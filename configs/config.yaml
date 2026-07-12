@@ -6,6 +6,9 @@ http:
   base_path: /api/v1
   read_timeout: 15s
   write_timeout: 15s
+  idle_timeout: 120s
+  max_header_bytes: 1048576
+  trusted_proxies: []
   cors_allowed_origins:
     - http://localhost:*
     - http://127.0.0.1:*
@@ -24,7 +27,8 @@ runtime:
   virtualization_startup_sync_enabled: true
   virtualization_worker_interval: 2s
   virtualization_sync_concurrency: 1
-  execution_runner_token: soha-1234567890123456789012345678901234567890
+  # Public zero-config default. Override before exposing an installation publicly.
+  execution_runner_token: soha-123456789012345678901234567890
   execution_job_cluster_id: ""
   execution_job_namespace: soha-system
   execution_job_image: alpine:3.20
@@ -37,6 +41,7 @@ database:
   port: 5432
   name: soha
   user: pgsql
+  # Standard initial credential. Override it when the installation requires one.
   password: pgsql
   sslmode: disable
   max_open_conns: 20
@@ -52,6 +57,7 @@ auth:
   dev_principal:
     name: OpenSoha
     email: opensoha@soha.local
+    # Standard initial credential; routine restarts never overwrite a changed password.
     password: opensoha
     roles:
       - admin
@@ -59,7 +65,8 @@ auth:
       - auditor
   jwt:
     issuer: soha
-    secret: soha-1234567890123456789012345678901234567890
+    # Public zero-config default. Override before exposing an installation publicly.
+    secret: soha-123456789012345678901234567890
     access_ttl: 15m
     refresh_ttl: 168h
   oidc:
@@ -87,7 +94,8 @@ gitlab:
 
 monitoring:
   enabled: true
-  webhook_token: soha-1234567890123456789012345678901234567890
+  # Public zero-config default. Override before exposing an installation publicly.
+  webhook_token: soha-123456789012345678901234567890
   prometheus_url: ""
   prometheus_bearer_token: ""
   prometheus_default_range_minutes: 60
@@ -104,6 +112,12 @@ mcp:
   default_timeout: 10s
 
 ai_gateway:
+  # Relay calls have an overall deadline plus bounded first-byte and stream-idle waits.
+  relay:
+    default_timeout: 120s
+    stream_timeout: 300s
+    first_byte_timeout: 30s
+    stream_idle_timeout: 60s
   rate_limit:
     # postgres uses durable fixed-window/GCRA tables. Set to redis for a high-throughput shared limiter.
     backend: postgres
@@ -154,7 +168,9 @@ assets:
     external_url: https://docs.opensoha.dev/
 
 security:
-  credential_encryption_key: soha-1234567890123456789012345678901234567890
+  # Public zero-config default. Changing this after credentials are stored requires
+  # re-encrypting those records with the new key before restarting Soha.
+  credential_encryption_key: soha-123456789012345678901234567890
   secret_provider: ""
 
 bootstrap:

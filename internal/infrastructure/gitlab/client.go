@@ -80,6 +80,14 @@ func (c *Client) ListProjects(ctx context.Context, search string, limit int) ([]
 }
 
 func (c *Client) ListBranches(ctx context.Context, projectID, search string, limit int) ([]domainapp.GitReference, error) {
+	return c.listReferences(ctx, projectID, search, limit, "branches")
+}
+
+func (c *Client) ListTags(ctx context.Context, projectID, search string, limit int) ([]domainapp.GitReference, error) {
+	return c.listReferences(ctx, projectID, search, limit, "tags")
+}
+
+func (c *Client) listReferences(ctx context.Context, projectID, search string, limit int, kind string) ([]domainapp.GitReference, error) {
 	if err := c.validateConfigured(); err != nil {
 		return nil, err
 	}
@@ -95,38 +103,7 @@ func (c *Client) ListBranches(ctx context.Context, projectID, search string, lim
 		params.Set("search", strings.TrimSpace(search))
 	}
 	var response []branchResponse
-	if err := c.get(ctx, "/projects/"+url.PathEscape(projectID)+"/repository/branches", params, &response); err != nil {
-		return nil, err
-	}
-	items := make([]domainapp.GitReference, 0, len(response))
-	for _, item := range response {
-		items = append(items, domainapp.GitReference{
-			Name:      item.Name,
-			CommitSHA: item.Commit.ID,
-			Protected: item.Protected,
-			UpdatedAt: item.Commit.CommittedDate,
-		})
-	}
-	return items, nil
-}
-
-func (c *Client) ListTags(ctx context.Context, projectID, search string, limit int) ([]domainapp.GitReference, error) {
-	if err := c.validateConfigured(); err != nil {
-		return nil, err
-	}
-	if strings.TrimSpace(projectID) == "" {
-		return nil, fmt.Errorf("%w: gitlab project id is required", apperrors.ErrInvalidArgument)
-	}
-	if limit <= 0 {
-		limit = c.perPage
-	}
-	params := url.Values{}
-	params.Set("per_page", strconv.Itoa(limit))
-	if strings.TrimSpace(search) != "" {
-		params.Set("search", strings.TrimSpace(search))
-	}
-	var response []tagResponse
-	if err := c.get(ctx, "/projects/"+url.PathEscape(projectID)+"/repository/tags", params, &response); err != nil {
+	if err := c.get(ctx, "/projects/"+url.PathEscape(projectID)+"/repository/"+kind, params, &response); err != nil {
 		return nil, err
 	}
 	items := make([]domainapp.GitReference, 0, len(response))
@@ -166,7 +143,7 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, out an
 	if err != nil {
 		return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("%w: gitlab request failed with status %d", apperrors.ErrClusterUnready, resp.StatusCode)
 	}
@@ -186,12 +163,6 @@ type projectResponse struct {
 }
 
 type branchResponse struct {
-	Name      string         `json:"name"`
-	Protected bool           `json:"protected"`
-	Commit    commitResponse `json:"commit"`
-}
-
-type tagResponse struct {
 	Name      string         `json:"name"`
 	Protected bool           `json:"protected"`
 	Commit    commitResponse `json:"commit"`

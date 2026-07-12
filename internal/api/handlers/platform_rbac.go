@@ -8,114 +8,114 @@ import (
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 )
 
-func (h *PlatformHandler) ListServiceAccounts(c *gin.Context) {
+func (h *namespacedRBACResourceHandler) ListServiceAccounts(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListServiceAccounts(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListServiceAccounts(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetServiceAccountDetail(c *gin.Context) {
+func (h *namespacedRBACResourceHandler) GetServiceAccountDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetServiceAccountDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	item, err := h.service.GetServiceAccountDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) CreateServiceAccount(c *gin.Context) {
-	h.createResourceFromYAML(c, "ServiceAccount")
+func (h *namespacedRBACResourceHandler) CreateServiceAccount(c *gin.Context) {
+	createResourceFromYAML(c, h.creator, "ServiceAccount")
 }
-func (h *PlatformHandler) ListRoles(c *gin.Context) {
+func (h *namespacedRBACResourceHandler) ListRoles(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListRoles(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListRoles(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetRoleDetail(c *gin.Context) {
+func (h *namespacedRBACResourceHandler) GetRoleDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetRoleDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	item, err := h.service.GetRoleDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) CreateRole(c *gin.Context) {
-	h.createResourceFromYAML(c, "Role")
+func (h *namespacedRBACResourceHandler) CreateRole(c *gin.Context) {
+	createResourceFromYAML(c, h.creator, "Role")
 }
-func (h *PlatformHandler) ListRoleBindings(c *gin.Context) {
+func (h *namespacedRBACResourceHandler) ListRoleBindings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListRoleBindings(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListRoleBindings(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetRoleBindingDetail(c *gin.Context) {
+func (h *namespacedRBACResourceHandler) GetRoleBindingDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetRoleBindingDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	item, err := h.service.GetRoleBindingDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) CreateRoleBinding(c *gin.Context) {
-	h.createResourceFromYAML(c, "RoleBinding")
+func (h *namespacedRBACResourceHandler) CreateRoleBinding(c *gin.Context) {
+	createResourceFromYAML(c, h.creator, "RoleBinding")
 }
-func (h *PlatformHandler) ListClusterRoles(c *gin.Context) {
+func (h *clusterRBACResourceHandler) ListClusterRoles(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListClusterRoles(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.service.ListClusterRoles(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetClusterRoleDetail(c *gin.Context) {
+func (h *clusterRBACResourceHandler) GetClusterRoleDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.GetClusterRoleDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
+	item, err := h.service.GetClusterRoleDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) CreateClusterRole(c *gin.Context) {
-	h.createResourceFromYAML(c, "ClusterRole")
+func (h *clusterRBACResourceHandler) CreateClusterRole(c *gin.Context) {
+	createResourceFromYAML(c, h.creator, "ClusterRole")
 }
-func (h *PlatformHandler) ListClusterRoleBindings(c *gin.Context) {
+func (h *clusterRBACResourceHandler) ListClusterRoleBindings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListClusterRoleBindings(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.service.ListClusterRoleBindings(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetClusterRoleBindingDetail(c *gin.Context) {
+func (h *clusterRBACResourceHandler) GetClusterRoleBindingDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.GetClusterRoleBindingDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
+	item, err := h.service.GetClusterRoleBindingDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) CreateClusterRoleBinding(c *gin.Context) {
-	h.createResourceFromYAML(c, "ClusterRoleBinding")
+func (h *clusterRBACResourceHandler) CreateClusterRoleBinding(c *gin.Context) {
+	createResourceFromYAML(c, h.creator, "ClusterRoleBinding")
 }

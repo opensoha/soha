@@ -885,7 +885,19 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		ApplicationEnvironmentID: binding.ID,
 		Target:                   target,
 	}
+	return s.executeApplicationDeliveryAction(ctx, principal, app, binding, target, input, result)
+}
 
+func (s *Service) executeApplicationDeliveryAction(
+	ctx context.Context,
+	principal domainidentity.Principal,
+	app domainapp.App,
+	binding domaincatalog.ApplicationEnvironment,
+	target *domaincatalog.ReleaseTarget,
+	input domaindelivery.ApplicationDeliveryActionInput,
+	result domaindelivery.ApplicationDeliveryActionResult,
+) (domaindelivery.ApplicationDeliveryActionResult, error) {
+	action := result.Action
 	switch action {
 	case domaindelivery.ApplicationDeliveryActionBuild:
 		buildRecord, buildErr := s.triggerApplicationBuild(ctx, principal, app, binding, input)
@@ -895,9 +907,6 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		result.Build = &buildRecord
 		applyBuildRelatedIDs(&result, buildRecord)
 	case domaindelivery.ApplicationDeliveryActionDeploy:
-		if target == nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
-		}
 		releaseRecord, releaseErr := s.triggerApplicationRelease(ctx, principal, app, binding, *target, input)
 		if releaseErr != nil {
 			return domaindelivery.ApplicationDeliveryActionResult{}, releaseErr
@@ -905,9 +914,6 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		result.Release = &releaseRecord
 		applyReleaseRelatedIDs(&result, releaseRecord)
 	case domaindelivery.ApplicationDeliveryActionWorkflow:
-		if target == nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
-		}
 		run, runErr := s.workflows.Trigger(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, false))
 		if runErr != nil {
 			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
@@ -915,11 +921,8 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		result.Workflow = &run
 		applyWorkflowRelatedIDs(&result, run)
 	case domaindelivery.ApplicationDeliveryActionBuildDeploy:
-		if target == nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
-		}
-		if binding.WorkflowTemplate == nil || len(binding.WorkflowTemplate.Definition) == 0 {
-			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: workflow template is required", apperrors.ErrInvalidArgument)
+		if err := requireDeliveryWorkflowTemplate(binding, "workflow template is required"); err != nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, err
 		}
 		run, runErr := s.workflows.Trigger(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, false))
 		if runErr != nil {
@@ -928,11 +931,8 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		result.Workflow = &run
 		applyWorkflowRelatedIDs(&result, run)
 	case domaindelivery.ApplicationDeliveryActionVerify:
-		if target == nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
-		}
-		if binding.WorkflowTemplate == nil || len(binding.WorkflowTemplate.Definition) == 0 {
-			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: workflow template is required", apperrors.ErrInvalidArgument)
+		if err := requireDeliveryWorkflowTemplate(binding, "workflow template is required"); err != nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, err
 		}
 		run, runErr := s.workflows.TriggerValidation(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, true))
 		if runErr != nil {
@@ -941,11 +941,8 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		result.Workflow = &run
 		applyWorkflowRelatedIDs(&result, run)
 	case domaindelivery.ApplicationDeliveryActionRollback:
-		if target == nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
-		}
-		if binding.WorkflowTemplate == nil || len(binding.WorkflowTemplate.Definition) == 0 {
-			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: rollback workflow template is required", apperrors.ErrInvalidArgument)
+		if err := requireDeliveryWorkflowTemplate(binding, "rollback workflow template is required"); err != nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, err
 		}
 		run, runErr := s.workflows.TriggerRollback(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, false))
 		if runErr != nil {
@@ -957,6 +954,13 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: unsupported application delivery action %q", apperrors.ErrInvalidArgument, action)
 	}
 	return result, nil
+}
+
+func requireDeliveryWorkflowTemplate(binding domaincatalog.ApplicationEnvironment, message string) error {
+	if binding.WorkflowTemplate == nil || len(binding.WorkflowTemplate.Definition) == 0 {
+		return fmt.Errorf("%w: %s", apperrors.ErrInvalidArgument, message)
+	}
+	return nil
 }
 
 func normalizeApplicationDeliveryAction(action domaindelivery.ApplicationDeliveryActionKind) domaindelivery.ApplicationDeliveryActionKind {

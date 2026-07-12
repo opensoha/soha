@@ -12,33 +12,51 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
-type ApplicationService interface {
+type ApplicationCatalogService interface {
 	List(context.Context, domainidentity.Principal, domainapp.Filter) ([]domainapp.App, error)
 	Get(context.Context, domainidentity.Principal, string) (domainapp.App, error)
 	Create(context.Context, domainidentity.Principal, domainapp.UpsertInput) (domainapp.App, error)
 	Update(context.Context, domainidentity.Principal, string, domainapp.UpsertInput) (domainapp.App, error)
 	Delete(context.Context, domainidentity.Principal, string) error
+}
+
+type ApplicationComponentService interface {
 	ListServices(context.Context, domainidentity.Principal, string) ([]domainapp.Service, error)
 	GetService(context.Context, domainidentity.Principal, string, string) (domainapp.Service, error)
 	CreateService(context.Context, domainidentity.Principal, string, domainapp.ServiceInput) (domainapp.Service, error)
 	UpdateService(context.Context, domainidentity.Principal, string, string, domainapp.ServiceInput) (domainapp.Service, error)
 	DeleteService(context.Context, domainidentity.Principal, string, string) error
+}
+
+type ApplicationGitService interface {
 	ListGitRepositories(context.Context, domainidentity.Principal, string, int) ([]domainapp.GitRepository, error)
 	ListGitBranches(context.Context, domainidentity.Principal, string, string, int) ([]domainapp.GitReference, error)
 	ListGitTags(context.Context, domainidentity.Principal, string, string, int) ([]domainapp.GitReference, error)
 }
 
+type ApplicationService interface {
+	ApplicationCatalogService
+	ApplicationComponentService
+	ApplicationGitService
+}
+
 type ApplicationHandler struct {
-	service ApplicationService
+	applications ApplicationCatalogService
+	components   ApplicationComponentService
+	git          ApplicationGitService
 }
 
 func NewApplicationHandler(service ApplicationService) *ApplicationHandler {
-	return &ApplicationHandler{service: service}
+	return NewApplicationHandlerWithServices(service, service, service)
+}
+
+func NewApplicationHandlerWithServices(applications ApplicationCatalogService, components ApplicationComponentService, git ApplicationGitService) *ApplicationHandler {
+	return &ApplicationHandler{applications: applications, components: components, git: git}
 }
 
 func (h *ApplicationHandler) ListApplications(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.List(c.Request.Context(), principal, domainapp.Filter{
+	items, err := h.applications.List(c.Request.Context(), principal, domainapp.Filter{
 		Search: c.Query("search"),
 		Limit:  parseLimit(c.Query("limit"), 100),
 	})
@@ -51,7 +69,7 @@ func (h *ApplicationHandler) ListApplications(c *gin.Context) {
 
 func (h *ApplicationHandler) GetApplication(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Get(c.Request.Context(), principal, c.Param("applicationID"))
+	item, err := h.applications.Get(c.Request.Context(), principal, c.Param("applicationID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -66,7 +84,7 @@ func (h *ApplicationHandler) CreateApplication(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Create(c.Request.Context(), principal, mapApplicationInput(req))
+	item, err := h.applications.Create(c.Request.Context(), principal, mapApplicationInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -81,7 +99,7 @@ func (h *ApplicationHandler) UpdateApplication(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Update(c.Request.Context(), principal, c.Param("applicationID"), mapApplicationInput(req))
+	item, err := h.applications.Update(c.Request.Context(), principal, c.Param("applicationID"), mapApplicationInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -91,7 +109,7 @@ func (h *ApplicationHandler) UpdateApplication(c *gin.Context) {
 
 func (h *ApplicationHandler) DeleteApplication(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.service.Delete(c.Request.Context(), principal, c.Param("applicationID")); err != nil {
+	if err := h.applications.Delete(c.Request.Context(), principal, c.Param("applicationID")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -100,7 +118,7 @@ func (h *ApplicationHandler) DeleteApplication(c *gin.Context) {
 
 func (h *ApplicationHandler) ListApplicationServices(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListServices(c.Request.Context(), principal, c.Param("applicationID"))
+	items, err := h.components.ListServices(c.Request.Context(), principal, c.Param("applicationID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -110,7 +128,7 @@ func (h *ApplicationHandler) ListApplicationServices(c *gin.Context) {
 
 func (h *ApplicationHandler) GetApplicationService(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetService(c.Request.Context(), principal, c.Param("applicationID"), c.Param("serviceID"))
+	item, err := h.components.GetService(c.Request.Context(), principal, c.Param("applicationID"), c.Param("serviceID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -125,7 +143,7 @@ func (h *ApplicationHandler) CreateApplicationService(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateService(c.Request.Context(), principal, c.Param("applicationID"), mapApplicationServiceInput(req))
+	item, err := h.components.CreateService(c.Request.Context(), principal, c.Param("applicationID"), mapApplicationServiceInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -140,7 +158,7 @@ func (h *ApplicationHandler) UpdateApplicationService(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateService(c.Request.Context(), principal, c.Param("applicationID"), c.Param("serviceID"), mapApplicationServiceInput(req))
+	item, err := h.components.UpdateService(c.Request.Context(), principal, c.Param("applicationID"), c.Param("serviceID"), mapApplicationServiceInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -150,7 +168,7 @@ func (h *ApplicationHandler) UpdateApplicationService(c *gin.Context) {
 
 func (h *ApplicationHandler) DeleteApplicationService(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.service.DeleteService(c.Request.Context(), principal, c.Param("applicationID"), c.Param("serviceID")); err != nil {
+	if err := h.components.DeleteService(c.Request.Context(), principal, c.Param("applicationID"), c.Param("serviceID")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -159,7 +177,7 @@ func (h *ApplicationHandler) DeleteApplicationService(c *gin.Context) {
 
 func (h *ApplicationHandler) ListGitRepositories(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListGitRepositories(c.Request.Context(), principal, c.Query("search"), parseLimit(c.Query("limit"), 50))
+	items, err := h.git.ListGitRepositories(c.Request.Context(), principal, c.Query("search"), parseLimit(c.Query("limit"), 50))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -169,7 +187,7 @@ func (h *ApplicationHandler) ListGitRepositories(c *gin.Context) {
 
 func (h *ApplicationHandler) ListGitBranches(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListGitBranches(c.Request.Context(), principal, c.Query("projectId"), c.Query("search"), parseLimit(c.Query("limit"), 50))
+	items, err := h.git.ListGitBranches(c.Request.Context(), principal, c.Query("projectId"), c.Query("search"), parseLimit(c.Query("limit"), 50))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -179,7 +197,7 @@ func (h *ApplicationHandler) ListGitBranches(c *gin.Context) {
 
 func (h *ApplicationHandler) ListGitTags(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListGitTags(c.Request.Context(), principal, c.Query("projectId"), c.Query("search"), parseLimit(c.Query("limit"), 50))
+	items, err := h.git.ListGitTags(c.Request.Context(), principal, c.Query("projectId"), c.Query("search"), parseLimit(c.Query("limit"), 50))
 	if err != nil {
 		writeError(c, err)
 		return

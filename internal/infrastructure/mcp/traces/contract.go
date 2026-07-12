@@ -5,44 +5,14 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
+
+	"github.com/opensoha/soha/internal/platform/telemetry"
 )
 
-type Scope struct {
-	ClusterID string
-	Namespace string
-	Service   string
-	Workload  string
-}
-
-type Query struct {
-	Scope       Scope
-	TimeFrom    time.Time
-	TimeTo      time.Time
-	MinDuration time.Duration
-	Limit       int
-}
-
-type Span struct {
-	TraceID      string         `json:"traceId"`
-	SpanID       string         `json:"spanId"`
-	ParentSpanID string         `json:"parentSpanId,omitempty"`
-	Operation    string         `json:"operation"`
-	Service      string         `json:"service"`
-	DurationMS   float64        `json:"durationMs"`
-	StartTime    time.Time      `json:"startTime"`
-	Tags         map[string]any `json:"tags,omitempty"`
-	Error        bool           `json:"error"`
-}
-
-type Result struct {
-	SourceID     string           `json:"sourceId"`
-	Summary      string           `json:"summary"`
-	Spans        []Span           `json:"spans"`
-	Hotspots     []map[string]any `json:"hotspots,omitempty"`
-	QueryCost    map[string]any   `json:"queryCost,omitempty"`
-	SampleWindow map[string]any   `json:"sampleWindow,omitempty"`
-}
+type Scope = telemetry.TraceScope
+type Query = telemetry.TraceQuery
+type Span = telemetry.TraceSpan
+type Result = telemetry.TraceResult
 
 type Driver interface {
 	BackendType() string

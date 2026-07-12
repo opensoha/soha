@@ -7,6 +7,8 @@ import (
 
 type ErrorBody = contractsresponse.ErrorBody
 
+const ErrorCodeContextKey = "error_code"
+
 func JSON(c *gin.Context, status int, payload any) {
 	c.JSON(status, payload)
 }
@@ -20,5 +22,6 @@ func Items(c *gin.Context, status int, items any) {
 }
 
 func Error(c *gin.Context, status int, code, message string) {
+	c.Set(ErrorCodeContextKey, code)
 	c.JSON(status, contractsresponse.Error(code, message, c.GetString("request_id")))
 }

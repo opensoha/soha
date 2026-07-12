@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -23,11 +25,11 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
-	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"github.com/opensoha/soha/internal/platform/appconfig"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
-	userrepo "github.com/opensoha/soha/internal/repository/user"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 )
@@ -41,37 +43,61 @@ const (
 	maxAvatarURLLength     = 700000
 )
 
-type UserRepository interface {
-	FindByLogin(context.Context, string) (userrepo.User, error)
-	FindByEmail(context.Context, string) (userrepo.User, error)
-	GetByID(context.Context, string) (userrepo.User, error)
-	GetAuthzState(context.Context, string) (userrepo.AuthzState, error)
-	UpsertUser(context.Context, userrepo.User) error
+type UserAccountStore interface {
+	FindByEmail(context.Context, string) (domainidentity.User, error)
+	GetByID(context.Context, string) (domainidentity.User, error)
+	UpsertUser(context.Context, domainidentity.User) error
+}
+
+type PasswordStore interface {
+	FindByLogin(context.Context, string) (domainidentity.User, error)
 	SetPasswordHash(context.Context, string, string) error
 	GetPasswordHash(context.Context, string) (string, error)
+}
+
+type AuthorizationStore interface {
+	GetAuthzState(context.Context, string) (domainidentity.AuthzState, error)
 	ListRoles(context.Context, string) ([]string, error)
+	ListTeams(context.Context, string) ([]string, error)
+	ListProjects(context.Context, string) ([]string, error)
+}
+
+type RoleBindingStore interface {
 	ReplaceRoleBindings(context.Context, string, []string) error
 	ResolveRoleIDs(context.Context, []string) ([]string, error)
 	SyncExternalRoleBindings(context.Context, string, string, string, []string, bool) error
-	ListTeams(context.Context, string) ([]string, error)
+}
+
+type TeamBindingStore interface {
 	ResolveTeamIDsForExternalRefs(context.Context, string, string, []string) ([]string, error)
 	SyncExternalTeamBindings(context.Context, string, string, string, []string, bool) error
-	ListProjects(context.Context, string) ([]string, error)
-	FindIdentity(context.Context, string, string, string) (userrepo.OIDCIdentity, error)
-	MigrateOIDCIdentity(context.Context, userrepo.OIDCIdentity, string) error
-	ListIdentitiesByUserID(context.Context, string) ([]userrepo.OIDCIdentity, error)
-	UpsertOIDCIdentity(context.Context, userrepo.OIDCIdentity) error
-	CreateSession(context.Context, userrepo.Session) error
-	GetSessionByRefreshID(context.Context, string) (userrepo.Session, error)
-	GetAuthSessionByID(context.Context, string) (userrepo.Session, error)
+}
+
+type ExternalIdentityStore interface {
+	FindIdentity(context.Context, string, string, string) (domainidentity.OIDCIdentity, error)
+	MigrateOIDCIdentity(context.Context, domainidentity.OIDCIdentity, string) error
+	ListIdentitiesByUserID(context.Context, string) ([]domainidentity.OIDCIdentity, error)
+	UpsertOIDCIdentity(context.Context, domainidentity.OIDCIdentity) error
+}
+
+type SessionStore interface {
+	CreateSession(context.Context, domainidentity.Session) error
+	GetSessionByRefreshID(context.Context, string) (domainidentity.Session, error)
+	GetAuthSessionByID(context.Context, string) (domainidentity.Session, error)
+	TouchSession(context.Context, string, time.Time, int64) error
+	RevokeSession(context.Context, string) error
+}
+
+type SessionAdminStore interface {
 	GetSessionByID(context.Context, string) (domainidentity.SessionRecord, error)
 	ListSessionRecords(context.Context, int) ([]domainidentity.SessionRecord, error)
 	ListSessionRecordsByUserID(context.Context, string, int) ([]domainidentity.SessionRecord, error)
 	RevokeSessionByID(context.Context, string) error
-	TouchSession(context.Context, string, time.Time, int64) error
-	RevokeSession(context.Context, string) error
-	CreateEphemeralToken(context.Context, userrepo.EphemeralToken) error
-	ConsumeEphemeralToken(context.Context, string, string) (userrepo.EphemeralToken, error)
+}
+
+type EphemeralTokenStore interface {
+	CreateEphemeralToken(context.Context, domainidentity.EphemeralToken) error
+	ConsumeEphemeralToken(context.Context, string, string) (domainidentity.EphemeralToken, error)
 }
 
 type GatewayTokenRepository interface {
@@ -93,16 +119,43 @@ type OperationRecorder interface {
 type SettingsReader interface {
 	ResolveLoginProviders(context.Context) ([]domainsettings.LoginProviderSettings, string, error)
 	ResolveLoginProvider(context.Context, string) (domainsettings.LoginProviderSettings, error)
+	LocalPasswordLoginEnabled(context.Context) (bool, error)
 }
 
 type Service struct {
-	cfg         cfgpkg.AuthConfig
-	users       UserRepository
-	audit       AuditRecorder
-	operations  OperationRecorder
-	settings    SettingsReader
-	permissions *appaccess.PermissionResolver
-	gateway     GatewayTokenRepository
+	cfg             appconfig.Auth
+	accounts        UserAccountStore
+	passwords       PasswordStore
+	authorization   AuthorizationStore
+	roleBindings    RoleBindingStore
+	teamBindings    TeamBindingStore
+	identities      ExternalIdentityStore
+	sessions        SessionStore
+	sessionAdmin    SessionAdminStore
+	ephemeralTokens EphemeralTokenStore
+	audit           AuditRecorder
+	operations      OperationRecorder
+	settings        SettingsReader
+	permissions     *appaccess.PermissionResolver
+	gateway         GatewayTokenRepository
+}
+
+type Dependencies struct {
+	Config          appconfig.Auth
+	Accounts        UserAccountStore
+	Passwords       PasswordStore
+	Authorization   AuthorizationStore
+	RoleBindings    RoleBindingStore
+	TeamBindings    TeamBindingStore
+	Identities      ExternalIdentityStore
+	Sessions        SessionStore
+	SessionAdmin    SessionAdminStore
+	EphemeralTokens EphemeralTokenStore
+	Audit           AuditRecorder
+	Operations      OperationRecorder
+	Settings        SettingsReader
+	Permissions     *appaccess.PermissionResolver
+	Gateway         GatewayTokenRepository
 }
 
 type tokenClaims struct {
@@ -133,11 +186,13 @@ type streamTicketPayload struct {
 }
 
 type genericProfile struct {
-	ID       string
-	Email    string
-	Name     string
-	Raw      map[string]any
-	Provider string
+	ID        string
+	Email     string
+	Name      string
+	Phone     string
+	AvatarURL string
+	Raw       map[string]any
+	Provider  string
 }
 
 type accessTokenEnvelope struct {
@@ -166,12 +221,59 @@ type oidcProfile struct {
 	Raw               map[string]any `json:"-"`
 }
 
-func New(_ context.Context, cfg cfgpkg.AuthConfig, users UserRepository, audit AuditRecorder, operations OperationRecorder, settings SettingsReader, permissions *appaccess.PermissionResolver, gateway GatewayTokenRepository) (*Service, error) {
-	return &Service{cfg: cfg, users: users, audit: audit, operations: operations, settings: settings, permissions: permissions, gateway: gateway}, nil
+func New(deps Dependencies) (*Service, error) {
+	required := []struct {
+		name  string
+		value any
+	}{
+		{"accounts", deps.Accounts},
+		{"passwords", deps.Passwords},
+		{"authorization", deps.Authorization},
+		{"role bindings", deps.RoleBindings},
+		{"team bindings", deps.TeamBindings},
+		{"identities", deps.Identities},
+		{"sessions", deps.Sessions},
+		{"session admin", deps.SessionAdmin},
+		{"ephemeral tokens", deps.EphemeralTokens},
+	}
+	for _, dependency := range required {
+		if isNilDependency(dependency.value) {
+			return nil, fmt.Errorf("identity service: %s dependency is required", dependency.name)
+		}
+	}
+	return &Service{
+		cfg: deps.Config, accounts: deps.Accounts, passwords: deps.Passwords,
+		authorization: deps.Authorization, roleBindings: deps.RoleBindings, teamBindings: deps.TeamBindings,
+		identities: deps.Identities, sessions: deps.Sessions, sessionAdmin: deps.SessionAdmin,
+		ephemeralTokens: deps.EphemeralTokens, audit: deps.Audit, operations: deps.Operations,
+		settings: deps.Settings, permissions: deps.Permissions, gateway: deps.Gateway,
+	}, nil
+}
+
+func isNilDependency(dependency any) bool {
+	if dependency == nil {
+		return true
+	}
+	value := reflect.ValueOf(dependency)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
 }
 
 func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
-	providers := []domainidentity.Provider{{ID: "password", Type: "password", Name: "Password", Enabled: true}}
+	providers := []domainidentity.Provider{}
+	passwordEnabled := true
+	if s.settings != nil {
+		if enabled, err := s.settings.LocalPasswordLoginEnabled(ctx); err == nil {
+			passwordEnabled = enabled
+		}
+	}
+	if passwordEnabled {
+		providers = append(providers, domainidentity.Provider{ID: "password", Type: "password", Name: "Password", Enabled: true})
+	}
 	loginProviders, _, err := s.loginProviders(ctx)
 	if err == nil {
 		for _, item := range loginProviders {
@@ -186,6 +288,7 @@ func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
 				ID:       item.ID,
 				Type:     item.Type,
 				Name:     item.Name,
+				IconURL:  item.IconURL,
 				Enabled:  item.Enabled,
 				LoginURL: loginURL,
 			})
@@ -206,13 +309,22 @@ func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
 }
 
 func (s *Service) LoginWithPassword(ctx context.Context, login, password string) (domainidentity.AuthResult, error) {
+	if s.settings != nil {
+		enabled, err := s.settings.LocalPasswordLoginEnabled(ctx)
+		if err != nil {
+			return domainidentity.AuthResult{}, fmt.Errorf("load password login setting: %w", err)
+		}
+		if !enabled {
+			return domainidentity.AuthResult{}, fmt.Errorf("%w: local password login is disabled", apperrors.ErrUnauthorized)
+		}
+	}
 	login = strings.TrimSpace(login)
 	password = strings.TrimSpace(password)
 	if login == "" || password == "" {
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: login and password are required", apperrors.ErrInvalidArgument)
 	}
 
-	user, err := s.users.FindByLogin(ctx, login)
+	user, err := s.passwords.FindByLogin(ctx, login)
 	if err != nil {
 		_ = s.recordAudit(ctx, domainidentity.Principal{UserName: login}, "login", "deny", "password login failed: user not found", map[string]any{"provider": "password"})
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
@@ -221,7 +333,7 @@ func (s *Service) LoginWithPassword(ctx context.Context, login, password string)
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
 	}
 
-	hash, err := s.users.GetPasswordHash(ctx, user.ID)
+	hash, err := s.passwords.GetPasswordHash(ctx, user.ID)
 	if err != nil {
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
 	}
@@ -247,7 +359,7 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (doma
 	if err != nil {
 		return domainidentity.AuthResult{}, err
 	}
-	session, err := s.users.GetSessionByRefreshID(ctx, claims.ID)
+	session, err := s.sessions.GetSessionByRefreshID(ctx, claims.ID)
 	if err != nil {
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: session not found", apperrors.ErrUnauthorized)
 	}
@@ -267,7 +379,7 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (doma
 	if err != nil {
 		return domainidentity.AuthResult{}, err
 	}
-	if err := s.users.TouchSession(ctx, claims.ID, time.Now().UTC(), authzState.AuthzVersion); err != nil {
+	if err := s.sessions.TouchSession(ctx, claims.ID, time.Now().UTC(), authzState.AuthzVersion); err != nil {
 		return domainidentity.AuthResult{}, fmt.Errorf("touch session: %w", err)
 	}
 	return domainidentity.AuthResult{
@@ -288,7 +400,7 @@ func (s *Service) Logout(ctx context.Context, accessToken, refreshToken string) 
 		parsedPrincipal, accessCtx, err := s.ParseAccessToken(ctx, accessToken)
 		if err == nil {
 			principal = parsedPrincipal
-			if err := s.users.RevokeSessionByID(ctx, accessCtx.SessionID); err != nil && !errors.Is(err, userrepo.ErrNotFound) {
+			if err := s.sessionAdmin.RevokeSessionByID(ctx, accessCtx.SessionID); err != nil && !errors.Is(err, apperrors.ErrNotFound) {
 				return fmt.Errorf("revoke session by access token: %w", err)
 			}
 		}
@@ -298,7 +410,7 @@ func (s *Service) Logout(ctx context.Context, accessToken, refreshToken string) 
 		if err != nil {
 			return err
 		}
-		if err := s.users.RevokeSession(ctx, claims.ID); err != nil {
+		if err := s.sessions.RevokeSession(ctx, claims.ID); err != nil {
 			return fmt.Errorf("revoke session: %w", err)
 		}
 		if principal.UserID == "" {
@@ -325,7 +437,7 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (dom
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
 	}
-	session, err := s.users.GetAuthSessionByID(ctx, claims.SessionID)
+	session, err := s.sessions.GetAuthSessionByID(ctx, claims.SessionID)
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session not found", apperrors.ErrUnauthorized)
 	}
@@ -357,7 +469,7 @@ func (s *Service) IssueStreamTicket(ctx context.Context, principal domainidentit
 	if !isAllowedStreamTicketPath(path) {
 		return domainidentity.StreamTicket{}, fmt.Errorf("%w: stream ticket path is not allowed", apperrors.ErrInvalidArgument)
 	}
-	session, err := s.users.GetAuthSessionByID(ctx, accessCtx.SessionID)
+	session, err := s.sessions.GetAuthSessionByID(ctx, accessCtx.SessionID)
 	if err != nil {
 		return domainidentity.StreamTicket{}, fmt.Errorf("%w: session not found", apperrors.ErrUnauthorized)
 	}
@@ -373,7 +485,7 @@ func (s *Service) IssueStreamTicket(ctx context.Context, principal domainidentit
 		Ticket:    uuid.NewString(),
 		ExpiresAt: expiresAt,
 	}
-	if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
+	if err := s.ephemeralTokens.CreateEphemeralToken(ctx, domainidentity.EphemeralToken{
 		Token: ticket.Ticket,
 		Kind:  streamTicketKind,
 		Payload: map[string]any{
@@ -397,7 +509,7 @@ func (s *Service) ParseStreamTicket(ctx context.Context, ticket, requestPath str
 	if !isAllowedStreamTicketPath(path) {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: stream ticket path is not allowed", apperrors.ErrUnauthorized)
 	}
-	token, err := s.users.ConsumeEphemeralToken(ctx, ticket, streamTicketKind)
+	token, err := s.ephemeralTokens.ConsumeEphemeralToken(ctx, ticket, streamTicketKind)
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: stream ticket missing or expired", apperrors.ErrUnauthorized)
 	}
@@ -410,7 +522,7 @@ func (s *Service) ParseStreamTicket(ctx context.Context, ticket, requestPath str
 	if payload.UserID == "" || payload.SessionID == "" || normalizeStreamTicketPath(payload.Path) != path {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: stream ticket does not match request", apperrors.ErrUnauthorized)
 	}
-	session, err := s.users.GetAuthSessionByID(ctx, payload.SessionID)
+	session, err := s.sessions.GetAuthSessionByID(ctx, payload.SessionID)
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session not found", apperrors.ErrUnauthorized)
 	}
@@ -532,7 +644,7 @@ func (s *Service) ListActiveSessions(ctx context.Context, principal domainidenti
 	if limit <= 0 {
 		limit = 100
 	}
-	items, err := s.users.ListSessionRecords(ctx, limit)
+	items, err := s.sessionAdmin.ListSessionRecords(ctx, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -550,11 +662,11 @@ func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentit
 	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemOnlineUsersManage, appaccess.PermIdentitySessionsManage); err != nil {
 		return err
 	}
-	session, err := s.users.GetSessionByID(ctx, strings.TrimSpace(sessionID))
+	session, err := s.sessionAdmin.GetSessionByID(ctx, strings.TrimSpace(sessionID))
 	if err != nil {
 		return err
 	}
-	if err := s.users.RevokeSessionByID(ctx, session.ID); err != nil {
+	if err := s.sessionAdmin.RevokeSessionByID(ctx, session.ID); err != nil {
 		return err
 	}
 	_ = s.recordAudit(ctx, principal, "session_revoke", "success", "admin revoked user session", map[string]any{
@@ -593,27 +705,27 @@ func (s *Service) CurrentProfile(ctx context.Context, principal domainidentity.P
 	if userID == "" {
 		return domainidentity.UserProfile{}, fmt.Errorf("%w: current user is required", apperrors.ErrUnauthorized)
 	}
-	user, err := s.users.GetByID(ctx, userID)
+	user, err := s.accounts.GetByID(ctx, userID)
 	if err != nil {
 		return domainidentity.UserProfile{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
 	}
-	roles, err := s.users.ListRoles(ctx, userID)
+	roles, err := s.authorization.ListRoles(ctx, userID)
 	if err != nil {
 		return domainidentity.UserProfile{}, fmt.Errorf("list user roles: %w", err)
 	}
-	teams, err := s.users.ListTeams(ctx, userID)
+	teams, err := s.authorization.ListTeams(ctx, userID)
 	if err != nil {
 		return domainidentity.UserProfile{}, fmt.Errorf("list user teams: %w", err)
 	}
-	projects, err := s.users.ListProjects(ctx, userID)
+	projects, err := s.authorization.ListProjects(ctx, userID)
 	if err != nil {
 		return domainidentity.UserProfile{}, fmt.Errorf("list user projects: %w", err)
 	}
-	identities, err := s.users.ListIdentitiesByUserID(ctx, userID)
+	identities, err := s.identities.ListIdentitiesByUserID(ctx, userID)
 	if err != nil {
 		return domainidentity.UserProfile{}, fmt.Errorf("list user identities: %w", err)
 	}
-	sessions, err := s.users.ListSessionRecordsByUserID(ctx, userID, 20)
+	sessions, err := s.sessionAdmin.ListSessionRecordsByUserID(ctx, userID, 20)
 	if err != nil {
 		return domainidentity.UserProfile{}, fmt.Errorf("list user sessions: %w", err)
 	}
@@ -627,7 +739,7 @@ func (s *Service) CurrentProfile(ctx context.Context, principal domainidentity.P
 	}
 
 	linkedIdentities := make([]domainidentity.LinkedIdentity, 0, len(identities)+1)
-	if _, err := s.users.GetPasswordHash(ctx, userID); err == nil {
+	if _, err := s.passwords.GetPasswordHash(ctx, userID); err == nil {
 		linkedIdentities = append(linkedIdentities, domainidentity.LinkedIdentity{
 			ID:             "password:" + userID,
 			ProviderType:   "password",
@@ -636,7 +748,7 @@ func (s *Service) CurrentProfile(ctx context.Context, principal domainidentity.P
 			DisplayName:    firstNonEmpty(user.DisplayName, user.Username),
 			Email:          user.Email,
 		})
-	} else if err != nil && !errors.Is(err, userrepo.ErrNotFound) {
+	} else if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
 		return domainidentity.UserProfile{}, fmt.Errorf("load password credential: %w", err)
 	}
 	for _, identity := range identities {
@@ -667,7 +779,7 @@ func (s *Service) UpdateCurrentProfile(ctx context.Context, principal domainiden
 	if userID == "" {
 		return domainidentity.UserProfile{}, fmt.Errorf("%w: current user is required", apperrors.ErrUnauthorized)
 	}
-	user, err := s.users.GetByID(ctx, userID)
+	user, err := s.accounts.GetByID(ctx, userID)
 	if err != nil {
 		return domainidentity.UserProfile{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
 	}
@@ -680,11 +792,11 @@ func (s *Service) UpdateCurrentProfile(ctx context.Context, principal domainiden
 		return domainidentity.UserProfile{}, fmt.Errorf("%w: email is invalid", apperrors.ErrInvalidArgument)
 	}
 	if email != strings.ToLower(strings.TrimSpace(user.Email)) {
-		existing, err := s.users.FindByEmail(ctx, email)
+		existing, err := s.accounts.FindByEmail(ctx, email)
 		if err == nil && existing.ID != user.ID {
 			return domainidentity.UserProfile{}, fmt.Errorf("%w: email already exists", apperrors.ErrConflict)
 		}
-		if err != nil && !errors.Is(err, userrepo.ErrNotFound) {
+		if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
 			return domainidentity.UserProfile{}, fmt.Errorf("find profile email: %w", err)
 		}
 	}
@@ -714,7 +826,7 @@ func (s *Service) UpdateCurrentProfile(ctx context.Context, principal domainiden
 	user.DisplayName = strings.TrimSpace(input.DisplayName)
 	user.Email = email
 	user.Preferences = preferences
-	if err := s.users.UpsertUser(ctx, user); err != nil {
+	if err := s.accounts.UpsertUser(ctx, user); err != nil {
 		return domainidentity.UserProfile{}, fmt.Errorf("update current profile: %w", err)
 	}
 	_ = s.recordAudit(ctx, domainidentity.Principal{
@@ -734,9 +846,9 @@ func (s *Service) ChangeCurrentPassword(ctx context.Context, principal domainide
 	if userID == "" {
 		return fmt.Errorf("%w: current user is required", apperrors.ErrUnauthorized)
 	}
-	hash, err := s.users.GetPasswordHash(ctx, userID)
+	hash, err := s.passwords.GetPasswordHash(ctx, userID)
 	if err != nil {
-		if errors.Is(err, userrepo.ErrNotFound) {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return fmt.Errorf("%w: current user has no local password", apperrors.ErrInvalidArgument)
 		}
 		return fmt.Errorf("load current password: %w", err)
@@ -751,14 +863,14 @@ func (s *Service) ChangeCurrentPassword(ctx context.Context, principal domainide
 	if err != nil {
 		return fmt.Errorf("hash new password: %w", err)
 	}
-	if err := s.users.SetPasswordHash(ctx, userID, string(nextHash)); err != nil {
+	if err := s.passwords.SetPasswordHash(ctx, userID, string(nextHash)); err != nil {
 		return fmt.Errorf("update password: %w", err)
 	}
 	_ = s.recordAudit(ctx, principal, "password_change", "success", "current user changed password", map[string]any{"userId": userID})
 	return nil
 }
 
-func toLinkedIdentity(identity userrepo.OIDCIdentity) domainidentity.LinkedIdentity {
+func toLinkedIdentity(identity domainidentity.OIDCIdentity) domainidentity.LinkedIdentity {
 	var lastLoginAt *time.Time
 	if !identity.LastLoginAt.IsZero() {
 		value := identity.LastLoginAt
@@ -793,15 +905,25 @@ func latestLoginAt(identities []domainidentity.LinkedIdentity, sessions []domain
 	return &latest
 }
 
-func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
-	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
-}
-
 func (s *Service) BeginOIDCLogin(ctx context.Context, returnTo string) (string, error) {
 	return s.BeginProviderLogin(ctx, "", returnTo)
 }
 
 func (s *Service) BeginProviderLogin(ctx context.Context, providerID, returnTo string) (string, error) {
+	return s.beginProviderAuthorization(ctx, providerID, returnTo, "")
+}
+
+func (s *Service) BeginProviderLink(ctx context.Context, principal domainidentity.Principal, providerID, returnTo string) (string, error) {
+	if strings.TrimSpace(principal.UserID) == "" {
+		return "", fmt.Errorf("%w: authentication required", apperrors.ErrUnauthorized)
+	}
+	if strings.TrimSpace(returnTo) == "" {
+		returnTo = "/account/profile"
+	}
+	return s.beginProviderAuthorization(ctx, providerID, returnTo, principal.UserID)
+}
+
+func (s *Service) beginProviderAuthorization(ctx context.Context, providerID, returnTo, linkUserID string) (string, error) {
 	returnTo, err := normalizeLocalReturnTo(returnTo)
 	if err != nil {
 		return "", err
@@ -821,13 +943,14 @@ func (s *Service) BeginProviderLogin(ctx context.Context, providerID, returnTo s
 		}
 		state := uuid.NewString()
 		nonce := uuid.NewString()
-		if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
+		if err := s.ephemeralTokens.CreateEphemeralToken(ctx, domainidentity.EphemeralToken{
 			Token: state,
 			Kind:  oidcStateKind,
 			Payload: loginStatePayload(map[string]any{
 				"nonce":      nonce,
 				"providerId": provider.ID,
 				"type":       provider.Type,
+				"linkUserId": linkUserID,
 			}, returnTo),
 			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
 		}); err != nil {
@@ -836,12 +959,13 @@ func (s *Service) BeginProviderLogin(ctx context.Context, providerID, returnTo s
 		return oauthConfig.AuthCodeURL(state, oidc.Nonce(nonce)), nil
 	case "oauth2", "feishu", "dingtalk", "wecom":
 		state := uuid.NewString()
-		if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
+		if err := s.ephemeralTokens.CreateEphemeralToken(ctx, domainidentity.EphemeralToken{
 			Token: state,
 			Kind:  oauthStateKind,
 			Payload: loginStatePayload(map[string]any{
 				"providerId": provider.ID,
 				"type":       provider.Type,
+				"linkUserId": linkUserID,
 			}, returnTo),
 			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
 		}); err != nil {
@@ -863,15 +987,13 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 	if strings.TrimSpace(state) == "" || strings.TrimSpace(code) == "" {
 		return "", fmt.Errorf("%w: missing oidc callback parameters", apperrors.ErrInvalidArgument)
 	}
-	stateToken, err := s.users.ConsumeEphemeralToken(ctx, state, oidcStateKind)
+	stateToken, err := s.ephemeralTokens.ConsumeEphemeralToken(ctx, state, oidcStateKind)
 	if err != nil {
 		return "", fmt.Errorf("%w: oidc state missing or expired", apperrors.ErrUnauthorized)
 	}
-	var statePayload oidcStatePayload
-	if payload, marshalErr := json.Marshal(stateToken.Payload); marshalErr != nil {
-		return "", fmt.Errorf("encode oidc state: %w", marshalErr)
-	} else if err := json.Unmarshal(payload, &statePayload); err != nil {
-		return "", fmt.Errorf("decode oidc state: %w", err)
+	statePayload, err := decodeOIDCStatePayload(stateToken.Payload)
+	if err != nil {
+		return "", err
 	}
 
 	providerID, _ := stateToken.Payload["providerId"].(string)
@@ -887,45 +1009,16 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 	if err != nil {
 		return "", fmt.Errorf("exchange oidc code: %w", err)
 	}
-	rawIDToken, ok := oauthToken.Extra("id_token").(string)
-	if !ok || rawIDToken == "" {
-		return "", fmt.Errorf("%w: oidc id_token is missing", apperrors.ErrUnauthorized)
-	}
-	idToken, err := verifier.Verify(ctx, rawIDToken)
+	profile, err := verifiedOIDCProfile(ctx, verifier, oauthToken, statePayload.Nonce)
 	if err != nil {
-		return "", fmt.Errorf("verify oidc id_token: %w", err)
+		return "", err
 	}
-	var profile oidcProfile
-	if err := idToken.Claims(&profile); err != nil {
-		return "", fmt.Errorf("decode oidc claims: %w", err)
-	}
-	var rawClaims map[string]any
-	if err := idToken.Claims(&rawClaims); err == nil {
-		profile.Raw = rawClaims
-	}
-	if statePayload.Nonce != "" && profile.Nonce != "" && profile.Nonce != statePayload.Nonce {
-		return "", fmt.Errorf("%w: oidc nonce mismatch", apperrors.ErrUnauthorized)
-	}
-	if profile.Email == "" || profile.Name == "" || loginProviderNeedsUserInfo(loginProvider) {
-		userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(oauthToken))
-		if err == nil {
-			var info oidcProfile
-			if err := userInfo.Claims(&info); err == nil {
-				if profile.Email == "" {
-					profile.Email = info.Email
-				}
-				if profile.Name == "" {
-					profile.Name = info.Name
-				}
-				if profile.PreferredUsername == "" {
-					profile.PreferredUsername = info.PreferredUsername
-				}
-			}
-			var rawInfo map[string]any
-			if err := userInfo.Claims(&rawInfo); err == nil {
-				profile.Raw = mergeRawMaps(profile.Raw, rawInfo)
-			}
+	profile = enrichOIDCProfile(ctx, provider, oauthToken, loginProvider, profile)
+	if linkUserID, _ := stateToken.Payload["linkUserId"].(string); strings.TrimSpace(linkUserID) != "" {
+		if err := s.linkOIDCIdentity(ctx, linkUserID, loginProvider, profile); err != nil {
+			return "", err
 		}
+		return linkedIdentityRedirect(statePayload.ReturnTo, loginProvider.ID)
 	}
 	principal, err := s.reconcileOIDCUser(ctx, profile, oidcCfg, loginProvider)
 	if err != nil {
@@ -935,22 +1028,9 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 	if err != nil {
 		return "", err
 	}
-	exchangeCode := uuid.NewString()
-	payload, err := json.Marshal(oidcExchangePayload{Result: result})
+	exchangeCode, err := s.storeOIDCExchange(ctx, result)
 	if err != nil {
-		return "", fmt.Errorf("marshal oidc exchange payload: %w", err)
-	}
-	var payloadMap map[string]any
-	if err := json.Unmarshal(payload, &payloadMap); err != nil {
-		return "", fmt.Errorf("decode oidc exchange payload: %w", err)
-	}
-	if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
-		Token:     exchangeCode,
-		Kind:      oidcExchangeKind,
-		Payload:   payloadMap,
-		ExpiresAt: time.Now().UTC().Add(2 * time.Minute),
-	}); err != nil {
-		return "", fmt.Errorf("store oidc exchange payload: %w", err)
+		return "", err
 	}
 	redirectURL, err := addQueryValue(oidcCfg.FrontendRedirectURL, "code", exchangeCode)
 	if err != nil {
@@ -964,11 +1044,94 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 	return redirectURL, nil
 }
 
+func decodeOIDCStatePayload(payload map[string]any) (oidcStatePayload, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return oidcStatePayload{}, fmt.Errorf("encode oidc state: %w", err)
+	}
+	var statePayload oidcStatePayload
+	if err := json.Unmarshal(raw, &statePayload); err != nil {
+		return oidcStatePayload{}, fmt.Errorf("decode oidc state: %w", err)
+	}
+	return statePayload, nil
+}
+
+func verifiedOIDCProfile(ctx context.Context, verifier *oidc.IDTokenVerifier, oauthToken *oauth2.Token, expectedNonce string) (oidcProfile, error) {
+	rawIDToken, ok := oauthToken.Extra("id_token").(string)
+	if !ok || rawIDToken == "" {
+		return oidcProfile{}, fmt.Errorf("%w: oidc id_token is missing", apperrors.ErrUnauthorized)
+	}
+	idToken, err := verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		return oidcProfile{}, fmt.Errorf("verify oidc id_token: %w", err)
+	}
+	var profile oidcProfile
+	if err := idToken.Claims(&profile); err != nil {
+		return oidcProfile{}, fmt.Errorf("decode oidc claims: %w", err)
+	}
+	var rawClaims map[string]any
+	if err := idToken.Claims(&rawClaims); err == nil {
+		profile.Raw = rawClaims
+	}
+	if expectedNonce != "" && profile.Nonce != "" && profile.Nonce != expectedNonce {
+		return oidcProfile{}, fmt.Errorf("%w: oidc nonce mismatch", apperrors.ErrUnauthorized)
+	}
+	return profile, nil
+}
+
+func enrichOIDCProfile(ctx context.Context, provider *oidc.Provider, oauthToken *oauth2.Token, loginProvider domainsettings.LoginProviderSettings, profile oidcProfile) oidcProfile {
+	if profile.Email != "" && profile.Name != "" && !loginProviderNeedsUserInfo(loginProvider) {
+		return profile
+	}
+	userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(oauthToken))
+	if err != nil {
+		return profile
+	}
+	var info oidcProfile
+	if err := userInfo.Claims(&info); err == nil {
+		if profile.Email == "" {
+			profile.Email = info.Email
+		}
+		if profile.Name == "" {
+			profile.Name = info.Name
+		}
+		if profile.PreferredUsername == "" {
+			profile.PreferredUsername = info.PreferredUsername
+		}
+	}
+	var rawInfo map[string]any
+	if err := userInfo.Claims(&rawInfo); err == nil {
+		profile.Raw = mergeRawMaps(profile.Raw, rawInfo)
+	}
+	return profile
+}
+
+func (s *Service) storeOIDCExchange(ctx context.Context, result domainidentity.AuthResult) (string, error) {
+	exchangeCode := uuid.NewString()
+	payload, err := json.Marshal(oidcExchangePayload{Result: result})
+	if err != nil {
+		return "", fmt.Errorf("marshal oidc exchange payload: %w", err)
+	}
+	var payloadMap map[string]any
+	if err := json.Unmarshal(payload, &payloadMap); err != nil {
+		return "", fmt.Errorf("decode oidc exchange payload: %w", err)
+	}
+	if err := s.ephemeralTokens.CreateEphemeralToken(ctx, domainidentity.EphemeralToken{
+		Token:     exchangeCode,
+		Kind:      oidcExchangeKind,
+		Payload:   payloadMap,
+		ExpiresAt: time.Now().UTC().Add(2 * time.Minute),
+	}); err != nil {
+		return "", fmt.Errorf("store oidc exchange payload: %w", err)
+	}
+	return exchangeCode, nil
+}
+
 func (s *Service) ConsumeOIDCExchange(ctx context.Context, code string) (domainidentity.AuthResult, error) {
 	if strings.TrimSpace(code) == "" {
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: exchange code is required", apperrors.ErrInvalidArgument)
 	}
-	token, err := s.users.ConsumeEphemeralToken(ctx, code, oidcExchangeKind)
+	token, err := s.ephemeralTokens.ConsumeEphemeralToken(ctx, code, oidcExchangeKind)
 	if err != nil {
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: exchange code expired", apperrors.ErrUnauthorized)
 	}
@@ -1050,7 +1213,7 @@ func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.
 	if err != nil {
 		return domainidentity.AuthResult{}, err
 	}
-	session := userrepo.Session{
+	session := domainidentity.Session{
 		ID:             sessionID,
 		UserID:         principal.UserID,
 		RefreshTokenID: refreshID,
@@ -1066,7 +1229,7 @@ func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.
 			"userAgent": meta.UserAgent,
 		},
 	}
-	if err := s.users.CreateSession(ctx, session); err != nil {
+	if err := s.sessions.CreateSession(ctx, session); err != nil {
 		return domainidentity.AuthResult{}, fmt.Errorf("create session: %w", err)
 	}
 	return domainidentity.AuthResult{
@@ -1082,19 +1245,19 @@ func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainidentity.Principal, error) {
-	user, err := s.users.GetByID(ctx, userID)
+	user, err := s.accounts.GetByID(ctx, userID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
 	}
-	roles, err := s.users.ListRoles(ctx, userID)
+	roles, err := s.authorization.ListRoles(ctx, userID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("list user roles: %w", err)
 	}
-	teams, err := s.users.ListTeams(ctx, userID)
+	teams, err := s.authorization.ListTeams(ctx, userID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("list user teams: %w", err)
 	}
-	projects, err := s.users.ListProjects(ctx, userID)
+	projects, err := s.authorization.ListProjects(ctx, userID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("list user projects: %w", err)
 	}
@@ -1115,13 +1278,13 @@ func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainident
 	}, nil
 }
 
-func (s *Service) requireActiveAuthzState(ctx context.Context, userID string) (userrepo.AuthzState, error) {
-	state, err := s.users.GetAuthzState(ctx, userID)
+func (s *Service) requireActiveAuthzState(ctx context.Context, userID string) (domainidentity.AuthzState, error) {
+	state, err := s.authorization.GetAuthzState(ctx, userID)
 	if err != nil {
-		return userrepo.AuthzState{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
+		return domainidentity.AuthzState{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
 	}
 	if strings.TrimSpace(state.Status) != "active" {
-		return userrepo.AuthzState{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
+		return domainidentity.AuthzState{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
 	}
 	if state.AuthzVersion < 1 {
 		state.AuthzVersion = 1
@@ -1129,83 +1292,34 @@ func (s *Service) requireActiveAuthzState(ctx context.Context, userID string) (u
 	return state, nil
 }
 
-func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oidcCfg cfgpkg.OIDCConfig, provider domainsettings.LoginProviderSettings) (domainidentity.Principal, error) {
+func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oidcCfg appconfig.OIDC, provider domainsettings.LoginProviderSettings) (domainidentity.Principal, error) {
 	if profile.Sub == "" {
 		return domainidentity.Principal{}, fmt.Errorf("%w: oidc subject is missing", apperrors.ErrUnauthorized)
 	}
-	if profile.Email == "" {
-		profile.Email = fmt.Sprintf("%s@%s.oidc.local", profile.Sub, strings.ReplaceAll(oidcCfg.ProviderName, " ", "-"))
-	}
-	if profile.Name == "" {
-		profile.Name = firstNonEmpty(profile.PreferredUsername, profile.Email, profile.Sub)
-	}
+	profile = normalizeOIDCProfile(profile, oidcCfg)
 	providerID := firstNonEmpty(strings.TrimSpace(provider.ID), strings.TrimSpace(oidcCfg.ProviderName))
 	legacyProviderID := strings.TrimSpace(oidcCfg.ProviderName)
-	identity, err := s.users.FindIdentity(ctx, "oidc", providerID, profile.Sub)
-	migratedLegacyIdentity := false
-	if errors.Is(err, userrepo.ErrNotFound) && legacyProviderID != "" && legacyProviderID != providerID {
-		legacyIdentity, legacyErr := s.users.FindIdentity(ctx, "oidc", legacyProviderID, profile.Sub)
-		if legacyErr == nil {
-			legacyIdentity.Profile = loginProfilePayload(profile.Raw, profile.Email, profile.Name)
-			legacyIdentity.LastLoginAt = time.Now().UTC()
-			if migrateErr := s.users.MigrateOIDCIdentity(ctx, legacyIdentity, providerID); migrateErr != nil {
-				return domainidentity.Principal{}, fmt.Errorf("migrate oidc identity: %w", migrateErr)
-			}
-			legacyIdentity.ProviderID = providerID
-			identity = legacyIdentity
-			err = nil
-			migratedLegacyIdentity = true
-		} else {
-			err = legacyErr
-		}
+	identity, migratedLegacyIdentity, identityErr := s.findOrMigrateOIDCIdentity(ctx, profile, providerID, legacyProviderID)
+	if identityErr != nil && !errors.Is(identityErr, apperrors.ErrNotFound) {
+		return domainidentity.Principal{}, identityErr
 	}
-	var user userrepo.User
-	if err == nil {
-		user, err = s.users.GetByID(ctx, identity.UserID)
-		if err != nil {
-			return domainidentity.Principal{}, err
-		}
-	} else if errors.Is(err, userrepo.ErrNotFound) {
-		user, err = s.users.FindByEmail(ctx, profile.Email)
-		if errors.Is(err, userrepo.ErrNotFound) {
-			user = userrepo.User{
-				ID:          uuid.NewString(),
-				Username:    normalizeUsername(firstNonEmpty(profile.PreferredUsername, profile.Email, profile.Sub)),
-				Email:       strings.ToLower(profile.Email),
-				DisplayName: profile.Name,
-				Status:      "active",
-				Preferences: map[string]any{},
-			}
-			if err := s.users.UpsertUser(ctx, user); err != nil {
-				return domainidentity.Principal{}, fmt.Errorf("create oidc user: %w", err)
-			}
-		} else if err != nil {
-			return domainidentity.Principal{}, fmt.Errorf("find oidc user by email: %w", err)
-		}
-	} else if err != nil {
-		return domainidentity.Principal{}, fmt.Errorf("find oidc identity: %w", err)
+	user, err := s.resolveOIDCAccount(ctx, identity, identityErr, profile)
+	if err != nil {
+		return domainidentity.Principal{}, err
 	}
 
 	if !migratedLegacyIdentity {
-		if err := s.users.UpsertOIDCIdentity(ctx, userrepo.OIDCIdentity{
-			ID:             uuid.NewString(),
-			UserID:         user.ID,
-			ProviderType:   "oidc",
-			ProviderID:     providerID,
-			ProviderUserID: profile.Sub,
-			Profile:        loginProfilePayload(profile.Raw, profile.Email, profile.Name),
-			LastLoginAt:    time.Now().UTC(),
-		}); err != nil {
+		if err := s.upsertOIDCIdentity(ctx, user.ID, providerID, profile); err != nil {
 			return domainidentity.Principal{}, fmt.Errorf("upsert oidc identity: %w", err)
 		}
 	}
 
-	roles, err := s.users.ListRoles(ctx, user.ID)
+	roles, err := s.authorization.ListRoles(ctx, user.ID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("load oidc user roles: %w", err)
 	}
 	if len(roles) == 0 && len(oidcCfg.DefaultRoles) > 0 && !provider.SyncRolesOnLogin {
-		if err := s.users.ReplaceRoleBindings(ctx, user.ID, oidcCfg.DefaultRoles); err != nil {
+		if err := s.roleBindings.ReplaceRoleBindings(ctx, user.ID, oidcCfg.DefaultRoles); err != nil {
 			return domainidentity.Principal{}, fmt.Errorf("assign default oidc roles: %w", err)
 		}
 	}
@@ -1213,6 +1327,127 @@ func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oi
 		return domainidentity.Principal{}, err
 	}
 	return s.loadPrincipal(ctx, user.ID)
+}
+
+func normalizeOIDCProfile(profile oidcProfile, cfg appconfig.OIDC) oidcProfile {
+	if profile.Email == "" {
+		profile.Email = fmt.Sprintf("%s@%s.oidc.local", profile.Sub, strings.ReplaceAll(cfg.ProviderName, " ", "-"))
+	}
+	if profile.Name == "" {
+		profile.Name = firstNonEmpty(profile.PreferredUsername, profile.Email, profile.Sub)
+	}
+	return profile
+}
+
+func (s *Service) findOrMigrateOIDCIdentity(ctx context.Context, profile oidcProfile, providerID, legacyProviderID string) (domainidentity.OIDCIdentity, bool, error) {
+	identity, err := s.identities.FindIdentity(ctx, "oidc", providerID, profile.Sub)
+	if !errors.Is(err, apperrors.ErrNotFound) || legacyProviderID == "" || legacyProviderID == providerID {
+		if err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+			return domainidentity.OIDCIdentity{}, false, fmt.Errorf("find oidc identity: %w", err)
+		}
+		return identity, false, err
+	}
+	legacyIdentity, err := s.identities.FindIdentity(ctx, "oidc", legacyProviderID, profile.Sub)
+	if err != nil {
+		if !errors.Is(err, apperrors.ErrNotFound) {
+			return domainidentity.OIDCIdentity{}, false, fmt.Errorf("find oidc identity: %w", err)
+		}
+		return domainidentity.OIDCIdentity{}, false, err
+	}
+	legacyIdentity.Profile = loginProfilePayload(profile.Raw, profile.Email, profile.Name)
+	legacyIdentity.LastLoginAt = time.Now().UTC()
+	if err := s.identities.MigrateOIDCIdentity(ctx, legacyIdentity, providerID); err != nil {
+		return domainidentity.OIDCIdentity{}, false, fmt.Errorf("migrate oidc identity: %w", err)
+	}
+	legacyIdentity.ProviderID = providerID
+	return legacyIdentity, true, nil
+}
+
+func (s *Service) resolveOIDCAccount(ctx context.Context, identity domainidentity.OIDCIdentity, identityErr error, profile oidcProfile) (domainidentity.User, error) {
+	if identityErr == nil {
+		return s.accounts.GetByID(ctx, identity.UserID)
+	}
+	user, err := s.accounts.FindByEmail(ctx, profile.Email)
+	if err == nil {
+		return user, nil
+	}
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		return domainidentity.User{}, fmt.Errorf("find oidc user by email: %w", err)
+	}
+	user = domainidentity.User{
+		ID:          uuid.NewString(),
+		Username:    normalizeUsername(firstNonEmpty(profile.PreferredUsername, profile.Email, profile.Sub)),
+		Email:       strings.ToLower(profile.Email),
+		DisplayName: profile.Name,
+		Status:      "active",
+		Preferences: map[string]any{},
+	}
+	if err := s.accounts.UpsertUser(ctx, user); err != nil {
+		return domainidentity.User{}, fmt.Errorf("create oidc user: %w", err)
+	}
+	return user, nil
+}
+
+func (s *Service) upsertOIDCIdentity(ctx context.Context, userID, providerID string, profile oidcProfile) error {
+	return s.identities.UpsertOIDCIdentity(ctx, domainidentity.OIDCIdentity{
+		ID:             uuid.NewString(),
+		UserID:         userID,
+		ProviderType:   "oidc",
+		ProviderID:     providerID,
+		ProviderUserID: profile.Sub,
+		Profile:        loginProfilePayload(profile.Raw, profile.Email, profile.Name),
+		LastLoginAt:    time.Now().UTC(),
+	})
+}
+
+func (s *Service) linkOIDCIdentity(ctx context.Context, userID string, provider domainsettings.LoginProviderSettings, profile oidcProfile) error {
+	if strings.TrimSpace(profile.Sub) == "" {
+		return fmt.Errorf("%w: oidc subject is missing", apperrors.ErrUnauthorized)
+	}
+	if err := s.ensureIdentityCanLink(ctx, userID, "oidc", provider.ID, profile.Sub); err != nil {
+		return err
+	}
+	if err := s.upsertOIDCIdentity(ctx, userID, provider.ID, profile); err != nil {
+		return fmt.Errorf("link oidc identity: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) linkExternalIdentity(ctx context.Context, userID string, provider domainsettings.LoginProviderSettings, profile genericProfile) error {
+	if strings.TrimSpace(profile.ID) == "" {
+		return fmt.Errorf("%w: external subject is missing", apperrors.ErrUnauthorized)
+	}
+	if err := s.ensureIdentityCanLink(ctx, userID, provider.Type, provider.ID, profile.ID); err != nil {
+		return err
+	}
+	if err := s.identities.UpsertOIDCIdentity(ctx, domainidentity.OIDCIdentity{
+		ID: uuid.NewString(), UserID: userID, ProviderType: provider.Type, ProviderID: provider.ID,
+		ProviderUserID: profile.ID, Profile: profile.Raw, LastLoginAt: time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("link external identity: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) ensureIdentityCanLink(ctx context.Context, userID, providerType, providerID, providerUserID string) error {
+	identity, err := s.identities.FindIdentity(ctx, providerType, providerID, providerUserID)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("find external identity: %w", err)
+	}
+	if identity.UserID != userID {
+		return fmt.Errorf("%w: external identity is already linked to another account", apperrors.ErrConflict)
+	}
+	return nil
+}
+
+func linkedIdentityRedirect(returnTo, providerID string) (string, error) {
+	if strings.TrimSpace(returnTo) == "" {
+		returnTo = "/account/profile"
+	}
+	return addQueryValue(returnTo, "linked", providerID)
 }
 
 func (s *Service) reconcileExternalUser(ctx context.Context, provider domainsettings.LoginProviderSettings, profile genericProfile) (domainidentity.Principal, error) {
@@ -1225,25 +1460,25 @@ func (s *Service) reconcileExternalUser(ctx context.Context, provider domainsett
 	if profile.Name == "" {
 		profile.Name = firstNonEmpty(profile.Email, profile.ID)
 	}
-	identity, err := s.users.FindIdentity(ctx, provider.Type, provider.ID, profile.ID)
-	var user userrepo.User
+	identity, err := s.identities.FindIdentity(ctx, provider.Type, provider.ID, profile.ID)
+	var user domainidentity.User
 	if err == nil {
-		user, err = s.users.GetByID(ctx, identity.UserID)
+		user, err = s.accounts.GetByID(ctx, identity.UserID)
 		if err != nil {
 			return domainidentity.Principal{}, err
 		}
-	} else if errors.Is(err, userrepo.ErrNotFound) {
-		user, err = s.users.FindByEmail(ctx, profile.Email)
-		if errors.Is(err, userrepo.ErrNotFound) {
-			user = userrepo.User{
+	} else if errors.Is(err, apperrors.ErrNotFound) {
+		user, err = s.accounts.FindByEmail(ctx, profile.Email)
+		if errors.Is(err, apperrors.ErrNotFound) {
+			user = domainidentity.User{
 				ID:          uuid.NewString(),
-				Username:    normalizeUsername(firstNonEmpty(profile.Name, profile.Email, profile.ID)),
+				Username:    strings.TrimSpace(profile.ID),
 				Email:       strings.ToLower(profile.Email),
 				DisplayName: profile.Name,
 				Status:      "active",
 				Preferences: map[string]any{},
 			}
-			if err := s.users.UpsertUser(ctx, user); err != nil {
+			if err := s.accounts.UpsertUser(ctx, user); err != nil {
 				return domainidentity.Principal{}, fmt.Errorf("create external login user: %w", err)
 			}
 		} else if err != nil {
@@ -1253,7 +1488,7 @@ func (s *Service) reconcileExternalUser(ctx context.Context, provider domainsett
 		return domainidentity.Principal{}, fmt.Errorf("find external login identity: %w", err)
 	}
 
-	if err := s.users.UpsertOIDCIdentity(ctx, userrepo.OIDCIdentity{
+	if err := s.identities.UpsertOIDCIdentity(ctx, domainidentity.OIDCIdentity{
 		ID:             uuid.NewString(),
 		UserID:         user.ID,
 		ProviderType:   provider.Type,
@@ -1264,13 +1499,16 @@ func (s *Service) reconcileExternalUser(ctx context.Context, provider domainsett
 	}); err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("upsert external login identity: %w", err)
 	}
+	if err := s.syncExternalUserProfile(ctx, &user, profile); err != nil {
+		return domainidentity.Principal{}, err
+	}
 
-	roles, err := s.users.ListRoles(ctx, user.ID)
+	roles, err := s.authorization.ListRoles(ctx, user.ID)
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("load external user roles: %w", err)
 	}
 	if len(roles) == 0 && len(provider.DefaultRoles) > 0 && !provider.SyncRolesOnLogin {
-		if err := s.users.ReplaceRoleBindings(ctx, user.ID, provider.DefaultRoles); err != nil {
+		if err := s.roleBindings.ReplaceRoleBindings(ctx, user.ID, provider.DefaultRoles); err != nil {
 			return domainidentity.Principal{}, fmt.Errorf("assign default external login roles: %w", err)
 		}
 	}
@@ -1280,35 +1518,12 @@ func (s *Service) reconcileExternalUser(ctx context.Context, provider domainsett
 	return s.loadPrincipal(ctx, user.ID)
 }
 
-func (s *Service) oidcConfig(ctx context.Context) (cfgpkg.OIDCConfig, error) {
+func (s *Service) oidcConfig(ctx context.Context) (appconfig.OIDC, error) {
 	return s.cfg.OIDC, nil
 }
 
-func (s *Service) oidcRuntime(ctx context.Context) (cfgpkg.OIDCConfig, *oidc.Provider, *oidc.IDTokenVerifier, *oauth2.Config, error) {
-	oidcCfg, err := s.oidcConfig(ctx)
-	if err != nil {
-		return cfgpkg.OIDCConfig{}, nil, nil, nil, err
-	}
-	if !oidcCfg.Enabled {
-		return cfgpkg.OIDCConfig{}, nil, nil, nil, fmt.Errorf("%w: oidc is disabled", apperrors.ErrNotFound)
-	}
-	provider, err := oidc.NewProvider(ctx, oidcCfg.Issuer)
-	if err != nil {
-		return cfgpkg.OIDCConfig{}, nil, nil, nil, fmt.Errorf("build oidc provider: %w", err)
-	}
-	verifier := provider.Verifier(&oidc.Config{ClientID: oidcCfg.ClientID})
-	oauthConfig := &oauth2.Config{
-		ClientID:     oidcCfg.ClientID,
-		ClientSecret: oidcCfg.ClientSecret,
-		Endpoint:     provider.Endpoint(),
-		RedirectURL:  oidcCfg.RedirectURL,
-		Scopes:       oidcCfg.Scopes,
-	}
-	return oidcCfg, provider, verifier, oauthConfig, nil
-}
-
-func (s *Service) oidcRuntimeWithProvider(ctx context.Context, item domainsettings.LoginProviderSettings) (cfgpkg.OIDCConfig, *oidc.Provider, *oidc.IDTokenVerifier, *oauth2.Config, error) {
-	oidcCfg := cfgpkg.OIDCConfig{
+func (s *Service) oidcRuntimeWithProvider(ctx context.Context, item domainsettings.LoginProviderSettings) (appconfig.OIDC, *oidc.Provider, *oidc.IDTokenVerifier, *oauth2.Config, error) {
+	oidcCfg := appconfig.OIDC{
 		Enabled:             item.Enabled,
 		ProviderName:        item.Name,
 		Issuer:              item.Issuer,
@@ -1320,11 +1535,11 @@ func (s *Service) oidcRuntimeWithProvider(ctx context.Context, item domainsettin
 		DefaultRoles:        append([]string(nil), item.DefaultRoles...),
 	}
 	if !oidcCfg.Enabled {
-		return cfgpkg.OIDCConfig{}, nil, nil, nil, fmt.Errorf("%w: oidc is disabled", apperrors.ErrNotFound)
+		return appconfig.OIDC{}, nil, nil, nil, fmt.Errorf("%w: oidc is disabled", apperrors.ErrNotFound)
 	}
 	provider, err := oidc.NewProvider(ctx, oidcCfg.Issuer)
 	if err != nil {
-		return cfgpkg.OIDCConfig{}, nil, nil, nil, fmt.Errorf("build oidc provider: %w", err)
+		return appconfig.OIDC{}, nil, nil, nil, fmt.Errorf("build oidc provider: %w", err)
 	}
 	verifier := provider.Verifier(&oidc.Config{ClientID: oidcCfg.ClientID})
 	oauthConfig := &oauth2.Config{
@@ -1357,11 +1572,18 @@ func (s *Service) signAccessToken(principal domainidentity.Principal, sessionID 
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.cfg.JWT.AccessTTL)),
 		},
 	}
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.JWT.Secret))
+	signingKeys, err := s.jwtKeyring()
+	if err != nil {
+		return "", nil, fmt.Errorf("build jwt signing keyring: %w", err)
+	}
+	active := signingKeys.Active()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token.Header["kid"] = active.ID()
+	signed, err := token.SignedString([]byte(active.Secret()))
 	if err != nil {
 		return "", nil, fmt.Errorf("sign access token: %w", err)
 	}
-	return token, claims, nil
+	return signed, claims, nil
 }
 
 func (s *Service) signRefreshToken(userID, sessionID, refreshID string) (string, *tokenClaims, error) {
@@ -1378,11 +1600,18 @@ func (s *Service) signRefreshToken(userID, sessionID, refreshID string) (string,
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.cfg.JWT.RefreshTTL)),
 		},
 	}
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(s.cfg.JWT.Secret))
+	signingKeys, err := s.jwtKeyring()
+	if err != nil {
+		return "", nil, fmt.Errorf("build jwt signing keyring: %w", err)
+	}
+	active := signingKeys.Active()
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token.Header["kid"] = active.ID()
+	signed, err := token.SignedString([]byte(active.Secret()))
 	if err != nil {
 		return "", nil, fmt.Errorf("sign refresh token: %w", err)
 	}
-	return token, claims, nil
+	return signed, claims, nil
 }
 
 func (s *Service) parseToken(tokenString, expectedType string) (*tokenClaims, error) {
@@ -1390,20 +1619,62 @@ func (s *Service) parseToken(tokenString, expectedType string) (*tokenClaims, er
 	if tokenString == "" {
 		return nil, fmt.Errorf("%w: token is required", apperrors.ErrUnauthorized)
 	}
-	claims := &tokenClaims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
-		if token.Method != jwt.SigningMethodHS256 {
-			return nil, fmt.Errorf("unexpected signing method: %s", token.Method.Alg())
-		}
-		return []byte(s.cfg.JWT.Secret), nil
-	})
-	if err != nil || !token.Valid {
+	keys, err := s.jwtVerificationCandidates(tokenString)
+	if err != nil {
 		return nil, fmt.Errorf("%w: invalid token", apperrors.ErrUnauthorized)
 	}
-	if claims.TokenType != expectedType {
-		return nil, fmt.Errorf("%w: unexpected token type", apperrors.ErrUnauthorized)
+	for _, key := range keys {
+		claims := &tokenClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
+			if token.Method != jwt.SigningMethodHS256 {
+				return nil, fmt.Errorf("unexpected signing method: %s", token.Method.Alg())
+			}
+			return []byte(key.Secret()), nil
+		})
+		if err == nil && token.Valid {
+			if claims.TokenType != expectedType {
+				return nil, fmt.Errorf("%w: unexpected token type", apperrors.ErrUnauthorized)
+			}
+			return claims, nil
+		}
 	}
-	return claims, nil
+	return nil, fmt.Errorf("%w: invalid token", apperrors.ErrUnauthorized)
+}
+
+func (s *Service) jwtKeyring() (keyring.Ring, error) {
+	if s.cfg.JWT.Keys.Active().ID() != "" {
+		return s.cfg.JWT.Keys, nil
+	}
+	legacy, err := keyring.NewKey(
+		"legacy-config-key",
+		s.cfg.JWT.Secret,
+		time.Unix(0, 0).UTC(),
+		nil,
+	)
+	if err != nil {
+		return keyring.Ring{}, err
+	}
+	return keyring.New(legacy, nil)
+}
+
+func (s *Service) jwtVerificationCandidates(tokenString string) ([]keyring.Key, error) {
+	ring, err := s.jwtKeyring()
+	if err != nil {
+		return nil, err
+	}
+	unverified, _, err := jwt.NewParser().ParseUnverified(tokenString, &tokenClaims{})
+	if err != nil {
+		return nil, err
+	}
+	kid, _ := unverified.Header["kid"].(string)
+	if strings.TrimSpace(kid) == "" {
+		return ring.ValidKeys(time.Now().UTC()), nil
+	}
+	key, ok := ring.Find(kid, time.Now().UTC())
+	if !ok {
+		return nil, errors.New("jwt key id is unknown or expired")
+	}
+	return []keyring.Key{key}, nil
 }
 
 func principalFromClaims(claims *tokenClaims) domainidentity.Principal {
@@ -1416,15 +1687,6 @@ func principalFromClaims(claims *tokenClaims) domainidentity.Principal {
 		Projects: append([]string(nil), claims.Projects...),
 		Tags:     append([]string(nil), claims.Tags...),
 	}
-}
-
-func hasAdminRole(roles []string) bool {
-	for _, role := range roles {
-		if role == "admin" {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Principal, action, result, summary string, metadata map[string]any) error {
@@ -1697,7 +1959,7 @@ func (s *Service) exchangeFeishuCode(ctx context.Context, provider domainsetting
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
@@ -1738,7 +2000,7 @@ func (s *Service) fetchWecomAccessToken(ctx context.Context, provider domainsett
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
@@ -1773,7 +2035,7 @@ func (s *Service) fetchWecomUserID(ctx context.Context, provider domainsettings.
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
@@ -1796,7 +2058,7 @@ func (s *Service) handleOAuth2Callback(ctx context.Context, provider domainsetti
 	if strings.TrimSpace(state) == "" || strings.TrimSpace(code) == "" {
 		return "", fmt.Errorf("%w: missing oauth2 callback parameters", apperrors.ErrInvalidArgument)
 	}
-	stateToken, err := s.users.ConsumeEphemeralToken(ctx, state, oauthStateKind)
+	stateToken, err := s.ephemeralTokens.ConsumeEphemeralToken(ctx, state, oauthStateKind)
 	if err != nil {
 		return "", fmt.Errorf("%w: oauth state missing or expired", apperrors.ErrUnauthorized)
 	}
@@ -1815,6 +2077,12 @@ func (s *Service) handleOAuth2Callback(ctx context.Context, provider domainsetti
 	if err != nil {
 		return "", err
 	}
+	if linkUserID, _ := stateToken.Payload["linkUserId"].(string); strings.TrimSpace(linkUserID) != "" {
+		if err := s.linkExternalIdentity(ctx, linkUserID, provider, profile); err != nil {
+			return "", err
+		}
+		return linkedIdentityRedirect(returnTo, provider.ID)
+	}
 	principal, err := s.reconcileExternalUser(ctx, provider, profile)
 	if err != nil {
 		return "", err
@@ -1832,7 +2100,7 @@ func (s *Service) handleOAuth2Callback(ctx context.Context, provider domainsetti
 	if err := json.Unmarshal(payload, &payloadMap); err != nil {
 		return "", fmt.Errorf("decode oauth exchange payload: %w", err)
 	}
-	if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
+	if err := s.ephemeralTokens.CreateEphemeralToken(ctx, domainidentity.EphemeralToken{
 		Token:     exchangeCode,
 		Kind:      oidcExchangeKind,
 		Payload:   payloadMap,
@@ -1858,13 +2126,7 @@ func (s *Service) fetchOAuth2Profile(ctx context.Context, provider domainsetting
 		return genericProfile{}, fmt.Errorf("%w: oauth2 user info url is required", apperrors.ErrInvalidArgument)
 	}
 	if provider.Type == "wecom" {
-		return genericProfile{
-			ID:       nestedString(map[string]any{"user_id": oauthToken.Extra("user_id")}, "user_id"),
-			Name:     nestedString(map[string]any{"user_id": oauthToken.Extra("user_id")}, "user_id"),
-			Email:    "",
-			Raw:      map[string]any{"user_id": oauthToken.Extra("user_id")},
-			Provider: provider.ID,
-		}, nil
+		return s.fetchWecomProfile(ctx, provider, oauthToken)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, profileURL, nil)
 	if err != nil {
@@ -1878,7 +2140,7 @@ func (s *Service) fetchOAuth2Profile(ctx context.Context, provider domainsetting
 	if err != nil {
 		return genericProfile{}, fmt.Errorf("request oauth2 user info: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return genericProfile{}, fmt.Errorf("oauth2 user info returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
@@ -1889,6 +2151,12 @@ func (s *Service) fetchOAuth2Profile(ctx context.Context, provider domainsetting
 	}
 	if data, ok := raw["data"].(map[string]any); ok && provider.Type == "feishu" {
 		raw = data
+	}
+	if provider.Type == "feishu" && provider.SyncOrgsOnLogin && strings.TrimSpace(provider.OrganizationField) != "" {
+		raw, err = enrichFeishuOrganizationProfile(ctx, provider, oauthToken, raw)
+		if err != nil {
+			return genericProfile{}, err
+		}
 	}
 	id := nestedString(raw, provider.UserIDField)
 	if id == "" {
@@ -1910,13 +2178,180 @@ func (s *Service) fetchOAuth2Profile(ctx context.Context, provider domainsetting
 	if email == "" {
 		email = firstNonEmpty(nestedString(raw, "email"), nestedString(raw, "enterprise_email"))
 	}
+	phone := nestedString(raw, provider.PhoneField)
+	avatarURL := nestedString(raw, provider.AvatarField)
 	return genericProfile{
-		ID:       id,
-		Email:    email,
-		Name:     name,
-		Raw:      raw,
-		Provider: provider.ID,
+		ID:        id,
+		Email:     email,
+		Name:      name,
+		Phone:     phone,
+		AvatarURL: avatarURL,
+		Raw:       raw,
+		Provider:  provider.ID,
 	}, nil
+}
+
+func enrichFeishuOrganizationProfile(ctx context.Context, provider domainsettings.LoginProviderSettings, oauthToken *oauth2.Token, raw map[string]any) (map[string]any, error) {
+	openID := strings.TrimSpace(nestedString(raw, "open_id"))
+	if openID == "" {
+		return nil, fmt.Errorf("fetch Feishu organization profile: open_id is missing")
+	}
+	baseURL, err := url.Parse(firstNonEmpty(provider.UserInfoURL, provider.ProfileURL))
+	if err != nil {
+		return nil, fmt.Errorf("parse Feishu user info url: %w", err)
+	}
+	baseURL.Path = "/open-apis/contact/v3/users/" + url.PathEscape(openID)
+	query := baseURL.Query()
+	query.Set("user_id_type", "open_id")
+	query.Set("department_id_type", "open_department_id")
+	baseURL.RawQuery = query.Encode()
+	tenantToken, err := fetchFeishuTenantAccessToken(ctx, baseURL, provider)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+tenantToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request Feishu organization profile: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("Feishu organization profile returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			User map[string]any `json:"user"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("decode Feishu organization profile: %w", err)
+	}
+	if payload.Code != 0 {
+		return nil, fmt.Errorf("Feishu organization profile failed: code=%d message=%q", payload.Code, payload.Msg)
+	}
+	return mergeRawMaps(raw, payload.Data.User), nil
+}
+
+func fetchFeishuTenantAccessToken(ctx context.Context, baseURL *url.URL, provider domainsettings.LoginProviderSettings) (string, error) {
+	tokenURL := *baseURL
+	tokenURL.Path = "/open-apis/auth/v3/tenant_access_token/internal"
+	tokenURL.RawQuery = ""
+	payload, err := json.Marshal(map[string]string{"app_id": provider.ClientID, "app_secret": provider.ClientSecret})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL.String(), bytes.NewReader(payload))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("request Feishu tenant access token: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var result struct {
+		Code              int    `json:"code"`
+		Msg               string `json:"msg"`
+		TenantAccessToken string `json:"tenant_access_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode Feishu tenant access token: %w", err)
+	}
+	if resp.StatusCode >= http.StatusBadRequest || result.Code != 0 || strings.TrimSpace(result.TenantAccessToken) == "" {
+		return "", fmt.Errorf("Feishu tenant access token failed: code=%d message=%q", result.Code, result.Msg)
+	}
+	return result.TenantAccessToken, nil
+}
+
+func (s *Service) fetchWecomProfile(ctx context.Context, provider domainsettings.LoginProviderSettings, oauthToken *oauth2.Token) (genericProfile, error) {
+	userID := nestedString(map[string]any{"user_id": oauthToken.Extra("user_id")}, "user_id")
+	raw := map[string]any{"user_id": userID, "UserId": userID}
+	if strings.TrimSpace(provider.ProfileURL) != "" {
+		parsed, err := url.Parse(provider.ProfileURL)
+		if err != nil {
+			return genericProfile{}, err
+		}
+		query := parsed.Query()
+		query.Set("access_token", oauthToken.AccessToken)
+		query.Set("userid", userID)
+		parsed.RawQuery = query.Encode()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+		if err != nil {
+			return genericProfile{}, err
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return genericProfile{}, fmt.Errorf("request wecom user profile: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode >= http.StatusBadRequest {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			return genericProfile{}, fmt.Errorf("wecom user profile returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+			return genericProfile{}, fmt.Errorf("decode wecom user profile: %w", err)
+		}
+		if errCode, ok := raw["errcode"].(float64); ok && int(errCode) != 0 {
+			return genericProfile{}, fmt.Errorf("provider returned errcode=%d errmsg=%s", int(errCode), strings.TrimSpace(fmt.Sprint(raw["errmsg"])))
+		}
+	}
+	return genericProfile{
+		ID:        firstNonEmpty(nestedString(raw, provider.UserIDField), userID),
+		Name:      firstNonEmpty(nestedString(raw, provider.UserNameField), userID),
+		Email:     nestedString(raw, provider.EmailField),
+		Phone:     nestedString(raw, provider.PhoneField),
+		AvatarURL: nestedString(raw, provider.AvatarField),
+		Raw:       raw,
+		Provider:  provider.ID,
+	}, nil
+}
+
+func (s *Service) syncExternalUserProfile(ctx context.Context, user *domainidentity.User, profile genericProfile) error {
+	preferences := clonePreferences(user.Preferences)
+	changed := false
+	if username := strings.TrimSpace(profile.ID); username != "" && user.Username != username {
+		user.Username = username
+		changed = true
+	}
+	if displayName := strings.TrimSpace(profile.Name); displayName != "" && user.DisplayName != displayName {
+		user.DisplayName = displayName
+		changed = true
+	}
+	if email := strings.ToLower(strings.TrimSpace(profile.Email)); email != "" && user.Email != email {
+		user.Email = email
+		changed = true
+	}
+	if phone := strings.TrimSpace(profile.Phone); phone != "" && stringPreference(preferences, "phone") != phone {
+		preferences["phone"] = phone
+		changed = true
+	}
+	if rawAvatarURL := strings.TrimSpace(profile.AvatarURL); rawAvatarURL != "" {
+		avatarURL, err := normalizeAvatarURL(rawAvatarURL)
+		if err != nil {
+			return fmt.Errorf("normalize external avatar: %w", err)
+		}
+		if stringPreference(preferences, avatarURLPreferenceKey) != avatarURL {
+			preferences[avatarURLPreferenceKey] = avatarURL
+			preferences[avatarFitPreferenceKey] = "cover"
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	user.Preferences = preferences
+	if err := s.accounts.UpsertUser(ctx, *user); err != nil {
+		return fmt.Errorf("update external login profile: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) syncLoginProviderBindings(ctx context.Context, userID string, provider domainsettings.LoginProviderSettings, raw map[string]any) error {
@@ -1925,21 +2360,21 @@ func (s *Service) syncLoginProviderBindings(ctx context.Context, userID string, 
 	if provider.SyncRolesOnLogin {
 		roleRefs := append([]string(nil), provider.DefaultRoles...)
 		roleRefs = append(roleRefs, nestedStrings(raw, provider.RoleField)...)
-		roleIDs, err := s.users.ResolveRoleIDs(ctx, roleRefs)
+		roleIDs, err := s.roleBindings.ResolveRoleIDs(ctx, roleRefs)
 		if err != nil {
 			return fmt.Errorf("resolve external login roles: %w", err)
 		}
-		if err := s.users.SyncExternalRoleBindings(ctx, userID, source, providerID, roleIDs, provider.RoleSyncMode == "replace_external"); err != nil {
+		if err := s.roleBindings.SyncExternalRoleBindings(ctx, userID, source, providerID, roleIDs, provider.RoleSyncMode == "replace_external"); err != nil {
 			return fmt.Errorf("sync external login roles: %w", err)
 		}
 	}
 	if provider.SyncOrgsOnLogin && strings.TrimSpace(provider.OrganizationField) != "" {
 		orgRefs := nestedStrings(raw, provider.OrganizationField)
-		teamIDs, err := s.users.ResolveTeamIDsForExternalRefs(ctx, provider.Type, provider.ID, orgRefs)
+		teamIDs, err := s.teamBindings.ResolveTeamIDsForExternalRefs(ctx, provider.Type, provider.ID, orgRefs)
 		if err != nil {
 			return fmt.Errorf("resolve external login organizations: %w", err)
 		}
-		if err := s.users.SyncExternalTeamBindings(ctx, userID, source, providerID, teamIDs, provider.OrgSyncMode == "replace_external"); err != nil {
+		if err := s.teamBindings.SyncExternalTeamBindings(ctx, userID, source, providerID, teamIDs, provider.OrgSyncMode == "replace_external"); err != nil {
 			return fmt.Errorf("sync external login organizations: %w", err)
 		}
 	}

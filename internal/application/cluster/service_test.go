@@ -68,6 +68,16 @@ func (r *stubRepository) Delete(context.Context, string) error {
 	return nil
 }
 
+func newTestService(t *testing.T, repo Repository) *Service {
+	t.Helper()
+	manager := k8sinfra.NewManager(nil)
+	service, err := New(manager, manager, nil, nil, repo, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	return service
+}
+
 func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 	repo := &stubRepository{
 		connection: domaincluster.Connection{
@@ -89,7 +99,7 @@ func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 		},
 	}
 
-	service := &Service{manager: k8sinfra.NewManager(nil), repo: repo}
+	service := newTestService(t, repo)
 
 	_, err := service.Update(context.Background(), domainidentity.Principal{}, "cluster-1", domaincluster.UpdateInput{
 		Name:                   "cluster-1",
@@ -123,7 +133,7 @@ func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 
 func TestRegisterGeneratesClusterID(t *testing.T) {
 	repo := &stubRepository{}
-	service := &Service{manager: k8sinfra.NewManager(nil), repo: repo}
+	service := newTestService(t, repo)
 
 	item, err := service.Register(context.Background(), domainidentity.Principal{}, domaincluster.RegisterInput{
 		Name:           "demo-cluster",
@@ -159,7 +169,7 @@ func TestUpdateRetainsExistingAgentEndpointWhenOmitted(t *testing.T) {
 		},
 	}
 
-	service := &Service{manager: k8sinfra.NewManager(nil), repo: repo}
+	service := newTestService(t, repo)
 
 	_, err := service.Update(context.Background(), domainidentity.Principal{}, "cluster-1", domaincluster.UpdateInput{
 		Name:           "cluster-1",
@@ -191,7 +201,7 @@ func TestUpdateRetainsExistingKubeContextWhenOmitted(t *testing.T) {
 		},
 	}
 
-	service := &Service{manager: k8sinfra.NewManager(nil), repo: repo}
+	service := newTestService(t, repo)
 
 	_, err := service.Update(context.Background(), domainidentity.Principal{}, "cluster-1", domaincluster.UpdateInput{
 		Name:           "cluster-1",
@@ -217,7 +227,8 @@ func TestListAccessibleFiltersUnauthorizedClusters(t *testing.T) {
 			},
 		},
 	}
-	service := &Service{manager: k8sinfra.NewManager(nil), repo: repo, authorizer: stubAuthorizer{}}
+	service := newTestService(t, repo)
+	service.authorizer = stubAuthorizer{}
 
 	items, err := service.ListAccessible(context.Background(), domainidentity.Principal{})
 	if err != nil {
@@ -249,10 +260,7 @@ func TestSyncConnectionUsesFixedHealthMessageForInvalidClusterConfig(t *testing.
 			},
 		},
 	}
-	service := &Service{
-		manager: k8sinfra.NewManager(nil),
-		repo:    repo,
-	}
+	service := newTestService(t, repo)
 
 	if err := service.syncConnection(context.Background(), repo.connection); err != nil {
 		t.Fatalf("syncConnection returned error: %v", err)

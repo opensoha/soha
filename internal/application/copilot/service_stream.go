@@ -17,7 +17,7 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.WorkbenchStreamResult{}, err
 	}
-	session, err := s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	session, err := s.sessions.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
 	if err != nil {
 		return domaincopilot.WorkbenchStreamResult{}, err
 	}
@@ -26,7 +26,7 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 		metadata = nextMetadata
 		session.Metadata = sessionMetadataMap(metadata)
 		session.UpdatedAt = time.Now().UTC()
-		if updated, updateErr := s.repo.UpdateSession(ctx, principal.UserID, session.ID, session); updateErr == nil {
+		if updated, updateErr := s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session); updateErr == nil {
 			session = updated
 			metadata = parseSessionMetadata(session.Metadata)
 		}
@@ -42,40 +42,14 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 	effectiveSession.Metadata = sessionMetadataMap(effectiveMetadata)
 
 	if mode == "general" {
-		if input.EventSink != nil {
-			envelope, err := s.streamGeneralMessageWithSessionConfig(ctx, principal, effectiveSession, effectiveMetadata, input.Content, locale, input.EventSink)
-			if err != nil {
-				return domaincopilot.WorkbenchStreamResult{}, err
-			}
-			auditResult := "success"
-			if len(envelope.Messages) == 1 && envelope.Messages[0].Role == "user" {
-				auditResult = "cancelled"
-			}
-			s.recordGlobalAssistantAudit(ctx, principal, domaincopilot.WorkbenchGlobalAssistantEventInput{
-				Action:           "send",
-				SessionID:        effectiveSession.ID,
-				Source:           effectiveMetadata.Source,
-				LaunchContext:    input.LaunchContext,
-				SelectionContext: input.SelectionContext,
-				Prompt:           input.Content,
-			}, effectiveMetadata, auditResult)
-			return domaincopilot.WorkbenchStreamResult{Envelope: envelope}, nil
-		}
-		envelope, err := s.sendMessageWithSessionConfig(ctx, principal, effectiveSession, effectiveMetadata, input.Content, locale)
-		if err != nil {
-			return domaincopilot.WorkbenchStreamResult{}, err
-		}
-		return domaincopilot.WorkbenchStreamResult{
-			Envelope: envelope,
-			Events:   streamEventsFromEnvelope(effectiveSession.ID, envelope, time.Now().UTC(), "succeeded"),
-		}, nil
+		return s.streamGeneralWorkbenchMessage(ctx, principal, effectiveSession, effectiveMetadata, input, locale)
 	}
 	if !isRunnableSessionAnalysisMode(mode) {
 		return domaincopilot.WorkbenchStreamResult{}, fmt.Errorf("%w: stream mode must be general, root_cause, performance, trace, or inspection_review", apperrors.ErrInvalidArgument)
 	}
 
 	locale = detectMessageLocale(input.Content, locale)
-	userMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+	userMessage, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: effectiveSession.ID,
 		Role:      "user",
@@ -140,9 +114,32 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 	}, nil
 }
 
+func (s *Service) streamGeneralWorkbenchMessage(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, metadata domaincopilot.SessionMetadata, input domaincopilot.WorkbenchSendMessageInput, locale string) (domaincopilot.WorkbenchStreamResult, error) {
+	if input.EventSink == nil {
+		envelope, err := s.sendMessageWithSessionConfig(ctx, principal, session, metadata, input.Content, locale)
+		if err != nil {
+			return domaincopilot.WorkbenchStreamResult{}, err
+		}
+		return domaincopilot.WorkbenchStreamResult{Envelope: envelope, Events: streamEventsFromEnvelope(session.ID, envelope, time.Now().UTC(), "succeeded")}, nil
+	}
+	envelope, err := s.streamGeneralMessageWithSessionConfig(ctx, principal, session, metadata, input.Content, locale, input.EventSink)
+	if err != nil {
+		return domaincopilot.WorkbenchStreamResult{}, err
+	}
+	auditResult := "success"
+	if len(envelope.Messages) == 1 && envelope.Messages[0].Role == "user" {
+		auditResult = "cancelled"
+	}
+	s.recordGlobalAssistantAudit(ctx, principal, domaincopilot.WorkbenchGlobalAssistantEventInput{
+		Action: "send", SessionID: session.ID, Source: metadata.Source,
+		LaunchContext: input.LaunchContext, SelectionContext: input.SelectionContext, Prompt: input.Content,
+	}, metadata, auditResult)
+	return domaincopilot.WorkbenchStreamResult{Envelope: envelope}, nil
+}
+
 func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, sessionMeta domaincopilot.SessionMetadata, content, locale string, eventSink domaincopilot.WorkbenchStreamEventSink) (domaincopilot.SessionMessageEnvelope, error) {
 	locale = detectMessageLocale(content, locale)
-	userMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+	userMessage, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: session.ID,
 		Role:      "user",
@@ -203,7 +200,7 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 		"providerKind": firstNonEmpty(reply.ProviderKind, "internal"),
 	}
 	assistantMetadata = finalWorkbenchMessageMetadata(assistantMetadata, nil, nil, agentStatus)
-	assistantMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+	assistantMessage, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: session.ID,
 		Role:      "assistant",
@@ -355,7 +352,7 @@ func (s *Service) runInternalStreamAnalysisMessage(ctx context.Context, principa
 		"providerKind": "internal",
 		"runId":        firstStreamArtifactRunID(artifacts),
 	})
-	assistantMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+	assistantMessage, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: session.ID,
 		Role:      "assistant",
@@ -370,7 +367,7 @@ func (s *Service) runInternalStreamAnalysisMessage(ctx context.Context, principa
 		merged := applySessionAnalysisPatch(parseSessionMetadata(session.Metadata), sessionPatch)
 		session.Metadata = sessionMetadataMap(merged)
 		session.UpdatedAt = time.Now().UTC()
-		_, _ = s.repo.UpdateSession(ctx, principal.UserID, session.ID, session)
+		_, _ = s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
 	}
 	envelope := domaincopilot.SessionMessageEnvelope{
 		Messages:          []domaincopilot.Message{userMessage, assistantMessage},
@@ -470,34 +467,7 @@ func emitInternalAnalysisFinal(sink domaincopilot.WorkbenchStreamEventSink, mode
 		}
 		sink(completed)
 	}
-	for _, artifact := range artifacts {
-		for _, evidence := range artifact.Evidence {
-			source := domaincopilot.WorkbenchStreamEvent{
-				Type:         "source.updated",
-				RunID:        artifact.RunID,
-				MessageID:    assistant.ID,
-				CreatedAt:    now,
-				ProviderID:   agentProviderInternal,
-				ProviderKind: "internal",
-				Source: &domaincopilot.WorkbenchSource{
-					ID:      evidence.ID,
-					Kind:    streamSourceKindFromEvidence(evidence.Kind),
-					Title:   evidence.Title,
-					Summary: evidence.Summary,
-				},
-			}
-			sink(source)
-		}
-		sink(domaincopilot.WorkbenchStreamEvent{
-			Type:         "artifact.updated",
-			RunID:        artifact.RunID,
-			MessageID:    assistant.ID,
-			CreatedAt:    now,
-			ProviderID:   agentProviderInternal,
-			ProviderKind: "internal",
-			Artifact:     artifact,
-		})
-	}
+	emitInternalAnalysisArtifacts(sink, assistant.ID, artifacts, now)
 	summary := streamThinkingSummary(toolCalls, artifacts)
 	sink(domaincopilot.WorkbenchStreamEvent{
 		Type:         "thinking.done",
@@ -531,6 +501,41 @@ func emitInternalAnalysisFinal(sink domaincopilot.WorkbenchStreamEventSink, mode
 		ProviderKind: "internal",
 		Status:       firstNonEmpty(finalStatus, "succeeded"),
 	})
+}
+
+func emitInternalAnalysisArtifacts(
+	sink domaincopilot.WorkbenchStreamEventSink,
+	messageID string,
+	artifacts []domaincopilot.AnalysisArtifact,
+	createdAt time.Time,
+) {
+	for _, artifact := range artifacts {
+		for _, evidence := range artifact.Evidence {
+			sink(domaincopilot.WorkbenchStreamEvent{
+				Type:         "source.updated",
+				RunID:        artifact.RunID,
+				MessageID:    messageID,
+				CreatedAt:    createdAt,
+				ProviderID:   agentProviderInternal,
+				ProviderKind: "internal",
+				Source: &domaincopilot.WorkbenchSource{
+					ID:      evidence.ID,
+					Kind:    streamSourceKindFromEvidence(evidence.Kind),
+					Title:   evidence.Title,
+					Summary: evidence.Summary,
+				},
+			})
+		}
+		sink(domaincopilot.WorkbenchStreamEvent{
+			Type:         "artifact.updated",
+			RunID:        artifact.RunID,
+			MessageID:    messageID,
+			CreatedAt:    createdAt,
+			ProviderID:   agentProviderInternal,
+			ProviderKind: "internal",
+			Artifact:     artifact,
+		})
+	}
 }
 
 func streamAnalysisThinkingDelta(mode string) string {

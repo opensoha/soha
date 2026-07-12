@@ -41,20 +41,7 @@ func (r *Repository) ListHosts(ctx context.Context, filter domaindocker.HostFilt
 	query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
 	limit, offset := limitOffset(filter.Limit, filter.Page, filter.PageSize)
 	args = append(args, limit, offset)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
-	if err != nil {
-		return nil, fmt.Errorf("query docker hosts: %w", err)
-	}
-	defer rows.Close()
-	items := make([]domaindocker.Host, 0, limit)
-	for rows.Next() {
-		item, err := scanHost(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+	return queryList(ctx, r.db, query, args, limit, "query docker hosts", scanHost)
 }
 
 func (r *Repository) CountHosts(ctx context.Context, filter domaindocker.HostFilter) (int, error) {
@@ -205,20 +192,7 @@ func (r *Repository) ListProjects(ctx context.Context, filter domaindocker.Proje
 	query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
 	limit, offset := limitOffset(filter.Limit, filter.Page, filter.PageSize)
 	args = append(args, limit, offset)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
-	if err != nil {
-		return nil, fmt.Errorf("query docker projects: %w", err)
-	}
-	defer rows.Close()
-	items := make([]domaindocker.Project, 0, limit)
-	for rows.Next() {
-		item, err := scanProject(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+	return queryList(ctx, r.db, query, args, limit, "query docker projects", scanProject)
 }
 
 func (r *Repository) CountProjects(ctx context.Context, filter domaindocker.ProjectFilter) (int, error) {
@@ -325,20 +299,7 @@ func (r *Repository) ListServices(ctx context.Context, filter domaindocker.Servi
 	query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
 	limit, offset := limitOffset(filter.Limit, filter.Page, filter.PageSize)
 	args = append(args, limit, offset)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
-	if err != nil {
-		return nil, fmt.Errorf("query docker services: %w", err)
-	}
-	defer rows.Close()
-	items := make([]domaindocker.Service, 0, limit)
-	for rows.Next() {
-		item, err := scanService(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+	return queryList(ctx, r.db, query, args, limit, "query docker services", scanService)
 }
 
 func (r *Repository) CountServices(ctx context.Context, filter domaindocker.ServiceFilter) (int, error) {
@@ -398,20 +359,7 @@ func (r *Repository) ListPortMappings(ctx context.Context, filter domaindocker.P
 	query += " ORDER BY host_port ASC, updated_at DESC LIMIT ? OFFSET ?"
 	limit, offset := limitOffset(filter.Limit, filter.Page, filter.PageSize)
 	args = append(args, limit, offset)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
-	if err != nil {
-		return nil, fmt.Errorf("query docker port mappings: %w", err)
-	}
-	defer rows.Close()
-	items := make([]domaindocker.PortMapping, 0, limit)
-	for rows.Next() {
-		item, err := scanPortMapping(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+	return queryList(ctx, r.db, query, args, limit, "query docker port mappings", scanPortMapping)
 }
 
 func (r *Repository) CountPortMappings(ctx context.Context, filter domaindocker.PortMappingFilter) (int, error) {
@@ -545,20 +493,7 @@ func (r *Repository) ListTemplates(ctx context.Context, filter domaindocker.Temp
 	query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
 	limit, offset := limitOffset(filter.Limit, filter.Page, filter.PageSize)
 	args = append(args, limit, offset)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
-	if err != nil {
-		return nil, fmt.Errorf("query docker templates: %w", err)
-	}
-	defer rows.Close()
-	items := make([]domaindocker.Template, 0, limit)
-	for rows.Next() {
-		item, err := scanTemplate(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
+	return queryList(ctx, r.db, query, args, limit, "query docker templates", scanTemplate)
 }
 
 func (r *Repository) CountTemplates(ctx context.Context, filter domaindocker.TemplateFilter) (int, error) {
@@ -701,17 +636,13 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 		if queryErr != nil {
 			return fmt.Errorf("claim docker operation query: %w", queryErr)
 		}
+		defer func() { _ = rows.Close() }()
 		if !rows.Next() {
-			_ = rows.Close()
 			return ErrNotFound
 		}
 		item, scanErr := scanOperation(rows)
-		closeErr := rows.Close()
 		if scanErr != nil {
 			return scanErr
-		}
-		if closeErr != nil {
-			return fmt.Errorf("close claimed docker operation rows: %w", closeErr)
 		}
 		item.Status = "running"
 		item.ClaimedByWorkerID = workerID
@@ -770,14 +701,18 @@ func (r *Repository) ListOperations(ctx context.Context, filter domaindocker.Ope
 	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
 	limit, offset := limitOffset(filter.Limit, filter.Page, filter.PageSize)
 	args = append(args, limit, offset)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	return queryList(ctx, r.db, query, args, limit, "query docker operations", scanOperation)
+}
+
+func queryList[T any](ctx context.Context, db *gorm.DB, query string, args []any, capacity int, contextMessage string, scan func(scanner) (T, error)) ([]T, error) {
+	rows, err := db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {
-		return nil, fmt.Errorf("query docker operations: %w", err)
+		return nil, fmt.Errorf("%s: %w", contextMessage, err)
 	}
-	defer rows.Close()
-	items := make([]domaindocker.Operation, 0, limit)
+	defer func() { _ = rows.Close() }()
+	items := make([]T, 0, capacity)
 	for rows.Next() {
-		item, err := scanOperation(rows)
+		item, err := scan(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -820,7 +755,7 @@ func (r *Repository) ListOperationLogs(ctx context.Context, operationID string, 
 	if err != nil {
 		return nil, fmt.Errorf("query docker operation logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaindocker.OperationLog, 0, normalized)
 	for rows.Next() {
 		item, err := scanOperationLog(rows)

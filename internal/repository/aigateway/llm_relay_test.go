@@ -15,62 +15,24 @@ import (
 	"gorm.io/gorm"
 )
 
+func llmUpstreamFixture(now time.Time) domainaigateway.LLMUpstream {
+	return domainaigateway.LLMUpstream{
+		ID: "upstream-1", Name: "OpenAI primary", ProviderKind: "openai", BaseURL: "https://api.openai.com/v1",
+		APIKeyCiphertext: "ciphertext-v1", APIKeyPrefix: "sk-live...abcd", Status: "active", Priority: 10, Weight: 3,
+		TimeoutSeconds: 90, StreamTimeoutSeconds: 240, MaxConcurrency: 20, SupportedModels: []string{"gpt-4.1"},
+		DefaultHeaders: map[string]any{"Authorization": "Bearer sk-plaintext", "X-Trace": "trace-1"},
+		Health:         map[string]any{"status": "ok"}, Metadata: map[string]any{"owner": "platform", "apiKey": "sk-plaintext"},
+		CreatedBy: "admin", CreatedAt: now, UpdatedAt: now,
+	}
+}
+
 func TestRepositoryCreateUpdateAndFilterLLMUpstreams(t *testing.T) {
 	repo, mock := newAIGatewayRepository(t)
 	now := time.Date(2026, 6, 25, 10, 0, 0, 0, time.UTC)
-	item := domainaigateway.LLMUpstream{
-		ID:                   "upstream-1",
-		Name:                 "OpenAI primary",
-		ProviderKind:         "openai",
-		BaseURL:              "https://api.openai.com/v1",
-		APIKeyCiphertext:     "ciphertext-v1",
-		APIKeyPrefix:         "sk-live...abcd",
-		Status:               "active",
-		Priority:             10,
-		Weight:               3,
-		TimeoutSeconds:       90,
-		StreamTimeoutSeconds: 240,
-		MaxConcurrency:       20,
-		SupportedModels:      []string{"gpt-4.1"},
-		DefaultHeaders: map[string]any{
-			"Authorization": "Bearer sk-plaintext",
-			"X-Trace":       "trace-1",
-		},
-		Health: map[string]any{
-			"status": "ok",
-		},
-		Metadata: map[string]any{
-			"owner":  "platform",
-			"apiKey": "sk-plaintext",
-		},
-		CreatedBy: "admin",
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
+	item := llmUpstreamFixture(now)
 
 	mock.ExpectExec(`(?s)INSERT INTO ai_gateway_llm_upstreams`).
-		WithArgs(
-			item.ID,
-			item.Name,
-			item.ProviderKind,
-			item.BaseURL,
-			item.APIKeyCiphertext,
-			item.APIKeyPrefix,
-			item.Status,
-			item.Priority,
-			item.Weight,
-			item.TimeoutSeconds,
-			item.StreamTimeoutSeconds,
-			item.MaxConcurrency,
-			jsonEqualArg(`["gpt-4.1"]`),
-			jsonEqualArg(`{"Authorization":"[REDACTED]","X-Trace":"trace-1"}`),
-			nil,
-			jsonEqualArg(`{"status":"ok"}`),
-			jsonEqualArg(`{"owner":"platform","apiKey":"[REDACTED]"}`),
-			item.CreatedBy,
-			item.CreatedAt,
-			item.UpdatedAt,
-		).
+		WithArgs(llmUpstreamCreateArgs(item)...).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	created, err := repo.CreateLLMUpstream(context.Background(), item)
@@ -90,28 +52,7 @@ func TestRepositoryCreateUpdateAndFilterLLMUpstreams(t *testing.T) {
 	updated.APIKeyCiphertext = ""
 	updated.APIKeyPrefix = ""
 	mock.ExpectExec(`(?s)UPDATE ai_gateway_llm_upstreams`).
-		WithArgs(
-			updated.Name,
-			updated.ProviderKind,
-			updated.BaseURL,
-			"",
-			"",
-			"",
-			"",
-			updated.Status,
-			updated.Priority,
-			updated.Weight,
-			updated.TimeoutSeconds,
-			updated.StreamTimeoutSeconds,
-			updated.MaxConcurrency,
-			jsonEqualArg(`["gpt-4.1"]`),
-			jsonEqualArg(`{"Authorization":"[REDACTED]","X-Trace":"trace-1"}`),
-			nil,
-			jsonEqualArg(`{"status":"ok"}`),
-			jsonEqualArg(`{"owner":"platform","apiKey":"[REDACTED]"}`),
-			sqlmock.AnyArg(),
-			updated.ID,
-		).
+		WithArgs(llmUpstreamUpdateArgs(updated)...).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`(?s)SELECT .*FROM ai_gateway_llm_upstreams.*WHERE id = .*LIMIT 1`).
 		WithArgs(updated.ID).
@@ -186,47 +127,77 @@ func TestRepositoryCreateUpdateAndFilterLLMUpstreams(t *testing.T) {
 	}
 }
 
+func llmUpstreamCreateArgs(item domainaigateway.LLMUpstream) []driver.Value {
+	return []driver.Value{
+		item.ID, item.Name, item.ProviderKind, item.BaseURL, item.APIKeyCiphertext, item.APIKeyPrefix,
+		item.Status, item.Priority, item.Weight, item.TimeoutSeconds, item.StreamTimeoutSeconds, item.MaxConcurrency,
+		jsonEqualArg(`["gpt-4.1"]`), jsonEqualArg(`{"Authorization":"[REDACTED]","X-Trace":"trace-1"}`), nil,
+		jsonEqualArg(`{"status":"ok"}`), jsonEqualArg(`{"owner":"platform","apiKey":"[REDACTED]"}`),
+		item.CreatedBy, item.CreatedAt, item.UpdatedAt,
+	}
+}
+
+func llmUpstreamUpdateArgs(item domainaigateway.LLMUpstream) []driver.Value {
+	return []driver.Value{
+		item.Name, item.ProviderKind, item.BaseURL, "", "", "", "", item.Status, item.Priority, item.Weight,
+		item.TimeoutSeconds, item.StreamTimeoutSeconds, item.MaxConcurrency, jsonEqualArg(`["gpt-4.1"]`),
+		jsonEqualArg(`{"Authorization":"[REDACTED]","X-Trace":"trace-1"}`), nil, jsonEqualArg(`{"status":"ok"}`),
+		jsonEqualArg(`{"owner":"platform","apiKey":"[REDACTED]"}`), sqlmock.AnyArg(), item.ID,
+	}
+}
+
+func llmModelRouteFixture(now time.Time) domainaigateway.LLMModelRoute {
+	return domainaigateway.LLMModelRoute{
+		ID: "route-1", PublicModel: "gpt-4.1", ProviderKind: "openai", UpstreamID: "upstream-1",
+		UpstreamModel: "gpt-4.1", RouteGroup: "prod", Priority: 10, Weight: 2, Enabled: true,
+		TransformPolicy: map[string]any{"mode": "passthrough"}, FallbackPolicy: map[string]any{"maxAttempts": float64(2)},
+		CachePolicy: map[string]any{"enabled": false}, RateLimitProfileID: "developer-default",
+		Metadata: map[string]any{"owner": "platform"}, CreatedAt: now, UpdatedAt: now,
+	}
+}
+
+func llmModelRouteCreateArgs(item domainaigateway.LLMModelRoute) []driver.Value {
+	return []driver.Value{
+		item.ID, item.PublicModel, item.ProviderKind, item.UpstreamID, item.UpstreamModel, item.RouteGroup,
+		item.Priority, item.Weight, item.Enabled, jsonEqualArg(`{"mode":"passthrough"}`), jsonEqualArg(`{"maxAttempts":2}`),
+		jsonEqualArg(`{"enabled":false}`), item.RateLimitProfileID, jsonEqualArg(`{"owner":"platform"}`), item.CreatedAt, item.UpdatedAt,
+	}
+}
+
+func llmCallLogFixture(now time.Time) domainaigateway.LLMCallLog {
+	return domainaigateway.LLMCallLog{
+		ID: "call-1", RequestID: "req-1", ActorType: "user", ActorID: "user-1", ActorName: "Ada",
+		TokenID: "token-1", TokenPrefix: "soha_pat_1234", TokenKind: "pat", AIClientID: "client-1",
+		PublicModel: "gpt-4.1", UpstreamID: "upstream-1", UpstreamName: "OpenAI primary",
+		ProviderKind: "openai", UpstreamModel: "gpt-4.1", Endpoint: "chat/completions", Stream: true,
+		Status: "success", HTTPStatus: 200, UpstreamStatus: 200, PromptTokens: 10, CompletionTokens: 20,
+		TotalTokens: 30, CachedReadTokens: 4, CachedWriteTokens: 2, TTFBMilliseconds: 120,
+		TTFTMilliseconds: 150, DurationMilliseconds: 900, InputBytes: 1000, OutputBytes: 2000,
+		CacheStatus: "miss", RouteTrace: map[string]any{"selected": "upstream-1", "Authorization": "Bearer sk-plaintext"},
+		SourceIP: "203.0.113.10", UserAgent: "openai-go", Metadata: map[string]any{"apiKey": "sk-plaintext", "usage": "summary"}, CreatedAt: now,
+	}
+}
+
+func llmCallLogCreateArgs(item domainaigateway.LLMCallLog) []driver.Value {
+	return []driver.Value{
+		item.ID, item.RequestID, item.ActorType, item.ActorID, item.ActorName, item.TokenID, item.TokenPrefix, item.TokenKind,
+		item.AIClientID, item.PublicModel, item.UpstreamID, item.UpstreamName, item.ProviderKind, item.UpstreamModel,
+		item.Endpoint, item.Stream, item.Status, item.HTTPStatus, item.UpstreamStatus, nil, nil,
+		item.PromptTokens, item.CompletionTokens, item.TotalTokens, item.ReasoningTokens, item.CachedReadTokens,
+		item.CachedWriteTokens, item.EstimatedTokens, item.TTFBMilliseconds, item.TTFTMilliseconds,
+		item.DurationMilliseconds, item.InputBytes, item.OutputBytes, item.CacheStatus,
+		jsonEqualArg(`{"Authorization":"[REDACTED]","selected":"upstream-1"}`), item.SourceIP, item.UserAgent,
+		jsonEqualArg(`{"apiKey":"[REDACTED]","usage":"summary"}`), item.CreatedAt,
+	}
+}
+
 func TestRepositoryCreateUpdateAndFilterLLMModelRoutes(t *testing.T) {
 	repo, mock := newAIGatewayRepository(t)
 	now := time.Date(2026, 6, 25, 11, 0, 0, 0, time.UTC)
-	item := domainaigateway.LLMModelRoute{
-		ID:                 "route-1",
-		PublicModel:        "gpt-4.1",
-		ProviderKind:       "openai",
-		UpstreamID:         "upstream-1",
-		UpstreamModel:      "gpt-4.1",
-		RouteGroup:         "prod",
-		Priority:           10,
-		Weight:             2,
-		Enabled:            true,
-		TransformPolicy:    map[string]any{"mode": "passthrough"},
-		FallbackPolicy:     map[string]any{"maxAttempts": float64(2)},
-		CachePolicy:        map[string]any{"enabled": false},
-		RateLimitProfileID: "developer-default",
-		Metadata:           map[string]any{"owner": "platform"},
-		CreatedAt:          now,
-		UpdatedAt:          now,
-	}
+	item := llmModelRouteFixture(now)
 
 	mock.ExpectExec(`(?s)INSERT INTO ai_gateway_llm_model_routes`).
-		WithArgs(
-			item.ID,
-			item.PublicModel,
-			item.ProviderKind,
-			item.UpstreamID,
-			item.UpstreamModel,
-			item.RouteGroup,
-			item.Priority,
-			item.Weight,
-			item.Enabled,
-			jsonEqualArg(`{"mode":"passthrough"}`),
-			jsonEqualArg(`{"maxAttempts":2}`),
-			jsonEqualArg(`{"enabled":false}`),
-			item.RateLimitProfileID,
-			jsonEqualArg(`{"owner":"platform"}`),
-			item.CreatedAt,
-			item.UpdatedAt,
-		).
+		WithArgs(llmModelRouteCreateArgs(item)...).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if _, err := repo.CreateLLMModelRoute(context.Background(), item); err != nil {
@@ -323,92 +294,10 @@ func TestRepositoryCreateUpdateAndFilterLLMModelRoutes(t *testing.T) {
 func TestRepositoryCreateAndListLLMCallLogsRedactsMetadata(t *testing.T) {
 	repo, mock := newAIGatewayRepository(t)
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
-	item := domainaigateway.LLMCallLog{
-		ID:                   "call-1",
-		RequestID:            "req-1",
-		ActorType:            "user",
-		ActorID:              "user-1",
-		ActorName:            "Ada",
-		TokenID:              "token-1",
-		TokenPrefix:          "soha_pat_1234",
-		TokenKind:            "pat",
-		AIClientID:           "client-1",
-		PublicModel:          "gpt-4.1",
-		UpstreamID:           "upstream-1",
-		UpstreamName:         "OpenAI primary",
-		ProviderKind:         "openai",
-		UpstreamModel:        "gpt-4.1",
-		Endpoint:             "chat/completions",
-		Stream:               true,
-		Status:               "success",
-		HTTPStatus:           200,
-		UpstreamStatus:       200,
-		PromptTokens:         10,
-		CompletionTokens:     20,
-		TotalTokens:          30,
-		CachedReadTokens:     4,
-		CachedWriteTokens:    2,
-		TTFBMilliseconds:     120,
-		TTFTMilliseconds:     150,
-		DurationMilliseconds: 900,
-		InputBytes:           1000,
-		OutputBytes:          2000,
-		CacheStatus:          "miss",
-		RouteTrace: map[string]any{
-			"selected":      "upstream-1",
-			"Authorization": "Bearer sk-plaintext",
-		},
-		SourceIP:  "203.0.113.10",
-		UserAgent: "openai-go",
-		Metadata: map[string]any{
-			"apiKey": "sk-plaintext",
-			"usage":  "summary",
-		},
-		CreatedAt: now,
-	}
+	item := llmCallLogFixture(now)
 
 	mock.ExpectExec(`(?s)INSERT INTO ai_gateway_llm_call_logs`).
-		WithArgs(
-			item.ID,
-			item.RequestID,
-			item.ActorType,
-			item.ActorID,
-			item.ActorName,
-			item.TokenID,
-			item.TokenPrefix,
-			item.TokenKind,
-			item.AIClientID,
-			item.PublicModel,
-			item.UpstreamID,
-			item.UpstreamName,
-			item.ProviderKind,
-			item.UpstreamModel,
-			item.Endpoint,
-			item.Stream,
-			item.Status,
-			item.HTTPStatus,
-			item.UpstreamStatus,
-			nil,
-			nil,
-			item.PromptTokens,
-			item.CompletionTokens,
-			item.TotalTokens,
-			item.ReasoningTokens,
-			item.CachedReadTokens,
-			item.CachedWriteTokens,
-			item.EstimatedTokens,
-			item.TTFBMilliseconds,
-			item.TTFTMilliseconds,
-			item.DurationMilliseconds,
-			item.InputBytes,
-			item.OutputBytes,
-			item.CacheStatus,
-			jsonEqualArg(`{"Authorization":"[REDACTED]","selected":"upstream-1"}`),
-			item.SourceIP,
-			item.UserAgent,
-			jsonEqualArg(`{"apiKey":"[REDACTED]","usage":"summary"}`),
-			item.CreatedAt,
-		).
+		WithArgs(llmCallLogCreateArgs(item)...).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if err := repo.CreateLLMCallLog(context.Background(), item); err != nil {

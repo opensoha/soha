@@ -2,8 +2,9 @@ package handlers
 
 import (
 	"context"
-	"io"
+	"fmt"
 	"net/http"
+	"reflect"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,146 +14,24 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
-	domainresource "github.com/opensoha/soha/internal/domain/resource"
-	"k8s.io/client-go/tools/remotecommand"
 )
 
-type ClusterService interface {
+type ClusterReader interface {
 	List(context.Context) ([]domaincluster.Summary, error)
 	ListAccessible(context.Context, domainidentity.Principal) ([]domaincluster.Summary, error)
 	Describe(context.Context, domainidentity.Principal, string) (domaincluster.Detail, error)
 	CapabilityMatrix(context.Context, domainidentity.Principal) ([]domaincluster.CapabilityMatrixEntry, error)
+}
+
+type ClusterEditor interface {
 	Register(context.Context, domainidentity.Principal, domaincluster.RegisterInput) (domaincluster.Summary, error)
 	Update(context.Context, domainidentity.Principal, string, domaincluster.UpdateInput) (domaincluster.Summary, error)
 	Delete(context.Context, domainidentity.Principal, string) error
 }
 
-type ResourceService interface {
-	ListNamespaces(context.Context, domainidentity.Principal, string) ([]domainresource.NamespaceView, error)
-	CreateNamespace(context.Context, domainidentity.Principal, string, domainresource.NamespaceUpsertInput) (domainresource.NamespaceView, error)
-	UpdateNamespace(context.Context, domainidentity.Principal, string, string, domainresource.NamespaceUpsertInput) (domainresource.NamespaceView, error)
-	DeleteNamespace(context.Context, domainidentity.Principal, string, string) error
-	ListNodes(context.Context, domainidentity.Principal, string) ([]domainresource.NodeView, error)
-	GetNodeDetail(context.Context, domainidentity.Principal, string, string) (domainresource.NodeDetailView, error)
-	GetNodeYAML(context.Context, domainidentity.Principal, string, string) (domainresource.ResourceYAMLView, error)
-	ApplyNodeYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
-	UpdateNode(context.Context, domainidentity.Principal, string, string, domainresource.NodeUpdateInput) (domainresource.NodeDetailView, error)
-	DeleteNode(context.Context, domainidentity.Principal, string, string) error
-	ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error)
-	GetWorkloadOverview(context.Context, domainidentity.Principal, string, string) (domainresource.WorkloadOverviewView, error)
-	GetPodDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PodDetailView, error)
-	DeletePod(context.Context, domainidentity.Principal, string, string, string) error
-	GetPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
-	StreamPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, io.Writer) error
-	GetPodYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
-	ApplyPodYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	GetPodMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.PodMetricsView, error)
-	ExecPod(context.Context, domainidentity.Principal, string, string, string, string, string, int64) (domainresource.PodExecView, error)
-	StreamPodTerminal(context.Context, domainidentity.Principal, string, string, string, string, string, io.Reader, io.Writer, io.Writer, remotecommand.TerminalSizeQueue) error
-	ListDeployments(context.Context, domainidentity.Principal, string, string) ([]domainresource.DeploymentView, error)
-	GetDeploymentDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentDetailView, error)
-	GetDeploymentYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
-	ApplyDeploymentYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	GetDeploymentMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.ResourceMetricsView, error)
-	GetDeploymentRolloutStatus(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentRolloutStatusView, error)
-	ListDeploymentRolloutHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.RolloutHistoryView, error)
-	ListStatefulSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.StatefulSetView, error)
-	GetStatefulSetDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.StatefulSetDetailView, error)
-	GetStatefulSetYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
-	ApplyStatefulSetYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	GetStatefulSetMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.ResourceMetricsView, error)
-	ListDaemonSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.DaemonSetView, error)
-	GetDaemonSetDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.DaemonSetDetailView, error)
-	GetDaemonSetYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
-	ApplyDaemonSetYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	GetDaemonSetMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.ResourceMetricsView, error)
-	ListJobs(context.Context, domainidentity.Principal, string, string) ([]domainresource.JobView, error)
-	GetJobDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.JobDetailView, error)
-	GetJobYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
-	ApplyJobYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	ListCronJobs(context.Context, domainidentity.Principal, string, string) ([]domainresource.CronJobView, error)
-	ListReplicaSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReplicaSetView, error)
-	ListConfigMaps(context.Context, domainidentity.Principal, string, string) ([]domainresource.ConfigMapView, error)
-	GetConfigMapDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ConfigMapDetailView, error)
-	UpdateConfigMapData(context.Context, domainidentity.Principal, string, string, string, map[string]string, map[string]string) (domainresource.ConfigMapDetailView, error)
-	ListConfigMapReferences(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.ConfigReferenceView, error)
-	ListSecrets(context.Context, domainidentity.Principal, string, string) ([]domainresource.SecretView, error)
-	GetSecretDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.SecretDetailView, error)
-	UpdateSecretData(context.Context, domainidentity.Principal, string, string, string, map[string]string) (domainresource.SecretDetailView, error)
-	ListSecretReferences(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.ConfigReferenceView, error)
-	CreateResourceFromYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	ListServiceAccounts(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceAccountView, error)
-	GetServiceAccountDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ServiceAccountDetailView, error)
-	ListRoles(context.Context, domainidentity.Principal, string, string) ([]domainresource.RoleView, error)
-	GetRoleDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.RoleDetailView, error)
-	ListRoleBindings(context.Context, domainidentity.Principal, string, string) ([]domainresource.RoleBindingView, error)
-	GetRoleBindingDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.RoleBindingDetailView, error)
-	ListHorizontalPodAutoscalers(context.Context, domainidentity.Principal, string, string) ([]domainresource.HorizontalPodAutoscalerView, error)
-	ListPodDisruptionBudgets(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodDisruptionBudgetView, error)
-	GetCronJobDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.CronJobDetailView, error)
-	GetCronJobYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
-	ApplyCronJobYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	SetCronJobSuspend(context.Context, domainidentity.Principal, string, string, string, bool) (domainresource.CronJobDetailView, error)
-	ListServices(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceView, error)
-	GetNetworkTopology(context.Context, domainidentity.Principal, string, string) (domainresource.NetworkTopologyView, error)
-	GetServiceMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.ResourceMetricsView, error)
-	ListIngresses(context.Context, domainidentity.Principal, string, string) ([]domainresource.IngressView, error)
-	ListEndpointSlices(context.Context, domainidentity.Principal, string, string) ([]domainresource.EndpointSliceView, error)
-	ListNetworkPolicies(context.Context, domainidentity.Principal, string, string) ([]domainresource.NetworkPolicyView, error)
-	ListGatewayClasses(context.Context, domainidentity.Principal, string) ([]domainresource.GatewayClassView, error)
-	ListGateways(context.Context, domainidentity.Principal, string, string) ([]domainresource.GatewayView, error)
-	ListHTTPRoutes(context.Context, domainidentity.Principal, string, string) ([]domainresource.HTTPRouteView, error)
-	ListBackendTLSPolicies(context.Context, domainidentity.Principal, string, string) ([]domainresource.BackendTLSPolicyView, error)
-	ListGRPCRoutes(context.Context, domainidentity.Principal, string, string) ([]domainresource.GRPCRouteView, error)
-	ListReferenceGrants(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReferenceGrantView, error)
-	ListPersistentVolumeClaims(context.Context, domainidentity.Principal, string, string) ([]domainresource.PersistentVolumeClaimView, error)
-	GetPersistentVolumeClaimDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PersistentVolumeClaimDetailView, error)
-	ListPersistentVolumes(context.Context, domainidentity.Principal, string) ([]domainresource.PersistentVolumeView, error)
-	GetPersistentVolumeDetail(context.Context, domainidentity.Principal, string, string) (domainresource.PersistentVolumeDetailView, error)
-	ListStorageClasses(context.Context, domainidentity.Principal, string) ([]domainresource.StorageClassView, error)
-	GetStorageClassDetail(context.Context, domainidentity.Principal, string, string) (domainresource.StorageClassDetailView, error)
-	ListIngressClasses(context.Context, domainidentity.Principal, string) ([]domainresource.IngressClassView, error)
-	ListPriorityClasses(context.Context, domainidentity.Principal, string) ([]domainresource.PriorityClassView, error)
-	ListRuntimeClasses(context.Context, domainidentity.Principal, string) ([]domainresource.RuntimeClassView, error)
-	ListClusterRoles(context.Context, domainidentity.Principal, string) ([]domainresource.ClusterRoleView, error)
-	GetClusterRoleDetail(context.Context, domainidentity.Principal, string, string) (domainresource.ClusterRoleDetailView, error)
-	ListClusterRoleBindings(context.Context, domainidentity.Principal, string) ([]domainresource.ClusterRoleBindingView, error)
-	GetClusterRoleBindingDetail(context.Context, domainidentity.Principal, string, string) (domainresource.ClusterRoleBindingDetailView, error)
-	ListMutatingWebhookConfigurations(context.Context, domainidentity.Principal, string) ([]domainresource.MutatingWebhookConfigurationView, error)
-	ListValidatingWebhookConfigurations(context.Context, domainidentity.Principal, string) ([]domainresource.ValidatingWebhookConfigurationView, error)
-	ListResourceQuotas(context.Context, domainidentity.Principal, string, string) ([]domainresource.ResourceQuotaView, error)
-	ListLimitRanges(context.Context, domainidentity.Principal, string, string) ([]domainresource.LimitRangeView, error)
-	ListLeases(context.Context, domainidentity.Principal, string, string) ([]domainresource.LeaseView, error)
-	ListReplicationControllers(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReplicationControllerView, error)
-	GetResourceYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	ApplyResourceYAMLByKind(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	DeleteResourceByKind(context.Context, domainidentity.Principal, string, string, string, string) error
-	ListPortForwards(context.Context, domainidentity.Principal, string) ([]domainresource.PortForwardSessionView, error)
-	RegisterPortForward(context.Context, domainidentity.Principal, string, domainresource.PortForwardRegisterInput) (domainresource.PortForwardSessionView, error)
-	StopPortForward(context.Context, domainidentity.Principal, string, string) error
-	ListCRDs(context.Context, domainidentity.Principal, string) ([]domainresource.CRDView, error)
-	ListCRDResources(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.CustomResourceView, error)
-	CreateCRDResourceFromYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	GetCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	ApplyCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	DeleteCRDResource(context.Context, domainidentity.Principal, string, string, string, string) error
-	ListHelmCharts(context.Context, domainidentity.Principal, string, string, int, int) (domainresource.HelmChartCatalogView, error)
-	GetHelmChartDetail(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmChartDetailView, error)
-	GetHelmChartValuesTemplate(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmChartValuesTemplateView, error)
-	InstallHelmChart(context.Context, domainidentity.Principal, string, domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, error)
-	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
-	GetHelmReleaseDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.HelmReleaseDetailView, error)
-	ListHelmReleaseHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.HelmReleaseHistoryView, error)
-	GetHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error)
-	UpdateHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error)
-	DeleteHelmRelease(context.Context, domainidentity.Principal, string, string, string) error
-	ListClusterEvents(context.Context, domainidentity.Principal, string, string, int) ([]domainresource.ClusterEventView, error)
-	RestartDeployment(context.Context, domainidentity.Principal, string, string, string) error
-	RollbackDeployment(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.DeploymentRollbackView, error)
-	ScaleDeployment(context.Context, domainidentity.Principal, string, string, string, int32) error
-	RestartStatefulSet(context.Context, domainidentity.Principal, string, string, string) error
-	ScaleStatefulSet(context.Context, domainidentity.Principal, string, string, string, int32) error
-	RestartDaemonSet(context.Context, domainidentity.Principal, string, string, string) error
+type ClusterService interface {
+	ClusterReader
+	ClusterEditor
 }
 
 type AuditService interface {
@@ -178,18 +57,134 @@ type IntegrationService interface {
 	ListCapabilities(context.Context) ([]domainmcp.Capability, error)
 }
 
+type podResourceHandler struct {
+	reader      PodReader
+	editor      PodResourceEditor
+	diagnostics PodDiagnostics
+}
+type deploymentResourceHandler struct {
+	reader DeploymentReader
+	editor DeploymentEditor
+}
+type statefulSetResourceHandler struct {
+	reader StatefulSetReader
+	editor StatefulSetEditor
+}
+type daemonSetResourceHandler struct {
+	reader DaemonSetReader
+	editor DaemonSetEditor
+}
+type jobResourceHandler struct{ service JobService }
+type cronJobResourceHandler struct{ service CronJobService }
+type workloadInventoryResourceHandler struct {
+	service WorkloadInventoryService
+	generic GenericResourceService
+}
+
+type configMapResourceHandler struct {
+	service ConfigMapService
+	creator ResourceCreator
+}
+type secretResourceHandler struct {
+	service SecretService
+	creator ResourceCreator
+}
+type configurationInventoryResourceHandler struct{ service ConfigurationInventoryService }
+type networkOverviewResourceHandler struct{ service NetworkOverviewService }
+type networkInventoryResourceHandler struct{ service NetworkInventoryService }
+type gatewayResourceHandler struct {
+	routing GatewayRoutingService
+	policy  GatewayPolicyService
+}
+type persistentVolumeClaimResourceHandler struct {
+	service PersistentVolumeClaimService
+	creator ResourceCreator
+}
+type persistentVolumeResourceHandler struct {
+	service PersistentVolumeService
+	creator ResourceCreator
+}
+type storageClassResourceHandler struct {
+	service StorageClassService
+	creator ResourceCreator
+}
+type namespacedRBACResourceHandler struct {
+	service NamespacedRBACService
+	creator ResourceCreator
+}
+type clusterRBACResourceHandler struct {
+	service ClusterRBACService
+	creator ResourceCreator
+}
+type crdResourceHandler struct {
+	reader CRDReader
+	editor CRDEditor
+}
+type helmCatalogResourceHandler struct{ service HelmCatalogService }
+type helmReleaseResourceHandler struct {
+	reader HelmReleaseReader
+	editor HelmReleaseEditor
+}
+type clusterHandler struct{ service ClusterService }
+type namespaceResourceHandler struct{ service NamespaceService }
+type nodeResourceHandler struct {
+	reader NodeReader
+	editor NodeEditor
+}
+type genericResourceHandler struct{ service GenericResourceService }
+type clusterEventResourceHandler struct{ service ClusterEventService }
+type portForwardResourceHandler struct{ service PortForwardService }
+type podStreamResourceHandler struct{ service PodStreamService }
+
 type PlatformHandler struct {
-	clusters    ClusterService
-	resources   ResourceService
+	*podResourceHandler
+	*deploymentResourceHandler
+	*statefulSetResourceHandler
+	*daemonSetResourceHandler
+	*jobResourceHandler
+	*cronJobResourceHandler
+	*workloadInventoryResourceHandler
+	*configMapResourceHandler
+	*secretResourceHandler
+	*configurationInventoryResourceHandler
+	*networkOverviewResourceHandler
+	*networkInventoryResourceHandler
+	*gatewayResourceHandler
+	*persistentVolumeClaimResourceHandler
+	*persistentVolumeResourceHandler
+	*storageClassResourceHandler
+	*namespacedRBACResourceHandler
+	*clusterRBACResourceHandler
+	*crdResourceHandler
+	*helmCatalogResourceHandler
+	*helmReleaseResourceHandler
+	*clusterHandler
+	*namespaceResourceHandler
+	*nodeResourceHandler
+	*genericResourceHandler
+	*clusterEventResourceHandler
+	*portForwardResourceHandler
+	*podStreamResourceHandler
+
 	audit       AuditService
 	events      EventService
 	operations  OperationService
 	integration IntegrationService
 }
 
+// PlatformDependencies groups the independently replaceable platform capabilities.
+type PlatformDependencies struct {
+	Clusters    ClusterService
+	Resources   ResourceServices
+	Audit       AuditService
+	Events      EventService
+	Operations  OperationService
+	Integration IntegrationService
+}
+
 var podTerminalUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return allowWebSocketOrigin(r)
 	},
 }
 
@@ -199,13 +194,125 @@ const (
 	podLogReconnectDelay = 1200 * time.Millisecond
 )
 
-func NewPlatformHandler(clusters ClusterService, resources ResourceService, audit AuditService, events EventService, operations OperationService, integration IntegrationService) *PlatformHandler {
+// NewPlatformHandlerWithResources is the capability-oriented constructor.
+func NewPlatformHandlerWithResources(deps PlatformDependencies) (*PlatformHandler, error) {
+	if err := validatePlatformDependencies(deps); err != nil {
+		return nil, err
+	}
+	resources := deps.Resources
 	return &PlatformHandler{
-		clusters:    clusters,
-		resources:   resources,
-		audit:       audit,
-		events:      events,
-		operations:  operations,
-		integration: integration,
+		podResourceHandler: &podResourceHandler{
+			reader: resources.PodReader, editor: resources.PodEditor, diagnostics: resources.PodDiagnostics,
+		},
+		deploymentResourceHandler: &deploymentResourceHandler{
+			reader: resources.DeploymentReader, editor: resources.DeploymentEditor,
+		},
+		statefulSetResourceHandler: &statefulSetResourceHandler{
+			reader: resources.StatefulSetReader, editor: resources.StatefulSetEditor,
+		},
+		daemonSetResourceHandler: &daemonSetResourceHandler{
+			reader: resources.DaemonSetReader, editor: resources.DaemonSetEditor,
+		},
+		jobResourceHandler:     &jobResourceHandler{service: resources.Jobs},
+		cronJobResourceHandler: &cronJobResourceHandler{service: resources.CronJobs},
+		workloadInventoryResourceHandler: &workloadInventoryResourceHandler{
+			service: resources.WorkloadInventory,
+			generic: resources.Generic,
+		},
+		configMapResourceHandler: &configMapResourceHandler{
+			service: resources.ConfigMaps,
+			creator: resources.Creator,
+		},
+		secretResourceHandler: &secretResourceHandler{
+			service: resources.Secrets,
+			creator: resources.Creator,
+		},
+		configurationInventoryResourceHandler: &configurationInventoryResourceHandler{service: resources.ConfigurationInventory},
+		networkOverviewResourceHandler:        &networkOverviewResourceHandler{service: resources.NetworkOverview},
+		networkInventoryResourceHandler:       &networkInventoryResourceHandler{service: resources.NetworkInventory},
+		gatewayResourceHandler: &gatewayResourceHandler{
+			routing: resources.GatewayRouting,
+			policy:  resources.GatewayPolicy,
+		},
+		persistentVolumeClaimResourceHandler: &persistentVolumeClaimResourceHandler{
+			service: resources.PersistentVolumeClaims,
+			creator: resources.Creator,
+		},
+		persistentVolumeResourceHandler: &persistentVolumeResourceHandler{
+			service: resources.PersistentVolumes,
+			creator: resources.Creator,
+		},
+		storageClassResourceHandler: &storageClassResourceHandler{
+			service: resources.StorageClasses,
+			creator: resources.Creator,
+		},
+		namespacedRBACResourceHandler: &namespacedRBACResourceHandler{
+			service: resources.NamespacedRBAC,
+			creator: resources.Creator,
+		},
+		clusterRBACResourceHandler: &clusterRBACResourceHandler{
+			service: resources.ClusterRBAC,
+			creator: resources.Creator,
+		},
+		crdResourceHandler:          &crdResourceHandler{reader: resources.CRDReader, editor: resources.CRDEditor},
+		helmCatalogResourceHandler:  &helmCatalogResourceHandler{service: resources.Helm},
+		helmReleaseResourceHandler:  &helmReleaseResourceHandler{reader: resources.HelmReleaseReader, editor: resources.HelmReleaseEditor},
+		clusterHandler:              &clusterHandler{service: deps.Clusters},
+		namespaceResourceHandler:    &namespaceResourceHandler{service: resources.Namespaces},
+		nodeResourceHandler:         &nodeResourceHandler{reader: resources.NodeReader, editor: resources.NodeEditor},
+		genericResourceHandler:      &genericResourceHandler{service: resources.Generic},
+		clusterEventResourceHandler: &clusterEventResourceHandler{service: resources.Events},
+		portForwardResourceHandler:  &portForwardResourceHandler{service: resources.PortForwards},
+		podStreamResourceHandler:    &podStreamResourceHandler{service: resources.PodStreams},
+		audit:                       deps.Audit,
+		events:                      deps.Events,
+		operations:                  deps.Operations,
+		integration:                 deps.Integration,
+	}, nil
+}
+
+func validatePlatformDependencies(deps PlatformDependencies) error {
+	required := map[string]any{
+		"clusters": deps.Clusters, "audit": deps.Audit, "events": deps.Events,
+		"operations": deps.Operations, "integration": deps.Integration,
+		"pod reader": deps.Resources.PodReader, "pod editor": deps.Resources.PodEditor,
+		"pod diagnostics": deps.Resources.PodDiagnostics, "pod streams": deps.Resources.PodStreams,
+		"deployment reader": deps.Resources.DeploymentReader, "deployment editor": deps.Resources.DeploymentEditor,
+		"statefulset reader": deps.Resources.StatefulSetReader, "statefulset editor": deps.Resources.StatefulSetEditor,
+		"daemonset reader": deps.Resources.DaemonSetReader, "daemonset editor": deps.Resources.DaemonSetEditor,
+		"jobs": deps.Resources.Jobs, "cronjobs": deps.Resources.CronJobs,
+		"workload inventory": deps.Resources.WorkloadInventory, "resource creator": deps.Resources.Creator,
+		"configmaps": deps.Resources.ConfigMaps, "secrets": deps.Resources.Secrets,
+		"configuration inventory": deps.Resources.ConfigurationInventory,
+		"network overview":        deps.Resources.NetworkOverview, "network inventory": deps.Resources.NetworkInventory,
+		"gateway routing": deps.Resources.GatewayRouting, "gateway policy": deps.Resources.GatewayPolicy,
+		"persistent volume claims": deps.Resources.PersistentVolumeClaims,
+		"persistent volumes":       deps.Resources.PersistentVolumes, "storage classes": deps.Resources.StorageClasses,
+		"namespaced rbac": deps.Resources.NamespacedRBAC, "cluster rbac": deps.Resources.ClusterRBAC,
+		"crd reader": deps.Resources.CRDReader, "crd editor": deps.Resources.CRDEditor,
+		"helm catalog": deps.Resources.Helm, "helm release reader": deps.Resources.HelmReleaseReader,
+		"helm release editor": deps.Resources.HelmReleaseEditor, "namespaces": deps.Resources.Namespaces,
+		"node reader": deps.Resources.NodeReader, "node editor": deps.Resources.NodeEditor,
+		"generic resources": deps.Resources.Generic, "cluster events": deps.Resources.Events,
+		"port forwards": deps.Resources.PortForwards,
+	}
+	for name, dependency := range required {
+		if isNilPlatformDependency(dependency) {
+			return fmt.Errorf("platform handler: %s dependency is required", name)
+		}
+	}
+	return nil
+}
+
+func isNilPlatformDependency(dependency any) bool {
+	if dependency == nil {
+		return true
+	}
+	value := reflect.ValueOf(dependency)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
 	}
 }

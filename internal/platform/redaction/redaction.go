@@ -10,6 +10,7 @@ const Redacted = "[REDACTED]"
 var (
 	authorizationValuePattern = regexp.MustCompile(`(?i)(authorization\s*[:=]\s*)(?:[a-z]+\s+)?([^\s,;]+)`)
 	sensitiveValuePattern     = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-]?key|credential|kubeconfig|env(?:ironment)?[_-]?var(?:iable)?)(\s*[:=]\s*)([^\s,;]+)`)
+	sensitiveQueryPattern     = regexp.MustCompile(`(?i)([?&](?:code|access_token|refresh_token|api[_-]?key)=)([^&\s]+)`)
 )
 
 func Map(values map[string]any) map[string]any {
@@ -68,7 +69,8 @@ func Value(value any) any {
 
 func Text(value string) string {
 	value = authorizationValuePattern.ReplaceAllString(value, "$1"+Redacted)
-	return sensitiveValuePattern.ReplaceAllString(value, "$1$2"+Redacted)
+	value = sensitiveValuePattern.ReplaceAllString(value, "$1$2"+Redacted)
+	return sensitiveQueryPattern.ReplaceAllString(value, "$1"+Redacted)
 }
 
 func SensitiveKey(key string) bool {

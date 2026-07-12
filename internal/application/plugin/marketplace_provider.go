@@ -359,7 +359,7 @@ func (p *RemoteMarketplaceProvider) getBytes(ctx context.Context, rawURL string,
 	if err != nil {
 		return nil, fmt.Errorf("fetch marketplace url: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("%w: marketplace returned status %d", apperrors.ErrInvalidArgument, resp.StatusCode)
 	}
@@ -486,7 +486,11 @@ func validateMarketplacePublicURL(rawURL string) error {
 }
 
 func newAdHocMarketplaceHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	}
+	transport := base.Clone()
 	transport.Proxy = nil
 	dialer := &net.Dialer{
 		Timeout:        10 * time.Second,

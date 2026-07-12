@@ -325,13 +325,26 @@ func BuildOperationState(task ExecutionTask, now time.Time) *OperationState {
 		HeartbeatStale:        heartbeatStale,
 		RecommendedNextAction: operationRecommendedNextAction(status, heartbeatStale),
 	}
-	state.RuntimeEndpointPresent = strings.TrimSpace(task.RuntimeEndpoint) != ""
-	if !state.RuntimeEndpointPresent {
-		if value, ok := task.Result["runtimeEndpoint"]; ok {
-			runtimeEndpoint := strings.TrimSpace(fmt.Sprint(value))
-			state.RuntimeEndpointPresent = runtimeEndpoint != "" && runtimeEndpoint != "<nil>"
-		}
+	state.RuntimeEndpointPresent = operationRuntimeEndpointPresent(task)
+	populateOperationStateTimes(state, task, nextDeadline)
+	state.ClaimedByAgentID = strings.TrimSpace(task.ClaimedByAgentID)
+	populateOperationFailure(state, task, terminal, status)
+	return state
+}
+
+func operationRuntimeEndpointPresent(task ExecutionTask) bool {
+	if strings.TrimSpace(task.RuntimeEndpoint) != "" {
+		return true
 	}
+	value, ok := task.Result["runtimeEndpoint"]
+	if !ok {
+		return false
+	}
+	runtimeEndpoint := strings.TrimSpace(fmt.Sprint(value))
+	return runtimeEndpoint != "" && runtimeEndpoint != "<nil>"
+}
+
+func populateOperationStateTimes(state *OperationState, task ExecutionTask, nextDeadline time.Time) {
 	if task.LastHeartbeatAt != nil && !task.LastHeartbeatAt.IsZero() {
 		state.LastHeartbeatAt = task.LastHeartbeatAt.UTC()
 	}
@@ -344,7 +357,9 @@ func BuildOperationState(task ExecutionTask, now time.Time) *OperationState {
 	if task.LastRuntimeSeenAt != nil && !task.LastRuntimeSeenAt.IsZero() {
 		state.LastRuntimeSeenAt = task.LastRuntimeSeenAt.UTC()
 	}
-	state.ClaimedByAgentID = strings.TrimSpace(task.ClaimedByAgentID)
+}
+
+func populateOperationFailure(state *OperationState, task ExecutionTask, terminal bool, status string) {
 	if terminal && status != "completed" {
 		state.FailureReason = firstNonEmptyResultString(task.Result, "failureReason", "reason")
 		if state.FailureReason == "" {
@@ -352,7 +367,6 @@ func BuildOperationState(task ExecutionTask, now time.Time) *OperationState {
 		}
 		state.FailureMessage = firstNonEmptyResultString(task.Result, "error", "message", "cancelReason")
 	}
-	return state
 }
 
 func operationHeartbeatReference(task ExecutionTask) time.Time {

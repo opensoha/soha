@@ -5,25 +5,22 @@ import (
 	"time"
 )
 
+type operationStateCase struct {
+	name                                                            string
+	task                                                            ExecutionTask
+	wantPhase                                                       string
+	wantTerminal, wantCancelable, wantRetryable, wantHeartbeatStale bool
+	wantNextAction, wantFailureReason, wantFailureMessage           string
+	wantRuntimeEndpoint                                             bool
+}
+
 func TestBuildOperationStateDerivesDurableTaskSemantics(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 30, 0, 0, time.UTC)
 	startedAt := now.Add(-10 * time.Minute)
 	lastHeartbeatAt := now.Add(-6 * time.Minute)
 	finishedAt := now.Add(-time.Minute)
 
-	cases := []struct {
-		name                string
-		task                ExecutionTask
-		wantPhase           string
-		wantTerminal        bool
-		wantCancelable      bool
-		wantRetryable       bool
-		wantHeartbeatStale  bool
-		wantNextAction      string
-		wantFailureReason   string
-		wantFailureMessage  string
-		wantRuntimeEndpoint bool
-	}{
+	cases := []operationStateCase{
 		{
 			name: "queued task can be canceled",
 			task: ExecutionTask{
@@ -98,22 +95,20 @@ func TestBuildOperationStateDerivesDurableTaskSemantics(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := BuildOperationState(tc.task, now)
-			if got.Phase != tc.wantPhase || got.Terminal != tc.wantTerminal || got.Cancelable != tc.wantCancelable || got.Retryable != tc.wantRetryable {
-				t.Fatalf("unexpected state: %#v", got)
-			}
-			if got.HeartbeatStale != tc.wantHeartbeatStale {
-				t.Fatalf("heartbeat stale = %v, want %v in %#v", got.HeartbeatStale, tc.wantHeartbeatStale, got)
-			}
-			if got.RecommendedNextAction != tc.wantNextAction {
-				t.Fatalf("next action = %q, want %q", got.RecommendedNextAction, tc.wantNextAction)
-			}
-			if got.FailureReason != tc.wantFailureReason || got.FailureMessage != tc.wantFailureMessage {
-				t.Fatalf("failure evidence = %q/%q, want %q/%q", got.FailureReason, got.FailureMessage, tc.wantFailureReason, tc.wantFailureMessage)
-			}
-			if got.RuntimeEndpointPresent != tc.wantRuntimeEndpoint {
-				t.Fatalf("runtime endpoint present = %v, want %v", got.RuntimeEndpointPresent, tc.wantRuntimeEndpoint)
-			}
+			assertOperationState(t, BuildOperationState(tc.task, now), tc)
 		})
+	}
+}
+
+func assertOperationState(t *testing.T, got *OperationState, tc operationStateCase) {
+	t.Helper()
+	if got.Phase != tc.wantPhase || got.Terminal != tc.wantTerminal || got.Cancelable != tc.wantCancelable || got.Retryable != tc.wantRetryable {
+		t.Fatalf("unexpected state: %#v", got)
+	}
+	if got.HeartbeatStale != tc.wantHeartbeatStale || got.RecommendedNextAction != tc.wantNextAction {
+		t.Fatalf("unexpected heartbeat/action state: %#v", got)
+	}
+	if got.FailureReason != tc.wantFailureReason || got.FailureMessage != tc.wantFailureMessage || got.RuntimeEndpointPresent != tc.wantRuntimeEndpoint {
+		t.Fatalf("unexpected failure/runtime evidence: %#v", got)
 	}
 }

@@ -6,26 +6,86 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
-	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 )
 
-func (s *Service) agentClient(connection domaincluster.Connection) (*agentinfra.Client, error) {
-	if s.agents == nil {
-		return nil, fmt.Errorf("%w: agent registry is not configured", apperrors.ErrClusterUnready)
+type resourceAccess struct {
+	directClusters ClusterMetadataProvider
+	resolver       ConnectionResolver
+	authorizer     domainaccess.Authorizer
+	permissions    RuntimePermissionAuthorizer
+	audit          AuditRecorder
+	operations     OperationRecorder
+}
+
+func resolveAgentClient[T any](factory AgentClientFactory[T], connection domaincluster.Connection) (T, error) {
+	var zero T
+	if factory == nil {
+		return zero, fmt.Errorf("%w: agent client is not configured", apperrors.ErrClusterUnready)
 	}
-	client, err := s.agents.ClientFor(connection)
+	client, err := factory(connection)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		return zero, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 	}
 	return client, nil
+}
+
+func (s *Workloads) workloadAgentClient(connection domaincluster.Connection) (WorkloadAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *Configuration) configurationAgentClient(connection domaincluster.Connection) (ConfigurationAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *Workloads) configurationAgentClient(connection domaincluster.Connection) (ConfigurationAgent, error) {
+	return resolveAgentClient(s.configuration, connection)
+}
+
+func (s *Network) configurationAgentClient(connection domaincluster.Connection) (ConfigurationAgent, error) {
+	return resolveAgentClient(s.configuration, connection)
+}
+
+func (s *Network) networkAgentClient(connection domaincluster.Connection) (NetworkAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *Storage) storageAgentClient(connection domaincluster.Connection) (StorageAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *RBAC) rbacAgentClient(connection domaincluster.Connection) (RBACAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *Helm) helmAgentClient(connection domaincluster.Connection) (HelmAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *Inventory) inventoryAgentClient(connection domaincluster.Connection) (InventoryAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *CustomResources) customResourceAgentClient(connection domaincluster.Connection) (CustomResourceAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *GenericResources) genericResourceAgentClient(connection domaincluster.Connection) (GenericResourceAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *Events) eventAgentClient(connection domaincluster.Connection) (EventAgent, error) {
+	return resolveAgentClient(s.agent, connection)
+}
+
+func (s *PortForwards) portForwardAgentClient(connection domaincluster.Connection) (PortForwardAgent, error) {
+	return resolveAgentClient(s.agent, connection)
 }
 
 func unsupportedAgentOperation(message string) error {
@@ -36,7 +96,7 @@ func unsupportedAgentOperation(message string) error {
 	return fmt.Errorf("%w: %s", apperrors.ErrUnsupportedOperation, message)
 }
 
-func (s *Service) loadConnection(ctx context.Context, clusterID string) (domaincluster.Connection, error) {
+func (s *resourceAccess) loadConnection(ctx context.Context, clusterID string) (domaincluster.Connection, error) {
 	if s.resolver != nil {
 		connection, err := s.resolver.GetConnection(ctx, clusterID)
 		if err == nil {
@@ -46,13 +106,16 @@ func (s *Service) loadConnection(ctx context.Context, clusterID string) (domainc
 			return connection, nil
 		}
 	}
-	summary, err := s.clusters.Metadata(clusterID)
+	if s.directClusters == nil {
+		return domaincluster.Connection{}, fmt.Errorf("%w: direct cluster provider is not configured", apperrors.ErrClusterUnready)
+	}
+	summary, err := s.directClusters.Metadata(clusterID)
 	if err != nil {
 		return domaincluster.Connection{}, fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
 	}
 	return domaincluster.Connection{Summary: summary}, nil
 }
-func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
+func (s *resourceAccess) authorize(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
 	connection, err := s.loadConnection(ctx, clusterID)
 	if err != nil {
 		return domaincluster.Connection{}, domainaccess.Decision{}, err
@@ -68,7 +131,7 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	}
 	return connection, decision, nil
 }
-func (s *Service) resourceAccessRequest(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind string, action domainaccess.Action) domainaccess.Request {
+func (s *resourceAccess) resourceAccessRequest(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind string, action domainaccess.Action) domainaccess.Request {
 	return domainaccess.Request{
 		Principal: principal,
 		Action:    action,
@@ -93,7 +156,7 @@ func (s *Service) resourceAccessRequest(ctx context.Context, principal domainide
 		},
 	}
 }
-func (s *Service) allowedActionsForResource(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind string, action domainaccess.Action) []string {
+func (s *resourceAccess) allowedActionsForResource(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind string, action domainaccess.Action) []string {
 	if s == nil || s.authorizer == nil {
 		return nil
 	}
@@ -103,7 +166,7 @@ func (s *Service) allowedActionsForResource(ctx context.Context, principal domai
 	}
 	return stringifyActions(decision.AllowedActions)
 }
-func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, action, result, summary string) error {
+func (s *resourceAccess) recordAudit(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, action, result, summary string) error {
 	meta := requestctx.FromContext(ctx)
 	return s.audit.Record(ctx, domainaudit.Entry{
 		ActorID:       principal.UserID,
@@ -126,7 +189,7 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 		},
 	})
 }
-func (s *Service) recordOperation(ctx context.Context, principal domainidentity.Principal, operationType, clusterID, namespace, kind, name, summary string, metadata map[string]any) {
+func (s *resourceAccess) recordOperation(ctx context.Context, principal domainidentity.Principal, operationType, clusterID, namespace, kind, name, summary string, metadata map[string]any) {
 	if s.operations == nil {
 		return
 	}
@@ -151,8 +214,11 @@ func (s *Service) recordOperation(ctx context.Context, principal domainidentity.
 		metadata,
 	))
 }
-func (s *Service) authorizeDeploymentPermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
-	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
+func (s *resourceAccess) authorizeDeploymentPermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	if s.permissions == nil {
+		return fmt.Errorf("%w: runtime permission resolver unavailable for %s", apperrors.ErrAccessDenied, strings.TrimSpace(permissionKey))
+	}
+	return s.permissions.Authorize(ctx, principal, permissionKey)
 }
 
 func filterScopedNamespaceItems[T any](items []T, decision domainaccess.Decision, namespaceOf func(T) string) []T {
@@ -170,9 +236,6 @@ func filterScopedNamespaceItems[T any](items []T, decision domainaccess.Decision
 		}
 	}
 	return filtered
-}
-func secondsSince(timestamp time.Time) int64 {
-	return int64(time.Since(timestamp).Seconds())
 }
 func stringifyActions(actions []domainaccess.Action) []string {
 	values := make([]string, 0, len(actions))

@@ -2,19 +2,13 @@ package resource
 
 import (
 	"context"
-	"net/http"
-	"time"
 
-	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
-	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
-	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
-	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
-	portforwardrepo "github.com/opensoha/soha/internal/repository/portforward"
 )
 
 type AuditRecorder interface {
@@ -33,25 +27,48 @@ type MonitoringSettingsResolver interface {
 	ResolveMonitoringSettings(context.Context) (domainsettings.MonitoringSettings, error)
 }
 
-type Service struct {
-	clusters     *k8sinfra.Manager
-	cache        *informerinfra.Service
-	agents       *agentinfra.Registry
-	resolver     ConnectionResolver
-	authorizer   domainaccess.Authorizer
-	permissions  *appaccess.PermissionResolver
-	audit        AuditRecorder
-	operations   OperationRecorder
-	settings     MonitoringSettingsResolver
-	httpClient   *http.Client
-	portForwards PortForwardRepository
+type RuntimePermissionAuthorizer interface {
+	Authorize(context.Context, domainidentity.Principal, string) error
 }
 
-type PortForwardRepository interface {
-	List(ctx context.Context) ([]portforwardrepo.Record, error)
-	Upsert(ctx context.Context, rec portforwardrepo.Record) error
-	Delete(ctx context.Context, sessionID string) error
-	MarkStatus(ctx context.Context, sessionID, status, lastErr string) error
+type Service struct {
+	workloads        *Workloads
+	configuration    *Configuration
+	network          *Network
+	storage          *Storage
+	rbac             *RBAC
+	helm             *Helm
+	inventory        *Inventory
+	customResources  *CustomResources
+	genericResources *GenericResources
+	events           *Events
+	portForwards     *PortForwards
+	runtime          *Runtime
+}
+
+type Dependencies struct {
+	Clusters            ClusterMetadataProvider
+	Agents              AgentClients
+	Connections         ConnectionResolver
+	Authorizer          domainaccess.Authorizer
+	Permissions         RuntimePermissionAuthorizer
+	Audit               AuditRecorder
+	Operations          OperationRecorder
+	Settings            MonitoringSettingsResolver
+	PortForwards        PortForwardRepository
+	DirectEvents        DirectEventReader
+	DirectCustom        DirectCustomResource
+	DirectConfiguration DirectConfiguration
+	DirectGeneric       DirectGenericResource
+	DirectGateway       DirectGatewayReader
+	DirectHelm          DirectHelm
+	DirectInventory     DirectInventory
+	DirectNetwork       DirectNetworkReader
+	DirectPods          DirectPods
+	DirectRBAC          DirectRBACReader
+	DirectStorage       DirectStorageReader
+	DirectTunnel        DirectPortForwardStarter
+	DirectWorkloads     DirectWorkloads
 }
 
 type crdResourceDefinition struct {
@@ -63,21 +80,6 @@ type crdResourceDefinition struct {
 	Namespaced bool
 }
 
-func New(clusters *k8sinfra.Manager, cache *informerinfra.Service, agents *agentinfra.Registry, resolver ConnectionResolver, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, settings MonitoringSettingsResolver) *Service {
-	return &Service{
-		clusters:    clusters,
-		cache:       cache,
-		agents:      agents,
-		resolver:    resolver,
-		authorizer:  authorizer,
-		permissions: permissions,
-		audit:       audit,
-		operations:  operations,
-		settings:    settings,
-		httpClient:  &http.Client{Timeout: 10 * time.Second},
-	}
-}
-
-func (s *Service) SetPortForwardRepository(repo PortForwardRepository) {
-	s.portForwards = repo
+func New(deps Dependencies) *Service {
+	return newServiceCapabilities(deps)
 }

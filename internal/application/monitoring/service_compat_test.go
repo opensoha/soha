@@ -12,6 +12,7 @@ import (
 	domainevent "github.com/opensoha/soha/internal/domain/event"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
 )
 
 type stubMonitoringRolePermissionReader struct {
@@ -35,6 +36,28 @@ type stubMonitoringCompatRepository struct {
 	updatedEventInput          domainalert.AlertEventInput
 	upsertSource               string
 	upsertAlerts               []domainalert.IngestAlert
+}
+
+func serviceWithCompatRepository(repo *stubMonitoringCompatRepository) *Service {
+	return &Service{
+		alertReader:           repo,
+		alertWriter:           repo,
+		channels:              repo,
+		silences:              repo,
+		deliveryLogs:          repo,
+		rules:                 repo,
+		ruleRuns:              repo,
+		alertEvents:           repo,
+		notificationPolicies:  repo,
+		notificationTemplates: repo,
+		healingPolicies:       repo,
+		healingRuns:           repo,
+		onCallSchedules:       repo,
+		onCallRotations:       repo,
+		onCallEscalations:     repo,
+		onCallAssignments:     repo,
+		integrations:          repo,
+	}
 }
 
 func (s *stubMonitoringCompatRepository) Upsert(_ context.Context, source string, alerts []domainalert.IngestAlert) ([]domainalert.Instance, error) {
@@ -421,8 +444,26 @@ func (s *stubMonitoringCompatRepository) UpdateAlertIntegrationStatus(_ context.
 	return item, nil
 }
 
-var _ Repository = (*stubMonitoringCompatRepository)(nil)
-var _ EventWriter = (*stubMonitoringEventWriter)(nil)
+var (
+	_ AlertReader                    = (*stubMonitoringCompatRepository)(nil)
+	_ AlertWriter                    = (*stubMonitoringCompatRepository)(nil)
+	_ ChannelRepository              = (*stubMonitoringCompatRepository)(nil)
+	_ SilenceRepository              = (*stubMonitoringCompatRepository)(nil)
+	_ DeliveryLogRepository          = (*stubMonitoringCompatRepository)(nil)
+	_ RuleRepository                 = (*stubMonitoringCompatRepository)(nil)
+	_ RuleRunRepository              = (*stubMonitoringCompatRepository)(nil)
+	_ AlertEventRepository           = (*stubMonitoringCompatRepository)(nil)
+	_ NotificationPolicyRepository   = (*stubMonitoringCompatRepository)(nil)
+	_ NotificationTemplateRepository = (*stubMonitoringCompatRepository)(nil)
+	_ HealingPolicyRepository        = (*stubMonitoringCompatRepository)(nil)
+	_ HealingRunRepository           = (*stubMonitoringCompatRepository)(nil)
+	_ OnCallScheduleRepository       = (*stubMonitoringCompatRepository)(nil)
+	_ OnCallRotationRepository       = (*stubMonitoringCompatRepository)(nil)
+	_ OnCallEscalationRepository     = (*stubMonitoringCompatRepository)(nil)
+	_ OnCallAssignmentRepository     = (*stubMonitoringCompatRepository)(nil)
+	_ AlertIntegrationRepository     = (*stubMonitoringCompatRepository)(nil)
+	_ EventWriter                    = (*stubMonitoringEventWriter)(nil)
+)
 
 type stubMonitoringEventWriter struct{}
 
@@ -510,6 +551,26 @@ func TestServiceValidateWebhookToken(t *testing.T) {
 	}
 }
 
+func TestServiceValidateWebhookTokenUsesUnexpiredKeyring(t *testing.T) {
+	now := time.Now().UTC()
+	expiresAt := now.Add(time.Hour)
+	active, _ := keyring.NewKey("active", "active-webhook-token", now, nil)
+	previous, _ := keyring.NewKey("previous", "previous-webhook-token", now.Add(-time.Hour), &expiresAt)
+	keys, _ := keyring.New(active, []keyring.Key{previous})
+	service := &Service{enabled: true, webhookKeys: keys}
+
+	if err := service.ValidateWebhookToken("previous-webhook-token"); err != nil {
+		t.Fatalf("unexpired previous webhook token rejected: %v", err)
+	}
+	expired := now.Add(-time.Minute)
+	previous, _ = keyring.NewKey("previous", "previous-webhook-token", now.Add(-time.Hour), &expired)
+	keys, _ = keyring.New(active, []keyring.Key{previous})
+	service = &Service{enabled: true, webhookKeys: keys}
+	if err := service.ValidateWebhookToken("previous-webhook-token"); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("expired previous webhook token error = %v", err)
+	}
+}
+
 func TestServiceAcknowledgeEventPreservesSourceStatus(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &stubMonitoringCompatRepository{
@@ -530,10 +591,8 @@ func TestServiceAcknowledgeEventPreservesSourceStatus(t *testing.T) {
 			},
 		},
 	}
-	service := &Service{
-		repo:        repo,
-		permissions: monitoringCompatPermissions(appaccess.PermObserveAlertsAcknowledge),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveAlertsAcknowledge)
 
 	result, err := service.AcknowledgeEvent(context.Background(), monitoringCompatPrincipal(), "evt-1")
 	if err != nil {
@@ -572,11 +631,9 @@ func TestServiceIngestAlertmanagerIntegrationNormalizesPayload(t *testing.T) {
 			},
 		},
 	}
-	service := &Service{
-		repo:    repo,
-		events:  &stubMonitoringEventWriter{},
-		enabled: true,
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.enabled = true
 
 	count, err := service.IngestAlertIntegration(context.Background(), "integration:alertmanager", "secret-token", map[string]any{
 		"receiver": "soha",
@@ -641,11 +698,9 @@ func TestServiceIngestAlertmanagerIntegrationNormalizesPayload(t *testing.T) {
 }
 
 func TestServiceTestGrafanaIntegrationNormalizesPayload(t *testing.T) {
-	service := &Service{
-		repo:        &stubMonitoringCompatRepository{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsManage),
-		enabled:     true,
-	}
+	service := serviceWithCompatRepository(&stubMonitoringCompatRepository{})
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsManage)
+	service.enabled = true
 
 	result, err := service.TestAlertIntegration(context.Background(), monitoringCompatPrincipal(), domainalert.AlertIntegrationTestInput{
 		IntegrationType: "grafana_alerting_v1",
@@ -711,11 +766,9 @@ func TestServiceListRoutesUsesNotificationPolicies(t *testing.T) {
 			}, nil
 		},
 	}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveNotificationsView),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveNotificationsView)
 
 	items, err := service.ListRoutes(context.Background(), monitoringCompatPrincipal())
 	if err != nil {
@@ -762,11 +815,9 @@ func TestServiceCreateRouteMapsToCompatibilityNotificationPolicy(t *testing.T) {
 			}, nil
 		},
 	}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveNotificationsManage),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveNotificationsManage)
 
 	item, err := service.CreateRoute(context.Background(), monitoringCompatPrincipal(), domainalert.RouteInput{
 		ID:         "route-primary",
@@ -824,11 +875,9 @@ func TestServiceUpdateRouteMapsToCompatibilityNotificationPolicy(t *testing.T) {
 			}, nil
 		},
 	}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveNotificationsManage),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveNotificationsManage)
 
 	item, err := service.UpdateRoute(context.Background(), monitoringCompatPrincipal(), "route-legacy", domainalert.RouteInput{
 		Name:       "Legacy Route",
@@ -867,11 +916,9 @@ func TestServiceUpdateRouteMapsToCompatibilityNotificationPolicy(t *testing.T) {
 
 func TestServiceGetAlertIntegrationMapsNotFoundSentinel(t *testing.T) {
 	repo := &stubMonitoringCompatRepository{}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsView),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsView)
 
 	_, err := service.GetAlertIntegration(context.Background(), monitoringCompatPrincipal(), "integration-missing")
 	if err == nil {
@@ -884,12 +931,10 @@ func TestServiceGetAlertIntegrationMapsNotFoundSentinel(t *testing.T) {
 
 func TestServiceIngestAlertIntegrationMapsNotFoundSentinel(t *testing.T) {
 	repo := &stubMonitoringCompatRepository{}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsView),
-		enabled:     true,
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsView)
+	service.enabled = true
 
 	_, err := service.IngestAlertIntegration(context.Background(), "integration-missing", "token", map[string]any{"kind": "alertmanager"})
 	if err == nil {
@@ -913,11 +958,9 @@ func TestServiceResolveOnCallUsesBusinessLineAndRoleAssignment(t *testing.T) {
 			{ID: "oncall-rule:retail-dev", Name: "Retail critical dev", BusinessLineID: "retail", Severity: "critical", Role: "dev", TargetType: "schedule", TargetRef: "schedule:dev-retail", Priority: 200, Enabled: true},
 		},
 	}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveOncallView)
 
 	result, err := service.ResolveOnCall(context.Background(), monitoringCompatPrincipal(), domainalert.OnCallResolveInput{
 		BusinessLineID: "retail",
@@ -964,11 +1007,9 @@ func TestServiceResolveOnCallUsesRotationDateOverride(t *testing.T) {
 			{ID: "oncall-rule:retail-dev", Name: "Retail critical dev", BusinessLineID: "retail", Severity: "critical", Role: "dev", TargetType: "schedule", TargetRef: "schedule:dev-retail", Priority: 200, Enabled: true},
 		},
 	}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveOncallView)
 
 	result, err := service.ResolveOnCall(context.Background(), monitoringCompatPrincipal(), domainalert.OnCallResolveInput{
 		BusinessLineID: "retail",
@@ -1005,11 +1046,9 @@ func TestServiceResolveOnCallUsesIRMRoutingOrderAndGrouping(t *testing.T) {
 			{ID: "oncall-route:payments", Name: "Payments checkout", IntegrationType: "prometheus", Service: "checkout", Severity: "critical", TargetType: "schedule", TargetRef: "schedule:payments", RouteOrder: 10, GroupBy: []string{"alertName", "service", "clusterId"}, Priority: 100, Enabled: true},
 		},
 	}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveOncallView)
 
 	result, err := service.ResolveOnCall(context.Background(), monitoringCompatPrincipal(), domainalert.OnCallResolveInput{
 		IntegrationType: "prometheus",
@@ -1059,11 +1098,9 @@ func TestServiceResolveOnCallCanDeriveContextFromAlertEvent(t *testing.T) {
 			{ID: "oncall-rule:retail-qa", Name: "Retail QA business alerts", BusinessLineID: "retail", AlertCategory: "business", Service: "checkout", Role: "qa", TargetType: "schedule", TargetRef: "schedule:qa-retail", Priority: 200, Enabled: true},
 		},
 	}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveOncallView)
 
 	result, err := service.ResolveOnCall(context.Background(), monitoringCompatPrincipal(), domainalert.OnCallResolveInput{AlertID: "evt-qa"})
 	if err != nil {
@@ -1113,11 +1150,9 @@ func TestServiceListOnCallTasksBuildsTasksFromFiringAlertEvents(t *testing.T) {
 			{ID: "oncall-route:payment", Name: "Payment route", IntegrationType: "prometheus", Service: "checkout", TargetType: "schedule", TargetRef: "schedule:payment-primary", RouteOrder: 10, GroupBy: []string{"alertName", "service"}, Enabled: true},
 		},
 	}
-	service := &Service{
-		repo:        repo,
-		events:      &stubMonitoringEventWriter{},
-		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
-	}
+	service := serviceWithCompatRepository(repo)
+	service.events = &stubMonitoringEventWriter{}
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveOncallView)
 
 	tasks, err := service.ListOnCallTasks(context.Background(), monitoringCompatPrincipal(), 20)
 	if err != nil {

@@ -14,7 +14,7 @@ WEB_DIST_DIR ?= internal/staticassets/web/dist
 ROOT_COMPOSE = $(COMPOSE) -f $(ROOT_COMPOSE_FILE)
 IMAGE_BUILD_TAGS = -t $(IMAGE_REPOSITORY):$(IMAGE_TAG)
 
-.PHONY: help init init-go init-db dev dev-api dev-web build build-web clean deploy-image test
+.PHONY: help init init-go init-db dev dev-api dev-web build build-web clean deploy-image test lint complexity-check complexity-report
 
 help: ## Show available make targets.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,8 +34,7 @@ init-db: ## Start local PostgreSQL from deploy/docker-compose.yaml.
 			printf "."; \
 			sleep 2; \
 		done; \
-		printf " done\n"; \
-		$(ROOT_COMPOSE) exec -T postgres psql -U pgsql -d soha -c "ALTER USER pgsql WITH PASSWORD 'pgsql';" >/dev/null
+		printf " done\n"
 
 dev-api: ## Run the Go API server locally.
 	go run ./cmd/server
@@ -68,6 +67,16 @@ deploy-image: build-web ## Build the single-project application image.
 # Test
 test: ## Run Go tests.
 	go test ./...
+
+lint: ## Run the configured Go quality and security linters.
+	golangci-lint run ./...
+
+complexity-check: ## Reject production functions with cyclomatic complexity above 20.
+	@output="$$(GOWORK=off go run github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0 -over 20 internal 2>/dev/null | awk '!/_test\.go/')"; \
+		test -z "$$output" || { printf '%s\n' "$$output"; exit 1; }
+
+complexity-report: ## Report complexity, duplication, function length, and maintainability findings.
+	-golangci-lint run --enable-only cyclop,dupl,funlen,maintidx ./...
 
 # Clean
 clean: ## Remove local build outputs.

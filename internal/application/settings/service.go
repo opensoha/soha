@@ -9,17 +9,17 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
-	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"github.com/opensoha/soha/internal/platform/appconfig"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type Service struct {
 	store       domainsettings.Store
-	monitoring  cfgpkg.MonitoringConfig
+	monitoring  appconfig.Monitoring
 	permissions *appaccess.PermissionResolver
 }
 
-func New(store domainsettings.Store, monitoring cfgpkg.MonitoringConfig, permissions *appaccess.PermissionResolver) *Service {
+func New(store domainsettings.Store, monitoring appconfig.Monitoring, permissions *appaccess.PermissionResolver) *Service {
 	return &Service{store: store, monitoring: monitoring, permissions: permissions}
 }
 
@@ -30,7 +30,7 @@ func (s *Service) GetIdentitySettings(ctx context.Context, principal domainident
 	return s.identitySettings(ctx)
 }
 
-func (s *Service) UpdateLoginProvidersSettings(ctx context.Context, principal domainidentity.Principal, providers []domainsettings.LoginProviderSettings, defaultProviderID string) (domainsettings.IdentitySettings, error) {
+func (s *Service) UpdateLoginProvidersSettings(ctx context.Context, principal domainidentity.Principal, providers []domainsettings.LoginProviderSettings, defaultProviderID string, localPasswordEnabled bool) (domainsettings.IdentitySettings, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityManage); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
@@ -59,7 +59,10 @@ func (s *Service) UpdateLoginProvidersSettings(ctx context.Context, principal do
 	} else {
 		defaultProviderID = ""
 	}
-	if err := s.persistLoginProvidersSettings(ctx, principal.UserID, normalized, defaultProviderID); err != nil {
+	if !localPasswordEnabled && !slices.ContainsFunc(normalized, func(item domainsettings.LoginProviderSettings) bool { return item.Enabled }) {
+		return domainsettings.IdentitySettings{}, fmt.Errorf("%w: local password login cannot be disabled without an enabled external provider", apperrors.ErrInvalidArgument)
+	}
+	if err := s.persistLoginProvidersSettings(ctx, principal.UserID, normalized, defaultProviderID, localPasswordEnabled); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
 	return s.identitySettings(ctx)
@@ -201,6 +204,11 @@ func (s *Service) ResolveLoginProviders(ctx context.Context) ([]domainsettings.L
 	return append([]domainsettings.LoginProviderSettings(nil), settings.Providers...), settings.DefaultProviderID, nil
 }
 
+func (s *Service) LocalPasswordLoginEnabled(ctx context.Context) (bool, error) {
+	settings, err := s.identitySettings(ctx)
+	return settings.LocalPasswordLoginEnabled, err
+}
+
 func (s *Service) ResolveLoginProvider(ctx context.Context, providerID string) (domainsettings.LoginProviderSettings, error) {
 	providers, defaultProviderID, err := s.ResolveLoginProviders(ctx)
 	if err != nil {
@@ -228,7 +236,7 @@ func (s *Service) ResolveLoginProvider(ctx context.Context, providerID string) (
 }
 
 func (s *Service) identitySettings(ctx context.Context) (domainsettings.IdentitySettings, error) {
-	item := domainsettings.IdentitySettings{}
+	item := domainsettings.IdentitySettings{LocalPasswordLoginEnabled: true}
 	if s.store == nil {
 		return item, nil
 	}
@@ -237,6 +245,9 @@ func (s *Service) identitySettings(ctx context.Context) (domainsettings.Identity
 		return item, err
 	}
 	if ok {
+		if value, exists := rawProviders["localPasswordLoginEnabled"].(bool); exists {
+			item.LocalPasswordLoginEnabled = value
+		}
 		if value, ok := rawProviders["defaultProviderId"].(string); ok {
 			item.DefaultProviderID = strings.TrimSpace(value)
 		}
@@ -251,6 +262,7 @@ func (s *Service) identitySettings(ctx context.Context) (domainsettings.Identity
 					ID:                  settingStringValue(record["id"]),
 					Name:                settingStringValue(record["name"]),
 					Type:                settingStringValue(record["type"]),
+					IconURL:             settingStringValue(record["iconUrl"]),
 					Enabled:             boolValue(record["enabled"]),
 					ClientID:            settingStringValue(record["clientId"]),
 					ClientSecret:        settingStringValue(record["clientSecret"]),
@@ -266,6 +278,8 @@ func (s *Service) identitySettings(ctx context.Context) (domainsettings.Identity
 					UserIDField:         settingStringValue(record["userIdField"]),
 					UserNameField:       settingStringValue(record["userNameField"]),
 					EmailField:          settingStringValue(record["emailField"]),
+					PhoneField:          settingStringValue(record["phoneField"]),
+					AvatarField:         settingStringValue(record["avatarField"]),
 					RoleField:           settingStringValue(record["roleField"]),
 					OrganizationField:   settingStringValue(record["organizationField"]),
 					SyncRolesOnLogin:    boolValue(record["syncRolesOnLogin"]),
@@ -487,6 +501,7 @@ func loginProvidersToMaps(items []domainsettings.LoginProviderSettings) []map[st
 			"id":                  item.ID,
 			"name":                item.Name,
 			"type":                item.Type,
+			"iconUrl":             item.IconURL,
 			"enabled":             item.Enabled,
 			"clientId":            item.ClientID,
 			"clientSecret":        item.ClientSecret,
@@ -502,6 +517,8 @@ func loginProvidersToMaps(items []domainsettings.LoginProviderSettings) []map[st
 			"userIdField":         item.UserIDField,
 			"userNameField":       item.UserNameField,
 			"emailField":          item.EmailField,
+			"phoneField":          item.PhoneField,
+			"avatarField":         item.AvatarField,
 			"roleField":           item.RoleField,
 			"organizationField":   item.OrganizationField,
 			"syncRolesOnLogin":    item.SyncRolesOnLogin,
@@ -516,10 +533,11 @@ func loginProvidersToMaps(items []domainsettings.LoginProviderSettings) []map[st
 	return out
 }
 
-func (s *Service) persistLoginProvidersSettings(ctx context.Context, updatedBy string, providers []domainsettings.LoginProviderSettings, defaultProviderID string) error {
+func (s *Service) persistLoginProvidersSettings(ctx context.Context, updatedBy string, providers []domainsettings.LoginProviderSettings, defaultProviderID string, localPasswordEnabled bool) error {
 	value := map[string]any{
-		"defaultProviderId": strings.TrimSpace(defaultProviderID),
-		"providers":         loginProvidersToMaps(providers),
+		"defaultProviderId":         strings.TrimSpace(defaultProviderID),
+		"providers":                 loginProvidersToMaps(providers),
+		"localPasswordLoginEnabled": localPasswordEnabled,
 	}
 	return s.store.Upsert(ctx, domainsettings.IdentityLoginProvidersSettingKey, "identity", value, updatedBy)
 }
@@ -545,6 +563,7 @@ func normalizeLoginProvider(input domainsettings.LoginProviderSettings, index in
 	input.ID = strings.TrimSpace(input.ID)
 	input.Name = strings.TrimSpace(input.Name)
 	input.Type = normalizeLoginProviderType(input.Type)
+	input.IconURL = strings.TrimSpace(input.IconURL)
 	input.ClientID = strings.TrimSpace(input.ClientID)
 	input.ClientSecret = strings.TrimSpace(input.ClientSecret)
 	input.Issuer = strings.TrimSpace(input.Issuer)
@@ -560,6 +579,8 @@ func normalizeLoginProvider(input domainsettings.LoginProviderSettings, index in
 	input.UserIDField = strings.TrimSpace(input.UserIDField)
 	input.UserNameField = strings.TrimSpace(input.UserNameField)
 	input.EmailField = strings.TrimSpace(input.EmailField)
+	input.PhoneField = strings.TrimSpace(input.PhoneField)
+	input.AvatarField = strings.TrimSpace(input.AvatarField)
 	input.RoleField = strings.TrimSpace(input.RoleField)
 	input.OrganizationField = strings.TrimSpace(input.OrganizationField)
 	input.RoleSyncMode = normalizeLoginSyncMode(input.RoleSyncMode)
@@ -621,54 +642,81 @@ func validateLoginProvider(input domainsettings.LoginProviderSettings) error {
 	if input.Name == "" {
 		return fmt.Errorf("%w: login provider name is required", apperrors.ErrInvalidArgument)
 	}
+	if !input.Enabled {
+		return validateLoginProviderType(input.Type)
+	}
 	switch input.Type {
 	case "oidc":
-		if input.Enabled {
-			switch {
-			case input.Issuer == "":
-				return fmt.Errorf("%w: oidc issuer is required", apperrors.ErrInvalidArgument)
-			case input.ClientID == "":
-				return fmt.Errorf("%w: oidc client id is required", apperrors.ErrInvalidArgument)
-			case input.ClientSecret == "":
-				return fmt.Errorf("%w: oidc client secret is required", apperrors.ErrInvalidArgument)
-			case input.RedirectURL == "":
-				return fmt.Errorf("%w: oidc redirect url is required", apperrors.ErrInvalidArgument)
-			case input.FrontendRedirectURL == "":
-				return fmt.Errorf("%w: oidc frontend redirect url is required", apperrors.ErrInvalidArgument)
-			}
-		}
+		return validateOIDCLoginProvider(input)
 	case "oauth2", "feishu", "dingtalk", "wecom":
-		if input.Enabled {
-			switch {
-			case input.AuthorizeURL == "":
-				return fmt.Errorf("%w: login authorize url is required", apperrors.ErrInvalidArgument)
-			case input.TokenURL == "":
-				return fmt.Errorf("%w: login token url is required", apperrors.ErrInvalidArgument)
-			case input.ClientID == "":
-				return fmt.Errorf("%w: login client id is required", apperrors.ErrInvalidArgument)
-			case input.ClientSecret == "":
-				return fmt.Errorf("%w: login client secret is required", apperrors.ErrInvalidArgument)
-			case input.RedirectURL == "":
-				return fmt.Errorf("%w: login redirect url is required", apperrors.ErrInvalidArgument)
-			case input.FrontendRedirectURL == "":
-				return fmt.Errorf("%w: login frontend redirect url is required", apperrors.ErrInvalidArgument)
-			}
-		}
+		return validateOAuth2LoginProvider(input)
 	case "saml":
-		if input.Enabled {
-			switch {
-			case input.MetadataURL == "" && input.Certificate == "":
-				return fmt.Errorf("%w: saml metadata url or certificate is required", apperrors.ErrInvalidArgument)
-			case input.RedirectURL == "":
-				return fmt.Errorf("%w: saml acs url is required", apperrors.ErrInvalidArgument)
-			case input.FrontendRedirectURL == "":
-				return fmt.Errorf("%w: saml frontend redirect url is required", apperrors.ErrInvalidArgument)
-			}
-		}
+		return validateSAMLLoginProvider(input)
 	default:
-		return fmt.Errorf("%w: unsupported login provider type %s", apperrors.ErrInvalidArgument, input.Type)
+		return unsupportedLoginProviderType(input.Type)
 	}
-	return nil
+}
+
+func validateLoginProviderType(providerType string) error {
+	switch providerType {
+	case "oidc", "oauth2", "feishu", "dingtalk", "wecom", "saml":
+		return nil
+	default:
+		return unsupportedLoginProviderType(providerType)
+	}
+}
+
+func validateOIDCLoginProvider(input domainsettings.LoginProviderSettings) error {
+	switch {
+	case input.Issuer == "":
+		return fmt.Errorf("%w: oidc issuer is required", apperrors.ErrInvalidArgument)
+	case input.ClientID == "":
+		return fmt.Errorf("%w: oidc client id is required", apperrors.ErrInvalidArgument)
+	case input.ClientSecret == "":
+		return fmt.Errorf("%w: oidc client secret is required", apperrors.ErrInvalidArgument)
+	case input.RedirectURL == "":
+		return fmt.Errorf("%w: oidc redirect url is required", apperrors.ErrInvalidArgument)
+	case input.FrontendRedirectURL == "":
+		return fmt.Errorf("%w: oidc frontend redirect url is required", apperrors.ErrInvalidArgument)
+	default:
+		return nil
+	}
+}
+
+func validateOAuth2LoginProvider(input domainsettings.LoginProviderSettings) error {
+	switch {
+	case input.AuthorizeURL == "":
+		return fmt.Errorf("%w: login authorize url is required", apperrors.ErrInvalidArgument)
+	case input.TokenURL == "":
+		return fmt.Errorf("%w: login token url is required", apperrors.ErrInvalidArgument)
+	case input.ClientID == "":
+		return fmt.Errorf("%w: login client id is required", apperrors.ErrInvalidArgument)
+	case input.ClientSecret == "":
+		return fmt.Errorf("%w: login client secret is required", apperrors.ErrInvalidArgument)
+	case input.RedirectURL == "":
+		return fmt.Errorf("%w: login redirect url is required", apperrors.ErrInvalidArgument)
+	case input.FrontendRedirectURL == "":
+		return fmt.Errorf("%w: login frontend redirect url is required", apperrors.ErrInvalidArgument)
+	default:
+		return nil
+	}
+}
+
+func validateSAMLLoginProvider(input domainsettings.LoginProviderSettings) error {
+	switch {
+	case input.MetadataURL == "" && input.Certificate == "":
+		return fmt.Errorf("%w: saml metadata url or certificate is required", apperrors.ErrInvalidArgument)
+	case input.RedirectURL == "":
+		return fmt.Errorf("%w: saml acs url is required", apperrors.ErrInvalidArgument)
+	case input.FrontendRedirectURL == "":
+		return fmt.Errorf("%w: saml frontend redirect url is required", apperrors.ErrInvalidArgument)
+	default:
+		return nil
+	}
+}
+
+func unsupportedLoginProviderType(providerType string) error {
+	return fmt.Errorf("%w: unsupported login provider type %s", apperrors.ErrInvalidArgument, providerType)
 }
 
 func defaultScopesForProviderType(providerType string) []string {
@@ -792,15 +840,6 @@ func intValue(value any) (int, bool) {
 	default:
 		return 0, false
 	}
-}
-
-func ensureAdmin(principal domainidentity.Principal) error {
-	for _, role := range principal.Roles {
-		if role == "admin" {
-			return nil
-		}
-	}
-	return fmt.Errorf("%w: admin role required", apperrors.ErrAccessDenied)
 }
 
 func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {

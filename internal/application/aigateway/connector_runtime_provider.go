@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -100,14 +101,19 @@ func DiscoverConnectorRuntime(ctx context.Context, endpoint string, client *http
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			return nil, fmt.Errorf("close connector runtime manifest response: %w", closeErr)
+		}
 		return nil, fmt.Errorf("%w: connector runtime manifest returned %d: %s", apperrors.ErrInvalidArgument, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var manifest connectorRuntimeManifest
 	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil {
-		return nil, fmt.Errorf("%w: invalid connector runtime manifest: %v", apperrors.ErrInvalidArgument, err)
+		return nil, fmt.Errorf("%w: invalid connector runtime manifest: %v", apperrors.ErrInvalidArgument, errors.Join(err, resp.Body.Close()))
+	}
+	if err := resp.Body.Close(); err != nil {
+		return nil, fmt.Errorf("close connector runtime manifest response: %w", err)
 	}
 	provider.connectorID = firstNonEmpty(provider.connectorID, manifest.ID)
 	if provider.pluginID == "" && provider.connectorID != "" {
@@ -177,10 +183,12 @@ func (p *connectorRuntimeProvider) InvokeTool(ctx context.Context, _ domainident
 	if err != nil {
 		return nil, p.relatedIDs(tool.Name), err
 	}
-	defer resp.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, p.relatedIDs(tool.Name), err
+		return nil, p.relatedIDs(tool.Name), errors.Join(err, resp.Body.Close())
+	}
+	if err := resp.Body.Close(); err != nil {
+		return nil, p.relatedIDs(tool.Name), fmt.Errorf("close connector action response: %w", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, p.relatedIDs(tool.Name), fmt.Errorf("%w: connector action returned %d: %s", apperrors.ErrInvalidArgument, resp.StatusCode, strings.TrimSpace(string(payload)))

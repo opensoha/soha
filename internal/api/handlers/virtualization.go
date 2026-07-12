@@ -3,10 +3,11 @@ package handlers
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -19,57 +20,118 @@ import (
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
+	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
-	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
 )
 
-type VirtualizationService interface {
+type VirtualizationOverviewService interface {
 	Overview(context.Context, domainidentity.Principal) (appvirtualization.Overview, error)
+}
+
+type VirtualizationConnectionService interface {
 	ListConnections(context.Context, domainidentity.Principal, domainvirtualization.ConnectionFilter) ([]domainvirtualization.Connection, error)
 	CreateConnection(context.Context, domainidentity.Principal, appvirtualization.ConnectionInput) (domainvirtualization.Connection, error)
 	UpdateConnection(context.Context, domainidentity.Principal, string, appvirtualization.ConnectionInput) (domainvirtualization.Connection, error)
 	GetConnectionDeleteDependencies(context.Context, domainidentity.Principal, string) (domainvirtualization.ConnectionDeleteDependencies, error)
 	DeleteConnection(context.Context, domainidentity.Principal, string, appvirtualization.DeleteConnectionOptions) error
 	TestConnection(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
+}
+
+type VirtualizationSyncService interface {
 	SyncConnection(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
 	SyncAll(context.Context, domainidentity.Principal) (domainvirtualization.Task, error)
+}
+
+type VirtualizationVMService interface {
 	ListVMs(context.Context, domainidentity.Principal, domainvirtualization.VMFilter) ([]domainvirtualization.VM, error)
 	ListVMsPage(context.Context, domainidentity.Principal, domainvirtualization.VMFilter) (domainvirtualization.Page[domainvirtualization.VM], error)
 	GetVM(context.Context, domainidentity.Principal, string) (domainvirtualization.VM, error)
 	GetVMDetail(context.Context, domainidentity.Principal, string) (appvirtualization.VMDetail, error)
 	CreateVM(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainvirtualization.Task, error)
 	VMAction(context.Context, domainidentity.Principal, string, appvirtualization.VMActionInput) (domainvirtualization.Task, error)
+}
+
+type VirtualizationImageService interface {
 	ListImages(context.Context, domainidentity.Principal, domainvirtualization.ImageFilter) ([]domainvirtualization.Image, error)
 	ListImagesPage(context.Context, domainidentity.Principal, domainvirtualization.ImageFilter) (domainvirtualization.Page[domainvirtualization.Image], error)
 	CreateImage(context.Context, domainidentity.Principal, appvirtualization.ImageInput) (domainvirtualization.Image, error)
 	UpdateImage(context.Context, domainidentity.Principal, string, appvirtualization.ImageInput) (domainvirtualization.Image, error)
 	DeleteImage(context.Context, domainidentity.Principal, string) error
+}
+
+type VirtualizationFlavorService interface {
 	ListFlavors(context.Context, domainidentity.Principal, domainvirtualization.FlavorFilter) ([]domainvirtualization.Flavor, error)
 	ListFlavorsPage(context.Context, domainidentity.Principal, domainvirtualization.FlavorFilter) (domainvirtualization.Page[domainvirtualization.Flavor], error)
 	CreateFlavor(context.Context, domainidentity.Principal, appvirtualization.FlavorInput) (domainvirtualization.Flavor, error)
 	UpdateFlavor(context.Context, domainidentity.Principal, string, appvirtualization.FlavorInput) (domainvirtualization.Flavor, error)
 	DeleteFlavor(context.Context, domainidentity.Principal, string) error
+}
+
+type VirtualizationOperationService interface {
 	ListOperations(context.Context, domainidentity.Principal, domainvirtualization.TaskFilter) ([]domainvirtualization.Task, error)
 	ListOperationsPage(context.Context, domainidentity.Principal, domainvirtualization.TaskFilter) (domainvirtualization.Page[domainvirtualization.Task], error)
 	GetOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
 	ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domainvirtualization.TaskLog, error)
 	CancelOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
 	RetryOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
-	GetVMMetrics(context.Context, domainidentity.Principal, string, int, int) (infravirtualization.VMMetricsResult, error)
-	GetConsoleURL(context.Context, domainidentity.Principal, string) (infravirtualization.ConsoleURLResult, error)
+}
+
+type VirtualizationRuntimeService interface {
+	GetVMMetrics(context.Context, domainidentity.Principal, string, int, int) (domainvirtualization.VMMetricsResult, error)
+	GetConsoleURL(context.Context, domainidentity.Principal, string) (consoleport.ConsoleURLResult, error)
+}
+
+type VirtualizationService interface {
+	VirtualizationOverviewService
+	VirtualizationConnectionService
+	VirtualizationSyncService
+	VirtualizationVMService
+	VirtualizationImageService
+	VirtualizationFlavorService
+	VirtualizationOperationService
+	VirtualizationRuntimeService
+}
+
+type VirtualizationServices struct {
+	Overview    VirtualizationOverviewService
+	Connections VirtualizationConnectionService
+	Sync        VirtualizationSyncService
+	VMs         VirtualizationVMService
+	Images      VirtualizationImageService
+	Flavors     VirtualizationFlavorService
+	Operations  VirtualizationOperationService
+	Runtime     VirtualizationRuntimeService
 }
 
 type VirtualizationHandler struct {
-	service VirtualizationService
+	overview    VirtualizationOverviewService
+	connections VirtualizationConnectionService
+	sync        VirtualizationSyncService
+	vms         VirtualizationVMService
+	images      VirtualizationImageService
+	flavors     VirtualizationFlavorService
+	operations  VirtualizationOperationService
+	runtime     VirtualizationRuntimeService
 }
 
 func NewVirtualizationHandler(service VirtualizationService) *VirtualizationHandler {
-	return &VirtualizationHandler{service: service}
+	return NewVirtualizationHandlerWithServices(VirtualizationServices{
+		Overview: service, Connections: service, Sync: service, VMs: service,
+		Images: service, Flavors: service, Operations: service, Runtime: service,
+	})
+}
+
+func NewVirtualizationHandlerWithServices(services VirtualizationServices) *VirtualizationHandler {
+	return &VirtualizationHandler{
+		overview: services.Overview, connections: services.Connections, sync: services.Sync,
+		vms: services.VMs, images: services.Images, flavors: services.Flavors,
+		operations: services.Operations, runtime: services.Runtime,
+	}
 }
 
 func (h *VirtualizationHandler) Overview(c *gin.Context) {
-	item, err := h.service.Overview(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
+	item, err := h.overview.Overview(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -78,7 +140,7 @@ func (h *VirtualizationHandler) Overview(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) ListConnections(c *gin.Context) {
-	items, err := h.service.ListConnections(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domainvirtualization.ConnectionFilter{
+	items, err := h.connections.ListConnections(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domainvirtualization.ConnectionFilter{
 		Provider:            c.Query("provider"),
 		KubernetesClusterID: c.Query("kubernetesClusterId"),
 		Limit:               queryLimit(c, 100),
@@ -96,7 +158,7 @@ func (h *VirtualizationHandler) CreateConnection(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtualization connection payload")
 		return
 	}
-	item, err := h.service.CreateConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	item, err := h.connections.CreateConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -110,7 +172,7 @@ func (h *VirtualizationHandler) UpdateConnection(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtualization connection payload")
 		return
 	}
-	item, err := h.service.UpdateConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
+	item, err := h.connections.UpdateConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -120,7 +182,7 @@ func (h *VirtualizationHandler) UpdateConnection(c *gin.Context) {
 
 func (h *VirtualizationHandler) DeleteConnection(c *gin.Context) {
 	opts := appvirtualization.DeleteConnectionOptions{Force: strings.EqualFold(c.Query("force"), "true") || c.Query("force") == "1"}
-	if err := h.service.DeleteConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), opts); err != nil {
+	if err := h.connections.DeleteConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), opts); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -128,7 +190,7 @@ func (h *VirtualizationHandler) DeleteConnection(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) GetConnectionDeleteDependencies(c *gin.Context) {
-	deps, err := h.service.GetConnectionDeleteDependencies(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	deps, err := h.connections.GetConnectionDeleteDependencies(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -137,7 +199,7 @@ func (h *VirtualizationHandler) GetConnectionDeleteDependencies(c *gin.Context) 
 }
 
 func (h *VirtualizationHandler) TestConnection(c *gin.Context) {
-	task, err := h.service.TestConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	task, err := h.connections.TestConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -146,7 +208,7 @@ func (h *VirtualizationHandler) TestConnection(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) SyncConnection(c *gin.Context) {
-	task, err := h.service.SyncConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	task, err := h.sync.SyncConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -155,7 +217,7 @@ func (h *VirtualizationHandler) SyncConnection(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) SyncAll(c *gin.Context) {
-	task, err := h.service.SyncAll(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
+	task, err := h.sync.SyncAll(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -175,7 +237,7 @@ func (h *VirtualizationHandler) ListVMs(c *gin.Context) {
 		Limit:        queryLimit(c, 100),
 	}
 	if wantsPage(c) {
-		page, err := h.service.ListVMsPage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
+		page, err := h.vms.ListVMsPage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
 		if err != nil {
 			writeError(c, err)
 			return
@@ -188,7 +250,7 @@ func (h *VirtualizationHandler) ListVMs(c *gin.Context) {
 		})
 		return
 	}
-	items, err := h.service.ListVMs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
+	items, err := h.vms.ListVMs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -202,7 +264,7 @@ func (h *VirtualizationHandler) CreateVM(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtual machine payload")
 		return
 	}
-	task, err := h.service.CreateVM(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	task, err := h.vms.CreateVM(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -211,7 +273,7 @@ func (h *VirtualizationHandler) CreateVM(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) GetVM(c *gin.Context) {
-	item, err := h.service.GetVM(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	item, err := h.vms.GetVM(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -220,7 +282,7 @@ func (h *VirtualizationHandler) GetVM(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) GetVMDetail(c *gin.Context) {
-	item, err := h.service.GetVMDetail(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	item, err := h.vms.GetVMDetail(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -234,7 +296,7 @@ func (h *VirtualizationHandler) VMAction(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtual machine action payload")
 		return
 	}
-	task, err := h.service.VMAction(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
+	task, err := h.vms.VMAction(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -252,26 +314,9 @@ func (h *VirtualizationHandler) ListImages(c *gin.Context) {
 		PageSize:     queryInt(c, "pageSize", 0),
 		Limit:        queryLimit(c, 100),
 	}
-	if wantsPage(c) {
-		page, err := h.service.ListImagesPage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
-		if err != nil {
-			writeError(c, err)
-			return
-		}
-		apiresponse.Item(c, http.StatusOK, gin.H{
-			"items":    mapImages(page.Items),
-			"total":    page.Total,
-			"page":     page.Page,
-			"pageSize": page.PageSize,
-		})
-		return
-	}
-	items, err := h.service.ListImages(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Items(c, http.StatusOK, mapImages(items))
+	listVirtualizationResources(c, virtualizationListSpec[domainvirtualization.Image, domainvirtualization.ImageFilter]{
+		filter: filter, list: h.images.ListImages, listPage: h.images.ListImagesPage, mapItems: mapImageItems,
+	})
 }
 
 func (h *VirtualizationHandler) CreateImage(c *gin.Context) {
@@ -280,7 +325,7 @@ func (h *VirtualizationHandler) CreateImage(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtualization image payload")
 		return
 	}
-	item, err := h.service.CreateImage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	item, err := h.images.CreateImage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -294,7 +339,7 @@ func (h *VirtualizationHandler) UpdateImage(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtualization image payload")
 		return
 	}
-	item, err := h.service.UpdateImage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
+	item, err := h.images.UpdateImage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -303,7 +348,7 @@ func (h *VirtualizationHandler) UpdateImage(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) DeleteImage(c *gin.Context) {
-	if err := h.service.DeleteImage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
+	if err := h.images.DeleteImage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -320,27 +365,42 @@ func (h *VirtualizationHandler) ListFlavors(c *gin.Context) {
 		PageSize:     queryInt(c, "pageSize", 0),
 		Limit:        queryLimit(c, 100),
 	}
+	listVirtualizationResources(c, virtualizationListSpec[domainvirtualization.Flavor, domainvirtualization.FlavorFilter]{
+		filter: filter, list: h.flavors.ListFlavors, listPage: h.flavors.ListFlavorsPage, mapItems: mapFlavorItems,
+	})
+}
+
+type virtualizationListSpec[T any, F any] struct {
+	filter   F
+	list     func(context.Context, domainidentity.Principal, F) ([]T, error)
+	listPage func(context.Context, domainidentity.Principal, F) (domainvirtualization.Page[T], error)
+	mapItems func([]T) any
+}
+
+func listVirtualizationResources[T any, F any](c *gin.Context, spec virtualizationListSpec[T, F]) {
+	principal := apiMiddleware.PrincipalFromContext(c)
 	if wantsPage(c) {
-		page, err := h.service.ListFlavorsPage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
+		page, err := spec.listPage(c.Request.Context(), principal, spec.filter)
 		if err != nil {
 			writeError(c, err)
 			return
 		}
 		apiresponse.Item(c, http.StatusOK, gin.H{
-			"items":    mapFlavors(page.Items),
-			"total":    page.Total,
-			"page":     page.Page,
-			"pageSize": page.PageSize,
+			"items": spec.mapItems(page.Items), "total": page.Total,
+			"page": page.Page, "pageSize": page.PageSize,
 		})
 		return
 	}
-	items, err := h.service.ListFlavors(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
+	items, err := spec.list(c.Request.Context(), principal, spec.filter)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, mapFlavors(items))
+	apiresponse.Items(c, http.StatusOK, spec.mapItems(items))
 }
+
+func mapImageItems(items []domainvirtualization.Image) any   { return mapImages(items) }
+func mapFlavorItems(items []domainvirtualization.Flavor) any { return mapFlavors(items) }
 
 func (h *VirtualizationHandler) CreateFlavor(c *gin.Context) {
 	var req appvirtualization.FlavorInput
@@ -348,7 +408,7 @@ func (h *VirtualizationHandler) CreateFlavor(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtualization flavor payload")
 		return
 	}
-	item, err := h.service.CreateFlavor(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	item, err := h.flavors.CreateFlavor(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -362,7 +422,7 @@ func (h *VirtualizationHandler) UpdateFlavor(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtualization flavor payload")
 		return
 	}
-	item, err := h.service.UpdateFlavor(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
+	item, err := h.flavors.UpdateFlavor(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -371,7 +431,7 @@ func (h *VirtualizationHandler) UpdateFlavor(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) DeleteFlavor(c *gin.Context) {
-	if err := h.service.DeleteFlavor(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
+	if err := h.flavors.DeleteFlavor(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -396,7 +456,7 @@ func (h *VirtualizationHandler) ListOperations(c *gin.Context) {
 		Limit:        queryLimit(c, 100),
 	}
 	if wantsPage(c) {
-		page, err := h.service.ListOperationsPage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
+		page, err := h.operations.ListOperationsPage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
 		if err != nil {
 			writeError(c, err)
 			return
@@ -409,7 +469,7 @@ func (h *VirtualizationHandler) ListOperations(c *gin.Context) {
 		})
 		return
 	}
-	items, err := h.service.ListOperations(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
+	items, err := h.operations.ListOperations(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -418,7 +478,7 @@ func (h *VirtualizationHandler) ListOperations(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) GetOperation(c *gin.Context) {
-	item, err := h.service.GetOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"))
+	item, err := h.operations.GetOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -427,7 +487,7 @@ func (h *VirtualizationHandler) GetOperation(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) ListOperationLogs(c *gin.Context) {
-	items, err := h.service.ListOperationLogs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"), queryLimit(c, 200))
+	items, err := h.operations.ListOperationLogs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"), queryLimit(c, 200))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -436,7 +496,7 @@ func (h *VirtualizationHandler) ListOperationLogs(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) CancelOperation(c *gin.Context) {
-	task, err := h.service.CancelOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"))
+	task, err := h.operations.CancelOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -445,7 +505,7 @@ func (h *VirtualizationHandler) CancelOperation(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) RetryOperation(c *gin.Context) {
-	task, err := h.service.RetryOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"))
+	task, err := h.operations.RetryOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -571,10 +631,8 @@ func sanitizeVirtualizationConnectionConfig(provider string, config map[string]a
 	if out == nil {
 		return nil
 	}
-	tokenConfigured := false
-	if strings.TrimSpace(stringValue(out, "prometheusBearerToken")) != "" {
-		tokenConfigured = true
-	}
+	tokenConfigured := strings.TrimSpace(stringValue(out, "prometheusBearerToken")) != ""
+
 	delete(out, "prometheusBearerToken")
 	if strings.EqualFold(provider, "kubevirt") && tokenConfigured {
 		out["prometheusBearerTokenConfigured"] = true
@@ -695,8 +753,9 @@ func mapVMDetail(item appvirtualization.VMDetail) gin.H {
 		mapped["logs"] = operation.Logs
 		operations = append(operations, mapped)
 	}
+	vm := mapVM(item.VM)
 	out := gin.H{
-		"vm":          mapVM(item.VM),
+		"vm":          vm,
 		"providerRaw": item.VM.Raw,
 		"operations":  operations,
 		"logs":        item.Logs,
@@ -706,12 +765,11 @@ func mapVMDetail(item appvirtualization.VMDetail) gin.H {
 	}
 	if item.Image != nil {
 		out["image"] = mapImage(*item.Image)
-		out["vm"].(gin.H)["bootImageName"] = item.Image.Name
-		out["vm"].(gin.H)["bootImageId"] = item.Image.ID
+		vm["bootImageName"] = item.Image.Name
+		vm["bootImageId"] = item.Image.ID
 	}
 	if item.Flavor != nil {
 		out["flavor"] = mapFlavor(*item.Flavor)
-		vm := out["vm"].(gin.H)
 		vm["flavorName"] = item.Flavor.Name
 		vm["flavorId"] = item.Flavor.ID
 		vm["cpu"] = item.Flavor.CPUCores
@@ -944,9 +1002,14 @@ func (h *VirtualizationHandler) StreamTaskUpdates(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	taskID := c.Param("taskID")
 
-	task, err := h.service.GetOperation(c.Request.Context(), principal, taskID)
+	task, err := h.operations.GetOperation(c.Request.Context(), principal, taskID)
 	if err != nil {
 		writeError(c, err)
+		return
+	}
+	if err := clearResponseWriteDeadline(c); err != nil {
+		_ = c.Error(err)
+		apiresponse.Error(c, http.StatusInternalServerError, "stream_unavailable", "streaming response is unavailable")
 		return
 	}
 
@@ -957,7 +1020,9 @@ func (h *VirtualizationHandler) StreamTaskUpdates(c *gin.Context) {
 
 	writeTaskEvent := func(task domainvirtualization.Task) bool {
 		data, _ := json.Marshal(mapOperation(task))
-		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+		if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
+			return true
+		}
 		c.Writer.Flush()
 		return taskTerminal(task.Status)
 	}
@@ -974,10 +1039,10 @@ func (h *VirtualizationHandler) StreamTaskUpdates(c *gin.Context) {
 		case <-c.Request.Context().Done():
 			return
 		case <-ticker.C:
-			task, err := h.service.GetOperation(c.Request.Context(), principal, taskID)
+			task, err := h.operations.GetOperation(c.Request.Context(), principal, taskID)
 			if err != nil {
 				data, _ := json.Marshal(gin.H{"error": streamExitMessage(streamExitKindTaskUpdates)})
-				fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", data)
+				_, _ = fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", data)
 				c.Writer.Flush()
 				return
 			}
@@ -996,7 +1061,7 @@ func (h *VirtualizationHandler) GetVMMetrics(c *gin.Context) {
 	rangeMinutes, _ := strconv.Atoi(c.DefaultQuery("rangeMinutes", "60"))
 	stepSeconds, _ := strconv.Atoi(c.DefaultQuery("stepSeconds", "60"))
 
-	result, err := h.service.GetVMMetrics(
+	result, err := h.runtime.GetVMMetrics(
 		c.Request.Context(),
 		apiMiddleware.PrincipalFromContext(c),
 		c.Param("id"),
@@ -1013,7 +1078,7 @@ func (h *VirtualizationHandler) GetVMMetrics(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) GetConsoleURL(c *gin.Context) {
-	result, err := h.service.GetConsoleURL(
+	result, err := h.runtime.GetConsoleURL(
 		c.Request.Context(),
 		apiMiddleware.PrincipalFromContext(c),
 		c.Param("id"),
@@ -1033,41 +1098,11 @@ var vncUpgrader = websocket.Upgrader{
 	},
 }
 
-func allowWebSocketOrigin(r *http.Request) bool {
-	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	if origin == "" {
-		return true
-	}
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host == "" {
-		return false
-	}
-	requestHost := hostName(r.Host)
-	originHost := hostName(parsed.Host)
-	if strings.EqualFold(originHost, requestHost) {
-		return true
-	}
-	return isLocalHost(originHost) && isLocalHost(requestHost)
-}
-
-func hostName(hostport string) string {
-	host, _, err := net.SplitHostPort(hostport)
-	if err == nil {
-		return strings.Trim(host, "[]")
-	}
-	return strings.Trim(hostport, "[]")
-}
-
-func isLocalHost(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	return host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasSuffix(host, ".localhost")
-}
-
 func (h *VirtualizationHandler) StreamVMConsole(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	vmID := c.Param("id")
 
-	consoleResult, err := h.service.GetConsoleURL(c.Request.Context(), principal, vmID)
+	consoleResult, err := h.runtime.GetConsoleURL(c.Request.Context(), principal, vmID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -1082,18 +1117,19 @@ func (h *VirtualizationHandler) StreamVMConsole(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
+	configureWebSocketReadLimit(conn)
 
 	if consoleResult.Type == "novnc" && consoleResult.Token != "" {
 		proxyPVEVNC(c.Request.Context(), conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult.Token, consoleResult)
 	} else if consoleResult.Type == "vnc" {
 		proxyKubeVirtVNC(c.Request.Context(), conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult)
 	} else {
-		conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"VNC proxy not fully implemented for this provider"}`))
+		_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"VNC proxy not fully implemented for this provider"}`))
 	}
 }
 
-func proxyPVEVNC(ctx context.Context, clientConn *websocket.Conn, backendURL, ticket string, consoleResult infravirtualization.ConsoleURLResult) {
+func proxyPVEVNC(ctx context.Context, clientConn *websocket.Conn, backendURL, ticket string, consoleResult consoleport.ConsoleURLResult) {
 	parsedURL, err := url.Parse(backendURL)
 	if err != nil {
 		writeWebsocketProxyError(clientConn, "invalid backend url")
@@ -1113,17 +1149,25 @@ func proxyPVEVNC(ctx context.Context, clientConn *websocket.Conn, backendURL, ti
 	header := http.Header{}
 	header.Set("Cookie", "PVEAuthCookie="+ticket)
 
-	backendConn, _, err := backendWebSocketDialer(consoleResult).DialContext(ctx, parsedURL.String(), header)
+	dialer, err := backendWebSocketDialer(consoleResult)
+	if err != nil {
+		writeWebsocketProxyError(clientConn, "invalid backend TLS configuration")
+		return
+	}
+	backendConn, response, err := dialer.DialContext(ctx, parsedURL.String(), header)
+	if response != nil {
+		defer func() { _ = response.Body.Close() }()
+	}
 	if err != nil {
 		writeWebsocketProxyError(clientConn, "backend connection failed")
 		return
 	}
-	defer backendConn.Close()
+	defer func() { _ = backendConn.Close() }()
 
 	proxyWebsocket(ctx, clientConn, backendConn)
 }
 
-func proxyKubeVirtVNC(ctx context.Context, clientConn *websocket.Conn, backendURL string, consoleResult infravirtualization.ConsoleURLResult) {
+func proxyKubeVirtVNC(ctx context.Context, clientConn *websocket.Conn, backendURL string, consoleResult consoleport.ConsoleURLResult) {
 	parsedURL, err := url.Parse(backendURL)
 	if err != nil {
 		writeWebsocketProxyError(clientConn, "invalid backend url")
@@ -1133,13 +1177,21 @@ func proxyKubeVirtVNC(ctx context.Context, clientConn *websocket.Conn, backendUR
 	if strings.HasPrefix(backendURL, "http://") {
 		parsedURL.Scheme = "ws"
 	}
-	headers := consoleResult.BackendHeaders.Clone()
-	backendConn, _, err := backendWebSocketDialer(consoleResult).DialContext(ctx, parsedURL.String(), headers)
+	headers := consoleBackendHeaders(consoleResult)
+	dialer, err := backendWebSocketDialer(consoleResult)
+	if err != nil {
+		writeWebsocketProxyError(clientConn, "invalid kubevirt backend TLS configuration")
+		return
+	}
+	backendConn, response, err := dialer.DialContext(ctx, parsedURL.String(), headers)
+	if response != nil {
+		defer func() { _ = response.Body.Close() }()
+	}
 	if err != nil {
 		writeWebsocketProxyError(clientConn, "kubevirt backend connection failed")
 		return
 	}
-	defer backendConn.Close()
+	defer func() { _ = backendConn.Close() }()
 	proxyWebsocket(ctx, clientConn, backendConn)
 }
 
@@ -1148,18 +1200,54 @@ func writeWebsocketProxyError(conn *websocket.Conn, message string) {
 	_ = conn.WriteMessage(websocket.TextMessage, payload)
 }
 
-func backendWebSocketDialer(consoleResult infravirtualization.ConsoleURLResult) *websocket.Dialer {
+func backendWebSocketDialer(consoleResult consoleport.ConsoleURLResult) (*websocket.Dialer, error) {
 	dialer := *websocket.DefaultDialer
-	if consoleResult.BackendTLSConfig != nil {
-		tlsConfig := consoleResult.BackendTLSConfig.Clone()
-		if consoleResult.InsecureSkipTLSVerify {
-			tlsConfig.InsecureSkipVerify = true
-		}
-		dialer.TLSClientConfig = tlsConfig
-	} else if consoleResult.InsecureSkipTLSVerify {
-		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	tlsConfig, err := consoleBackendTLSConfig(consoleResult)
+	if err != nil {
+		return nil, err
 	}
-	return &dialer
+	dialer.TLSClientConfig = tlsConfig
+	return &dialer, nil
+}
+
+func consoleBackendHeaders(result consoleport.ConsoleURLResult) http.Header {
+	headers := make(http.Header, len(result.BackendHeaders))
+	for name, values := range result.BackendHeaders {
+		headers[name] = append([]string(nil), values...)
+	}
+	return headers
+}
+
+func consoleBackendTLSConfig(result consoleport.ConsoleURLResult) (*tls.Config, error) {
+	config := result.BackendTLS
+	empty := config.ServerName == "" && !config.InsecureSkipVerify && len(config.CAData) == 0 &&
+		len(config.CertData) == 0 && len(config.KeyData) == 0 && len(config.NextProtos) == 0
+	if empty {
+		return nil, nil
+	}
+	tlsConfig := &tls.Config{
+		ServerName:         config.ServerName,
+		InsecureSkipVerify: config.InsecureSkipVerify, //nolint:gosec // Explicit per-connection operator setting.
+		NextProtos:         append([]string(nil), config.NextProtos...),
+	}
+	if len(config.CAData) > 0 {
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(config.CAData) {
+			return nil, errors.New("virtualization backend TLS CA data is invalid")
+		}
+		tlsConfig.RootCAs = roots
+	}
+	if len(config.CertData) > 0 || len(config.KeyData) > 0 {
+		if len(config.CertData) == 0 || len(config.KeyData) == 0 {
+			return nil, errors.New("virtualization backend TLS client certificate and key must be provided together")
+		}
+		certificate, err := tls.X509KeyPair(config.CertData, config.KeyData)
+		if err != nil {
+			return nil, fmt.Errorf("parse virtualization backend TLS client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{certificate}
+	}
+	return tlsConfig, nil
 }
 
 func proxyWebsocket(ctx context.Context, clientConn, backendConn *websocket.Conn) {
@@ -1173,8 +1261,8 @@ func proxyWebsocket(ctx context.Context, clientConn, backendConn *websocket.Conn
 	var closeOnce sync.Once
 	closeBoth := func() {
 		closeOnce.Do(func() {
-			clientConn.Close()
-			backendConn.Close()
+			_ = clientConn.Close()
+			_ = backendConn.Close()
 		})
 	}
 
@@ -1184,7 +1272,7 @@ func proxyWebsocket(ctx context.Context, clientConn, backendConn *websocket.Conn
 			closeBoth()
 			done <- struct{}{}
 		}()
-		copyWebsocketMessages(dst, src)
+		_ = copyWebsocketMessages(dst, src)
 	}
 
 	go pipe(clientConn, backendConn)

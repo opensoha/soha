@@ -13,32 +13,55 @@ import (
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 )
 
-type PluginService interface {
+type PluginMarketplaceService interface {
 	ListMarketplace(context.Context, domainidentity.Principal, domainplugin.MarketplaceFilter) ([]domainplugin.MarketplacePlugin, error)
 	GetMarketplace(context.Context, domainidentity.Principal, domainplugin.PluginVersionRef) (domainplugin.MarketplacePlugin, error)
+}
+
+type PluginInventoryService interface {
 	ListInstalled(context.Context, domainidentity.Principal) ([]domainplugin.InstalledPlugin, error)
 	GetInstalled(context.Context, domainidentity.Principal, string) (domainplugin.InstalledPlugin, error)
 	GetManifest(context.Context, domainidentity.Principal, string) (domainplugin.PluginManifest, error)
+}
+
+type PluginLifecycleService interface {
 	Install(context.Context, domainidentity.Principal, domainplugin.PluginInstallRequest) (domainplugin.InstalledPlugin, error)
 	Enable(context.Context, domainidentity.Principal, string) (domainplugin.InstalledPlugin, error)
 	Disable(context.Context, domainidentity.Principal, string) (domainplugin.InstalledPlugin, error)
 	Upgrade(context.Context, domainidentity.Principal, string, domainplugin.PluginInstallRequest) (domainplugin.InstalledPlugin, error)
 	Configure(context.Context, domainidentity.Principal, string, domainplugin.PluginConfigRequest) (domainplugin.InstalledPlugin, error)
 	Remove(context.Context, domainidentity.Principal, string) error
+}
+
+type PluginExtensionService interface {
 	ListExtensions(context.Context, domainidentity.Principal, string) ([]domainplugin.ExtensionRecord, error)
 }
 
+type PluginService interface {
+	PluginMarketplaceService
+	PluginInventoryService
+	PluginLifecycleService
+	PluginExtensionService
+}
+
 type PluginHandler struct {
-	service PluginService
+	marketplace PluginMarketplaceService
+	inventory   PluginInventoryService
+	lifecycle   PluginLifecycleService
+	extensions  PluginExtensionService
 }
 
 func NewPluginHandler(service PluginService) *PluginHandler {
-	return &PluginHandler{service: service}
+	return NewPluginHandlerWithServices(service, service, service, service)
+}
+
+func NewPluginHandlerWithServices(marketplace PluginMarketplaceService, inventory PluginInventoryService, lifecycle PluginLifecycleService, extensions PluginExtensionService) *PluginHandler {
+	return &PluginHandler{marketplace: marketplace, inventory: inventory, lifecycle: lifecycle, extensions: extensions}
 }
 
 func (h *PluginHandler) ListMarketplace(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListMarketplace(c.Request.Context(), principal, domainplugin.MarketplaceFilter{
+	items, err := h.marketplace.ListMarketplace(c.Request.Context(), principal, domainplugin.MarketplaceFilter{
 		Query:          c.Query("q"),
 		Type:           c.Query("type"),
 		Publisher:      c.Query("publisher"),
@@ -55,7 +78,7 @@ func (h *PluginHandler) ListMarketplace(c *gin.Context) {
 
 func (h *PluginHandler) GetMarketplace(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetMarketplace(c.Request.Context(), principal, domainplugin.PluginVersionRef{
+	item, err := h.marketplace.GetMarketplace(c.Request.Context(), principal, domainplugin.PluginVersionRef{
 		PluginID:       c.Param("pluginID"),
 		Version:        c.Query("version"),
 		SourceID:       c.Query("sourceId"),
@@ -70,7 +93,7 @@ func (h *PluginHandler) GetMarketplace(c *gin.Context) {
 
 func (h *PluginHandler) ListInstalled(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListInstalled(c.Request.Context(), principal)
+	items, err := h.inventory.ListInstalled(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -80,7 +103,7 @@ func (h *PluginHandler) ListInstalled(c *gin.Context) {
 
 func (h *PluginHandler) GetInstalled(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetInstalled(c.Request.Context(), principal, c.Param("pluginID"))
+	item, err := h.inventory.GetInstalled(c.Request.Context(), principal, c.Param("pluginID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -90,7 +113,7 @@ func (h *PluginHandler) GetInstalled(c *gin.Context) {
 
 func (h *PluginHandler) GetManifest(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetManifest(c.Request.Context(), principal, c.Param("pluginID"))
+	item, err := h.inventory.GetManifest(c.Request.Context(), principal, c.Param("pluginID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -105,7 +128,7 @@ func (h *PluginHandler) Install(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Install(c.Request.Context(), principal, req)
+	item, err := h.lifecycle.Install(c.Request.Context(), principal, req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -115,7 +138,7 @@ func (h *PluginHandler) Install(c *gin.Context) {
 
 func (h *PluginHandler) Enable(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Enable(c.Request.Context(), principal, c.Param("pluginID"))
+	item, err := h.lifecycle.Enable(c.Request.Context(), principal, c.Param("pluginID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -125,7 +148,7 @@ func (h *PluginHandler) Enable(c *gin.Context) {
 
 func (h *PluginHandler) Disable(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Disable(c.Request.Context(), principal, c.Param("pluginID"))
+	item, err := h.lifecycle.Disable(c.Request.Context(), principal, c.Param("pluginID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -140,7 +163,7 @@ func (h *PluginHandler) Upgrade(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Upgrade(c.Request.Context(), principal, c.Param("pluginID"), req)
+	item, err := h.lifecycle.Upgrade(c.Request.Context(), principal, c.Param("pluginID"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -155,7 +178,7 @@ func (h *PluginHandler) Configure(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Configure(c.Request.Context(), principal, c.Param("pluginID"), req)
+	item, err := h.lifecycle.Configure(c.Request.Context(), principal, c.Param("pluginID"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -165,7 +188,7 @@ func (h *PluginHandler) Configure(c *gin.Context) {
 
 func (h *PluginHandler) Remove(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.service.Remove(c.Request.Context(), principal, c.Param("pluginID")); err != nil {
+	if err := h.lifecycle.Remove(c.Request.Context(), principal, c.Param("pluginID")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -206,7 +229,7 @@ func (h *PluginHandler) ListUIExtensions(c *gin.Context) {
 
 func (h *PluginHandler) listExtensions(c *gin.Context, scope string) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListExtensions(c.Request.Context(), principal, scope)
+	items, err := h.extensions.ListExtensions(c.Request.Context(), principal, scope)
 	if err != nil {
 		writeError(c, err)
 		return

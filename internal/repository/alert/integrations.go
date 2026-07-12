@@ -22,7 +22,7 @@ func (r *Repository) ListAlertIntegrations(ctx context.Context) ([]domainalert.A
 	if err != nil {
 		return nil, fmt.Errorf("query alert integrations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.AlertIntegration, 0)
 	for rows.Next() {

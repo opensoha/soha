@@ -13,14 +13,19 @@ import (
 )
 
 type stubSettingsService struct {
-	ai domainsettings.AISettings
+	ai                   domainsettings.AISettings
+	identity             domainsettings.IdentitySettings
+	updatedLocalPassword *bool
 }
 
 func (s stubSettingsService) GetIdentitySettings(context.Context, domainidentity.Principal) (domainsettings.IdentitySettings, error) {
-	return domainsettings.IdentitySettings{}, nil
+	return s.identity, nil
 }
 
-func (s stubSettingsService) UpdateLoginProvidersSettings(context.Context, domainidentity.Principal, []domainsettings.LoginProviderSettings, string) (domainsettings.IdentitySettings, error) {
+func (s stubSettingsService) UpdateLoginProvidersSettings(_ context.Context, _ domainidentity.Principal, _ []domainsettings.LoginProviderSettings, _ string, localPasswordEnabled bool) (domainsettings.IdentitySettings, error) {
+	if s.updatedLocalPassword != nil {
+		*s.updatedLocalPassword = localPasswordEnabled
+	}
 	return domainsettings.IdentitySettings{}, nil
 }
 
@@ -78,5 +83,26 @@ func TestGetAISettingsDoesNotSerializeLegacyProviderFields(t *testing.T) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("GET /settings/ai leaked %q: %s", forbidden, body)
 		}
+	}
+}
+
+func TestUpdateLoginProvidersPreservesLocalPasswordSettingWhenOmitted(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/api/v1/settings/identity/providers", strings.NewReader(`{"providers":[]}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	updatedLocalPassword := true
+	handler := NewSettingsHandler(stubSettingsService{
+		identity:             domainsettings.IdentitySettings{LocalPasswordLoginEnabled: false},
+		updatedLocalPassword: &updatedLocalPassword,
+	}, nil)
+
+	handler.UpdateLoginProvidersSettings(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if updatedLocalPassword {
+		t.Fatal("omitted localPasswordLoginEnabled unexpectedly re-enabled password login")
 	}
 }

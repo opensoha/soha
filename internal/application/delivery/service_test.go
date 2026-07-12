@@ -531,42 +531,7 @@ func (r *planRepository) UpdateDeliveryPlan(_ context.Context, plan domaindelive
 }
 
 func TestGetDeliveryBlueprintUsageSummarizesCreatedApplicationRisk(t *testing.T) {
-	repo := stubRepository{blueprint: domaindelivery.DeliveryBlueprint{
-		ID:   "blueprint-1",
-		Key:  "payments-standard",
-		Name: "Payments Standard",
-		ApplicationDraft: domaindelivery.BlueprintApplicationDraft{
-			Key:  "payments-api",
-			Name: "Payments API",
-		},
-		EnvironmentBindings: []domaindelivery.BlueprintEnvironmentBindingTemplate{
-			{EnvironmentKey: "dev"},
-			{EnvironmentKey: "prod", ReleasePolicy: domaincatalog.ReleasePolicy{RequiresApproval: true}},
-		},
-		Files: []domaindelivery.BlueprintFileTemplate{
-			{Path: "Dockerfile", Kind: "dockerfile", Required: true},
-			{Path: "deploy/values.yaml", Kind: "helm_values", Required: true},
-		},
-	}, bundles: []domaindelivery.ReleaseBundle{
-		{
-			ID:                       "bundle-1",
-			ApplicationID:            "app-1",
-			ApplicationEnvironmentID: "binding-prod",
-			Version:                  "1.2.3",
-			SourceType:               "build",
-			Status:                   "building",
-			UpdatedAt:                time.Date(2026, 5, 8, 10, 30, 0, 0, time.UTC),
-		},
-	}, tasks: []domaindelivery.ExecutionTask{
-		{
-			ID:                       "task-1",
-			ApplicationID:            "app-1",
-			ApplicationEnvironmentID: "binding-prod",
-			TaskKind:                 "release",
-			Status:                   "running",
-			UpdatedAt:                time.Date(2026, 5, 8, 10, 45, 0, 0, time.UTC),
-		},
-	}}
+	repo := blueprintUsageRepository()
 	service := New(
 		stubApplicationReader{apps: []domainapp.App{
 			{
@@ -651,10 +616,34 @@ func TestGetDeliveryBlueprintUsageSummarizesCreatedApplicationRisk(t *testing.T)
 	if usage.FileKindCounts["dockerfile"] != 1 || usage.FileKindCounts["helm_values"] != 1 {
 		t.Fatalf("unexpected file kind counts: %#v", usage.FileKindCounts)
 	}
-	states := usage.LastExecutionSummary["stateCounts"].(map[string]int)
+	states, ok := usage.LastExecutionSummary["stateCounts"].(map[string]int)
+	if !ok {
+		t.Fatalf("stateCounts has unexpected type: %T", usage.LastExecutionSummary["stateCounts"])
+	}
 	if states["succeeded"] != 1 || states["running"] != 3 || states["failed"] != 1 {
 		t.Fatalf("unexpected blueprint runtime state counts: %#v", usage.LastExecutionSummary)
 	}
+}
+
+func blueprintUsageRepository() stubRepository {
+	return stubRepository{blueprint: domaindelivery.DeliveryBlueprint{
+		ID: "blueprint-1", Key: "payments-standard", Name: "Payments Standard",
+		ApplicationDraft: domaindelivery.BlueprintApplicationDraft{Key: "payments-api", Name: "Payments API"},
+		EnvironmentBindings: []domaindelivery.BlueprintEnvironmentBindingTemplate{
+			{EnvironmentKey: "dev"},
+			{EnvironmentKey: "prod", ReleasePolicy: domaincatalog.ReleasePolicy{RequiresApproval: true}},
+		},
+		Files: []domaindelivery.BlueprintFileTemplate{
+			{Path: "Dockerfile", Kind: "dockerfile", Required: true},
+			{Path: "deploy/values.yaml", Kind: "helm_values", Required: true},
+		},
+	}, bundles: []domaindelivery.ReleaseBundle{{
+		ID: "bundle-1", ApplicationID: "app-1", ApplicationEnvironmentID: "binding-prod", Version: "1.2.3", SourceType: "build", Status: "building",
+		UpdatedAt: time.Date(2026, 5, 8, 10, 30, 0, 0, time.UTC),
+	}}, tasks: []domaindelivery.ExecutionTask{{
+		ID: "task-1", ApplicationID: "app-1", ApplicationEnvironmentID: "binding-prod", TaskKind: "release", Status: "running",
+		UpdatedAt: time.Date(2026, 5, 8, 10, 45, 0, 0, time.UTC),
+	}}}
 }
 
 func TestCreateDeliveryDraftDoesNotCreatePlatformObjects(t *testing.T) {

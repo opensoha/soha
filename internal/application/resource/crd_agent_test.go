@@ -16,8 +16,46 @@ import (
 
 func TestAgentCustomResourceOperationsResolveCRDThroughAgent(t *testing.T) {
 	var seen []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.Method+" "+r.URL.Path)
+	server := newAgentCRDTestServer(t, &seen)
+	defer server.Close()
+
+	service := New(Dependencies{
+		Agents:      testAgentClients(agentinfra.NewRegistry(0)),
+		Connections: stubConnectionResolver{connection: agentCRDConnection(server.URL)},
+		Authorizer:  allowAllResourceAuthorizer{},
+		Audit:       noopResourceAuditRecorder{},
+	})
+	principal := domainidentity.Principal{UserID: "user-1"}
+
+	items, err := service.CustomResources().ListCRDResources(context.Background(), principal, "agent-cluster", "widgets.example.com", "platform")
+	if err != nil {
+		t.Fatalf("ListCRDResources() error = %v", err)
+	}
+	if len(items) != 1 || items[0].Name != "sample" || items[0].Kind != "Widget" {
+		t.Fatalf("items = %#v, want sample widget", items)
+	}
+
+	if _, err := service.CustomResources().ApplyCRDResourceYAML(context.Background(), principal, "agent-cluster", "widgets.example.com", "platform", "sample", `
+apiVersion: example.com/v1
+kind: Widget
+metadata:
+  name: sample
+  namespace: platform
+`); err != nil {
+		t.Fatalf("ApplyCRDResourceYAML() error = %v", err)
+	}
+	if err := service.CustomResources().DeleteCRDResource(context.Background(), principal, "agent-cluster", "widgets.example.com", "platform", "sample"); err != nil {
+		t.Fatalf("DeleteCRDResource() error = %v", err)
+	}
+	if len(seen) != 6 {
+		t.Fatalf("request count = %d, want 6: %#v", len(seen), seen)
+	}
+}
+
+func newAgentCRDTestServer(t *testing.T, seen *[]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*seen = append(*seen, r.Method+" "+r.URL.Path)
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/platform/extensions/crds":
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{
@@ -81,39 +119,6 @@ func TestAgentCustomResourceOperationsResolveCRDThroughAgent(t *testing.T) {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
 	}))
-	defer server.Close()
-
-	service := &Service{
-		agents:     agentinfra.NewRegistry(0),
-		resolver:   stubConnectionResolver{connection: agentCRDConnection(server.URL)},
-		authorizer: allowAllResourceAuthorizer{},
-		audit:      noopResourceAuditRecorder{},
-	}
-	principal := domainidentity.Principal{UserID: "user-1"}
-
-	items, err := service.ListCRDResources(context.Background(), principal, "agent-cluster", "widgets.example.com", "platform")
-	if err != nil {
-		t.Fatalf("ListCRDResources() error = %v", err)
-	}
-	if len(items) != 1 || items[0].Name != "sample" || items[0].Kind != "Widget" {
-		t.Fatalf("items = %#v, want sample widget", items)
-	}
-
-	if _, err := service.ApplyCRDResourceYAML(context.Background(), principal, "agent-cluster", "widgets.example.com", "platform", "sample", `
-apiVersion: example.com/v1
-kind: Widget
-metadata:
-  name: sample
-  namespace: platform
-`); err != nil {
-		t.Fatalf("ApplyCRDResourceYAML() error = %v", err)
-	}
-	if err := service.DeleteCRDResource(context.Background(), principal, "agent-cluster", "widgets.example.com", "platform", "sample"); err != nil {
-		t.Fatalf("DeleteCRDResource() error = %v", err)
-	}
-	if len(seen) != 6 {
-		t.Fatalf("request count = %d, want 6: %#v", len(seen), seen)
-	}
 }
 
 type noopResourceAuditRecorder struct{}

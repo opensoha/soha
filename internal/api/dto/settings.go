@@ -1,14 +1,16 @@
 package dto
 
 type UpdateLoginProvidersSettingsRequest struct {
-	DefaultProviderID string                  `json:"defaultProviderId"`
-	Providers         []LoginProviderSettings `json:"providers"`
+	DefaultProviderID         string                  `json:"defaultProviderId"`
+	Providers                 []LoginProviderSettings `json:"providers"`
+	LocalPasswordLoginEnabled *bool                   `json:"localPasswordLoginEnabled"`
 }
 
 type LoginProviderSettings struct {
 	ID                  string   `json:"id"`
 	Name                string   `json:"name"`
 	Type                string   `json:"type"`
+	IconURL             string   `json:"iconUrl"`
 	Enabled             bool     `json:"enabled"`
 	ClientID            string   `json:"clientId"`
 	ClientSecret        string   `json:"clientSecret"`
@@ -24,6 +26,8 @@ type LoginProviderSettings struct {
 	UserIDField         string   `json:"userIdField"`
 	UserNameField       string   `json:"userNameField"`
 	EmailField          string   `json:"emailField"`
+	PhoneField          string   `json:"phoneField"`
+	AvatarField         string   `json:"avatarField"`
 	RoleField           string   `json:"roleField"`
 	OrganizationField   string   `json:"organizationField"`
 	SyncRolesOnLogin    bool     `json:"syncRolesOnLogin"`

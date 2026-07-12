@@ -12,17 +12,29 @@ import (
 
 	"github.com/gin-gonic/gin"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainevent "github.com/opensoha/soha/internal/domain/event"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type stubPlatformResourceService struct {
-	ResourceService
+	*appresource.Workloads
+	*appresource.Configuration
+	*appresource.Network
+	*appresource.Storage
+	*appresource.RBAC
+	*appresource.CustomResources
+	*appresource.Helm
+	*appresource.Inventory
+	*appresource.GenericResources
+	*appresource.PortForwards
+	*appresource.Events
 
 	listPodsClusterID              string
 	listPodsNamespace              string
@@ -54,15 +66,79 @@ type stubPlatformResourceService struct {
 	helmInstallInput               domainresource.HelmChartInstallInput
 }
 
-type stubPlatformClusterService struct {
-	ClusterService
-
-	matrixCalled bool
+func newStubPlatformResourceService() *stubPlatformResourceService {
+	service := appresource.New(appresource.Dependencies{})
+	return &stubPlatformResourceService{
+		Workloads: service.Workloads(), Configuration: service.Configuration(),
+		Network: service.Network(), Storage: service.Storage(), RBAC: service.RBAC(),
+		CustomResources: service.CustomResources(), Helm: service.Helm(), Inventory: service.Inventory(),
+		GenericResources: service.GenericResources(), PortForwards: service.PortForwards(), Events: service.Events(),
+	}
 }
 
-type stubPlatformEventService struct {
-	EventService
+func newTestPlatformHandler(
+	clusters ClusterService,
+	resources *stubPlatformResourceService,
+	audit AuditService,
+	events EventService,
+	operations OperationService,
+	integration IntegrationService,
+) *PlatformHandler {
+	base := newStubPlatformResourceService()
+	if resources != nil {
+		base = resources
+	}
+	resourceServices := completeResourceServices(base)
+	if clusters == nil {
+		clusters = &stubPlatformClusterService{}
+	}
+	if audit == nil {
+		audit = &stubPlatformAuditService{}
+	}
+	if events == nil {
+		events = &stubPlatformEventService{}
+	}
+	if operations == nil {
+		operations = &stubPlatformOperationService{}
+	}
+	if integration == nil {
+		integration = stubPlatformIntegrationService{}
+	}
+	handler, err := NewPlatformHandlerWithResources(PlatformDependencies{
+		Clusters:    clusters,
+		Resources:   resourceServices,
+		Audit:       audit,
+		Events:      events,
+		Operations:  operations,
+		Integration: integration,
+	})
+	if err != nil {
+		panic(err)
+	}
+	return handler
+}
 
+func completeResourceServices(resources *stubPlatformResourceService) ResourceServices {
+	return ResourceServices{
+		PodReader: resources, PodEditor: resources, PodDiagnostics: resources, PodStreams: resources,
+		DeploymentReader: resources, DeploymentEditor: resources,
+		StatefulSetReader: resources, StatefulSetEditor: resources,
+		DaemonSetReader: resources, DaemonSetEditor: resources,
+		Jobs: resources, CronJobs: resources, WorkloadInventory: resources,
+		Creator: resources, ConfigMaps: resources, Secrets: resources, ConfigurationInventory: resources,
+		NetworkOverview: resources, NetworkInventory: resources, GatewayRouting: resources, GatewayPolicy: resources,
+		PersistentVolumeClaims: resources, PersistentVolumes: resources, StorageClasses: resources,
+		NamespacedRBAC: resources, ClusterRBAC: resources,
+		CRDReader: resources, CRDEditor: resources,
+		Helm: resources, HelmReleaseReader: resources, HelmReleaseEditor: resources,
+		Namespaces: resources, NodeReader: resources, NodeEditor: resources,
+		Generic: resources, Events: resources, PortForwards: resources,
+	}
+}
+
+type stubPlatformClusterService struct{ matrixCalled bool }
+
+type stubPlatformEventService struct {
 	validateErr    error
 	validatedToken string
 	ingestInput    domainevent.ConnectorEventIngestInput
@@ -70,19 +146,40 @@ type stubPlatformEventService struct {
 }
 
 type stubPlatformAuditService struct {
-	AuditService
-
 	filter        domainaudit.Filter
 	summaryCalled bool
 	exportCalled  bool
 }
 
 type stubPlatformOperationService struct {
-	OperationService
-
 	filter        domainoperation.Filter
 	summaryCalled bool
 	exportCalled  bool
+}
+
+type stubPlatformIntegrationService struct{}
+
+func (stubPlatformIntegrationService) ListCapabilities(context.Context) ([]domainmcp.Capability, error) {
+	return nil, nil
+}
+
+func (s *stubPlatformClusterService) List(context.Context) ([]domaincluster.Summary, error) {
+	return nil, nil
+}
+func (s *stubPlatformClusterService) ListAccessible(context.Context, domainidentity.Principal) ([]domaincluster.Summary, error) {
+	return nil, nil
+}
+func (s *stubPlatformClusterService) Describe(context.Context, domainidentity.Principal, string) (domaincluster.Detail, error) {
+	return domaincluster.Detail{}, nil
+}
+func (s *stubPlatformClusterService) Register(context.Context, domainidentity.Principal, domaincluster.RegisterInput) (domaincluster.Summary, error) {
+	return domaincluster.Summary{}, nil
+}
+func (s *stubPlatformClusterService) Update(context.Context, domainidentity.Principal, string, domaincluster.UpdateInput) (domaincluster.Summary, error) {
+	return domaincluster.Summary{}, nil
+}
+func (s *stubPlatformClusterService) Delete(context.Context, domainidentity.Principal, string) error {
+	return nil
 }
 
 func (s *stubPlatformAuditService) ListAuthorized(_ context.Context, _ domainidentity.Principal, filter domainaudit.Filter) ([]domainaudit.Entry, error) {
@@ -256,8 +353,8 @@ func newPlatformTestContext(method, target, body string, params gin.Params) (*gi
 }
 
 func TestPlatformListPodsPassesScopeAndPrincipal(t *testing.T) {
-	resources := &stubPlatformResourceService{}
-	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/pods?namespace=team-a", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}})
 
 	handler.ListPods(ctx)
@@ -287,8 +384,8 @@ func TestPlatformListPodsPassesScopeAndPrincipal(t *testing.T) {
 }
 
 func TestPlatformGetStatefulSetMetricsBindsQuery(t *testing.T) {
-	resources := &stubPlatformResourceService{}
-	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/statefulsets/web/metrics?namespace=team-a&rangeMinutes=30&stepSeconds=15", "", gin.Params{
 		{Key: "clusterID", Value: "cluster-a"},
 		{Key: "statefulSetName", Value: "web"},
@@ -296,23 +393,16 @@ func TestPlatformGetStatefulSetMetricsBindsQuery(t *testing.T) {
 
 	handler.GetStatefulSetMetrics(ctx)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
-	}
-	if !resources.statefulSetMetricsCalled {
-		t.Fatal("GetStatefulSetMetrics was not called")
-	}
-	if resources.statefulSetMetricsClusterID != "cluster-a" || resources.statefulSetMetricsNamespace != "team-a" || resources.statefulSetMetricsName != "web" {
-		t.Fatalf("scope = %#v/%#v/%#v, want cluster-a/team-a/web", resources.statefulSetMetricsClusterID, resources.statefulSetMetricsNamespace, resources.statefulSetMetricsName)
-	}
-	if resources.statefulSetMetricsRangeMinutes != 30 || resources.statefulSetMetricsStepSeconds != 15 {
-		t.Fatalf("metrics window = %d/%d, want 30/15", resources.statefulSetMetricsRangeMinutes, resources.statefulSetMetricsStepSeconds)
-	}
+	assertPlatformMetricsCall(t, recorder, platformMetricsCall{
+		called: resources.statefulSetMetricsCalled, clusterID: resources.statefulSetMetricsClusterID,
+		namespace: resources.statefulSetMetricsNamespace, name: resources.statefulSetMetricsName,
+		rangeMinutes: resources.statefulSetMetricsRangeMinutes, stepSeconds: resources.statefulSetMetricsStepSeconds,
+	}, "web")
 }
 
 func TestPlatformGetDaemonSetMetricsBindsQuery(t *testing.T) {
-	resources := &stubPlatformResourceService{}
-	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/daemonsets/node-agent/metrics?namespace=team-a&rangeMinutes=30&stepSeconds=15", "", gin.Params{
 		{Key: "clusterID", Value: "cluster-a"},
 		{Key: "daemonSetName", Value: "node-agent"},
@@ -320,23 +410,39 @@ func TestPlatformGetDaemonSetMetricsBindsQuery(t *testing.T) {
 
 	handler.GetDaemonSetMetrics(ctx)
 
+	assertPlatformMetricsCall(t, recorder, platformMetricsCall{
+		called: resources.daemonSetMetricsCalled, clusterID: resources.daemonSetMetricsClusterID,
+		namespace: resources.daemonSetMetricsNamespace, name: resources.daemonSetMetricsName,
+		rangeMinutes: resources.daemonSetMetricsRangeMinutes, stepSeconds: resources.daemonSetMetricsStepSeconds,
+	}, "node-agent")
+}
+
+type platformMetricsCall struct {
+	called                    bool
+	clusterID, namespace      string
+	name                      string
+	rangeMinutes, stepSeconds int
+}
+
+func assertPlatformMetricsCall(t *testing.T, recorder *httptest.ResponseRecorder, call platformMetricsCall, wantName string) {
+	t.Helper()
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	if !resources.daemonSetMetricsCalled {
-		t.Fatal("GetDaemonSetMetrics was not called")
+	if !call.called {
+		t.Fatal("metrics service was not called")
 	}
-	if resources.daemonSetMetricsClusterID != "cluster-a" || resources.daemonSetMetricsNamespace != "team-a" || resources.daemonSetMetricsName != "node-agent" {
-		t.Fatalf("scope = %#v/%#v/%#v, want cluster-a/team-a/node-agent", resources.daemonSetMetricsClusterID, resources.daemonSetMetricsNamespace, resources.daemonSetMetricsName)
+	if call.clusterID != "cluster-a" || call.namespace != "team-a" || call.name != wantName {
+		t.Fatalf("scope = %#v/%#v/%#v, want cluster-a/team-a/%s", call.clusterID, call.namespace, call.name, wantName)
 	}
-	if resources.daemonSetMetricsRangeMinutes != 30 || resources.daemonSetMetricsStepSeconds != 15 {
-		t.Fatalf("metrics window = %d/%d, want 30/15", resources.daemonSetMetricsRangeMinutes, resources.daemonSetMetricsStepSeconds)
+	if call.rangeMinutes != 30 || call.stepSeconds != 15 {
+		t.Fatalf("metrics window = %d/%d, want 30/15", call.rangeMinutes, call.stepSeconds)
 	}
 }
 
 func TestPlatformClusterCapabilityMatrixReturnsItems(t *testing.T) {
 	clusters := &stubPlatformClusterService{}
-	handler := NewPlatformHandler(clusters, nil, nil, nil, nil, nil)
+	handler := newTestPlatformHandler(clusters, nil, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/capabilities", "", nil)
 
 	handler.ClusterCapabilityMatrix(ctx)
@@ -366,7 +472,7 @@ func TestPlatformClusterCapabilityMatrixReturnsItems(t *testing.T) {
 
 func TestPlatformListAuditLogsBindsExpandedFilter(t *testing.T) {
 	audit := &stubPlatformAuditService{}
-	handler := NewPlatformHandler(nil, nil, audit, nil, nil, nil)
+	handler := newTestPlatformHandler(nil, nil, audit, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/logs?actorId=user-1&actorName=Operator&clusterId=cluster-a&namespace=prod&resourceKind=Deployment&resourceName=api&action=platform.deployment.restart&result=success&requestID=req-1&requestPath=/api/v1/restart&method=post&sourceIP=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=usageSnapshot.templateId&metadataValue=tpl-1&from=2026-06-12T08:00:00Z&to=2026-06-12T09:00:00Z&limit=25", "", nil)
 
 	handler.ListAuditLogs(ctx)
@@ -374,31 +480,13 @@ func TestPlatformListAuditLogsBindsExpandedFilter(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	if audit.filter.ActorID != "user-1" || audit.filter.ActorName != "Operator" || audit.filter.ClusterID != "cluster-a" || audit.filter.Namespace != "prod" {
-		t.Fatalf("audit scope filter = %#v", audit.filter)
-	}
-	if audit.filter.ResourceKind != "Deployment" || audit.filter.ResourceName != "api" || audit.filter.Action != "platform.deployment.restart" || audit.filter.Result != "success" {
-		t.Fatalf("audit resource filter = %#v", audit.filter)
-	}
-	if audit.filter.RequestID != "req-1" || audit.filter.RequestPath != "/api/v1/restart" || audit.filter.RequestMethod != "post" || audit.filter.SourceIP != "127.0.0.1" {
-		t.Fatalf("audit request filter = %#v", audit.filter)
-	}
-	if audit.filter.ApprovalRequestID != "approval-1" || audit.filter.AgentRunID != "agent-run-1" || audit.filter.RootCauseRunID != "root-cause-1" {
-		t.Fatalf("audit correlation filter = %#v", audit.filter)
-	}
-	if audit.filter.MetadataKey != "usageSnapshot.templateId" || audit.filter.MetadataValue != "tpl-1" {
-		t.Fatalf("audit metadata filter = %#v", audit.filter)
-	}
-	from := time.Date(2026, 6, 12, 8, 0, 0, 0, time.UTC)
-	to := time.Date(2026, 6, 12, 9, 0, 0, 0, time.UTC)
-	if audit.filter.From == nil || !audit.filter.From.Equal(from) || audit.filter.To == nil || !audit.filter.To.Equal(to) || audit.filter.Limit != 25 {
-		t.Fatalf("audit time/limit filter = %#v", audit.filter)
-	}
+	assertAuditFilterScope(t, audit.filter)
+	assertAuditFilterCorrelation(t, audit.filter)
 }
 
 func TestPlatformAuditSummaryBindsFilter(t *testing.T) {
 	audit := &stubPlatformAuditService{}
-	handler := NewPlatformHandler(nil, nil, audit, nil, nil, nil)
+	handler := newTestPlatformHandler(nil, nil, audit, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/summary?actorId=user-1&result=success&limit=25", "", nil)
 
 	handler.AuditSummary(ctx)
@@ -416,34 +504,21 @@ func TestPlatformAuditSummaryBindsFilter(t *testing.T) {
 
 func TestPlatformExportAuditLogsReturnsCSV(t *testing.T) {
 	audit := &stubPlatformAuditService{}
-	handler := NewPlatformHandler(nil, nil, audit, nil, nil, nil)
+	handler := newTestPlatformHandler(nil, nil, audit, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/logs/export?actorId=user-1&limit=25", "", nil)
 
 	handler.ExportAuditLogs(ctx)
 
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
-	}
-	if !audit.exportCalled || audit.filter.ActorID != "user-1" || audit.filter.Limit != 25 {
-		t.Fatalf("export filter = %#v called=%v", audit.filter, audit.exportCalled)
-	}
-	if got := recorder.Header().Get("Content-Type"); got != "text/csv; charset=utf-8" {
-		t.Fatalf("content type = %q", got)
-	}
-	if got := recorder.Header().Get("Content-Disposition"); !strings.Contains(got, "audit-logs-20260612T100000Z.csv") {
-		t.Fatalf("content disposition = %q", got)
-	}
-	if got := recorder.Header().Get("X-Soha-Audit-Export-Count"); got != "1" {
-		t.Fatalf("export count header = %q", got)
-	}
-	if !strings.Contains(recorder.Body.String(), "audit-1,user-1") {
-		t.Fatalf("expected CSV body, got %q", recorder.Body.String())
-	}
+	assertCSVExport(t, recorder, csvExportExpectation{
+		called: audit.exportCalled, actorID: audit.filter.ActorID, limit: audit.filter.Limit,
+		filename: "audit-logs-20260612T100000Z.csv", countHeader: "X-Soha-Audit-Export-Count",
+		bodyFragment: "audit-1,user-1",
+	})
 }
 
 func TestPlatformListOperationLogsBindsExpandedFilter(t *testing.T) {
 	operations := &stubPlatformOperationService{}
-	handler := NewPlatformHandler(nil, nil, nil, nil, operations, nil)
+	handler := newTestPlatformHandler(nil, nil, nil, nil, operations, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/operations/logs?type=ai_gateway.tool.invoke&actor=user-1&clusterId=cluster-a&namespace=prod&resourceKind=Pod&resourceName=api-0&result=failure&requestId=req-1&requestPath=/api/v1/invoke&requestMethod=POST&sourceIp=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=usageSnapshot.riskLevel&metadataValue=high&createdAtFrom=2026-06-12T08:00:00Z&createdAtTo=2026-06-12T09:00:00Z&limit=25", "", nil)
 
 	handler.ListOperationLogs(ctx)
@@ -451,31 +526,13 @@ func TestPlatformListOperationLogsBindsExpandedFilter(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	if operations.filter.OperationType != "ai_gateway.tool.invoke" || operations.filter.ActorID != "user-1" || operations.filter.Result != "failure" {
-		t.Fatalf("operation identity filter = %#v", operations.filter)
-	}
-	if operations.filter.ClusterID != "cluster-a" || operations.filter.Namespace != "prod" || operations.filter.ResourceKind != "Pod" || operations.filter.ResourceName != "api-0" {
-		t.Fatalf("operation scope filter = %#v", operations.filter)
-	}
-	if operations.filter.RequestID != "req-1" || operations.filter.RequestPath != "/api/v1/invoke" || operations.filter.RequestMethod != "POST" || operations.filter.SourceIP != "127.0.0.1" {
-		t.Fatalf("operation request filter = %#v", operations.filter)
-	}
-	if operations.filter.ApprovalRequestID != "approval-1" || operations.filter.AgentRunID != "agent-run-1" || operations.filter.RootCauseRunID != "root-cause-1" {
-		t.Fatalf("operation correlation filter = %#v", operations.filter)
-	}
-	if operations.filter.MetadataKey != "usageSnapshot.riskLevel" || operations.filter.MetadataValue != "high" {
-		t.Fatalf("operation metadata filter = %#v", operations.filter)
-	}
-	from := time.Date(2026, 6, 12, 8, 0, 0, 0, time.UTC)
-	to := time.Date(2026, 6, 12, 9, 0, 0, 0, time.UTC)
-	if operations.filter.From == nil || !operations.filter.From.Equal(from) || operations.filter.To == nil || !operations.filter.To.Equal(to) || operations.filter.Limit != 25 {
-		t.Fatalf("operation time/limit filter = %#v", operations.filter)
-	}
+	assertOperationFilterScope(t, operations.filter)
+	assertOperationFilterCorrelation(t, operations.filter)
 }
 
 func TestPlatformOperationSummaryBindsFilter(t *testing.T) {
 	operations := &stubPlatformOperationService{}
-	handler := NewPlatformHandler(nil, nil, nil, nil, operations, nil)
+	handler := newTestPlatformHandler(nil, nil, nil, nil, operations, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/operations/summary?type=ai_gateway.tool.invoke&actor=user-1&result=failure&limit=25", "", nil)
 
 	handler.OperationSummary(ctx)
@@ -493,34 +550,109 @@ func TestPlatformOperationSummaryBindsFilter(t *testing.T) {
 
 func TestPlatformExportOperationLogsReturnsCSV(t *testing.T) {
 	operations := &stubPlatformOperationService{}
-	handler := NewPlatformHandler(nil, nil, nil, nil, operations, nil)
+	handler := newTestPlatformHandler(nil, nil, nil, nil, operations, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/operations/logs/export?actor=user-1&limit=25", "", nil)
 
 	handler.ExportOperationLogs(ctx)
 
+	assertCSVExport(t, recorder, csvExportExpectation{
+		called: operations.exportCalled, actorID: operations.filter.ActorID, limit: operations.filter.Limit,
+		filename: "operation-logs-20260612T100000Z.csv", countHeader: "X-Soha-Operation-Export-Count",
+		bodyFragment: "op-1,user-1",
+	})
+}
+
+func assertAuditFilterScope(t *testing.T, filter domainaudit.Filter) {
+	t.Helper()
+	if filter.ActorID != "user-1" || filter.ActorName != "Operator" || filter.ClusterID != "cluster-a" || filter.Namespace != "prod" {
+		t.Fatalf("audit scope filter = %#v", filter)
+	}
+	if filter.ResourceKind != "Deployment" || filter.ResourceName != "api" || filter.Action != "platform.deployment.restart" || filter.Result != "success" {
+		t.Fatalf("audit resource filter = %#v", filter)
+	}
+	if filter.RequestID != "req-1" || filter.RequestPath != "/api/v1/restart" || filter.RequestMethod != "post" || filter.SourceIP != "127.0.0.1" {
+		t.Fatalf("audit request filter = %#v", filter)
+	}
+}
+
+func assertAuditFilterCorrelation(t *testing.T, filter domainaudit.Filter) {
+	t.Helper()
+	if filter.ApprovalRequestID != "approval-1" || filter.AgentRunID != "agent-run-1" || filter.RootCauseRunID != "root-cause-1" {
+		t.Fatalf("audit correlation filter = %#v", filter)
+	}
+	if filter.MetadataKey != "usageSnapshot.templateId" || filter.MetadataValue != "tpl-1" {
+		t.Fatalf("audit metadata filter = %#v", filter)
+	}
+	assertFilterWindow(t, filter.From, filter.To, filter.Limit)
+}
+
+func assertOperationFilterScope(t *testing.T, filter domainoperation.Filter) {
+	t.Helper()
+	if filter.OperationType != "ai_gateway.tool.invoke" || filter.ActorID != "user-1" || filter.Result != "failure" {
+		t.Fatalf("operation identity filter = %#v", filter)
+	}
+	if filter.ClusterID != "cluster-a" || filter.Namespace != "prod" || filter.ResourceKind != "Pod" || filter.ResourceName != "api-0" {
+		t.Fatalf("operation scope filter = %#v", filter)
+	}
+	if filter.RequestID != "req-1" || filter.RequestPath != "/api/v1/invoke" || filter.RequestMethod != "POST" || filter.SourceIP != "127.0.0.1" {
+		t.Fatalf("operation request filter = %#v", filter)
+	}
+}
+
+func assertOperationFilterCorrelation(t *testing.T, filter domainoperation.Filter) {
+	t.Helper()
+	if filter.ApprovalRequestID != "approval-1" || filter.AgentRunID != "agent-run-1" || filter.RootCauseRunID != "root-cause-1" {
+		t.Fatalf("operation correlation filter = %#v", filter)
+	}
+	if filter.MetadataKey != "usageSnapshot.riskLevel" || filter.MetadataValue != "high" {
+		t.Fatalf("operation metadata filter = %#v", filter)
+	}
+	assertFilterWindow(t, filter.From, filter.To, filter.Limit)
+}
+
+func assertFilterWindow(t *testing.T, from, to *time.Time, limit int) {
+	t.Helper()
+	wantFrom := time.Date(2026, 6, 12, 8, 0, 0, 0, time.UTC)
+	wantTo := time.Date(2026, 6, 12, 9, 0, 0, 0, time.UTC)
+	if from == nil || !from.Equal(wantFrom) || to == nil || !to.Equal(wantTo) || limit != 25 {
+		t.Fatalf("time/limit filter = from:%v to:%v limit:%d", from, to, limit)
+	}
+}
+
+type csvExportExpectation struct {
+	called       bool
+	actorID      string
+	limit        int
+	filename     string
+	countHeader  string
+	bodyFragment string
+}
+
+func assertCSVExport(t *testing.T, recorder *httptest.ResponseRecorder, expected csvExportExpectation) {
+	t.Helper()
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	if !operations.exportCalled || operations.filter.ActorID != "user-1" || operations.filter.Limit != 25 {
-		t.Fatalf("export filter = %#v called=%v", operations.filter, operations.exportCalled)
+	if !expected.called || expected.actorID != "user-1" || expected.limit != 25 {
+		t.Fatalf("export called=%v actor=%q limit=%d", expected.called, expected.actorID, expected.limit)
 	}
 	if got := recorder.Header().Get("Content-Type"); got != "text/csv; charset=utf-8" {
 		t.Fatalf("content type = %q", got)
 	}
-	if got := recorder.Header().Get("Content-Disposition"); !strings.Contains(got, "operation-logs-20260612T100000Z.csv") {
+	if got := recorder.Header().Get("Content-Disposition"); !strings.Contains(got, expected.filename) {
 		t.Fatalf("content disposition = %q", got)
 	}
-	if got := recorder.Header().Get("X-Soha-Operation-Export-Count"); got != "1" {
+	if got := recorder.Header().Get(expected.countHeader); got != "1" {
 		t.Fatalf("export count header = %q", got)
 	}
-	if !strings.Contains(recorder.Body.String(), "op-1,user-1") {
+	if !strings.Contains(recorder.Body.String(), expected.bodyFragment) {
 		t.Fatalf("expected CSV body, got %q", recorder.Body.String())
 	}
 }
 
 func TestPlatformGetPodLogsBindsDefaultsAndQuery(t *testing.T) {
-	resources := &stubPlatformResourceService{}
-	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/pods/api-0/logs?tailLines=50&sinceSeconds=300&previous=true&container=api", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}, {Key: "podName", Value: "api-0"}})
 
 	handler.GetPodLogs(ctx)
@@ -537,8 +669,8 @@ func TestPlatformGetPodLogsBindsDefaultsAndQuery(t *testing.T) {
 }
 
 func TestPlatformApplyPodYAMLRejectsInvalidPayload(t *testing.T) {
-	resources := &stubPlatformResourceService{}
-	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodPut, "/api/v1/clusters/cluster-a/workloads/pods/api-0/yaml", "{", gin.Params{{Key: "clusterID", Value: "cluster-a"}, {Key: "podName", Value: "api-0"}})
 
 	handler.ApplyPodYAML(ctx)
@@ -552,8 +684,8 @@ func TestPlatformApplyPodYAMLRejectsInvalidPayload(t *testing.T) {
 }
 
 func TestPlatformCreateCRDResourcePrefersBodyNamespace(t *testing.T) {
-	resources := &stubPlatformResourceService{}
-	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
 	body := `{"namespace":"team-b","content":"apiVersion: example.io/v1\nkind: Widget\nmetadata:\n  name: sample\n"}`
 	ctx, recorder := newPlatformTestContext(http.MethodPost, "/api/v1/clusters/cluster-a/extensions/crds/widgets.example.io/resources?namespace=team-a", body, gin.Params{{Key: "clusterID", Value: "cluster-a"}, {Key: "crdName", Value: "widgets.example.io"}})
 
@@ -571,8 +703,8 @@ func TestPlatformCreateCRDResourcePrefersBodyNamespace(t *testing.T) {
 }
 
 func TestPlatformInstallHelmChartBindsPayload(t *testing.T) {
-	resources := &stubPlatformResourceService{}
-	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
 	body := `{"packageId":"pkg-1","name":"nginx","version":"1.2.3","namespace":"apps","releaseName":"edge","values":"replicaCount: 2\n"}`
 	ctx, recorder := newPlatformTestContext(http.MethodPost, "/api/v1/clusters/cluster-a/helm/charts/install", body, gin.Params{{Key: "clusterID", Value: "cluster-a"}})
 
@@ -587,37 +719,29 @@ func TestPlatformInstallHelmChartBindsPayload(t *testing.T) {
 }
 
 func TestPlatformHandlerMapsApplicationErrors(t *testing.T) {
-	resources := &stubPlatformResourceService{serviceListErr: fmt.Errorf("%w: no access", apperrors.ErrAccessDenied)}
-	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	resources := newStubPlatformResourceService()
+	resources.serviceListErr = fmt.Errorf("%w: no access", apperrors.ErrAccessDenied)
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/network/services", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}})
 
 	handler.ListServices(ctx)
-
-	if recorder.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusForbidden, recorder.Body.String())
-	}
-	var payload struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if payload.Error.Code != "access_denied" {
-		t.Fatalf("error.code = %q, want access_denied", payload.Error.Code)
-	}
+	assertPlatformErrorResponse(t, recorder, http.StatusForbidden, "access_denied")
 }
 
 func TestPlatformHandlerMapsUnsupportedOperations(t *testing.T) {
-	resources := &stubPlatformResourceService{serviceListErr: fmt.Errorf("%w: streaming pod logs are not supported for agent-connected clusters yet", apperrors.ErrUnsupportedOperation)}
-	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	resources := newStubPlatformResourceService()
+	resources.serviceListErr = fmt.Errorf("%w: streaming pod logs are not supported for agent-connected clusters yet", apperrors.ErrUnsupportedOperation)
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/network/services", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}})
 
 	handler.ListServices(ctx)
+	assertPlatformErrorResponse(t, recorder, http.StatusNotImplemented, "unsupported_operation")
+}
 
-	if recorder.Code != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusNotImplemented, recorder.Body.String())
+func assertPlatformErrorResponse(t *testing.T, recorder *httptest.ResponseRecorder, wantStatus int, wantCode string) {
+	t.Helper()
+	if recorder.Code != wantStatus {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, wantStatus, recorder.Body.String())
 	}
 	var payload struct {
 		Error struct {
@@ -627,14 +751,14 @@ func TestPlatformHandlerMapsUnsupportedOperations(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload.Error.Code != "unsupported_operation" {
-		t.Fatalf("error.code = %q, want unsupported_operation", payload.Error.Code)
+	if payload.Error.Code != wantCode {
+		t.Fatalf("error.code = %q, want %q", payload.Error.Code, wantCode)
 	}
 }
 
 func TestPlatformIngestConnectorEventsAcceptsStaticBearerToken(t *testing.T) {
 	events := &stubPlatformEventService{}
-	recorder := postConnectorEventSinkRequest(NewPlatformHandler(nil, nil, nil, events, nil, nil), `{
+	recorder := postConnectorEventSinkRequest(newTestPlatformHandler(nil, nil, nil, events, nil, nil), `{
 		"connectorId":"feishu",
 		"events":[{"id":"event-1","type":"im.message.receive_v1","source":"feishu","occurredAt":"2026-06-11T08:00:00Z","payload":{}}]
 	}`, map[string]string{"Authorization": "Bearer sink-token"}, nil)
@@ -668,7 +792,7 @@ func TestPlatformIngestConnectorEventsAcceptsStaticBearerToken(t *testing.T) {
 
 func TestPlatformIngestConnectorEventsAcceptsServiceAccountWithGatewayInvoke(t *testing.T) {
 	events := &stubPlatformEventService{validateErr: fmt.Errorf("%w: static token should not be used", apperrors.ErrUnauthorized)}
-	recorder := postConnectorEventSinkRequest(NewPlatformHandler(nil, nil, nil, events, nil, nil), `{
+	recorder := postConnectorEventSinkRequest(newTestPlatformHandler(nil, nil, nil, events, nil, nil), `{
 		"connectorId":"feishu",
 		"events":[{"id":"event-1","type":"im.message.receive_v1","source":"feishu","occurredAt":"2026-06-11T08:00:00Z","payload":{}}]
 	}`, nil, func(c *gin.Context) {
@@ -702,7 +826,7 @@ func TestPlatformIngestConnectorEventsAcceptsServiceAccountWithGatewayInvoke(t *
 
 func TestPlatformIngestConnectorEventsRejectsUnauthenticatedRequest(t *testing.T) {
 	events := &stubPlatformEventService{validateErr: fmt.Errorf("%w: invalid connector event sink token", apperrors.ErrUnauthorized)}
-	recorder := postConnectorEventSinkRequest(NewPlatformHandler(nil, nil, nil, events, nil, nil), `{
+	recorder := postConnectorEventSinkRequest(newTestPlatformHandler(nil, nil, nil, events, nil, nil), `{
 		"connectorId":"feishu",
 		"events":[{"id":"event-1","type":"im.message.receive_v1","source":"feishu","occurredAt":"2026-06-11T08:00:00Z","payload":{}}]
 	}`, nil, nil)

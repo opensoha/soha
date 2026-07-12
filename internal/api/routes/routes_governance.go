@@ -35,6 +35,11 @@ func registerOperationalAuditRoutes(protected gin.IRoutes, deps Dependencies) {
 }
 
 func registerAccessRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerAccessUserRoleRoutes(protected, deps)
+	registerAccessTeamPolicyRoutes(protected, deps)
+}
+
+func registerAccessUserRoleRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/access/users", deps.Access.ListUsers)
 	protected.POST("/access/users", deps.Access.CreateUser)
 	protected.PUT("/access/users/:userID", deps.Access.UpdateUser)
@@ -44,11 +49,24 @@ func registerAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/access/roles", deps.Access.CreateRole)
 	protected.PUT("/access/roles/:roleID", deps.Access.UpdateRole)
 	protected.DELETE("/access/roles/:roleID", deps.Access.DeleteRole)
+	protected.PUT("/access/users/:userID/roles", deps.Access.ReplaceUserRoles)
+	protected.PUT("/access/users/:userID/teams", deps.Access.ReplaceUserTeams)
+}
+
+func registerAccessTeamPolicyRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerAccessTeamRoutes(protected, deps)
+	registerAccessPolicyScopeRoutes(protected, deps)
+}
+
+func registerAccessTeamRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/access/teams", deps.Access.ListTeams)
 	protected.GET("/access/permission-snapshot", deps.Access.PermissionSnapshot)
 	protected.POST("/access/teams", deps.Access.CreateTeam)
 	protected.PUT("/access/teams/:teamID", deps.Access.UpdateTeam)
 	protected.DELETE("/access/teams/:teamID", deps.Access.DeleteTeam)
+}
+
+func registerAccessPolicyScopeRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/access/policies", deps.Access.ListPolicies)
 	protected.POST("/access/policies", deps.Access.CreatePolicy)
 	protected.PUT("/access/policies/:policyID", deps.Access.UpdatePolicy)
@@ -57,11 +75,14 @@ func registerAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/access/scope-grants", deps.ScopeGrants.Create)
 	protected.PUT("/access/scope-grants/:scopeGrantID", deps.ScopeGrants.Update)
 	protected.DELETE("/access/scope-grants/:scopeGrantID", deps.ScopeGrants.Delete)
-	protected.PUT("/access/users/:userID/roles", deps.Access.ReplaceUserRoles)
-	protected.PUT("/access/users/:userID/teams", deps.Access.ReplaceUserTeams)
 }
 
 func registerAIGatewayRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerAIGatewayManagementRoutes(protected, deps)
+	registerAIGatewayRelayRoutes(protected, deps)
+}
+
+func registerAIGatewayManagementRoutes(protected gin.IRoutes, deps Dependencies) {
 	if deps.AIGateway == nil {
 		return
 	}
@@ -114,6 +135,9 @@ func registerAIGatewayRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/ai-gateway/relay/metrics", deps.AIGateway.LLMRelayMetrics)
 	protected.GET("/ai-gateway/relay/cache/stats", deps.AIGateway.LLMRelayCacheStats)
 	protected.POST("/ai-gateway/relay/cache/purge", deps.AIGateway.PurgeLLMRelayCache)
+}
+
+func registerAIGatewayRelayRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/ai-gateway/llm/openai/v1/models", deps.AIGateway.RelayOpenAIModels)
 	protected.POST("/ai-gateway/llm/openai/v1/chat/completions", deps.AIGateway.RelayOpenAIChatCompletions)
 	protected.POST("/ai-gateway/llm/openai/v1/responses", deps.AIGateway.RelayOpenAIResponses)

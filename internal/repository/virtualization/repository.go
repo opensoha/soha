@@ -96,7 +96,7 @@ func (r *Repository) ListConnections(ctx context.Context, filter domainvirtualiz
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization connections: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainvirtualization.Connection, 0, limit)
 	for rows.Next() {
@@ -367,7 +367,7 @@ func (r *Repository) ListImages(ctx context.Context, filter domainvirtualization
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization images: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainvirtualization.Image, 0, limit)
 	for rows.Next() {
 		item, scanErr := scanImage(rows)
@@ -465,7 +465,7 @@ func (r *Repository) ListFlavors(ctx context.Context, filter domainvirtualizatio
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization flavors: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainvirtualization.Flavor, 0, limit)
 	for rows.Next() {
 		item, scanErr := scanFlavor(rows)
@@ -637,7 +637,7 @@ func (r *Repository) ListTasks(ctx context.Context, filter domainvirtualization.
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainvirtualization.Task, 0, limit)
 	for rows.Next() {
 		item, scanErr := scanTask(rows)
@@ -665,7 +665,7 @@ func (r *Repository) ListTimedOutTasks(ctx context.Context, now time.Time, limit
 	if err != nil {
 		return nil, fmt.Errorf("query timed out virtualization tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainvirtualization.Task, 0, limit)
 	for rows.Next() {
 		item, scanErr := scanTask(rows)
@@ -706,7 +706,7 @@ func (r *Repository) ListTaskLogs(ctx context.Context, taskID string, limit int)
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization task logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainvirtualization.TaskLog, 0, limit)
 	for rows.Next() {
 		item, scanErr := scanTaskLog(rows)
@@ -914,7 +914,7 @@ func scanVMList(rows *sql.Rows, err error, limit int) ([]domainvirtualization.VM
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization vms: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainvirtualization.VM, 0, limit)
 	for rows.Next() {
 		item, scanErr := scanVM(rows)

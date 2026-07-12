@@ -20,14 +20,28 @@ linters:
     - ineffassign
     - revive
     - testifylint
+    - cyclop
+    - dupl
+    - funlen
+    - maintidx
   exclusions:
     paths:
       - vendor$
       - third_party$
       - internal/staticassets/web/dist$
   settings:
+    cyclop:
+      max-complexity: 20
+      package-average: 0
+    dupl:
+      threshold: 150
     errcheck:
       check-type-assertions: true
+    funlen:
+      lines: 100
+      statements: 60
+    maintidx:
+      under: 15
     revive:
       rules:
         - name: exported

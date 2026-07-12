@@ -13,10 +13,15 @@ import (
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 )
 
-func (h *CopilotHandler) StreamMessage(c *gin.Context) {
+func (h *copilotStreamHandler) StreamMessage(c *gin.Context) {
 	var req dto.WorkbenchSendMessageStreamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid workbench stream payload")
+		return
+	}
+	if err := clearResponseWriteDeadline(c); err != nil {
+		_ = c.Error(err)
+		apiresponse.Error(c, http.StatusInternalServerError, "stream_unavailable", "streaming response is unavailable")
 		return
 	}
 
@@ -59,8 +64,9 @@ func (h *CopilotHandler) StreamMessage(c *gin.Context) {
 		EventSink:        emit,
 	}, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
+		_ = c.Error(err)
 		retryable := false
-		emit(domaincopilot.WorkbenchStreamEvent{Type: "error", Message: err.Error(), Retryable: &retryable})
+		emit(domaincopilot.WorkbenchStreamEvent{Type: "error", Message: "copilot stream failed", Retryable: &retryable})
 		emit(domaincopilot.WorkbenchStreamEvent{Type: "agent.status", ProviderID: "internal", ProviderKind: "internal", Status: "failed"})
 		return
 	}

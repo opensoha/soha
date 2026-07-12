@@ -56,7 +56,7 @@ func TestStreamProjectTerminalProxiesToDockerAgentRuntime(t *testing.T) {
 		if err != nil {
 			t.Fatalf("upgrade websocket: %v", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		var init dockerRuntimeMessage
 		if err := conn.ReadJSON(&init); err != nil {
 			t.Fatalf("read init: %v", err)

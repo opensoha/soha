@@ -57,7 +57,7 @@ func (r *Repository) ListProviders(ctx context.Context, filter domainprovider.Pr
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainprovider.Provider, 0)
 	for rows.Next() {
 		item, err := scanProvider(rows)
@@ -200,7 +200,7 @@ func (r *Repository) ListOutposts(ctx context.Context, filter domainprovider.Out
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainprovider.Outpost, 0)
 	for rows.Next() {
 		item, err := scanOutpost(rows)
@@ -293,7 +293,7 @@ func (r *Repository) ListOIDCClients(ctx context.Context, providerID string) ([]
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainprovider.OIDCClient, 0)
 	for rows.Next() {
 		item, err := scanOIDCClient(rows)
@@ -459,7 +459,7 @@ func (r *Repository) ListActivePublicKeys(ctx context.Context) ([]domainprovider
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainprovider.SigningKey, 0)
 	for rows.Next() {
 		item, err := scanSigningKey(rows)
@@ -780,7 +780,7 @@ func (r *Repository) listAssignments(ctx context.Context, applicationIDs []strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var item domainportal.ApplicationAssignment
 		if err := rows.Scan(&item.ID, &item.ApplicationID, &item.SubjectType, &item.SubjectID, &item.Effect, &item.CreatedBy, &item.CreatedAt); err != nil {

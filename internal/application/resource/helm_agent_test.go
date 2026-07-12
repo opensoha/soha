@@ -14,8 +14,52 @@ import (
 
 func TestAgentHelmMutationsDelegateToAgent(t *testing.T) {
 	var seen []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.Method+" "+r.URL.String())
+	server := newAgentHelmTestServer(t, &seen)
+	defer server.Close()
+
+	service := New(Dependencies{
+		Agents:      testAgentClients(agentinfra.NewRegistry(0)),
+		Connections: stubConnectionResolver{connection: agentConnection(server.URL)},
+		Authorizer:  allowAllResourceAuthorizer{},
+		Audit:       noopResourceAuditRecorder{},
+	})
+	principal := domainidentity.Principal{UserID: "user-1"}
+
+	installed, err := service.Helm().InstallHelmChart(context.Background(), principal, "agent-cluster", domainresource.HelmChartInstallInput{
+		RepositoryURL:  "https://charts.example",
+		ChartName:      "nginx",
+		Version:        "1.2.3",
+		ReleaseName:    "edge",
+		Namespace:      "platform",
+		TimeoutSeconds: 60,
+	})
+	if err != nil {
+		t.Fatalf("InstallHelmChart() error = %v", err)
+	}
+	if installed.Name != "edge" || installed.Revision != "1" {
+		t.Fatalf("installed = %#v, want edge revision 1", installed)
+	}
+
+	values, err := service.Helm().UpdateHelmReleaseValues(context.Background(), principal, "agent-cluster", "platform", "edge", "replicaCount: 2\n")
+	if err != nil {
+		t.Fatalf("UpdateHelmReleaseValues() error = %v", err)
+	}
+	if values.Revision != "2" || !values.Editable {
+		t.Fatalf("values = %#v, want revision 2 editable", values)
+	}
+
+	if err := service.Helm().DeleteHelmRelease(context.Background(), principal, "agent-cluster", "platform", "edge"); err != nil {
+		t.Fatalf("DeleteHelmRelease() error = %v", err)
+	}
+	if len(seen) != 3 {
+		t.Fatalf("request count = %d, want 3: %#v", len(seen), seen)
+	}
+}
+
+func newAgentHelmTestServer(t *testing.T, seen *[]string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*seen = append(*seen, r.Method+" "+r.URL.String())
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/helm/charts/install":
 			var req domainresource.HelmChartInstallInput
@@ -65,43 +109,4 @@ func TestAgentHelmMutationsDelegateToAgent(t *testing.T) {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
 	}))
-	defer server.Close()
-
-	service := &Service{
-		agents:     agentinfra.NewRegistry(0),
-		resolver:   stubConnectionResolver{connection: agentConnection(server.URL)},
-		authorizer: allowAllResourceAuthorizer{},
-		audit:      noopResourceAuditRecorder{},
-	}
-	principal := domainidentity.Principal{UserID: "user-1"}
-
-	installed, err := service.InstallHelmChart(context.Background(), principal, "agent-cluster", domainresource.HelmChartInstallInput{
-		RepositoryURL:  "https://charts.example",
-		ChartName:      "nginx",
-		Version:        "1.2.3",
-		ReleaseName:    "edge",
-		Namespace:      "platform",
-		TimeoutSeconds: 60,
-	})
-	if err != nil {
-		t.Fatalf("InstallHelmChart() error = %v", err)
-	}
-	if installed.Name != "edge" || installed.Revision != "1" {
-		t.Fatalf("installed = %#v, want edge revision 1", installed)
-	}
-
-	values, err := service.UpdateHelmReleaseValues(context.Background(), principal, "agent-cluster", "platform", "edge", "replicaCount: 2\n")
-	if err != nil {
-		t.Fatalf("UpdateHelmReleaseValues() error = %v", err)
-	}
-	if values.Revision != "2" || !values.Editable {
-		t.Fatalf("values = %#v, want revision 2 editable", values)
-	}
-
-	if err := service.DeleteHelmRelease(context.Background(), principal, "agent-cluster", "platform", "edge"); err != nil {
-		t.Fatalf("DeleteHelmRelease() error = %v", err)
-	}
-	if len(seen) != 3 {
-		t.Fatalf("request count = %d, want 3: %#v", len(seen), seen)
-	}
 }

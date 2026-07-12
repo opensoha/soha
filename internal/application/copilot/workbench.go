@@ -10,8 +10,7 @@ import (
 	"github.com/google/uuid"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
-	mcpmetrics "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
-	mcptraces "github.com/opensoha/soha/internal/infrastructure/mcp/traces"
+	"github.com/opensoha/soha/internal/platform/telemetry"
 )
 
 func normalizeSessionMode(mode string) string {
@@ -357,7 +356,7 @@ func pruneHypothesisEvidenceIDs(hypotheses []domaincopilot.RootCauseHypothesis, 
 	return hypotheses
 }
 
-func limitSpans(items []mcptraces.Span, limit int) []mcptraces.Span {
+func limitSpans(items []telemetry.TraceSpan, limit int) []telemetry.TraceSpan {
 	if limit <= 0 || len(items) <= limit {
 		return items
 	}
@@ -553,7 +552,7 @@ func (s *Service) runSessionPerformance(ctx context.Context, sessionID string, s
 	if !toolsetAllowsTool(toolset, adapterID, toolName) {
 		return nil, domaincopilot.AnalysisArtifact{}, fmt.Errorf("metrics analysis tool is disabled for this session")
 	}
-	dataSources, err := s.repo.ListDataSources(ctx)
+	dataSources, err := s.dataSources.ListDataSources(ctx)
 	if err != nil {
 		return nil, domaincopilot.AnalysisArtifact{}, err
 	}
@@ -565,8 +564,8 @@ func (s *Service) runSessionPerformance(ctx context.Context, sessionID string, s
 		defer cancel()
 		timeTo := time.Now().UTC()
 		timeFrom := timeTo.Add(-time.Duration(sessionScopeTimeRange(scope)) * time.Minute)
-		summary, err := mcpmetrics.DefaultRegistry().Analyze(runCtx, source.BackendType, source.ID, source.Config, mcpmetrics.RangeQuery{
-			Scope:     mcpmetrics.Scope{ClusterID: scope.ClusterID, Namespace: scope.Namespace, Workload: scope.Workload, Service: scope.Service},
+		summary, err := s.metricBackend().Analyze(runCtx, source.BackendType, source.ID, source.Config, telemetry.MetricRangeQuery{
+			Scope:     telemetry.MetricScope{ClusterID: scope.ClusterID, Namespace: scope.Namespace, Workload: scope.Workload, Service: scope.Service},
 			MetricKey: "",
 			TimeFrom:  timeFrom,
 			TimeTo:    timeTo,
@@ -631,7 +630,7 @@ func (s *Service) runSessionPerformance(ctx context.Context, sessionID string, s
 			CreatedAt:          now,
 			UpdatedAt:          now,
 		}
-		_, _ = s.repo.CreateRootCauseRun(ctx, run)
+		_, _ = s.rootCauseRuns.CreateRootCauseRun(ctx, run)
 		graph := buildMetricsGraph(scope, source.ID, signals, evidence)
 		return []domaincopilot.ToolExecution{tool}, domaincopilot.AnalysisArtifact{
 			Kind:               "performance",
@@ -655,7 +654,7 @@ func (s *Service) runSessionTrace(ctx context.Context, sessionID string, scope d
 	if !toolsetAllowsTool(toolset, adapterID, toolName) {
 		return nil, domaincopilot.AnalysisArtifact{}, fmt.Errorf("trace analysis tool is disabled for this session")
 	}
-	dataSources, err := s.repo.ListDataSources(ctx)
+	dataSources, err := s.dataSources.ListDataSources(ctx)
 	if err != nil {
 		return nil, domaincopilot.AnalysisArtifact{}, err
 	}
@@ -668,8 +667,8 @@ func (s *Service) runSessionTrace(ctx context.Context, sessionID string, scope d
 		limit := evidenceBudget(toolset, 20)
 		timeTo := time.Now().UTC()
 		timeFrom := timeTo.Add(-time.Duration(sessionScopeTimeRange(scope)) * time.Minute)
-		result, err := mcptraces.DefaultRegistry().FindSlowSpans(runCtx, source.BackendType, source.ID, source.Config, mcptraces.Query{
-			Scope:       mcptraces.Scope{ClusterID: scope.ClusterID, Namespace: scope.Namespace, Service: scope.Service, Workload: scope.Workload},
+		result, err := s.traceBackend().FindSlowSpans(runCtx, source.BackendType, source.ID, source.Config, telemetry.TraceQuery{
+			Scope:       telemetry.TraceScope{ClusterID: scope.ClusterID, Namespace: scope.Namespace, Service: scope.Service, Workload: scope.Workload},
 			TimeFrom:    timeFrom,
 			TimeTo:      timeTo,
 			MinDuration: 250 * time.Millisecond,
@@ -679,86 +678,84 @@ func (s *Service) runSessionTrace(ctx context.Context, sessionID string, scope d
 			return nil, domaincopilot.AnalysisArtifact{}, err
 		}
 		spans := limitSpans(result.Spans, limit)
-		now := time.Now().UTC()
-		tool := domaincopilot.ToolExecution{
-			ID:          "tool:" + uuid.NewString(),
-			AdapterID:   adapterID,
-			ToolName:    toolName,
-			Status:      "success",
-			Summary:     result.Summary,
-			Input:       map[string]any{"prompt": prompt, "scope": scope, "budgetOverrides": toolset.BudgetOverrides},
-			Output:      map[string]any{"hotspots": result.Hotspots},
-			StartedAt:   now,
-			CompletedAt: &now,
-		}
-		evidence := make([]domaincopilot.RootCauseEvidence, 0, len(spans))
-		for index, item := range spans {
-			evidence = append(evidence, domaincopilot.RootCauseEvidence{
-				ID:      fmt.Sprintf("trace:%s:%d", source.ID, index+1),
-				Kind:    "trace.span",
-				Title:   fmt.Sprintf("%s / %s", item.Service, item.Operation),
-				Summary: fmt.Sprintf("duration=%.2fms trace=%s", item.DurationMS, item.TraceID),
-				Attributes: map[string]any{
-					"traceId":      item.TraceID,
-					"spanId":       item.SpanID,
-					"parentSpanId": item.ParentSpanID,
-					"durationMs":   item.DurationMS,
-					"error":        item.Error,
-					"tags":         item.Tags,
-					"service":      item.Service,
-					"operation":    item.Operation,
-				},
-			})
-		}
-		runID := "trace:" + uuid.NewString()
-		snapshot := analysisArtifactSnapshot(map[string]any{"sourceId": source.ID, "backendType": source.BackendType, "hotspots": result.Hotspots}, map[string]string{
-			"sessionId":      sessionID,
-			"rootCauseRunId": runID,
-			"analysisRunId":  runID,
-			"analysisKind":   "trace",
+		return s.persistSessionTrace(ctx, sessionTraceArtifactInput{
+			sessionID:   sessionID,
+			scope:       scope,
+			toolset:     toolset,
+			prompt:      prompt,
+			createdBy:   createdBy,
+			triggerType: triggerType,
+			dedupKey:    dedupKey,
+			source:      source,
+			result:      result,
+			spans:       spans,
 		})
-		run := domaincopilot.RootCauseRun{
-			ID:                 runID,
-			Kind:               "trace",
-			SessionID:          sessionID,
-			Title:              "Trace Analysis",
-			CreatedBy:          strings.TrimSpace(createdBy),
-			TriggerType:        strings.TrimSpace(triggerType),
-			Status:             "completed",
-			Severity:           deriveArtifactSeverity(evidence),
-			Summary:            result.Summary,
-			ClusterID:          scope.ClusterID,
-			Namespace:          scope.Namespace,
-			WorkloadName:       scope.Workload,
-			AlertID:            scope.AlertID,
-			TimeRangeMinutes:   sessionScopeTimeRange(scope),
-			Question:           prompt,
-			Evidence:           evidence,
-			Recommendations:    []string{"Review the slowest spans and compare them against downstream dependency errors."},
-			ToolExecutions:     []domaincopilot.ToolExecution{tool},
-			DataSourceSnapshot: snapshot,
-			PlaybookResults:    map[string]any{toolName: result.Hotspots},
-			RemediationPlan:    map[string]any{"policy": "suggest_only"},
-			DedupKey:           strings.TrimSpace(dedupKey),
-			CreatedAt:          now,
-			UpdatedAt:          now,
-		}
-		_, _ = s.repo.CreateRootCauseRun(ctx, run)
-		graph := buildTraceGraph(scope, source.ID, spans, evidence)
-		return []domaincopilot.ToolExecution{tool}, domaincopilot.AnalysisArtifact{
-			Kind:               "trace",
-			RunID:              runID,
-			Title:              "Trace Analysis",
-			Summary:            result.Summary,
-			Scope:              scope,
-			Evidence:           evidence,
-			Recommendations:    run.Recommendations,
-			ToolExecutions:     []domaincopilot.ToolExecution{tool},
-			Graph:              graph,
-			DataSourceSnapshot: snapshot,
-		}, nil
 	}
 	return nil, domaincopilot.AnalysisArtifact{}, fmt.Errorf("no enabled traces.v1 data source found")
+}
+
+type sessionTraceArtifactInput struct {
+	sessionID   string
+	scope       domaincopilot.SessionScope
+	toolset     domaincopilot.SessionToolset
+	prompt      string
+	createdBy   string
+	triggerType string
+	dedupKey    string
+	source      domaincopilot.DataSource
+	result      telemetry.TraceResult
+	spans       []telemetry.TraceSpan
+}
+
+func (s *Service) persistSessionTrace(ctx context.Context, input sessionTraceArtifactInput) ([]domaincopilot.ToolExecution, domaincopilot.AnalysisArtifact, error) {
+	now := time.Now().UTC()
+	tool := sessionTraceTool(input, now)
+	evidence := sessionTraceEvidence(input.source.ID, input.spans)
+	runID := "trace:" + uuid.NewString()
+	snapshot := analysisArtifactSnapshot(map[string]any{"sourceId": input.source.ID, "backendType": input.source.BackendType, "hotspots": input.result.Hotspots}, map[string]string{
+		"sessionId": input.sessionID, "rootCauseRunId": runID, "analysisRunId": runID, "analysisKind": "trace",
+	})
+	recommendations := []string{"Review the slowest spans and compare them against downstream dependency errors."}
+	run := domaincopilot.RootCauseRun{
+		ID: runID, Kind: "trace", SessionID: input.sessionID, Title: "Trace Analysis",
+		CreatedBy: strings.TrimSpace(input.createdBy), TriggerType: strings.TrimSpace(input.triggerType),
+		Status: "completed", Severity: deriveArtifactSeverity(evidence), Summary: input.result.Summary,
+		ClusterID: input.scope.ClusterID, Namespace: input.scope.Namespace, WorkloadName: input.scope.Workload,
+		AlertID: input.scope.AlertID, TimeRangeMinutes: sessionScopeTimeRange(input.scope), Question: input.prompt,
+		Evidence: evidence, Recommendations: recommendations, ToolExecutions: []domaincopilot.ToolExecution{tool},
+		DataSourceSnapshot: snapshot, PlaybookResults: map[string]any{"traces.find_slow_spans": input.result.Hotspots},
+		RemediationPlan: map[string]any{"policy": "suggest_only"}, DedupKey: strings.TrimSpace(input.dedupKey),
+		CreatedAt: now, UpdatedAt: now,
+	}
+	_, _ = s.rootCauseRuns.CreateRootCauseRun(ctx, run)
+	artifact := domaincopilot.AnalysisArtifact{
+		Kind: "trace", RunID: runID, Title: "Trace Analysis", Summary: input.result.Summary, Scope: input.scope,
+		Evidence: evidence, Recommendations: recommendations, ToolExecutions: []domaincopilot.ToolExecution{tool},
+		Graph: buildTraceGraph(input.scope, input.source.ID, input.spans, evidence), DataSourceSnapshot: snapshot,
+	}
+	return []domaincopilot.ToolExecution{tool}, artifact, nil
+}
+
+func sessionTraceTool(input sessionTraceArtifactInput, now time.Time) domaincopilot.ToolExecution {
+	return domaincopilot.ToolExecution{
+		ID: "tool:" + uuid.NewString(), AdapterID: "traces.v1", ToolName: "traces.find_slow_spans", Status: "success",
+		Summary: input.result.Summary,
+		Input:   map[string]any{"prompt": input.prompt, "scope": input.scope, "budgetOverrides": input.toolset.BudgetOverrides},
+		Output:  map[string]any{"hotspots": input.result.Hotspots}, StartedAt: now, CompletedAt: &now,
+	}
+}
+
+func sessionTraceEvidence(sourceID string, spans []telemetry.TraceSpan) []domaincopilot.RootCauseEvidence {
+	evidence := make([]domaincopilot.RootCauseEvidence, 0, len(spans))
+	for index, item := range spans {
+		evidence = append(evidence, domaincopilot.RootCauseEvidence{
+			ID: fmt.Sprintf("trace:%s:%d", sourceID, index+1), Kind: "trace.span",
+			Title:      fmt.Sprintf("%s / %s", item.Service, item.Operation),
+			Summary:    fmt.Sprintf("duration=%.2fms trace=%s", item.DurationMS, item.TraceID),
+			Attributes: map[string]any{"traceId": item.TraceID, "spanId": item.SpanID, "parentSpanId": item.ParentSpanID, "durationMs": item.DurationMS, "error": item.Error, "tags": item.Tags, "service": item.Service, "operation": item.Operation},
+		})
+	}
+	return evidence
 }
 
 func (s *Service) runSessionInspectionReview(sessionID string, scope domaincopilot.SessionScope, toolset domaincopilot.SessionToolset, prompt, locale string) ([]domaincopilot.ToolExecution, domaincopilot.AnalysisArtifact) {
@@ -900,10 +897,37 @@ func buildSessionInspectionReviewGraph(scope domaincopilot.SessionScope, runID s
 }
 
 func buildRootCauseGraph(scope domaincopilot.SessionScope, evidence []domaincopilot.RootCauseEvidence, hypotheses []domaincopilot.RootCauseHypothesis, snapshot map[string]any) *domaincopilot.AnalysisGraph {
-	nodes := make([]domaincopilot.AnalysisGraphNode, 0)
-	edges := make([]domaincopilot.AnalysisGraphEdge, 0)
+	graph := newRootCauseGraphBuilder(scope)
+	for _, item := range evidence {
+		graph.appendEvidence(scope, item)
+	}
+	for _, item := range hypotheses {
+		graph.appendHypothesis(item)
+	}
+	appendMissingSourceNodes(&graph.nodes, &graph.edges, graph.rootID, snapshot)
+	appendRecommendationNodes(&graph.nodes, &graph.edges, graph.rootID, hypotheses)
+	if len(graph.nodes) == 0 {
+		return nil
+	}
+	sort.Slice(graph.nodes, func(i, j int) bool { return graph.nodes[i].ID < graph.nodes[j].ID })
+	sort.Slice(graph.edges, func(i, j int) bool { return graph.edges[i].ID < graph.edges[j].ID })
+	return &domaincopilot.AnalysisGraph{Layout: "LR", FocusNodeID: graph.rootID, Nodes: graph.nodes, Edges: graph.edges}
+}
+
+type rootCauseGraphBuilder struct {
+	rootID          string
+	nodes           []domaincopilot.AnalysisGraphNode
+	edges           []domaincopilot.AnalysisGraphEdge
+	serviceNodeIDs  map[string]string
+	traceNodeIDs    map[string]string
+	logNodeIDs      map[string]string
+	metricNodeIDs   map[string]string
+	evidenceNodeIDs map[string]string
+}
+
+func newRootCauseGraphBuilder(scope domaincopilot.SessionScope) *rootCauseGraphBuilder {
 	rootID := graphRootNodeID(scope)
-	nodes = append(nodes, domaincopilot.AnalysisGraphNode{
+	root := domaincopilot.AnalysisGraphNode{
 		ID:         rootID,
 		Kind:       "scope",
 		Title:      graphRootTitle(scope),
@@ -915,176 +939,102 @@ func buildRootCauseGraph(scope domaincopilot.SessionScope, evidence []domaincopi
 			"workload":  scope.Workload,
 			"alertId":   scope.AlertID,
 		},
+	}
+	return &rootCauseGraphBuilder{
+		rootID: rootID, nodes: []domaincopilot.AnalysisGraphNode{root}, edges: []domaincopilot.AnalysisGraphEdge{},
+		serviceNodeIDs: map[string]string{}, traceNodeIDs: map[string]string{}, logNodeIDs: map[string]string{},
+		metricNodeIDs: map[string]string{}, evidenceNodeIDs: map[string]string{},
+	}
+}
+
+func (g *rootCauseGraphBuilder) appendEvidence(scope domaincopilot.SessionScope, item domaincopilot.RootCauseEvidence) {
+	switch item.Kind {
+	case "trace.span":
+		g.appendTraceEvidence(item)
+	case "logs.signature":
+		g.appendLogEvidence(scope, item)
+	case "metrics.signal":
+		g.appendMetricEvidence(scope, item)
+	default:
+		g.appendPlatformEvidence(item)
+	}
+}
+
+func (g *rootCauseGraphBuilder) appendTraceEvidence(item domaincopilot.RootCauseEvidence) {
+	service := strings.TrimSpace(fmt.Sprint(item.Attributes["service"]))
+	operation := strings.TrimSpace(fmt.Sprint(item.Attributes["operation"]))
+	traceID := strings.TrimSpace(fmt.Sprint(item.Attributes["traceId"]))
+	spanID := strings.TrimSpace(fmt.Sprint(item.Attributes["spanId"]))
+	parentSpanID := strings.TrimSpace(fmt.Sprint(item.Attributes["parentSpanId"]))
+	serviceNodeID := ensureGraphServiceNode(&g.nodes, &g.edges, g.serviceNodeIDs, g.rootID, service, item)
+	traceNodeID := "trace:" + traceID + ":" + spanID
+	g.traceNodeIDs[spanID] = traceNodeID
+	g.evidenceNodeIDs[item.ID] = traceNodeID
+	g.nodes = appendGraphNode(g.nodes, domaincopilot.AnalysisGraphNode{ID: traceNodeID, Kind: "span", Title: firstNonEmpty(operation, item.Title), Subtitle: item.Summary, Severity: item.Severity, EvidenceIDs: []string{item.ID}, SourceRefs: []string{"traces.v1"}, Attributes: item.Attributes})
+	g.edges = appendGraphEdge(g.edges, domaincopilot.AnalysisGraphEdge{ID: serviceNodeID + "->" + traceNodeID, Source: serviceNodeID, Target: traceNodeID, Relation: "contains", Severity: item.Severity, EvidenceIDs: []string{item.ID}})
+	if parentNodeID, ok := g.traceNodeIDs[parentSpanID]; parentSpanID != "" && ok {
+		g.edges = appendGraphEdge(g.edges, domaincopilot.AnalysisGraphEdge{ID: parentNodeID + "->" + traceNodeID, Source: parentNodeID, Target: traceNodeID, Relation: "calls", Severity: item.Severity, EvidenceIDs: []string{item.ID}})
+	}
+}
+
+func (g *rootCauseGraphBuilder) appendLogEvidence(scope domaincopilot.SessionScope, item domaincopilot.RootCauseEvidence) {
+	service := strings.TrimSpace(fmt.Sprint(item.Attributes["service"]))
+	workload := strings.TrimSpace(fmt.Sprint(item.Attributes["workload"]))
+	anchorNodeID := ensureGraphServiceNode(&g.nodes, &g.edges, g.serviceNodeIDs, g.rootID, firstNonEmpty(service, workload, scope.Workload, "日志"), item)
+	logNodeID := "log:" + item.ID
+	g.logNodeIDs[item.ID] = logNodeID
+	g.evidenceNodeIDs[item.ID] = logNodeID
+	g.nodes = appendGraphNode(g.nodes, domaincopilot.AnalysisGraphNode{ID: logNodeID, Kind: "log_signature", Title: item.Title, Subtitle: item.Summary, Severity: item.Severity, EvidenceIDs: []string{item.ID}, SourceRefs: []string{"logs.v1"}, Attributes: item.Attributes})
+	g.edges = appendGraphEdge(g.edges, domaincopilot.AnalysisGraphEdge{ID: anchorNodeID + "->" + logNodeID, Source: anchorNodeID, Target: logNodeID, Relation: "emits", Severity: item.Severity, EvidenceIDs: []string{item.ID}})
+}
+
+func (g *rootCauseGraphBuilder) appendMetricEvidence(scope domaincopilot.SessionScope, item domaincopilot.RootCauseEvidence) {
+	metricLabel := strings.TrimSpace(fmt.Sprint(item.Attributes["label"]))
+	metricKey := strings.TrimSpace(fmt.Sprint(item.Attributes["metricKey"]))
+	serviceNodeID := ensureGraphServiceNode(&g.nodes, &g.edges, g.serviceNodeIDs, g.rootID, firstNonEmpty(scope.Workload, scope.Service, "指标"), item)
+	metricNodeID := "metric:" + firstNonEmpty(metricKey, item.ID)
+	g.metricNodeIDs[item.ID] = metricNodeID
+	g.evidenceNodeIDs[item.ID] = metricNodeID
+	g.nodes = appendGraphNode(g.nodes, domaincopilot.AnalysisGraphNode{ID: metricNodeID, Kind: "metric_signal", Title: firstNonEmpty(metricLabel, metricKey, item.Title), Subtitle: item.Summary, Severity: item.Severity, EvidenceIDs: []string{item.ID}, SourceRefs: []string{"metrics.v1"}, Attributes: item.Attributes})
+	g.edges = appendGraphEdge(g.edges, domaincopilot.AnalysisGraphEdge{ID: serviceNodeID + "->" + metricNodeID, Source: serviceNodeID, Target: metricNodeID, Relation: "measures", Severity: item.Severity, EvidenceIDs: []string{item.ID}})
+}
+
+func (g *rootCauseGraphBuilder) appendPlatformEvidence(item domaincopilot.RootCauseEvidence) {
+	nodeID := "evidence:" + item.ID
+	g.evidenceNodeIDs[item.ID] = nodeID
+	g.nodes = appendGraphNode(g.nodes, domaincopilot.AnalysisGraphNode{ID: nodeID, Kind: item.Kind, Title: item.Title, Subtitle: item.Summary, Severity: item.Severity, EvidenceIDs: []string{item.ID}, SourceRefs: []string{"platform-native.v1"}, Attributes: item.Attributes})
+	g.edges = appendGraphEdge(g.edges, domaincopilot.AnalysisGraphEdge{ID: g.rootID + "->" + nodeID, Source: g.rootID, Target: nodeID, Relation: "observes", Severity: item.Severity, EvidenceIDs: []string{item.ID}})
+}
+
+func (g *rootCauseGraphBuilder) appendHypothesis(item domaincopilot.RootCauseHypothesis) {
+	hypothesisID := "hypothesis:" + item.ID
+	g.nodes = appendGraphNode(g.nodes, domaincopilot.AnalysisGraphNode{
+		ID:          hypothesisID,
+		Kind:        "hypothesis",
+		Title:       item.Title,
+		Subtitle:    item.Summary,
+		Severity:    confidenceSeverity(item.Confidence),
+		EvidenceIDs: item.EvidenceIDs,
+		SourceRefs:  []string{"analysis"},
+		Attributes:  map[string]any{"confidence": item.Confidence},
 	})
-
-	serviceNodeIDs := map[string]string{}
-	traceNodeIDs := map[string]string{}
-	logNodeIDs := map[string]string{}
-	metricNodeIDs := map[string]string{}
-	evidenceNodeIDs := map[string]string{}
-
-	for _, item := range evidence {
-		switch item.Kind {
-		case "trace.span":
-			service := strings.TrimSpace(fmt.Sprint(item.Attributes["service"]))
-			operation := strings.TrimSpace(fmt.Sprint(item.Attributes["operation"]))
-			traceID := strings.TrimSpace(fmt.Sprint(item.Attributes["traceId"]))
-			parentSpanID := strings.TrimSpace(fmt.Sprint(item.Attributes["parentSpanId"]))
-			serviceNodeID := ensureGraphServiceNode(&nodes, &edges, serviceNodeIDs, rootID, service, item)
-			traceNodeID := "trace:" + traceID + ":" + strings.TrimSpace(fmt.Sprint(item.Attributes["spanId"]))
-			traceNodeIDs[strings.TrimSpace(fmt.Sprint(item.Attributes["spanId"]))] = traceNodeID
-			evidenceNodeIDs[item.ID] = traceNodeID
-			nodes = appendGraphNode(nodes, domaincopilot.AnalysisGraphNode{
-				ID:          traceNodeID,
-				Kind:        "span",
-				Title:       firstNonEmpty(operation, item.Title),
-				Subtitle:    item.Summary,
-				Severity:    item.Severity,
-				EvidenceIDs: []string{item.ID},
-				SourceRefs:  []string{"traces.v1"},
-				Attributes:  item.Attributes,
-			})
-			edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
-				ID:          serviceNodeID + "->" + traceNodeID,
-				Source:      serviceNodeID,
-				Target:      traceNodeID,
-				Relation:    "contains",
-				Severity:    item.Severity,
-				EvidenceIDs: []string{item.ID},
-			})
-			if parentSpanID != "" {
-				if parentNodeID, ok := traceNodeIDs[parentSpanID]; ok {
-					edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
-						ID:          parentNodeID + "->" + traceNodeID,
-						Source:      parentNodeID,
-						Target:      traceNodeID,
-						Relation:    "calls",
-						Severity:    item.Severity,
-						EvidenceIDs: []string{item.ID},
-					})
-				}
-			}
-		case "logs.signature":
-			service := strings.TrimSpace(fmt.Sprint(item.Attributes["service"]))
-			workload := strings.TrimSpace(fmt.Sprint(item.Attributes["workload"]))
-			anchorTitle := firstNonEmpty(service, workload, scope.Workload, "日志")
-			anchorNodeID := ensureGraphServiceNode(&nodes, &edges, serviceNodeIDs, rootID, anchorTitle, item)
-			logNodeID := "log:" + item.ID
-			logNodeIDs[item.ID] = logNodeID
-			evidenceNodeIDs[item.ID] = logNodeID
-			nodes = appendGraphNode(nodes, domaincopilot.AnalysisGraphNode{
-				ID:          logNodeID,
-				Kind:        "log_signature",
-				Title:       item.Title,
-				Subtitle:    item.Summary,
-				Severity:    item.Severity,
-				EvidenceIDs: []string{item.ID},
-				SourceRefs:  []string{"logs.v1"},
-				Attributes:  item.Attributes,
-			})
-			edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
-				ID:          anchorNodeID + "->" + logNodeID,
-				Source:      anchorNodeID,
-				Target:      logNodeID,
-				Relation:    "emits",
-				Severity:    item.Severity,
-				EvidenceIDs: []string{item.ID},
-			})
-		case "metrics.signal":
-			metricLabel := strings.TrimSpace(fmt.Sprint(item.Attributes["label"]))
-			metricKey := strings.TrimSpace(fmt.Sprint(item.Attributes["metricKey"]))
-			serviceNodeID := ensureGraphServiceNode(&nodes, &edges, serviceNodeIDs, rootID, firstNonEmpty(scope.Workload, scope.Service, "指标"), item)
-			metricNodeID := "metric:" + firstNonEmpty(metricKey, item.ID)
-			metricNodeIDs[item.ID] = metricNodeID
-			evidenceNodeIDs[item.ID] = metricNodeID
-			nodes = appendGraphNode(nodes, domaincopilot.AnalysisGraphNode{
-				ID:          metricNodeID,
-				Kind:        "metric_signal",
-				Title:       firstNonEmpty(metricLabel, metricKey, item.Title),
-				Subtitle:    item.Summary,
-				Severity:    item.Severity,
-				EvidenceIDs: []string{item.ID},
-				SourceRefs:  []string{"metrics.v1"},
-				Attributes:  item.Attributes,
-			})
-			edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
-				ID:          serviceNodeID + "->" + metricNodeID,
-				Source:      serviceNodeID,
-				Target:      metricNodeID,
-				Relation:    "measures",
-				Severity:    item.Severity,
-				EvidenceIDs: []string{item.ID},
-			})
-		default:
-			nodeID := "evidence:" + item.ID
-			evidenceNodeIDs[item.ID] = nodeID
-			nodes = appendGraphNode(nodes, domaincopilot.AnalysisGraphNode{
-				ID:          nodeID,
-				Kind:        item.Kind,
-				Title:       item.Title,
-				Subtitle:    item.Summary,
-				Severity:    item.Severity,
-				EvidenceIDs: []string{item.ID},
-				SourceRefs:  []string{"platform-native.v1"},
-				Attributes:  item.Attributes,
-			})
-			edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
-				ID:          rootID + "->" + nodeID,
-				Source:      rootID,
-				Target:      nodeID,
-				Relation:    "observes",
-				Severity:    item.Severity,
-				EvidenceIDs: []string{item.ID},
+	g.edges = appendGraphEdge(g.edges, domaincopilot.AnalysisGraphEdge{
+		ID:       g.rootID + "->" + hypothesisID,
+		Source:   g.rootID,
+		Target:   hypothesisID,
+		Relation: "hypothesizes",
+		Severity: confidenceSeverity(item.Confidence),
+	})
+	for _, evidenceID := range item.EvidenceIDs {
+		if nodeID := graphEvidenceNodeID(evidenceID, g.evidenceNodeIDs, g.logNodeIDs, g.metricNodeIDs); nodeID != "" {
+			g.edges = appendGraphEdge(g.edges, domaincopilot.AnalysisGraphEdge{
+				ID:          nodeID + "->" + hypothesisID,
+				Source:      nodeID,
+				Target:      hypothesisID,
+				Relation:    "supports",
+				EvidenceIDs: []string{evidenceID},
 			})
 		}
-	}
-
-	for _, item := range hypotheses {
-		hypothesisID := "hypothesis:" + item.ID
-		nodes = appendGraphNode(nodes, domaincopilot.AnalysisGraphNode{
-			ID:          hypothesisID,
-			Kind:        "hypothesis",
-			Title:       item.Title,
-			Subtitle:    item.Summary,
-			Severity:    confidenceSeverity(item.Confidence),
-			EvidenceIDs: item.EvidenceIDs,
-			SourceRefs:  []string{"analysis"},
-			Attributes:  map[string]any{"confidence": item.Confidence},
-		})
-		edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
-			ID:       rootID + "->" + hypothesisID,
-			Source:   rootID,
-			Target:   hypothesisID,
-			Relation: "hypothesizes",
-			Severity: confidenceSeverity(item.Confidence),
-		})
-		for _, evidenceID := range item.EvidenceIDs {
-			if nodeID := graphEvidenceNodeID(evidenceID, evidenceNodeIDs, logNodeIDs, metricNodeIDs); nodeID != "" {
-				edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
-					ID:          nodeID + "->" + hypothesisID,
-					Source:      nodeID,
-					Target:      hypothesisID,
-					Relation:    "supports",
-					EvidenceIDs: []string{evidenceID},
-				})
-			}
-		}
-	}
-
-	appendMissingSourceNodes(&nodes, &edges, rootID, snapshot)
-	appendRecommendationNodes(&nodes, &edges, rootID, hypotheses)
-
-	if len(nodes) == 0 {
-		return nil
-	}
-
-	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
-	sort.Slice(edges, func(i, j int) bool { return edges[i].ID < edges[j].ID })
-	return &domaincopilot.AnalysisGraph{
-		Layout:      "LR",
-		FocusNodeID: rootID,
-		Nodes:       nodes,
-		Edges:       edges,
 	}
 }
 
@@ -1125,7 +1075,7 @@ func buildMetricsGraph(scope domaincopilot.SessionScope, sourceID string, signal
 	}
 }
 
-func buildTraceGraph(scope domaincopilot.SessionScope, sourceID string, spans []mcptraces.Span, evidence []domaincopilot.RootCauseEvidence) *domaincopilot.AnalysisGraph {
+func buildTraceGraph(scope domaincopilot.SessionScope, sourceID string, spans []telemetry.TraceSpan, evidence []domaincopilot.RootCauseEvidence) *domaincopilot.AnalysisGraph {
 	rootID := graphRootNodeID(scope)
 	nodes := []domaincopilot.AnalysisGraphNode{{
 		ID:         rootID,

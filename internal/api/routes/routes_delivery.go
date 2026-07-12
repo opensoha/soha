@@ -9,7 +9,13 @@ func registerDeliveryRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depen
 	if !cfg.Modules.Delivery.Enabled {
 		return
 	}
+	registerDeliveryRuntimeRoutes(protected, deps)
+	registerDeliveryCatalogRoutes(protected, deps)
+	registerDeliveryApplicationRoutes(protected, deps)
+	registerDeliveryExecutionRoutes(protected, deps)
+}
 
+func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/application-environments", deps.Catalog.ListApplicationEnvironments)
 	protected.GET("/application-environments/:applicationEnvironmentID", deps.Catalog.GetApplicationEnvironment)
 	protected.GET("/application-environments/:applicationEnvironmentID/detail", deps.Delivery.GetApplicationEnvironmentDetail)
@@ -41,6 +47,9 @@ func registerDeliveryRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depen
 	protected.POST("/delivery/plans", deps.Delivery.CreateDeliveryPlan)
 	protected.GET("/delivery/plans/:planID", deps.Delivery.GetDeliveryPlan)
 	protected.POST("/delivery/plans/:planID/confirm", deps.Delivery.ConfirmDeliveryPlan)
+}
+
+func registerDeliveryCatalogRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/application-environments", deps.Catalog.CreateApplicationEnvironment)
 	protected.PUT("/application-environments/:applicationEnvironmentID", deps.Catalog.UpdateApplicationEnvironment)
 	protected.DELETE("/application-environments/:applicationEnvironmentID", deps.Catalog.DeleteApplicationEnvironment)
@@ -54,6 +63,9 @@ func registerDeliveryRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depen
 	protected.POST("/workflow-templates", deps.Catalog.CreateWorkflowTemplate)
 	protected.PUT("/workflow-templates/:workflowTemplateID", deps.Catalog.UpdateWorkflowTemplate)
 	protected.DELETE("/workflow-templates/:workflowTemplateID", deps.Catalog.DeleteWorkflowTemplate)
+}
+
+func registerDeliveryApplicationRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/applications", deps.Applications.ListApplications)
 	protected.POST("/applications", deps.Applications.CreateApplication)
 	protected.GET("/applications/:applicationID", deps.Applications.GetApplication)
@@ -68,6 +80,9 @@ func registerDeliveryRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depen
 	protected.DELETE("/applications/:applicationID/services/:serviceID", deps.Applications.DeleteApplicationService)
 	protected.PUT("/applications/:applicationID", deps.Applications.UpdateApplication)
 	protected.DELETE("/applications/:applicationID", deps.Applications.DeleteApplication)
+}
+
+func registerDeliveryExecutionRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/builds", deps.Builds.ListBuilds)
 	protected.GET("/builds/:buildID", deps.Builds.GetBuild)
 	protected.POST("/builds/trigger", deps.Builds.TriggerBuild)

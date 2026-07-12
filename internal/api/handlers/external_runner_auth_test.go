@@ -4,10 +4,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/keyring"
 )
 
 func TestAuthorizeExternalRunnerAcceptsStaticBearerToken(t *testing.T) {
@@ -17,6 +19,45 @@ func TestAuthorizeExternalRunnerAcceptsStaticBearerToken(t *testing.T) {
 
 	if !authorizeDeliveryRunner(ctx, "runner-token") {
 		t.Fatal("authorizeDeliveryRunner = false, want static runner token accepted")
+	}
+}
+
+func TestAuthorizeExternalRunnerAcceptsUnexpiredPreviousKey(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(time.Hour)
+	active, _ := keyring.NewKey("active", "active-runner-token", now, nil)
+	previous, _ := keyring.NewKey("previous", "previous-runner-token", now.Add(-time.Hour), &expiresAt)
+	keys, _ := keyring.New(active, []keyring.Key{previous})
+	ctx := newRunnerAuthTestContext(http.Header{"Authorization": []string{"Bearer previous-runner-token"}})
+	if !authorizeDeliveryRunnerKeys(ctx, keys) {
+		t.Fatal("unexpired previous runner key was rejected")
+	}
+}
+
+func TestAuthorizeExternalRunnerRejectsExpiredPreviousKey(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	expiresAt := now.Add(-time.Minute)
+	active, _ := keyring.NewKey("active", "active-runner-token", now, nil)
+	previous, _ := keyring.NewKey("previous", "previous-runner-token", now.Add(-time.Hour), &expiresAt)
+	keys, _ := keyring.New(active, []keyring.Key{previous})
+	ctx := newRunnerAuthTestContext(http.Header{"Authorization": []string{"Bearer previous-runner-token"}})
+	if authorizeDeliveryRunnerKeys(ctx, keys) {
+		t.Fatal("expired previous runner key was accepted")
+	}
+}
+
+func TestAuthorizeExternalRunnerRejectsMultipleAuthorizationHeaders(t *testing.T) {
+	t.Parallel()
+
+	ctx := newRunnerAuthTestContext(http.Header{
+		"Authorization": []string{"Bearer runner-token", "Bearer attacker-token"},
+	})
+	if authorizeDeliveryRunner(ctx, "runner-token") {
+		t.Fatal("multiple authorization headers were accepted")
 	}
 }
 

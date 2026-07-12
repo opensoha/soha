@@ -74,11 +74,17 @@ func TestBuildKubeVirtVMUsesDataSourceClone(t *testing.T) {
 	if len(accessModes) != 1 || accessModes[0] != "ReadWriteOnce" {
 		t.Fatalf("accessModes = %#v, want ReadWriteOnce", accessModes)
 	}
-	volumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
+	volumes, _, err := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
+	if err != nil {
+		t.Fatalf("volumes error = %v", err)
+	}
 	if len(volumes) == 0 {
 		t.Fatalf("volumes len = 0")
 	}
-	root := volumes[0].(map[string]any)
+	root, ok := volumes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("root volume = %#v, want map", volumes[0])
+	}
 	if _, ok := root["dataVolume"]; !ok {
 		t.Fatalf("root volume = %#v, want dataVolume", root)
 	}
@@ -144,11 +150,17 @@ func TestBuildKubeVirtVMUsesPVCClone(t *testing.T) {
 		SourceMode: "pvc_clone",
 		SourceRef:  "root-pvc",
 	})
-	volumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
+	volumes, _, err := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
+	if err != nil {
+		t.Fatalf("volumes error = %v", err)
+	}
 	if len(volumes) == 0 {
 		t.Fatalf("volumes len = 0")
 	}
-	root := volumes[0].(map[string]any)
+	root, ok := volumes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("root volume = %#v, want map", volumes[0])
+	}
 	if _, ok := root["persistentVolumeClaim"]; !ok {
 		t.Fatalf("root volume = %#v, want persistentVolumeClaim", root)
 	}
@@ -240,8 +252,14 @@ func TestBuildKubeVirtVMUsesSourceRefForContainerDisk(t *testing.T) {
 	if len(volumes) == 0 {
 		t.Fatalf("volumes len = 0")
 	}
-	root := volumes[0].(map[string]any)
-	containerDisk := root["containerDisk"].(map[string]any)
+	root, ok := volumes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("root volume = %#v, want map", volumes[0])
+	}
+	containerDisk, ok := root["containerDisk"].(map[string]any)
+	if !ok {
+		t.Fatalf("containerDisk = %#v, want map", root["containerDisk"])
+	}
 	if containerDisk["image"] != "quay.io/containerdisks/cirros:latest" {
 		t.Fatalf("containerDisk image = %#v, want sourceRef", containerDisk["image"])
 	}
@@ -520,17 +538,22 @@ func TestKubeVirtAdapterGetConsoleURLReturnsBackendURL(t *testing.T) {
 	if result.BackendURL != "https://k8s.example/apis/subresources.kubevirt.io/v1/namespaces/apps/virtualmachineinstances/demo/vnc" {
 		t.Fatalf("backendURL = %q", result.BackendURL)
 	}
-	if result.BackendHeaders.Get("Authorization") != "Bearer token-1" {
-		t.Fatalf("Authorization header = %q", result.BackendHeaders.Get("Authorization"))
+	headers := ConsoleBackendHeaders(result)
+	if headers.Get("Authorization") != "Bearer token-1" {
+		t.Fatalf("Authorization header = %q", headers.Get("Authorization"))
 	}
-	if result.BackendTLSConfig == nil || !result.BackendTLSConfig.InsecureSkipVerify {
-		t.Fatalf("BackendTLSConfig = %#v, want kube REST TLS config", result.BackendTLSConfig)
+	tlsConfig, err := ConsoleBackendTLSConfig(result)
+	if err != nil {
+		t.Fatalf("ConsoleBackendTLSConfig() error = %v", err)
+	}
+	if tlsConfig == nil || !tlsConfig.InsecureSkipVerify {
+		t.Fatalf("BackendTLS = %#v, want kube REST TLS config", result.BackendTLS)
 	}
 	raw, err := json.Marshal(result)
 	if err != nil {
 		t.Fatalf("marshal console result: %v", err)
 	}
-	if strings.Contains(string(raw), "token-1") || strings.Contains(string(raw), "BackendHeaders") || strings.Contains(string(raw), "BackendTLSConfig") {
+	if strings.Contains(string(raw), "token-1") || strings.Contains(string(raw), "BackendHeaders") || strings.Contains(string(raw), "BackendTLS") {
 		t.Fatalf("console result leaked backend internals: %s", raw)
 	}
 }

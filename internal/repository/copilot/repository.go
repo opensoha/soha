@@ -39,7 +39,7 @@ func (r *Repository) ListSessions(ctx context.Context, createdBy string, limit i
 	if err != nil {
 		return nil, fmt.Errorf("query ai sessions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.Session, 0, limit)
 	for rows.Next() {
 		item, err := scanSession(rows)
@@ -123,7 +123,7 @@ func (r *Repository) ListMessages(ctx context.Context, sessionID string, limit i
 	if err != nil {
 		return nil, fmt.Errorf("query ai messages: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.Message, 0, limit)
 	for rows.Next() {
 		item, err := scanMessage(rows)
@@ -172,7 +172,7 @@ func (r *Repository) ListRecentMessages(ctx context.Context, sessionID string, l
 	if err != nil {
 		return nil, fmt.Errorf("query recent ai messages: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.Message, 0, limit)
 	for rows.Next() {
 		item, err := scanMessage(rows)
@@ -232,7 +232,7 @@ func (r *Repository) ListDataSources(ctx context.Context) ([]domaincopilot.DataS
 	if err != nil {
 		return nil, fmt.Errorf("query data sources: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.DataSource, 0)
 	for rows.Next() {
 		item, err := scanDataSource(rows)
@@ -340,7 +340,7 @@ func (r *Repository) ListAnalysisProfiles(ctx context.Context) ([]domaincopilot.
 	if err != nil {
 		return nil, fmt.Errorf("query analysis profiles: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.AnalysisProfile, 0)
 	for rows.Next() {
 		item, err := scanAnalysisProfile(rows)
@@ -418,7 +418,7 @@ func (r *Repository) ListAutomationPolicies(ctx context.Context) ([]domaincopilo
 	if err != nil {
 		return nil, fmt.Errorf("query automation policies: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.AutomationPolicy, 0)
 	for rows.Next() {
 		item, err := scanAutomationPolicy(rows)
@@ -531,7 +531,7 @@ func (r *Repository) ListRootCauseRuns(ctx context.Context, createdBy string, fi
 	if err != nil {
 		return nil, fmt.Errorf("query root cause runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.RootCauseRun, 0, limit)
 	for rows.Next() {
 		item, err := scanRootCauseRun(rows)
@@ -718,7 +718,7 @@ func (r *Repository) ListAgentRuns(ctx context.Context, filter domaincopilot.Age
 	if err != nil {
 		return nil, fmt.Errorf("query ai agent runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.AgentRun, 0, limit)
 	for rows.Next() {
 		item, err := scanAgentRun(rows)
@@ -850,7 +850,7 @@ func (r *Repository) ClaimAgentRun(ctx context.Context, input domaincopilot.Agen
 		if queryErr != nil {
 			return fmt.Errorf("claim ai agent run query: %w", queryErr)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		if !rows.Next() {
 			return apperrors.ErrNotFound
 		}
@@ -1016,7 +1016,7 @@ func (r *Repository) ListInspectionTasks(ctx context.Context, createdBy string, 
 	if err != nil {
 		return nil, fmt.Errorf("query inspection tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.InspectionTask, 0, limit)
 	for rows.Next() {
 		item, err := scanInspectionTask(rows)
@@ -1052,7 +1052,7 @@ func (r *Repository) ListDueInspectionTasks(ctx context.Context, now time.Time, 
 	if err != nil {
 		return nil, fmt.Errorf("query due inspection tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.InspectionTask, 0, limit)
 	for rows.Next() {
 		item, err := scanInspectionTask(rows)
@@ -1175,7 +1175,7 @@ func (r *Repository) ListInspectionRuns(ctx context.Context, createdBy string, f
 	if err != nil {
 		return nil, fmt.Errorf("query inspection runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domaincopilot.InspectionRun, 0, limit)
 	for rows.Next() {
 		item, runClusterID, runNamespace, runChecks, err := scanInspectionRunWithTask(rows)
@@ -1470,113 +1470,15 @@ func (r *Repository) getAutomationPolicy(ctx context.Context, policyID string) (
 	return scanAutomationPolicyRow(row, policyID)
 }
 
-func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
-	var item domaincopilot.RootCauseRun
-	var kind string
-	var sessionID sql.NullString
-	var analysisProfileID sql.NullString
-	var triggerType sql.NullString
-	var clusterID sql.NullString
-	var namespace sql.NullString
-	var workloadKind sql.NullString
-	var workloadName sql.NullString
-	var alertID sql.NullString
-	var question sql.NullString
-	var evidence []byte
-	var hypotheses []byte
-	var recommendations []byte
-	var toolExecutions []byte
-	var dataSourceSnapshot []byte
-	var playbookResults []byte
-	var remediationPlan []byte
-	var dedupKey sql.NullString
-	if err := rows.Scan(
-		&item.ID,
-		&kind,
-		&sessionID,
-		&item.Title,
-		&item.CreatedBy,
-		&analysisProfileID,
-		&triggerType,
-		&item.Status,
-		&item.Severity,
-		&item.Summary,
-		&clusterID,
-		&namespace,
-		&workloadKind,
-		&workloadName,
-		&alertID,
-		&item.TimeRangeMinutes,
-		&question,
-		&evidence,
-		&hypotheses,
-		&recommendations,
-		&toolExecutions,
-		&dataSourceSnapshot,
-		&playbookResults,
-		&remediationPlan,
-		&dedupKey,
-		&item.CreatedAt,
-		&item.UpdatedAt,
-	); err != nil {
-		return domaincopilot.RootCauseRun{}, fmt.Errorf("scan root cause run: %w", err)
-	}
-	item.Kind = kind
-	if sessionID.Valid {
-		item.SessionID = sessionID.String
-	}
-	if analysisProfileID.Valid {
-		item.AnalysisProfileID = analysisProfileID.String
-	}
-	if triggerType.Valid {
-		item.TriggerType = triggerType.String
-	}
-	if clusterID.Valid {
-		item.ClusterID = clusterID.String
-	}
-	if namespace.Valid {
-		item.Namespace = namespace.String
-	}
-	if workloadKind.Valid {
-		item.WorkloadKind = workloadKind.String
-	}
-	if workloadName.Valid {
-		item.WorkloadName = workloadName.String
-	}
-	if alertID.Valid {
-		item.AlertID = alertID.String
-	}
-	if question.Valid {
-		item.Question = question.String
-	}
-	if dedupKey.Valid {
-		item.DedupKey = dedupKey.String
-	}
-	if len(evidence) > 0 {
-		_ = json.Unmarshal(evidence, &item.Evidence)
-	}
-	if len(hypotheses) > 0 {
-		_ = json.Unmarshal(hypotheses, &item.Hypotheses)
-	}
-	if len(recommendations) > 0 {
-		_ = json.Unmarshal(recommendations, &item.Recommendations)
-	}
-	if len(toolExecutions) > 0 {
-		_ = json.Unmarshal(toolExecutions, &item.ToolExecutions)
-	}
-	if len(dataSourceSnapshot) > 0 {
-		_ = json.Unmarshal(dataSourceSnapshot, &item.DataSourceSnapshot)
-	}
-	if len(playbookResults) > 0 {
-		_ = json.Unmarshal(playbookResults, &item.PlaybookResults)
-	}
-	if len(remediationPlan) > 0 {
-		_ = json.Unmarshal(remediationPlan, &item.RemediationPlan)
-	}
-	return item, nil
+type rootCauseScanner interface {
+	Scan(dest ...any) error
 }
 
-func scanRootCauseRunRow(row *sql.Row, runID string) (domaincopilot.RootCauseRun, error) {
+func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
+	return scanRootCause(rows, "")
+}
+
+func scanRootCause(scanner rootCauseScanner, runID string) (domaincopilot.RootCauseRun, error) {
 	var item domaincopilot.RootCauseRun
 	var kind string
 	var sessionID sql.NullString
@@ -1596,7 +1498,7 @@ func scanRootCauseRunRow(row *sql.Row, runID string) (domaincopilot.RootCauseRun
 	var playbookResults []byte
 	var remediationPlan []byte
 	var dedupKey sql.NullString
-	if err := row.Scan(
+	if err := scanner.Scan(
 		&item.ID,
 		&kind,
 		&sessionID,
@@ -1625,7 +1527,7 @@ func scanRootCauseRunRow(row *sql.Row, runID string) (domaincopilot.RootCauseRun
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
+		if runID != "" && errors.Is(err, sql.ErrNoRows) {
 			return domaincopilot.RootCauseRun{}, copilotNotFound("root cause run", runID)
 		}
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("scan root cause run: %w", err)
@@ -1661,28 +1563,28 @@ func scanRootCauseRunRow(row *sql.Row, runID string) (domaincopilot.RootCauseRun
 	if dedupKey.Valid {
 		item.DedupKey = dedupKey.String
 	}
-	if len(evidence) > 0 {
-		_ = json.Unmarshal(evidence, &item.Evidence)
-	}
-	if len(hypotheses) > 0 {
-		_ = json.Unmarshal(hypotheses, &item.Hypotheses)
-	}
-	if len(recommendations) > 0 {
-		_ = json.Unmarshal(recommendations, &item.Recommendations)
-	}
-	if len(toolExecutions) > 0 {
-		_ = json.Unmarshal(toolExecutions, &item.ToolExecutions)
-	}
-	if len(dataSourceSnapshot) > 0 {
-		_ = json.Unmarshal(dataSourceSnapshot, &item.DataSourceSnapshot)
-	}
-	if len(playbookResults) > 0 {
-		_ = json.Unmarshal(playbookResults, &item.PlaybookResults)
-	}
-	if len(remediationPlan) > 0 {
-		_ = json.Unmarshal(remediationPlan, &item.RemediationPlan)
-	}
+	decodeRootCauseJSON(&item, evidence, hypotheses, recommendations, toolExecutions, dataSourceSnapshot, playbookResults, remediationPlan)
 	return item, nil
+}
+
+func decodeRootCauseJSON(item *domaincopilot.RootCauseRun, evidence, hypotheses, recommendations, toolExecutions, dataSourceSnapshot, playbookResults, remediationPlan []byte) {
+	decodeJSONIfPresent(evidence, &item.Evidence)
+	decodeJSONIfPresent(hypotheses, &item.Hypotheses)
+	decodeJSONIfPresent(recommendations, &item.Recommendations)
+	decodeJSONIfPresent(toolExecutions, &item.ToolExecutions)
+	decodeJSONIfPresent(dataSourceSnapshot, &item.DataSourceSnapshot)
+	decodeJSONIfPresent(playbookResults, &item.PlaybookResults)
+	decodeJSONIfPresent(remediationPlan, &item.RemediationPlan)
+}
+
+func decodeJSONIfPresent(raw []byte, destination any) {
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, destination)
+	}
+}
+
+func scanRootCauseRunRow(row *sql.Row, runID string) (domaincopilot.RootCauseRun, error) {
+	return scanRootCause(row, runID)
 }
 
 func agentRunSelect() string {
@@ -1921,27 +1823,6 @@ func scanInspectionTaskRow(row *sql.Row, taskID string) (domaincopilot.Inspectio
 	if lastRunAt.Valid {
 		value := lastRunAt.Time
 		item.LastRunAt = &value
-	}
-	return item, nil
-}
-
-func scanInspectionRun(rows *sql.Rows) (domaincopilot.InspectionRun, error) {
-	var item domaincopilot.InspectionRun
-	var findings []byte
-	var report []byte
-	var completedAt sql.NullTime
-	if err := rows.Scan(&item.ID, &item.TaskID, &item.TriggeredBy, &item.Status, &item.Severity, &item.Summary, &findings, &report, &item.StartedAt, &completedAt, &item.CreatedAt); err != nil {
-		return domaincopilot.InspectionRun{}, fmt.Errorf("scan inspection run: %w", err)
-	}
-	if len(findings) > 0 {
-		_ = json.Unmarshal(findings, &item.Findings)
-	}
-	if len(report) > 0 {
-		_ = json.Unmarshal(report, &item.Report)
-	}
-	if completedAt.Valid {
-		value := completedAt.Time
-		item.CompletedAt = &value
 	}
 	return item, nil
 }

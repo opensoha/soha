@@ -1,28 +1,37 @@
 package handlers
 
 import (
-	"crypto/subtle"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/platform/keyring"
 )
 
 func authorizeDeliveryRunner(c *gin.Context, staticToken string) bool {
-	return authorizeExternalRunner(c, staticToken, appaccess.PermDeliveryExecutionTasksManage)
+	return authorizeDeliveryRunnerKeys(c, legacyRunnerKeyring(staticToken))
 }
 
-func authorizeDockerRunner(c *gin.Context, staticToken string) bool {
-	return authorizeExternalRunner(c, staticToken, appaccess.PermDockerOperationsManage)
+func authorizeDeliveryRunnerKeys(c *gin.Context, keys keyring.Ring) bool {
+	return authorizeExternalRunnerKeys(c, keys, appaccess.PermDeliveryExecutionTasksManage)
 }
 
-func authorizeAIAgentRunner(c *gin.Context, staticToken string) bool {
-	return authorizeExternalRunner(c, staticToken, appaccess.PermAIGatewayInvoke, appaccess.PermObserveAIChatUse)
+func authorizeDockerRunnerKeys(c *gin.Context, keys keyring.Ring) bool {
+	return authorizeExternalRunnerKeys(c, keys, appaccess.PermDockerOperationsManage)
 }
 
-func authorizeExternalRunner(c *gin.Context, staticToken string, acceptedPermissionKeys ...string) bool {
-	if authorizeStaticBearerToken(c.GetHeader("Authorization"), staticToken) {
+func authorizeAIAgentRunnerKeys(c *gin.Context, keys keyring.Ring) bool {
+	return authorizeExternalRunnerKeys(c, keys, appaccess.PermAIGatewayInvoke, appaccess.PermObserveAIChatUse)
+}
+
+func authorizeExternalRunnerKeys(c *gin.Context, keys keyring.Ring, acceptedPermissionKeys ...string) bool {
+	authorization, valid := apiMiddleware.SingleAuthorizationHeader(c.Request)
+	if !valid {
+		return false
+	}
+	if authorizeStaticBearerKeys(authorization, keys) {
 		return true
 	}
 	accessCtx := apiMiddleware.AccessContextFromContext(c)
@@ -33,19 +42,31 @@ func authorizeExternalRunner(c *gin.Context, staticToken string, acceptedPermiss
 	return hasAnyRunnerPermission(principal.PermissionKeys, acceptedPermissionKeys...)
 }
 
-func authorizeStaticBearerToken(header, staticToken string) bool {
-	expected := strings.TrimSpace(staticToken)
-	if expected == "" {
+func authorizeStaticBearerKeys(header string, keys keyring.Ring) bool {
+	if keys.Active().ID() == "" {
 		return false
 	}
 	actual := strings.TrimSpace(header)
 	if len(actual) >= len("Bearer ") && strings.EqualFold(actual[:len("Bearer ")], "Bearer ") {
 		actual = strings.TrimSpace(actual[len("Bearer "):])
 	}
-	if len(actual) != len(expected) {
-		return false
+	return keys.Match(actual, time.Now().UTC())
+}
+
+func legacyRunnerKeyring(token string) keyring.Ring {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return keyring.Ring{}
 	}
-	return subtle.ConstantTimeCompare([]byte(actual), []byte(expected)) == 1
+	key, err := keyring.NewKey("legacy-config-key", token, time.Unix(0, 0).UTC(), nil)
+	if err != nil {
+		return keyring.Ring{}
+	}
+	ring, err := keyring.New(key, nil)
+	if err != nil {
+		return keyring.Ring{}
+	}
+	return ring
 }
 
 func hasAnyRunnerPermission(permissionKeys []string, acceptedPermissionKeys ...string) bool {

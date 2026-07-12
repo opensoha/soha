@@ -78,7 +78,7 @@ func (s *Service) ListInspectionTasks(ctx context.Context, principal domainident
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListInspectionTasks(ctx, principal.UserID, 50)
+	return s.inspectionTasks.ListInspectionTasks(ctx, principal.UserID, 50)
 }
 
 func (s *Service) CreateInspectionTask(ctx context.Context, principal domainidentity.Principal, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
@@ -107,14 +107,14 @@ func (s *Service) CreateInspectionTask(ctx context.Context, principal domainiden
 		CreatedAt:       time.Now().UTC(),
 		UpdatedAt:       time.Now().UTC(),
 	}
-	return s.repo.CreateInspectionTask(ctx, task)
+	return s.inspectionTasks.CreateInspectionTask(ctx, task)
 }
 
 func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID string, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
-	task, err := s.repo.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
+	task, err := s.inspectionTasks.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
 	if err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
@@ -136,14 +136,14 @@ func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainiden
 		IntervalMinutes: normalizeInterval(input.IntervalMinutes),
 		Metadata:        metadataWithLocale(defaultInspectionMetadata(input.Metadata), locale),
 	}
-	return s.repo.UpdateInspectionTask(ctx, principal.UserID, task.ID, payload)
+	return s.inspectionTasks.UpdateInspectionTask(ctx, principal.UserID, task.ID, payload)
 }
 
 func (s *Service) DeleteInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID string) error {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
 		return err
 	}
-	return s.repo.DeleteInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
+	return s.inspectionTasks.DeleteInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
 }
 
 func (s *Service) ListInspectionRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.InspectionRunFilter) ([]domaincopilot.InspectionRun, error) {
@@ -157,20 +157,20 @@ func (s *Service) ListInspectionRuns(ctx context.Context, principal domainidenti
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
-	return s.repo.ListInspectionRuns(ctx, principal.UserID, filter)
+	return s.inspectionRuns.ListInspectionRuns(ctx, principal.UserID, filter)
 }
 
 func (s *Service) ExecuteInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID, locale string) (domaincopilot.InspectionRun, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionRun); err != nil {
 		return domaincopilot.InspectionRun{}, err
 	}
-	task, err := s.repo.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
+	task, err := s.inspectionTasks.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
 	if err != nil {
 		return domaincopilot.InspectionRun{}, err
 	}
 	run, err := s.executeInspection(ctx, principal, task, principal.UserID, localeFromInspectionMetadata(task.Metadata, locale))
 	if err == nil {
-		_ = s.repo.TouchInspectionTaskRun(ctx, task.ID, time.Now().UTC())
+		_ = s.inspectionTasks.TouchInspectionTaskRun(ctx, task.ID, time.Now().UTC())
 	}
 	return run, err
 }
@@ -182,7 +182,7 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return domaincopilot.Session{}, err
 	}
-	runs, err := s.repo.ListInspectionRuns(ctx, principal.UserID, domaincopilot.InspectionRunFilter{Limit: 200})
+	runs, err := s.inspectionRuns.ListInspectionRuns(ctx, principal.UserID, domaincopilot.InspectionRunFilter{Limit: 200})
 	if err != nil {
 		return domaincopilot.Session{}, err
 	}
@@ -197,7 +197,7 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 		return domaincopilot.Session{}, fmt.Errorf("%w: inspection run not found: %s", aperrors.ErrNotFound, strings.TrimSpace(runID))
 	}
 	scope := map[string]any{}
-	task, taskErr := s.repo.GetInspectionTask(ctx, principal.UserID, target.TaskID)
+	task, taskErr := s.inspectionTasks.GetInspectionTask(ctx, principal.UserID, target.TaskID)
 	if taskErr == nil {
 		if task.ClusterID != "" {
 			scope["clusterId"] = task.ClusterID
@@ -228,13 +228,13 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 	})
 	session.Metadata = sessionMetadataMap(metadata)
 	session.UpdatedAt = time.Now().UTC()
-	updatedSession, err := s.repo.UpdateSession(ctx, principal.UserID, session.ID, session)
+	updatedSession, err := s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
 	if err != nil {
 		return domaincopilot.Session{}, err
 	}
 	updatedMetadata := parseSessionMetadata(updatedSession.Metadata)
 	artifact := buildInspectionReviewArtifact(updatedMetadata.Scope, *target, locale)
-	if _, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+	if _, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: updatedSession.ID,
 		Role:      "assistant",
@@ -425,7 +425,7 @@ func (s *Service) CreateInspectionTaskFromSession(ctx context.Context, principal
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
-	session, err := s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	session, err := s.sessions.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
 	if err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
@@ -457,7 +457,7 @@ func (s *Service) CreateInspectionTaskFromSession(ctx context.Context, principal
 }
 
 func (s *Service) runDueInspectionTasks(ctx context.Context) (int, error) {
-	tasks, err := s.repo.ListDueInspectionTasks(ctx, time.Now().UTC(), 20)
+	tasks, err := s.inspectionTasks.ListDueInspectionTasks(ctx, time.Now().UTC(), 20)
 	if err != nil {
 		return 0, err
 	}
@@ -487,7 +487,7 @@ func (s *Service) runDueInspectionTasks(ctx context.Context) (int, error) {
 					errCh <- err
 					continue
 				}
-				if err := s.repo.TouchInspectionTaskRun(ctx, task.ID, time.Now().UTC()); err != nil {
+				if err := s.inspectionTasks.TouchInspectionTaskRun(ctx, task.ID, time.Now().UTC()); err != nil {
 					s.logWarn("copilot inspection task touch failed", zap.String("taskID", task.ID), zap.Error(err))
 					errCh <- err
 				}
@@ -549,7 +549,7 @@ func (s *Service) executeInspection(ctx context.Context, principal domainidentit
 		CompletedAt: &completedAt,
 		CreatedAt:   startedAt,
 	}
-	savedRun, err := s.repo.CreateInspectionRun(ctx, run)
+	savedRun, err := s.inspectionRuns.CreateInspectionRun(ctx, run)
 	if err != nil {
 		if s.metrics != nil {
 			s.metrics.RecordFinish(runtimeobs.ComponentCopilotInspection, task.ID, time.Since(startedAt), 0, len(findings), runtimeobs.OutcomeFailed, err)
@@ -638,7 +638,7 @@ func (s *Service) resolveInspectionChecksProfile(ctx context.Context, task domai
 	if strings.TrimSpace(profileID) == "" {
 		return normalizeChecks(task.Checks), domaincopilot.AnalysisProfile{}, true
 	}
-	profile, err := s.repo.GetAnalysisProfile(ctx, strings.TrimSpace(profileID))
+	profile, err := s.analysisProfiles.GetAnalysisProfile(ctx, strings.TrimSpace(profileID))
 	if err != nil {
 		return normalizeChecks(task.Checks), domaincopilot.AnalysisProfile{}, true
 	}
@@ -928,7 +928,7 @@ func (s *Service) syncInspectionSuggestionSession(ctx context.Context, task doma
 	}
 	metadata := parseSessionMetadata(session.Metadata)
 	artifact := buildInspectionReviewArtifact(metadata.Scope, run, locale)
-	_, err = s.repo.CreateMessage(ctx, domaincopilot.Message{
+	_, err = s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: session.ID,
 		Role:      "assistant",
@@ -965,7 +965,7 @@ func inspectionRunAgentStatus(status string) string {
 
 func (s *Service) findOrCreateInspectionSession(ctx context.Context, task domaincopilot.InspectionTask) (domaincopilot.Session, error) {
 	locale := localeFromInspectionMetadata(task.Metadata, "")
-	sessions, err := s.repo.ListSessions(ctx, task.CreatedBy, 100)
+	sessions, err := s.sessions.ListSessions(ctx, task.CreatedBy, 100)
 	if err != nil {
 		return domaincopilot.Session{}, err
 	}
@@ -977,7 +977,7 @@ func (s *Service) findOrCreateInspectionSession(ctx context.Context, task domain
 		}
 	}
 	now := time.Now().UTC()
-	return s.repo.CreateSession(ctx, domaincopilot.Session{
+	return s.sessions.CreateSession(ctx, domaincopilot.Session{
 		ID:        uuid.NewString(),
 		Title:     fmt.Sprintf("%s · %s", localize(locale, "巡检", "Inspection"), task.Title),
 		CreatedBy: task.CreatedBy,

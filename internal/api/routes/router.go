@@ -12,6 +12,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
+	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
+	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"
+	providerportalhandler "github.com/opensoha/soha/internal/api/handlers/providerportal"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	swaggerinfra "github.com/opensoha/soha/internal/infrastructure/swagger"
@@ -45,12 +48,13 @@ type Dependencies struct {
 	Plugins        *apiHandlers.PluginHandler
 	Virtualization *apiHandlers.VirtualizationHandler
 	Docker         *apiHandlers.DockerHandler
-	Access         *apiHandlers.AccessHandler
-	ScopeGrants    *apiHandlers.ScopeGrantHandler
+	Access         *accesshandler.Handler
+	DirectorySync  *directorysynchandler.Handler
+	ScopeGrants    *accesshandler.ScopeGrantHandler
 	Menu           *apiHandlers.MenuHandler
 	Settings       *apiHandlers.SettingsHandler
 	Auth           *apiHandlers.AuthHandler
-	ProviderPortal *apiHandlers.ProviderPortalHandler
+	ProviderPortal *providerportalhandler.Handler
 	Authn          apiMiddleware.AccessTokenParser
 }
 
@@ -58,8 +62,13 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
+	if err := router.SetTrustedProxies(cfg.HTTP.TrustedProxies); err != nil {
+		logger.Error("invalid trusted proxy configuration; proxy headers disabled", zap.Error(err))
+		_ = router.SetTrustedProxies(nil)
+	}
 	router.Use(gin.Recovery())
 	router.Use(apiMiddleware.RequestID())
+	router.Use(apiMiddleware.RequestLogger(logger))
 	router.Use(apiMiddleware.CORS(cfg.HTTP.CORSAllowedOrigins))
 	router.Use(apiMiddleware.BuildPrincipalMiddleware(cfg.Auth, deps.Authn))
 
@@ -99,6 +108,8 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       cfg.HTTP.ReadTimeout,
 		WriteTimeout:      cfg.HTTP.WriteTimeout,
+		IdleTimeout:       cfg.HTTP.IdleTimeout,
+		MaxHeaderBytes:    cfg.HTTP.MaxHeaderBytes,
 	}
 }
 

@@ -29,7 +29,7 @@ func (r *Repository) ListPolicies(ctx context.Context) ([]domainaccess.Policy, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	policies := make([]domainaccess.Policy, 0)
 	for rows.Next() {
@@ -51,7 +51,7 @@ func (r *Repository) ListRoleCapabilities(ctx context.Context) (map[string][]dom
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	matrix := map[string][]domainaccess.Action{}
 	for rows.Next() {
@@ -80,7 +80,7 @@ func (r *Repository) ListRolePermissions(ctx context.Context) (map[string][]stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	matrix := map[string][]string{}
 	for rows.Next() {
@@ -120,7 +120,7 @@ func (r *Repository) ListRoles(ctx context.Context) ([]domainaccess.RoleRecord, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainaccess.RoleRecord, 0)
 	for rows.Next() {

@@ -9,7 +9,23 @@ func registerMonitoringRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dep
 	if !cfg.Modules.Monitoring.Enabled {
 		return
 	}
+	registerAlertRoutes(protected, deps)
+	registerNotificationRoutes(protected, deps)
+	registerOnCallRoutes(protected, deps)
+	registerAlertDeliveryRoutes(protected, deps)
+}
 
+func registerAlertRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerAlertResourceRoutes(protected, deps)
+	registerAlertEventRoutes(protected, deps)
+}
+
+func registerAlertResourceRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerAlertStateIntegrationRoutes(protected, deps)
+	registerAlertRuleRoutes(protected, deps)
+}
+
+func registerAlertStateIntegrationRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/monitoring/summary", deps.Monitoring.Summary)
 	protected.GET("/alerts", deps.Monitoring.ListAlerts)
 	protected.GET("/alerts/:alertID", deps.Monitoring.GetAlert)
@@ -20,12 +36,18 @@ func registerMonitoringRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dep
 	protected.POST("/alert-integrations/test", deps.Monitoring.TestAlertIntegration)
 	protected.GET("/alert-integrations/:integrationID", deps.Monitoring.GetAlertIntegration)
 	protected.PUT("/alert-integrations/:integrationID", deps.Monitoring.UpdateAlertIntegration)
+}
+
+func registerAlertRuleRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/alert-rules", deps.Monitoring.ListRules)
 	protected.POST("/alert-rules", deps.Monitoring.CreateRule)
 	protected.PUT("/alert-rules/:ruleID", deps.Monitoring.UpdateRule)
 	protected.POST("/alert-rules/:ruleID/validate", deps.Monitoring.TestRule)
 	protected.POST("/alert-rules/:ruleID/test", deps.Monitoring.TestRule)
 	protected.GET("/alert-rule-runs", deps.Monitoring.ListRuleRuns)
+}
+
+func registerAlertEventRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/alert-events", deps.Monitoring.ListEvents)
 	protected.GET("/alert-events/:eventID", deps.Monitoring.GetEvent)
 	protected.POST("/alert-events/:eventID/acknowledge", deps.Monitoring.AcknowledgeEvent)
@@ -34,6 +56,9 @@ func registerMonitoringRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dep
 	protected.POST("/healing-runs/:runID/approve", deps.Monitoring.ApproveHealingRun)
 	protected.POST("/healing-runs/:runID/reject", deps.Monitoring.RejectHealingRun)
 	protected.POST("/healing-runs/:runID/retry", deps.Monitoring.RetryHealingRun)
+}
+
+func registerNotificationRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/notification-policies", deps.Monitoring.ListNotificationPolicies)
 	protected.POST("/notification-policies", deps.Monitoring.CreateNotificationPolicy)
 	protected.PUT("/notification-policies/:policyID", deps.Monitoring.UpdateNotificationPolicy)
@@ -46,6 +71,9 @@ func registerMonitoringRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dep
 	protected.PUT("/healing-policies/:policyID", deps.Monitoring.UpdateHealingPolicy)
 	protected.GET("/healing-runs", deps.Monitoring.ListHealingRuns)
 	protected.GET("/healing-runs/:runID", deps.Monitoring.GetHealingRun)
+}
+
+func registerOnCallRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/oncall/schedules", deps.Monitoring.ListOnCallSchedules)
 	protected.POST("/oncall/schedules", deps.Monitoring.CreateOnCallSchedule)
 	protected.PUT("/oncall/schedules/:scheduleID", deps.Monitoring.UpdateOnCallSchedule)
@@ -64,6 +92,9 @@ func registerMonitoringRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dep
 	protected.GET("/oncall/current", deps.Monitoring.GetCurrentOnCall)
 	protected.GET("/oncall/resolve", deps.Monitoring.ResolveOnCall)
 	protected.GET("/oncall/tasks", deps.Monitoring.ListOnCallTasks)
+}
+
+func registerAlertDeliveryRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/alert-delivery-logs", deps.Monitoring.ListDeliveryLogs)
 	protected.GET("/alert-silences", deps.Monitoring.ListSilences)
 	protected.POST("/alert-silences", deps.Monitoring.CreateSilence)

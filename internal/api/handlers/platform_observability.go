@@ -19,11 +19,11 @@ import (
 
 const connectorEventSinkMaxBodyBytes = 1 << 20
 
-func (h *PlatformHandler) ListClusterEvents(c *gin.Context) {
+func (h *clusterEventResourceHandler) ListClusterEvents(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
 	limit := parseLimit(c.Query("limit"), 20)
-	items, err := h.resources.ListClusterEvents(c.Request.Context(), principal, c.Param("clusterID"), namespace, limit)
+	items, err := h.service.ListClusterEvents(c.Request.Context(), principal, c.Param("clusterID"), namespace, limit)
 	if err != nil {
 		writeError(c, err)
 		return

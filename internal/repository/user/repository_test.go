@@ -56,6 +56,62 @@ func TestRepositoryListTeamsDetailedAggregatesUserCountsWithoutGroupingJSON(t *t
 	}
 }
 
+func TestRepositoryResolveTeamIDsForExternalRefsIncludesLinkedDirectoryConnection(t *testing.T) {
+	repo, mock := newUserRepository(t)
+	mock.ExpectQuery(`(?s)SELECT id\s+FROM teams.*SELECT DISTINCT organization\.local_team_id.*organization\.status = 'active'.*connection\.login_provider_id = \$11`).
+		WithArgs(
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			"feishu",
+			"feishu-main",
+			"feishu",
+			"feishu-main",
+			sqlmock.AnyArg(),
+			"feishu",
+			"feishu-main",
+		).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("team-1"))
+
+	teamIDs, err := repo.ResolveTeamIDsForExternalRefs(context.Background(), "feishu", "feishu-main", []string{"od-1"})
+	if err != nil {
+		t.Fatalf("ResolveTeamIDsForExternalRefs() error = %v", err)
+	}
+	if len(teamIDs) != 1 || teamIDs[0] != "team-1" {
+		t.Fatalf("team IDs = %#v", teamIDs)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestAvatarPreferences(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    string
+		wantURL string
+		wantFit string
+	}{
+		{
+			name:    "stored avatar preferences",
+			data:    `{"avatarUrl":"https://example.com/avatar.png","avatarFit":"contain"}`,
+			wantURL: "https://example.com/avatar.png",
+			wantFit: "contain",
+		},
+		{name: "invalid json", data: `{`, wantURL: "", wantFit: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotURL, gotFit := avatarPreferences([]byte(tt.data))
+			if gotURL != tt.wantURL || gotFit != tt.wantFit {
+				t.Fatalf("avatarPreferences() = %q/%q, want %q/%q", gotURL, gotFit, tt.wantURL, tt.wantFit)
+			}
+		})
+	}
+}
+
 func newUserRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {
 	t.Helper()
 	sqlDB, mock, err := sqlmock.New()

@@ -137,55 +137,48 @@ func TestInstallConnectorMarketplaceManifestRecordsSnapshotAndAudit(t *testing.T
 		PluginID: "opensoha.feishu",
 		Enable:   true,
 	})
-	if err != nil {
-		t.Fatalf("Install returned error: %v", err)
-	}
-	if item.ID != "opensoha.feishu" || item.Type != "connector" || item.Status != statusEnabled {
-		t.Fatalf("unexpected installed connector identity/status: %#v", item)
-	}
-	if item.Source != "marketplace:opensoha/feishu" {
-		t.Fatalf("source = %q, want marketplace source", item.Source)
-	}
-	if item.SignatureStatus != "catalog" || item.ChecksumStatus != "not_provided" {
-		t.Fatalf("integrity statuses not recorded from catalog manifest: checksum=%q signature=%q", item.ChecksumStatus, item.SignatureStatus)
-	}
-	if item.Manifest.Assets == nil || len(item.Manifest.Assets.Connectors) != 1 || item.Manifest.Assets.Connectors[0] != "connectors/feishu/connector.manifest.json" {
-		t.Fatalf("connector asset snapshot not recorded: %#v", item.Manifest.Assets)
-	}
-	if item.Manifest.Capabilities == nil || len(item.Manifest.Capabilities.Tools) != 1 || item.Manifest.Capabilities.Tools[0] != "feishu.message.send_text" {
-		t.Fatalf("connector capability snapshot not recorded: %#v", item.Manifest.Capabilities)
-	}
-	if item.RequestedPermissions == nil {
-		t.Fatalf("requested permissions were not snapshotted")
-	}
-	if !containsString(item.RequestedPermissions.Required, appaccess.PermAIGatewayView) || !containsString(item.RequestedPermissions.Required, appaccess.PermAIGatewayInvoke) {
-		t.Fatalf("requested AI Gateway permissions missing: %#v", item.RequestedPermissions.Required)
-	}
-	if item.Metadata["permissionModel"] != "requested-only" || item.Metadata["manifestChecksum"] == "" {
-		t.Fatalf("install metadata missing permission/checksum evidence: %#v", item.Metadata)
-	}
-	if len(audit.entries) != 1 {
-		t.Fatalf("audit entries = %d, want 1", len(audit.entries))
-	}
+	expectPlugin(t, err == nil, "Install returned error: %v", err)
+	expectPlugin(t, item.ID == "opensoha.feishu", "plugin id = %q", item.ID)
+	expectPlugin(t, item.Type == "connector", "plugin type = %q", item.Type)
+	expectPlugin(t, item.Status == statusEnabled, "plugin status = %q", item.Status)
+	expectPlugin(t, item.Source == "marketplace:opensoha/feishu", "source = %q", item.Source)
+	expectPlugin(t, item.SignatureStatus == "catalog", "signature status = %q", item.SignatureStatus)
+	expectPlugin(t, item.ChecksumStatus == "not_provided", "checksum status = %q", item.ChecksumStatus)
+	expectPlugin(t, item.Manifest.Assets != nil, "connector assets are missing")
+	expectPlugin(t, len(item.Manifest.Assets.Connectors) == 1, "connector assets = %#v", item.Manifest.Assets)
+	expectPlugin(t, item.Manifest.Assets.Connectors[0] == "connectors/feishu/connector.manifest.json", "connector asset = %#v", item.Manifest.Assets)
+	expectPlugin(t, item.Manifest.Capabilities != nil, "connector capabilities are missing")
+	expectPlugin(t, len(item.Manifest.Capabilities.Tools) == 1, "connector tools = %#v", item.Manifest.Capabilities)
+	expectPlugin(t, item.Manifest.Capabilities.Tools[0] == "feishu.message.send_text", "connector tools = %#v", item.Manifest.Capabilities)
+	expectPlugin(t, item.RequestedPermissions != nil, "requested permissions were not snapshotted")
+	expectPlugin(t, containsString(item.RequestedPermissions.Required, appaccess.PermAIGatewayView), "view permission missing: %#v", item.RequestedPermissions.Required)
+	expectPlugin(t, containsString(item.RequestedPermissions.Required, appaccess.PermAIGatewayInvoke), "invoke permission missing: %#v", item.RequestedPermissions.Required)
+	expectPlugin(t, item.Metadata["permissionModel"] == "requested-only", "permission model metadata = %#v", item.Metadata)
+	expectPlugin(t, item.Metadata["manifestChecksum"] != "", "manifest checksum metadata missing: %#v", item.Metadata)
+	expectPlugin(t, len(audit.entries) == 1, "audit entries = %d, want 1", len(audit.entries))
 	entry := audit.entries[0]
-	if entry.Action != "plugin.install" || entry.Result != "success" {
-		t.Fatalf("unexpected audit action/result: %#v", entry)
-	}
-	if entry.Metadata["pluginId"] != "opensoha.feishu" || entry.Metadata["pluginType"] != "connector" {
-		t.Fatalf("audit connector identity missing: %#v", entry.Metadata)
-	}
-	if entry.Metadata["checksumStatus"] != "not_provided" || entry.Metadata["signatureStatus"] != "catalog" {
-		t.Fatalf("audit integrity status missing: %#v", entry.Metadata)
-	}
+	expectPlugin(t, entry.Action == "plugin.install", "audit action = %q", entry.Action)
+	expectPlugin(t, entry.Result == "success", "audit result = %q", entry.Result)
+	expectPlugin(t, entry.Metadata["pluginId"] == "opensoha.feishu", "audit plugin id missing: %#v", entry.Metadata)
+	expectPlugin(t, entry.Metadata["pluginType"] == "connector", "audit plugin type missing: %#v", entry.Metadata)
+	expectPlugin(t, entry.Metadata["checksumStatus"] == "not_provided", "audit checksum status missing: %#v", entry.Metadata)
+	expectPlugin(t, entry.Metadata["signatureStatus"] == "catalog", "audit signature status missing: %#v", entry.Metadata)
 	snapshot, ok := entry.Metadata["manifestSnapshot"].(domainplugin.PluginManifest)
 	if !ok {
 		t.Fatalf("audit manifest snapshot has unexpected type: %#v", entry.Metadata["manifestSnapshot"])
 	}
-	if snapshot.ID != "opensoha.feishu" || snapshot.Type != "connector" || snapshot.Assets == nil || snapshot.Capabilities == nil {
-		t.Fatalf("audit manifest snapshot incomplete: %#v", snapshot)
-	}
-	if snapshot.Assets.Connectors[0] != "connectors/feishu/connector.manifest.json" || snapshot.Capabilities.Tools[0] != "feishu.message.send_text" {
-		t.Fatalf("audit manifest snapshot drifted: %#v", snapshot)
+	expectPlugin(t, snapshot.ID == "opensoha.feishu", "snapshot id = %q", snapshot.ID)
+	expectPlugin(t, snapshot.Type == "connector", "snapshot type = %q", snapshot.Type)
+	expectPlugin(t, snapshot.Assets != nil, "snapshot assets missing")
+	expectPlugin(t, snapshot.Capabilities != nil, "snapshot capabilities missing")
+	expectPlugin(t, snapshot.Assets.Connectors[0] == "connectors/feishu/connector.manifest.json", "snapshot connector drifted: %#v", snapshot)
+	expectPlugin(t, snapshot.Capabilities.Tools[0] == "feishu.message.send_text", "snapshot tool drifted: %#v", snapshot)
+}
+
+func expectPlugin(t *testing.T, condition bool, format string, args ...any) {
+	t.Helper()
+	if !condition {
+		t.Fatalf(format, args...)
 	}
 }
 
@@ -197,7 +190,7 @@ func TestInstallRemoteMarketplaceManifestVerifiesChecksumAndRegistersExtensions(
 		switch r.URL.Path {
 		case "/index.json":
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprintf(w, `{
+			_, _ = fmt.Fprintf(w, `{
 				"schemaVersion":"marketplace.opensoha.io/v1",
 				"generatedAt":"2026-06-28T00:00:00Z",
 				"sourceId":"community",
@@ -214,7 +207,7 @@ func TestInstallRemoteMarketplaceManifestVerifiesChecksumAndRegistersExtensions(
 					"manifest":{"id":"opensoha.remote-skill","name":"Remote Skill","version":"0.2.0","publisher":"community","type":"skill-pack"},
 					"versions":[{"version":"0.2.0","manifestUrl":%q,"checksum":%q,"signature":"sig:test"}]
 				}]
-			}`, server.URL+"/index.json", server.URL+"/plugin.manifest.json", manifestChecksum)
+				}`, server.URL+"/index.json", server.URL+"/plugin.manifest.json", manifestChecksum)
 		case "/plugin.manifest.json":
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(manifestRaw)

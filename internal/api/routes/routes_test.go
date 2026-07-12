@@ -5,6 +5,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
+	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
+	providerportalhandler "github.com/opensoha/soha/internal/api/handlers/providerportal"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
@@ -191,7 +193,7 @@ func TestRegisterProviderProtocolRoutesExposeProxyLogout(t *testing.T) {
 
 	router := gin.New()
 	group := router.Group("/api/v1")
-	registerProviderProtocolRoutes(group, Dependencies{ProviderPortal: &apiHandlers.ProviderPortalHandler{}})
+	registerProviderProtocolRoutes(group, Dependencies{ProviderPortal: &providerportalhandler.Handler{}})
 
 	registered := make(map[string]struct{})
 	for _, route := range router.Routes() {
@@ -353,6 +355,47 @@ func TestRegisterProviderPortalRoutesExposeIdentityProviderWorkbenchAndOIDCProto
 	}
 }
 
+func TestRegisterAccessRoutesPreservesEndpointContract(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerAccessRoutes(router.Group("/api/v1"), routeTestDependencies())
+
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, route := range []string{
+		"GET /api/v1/access/users",
+		"POST /api/v1/access/users",
+		"PUT /api/v1/access/users/:userID",
+		"DELETE /api/v1/access/users/:userID",
+		"POST /api/v1/access/users/:userID/revoke-sessions",
+		"PUT /api/v1/access/users/:userID/roles",
+		"PUT /api/v1/access/users/:userID/teams",
+		"GET /api/v1/access/permission-snapshot",
+		"GET /api/v1/access/roles",
+		"POST /api/v1/access/roles",
+		"PUT /api/v1/access/roles/:roleID",
+		"DELETE /api/v1/access/roles/:roleID",
+		"GET /api/v1/access/teams",
+		"POST /api/v1/access/teams",
+		"PUT /api/v1/access/teams/:teamID",
+		"DELETE /api/v1/access/teams/:teamID",
+		"GET /api/v1/access/policies",
+		"POST /api/v1/access/policies",
+		"PUT /api/v1/access/policies/:policyID",
+		"DELETE /api/v1/access/policies/:policyID",
+		"GET /api/v1/access/scope-grants",
+		"POST /api/v1/access/scope-grants",
+		"PUT /api/v1/access/scope-grants/:scopeGrantID",
+		"DELETE /api/v1/access/scope-grants/:scopeGrantID",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing route %s", route)
+		}
+	}
+}
+
 func TestPlatformMutationSecuritySurfaceClassifiesHighRiskRoutes(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -465,114 +508,18 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 		permission   string
 		scoped       bool
 	}{
-		{
-			name:         "application create",
-			method:       "POST",
-			path:         "/api/v1/applications",
-			resourceKind: "Application",
-			action:       "create",
-			permission:   appaccess.PermDeliveryApplicationsCreate,
-			scoped:       true,
-		},
-		{
-			name:         "workflow trigger",
-			method:       "POST",
-			path:         "/api/v1/workflows/trigger",
-			resourceKind: "Workflow",
-			action:       "trigger",
-			permission:   appaccess.PermDeliveryWorkflowsTrigger,
-			scoped:       true,
-		},
-		{
-			name:         "gateway approval approve",
-			method:       "POST",
-			path:         "/api/v1/ai-gateway/approval-requests/:requestID/approve",
-			resourceKind: "AIGatewayApprovalRequest",
-			action:       "approve",
-			permission:   appaccess.PermAIGatewayInvoke,
-			scoped:       true,
-		},
-		{
-			name:         "gateway llm relay invoke",
-			method:       "POST",
-			path:         "/api/v1/ai-gateway/llm/openai/v1/chat/completions",
-			resourceKind: "AIGatewayLLMRelayInvocation",
-			action:       "invoke",
-			permission:   appaccess.PermAIGatewayRelayInvoke,
-			scoped:       true,
-		},
-		{
-			name:         "gateway llm relay embeddings invoke",
-			method:       "POST",
-			path:         "/api/v1/ai-gateway/llm/openai/v1/embeddings",
-			resourceKind: "AIGatewayLLMRelayInvocation",
-			action:       "invoke",
-			permission:   appaccess.PermAIGatewayRelayInvoke,
-			scoped:       true,
-		},
-		{
-			name:         "gateway llm relay manage",
-			method:       "POST",
-			path:         "/api/v1/ai-gateway/relay/upstreams",
-			resourceKind: "AIGatewayLLMRelay",
-			action:       "create",
-			permission:   appaccess.PermAIGatewayRelayManage,
-			scoped:       false,
-		},
-		{
-			name:         "gateway llm relay cache purge",
-			method:       "POST",
-			path:         "/api/v1/ai-gateway/relay/cache/purge",
-			resourceKind: "AIGatewayLLMRelay",
-			action:       "create",
-			permission:   appaccess.PermAIGatewayRelayManage,
-			scoped:       false,
-		},
-		{
-			name:         "docker project deploy",
-			method:       "POST",
-			path:         "/api/v1/docker/projects/:id/deploy",
-			resourceKind: "DockerProject",
-			action:       "deploy",
-			permission:   appaccess.PermDockerProjectsDeploy,
-			scoped:       false,
-		},
-		{
-			name:         "access scope grant update",
-			method:       "PUT",
-			path:         "/api/v1/access/scope-grants/:scopeGrantID",
-			resourceKind: "ScopeGrant",
-			action:       "update",
-			permission:   appaccess.PermAccessScopeGrantsManage,
-			scoped:       false,
-		},
-		{
-			name:         "identity policy update",
-			method:       "PATCH",
-			path:         "/api/v1/identity/policies/:applicationID",
-			resourceKind: "IdentityPolicy",
-			action:       "update",
-			permission:   appaccess.PermIdentityPoliciesManage,
-			scoped:       false,
-		},
-		{
-			name:         "identity session revoke",
-			method:       "POST",
-			path:         "/api/v1/identity/sessions/:sessionID/revoke",
-			resourceKind: "IdentitySession",
-			action:       "revoke",
-			permission:   appaccess.PermIdentitySessionsManage,
-			scoped:       false,
-		},
-		{
-			name:         "identity outpost update",
-			method:       "PATCH",
-			path:         "/api/v1/identity/outposts/:outpostID",
-			resourceKind: "IdentityOutpost",
-			action:       "update",
-			permission:   appaccess.PermIdentityOutpostsManage,
-			scoped:       false,
-		},
+		{name: "application create", method: "POST", path: "/api/v1/applications", resourceKind: "Application", action: "create", permission: appaccess.PermDeliveryApplicationsCreate, scoped: true},
+		{name: "workflow trigger", method: "POST", path: "/api/v1/workflows/trigger", resourceKind: "Workflow", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scoped: true},
+		{name: "gateway approval approve", method: "POST", path: "/api/v1/ai-gateway/approval-requests/:requestID/approve", resourceKind: "AIGatewayApprovalRequest", action: "approve", permission: appaccess.PermAIGatewayInvoke, scoped: true},
+		{name: "gateway llm relay invoke", method: "POST", path: "/api/v1/ai-gateway/llm/openai/v1/chat/completions", resourceKind: "AIGatewayLLMRelayInvocation", action: "invoke", permission: appaccess.PermAIGatewayRelayInvoke, scoped: true},
+		{name: "gateway llm relay embeddings invoke", method: "POST", path: "/api/v1/ai-gateway/llm/openai/v1/embeddings", resourceKind: "AIGatewayLLMRelayInvocation", action: "invoke", permission: appaccess.PermAIGatewayRelayInvoke, scoped: true},
+		{name: "gateway llm relay manage", method: "POST", path: "/api/v1/ai-gateway/relay/upstreams", resourceKind: "AIGatewayLLMRelay", action: "create", permission: appaccess.PermAIGatewayRelayManage},
+		{name: "gateway llm relay cache purge", method: "POST", path: "/api/v1/ai-gateway/relay/cache/purge", resourceKind: "AIGatewayLLMRelay", action: "create", permission: appaccess.PermAIGatewayRelayManage},
+		{name: "docker project deploy", method: "POST", path: "/api/v1/docker/projects/:id/deploy", resourceKind: "DockerProject", action: "deploy", permission: appaccess.PermDockerProjectsDeploy},
+		{name: "access scope grant update", method: "PUT", path: "/api/v1/access/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "update", permission: appaccess.PermAccessScopeGrantsManage},
+		{name: "identity policy update", method: "PATCH", path: "/api/v1/identity/policies/:applicationID", resourceKind: "IdentityPolicy", action: "update", permission: appaccess.PermIdentityPoliciesManage},
+		{name: "identity session revoke", method: "POST", path: "/api/v1/identity/sessions/:sessionID/revoke", resourceKind: "IdentitySession", action: "revoke", permission: appaccess.PermIdentitySessionsManage},
+		{name: "identity outpost update", method: "PATCH", path: "/api/v1/identity/outposts/:outpostID", resourceKind: "IdentityOutpost", action: "update", permission: appaccess.PermIdentityOutpostsManage},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry, ok := nonPlatformMutationSecuritySurface(tc.method, tc.path)
@@ -581,6 +528,77 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 			}
 			if entry.ResourceKind != tc.resourceKind || entry.Action != tc.action || entry.PermissionKey != tc.permission || entry.ScopeRequired != tc.scoped {
 				t.Fatalf("entry = %#v, want kind=%s action=%s permission=%s scoped=%t", entry, tc.resourceKind, tc.action, tc.permission, tc.scoped)
+			}
+		})
+	}
+}
+
+func TestDeliveryMutationSecuritySurfaceRules(t *testing.T) {
+	tests := []struct {
+		name         string
+		method       string
+		path         string
+		resourceKind string
+		action       string
+		permission   string
+		scoped       bool
+	}{
+		{name: "application service precedes application", method: "POST", path: "/api/v1/applications/:applicationID/services", resourceKind: "ApplicationService", action: "create", permission: appaccess.PermDeliveryApplicationServicesManage, scoped: true},
+		{name: "application delete permission", method: "DELETE", path: "/api/v1/applications/:applicationID", resourceKind: "Application", action: "delete", permission: appaccess.PermDeliveryApplicationsDelete, scoped: true},
+		{name: "environment update", method: "PATCH", path: "/api/v1/application-environments/:environmentID", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.PermDeliveryApplicationEnvManage, scoped: true},
+		{name: "build template", method: "POST", path: "/api/v1/build-templates", resourceKind: "BuildTemplate", action: "create", permission: appaccess.PermDeliveryBuildTemplatesManage, scoped: true},
+		{name: "workflow template", method: "PUT", path: "/api/v1/workflow-templates/:templateID", resourceKind: "WorkflowTemplate", action: "update", permission: appaccess.PermDeliveryWorkflowTemplatesManage, scoped: true},
+		{name: "build trigger", method: "POST", path: "/api/v1/builds/trigger", resourceKind: "Build", action: "trigger", permission: appaccess.PermDeliveryBuildsTrigger, scoped: true},
+		{name: "workflow approve", method: "POST", path: "/api/v1/workflows/:workflowID/approve", resourceKind: "WorkflowApproval", action: "approve", permission: appaccess.PermDeliveryWorkflowsTrigger, scoped: true},
+		{name: "registry is global", method: "POST", path: "/api/v1/registries", resourceKind: "RegistryConnection", action: "create", permission: appaccess.PermDeliveryRegistriesManage},
+		{name: "release trigger", method: "POST", path: "/api/v1/releases/trigger", resourceKind: "Release", action: "trigger", permission: appaccess.PermDeliveryReleasesTrigger, scoped: true},
+		{name: "execution task retry", method: "POST", path: "/api/v1/delivery/execution-tasks/:taskID/retry", resourceKind: "ExecutionTask", action: "retry", permission: appaccess.PermDeliveryExecutionTasksManage, scoped: true},
+		{name: "blueprint render precedes blueprint", method: "POST", path: "/api/v1/delivery/blueprints/:blueprintID/render-spec", resourceKind: "DeliveryBlueprint", action: "render", permission: appaccess.PermDeliveryApplicationsCreate, scoped: true},
+		{name: "draft confirm precedes draft", method: "POST", path: "/api/v1/delivery/drafts/:draftID/confirm", resourceKind: "DeliveryDraft", action: "confirm", permission: appaccess.PermDeliveryApplicationsUpdate, scoped: true},
+		{name: "plan confirm precedes plan", method: "POST", path: "/api/v1/delivery/plans/:planID/confirm", resourceKind: "DeliveryPlan", action: "confirm", permission: appaccess.PermDeliveryWorkflowsTrigger, scoped: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry, ok := deliveryMutationSecuritySurface(tt.method, tt.path)
+			if !ok {
+				t.Fatal("deliveryMutationSecuritySurface() not found")
+			}
+			if entry.ResourceKind != tt.resourceKind || entry.Action != tt.action || entry.PermissionKey != tt.permission || entry.ScopeRequired != tt.scoped {
+				t.Fatalf("entry = %#v, want kind=%s action=%s permission=%s scoped=%v", entry, tt.resourceKind, tt.action, tt.permission, tt.scoped)
+			}
+		})
+	}
+}
+
+func TestPlatformMutationResourceKindMappings(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		kind string
+	}{
+		{name: "cluster collection", path: "/api/v1/clusters", kind: "Cluster"},
+		{name: "cluster item", path: "/api/v1/clusters/:clusterID", kind: "Cluster"},
+		{name: "namespace", path: "/api/v1/clusters/:clusterID/namespaces/:namespace", kind: "Namespace"},
+		{name: "node", path: "/api/v1/clusters/:clusterID/infrastructure/nodes/:nodeName", kind: "Node"},
+		{name: "pod", path: "/api/v1/clusters/:clusterID/workloads/pods/:podName", kind: "Pod"},
+		{name: "cron job", path: "/api/v1/clusters/:clusterID/workloads/cronjobs/:name", kind: "CronJob"},
+		{name: "config map", path: "/api/v1/clusters/:clusterID/configuration/configmaps/:name", kind: "ConfigMap"},
+		{name: "mutating webhook", path: "/api/v1/clusters/:clusterID/configuration/mutatingwebhookconfigurations/:name", kind: "MutatingWebhookConfiguration"},
+		{name: "role binding", path: "/api/v1/clusters/:clusterID/access-control/rolebindings/:name", kind: "RoleBinding"},
+		{name: "cluster role binding", path: "/api/v1/clusters/:clusterID/access-control/clusterrolebindings/:name", kind: "ClusterRoleBinding"},
+		{name: "gateway class", path: "/api/v1/clusters/:clusterID/network/gatewayclasses/:name", kind: "GatewayClass"},
+		{name: "port forward", path: "/api/v1/clusters/:clusterID/network/port-forwards/:sessionID", kind: "PortForward"},
+		{name: "persistent volume claim", path: "/api/v1/clusters/:clusterID/storage/persistentvolumeclaims/:name", kind: "PersistentVolumeClaim"},
+		{name: "custom resource", path: "/api/v1/clusters/:clusterID/extensions/crds/:crdName/resources/:name", kind: "CustomResource"},
+		{name: "helm release", path: "/api/v1/clusters/:clusterID/helm/releases/:name", kind: "HelmRelease"},
+		{name: "unknown cluster route", path: "/api/v1/clusters/:clusterID/read-only", kind: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := platformMutationResourceKind(tt.path); got != tt.kind {
+				t.Fatalf("platformMutationResourceKind(%q) = %q, want %q", tt.path, got, tt.kind)
 			}
 		})
 	}
@@ -671,11 +689,11 @@ func routeTestDependencies() Dependencies {
 		Plugins:        &apiHandlers.PluginHandler{},
 		Virtualization: &apiHandlers.VirtualizationHandler{},
 		Docker:         &apiHandlers.DockerHandler{},
-		Access:         &apiHandlers.AccessHandler{},
-		ScopeGrants:    &apiHandlers.ScopeGrantHandler{},
+		Access:         &accesshandler.Handler{},
+		ScopeGrants:    &accesshandler.ScopeGrantHandler{},
 		Menu:           &apiHandlers.MenuHandler{},
 		Settings:       &apiHandlers.SettingsHandler{},
 		Auth:           &apiHandlers.AuthHandler{},
-		ProviderPortal: &apiHandlers.ProviderPortalHandler{},
+		ProviderPortal: &providerportalhandler.Handler{},
 	}
 }

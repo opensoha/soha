@@ -167,8 +167,7 @@ func TestWorkbenchStreamContractWireCompatibility(t *testing.T) {
 	}
 }
 
-func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
-	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+func testDeliveryApplicationContract(t *testing.T, now time.Time) domainapp.App {
 	app := domainapp.App{
 		ID:             "app-1",
 		Name:           "Checkout Platform",
@@ -191,9 +190,9 @@ func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
 		UpdatedAt:        now,
 	}
 	contractApp := roundTrip[sohaapi.Application](t, app)
-	if contractApp.ID != app.ID || contractApp.Key != app.Key || contractApp.BuildSources[0].Type != sohaapi.BuildSourceTypeRepoDockerfile {
-		t.Fatalf("application wire mismatch: %#v", contractApp)
-	}
+	expectContract(t, contractApp.ID == app.ID, "application id mismatch: %#v", contractApp)
+	expectContract(t, contractApp.Key == app.Key, "application key mismatch: %#v", contractApp)
+	expectContract(t, contractApp.BuildSources[0].Type == sohaapi.BuildSourceTypeRepoDockerfile, "application source mismatch: %#v", contractApp)
 
 	service := domainapp.Service{
 		ID:            "svc-api",
@@ -213,10 +212,13 @@ func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
 		UpdatedAt: now,
 	}
 	contractService := roundTrip[sohaapi.ApplicationService](t, service)
-	if contractService.ServiceKind != sohaapi.ApplicationServiceServiceKindKubernetesWorkload || contractService.Containers[0].RuntimePorts[0] != 8080 {
-		t.Fatalf("application service wire mismatch: %#v", contractService)
-	}
+	expectContract(t, contractService.ServiceKind == sohaapi.ApplicationServiceServiceKindKubernetesWorkload, "application service kind mismatch: %#v", contractService)
+	expectContract(t, contractService.Containers[0].RuntimePorts[0] == 8080, "application service port mismatch: %#v", contractService)
+	return app
+}
 
+func testDeliveryBindingContract(t *testing.T, now time.Time, app domainapp.App) domaincatalog.ApplicationEnvironment {
+	t.Helper()
 	workflowTemplate := domaincatalog.WorkflowTemplate{
 		ID:       "wf-template-1",
 		Key:      "release-dag",
@@ -273,15 +275,18 @@ func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
 		UpdatedAt: now,
 	}
 	contractBinding := roundTrip[sohaapi.ApplicationEnvironment](t, binding)
-	if contractBinding.EnvironmentKey != "test" || contractBinding.Targets[0].ExecutorKind != "k8s_job_runner" {
-		t.Fatalf("application environment wire mismatch: %#v", contractBinding)
-	}
+	expectContract(t, contractBinding.EnvironmentKey == "test", "application environment mismatch: %#v", contractBinding)
+	expectContract(t, contractBinding.Targets[0].ExecutorKind == "k8s_job_runner", "application executor mismatch: %#v", contractBinding)
 	contractTemplate := roundTrip[sohaapi.WorkflowTemplate](t, workflowTemplate)
 	nodes, ok := contractTemplate.Definition["nodes"].([]any)
 	if !ok || len(nodes) != 1 {
 		t.Fatalf("workflow template definition not preserved: %#v", contractTemplate.Definition)
 	}
+	return binding
+}
 
+func testDeliveryExecutionContract(t *testing.T, now time.Time, app domainapp.App, binding domaincatalog.ApplicationEnvironment) {
+	t.Helper()
 	bundle := domaindelivery.ReleaseBundle{
 		ID:                       "bundle-1",
 		ApplicationID:            app.ID,
@@ -294,9 +299,8 @@ func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
 		UpdatedAt:                now,
 	}
 	contractBundle := roundTrip[sohaapi.ReleaseBundle](t, bundle)
-	if contractBundle.Version != bundle.Version || contractBundle.ApplicationEnvironmentID != binding.ID {
-		t.Fatalf("release bundle wire mismatch: %#v", contractBundle)
-	}
+	expectContract(t, contractBundle.Version == bundle.Version, "release bundle version mismatch: %#v", contractBundle)
+	expectContract(t, contractBundle.ApplicationEnvironmentID == binding.ID, "release bundle environment mismatch: %#v", contractBundle)
 
 	artifact := domaindelivery.ExecutionArtifact{
 		ID:              "artifact-1",
@@ -310,9 +314,8 @@ func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
 		UpdatedAt:       now,
 	}
 	contractArtifact := roundTrip[sohaapi.ExecutionArtifact](t, artifact)
-	if contractArtifact.Kind != artifact.Kind || contractArtifact.ReleaseBundleID != bundle.ID {
-		t.Fatalf("execution artifact wire mismatch: %#v", contractArtifact)
-	}
+	expectContract(t, contractArtifact.Kind == artifact.Kind, "execution artifact kind mismatch: %#v", contractArtifact)
+	expectContract(t, contractArtifact.ReleaseBundleID == bundle.ID, "execution artifact bundle mismatch: %#v", contractArtifact)
 
 	task := domaindelivery.WithOperationState(domaindelivery.ExecutionTask{
 		ID:                       "task-1",
@@ -331,9 +334,9 @@ func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
 		UpdatedAt:                now,
 	}, now)
 	contractTask := roundTrip[sohaapi.ExecutionTask](t, task)
-	if contractTask.ProviderKind != "mcp" || contractTask.TargetKind != "ai_test" || contractTask.OperationState == nil {
-		t.Fatalf("execution task wire mismatch: %#v", contractTask)
-	}
+	expectContract(t, contractTask.ProviderKind == "mcp", "execution task provider mismatch: %#v", contractTask)
+	expectContract(t, contractTask.TargetKind == "ai_test", "execution task target mismatch: %#v", contractTask)
+	expectContract(t, contractTask.OperationState != nil, "execution task operation state missing: %#v", contractTask)
 
 	plan := domaindelivery.DeliveryPlan{
 		ID:                       "plan-1",
@@ -352,9 +355,8 @@ func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
 		UpdatedAt:                now,
 	}
 	contractPlan := roundTrip[sohaapi.DeliveryPlan](t, plan)
-	if contractPlan.Action != sohaapi.Verify || contractPlan.EnvironmentKey != "test" {
-		t.Fatalf("delivery plan wire mismatch: %#v", contractPlan)
-	}
+	expectContract(t, contractPlan.Action == sohaapi.Verify, "delivery plan action mismatch: %#v", contractPlan)
+	expectContract(t, contractPlan.EnvironmentKey == "test", "delivery plan environment mismatch: %#v", contractPlan)
 
 	detail := domaindelivery.ApplicationDetail{
 		Application: app,
@@ -363,8 +365,8 @@ func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
 			EnvironmentID:            binding.EnvironmentID,
 			EnvironmentKey:           binding.EnvironmentKey,
 			RequiresApproval:         true,
-			WorkflowTemplateID:       workflowTemplate.ID,
-			WorkflowTemplate:         &workflowTemplate,
+			WorkflowTemplateID:       binding.WorkflowTemplateID,
+			WorkflowTemplate:         binding.WorkflowTemplate,
 			TargetCount:              1,
 			Targets:                  binding.Targets,
 			BuildSourceID:            "source-api",
@@ -375,8 +377,21 @@ func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
 		LatestExecutionTask: &task,
 	}
 	contractDetail := roundTrip[sohaapi.ApplicationDeliveryDetail](t, detail)
-	if contractDetail.Application.ID != app.ID || contractDetail.Bindings[0].LatestExecutionTask.ProviderKind != "mcp" {
-		t.Fatalf("application delivery detail wire mismatch: %#v", contractDetail)
+	expectContract(t, contractDetail.Application.ID == app.ID, "delivery detail application mismatch: %#v", contractDetail)
+	expectContract(t, contractDetail.Bindings[0].LatestExecutionTask.ProviderKind == "mcp", "delivery detail provider mismatch: %#v", contractDetail)
+}
+
+func TestDeliveryControlPlaneContractWireCompatibility(t *testing.T) {
+	now := time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC)
+	app := testDeliveryApplicationContract(t, now)
+	binding := testDeliveryBindingContract(t, now, app)
+	testDeliveryExecutionContract(t, now, app, binding)
+}
+
+func expectContract(t *testing.T, condition bool, format string, args ...any) {
+	t.Helper()
+	if !condition {
+		t.Fatalf(format, args...)
 	}
 }
 

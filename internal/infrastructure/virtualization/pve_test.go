@@ -235,8 +235,24 @@ func TestPVEAdapterSyncAssetsScansAllStoragesAndQEMUTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SyncAssets() error = %v", err)
 	}
+	assertPVESyncedAssets(t, result, seen)
+}
+
+func assertPVESyncedAssets(t *testing.T, result AssetSyncResult, seen []string) {
+	t.Helper()
+	qemuTemplate, sharedISO, lxcTemplate, bridgeAsset, snippetStorage := classifyPVEAssets(t, result.Assets)
+	if !qemuTemplate || !sharedISO || !lxcTemplate || !bridgeAsset || !snippetStorage {
+		t.Fatalf("assets missing qemuTemplate=%v sharedISO=%v lxcTemplate=%v bridge=%v storageCapabilities=%v: %#v", qemuTemplate, sharedISO, lxcTemplate, bridgeAsset, snippetStorage, result.Assets)
+	}
+	if !strings.Contains(strings.Join(seen, ","), "GET /api2/json/nodes/pve-a/storage/shared-nfs/content") {
+		t.Fatalf("seen paths = %#v", seen)
+	}
+}
+
+func classifyPVEAssets(t *testing.T, assets []Asset) (bool, bool, bool, bool, bool) {
+	t.Helper()
 	var qemuTemplate, sharedISO, lxcTemplate, bridgeAsset, snippetStorage bool
-	for _, asset := range result.Assets {
+	for _, asset := range assets {
 		if asset.Type == "template" && asset.Metadata["sourceRef"] == "9000" {
 			qemuTemplate = true
 		}
@@ -256,12 +272,7 @@ func TestPVEAdapterSyncAssetsScansAllStoragesAndQEMUTemplates(t *testing.T) {
 			t.Fatalf("vztmpl storage content must not be exposed as a QEMU VM template: %#v", asset)
 		}
 	}
-	if !qemuTemplate || !sharedISO || !lxcTemplate || !bridgeAsset || !snippetStorage {
-		t.Fatalf("assets missing qemuTemplate=%v sharedISO=%v lxcTemplate=%v bridge=%v storageCapabilities=%v: %#v", qemuTemplate, sharedISO, lxcTemplate, bridgeAsset, snippetStorage, result.Assets)
-	}
-	if !strings.Contains(strings.Join(seen, ","), "GET /api2/json/nodes/pve-a/storage/shared-nfs/content") {
-		t.Fatalf("seen paths = %#v", seen)
-	}
+	return qemuTemplate, sharedISO, lxcTemplate, bridgeAsset, snippetStorage
 }
 
 func TestPVEAdapterSyncAssetsHonorsResourceTypeSwitch(t *testing.T) {
@@ -343,9 +354,20 @@ func TestPVEAdapterCreateClonePayloadDoesNotLeakToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateVM() error = %v", err)
 	}
+	assertPVECloneVM(t, vm)
+	assertPVEClonePayloads(t, bodies)
+	assertPVEClonePaths(t, paths)
+}
+
+func assertPVECloneVM(t *testing.T, vm VM) {
+	t.Helper()
 	if vm.ID != "200" || vm.Node != "pve-a" {
 		t.Fatalf("vm = %#v", vm)
 	}
+}
+
+func assertPVEClonePayloads(t *testing.T, bodies map[string]string) {
+	t.Helper()
 	cloneBody := bodies["/api2/json/nodes/pve-a/qemu/9000/clone"]
 	if !strings.Contains(cloneBody, `"newid":"200"`) || !strings.Contains(cloneBody, `"storage":"local-lvm"`) || !strings.Contains(cloneBody, `"full":1`) || strings.Contains(cloneBody, "token") {
 		t.Fatalf("clone payload = %s", cloneBody)
@@ -361,6 +383,10 @@ func TestPVEAdapterCreateClonePayloadDoesNotLeakToken(t *testing.T) {
 	if !strings.Contains(configBody, `"cores":2`) || !strings.Contains(configBody, `"memory":4096`) || !strings.Contains(configBody, `"net0":"virtio,bridge=vmbr0"`) || !strings.Contains(configBody, `"ipconfig0":"ip=10.0.3.250/24,gw=10.0.3.254"`) || !strings.Contains(configBody, `"nameserver":"10.0.3.254"`) || !strings.Contains(configBody, `"sshkeys":"ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAITestKey%20user%40example"`) {
 		t.Fatalf("config payload = %s", configBody)
 	}
+}
+
+func assertPVEClonePaths(t *testing.T, paths []string) {
+	t.Helper()
 	want := []string{
 		"POST /api2/json/nodes/pve-a/qemu/9000/clone",
 		"GET /api2/json/nodes/pve-a/qemu/200/config",
@@ -863,8 +889,8 @@ func TestPVEAdapterGetConsoleURLReturnsBackendWebsocketURL(t *testing.T) {
 	if !strings.Contains(result.BackendURL, "/api2/json/nodes/pve-a/qemu/101/vncwebsocket") || !strings.Contains(result.BackendURL, "port=5901") || !strings.Contains(result.BackendURL, "vncticket=ticket-1") {
 		t.Fatalf("result.BackendURL = %q", result.BackendURL)
 	}
-	if !result.InsecureSkipTLSVerify {
-		t.Fatalf("InsecureSkipTLSVerify = false, want true")
+	if !result.BackendTLS.InsecureSkipVerify {
+		t.Fatalf("BackendTLS.InsecureSkipVerify = false, want true")
 	}
 }
 

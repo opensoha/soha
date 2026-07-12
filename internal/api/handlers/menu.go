@@ -66,18 +66,7 @@ func (h *MenuHandler) Create(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Create(c.Request.Context(), principal, domainmenu.Input{
-		ID:        req.ID,
-		ParentID:  req.ParentID,
-		Path:      req.Path,
-		LabelZH:   req.LabelZH,
-		LabelEN:   req.LabelEN,
-		IconKey:   req.IconKey,
-		Section:   req.Section,
-		SortOrder: req.SortOrder,
-		Enabled:   req.Enabled,
-		RoleIDs:   req.RoleIDs,
-	})
+	item, err := h.service.Create(c.Request.Context(), principal, menuInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -92,7 +81,16 @@ func (h *MenuHandler) Update(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Update(c.Request.Context(), principal, c.Param("menuID"), domainmenu.Input{
+	item, err := h.service.Update(c.Request.Context(), principal, c.Param("menuID"), menuInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func menuInput(req dto.UpsertMenuRequest) domainmenu.Input {
+	return domainmenu.Input{
 		ID:        req.ID,
 		ParentID:  req.ParentID,
 		Path:      req.Path,
@@ -103,12 +101,7 @@ func (h *MenuHandler) Update(c *gin.Context) {
 		SortOrder: req.SortOrder,
 		Enabled:   req.Enabled,
 		RoleIDs:   req.RoleIDs,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *MenuHandler) Delete(c *gin.Context) {

@@ -321,9 +321,6 @@ func gatewayRedactionRuleAppliesToTool(rule map[string]any, tool domainaigateway
 	}
 	return matchesToolPatternList(patterns, tool.Name)
 }
-func gatewayRedactionRuleMatchesSensitive(value any, rule gatewayRedactionRule) bool {
-	return gatewayRedactionValueContainsSensitiveData(value, rule, "")
-}
 func gatewayRedactionAuditSummaryForValue(value any, rule gatewayRedactionRule, target string) gatewayRedactionAuditSummary {
 	var summary gatewayRedactionAuditSummary
 	gatewayCollectRedactionAudit(value, rule, target, "", &summary)
@@ -383,50 +380,6 @@ func gatewayCollectRedactionStringAudit(value string, rule gatewayRedactionRule,
 	}
 	for _, classifier := range gatewaySecretClassifierMatches(value, rule.SecretTypes) {
 		summary.add(target, path, "secret_classifier", classifier)
-	}
-}
-func gatewayRedactionValueContainsSensitiveData(value any, rule gatewayRedactionRule, path string) bool {
-	if gatewayRedactionPathAllowed(path, rule.AllowFields) {
-		return false
-	}
-	if len(gatewayStructuredSecretClassifiers(value, rule)) > 0 {
-		return true
-	}
-	switch typed := value.(type) {
-	case nil:
-		return false
-	case map[string]any:
-		for key, item := range typed {
-			nextPath := gatewayJoinFieldPath(path, key)
-			if gatewayRedactionPathAllowed(nextPath, rule.AllowFields) {
-				continue
-			}
-			if gatewayRedactionFieldMatches(nextPath, key, rule.Fields) || gatewaySensitiveKey(key) {
-				return true
-			}
-			if gatewayRedactionValueContainsSensitiveData(item, rule, nextPath) {
-				return true
-			}
-		}
-		return false
-	case []any:
-		for index, item := range typed {
-			if gatewayRedactionValueContainsSensitiveData(item, rule, gatewayJoinFieldPath(path, strconv.Itoa(index))) {
-				return true
-			}
-		}
-		return false
-	case []map[string]any:
-		for index, item := range typed {
-			if gatewayRedactionValueContainsSensitiveData(item, rule, gatewayJoinFieldPath(path, strconv.Itoa(index))) {
-				return true
-			}
-		}
-		return false
-	case string:
-		return gatewayRedactionStringMatches(typed, rule)
-	default:
-		return false
 	}
 }
 func applyGatewayRedactionRule(values map[string]any, rule gatewayRedactionRule) map[string]any {
@@ -529,22 +482,6 @@ func gatewayRedactionReplacementForValue(value any, rule gatewayRedactionRule) a
 	default:
 		return gatewayRedactionReplacement(rule)
 	}
-}
-func gatewayRedactionStringMatches(value string, rule gatewayRedactionRule) bool {
-	if gatewaySensitiveValuePattern.MatchString(value) {
-		return true
-	}
-	for _, pattern := range gatewayCompiledRedactionPatterns(rule.ValuePatterns) {
-		if pattern.MatchString(value) {
-			return true
-		}
-	}
-	for _, pattern := range gatewaySecretClassifierPatterns(rule.SecretTypes) {
-		if pattern.MatchString(value) {
-			return true
-		}
-	}
-	return false
 }
 func gatewayStructuredSecretClassifiers(value any, rule gatewayRedactionRule) []string {
 	if len(rule.SecretTypes) == 0 {
@@ -684,189 +621,17 @@ type gatewaySecretClassifierPattern struct {
 func gatewaySecretClassifierPatternSpecs(secretTypes []string) []gatewaySecretClassifierPattern {
 	out := make([]gatewaySecretClassifierPattern, 0, len(secretTypes)+4)
 	seen := map[string]struct{}{}
-	add := func(key, pattern string) {
-		if _, ok := seen[key]; ok {
-			return
-		}
-		seen[key] = struct{}{}
-		out = append(out, gatewaySecretClassifierPattern{Name: key, Pattern: regexp.MustCompile(pattern)})
-	}
 	for _, secretType := range secretTypes {
-		switch normalizeGatewayConditionKey(secretType) {
-		case "default", "all", "builtin", "builtins", "secret", "secrets", "token", "tokens":
-			add("token", `(?i)(?:bearer\s+)?(?:ghp|github_pat|glpat|sk|xox[baprs])[-_A-Za-z0-9]{12,}`)
-			add("jwt", `eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`)
-			add("aws", `AKIA[0-9A-Z]{16}`)
-			add("private_key", `-----BEGIN [A-Z ]*PRIVATE KEY-----`)
-			add("anthropic", `(?i)sk-ant-[A-Za-z0-9_-]{20,}`)
-			add("google_api_key", `AIza[0-9A-Za-z_-]{30,}`)
-			add("huggingface", `(?i)hf_[A-Za-z0-9]{30,}`)
-			add("cohere", `(?i)\bcohere[_-]?(?:api[_-]?)?key[_-]?[A-Za-z0-9]{20,}\b`)
-			add("mistral", `(?i)\bmistral[_-]?[A-Za-z0-9]{20,}\b`)
-			add("deepseek", `(?i)\bsk-(?:deepseek|ds)-[A-Za-z0-9_-]{20,}\b`)
-			add("groq", `(?i)\bgsk_[A-Za-z0-9]{20,}\b`)
-			add("together", `(?i)\btgp_v1_[A-Za-z0-9_-]{20,}\b`)
-			add("replicate", `(?i)\br8_[A-Za-z0-9]{20,}\b`)
-			add("langsmith", `(?i)\bls[v]2?_[A-Za-z0-9_-]{20,}\b`)
-			add("pinecone", `(?i)\bpcsk_[A-Za-z0-9_-]{20,}\b`)
-			add("xai", `(?i)\bxai-[A-Za-z0-9_-]{20,}\b`)
-			add("perplexity", `(?i)\bpplx-[A-Za-z0-9_-]{20,}\b`)
-			add("tavily", `(?i)\btvly-[A-Za-z0-9_-]{20,}\b`)
-			add("langfuse", `(?i)\b(?:pk|sk)-lf-[A-Za-z0-9_-]{20,}\b`)
-			add("qdrant", `(?i)\bqdrant[_-][A-Za-z0-9_-]{20,}\b`)
-			add("wandb", `(?i)\bwandb_[A-Za-z0-9]{20,}\b`)
-			add("linear", `(?i)\blin_api_[A-Za-z0-9]{20,}\b`)
-			add("openrouter", `(?i)\bsk-or-v1-[A-Za-z0-9_-]{20,}\b`)
-			add("fireworks", `(?i)\bfw_[A-Za-z0-9_-]{20,}\b`)
-			add("voyage", `(?i)\bpa-[A-Za-z0-9_-]{20,}\b`)
-			add("brave_search", `(?i)\bBSA[A-Za-z0-9_-]{20,}\b`)
-			add("serpapi", `(?i)\bserpapi[_-]?[A-Za-z0-9]{20,}\b`)
-			add("browserbase", `(?i)\bbb_[A-Za-z0-9_-]{20,}\b`)
-			add("exa", `(?i)\bexa_[A-Za-z0-9_-]{20,}\b`)
-			add("jina", `(?i)\bjina_[A-Za-z0-9_-]{20,}\b`)
-			add("unstructured", `(?i)\bunstructured[_-]?[A-Za-z0-9_-]{20,}\b`)
-			add("llama_cloud", `(?i)\bllx-[A-Za-z0-9_-]{20,}\b`)
-			add("helicone", `(?i)\bsk-helicone-[A-Za-z0-9_-]{20,}\b`)
-			add("dashscope", `(?i)\b(?:dashscope|dash_scope|aliyun[_-]?bailian|bailian|tongyi|qwen)[\s:=_-]+sk-[A-Za-z0-9]{24,}\b`)
-			add("moonshot", `(?i)\b(?:moonshot|kimi)[\s:=_-]+sk-[A-Za-z0-9]{32,}\b`)
-			add("zhipu", `(?i)\b(?:zhipu|zhipuai|glm)[\s:=_-]+[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{24,}\b`)
-			add("siliconflow", `(?i)\bsilicon[_-]?flow[\s:=_-]+sk-[A-Za-z0-9]{32,}\b`)
-			add("hunyuan", `(?i)\bAKID[A-Za-z0-9]{16,}\b`)
-			add("qianfan", `(?i)\bbce-v3/[A-Za-z0-9._~+/=-]{24,}\b`)
-			add("volcengine", `(?i)\b(?:aklt|volc)[A-Za-z0-9_-]{20,}\b`)
-			add("grafana", `(?i)\bgl(?:sa|c)_[A-Za-z0-9_=-]{20,}\b`)
-			add("sentry", `(?i)\bsntrys_[A-Za-z0-9_=-]{20,}\b`)
-			add("newrelic", `(?i)\bNRAK[-_A-Za-z0-9]{20,}\b`)
-			add("azure_openai", `(?i)\b(?:azure[_-]?(?:openai|ai)?[_-]?(?:api[_-]?)?key|AZURE_OPENAI_API_KEY|OCP_APIM_SUBSCRIPTION_KEY)[\s:=_-]+[A-Za-z0-9]{32,}\b`)
-			add("azure_devops", `(?i)\b[A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4}\b`)
-			add("datadog", `(?i)\b(?:datadog|dd)[_-]?(?:api|app)?[_-]?key[_-]?[A-Fa-f0-9]{32,40}\b`)
-			add("pagerduty", `(?i)\bpd(?:us|at)\+[A-Za-z0-9._~-]{20,}\b`)
-			add("posthog", `(?i)\bph[cp]_[A-Za-z0-9_-]{20,}\b`)
-			add("splunk", `(?i)\bSplunk\s+[A-Za-z0-9+/=_-]{20,}\b`)
-			add("elastic", `(?i)\bApiKey\s+[A-Za-z0-9+/=_-]{20,}\b`)
-			add("terraform", `(?i)\batlasv1\.[A-Za-z0-9_-]{20,}\b`)
-			add("npm", `(?i)npm_[A-Za-z0-9]{36,}`)
-			add("stripe", `(?i)(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}`)
-			add("docker_config", `(?is)"auths"\s*:\s*\{.*"auth"\s*:`)
-			add("kubeconfig", `(?is)\bclusters\s*:.*\busers\s*:.*\bcurrent-context\s*:`)
-		case "github", "githubtoken":
-			add("github", `(?i)(?:ghp|github_pat)_[A-Za-z0-9_]{20,}`)
-		case "gitlab", "gitlabtoken":
-			add("gitlab", `(?i)glpat-[A-Za-z0-9_-]{20,}`)
-		case "openai", "openaikey":
-			add("openai", `(?i)sk-[A-Za-z0-9_-]{20,}`)
-		case "anthropic", "anthropickey":
-			add("anthropic", `(?i)sk-ant-[A-Za-z0-9_-]{20,}`)
-		case "slack", "slacktoken":
-			add("slack", `(?i)xox[baprs]-[A-Za-z0-9-]{20,}`)
-		case "google", "googleapikey", "gcpapikey":
-			add("google_api_key", `AIza[0-9A-Za-z_-]{30,}`)
-		case "huggingface", "huggingfacetoken":
-			add("huggingface", `(?i)hf_[A-Za-z0-9]{30,}`)
-		case "cohere", "coherekey", "coheretoken":
-			add("cohere", `(?i)\bcohere[_-]?(?:api[_-]?)?key[_-]?[A-Za-z0-9]{20,}\b`)
-		case "mistral", "mistralkey", "mistraltoken":
-			add("mistral", `(?i)\bmistral[_-]?[A-Za-z0-9]{20,}\b`)
-		case "deepseek", "deepseekkey", "deepseektoken":
-			add("deepseek", `(?i)\bsk-(?:deepseek|ds)-[A-Za-z0-9_-]{20,}\b`)
-		case "groq", "groqkey", "groqtoken":
-			add("groq", `(?i)\bgsk_[A-Za-z0-9]{20,}\b`)
-		case "together", "togetherkey", "togethertoken", "togetherai":
-			add("together", `(?i)\btgp_v1_[A-Za-z0-9_-]{20,}\b`)
-		case "replicate", "replicatekey", "replicatetoken":
-			add("replicate", `(?i)\br8_[A-Za-z0-9]{20,}\b`)
-		case "langsmith", "langchain", "langsmithkey", "langsmithtoken":
-			add("langsmith", `(?i)\bls[v]2?_[A-Za-z0-9_-]{20,}\b`)
-		case "pinecone", "pineconekey", "pineconetoken":
-			add("pinecone", `(?i)\bpcsk_[A-Za-z0-9_-]{20,}\b`)
-		case "xai", "xaikey", "xaitoken", "grok", "grokkey", "groktoken":
-			add("xai", `(?i)\bxai-[A-Za-z0-9_-]{20,}\b`)
-		case "perplexity", "perplexitykey", "perplexitytoken", "pplx":
-			add("perplexity", `(?i)\bpplx-[A-Za-z0-9_-]{20,}\b`)
-		case "tavily", "tavilykey", "tavilytoken":
-			add("tavily", `(?i)\btvly-[A-Za-z0-9_-]{20,}\b`)
-		case "langfuse", "langfusekey", "langfusetoken":
-			add("langfuse", `(?i)\b(?:pk|sk)-lf-[A-Za-z0-9_-]{20,}\b`)
-		case "qdrant", "qdrantkey", "qdranttoken":
-			add("qdrant", `(?i)\bqdrant[_-][A-Za-z0-9_-]{20,}\b`)
-		case "wandb", "weightsandbiases", "wandbkey", "wandbtoken":
-			add("wandb", `(?i)\bwandb_[A-Za-z0-9]{20,}\b`)
-		case "linear", "linearkey", "lineartoken":
-			add("linear", `(?i)\blin_api_[A-Za-z0-9]{20,}\b`)
-		case "openrouter", "openrouterkey", "openroutertoken":
-			add("openrouter", `(?i)\bsk-or-v1-[A-Za-z0-9_-]{20,}\b`)
-		case "fireworks", "fireworksai", "fireworkskey", "fireworkstoken":
-			add("fireworks", `(?i)\bfw_[A-Za-z0-9_-]{20,}\b`)
-		case "voyage", "voyageai", "voyagekey", "voyagetoken":
-			add("voyage", `(?i)\bpa-[A-Za-z0-9_-]{20,}\b`)
-		case "bravesearch", "brave", "bravesearchkey", "bravesearchtoken":
-			add("brave_search", `(?i)\bBSA[A-Za-z0-9_-]{20,}\b`)
-		case "serpapi", "serp", "serpapikey", "serpapitoken":
-			add("serpapi", `(?i)\bserpapi[_-]?[A-Za-z0-9]{20,}\b`)
-		case "browserbase", "browserbasekey", "browserbasetoken":
-			add("browserbase", `(?i)\bbb_[A-Za-z0-9_-]{20,}\b`)
-		case "exa", "exasearch", "exakey", "exatoken":
-			add("exa", `(?i)\bexa_[A-Za-z0-9_-]{20,}\b`)
-		case "jina", "jinaai", "jinakey", "jinatoken":
-			add("jina", `(?i)\bjina_[A-Za-z0-9_-]{20,}\b`)
-		case "unstructured", "unstructuredio", "unstructuredkey", "unstructuredtoken":
-			add("unstructured", `(?i)\bunstructured[_-]?[A-Za-z0-9_-]{20,}\b`)
-		case "llamacloud", "llamaindex", "llamaparse", "llamacloudkey", "llamacloudtoken":
-			add("llama_cloud", `(?i)\bllx-[A-Za-z0-9_-]{20,}\b`)
-		case "helicone", "heliconekey", "heliconetoken":
-			add("helicone", `(?i)\bsk-helicone-[A-Za-z0-9_-]{20,}\b`)
-		case "dashscope", "dashscopekey", "dashscopetoken", "aliyunbailian", "bailian", "tongyi", "qwen":
-			add("dashscope", `(?i)\bsk-[A-Za-z0-9]{24,}\b`)
-		case "moonshot", "moonshotkey", "moonshottoken", "kimi":
-			add("moonshot", `(?i)\bsk-[A-Za-z0-9]{32,}\b`)
-		case "zhipu", "zhipuai", "zhipukey", "zhiputoken", "glm":
-			add("zhipu", `(?i)\b[A-Za-z0-9_-]{12,}\.[A-Za-z0-9_-]{24,}\b`)
-		case "siliconflow", "siliconflowkey", "siliconflowtoken":
-			add("siliconflow", `(?i)\bsk-[A-Za-z0-9]{32,}\b`)
-		case "hunyuan", "tencenthunyuan", "hunyuansecretid", "tencentcloud":
-			add("hunyuan", `(?i)\bAKID[A-Za-z0-9]{16,}\b`)
-		case "qianfan", "baiduqianfan", "wenxin", "ernie", "baiducloud":
-			add("qianfan", `(?i)\bbce-v3/[A-Za-z0-9._~+/=-]{24,}\b`)
-		case "volcengine", "volcano", "doubao", "ark", "volcengineark", "volctoken":
-			add("volcengine", `(?i)\b(?:aklt|volc)[A-Za-z0-9_-]{20,}\b`)
-		case "grafana", "grafanakey", "grafanatoken", "grafanaserviceaccount":
-			add("grafana", `(?i)\bgl(?:sa|c)_[A-Za-z0-9_=-]{20,}\b`)
-		case "sentry", "sentrykey", "sentrytoken", "sentryauthtoken":
-			add("sentry", `(?i)\bsntrys_[A-Za-z0-9_=-]{20,}\b`)
-		case "newrelic", "newrelickey", "newrelictoken", "newrelicuserkey":
-			add("newrelic", `(?i)\bNRAK[-_A-Za-z0-9]{20,}\b`)
-		case "azure", "azureopenai", "azureai", "azurekey", "azuretoken", "azureopenaikey", "azureopenaitoken":
-			add("azure_openai", `(?i)\b(?:azure[_-]?(?:openai|ai)?[_-]?(?:api[_-]?)?key|AZURE_OPENAI_API_KEY|OCP_APIM_SUBSCRIPTION_KEY)[\s:=_-]+[A-Za-z0-9]{32,}\b`)
-		case "azuredevops", "azuredevopspat", "azdo", "azdopat":
-			add("azure_devops", `(?i)\b[A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4}\b`)
-		case "datadog", "datadogkey", "datadogtoken", "datadogapikey", "datadogappkey":
-			add("datadog", `(?i)\b(?:datadog|dd)[_-]?(?:api|app)?[_-]?key[_-]?[A-Fa-f0-9]{32,40}\b`)
-		case "pagerduty", "pagerdutykey", "pagerdutytoken", "pdtoken":
-			add("pagerduty", `(?i)\bpd(?:us|at)\+[A-Za-z0-9._~-]{20,}\b`)
-		case "posthog", "posthogkey", "posthogtoken":
-			add("posthog", `(?i)\bph[cp]_[A-Za-z0-9_-]{20,}\b`)
-		case "splunk", "splunktoken", "splunkhectoken":
-			add("splunk", `(?i)\bSplunk\s+[A-Za-z0-9+/=_-]{20,}\b`)
-		case "elastic", "elasticsearch", "elastickey", "elastictoken", "elasticsearchapikey":
-			add("elastic", `(?i)\bApiKey\s+[A-Za-z0-9+/=_-]{20,}\b`)
-		case "terraform", "terraformcloud", "terraformtoken", "tfc", "tfctoken":
-			add("terraform", `(?i)\batlasv1\.[A-Za-z0-9_-]{20,}\b`)
-		case "npm", "npmtoken":
-			add("npm", `(?i)npm_[A-Za-z0-9]{36,}`)
-		case "stripe", "stripetoken":
-			add("stripe", `(?i)(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}`)
-		case "jwt":
-			add("jwt", `eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}`)
-		case "aws", "awsaccesskey":
-			add("aws", `AKIA[0-9A-Z]{16}`)
-		case "privatekey", "pem":
-			add("private_key", `-----BEGIN [A-Z ]*PRIVATE KEY-----`)
-		case "kubernetes", "kubernetessecret", "k8ssecret":
-			add("k8s_secret_yaml", `(?im)^\s*kind:\s*Secret\s*$`)
-		case "kubeconfig", "kubernetesconfig", "k8sconfig":
-			add("kubeconfig", `(?is)\bclusters\s*:.*\busers\s*:.*\bcurrent-context\s*:`)
-		case "docker", "dockerconfig", "dockerauth":
-			add("docker_config", `(?is)"auths"\s*:\s*\{.*"auth"\s*:`)
+		normalized := normalizeGatewayConditionKey(secretType)
+		for _, definition := range gatewaySecretClassifierDefinitionsForType(normalized) {
+			if _, ok := seen[definition.name]; ok {
+				continue
+			}
+			seen[definition.name] = struct{}{}
+			out = append(out, gatewaySecretClassifierPattern{
+				Name:    definition.name,
+				Pattern: regexp.MustCompile(definition.pattern),
+			})
 		}
 	}
 	return out
@@ -1238,90 +1003,49 @@ func normalizeGatewayConditionKey(key string) string {
 	return replacer.Replace(strings.ToLower(strings.TrimSpace(key)))
 }
 func gatewayPositiveInt(value any) (int, bool) {
-	switch typed := value.(type) {
-	case int:
-		return typed, typed > 0
-	case int32:
-		value := int(typed)
-		return value, value > 0
-	case int64:
-		value := int(typed)
-		return value, value > 0
-	case float32:
-		value := int(typed)
-		return value, value > 0
-	case float64:
-		value := int(typed)
-		return value, value > 0
-	case json.Number:
-		parsed, err := typed.Int64()
-		if err != nil {
-			asFloat, floatErr := strconv.ParseFloat(typed.String(), 64)
-			if floatErr != nil {
-				return 0, false
-			}
-			value := int(asFloat)
-			return value, value > 0
-		}
-		value := int(parsed)
-		return value, value > 0
-	case string:
-		text := strings.TrimSpace(typed)
-		if text == "" {
-			return 0, false
-		}
-		parsed, err := strconv.ParseFloat(text, 64)
-		if err != nil {
-			return 0, false
-		}
-		value := int(parsed)
-		return value, value > 0
-	default:
-		return 0, false
-	}
+	return gatewayInt(value, func(value int) bool { return value > 0 })
 }
 func gatewayNonNegativeInt(value any) (int, bool) {
+	return gatewayInt(value, func(value int) bool { return value >= 0 })
+}
+func gatewayInt(value any, valid func(int) bool) (int, bool) {
+	var parsed int
 	switch typed := value.(type) {
 	case int:
-		return typed, typed >= 0
+		parsed = typed
 	case int32:
-		value := int(typed)
-		return value, value >= 0
+		parsed = int(typed)
 	case int64:
-		value := int(typed)
-		return value, value >= 0
+		parsed = int(typed)
 	case float32:
-		value := int(typed)
-		return value, value >= 0
+		parsed = int(typed)
 	case float64:
-		value := int(typed)
-		return value, value >= 0
+		parsed = int(typed)
 	case json.Number:
-		parsed, err := typed.Int64()
+		integer, err := typed.Int64()
 		if err != nil {
 			asFloat, floatErr := strconv.ParseFloat(typed.String(), 64)
 			if floatErr != nil {
 				return 0, false
 			}
-			value := int(asFloat)
-			return value, value >= 0
+			parsed = int(asFloat)
+			break
 		}
-		value := int(parsed)
-		return value, value >= 0
+		parsed = int(integer)
 	case string:
 		text := strings.TrimSpace(typed)
 		if text == "" {
 			return 0, false
 		}
-		parsed, err := strconv.ParseFloat(text, 64)
+		asFloat, err := strconv.ParseFloat(text, 64)
 		if err != nil {
 			return 0, false
 		}
-		value := int(parsed)
-		return value, value >= 0
+		parsed = int(asFloat)
 	default:
 		return 0, false
 	}
+	return parsed, valid(parsed)
 }
 func gatewayPositiveFloat(value any) (float64, bool) {
 	switch typed := value.(type) {
@@ -1420,39 +1144,5 @@ func normalizeGatewayLimitScope(scope string) string {
 		return "actor_client"
 	default:
 		return "actor_client_tool"
-	}
-}
-func gatewayValueContainsSensitiveData(value any) bool {
-	switch typed := value.(type) {
-	case nil:
-		return false
-	case map[string]any:
-		for key, item := range typed {
-			if gatewaySensitiveKey(key) {
-				return true
-			}
-			if gatewayValueContainsSensitiveData(item) {
-				return true
-			}
-		}
-		return false
-	case []any:
-		for _, item := range typed {
-			if gatewayValueContainsSensitiveData(item) {
-				return true
-			}
-		}
-		return false
-	case []map[string]any:
-		for _, item := range typed {
-			if gatewayValueContainsSensitiveData(item) {
-				return true
-			}
-		}
-		return false
-	case string:
-		return gatewaySensitiveValuePattern.MatchString(typed)
-	default:
-		return false
 	}
 }

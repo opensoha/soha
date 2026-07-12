@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -40,9 +41,39 @@ func (allowAllResourceAuthorizer) Authorize(context.Context, domainaccess.Reques
 func TestAgentPortForwardStartsLocalTunnelThroughAgent(t *testing.T) {
 	var seen []string
 	localPort := testFreeLocalPort(t)
+	server := newAgentPortForwardTestServer(t, localPort, &seen)
+	defer server.Close()
+
+	service := New(Dependencies{
+		Agents:      testAgentClients(agentinfra.NewRegistry(0)),
+		Connections: stubConnectionResolver{connection: agentConnection(server.URL)},
+		Authorizer:  allowAllResourceAuthorizer{},
+	})
+	principal := domainidentity.Principal{UserID: "user-1"}
+
+	created, err := service.PortForwards().RegisterPortForward(context.Background(), principal, "agent-cluster", domainresource.PortForwardRegisterInput{
+		Namespace:  "platform",
+		TargetKind: "Pod",
+		TargetName: "api-0",
+		LocalPort:  localPort,
+		RemotePort: 8080,
+	})
+	if err != nil {
+		t.Fatalf("RegisterPortForward() error = %v", err)
+	}
+	if created.SessionID != "agent-session" || created.Status != "active" {
+		t.Fatalf("created = %#v, want active agent-session", created)
+	}
+
+	assertAgentTunnelRoundTrip(t, localPort)
+	assertAgentPortForwardLifecycle(t, service.PortForwards(), principal, &seen)
+}
+
+func newAgentPortForwardTestServer(t *testing.T, localPort int, seen *[]string) *httptest.Server {
+	t.Helper()
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.Method+" "+r.URL.Path)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*seen = append(*seen, r.Method+" "+r.URL.Path)
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/network/port-forwards":
 			var req domainresource.PortForwardRegisterInput
@@ -69,7 +100,7 @@ func TestAgentPortForwardStartsLocalTunnelThroughAgent(t *testing.T) {
 			if err != nil {
 				t.Fatalf("upgrade tunnel: %v", err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			messageType, payload, err := conn.ReadMessage()
 			if err != nil {
 				t.Fatalf("read tunnel payload: %v", err)
@@ -100,29 +131,10 @@ func TestAgentPortForwardStartsLocalTunnelThroughAgent(t *testing.T) {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
 	}))
-	defer server.Close()
+}
 
-	service := &Service{
-		agents:     agentinfra.NewRegistry(0),
-		resolver:   stubConnectionResolver{connection: agentConnection(server.URL)},
-		authorizer: allowAllResourceAuthorizer{},
-	}
-	principal := domainidentity.Principal{UserID: "user-1"}
-
-	created, err := service.RegisterPortForward(context.Background(), principal, "agent-cluster", domainresource.PortForwardRegisterInput{
-		Namespace:  "platform",
-		TargetKind: "Pod",
-		TargetName: "api-0",
-		LocalPort:  localPort,
-		RemotePort: 8080,
-	})
-	if err != nil {
-		t.Fatalf("RegisterPortForward() error = %v", err)
-	}
-	if created.SessionID != "agent-session" || created.Status != "active" {
-		t.Fatalf("created = %#v, want active agent-session", created)
-	}
-
+func assertAgentTunnelRoundTrip(t *testing.T, localPort int) {
+	t.Helper()
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(localPort)), time.Second)
 	if err != nil {
 		t.Fatalf("dial local tunnel: %v", err)
@@ -141,22 +153,25 @@ func TestAgentPortForwardStartsLocalTunnelThroughAgent(t *testing.T) {
 		t.Fatalf("local tunnel payload = %q, want agent:pong", string(buf))
 	}
 	_ = conn.Close()
+}
 
-	items, err := service.ListPortForwards(context.Background(), principal, "agent-cluster")
+func assertAgentPortForwardLifecycle(t *testing.T, portForwards *PortForwards, principal domainidentity.Principal, seen *[]string) {
+	t.Helper()
+	items, err := portForwards.ListPortForwards(context.Background(), principal, "agent-cluster")
 	if err != nil {
 		t.Fatalf("ListPortForwards() error = %v", err)
 	}
 	if len(items) != 1 || items[0].SessionID != "agent-session" {
 		t.Fatalf("items = %#v, want agent-session", items)
 	}
-	if err := service.StopPortForward(context.Background(), principal, "agent-cluster", "agent-session"); err != nil {
+	if err := portForwards.StopPortForward(context.Background(), principal, "agent-cluster", "agent-session"); err != nil {
 		t.Fatalf("StopPortForward() error = %v", err)
 	}
-	if !sawRequest(seen, "GET /api/v1/platform/network/port-forwards/agent-session/tunnel") {
-		t.Fatalf("requests = %#v, want tunnel request", seen)
+	if !sawRequest(*seen, "GET /api/v1/platform/network/port-forwards/agent-session/tunnel") {
+		t.Fatalf("requests = %#v, want tunnel request", *seen)
 	}
-	if !sawRequest(seen, "DELETE /api/v1/platform/network/port-forwards/agent-session") {
-		t.Fatalf("requests = %#v, want delete request", seen)
+	if !sawRequest(*seen, "DELETE /api/v1/platform/network/port-forwards/agent-session") {
+		t.Fatalf("requests = %#v, want delete request", *seen)
 	}
 }
 
@@ -207,6 +222,45 @@ func TestPersistRegisteredPortForwardSessionCleansUpOnRepositoryFailure(t *testi
 	}
 }
 
+func TestDirectPortForwardDelegatesTransportToInfrastructurePort(t *testing.T) {
+	starter := &recordingDirectPortForwardStarter{session: &recordingDirectPortForwardSession{}}
+	service := New(Dependencies{
+		Connections: stubConnectionResolver{connection: domaincluster.Connection{
+			Summary: domaincluster.Summary{ID: "direct-port-cluster", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig},
+		}},
+		Authorizer:   allowAllResourceAuthorizer{},
+		DirectTunnel: starter,
+	})
+	principal := domainidentity.Principal{UserID: "user-1"}
+	created, err := service.PortForwards().RegisterPortForward(
+		context.Background(), principal, "direct-port-cluster",
+		domainresource.PortForwardRegisterInput{
+			Namespace: "platform", TargetKind: "Service", TargetName: "api",
+			LocalPort: 18080, RemotePort: 8080,
+		},
+	)
+	if err != nil {
+		t.Fatalf("RegisterPortForward() error = %v", err)
+	}
+	t.Cleanup(func() {
+		portForwardRegistryMu.Lock()
+		delete(portForwardRegistry, created.SessionID)
+		portForwardRegistryMu.Unlock()
+	})
+	if starter.clusterID != "direct-port-cluster" {
+		t.Fatalf("StartPortForward() clusterID = %q", starter.clusterID)
+	}
+	if starter.view.SessionID == "" || starter.view.TargetKind != "Service" || starter.view.CreatedBy != "user-1" {
+		t.Fatalf("StartPortForward() view = %#v", starter.view)
+	}
+	if err := service.PortForwards().StopPortForward(context.Background(), principal, "direct-port-cluster", created.SessionID); err != nil {
+		t.Fatalf("StopPortForward() error = %v", err)
+	}
+	if !starter.session.stopped {
+		t.Fatal("StopPortForward() did not stop infrastructure session")
+	}
+}
+
 func agentConnection(endpoint string) domaincluster.Connection {
 	return domaincluster.Connection{
 		Summary: domaincluster.Summary{
@@ -216,6 +270,37 @@ func agentConnection(endpoint string) domaincluster.Connection {
 		Metadata: map[string]any{
 			"endpoint": endpoint,
 		},
+	}
+}
+
+func testAgentClients(registry *agentinfra.Registry) AgentClients {
+	return AgentClients{
+		Workloads:       testAgentFactory[WorkloadAgent](registry),
+		Configuration:   testAgentFactory[ConfigurationAgent](registry),
+		Network:         testAgentFactory[NetworkAgent](registry),
+		Storage:         testAgentFactory[StorageAgent](registry),
+		RBAC:            testAgentFactory[RBACAgent](registry),
+		Helm:            testAgentFactory[HelmAgent](registry),
+		Inventory:       testAgentFactory[InventoryAgent](registry),
+		CustomResources: testAgentFactory[CustomResourceAgent](registry),
+		Generic:         testAgentFactory[GenericResourceAgent](registry),
+		Events:          testAgentFactory[EventAgent](registry),
+		PortForwards:    testAgentFactory[PortForwardAgent](registry),
+	}
+}
+
+func testAgentFactory[T any](registry *agentinfra.Registry) AgentClientFactory[T] {
+	return func(connection domaincluster.Connection) (T, error) {
+		var zero T
+		client, err := registry.ClientFor(connection)
+		if err != nil {
+			return zero, err
+		}
+		typed, ok := any(client).(T)
+		if !ok {
+			return zero, fmt.Errorf("agent client does not implement requested test capability")
+		}
+		return typed, nil
 	}
 }
 
@@ -250,6 +335,30 @@ func sawRequest(seen []string, want string) bool {
 
 type failingPortForwardRepository struct {
 	err error
+}
+
+type recordingDirectPortForwardStarter struct {
+	clusterID string
+	view      domainresource.PortForwardSessionView
+	session   *recordingDirectPortForwardSession
+}
+
+func (s *recordingDirectPortForwardStarter) StartPortForward(_ context.Context, clusterID string, view domainresource.PortForwardSessionView) (DirectPortForwardSession, error) {
+	s.clusterID = clusterID
+	s.view = view
+	return s.session, nil
+}
+
+type recordingDirectPortForwardSession struct {
+	stopped bool
+}
+
+func (s *recordingDirectPortForwardSession) Stop() {
+	s.stopped = true
+}
+
+func (*recordingDirectPortForwardSession) LastError() string {
+	return ""
 }
 
 func (f failingPortForwardRepository) List(context.Context) ([]portforwardrepo.Record, error) {

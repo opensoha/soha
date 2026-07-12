@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"database/sql"
 	"database/sql/driver"
 	"slices"
 	"testing"
@@ -12,9 +13,18 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestDefaultMenusIncludeDirectorySync(t *testing.T) {
+	if !slices.ContainsFunc(defaultMenuSeeds(), func(item menuSeed) bool {
+		return item.ID == "access-directory-sync" && item.Path == "/access/directory-sync" && slices.Contains(item.Roles, "admin")
+	}) {
+		t.Fatal("default menus missing admin directory sync entry")
+	}
+}
 
 func TestDefaultMenuSeedsValidate(t *testing.T) {
 	if err := validateMenuSeeds(defaultMenuSeeds()); err != nil {
@@ -154,6 +164,111 @@ func TestSeedUserUsesConfiguredUserID(t *testing.T) {
 
 	if err := seedUser(context.Background(), db, cfg); err != nil {
 		t.Fatalf("seedUser returned error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestSeedUserDoesNotOverwriteExistingPassword(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("new sqlmock: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm postgres mock: %v", err)
+	}
+	cfg := cfgpkg.Config{Auth: cfgpkg.AuthConfig{DevPrincipal: cfgpkg.DevPrincipalConfig{
+		UserID: "67d90df8-9de4-4a7b-b3f8-86cd36f899e2",
+		Name:   "OpenSoha", Email: "opensoha@soha.local", Password: "strong-bootstrap-password",
+	}}}
+	existingHash, err := bcrypt.GenerateFromPassword([]byte("user-changed-password"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash existing password: %v", err)
+	}
+
+	mock.ExpectExec(`(?s)INSERT INTO users .*ON CONFLICT \(id\) DO UPDATE SET`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)SELECT password_hash FROM user_password_credentials WHERE user_id = \$1 LIMIT 1`).
+		WithArgs(cfg.Auth.DevPrincipal.UserID).
+		WillReturnRows(sqlmock.NewRows([]string{"password_hash"}).AddRow(string(existingHash)))
+
+	if err := seedUser(context.Background(), db, cfg); err != nil {
+		t.Fatalf("seedUser() error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestSeedUserCreatesStandardInitialPassword(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("new sqlmock: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm postgres mock: %v", err)
+	}
+	const userID = "67d90df8-9de4-4a7b-b3f8-86cd36f899e2"
+	cfg := cfgpkg.Config{Auth: cfgpkg.AuthConfig{
+		DevPrincipal: cfgpkg.DevPrincipalConfig{
+			UserID: userID, Name: "OpenSoha", Email: "opensoha@soha.local", Password: "opensoha",
+		},
+	}}
+
+	mock.ExpectExec(`(?s)INSERT INTO users .*ON CONFLICT \(id\) DO UPDATE SET`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)SELECT password_hash FROM user_password_credentials WHERE user_id = \$1 LIMIT 1`).
+		WithArgs(userID).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectExec(`(?s)INSERT INTO user_password_credentials`).
+		WithArgs(userID, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := seedUser(context.Background(), db, cfg); err != nil {
+		t.Fatalf("seedUser() error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestSeedUserKeepsExistingStandardPassword(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("new sqlmock: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm postgres mock: %v", err)
+	}
+	const userID = "67d90df8-9de4-4a7b-b3f8-86cd36f899e2"
+	cfg := cfgpkg.Config{Auth: cfgpkg.AuthConfig{
+		DevPrincipal: cfgpkg.DevPrincipalConfig{
+			UserID: userID, Name: "OpenSoha", Email: "opensoha@soha.local", Password: "opensoha",
+		},
+	}}
+	existingHash, err := bcrypt.GenerateFromPassword([]byte("opensoha"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatalf("hash standard initial password: %v", err)
+	}
+
+	mock.ExpectExec(`(?s)INSERT INTO users .*ON CONFLICT \(id\) DO UPDATE SET`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)SELECT password_hash FROM user_password_credentials WHERE user_id = \$1 LIMIT 1`).
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"password_hash"}).AddRow(string(existingHash)))
+
+	if err := seedUser(context.Background(), db, cfg); err != nil {
+		t.Fatalf("seedUser() error = %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)

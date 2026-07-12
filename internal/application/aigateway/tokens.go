@@ -721,9 +721,7 @@ func metadataListItemString(raw any, key string) (string, error) {
 func splitMetadataListString(value string) []string {
 	parts := strings.Split(value, ",")
 	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		out = append(out, part)
-	}
+	out = append(out, parts...)
 	return out
 }
 

@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,9 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
+	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
-	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
 )
 
 type streamTaskUpdatesStubService struct {
@@ -64,23 +63,34 @@ func TestStreamTaskUpdatesUsesFixedErrorMessage(t *testing.T) {
 }
 
 func TestBackendWebSocketDialerUsesConsoleTLSOptions(t *testing.T) {
-	result := infravirtualization.ConsoleURLResult{
-		BackendTLSConfig:      &tls.Config{ServerName: "k8s.example"},
-		InsecureSkipTLSVerify: true,
+	result := consoleport.ConsoleURLResult{
+		BackendTLS: consoleport.BackendTLS{
+			ServerName:         "k8s.example",
+			InsecureSkipVerify: true,
+		},
 	}
 
-	dialer := backendWebSocketDialer(result)
+	dialer, err := backendWebSocketDialer(result)
+	if err != nil {
+		t.Fatalf("backendWebSocketDialer() error = %v", err)
+	}
 	if dialer.TLSClientConfig == nil {
 		t.Fatalf("TLSClientConfig is nil")
-	}
-	if dialer.TLSClientConfig == result.BackendTLSConfig {
-		t.Fatalf("TLSClientConfig should be cloned")
 	}
 	if dialer.TLSClientConfig.ServerName != "k8s.example" {
 		t.Fatalf("ServerName = %q", dialer.TLSClientConfig.ServerName)
 	}
 	if !dialer.TLSClientConfig.InsecureSkipVerify {
 		t.Fatalf("InsecureSkipVerify = false, want true")
+	}
+}
+
+func TestBackendWebSocketDialerRejectsInvalidTLSMaterial(t *testing.T) {
+	_, err := backendWebSocketDialer(consoleport.ConsoleURLResult{
+		BackendTLS: consoleport.BackendTLS{CAData: []byte("not pem")},
+	})
+	if err == nil {
+		t.Fatal("backendWebSocketDialer() error = nil")
 	}
 }
 
@@ -111,11 +121,17 @@ func TestMapOperationRedactsSensitivePayload(t *testing.T) {
 		},
 	})
 
-	payload := mapped["payload"].(map[string]any)
+	payload, ok := mapped["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload = %#v, want map", mapped["payload"])
+	}
 	if payload["cloudInit"] != nil || payload["cloudInitConfigured"] != true {
 		t.Fatalf("cloudInit was not redacted: %#v", payload)
 	}
-	providerParams := payload["providerParams"].(map[string]any)
+	providerParams, ok := payload["providerParams"].(map[string]any)
+	if !ok {
+		t.Fatalf("provider params = %#v, want map", payload["providerParams"])
+	}
 	if providerParams["runnerToken"] != nil || providerParams["runnerTokenConfigured"] != true || providerParams["storage"] != "local-lvm" {
 		t.Fatalf("provider params redaction = %#v", providerParams)
 	}
@@ -133,8 +149,14 @@ func TestMapOperationPreservesConfiguredFlags(t *testing.T) {
 		},
 	})
 
-	result := mapped["result"].(map[string]any)
-	snapshot := result["connectionSnapshot"].(map[string]any)
+	result, ok := mapped["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("result = %#v, want map", mapped["result"])
+	}
+	snapshot, ok := result["connectionSnapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("connection snapshot = %#v, want map", result["connectionSnapshot"])
+	}
 	if snapshot["credentialConfigured"] != true || snapshot["prometheusBearerTokenConfigured"] != true {
 		t.Fatalf("configured flags were not preserved: %#v", snapshot)
 	}
@@ -267,7 +289,9 @@ func TestProxyWebsocketCopiesFullMessages(t *testing.T) {
 		t.Fatalf("write client message: %v", err)
 	}
 
-	backendConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := backendConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set backend read deadline: %v", err)
+	}
 	messageType, got, err := backendConn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read backend message: %v", err)
@@ -284,7 +308,9 @@ func TestProxyWebsocketCopiesFullMessages(t *testing.T) {
 		t.Fatalf("write backend message: %v", err)
 	}
 
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := clientConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set client read deadline: %v", err)
+	}
 	messageType, got, err = clientConn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read client message: %v", err)
@@ -319,7 +345,7 @@ func TestProxyPVEVNCDialsBackendWithTicketCookieAndQuery(t *testing.T) {
 			errCh <- err
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		messageType, payload, err := conn.ReadMessage()
 		if err != nil {
 			errCh <- err
@@ -341,13 +367,15 @@ func TestProxyPVEVNCDialsBackendWithTicketCookieAndQuery(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		proxyPVEVNC(ctx, clientProxyConn, backend.URL+"/api2/json/nodes/pve-a/qemu/101/vncwebsocket?port=5901", "ticket-1", infravirtualization.ConsoleURLResult{})
+		proxyPVEVNC(ctx, clientProxyConn, backend.URL+"/api2/json/nodes/pve-a/qemu/101/vncwebsocket?port=5901", "ticket-1", consoleport.ConsoleURLResult{})
 	}()
 
 	if err := clientConn.WriteMessage(websocket.BinaryMessage, []byte("hello")); err != nil {
 		t.Fatalf("write client message: %v", err)
 	}
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := clientConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set client read deadline: %v", err)
+	}
 	messageType, payload, err := clientConn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read client response: %v", err)
@@ -378,7 +406,7 @@ func TestProxyPVEVNCUsesInsecureTLSForSelfSignedBackend(t *testing.T) {
 			errCh <- err
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_, payload, err := conn.ReadMessage()
 		if err != nil {
 			errCh <- err
@@ -400,13 +428,17 @@ func TestProxyPVEVNCUsesInsecureTLSForSelfSignedBackend(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		proxyPVEVNC(ctx, clientProxyConn, backend.URL+"/vncwebsocket", "ticket-tls", infravirtualization.ConsoleURLResult{InsecureSkipTLSVerify: true})
+		proxyPVEVNC(ctx, clientProxyConn, backend.URL+"/vncwebsocket", "ticket-tls", consoleport.ConsoleURLResult{
+			BackendTLS: consoleport.BackendTLS{InsecureSkipVerify: true},
+		})
 	}()
 
 	if err := clientConn.WriteMessage(websocket.TextMessage, []byte("ping")); err != nil {
 		t.Fatalf("write client message: %v", err)
 	}
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := clientConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set client read deadline: %v", err)
+	}
 	_, payload, err := clientConn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read client response: %v", err)
@@ -425,15 +457,15 @@ func TestProxyPVEVNCUsesInsecureTLSForSelfSignedBackend(t *testing.T) {
 
 type consoleURLStubService struct {
 	VirtualizationService
-	result infravirtualization.ConsoleURLResult
+	result consoleport.ConsoleURLResult
 }
 
-func (s *consoleURLStubService) GetConsoleURL(context.Context, domainidentity.Principal, string) (infravirtualization.ConsoleURLResult, error) {
+func (s *consoleURLStubService) GetConsoleURL(context.Context, domainidentity.Principal, string) (consoleport.ConsoleURLResult, error) {
 	return s.result, nil
 }
 
 func TestStreamVMConsoleReturnsServiceUnavailableWhenConsoleNotReady(t *testing.T) {
-	handler := NewVirtualizationHandler(&consoleURLStubService{result: infravirtualization.ConsoleURLResult{
+	handler := NewVirtualizationHandler(&consoleURLStubService{result: consoleport.ConsoleURLResult{
 		Type:     "novnc",
 		Provider: "pve",
 		Ready:    false,
@@ -473,12 +505,14 @@ func TestProxyWebsocketStopsOnContextCancel(t *testing.T) {
 
 func TestWriteWebsocketProxyErrorRedactsBackendDetails(t *testing.T) {
 	clientProxyConn, clientConn := newWebSocketTestPair(t)
-	defer clientProxyConn.Close()
-	defer clientConn.Close()
+	defer func() { _ = clientProxyConn.Close() }()
+	defer func() { _ = clientConn.Close() }()
 
 	writeWebsocketProxyError(clientProxyConn, "backend connection failed")
 
-	clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := clientConn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatalf("set client read deadline: %v", err)
+	}
 	messageType, got, err := clientConn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read client message: %v", err)
@@ -523,10 +557,10 @@ func newWebSocketTestPair(t *testing.T) (*websocket.Conn, *websocket.Conn) {
 
 	t.Cleanup(func() {
 		if clientConn != nil {
-			clientConn.Close()
+			_ = clientConn.Close()
 		}
 		if serverConn != nil {
-			serverConn.Close()
+			_ = serverConn.Close()
 		}
 		close(release)
 		server.Close()
@@ -534,7 +568,10 @@ func newWebSocketTestPair(t *testing.T) (*websocket.Conn, *websocket.Conn) {
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 	var err error
-	clientConn, _, err = websocket.DefaultDialer.Dial(wsURL, nil)
+	clientConn, response, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if response != nil {
+		defer func() { _ = response.Body.Close() }()
+	}
 	if err != nil {
 		t.Fatalf("dial websocket test server: %v", err)
 	}

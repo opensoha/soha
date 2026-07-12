@@ -1,7 +1,6 @@
 package virtualization
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -363,42 +362,4 @@ type TaskLog struct {
 	Message   string         `json:"message"`
 	Payload   map[string]any `json:"payload,omitempty"`
 	CreatedAt time.Time      `json:"createdAt"`
-}
-
-type Repository interface {
-	CreateConnection(context.Context, ConnectionInput) (Connection, error)
-	UpdateConnection(context.Context, string, ConnectionInput) (Connection, error)
-	DeleteConnection(context.Context, string) error
-	GetConnection(context.Context, string) (Connection, error)
-	ListConnections(context.Context, ConnectionFilter) ([]Connection, error)
-	CountConnections(context.Context, ConnectionFilter) (int, error)
-	CountDockerHostsByConnection(context.Context, string) (int, error)
-	MarkDockerHostsUnavailableByConnection(context.Context, string) error
-	MarkDockerHostsUnavailableByVM(context.Context, string) error
-	UpsertVM(context.Context, VM) (VM, error)
-	GetVM(context.Context, string) (VM, error)
-	ListVMs(context.Context, VMFilter) ([]VM, error)
-	CountVMs(context.Context, VMFilter) (int, error)
-	UpsertImage(context.Context, Image) (Image, error)
-	GetImage(context.Context, string) (Image, error)
-	ListImages(context.Context, ImageFilter) ([]Image, error)
-	CountImages(context.Context, ImageFilter) (int, error)
-	UpsertFlavor(context.Context, Flavor) (Flavor, error)
-	GetFlavor(context.Context, string) (Flavor, error)
-	ListFlavors(context.Context, FlavorFilter) ([]Flavor, error)
-	CountFlavors(context.Context, FlavorFilter) (int, error)
-	CreateTask(context.Context, Task) (Task, error)
-	UpdateTask(context.Context, Task) (Task, error)
-	ClaimTask(context.Context, string, time.Time) (Task, error)
-	GetTask(context.Context, string) (Task, error)
-	ListTasks(context.Context, TaskFilter) ([]Task, error)
-	CountTasks(context.Context, TaskFilter) (int, error)
-	ListTimedOutTasks(context.Context, time.Time, int) ([]Task, error)
-	HeartbeatTask(context.Context, string, string, time.Time) error
-	UpdateConnectionHealth(context.Context, string, map[string]any, *time.Time) (Connection, error)
-	MarkVMsStale(context.Context, string, string, time.Time) error
-	MarkImagesStale(context.Context, string, string, time.Time) error
-	MarkFlavorsStale(context.Context, string, string, time.Time) error
-	CreateTaskLog(context.Context, TaskLog) error
-	ListTaskLogs(context.Context, string, int) ([]TaskLog, error)
 }

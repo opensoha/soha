@@ -145,9 +145,16 @@ See the published docs for the current route, bootstrap, multi-`cmd`, and reserv
 
 ### Install dependencies and start local services
 
+The standard stack starts with `pgsql` as the PostgreSQL password and
+`opensoha` as the initial `opensoha` administrator password:
+
 ```bash
 make init
 ```
+
+These are Soha's standard initial credentials across local, Docker, Compose,
+Kubernetes, and Helm deployments. Override them only when an installation needs
+different database or administrator credentials.
 
 This installs Go dependencies, then starts the local PostgreSQL service from `deploy/docker-compose.yaml`. Frontend dependencies are managed in the sibling `../soha-web` repository.
 
@@ -225,6 +232,44 @@ make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
 ```
 
+Run the application container without Compose when PostgreSQL is already
+reachable. This example keeps every standard default explicit so each value can
+be replaced independently before deployment:
+
+```bash
+docker run -d \
+  --name soha \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  --add-host host.docker.internal:host-gateway \
+  -e SOHA_DATABASE_HOST=host.docker.internal \
+  -e SOHA_DATABASE_PASSWORD=pgsql \
+  -e SOHA_AUTH_DEV_PRINCIPAL_PASSWORD=opensoha \
+  -e SOHA_AUTH_JWT_SECRET=soha-123456789012345678901234567890 \
+  -e SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN=soha-123456789012345678901234567890 \
+  -e SOHA_MONITORING_WEBHOOK_TOKEN=soha-123456789012345678901234567890 \
+  -e SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY=soha-123456789012345678901234567890 \
+  yshanchui/soha:latest
+```
+
+The bootstrap password is inserted only when the `opensoha` user's password
+credential does not already exist, so routine restarts never reset a changed
+administrator password.
+
+The JWT, runner, webhook, and credential-encryption settings all default to the
+public value `soha-123456789012345678901234567890`. This makes local, raw Docker,
+Compose, Kubernetes, and Helm startup deterministic, but it is not secure for a
+public installation. Override all four settings before exposing Soha. Prefer
+separate high-entropy values and keep the same configured values on every Soha
+replica. Changing the credential-encryption key does not re-encrypt existing
+records: migrate every stored ciphertext to the new key before restarting with
+the replacement, or those credentials will become unreadable.
+
+Soha does not require a SecretStore volume, secret bundle, writer lease, or
+secret lifecycle CLI. Multiple API containers may use the same database when
+they receive the same configuration; use different host ports for parallel raw
+Docker instances and a shared load balancer for normal multi-replica delivery.
+
 Recommended boundaries:
 
 - Docker image: publish to Docker Hub as `yshanchui/soha`; local builds default to the `local` tag.
@@ -250,17 +295,22 @@ helm repo add opensoha https://raw.githubusercontent.com/opensoha/soha-helm/gh-p
 helm repo update
 helm install soha opensoha/soha --namespace soha --create-namespace
 helm install soha-agent opensoha/soha-agent \
-  --namespace soha-agent \
-  --create-namespace \
-  --set-string secrets.agentBearerToken="$SOHA_AGENT_BEARER_TOKEN" \
-  --set-string secrets.controlPlaneBearerToken="$SOHA_EXECUTION_RUNNER_TOKEN" \
+  --namespace soha \
   --set-string config.controlPlane.baseUrl="https://soha.example.com"
 helm install soha-hermes-agent opensoha/soha-hermes-agent \
-  --namespace soha-agent \
-  --create-namespace \
-  --set-string secrets.controlPlaneBearerToken="$SOHA_EXECUTION_RUNNER_TOKEN" \
+  --namespace soha \
   --set-string controlPlane.baseUrl="https://soha.example.com"
 ```
+
+The agent charts read only `soha-config/execution-runner-token` by default and
+generate their own inbound agent token when needed. Kubernetes Secret
+references cannot cross namespaces; for a separate agent namespace, sync only
+that runner key with an External Secrets controller and set
+`secrets.controlPlaneExistingSecret.name/key` accordingly.
+
+The chart keeps deployment configuration in Kubernetes Secrets so installations
+can override the four public defaults without modifying the image. Keep all
+replicas on the same values during a rollout.
 
 To copy the CLI into another image, use the tool image directly:
 
@@ -275,6 +325,10 @@ Apply the raw Kubernetes baseline:
 ```bash
 kubectl apply -k deploy
 ```
+
+The raw manifest includes the standard `pgsql`/`opensoha` initial credentials
+and the four public system-key defaults in `soha-app-config`. Replace them with
+an overlay or external Secret integration before a public rollout.
 
 ## Documentation
 

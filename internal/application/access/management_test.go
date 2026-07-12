@@ -53,26 +53,6 @@ func (s *captureUserManager) CreateUser(_ context.Context, input domainaccess.Us
 	}, nil
 }
 
-type stubPolicyManager struct {
-	createdRole domainaccess.RoleInput
-}
-
-func (s *stubPolicyManager) CreateRole(context.Context, domainaccess.RoleInput) (domainaccess.RoleRecord, error) {
-	s.createdRole = domainaccess.RoleInput{}
-	return domainaccess.RoleRecord{}, nil
-}
-func (s *stubPolicyManager) UpdateRole(context.Context, string, domainaccess.RoleInput) (domainaccess.RoleRecord, error) {
-	return domainaccess.RoleRecord{}, nil
-}
-func (s *stubPolicyManager) DeleteRole(context.Context, string) error { return nil }
-func (s *stubPolicyManager) CreatePolicy(context.Context, domainaccess.PolicyInput) (domainaccess.Policy, error) {
-	return domainaccess.Policy{}, nil
-}
-func (s *stubPolicyManager) UpdatePolicy(context.Context, string, domainaccess.PolicyInput) (domainaccess.Policy, error) {
-	return domainaccess.Policy{}, nil
-}
-func (s *stubPolicyManager) DeletePolicy(context.Context, string) error { return nil }
-
 type capturePolicyManager struct {
 	lastRoleInput domainaccess.RoleInput
 }

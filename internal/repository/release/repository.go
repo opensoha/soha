@@ -52,7 +52,7 @@ func (r *Repository) List(ctx context.Context, filter domainrelease.Filter) ([]d
 	if err != nil {
 		return nil, fmt.Errorf("query release records: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainrelease.Record, 0, limit)
 	for rows.Next() {

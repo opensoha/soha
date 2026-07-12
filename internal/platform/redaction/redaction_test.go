@@ -5,6 +5,15 @@ import (
 	"testing"
 )
 
+func mustRedactedValue[T any](t *testing.T, value any) T {
+	t.Helper()
+	result, ok := value.(T)
+	if !ok {
+		t.Fatalf("value has type %T, want %T", value, *new(T))
+	}
+	return result
+}
+
 func TestMapRedactsSensitiveKeysAndNestedText(t *testing.T) {
 	values := map[string]any{
 		"clusterId": "cluster-a",
@@ -25,28 +34,28 @@ func TestMapRedactsSensitiveKeysAndNestedText(t *testing.T) {
 	if redacted["api_key"] != Redacted {
 		t.Fatalf("api key was not redacted: %#v", redacted)
 	}
-	nested := redacted["nested"].(map[string]any)
-	if strings.Contains(nested["note"].(string), "raw-bearer") {
+	nested := mustRedactedValue[map[string]any](t, redacted["nested"])
+	if strings.Contains(mustRedactedValue[string](t, nested["note"]), "raw-bearer") {
 		t.Fatalf("nested text was not redacted: %#v", nested)
 	}
-	events := redacted["events"].([]any)
-	if events[0].(map[string]any)["password"] != Redacted {
+	events := mustRedactedValue[[]any](t, redacted["events"])
+	if mustRedactedValue[map[string]any](t, events[0])["password"] != Redacted {
 		t.Fatalf("nested password was not redacted: %#v", events[0])
 	}
-	if strings.Contains(events[1].(string), "raw-token") {
+	if strings.Contains(mustRedactedValue[string](t, events[1]), "raw-token") {
 		t.Fatalf("slice text was not redacted: %#v", events[1])
 	}
 }
 
 func TestTextRedactsCommonSecretPatterns(t *testing.T) {
-	value := "token=raw-token password: raw-password Authorization: Bearer raw-bearer kubeconfig=raw-kubeconfig"
+	value := "token=raw-token password: raw-password Authorization: Bearer raw-bearer kubeconfig=raw-kubeconfig https://idp.example/callback?code=raw-code"
 	redacted := Text(value)
-	for _, leaked := range []string{"raw-token", "raw-password", "raw-bearer", "raw-kubeconfig"} {
+	for _, leaked := range []string{"raw-token", "raw-password", "raw-bearer", "raw-kubeconfig", "raw-code"} {
 		if strings.Contains(redacted, leaked) {
 			t.Fatalf("text leaked %q in %q", leaked, redacted)
 		}
 	}
-	if strings.Count(redacted, Redacted) != 4 {
+	if strings.Count(redacted, Redacted) != 5 {
 		t.Fatalf("redaction count mismatch in %q", redacted)
 	}
 }

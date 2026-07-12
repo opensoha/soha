@@ -171,65 +171,41 @@ func TestDefaultRolePermissionsDeliveryWorkbenchRoles(t *testing.T) {
 }
 
 func TestDefaultRolePermissionsAIGateway(t *testing.T) {
-	SetRolePermissionMatrix(nil)
-
-	for _, permission := range []string{PermAIGatewayView, PermAIGatewayInvoke, PermAIGatewayManage} {
-		for _, role := range []string{"admin", "ops"} {
-			if !HasPermission([]string{role}, permission) {
-				t.Fatalf("%s role should include %s", role, permission)
-			}
-		}
-	}
-	for _, permission := range []string{PermAIGatewayView, PermAIGatewayInvoke} {
-		if !HasPermission([]string{"developer"}, permission) {
-			t.Fatalf("developer role should include %s", permission)
-		}
-	}
-	if HasPermission([]string{"developer"}, PermAIGatewayManage) {
-		t.Fatalf("developer role should not include %s", PermAIGatewayManage)
-	}
-	if !HasPermission([]string{"readonly"}, PermAIGatewayView) {
-		t.Fatalf("readonly role should include %s", PermAIGatewayView)
-	}
-	for _, permission := range []string{PermAIGatewayInvoke, PermAIGatewayManage} {
-		if HasPermission([]string{"readonly"}, permission) {
-			t.Fatalf("readonly role should not include %s", permission)
-		}
-	}
-	for _, permission := range []string{PermAIGatewayView, PermAIGatewayInvoke, PermAIGatewayManage} {
-		if HasPermission([]string{"auditor"}, permission) {
-			t.Fatalf("auditor role should not include %s", permission)
-		}
-	}
+	assertDefaultGatewayRolePermissions(t, PermAIGatewayView, PermAIGatewayInvoke, PermAIGatewayManage)
 }
 
 func TestDefaultRolePermissionsAIGatewayRelay(t *testing.T) {
+	assertDefaultGatewayRolePermissions(t, PermAIGatewayRelayView, PermAIGatewayRelayInvoke, PermAIGatewayRelayManage)
+}
+
+func assertDefaultGatewayRolePermissions(t *testing.T, view, invoke, manage string) {
+	t.Helper()
 	SetRolePermissionMatrix(nil)
 
-	for _, permission := range []string{PermAIGatewayRelayView, PermAIGatewayRelayInvoke, PermAIGatewayRelayManage} {
+	for _, permission := range []string{view, invoke, manage} {
 		for _, role := range []string{"admin", "ops"} {
 			if !HasPermission([]string{role}, permission) {
 				t.Fatalf("%s role should include %s", role, permission)
 			}
 		}
 	}
-	for _, permission := range []string{PermAIGatewayRelayView, PermAIGatewayRelayInvoke} {
+	for _, permission := range []string{view, invoke} {
 		if !HasPermission([]string{"developer"}, permission) {
 			t.Fatalf("developer role should include %s", permission)
 		}
 	}
-	if HasPermission([]string{"developer"}, PermAIGatewayRelayManage) {
-		t.Fatalf("developer role should not include %s", PermAIGatewayRelayManage)
+	if HasPermission([]string{"developer"}, manage) {
+		t.Fatalf("developer role should not include %s", manage)
 	}
-	if !HasPermission([]string{"readonly"}, PermAIGatewayRelayView) {
-		t.Fatalf("readonly role should include %s", PermAIGatewayRelayView)
+	if !HasPermission([]string{"readonly"}, view) {
+		t.Fatalf("readonly role should include %s", view)
 	}
-	for _, permission := range []string{PermAIGatewayRelayInvoke, PermAIGatewayRelayManage} {
+	for _, permission := range []string{invoke, manage} {
 		if HasPermission([]string{"readonly"}, permission) {
 			t.Fatalf("readonly role should not include %s", permission)
 		}
 	}
-	for _, permission := range []string{PermAIGatewayRelayView, PermAIGatewayRelayInvoke, PermAIGatewayRelayManage} {
+	for _, permission := range []string{view, invoke, manage} {
 		if HasPermission([]string{"auditor"}, permission) {
 			t.Fatalf("auditor role should not include %s", permission)
 		}

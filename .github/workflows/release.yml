@@ -49,7 +49,7 @@ jobs:
         working-directory: soha
         run: |
           test -n "${CONTRACTS_REF}"
-          go mod edit -dropreplace=github.com/opensoha/soha-contracts@v0.1.1
+          go mod edit -dropreplace=github.com/opensoha/soha-contracts@v0.1.2
           go get "github.com/opensoha/soha-contracts@${CONTRACTS_REF}"
           go mod tidy
           go list -m github.com/opensoha/soha-contracts | tee ../soha-contracts-module.txt

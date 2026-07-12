@@ -161,31 +161,7 @@ func (r *relayTestRepository) ListLLMCallLogs(_ context.Context, filter domainai
 	defer r.mu.Unlock()
 	items := make([]domainaigateway.LLMCallLog, 0, len(r.callLogs))
 	for _, item := range r.callLogs {
-		if filter.TokenID != "" && item.TokenID != filter.TokenID {
-			continue
-		}
-		if filter.TokenPrefix != "" && item.TokenPrefix != filter.TokenPrefix {
-			continue
-		}
-		if filter.TokenKind != "" && item.TokenKind != filter.TokenKind {
-			continue
-		}
-		if filter.Status != "" && item.Status != filter.Status {
-			continue
-		}
-		if filter.PublicModel != "" && item.PublicModel != filter.PublicModel {
-			continue
-		}
-		if filter.UpstreamID != "" && item.UpstreamID != filter.UpstreamID {
-			continue
-		}
-		if filter.ProviderKind != "" && item.ProviderKind != filter.ProviderKind {
-			continue
-		}
-		if filter.From != nil && item.CreatedAt.Before(*filter.From) {
-			continue
-		}
-		if filter.To != nil && item.CreatedAt.After(*filter.To) {
+		if !relayCallLogMatchesFilter(item, filter) {
 			continue
 		}
 		items = append(items, item)
@@ -194,6 +170,18 @@ func (r *relayTestRepository) ListLLMCallLogs(_ context.Context, filter domainai
 		}
 	}
 	return items, nil
+}
+
+func relayCallLogMatchesFilter(item domainaigateway.LLMCallLog, filter domainaigateway.LLMCallLogFilter) bool {
+	return (filter.TokenID == "" || item.TokenID == filter.TokenID) &&
+		(filter.TokenPrefix == "" || item.TokenPrefix == filter.TokenPrefix) &&
+		(filter.TokenKind == "" || item.TokenKind == filter.TokenKind) &&
+		(filter.Status == "" || item.Status == filter.Status) &&
+		(filter.PublicModel == "" || item.PublicModel == filter.PublicModel) &&
+		(filter.UpstreamID == "" || item.UpstreamID == filter.UpstreamID) &&
+		(filter.ProviderKind == "" || item.ProviderKind == filter.ProviderKind) &&
+		(filter.From == nil || !item.CreatedAt.Before(*filter.From)) &&
+		(filter.To == nil || !item.CreatedAt.After(*filter.To))
 }
 
 func (r *relayTestRepository) LLMRelayCallLogMetrics(ctx context.Context, filter domainaigateway.LLMCallLogFilter) (domainaigateway.LLMRelayCallLogMetrics, error) {
@@ -315,16 +303,16 @@ func mergeRelayTestCacheBreakdown(items map[string]map[string]any, label, value 
 	}
 	switch log.CacheStatus {
 	case relayCacheHit:
-		item["responseCacheHits"] = item["responseCacheHits"].(int) + 1
+		item["responseCacheHits"] = intFromAny(item["responseCacheHits"]) + 1
 	case relayCacheMiss:
-		item["responseCacheMisses"] = item["responseCacheMisses"].(int) + 1
+		item["responseCacheMisses"] = intFromAny(item["responseCacheMisses"]) + 1
 	case relayCacheWrite:
-		item["responseCacheWrites"] = item["responseCacheWrites"].(int) + 1
+		item["responseCacheWrites"] = intFromAny(item["responseCacheWrites"]) + 1
 	case relayCacheBypass:
-		item["responseCacheBypasses"] = item["responseCacheBypasses"].(int) + 1
+		item["responseCacheBypasses"] = intFromAny(item["responseCacheBypasses"]) + 1
 	}
-	item["providerCachedReadTokens"] = item["providerCachedReadTokens"].(int) + log.CachedReadTokens
-	item["providerCachedWriteTokens"] = item["providerCachedWriteTokens"].(int) + log.CachedWriteTokens
+	item["providerCachedReadTokens"] = intFromAny(item["providerCachedReadTokens"]) + log.CachedReadTokens
+	item["providerCachedWriteTokens"] = intFromAny(item["providerCachedWriteTokens"]) + log.CachedWriteTokens
 }
 
 func (r *relayTestRepository) CreateLLMCallLog(ctx context.Context, item domainaigateway.LLMCallLog) error {
@@ -578,30 +566,8 @@ func TestRelayLLMHTTPProxiesOpenAIChatCompletionAndRecordsUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RelayLLMHTTP returned error: %v", err)
 	}
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
-	}
 	upstreamPayload := <-requests
-	if upstreamPayload["model"] != "gpt-upstream" || upstreamPayload["custom"] != "preserved" {
-		t.Fatalf("upstream payload = %#v", upstreamPayload)
-	}
-	assertNativeRelayBody(t, recorder.Body.String(), "chatcmpl-1")
-	log := singleRelayLog(t, repo)
-	if log.PublicModel != "gpt-public" || log.UpstreamID != "upstream-openai" || log.UpstreamModel != "gpt-upstream" {
-		t.Fatalf("unexpected route log fields: %#v", log)
-	}
-	if log.Status != "success" || log.HTTPStatus != http.StatusOK || log.ProviderKind != "openai" || log.Endpoint != "chat/completions" {
-		t.Fatalf("unexpected status log fields: %#v", log)
-	}
-	if log.PromptTokens != 7 || log.CompletionTokens != 11 || log.TotalTokens != 18 || log.CachedReadTokens != 3 || log.ReasoningTokens != 2 {
-		t.Fatalf("unexpected usage log fields: %#v", log)
-	}
-	if log.TTFBMilliseconds <= 0 || log.DurationMilliseconds <= 0 {
-		t.Fatalf("expected timing fields to be recorded, got %#v", log)
-	}
-	if log.EstimatedTokens {
-		t.Fatalf("provider usage should not be marked estimated")
-	}
+	assertOpenAIChatRelayResult(t, recorder, upstreamPayload, singleRelayLog(t, repo))
 }
 
 func TestInvokeWorkbenchModelUsesRelayRouteAndRecordsWorkbenchMetadata(t *testing.T) {
@@ -867,77 +833,80 @@ func TestInvokeWorkbenchModelPreservesOpenAIToAnthropicTransformRoute(t *testing
 	}
 }
 
-func TestRelayLLMWebSocketProxiesOpenAIRealtimeAndRecordsCall(t *testing.T) {
-	const upstreamKey = "sk-realtime-upstream-test"
-	seen := make(chan *http.Request, 1)
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func realtimeRelayHandler(t *testing.T, service *Service, claims map[string]any, requestID string) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		err := service.RelayLLMWebSocket(r.Context(), relayTestPrincipal(), relayTestAccessContext(claims), LLMRelayHTTPRequest{
+			ProviderKind: "openai", Endpoint: "realtime", QueryModel: r.URL.Query().Get("model"), Method: r.Method,
+			Headers: r.Header.Clone(), RequestID: requestID, SourceIP: "203.0.113.8", UserAgent: "relay-test",
+		}, w, r)
+		if err != nil {
+			t.Errorf("RelayLLMWebSocket returned error: %v", err)
+		}
+	}
+}
+
+func realtimeEchoUpstreamHandler(t *testing.T, seen chan<- *http.Request) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
 		upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 		conn, err := upgrader.Upgrade(w, r, http.Header{"X-Request-Id": []string{"upstream-realtime-1"}})
 		if err != nil {
 			t.Errorf("upgrade upstream websocket: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		seen <- r.Clone(context.Background())
 		messageType, payload, err := conn.ReadMessage()
-		if err != nil {
-			t.Errorf("read upstream websocket: %v", err)
+		if err != nil || messageType != websocket.TextMessage || string(payload) != `{"type":"session.update"}` {
+			t.Errorf("upstream message = type %d body %s err=%v", messageType, payload, err)
 			return
-		}
-		if messageType != websocket.TextMessage || string(payload) != `{"type":"session.update"}` {
-			t.Errorf("upstream message = type %d body %s", messageType, payload)
 		}
 		if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"session.created"}`)); err != nil {
 			t.Errorf("write upstream websocket: %v", err)
 		}
-	}))
+	}
+}
+
+func realtimeReadyUpstreamHandler(t *testing.T, seen chan<- *http.Request) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade second upstream websocket: %v", err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		seen <- r.Clone(context.Background())
+		if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"ready"}`)); err != nil {
+			t.Errorf("write second upstream websocket: %v", err)
+		}
+	}
+}
+
+func TestRelayLLMWebSocketProxiesOpenAIRealtimeAndRecordsCall(t *testing.T) {
+	const upstreamKey = "sk-realtime-upstream-test"
+	seen := make(chan *http.Request, 1)
+	upstream := httptest.NewServer(realtimeEchoUpstreamHandler(t, seen))
 	defer upstream.Close()
 
 	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 	service := newRelayRuntimeTestService(repo, upstream.Client())
 	router := http.NewServeMux()
-	router.HandleFunc("/api/v1/ai-gateway/llm/openai/v1/realtime", func(w http.ResponseWriter, r *http.Request) {
-		err := service.RelayLLMWebSocket(r.Context(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
-			"purpose":              LLMRelayTokenPurpose,
-			"allowedModels":        []string{"gpt-public"},
-			"allowedProviderKinds": []string{"openai"},
-			"allowedUpstreamIds":   []string{"upstream-openai"},
-			"allowRouteTrace":      true,
-		}), LLMRelayHTTPRequest{
-			ProviderKind: "openai",
-			Endpoint:     "realtime",
-			QueryModel:   r.URL.Query().Get("model"),
-			Method:       r.Method,
-			Headers:      r.Header.Clone(),
-			RequestID:    "req-realtime",
-			SourceIP:     "203.0.113.8",
-			UserAgent:    "relay-test",
-		}, w, r)
-		if err != nil {
-			t.Errorf("RelayLLMWebSocket returned error: %v", err)
-		}
-	})
+	router.HandleFunc("/api/v1/ai-gateway/llm/openai/v1/realtime", realtimeRelayHandler(t, service, map[string]any{
+		"purpose": LLMRelayTokenPurpose, "allowedModels": []string{"gpt-public"},
+		"allowedProviderKinds": []string{"openai"}, "allowedUpstreamIds": []string{"upstream-openai"}, "allowRouteTrace": true,
+	}, "req-realtime"))
 	server := httptest.NewServer(router)
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/ai-gateway/llm/openai/v1/realtime?model=gpt-public"
-	clientConn, resp, err := websocket.DefaultDialer.Dial(wsURL, http.Header{
+	clientConn := dialRealtimeRelay(t, wsURL, http.Header{
 		"OpenAI-Organization": []string{"org-realtime"},
 		"X-Soha-Route-Trace":  []string{"true"},
 	})
-	if err != nil {
-		if resp != nil {
-			t.Fatalf("dial relay websocket: status=%d err=%v", resp.StatusCode, err)
-		}
-		t.Fatalf("dial relay websocket: %v", err)
-	}
-	defer clientConn.Close()
-	if resp == nil || resp.StatusCode != http.StatusSwitchingProtocols {
-		t.Fatalf("upgrade status = %#v", resp)
-	}
-	if resp.Header.Get("X-Soha-Relay-Endpoint") != "realtime" || resp.Header.Get("X-Soha-Cache-Status") != relayCacheBypass {
-		t.Fatalf("route trace headers = %#v", resp.Header)
-	}
+	closeWebSocketOnCleanup(t, clientConn)
 	if err := clientConn.WriteMessage(websocket.TextMessage, []byte(`{"type":"session.update"}`)); err != nil {
 		t.Fatalf("write client websocket: %v", err)
 	}
@@ -950,37 +919,8 @@ func TestRelayLLMWebSocketProxiesOpenAIRealtimeAndRecordsCall(t *testing.T) {
 	}
 	_ = clientConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done"))
 
-	var upstreamReq *http.Request
-	select {
-	case upstreamReq = <-seen:
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for upstream request")
-	}
-	if upstreamReq.URL.Path != "/v1/realtime" || upstreamReq.URL.Query().Get("model") != "gpt-upstream" {
-		t.Fatalf("upstream URL = %s", upstreamReq.URL.String())
-	}
-	if upstreamReq.Header.Get("Authorization") != "Bearer "+upstreamKey {
-		t.Fatalf("upstream Authorization = %q", upstreamReq.Header.Get("Authorization"))
-	}
-	if upstreamReq.Header.Get("OpenAI-Organization") != "org-realtime" {
-		t.Fatalf("upstream OpenAI-Organization = %q", upstreamReq.Header.Get("OpenAI-Organization"))
-	}
-
-	deadline := time.After(time.Second)
-	for {
-		repo.mu.Lock()
-		logCount := len(repo.callLogs)
-		repo.mu.Unlock()
-		if logCount > 0 {
-			break
-		}
-		select {
-		case <-deadline:
-			t.Fatal("timed out waiting for relay call log")
-		default:
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
+	assertRealtimeUpstreamRequest(t, seen, upstreamKey)
+	waitForRelayCallLog(t, repo, 1)
 	log := singleRelayLog(t, repo)
 	if log.Endpoint != "realtime" || !log.Stream || log.CacheStatus != relayCacheBypass {
 		t.Fatalf("unexpected realtime log fields: %#v", log)
@@ -993,6 +933,58 @@ func TestRelayLLMWebSocketProxiesOpenAIRealtimeAndRecordsCall(t *testing.T) {
 	}
 }
 
+func dialRealtimeRelay(t *testing.T, wsURL string, headers http.Header) *websocket.Conn {
+	t.Helper()
+	connection, response, err := websocket.DefaultDialer.Dial(wsURL, headers)
+	if response != nil && response.Body != nil {
+		defer func() { _ = response.Body.Close() }()
+	}
+	if err != nil {
+		if response != nil {
+			t.Fatalf("dial relay websocket: status=%d err=%v", response.StatusCode, err)
+		}
+		t.Fatalf("dial relay websocket: %v", err)
+	}
+	if response == nil || response.StatusCode != http.StatusSwitchingProtocols || response.Header.Get("X-Soha-Relay-Endpoint") != "realtime" || response.Header.Get("X-Soha-Cache-Status") != relayCacheBypass {
+		t.Fatalf("unexpected relay upgrade response: %#v", response)
+	}
+	return connection
+}
+
+func assertRealtimeUpstreamRequest(t *testing.T, seen <-chan *http.Request, upstreamKey string) {
+	t.Helper()
+	select {
+	case request := <-seen:
+		if request.URL.Path != "/v1/realtime" || request.URL.Query().Get("model") != "gpt-upstream" {
+			t.Fatalf("upstream URL = %s", request.URL.String())
+		}
+		if request.Header.Get("Authorization") != "Bearer "+upstreamKey || request.Header.Get("OpenAI-Organization") != "org-realtime" {
+			t.Fatalf("upstream headers = %#v", request.Header)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for upstream request")
+	}
+}
+
+func waitForRelayCallLog(t *testing.T, repo *relayTestRepository, minimum int) {
+	t.Helper()
+	deadline := time.After(time.Second)
+	for {
+		repo.mu.Lock()
+		logCount := len(repo.callLogs)
+		repo.mu.Unlock()
+		if logCount >= minimum {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for relay call log")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
 func TestRelayLLMWebSocketRealtimeFallsBackBeforeClientUpgrade(t *testing.T) {
 	const upstreamKey = "sk-realtime-upstream-test"
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1000,19 +992,7 @@ func TestRelayLLMWebSocketRealtimeFallsBackBeforeClientUpgrade(t *testing.T) {
 	}))
 	defer first.Close()
 	secondSeen := make(chan *http.Request, 1)
-	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			t.Errorf("upgrade second upstream websocket: %v", err)
-			return
-		}
-		defer conn.Close()
-		secondSeen <- r.Clone(context.Background())
-		if err := conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"ready"}`)); err != nil {
-			t.Errorf("write second upstream websocket: %v", err)
-		}
-	}))
+	second := httptest.NewServer(realtimeReadyUpstreamHandler(t, secondSeen))
 	defer second.Close()
 
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
@@ -1020,31 +1000,26 @@ func TestRelayLLMWebSocketRealtimeFallsBackBeforeClientUpgrade(t *testing.T) {
 	restore := stubRelayRandomIntn(func(int) int { return 0 })
 	defer restore()
 	router := http.NewServeMux()
-	router.HandleFunc("/api/v1/ai-gateway/llm/openai/v1/realtime", func(w http.ResponseWriter, r *http.Request) {
-		err := service.RelayLLMWebSocket(r.Context(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
-			"purpose":            LLMRelayTokenPurpose,
-			"allowedModels":      []string{"gpt-public"},
-			"allowedUpstreamIds": []string{"upstream-first", "upstream-second"},
-		}), LLMRelayHTTPRequest{
-			ProviderKind: "openai",
-			Endpoint:     "realtime",
-			QueryModel:   r.URL.Query().Get("model"),
-			Method:       r.Method,
-			Headers:      r.Header.Clone(),
-		}, w, r)
-		if err != nil {
-			t.Errorf("RelayLLMWebSocket returned error: %v", err)
-		}
-	})
+	router.HandleFunc("/api/v1/ai-gateway/llm/openai/v1/realtime", realtimeRelayHandler(t, service, map[string]any{
+		"purpose": LLMRelayTokenPurpose, "allowedModels": []string{"gpt-public"},
+		"allowedUpstreamIds": []string{"upstream-first", "upstream-second"},
+	}, ""))
 	server := httptest.NewServer(router)
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/ai-gateway/llm/openai/v1/realtime?model=gpt-public"
-	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	clientConn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if resp != nil && resp.Body != nil {
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("close fallback WebSocket upgrade response: %v", err)
+			}
+		}()
+	}
 	if err != nil {
 		t.Fatalf("dial relay websocket: %v", err)
 	}
-	defer clientConn.Close()
+	closeWebSocketOnCleanup(t, clientConn)
 	_, payload, err := clientConn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read client websocket: %v", err)
@@ -1052,7 +1027,9 @@ func TestRelayLLMWebSocketRealtimeFallsBackBeforeClientUpgrade(t *testing.T) {
 	if string(payload) != `{"type":"ready"}` {
 		t.Fatalf("client payload = %s", payload)
 	}
-	_ = clientConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done"))
+	if err := clientConn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, "done")); err != nil {
+		t.Fatalf("write client close message: %v", err)
+	}
 
 	select {
 	case req := <-secondSeen:
@@ -1337,14 +1314,14 @@ func TestRelayLLMHTTPProxiesGeminiGenerateContent(t *testing.T) {
 	}
 }
 
-func TestRelayLLMHTTPGeminiGenerateContentAudioInputBypassesCacheAndBase64Estimation(t *testing.T) {
-	const upstreamKey = "gemini-audio-upstream-test-key"
-	const audioData = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo="
-	for _, tt := range []struct {
-		name       string
-		audioPart  string
-		assertPart func(t *testing.T, part map[string]any)
-	}{
+type geminiAudioInputCase struct {
+	name       string
+	audioPart  string
+	assertPart func(t *testing.T, part map[string]any)
+}
+
+func geminiAudioInputCases(audioData string) []geminiAudioInputCase {
+	return []geminiAudioInputCase{
 		{
 			name:      "inline data",
 			audioPart: `{"inlineData":{"mimeType":"audio/wav","data":"` + audioData + `"}}`,
@@ -1367,7 +1344,13 @@ func TestRelayLLMHTTPGeminiGenerateContentAudioInputBypassesCacheAndBase64Estima
 				}
 			},
 		},
-	} {
+	}
+}
+
+func TestRelayLLMHTTPGeminiGenerateContentAudioInputBypassesCacheAndBase64Estimation(t *testing.T) {
+	const upstreamKey = "gemini-audio-upstream-test-key"
+	const audioData = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo="
+	for _, tt := range geminiAudioInputCases(audioData) {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := make(chan map[string]any, 1)
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1847,39 +1830,8 @@ func TestRelayLLMHTTPConvertsOpenAIChatToAnthropicMessagesNonStream(t *testing.T
 	if err != nil {
 		t.Fatalf("RelayLLMHTTP returned error: %v", err)
 	}
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
-	}
 	upstreamPayload := <-requests
-	if upstreamPayload["model"] != "gpt-upstream" || upstreamPayload["system"] != "be concise" || jsonNumberInt(upstreamPayload["max_tokens"]) != 64 {
-		t.Fatalf("upstream payload = %#v", upstreamPayload)
-	}
-	messages, _ := upstreamPayload["messages"].([]any)
-	if len(messages) != 1 {
-		t.Fatalf("upstream messages = %#v, want one user message", messages)
-	}
-	firstMessage, _ := messages[0].(map[string]any)
-	if firstMessage["role"] != "user" || firstMessage["content"] != "hello" {
-		t.Fatalf("upstream first message = %#v", firstMessage)
-	}
-	var response map[string]any
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if response["object"] != "chat.completion" {
-		t.Fatalf("response = %#v, want OpenAI chat completion", response)
-	}
-	usage, _ := response["usage"].(map[string]any)
-	if jsonNumberInt(usage["prompt_tokens"]) != 8 || jsonNumberInt(usage["completion_tokens"]) != 13 || jsonNumberInt(usage["total_tokens"]) != 21 {
-		t.Fatalf("usage = %#v", usage)
-	}
-	log := singleRelayLog(t, repo)
-	if log.ProviderKind != "openai" || log.Endpoint != "chat/completions" || log.UpstreamID != "upstream-openai" {
-		t.Fatalf("unexpected log route fields: %#v", log)
-	}
-	if log.PromptTokens != 8 || log.CompletionTokens != 13 || log.TotalTokens != 21 {
-		t.Fatalf("unexpected log usage: %#v", log)
-	}
+	assertOpenAIToAnthropicResult(t, recorder, upstreamPayload, singleRelayLog(t, repo))
 }
 
 func TestRelayLLMHTTPRejectsStreamingTransform(t *testing.T) {
@@ -2545,32 +2497,8 @@ func TestRelayLLMHTTPProxiesOpenAIAudioSpeech(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RelayLLMHTTP returned error: %v", err)
 	}
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
-	}
-	if recorder.Header().Get("Content-Type") != "audio/mpeg" {
-		t.Fatalf("Content-Type = %q, want audio/mpeg", recorder.Header().Get("Content-Type"))
-	}
-	if recorder.Body.String() != audioBody {
-		t.Fatalf("body = %q, want %q", recorder.Body.String(), audioBody)
-	}
 	upstreamPayload := <-requests
-	if upstreamPayload["model"] != "gpt-upstream" || upstreamPayload["input"] != "hello from speech" || upstreamPayload["voice"] != "alloy" || upstreamPayload["custom"] != "preserved" {
-		t.Fatalf("upstream payload = %#v", upstreamPayload)
-	}
-	log := singleRelayLog(t, repo)
-	if log.Status != "success" || log.ProviderKind != "openai" || log.Endpoint != "audio/speech" {
-		t.Fatalf("unexpected status log fields: %#v", log)
-	}
-	if log.Stream {
-		t.Fatalf("audio speech relay log stream = true, want false")
-	}
-	if log.PublicModel != "gpt-public" || log.UpstreamID != "upstream-openai" || log.UpstreamModel != "gpt-upstream" {
-		t.Fatalf("unexpected route log fields: %#v", log)
-	}
-	if !log.EstimatedTokens || log.PromptTokens <= 0 || log.CompletionTokens != 0 || log.TotalTokens != log.PromptTokens {
-		t.Fatalf("unexpected estimated usage fields: %#v", log)
-	}
+	assertOpenAIAudioSpeechResult(t, recorder, upstreamPayload, singleRelayLog(t, repo), audioBody)
 }
 
 func TestRelayLLMHTTPProxiesOpenAIAudioMultipartEndpoints(t *testing.T) {
@@ -2666,19 +2594,21 @@ func TestRelayLLMHTTPProxiesOpenAIAudioMultipartEndpoints(t *testing.T) {
 	}
 }
 
+type imageMultipartCase struct {
+	name       string
+	endpoint   string
+	path       string
+	fields     map[string]string
+	fileField  string
+	fileName   string
+	fileBody   string
+	maskName   string
+	maskBody   string
+	wantPrompt bool
+}
+
 func TestRelayLLMHTTPProxiesOpenAIImageMultipartEndpoints(t *testing.T) {
-	for _, tt := range []struct {
-		name       string
-		endpoint   string
-		path       string
-		fields     map[string]string
-		fileField  string
-		fileName   string
-		fileBody   string
-		maskName   string
-		maskBody   string
-		wantPrompt bool
-	}{
+	for _, tt := range []imageMultipartCase{
 		{
 			name:     "edits",
 			endpoint: "images/edits",
@@ -2711,96 +2641,113 @@ func TestRelayLLMHTTPProxiesOpenAIImageMultipartEndpoints(t *testing.T) {
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			const upstreamKey = "sk-openai-image-multipart-test"
-			requests := make(chan relayMultipartFields, 1)
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path != tt.path {
-					t.Errorf("path = %s, want %s", r.URL.Path, tt.path)
-				}
-				if got := r.Header.Get("Authorization"); got != "Bearer "+upstreamKey {
-					t.Errorf("Authorization = %q", got)
-				}
-				if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data; boundary=") {
-					t.Errorf("Content-Type = %q, want multipart/form-data with boundary", r.Header.Get("Content-Type"))
-				}
-				requests <- decodeRelayTestMultipart(t, r)
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = io.WriteString(w, `{"created":1710000000,"data":[{"b64_json":"image-bytes"}]}`)
-			}))
-			defer upstream.Close()
+			testOpenAIImageMultipartEndpoint(t, tt)
 
-			body, contentType := relayTestMultipartBody(t, tt.fields, tt.fileField, tt.fileName, "image/png", tt.fileBody)
-			if tt.maskName != "" {
-				parts := make([]relayTestMultipartPart, 0, len(tt.fields)+2)
-				for key, value := range tt.fields {
-					parts = append(parts, relayTestMultipartPart{name: key, body: value})
-				}
-				parts = append(parts,
-					relayTestMultipartPart{name: tt.fileField, filename: tt.fileName, contentType: "image/png", body: tt.fileBody},
-					relayTestMultipartPart{name: "mask", filename: tt.maskName, contentType: "image/png", body: tt.maskBody},
-				)
-				body, contentType = relayTestMultipartBodyWithParts(t, parts)
-			}
-			repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-			service := newRelayRuntimeTestService(repo, upstream.Client())
-			recorder := httptest.NewRecorder()
-
-			err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
-				"purpose":              LLMRelayTokenPurpose,
-				"allowedModels":        []string{"gpt-public"},
-				"allowedProviderKinds": []string{"openai"},
-				"allowedUpstreamIds":   []string{"upstream-openai"},
-			}), LLMRelayHTTPRequest{
-				ProviderKind: "openai",
-				Endpoint:     tt.endpoint,
-				Method:       http.MethodPost,
-				Headers:      http.Header{"Content-Type": []string{contentType}},
-				Body:         body,
-				RequestID:    "req-openai-image-multipart",
-			}, recorder)
-
-			if err != nil {
-				t.Fatalf("RelayLLMHTTP returned error: %v", err)
-			}
-			if recorder.Code != http.StatusOK {
-				t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
-			}
-			assertNativeRelayBody(t, recorder.Body.String(), "image-bytes")
-			upstreamPayload := <-requests
-			if upstreamPayload.fields["model"] != "gpt-upstream" || upstreamPayload.fields["custom"] != "preserved" {
-				t.Fatalf("upstream multipart fields = %#v", upstreamPayload.fields)
-			}
-			if tt.wantPrompt && upstreamPayload.fields["prompt"] != "replace the background" {
-				t.Fatalf("upstream prompt = %q", upstreamPayload.fields["prompt"])
-			}
-			image := upstreamPayload.files[tt.fileField]
-			if image.name != tt.fileName || image.body != tt.fileBody {
-				t.Fatalf("upstream image part = %#v", image)
-			}
-			if tt.maskName != "" {
-				mask := upstreamPayload.files["mask"]
-				if mask.name != tt.maskName || mask.body != tt.maskBody {
-					t.Fatalf("upstream mask part = %#v", mask)
-				}
-			}
-			log := singleRelayLog(t, repo)
-			if log.Status != "success" || log.ProviderKind != "openai" || log.Endpoint != tt.endpoint {
-				t.Fatalf("unexpected status log fields: %#v", log)
-			}
-			if log.Stream {
-				t.Fatalf("image multipart relay log stream = true, want false")
-			}
-			if log.PublicModel != "gpt-public" || log.UpstreamID != "upstream-openai" || log.UpstreamModel != "gpt-upstream" {
-				t.Fatalf("unexpected route log fields: %#v", log)
-			}
-			if tt.wantPrompt {
-				if !log.EstimatedTokens || log.PromptTokens <= 0 || log.CompletionTokens != 0 || log.TotalTokens != log.PromptTokens {
-					t.Fatalf("unexpected estimated usage fields: %#v", log)
-				}
-			} else if log.EstimatedTokens || log.PromptTokens != 0 || log.CompletionTokens != 0 || log.TotalTokens != 0 {
-				t.Fatalf("unexpected variation usage fields: %#v", log)
-			}
 		})
+	}
+}
+
+func testOpenAIImageMultipartEndpoint(t *testing.T, tt imageMultipartCase) {
+	const upstreamKey = "sk-openai-image-multipart-test"
+	requests := make(chan relayMultipartFields, 1)
+	upstream := httptest.NewServer(imageMultipartUpstreamHandler(t, tt, upstreamKey, requests))
+	defer upstream.Close()
+
+	body, contentType := imageMultipartRequestBody(t, tt)
+	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
+	service := newRelayRuntimeTestService(repo, upstream.Client())
+	recorder := httptest.NewRecorder()
+
+	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
+		"purpose":              LLMRelayTokenPurpose,
+		"allowedModels":        []string{"gpt-public"},
+		"allowedProviderKinds": []string{"openai"},
+		"allowedUpstreamIds":   []string{"upstream-openai"},
+	}), LLMRelayHTTPRequest{
+		ProviderKind: "openai",
+		Endpoint:     tt.endpoint,
+		Method:       http.MethodPost,
+		Headers:      http.Header{"Content-Type": []string{contentType}},
+		Body:         body,
+		RequestID:    "req-openai-image-multipart",
+	}, recorder)
+
+	if err != nil {
+		t.Fatalf("RelayLLMHTTP returned error: %v", err)
+	}
+	assertImageMultipartResponse(t, recorder, <-requests, tt)
+	assertImageMultipartLog(t, singleRelayLog(t, repo), tt)
+}
+
+func imageMultipartUpstreamHandler(t *testing.T, tt imageMultipartCase, upstreamKey string, requests chan<- relayMultipartFields) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != tt.path || r.Header.Get("Authorization") != "Bearer "+upstreamKey || !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data; boundary=") {
+			t.Errorf("unexpected multipart request path=%s headers=%#v", r.URL.Path, r.Header)
+		}
+		requests <- decodeRelayTestMultipart(t, r)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"created":1710000000,"data":[{"b64_json":"image-bytes"}]}`)
+	}
+}
+
+func imageMultipartRequestBody(t *testing.T, tt imageMultipartCase) ([]byte, string) {
+	t.Helper()
+	if tt.maskName == "" {
+		return relayTestMultipartBody(t, tt.fields, tt.fileField, tt.fileName, "image/png", tt.fileBody)
+	}
+	parts := make([]relayTestMultipartPart, 0, len(tt.fields)+2)
+	for key, value := range tt.fields {
+		parts = append(parts, relayTestMultipartPart{name: key, body: value})
+	}
+	parts = append(parts,
+		relayTestMultipartPart{name: tt.fileField, filename: tt.fileName, contentType: "image/png", body: tt.fileBody},
+		relayTestMultipartPart{name: "mask", filename: tt.maskName, contentType: "image/png", body: tt.maskBody},
+	)
+	return relayTestMultipartBodyWithParts(t, parts)
+}
+
+func assertImageMultipartResponse(t *testing.T, recorder *httptest.ResponseRecorder, upstreamPayload relayMultipartFields, tt imageMultipartCase) {
+	t.Helper()
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	assertNativeRelayBody(t, recorder.Body.String(), "image-bytes")
+	if upstreamPayload.fields["model"] != "gpt-upstream" || upstreamPayload.fields["custom"] != "preserved" {
+		t.Fatalf("upstream multipart fields = %#v", upstreamPayload.fields)
+	}
+	if tt.wantPrompt && upstreamPayload.fields["prompt"] != "replace the background" {
+		t.Fatalf("upstream prompt = %q", upstreamPayload.fields["prompt"])
+	}
+	image := upstreamPayload.files[tt.fileField]
+	if image.name != tt.fileName || image.body != tt.fileBody {
+		t.Fatalf("upstream image part = %#v", image)
+	}
+	if tt.maskName != "" {
+		mask := upstreamPayload.files["mask"]
+		if mask.name != tt.maskName || mask.body != tt.maskBody {
+			t.Fatalf("upstream mask part = %#v", mask)
+		}
+	}
+}
+
+func assertImageMultipartLog(t *testing.T, log domainaigateway.LLMCallLog, tt imageMultipartCase) {
+	t.Helper()
+	if log.Status != "success" || log.ProviderKind != "openai" || log.Endpoint != tt.endpoint {
+		t.Fatalf("unexpected status log fields: %#v", log)
+	}
+	if log.Stream {
+		t.Fatalf("image multipart relay log stream = true, want false")
+	}
+	if log.PublicModel != "gpt-public" || log.UpstreamID != "upstream-openai" || log.UpstreamModel != "gpt-upstream" {
+		t.Fatalf("unexpected route log fields: %#v", log)
+	}
+	if tt.wantPrompt {
+		if !log.EstimatedTokens || log.PromptTokens <= 0 || log.CompletionTokens != 0 || log.TotalTokens != log.PromptTokens {
+			t.Fatalf("unexpected estimated usage fields: %#v", log)
+		}
+	} else if log.EstimatedTokens || log.PromptTokens != 0 || log.CompletionTokens != 0 || log.TotalTokens != 0 {
+		t.Fatalf("unexpected variation usage fields: %#v", log)
 	}
 }
 
@@ -3005,6 +2952,46 @@ func TestRelayLLMHTTPRejectsOpenAIAudioMultipartInvalidRequests(t *testing.T) {
 	}
 }
 
+type invalidImageMultipartCase struct {
+	name, endpoint, contentType string
+	body                        []byte
+}
+
+func invalidImageMultipartCases(t *testing.T) []invalidImageMultipartCase {
+	t.Helper()
+	validBody, _ := relayTestMultipartBody(t, map[string]string{"model": "gpt-public", "prompt": "edit this image"}, "image", "input.png", "image/png", "fake-image-bytes")
+	missingModelBody, missingModelType := relayTestMultipartBody(t, map[string]string{"prompt": "edit this image"}, "image", "input.png", "image/png", "fake-image-bytes")
+	missingImageBody, missingImageType := relayTestMultipartBody(t, map[string]string{"model": "gpt-public", "prompt": "edit this image"}, "file", "input.png", "image/png", "fake-image-bytes")
+	missingPromptBody, missingPromptType := relayTestMultipartBody(t, map[string]string{"model": "gpt-public"}, "image", "input.png", "image/png", "fake-image-bytes")
+	duplicateModelBody, duplicateModelType := relayTestMultipartBodyWithParts(t, []relayTestMultipartPart{
+		{name: "model", body: "gpt-public"}, {name: "model", body: "other-model"}, {name: "prompt", body: "edit this image"},
+		{name: "image", filename: "input.png", contentType: "image/png", body: "fake-image-bytes"},
+	})
+	fileModelBody, fileModelType := relayTestMultipartBodyWithParts(t, []relayTestMultipartPart{
+		{name: "model", filename: "model.txt", contentType: "text/plain", body: "gpt-public"}, {name: "prompt", body: "edit this image"},
+		{name: "image", filename: "input.png", contentType: "image/png", body: "fake-image-bytes"},
+	})
+	filePromptBody, filePromptType := relayTestMultipartBodyWithParts(t, []relayTestMultipartPart{
+		{name: "model", body: "gpt-public"}, {name: "prompt", filename: "prompt.txt", contentType: "text/plain", body: "edit this image"},
+		{name: "image", filename: "input.png", contentType: "image/png", body: "fake-image-bytes"},
+	})
+	streamBody, streamType := relayTestMultipartBody(t, map[string]string{"model": "gpt-public", "prompt": "edit this image", "stream": "true"}, "image", "input.png", "image/png", "fake-image-bytes")
+	streamFormatBody, streamFormatType := relayTestMultipartBody(t, map[string]string{"model": "gpt-public", "prompt": "edit this image", "stream_format": "sse"}, "image", "input.png", "image/png", "fake-image-bytes")
+	return []invalidImageMultipartCase{
+		{"non multipart", "images/edits", "application/json", []byte(`{"model":"gpt-public"}`)},
+		{"bad boundary", "images/edits", "multipart/form-data; boundary=missing", validBody},
+		{"missing model", "images/edits", missingModelType, missingModelBody},
+		{"missing image", "images/edits", missingImageType, missingImageBody},
+		{"missing prompt for edits", "images/edits", missingPromptType, missingPromptBody},
+		{"variation missing image", "images/variations", missingImageType, missingImageBody},
+		{"duplicate model", "images/edits", duplicateModelType, duplicateModelBody},
+		{"model file part", "images/edits", fileModelType, fileModelBody},
+		{"prompt file part", "images/edits", filePromptType, filePromptBody},
+		{"stream flag", "images/edits", streamType, streamBody},
+		{"stream format sse", "images/edits", streamFormatType, streamFormatBody},
+	}
+}
+
 func TestRelayLLMHTTPRejectsOpenAIImageMultipartInvalidRequests(t *testing.T) {
 	const upstreamKey = "sk-openai-image-invalid-multipart-test"
 	upstreamCalls := 0
@@ -3014,120 +3001,7 @@ func TestRelayLLMHTTPRejectsOpenAIImageMultipartInvalidRequests(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	validBody, _ := relayTestMultipartBody(t, map[string]string{
-		"model":  "gpt-public",
-		"prompt": "edit this image",
-	}, "image", "input.png", "image/png", "fake-image-bytes")
-	missingModelBody, missingModelContentType := relayTestMultipartBody(t, map[string]string{
-		"prompt": "edit this image",
-	}, "image", "input.png", "image/png", "fake-image-bytes")
-	missingImageBody, missingImageContentType := relayTestMultipartBody(t, map[string]string{
-		"model":  "gpt-public",
-		"prompt": "edit this image",
-	}, "file", "input.png", "image/png", "fake-image-bytes")
-	missingPromptBody, missingPromptContentType := relayTestMultipartBody(t, map[string]string{
-		"model": "gpt-public",
-	}, "image", "input.png", "image/png", "fake-image-bytes")
-	duplicateModelBody, duplicateModelContentType := relayTestMultipartBodyWithParts(t, []relayTestMultipartPart{
-		{name: "model", body: "gpt-public"},
-		{name: "model", body: "other-model"},
-		{name: "prompt", body: "edit this image"},
-		{name: "image", filename: "input.png", contentType: "image/png", body: "fake-image-bytes"},
-	})
-	fileModelBody, fileModelContentType := relayTestMultipartBodyWithParts(t, []relayTestMultipartPart{
-		{name: "model", filename: "model.txt", contentType: "text/plain", body: "gpt-public"},
-		{name: "prompt", body: "edit this image"},
-		{name: "image", filename: "input.png", contentType: "image/png", body: "fake-image-bytes"},
-	})
-	filePromptBody, filePromptContentType := relayTestMultipartBodyWithParts(t, []relayTestMultipartPart{
-		{name: "model", body: "gpt-public"},
-		{name: "prompt", filename: "prompt.txt", contentType: "text/plain", body: "edit this image"},
-		{name: "image", filename: "input.png", contentType: "image/png", body: "fake-image-bytes"},
-	})
-	streamBody, streamContentType := relayTestMultipartBody(t, map[string]string{
-		"model":  "gpt-public",
-		"prompt": "edit this image",
-		"stream": "true",
-	}, "image", "input.png", "image/png", "fake-image-bytes")
-	streamFormatBody, streamFormatContentType := relayTestMultipartBody(t, map[string]string{
-		"model":         "gpt-public",
-		"prompt":        "edit this image",
-		"stream_format": "sse",
-	}, "image", "input.png", "image/png", "fake-image-bytes")
-
-	for _, tt := range []struct {
-		name        string
-		endpoint    string
-		contentType string
-		body        []byte
-	}{
-		{
-			name:        "non multipart",
-			endpoint:    "images/edits",
-			contentType: "application/json",
-			body:        []byte(`{"model":"gpt-public"}`),
-		},
-		{
-			name:        "bad boundary",
-			endpoint:    "images/edits",
-			contentType: "multipart/form-data; boundary=missing",
-			body:        validBody,
-		},
-		{
-			name:        "missing model",
-			endpoint:    "images/edits",
-			contentType: missingModelContentType,
-			body:        missingModelBody,
-		},
-		{
-			name:        "missing image",
-			endpoint:    "images/edits",
-			contentType: missingImageContentType,
-			body:        missingImageBody,
-		},
-		{
-			name:        "missing prompt for edits",
-			endpoint:    "images/edits",
-			contentType: missingPromptContentType,
-			body:        missingPromptBody,
-		},
-		{
-			name:        "variation missing image",
-			endpoint:    "images/variations",
-			contentType: missingImageContentType,
-			body:        missingImageBody,
-		},
-		{
-			name:        "duplicate model",
-			endpoint:    "images/edits",
-			contentType: duplicateModelContentType,
-			body:        duplicateModelBody,
-		},
-		{
-			name:        "model file part",
-			endpoint:    "images/edits",
-			contentType: fileModelContentType,
-			body:        fileModelBody,
-		},
-		{
-			name:        "prompt file part",
-			endpoint:    "images/edits",
-			contentType: filePromptContentType,
-			body:        filePromptBody,
-		},
-		{
-			name:        "stream flag",
-			endpoint:    "images/edits",
-			contentType: streamContentType,
-			body:        streamBody,
-		},
-		{
-			name:        "stream format sse",
-			endpoint:    "images/edits",
-			contentType: streamFormatContentType,
-			body:        streamFormatBody,
-		},
-	} {
+	for _, tt := range invalidImageMultipartCases(t) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
 			service := newRelayRuntimeTestService(repo, upstream.Client())
@@ -3155,37 +3029,31 @@ func TestRelayLLMHTTPRejectsOpenAIImageMultipartInvalidRequests(t *testing.T) {
 	}
 }
 
-func TestRelayLLMHTTPAudioSpeechBypassResponseCache(t *testing.T) {
-	const upstreamKey = "sk-openai-audio-cache-test"
+func runRelayCacheBypassTest(t *testing.T, contentType, responseFormat, endpoint string, body []byte) (int, *relayTestRepository) {
+	t.Helper()
 	upstreamCalls := 0
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		upstreamCalls++
-		w.Header().Set("Content-Type", "audio/mpeg")
-		_, _ = fmt.Fprintf(w, "audio-%d", upstreamCalls)
+		w.Header().Set("Content-Type", contentType)
+		_, _ = fmt.Fprintf(w, responseFormat, upstreamCalls)
 	}))
-	defer upstream.Close()
-
-	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
+	t.Cleanup(upstream.Close)
+	repo := relayRepoForUpstream(t, upstream.URL, "openai", "sk-openai-cache-bypass-test")
 	repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
 	service := newRelayRuntimeTestService(repo, upstream.Client())
-	req := LLMRelayHTTPRequest{
-		ProviderKind: "openai",
-		Endpoint:     "audio/speech",
-		Method:       http.MethodPost,
-		Headers:      http.Header{},
-		Body:         []byte(`{"model":"gpt-public","input":"hello","voice":"alloy"}`),
-	}
-
-	for i := 0; i < 2; i++ {
+	request := LLMRelayHTTPRequest{ProviderKind: "openai", Endpoint: endpoint, Method: http.MethodPost, Headers: http.Header{}, Body: body}
+	for call := range 2 {
 		if err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
-			"purpose":              LLMRelayTokenPurpose,
-			"allowedModels":        []string{"gpt-public"},
-			"allowedProviderKinds": []string{"openai"},
-			"allowedUpstreamIds":   []string{"upstream-openai"},
-		}), req, httptest.NewRecorder()); err != nil {
-			t.Fatalf("RelayLLMHTTP #%d returned error: %v", i+1, err)
+			"purpose": LLMRelayTokenPurpose, "allowedModels": []string{"gpt-public"}, "allowedProviderKinds": []string{"openai"}, "allowedUpstreamIds": []string{"upstream-openai"},
+		}), request, httptest.NewRecorder()); err != nil {
+			t.Fatalf("RelayLLMHTTP #%d returned error: %v", call+1, err)
 		}
 	}
+	return upstreamCalls, repo
+}
+
+func TestRelayLLMHTTPAudioSpeechBypassResponseCache(t *testing.T) {
+	upstreamCalls, repo := runRelayCacheBypassTest(t, "audio/mpeg", "audio-%d", "audio/speech", []byte(`{"model":"gpt-public","input":"hello","voice":"alloy"}`))
 	if upstreamCalls != 2 {
 		t.Fatalf("upstream calls = %d, want 2", upstreamCalls)
 	}
@@ -3342,36 +3210,8 @@ func TestRelayLLMHTTPImageMultipartBypassResponseCache(t *testing.T) {
 }
 
 func TestRelayLLMHTTPImageGenerationsBypassResponseCache(t *testing.T) {
-	const upstreamKey = "sk-openai-image-cache-test"
-	upstreamCalls := 0
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upstreamCalls++
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w, `{"created":1710000000,"data":[{"url":"https://example.test/image-%d.png"}]}`, upstreamCalls)
-	}))
-	defer upstream.Close()
-
-	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	repo.routes[0].CachePolicy = map[string]any{"enabled": true, "ttlSeconds": 60}
-	service := newRelayRuntimeTestService(repo, upstream.Client())
-	req := LLMRelayHTTPRequest{
-		ProviderKind: "openai",
-		Endpoint:     "images/generations",
-		Method:       http.MethodPost,
-		Headers:      http.Header{},
-		Body:         []byte(`{"model":"gpt-public","prompt":"draw a release badge"}`),
-	}
-
-	for i := 0; i < 2; i++ {
-		if err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), relayTestAccessContext(map[string]any{
-			"purpose":              LLMRelayTokenPurpose,
-			"allowedModels":        []string{"gpt-public"},
-			"allowedProviderKinds": []string{"openai"},
-			"allowedUpstreamIds":   []string{"upstream-openai"},
-		}), req, httptest.NewRecorder()); err != nil {
-			t.Fatalf("RelayLLMHTTP #%d returned error: %v", i+1, err)
-		}
-	}
+	responseFormat := `{"created":1710000000,"data":[{"url":"https://example.test/image-%d.png"}]}`
+	upstreamCalls, repo := runRelayCacheBypassTest(t, "application/json", responseFormat, "images/generations", []byte(`{"model":"gpt-public","prompt":"draw a release badge"}`))
 	if upstreamCalls != 2 {
 		t.Fatalf("upstream calls = %d, want 2", upstreamCalls)
 	}
@@ -3604,44 +3444,44 @@ func TestRelayLLMHTTPConvertsAnthropicMessagesToOpenAIChatNonStream(t *testing.T
 	if err != nil {
 		t.Fatalf("RelayLLMHTTP returned error: %v", err)
 	}
+	assertAnthropicToOpenAIResponse(t, recorder, <-requests, repo)
+}
+
+func assertAnthropicToOpenAIResponse(t *testing.T, recorder *httptest.ResponseRecorder, upstreamPayload map[string]any, repo *relayTestRepository) {
+	t.Helper()
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
 	}
-	upstreamPayload := <-requests
-	if upstreamPayload["model"] != "gpt-upstream" || jsonNumberInt(upstreamPayload["max_tokens"]) != 32 {
-		t.Fatalf("upstream payload = %#v", upstreamPayload)
+	assertAnthropicUpstreamMessages(t, upstreamPayload)
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
 	}
-	messages, _ := upstreamPayload["messages"].([]any)
-	if len(messages) != 2 {
-		t.Fatalf("upstream messages = %#v, want system and user messages", messages)
+	content, _ := response["content"].([]any)
+	if response["type"] != "message" || response["role"] != "assistant" || len(content) != 1 {
+		t.Fatalf("response = %#v, want Anthropic message", response)
+	}
+	textBlock, _ := content[0].(map[string]any)
+	usage, _ := response["usage"].(map[string]any)
+	if textBlock["type"] != "text" || textBlock["text"] != "converted openai" || jsonNumberInt(usage["input_tokens"]) != 6 || jsonNumberInt(usage["output_tokens"]) != 9 {
+		t.Fatalf("response content or usage is invalid: %#v", response)
+	}
+	log := singleRelayLog(t, repo)
+	if log.ProviderKind != "anthropic" || log.Endpoint != "messages" || log.PromptTokens != 6 || log.CompletionTokens != 9 || log.TotalTokens != 15 {
+		t.Fatalf("unexpected log: %#v", log)
+	}
+}
+
+func assertAnthropicUpstreamMessages(t *testing.T, payload map[string]any) {
+	t.Helper()
+	messages, _ := payload["messages"].([]any)
+	if payload["model"] != "gpt-upstream" || jsonNumberInt(payload["max_tokens"]) != 32 || len(messages) != 2 {
+		t.Fatalf("upstream payload = %#v", payload)
 	}
 	systemMessage, _ := messages[0].(map[string]any)
 	userMessage, _ := messages[1].(map[string]any)
 	if systemMessage["role"] != "system" || systemMessage["content"] != "reply plainly" || userMessage["role"] != "user" || userMessage["content"] != "hello" {
 		t.Fatalf("upstream messages = %#v", messages)
-	}
-	var response map[string]any
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if response["type"] != "message" || response["role"] != "assistant" {
-		t.Fatalf("response = %#v, want Anthropic message", response)
-	}
-	content, _ := response["content"].([]any)
-	if len(content) != 1 {
-		t.Fatalf("content = %#v, want one text block", content)
-	}
-	textBlock, _ := content[0].(map[string]any)
-	if textBlock["type"] != "text" || textBlock["text"] != "converted openai" {
-		t.Fatalf("text block = %#v", textBlock)
-	}
-	usage, _ := response["usage"].(map[string]any)
-	if jsonNumberInt(usage["input_tokens"]) != 6 || jsonNumberInt(usage["output_tokens"]) != 9 {
-		t.Fatalf("usage = %#v", usage)
-	}
-	log := singleRelayLog(t, repo)
-	if log.ProviderKind != "anthropic" || log.Endpoint != "messages" || log.PromptTokens != 6 || log.CompletionTokens != 9 || log.TotalTokens != 15 {
-		t.Fatalf("unexpected log: %#v", log)
 	}
 }
 
@@ -4108,165 +3948,167 @@ func TestRelayEndpointURLUsesOpenAIPathsForFirstClassOpenAICompatibleProviders(t
 	}
 }
 
+var azureOpenAIPathCases = []struct {
+	name     string
+	upstream domainaigateway.LLMUpstream
+	route    domainaigateway.LLMModelRoute
+	endpoint string
+	want     string
+}{
+	{
+		name: "v1 chat appends openai v1",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com",
+		},
+		endpoint: "chat/completions",
+		want:     "https://example.openai.azure.com/openai/v1/chat/completions",
+	},
+	{
+		name: "v1 models keeps existing openai v1 suffix",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com/openai/v1",
+		},
+		endpoint: "models",
+		want:     "https://example.openai.azure.com/openai/v1/models",
+	},
+	{
+		name: "deployment chat uses route upstream model and api version",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com",
+			Metadata: map[string]any{
+				"azureOpenAI": map[string]any{
+					"apiVersion": "2024-10-21",
+				},
+			},
+		},
+		route: domainaigateway.LLMModelRoute{
+			UpstreamModel: "gpt-4o-prod",
+		},
+		endpoint: "chat/completions",
+		want:     "https://example.openai.azure.com/openai/deployments/gpt-4o-prod/chat/completions?api-version=2024-10-21",
+	},
+	{
+		name: "route metadata overrides deployment",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com/openai",
+			Metadata: map[string]any{
+				"azureOpenAI": map[string]any{
+					"apiVersion": "2024-10-21",
+					"deployment": "upstream-deployment",
+				},
+			},
+		},
+		route: domainaigateway.LLMModelRoute{
+			UpstreamModel: "route-model",
+			Metadata: map[string]any{
+				"azureOpenAI": map[string]any{
+					"deployment": "route-deployment",
+				},
+			},
+		},
+		endpoint: "embeddings",
+		want:     "https://example.openai.azure.com/openai/deployments/route-deployment/embeddings?api-version=2024-10-21",
+	},
+	{
+		name: "deployment images generations uses route upstream model and api version",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com",
+			Metadata: map[string]any{
+				"azureOpenAI": map[string]any{
+					"apiVersion": "2024-10-21",
+				},
+			},
+		},
+		route: domainaigateway.LLMModelRoute{
+			UpstreamModel: "gpt-image-prod",
+		},
+		endpoint: "images/generations",
+		want:     "https://example.openai.azure.com/openai/deployments/gpt-image-prod/images/generations?api-version=2024-10-21",
+	},
+	{
+		name: "deployment images edits uses route upstream model and api version",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com",
+			Metadata: map[string]any{
+				"azureOpenAI": map[string]any{
+					"apiVersion": "2024-10-21",
+				},
+			},
+		},
+		route: domainaigateway.LLMModelRoute{
+			UpstreamModel: "gpt-image-prod",
+		},
+		endpoint: "images/edits",
+		want:     "https://example.openai.azure.com/openai/deployments/gpt-image-prod/images/edits?api-version=2024-10-21",
+	},
+	{
+		name: "deployment images variations uses route upstream model and api version",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com",
+			Metadata: map[string]any{
+				"azureOpenAI": map[string]any{
+					"apiVersion": "2024-10-21",
+				},
+			},
+		},
+		route: domainaigateway.LLMModelRoute{
+			UpstreamModel: "gpt-image-prod",
+		},
+		endpoint: "images/variations",
+		want:     "https://example.openai.azure.com/openai/deployments/gpt-image-prod/images/variations?api-version=2024-10-21",
+	},
+	{
+		name: "deployment audio speech uses route upstream model and api version",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com",
+			Metadata: map[string]any{
+				"azureOpenAI": map[string]any{
+					"apiVersion": "2024-10-21",
+				},
+			},
+		},
+		route: domainaigateway.LLMModelRoute{
+			UpstreamModel: "tts-prod",
+		},
+		endpoint: "audio/speech",
+		want:     "https://example.openai.azure.com/openai/deployments/tts-prod/audio/speech?api-version=2024-10-21",
+	},
+	{
+		name: "deployment audio transcriptions uses route upstream model and api version",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com",
+			Metadata: map[string]any{
+				"azureOpenAI": map[string]any{
+					"apiVersion": "2024-10-21",
+				},
+			},
+		},
+		route: domainaigateway.LLMModelRoute{
+			UpstreamModel: "whisper-prod",
+		},
+		endpoint: "audio/transcriptions",
+		want:     "https://example.openai.azure.com/openai/deployments/whisper-prod/audio/transcriptions?api-version=2024-10-21",
+	},
+	{
+		name: "deployment audio translations uses route upstream model and api version",
+		upstream: domainaigateway.LLMUpstream{
+			BaseURL: "https://example.openai.azure.com",
+			Metadata: map[string]any{
+				"azureOpenAI": map[string]any{
+					"apiVersion": "2024-10-21",
+				},
+			},
+		},
+		route: domainaigateway.LLMModelRoute{
+			UpstreamModel: "whisper-prod",
+		},
+		endpoint: "audio/translations",
+		want:     "https://example.openai.azure.com/openai/deployments/whisper-prod/audio/translations?api-version=2024-10-21",
+	},
+}
+
 func TestRelayEndpointURLUsesAzureOpenAIPaths(t *testing.T) {
-	for _, tt := range []struct {
-		name     string
-		upstream domainaigateway.LLMUpstream
-		route    domainaigateway.LLMModelRoute
-		endpoint string
-		want     string
-	}{
-		{
-			name: "v1 chat appends openai v1",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com",
-			},
-			endpoint: "chat/completions",
-			want:     "https://example.openai.azure.com/openai/v1/chat/completions",
-		},
-		{
-			name: "v1 models keeps existing openai v1 suffix",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com/openai/v1",
-			},
-			endpoint: "models",
-			want:     "https://example.openai.azure.com/openai/v1/models",
-		},
-		{
-			name: "deployment chat uses route upstream model and api version",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com",
-				Metadata: map[string]any{
-					"azureOpenAI": map[string]any{
-						"apiVersion": "2024-10-21",
-					},
-				},
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "gpt-4o-prod",
-			},
-			endpoint: "chat/completions",
-			want:     "https://example.openai.azure.com/openai/deployments/gpt-4o-prod/chat/completions?api-version=2024-10-21",
-		},
-		{
-			name: "route metadata overrides deployment",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com/openai",
-				Metadata: map[string]any{
-					"azureOpenAI": map[string]any{
-						"apiVersion": "2024-10-21",
-						"deployment": "upstream-deployment",
-					},
-				},
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "route-model",
-				Metadata: map[string]any{
-					"azureOpenAI": map[string]any{
-						"deployment": "route-deployment",
-					},
-				},
-			},
-			endpoint: "embeddings",
-			want:     "https://example.openai.azure.com/openai/deployments/route-deployment/embeddings?api-version=2024-10-21",
-		},
-		{
-			name: "deployment images generations uses route upstream model and api version",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com",
-				Metadata: map[string]any{
-					"azureOpenAI": map[string]any{
-						"apiVersion": "2024-10-21",
-					},
-				},
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "gpt-image-prod",
-			},
-			endpoint: "images/generations",
-			want:     "https://example.openai.azure.com/openai/deployments/gpt-image-prod/images/generations?api-version=2024-10-21",
-		},
-		{
-			name: "deployment images edits uses route upstream model and api version",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com",
-				Metadata: map[string]any{
-					"azureOpenAI": map[string]any{
-						"apiVersion": "2024-10-21",
-					},
-				},
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "gpt-image-prod",
-			},
-			endpoint: "images/edits",
-			want:     "https://example.openai.azure.com/openai/deployments/gpt-image-prod/images/edits?api-version=2024-10-21",
-		},
-		{
-			name: "deployment images variations uses route upstream model and api version",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com",
-				Metadata: map[string]any{
-					"azureOpenAI": map[string]any{
-						"apiVersion": "2024-10-21",
-					},
-				},
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "gpt-image-prod",
-			},
-			endpoint: "images/variations",
-			want:     "https://example.openai.azure.com/openai/deployments/gpt-image-prod/images/variations?api-version=2024-10-21",
-		},
-		{
-			name: "deployment audio speech uses route upstream model and api version",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com",
-				Metadata: map[string]any{
-					"azureOpenAI": map[string]any{
-						"apiVersion": "2024-10-21",
-					},
-				},
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "tts-prod",
-			},
-			endpoint: "audio/speech",
-			want:     "https://example.openai.azure.com/openai/deployments/tts-prod/audio/speech?api-version=2024-10-21",
-		},
-		{
-			name: "deployment audio transcriptions uses route upstream model and api version",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com",
-				Metadata: map[string]any{
-					"azureOpenAI": map[string]any{
-						"apiVersion": "2024-10-21",
-					},
-				},
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "whisper-prod",
-			},
-			endpoint: "audio/transcriptions",
-			want:     "https://example.openai.azure.com/openai/deployments/whisper-prod/audio/transcriptions?api-version=2024-10-21",
-		},
-		{
-			name: "deployment audio translations uses route upstream model and api version",
-			upstream: domainaigateway.LLMUpstream{
-				BaseURL: "https://example.openai.azure.com",
-				Metadata: map[string]any{
-					"azureOpenAI": map[string]any{
-						"apiVersion": "2024-10-21",
-					},
-				},
-			},
-			route: domainaigateway.LLMModelRoute{
-				UpstreamModel: "whisper-prod",
-			},
-			endpoint: "audio/translations",
-			want:     "https://example.openai.azure.com/openai/deployments/whisper-prod/audio/translations?api-version=2024-10-21",
-		},
-	} {
+	for _, tt := range azureOpenAIPathCases {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := relayEndpointURLForUpstream(tt.upstream, tt.route, "azure-openai", tt.endpoint)
 			if err != nil {
@@ -5436,31 +5278,47 @@ func TestRelayLLMHTTPFallsBackWhenUpstreamConcurrencyLimitIsFull(t *testing.T) {
 }
 
 func TestRelayLLMHTTPEnforcesTokenConcurrencyLimit(t *testing.T) {
-	const upstreamKey = "sk-openai-upstream-test"
+	testRelayTokenConcurrencyLimit(t, false)
+}
+
+func TestRelayLLMHTTPEnforcesTokenStreamConcurrencyLimit(t *testing.T) {
+	testRelayTokenConcurrencyLimit(t, true)
+}
+
+func testRelayTokenConcurrencyLimit(t *testing.T, stream bool) {
+	t.Helper()
 	firstEntered := make(chan struct{})
 	releaseFirst := make(chan struct{})
 	upstreamCalls := 0
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		upstreamCalls++
 		close(firstEntered)
 		<-releaseFirst
+		if stream {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"id":"chatcmpl-token-concurrency","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"total_tokens":1}}`)
+		_, _ = io.WriteString(w, `{ "id":"chatcmpl-token-concurrency","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"total_tokens":1}}`)
 	}))
 	defer upstream.Close()
-	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
+	repo := relayRepoForUpstream(t, upstream.URL, "openai", "sk-openai-upstream-test")
 	service := newRelayRuntimeTestService(repo, upstream.Client())
-	accessCtx := relayTestAccessContext(map[string]any{
-		"purpose":        LLMRelayTokenPurpose,
-		"maxConcurrency": 1,
-	})
-	request := LLMRelayHTTPRequest{
-		ProviderKind: "openai",
-		Endpoint:     "chat/completions",
-		Method:       http.MethodPost,
-		Headers:      http.Header{},
-		Body:         []byte(`{"model":"gpt-public","messages":[{"role":"user","content":"hi"}]}`),
+	claims := map[string]any{"purpose": LLMRelayTokenPurpose}
+	errorCode := "token_concurrency_limited"
+	if stream {
+		claims["maxConcurrentStreams"] = 1
+		errorCode = "token_stream_concurrency_limited"
+	} else {
+		claims["maxConcurrency"] = 1
 	}
+	accessCtx := relayTestAccessContext(claims)
+	body := `{"model":"gpt-public","messages":[{"role":"user","content":"hi"}]}`
+	if stream {
+		body = `{"model":"gpt-public","stream":true,"messages":[{"role":"user","content":"hi"}]}`
+	}
+	request := LLMRelayHTTPRequest{ProviderKind: "openai", Endpoint: "chat/completions", Method: http.MethodPost, Headers: http.Header{}, Body: []byte(body)}
 	firstErr := make(chan error, 1)
 	go func() {
 		firstErr <- service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), accessCtx, request, httptest.NewRecorder())
@@ -5470,7 +5328,6 @@ func TestRelayLLMHTTPEnforcesTokenConcurrencyLimit(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("first upstream request did not start")
 	}
-
 	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), accessCtx, request, httptest.NewRecorder())
 	close(releaseFirst)
 	if !errors.Is(err, apperrors.ErrAccessDenied) {
@@ -5482,57 +5339,7 @@ func TestRelayLLMHTTPEnforcesTokenConcurrencyLimit(t *testing.T) {
 	if upstreamCalls != 1 {
 		t.Fatalf("upstream calls = %d, want 1", upstreamCalls)
 	}
-	assertRelayLogWithErrorCode(t, repo, "token_concurrency_limited")
-}
-
-func TestRelayLLMHTTPEnforcesTokenStreamConcurrencyLimit(t *testing.T) {
-	const upstreamKey = "sk-openai-upstream-test"
-	firstEntered := make(chan struct{})
-	releaseFirst := make(chan struct{})
-	upstreamCalls := 0
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upstreamCalls++
-		close(firstEntered)
-		<-releaseFirst
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")
-	}))
-	defer upstream.Close()
-	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
-	service := newRelayRuntimeTestService(repo, upstream.Client())
-	accessCtx := relayTestAccessContext(map[string]any{
-		"purpose":              LLMRelayTokenPurpose,
-		"maxConcurrentStreams": 1,
-	})
-	request := LLMRelayHTTPRequest{
-		ProviderKind: "openai",
-		Endpoint:     "chat/completions",
-		Method:       http.MethodPost,
-		Headers:      http.Header{},
-		Body:         []byte(`{"model":"gpt-public","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
-	}
-	firstErr := make(chan error, 1)
-	go func() {
-		firstErr <- service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), accessCtx, request, httptest.NewRecorder())
-	}()
-	select {
-	case <-firstEntered:
-	case <-time.After(2 * time.Second):
-		t.Fatal("first upstream stream did not start")
-	}
-
-	err := service.RelayLLMHTTP(context.Background(), relayTestPrincipal(), accessCtx, request, httptest.NewRecorder())
-	close(releaseFirst)
-	if !errors.Is(err, apperrors.ErrAccessDenied) {
-		t.Fatalf("second error = %v, want access denied", err)
-	}
-	if err := <-firstErr; err != nil {
-		t.Fatalf("first RelayLLMHTTP returned error: %v", err)
-	}
-	if upstreamCalls != 1 {
-		t.Fatalf("upstream calls = %d, want 1", upstreamCalls)
-	}
-	assertRelayLogWithErrorCode(t, repo, "token_stream_concurrency_limited")
+	assertRelayLogWithErrorCode(t, repo, errorCode)
 }
 
 func newRelayRuntimeTestService(repo *relayTestRepository, client *http.Client) *Service {

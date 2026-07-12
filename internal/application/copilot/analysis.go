@@ -24,14 +24,14 @@ func (s *Service) ListRootCauseRuns(ctx context.Context, principal domainidentit
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListRootCauseRuns(ctx, principal.UserID, filter)
+	return s.rootCauseRuns.ListRootCauseRuns(ctx, principal.UserID, filter)
 }
 
 func (s *Service) GetRootCauseRun(ctx context.Context, principal domainidentity.Principal, runID string) (domaincopilot.RootCauseRun, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return domaincopilot.RootCauseRun{}, err
 	}
-	return s.repo.GetRootCauseRun(ctx, principal.UserID, strings.TrimSpace(runID))
+	return s.rootCauseRuns.GetRootCauseRun(ctx, principal.UserID, strings.TrimSpace(runID))
 }
 
 func (s *Service) RunRootCauseAnalysis(ctx context.Context, principal domainidentity.Principal, input domaincopilot.RootCauseRunInput, locale string) (domaincopilot.RootCauseRun, error) {
@@ -112,7 +112,7 @@ func (s *Service) executeRootCauseRun(ctx context.Context, principal domainident
 	if strings.TrimSpace(input.Title) != "" {
 		run.Title = strings.TrimSpace(input.Title)
 	}
-	return s.repo.CreateRootCauseRun(ctx, run)
+	return s.rootCauseRuns.CreateRootCauseRun(ctx, run)
 }
 
 type queuedRootCauseAgentRun struct {
@@ -151,36 +151,9 @@ func (s *Service) queueRootCauseAgentRunWithToolset(ctx context.Context, princip
 	if agentCreatedBy == "" {
 		agentCreatedBy = rootCauseCreatedBy
 	}
-	now := time.Now().UTC()
 	provider := s.resolveAgentProvider(input.AgentProviderID)
-	run := domaincopilot.RootCauseRun{
-		ID:                 "rca:" + uuid.NewString(),
-		Kind:               normalizeAnalysisKind(input.Kind),
-		SessionID:          strings.TrimSpace(input.SessionID),
-		Title:              analysisTitle(input, locale),
-		CreatedBy:          rootCauseCreatedBy,
-		AnalysisProfileID:  profile.ID,
-		TriggerType:        normalizedTriggerType(input.TriggerType),
-		Status:             domaincopilot.AgentRunStatusQueued,
-		Severity:           "info",
-		Summary:            localize(locale, "已提交给 Agent Runtime，等待外部 agent runner 领取并回写根因分析结果。", "Queued for Agent Runtime. Waiting for an external agent runner to write back the root-cause result."),
-		ClusterID:          input.ClusterID,
-		Namespace:          input.Namespace,
-		WorkloadKind:       input.WorkloadKind,
-		WorkloadName:       input.WorkloadName,
-		AlertID:            input.AlertID,
-		TimeRangeMinutes:   input.TimeRangeMinutes,
-		Question:           input.Question,
-		Recommendations:    []string{localize(locale, "等待外部 agent 回写后再执行处置动作。", "Wait for the external agent callback before taking remediation action.")},
-		DataSourceSnapshot: map[string]any{"providerId": provider.ID, "providerKind": provider.Kind, "capabilityId": "root_cause", "status": domaincopilot.AgentRunStatusQueued},
-		DedupKey:           strings.TrimSpace(dedupKey),
-		CreatedAt:          now,
-		UpdatedAt:          now,
-	}
-	if strings.TrimSpace(input.Title) != "" {
-		run.Title = strings.TrimSpace(input.Title)
-	}
-	created, err := s.repo.CreateRootCauseRun(ctx, run)
+	run := newQueuedRootCauseRun(input, profile, provider, rootCauseCreatedBy, dedupKey, locale)
+	created, err := s.rootCauseRuns.CreateRootCauseRun(ctx, run)
 	if err != nil {
 		return queuedRootCauseAgentRun{}, err
 	}
@@ -219,7 +192,7 @@ func (s *Service) queueRootCauseAgentRunWithToolset(ctx context.Context, princip
 		created.Status = domaincopilot.AgentRunStatusFailed
 		created.Summary = err.Error()
 		created.UpdatedAt = time.Now().UTC()
-		_, _ = s.repo.UpdateRootCauseRun(ctx, created)
+		_, _ = s.rootCauseRuns.UpdateRootCauseRun(ctx, created)
 		return queuedRootCauseAgentRun{}, err
 	}
 	created.DataSourceSnapshot = mergeAgentRunCallbackPayload(created.DataSourceSnapshot, map[string]any{
@@ -230,11 +203,46 @@ func (s *Service) queueRootCauseAgentRunWithToolset(ctx context.Context, princip
 		"toolset":        agentRun.Toolset,
 	})
 	created.UpdatedAt = time.Now().UTC()
-	updated, err := s.repo.UpdateRootCauseRun(ctx, created)
+	updated, err := s.rootCauseRuns.UpdateRootCauseRun(ctx, created)
 	if err != nil {
 		return queuedRootCauseAgentRun{RootCauseRun: created, AgentRun: agentRun}, nil
 	}
 	return queuedRootCauseAgentRun{RootCauseRun: updated, AgentRun: agentRun}, nil
+}
+
+func newQueuedRootCauseRun(
+	input domaincopilot.RootCauseRunInput,
+	profile domaincopilot.AnalysisProfile,
+	provider domaincopilot.AgentProvider,
+	createdBy string,
+	dedupKey string,
+	locale string,
+) domaincopilot.RootCauseRun {
+	now := time.Now().UTC()
+	return domaincopilot.RootCauseRun{
+		ID:                 "rca:" + uuid.NewString(),
+		Kind:               normalizeAnalysisKind(input.Kind),
+		SessionID:          strings.TrimSpace(input.SessionID),
+		Title:              analysisTitle(input, locale),
+		CreatedBy:          createdBy,
+		AnalysisProfileID:  profile.ID,
+		TriggerType:        normalizedTriggerType(input.TriggerType),
+		Status:             domaincopilot.AgentRunStatusQueued,
+		Severity:           "info",
+		Summary:            localize(locale, "已提交给 Agent Runtime，等待外部 agent runner 领取并回写根因分析结果。", "Queued for Agent Runtime. Waiting for an external agent runner to write back the root-cause result."),
+		ClusterID:          input.ClusterID,
+		Namespace:          input.Namespace,
+		WorkloadKind:       input.WorkloadKind,
+		WorkloadName:       input.WorkloadName,
+		AlertID:            input.AlertID,
+		TimeRangeMinutes:   input.TimeRangeMinutes,
+		Question:           input.Question,
+		Recommendations:    []string{localize(locale, "等待外部 agent 回写后再执行处置动作。", "Wait for the external agent callback before taking remediation action.")},
+		DataSourceSnapshot: map[string]any{"providerId": provider.ID, "providerKind": provider.Kind, "capabilityId": "root_cause", "status": domaincopilot.AgentRunStatusQueued},
+		DedupKey:           strings.TrimSpace(dedupKey),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
 }
 
 func rootCauseAgentToolset(profile domaincopilot.AnalysisProfile, input domaincopilot.RootCauseRunInput) domaincopilot.SessionToolset {
@@ -276,13 +284,13 @@ func mergeRootCauseAgentToolset(base, override domaincopilot.SessionToolset) dom
 
 func (s *Service) resolveRootCauseProfile(ctx context.Context, input domaincopilot.RootCauseRunInput) (domaincopilot.AnalysisProfile, error) {
 	if strings.TrimSpace(input.AnalysisProfileID) != "" {
-		profile, err := s.repo.GetAnalysisProfile(ctx, strings.TrimSpace(input.AnalysisProfileID))
+		profile, err := s.analysisProfiles.GetAnalysisProfile(ctx, strings.TrimSpace(input.AnalysisProfileID))
 		if err != nil {
 			return domaincopilot.AnalysisProfile{}, err
 		}
 		return profile, nil
 	}
-	items, err := s.repo.ListAnalysisProfiles(ctx)
+	items, err := s.analysisProfiles.ListAnalysisProfiles(ctx)
 	if err == nil {
 		for _, item := range items {
 			if item.Enabled && item.Mode == "root_cause" {
@@ -304,7 +312,7 @@ func (s *Service) resolveRootCauseProfile(ctx context.Context, input domaincopil
 }
 
 func (s *Service) buildRootCauseExecutionMetadata(ctx context.Context, profile domaincopilot.AnalysisProfile, toolset domaincopilot.SessionToolset, analysis rootCauseAnalysis) (map[string]any, map[string]any) {
-	dataSources, _ := s.repo.ListDataSources(ctx)
+	dataSources, _ := s.dataSources.ListDataSources(ctx)
 	available := make([]map[string]any, 0)
 	for _, item := range dataSources {
 		if !item.Enabled {
@@ -388,16 +396,52 @@ func sourceEnabled(enabledSources []string, expected string) bool {
 }
 
 func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domainidentity.Principal, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, toolset domaincopilot.SessionToolset, locale string) rootCauseAnalysis {
-	now := time.Now().UTC()
 	playbooks := enabledPlaybooks(profile.EnabledPlaybooks)
 	platformNativeEnabled := sourceEnabled(profile.EnabledSources, "platform-native") && toolsetAllowsAdapter(toolset, "platform-native.v1")
+	if !platformNativeEnabled {
+		return rootCauseAnalysis{
+			evidence:        nil,
+			hypotheses:      nil,
+			recommendations: []string{localize(locale, "当前分析 profile 没有启用 platform-native 数据源，暂时无法生成根因证据。", "The selected analysis profile does not enable platform-native sources, so no local root cause evidence can be generated yet.")},
+			summary:         localize(locale, "当前 profile 没有启用可执行的数据源。", "The selected profile does not enable any executable local data source."),
+			severity:        "info",
+			playbookResults: map[string]any{},
+		}
+	}
+	platform := s.collectPlatformRootCauseEvidence(ctx, principal, input)
+	analysis := s.collectExternalRootCauseEvidence(ctx, input, profile, toolset, locale)
+	analysis.evidence = append(platform.all(), analysis.evidence...)
+	applyRootCausePlaybooks(&analysis, platform, playbooks, locale)
+	return finalizeRootCauseAnalysis(analysis, toolset, locale)
+}
+
+type platformRootCauseEvidence struct {
+	degraded []domaincopilot.RootCauseEvidence
+	alerts   []domaincopilot.RootCauseEvidence
+	events   []domaincopilot.RootCauseEvidence
+	audits   []domaincopilot.RootCauseEvidence
+	releases []domaincopilot.RootCauseEvidence
+	builds   []domaincopilot.RootCauseEvidence
+}
+
+func (e platformRootCauseEvidence) all() []domaincopilot.RootCauseEvidence {
+	items := make([]domaincopilot.RootCauseEvidence, 0)
+	items = append(items, e.degraded...)
+	items = append(items, e.alerts...)
+	items = append(items, e.events...)
+	items = append(items, e.audits...)
+	items = append(items, e.releases...)
+	return append(items, e.builds...)
+}
+
+func (s *Service) collectPlatformRootCauseEvidence(ctx context.Context, principal domainidentity.Principal, input domaincopilot.RootCauseRunInput) platformRootCauseEvidence {
+	now := time.Now().UTC()
 	clusters, _ := s.clusters.List(ctx)
 	alerts, _ := s.alerts.ListAlerts(ctx, principal, domainalert.Filter{ClusterID: input.ClusterID, Limit: 30})
 	events, _ := s.events.List(ctx, 50)
 	audits, _ := s.audits.List(ctx, domainaudit.Filter{Limit: 50})
 	releases, _ := s.releases.List(ctx, domainrelease.Filter{ClusterID: input.ClusterID, Limit: 20})
 	builds, _ := s.builds.List(ctx, domainbuild.Filter{Limit: 20})
-
 	if input.ClusterID != "" {
 		clusters = filterClustersByID(clusters, input.ClusterID)
 		audits = filterAuditsByCluster(audits, input.ClusterID)
@@ -407,152 +451,131 @@ func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domain
 		releases = filterReleasesByNamespace(releases, input.Namespace)
 		audits = filterAuditsByNamespace(audits, input.Namespace)
 	}
-
-	alerts = filterRootCauseAlerts(alerts, input)
-	events = filterRootCauseEvents(events, input)
-	audits = filterRootCauseAudits(audits, input, now)
-	releases = filterRootCauseReleases(releases, input, now)
-	builds = filterRootCauseBuilds(builds, now)
-
-	evidence := make([]domaincopilot.RootCauseEvidence, 0)
-	hypotheses := make([]domaincopilot.RootCauseHypothesis, 0)
-	playbookResults := map[string]any{}
-
-	if !platformNativeEnabled {
-		return rootCauseAnalysis{
-			evidence:        nil,
-			hypotheses:      nil,
-			recommendations: []string{localize(locale, "当前分析 profile 没有启用 platform-native 数据源，暂时无法生成根因证据。", "The selected analysis profile does not enable platform-native sources, so no local root cause evidence can be generated yet.")},
-			summary:         localize(locale, "当前 profile 没有启用可执行的数据源。", "The selected profile does not enable any executable local data source."),
-			severity:        "info",
-			playbookResults: playbookResults,
-		}
+	return platformRootCauseEvidence{
+		degraded: degradedClusterEvidence(clusters),
+		alerts:   alertRootCauseEvidence(filterRootCauseAlerts(alerts, input)),
+		events:   eventRootCauseEvidence(filterRootCauseEvents(events, input), input),
+		audits:   auditRootCauseEvidence(filterRootCauseAudits(audits, input, now)),
+		releases: releaseRootCauseEvidence(filterRootCauseReleases(releases, input, now)),
+		builds:   buildRootCauseEvidence(filterRootCauseBuilds(builds, now)),
 	}
+}
 
-	degradedClusters := degradedClusterEvidence(clusters)
-	evidence = append(evidence, degradedClusters...)
-
-	alertEvidence := alertRootCauseEvidence(alerts)
-	evidence = append(evidence, alertEvidence...)
-
-	eventEvidence := eventRootCauseEvidence(events, input)
-	evidence = append(evidence, eventEvidence...)
-
-	auditEvidence := auditRootCauseEvidence(audits)
-	evidence = append(evidence, auditEvidence...)
-
-	releaseEvidence := releaseRootCauseEvidence(releases)
-	evidence = append(evidence, releaseEvidence...)
-
-	buildEvidence := buildRootCauseEvidence(builds)
-	evidence = append(evidence, buildEvidence...)
-
+func (s *Service) collectExternalRootCauseEvidence(ctx context.Context, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, toolset domaincopilot.SessionToolset, locale string) rootCauseAnalysis {
+	analysis := rootCauseAnalysis{evidence: []domaincopilot.RootCauseEvidence{}, hypotheses: []domaincopilot.RootCauseHypothesis{}, recommendations: []string{}, playbookResults: map[string]any{}, toolExecutions: []domaincopilot.ToolExecution{}}
 	logAnalysis := s.collectRootCauseLogEvidence(ctx, input, profile, toolset, locale)
-	evidence = append(evidence, logAnalysis.evidence...)
-	hypotheses = append(hypotheses, logAnalysis.hypotheses...)
-	playbookResults = mergePlaybookResults(playbookResults, logAnalysis.playbookResults)
-	toolExecutions := append([]domaincopilot.ToolExecution{}, logAnalysis.toolExecutions...)
-
+	analysis.evidence = append(analysis.evidence, logAnalysis.evidence...)
+	analysis.hypotheses = append(analysis.hypotheses, logAnalysis.hypotheses...)
+	analysis.recommendations = uniqueStrings(analysis.recommendations, logAnalysis.recommendations)
+	analysis.playbookResults = mergePlaybookResults(analysis.playbookResults, logAnalysis.playbookResults)
+	analysis.toolExecutions = append(analysis.toolExecutions, logAnalysis.toolExecutions...)
 	metricAnalysis := s.collectRootCauseMetricEvidence(ctx, input, profile, toolset, locale)
-	evidence = append(evidence, metricAnalysis.evidence...)
-	hypotheses = append(hypotheses, metricAnalysis.hypotheses...)
-	playbookResults = mergePlaybookResults(playbookResults, metricAnalysis.playbookResults)
-	toolExecutions = append(toolExecutions, metricAnalysis.toolExecutions...)
-
+	analysis.evidence = append(analysis.evidence, metricAnalysis.evidence...)
+	analysis.hypotheses = append(analysis.hypotheses, metricAnalysis.hypotheses...)
+	analysis.recommendations = uniqueStrings(analysis.recommendations, metricAnalysis.recommendations)
+	analysis.playbookResults = mergePlaybookResults(analysis.playbookResults, metricAnalysis.playbookResults)
+	analysis.toolExecutions = append(analysis.toolExecutions, metricAnalysis.toolExecutions...)
 	traceAnalysis := s.collectRootCauseTraceEvidence(ctx, input, profile, toolset, locale)
-	evidence = append(evidence, traceAnalysis.evidence...)
-	hypotheses = append(hypotheses, traceAnalysis.hypotheses...)
-	playbookResults = mergePlaybookResults(playbookResults, traceAnalysis.playbookResults)
-	toolExecutions = append(toolExecutions, traceAnalysis.toolExecutions...)
+	analysis.evidence = append(analysis.evidence, traceAnalysis.evidence...)
+	analysis.hypotheses = append(analysis.hypotheses, traceAnalysis.hypotheses...)
+	analysis.recommendations = uniqueStrings(analysis.recommendations, traceAnalysis.recommendations)
+	analysis.playbookResults = mergePlaybookResults(analysis.playbookResults, traceAnalysis.playbookResults)
+	analysis.toolExecutions = append(analysis.toolExecutions, traceAnalysis.toolExecutions...)
+	return analysis
+}
 
-	if playbooks["release-correlation"] && len(releaseEvidence) > 0 && len(alertEvidence) > 0 {
-		hypotheses = append(hypotheses, domaincopilot.RootCauseHypothesis{
+func applyRootCausePlaybooks(analysis *rootCauseAnalysis, evidence platformRootCauseEvidence, playbooks map[string]bool, locale string) {
+	if rootCausePlaybookEnabled(playbooks, "release-correlation", len(evidence.releases) > 0, len(evidence.alerts) > 0) {
+		analysis.hypotheses = append(analysis.hypotheses, domaincopilot.RootCauseHypothesis{
 			ID:              "release-change",
 			Title:           localize(locale, "近期发布变更高度可疑", "Recent release change is the most likely trigger"),
 			Summary:         localize(locale, "最近发布记录与当前告警范围重合，优先检查最近镜像、配置变更和 rollout 事件。", "Recent release activity overlaps with the current alert scope. Review image, config, and rollout changes first."),
 			Confidence:      86,
-			EvidenceIDs:     collectEvidenceIDs(append(releaseEvidence, alertEvidence...)...),
+			EvidenceIDs:     collectEvidenceIDs(append(evidence.releases, evidence.alerts...)...),
 			Recommendations: []string{localize(locale, "先比对最近一次发布记录和 deployment rollout 状态。", "Compare the latest release record with current deployment rollout status first."), localize(locale, "检查变更镜像、环境变量和配置挂载差异。", "Inspect recent image, environment variable, and mounted config changes.")},
 		})
-		playbookResults["release-correlation"] = "matched"
+		analysis.playbookResults["release-correlation"] = "matched"
 	}
-	if playbooks["cluster-health"] && len(degradedClusters) > 0 {
-		hypotheses = append(hypotheses, domaincopilot.RootCauseHypothesis{
+	if rootCausePlaybookEnabled(playbooks, "cluster-health", len(evidence.degraded) > 0) {
+		analysis.hypotheses = append(analysis.hypotheses, domaincopilot.RootCauseHypothesis{
 			ID:              "cluster-instability",
 			Title:           localize(locale, "集群或平台稳定性异常", "Cluster or platform instability is likely involved"),
 			Summary:         localize(locale, "存在异常集群或平台健康信号，当前问题可能不是单一工作负载缺陷。", "Degraded cluster health suggests the issue may extend beyond a single workload."),
 			Confidence:      78,
-			EvidenceIDs:     collectEvidenceIDs(degradedClusters...),
+			EvidenceIDs:     collectEvidenceIDs(evidence.degraded...),
 			Recommendations: []string{localize(locale, "优先确认节点、网络和控制面事件。", "Check node, network, and control-plane signals first."), localize(locale, "确认是否存在多业务同时受影响。", "Confirm whether multiple workloads are impacted at the same time.")},
 		})
-		playbookResults["cluster-health"] = "matched"
+		analysis.playbookResults["cluster-health"] = "matched"
 	}
-	if playbooks["access-drift"] && len(auditEvidence) > 0 {
-		hypotheses = append(hypotheses, domaincopilot.RootCauseHypothesis{
+	if rootCausePlaybookEnabled(playbooks, "access-drift", len(evidence.audits) > 0) {
+		analysis.hypotheses = append(analysis.hypotheses, domaincopilot.RootCauseHypothesis{
 			ID:              "access-or-config-drift",
 			Title:           localize(locale, "权限或配置漂移可能导致失败", "Access or configuration drift may be blocking execution"),
 			Summary:         localize(locale, "最近审计中出现失败或拒绝记录，建议检查策略和手工操作。", "Recent audit failures or denies indicate policy or manual change issues may be involved."),
 			Confidence:      68,
-			EvidenceIDs:     collectEvidenceIDs(auditEvidence...),
+			EvidenceIDs:     collectEvidenceIDs(evidence.audits...),
 			Recommendations: []string{localize(locale, "检查最近失败操作的目标资源和策略命中情况。", "Review recent failed operations and policy matches on the target resources."), localize(locale, "区分预期访问拒绝与非预期配置漂移。", "Distinguish expected access denies from unintended drift.")},
 		})
-		playbookResults["access-drift"] = "matched"
+		analysis.playbookResults["access-drift"] = "matched"
 	}
-	if playbooks["runtime-instability"] && len(eventEvidence) > 0 && len(hypotheses) == 0 {
-		hypotheses = append(hypotheses, domaincopilot.RootCauseHypothesis{
+	if rootCausePlaybookEnabled(playbooks, "runtime-instability", len(evidence.events) > 0, len(analysis.hypotheses) == 0) {
+		analysis.hypotheses = append(analysis.hypotheses, domaincopilot.RootCauseHypothesis{
 			ID:              "runtime-instability",
 			Title:           localize(locale, "运行时异常正在主导当前问题", "Runtime instability is driving the current issue"),
 			Summary:         localize(locale, "最近事件流中已出现与目标范围相关的异常信号，建议先沿事件时间线排查。", "Recent event stream signals already point to runtime instability in the selected scope."),
 			Confidence:      61,
-			EvidenceIDs:     collectEvidenceIDs(eventEvidence...),
+			EvidenceIDs:     collectEvidenceIDs(evidence.events...),
 			Recommendations: []string{localize(locale, "优先按照事件时间顺序复盘。", "Reconstruct the issue first in event timeline order.")},
 		})
-		playbookResults["runtime-instability"] = "matched"
+		analysis.playbookResults["runtime-instability"] = "matched"
 	}
-	if playbooks["alert-pressure"] && len(alertEvidence) > 0 && len(hypotheses) == 0 {
-		hypotheses = append(hypotheses, domaincopilot.RootCauseHypothesis{
+	if rootCausePlaybookEnabled(playbooks, "alert-pressure", len(evidence.alerts) > 0, len(analysis.hypotheses) == 0) {
+		analysis.hypotheses = append(analysis.hypotheses, domaincopilot.RootCauseHypothesis{
 			ID:              "workload-incident",
 			Title:           localize(locale, "工作负载本身存在故障征兆", "The workload itself shows failure symptoms"),
 			Summary:         localize(locale, "当前已有明确告警但缺少更强上游证据，建议先从工作负载和依赖面排查。", "Active alerts are present but upstream evidence is limited. Start with the workload and its direct dependencies."),
 			Confidence:      55,
-			EvidenceIDs:     collectEvidenceIDs(alertEvidence...),
+			EvidenceIDs:     collectEvidenceIDs(evidence.alerts...),
 			Recommendations: []string{localize(locale, "先核对容器重启、依赖超时和错误率变化。", "Check container restarts, dependency timeouts, and error-rate shifts first.")},
 		})
-		playbookResults["alert-pressure"] = "matched"
+		analysis.playbookResults["alert-pressure"] = "matched"
 	}
-	if playbooks["build-queue"] && len(buildEvidence) > 0 {
-		playbookResults["build-queue"] = "matched"
+	if rootCausePlaybookEnabled(playbooks, "build-queue", len(evidence.builds) > 0) {
+		analysis.playbookResults["build-queue"] = "matched"
 	}
+}
 
-	sort.Slice(hypotheses, func(i, j int) bool {
-		return hypotheses[i].Confidence > hypotheses[j].Confidence
+func finalizeRootCauseAnalysis(analysis rootCauseAnalysis, toolset domaincopilot.SessionToolset, locale string) rootCauseAnalysis {
+	sort.Slice(analysis.hypotheses, func(i, j int) bool {
+		return analysis.hypotheses[i].Confidence > analysis.hypotheses[j].Confidence
 	})
-
-	recommendations := uniqueStrings(nil, flattenRecommendations(hypotheses))
+	recommendations := uniqueStrings(nil, flattenRecommendations(analysis.hypotheses))
 	if len(recommendations) == 0 {
 		recommendations = []string{localize(locale, "先缩小范围到单个集群/命名空间/工作负载，再重新运行根因分析。", "Narrow the scope to a single cluster, namespace, or workload and rerun the analysis.")}
 	}
-	recommendations = uniqueStrings(recommendations, logAnalysis.recommendations)
-	recommendations = uniqueStrings(recommendations, metricAnalysis.recommendations)
-	recommendations = uniqueStrings(recommendations, traceAnalysis.recommendations)
-
+	recommendations = uniqueStrings(recommendations, analysis.recommendations)
 	summary := localize(locale, "当前证据还不足以给出明确根因。", "Current evidence is not yet sufficient for a decisive root cause.")
-	severity := "info"
-	if len(hypotheses) > 0 {
-		summary = hypotheses[0].Summary
+	if len(analysis.hypotheses) > 0 {
+		summary = analysis.hypotheses[0].Summary
 	}
-	evidence = limitEvidenceItems(evidence, evidenceBudget(toolset, len(evidence)))
-	hypotheses = pruneHypothesisEvidenceIDs(hypotheses, evidence)
-	severity = highestEvidenceSeverity(evidence)
-	return rootCauseAnalysis{
-		evidence:        evidence,
-		hypotheses:      hypotheses,
-		recommendations: recommendations,
-		summary:         summary,
-		severity:        severity,
-		playbookResults: playbookResults,
-		toolExecutions:  toolExecutions,
+	analysis.evidence = limitEvidenceItems(analysis.evidence, evidenceBudget(toolset, len(analysis.evidence)))
+	analysis.hypotheses = pruneHypothesisEvidenceIDs(analysis.hypotheses, analysis.evidence)
+	analysis.recommendations = recommendations
+	analysis.summary = summary
+	analysis.severity = highestEvidenceSeverity(analysis.evidence)
+	return analysis
+}
+
+func rootCausePlaybookEnabled(playbooks map[string]bool, name string, conditions ...bool) bool {
+	if !playbooks[name] {
+		return false
 	}
+	for _, condition := range conditions {
+		if !condition {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeRootCauseInput(input domaincopilot.RootCauseRunInput) domaincopilot.RootCauseRunInput {

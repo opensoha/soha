@@ -439,7 +439,10 @@ func TestWorkflowTemplateUsageSummarizesProductionRisk(t *testing.T) {
 	if usage.RiskLevel != domaincatalog.TemplateUsageRiskHigh || usage.RecommendedAction != "copy_template_before_editing" {
 		t.Fatalf("expected high-risk recommendation, got %#v", usage)
 	}
-	states := usage.LastExecutionSummary["stateCounts"].(map[string]int)
+	states, ok := usage.LastExecutionSummary["stateCounts"].(map[string]int)
+	if !ok {
+		t.Fatalf("stateCounts has unexpected type: %T", usage.LastExecutionSummary["stateCounts"])
+	}
 	if states["running"] != 1 || states["failed"] != 2 {
 		t.Fatalf("unexpected workflow runtime state counts: %#v", usage.LastExecutionSummary)
 	}
@@ -507,7 +510,10 @@ func TestBuildTemplateUsageFindsApplicationBuildSources(t *testing.T) {
 	if usage.RiskLevel != domaincatalog.TemplateUsageRiskLow {
 		t.Fatalf("expected low-risk dev usage, got %#v", usage)
 	}
-	states := usage.LastExecutionSummary["stateCounts"].(map[string]int)
+	states, ok := usage.LastExecutionSummary["stateCounts"].(map[string]int)
+	if !ok {
+		t.Fatalf("stateCounts has unexpected type: %T", usage.LastExecutionSummary["stateCounts"])
+	}
 	if states["succeeded"] != 1 || states["running"] != 2 {
 		t.Fatalf("unexpected build runtime state counts: %#v", usage.LastExecutionSummary)
 	}

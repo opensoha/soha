@@ -9,26 +9,26 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
-func (h *PlatformHandler) ListCRDs(c *gin.Context) {
+func (h *crdResourceHandler) ListCRDs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListCRDs(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.reader.ListCRDs(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListCRDResources(c *gin.Context) {
+func (h *crdResourceHandler) ListCRDResources(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListCRDResources(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace)
+	items, err := h.reader.ListCRDResources(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) CreateCRDResource(c *gin.Context) {
+func (h *crdResourceHandler) CreateCRDResource(c *gin.Context) {
 	var payload struct {
 		Content   string `json:"content"`
 		Namespace string `json:"namespace"`
@@ -42,24 +42,24 @@ func (h *PlatformHandler) CreateCRDResource(c *gin.Context) {
 	if namespace == "" {
 		namespace = c.Query("namespace")
 	}
-	item, err := h.resources.CreateCRDResourceFromYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, payload.Content)
+	item, err := h.editor.CreateCRDResourceFromYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, payload.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusCreated, item)
 }
-func (h *PlatformHandler) GetCRDResourceYAML(c *gin.Context) {
+func (h *crdResourceHandler) GetCRDResourceYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetCRDResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name"))
+	item, err := h.reader.GetCRDResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ApplyCRDResourceYAML(c *gin.Context) {
+func (h *crdResourceHandler) ApplyCRDResourceYAML(c *gin.Context) {
 	var payload struct {
 		Content string `json:"content"`
 	}
@@ -69,105 +69,105 @@ func (h *PlatformHandler) ApplyCRDResourceYAML(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.ApplyCRDResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name"), payload.Content)
+	item, err := h.editor.ApplyCRDResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name"), payload.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) DeleteCRDResource(c *gin.Context) {
+func (h *crdResourceHandler) DeleteCRDResource(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	if err := h.resources.DeleteCRDResource(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name")); err != nil {
+	if err := h.editor.DeleteCRDResource(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name")); err != nil {
 		writeError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *PlatformHandler) ListHelmCharts(c *gin.Context) {
+func (h *helmCatalogResourceHandler) ListHelmCharts(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.ListHelmCharts(c.Request.Context(), principal, c.Param("clusterID"), c.Query("keyword"), parseLimit(c.Query("limit"), 100), parseOffset(c.Query("offset")))
+	item, err := h.service.ListHelmCharts(c.Request.Context(), principal, c.Param("clusterID"), c.Query("keyword"), parseLimit(c.Query("limit"), 100), parseOffset(c.Query("offset")))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetHelmChartDetail(c *gin.Context) {
+func (h *helmCatalogResourceHandler) GetHelmChartDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.GetHelmChartDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("repositoryName"), c.Param("chartName"), c.Query("version"))
+	item, err := h.service.GetHelmChartDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("repositoryName"), c.Param("chartName"), c.Query("version"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetHelmChartValuesTemplate(c *gin.Context) {
+func (h *helmCatalogResourceHandler) GetHelmChartValuesTemplate(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.GetHelmChartValuesTemplate(c.Request.Context(), principal, c.Param("clusterID"), c.Query("packageId"), c.Query("name"), c.Query("version"))
+	item, err := h.service.GetHelmChartValuesTemplate(c.Request.Context(), principal, c.Param("clusterID"), c.Query("packageId"), c.Query("name"), c.Query("version"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) InstallHelmChart(c *gin.Context) {
+func (h *helmCatalogResourceHandler) InstallHelmChart(c *gin.Context) {
 	var payload domainresource.HelmChartInstallInput
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid helm chart install payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.InstallHelmChart(c.Request.Context(), principal, c.Param("clusterID"), payload)
+	item, err := h.service.InstallHelmChart(c.Request.Context(), principal, c.Param("clusterID"), payload)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusCreated, item)
 }
-func (h *PlatformHandler) ListHelmReleases(c *gin.Context) {
+func (h *helmReleaseResourceHandler) ListHelmReleases(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListHelmReleases(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.reader.ListHelmReleases(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetHelmReleaseDetail(c *gin.Context) {
+func (h *helmReleaseResourceHandler) GetHelmReleaseDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetHelmReleaseDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"))
+	item, err := h.reader.GetHelmReleaseDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListHelmReleaseHistory(c *gin.Context) {
+func (h *helmReleaseResourceHandler) ListHelmReleaseHistory(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListHelmReleaseHistory(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"))
+	items, err := h.reader.ListHelmReleaseHistory(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetHelmReleaseValues(c *gin.Context) {
+func (h *helmReleaseResourceHandler) GetHelmReleaseValues(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
 	revision := c.Query("revision")
-	item, err := h.resources.GetHelmReleaseValues(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"), revision)
+	item, err := h.reader.GetHelmReleaseValues(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"), revision)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) UpdateHelmReleaseValues(c *gin.Context) {
+func (h *helmReleaseResourceHandler) UpdateHelmReleaseValues(c *gin.Context) {
 	var payload struct {
 		Content string `json:"content"`
 	}
@@ -177,17 +177,17 @@ func (h *PlatformHandler) UpdateHelmReleaseValues(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.UpdateHelmReleaseValues(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"), payload.Content)
+	item, err := h.editor.UpdateHelmReleaseValues(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"), payload.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) DeleteHelmRelease(c *gin.Context) {
+func (h *helmReleaseResourceHandler) DeleteHelmRelease(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	if err := h.resources.DeleteHelmRelease(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName")); err != nil {
+	if err := h.editor.DeleteHelmRelease(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName")); err != nil {
 		writeError(c, err)
 		return
 	}

@@ -15,54 +15,11 @@ import (
 	"github.com/gorilla/websocket"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
-	"k8s.io/client-go/tools/remotecommand"
 )
 
 func TestClientResourceYAMLMethodsUseAgentPlatformEndpoints(t *testing.T) {
 	var seen []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer agent-token" {
-			t.Fatalf("Authorization = %q, want bearer token", r.Header.Get("Authorization"))
-		}
-		seen = append(seen, r.Method+" "+r.URL.String())
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/platform/resources/yaml":
-			if r.URL.Query().Get("namespace") != "platform" || r.URL.Query().Get("kind") != "ConfigMap" || r.URL.Query().Get("name") != "app-config" {
-				t.Fatalf("unexpected get query: %s", r.URL.RawQuery)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
-				"kind":      "ConfigMap",
-				"name":      "app-config",
-				"namespace": "platform",
-				"content":   "apiVersion: v1\nkind: ConfigMap\n",
-			}})
-		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/platform/resources/yaml":
-			var req resourceYAMLRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode apply request: %v", err)
-			}
-			if req.Namespace != "platform" || req.Kind != "ConfigMap" || req.Name != "app-config" || req.Content == "" {
-				t.Fatalf("unexpected apply request: %#v", req)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
-				"kind":      req.Kind,
-				"name":      req.Name,
-				"namespace": req.Namespace,
-				"content":   req.Content,
-			}})
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/platform/resources":
-			var req deleteResourceRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode delete request: %v", err)
-			}
-			if req.Namespace != "platform" || req.Kind != "ConfigMap" || req.Name != "app-config" {
-				t.Fatalf("unexpected delete request: %#v", req)
-			}
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
-		}
-	}))
+	server := httptest.NewServer(resourceYAMLTestHandler(t, &seen))
 	defer server.Close()
 
 	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
@@ -128,47 +85,7 @@ func TestClientStreamPodLogsCopiesAgentStream(t *testing.T) {
 
 func TestClientStreamPodTerminalBridgesWebSocketMessages(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer agent-token" {
-			t.Fatalf("Authorization = %q, want bearer token", r.Header.Get("Authorization"))
-		}
-		if r.URL.Path != "/api/v1/platform/workloads/pods/api-0/terminal" {
-			t.Fatalf("path = %s, want terminal path", r.URL.Path)
-		}
-		query := r.URL.Query()
-		if query.Get("namespace") != "platform" || query.Get("container") != "app" || query.Get("shell") != "/bin/sh" {
-			t.Fatalf("query = %s, want namespace/container/shell", r.URL.RawQuery)
-		}
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			t.Fatalf("upgrade websocket: %v", err)
-		}
-		defer conn.Close()
-		gotInput := false
-		gotResize := false
-		for !gotInput || !gotResize {
-			var message terminalMessage
-			if err := conn.ReadJSON(&message); err != nil {
-				t.Fatalf("read terminal message: %v", err)
-			}
-			switch message.Type {
-			case "input":
-				if message.Data == "whoami\n" {
-					gotInput = true
-				}
-			case "resize":
-				if message.Cols == 120 && message.Rows == 40 {
-					gotResize = true
-				}
-			case "close":
-			default:
-				t.Fatalf("unexpected terminal message: %#v", message)
-			}
-		}
-		_ = conn.WriteJSON(terminalMessage{Type: "stdout", Data: "root\n"})
-		_ = conn.WriteJSON(terminalMessage{Type: "stderr", Data: "warn\n"})
-		_ = conn.WriteJSON(terminalMessage{Type: "exit", Message: "terminal session closed"})
-	}))
+	server := httptest.NewServer(terminalTestHandler(t, upgrader))
 	defer server.Close()
 
 	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
@@ -197,33 +114,98 @@ type oneShotTerminalSizeQueue struct {
 	sent bool
 }
 
-func (q *oneShotTerminalSizeQueue) Next() *remotecommand.TerminalSize {
-	if q.sent {
-		return nil
+func resourceYAMLTestHandler(t *testing.T, seen *[]string) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer agent-token" {
+			t.Fatalf("Authorization = %q, want bearer token", r.Header.Get("Authorization"))
+		}
+		*seen = append(*seen, r.Method+" "+r.URL.String())
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/platform/resources/yaml":
+			handleResourceYAMLGet(t, w, r)
+		case "PUT /api/v1/platform/resources/yaml":
+			handleResourceYAMLApply(t, w, r)
+		case "DELETE /api/v1/platform/resources":
+			handleResourceDelete(t, w, r)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
 	}
-	q.sent = true
-	return &remotecommand.TerminalSize{Width: 120, Height: 40}
 }
 
-func TestClientPortForwardMethodsUseAgentPlatformEndpoints(t *testing.T) {
-	var seen []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.Method+" "+r.URL.String())
+func handleResourceYAMLGet(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("namespace") != "platform" || r.URL.Query().Get("kind") != "ConfigMap" || r.URL.Query().Get("name") != "app-config" {
+		t.Fatalf("unexpected get query: %s", r.URL.RawQuery)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"kind": "ConfigMap", "name": "app-config", "namespace": "platform", "content": "apiVersion: v1\nkind: ConfigMap\n"}})
+}
+
+func handleResourceYAMLApply(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	var req resourceYAMLRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Namespace != "platform" || req.Kind != "ConfigMap" || req.Name != "app-config" || req.Content == "" {
+		t.Fatalf("unexpected apply request: %#v error=%v", req, err)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"kind": req.Kind, "name": req.Name, "namespace": req.Namespace, "content": req.Content}})
+}
+
+func handleResourceDelete(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	var req deleteResourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Namespace != "platform" || req.Kind != "ConfigMap" || req.Name != "app-config" {
+		t.Fatalf("unexpected delete request: %#v error=%v", req, err)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func terminalTestHandler(t *testing.T, upgrader websocket.Upgrader) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer agent-token" || r.URL.Path != "/api/v1/platform/workloads/pods/api-0/terminal" {
+			t.Fatalf("unexpected terminal request %s authorization=%q", r.URL.String(), r.Header.Get("Authorization"))
+		}
+		query := r.URL.Query()
+		if query.Get("namespace") != "platform" || query.Get("container") != "app" || query.Get("shell") != "/bin/sh" {
+			t.Fatalf("query = %s, want namespace/container/shell", r.URL.RawQuery)
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Fatalf("upgrade websocket: %v", err)
+		}
+		defer func() { _ = conn.Close() }()
+		readTerminalClientMessages(t, conn)
+		_ = conn.WriteJSON(terminalMessage{Type: "stdout", Data: "root\n"})
+		_ = conn.WriteJSON(terminalMessage{Type: "stderr", Data: "warn\n"})
+		_ = conn.WriteJSON(terminalMessage{Type: "exit", Message: "terminal session closed"})
+	}
+}
+
+func readTerminalClientMessages(t *testing.T, conn *websocket.Conn) {
+	t.Helper()
+	gotInput, gotResize := false, false
+	for !gotInput || !gotResize {
+		var message terminalMessage
+		if err := conn.ReadJSON(&message); err != nil {
+			t.Fatalf("read terminal message: %v", err)
+		}
+		switch message.Type {
+		case "input":
+			gotInput = message.Data == "whoami\n" || gotInput
+		case "resize":
+			gotResize = message.Cols == 120 && message.Rows == 40 || gotResize
+		case "close":
+		default:
+			t.Fatalf("unexpected terminal message: %#v", message)
+		}
+	}
+}
+
+func portForwardTestHandler(t *testing.T, seen *[]string) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		*seen = append(*seen, r.Method+" "+r.URL.String())
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/platform/network/port-forwards":
-			_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{
-				{
-					"sessionId":  "session-1",
-					"clusterId":  "agent-cluster",
-					"namespace":  "platform",
-					"targetKind": "Pod",
-					"targetName": "api-0",
-					"localPort":  18080,
-					"remotePort": 8080,
-					"status":     "registered",
-					"createdAt":  "2026-06-12T00:00:00Z",
-				},
-			}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{{"sessionId": "session-1", "clusterId": "agent-cluster", "namespace": "platform", "targetKind": "Pod", "targetName": "api-0", "localPort": 18080, "remotePort": 8080, "status": "registered", "createdAt": "2026-06-12T00:00:00Z"}}})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/network/port-forwards":
 			var req domainresource.PortForwardRegisterInput
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -233,23 +215,116 @@ func TestClientPortForwardMethodsUseAgentPlatformEndpoints(t *testing.T) {
 				t.Fatalf("unexpected register request: %#v", req)
 			}
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
-				"sessionId":  "session-2",
-				"clusterId":  "agent-cluster",
-				"namespace":  req.Namespace,
-				"targetKind": req.TargetKind,
-				"targetName": req.TargetName,
-				"localPort":  req.LocalPort,
-				"remotePort": req.RemotePort,
-				"status":     "registered",
-				"createdAt":  "2026-06-12T00:00:00Z",
-			}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"sessionId": "session-2", "clusterId": "agent-cluster", "namespace": req.Namespace, "targetKind": req.TargetKind, "targetName": req.TargetName, "localPort": req.LocalPort, "remotePort": req.RemotePort, "status": "registered", "createdAt": "2026-06-12T00:00:00Z"}})
 		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/platform/network/port-forwards/session-2":
 			w.WriteHeader(http.StatusOK)
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
-	}))
+	}
+}
+
+func helmMutationTestHandler(t *testing.T, seen *[]string) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		*seen = append(*seen, r.Method+" "+r.URL.String())
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/helm/charts/install":
+			var req domainresource.HelmChartInstallInput
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode install request: %v", err)
+			}
+			if req.ReleaseName != "edge" || req.Namespace != "platform" || req.ChartName != "nginx" {
+				t.Fatalf("unexpected install request: %#v", req)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"name": "edge", "namespace": "platform", "revision": "1", "status": "deployed"}})
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/platform/helm/releases/edge/values":
+			var req helmReleaseValuesRequest
+			if r.URL.Query().Get("namespace") != "platform" || json.NewDecoder(r.Body).Decode(&req) != nil || req.Content != "replicaCount: 2\n" {
+				t.Fatalf("unexpected values request: query=%s body=%#v", r.URL.RawQuery, req)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"name": "edge", "namespace": "platform", "revision": "2", "content": req.Content, "editable": true, "diffEnabled": true}})
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/platform/helm/releases/edge":
+			if r.URL.Query().Get("namespace") != "platform" {
+				t.Fatalf("unexpected delete query: %s", r.URL.RawQuery)
+			}
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+	}
+}
+
+func customResourceTestHandler(t *testing.T, seen *[]string) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, r *http.Request) {
+		*seen = append(*seen, r.Method+" "+r.URL.Path)
+		switch r.Method + " " + r.URL.Path {
+		case "POST /api/v1/platform/extensions/custom-resources/list":
+			handleCustomResourceList(t, w, r)
+		case "POST /api/v1/platform/extensions/custom-resources":
+			handleCustomResourceCreate(t, w, r)
+		case "POST /api/v1/platform/extensions/custom-resources/yaml":
+			handleCustomResourceYAML(t, w, r, false)
+		case "PUT /api/v1/platform/extensions/custom-resources/yaml":
+			handleCustomResourceYAML(t, w, r, true)
+		case "DELETE /api/v1/platform/extensions/custom-resources":
+			handleCustomResourceDelete(t, w, r)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
+		}
+	}
+}
+
+func handleCustomResourceList(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	var req customResourceListRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Definition.Kind != "Widget" || req.Namespace != "platform" {
+		t.Fatalf("unexpected list request: %#v error=%v", req, err)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{{"apiVersion": "example.com/v1", "kind": "Widget", "name": "sample", "namespace": "platform"}}})
+}
+
+func handleCustomResourceCreate(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	var req customResourceYAMLRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Definition.Resource != "widgets" || req.Content == "" {
+		t.Fatalf("unexpected create request: %#v error=%v", req, err)
+	}
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"kind": "Widget", "name": "created", "namespace": "platform", "content": req.Content}})
+}
+
+func handleCustomResourceYAML(t *testing.T, w http.ResponseWriter, r *http.Request, apply bool) {
+	var req customResourceYAMLRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name != "sample" || req.Namespace != "platform" || apply && req.Content == "" {
+		t.Fatalf("unexpected yaml request: %#v error=%v", req, err)
+	}
+	content := "kind: Widget\n"
+	if apply {
+		content = req.Content
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"kind": "Widget", "name": "sample", "namespace": "platform", "content": content}})
+}
+
+func handleCustomResourceDelete(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	var req customResourceYAMLRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name != "sample" || req.Definition.Kind != "Widget" {
+		t.Fatalf("unexpected delete request: %#v error=%v", req, err)
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (q *oneShotTerminalSizeQueue) Next() *domainresource.TerminalSize {
+	if q.sent {
+		return nil
+	}
+	q.sent = true
+	return &domainresource.TerminalSize{Width: 120, Height: 40}
+}
+
+func TestClientPortForwardMethodsUseAgentPlatformEndpoints(t *testing.T) {
+	var seen []string
+	server := httptest.NewServer(portForwardTestHandler(t, &seen))
 	defer server.Close()
 
 	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
@@ -303,7 +378,7 @@ func TestClientStreamPortForwardBridgesWebSocketBytes(t *testing.T) {
 		if err != nil {
 			t.Fatalf("upgrade websocket: %v", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		messageType, payload, err := conn.ReadMessage()
 		if err != nil {
 			t.Fatalf("read tunnel message: %v", err)
@@ -329,8 +404,8 @@ func TestClientStreamPortForwardBridgesWebSocketBytes(t *testing.T) {
 	}
 
 	local, peer := net.Pipe()
-	defer local.Close()
-	defer peer.Close()
+	defer func() { _ = local.Close() }()
+	defer func() { _ = peer.Close() }()
 	if err := peer.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
 		t.Fatalf("set pipe deadline: %v", err)
 	}
@@ -363,61 +438,7 @@ func TestClientCustomResourceMethodsUseAgentPlatformEndpoints(t *testing.T) {
 		Namespaced: true,
 	}
 	var seen []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.Method+" "+r.URL.Path)
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/extensions/custom-resources/list":
-			var req customResourceListRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode list request: %v", err)
-			}
-			if req.Definition.Kind != "Widget" || req.Namespace != "platform" {
-				t.Fatalf("unexpected list request: %#v", req)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{
-				{"apiVersion": "example.com/v1", "kind": "Widget", "name": "sample", "namespace": "platform"},
-			}})
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/extensions/custom-resources":
-			var req customResourceYAMLRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode create request: %v", err)
-			}
-			if req.Definition.Resource != "widgets" || req.Content == "" {
-				t.Fatalf("unexpected create request: %#v", req)
-			}
-			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"kind": "Widget", "name": "created", "namespace": "platform", "content": req.Content}})
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/extensions/custom-resources/yaml":
-			var req customResourceYAMLRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode get yaml request: %v", err)
-			}
-			if req.Name != "sample" || req.Namespace != "platform" {
-				t.Fatalf("unexpected get yaml request: %#v", req)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"kind": "Widget", "name": "sample", "namespace": "platform", "content": "kind: Widget\n"}})
-		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/platform/extensions/custom-resources/yaml":
-			var req customResourceYAMLRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode apply request: %v", err)
-			}
-			if req.Name != "sample" || req.Content == "" {
-				t.Fatalf("unexpected apply request: %#v", req)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"kind": "Widget", "name": "sample", "namespace": "platform", "content": req.Content}})
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/platform/extensions/custom-resources":
-			var req customResourceYAMLRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode delete request: %v", err)
-			}
-			if req.Name != "sample" || req.Definition.Kind != "Widget" {
-				t.Fatalf("unexpected delete request: %#v", req)
-			}
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
-		}
-	}))
+	server := httptest.NewServer(customResourceTestHandler(t, &seen))
 	defer server.Close()
 
 	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
@@ -452,52 +473,7 @@ func TestClientCustomResourceMethodsUseAgentPlatformEndpoints(t *testing.T) {
 
 func TestClientHelmMutationMethodsUseAgentPlatformEndpoints(t *testing.T) {
 	var seen []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen = append(seen, r.Method+" "+r.URL.String())
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/helm/charts/install":
-			var req domainresource.HelmChartInstallInput
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode install request: %v", err)
-			}
-			if req.ReleaseName != "edge" || req.Namespace != "platform" || req.ChartName != "nginx" {
-				t.Fatalf("unexpected install request: %#v", req)
-			}
-			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
-				"name":      "edge",
-				"namespace": "platform",
-				"revision":  "1",
-				"status":    "deployed",
-			}})
-		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/platform/helm/releases/edge/values":
-			if r.URL.Query().Get("namespace") != "platform" {
-				t.Fatalf("unexpected values query: %s", r.URL.RawQuery)
-			}
-			var req helmReleaseValuesRequest
-			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-				t.Fatalf("decode values request: %v", err)
-			}
-			if req.Content != "replicaCount: 2\n" {
-				t.Fatalf("values content = %q, want replicaCount", req.Content)
-			}
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
-				"name":        "edge",
-				"namespace":   "platform",
-				"revision":    "2",
-				"content":     req.Content,
-				"editable":    true,
-				"diffEnabled": true,
-			}})
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/platform/helm/releases/edge":
-			if r.URL.Query().Get("namespace") != "platform" {
-				t.Fatalf("unexpected delete query: %s", r.URL.RawQuery)
-			}
-			w.WriteHeader(http.StatusOK)
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
-		}
-	}))
+	server := httptest.NewServer(helmMutationTestHandler(t, &seen))
 	defer server.Close()
 
 	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{

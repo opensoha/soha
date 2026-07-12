@@ -8,27 +8,27 @@ import (
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 )
 
-func (h *PlatformHandler) ListConfigMaps(c *gin.Context) {
+func (h *configMapResourceHandler) ListConfigMaps(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListConfigMaps(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListConfigMaps(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetConfigMapDetail(c *gin.Context) {
+func (h *configMapResourceHandler) GetConfigMapDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetConfigMapDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	item, err := h.service.GetConfigMapDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) UpdateConfigMapData(c *gin.Context) {
+func (h *configMapResourceHandler) UpdateConfigMapData(c *gin.Context) {
 	var payload struct {
 		Data       map[string]string `json:"data"`
 		BinaryData map[string]string `json:"binaryData"`
@@ -39,34 +39,34 @@ func (h *PlatformHandler) UpdateConfigMapData(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.UpdateConfigMapData(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"), payload.Data, payload.BinaryData)
+	item, err := h.service.UpdateConfigMapData(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"), payload.Data, payload.BinaryData)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListConfigMapReferences(c *gin.Context) {
+func (h *configMapResourceHandler) ListConfigMapReferences(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListConfigMapReferences(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	items, err := h.service.ListConfigMapReferences(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetSecretDetail(c *gin.Context) {
+func (h *secretResourceHandler) GetSecretDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetSecretDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	item, err := h.service.GetSecretDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) UpdateSecretData(c *gin.Context) {
+func (h *secretResourceHandler) UpdateSecretData(c *gin.Context) {
 	var payload struct {
 		Data map[string]string `json:"data"`
 	}
@@ -76,30 +76,30 @@ func (h *PlatformHandler) UpdateSecretData(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.UpdateSecretData(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"), payload.Data)
+	item, err := h.service.UpdateSecretData(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"), payload.Data)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListSecretReferences(c *gin.Context) {
+func (h *secretResourceHandler) ListSecretReferences(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListSecretReferences(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	items, err := h.service.ListSecretReferences(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) CreateConfigMap(c *gin.Context) {
-	h.createResourceFromYAML(c, "ConfigMap")
+func (h *configMapResourceHandler) CreateConfigMap(c *gin.Context) {
+	createResourceFromYAML(c, h.creator, "ConfigMap")
 }
-func (h *PlatformHandler) CreateSecret(c *gin.Context) {
-	h.createResourceFromYAML(c, "Secret")
+func (h *secretResourceHandler) CreateSecret(c *gin.Context) {
+	createResourceFromYAML(c, h.creator, "Secret")
 }
-func (h *PlatformHandler) createResourceFromYAML(c *gin.Context, kind string) {
+func createResourceFromYAML(c *gin.Context, service ResourceCreator, kind string) {
 	var payload struct {
 		Content   string `json:"content"`
 		Namespace string `json:"namespace"`
@@ -113,102 +113,83 @@ func (h *PlatformHandler) createResourceFromYAML(c *gin.Context, kind string) {
 	if namespace == "" {
 		namespace = c.Query("namespace")
 	}
-	item, err := h.resources.CreateResourceFromYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, payload.Content)
+	item, err := service.CreateResourceFromYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, payload.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusCreated, item)
 }
-func (h *PlatformHandler) ListSecrets(c *gin.Context) {
+func (h *secretResourceHandler) ListSecrets(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListSecrets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListSecrets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListIngressClasses(c *gin.Context) {
+func (h *configurationInventoryResourceHandler) ListPriorityClasses(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListIngressClasses(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.service.ListPriorityClasses(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListPriorityClasses(c *gin.Context) {
+func (h *configurationInventoryResourceHandler) ListRuntimeClasses(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListPriorityClasses(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.service.ListRuntimeClasses(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListRuntimeClasses(c *gin.Context) {
+func (h *configurationInventoryResourceHandler) ListMutatingWebhookConfigurations(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListRuntimeClasses(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.service.ListMutatingWebhookConfigurations(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListMutatingWebhookConfigurations(c *gin.Context) {
+func (h *configurationInventoryResourceHandler) ListValidatingWebhookConfigurations(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListMutatingWebhookConfigurations(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.service.ListValidatingWebhookConfigurations(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListValidatingWebhookConfigurations(c *gin.Context) {
-	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListValidatingWebhookConfigurations(c.Request.Context(), principal, c.Param("clusterID"))
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Items(c, http.StatusOK, items)
-}
-func (h *PlatformHandler) ListResourceQuotas(c *gin.Context) {
+func (h *configurationInventoryResourceHandler) ListResourceQuotas(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListResourceQuotas(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListResourceQuotas(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListLimitRanges(c *gin.Context) {
+func (h *configurationInventoryResourceHandler) ListLimitRanges(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListLimitRanges(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListLimitRanges(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListLeases(c *gin.Context) {
+func (h *configurationInventoryResourceHandler) ListLeases(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListLeases(c.Request.Context(), principal, c.Param("clusterID"), namespace)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Items(c, http.StatusOK, items)
-}
-func (h *PlatformHandler) ListReplicationControllers(c *gin.Context) {
-	principal := apiMiddleware.PrincipalFromContext(c)
-	namespace := c.Query("namespace")
-	items, err := h.resources.ListReplicationControllers(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListLeases(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return

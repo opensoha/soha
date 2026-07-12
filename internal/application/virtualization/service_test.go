@@ -2,7 +2,6 @@ package virtualization
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"slices"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
-	"gorm.io/gorm"
 )
 
 func TestWorkerAssetSyncUpdatesTaskAndRecordsOperation(t *testing.T) {
@@ -201,21 +199,33 @@ func TestMapNotFoundPreservesAppNotFoundSentinel(t *testing.T) {
 	}
 }
 
-func TestMapNotFoundWrapsCommonSentinels(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		input error
-	}{
-		{name: "sql", input: sql.ErrNoRows},
-		{name: "gorm", input: gorm.ErrRecordNotFound},
-		{name: "string fallback", input: errors.New("resource not found")},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got := mapNotFound(tc.input)
-			if !errors.Is(got, apperrors.ErrNotFound) {
-				t.Fatalf("mapNotFound() = %v, want apperrors.ErrNotFound sentinel", got)
-			}
-		})
+func TestMapNotFoundDoesNotInterpretAdapterErrors(t *testing.T) {
+	input := errors.New("adapter-specific record not found")
+	if got := mapNotFound(input); got != input {
+		t.Fatalf("mapNotFound() = %v, want original adapter error", got)
+	}
+}
+
+func TestNewRejectsMissingDependencies(t *testing.T) {
+	service, err := New(Dependencies{}, nil, testPermissions(), nil, Options{})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("New() error = %v, want invalid argument", err)
+	}
+	if service != nil {
+		t.Fatalf("New() service = %#v, want nil", service)
+	}
+}
+
+func TestNewRejectsTypedNilDependency(t *testing.T) {
+	var repo *memoryRepo
+	deps := testDependencies(newMemoryRepo())
+	deps.Connections = repo
+	service, err := New(deps, nil, testPermissions(), nil, Options{})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("New() error = %v, want invalid argument", err)
+	}
+	if service != nil {
+		t.Fatalf("New() service = %#v, want nil", service)
 	}
 }
 
@@ -264,7 +274,7 @@ func TestSanitizeConnectionIsIdempotentForCredentialConfigured(t *testing.T) {
 
 func TestCreatePVECredentialRequiresEncryptionKey(t *testing.T) {
 	repo := newMemoryRepo()
-	service := New(repo, map[string]Adapter{ProviderPVE: fakeAdapter{}}, testPermissions(), nil, Options{})
+	service := MustNew(testDependencies(repo), map[string]Adapter{ProviderPVE: fakeAdapter{}}, testPermissions(), nil, Options{})
 
 	_, err := service.CreateConnection(context.Background(), testPrincipal(), ConnectionInput{
 		Provider:   ProviderPVE,
@@ -314,7 +324,7 @@ func TestCreateKubeVirtConnectionEncryptsPrometheusTokenAndSanitizesConfig(t *te
 	if stored.EncryptedCredential["ciphertext"] == "" {
 		t.Fatalf("stored credential missing ciphertext")
 	}
-	adapterConn, err := service.adapterConnection(stored)
+	adapterConn, err := service.adapterConnection(context.Background(), stored)
 	if err != nil {
 		t.Fatalf("adapterConnection() error = %v", err)
 	}
@@ -323,14 +333,30 @@ func TestCreateKubeVirtConnectionEncryptsPrometheusTokenAndSanitizesConfig(t *te
 	}
 }
 
+func TestAdapterConnectionPropagatesCredentialCancellation(t *testing.T) {
+	service := MustNew(testDependencies(newMemoryRepo()), map[string]Adapter{}, testPermissions(), nil, Options{
+		CredentialProvider: canceledCredentialProvider{},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := service.adapterConnection(ctx, domainvirtualization.Connection{
+		Provider: ProviderPVE,
+		Config:   map[string]any{"credentialSecretRef": "secret://pve/root"},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("adapterConnection() error = %v, want context.Canceled", err)
+	}
+}
+
 func TestNewServiceNormalizesWorkerRuntimeOptions(t *testing.T) {
 	repo := newMemoryRepo()
-	defaultService := New(repo, map[string]Adapter{ProviderPVE: fakeAdapter{}}, testPermissions(), nil, Options{})
+	defaultService := MustNew(testDependencies(repo), map[string]Adapter{ProviderPVE: fakeAdapter{}}, testPermissions(), nil, Options{})
 	if defaultService.workerInterval != 2*time.Second || defaultService.syncConcurrency != 1 {
 		t.Fatalf("default worker options interval=%s concurrency=%d", defaultService.workerInterval, defaultService.syncConcurrency)
 	}
 
-	customService := New(repo, map[string]Adapter{ProviderPVE: fakeAdapter{}}, testPermissions(), nil, Options{
+	customService := MustNew(testDependencies(repo), map[string]Adapter{ProviderPVE: fakeAdapter{}}, testPermissions(), nil, Options{
 		WorkerInterval:  5 * time.Second,
 		SyncConcurrency: 3,
 	})
@@ -487,34 +513,49 @@ func TestDeleteConnectionForceSnapshotsHistoricalTasks(t *testing.T) {
 	if err := service.DeleteConnection(context.Background(), testPrincipal(), conn.ID, DeleteConnectionOptions{Force: true}); err != nil {
 		t.Fatalf("DeleteConnection(force) error = %v", err)
 	}
-	if _, err := repo.GetConnection(context.Background(), conn.ID); err == nil {
+	assertDeletedConnectionSnapshots(t, repo, conn.ID)
+}
+
+func assertDeletedConnectionSnapshots(t *testing.T, repo *memoryRepo, connectionID string) {
+	t.Helper()
+	if _, err := repo.GetConnection(context.Background(), connectionID); err == nil {
 		t.Fatal("connection still exists after force delete")
 	}
 	task := repo.tasks["task-1"]
-	if task.ConnectionID != "" || task.VMID != "" {
-		t.Fatalf("task foreign keys = connection %q vm %q, want cleared", task.ConnectionID, task.VMID)
-	}
+	expectVirtualization(t, task.ConnectionID == "", "task connection key = %q", task.ConnectionID)
+	expectVirtualization(t, task.VMID == "", "task VM key = %q", task.VMID)
 	connectionSnapshot, ok := task.Result["connectionSnapshot"].(map[string]any)
-	if !ok || connectionSnapshot["endpoint"] != "https://pve.example:8006" || connectionSnapshot["name"] != "pve-a" {
-		t.Fatalf("connection snapshot = %#v", task.Result["connectionSnapshot"])
-	}
+	expectVirtualization(t, ok, "connection snapshot = %#v", task.Result["connectionSnapshot"])
+	expectVirtualization(t, connectionSnapshot["endpoint"] == "https://pve.example:8006", "connection snapshot = %#v", connectionSnapshot)
+	expectVirtualization(t, connectionSnapshot["name"] == "pve-a", "connection snapshot = %#v", connectionSnapshot)
 	vmSnapshot, ok := task.Result["vmSnapshot"].(map[string]any)
-	if !ok || vmSnapshot["externalId"] != "101" || vmSnapshot["nodeName"] != "pve-a" {
-		t.Fatalf("vm snapshot = %#v", task.Result["vmSnapshot"])
-	}
-	if task.Result["existing"] != "kept" || task.Result["connectionDeletedBy"] != testPrincipal().UserID {
-		t.Fatalf("task result metadata = %#v", task.Result)
-	}
+	expectVirtualization(t, ok, "vm snapshot = %#v", task.Result["vmSnapshot"])
+	expectVirtualization(t, vmSnapshot["externalId"] == "101", "vm snapshot = %#v", vmSnapshot)
+	expectVirtualization(t, vmSnapshot["nodeName"] == "pve-a", "vm snapshot = %#v", vmSnapshot)
+	expectVirtualization(t, task.Result["existing"] == "kept", "task result metadata = %#v", task.Result)
+	expectVirtualization(t, task.Result["connectionDeletedBy"] == testPrincipal().UserID, "task result metadata = %#v", task.Result)
 	host := repo.dockerHosts["host-1"]
-	if host.Status != "unavailable" || host.Endpoint != "" || host.AgentID != "" || host.IPAddress != "" || host.ConnectionID != "" || host.VMID != "" || host.VMName != "" {
-		t.Fatalf("docker host after connection delete = %#v", host)
-	}
-	if host.Config["hostProvisionStatus"] != "connection_deleted" || host.Config["hostProvisionStage"] != "connection_deleted" || host.Config["connectionDeletedAt"] == "" {
-		t.Fatalf("docker host config after connection delete = %#v", host.Config)
-	}
+	expectVirtualization(t, host.Status == "unavailable", "docker host after connection delete = %#v", host)
+	expectVirtualization(t, host.Endpoint == "", "docker host endpoint remains: %#v", host)
+	expectVirtualization(t, host.AgentID == "", "docker host agent remains: %#v", host)
+	expectVirtualization(t, host.IPAddress == "", "docker host IP remains: %#v", host)
+	expectVirtualization(t, host.ConnectionID == "", "docker host connection remains: %#v", host)
+	expectVirtualization(t, host.VMID == "", "docker host VM remains: %#v", host)
+	expectVirtualization(t, host.VMName == "", "docker host VM name remains: %#v", host)
+	expectVirtualization(t, host.Config["hostProvisionStatus"] == "connection_deleted", "docker host config = %#v", host.Config)
+	expectVirtualization(t, host.Config["hostProvisionStage"] == "connection_deleted", "docker host config = %#v", host.Config)
+	expectVirtualization(t, host.Config["connectionDeletedAt"] != "", "docker host config = %#v", host.Config)
 	op := repo.dockerOperations["op-1"]
-	if op.Status != TaskStatusCanceled || op.Result["hostProvisionStatus"] != "connection_deleted" || op.Result["hostProvisionStage"] != "connection_deleted" || op.Result["connectionDeletedAt"] == "" {
-		t.Fatalf("docker operation after connection delete = %#v", op)
+	expectVirtualization(t, op.Status == TaskStatusCanceled, "docker operation = %#v", op)
+	expectVirtualization(t, op.Result["hostProvisionStatus"] == "connection_deleted", "docker operation = %#v", op)
+	expectVirtualization(t, op.Result["hostProvisionStage"] == "connection_deleted", "docker operation = %#v", op)
+	expectVirtualization(t, op.Result["connectionDeletedAt"] != "", "docker operation = %#v", op)
+}
+
+func expectVirtualization(t *testing.T, condition bool, format string, args ...any) {
+	t.Helper()
+	if !condition {
+		t.Fatalf(format, args...)
 	}
 }
 
@@ -898,7 +939,7 @@ func TestGetVMMetricsRequiresDedicatedPermission(t *testing.T) {
 	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
 	vm := domainvirtualization.VM{ID: "vm-1", Provider: ProviderKubeVirt, ConnectionID: conn.ID, ExternalID: "vm-1", Name: "vm-1", Namespace: "default", Status: "running"}
 	repo.vms[vm.ID] = vm
-	service := New(repo, map[string]Adapter{ProviderKubeVirt: fakeAdapter{}}, appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{
+	service := MustNew(testDependencies(repo), map[string]Adapter{ProviderKubeVirt: fakeAdapter{}}, appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{
 		"viewer": {appaccess.PermVirtualizationVMsView},
 	}}), nil, Options{})
 
@@ -941,7 +982,7 @@ func TestGetConsoleURLRequiresDedicatedPermission(t *testing.T) {
 	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
 	vm := domainvirtualization.VM{ID: "vm-1", Provider: ProviderKubeVirt, ConnectionID: conn.ID, ExternalID: "vm-1", Name: "vm-1", Namespace: "default", Status: "running"}
 	repo.vms[vm.ID] = vm
-	service := New(repo, map[string]Adapter{ProviderKubeVirt: fakeAdapter{}}, appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{
+	service := MustNew(testDependencies(repo), map[string]Adapter{ProviderKubeVirt: fakeAdapter{}}, appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{
 		"viewer": {appaccess.PermVirtualizationVMsView},
 	}}), nil, Options{})
 
@@ -952,10 +993,24 @@ func TestGetConsoleURLRequiresDedicatedPermission(t *testing.T) {
 }
 
 func newTestService(repo *memoryRepo, ops *captureOperations, adapter Adapter) *Service {
-	return New(repo, map[string]Adapter{
+	return MustNew(testDependencies(repo), map[string]Adapter{
 		ProviderKubeVirt: adapter,
 		ProviderPVE:      adapter,
 	}, testPermissions(), ops, Options{CredentialEncryptionKey: "test-secret"})
+}
+
+func testDependencies(repo *memoryRepo) Dependencies {
+	return Dependencies{
+		Connections:      repo,
+		ConnectionWriter: repo,
+		DockerLinks:      repo,
+		VMs:              repo,
+		Images:           repo,
+		Flavors:          repo,
+		Tasks:            repo,
+		TaskQueue:        repo,
+		TaskLogs:         repo,
+	}
 }
 
 func testPermissions() *appaccess.PermissionResolver {
@@ -994,6 +1049,12 @@ func (r testRoleReader) ListRolePermissions(context.Context) (map[string][]strin
 
 type captureOperations struct {
 	entries []domainoperation.Entry
+}
+
+type canceledCredentialProvider struct{}
+
+func (canceledCredentialProvider) ResolveVirtualizationCredential(ctx context.Context, _ domainvirtualization.Connection) (map[string]any, error) {
+	return nil, ctx.Err()
 }
 
 func (c *captureOperations) Record(_ context.Context, entry domainoperation.Entry) error {
@@ -1070,14 +1131,14 @@ type memoryRepo struct {
 }
 
 type memoryDockerHost struct {
-	Status    string
-	Endpoint  string
-	AgentID   string
-	IPAddress string
+	Status       string
+	Endpoint     string
+	AgentID      string
+	IPAddress    string
 	ConnectionID string
-	VMID      string
-	VMName    string
-	Config    map[string]any
+	VMID         string
+	VMName       string
+	Config       map[string]any
 }
 
 type memoryDockerOperation struct {

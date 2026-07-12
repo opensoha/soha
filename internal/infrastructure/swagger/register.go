@@ -26,7 +26,7 @@ func openAPISpec() gin.H {
 		"openapi": "3.0.3",
 		"info": gin.H{
 			"title":       "soha API",
-			"version":     "0.1.0",
+			"version":     "0.1.2",
 			"description": "soha platform console API surface",
 		},
 		"paths": gin.H{

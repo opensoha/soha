@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,23 +19,44 @@ import (
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
-type IdentityService interface {
+type IdentityAuthService interface {
 	ListProviders(context.Context) []domainidentity.Provider
 	LoginWithPassword(context.Context, string, string) (domainidentity.AuthResult, error)
 	RefreshSession(context.Context, string) (domainidentity.AuthResult, error)
 	Logout(context.Context, string, string) error
 	CurrentPrincipal(context.Context, string) (domainidentity.Principal, error)
+}
+
+type IdentityProfileService interface {
 	CurrentProfile(context.Context, domainidentity.Principal) (domainidentity.UserProfile, error)
 	UpdateCurrentProfile(context.Context, domainidentity.Principal, domainidentity.ProfileUpdate) (domainidentity.UserProfile, error)
 	ChangeCurrentPassword(context.Context, domainidentity.Principal, domainidentity.PasswordChange) error
+}
+
+type IdentityFederationService interface {
 	BeginOIDCLogin(context.Context, string) (string, error)
 	BeginProviderLogin(context.Context, string, string) (string, error)
+	BeginProviderLink(context.Context, domainidentity.Principal, string, string) (string, error)
 	HandleOIDCCallback(context.Context, string, string) (string, error)
 	HandleProviderCallback(context.Context, string, string, string) (string, error)
 	ConsumeOIDCExchange(context.Context, string) (domainidentity.AuthResult, error)
+}
+
+type IdentitySessionService interface {
 	ListActiveSessions(context.Context, domainidentity.Principal, int) ([]domainidentity.SessionRecord, error)
 	RevokeSessionByID(context.Context, domainidentity.Principal, string) error
+}
+
+type IdentityStreamTicketService interface {
 	IssueStreamTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error)
+}
+
+type IdentityService interface {
+	IdentityAuthService
+	IdentityProfileService
+	IdentityFederationService
+	IdentitySessionService
+	IdentityStreamTicketService
 }
 
 type AuthBootstrapAccessService interface {
@@ -106,7 +128,11 @@ type proLoginResponse struct {
 const refreshCookieName = "soha_refresh_token"
 
 type AuthHandler struct {
-	identity            IdentityService
+	auth                IdentityAuthService
+	profile             IdentityProfileService
+	federation          IdentityFederationService
+	sessions            IdentitySessionService
+	streamTickets       IdentityStreamTicketService
 	access              AuthBootstrapAccessService
 	settings            AuthBootstrapSettingsService
 	loginOptions        dto.LoginOptionsResponse
@@ -114,12 +140,20 @@ type AuthHandler struct {
 }
 
 func NewAuthHandler(identity IdentityService, access AuthBootstrapAccessService, settings AuthBootstrapSettingsService, authCfg cfgpkg.AuthConfig) *AuthHandler {
+	return NewAuthHandlerWithServices(identity, identity, identity, identity, identity, access, settings, authCfg)
+}
+
+func NewAuthHandlerWithServices(auth IdentityAuthService, profile IdentityProfileService, federation IdentityFederationService, sessions IdentitySessionService, streamTickets IdentityStreamTicketService, access AuthBootstrapAccessService, settings AuthBootstrapSettingsService, authCfg cfgpkg.AuthConfig) *AuthHandler {
 	refreshCookieMaxAge := int(authCfg.JWT.RefreshTTL / time.Second)
 	if refreshCookieMaxAge <= 0 {
 		refreshCookieMaxAge = int((7 * 24 * time.Hour) / time.Second)
 	}
 	return &AuthHandler{
-		identity:            identity,
+		auth:                auth,
+		profile:             profile,
+		federation:          federation,
+		sessions:            sessions,
+		streamTickets:       streamTickets,
 		access:              access,
 		settings:            settings,
 		refreshCookieMaxAge: refreshCookieMaxAge,
@@ -153,7 +187,7 @@ func (h *AuthHandler) setProtocolAccessCookie(c *gin.Context, result domainident
 		return
 	}
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(apiMiddleware.ProtocolAccessCookieName, accessToken, maxAge, "/", "", requestIsHTTPS(c), true)
+	c.SetCookie(apiMiddleware.ProtocolAccessCookieName, accessToken, maxAge, "/", "", authRequestIsHTTPS(c), true)
 }
 
 func (h *AuthHandler) setAuthCookies(c *gin.Context, result domainidentity.AuthResult) {
@@ -168,12 +202,16 @@ func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
 
 func (h *AuthHandler) clearProtocolAccessCookie(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(apiMiddleware.ProtocolAccessCookieName, "", -1, "/", "", requestIsHTTPS(c), true)
+	c.SetCookie(apiMiddleware.ProtocolAccessCookieName, "", -1, "/", "", authRequestIsHTTPS(c), true)
 }
 
 func (h *AuthHandler) clearAuthCookies(c *gin.Context) {
 	h.clearRefreshCookie(c)
 	h.clearProtocolAccessCookie(c)
+}
+
+func authRequestIsHTTPS(c *gin.Context) bool {
+	return c.Request.TLS != nil || strings.EqualFold(strings.TrimSpace(c.GetHeader("X-Forwarded-Proto")), "https")
 }
 
 func refreshTokenFromRequest(c *gin.Context, bodyValue string) string {
@@ -188,11 +226,15 @@ func refreshTokenFromRequest(c *gin.Context, bodyValue string) string {
 }
 
 func (h *AuthHandler) ListProviders(c *gin.Context) {
-	apiresponse.Items(c, http.StatusOK, h.identity.ListProviders(c.Request.Context()))
+	apiresponse.Items(c, http.StatusOK, h.auth.ListProviders(c.Request.Context()))
 }
 
 func (h *AuthHandler) LoginOptions(c *gin.Context) {
-	apiresponse.Item(c, http.StatusOK, h.loginOptions)
+	options := h.loginOptions
+	options.LocalPasswordLoginEnabled = slices.ContainsFunc(h.auth.ListProviders(c.Request.Context()), func(provider domainidentity.Provider) bool {
+		return provider.Type == "password" && provider.Enabled
+	})
+	apiresponse.Item(c, http.StatusOK, options)
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -201,7 +243,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid login payload")
 		return
 	}
-	result, err := h.identity.LoginWithPassword(c.Request.Context(), req.Login, req.Password)
+	result, err := h.auth.LoginWithPassword(c.Request.Context(), req.Login, req.Password)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -220,7 +262,7 @@ func (h *AuthHandler) ProLogin(c *gin.Context) {
 	if login == "" {
 		login = strings.TrimSpace(req.Login)
 	}
-	result, err := h.identity.LoginWithPassword(c.Request.Context(), login, req.Password)
+	result, err := h.auth.LoginWithPassword(c.Request.Context(), login, req.Password)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -251,7 +293,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "refresh token is required")
 		return
 	}
-	result, err := h.identity.RefreshSession(c.Request.Context(), refreshToken)
+	result, err := h.auth.RefreshSession(c.Request.Context(), refreshToken)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -263,7 +305,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 func (h *AuthHandler) Logout(c *gin.Context) {
 	var req dto.LogoutRequest
 	_ = c.ShouldBindJSON(&req)
-	if err := h.identity.Logout(c.Request.Context(), apiMiddleware.BearerTokenFromContext(c), refreshTokenFromRequest(c, req.RefreshToken)); err != nil {
+	if err := h.auth.Logout(c.Request.Context(), apiMiddleware.BearerTokenFromContext(c), refreshTokenFromRequest(c, req.RefreshToken)); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -274,7 +316,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 func (h *AuthHandler) ProLogout(c *gin.Context) {
 	var req dto.LogoutRequest
 	_ = c.ShouldBindJSON(&req)
-	if err := h.identity.Logout(c.Request.Context(), apiMiddleware.BearerTokenFromContext(c), refreshTokenFromRequest(c, req.RefreshToken)); err != nil {
+	if err := h.auth.Logout(c.Request.Context(), apiMiddleware.BearerTokenFromContext(c), refreshTokenFromRequest(c, req.RefreshToken)); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -284,7 +326,7 @@ func (h *AuthHandler) ProLogout(c *gin.Context) {
 
 func (h *AuthHandler) Me(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	current, err := h.identity.CurrentPrincipal(c.Request.Context(), principal.UserID)
+	current, err := h.auth.CurrentPrincipal(c.Request.Context(), principal.UserID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -294,7 +336,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 
 func (h *AuthHandler) Profile(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	profile, err := h.identity.CurrentProfile(c.Request.Context(), principal)
+	profile, err := h.profile.CurrentProfile(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -309,7 +351,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	profile, err := h.identity.UpdateCurrentProfile(c.Request.Context(), principal, domainidentity.ProfileUpdate{
+	profile, err := h.profile.UpdateCurrentProfile(c.Request.Context(), principal, domainidentity.ProfileUpdate{
 		DisplayName: req.DisplayName,
 		Email:       req.Email,
 		Phone:       req.Phone,
@@ -330,7 +372,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.identity.ChangeCurrentPassword(c.Request.Context(), principal, domainidentity.PasswordChange{
+	if err := h.profile.ChangeCurrentPassword(c.Request.Context(), principal, domainidentity.PasswordChange{
 		CurrentPassword: req.CurrentPassword,
 		NewPassword:     req.NewPassword,
 	}); err != nil {
@@ -342,7 +384,7 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 func (h *AuthHandler) ProCurrentUser(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	current, err := h.identity.CurrentPrincipal(c.Request.Context(), principal.UserID)
+	current, err := h.auth.CurrentPrincipal(c.Request.Context(), principal.UserID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -352,7 +394,7 @@ func (h *AuthHandler) ProCurrentUser(c *gin.Context) {
 
 func (h *AuthHandler) Bootstrap(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	current, err := h.identity.CurrentPrincipal(c.Request.Context(), principal.UserID)
+	current, err := h.auth.CurrentPrincipal(c.Request.Context(), principal.UserID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -394,7 +436,7 @@ func (h *AuthHandler) IssueStreamTicket(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid stream ticket payload")
 		return
 	}
-	item, err := h.identity.IssueStreamTicket(
+	item, err := h.streamTickets.IssueStreamTicket(
 		c.Request.Context(),
 		apiMiddleware.PrincipalFromContext(c),
 		apiMiddleware.AccessContextFromContext(c),
@@ -408,7 +450,7 @@ func (h *AuthHandler) IssueStreamTicket(c *gin.Context) {
 }
 
 func (h *AuthHandler) OIDCLogin(c *gin.Context) {
-	loginURL, err := h.identity.BeginOIDCLogin(c.Request.Context(), c.Query("return_to"))
+	loginURL, err := h.federation.BeginOIDCLogin(c.Request.Context(), c.Query("return_to"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -417,7 +459,7 @@ func (h *AuthHandler) OIDCLogin(c *gin.Context) {
 }
 
 func (h *AuthHandler) OIDCCallback(c *gin.Context) {
-	redirectURL, err := h.identity.HandleOIDCCallback(c.Request.Context(), c.Query("state"), c.Query("code"))
+	redirectURL, err := h.federation.HandleOIDCCallback(c.Request.Context(), c.Query("state"), c.Query("code"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -431,7 +473,7 @@ func (h *AuthHandler) OIDCExchange(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oidc exchange payload")
 		return
 	}
-	result, err := h.identity.ConsumeOIDCExchange(c.Request.Context(), req.Code)
+	result, err := h.federation.ConsumeOIDCExchange(c.Request.Context(), req.Code)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -441,7 +483,7 @@ func (h *AuthHandler) OIDCExchange(c *gin.Context) {
 }
 
 func (h *AuthHandler) ProviderLogin(c *gin.Context) {
-	loginURL, err := h.identity.BeginProviderLogin(c.Request.Context(), c.Param("providerID"), c.Query("return_to"))
+	loginURL, err := h.federation.BeginProviderLogin(c.Request.Context(), c.Param("providerID"), c.Query("return_to"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -449,8 +491,17 @@ func (h *AuthHandler) ProviderLogin(c *gin.Context) {
 	c.Redirect(http.StatusTemporaryRedirect, loginURL)
 }
 
+func (h *AuthHandler) ProviderLink(c *gin.Context) {
+	loginURL, err := h.federation.BeginProviderLink(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("providerID"), c.Query("return_to"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, gin.H{"url": loginURL})
+}
+
 func (h *AuthHandler) ProviderCallback(c *gin.Context) {
-	redirectURL, err := h.identity.HandleProviderCallback(c.Request.Context(), c.Param("providerID"), c.Query("state"), c.Query("code"))
+	redirectURL, err := h.federation.HandleProviderCallback(c.Request.Context(), c.Param("providerID"), c.Query("state"), c.Query("code"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -461,7 +512,7 @@ func (h *AuthHandler) ProviderCallback(c *gin.Context) {
 func (h *AuthHandler) ListSessions(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	limit := 100
-	items, err := h.identity.ListActiveSessions(c.Request.Context(), principal, limit)
+	items, err := h.sessions.ListActiveSessions(c.Request.Context(), principal, limit)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -471,7 +522,7 @@ func (h *AuthHandler) ListSessions(c *gin.Context) {
 
 func (h *AuthHandler) RevokeSession(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.identity.RevokeSessionByID(c.Request.Context(), principal, c.Param("sessionID")); err != nil {
+	if err := h.sessions.RevokeSessionByID(c.Request.Context(), principal, c.Param("sessionID")); err != nil {
 		writeError(c, err)
 		return
 	}

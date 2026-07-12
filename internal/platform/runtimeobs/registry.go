@@ -10,6 +10,7 @@ const (
 	ComponentWorkflowRunner       = "workflow_runner"
 	ComponentCopilotInspection    = "copilot_inspection"
 	ComponentVirtualizationWorker = "virtualization_worker"
+	ComponentDirectorySync        = "directory_sync"
 )
 
 const (
@@ -38,6 +39,7 @@ type Snapshot struct {
 	WorkflowRunner       ComponentSnapshot `json:"workflowRunner"`
 	CopilotInspection    ComponentSnapshot `json:"copilotInspection"`
 	VirtualizationWorker ComponentSnapshot `json:"virtualizationWorker"`
+	DirectorySync        ComponentSnapshot `json:"directorySync"`
 }
 
 type Registry struct {
@@ -109,6 +111,8 @@ func (r *Registry) component(name string) *ComponentSnapshot {
 		return &r.snapshot.CopilotInspection
 	case ComponentVirtualizationWorker:
 		return &r.snapshot.VirtualizationWorker
+	case ComponentDirectorySync:
+		return &r.snapshot.DirectorySync
 	default:
 		return &r.snapshot.WorkflowRunner
 	}

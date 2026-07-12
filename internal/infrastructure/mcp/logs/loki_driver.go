@@ -16,6 +16,18 @@ type lokiDriver struct {
 	http *http.Client
 }
 
+type lokiQueryRangePayload struct {
+	Status string `json:"status"`
+	Data   struct {
+		Result []lokiStreamResult `json:"result"`
+	} `json:"data"`
+}
+
+type lokiStreamResult struct {
+	Stream map[string]string `json:"stream"`
+	Values [][]string        `json:"values"`
+}
+
 func newLokiDriver() Driver {
 	return lokiDriver{http: &http.Client{Timeout: 8 * time.Second}}
 }
@@ -75,24 +87,41 @@ func (d lokiDriver) Correlate(ctx context.Context, sourceID string, config map[s
 	if err != nil {
 		return CorrelationResult{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return CorrelationResult{}, fmt.Errorf("loki correlate failed with status %d", resp.StatusCode)
 	}
-	var payload struct {
-		Status string `json:"status"`
-		Data   struct {
-			Result []struct {
-				Stream map[string]string `json:"stream"`
-				Values [][]string        `json:"values"`
-			} `json:"result"`
-		} `json:"data"`
-	}
+	var payload lokiQueryRangePayload
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return CorrelationResult{ErrorKind: "decode_failed"}, fmt.Errorf("decode loki correlate response: %w", err)
 	}
+	records := lokiRecords(payload.Data.Result, labelKeys, limit)
+	signatures := summarizeSignatures(records)
+	summary := "no correlated logs found"
+	if len(records) > 0 {
+		summary = fmt.Sprintf("%d correlated logs found", len(records))
+	}
+	return CorrelationResult{
+		SourceID:   sourceID,
+		Summary:    summary,
+		Records:    records,
+		Signatures: signatures,
+		Truncated:  len(records) >= limit,
+		QueryCost: map[string]any{
+			"backendType": "loki",
+			"limit":       limit,
+			"recordCount": len(records),
+		},
+		SampleWindow: map[string]any{
+			"timeFrom": query.TimeFrom.Format(time.RFC3339),
+			"timeTo":   query.TimeTo.Format(time.RFC3339),
+		},
+	}, nil
+}
+
+func lokiRecords(streams []lokiStreamResult, labelKeys map[string]string, limit int) []Record {
 	records := make([]Record, 0)
-	for _, stream := range payload.Data.Result {
+	for _, stream := range streams {
 		for _, value := range stream.Values {
 			if len(value) < 2 {
 				continue
@@ -122,27 +151,7 @@ func (d lokiDriver) Correlate(ctx context.Context, sourceID string, config map[s
 	if len(records) > limit {
 		records = records[:limit]
 	}
-	signatures := summarizeSignatures(records)
-	summary := "no correlated logs found"
-	if len(records) > 0 {
-		summary = fmt.Sprintf("%d correlated logs found", len(records))
-	}
-	return CorrelationResult{
-		SourceID:   sourceID,
-		Summary:    summary,
-		Records:    records,
-		Signatures: signatures,
-		Truncated:  len(records) >= limit,
-		QueryCost: map[string]any{
-			"backendType": "loki",
-			"limit":       limit,
-			"recordCount": len(records),
-		},
-		SampleWindow: map[string]any{
-			"timeFrom": query.TimeFrom.Format(time.RFC3339),
-			"timeTo":   query.TimeTo.Format(time.RFC3339),
-		},
-	}, nil
+	return records
 }
 
 func buildLokiCorrelationQuery(query CorrelationQuery, labelKeys map[string]string) string {

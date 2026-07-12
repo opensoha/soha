@@ -12,7 +12,7 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
-func (s *Service) GetNetworkTopology(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (domainresource.NetworkTopologyView, error) {
+func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (domainresource.NetworkTopologyView, error) {
 	view := domainresource.NetworkTopologyView{
 		ClusterID:   clusterID,
 		Namespace:   namespace,
@@ -50,7 +50,7 @@ func (s *Service) GetNetworkTopology(ctx context.Context, principal domainidenti
 	}
 
 	run(func() error {
-		items, err := s.ListServices(ctx, principal, clusterID, namespace)
+		items, err := n.ListServices(ctx, principal, clusterID, namespace)
 		mu.Lock()
 		view.Services = items
 		mu.Unlock()
@@ -58,7 +58,7 @@ func (s *Service) GetNetworkTopology(ctx context.Context, principal domainidenti
 		return err
 	})
 	run(func() error {
-		items, err := s.ListIngresses(ctx, principal, clusterID, namespace)
+		items, err := n.ListIngresses(ctx, principal, clusterID, namespace)
 		mu.Lock()
 		view.Ingresses = items
 		mu.Unlock()
@@ -66,7 +66,7 @@ func (s *Service) GetNetworkTopology(ctx context.Context, principal domainidenti
 		return err
 	})
 	run(func() error {
-		items, err := s.ListHTTPRoutes(ctx, principal, clusterID, namespace)
+		items, err := n.ListHTTPRoutes(ctx, principal, clusterID, namespace)
 		mu.Lock()
 		view.HTTPRoutes = items
 		mu.Unlock()
@@ -74,7 +74,7 @@ func (s *Service) GetNetworkTopology(ctx context.Context, principal domainidenti
 		return err
 	})
 	run(func() error {
-		items, err := s.ListGateways(ctx, principal, clusterID, namespace)
+		items, err := n.ListGateways(ctx, principal, clusterID, namespace)
 		mu.Lock()
 		view.Gateways = items
 		mu.Unlock()
@@ -82,7 +82,7 @@ func (s *Service) GetNetworkTopology(ctx context.Context, principal domainidenti
 		return err
 	})
 	run(func() error {
-		items, err := s.ListPods(ctx, principal, clusterID, namespace)
+		items, err := n.pods.ListPods(ctx, principal, clusterID, namespace)
 		mu.Lock()
 		view.Pods = items
 		mu.Unlock()
@@ -115,184 +115,88 @@ func buildNetworkTopologyTraces(services []domainresource.ServiceView, ingresses
 	referencedGateways := make(map[string]struct{})
 	traces := make([]domainresource.NetworkTopologyTraceView, 0, len(ingresses)+len(httpRoutes)+len(gateways))
 
+	traces = append(traces, buildIngressTopologyTraces(ingresses, serviceLookup, podsByNamespace)...)
+
+	traces = append(traces, buildHTTPRouteTopologyTraces(httpRoutes, gatewayRefs, referencedGateways, serviceLookup, podsByNamespace)...)
+
+	traces = append(traces, buildUnboundGatewayTopologyTraces(gatewayRefs, referencedGateways)...)
+
+	sort.SliceStable(traces, func(i, j int) bool { return traces[i].ID < traces[j].ID })
+	return traces
+}
+
+func buildIngressTopologyTraces(ingresses []domainresource.IngressView, services map[string]domainresource.ServiceView, pods map[string][]domainresource.PodView) []domainresource.NetworkTopologyTraceView {
+	var traces []domainresource.NetworkTopologyTraceView
 	for _, ingress := range ingresses {
-		route := topologyNode(
-			fmt.Sprintf("ingress-route:%s/%s", ingress.Namespace, ingress.Name),
-			ingress.Name,
-			"ingress-route",
-			"live",
-			ingress.Namespace,
-			ingress.Name,
-			ingress.Namespace,
-			firstNonEmpty(ingress.ClassName, "Ingress"),
-		)
+		route := topologyNode(fmt.Sprintf("ingress-route:%s/%s", ingress.Namespace, ingress.Name), ingress.Name, "ingress-route", "live", ingress.Namespace, ingress.Name, ingress.Namespace, firstNonEmpty(ingress.ClassName, "Ingress"))
 		entries := firstNonEmptyStrings(ingress.Hosts, splitTopologyCSV(ingress.Address), []string{ingress.Name})
 		backends := uniqueNonEmptySorted(ingress.BackendServices)
 		for _, entryLabel := range entries {
-			entry := topologyNode(
-				fmt.Sprintf("entry:ingress:%s/%s/%s", ingress.Namespace, ingress.Name, entryLabel),
-				entryLabel,
-				"entry",
-				"live",
-				ingress.Namespace,
-				ingress.Name,
-				ingress.Namespace,
-				firstNonEmpty(ingress.ClassName, "Ingress"),
-			)
+			entry := topologyNode(fmt.Sprintf("entry:ingress:%s/%s/%s", ingress.Namespace, ingress.Name, entryLabel), entryLabel, "entry", "live", ingress.Namespace, ingress.Name, ingress.Namespace, firstNonEmpty(ingress.ClassName, "Ingress"))
 			if len(backends) == 0 {
-				service := topologyNode(
-					fmt.Sprintf("missing-service:%s/%s:no-backend", ingress.Namespace, ingress.Name),
-					"No backend service",
-					"missing-service",
-					"pending",
-					ingress.Namespace,
-					"",
-					ingress.Namespace,
-					"Backend pending",
-				)
-				traces = append(traces, domainresource.NetworkTopologyTraceView{
-					ID:         fmt.Sprintf("%s:%s:no-backend", entry.ID, route.ID),
-					SourceType: "ingress",
-					State:      "pending",
-					Entry:      entry,
-					Route:      route,
-					Service:    &service,
-					Note:       "Ingress has no resolved backend service.",
-				})
+				missing := topologyNode(fmt.Sprintf("missing-service:%s/%s:no-backend", ingress.Namespace, ingress.Name), "No backend service", "missing-service", "pending", ingress.Namespace, "", ingress.Namespace, "Backend pending")
+				traces = append(traces, domainresource.NetworkTopologyTraceView{ID: fmt.Sprintf("%s:%s:no-backend", entry.ID, route.ID), SourceType: "ingress", State: "pending", Entry: entry, Route: route, Service: &missing, Note: "Ingress has no resolved backend service."})
 				continue
 			}
 			for _, serviceName := range backends {
-				service, backendPods, state, note := resolveTopologyService(ingress.Namespace, serviceName, serviceLookup, podsByNamespace)
-				traces = append(traces, domainresource.NetworkTopologyTraceView{
-					ID:          fmt.Sprintf("%s:%s:%s", entry.ID, route.ID, serviceName),
-					SourceType:  "ingress",
-					State:       state,
-					Entry:       entry,
-					Route:       route,
-					Service:     service,
-					BackendPods: backendPods,
-					Note:        note,
-				})
+				service, backendPods, state, note := resolveTopologyService(ingress.Namespace, serviceName, services, pods)
+				traces = append(traces, domainresource.NetworkTopologyTraceView{ID: fmt.Sprintf("%s:%s:%s", entry.ID, route.ID, serviceName), SourceType: "ingress", State: state, Entry: entry, Route: route, Service: service, BackendPods: backendPods, Note: note})
 			}
 		}
 	}
+	return traces
+}
 
-	for _, routeItem := range httpRoutes {
+func buildHTTPRouteTopologyTraces(routes []domainresource.HTTPRouteView, gateways map[string]topologyGatewayRef, referenced map[string]struct{}, services map[string]domainresource.ServiceView, pods map[string][]domainresource.PodView) []domainresource.NetworkTopologyTraceView {
+	var traces []domainresource.NetworkTopologyTraceView
+	for _, routeItem := range routes {
 		parents := uniqueNonEmptySorted(routeItem.ParentRefs)
 		for _, parentRef := range parents {
-			referencedGateways[parentRef] = struct{}{}
+			referenced[parentRef] = struct{}{}
 		}
 		if len(parents) == 0 {
 			parents = []string{fmt.Sprintf("unbound:%s/%s", routeItem.Namespace, routeItem.Name)}
 		}
 		backends := uniqueNonEmptySorted(routeItem.BackendServices)
-		routeNode := topologyNode(
-			fmt.Sprintf("http-route:%s/%s", routeItem.Namespace, routeItem.Name),
-			routeItem.Name,
-			"http-route",
-			"live",
-			routeItem.Namespace,
-			routeItem.Name,
-			strings.Join(firstNonEmptyStrings(routeItem.Hostnames, nil, []string{routeItem.Namespace}), ", "),
-			"HTTPRoute",
-		)
+		routeNode := topologyNode(fmt.Sprintf("http-route:%s/%s", routeItem.Namespace, routeItem.Name), routeItem.Name, "http-route", "live", routeItem.Namespace, routeItem.Name, strings.Join(firstNonEmptyStrings(routeItem.Hostnames, nil, []string{routeItem.Namespace}), ", "), "HTTPRoute")
 		for _, parentRef := range parents {
-			parent := resolveTopologyGatewayRef(parentRef, routeItem.Namespace, gatewayRefs)
+			parent := resolveTopologyGatewayRef(parentRef, routeItem.Namespace, gateways)
 			entries := firstNonEmptyStrings(routeItem.Hostnames, splitTopologyCSV(parent.AddressSummary), []string{parent.Name})
 			entryState := "live"
 			if !parent.Visible {
 				entryState = "pending"
 			}
 			for _, entryLabel := range entries {
-				entry := topologyNode(
-					fmt.Sprintf("entry:gateway:%s/%s", parent.ID, entryLabel),
-					entryLabel,
-					"entry",
-					entryState,
-					parent.Namespace,
-					parent.Name,
-					parent.Namespace,
-					firstNonEmpty(parent.GatewayClass, "Gateway API"),
-				)
+				entry := topologyNode(fmt.Sprintf("entry:gateway:%s/%s", parent.ID, entryLabel), entryLabel, "entry", entryState, parent.Namespace, parent.Name, parent.Namespace, firstNonEmpty(parent.GatewayClass, "Gateway API"))
 				if len(backends) == 0 {
-					service := topologyNode(
-						fmt.Sprintf("missing-service:%s/%s:no-backend", routeItem.Namespace, routeItem.Name),
-						"No backend service",
-						"missing-service",
-						"pending",
-						routeItem.Namespace,
-						"",
-						routeItem.Namespace,
-						"Backend pending",
-					)
-					traces = append(traces, domainresource.NetworkTopologyTraceView{
-						ID:         fmt.Sprintf("%s:%s:no-backend", entry.ID, routeNode.ID),
-						SourceType: "httproute",
-						State:      "pending",
-						Entry:      entry,
-						Route:      routeNode,
-						Service:    &service,
-						Note:       joinTopologyNotes("HTTPRoute has no resolved backend service.", invisibleGatewayNote(parent)),
-					})
+					missing := topologyNode(fmt.Sprintf("missing-service:%s/%s:no-backend", routeItem.Namespace, routeItem.Name), "No backend service", "missing-service", "pending", routeItem.Namespace, "", routeItem.Namespace, "Backend pending")
+					traces = append(traces, domainresource.NetworkTopologyTraceView{ID: fmt.Sprintf("%s:%s:no-backend", entry.ID, routeNode.ID), SourceType: "httproute", State: "pending", Entry: entry, Route: routeNode, Service: &missing, Note: joinTopologyNotes("HTTPRoute has no resolved backend service.", invisibleGatewayNote(parent))})
 					continue
 				}
 				for _, serviceName := range backends {
-					service, backendPods, state, note := resolveTopologyService(routeItem.Namespace, serviceName, serviceLookup, podsByNamespace)
+					service, backendPods, state, note := resolveTopologyService(routeItem.Namespace, serviceName, services, pods)
 					if !parent.Visible {
-						state = "pending"
-						note = joinTopologyNotes(note, invisibleGatewayNote(parent))
+						state, note = "pending", joinTopologyNotes(note, invisibleGatewayNote(parent))
 					}
-					traces = append(traces, domainresource.NetworkTopologyTraceView{
-						ID:          fmt.Sprintf("%s:%s:%s", entry.ID, routeNode.ID, serviceName),
-						SourceType:  "httproute",
-						State:       state,
-						Entry:       entry,
-						Route:       routeNode,
-						Service:     service,
-						BackendPods: backendPods,
-						Note:        note,
-					})
+					traces = append(traces, domainresource.NetworkTopologyTraceView{ID: fmt.Sprintf("%s:%s:%s", entry.ID, routeNode.ID, serviceName), SourceType: "httproute", State: state, Entry: entry, Route: routeNode, Service: service, BackendPods: backendPods, Note: note})
 				}
 			}
 		}
 	}
+	return traces
+}
 
-	for _, gateway := range gatewayRefs {
-		if _, ok := referencedGateways[gateway.ID]; ok {
+func buildUnboundGatewayTopologyTraces(gateways map[string]topologyGatewayRef, referenced map[string]struct{}) []domainresource.NetworkTopologyTraceView {
+	var traces []domainresource.NetworkTopologyTraceView
+	for _, gateway := range gateways {
+		if _, ok := referenced[gateway.ID]; ok {
 			continue
 		}
-		entryName := firstNonEmpty(gateway.AddressSummary, gateway.Name)
-		entry := topologyNode(
-			fmt.Sprintf("entry:pending-gateway:%s", gateway.ID),
-			entryName,
-			"entry",
-			"pending",
-			gateway.Namespace,
-			gateway.Name,
-			gateway.Namespace,
-			firstNonEmpty(gateway.GatewayClass, "Gateway API"),
-		)
-		route := topologyNode(
-			fmt.Sprintf("pending-route:%s", gateway.ID),
-			"HTTPRoute pending",
-			"pending-route",
-			"pending",
-			gateway.Namespace,
-			gateway.Name,
-			gateway.Name,
-			firstNonEmpty(gateway.GatewayClass, "Gateway API"),
-		)
-		traces = append(traces, domainresource.NetworkTopologyTraceView{
-			ID:         fmt.Sprintf("pending-gateway:%s", gateway.ID),
-			SourceType: "gateway",
-			State:      "pending",
-			Entry:      entry,
-			Route:      route,
-			Note:       "Gateway has no visible HTTPRoute binding.",
-		})
+		class := firstNonEmpty(gateway.GatewayClass, "Gateway API")
+		entry := topologyNode(fmt.Sprintf("entry:pending-gateway:%s", gateway.ID), firstNonEmpty(gateway.AddressSummary, gateway.Name), "entry", "pending", gateway.Namespace, gateway.Name, gateway.Namespace, class)
+		route := topologyNode(fmt.Sprintf("pending-route:%s", gateway.ID), "HTTPRoute pending", "pending-route", "pending", gateway.Namespace, gateway.Name, gateway.Name, class)
+		traces = append(traces, domainresource.NetworkTopologyTraceView{ID: fmt.Sprintf("pending-gateway:%s", gateway.ID), SourceType: "gateway", State: "pending", Entry: entry, Route: route, Note: "Gateway has no visible HTTPRoute binding."})
 	}
-
-	sort.SliceStable(traces, func(i, j int) bool { return traces[i].ID < traces[j].ID })
 	return traces
 }
 

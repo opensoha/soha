@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -13,10 +14,10 @@ import (
 	"github.com/gorilla/websocket"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
-	"k8s.io/client-go/tools/remotecommand"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
-func (h *PlatformHandler) StreamPodLogs(c *gin.Context) {
+func (h *podStreamResourceHandler) StreamPodLogs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	container := c.Query("container")
@@ -63,7 +64,7 @@ func (h *PlatformHandler) StreamPodLogs(c *gin.Context) {
 	}
 }
 
-func (h *PlatformHandler) streamPodLogsWithReconnect(
+func (h *podStreamResourceHandler) streamPodLogsWithReconnect(
 	ctx context.Context,
 	principal domainidentity.Principal,
 	clusterID, namespace, podName, container string,
@@ -73,7 +74,7 @@ func (h *PlatformHandler) streamPodLogsWithReconnect(
 	currentTailLines := tailLines
 	connectedOnce := false
 	for {
-		err := h.resources.StreamPodLogs(
+		err := h.service.StreamPodLogs(
 			ctx,
 			principal,
 			clusterID,
@@ -103,7 +104,7 @@ func (h *PlatformHandler) streamPodLogsWithReconnect(
 	}
 }
 
-func (h *PlatformHandler) StreamPodTerminal(c *gin.Context) {
+func (h *podStreamResourceHandler) StreamPodTerminal(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	container := c.Query("container")
@@ -116,7 +117,7 @@ func (h *PlatformHandler) StreamPodTerminal(c *gin.Context) {
 	defer session.Close()
 
 	stdinReader, stdinWriter := io.Pipe()
-	defer stdinWriter.Close()
+	defer func() { _ = stdinWriter.Close() }()
 	sizeQueue := newTerminalSizeQueue()
 	defer sizeQueue.Close()
 
@@ -127,7 +128,7 @@ func (h *PlatformHandler) StreamPodTerminal(c *gin.Context) {
 
 	streamErrCh := make(chan error, 1)
 	go func() {
-		streamErrCh <- h.resources.StreamPodTerminal(
+		streamErrCh <- h.service.StreamPodTerminal(
 			session.Context(),
 			principal,
 			c.Param("clusterID"),
@@ -190,6 +191,7 @@ func newWebSocketStreamSession(c *gin.Context) (*websocketStreamSession, error) 
 	if err != nil {
 		return nil, err
 	}
+	configureWebSocketReadLimit(conn)
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	return &websocketStreamSession{conn: conn, ctx: ctx, cancel: cancel}, nil
 }
@@ -320,15 +322,15 @@ func (w *logStreamWriter) Write(p []byte) (int, error) {
 }
 
 type terminalSizeQueue struct {
-	ch   chan remotecommand.TerminalSize
+	ch   chan domainresource.TerminalSize
 	once sync.Once
 }
 
 func newTerminalSizeQueue() *terminalSizeQueue {
-	return &terminalSizeQueue{ch: make(chan remotecommand.TerminalSize, 1)}
+	return &terminalSizeQueue{ch: make(chan domainresource.TerminalSize, 1)}
 }
 
-func (q *terminalSizeQueue) Next() *remotecommand.TerminalSize {
+func (q *terminalSizeQueue) Next() *domainresource.TerminalSize {
 	size, ok := <-q.ch
 	if !ok {
 		return nil
@@ -337,10 +339,10 @@ func (q *terminalSizeQueue) Next() *remotecommand.TerminalSize {
 }
 
 func (q *terminalSizeQueue) Push(cols, rows int) {
-	if cols <= 0 || rows <= 0 {
+	if cols <= 0 || rows <= 0 || cols > math.MaxUint16 || rows > math.MaxUint16 {
 		return
 	}
-	size := remotecommand.TerminalSize{Width: uint16(cols), Height: uint16(rows)}
+	size := domainresource.TerminalSize{Width: uint16(cols), Height: uint16(rows)}
 	select {
 	case q.ch <- size:
 	default:

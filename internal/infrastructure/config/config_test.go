@@ -14,7 +14,7 @@ import (
 func TestResolveMigrationPathUsesDriverDirectoryForMigrationRoot(t *testing.T) {
 	root := t.TempDir()
 	postgresDir := filepath.Join(root, "postgres")
-	if err := os.MkdirAll(postgresDir, 0o755); err != nil {
+	if err := os.MkdirAll(postgresDir, 0o750); err != nil {
 		t.Fatalf("mkdir postgres dir: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(postgresDir, "0001_init.sql"), []byte("-- init"), 0o600); err != nil {
@@ -34,10 +34,10 @@ func TestResolveMigrationPathKeepsLegacySingleFileRedirect(t *testing.T) {
 	root := t.TempDir()
 	legacyPath := filepath.Join(root, "migrations", "0001_init.sql")
 	postgresDir := filepath.Join(root, "migrations", "postgres")
-	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o750); err != nil {
 		t.Fatalf("mkdir legacy dir: %v", err)
 	}
-	if err := os.MkdirAll(postgresDir, 0o755); err != nil {
+	if err := os.MkdirAll(postgresDir, 0o750); err != nil {
 		t.Fatalf("mkdir postgres dir: %v", err)
 	}
 	if err := os.WriteFile(legacyPath, []byte("-- legacy"), 0o600); err != nil {
@@ -93,6 +93,17 @@ func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
 	}
 	if cfg.Logger.Level != "info" {
 		t.Fatalf("logger level default = %q, want info", cfg.Logger.Level)
+	}
+	if cfg.Database.Password != "pgsql" {
+		t.Fatalf("database password default = %q, want pgsql", cfg.Database.Password)
+	}
+	if cfg.Auth.DevPrincipal.Password != "opensoha" {
+		t.Fatalf("bootstrap administrator password default = %q, want opensoha", cfg.Auth.DevPrincipal.Password)
+	}
+	for name, value := range configuredSystemSecrets(cfg) {
+		if value != defaultSystemSecret {
+			t.Fatalf("%s default = %q, want documented project default", name, value)
+		}
 	}
 	if cfg.Auth.DevPrincipal.UserID == "opensoha" {
 		t.Fatalf("dev principal user id default should not be username-derived")
@@ -172,22 +183,47 @@ func TestLoadRepoDefaultConfigWithoutGeneratedEnv(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 	if cfg.Database.Password != "pgsql" {
-		t.Fatalf("database password = %q, want pgsql", cfg.Database.Password)
+		t.Fatalf("database password = %q, want pgsql standard default", cfg.Database.Password)
 	}
 	if cfg.Auth.DevPrincipal.Password != "opensoha" {
-		t.Fatalf("dev principal password = %q, want opensoha", cfg.Auth.DevPrincipal.Password)
+		t.Fatalf("dev principal password = %q, want opensoha standard default", cfg.Auth.DevPrincipal.Password)
 	}
 	if cfg.Auth.DevPrincipal.UserID != defaultDevPrincipalUserID {
 		t.Fatalf("dev principal user id = %q, want %q", cfg.Auth.DevPrincipal.UserID, defaultDevPrincipalUserID)
 	}
-	if len(cfg.Auth.JWT.Secret) < 32 || len(cfg.Runtime.ExecutionRunnerToken) < 32 || len(cfg.Monitoring.WebhookToken) < 32 || len(cfg.Security.CredentialEncryptionKey) < 32 {
-		t.Fatalf("repo default config secrets should satisfy minimum lengths")
+	for name, value := range configuredSystemSecrets(cfg) {
+		if value != defaultSystemSecret {
+			t.Fatalf("%s = %q, want documented project default", name, value)
+		}
+	}
+	keyIDs := map[string]string{
+		"jwt":        cfg.Auth.JWT.Keys.Active().ID(),
+		"runner":     cfg.Runtime.ExecutionRunnerKeys.Active().ID(),
+		"webhook":    cfg.Monitoring.WebhookKeys.Active().ID(),
+		"credential": cfg.Security.CredentialEncryptionKeys.Active().ID(),
+	}
+	wantedKeyIDs := map[string]string{
+		"jwt":        jwtKeyID,
+		"runner":     runnerKeyID,
+		"webhook":    webhookKeyID,
+		"credential": encryptionKeyID,
+	}
+	for name, keyID := range keyIDs {
+		if keyID != wantedKeyIDs[name] {
+			t.Fatalf("%s key id = %q, want %q", name, keyID, wantedKeyIDs[name])
+		}
 	}
 }
 
 func TestLoadRepoDefaultConfigAllowsEnvOverride(t *testing.T) {
 	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.yaml"))
 	t.Setenv("SOHA_DATABASE_HOST", "postgres")
+	t.Setenv("SOHA_DATABASE_PASSWORD", "override-database-password")
+	t.Setenv("SOHA_AUTH_DEV_PRINCIPAL_PASSWORD", "override-admin-password")
+	t.Setenv("SOHA_AUTH_JWT_SECRET", "override-jwt-secret-123456789012345678901")
+	t.Setenv("SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN", "override-runner-token-12345678901234567")
+	t.Setenv("SOHA_MONITORING_WEBHOOK_TOKEN", "override-webhook-token-1234567890123456")
+	t.Setenv("SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY", "override-credential-key-12345678901234")
 
 	cfg, err := Load()
 	if err != nil {
@@ -195,6 +231,47 @@ func TestLoadRepoDefaultConfigAllowsEnvOverride(t *testing.T) {
 	}
 	if cfg.Database.Host != "postgres" {
 		t.Fatalf("database host = %q, want postgres", cfg.Database.Host)
+	}
+	if cfg.Database.Password != "override-database-password" {
+		t.Fatalf("database password = %q, want environment override", cfg.Database.Password)
+	}
+	if cfg.Auth.DevPrincipal.Password != "override-admin-password" {
+		t.Fatalf("dev principal password = %q, want environment override", cfg.Auth.DevPrincipal.Password)
+	}
+	wantedSecrets := map[string]string{
+		"jwt":        "override-jwt-secret-123456789012345678901",
+		"runner":     "override-runner-token-12345678901234567",
+		"webhook":    "override-webhook-token-1234567890123456",
+		"credential": "override-credential-key-12345678901234",
+	}
+	for name, value := range configuredSystemSecrets(cfg) {
+		if value != wantedSecrets[name] {
+			t.Fatalf("%s environment override = %q, want %q", name, value, wantedSecrets[name])
+		}
+	}
+	keyMatches := map[string]bool{
+		"jwt":        cfg.Auth.JWT.Keys.Match(cfg.Auth.JWT.Secret, time.Now()),
+		"runner":     cfg.Runtime.ExecutionRunnerKeys.Match(cfg.Runtime.ExecutionRunnerToken, time.Now()),
+		"webhook":    cfg.Monitoring.WebhookKeys.Match(cfg.Monitoring.WebhookToken, time.Now()),
+		"credential": cfg.Security.CredentialEncryptionKeys.Match(cfg.Security.CredentialEncryptionKey, time.Now()),
+	}
+	for name, matches := range keyMatches {
+		if !matches {
+			t.Fatalf("%s runtime keyring was not built from its environment override", name)
+		}
+	}
+}
+
+func TestLoadRepoDefaultConfigIgnoresObsoleteAppEnvironment(t *testing.T) {
+	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.yaml"))
+	t.Setenv("SOHA_APP_ENV", "production")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Database.Password != "pgsql" || cfg.Auth.DevPrincipal.Password != "opensoha" {
+		t.Fatalf("standard credentials changed by obsolete app environment: database=%q admin=%q", cfg.Database.Password, cfg.Auth.DevPrincipal.Password)
 	}
 }
 
@@ -332,8 +409,72 @@ func TestConfigValidateRejectsDevAuth(t *testing.T) {
 	}
 }
 
+func TestConfigValidateRejectsInvalidTrustedProxy(t *testing.T) {
+	t.Parallel()
+
+	cfg := validSecureConfig()
+	cfg.HTTP.TrustedProxies = []string{"not-a-proxy"}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want trusted proxy rejection")
+	}
+	if !strings.Contains(err.Error(), "http.trusted_proxies") {
+		t.Fatalf("Validate() error = %q, want trusted proxy problem", err)
+	}
+}
+
+func TestConfigValidateAcceptsTrustedProxyIPAndCIDR(t *testing.T) {
+	t.Parallel()
+
+	cfg := validSecureConfig()
+	cfg.HTTP.TrustedProxies = []string{"127.0.0.1", "10.0.0.0/8", "::1"}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
 func TestConfigValidateAllowsStrongSecrets(t *testing.T) {
 	cfg := validSecureConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestConfigValidateAllowsDocumentedSharedDefault(t *testing.T) {
+	t.Parallel()
+
+	cfg := validSecureConfig()
+	cfg.Auth.JWT.Secret = defaultSystemSecret
+	cfg.Runtime.ExecutionRunnerToken = defaultSystemSecret
+	cfg.Monitoring.WebhookToken = defaultSystemSecret
+	cfg.Security.CredentialEncryptionKey = defaultSystemSecret
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if err := cfg.initializeRuntimeKeyrings(); err != nil {
+		t.Fatalf("initializeRuntimeKeyrings() error = %v", err)
+	}
+	keyMatches := map[string]bool{
+		"jwt":        cfg.Auth.JWT.Keys.Match(defaultSystemSecret, time.Now()),
+		"runner":     cfg.Runtime.ExecutionRunnerKeys.Match(defaultSystemSecret, time.Now()),
+		"webhook":    cfg.Monitoring.WebhookKeys.Match(defaultSystemSecret, time.Now()),
+		"credential": cfg.Security.CredentialEncryptionKeys.Match(defaultSystemSecret, time.Now()),
+	}
+	for name, matches := range keyMatches {
+		if !matches {
+			t.Fatalf("%s keyring does not contain the shared default", name)
+		}
+	}
+}
+
+func TestConfigValidateAllowsStandardInitialCredentials(t *testing.T) {
+	t.Parallel()
+
+	cfg := validSecureConfig()
+	cfg.Database.Password = "pgsql"
+	cfg.Auth.DevPrincipal.Password = "opensoha"
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
@@ -389,5 +530,14 @@ func validSecureConfig() Config {
 			CredentialEncryptionKey: "credential-key-123456789012345678901234",
 		},
 		Bootstrap: BootstrapConfig{SeedDefaults: true},
+	}
+}
+
+func configuredSystemSecrets(cfg Config) map[string]string {
+	return map[string]string{
+		"jwt":        cfg.Auth.JWT.Secret,
+		"runner":     cfg.Runtime.ExecutionRunnerToken,
+		"webhook":    cfg.Monitoring.WebhookToken,
+		"credential": cfg.Security.CredentialEncryptionKey,
 	}
 }

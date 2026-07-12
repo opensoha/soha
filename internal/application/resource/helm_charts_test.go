@@ -2,17 +2,10 @@ package resource
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
-
-	sohahelmrelease "github.com/opensoha/soha-contracts/helmrelease"
-	domainresource "github.com/opensoha/soha/internal/domain/resource"
-	"github.com/opensoha/soha/internal/platform/apperrors"
-	helmchartpkg "helm.sh/helm/v3/pkg/chart"
-	helmreleasepkg "helm.sh/helm/v3/pkg/release"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -76,7 +69,7 @@ func TestMapArtifactHubChartMapsPackageMetadata(t *testing.T) {
 func TestFetchArtifactHubHelmCatalogMapsPaginationTotal(t *testing.T) {
 	t.Parallel()
 
-	service := &Service{
+	service := &Helm{
 		httpClient: &http.Client{
 			Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 				if request.URL.Query().Get("kind") != artifactHubHelmKind {
@@ -147,96 +140,5 @@ func TestParseHelmInstallValuesValidatesYAML(t *testing.T) {
 
 	if _, err := parseHelmInstallValues("replicaCount: ["); err == nil {
 		t.Fatalf("parseHelmInstallValues invalid YAML returned nil error")
-	}
-}
-
-func TestMapHelmChartInstallResultIncludesManifestResources(t *testing.T) {
-	t.Parallel()
-
-	result := mapHelmChartInstallResult(&helmreleasepkg.Release{
-		Name:      "prometheus",
-		Namespace: "monitoring",
-		Version:   1,
-		Manifest: `
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: prometheus-operator
-  namespace: monitoring
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: prometheus-operator
-  namespace: monitoring
-`,
-	})
-
-	if len(result.Resources) != 2 {
-		t.Fatalf("Resources length = %d, want 2", len(result.Resources))
-	}
-	if result.Resources[0].Kind != "Deployment" || result.Resources[0].Name != "prometheus-operator" || result.Resources[0].Namespace != "monitoring" {
-		t.Fatalf("first resource = %#v", result.Resources[0])
-	}
-	if result.Resources[1].Kind != "ServiceAccount" || result.Resources[1].APIVersion != "v1" {
-		t.Fatalf("second resource = %#v", result.Resources[1])
-	}
-}
-
-func TestHelmSDKReleaseSatisfiesInstallRequiresDeployedSameChartVersion(t *testing.T) {
-	t.Parallel()
-
-	input := domainresource.HelmChartInstallInput{
-		ChartName:   "kube-prometheus-stack",
-		Version:     "86.1.0",
-		ReleaseName: "kube-prometheus-stack",
-		Namespace:   "default",
-	}
-	release := &helmreleasepkg.Release{
-		Name:      "kube-prometheus-stack",
-		Namespace: "default",
-		Version:   1,
-		Info:      &helmreleasepkg.Info{Status: helmreleasepkg.StatusDeployed},
-		Chart: &helmchartpkg.Chart{
-			Metadata: &helmchartpkg.Metadata{
-				Name:    "kube-prometheus-stack",
-				Version: "86.1.0",
-			},
-		},
-	}
-
-	if !helmSDKReleaseSatisfiesInstall(release, input) {
-		t.Fatalf("expected deployed matching SDK release to satisfy install")
-	}
-	release.Info.Status = helmreleasepkg.StatusPendingInstall
-	if helmSDKReleaseSatisfiesInstall(release, input) {
-		t.Fatalf("pending SDK release satisfied install")
-	}
-	release.Info.Status = helmreleasepkg.StatusDeployed
-	release.Chart.Metadata.Version = "86.0.0"
-	if helmSDKReleaseSatisfiesInstall(release, input) {
-		t.Fatalf("different SDK chart version satisfied install")
-	}
-}
-
-func TestHelmReleaseNameUnavailableErrorIsInvalidArgument(t *testing.T) {
-	t.Parallel()
-
-	err := helmReleaseNameUnavailableError("prometheus", "monitoring", helmReleaseRecord{
-		labels: map[string]string{"status": "pending-install"},
-		release: &sohahelmrelease.Release{
-			Name:    "prometheus",
-			Version: 2,
-		},
-	})
-
-	if err == nil {
-		t.Fatalf("helmReleaseNameUnavailableError returned nil")
-	}
-	if !errors.Is(err, apperrors.ErrInvalidArgument) {
-		t.Fatalf("error does not wrap ErrInvalidArgument: %v", err)
-	}
-	if !strings.Contains(err.Error(), "invalid argument") || !strings.Contains(err.Error(), "pending-install") || !strings.Contains(err.Error(), "revision 2") {
-		t.Fatalf("error message = %q", err.Error())
 	}
 }

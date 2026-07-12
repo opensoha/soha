@@ -68,301 +68,462 @@ func (a *PVEAdapter) SyncAssets(ctx context.Context, connection Connection) (Ass
 		if syncTypes["node"] {
 			assets = append(assets, Asset{Type: "node", Name: nodeName, Status: stringFromMap(node, "status")})
 		}
-		if syncTypes["network"] {
-			var networks pveDataEnvelope
-			if err := a.do(ctx, connection, http.MethodGet, fmt.Sprintf("/nodes/%s/network", url.PathEscape(nodeName)), nil, &networks); err == nil {
-				for _, item := range networks.Data {
-					iface := firstNonEmpty(stringFromAny(item["iface"]), stringFromAny(item["name"]))
-					if iface == "" {
-						continue
-					}
-					networkType := firstNonEmpty(stringFromAny(item["type"]), stringFromAny(item["method"]))
-					active := boolFromAny(firstNonNil(item["active"], item["autostart"]))
-					metadata := map[string]string{
-						"iface":     iface,
-						"network":   iface,
-						"type":      networkType,
-						"node":      nodeName,
-						"active":    strconv.FormatBool(active),
-						"bridge":    strconv.FormatBool(strings.EqualFold(networkType, "bridge")),
-						"sourceRef": iface,
-					}
-					if cidr := stringFromAny(item["cidr"]); cidr != "" {
-						metadata["cidr"] = cidr
-					}
-					if address := stringFromAny(item["address"]); address != "" {
-						metadata["address"] = address
-					}
-					assets = append(assets, Asset{
-						Type:     "network",
-						Name:     iface,
-						Node:     nodeName,
-						Status:   firstNonEmpty(networkType, "network"),
-						Metadata: metadata,
-					})
-				}
-			}
+		assets = append(assets, a.pveNetworkAssets(ctx, connection, nodeName, syncTypes)...)
+		qemuAssets, err := a.pveQEMUAssets(ctx, connection, nodeName, syncTypes)
+		if err != nil {
+			return AssetSyncResult{Health: pveAssetHealthFromError(err), Assets: assets}, nil
 		}
-		if syncTypes["qemu"] || syncTypes["vm"] || syncTypes["template"] {
-			var qemu pveDataEnvelope
-			if err := a.do(ctx, connection, http.MethodGet, fmt.Sprintf("/nodes/%s/qemu", url.PathEscape(nodeName)), nil, &qemu); err != nil {
-				return AssetSyncResult{Health: pveAssetHealthFromError(err), Assets: assets}, nil
-			}
-			for _, vm := range qemu.Data {
-				vmid := stringFromAny(vm["vmid"])
-				vmName := firstNonEmpty(stringFromAny(vm["name"]), "vm-"+vmid)
-				assetType := "qemu"
-				status := stringFromMap(vm, "status")
-				if boolFromAny(vm["template"]) {
-					assetType = "template"
-					status = firstNonEmpty(status, "template")
-				}
-				if !syncTypes[assetType] && (assetType != "qemu" || !syncTypes["vm"]) {
-					continue
-				}
-				metadata := map[string]string{
-					"vmid":      vmid,
-					"sourceRef": vmid,
-					"node":      nodeName,
-				}
-				if cpus := stringFromAny(firstNonNil(vm["cpus"], vm["cores"])); cpus != "" {
-					metadata["cpu"] = cpus
-				}
-				if memory := stringFromAny(firstNonNil(vm["maxmem"], vm["mem"])); memory != "" {
-					metadata["memory"] = memory
-				}
-				assets = append(assets, Asset{
-					Type:     assetType,
-					Name:     vmName,
-					Node:     nodeName,
-					Status:   status,
-					Metadata: metadata,
-				})
-			}
-		}
-		if syncTypes["storage"] || syncTypes["storage_content"] || syncTypes["iso"] || syncTypes["lxc_template"] || syncTypes["image"] {
-			var storages pveDataEnvelope
-			if err := a.do(ctx, connection, http.MethodGet, fmt.Sprintf("/nodes/%s/storage", url.PathEscape(nodeName)), nil, &storages); err == nil {
-				for _, item := range storages.Data {
-					storageName := stringFromAny(item["storage"])
-					contentTypes := pveStorageContentSet(item)
-					if syncTypes["storage"] {
-						assets = append(assets, Asset{
-							Type:   "storage",
-							Name:   storageName,
-							Node:   nodeName,
-							Status: stringFromMap(item, "type"),
-							Metadata: map[string]string{
-								"storage":          storageName,
-								"type":             stringFromMap(item, "type"),
-								"content":          stringFromMap(item, "content"),
-								"supportsISO":      strconv.FormatBool(contentTypes["iso"]),
-								"supportsImages":   strconv.FormatBool(contentTypes["images"]),
-								"supportsSnippets": strconv.FormatBool(contentTypes["snippets"]),
-								"supportsBackup":   strconv.FormatBool(contentTypes["backup"]),
-								"supportsRootdir":  strconv.FormatBool(contentTypes["rootdir"]),
-							},
-						})
-					}
-					if storageName == "" || !pveStorageSupportsContent(item) {
-						continue
-					}
-					var storageContent pveDataEnvelope
-					if err := a.do(ctx, connection, http.MethodGet, fmt.Sprintf("/nodes/%s/storage/%s/content", url.PathEscape(nodeName), url.PathEscape(storageName)), nil, &storageContent); err != nil {
-						continue
-					}
-					for _, content := range storageContent.Data {
-						contentType := stringFromMap(content, "content")
-						volID := firstNonEmpty(stringFromAny(content["volid"]), stringFromAny(content["name"]))
-						assetType := "storage_content"
-						lowerVolID := strings.ToLower(volID)
-						if contentType == "iso" {
-							assetType = "iso"
-						} else if contentType == "vztmpl" {
-							assetType = "lxc_template"
-						} else if strings.Contains(lowerVolID, "template") {
-							assetType = "template"
-						} else if contentType == "images" || contentType == "rootdir" {
-							assetType = "image"
-						}
-						if !syncTypes[assetType] && !syncTypes["storage_content"] {
-							continue
-						}
-						metadata := map[string]string{
-							"volid":       volID,
-							"sourceRef":   volID,
-							"contentType": contentType,
-							"node":        nodeName,
-							"storage":     storageName,
-						}
-						if format := stringFromAny(content["format"]); format != "" {
-							metadata["format"] = format
-						}
-						if size := stringFromAny(content["size"]); size != "" {
-							metadata["size"] = size
-						}
-						assets = append(assets, Asset{
-							Type:     assetType,
-							Name:     volID,
-							Node:     nodeName,
-							Status:   contentType,
-							Metadata: metadata,
-						})
-					}
-				}
-			}
-		}
+		assets = append(assets, qemuAssets...)
+		assets = append(assets, a.pveStorageAssets(ctx, connection, nodeName, syncTypes)...)
 	}
 	return AssetSyncResult{Health: AssetHealth{Status: "healthy"}, Assets: assets}, nil
 }
 
-func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input CreateVMInput) (VM, error) {
-	if input.Name == "" {
-		return VM{}, invalidf("vm name is required")
+func (a *PVEAdapter) pveNetworkAssets(
+	ctx context.Context,
+	connection Connection,
+	nodeName string,
+	syncTypes map[string]bool,
+) []Asset {
+	if !syncTypes["network"] {
+		return nil
 	}
-	node := input.Node
-	if node == "" {
-		node = stringOptionValue(connection.Options, "defaultNode")
+	var networks pveDataEnvelope
+	endpoint := fmt.Sprintf("/nodes/%s/network", url.PathEscape(nodeName))
+	if err := a.do(ctx, connection, http.MethodGet, endpoint, nil, &networks); err != nil {
+		return nil
 	}
-	if node == "" {
-		return VM{}, invalidf("node is required")
-	}
-	providerStorage := stringFromAny(input.ProviderParams["storage"])
-	if providerStorage == "" {
-		providerStorage = stringOptionValue(connection.Options, "defaultStorage")
-	}
-	providerBridge := stringFromAny(input.ProviderParams["bridge"])
-	if providerBridge == "" {
-		providerBridge = stringOptionValue(connection.Options, "defaultBridge")
-	}
-	providerISO := stringFromAny(input.ProviderParams["iso"])
-	vmid := stringFromAny(input.ProviderParams["vmid"])
-	if vmid == "" {
-		vmid = stringOptionValue(connection.Options, "vmid")
-	}
-	if vmid == "" {
-		vmid = stringOptionValue(connection.Options, "nextVmid")
-	}
-	if vmid == "" {
-		nextID, err := a.nextVMID(ctx, connection)
-		if err != nil {
-			return VM{}, err
+	assets := make([]Asset, 0, len(networks.Data))
+	for _, item := range networks.Data {
+		if asset, ok := pveNetworkAsset(nodeName, item); ok {
+			assets = append(assets, asset)
 		}
-		vmid = nextID
 	}
-	cicustom, err := a.ensurePVECICustom(ctx, connection, node, vmid, input)
+	return assets
+}
+
+func pveNetworkAsset(nodeName string, item map[string]any) (Asset, bool) {
+	iface := firstNonEmpty(stringFromAny(item["iface"]), stringFromAny(item["name"]))
+	if iface == "" {
+		return Asset{}, false
+	}
+	networkType := firstNonEmpty(stringFromAny(item["type"]), stringFromAny(item["method"]))
+	active := boolFromAny(firstNonNil(item["active"], item["autostart"]))
+	metadata := map[string]string{
+		"iface":     iface,
+		"network":   iface,
+		"type":      networkType,
+		"node":      nodeName,
+		"active":    strconv.FormatBool(active),
+		"bridge":    strconv.FormatBool(strings.EqualFold(networkType, "bridge")),
+		"sourceRef": iface,
+	}
+	if cidr := stringFromAny(item["cidr"]); cidr != "" {
+		metadata["cidr"] = cidr
+	}
+	if address := stringFromAny(item["address"]); address != "" {
+		metadata["address"] = address
+	}
+	return Asset{
+		Type: "network", Name: iface, Node: nodeName,
+		Status: firstNonEmpty(networkType, "network"), Metadata: metadata,
+	}, true
+}
+
+func (a *PVEAdapter) pveQEMUAssets(
+	ctx context.Context,
+	connection Connection,
+	nodeName string,
+	syncTypes map[string]bool,
+) ([]Asset, error) {
+	if !syncTypes["qemu"] && !syncTypes["vm"] && !syncTypes["template"] {
+		return nil, nil
+	}
+	var qemu pveDataEnvelope
+	endpoint := fmt.Sprintf("/nodes/%s/qemu", url.PathEscape(nodeName))
+	if err := a.do(ctx, connection, http.MethodGet, endpoint, nil, &qemu); err != nil {
+		return nil, err
+	}
+	assets := make([]Asset, 0, len(qemu.Data))
+	for _, vm := range qemu.Data {
+		if asset, ok := pveQEMUAsset(nodeName, vm, syncTypes); ok {
+			assets = append(assets, asset)
+		}
+	}
+	return assets, nil
+}
+
+func pveQEMUAsset(nodeName string, vm map[string]any, syncTypes map[string]bool) (Asset, bool) {
+	vmid := stringFromAny(vm["vmid"])
+	assetType := "qemu"
+	status := stringFromMap(vm, "status")
+	if boolFromAny(vm["template"]) {
+		assetType = "template"
+		status = firstNonEmpty(status, "template")
+	}
+	if !syncTypes[assetType] && (assetType != "qemu" || !syncTypes["vm"]) {
+		return Asset{}, false
+	}
+	metadata := map[string]string{"vmid": vmid, "sourceRef": vmid, "node": nodeName}
+	if cpus := stringFromAny(firstNonNil(vm["cpus"], vm["cores"])); cpus != "" {
+		metadata["cpu"] = cpus
+	}
+	if memory := stringFromAny(firstNonNil(vm["maxmem"], vm["mem"])); memory != "" {
+		metadata["memory"] = memory
+	}
+	return Asset{
+		Type: assetType, Name: firstNonEmpty(stringFromAny(vm["name"]), "vm-"+vmid),
+		Node: nodeName, Status: status, Metadata: metadata,
+	}, true
+}
+
+func (a *PVEAdapter) pveStorageAssets(
+	ctx context.Context,
+	connection Connection,
+	nodeName string,
+	syncTypes map[string]bool,
+) []Asset {
+	if !pveStorageSyncEnabled(syncTypes) {
+		return nil
+	}
+	var storages pveDataEnvelope
+	endpoint := fmt.Sprintf("/nodes/%s/storage", url.PathEscape(nodeName))
+	if err := a.do(ctx, connection, http.MethodGet, endpoint, nil, &storages); err != nil {
+		return nil
+	}
+	assets := make([]Asset, 0)
+	for _, item := range storages.Data {
+		storageName := stringFromAny(item["storage"])
+		if syncTypes["storage"] {
+			assets = append(assets, pveStorageAsset(nodeName, storageName, item))
+		}
+		assets = append(assets, a.pveStorageContentAssets(
+			ctx, connection, nodeName, storageName, item, syncTypes,
+		)...)
+	}
+	return assets
+}
+
+func pveStorageSyncEnabled(syncTypes map[string]bool) bool {
+	return syncTypes["storage"] || syncTypes["storage_content"] || syncTypes["iso"] ||
+		syncTypes["lxc_template"] || syncTypes["image"]
+}
+
+func pveStorageAsset(nodeName, storageName string, item map[string]any) Asset {
+	contentTypes := pveStorageContentSet(item)
+	return Asset{
+		Type: "storage", Name: storageName, Node: nodeName, Status: stringFromMap(item, "type"),
+		Metadata: map[string]string{
+			"storage": storageName, "type": stringFromMap(item, "type"),
+			"content":          stringFromMap(item, "content"),
+			"supportsISO":      strconv.FormatBool(contentTypes["iso"]),
+			"supportsImages":   strconv.FormatBool(contentTypes["images"]),
+			"supportsSnippets": strconv.FormatBool(contentTypes["snippets"]),
+			"supportsBackup":   strconv.FormatBool(contentTypes["backup"]),
+			"supportsRootdir":  strconv.FormatBool(contentTypes["rootdir"]),
+		},
+	}
+}
+
+func (a *PVEAdapter) pveStorageContentAssets(
+	ctx context.Context,
+	connection Connection,
+	nodeName, storageName string,
+	storage map[string]any,
+	syncTypes map[string]bool,
+) []Asset {
+	if storageName == "" || !pveStorageSupportsContent(storage) {
+		return nil
+	}
+	var content pveDataEnvelope
+	endpoint := fmt.Sprintf(
+		"/nodes/%s/storage/%s/content", url.PathEscape(nodeName), url.PathEscape(storageName),
+	)
+	if err := a.do(ctx, connection, http.MethodGet, endpoint, nil, &content); err != nil {
+		return nil
+	}
+	assets := make([]Asset, 0, len(content.Data))
+	for _, item := range content.Data {
+		if asset, ok := pveStorageContentAsset(nodeName, storageName, item, syncTypes); ok {
+			assets = append(assets, asset)
+		}
+	}
+	return assets
+}
+
+func pveStorageContentAsset(
+	nodeName, storageName string,
+	content map[string]any,
+	syncTypes map[string]bool,
+) (Asset, bool) {
+	contentType := stringFromMap(content, "content")
+	volID := firstNonEmpty(stringFromAny(content["volid"]), stringFromAny(content["name"]))
+	assetType := pveStorageContentAssetType(contentType, volID)
+	if !syncTypes[assetType] && !syncTypes["storage_content"] {
+		return Asset{}, false
+	}
+	metadata := map[string]string{
+		"volid": volID, "sourceRef": volID, "contentType": contentType,
+		"node": nodeName, "storage": storageName,
+	}
+	if format := stringFromAny(content["format"]); format != "" {
+		metadata["format"] = format
+	}
+	if size := stringFromAny(content["size"]); size != "" {
+		metadata["size"] = size
+	}
+	return Asset{
+		Type: assetType, Name: volID, Node: nodeName, Status: contentType, Metadata: metadata,
+	}, true
+}
+
+func pveStorageContentAssetType(contentType, volID string) string {
+	switch {
+	case contentType == "iso":
+		return "iso"
+	case contentType == "vztmpl":
+		return "lxc_template"
+	case strings.Contains(strings.ToLower(volID), "template"):
+		return "template"
+	case contentType == "images" || contentType == "rootdir":
+		return "image"
+	default:
+		return "storage_content"
+	}
+}
+
+func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input CreateVMInput) (VM, error) {
+	plan, err := a.preparePVECreate(ctx, connection, input)
 	if err != nil {
 		return VM{}, err
 	}
-	payload := map[string]any{"name": input.Name}
-	if input.CPU > 0 {
-		payload["cores"] = input.CPU
+	if input.SourceMode == "template_clone" || input.TemplateID != "" {
+		return a.createPVEClone(ctx, connection, plan)
 	}
-	if memoryMB := normalizePVEMemoryMB(input.Memory); memoryMB > 0 {
+	return a.createPVENative(ctx, connection, plan)
+}
+
+type pveCreatePlan struct {
+	input    CreateVMInput
+	node     string
+	storage  string
+	bridge   string
+	iso      string
+	vmid     string
+	cicustom string
+}
+
+func (a *PVEAdapter) preparePVECreate(
+	ctx context.Context,
+	connection Connection,
+	input CreateVMInput,
+) (pveCreatePlan, error) {
+	if input.Name == "" {
+		return pveCreatePlan{}, invalidf("vm name is required")
+	}
+	plan := pveCreatePlan{input: input}
+	plan.node = input.Node
+	if plan.node == "" {
+		plan.node = stringOptionValue(connection.Options, "defaultNode")
+	}
+	if plan.node == "" {
+		return pveCreatePlan{}, invalidf("node is required")
+	}
+	plan.storage = firstNonEmpty(
+		stringFromAny(input.ProviderParams["storage"]),
+		stringOptionValue(connection.Options, "defaultStorage"),
+	)
+	plan.bridge = firstNonEmpty(
+		stringFromAny(input.ProviderParams["bridge"]),
+		stringOptionValue(connection.Options, "defaultBridge"),
+	)
+	plan.iso = stringFromAny(input.ProviderParams["iso"])
+	plan.vmid = firstNonEmpty(
+		stringFromAny(input.ProviderParams["vmid"]),
+		stringOptionValue(connection.Options, "vmid"),
+		stringOptionValue(connection.Options, "nextVmid"),
+	)
+	if plan.vmid == "" {
+		vmid, err := a.nextVMID(ctx, connection)
+		if err != nil {
+			return pveCreatePlan{}, err
+		}
+		plan.vmid = vmid
+	}
+	cicustom, err := a.ensurePVECICustom(ctx, connection, plan.node, plan.vmid, input)
+	if err != nil {
+		return pveCreatePlan{}, err
+	}
+	plan.cicustom = cicustom
+	return plan, nil
+}
+
+func (a *PVEAdapter) createPVEClone(
+	ctx context.Context,
+	connection Connection,
+	plan pveCreatePlan,
+) (VM, error) {
+	templateID := firstNonEmpty(plan.input.TemplateID, plan.input.SourceRef, plan.input.BootImage)
+	if templateID == "" {
+		return VM{}, invalidf("template source is required")
+	}
+	payload := map[string]any{"newid": plan.vmid, "name": plan.input.Name}
+	if plan.storage != "" {
+		payload["storage"] = plan.storage
+		payload["full"] = 1
+	}
+	endpoint := fmt.Sprintf(
+		"/nodes/%s/qemu/%s/clone", url.PathEscape(plan.node), url.PathEscape(templateID),
+	)
+	createUPID, err := a.doTaskAndWait(
+		ctx, connection, plan.node, http.MethodPost, endpoint, payload,
+	)
+	if err != nil {
+		return VM{}, err
+	}
+	resizeUPID := ""
+	if plan.input.DiskSize != "" {
+		resizeUPID, err = a.resizePVEClonedDisk(
+			ctx, connection, plan.node, plan.vmid, "scsi0", plan.input.DiskSize,
+		)
+		if err != nil {
+			return VM{}, err
+		}
+	}
+	configUPID, err := a.configurePVECloneCloudInit(ctx, connection, plan)
+	if err != nil {
+		return VM{}, err
+	}
+	startUPID, err := a.startPVEAfterCreate(ctx, connection, plan)
+	if err != nil {
+		return VM{}, err
+	}
+	return a.finishPVECreate(ctx, connection, plan, map[string]string{
+		"pveCreateUpid": createUPID,
+		"pveResizeUpid": resizeUPID,
+		"pveConfigUpid": configUPID,
+		"pveStartUpid":  startUPID,
+	})
+}
+
+func (a *PVEAdapter) configurePVECloneCloudInit(
+	ctx context.Context,
+	connection Connection,
+	plan pveCreatePlan,
+) (string, error) {
+	payload := pveCloudInitConfigPayload(plan.input, plan.cicustom, plan.bridge)
+	if len(payload) == 0 {
+		return "", nil
+	}
+	endpoint := fmt.Sprintf(
+		"/nodes/%s/qemu/%s/config", url.PathEscape(plan.node), url.PathEscape(plan.vmid),
+	)
+	upid, err := a.doTaskAndWait(ctx, connection, plan.node, http.MethodPost, endpoint, payload)
+	if err != nil {
+		return "", err
+	}
+	if err := a.refreshPVECloudInit(ctx, connection, plan.node, plan.vmid); err != nil {
+		return "", err
+	}
+	return upid, nil
+}
+
+func (a *PVEAdapter) createPVENative(
+	ctx context.Context,
+	connection Connection,
+	plan pveCreatePlan,
+) (VM, error) {
+	endpoint := fmt.Sprintf("/nodes/%s/qemu", url.PathEscape(plan.node))
+	createUPID, err := a.doTaskAndWait(
+		ctx, connection, plan.node, http.MethodPost, endpoint, pveCreatePayload(plan),
+	)
+	if err != nil {
+		return VM{}, err
+	}
+	startUPID, err := a.startPVEAfterCreate(ctx, connection, plan)
+	if err != nil {
+		return VM{}, err
+	}
+	return a.finishPVECreate(ctx, connection, plan, map[string]string{
+		"pveCreateUpid": createUPID,
+		"pveStartUpid":  startUPID,
+	})
+}
+
+func pveCreatePayload(plan pveCreatePlan) map[string]any {
+	payload := map[string]any{"name": plan.input.Name, "vmid": plan.vmid}
+	if plan.input.CPU > 0 {
+		payload["cores"] = plan.input.CPU
+	}
+	if memoryMB := normalizePVEMemoryMB(plan.input.Memory); memoryMB > 0 {
 		payload["memory"] = memoryMB
 	}
-	if input.SourceMode == "template_clone" || input.TemplateID != "" {
-		templateID := firstNonEmpty(input.TemplateID, input.SourceRef, input.BootImage)
-		if templateID == "" {
-			return VM{}, invalidf("template source is required")
-		}
-		clonePayload := map[string]any{"newid": vmid, "name": input.Name}
-		if providerStorage != "" {
-			clonePayload["storage"] = providerStorage
-			clonePayload["full"] = 1
-		}
-		endpoint := fmt.Sprintf("/nodes/%s/qemu/%s/clone", url.PathEscape(node), url.PathEscape(templateID))
-		createUPID, err := a.doTaskAndWait(ctx, connection, node, http.MethodPost, endpoint, clonePayload)
-		if err != nil {
-			return VM{}, err
-		}
-		var resizeUPID string
-		if input.DiskSize != "" {
-			resizeUPID, err = a.resizePVEClonedDisk(ctx, connection, node, vmid, "scsi0", input.DiskSize)
-			if err != nil {
-				return VM{}, err
-			}
-		}
-		configPayload := pveCloudInitConfigPayload(input, cicustom, providerBridge)
-		var configUPID string
-		if len(configPayload) > 0 {
-			configUPID, err = a.doTaskAndWait(ctx, connection, node, http.MethodPost, fmt.Sprintf("/nodes/%s/qemu/%s/config", url.PathEscape(node), url.PathEscape(vmid)), configPayload)
-			if err != nil {
-				return VM{}, err
-			}
-			if err := a.refreshPVECloudInit(ctx, connection, node, vmid); err != nil {
-				return VM{}, err
-			}
-		}
-		var startUPID string
-		if input.StartAfterCreate {
-			startUPID, err = a.doTaskAndWait(ctx, connection, node, http.MethodPost, fmt.Sprintf("/nodes/%s/qemu/%s/status/start", url.PathEscape(node), url.PathEscape(vmid)), nil)
-			if err != nil {
-				return VM{}, err
-			}
-		}
-		vm, err := a.fetchVM(ctx, connection, node, vmid, input.Name)
-		if err != nil {
-			return VM{}, err
-		}
-		return a.enrichPVEVM(ctx, connection, node, vmid, input, vm, map[string]string{
-			"pveCreateUpid": createUPID,
-			"pveResizeUpid": resizeUPID,
-			"pveConfigUpid": configUPID,
-			"pveStartUpid":  startUPID,
-		}), nil
-	}
-	payload["vmid"] = vmid
-	if arch := pveArchitecture(input.Architecture); arch != "" {
+	if arch := pveArchitecture(plan.input.Architecture); arch != "" {
 		payload["arch"] = arch
 	}
-	if input.DiskSize != "" {
-		diskRef := normalizePVEDiskSize(input.DiskSize)
-		if providerStorage != "" {
-			diskRef = fmt.Sprintf("%s:%s", providerStorage, diskRef)
+	addPVEDiskAndNetwork(payload, plan)
+	addPVECloudInitPayload(payload, plan)
+	return payload
+}
+
+func addPVEDiskAndNetwork(payload map[string]any, plan pveCreatePlan) {
+	if plan.input.DiskSize != "" {
+		diskRef := normalizePVEDiskSize(plan.input.DiskSize)
+		if plan.storage != "" {
+			diskRef = fmt.Sprintf("%s:%s", plan.storage, diskRef)
 		}
 		payload["scsi0"] = diskRef
 	}
-	if providerBridge != "" {
-		payload["net0"] = fmt.Sprintf("virtio,bridge=%s", providerBridge)
-	} else if input.Network != "" {
-		payload["net0"] = input.Network
+	if plan.bridge != "" {
+		payload["net0"] = fmt.Sprintf("virtio,bridge=%s", plan.bridge)
+	} else if plan.input.Network != "" {
+		payload["net0"] = plan.input.Network
 	}
-	if providerISO == "" {
-		providerISO = firstNonEmpty(input.SourceRef, input.BootImage)
+}
+
+func addPVECloudInitPayload(payload map[string]any, plan pveCreatePlan) {
+	iso := firstNonEmpty(plan.iso, plan.input.SourceRef, plan.input.BootImage)
+	if iso != "" {
+		payload["ide2"] = normalizePVEISORef(iso)
 	}
-	if providerISO != "" {
-		payload["ide2"] = normalizePVEISORef(providerISO)
-	}
-	if ciuser := stringFromAny(input.ProviderParams["ciuser"]); ciuser != "" {
+	if ciuser := stringFromAny(plan.input.ProviderParams["ciuser"]); ciuser != "" {
 		payload["ciuser"] = ciuser
 	}
-	if sshKeys := stringFromAny(input.ProviderParams["sshkeys"]); sshKeys != "" {
+	if sshKeys := stringFromAny(plan.input.ProviderParams["sshkeys"]); sshKeys != "" {
 		payload["sshkeys"] = normalizePVESSHKeys(sshKeys)
 	}
-	if cicustom != "" {
-		payload["cicustom"] = cicustom
+	if plan.cicustom != "" {
+		payload["cicustom"] = plan.cicustom
 	}
-	endpoint := fmt.Sprintf("/nodes/%s/qemu", url.PathEscape(node))
-	createUPID, err := a.doTaskAndWait(ctx, connection, node, http.MethodPost, endpoint, payload)
+}
+
+func (a *PVEAdapter) startPVEAfterCreate(
+	ctx context.Context,
+	connection Connection,
+	plan pveCreatePlan,
+) (string, error) {
+	if !plan.input.StartAfterCreate {
+		return "", nil
+	}
+	endpoint := fmt.Sprintf(
+		"/nodes/%s/qemu/%s/status/start", url.PathEscape(plan.node), url.PathEscape(plan.vmid),
+	)
+	return a.doTaskAndWait(ctx, connection, plan.node, http.MethodPost, endpoint, nil)
+}
+
+func (a *PVEAdapter) finishPVECreate(
+	ctx context.Context,
+	connection Connection,
+	plan pveCreatePlan,
+	metadata map[string]string,
+) (VM, error) {
+	vm, err := a.fetchVM(ctx, connection, plan.node, plan.vmid, plan.input.Name)
 	if err != nil {
 		return VM{}, err
 	}
-	var startUPID string
-	if input.StartAfterCreate {
-		startUPID, err = a.doTaskAndWait(ctx, connection, node, http.MethodPost, fmt.Sprintf("/nodes/%s/qemu/%s/status/start", url.PathEscape(node), url.PathEscape(vmid)), nil)
-		if err != nil {
-			return VM{}, err
-		}
-	}
-	vm, err := a.fetchVM(ctx, connection, node, vmid, input.Name)
-	if err != nil {
-		return VM{}, err
-	}
-	return a.enrichPVEVM(ctx, connection, node, vmid, input, vm, map[string]string{
-		"pveCreateUpid": createUPID,
-		"pveStartUpid":  startUPID,
-	}), nil
+	return a.enrichPVEVM(
+		ctx, connection, plan.node, plan.vmid, plan.input, vm, metadata,
+	), nil
 }
 
 func (a *PVEAdapter) refreshPVECloudInit(ctx context.Context, connection Connection, node string, vmid string) error {
@@ -690,7 +851,9 @@ func (a *PVEAdapter) uploadPVECloudInit(ctx context.Context, connection Connecti
 		}
 		return "", err
 	}
-	io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return "", fmt.Errorf("discard pve upload response: %w", err)
+	}
 	return fmt.Sprintf("%s:snippets/%s", storage, filename), nil
 }
 
@@ -978,7 +1141,9 @@ func (a *PVEAdapter) do(ctx context.Context, connection Connection, method strin
 		return classifyPVEHTTPError(resp.StatusCode, endpoint, raw)
 	}
 	if out == nil {
-		io.Copy(io.Discard, resp.Body)
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			return fmt.Errorf("discard pve response: %w", err)
+		}
 		return nil
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
@@ -1231,13 +1396,20 @@ func (a *PVEAdapter) clientFor(connection Connection) *http.Client {
 func pveInsecureTransport(base http.RoundTripper) http.RoundTripper {
 	transport, ok := base.(*http.Transport)
 	if !ok || transport == nil {
-		transport = http.DefaultTransport.(*http.Transport)
+		defaultTransport, defaultOK := http.DefaultTransport.(*http.Transport)
+		if !defaultOK {
+			defaultTransport = &http.Transport{}
+		}
+		transport = defaultTransport
 	}
 	clone := transport.Clone()
 	if clone.TLSClientConfig == nil {
-		clone.TLSClientConfig = &tls.Config{}
+		clone.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	} else {
 		clone.TLSClientConfig = clone.TLSClientConfig.Clone()
+		if clone.TLSClientConfig.MinVersion < tls.VersionTLS12 {
+			clone.TLSClientConfig.MinVersion = tls.VersionTLS12
+		}
 	}
 	clone.TLSClientConfig.InsecureSkipVerify = true
 	return clone
@@ -1832,13 +2004,13 @@ func (a *PVEAdapter) GetConsoleURL(ctx context.Context, connection Connection, v
 	base.RawQuery = query.Encode()
 
 	return ConsoleURLResult{
-		Type:                  "novnc",
-		URL:                   fmt.Sprintf("/api/v1/virtualization/vms/%s/console/novnc", vm.ID),
-		BackendURL:            base.String(),
-		Token:                 ticketResponse.Data.Ticket,
-		Ready:                 true,
-		Provider:              "pve",
-		ProxyMode:             "backend-ws-proxy",
-		InsecureSkipTLSVerify: connection.InsecureSkipTLSVerify,
+		Type:       "novnc",
+		URL:        fmt.Sprintf("/api/v1/virtualization/vms/%s/console/novnc", vm.ID),
+		BackendURL: base.String(),
+		Token:      ticketResponse.Data.Ticket,
+		Ready:      true,
+		Provider:   "pve",
+		ProxyMode:  "backend-ws-proxy",
+		BackendTLS: BackendTLS{InsecureSkipVerify: connection.InsecureSkipTLSVerify},
 	}, nil
 }

@@ -83,6 +83,10 @@ func (s stubIdentityService) BeginProviderLogin(context.Context, string, string)
 	return "", nil
 }
 
+func (s stubIdentityService) BeginProviderLink(context.Context, domainidentity.Principal, string, string) (string, error) {
+	return "", nil
+}
+
 func (s stubIdentityService) HandleOIDCCallback(context.Context, string, string) (string, error) {
 	return "", nil
 }
@@ -416,6 +420,10 @@ func (s *recordingIdentityService) BeginProviderLogin(_ context.Context, provide
 	s.providerID = providerID
 	s.providerReturnTo = returnTo
 	return "/provider-login", nil
+}
+
+func (s *recordingIdentityService) BeginProviderLink(_ context.Context, _ domainidentity.Principal, providerID, returnTo string) (string, error) {
+	return s.BeginProviderLogin(context.Background(), providerID, returnTo)
 }
 
 func (s *recordingIdentityService) IssueStreamTicket(_ context.Context, _ domainidentity.Principal, _ domainidentity.AccessContext, req domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error) {

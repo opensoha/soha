@@ -39,7 +39,7 @@ func (r *Repository) List(ctx context.Context) ([]domainmenu.Record, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query menus: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainmenu.Record, 0)
 	menuIDs := make([]string, 0)
@@ -211,7 +211,7 @@ func (r *Repository) loadRoleBindings(ctx context.Context, menuIDs []string) (ma
 	if err != nil {
 		return nil, fmt.Errorf("query menu role bindings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make(map[string][]string, len(menuIDs))
 	for _, menuID := range menuIDs {

@@ -32,44 +32,42 @@ func TestBuildNetworkTopologyTracesAggregatesRoutesServicesAndBackends(t *testin
 		},
 	)
 
-	if len(traces) != 4 {
-		t.Fatalf("len(traces) = %d, want 4: %#v", len(traces), traces)
-	}
+	expectTopology(t, len(traces) == 4, "len(traces) = %d, want 4: %#v", len(traces), traces)
 	ingressAPI := findTopologyTrace(t, traces, "ingress", "service:team-a/api")
-	if ingressAPI.State != "live" {
-		t.Fatalf("ingress api state = %q, want live", ingressAPI.State)
-	}
-	if len(ingressAPI.BackendPods) != 2 {
-		t.Fatalf("ingress api backend pods = %#v, want 2 pods", ingressAPI.BackendPods)
-	}
-	if ingressAPI.Entry.Name != "api.example.com" || ingressAPI.Route.Kind != "ingress-route" {
-		t.Fatalf("ingress trace = %#v", ingressAPI)
-	}
+	expectTopology(t, ingressAPI.State == "live", "ingress api state = %q", ingressAPI.State)
+	expectTopology(t, len(ingressAPI.BackendPods) == 2, "ingress api backend pods = %#v", ingressAPI.BackendPods)
+	expectTopology(t, ingressAPI.Entry.Name == "api.example.com", "ingress entry = %#v", ingressAPI.Entry)
+	expectTopology(t, ingressAPI.Route.Kind == "ingress-route", "ingress route = %#v", ingressAPI.Route)
 
 	ingressMissing := findTopologyTrace(t, traces, "ingress", "missing-service:team-a/missing")
-	if ingressMissing.State != "pending" || ingressMissing.Service == nil || ingressMissing.Service.Kind != "missing-service" {
-		t.Fatalf("missing service trace = %#v", ingressMissing)
-	}
+	expectTopology(t, ingressMissing.State == "pending", "missing service state = %#v", ingressMissing)
+	expectTopology(t, ingressMissing.Service != nil, "missing service node absent: %#v", ingressMissing)
+	expectTopology(t, ingressMissing.Service.Kind == "missing-service", "missing service kind = %#v", ingressMissing.Service)
 
 	httpRoute := findTopologyTrace(t, traces, "httproute", "service:team-a/api")
-	if httpRoute.State != "live" || httpRoute.Entry.State != "live" || httpRoute.Route.Kind != "http-route" {
-		t.Fatalf("httproute trace = %#v", httpRoute)
-	}
-	if httpRoute.Entry.Name != "gw.example.com" {
-		t.Fatalf("httproute entry name = %q, want gw.example.com", httpRoute.Entry.Name)
-	}
+	expectTopology(t, httpRoute.State == "live", "httproute state = %#v", httpRoute)
+	expectTopology(t, httpRoute.Entry.State == "live", "httproute entry state = %#v", httpRoute)
+	expectTopology(t, httpRoute.Route.Kind == "http-route", "httproute kind = %#v", httpRoute)
+	expectTopology(t, httpRoute.Entry.Name == "gw.example.com", "httproute entry = %q", httpRoute.Entry.Name)
 
 	pendingGateway := findTopologyTrace(t, traces, "gateway", "")
-	if pendingGateway.State != "pending" || pendingGateway.Route.Kind != "pending-route" {
-		t.Fatalf("pending gateway trace = %#v", pendingGateway)
-	}
-	if !strings.Contains(pendingGateway.Note, "no visible HTTPRoute") {
-		t.Fatalf("pending gateway note = %q", pendingGateway.Note)
-	}
+	expectTopology(t, pendingGateway.State == "pending", "pending gateway state = %#v", pendingGateway)
+	expectTopology(t, pendingGateway.Route.Kind == "pending-route", "pending gateway route = %#v", pendingGateway)
+	expectTopology(t, strings.Contains(pendingGateway.Note, "no visible HTTPRoute"), "pending gateway note = %q", pendingGateway.Note)
 
 	summary := summarizeNetworkTopologyTraces(traces)
-	if summary.EntryCount != 3 || summary.RouteCount != 3 || summary.ServiceCount != 1 || summary.MissingServiceCount != 1 || summary.BackendPodCount != 2 || summary.PendingRouteCount != 1 {
-		t.Fatalf("summary = %#v", summary)
+	expectTopology(t, summary.EntryCount == 3, "entry summary = %#v", summary)
+	expectTopology(t, summary.RouteCount == 3, "route summary = %#v", summary)
+	expectTopology(t, summary.ServiceCount == 1, "service summary = %#v", summary)
+	expectTopology(t, summary.MissingServiceCount == 1, "missing service summary = %#v", summary)
+	expectTopology(t, summary.BackendPodCount == 2, "pod summary = %#v", summary)
+	expectTopology(t, summary.PendingRouteCount == 1, "pending route summary = %#v", summary)
+}
+
+func expectTopology(t *testing.T, condition bool, format string, args ...any) {
+	t.Helper()
+	if !condition {
+		t.Fatalf(format, args...)
 	}
 }
 

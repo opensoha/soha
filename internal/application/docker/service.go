@@ -281,62 +281,13 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 		return domaindocker.Operation{}, err
 	}
 	cloudInit := s.quickCreateCloudInit(input, host.ID)
-	var vmTask *HostProvisionTask
-	if s.hostProvisioner != nil && strings.TrimSpace(input.VirtualizationConnectionID) != "" {
-		providerParams := mapValueAny(input.Config["providerParams"])
-		if _, exists := providerParams["dockerHostId"]; !exists && strings.TrimSpace(host.ID) != "" {
-			providerParams["dockerHostId"] = host.ID
-		}
-		task, err := s.hostProvisioner.ProvisionDockerHost(ctx, principal, HostProvisionInput{
-			ConnectionID:     strings.TrimSpace(input.VirtualizationConnectionID),
-			Name:             strings.TrimSpace(input.Name),
-			Architecture:     architecture,
-			CPU:              input.CPUCoreCount,
-			MemoryMiB:        bytesToMiB(input.MemoryBytes),
-			DiskGiB:          bytesToGiB(input.DiskBytes),
-			BootImageID:      strings.TrimSpace(input.ImageID),
-			ImageID:          strings.TrimSpace(input.ImageID),
-			FlavorID:         strings.TrimSpace(input.FlavorID),
-			Network:          strings.TrimSpace(input.Network),
-			CloudInit:        cloudInit,
-			StartAfterCreate: true,
-			TemplateID:       strings.TrimSpace(input.VMTemplateID),
-			ProviderParams:   providerParams,
-			ProviderExtraJSON: mapValueAny(firstNonNil(
-				input.Config["providerExtra"],
-				input.Config["providerExtraJSON"],
-			)),
-		})
-		if err != nil {
-			_ = s.repo.DeleteHost(ctx, host.ID)
-			return domaindocker.Operation{}, err
-		}
-		vmTask = &task
+	vmTask, err := s.provisionQuickCreateHost(ctx, principal, input, host, architecture, cloudInit)
+	if err != nil {
+		_ = s.repo.DeleteHost(ctx, host.ID)
+		return domaindocker.Operation{}, err
 	}
 	if vmTask != nil {
-		hostConfig = mergeMap(hostConfig, map[string]any{
-			"virtualizationTaskId":     vmTask.ID,
-			"virtualizationTaskStatus": vmTask.Status,
-			"virtualizationProvider":   vmTask.Provider,
-		})
-		if updatedHost, updateErr := s.repo.UpdateHost(ctx, host.ID, domaindocker.HostInput{
-			Name:                       host.Name,
-			Status:                     host.Status,
-			Environment:                host.Environment,
-			Owner:                      host.Owner,
-			Team:                       host.Team,
-			VirtualizationConnectionID: host.VirtualizationConnectionID,
-			Architecture:               host.Architecture,
-			CPUCoreCount:               host.CPUCoreCount,
-			MemoryBytes:                host.MemoryBytes,
-			DiskBytes:                  host.DiskBytes,
-			AvailablePortStart:         host.AvailablePortStart,
-			AvailablePortEnd:           host.AvailablePortEnd,
-			Labels:                     host.Labels,
-			Config:                     hostConfig,
-		}); updateErr == nil {
-			host = updatedHost
-		}
+		host = s.attachQuickCreateTask(ctx, host, hostConfig, *vmTask)
 	}
 	payload := map[string]any{
 		"hostId":                     host.ID,
@@ -360,28 +311,58 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 		return domaindocker.Operation{}, err
 	}
 	if vmTask != nil {
-		now := time.Now().UTC()
-		task.Status = OperationStatusRunning
-		task.StartedAt = &now
-		task.LastHeartbeatAt = &now
-		task.Result = mergeMap(task.Result, map[string]any{
-			"virtualizationTaskId":     vmTask.ID,
-			"virtualizationTaskStatus": vmTask.Status,
-			"message":                  "virtualization VM creation task enqueued",
-		})
-		if updated, updateErr := s.repo.UpdateOperation(ctx, task); updateErr == nil {
-			task = updated
-		}
-		_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
-			ID:          uuid.NewString(),
-			OperationID: task.ID,
-			LogLevel:    "info",
-			Message:     "virtualization VM creation task enqueued",
-			Payload:     map[string]any{"virtualizationTaskId": vmTask.ID, "provider": vmTask.Provider},
-		})
+		task = s.markQuickCreateOperationRunning(ctx, task, *vmTask)
 	}
 	s.recordOperation(ctx, principal, "docker.host.provision.enqueue", host.ID, host.Name, "success", "enqueued docker host provisioning", map[string]any{"operationId": task.ID})
 	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func (s *Service) provisionQuickCreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.QuickCreateHostInput, host domaindocker.Host, architecture, cloudInit string) (*HostProvisionTask, error) {
+	if s.hostProvisioner == nil || strings.TrimSpace(input.VirtualizationConnectionID) == "" {
+		return nil, nil
+	}
+	providerParams := mapValueAny(input.Config["providerParams"])
+	if _, exists := providerParams["dockerHostId"]; !exists && strings.TrimSpace(host.ID) != "" {
+		providerParams["dockerHostId"] = host.ID
+	}
+	task, err := s.hostProvisioner.ProvisionDockerHost(ctx, principal, HostProvisionInput{
+		ConnectionID: strings.TrimSpace(input.VirtualizationConnectionID), Name: strings.TrimSpace(input.Name), Architecture: architecture,
+		CPU: input.CPUCoreCount, MemoryMiB: bytesToMiB(input.MemoryBytes), DiskGiB: bytesToGiB(input.DiskBytes),
+		BootImageID: strings.TrimSpace(input.ImageID), ImageID: strings.TrimSpace(input.ImageID), FlavorID: strings.TrimSpace(input.FlavorID),
+		Network: strings.TrimSpace(input.Network), CloudInit: cloudInit, StartAfterCreate: true, TemplateID: strings.TrimSpace(input.VMTemplateID),
+		ProviderParams: providerParams, ProviderExtraJSON: mapValueAny(firstNonNil(input.Config["providerExtra"], input.Config["providerExtraJSON"])),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+func (s *Service) attachQuickCreateTask(ctx context.Context, host domaindocker.Host, config map[string]any, task HostProvisionTask) domaindocker.Host {
+	config = mergeMap(config, map[string]any{"virtualizationTaskId": task.ID, "virtualizationTaskStatus": task.Status, "virtualizationProvider": task.Provider})
+	updated, err := s.repo.UpdateHost(ctx, host.ID, domaindocker.HostInput{
+		Name: host.Name, Status: host.Status, Environment: host.Environment, Owner: host.Owner, Team: host.Team,
+		VirtualizationConnectionID: host.VirtualizationConnectionID, Architecture: host.Architecture,
+		CPUCoreCount: host.CPUCoreCount, MemoryBytes: host.MemoryBytes, DiskBytes: host.DiskBytes,
+		AvailablePortStart: host.AvailablePortStart, AvailablePortEnd: host.AvailablePortEnd, Labels: host.Labels, Config: config,
+	})
+	if err != nil {
+		return host
+	}
+	return updated
+}
+
+func (s *Service) markQuickCreateOperationRunning(ctx context.Context, operation domaindocker.Operation, task HostProvisionTask) domaindocker.Operation {
+	now := time.Now().UTC()
+	operation.Status = OperationStatusRunning
+	operation.StartedAt = &now
+	operation.LastHeartbeatAt = &now
+	operation.Result = mergeMap(operation.Result, map[string]any{"virtualizationTaskId": task.ID, "virtualizationTaskStatus": task.Status, "message": "virtualization VM creation task enqueued"})
+	if updated, err := s.repo.UpdateOperation(ctx, operation); err == nil {
+		operation = updated
+	}
+	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: operation.ID, LogLevel: "info", Message: "virtualization VM creation task enqueued", Payload: map[string]any{"virtualizationTaskId": task.ID, "provider": task.Provider}})
+	return operation
 }
 
 func (s *Service) ListProjects(ctx context.Context, principal domainidentity.Principal, filter domaindocker.ProjectFilter) (domaindocker.Page[domaindocker.Project], error) {
@@ -502,151 +483,11 @@ func (s *Service) StartContainer(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker host %s", apperrors.ErrNotFound, strings.TrimSpace(input.HostID))
 	}
-	serviceName := NormalizeSlug(input.Name)
-	architecture, err := normalizeArchitecture(input.Architecture)
+	createInput, err := s.prepareContainerStart(ctx, principal, input, host)
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
-	if architecture == "" {
-		architecture = strings.TrimSpace(host.Architecture)
-	}
-	ports, err := normalizeContainerPorts(input)
-	if err != nil {
-		return domaindocker.Operation{}, err
-	}
-	volumes, err := normalizeContainerVolumes(input.Volumes)
-	if err != nil {
-		return domaindocker.Operation{}, err
-	}
-	envVars, err := normalizeContainerEnvironmentVariables(input.EnvironmentVariables)
-	if err != nil {
-		return domaindocker.Operation{}, err
-	}
-	resources := normalizeContainerResources(input.Resources)
-	input.RestartPolicy = normalizedRestartPolicy(input.RestartPolicy)
-	input.Owner = firstNonEmpty(input.Owner, principal.UserName, principal.UserID)
-
-	portSeen := map[string]struct{}{}
-	for _, port := range ports {
-		key := strings.Join([]string{input.HostID, firstNonEmpty(port.HostIP, "0.0.0.0"), strconv.Itoa(port.HostPort), normalizedProtocol(port.Protocol)}, "|")
-		if _, ok := portSeen[key]; ok {
-			return domaindocker.Operation{}, fmt.Errorf("%w: duplicate host port %d/%s in request", apperrors.ErrInvalidArgument, port.HostPort, normalizedProtocol(port.Protocol))
-		}
-		portSeen[key] = struct{}{}
-		if err := s.validatePortMapping(ctx, portMappingInputForContainer(input, serviceName, port, host, uuid.NewString()), ""); err != nil {
-			return domaindocker.Operation{}, err
-		}
-	}
-
-	composeContent, err := singleContainerComposeContent(serviceName, input, ports, volumes, envVars, resources, architecture)
-	if err != nil {
-		return domaindocker.Operation{}, err
-	}
-
-	portInputs := make([]domaindocker.PortMappingInput, 0, len(ports))
-	portSummaries := make([]map[string]any, 0, len(ports))
-	for _, port := range ports {
-		portMappingID := uuid.NewString()
-		portInput := portMappingInputForContainer(input, serviceName, port, host, portMappingID)
-		portInputs = append(portInputs, portInput)
-		portSummaries = append(portSummaries, map[string]any{
-			"id":            portMappingID,
-			"name":          firstNonEmpty(port.Name, input.Name),
-			"hostIp":        portInput.HostIP,
-			"hostPort":      portInput.HostPort,
-			"containerPort": portInput.ContainerPort,
-			"protocol":      portInput.Protocol,
-			"accessUrl":     portInput.AccessURL,
-			"domainName":    portInput.DomainName,
-		})
-	}
-	primaryPort := ports[0]
-	primaryPortMappingID := portInputs[0].ID
-	primaryAccessURL := portInputs[0].AccessURL
-	projectInput := domaindocker.ProjectInput{
-		HostID:         input.HostID,
-		Name:           input.Name,
-		Slug:           serviceName,
-		Description:    "Single container: " + strings.TrimSpace(input.Image),
-		Environment:    input.Environment,
-		Owner:          input.Owner,
-		Team:           input.Team,
-		SourceKind:     "single_container",
-		ComposeContent: composeContent,
-		EnvContent:     input.EnvContent,
-		Status:         "defined",
-		DesiredState:   "running",
-		TTLSeconds:     input.TTLSeconds,
-		Labels:         input.Labels,
-		Config: mergeMap(input.Config, map[string]any{
-			"sourceKind":           "single_container",
-			"serviceName":          serviceName,
-			"image":                input.Image,
-			"architecture":         architecture,
-			"platform":             dockerPlatformForArchitecture(architecture),
-			"ports":                containerPortMaps(ports),
-			"volumes":              containerVolumeMaps(volumes),
-			"environmentVariables": containerEnvironmentVariableMaps(envVars),
-			"resources":            containerResourceMap(resources),
-			"containerPort":        primaryPort.ContainerPort,
-			"hostPort":             primaryPort.HostPort,
-			"protocol":             primaryPort.Protocol,
-			"domainName":           primaryPort.DomainName,
-			"domainScheme":         primaryPort.DomainScheme,
-			"domainTlsEnabled":     primaryPort.DomainTLSEnabled,
-		}),
-	}
-	serviceInput := domaindocker.ServiceInput{
-		HostID: input.HostID,
-		Name:   serviceName,
-		Image:  input.Image,
-		Status: "defined",
-		Config: map[string]any{
-			"sourceKind":    "single_container",
-			"architecture":  architecture,
-			"platform":      dockerPlatformForArchitecture(architecture),
-			"containerPort": primaryPort.ContainerPort,
-			"hostPort":      primaryPort.HostPort,
-			"protocol":      primaryPort.Protocol,
-			"domainName":    primaryPort.DomainName,
-			"ports":         containerPortMaps(ports),
-			"volumes":       containerVolumeMaps(volumes),
-			"resources":     containerResourceMap(resources),
-		},
-	}
-	requestedBy := firstNonEmpty(principal.UserID, principal.UserName)
-	operationPayload := map[string]any{
-		"action":         "deploy",
-		"sourceKind":     "single_container",
-		"projectSlug":    projectInput.Slug,
-		"serviceName":    serviceInput.Name,
-		"composeContent": projectInput.ComposeContent,
-		"envContent":     projectInput.EnvContent,
-		"image":          input.Image,
-		"architecture":   architecture,
-		"platform":       dockerPlatformForArchitecture(architecture),
-		"ports":          containerPortMaps(ports),
-		"volumes":        containerVolumeMaps(volumes),
-		"resources":      containerResourceMap(resources),
-		"portMappingId":  primaryPortMappingID,
-		"portMappings":   portSummaries,
-		"accessUrl":      primaryAccessURL,
-		"domainName":     primaryPort.DomainName,
-	}
-	created, err := s.repo.CreateContainerStart(ctx, domaindocker.ContainerStartCreateInput{
-		Project:      projectInput,
-		Service:      serviceInput,
-		PortMappings: portInputs,
-		Operation: domaindocker.OperationInput{
-			HostID:         input.HostID,
-			OperationKind:  OperationKindContainerStart,
-			Status:         OperationStatusQueued,
-			RequestedBy:    requestedBy,
-			MaxRetries:     defaultOperationMaxRetries,
-			TimeoutSeconds: defaultOperationTimeout,
-			Payload:        operationPayload,
-		},
-	})
+	created, err := s.repo.CreateContainerStart(ctx, createInput)
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -660,6 +501,134 @@ func (s *Service) StartContainer(ctx context.Context, principal domainidentity.P
 	})
 	s.recordOperation(ctx, principal, "docker.container.start.enqueue", created.Project.ID, created.Project.Name, "success", "enqueued single container start", map[string]any{"operationId": created.Operation.ID, "serviceId": created.Service.ID, "portMappingId": created.PortMapping.ID, "portMappingCount": len(created.PortMappings), "domainName": created.PortMapping.DomainName})
 	return domaindocker.WithOperationState(created.Operation, time.Now().UTC()), nil
+}
+
+type containerStartPlan struct {
+	input         domaindocker.ContainerStartInput
+	serviceName   string
+	architecture  string
+	ports         []domaindocker.ContainerPortInput
+	volumes       []domaindocker.ContainerVolumeInput
+	envVars       []domaindocker.ContainerEnvironmentVariableInput
+	resources     domaindocker.ContainerResourceInput
+	compose       string
+	portInputs    []domaindocker.PortMappingInput
+	portSummaries []map[string]any
+}
+
+func (s *Service) prepareContainerStart(ctx context.Context, principal domainidentity.Principal, input domaindocker.ContainerStartInput, host domaindocker.Host) (domaindocker.ContainerStartCreateInput, error) {
+	plan, err := s.normalizeContainerStart(ctx, principal, input, host)
+	if err != nil {
+		return domaindocker.ContainerStartCreateInput{}, err
+	}
+	project := buildContainerStartProject(plan)
+	service := buildContainerStartService(plan)
+	return domaindocker.ContainerStartCreateInput{
+		Project:      project,
+		Service:      service,
+		PortMappings: plan.portInputs,
+		Operation: domaindocker.OperationInput{
+			HostID:         plan.input.HostID,
+			OperationKind:  OperationKindContainerStart,
+			Status:         OperationStatusQueued,
+			RequestedBy:    firstNonEmpty(principal.UserID, principal.UserName),
+			MaxRetries:     defaultOperationMaxRetries,
+			TimeoutSeconds: defaultOperationTimeout,
+			Payload:        buildContainerStartOperationPayload(plan, project, service),
+		},
+	}, nil
+}
+
+func (s *Service) normalizeContainerStart(ctx context.Context, principal domainidentity.Principal, input domaindocker.ContainerStartInput, host domaindocker.Host) (containerStartPlan, error) {
+	architecture, err := normalizeArchitecture(input.Architecture)
+	if err != nil {
+		return containerStartPlan{}, err
+	}
+	if architecture == "" {
+		architecture = strings.TrimSpace(host.Architecture)
+	}
+	ports, err := normalizeContainerPorts(input)
+	if err != nil {
+		return containerStartPlan{}, err
+	}
+	volumes, err := normalizeContainerVolumes(input.Volumes)
+	if err != nil {
+		return containerStartPlan{}, err
+	}
+	envVars, err := normalizeContainerEnvironmentVariables(input.EnvironmentVariables)
+	if err != nil {
+		return containerStartPlan{}, err
+	}
+	input.RestartPolicy = normalizedRestartPolicy(input.RestartPolicy)
+	input.Owner = firstNonEmpty(input.Owner, principal.UserName, principal.UserID)
+	serviceName := NormalizeSlug(input.Name)
+	portInputs, portSummaries, err := s.prepareContainerPorts(ctx, input, serviceName, ports, host)
+	if err != nil {
+		return containerStartPlan{}, err
+	}
+	resources := normalizeContainerResources(input.Resources)
+	compose, err := singleContainerComposeContent(serviceName, input, ports, volumes, envVars, resources, architecture)
+	if err != nil {
+		return containerStartPlan{}, err
+	}
+	return containerStartPlan{input: input, serviceName: serviceName, architecture: architecture, ports: ports, volumes: volumes, envVars: envVars, resources: resources, compose: compose, portInputs: portInputs, portSummaries: portSummaries}, nil
+}
+
+func (s *Service) prepareContainerPorts(ctx context.Context, input domaindocker.ContainerStartInput, serviceName string, ports []domaindocker.ContainerPortInput, host domaindocker.Host) ([]domaindocker.PortMappingInput, []map[string]any, error) {
+	seen := make(map[string]struct{}, len(ports))
+	inputs := make([]domaindocker.PortMappingInput, 0, len(ports))
+	summaries := make([]map[string]any, 0, len(ports))
+	for _, port := range ports {
+		key := strings.Join([]string{input.HostID, firstNonEmpty(port.HostIP, "0.0.0.0"), strconv.Itoa(port.HostPort), normalizedProtocol(port.Protocol)}, "|")
+		if _, ok := seen[key]; ok {
+			return nil, nil, fmt.Errorf("%w: duplicate host port %d/%s in request", apperrors.ErrInvalidArgument, port.HostPort, normalizedProtocol(port.Protocol))
+		}
+		seen[key] = struct{}{}
+		portInput := portMappingInputForContainer(input, serviceName, port, host, uuid.NewString())
+		if err := s.validatePortMapping(ctx, portInput, ""); err != nil {
+			return nil, nil, err
+		}
+		inputs = append(inputs, portInput)
+		summaries = append(summaries, map[string]any{"id": portInput.ID, "name": firstNonEmpty(port.Name, input.Name), "hostIp": portInput.HostIP, "hostPort": portInput.HostPort, "containerPort": portInput.ContainerPort, "protocol": portInput.Protocol, "accessUrl": portInput.AccessURL, "domainName": portInput.DomainName})
+	}
+	return inputs, summaries, nil
+}
+
+func buildContainerStartProject(plan containerStartPlan) domaindocker.ProjectInput {
+	primary := plan.ports[0]
+	return domaindocker.ProjectInput{
+		HostID: plan.input.HostID, Name: plan.input.Name, Slug: plan.serviceName,
+		Description: "Single container: " + strings.TrimSpace(plan.input.Image), Environment: plan.input.Environment,
+		Owner: plan.input.Owner, Team: plan.input.Team, SourceKind: "single_container", ComposeContent: plan.compose,
+		EnvContent: plan.input.EnvContent, Status: "defined", DesiredState: "running", TTLSeconds: plan.input.TTLSeconds, Labels: plan.input.Labels,
+		Config: mergeMap(plan.input.Config, map[string]any{
+			"sourceKind": "single_container", "serviceName": plan.serviceName, "image": plan.input.Image, "architecture": plan.architecture,
+			"platform": dockerPlatformForArchitecture(plan.architecture), "ports": containerPortMaps(plan.ports), "volumes": containerVolumeMaps(plan.volumes),
+			"environmentVariables": containerEnvironmentVariableMaps(plan.envVars), "resources": containerResourceMap(plan.resources),
+			"containerPort": primary.ContainerPort, "hostPort": primary.HostPort, "protocol": primary.Protocol, "domainName": primary.DomainName,
+			"domainScheme": primary.DomainScheme, "domainTlsEnabled": primary.DomainTLSEnabled,
+		}),
+	}
+}
+
+func buildContainerStartService(plan containerStartPlan) domaindocker.ServiceInput {
+	primary := plan.ports[0]
+	return domaindocker.ServiceInput{HostID: plan.input.HostID, Name: plan.serviceName, Image: plan.input.Image, Status: "defined", Config: map[string]any{
+		"sourceKind": "single_container", "architecture": plan.architecture, "platform": dockerPlatformForArchitecture(plan.architecture),
+		"containerPort": primary.ContainerPort, "hostPort": primary.HostPort, "protocol": primary.Protocol, "domainName": primary.DomainName,
+		"ports": containerPortMaps(plan.ports), "volumes": containerVolumeMaps(plan.volumes), "resources": containerResourceMap(plan.resources),
+	}}
+}
+
+func buildContainerStartOperationPayload(plan containerStartPlan, project domaindocker.ProjectInput, service domaindocker.ServiceInput) map[string]any {
+	primary := plan.ports[0]
+	return map[string]any{
+		"action": "deploy", "sourceKind": "single_container", "projectSlug": project.Slug, "serviceName": service.Name,
+		"composeContent": project.ComposeContent, "envContent": project.EnvContent, "image": plan.input.Image, "architecture": plan.architecture,
+		"platform": dockerPlatformForArchitecture(plan.architecture), "ports": containerPortMaps(plan.ports), "volumes": containerVolumeMaps(plan.volumes),
+		"resources": containerResourceMap(plan.resources), "portMappingId": plan.portInputs[0].ID, "portMappings": plan.portSummaries,
+		"accessUrl": plan.portInputs[0].AccessURL, "domainName": primary.DomainName,
+	}
 }
 
 func (s *Service) ListServices(ctx context.Context, principal domainidentity.Principal, filter domaindocker.ServiceFilter) (domaindocker.Page[domaindocker.Service], error) {
@@ -1036,9 +1005,10 @@ func (s *Service) enqueueOperation(ctx context.Context, principal domainidentity
 
 func (s *Service) appendCallbackLogs(ctx context.Context, operationID, status string, input domaindocker.OperationCallbackInput) {
 	logLevel := "info"
-	if status == OperationStatusFailed || status == OperationStatusTimeout {
+	switch status {
+	case OperationStatusFailed, OperationStatusTimeout:
 		logLevel = "error"
-	} else if status == OperationStatusCanceled {
+	case OperationStatusCanceled:
 		logLevel = "warn"
 	}
 	if len(input.Logs) == 0 {

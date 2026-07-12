@@ -262,7 +262,7 @@ func (r *Repository) ListAssignments(ctx context.Context, applicationIDs []strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var item domainportal.ApplicationAssignment
 		if err := rows.Scan(&item.ID, &item.ApplicationID, &item.SubjectType, &item.SubjectID, &item.Effect, &item.CreatedBy, &item.CreatedAt); err != nil {
@@ -282,7 +282,7 @@ func (r *Repository) ListFavoriteApplicationIDs(ctx context.Context, userID stri
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := map[string]bool{}
 	for rows.Next() {
 		var applicationID string
@@ -326,7 +326,7 @@ func (r *Repository) ListRecentLaunches(ctx context.Context, userID string, limi
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainportal.ApplicationLaunch, 0)
 	for rows.Next() {
 		var item domainportal.ApplicationLaunch
@@ -365,7 +365,7 @@ func (r *Repository) GetLastLaunches(ctx context.Context, userID string) (map[st
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	out := map[string]time.Time{}
 	for rows.Next() {
 		var applicationID string
@@ -394,7 +394,7 @@ func (r *Repository) scanApplications(ctx context.Context, query string, args ..
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainportal.Application, 0)
 	for rows.Next() {
 		item, err := scanApplication(rows)

@@ -3,23 +3,14 @@ package resource
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"helm.sh/helm/v3/pkg/action"
-	helmreleasepkg "helm.sh/helm/v3/pkg/release"
-	"helm.sh/helm/v3/pkg/storage/driver"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/yaml"
-
-	helmrelease "github.com/opensoha/soha-contracts/helmrelease"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -36,13 +27,6 @@ const (
 	artifactHubJSONMaxBytes       = 4 * 1024 * 1024
 	artifactHubValuesMaxBytes     = 3 * 1024 * 1024
 )
-
-type helmReleaseRecord struct {
-	createdAt time.Time
-	labels    map[string]string
-	release   *helmrelease.Release
-	secret    string
-}
 
 type artifactHubSearchResponse struct {
 	Packages []artifactHubPackage `json:"packages"`
@@ -115,7 +99,8 @@ type artifactHubSecuritySummary struct {
 	Unknown  int `json:"unknown"`
 }
 
-func (s *Service) ListHelmCharts(ctx context.Context, principal domainidentity.Principal, clusterID, keyword string, limit, offset int) (domainresource.HelmChartCatalogView, error) {
+func (h *Helm) ListHelmCharts(ctx context.Context, principal domainidentity.Principal, clusterID, keyword string, limit, offset int) (domainresource.HelmChartCatalogView, error) {
+	s := h
 	connection, _, err := s.authorize(ctx, principal, clusterID, "", "HelmChart", domainaccess.ActionList)
 	if err != nil {
 		return domainresource.HelmChartCatalogView{}, err
@@ -130,7 +115,8 @@ func (s *Service) ListHelmCharts(ctx context.Context, principal domainidentity.P
 	return item, nil
 }
 
-func (s *Service) GetHelmChartDetail(ctx context.Context, principal domainidentity.Principal, clusterID, repositoryName, chartName, version string) (domainresource.HelmChartDetailView, error) {
+func (h *Helm) GetHelmChartDetail(ctx context.Context, principal domainidentity.Principal, clusterID, repositoryName, chartName, version string) (domainresource.HelmChartDetailView, error) {
+	s := h
 	connection, _, err := s.authorize(ctx, principal, clusterID, "", "HelmChart", domainaccess.ActionView)
 	if err != nil {
 		return domainresource.HelmChartDetailView{}, err
@@ -145,7 +131,8 @@ func (s *Service) GetHelmChartDetail(ctx context.Context, principal domainidenti
 	return item, nil
 }
 
-func (s *Service) GetHelmChartValuesTemplate(ctx context.Context, principal domainidentity.Principal, clusterID, packageID, name, version string) (domainresource.HelmChartValuesTemplateView, error) {
+func (h *Helm) GetHelmChartValuesTemplate(ctx context.Context, principal domainidentity.Principal, clusterID, packageID, name, version string) (domainresource.HelmChartValuesTemplateView, error) {
+	s := h
 	connection, _, err := s.authorize(ctx, principal, clusterID, "", "HelmChart", domainaccess.ActionView)
 	if err != nil {
 		return domainresource.HelmChartValuesTemplateView{}, err
@@ -159,7 +146,8 @@ func (s *Service) GetHelmChartValuesTemplate(ctx context.Context, principal doma
 	return item, nil
 }
 
-func (s *Service) GetHelmReleaseDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.HelmReleaseDetailView, error) {
+func (h *Helm) GetHelmReleaseDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.HelmReleaseDetailView, error) {
+	s := h
 	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionView)
 	if err != nil {
 		return domainresource.HelmReleaseDetailView{}, err
@@ -171,7 +159,7 @@ func (s *Service) GetHelmReleaseDetail(ctx context.Context, principal domainiden
 	)
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
+		client, err := s.helmAgentClient(connection)
 		if err != nil {
 			return domainresource.HelmReleaseDetailView{}, err
 		}
@@ -181,7 +169,7 @@ func (s *Service) GetHelmReleaseDetail(ctx context.Context, principal domainiden
 		}
 		source = "agent"
 	default:
-		item, err = s.getDirectHelmReleaseDetail(ctx, clusterID, namespace, name)
+		item, err = s.direct.GetHelmReleaseDetail(ctx, clusterID, namespace, name)
 		if err != nil {
 			return domainresource.HelmReleaseDetailView{}, err
 		}
@@ -194,7 +182,8 @@ func (s *Service) GetHelmReleaseDetail(ctx context.Context, principal domainiden
 	return item, nil
 }
 
-func (s *Service) ListHelmReleaseHistory(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) ([]domainresource.HelmReleaseHistoryView, error) {
+func (h *Helm) ListHelmReleaseHistory(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) ([]domainresource.HelmReleaseHistoryView, error) {
+	s := h
 	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionView)
 	if err != nil {
 		return nil, err
@@ -206,7 +195,7 @@ func (s *Service) ListHelmReleaseHistory(ctx context.Context, principal domainid
 	)
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
+		client, err := s.helmAgentClient(connection)
 		if err != nil {
 			return nil, err
 		}
@@ -216,7 +205,7 @@ func (s *Service) ListHelmReleaseHistory(ctx context.Context, principal domainid
 		}
 		source = "agent"
 	default:
-		items, err = s.listDirectHelmReleaseHistory(ctx, clusterID, namespace, name)
+		items, err = s.direct.ListHelmReleaseHistory(ctx, clusterID, namespace, name)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +218,8 @@ func (s *Service) ListHelmReleaseHistory(ctx context.Context, principal domainid
 	return items, nil
 }
 
-func (s *Service) GetHelmReleaseValues(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, revision string) (domainresource.HelmValuesView, error) {
+func (h *Helm) GetHelmReleaseValues(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, revision string) (domainresource.HelmValuesView, error) {
+	s := h
 	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionView)
 	if err != nil {
 		return domainresource.HelmValuesView{}, err
@@ -241,7 +231,7 @@ func (s *Service) GetHelmReleaseValues(ctx context.Context, principal domainiden
 	)
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
+		client, err := s.helmAgentClient(connection)
 		if err != nil {
 			return domainresource.HelmValuesView{}, err
 		}
@@ -251,7 +241,7 @@ func (s *Service) GetHelmReleaseValues(ctx context.Context, principal domainiden
 		}
 		source = "agent"
 	default:
-		item, err = s.getDirectHelmReleaseValues(ctx, clusterID, namespace, name, revision)
+		item, err = s.direct.GetHelmReleaseValues(ctx, clusterID, namespace, name, revision)
 		if err != nil {
 			return domainresource.HelmValuesView{}, err
 		}
@@ -264,7 +254,8 @@ func (s *Service) GetHelmReleaseValues(ctx context.Context, principal domainiden
 	return item, nil
 }
 
-func (s *Service) UpdateHelmReleaseValues(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, content string) (domainresource.HelmValuesView, error) {
+func (h *Helm) UpdateHelmReleaseValues(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, content string) (domainresource.HelmValuesView, error) {
+	s := h
 	namespace = strings.TrimSpace(namespace)
 	name = strings.TrimSpace(name)
 	if namespace == "" || name == "" {
@@ -280,7 +271,7 @@ func (s *Service) UpdateHelmReleaseValues(ctx context.Context, principal domaini
 			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 			return domainresource.HelmValuesView{}, err
 		}
-		client, err := s.agentClient(connection)
+		client, err := s.helmAgentClient(connection)
 		if err != nil {
 			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 			return domainresource.HelmValuesView{}, err
@@ -302,12 +293,7 @@ func (s *Service) UpdateHelmReleaseValues(ctx context.Context, principal domaini
 	}
 
 	normalizedContent := normalizeHelmValuesContent(content)
-	values, err := parseHelmInstallValues(normalizedContent)
-	if err != nil {
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
-		return domainresource.HelmValuesView{}, err
-	}
-	item, err := s.updateDirectHelmReleaseValues(ctx, clusterID, namespace, name, normalizedContent, values)
+	item, err := s.direct.UpdateHelmReleaseValues(ctx, clusterID, namespace, name, normalizedContent)
 	if err != nil {
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return domainresource.HelmValuesView{}, err
@@ -322,7 +308,8 @@ func (s *Service) UpdateHelmReleaseValues(ctx context.Context, principal domaini
 	return item, nil
 }
 
-func (s *Service) DeleteHelmRelease(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
+func (h *Helm) DeleteHelmRelease(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
+	s := h
 	namespace = strings.TrimSpace(namespace)
 	name = strings.TrimSpace(name)
 	if namespace == "" || name == "" {
@@ -333,7 +320,7 @@ func (s *Service) DeleteHelmRelease(ctx context.Context, principal domainidentit
 		return err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		client, err := s.agentClient(connection)
+		client, err := s.helmAgentClient(connection)
 		if err != nil {
 			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionDelete), "failure", err.Error())
 			return err
@@ -346,7 +333,7 @@ func (s *Service) DeleteHelmRelease(ctx context.Context, principal domainidentit
 		s.recordOperation(ctx, principal, "platform.helm_release.delete", connection.Summary.ID, namespace, "HelmRelease", name, "deleted helm release via agent", map[string]any{"source": "agent"})
 		return nil
 	}
-	if err := s.deleteDirectHelmRelease(ctx, clusterID, namespace, name); err != nil {
+	if err := s.direct.DeleteHelmRelease(ctx, clusterID, namespace, name); err != nil {
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionDelete), "failure", err.Error())
 		return err
 	}
@@ -355,7 +342,7 @@ func (s *Service) DeleteHelmRelease(ctx context.Context, principal domainidentit
 	return nil
 }
 
-func (s *Service) fetchArtifactHubHelmCatalog(ctx context.Context, keyword string, limit, offset int) (domainresource.HelmChartCatalogView, error) {
+func (s *Helm) fetchArtifactHubHelmCatalog(ctx context.Context, keyword string, limit, offset int) (domainresource.HelmChartCatalogView, error) {
 	normalizedLimit := normalizeHelmChartSearchLimit(limit)
 	normalizedOffset := maxInt(offset, 0)
 	endpoint, err := url.Parse(artifactHubAPIBaseURL + "/packages/search")
@@ -414,7 +401,7 @@ func (s *Service) fetchArtifactHubHelmCatalog(ctx context.Context, keyword strin
 	}, nil
 }
 
-func (s *Service) fetchArtifactHubHelmChartDetail(ctx context.Context, repositoryName, chartName, version string) (domainresource.HelmChartDetailView, error) {
+func (s *Helm) fetchArtifactHubHelmChartDetail(ctx context.Context, repositoryName, chartName, version string) (domainresource.HelmChartDetailView, error) {
 	repositoryName = strings.TrimSpace(repositoryName)
 	chartName = strings.TrimSpace(chartName)
 	version = strings.TrimSpace(version)
@@ -450,7 +437,7 @@ func (s *Service) fetchArtifactHubHelmChartDetail(ctx context.Context, repositor
 	return view, nil
 }
 
-func (s *Service) fetchArtifactHubHelmChartValues(ctx context.Context, packageID, name, version string) (domainresource.HelmChartValuesTemplateView, error) {
+func (s *Helm) fetchArtifactHubHelmChartValues(ctx context.Context, packageID, name, version string) (domainresource.HelmChartValuesTemplateView, error) {
 	packageID = strings.TrimSpace(packageID)
 	version = strings.TrimSpace(version)
 	if packageID == "" || version == "" {
@@ -469,12 +456,12 @@ func (s *Service) fetchArtifactHubHelmChartValues(ctx context.Context, packageID
 	}, nil
 }
 
-func (s *Service) fetchArtifactHubJSON(ctx context.Context, endpoint string, target any) error {
+func (s *Helm) fetchArtifactHubJSON(ctx context.Context, endpoint string, target any) error {
 	_, err := s.fetchArtifactHubJSONWithHeaders(ctx, endpoint, target)
 	return err
 }
 
-func (s *Service) fetchArtifactHubJSONWithHeaders(ctx context.Context, endpoint string, target any) (http.Header, error) {
+func (s *Helm) fetchArtifactHubJSONWithHeaders(ctx context.Context, endpoint string, target any) (http.Header, error) {
 	raw, headers, err := s.fetchArtifactHubBytesWithHeaders(ctx, endpoint, artifactHubJSONMaxBytes, "application/json")
 	if err != nil {
 		return nil, err
@@ -485,7 +472,7 @@ func (s *Service) fetchArtifactHubJSONWithHeaders(ctx context.Context, endpoint 
 	return headers, nil
 }
 
-func (s *Service) fetchArtifactHubText(ctx context.Context, endpoint string, maxBytes int64, accept string) (string, error) {
+func (s *Helm) fetchArtifactHubText(ctx context.Context, endpoint string, maxBytes int64, accept string) (string, error) {
 	raw, err := s.fetchArtifactHubBytes(ctx, endpoint, maxBytes, accept)
 	if err != nil {
 		return "", err
@@ -493,12 +480,12 @@ func (s *Service) fetchArtifactHubText(ctx context.Context, endpoint string, max
 	return string(raw), nil
 }
 
-func (s *Service) fetchArtifactHubBytes(ctx context.Context, endpoint string, maxBytes int64, accept string) ([]byte, error) {
+func (s *Helm) fetchArtifactHubBytes(ctx context.Context, endpoint string, maxBytes int64, accept string) ([]byte, error) {
 	raw, _, err := s.fetchArtifactHubBytesWithHeaders(ctx, endpoint, maxBytes, accept)
 	return raw, err
 }
 
-func (s *Service) fetchArtifactHubBytesWithHeaders(ctx context.Context, endpoint string, maxBytes int64, accept string) ([]byte, http.Header, error) {
+func (s *Helm) fetchArtifactHubBytesWithHeaders(ctx context.Context, endpoint string, maxBytes int64, accept string) ([]byte, http.Header, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, nil, err
@@ -512,7 +499,7 @@ func (s *Service) fetchArtifactHubBytesWithHeaders(ctx context.Context, endpoint
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: fetch Artifact Hub: %v", apperrors.ErrClusterUnready, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return nil, nil, fmt.Errorf("%w: Artifact Hub returned %s", apperrors.ErrClusterUnready, response.Status)
 	}
@@ -718,7 +705,7 @@ func trimStringSlice(values []string) []string {
 	return result
 }
 
-func (s *Service) helmChartInstallAllowedActions(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace string) []string {
+func (s *Helm) helmChartInstallAllowedActions(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace string) []string {
 	return s.allowedActionsForResource(ctx, principal, connection, namespace, "HelmRelease", domainaccess.ActionCreate)
 }
 
@@ -728,138 +715,6 @@ func populateAllowedActionsHelmCharts(items []domainresource.HelmChartView, acti
 			items[i].AllowedActions = actions
 		}
 	}
-}
-
-func (s *Service) getDirectHelmReleaseDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.HelmReleaseDetailView, error) {
-	actionConfig, err := s.directHelmActionConfig(ctx, clusterID, namespace)
-	if err != nil {
-		return domainresource.HelmReleaseDetailView{}, err
-	}
-	release, err := action.NewGet(actionConfig).Run(name)
-	if err != nil {
-		return domainresource.HelmReleaseDetailView{}, mapHelmReleaseSDKError(name, "get helm release detail", err)
-	}
-	return mapSDKHelmReleaseDetail(release), nil
-}
-
-func (s *Service) listDirectHelmReleaseHistory(ctx context.Context, clusterID, namespace, name string) ([]domainresource.HelmReleaseHistoryView, error) {
-	actionConfig, err := s.directHelmActionConfig(ctx, clusterID, namespace)
-	if err != nil {
-		return nil, err
-	}
-	historyAction := action.NewHistory(actionConfig)
-	releases, err := historyAction.Run(name)
-	if err != nil {
-		return nil, mapHelmReleaseSDKError(name, "list helm release history", err)
-	}
-	items := make([]domainresource.HelmReleaseHistoryView, 0, len(releases))
-	for _, release := range releases {
-		items = append(items, mapSDKHelmReleaseHistory(release))
-	}
-	sort.SliceStable(items, func(i, j int) bool {
-		leftRevision, _ := strconv.Atoi(items[i].Revision)
-		rightRevision, _ := strconv.Atoi(items[j].Revision)
-		return leftRevision > rightRevision
-	})
-	if len(items) == 0 {
-		return nil, fmt.Errorf("%w: helm release %s not found", apperrors.ErrNotFound, name)
-	}
-	return items, nil
-}
-
-func (s *Service) getDirectHelmReleaseValues(ctx context.Context, clusterID, namespace, name, revision string) (domainresource.HelmValuesView, error) {
-	actionConfig, err := s.directHelmActionConfig(ctx, clusterID, namespace)
-	if err != nil {
-		return domainresource.HelmValuesView{}, err
-	}
-	getter := action.NewGet(actionConfig)
-	if strings.TrimSpace(revision) != "" {
-		parsedRevision, err := strconv.Atoi(strings.TrimSpace(revision))
-		if err != nil || parsedRevision <= 0 {
-			return domainresource.HelmValuesView{}, fmt.Errorf("%w: revision must be a positive integer", apperrors.ErrInvalidArgument)
-		}
-		getter.Version = parsedRevision
-	}
-	release, err := getter.Run(name)
-	if err != nil {
-		return domainresource.HelmValuesView{}, mapHelmReleaseSDKError(name, "get helm release values", err)
-	}
-	content, err := sdkReleaseValuesYAML(release)
-	if err != nil {
-		return domainresource.HelmValuesView{}, fmt.Errorf("%w: render helm release values: %v", apperrors.ErrClusterUnready, err)
-	}
-	return domainresource.HelmValuesView{
-		Name:        strings.TrimSpace(release.Name),
-		Namespace:   strings.TrimSpace(release.Namespace),
-		Revision:    strconv.Itoa(release.Version),
-		Content:     content,
-		Original:    content,
-		Editable:    false,
-		DiffEnabled: true,
-	}, nil
-}
-
-func (s *Service) updateDirectHelmReleaseValues(ctx context.Context, clusterID, namespace, name, content string, values map[string]interface{}) (domainresource.HelmValuesView, error) {
-	actionConfig, err := s.directHelmActionConfig(ctx, clusterID, namespace)
-	if err != nil {
-		return domainresource.HelmValuesView{}, err
-	}
-	current, err := action.NewGet(actionConfig).Run(name)
-	if err != nil {
-		return domainresource.HelmValuesView{}, mapHelmReleaseSDKError(name, "get helm release", err)
-	}
-	if current == nil || current.Chart == nil {
-		return domainresource.HelmValuesView{}, fmt.Errorf("%w: helm release %s has no chart payload", apperrors.ErrClusterUnready, name)
-	}
-	upgrader := action.NewUpgrade(actionConfig)
-	upgrader.Namespace = namespace
-	upgrader.ResetValues = true
-	upgrader.Wait = true
-	upgrader.WaitForJobs = true
-	upgrader.Timeout = time.Duration(defaultHelmInstallTimeoutSeconds) * time.Second
-	release, err := upgrader.RunWithContext(ctx, name, current.Chart, values)
-	if err != nil {
-		return domainresource.HelmValuesView{}, mapHelmReleaseSDKError(name, "update helm release values", err)
-	}
-	if release == nil {
-		return domainresource.HelmValuesView{}, fmt.Errorf("%w: update helm release values returned no release", apperrors.ErrClusterUnready)
-	}
-	return domainresource.HelmValuesView{
-		Name:        strings.TrimSpace(release.Name),
-		Namespace:   strings.TrimSpace(release.Namespace),
-		Revision:    strconv.Itoa(release.Version),
-		Content:     content,
-		Original:    content,
-		Editable:    true,
-		DiffEnabled: true,
-	}, nil
-}
-
-func (s *Service) deleteDirectHelmRelease(ctx context.Context, clusterID, namespace, name string) error {
-	actionConfig, err := s.directHelmActionConfig(ctx, clusterID, namespace)
-	if err != nil {
-		return err
-	}
-	uninstaller := action.NewUninstall(actionConfig)
-	uninstaller.Wait = true
-	uninstaller.Timeout = time.Duration(defaultHelmInstallTimeoutSeconds) * time.Second
-	if _, err := uninstaller.Run(name); err != nil {
-		return mapHelmReleaseSDKError(name, "delete helm release", err)
-	}
-	return nil
-}
-
-func (s *Service) directHelmActionConfig(ctx context.Context, clusterID, namespace string) (*action.Configuration, error) {
-	bundle, err := s.clusters.Bundle(ctx, clusterID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-	}
-	actionConfig := new(action.Configuration)
-	getter := helmRESTClientGetter{restConfig: bundle.RESTConfig, namespace: namespace}
-	if err := actionConfig.Init(getter, namespace, "secrets", func(string, ...interface{}) {}); err != nil {
-		return nil, fmt.Errorf("%w: initialize helm action: %v", apperrors.ErrClusterUnready, err)
-	}
-	return actionConfig, nil
 }
 
 func helmReleaseValuesEditable(connection domaincluster.Connection, decision domainaccess.Decision) bool {
@@ -880,287 +735,6 @@ func normalizeHelmValuesContent(content string) string {
 		return "{}\n"
 	}
 	return content
-}
-
-func mapHelmReleaseSDKError(name, operation string, err error) error {
-	if isHelmReleaseNotFoundError(err) {
-		return fmt.Errorf("%w: helm release %s not found", apperrors.ErrNotFound, name)
-	}
-	return fmt.Errorf("%w: %s: %v", apperrors.ErrClusterUnready, operation, err)
-}
-
-func isHelmReleaseNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, driver.ErrReleaseNotFound) || errors.Is(err, driver.ErrNoDeployedReleases) {
-		return true
-	}
-	normalized := strings.ToLower(err.Error())
-	return strings.Contains(normalized, "release: not found") || strings.Contains(normalized, "not found")
-}
-
-func (s *Service) getDirectHelmReleaseRecord(ctx context.Context, clusterID, namespace, name, revision string) (helmReleaseRecord, error) {
-	records, err := s.listDirectHelmReleaseRecords(ctx, clusterID, namespace)
-	if err != nil {
-		return helmReleaseRecord{}, err
-	}
-	for _, record := range records {
-		if record.release == nil {
-			continue
-		}
-		if record.release.Name != name {
-			continue
-		}
-		if revision != "" && strconv.Itoa(record.release.Version) != revision {
-			continue
-		}
-		return record, nil
-	}
-	return helmReleaseRecord{}, fmt.Errorf("%w: helm release %s not found", apperrors.ErrNotFound, name)
-}
-
-func (s *Service) listDirectHelmReleaseRecords(ctx context.Context, clusterID, namespace string) ([]helmReleaseRecord, error) {
-	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-	secrets, err := bundle.Typed.CoreV1().Secrets(namespace).List(queryCtx, metav1.ListOptions{LabelSelector: "owner=helm"})
-	if err != nil {
-		return nil, err
-	}
-	records := make([]helmReleaseRecord, 0, len(secrets.Items))
-	for _, item := range secrets.Items {
-		releaseData := strings.TrimSpace(string(item.Data["release"]))
-		if releaseData == "" {
-			continue
-		}
-		release, err := helmrelease.Decode(releaseData, item.Labels)
-		if err != nil {
-			continue
-		}
-		if strings.TrimSpace(release.Namespace) == "" {
-			release.Namespace = item.Namespace
-		}
-		records = append(records, helmReleaseRecord{
-			createdAt: item.CreationTimestamp.Time,
-			labels:    cloneStringMap(item.Labels),
-			release:   release,
-			secret:    item.Name,
-		})
-	}
-	sort.SliceStable(records, func(i, j int) bool {
-		if records[i].release.Namespace != records[j].release.Namespace {
-			return records[i].release.Namespace < records[j].release.Namespace
-		}
-		if records[i].release.Name != records[j].release.Name {
-			return records[i].release.Name < records[j].release.Name
-		}
-		return records[i].release.Version > records[j].release.Version
-	})
-	return records, nil
-}
-
-func mapSDKHelmReleaseDetail(release *helmreleasepkg.Release) domainresource.HelmReleaseDetailView {
-	if release == nil {
-		return domainresource.HelmReleaseDetailView{}
-	}
-	chartName := ""
-	chartVersion := ""
-	appVersion := ""
-	description := ""
-	annotations := map[string]string(nil)
-	if release.Chart != nil && release.Chart.Metadata != nil {
-		chartName = strings.TrimSpace(release.Chart.Metadata.Name)
-		chartVersion = strings.TrimSpace(release.Chart.Metadata.Version)
-		appVersion = strings.TrimSpace(release.Chart.Metadata.AppVersion)
-		description = strings.TrimSpace(release.Chart.Metadata.Description)
-		annotations = cloneStringMap(release.Chart.Metadata.Annotations)
-	}
-	detail := domainresource.HelmReleaseDetailView{
-		Name:              strings.TrimSpace(release.Name),
-		Namespace:         strings.TrimSpace(release.Namespace),
-		Revision:          strconv.Itoa(release.Version),
-		ChartName:         chartName,
-		ChartVersion:      chartVersion,
-		AppVersion:        appVersion,
-		StorageDriver:     "secret",
-		Description:       description,
-		Annotations:       annotations,
-		ValuesEditable:    false,
-		ValuesDiffEnabled: true,
-	}
-	if chartName != "" {
-		if chartVersion != "" {
-			detail.Chart = fmt.Sprintf("%s-%s", chartName, chartVersion)
-		} else {
-			detail.Chart = chartName
-		}
-	}
-	if release.Info != nil {
-		detail.Status = strings.TrimSpace(string(release.Info.Status))
-		detail.Notes = release.Info.Notes
-		detail.CreatedAt = formatHelmTime(release.Info.FirstDeployed.Time)
-		detail.UpdatedAt = formatHelmTime(release.Info.LastDeployed.Time)
-		detail.FirstDeployedAt = formatHelmTime(release.Info.FirstDeployed.Time)
-		detail.LastDeployedAt = formatHelmTime(release.Info.LastDeployed.Time)
-		detail.Description = firstNonEmptyHelm(strings.TrimSpace(release.Info.Description), detail.Description)
-		if !release.Info.FirstDeployed.IsZero() {
-			detail.AgeSeconds = secondsSince(release.Info.FirstDeployed.Time)
-		}
-	}
-	if detail.Status == "" {
-		detail.Status = "unknown"
-	}
-	return detail
-}
-
-func mapSDKHelmReleaseHistory(release *helmreleasepkg.Release) domainresource.HelmReleaseHistoryView {
-	if release == nil {
-		return domainresource.HelmReleaseHistoryView{}
-	}
-	item := domainresource.HelmReleaseHistoryView{
-		Name:      strings.TrimSpace(release.Name),
-		Namespace: strings.TrimSpace(release.Namespace),
-		Revision:  strconv.Itoa(release.Version),
-	}
-	if release.Chart != nil && release.Chart.Metadata != nil {
-		item.ChartVersion = strings.TrimSpace(release.Chart.Metadata.Version)
-		item.AppVersion = strings.TrimSpace(release.Chart.Metadata.AppVersion)
-		if release.Chart.Metadata.Name != "" {
-			if item.ChartVersion != "" {
-				item.Chart = fmt.Sprintf("%s-%s", strings.TrimSpace(release.Chart.Metadata.Name), item.ChartVersion)
-			} else {
-				item.Chart = strings.TrimSpace(release.Chart.Metadata.Name)
-			}
-		}
-	}
-	if release.Info != nil {
-		item.Status = strings.TrimSpace(string(release.Info.Status))
-		item.Description = strings.TrimSpace(release.Info.Description)
-		item.UpdatedAt = formatHelmTime(release.Info.LastDeployed.Time)
-		item.CreatedAt = formatHelmTime(release.Info.FirstDeployed.Time)
-	}
-	item.ManifestDigest = helmrelease.Digest(release.Manifest)
-	if valuesContent, err := sdkReleaseValuesYAML(release); err == nil {
-		item.ValuesDigest = helmrelease.Digest(valuesContent)
-	}
-	return item
-}
-
-func sdkReleaseValuesYAML(release *helmreleasepkg.Release) (string, error) {
-	if release == nil || len(release.Config) == 0 {
-		return "{}\n", nil
-	}
-	content, err := yaml.Marshal(release.Config)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}
-
-func mapHelmReleaseDetail(record helmReleaseRecord) domainresource.HelmReleaseDetailView {
-	release := record.release
-	chartName := ""
-	chartVersion := ""
-	appVersion := ""
-	description := ""
-	annotations := map[string]string(nil)
-	if release.Chart != nil && release.Chart.Metadata != nil {
-		chartName = strings.TrimSpace(release.Chart.Metadata.Name)
-		chartVersion = strings.TrimSpace(release.Chart.Metadata.Version)
-		appVersion = strings.TrimSpace(release.Chart.Metadata.AppVersion)
-		description = strings.TrimSpace(release.Chart.Metadata.Description)
-		annotations = cloneStringMap(release.Chart.Metadata.Annotations)
-	}
-	status := strings.TrimSpace(record.labels["status"])
-	if status == "" && release.Info != nil {
-		status = strings.TrimSpace(release.Info.Status)
-	}
-	if status == "" {
-		status = "unknown"
-	}
-	detail := domainresource.HelmReleaseDetailView{
-		Name:              release.Name,
-		Namespace:         release.Namespace,
-		Revision:          strconv.Itoa(release.Version),
-		Status:            status,
-		Chart:             strings.TrimSpace(record.labels["helm.sh/chart"]),
-		ChartName:         chartName,
-		ChartVersion:      chartVersion,
-		AppVersion:        appVersion,
-		StorageDriver:     "secret",
-		Description:       description,
-		Labels:            cloneStringMap(record.labels),
-		Annotations:       annotations,
-		AgeSeconds:        secondsSince(record.createdAt),
-		ValuesEditable:    false,
-		ValuesDiffEnabled: true,
-	}
-	if detail.Chart == "" && chartName != "" {
-		if chartVersion != "" {
-			detail.Chart = fmt.Sprintf("%s-%s", chartName, chartVersion)
-		} else {
-			detail.Chart = chartName
-		}
-	}
-	if release.Info != nil {
-		detail.Status = firstNonEmptyHelm(detail.Status, strings.TrimSpace(release.Info.Status))
-		detail.Notes = release.Info.Notes
-		detail.CreatedAt = formatHelmTime(record.createdAt)
-		detail.UpdatedAt = formatHelmTime(release.Info.LastDeployed)
-		detail.FirstDeployedAt = formatHelmTime(release.Info.FirstDeployed)
-		detail.LastDeployedAt = formatHelmTime(release.Info.LastDeployed)
-		detail.Description = firstNonEmptyHelm(strings.TrimSpace(release.Info.Description), detail.Description)
-	} else {
-		detail.CreatedAt = formatHelmTime(record.createdAt)
-	}
-	return detail
-}
-
-func mapHelmReleaseHistory(record helmReleaseRecord) domainresource.HelmReleaseHistoryView {
-	release := record.release
-	item := domainresource.HelmReleaseHistoryView{
-		Name:         release.Name,
-		Namespace:    release.Namespace,
-		Revision:     strconv.Itoa(release.Version),
-		Status:       strings.TrimSpace(record.labels["status"]),
-		Chart:        strings.TrimSpace(record.labels["helm.sh/chart"]),
-		Description:  "",
-		UpdatedAt:    "",
-		CreatedAt:    formatHelmTime(record.createdAt),
-		ValuesDigest: "",
-	}
-	if release.Chart != nil && release.Chart.Metadata != nil {
-		item.ChartVersion = strings.TrimSpace(release.Chart.Metadata.Version)
-		item.AppVersion = strings.TrimSpace(release.Chart.Metadata.AppVersion)
-		if item.Chart == "" && release.Chart.Metadata.Name != "" {
-			if item.ChartVersion != "" {
-				item.Chart = fmt.Sprintf("%s-%s", release.Chart.Metadata.Name, item.ChartVersion)
-			} else {
-				item.Chart = release.Chart.Metadata.Name
-			}
-		}
-	}
-	if release.Info != nil {
-		item.Status = firstNonEmptyHelm(item.Status, strings.TrimSpace(release.Info.Status))
-		item.Description = strings.TrimSpace(release.Info.Description)
-		item.UpdatedAt = formatHelmTime(release.Info.LastDeployed)
-	}
-	valuesContent, err := helmrelease.ValuesYAML(release)
-	if err == nil {
-		item.ValuesDigest = helmrelease.Digest(valuesContent)
-	}
-	item.ManifestDigest = helmrelease.Digest(release.Manifest)
-	return item
-}
-
-func formatHelmTime(value time.Time) string {
-	if value.IsZero() {
-		return ""
-	}
-	return value.UTC().Format(time.RFC3339)
 }
 
 func firstNonEmptyHelm(values ...string) string {

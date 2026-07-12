@@ -26,9 +26,8 @@ func TestServiceOIDCAuthorizationCodeFlow(t *testing.T) {
 	service := New(repo, users, nil, nil, "test-encryption-key-32-bytes-long")
 
 	discovery := service.Discovery("https://soha.example/")
-	if discovery.IntrospectionEndpoint != "https://soha.example/oauth2/introspect" || discovery.RevocationEndpoint != "https://soha.example/oauth2/revoke" {
-		t.Fatalf("Discovery endpoints = %#v", discovery)
-	}
+	expectOIDC(t, discovery.IntrospectionEndpoint == "https://soha.example/oauth2/introspect", "introspection endpoint = %q", discovery.IntrospectionEndpoint)
+	expectOIDC(t, discovery.RevocationEndpoint == "https://soha.example/oauth2/revoke", "revocation endpoint = %q", discovery.RevocationEndpoint)
 
 	verifier := "test-verifier-value"
 	challenge := pkceChallenge(verifier)
@@ -42,12 +41,10 @@ func TestServiceOIDCAuthorizationCodeFlow(t *testing.T) {
 		CodeChallenge:       challenge,
 		CodeChallengeMethod: "S256",
 	})
-	if err != nil {
-		t.Fatalf("Authorize returned error: %v", err)
-	}
-	if authorize.Code == "" || authorize.State != "state-1" || authorize.RedirectURI != "https://app.example/callback" {
-		t.Fatalf("Authorize result = %#v", authorize)
-	}
+	expectOIDC(t, err == nil, "Authorize returned error: %v", err)
+	expectOIDC(t, authorize.Code != "", "Authorize code is empty")
+	expectOIDC(t, authorize.State == "state-1", "Authorize state = %q", authorize.State)
+	expectOIDC(t, authorize.RedirectURI == "https://app.example/callback", "Authorize redirect = %q", authorize.RedirectURI)
 
 	token, err := service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
 		GrantType:    "authorization_code",
@@ -57,66 +54,61 @@ func TestServiceOIDCAuthorizationCodeFlow(t *testing.T) {
 		ClientSecret: "secret-1",
 		CodeVerifier: verifier,
 	})
-	if err != nil {
-		t.Fatalf("Token returned error: %v", err)
-	}
-	if token.AccessToken == "" || token.IDToken == "" || token.TokenType != "Bearer" {
-		t.Fatalf("Token result = %#v", token)
-	}
+	expectOIDC(t, err == nil, "Token returned error: %v", err)
+	expectOIDC(t, token.AccessToken != "", "access token is empty")
+	expectOIDC(t, token.IDToken != "", "ID token is empty")
+	expectOIDC(t, token.TokenType == "Bearer", "token type = %q", token.TokenType)
 
 	jwks, err := service.JWKS(ctx)
-	if err != nil {
-		t.Fatalf("JWKS returned error: %v", err)
-	}
-	if len(jwks.Keys) != 1 || jwks.Keys[0]["kid"] == "" || jwks.Keys[0]["alg"] != "ES256" {
-		t.Fatalf("JWKS = %#v", jwks)
-	}
+	expectOIDC(t, err == nil, "JWKS returned error: %v", err)
+	expectOIDC(t, len(jwks.Keys) == 1, "JWKS keys = %#v", jwks.Keys)
+	expectOIDC(t, jwks.Keys[0]["kid"] != "", "JWKS kid is empty")
+	expectOIDC(t, jwks.Keys[0]["alg"] == "ES256", "JWKS alg = %#v", jwks.Keys[0]["alg"])
 
 	userInfo, err := service.UserInfo(ctx, "https://soha.example", "Bearer "+token.AccessToken)
-	if err != nil {
-		t.Fatalf("UserInfo returned error: %v", err)
-	}
-	if userInfo.Subject != "user-1" || userInfo.Email != "ada@example.com" || len(userInfo.Roles) != 1 || userInfo.Roles[0] != "admin" {
-		t.Fatalf("UserInfo = %#v", userInfo)
-	}
+	expectOIDC(t, err == nil, "UserInfo returned error: %v", err)
+	expectOIDC(t, userInfo.Subject == "user-1", "UserInfo subject = %q", userInfo.Subject)
+	expectOIDC(t, userInfo.Email == "ada@example.com", "UserInfo email = %q", userInfo.Email)
+	expectOIDC(t, len(userInfo.Roles) == 1, "UserInfo roles = %#v", userInfo.Roles)
+	expectOIDC(t, userInfo.Roles[0] == "admin", "UserInfo roles = %#v", userInfo.Roles)
 
 	introspection, err := service.Introspect(ctx, "https://soha.example", token.AccessToken, domainprovider.ClientAuthInput{
 		ClientID:     "client-1",
 		ClientSecret: "secret-1",
 	})
-	if err != nil {
-		t.Fatalf("Introspect returned error: %v", err)
-	}
-	if !introspection.Active || introspection.Subject != "user-1" || introspection.ClientID != "client-1" || introspection.TokenType != "Bearer" {
-		t.Fatalf("Introspect = %#v", introspection)
-	}
+	expectOIDC(t, err == nil, "Introspect returned error: %v", err)
+	expectOIDC(t, introspection.Active, "Introspect is inactive")
+	expectOIDC(t, introspection.Subject == "user-1", "Introspect subject = %q", introspection.Subject)
+	expectOIDC(t, introspection.ClientID == "client-1", "Introspect client = %q", introspection.ClientID)
+	expectOIDC(t, introspection.TokenType == "Bearer", "Introspect token type = %q", introspection.TokenType)
 	inactive, err := service.Introspect(ctx, "https://soha.example", "invalid-token", domainprovider.ClientAuthInput{
 		ClientID:     "client-1",
 		ClientSecret: "secret-1",
 	})
-	if err != nil {
-		t.Fatalf("inactive Introspect returned error: %v", err)
-	}
-	if inactive.Active {
-		t.Fatalf("inactive Introspect = %#v, want inactive", inactive)
-	}
+	expectOIDC(t, err == nil, "inactive Introspect returned error: %v", err)
+	expectOIDC(t, !inactive.Active, "inactive token reported active")
 
-	if err := service.Revoke(ctx, "https://soha.example", token.AccessToken, domainprovider.ClientAuthInput{
+	err = service.Revoke(ctx, "https://soha.example", token.AccessToken, domainprovider.ClientAuthInput{
 		ClientID:     "client-1",
 		ClientSecret: "secret-1",
-	}); err != nil {
-		t.Fatalf("Revoke returned error: %v", err)
-	}
+	})
+	expectOIDC(t, err == nil, "Revoke returned error: %v", err)
 
-	if _, err := service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
+	_, err = service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
 		GrantType:    "authorization_code",
 		Code:         authorize.Code,
 		RedirectURI:  "https://app.example/callback",
 		ClientID:     "client-1",
 		ClientSecret: "secret-1",
 		CodeVerifier: verifier,
-	}); !errors.Is(err, apperrors.ErrUnauthorized) {
-		t.Fatalf("second Token error = %v, want unauthorized", err)
+	})
+	expectOIDC(t, errors.Is(err, apperrors.ErrUnauthorized), "second Token error = %v, want unauthorized", err)
+}
+
+func expectOIDC(t *testing.T, condition bool, format string, args ...any) {
+	t.Helper()
+	if !condition {
+		t.Fatalf(format, args...)
 	}
 }
 

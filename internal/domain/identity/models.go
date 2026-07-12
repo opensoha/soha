@@ -15,6 +15,54 @@ type Principal struct {
 	PermissionKeys []string `json:"permissionKeys,omitempty"`
 }
 
+// User is the persistence-neutral identity record used by authentication services.
+type User struct {
+	ID           string
+	Username     string
+	Email        string
+	DisplayName  string
+	Status       string
+	Tags         []string
+	Preferences  map[string]any
+	AuthzVersion int64
+}
+
+type AuthzState struct {
+	UserID       string
+	Status       string
+	AuthzVersion int64
+}
+
+type Session struct {
+	ID             string
+	UserID         string
+	RefreshTokenID string
+	ProviderType   string
+	Status         string
+	ExpiresAt      time.Time
+	LastSeenAt     time.Time
+	Metadata       map[string]any
+	AuthzVersion   int64
+}
+
+type EphemeralToken struct {
+	Token     string
+	Kind      string
+	Payload   map[string]any
+	ExpiresAt time.Time
+	CreatedAt time.Time
+}
+
+type OIDCIdentity struct {
+	ID             string
+	UserID         string
+	ProviderType   string
+	ProviderID     string
+	ProviderUserID string
+	Profile        map[string]any
+	LastLoginAt    time.Time
+}
+
 type LinkedIdentity struct {
 	ID             string     `json:"id"`
 	ProviderType   string     `json:"providerType"`
@@ -94,6 +142,7 @@ type Provider struct {
 	Type     string `json:"type"`
 	ID       string `json:"id,omitempty"`
 	Name     string `json:"name"`
+	IconURL  string `json:"iconUrl,omitempty"`
 	Enabled  bool   `json:"enabled"`
 	LoginURL string `json:"loginUrl,omitempty"`
 }

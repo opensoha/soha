@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
@@ -33,9 +34,10 @@ func (a *App) Run() error {
 }
 
 func (a *App) Shutdown(ctx context.Context) error {
+	var shutdownErr error
 	if a.HTTP != nil {
 		if err := a.HTTP.Shutdown(ctx); err != nil {
-			return err
+			shutdownErr = errors.Join(shutdownErr, err)
 		}
 	}
 	if a.cancel != nil {
@@ -43,7 +45,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	if a.WorkflowService != nil {
 		if err := a.WorkflowService.Shutdown(ctx); err != nil {
-			return err
+			shutdownErr = errors.Join(shutdownErr, err)
 		}
 	}
 	if a.VirtualizationService != nil {
@@ -53,7 +55,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		a.Informers.Stop()
 	}
 	if a.Database != nil {
-		_ = a.Database.Close()
+		shutdownErr = errors.Join(shutdownErr, a.Database.Close())
 	}
 	if a.RateLimitBackend != nil {
 		_ = a.RateLimitBackend.Close()
@@ -61,5 +63,5 @@ func (a *App) Shutdown(ctx context.Context) error {
 	if a.Logger != nil {
 		_ = a.Logger.Sync()
 	}
-	return nil
+	return shutdownErr
 }

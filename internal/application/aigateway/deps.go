@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/opensoha/soha/internal/platform/keyring"
+
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 )
@@ -16,13 +18,21 @@ type PersonalAccessTokenRepository interface {
 	RevokePersonalAccessToken(context.Context, string, string) error
 }
 
-type ServiceAccountRepository interface {
+type ServiceAccountStore interface {
 	ListServiceAccounts(context.Context) ([]domainaigateway.ServiceAccount, error)
 	CreateServiceAccount(context.Context, domainaigateway.ServiceAccount) (domainaigateway.ServiceAccount, error)
 	GetServiceAccount(context.Context, string) (domainaigateway.ServiceAccount, error)
+}
+
+type ServiceAccountTokenStore interface {
 	ListAllServiceAccountTokens(context.Context) ([]domainaigateway.ServiceAccountToken, error)
 	CreateServiceAccountToken(context.Context, domainaigateway.ServiceAccountToken) (domainaigateway.ServiceAccountToken, error)
 	RevokeServiceAccountToken(context.Context, string) error
+}
+
+type ServiceAccountRepository interface {
+	ServiceAccountStore
+	ServiceAccountTokenStore
 }
 
 type AIClientRepository interface {
@@ -73,33 +83,59 @@ type ApprovalRepository interface {
 	ExpirePendingApprovalRequests(context.Context, time.Time) ([]domainaigateway.ApprovalRequest, error)
 }
 
-type LLMRelayRepository interface {
+type LLMUpstreamStore interface {
 	ListLLMUpstreams(context.Context, domainaigateway.LLMUpstreamFilter) ([]domainaigateway.LLMUpstream, error)
 	GetLLMUpstream(context.Context, string) (domainaigateway.LLMUpstream, error)
 	CreateLLMUpstream(context.Context, domainaigateway.LLMUpstream) (domainaigateway.LLMUpstream, error)
 	UpdateLLMUpstream(context.Context, domainaigateway.LLMUpstream) (domainaigateway.LLMUpstream, error)
+}
+
+type LLMModelRouteStore interface {
 	ListLLMModelRoutes(context.Context, domainaigateway.LLMModelRouteFilter) ([]domainaigateway.LLMModelRoute, error)
 	GetLLMModelRoute(context.Context, string) (domainaigateway.LLMModelRoute, error)
 	CreateLLMModelRoute(context.Context, domainaigateway.LLMModelRoute) (domainaigateway.LLMModelRoute, error)
 	UpdateLLMModelRoute(context.Context, domainaigateway.LLMModelRoute) (domainaigateway.LLMModelRoute, error)
 	DeleteLLMModelRoute(context.Context, string) error
+}
+
+type LLMCallLogReader interface {
 	ListLLMCallLogs(context.Context, domainaigateway.LLMCallLogFilter) ([]domainaigateway.LLMCallLog, error)
 	LLMRelayCallLogMetrics(context.Context, domainaigateway.LLMCallLogFilter) (domainaigateway.LLMRelayCallLogMetrics, error)
 	SumLLMCallTokens(context.Context, domainaigateway.LLMCallLogFilter) (int, error)
 	LLMRelayCacheLogStats(context.Context, domainaigateway.LLMCallLogFilter) (domainaigateway.LLMRelayCacheLogStats, error)
+}
+
+type LLMCallLogWriter interface {
 	CreateLLMCallLog(context.Context, domainaigateway.LLMCallLog) error
+}
+
+type LLMCacheStore interface {
 	GetLLMCacheEntryByKey(context.Context, string) (domainaigateway.LLMCacheEntry, error)
 	CountLLMCacheEntries(context.Context, domainaigateway.LLMCacheEntryFilter) (int, error)
 	CreateLLMCacheEntry(context.Context, domainaigateway.LLMCacheEntry) (domainaigateway.LLMCacheEntry, error)
 	UpdateLLMCacheEntry(context.Context, domainaigateway.LLMCacheEntry) (domainaigateway.LLMCacheEntry, error)
 	DeleteLLMCacheEntries(context.Context, domainaigateway.LLMCacheEntryFilter) (int, error)
+}
+
+type LLMHealthEventWriter interface {
 	CreateLLMHealthEvent(context.Context, domainaigateway.LLMHealthEvent) error
+}
+
+type LLMRelayRepository interface {
+	LLMUpstreamStore
+	LLMModelRouteStore
+	LLMCallLogReader
+	LLMCallLogWriter
+	LLMCacheStore
+	LLMHealthEventWriter
 }
 
 type LLMRelayConfig struct {
 	Enabled                     bool
 	DefaultTimeout              time.Duration
 	StreamTimeout               time.Duration
+	FirstByteTimeout            time.Duration
+	StreamIdleTimeout           time.Duration
 	HealthCheckEnabled          bool
 	HealthCheckInterval         time.Duration
 	MaxRequestBodyBytes         int64
@@ -107,6 +143,7 @@ type LLMRelayConfig struct {
 	AllowPrivateUpstreamHosts   bool
 	IncludeUsageForOpenAIStream bool
 	CredentialEncryptionKey     string
+	CredentialEncryptionKeys    keyring.Ring
 }
 
 type ServiceDeps struct {

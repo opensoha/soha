@@ -15,16 +15,23 @@ import (
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/keyring"
 )
 
-type DockerService interface {
+type DockerOverviewService interface {
 	Overview(context.Context, domainidentity.Principal) (domaindocker.Overview, error)
+}
+
+type DockerHostService interface {
 	ListHosts(context.Context, domainidentity.Principal, domaindocker.HostFilter) (domaindocker.Page[domaindocker.Host], error)
 	GetHost(context.Context, domainidentity.Principal, string) (domaindocker.Host, error)
 	CreateHost(context.Context, domainidentity.Principal, domaindocker.HostInput) (domaindocker.Host, error)
 	UpdateHost(context.Context, domainidentity.Principal, string, domaindocker.HostInput) (domaindocker.Host, error)
 	DeleteHost(context.Context, domainidentity.Principal, string) error
 	QuickCreateHost(context.Context, domainidentity.Principal, domaindocker.QuickCreateHostInput) (domaindocker.Operation, error)
+}
+
+type DockerProjectService interface {
 	ListProjects(context.Context, domainidentity.Principal, domaindocker.ProjectFilter) (domaindocker.Page[domaindocker.Project], error)
 	GetProject(context.Context, domainidentity.Principal, string) (domaindocker.Project, error)
 	CreateProject(context.Context, domainidentity.Principal, domaindocker.ProjectInput) (domaindocker.Project, error)
@@ -32,35 +39,91 @@ type DockerService interface {
 	DeleteProject(context.Context, domainidentity.Principal, string) error
 	DeployProject(context.Context, domainidentity.Principal, string, string) (domaindocker.Operation, error)
 	StartContainer(context.Context, domainidentity.Principal, domaindocker.ContainerStartInput) (domaindocker.Operation, error)
+}
+
+type DockerProjectRuntimeService interface {
 	GetProjectLogs(context.Context, domainidentity.Principal, string, string, int) (domaindocker.ProjectRuntimeLogs, error)
 	StreamProjectLogs(context.Context, domainidentity.Principal, string, string, int, io.Writer) error
 	StreamProjectTerminal(context.Context, domainidentity.Principal, string, string, string, io.Reader, io.Writer, io.Writer) error
+}
+
+type DockerProjectStorageService interface {
 	ListProjectVolumes(context.Context, domainidentity.Principal, string, string) ([]domaindocker.ProjectVolume, error)
 	ListProjectVolumeFiles(context.Context, domainidentity.Principal, string, domaindocker.ProjectVolumeFileListInput) (domaindocker.ProjectVolumeFileList, error)
 	ReadProjectVolumeFile(context.Context, domainidentity.Principal, string, domaindocker.ProjectVolumeFileReadInput) (domaindocker.ProjectVolumeFileContent, error)
+}
+
+type DockerServiceRuntimeService interface {
 	ListServices(context.Context, domainidentity.Principal, domaindocker.ServiceFilter) (domaindocker.Page[domaindocker.Service], error)
 	ServiceAction(context.Context, domainidentity.Principal, string, string) (domaindocker.Operation, error)
+}
+
+type DockerPortMappingService interface {
 	ListPortMappings(context.Context, domainidentity.Principal, domaindocker.PortMappingFilter) (domaindocker.Page[domaindocker.PortMapping], error)
 	CreatePortMapping(context.Context, domainidentity.Principal, domaindocker.PortMappingInput) (domaindocker.PortMapping, error)
 	UpdatePortMapping(context.Context, domainidentity.Principal, string, domaindocker.PortMappingInput) (domaindocker.PortMapping, error)
 	DeletePortMapping(context.Context, domainidentity.Principal, string) error
+}
+
+type DockerTemplateService interface {
 	ListTemplates(context.Context, domainidentity.Principal, domaindocker.TemplateFilter) (domaindocker.Page[domaindocker.Template], error)
 	CreateTemplate(context.Context, domainidentity.Principal, domaindocker.TemplateInput) (domaindocker.Template, error)
 	UpdateTemplate(context.Context, domainidentity.Principal, string, domaindocker.TemplateInput) (domaindocker.Template, error)
 	DeleteTemplate(context.Context, domainidentity.Principal, string) error
+}
+
+type DockerOperationService interface {
 	ListOperations(context.Context, domainidentity.Principal, domaindocker.OperationFilter) (domaindocker.Page[domaindocker.Operation], error)
 	GetOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
 	ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domaindocker.OperationLog, error)
 	CancelOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
 	RetryOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
+}
+
+type DockerRunnerOperationService interface {
 	ClaimOperation(context.Context, domaindocker.OperationClaimInput) (domaindocker.Operation, error)
 	GetOperationForRunner(context.Context, string) (domaindocker.Operation, error)
 	RecordOperationCallback(context.Context, domaindocker.OperationCallbackInput) (domaindocker.Operation, error)
 }
 
+type DockerService interface {
+	DockerOverviewService
+	DockerHostService
+	DockerProjectService
+	DockerProjectRuntimeService
+	DockerProjectStorageService
+	DockerServiceRuntimeService
+	DockerPortMappingService
+	DockerTemplateService
+	DockerOperationService
+	DockerRunnerOperationService
+}
+
+type DockerServices struct {
+	Overview         DockerOverviewService
+	Hosts            DockerHostService
+	Projects         DockerProjectService
+	ProjectRuntime   DockerProjectRuntimeService
+	ProjectStorage   DockerProjectStorageService
+	Services         DockerServiceRuntimeService
+	PortMappings     DockerPortMappingService
+	Templates        DockerTemplateService
+	Operations       DockerOperationService
+	RunnerOperations DockerRunnerOperationService
+}
+
 type DockerHandler struct {
-	service     DockerService
-	runnerToken string
+	overview         DockerOverviewService
+	hosts            DockerHostService
+	projects         DockerProjectService
+	projectRuntime   DockerProjectRuntimeService
+	projectStorage   DockerProjectStorageService
+	services         DockerServiceRuntimeService
+	portMappings     DockerPortMappingService
+	templates        DockerTemplateService
+	operations       DockerOperationService
+	runnerOperations DockerRunnerOperationService
+	runnerKeys       keyring.Ring
 }
 
 func NewDockerHandler(service DockerService, runnerToken ...string) *DockerHandler {
@@ -68,11 +131,28 @@ func NewDockerHandler(service DockerService, runnerToken ...string) *DockerHandl
 	if len(runnerToken) > 0 {
 		token = runnerToken[0]
 	}
-	return &DockerHandler{service: service, runnerToken: token}
+	return NewDockerHandlerWithRunnerKeys(service, legacyRunnerKeyring(token))
+}
+
+func NewDockerHandlerWithRunnerKeys(service DockerService, keys keyring.Ring) *DockerHandler {
+	return NewDockerHandlerWithServices(DockerServices{
+		Overview: service, Hosts: service, Projects: service, ProjectRuntime: service,
+		ProjectStorage: service, Services: service, PortMappings: service, Templates: service,
+		Operations: service, RunnerOperations: service,
+	}, keys)
+}
+
+func NewDockerHandlerWithServices(services DockerServices, keys keyring.Ring) *DockerHandler {
+	return &DockerHandler{
+		overview: services.Overview, hosts: services.Hosts, projects: services.Projects,
+		projectRuntime: services.ProjectRuntime, projectStorage: services.ProjectStorage,
+		services: services.Services, portMappings: services.PortMappings, templates: services.Templates,
+		operations: services.Operations, runnerOperations: services.RunnerOperations, runnerKeys: keys,
+	}
 }
 
 func (h *DockerHandler) Overview(c *gin.Context) {
-	item, err := h.service.Overview(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
+	item, err := h.overview.Overview(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -81,7 +161,7 @@ func (h *DockerHandler) Overview(c *gin.Context) {
 }
 
 func (h *DockerHandler) ListHosts(c *gin.Context) {
-	page, err := h.service.ListHosts(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.HostFilter{
+	page, err := h.hosts.ListHosts(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.HostFilter{
 		Status:       c.Query("status"),
 		Search:       c.Query("search"),
 		Environment:  c.Query("environment"),
@@ -98,7 +178,7 @@ func (h *DockerHandler) ListHosts(c *gin.Context) {
 }
 
 func (h *DockerHandler) GetHost(c *gin.Context) {
-	item, err := h.service.GetHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	item, err := h.hosts.GetHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -112,7 +192,7 @@ func (h *DockerHandler) CreateHost(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker host payload")
 		return
 	}
-	item, err := h.service.CreateHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	item, err := h.hosts.CreateHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -126,7 +206,7 @@ func (h *DockerHandler) UpdateHost(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker host payload")
 		return
 	}
-	item, err := h.service.UpdateHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
+	item, err := h.hosts.UpdateHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -135,7 +215,7 @@ func (h *DockerHandler) UpdateHost(c *gin.Context) {
 }
 
 func (h *DockerHandler) DeleteHost(c *gin.Context) {
-	if err := h.service.DeleteHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
+	if err := h.hosts.DeleteHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -148,7 +228,7 @@ func (h *DockerHandler) QuickCreateHost(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker host provisioning payload")
 		return
 	}
-	item, err := h.service.QuickCreateHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	item, err := h.hosts.QuickCreateHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -157,7 +237,7 @@ func (h *DockerHandler) QuickCreateHost(c *gin.Context) {
 }
 
 func (h *DockerHandler) ListProjects(c *gin.Context) {
-	page, err := h.service.ListProjects(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.ProjectFilter{
+	page, err := h.projects.ListProjects(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.ProjectFilter{
 		HostID:      c.Query("hostId"),
 		Status:      c.Query("status"),
 		SourceKind:  c.Query("sourceKind"),
@@ -175,7 +255,7 @@ func (h *DockerHandler) ListProjects(c *gin.Context) {
 }
 
 func (h *DockerHandler) GetProject(c *gin.Context) {
-	item, err := h.service.GetProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	item, err := h.projects.GetProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -189,7 +269,7 @@ func (h *DockerHandler) CreateProject(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker project payload")
 		return
 	}
-	item, err := h.service.CreateProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	item, err := h.projects.CreateProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -203,7 +283,7 @@ func (h *DockerHandler) UpdateProject(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker project payload")
 		return
 	}
-	item, err := h.service.UpdateProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
+	item, err := h.projects.UpdateProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -212,7 +292,7 @@ func (h *DockerHandler) UpdateProject(c *gin.Context) {
 }
 
 func (h *DockerHandler) DeleteProject(c *gin.Context) {
-	if err := h.service.DeleteProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
+	if err := h.projects.DeleteProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -224,7 +304,7 @@ func (h *DockerHandler) DeployProject(c *gin.Context) {
 		Action string `json:"action"`
 	}
 	_ = c.ShouldBindJSON(&req)
-	item, err := h.service.DeployProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req.Action)
+	item, err := h.projects.DeployProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req.Action)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -238,7 +318,7 @@ func (h *DockerHandler) StartContainer(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker container start payload")
 		return
 	}
-	item, err := h.service.StartContainer(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	item, err := h.projects.StartContainer(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -247,7 +327,7 @@ func (h *DockerHandler) StartContainer(c *gin.Context) {
 }
 
 func (h *DockerHandler) GetProjectLogs(c *gin.Context) {
-	item, err := h.service.GetProjectLogs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), c.Query("serviceName"), queryInt(c, "tailLines", 200))
+	item, err := h.projectRuntime.GetProjectLogs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), c.Query("serviceName"), queryInt(c, "tailLines", 200))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -260,7 +340,8 @@ func (h *DockerHandler) StreamProjectLogs(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
+	configureWebSocketReadLimit(conn)
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
@@ -284,7 +365,7 @@ func (h *DockerHandler) StreamProjectLogs(c *gin.Context) {
 
 	streamErrCh := make(chan error, 1)
 	go func() {
-		streamErrCh <- h.service.StreamProjectLogs(
+		streamErrCh <- h.projectRuntime.StreamProjectLogs(
 			ctx,
 			apiMiddleware.PrincipalFromContext(c),
 			c.Param("id"),
@@ -328,13 +409,14 @@ func (h *DockerHandler) StreamProjectTerminal(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
+	configureWebSocketReadLimit(conn)
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
 	stdinReader, stdinWriter := io.Pipe()
-	defer stdinWriter.Close()
+	defer func() { _ = stdinWriter.Close() }()
 
 	var writeMu sync.Mutex
 	_ = writeTerminalMessage(conn, &writeMu, terminalMessage{
@@ -344,7 +426,7 @@ func (h *DockerHandler) StreamProjectTerminal(c *gin.Context) {
 
 	streamErrCh := make(chan error, 1)
 	go func() {
-		streamErrCh <- h.service.StreamProjectTerminal(
+		streamErrCh <- h.projectRuntime.StreamProjectTerminal(
 			ctx,
 			apiMiddleware.PrincipalFromContext(c),
 			c.Param("id"),
@@ -359,7 +441,7 @@ func (h *DockerHandler) StreamProjectTerminal(c *gin.Context) {
 	readDone := make(chan struct{})
 	go func() {
 		defer close(readDone)
-		defer stdinWriter.Close()
+		defer func() { _ = stdinWriter.Close() }()
 		for {
 			_, payload, err := conn.ReadMessage()
 			if err != nil {
@@ -395,7 +477,7 @@ func (h *DockerHandler) StreamProjectTerminal(c *gin.Context) {
 }
 
 func (h *DockerHandler) ListProjectVolumes(c *gin.Context) {
-	items, err := h.service.ListProjectVolumes(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), c.Query("serviceName"))
+	items, err := h.projectStorage.ListProjectVolumes(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), c.Query("serviceName"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -404,7 +486,7 @@ func (h *DockerHandler) ListProjectVolumes(c *gin.Context) {
 }
 
 func (h *DockerHandler) ListProjectVolumeFiles(c *gin.Context) {
-	item, err := h.service.ListProjectVolumeFiles(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), domaindocker.ProjectVolumeFileListInput{
+	item, err := h.projectStorage.ListProjectVolumeFiles(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), domaindocker.ProjectVolumeFileListInput{
 		ServiceName: c.Query("serviceName"),
 		Target:      c.Query("target"),
 		Path:        c.Query("path"),
@@ -418,7 +500,7 @@ func (h *DockerHandler) ListProjectVolumeFiles(c *gin.Context) {
 }
 
 func (h *DockerHandler) ReadProjectVolumeFile(c *gin.Context) {
-	item, err := h.service.ReadProjectVolumeFile(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), domaindocker.ProjectVolumeFileReadInput{
+	item, err := h.projectStorage.ReadProjectVolumeFile(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), domaindocker.ProjectVolumeFileReadInput{
 		ServiceName: c.Query("serviceName"),
 		Target:      c.Query("target"),
 		Path:        c.Query("path"),
@@ -432,7 +514,7 @@ func (h *DockerHandler) ReadProjectVolumeFile(c *gin.Context) {
 }
 
 func (h *DockerHandler) ListServices(c *gin.Context) {
-	page, err := h.service.ListServices(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.ServiceFilter{
+	page, err := h.services.ListServices(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.ServiceFilter{
 		HostID:    c.Query("hostId"),
 		ProjectID: c.Query("projectId"),
 		Status:    c.Query("status"),
@@ -456,7 +538,7 @@ func (h *DockerHandler) ServiceAction(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker service action payload")
 		return
 	}
-	item, err := h.service.ServiceAction(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req.Action)
+	item, err := h.services.ServiceAction(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req.Action)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -465,7 +547,7 @@ func (h *DockerHandler) ServiceAction(c *gin.Context) {
 }
 
 func (h *DockerHandler) ListPortMappings(c *gin.Context) {
-	page, err := h.service.ListPortMappings(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.PortMappingFilter{
+	page, err := h.portMappings.ListPortMappings(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.PortMappingFilter{
 		HostID:    c.Query("hostId"),
 		ProjectID: c.Query("projectId"),
 		ServiceID: c.Query("serviceId"),
@@ -488,7 +570,7 @@ func (h *DockerHandler) CreatePortMapping(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker port mapping payload")
 		return
 	}
-	item, err := h.service.CreatePortMapping(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	item, err := h.portMappings.CreatePortMapping(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -502,7 +584,7 @@ func (h *DockerHandler) UpdatePortMapping(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker port mapping payload")
 		return
 	}
-	item, err := h.service.UpdatePortMapping(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
+	item, err := h.portMappings.UpdatePortMapping(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -511,7 +593,7 @@ func (h *DockerHandler) UpdatePortMapping(c *gin.Context) {
 }
 
 func (h *DockerHandler) DeletePortMapping(c *gin.Context) {
-	if err := h.service.DeletePortMapping(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
+	if err := h.portMappings.DeletePortMapping(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -530,7 +612,7 @@ func (h *DockerHandler) ListTemplates(c *gin.Context) {
 		enabled := value == "true" || value == "1"
 		filter.Enabled = &enabled
 	}
-	page, err := h.service.ListTemplates(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
+	page, err := h.templates.ListTemplates(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -544,7 +626,7 @@ func (h *DockerHandler) CreateTemplate(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker template payload")
 		return
 	}
-	item, err := h.service.CreateTemplate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	item, err := h.templates.CreateTemplate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -558,7 +640,7 @@ func (h *DockerHandler) UpdateTemplate(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker template payload")
 		return
 	}
-	item, err := h.service.UpdateTemplate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
+	item, err := h.templates.UpdateTemplate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -567,7 +649,7 @@ func (h *DockerHandler) UpdateTemplate(c *gin.Context) {
 }
 
 func (h *DockerHandler) DeleteTemplate(c *gin.Context) {
-	if err := h.service.DeleteTemplate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
+	if err := h.templates.DeleteTemplate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -591,7 +673,7 @@ func (h *DockerHandler) ListOperations(c *gin.Context) {
 	if statuses := strings.TrimSpace(c.Query("statuses")); statuses != "" {
 		filter.Statuses = strings.Split(statuses, ",")
 	}
-	page, err := h.service.ListOperations(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
+	page, err := h.operations.ListOperations(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -600,7 +682,7 @@ func (h *DockerHandler) ListOperations(c *gin.Context) {
 }
 
 func (h *DockerHandler) GetOperation(c *gin.Context) {
-	item, err := h.service.GetOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	item, err := h.operations.GetOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -609,7 +691,7 @@ func (h *DockerHandler) GetOperation(c *gin.Context) {
 }
 
 func (h *DockerHandler) ListOperationLogs(c *gin.Context) {
-	items, err := h.service.ListOperationLogs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), queryLimit(c, 200))
+	items, err := h.operations.ListOperationLogs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), queryLimit(c, 200))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -618,7 +700,7 @@ func (h *DockerHandler) ListOperationLogs(c *gin.Context) {
 }
 
 func (h *DockerHandler) CancelOperation(c *gin.Context) {
-	item, err := h.service.CancelOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	item, err := h.operations.CancelOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -627,7 +709,7 @@ func (h *DockerHandler) CancelOperation(c *gin.Context) {
 }
 
 func (h *DockerHandler) RetryOperation(c *gin.Context) {
-	item, err := h.service.RetryOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	item, err := h.operations.RetryOperation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -636,7 +718,7 @@ func (h *DockerHandler) RetryOperation(c *gin.Context) {
 }
 
 func (h *DockerHandler) ClaimOperation(c *gin.Context) {
-	if !authorizeDockerRunner(c, h.runnerToken) {
+	if !authorizeDockerRunnerKeys(c, h.runnerKeys) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid docker runner token")
 		return
 	}
@@ -645,7 +727,7 @@ func (h *DockerHandler) ClaimOperation(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker operation claim payload")
 		return
 	}
-	item, err := h.service.ClaimOperation(c.Request.Context(), req)
+	item, err := h.runnerOperations.ClaimOperation(c.Request.Context(), req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -654,11 +736,11 @@ func (h *DockerHandler) ClaimOperation(c *gin.Context) {
 }
 
 func (h *DockerHandler) GetOperationRunnerStatus(c *gin.Context) {
-	if !authorizeDockerRunner(c, h.runnerToken) {
+	if !authorizeDockerRunnerKeys(c, h.runnerKeys) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid docker runner token")
 		return
 	}
-	item, err := h.service.GetOperationForRunner(c.Request.Context(), c.Param("id"))
+	item, err := h.runnerOperations.GetOperationForRunner(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -667,7 +749,7 @@ func (h *DockerHandler) GetOperationRunnerStatus(c *gin.Context) {
 }
 
 func (h *DockerHandler) RecordOperationCallback(c *gin.Context) {
-	if !authorizeDockerRunner(c, h.runnerToken) {
+	if !authorizeDockerRunnerKeys(c, h.runnerKeys) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid docker runner token")
 		return
 	}
@@ -676,7 +758,7 @@ func (h *DockerHandler) RecordOperationCallback(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker operation callback payload")
 		return
 	}
-	item, err := h.service.RecordOperationCallback(c.Request.Context(), req)
+	item, err := h.runnerOperations.RecordOperationCallback(c.Request.Context(), req)
 	if err != nil {
 		writeError(c, err)
 		return

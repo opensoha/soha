@@ -84,50 +84,61 @@ var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatform
 }
 
 func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
-	scopeRequired := true
-	switch {
-	case strings.HasPrefix(path, "/api/v1/applications/") && strings.Contains(path, "/services"):
-		return nonPlatformMutationEntry("ApplicationService", nonPlatformMutationAction(method, path), appaccess.PermDeliveryApplicationServicesManage, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/applications"):
-		return nonPlatformMutationEntry("Application", nonPlatformMutationAction(method, path), deliveryApplicationPermission(method), scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/application-environments"):
-		return nonPlatformMutationEntry("ApplicationEnvironment", nonPlatformMutationAction(method, path), appaccess.PermDeliveryApplicationEnvManage, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/build-templates"):
-		return nonPlatformMutationEntry("BuildTemplate", nonPlatformMutationAction(method, path), appaccess.PermDeliveryBuildTemplatesManage, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/workflow-templates"):
-		return nonPlatformMutationEntry("WorkflowTemplate", nonPlatformMutationAction(method, path), appaccess.PermDeliveryWorkflowTemplatesManage, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/builds/trigger"):
-		return nonPlatformMutationEntry("Build", "trigger", appaccess.PermDeliveryBuildsTrigger, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/workflows/trigger"):
-		return nonPlatformMutationEntry("Workflow", "trigger", appaccess.PermDeliveryWorkflowsTrigger, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/workflows/") && strings.HasSuffix(path, "/approve"):
-		return nonPlatformMutationEntry("WorkflowApproval", "approve", appaccess.PermDeliveryWorkflowsTrigger, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/workflows/") && strings.HasSuffix(path, "/reject"):
-		return nonPlatformMutationEntry("WorkflowApproval", "reject", appaccess.PermDeliveryWorkflowsTrigger, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/registries"):
-		return nonPlatformMutationEntry("RegistryConnection", nonPlatformMutationAction(method, path), appaccess.PermDeliveryRegistriesManage, false), true
-	case strings.HasPrefix(path, "/api/v1/releases/trigger"):
-		return nonPlatformMutationEntry("Release", "trigger", appaccess.PermDeliveryReleasesTrigger, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/execution-tasks/") && strings.HasSuffix(path, "/cancel"):
-		return nonPlatformMutationEntry("ExecutionTask", "cancel", appaccess.PermDeliveryExecutionTasksManage, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/execution-tasks/") && strings.HasSuffix(path, "/retry"):
-		return nonPlatformMutationEntry("ExecutionTask", "retry", appaccess.PermDeliveryExecutionTasksManage, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/blueprints") && strings.Contains(path, "/render-spec"):
-		return nonPlatformMutationEntry("DeliveryBlueprint", "render", appaccess.PermDeliveryApplicationsCreate, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/blueprints") && strings.Contains(path, "/bootstrap-application"):
-		return nonPlatformMutationEntry("DeliveryBlueprint", "bootstrap", appaccess.PermDeliveryApplicationsCreate, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/blueprints"):
-		return nonPlatformMutationEntry("DeliveryBlueprint", nonPlatformMutationAction(method, path), appaccess.PermDeliveryApplicationsCreate, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/drafts") && strings.HasSuffix(path, "/confirm"):
-		return nonPlatformMutationEntry("DeliveryDraft", "confirm", appaccess.PermDeliveryApplicationsUpdate, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/drafts"):
-		return nonPlatformMutationEntry("DeliveryDraft", nonPlatformMutationAction(method, path), appaccess.PermDeliveryApplicationsUpdate, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/plans") && strings.HasSuffix(path, "/confirm"):
-		return nonPlatformMutationEntry("DeliveryPlan", "confirm", appaccess.PermDeliveryWorkflowsTrigger, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/plans"):
-		return nonPlatformMutationEntry("DeliveryPlan", nonPlatformMutationAction(method, path), appaccess.PermDeliveryApplicationsView, scopeRequired), true
+	for _, rule := range deliveryMutationRules {
+		if !rule.matches(path) {
+			continue
+		}
+		action := rule.action
+		if action == "" {
+			action = nonPlatformMutationAction(method, path)
+		}
+		permission := rule.permission
+		if rule.applicationPermission {
+			permission = deliveryApplicationPermission(method)
+		}
+		return nonPlatformMutationEntry(rule.resourceKind, action, permission, rule.scopeRequired), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
+}
+
+type deliveryMutationRule struct {
+	prefix                string
+	contains              string
+	suffix                string
+	resourceKind          string
+	action                string
+	permission            string
+	scopeRequired         bool
+	applicationPermission bool
+}
+
+func (r deliveryMutationRule) matches(path string) bool {
+	return strings.HasPrefix(path, r.prefix) &&
+		(r.contains == "" || strings.Contains(path, r.contains)) &&
+		(r.suffix == "" || strings.HasSuffix(path, r.suffix))
+}
+
+var deliveryMutationRules = []deliveryMutationRule{
+	{prefix: "/api/v1/applications/", contains: "/services", resourceKind: "ApplicationService", permission: appaccess.PermDeliveryApplicationServicesManage, scopeRequired: true},
+	{prefix: "/api/v1/applications", resourceKind: "Application", scopeRequired: true, applicationPermission: true},
+	{prefix: "/api/v1/application-environments", resourceKind: "ApplicationEnvironment", permission: appaccess.PermDeliveryApplicationEnvManage, scopeRequired: true},
+	{prefix: "/api/v1/build-templates", resourceKind: "BuildTemplate", permission: appaccess.PermDeliveryBuildTemplatesManage, scopeRequired: true},
+	{prefix: "/api/v1/workflow-templates", resourceKind: "WorkflowTemplate", permission: appaccess.PermDeliveryWorkflowTemplatesManage, scopeRequired: true},
+	{prefix: "/api/v1/builds/trigger", resourceKind: "Build", action: "trigger", permission: appaccess.PermDeliveryBuildsTrigger, scopeRequired: true},
+	{prefix: "/api/v1/workflows/trigger", resourceKind: "Workflow", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
+	{prefix: "/api/v1/workflows/", suffix: "/approve", resourceKind: "WorkflowApproval", action: "approve", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
+	{prefix: "/api/v1/workflows/", suffix: "/reject", resourceKind: "WorkflowApproval", action: "reject", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
+	{prefix: "/api/v1/registries", resourceKind: "RegistryConnection", permission: appaccess.PermDeliveryRegistriesManage},
+	{prefix: "/api/v1/releases/trigger", resourceKind: "Release", action: "trigger", permission: appaccess.PermDeliveryReleasesTrigger, scopeRequired: true},
+	{prefix: "/api/v1/delivery/execution-tasks/", suffix: "/cancel", resourceKind: "ExecutionTask", action: "cancel", permission: appaccess.PermDeliveryExecutionTasksManage, scopeRequired: true},
+	{prefix: "/api/v1/delivery/execution-tasks/", suffix: "/retry", resourceKind: "ExecutionTask", action: "retry", permission: appaccess.PermDeliveryExecutionTasksManage, scopeRequired: true},
+	{prefix: "/api/v1/delivery/blueprints", contains: "/render-spec", resourceKind: "DeliveryBlueprint", action: "render", permission: appaccess.PermDeliveryApplicationsCreate, scopeRequired: true},
+	{prefix: "/api/v1/delivery/blueprints", contains: "/bootstrap-application", resourceKind: "DeliveryBlueprint", action: "bootstrap", permission: appaccess.PermDeliveryApplicationsCreate, scopeRequired: true},
+	{prefix: "/api/v1/delivery/blueprints", resourceKind: "DeliveryBlueprint", permission: appaccess.PermDeliveryApplicationsCreate, scopeRequired: true},
+	{prefix: "/api/v1/delivery/drafts", suffix: "/confirm", resourceKind: "DeliveryDraft", action: "confirm", permission: appaccess.PermDeliveryApplicationsUpdate, scopeRequired: true},
+	{prefix: "/api/v1/delivery/drafts", resourceKind: "DeliveryDraft", permission: appaccess.PermDeliveryApplicationsUpdate, scopeRequired: true},
+	{prefix: "/api/v1/delivery/plans", suffix: "/confirm", resourceKind: "DeliveryPlan", action: "confirm", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
+	{prefix: "/api/v1/delivery/plans", resourceKind: "DeliveryPlan", permission: appaccess.PermDeliveryApplicationsView, scopeRequired: true},
 }
 
 func monitoringMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
@@ -242,6 +253,14 @@ func systemMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 
 func accessMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	switch {
+	case strings.HasPrefix(path, "/api/v1/access/identity-links") || strings.HasPrefix(path, "/api/v1/access/identity-link-suppressions"):
+		return nonPlatformMutationEntry("IdentityLink", nonPlatformMutationAction(method, path), appaccess.PermAccessIdentityLinkManage, false), true
+	case strings.HasPrefix(path, "/api/v1/access/directory-conflicts"):
+		return nonPlatformMutationEntry("DirectoryConflict", nonPlatformMutationAction(method, path), appaccess.PermAccessDirectoryPeopleManage, false), true
+	case strings.HasPrefix(path, "/api/v1/access/directory-connections") && (strings.Contains(path, "/sync") || strings.HasSuffix(path, "/validate") || strings.Contains(path, "/runs/")):
+		return nonPlatformMutationEntry("DirectorySyncRun", nonPlatformMutationAction(method, path), appaccess.PermAccessDirectorySync, false), true
+	case strings.HasPrefix(path, "/api/v1/access/directory-connections"):
+		return nonPlatformMutationEntry("DirectoryConnection", nonPlatformMutationAction(method, path), appaccess.PermAccessDirectoryManage, false), true
 	case strings.HasPrefix(path, "/api/v1/access/users"):
 		return nonPlatformMutationEntry("AccessUser", accessRouteAction(method, path), appaccess.PermAccessUsersManage, false), true
 	case strings.HasPrefix(path, "/api/v1/access/roles"):
@@ -499,88 +518,58 @@ func platformMutationCapabilityKey(path string) string {
 }
 
 func platformMutationResourceKind(path string) string {
-	switch {
-	case path == "/api/v1/clusters" || strings.Contains(path, "/clusters/:clusterID") && !strings.Contains(path, "/clusters/:clusterID/"):
+	if path == "/api/v1/clusters" || strings.Contains(path, "/clusters/:clusterID") && !strings.Contains(path, "/clusters/:clusterID/") {
 		return "Cluster"
-	case strings.Contains(path, "/namespaces"):
-		return "Namespace"
-	case strings.Contains(path, "/infrastructure/nodes"):
-		return "Node"
-	case strings.Contains(path, "/workloads/pods"):
-		return "Pod"
-	case strings.Contains(path, "/workloads/deployments"):
-		return "Deployment"
-	case strings.Contains(path, "/workloads/statefulsets"):
-		return "StatefulSet"
-	case strings.Contains(path, "/workloads/daemonsets"):
-		return "DaemonSet"
-	case strings.Contains(path, "/workloads/replicasets"):
-		return "ReplicaSet"
-	case strings.Contains(path, "/workloads/jobs"):
-		return "Job"
-	case strings.Contains(path, "/workloads/cronjobs"):
-		return "CronJob"
-	case strings.Contains(path, "/workloads/replicationcontrollers"):
-		return "ReplicationController"
-	case strings.Contains(path, "/configuration/configmaps"):
-		return "ConfigMap"
-	case strings.Contains(path, "/configuration/secrets"):
-		return "Secret"
-	case strings.Contains(path, "/configuration/hpas"):
-		return "HorizontalPodAutoscaler"
-	case strings.Contains(path, "/configuration/poddisruptionbudgets"):
-		return "PodDisruptionBudget"
-	case strings.Contains(path, "/configuration/priorityclasses"):
-		return "PriorityClass"
-	case strings.Contains(path, "/configuration/runtimeclasses"):
-		return "RuntimeClass"
-	case strings.Contains(path, "/configuration/mutatingwebhookconfigurations"):
-		return "MutatingWebhookConfiguration"
-	case strings.Contains(path, "/configuration/validatingwebhookconfigurations"):
-		return "ValidatingWebhookConfiguration"
-	case strings.Contains(path, "/configuration/resourcequotas"):
-		return "ResourceQuota"
-	case strings.Contains(path, "/configuration/limitranges"):
-		return "LimitRange"
-	case strings.Contains(path, "/configuration/leases"):
-		return "Lease"
-	case strings.Contains(path, "/access-control/serviceaccounts"):
-		return "ServiceAccount"
-	case strings.Contains(path, "/access-control/roles"):
-		return "Role"
-	case strings.Contains(path, "/access-control/rolebindings"):
-		return "RoleBinding"
-	case strings.Contains(path, "/access-control/clusterroles"):
-		return "ClusterRole"
-	case strings.Contains(path, "/access-control/clusterrolebindings"):
-		return "ClusterRoleBinding"
-	case strings.Contains(path, "/network/services"):
-		return "Service"
-	case strings.Contains(path, "/network/ingresses"):
-		return "Ingress"
-	case strings.Contains(path, "/network/endpointslices"):
-		return "EndpointSlice"
-	case strings.Contains(path, "/network/networkpolicies"):
-		return "NetworkPolicy"
-	case strings.Contains(path, "/network/ingressclasses"):
-		return "IngressClass"
-	case strings.Contains(path, "/network/gatewayclasses"):
-		return "GatewayClass"
-	case strings.Contains(path, "/network/gateways"):
-		return "Gateway"
-	case strings.Contains(path, "/network/port-forwards"):
-		return "PortForward"
-	case strings.Contains(path, "/storage/persistentvolumeclaims"):
-		return "PersistentVolumeClaim"
-	case strings.Contains(path, "/storage/persistentvolumes"):
-		return "PersistentVolume"
-	case strings.Contains(path, "/storage/storageclasses"):
-		return "StorageClass"
-	case strings.Contains(path, "/extensions/crds/"):
-		return "CustomResource"
-	case strings.Contains(path, "/helm/"):
-		return "HelmRelease"
-	default:
-		return ""
 	}
+	for _, resource := range platformMutationResourceKinds {
+		if strings.Contains(path, resource.pathSegment) {
+			return resource.kind
+		}
+	}
+	return ""
+}
+
+var platformMutationResourceKinds = []struct {
+	pathSegment string
+	kind        string
+}{
+	{pathSegment: "/namespaces", kind: "Namespace"},
+	{pathSegment: "/infrastructure/nodes", kind: "Node"},
+	{pathSegment: "/workloads/pods", kind: "Pod"},
+	{pathSegment: "/workloads/deployments", kind: "Deployment"},
+	{pathSegment: "/workloads/statefulsets", kind: "StatefulSet"},
+	{pathSegment: "/workloads/daemonsets", kind: "DaemonSet"},
+	{pathSegment: "/workloads/replicasets", kind: "ReplicaSet"},
+	{pathSegment: "/workloads/jobs", kind: "Job"},
+	{pathSegment: "/workloads/cronjobs", kind: "CronJob"},
+	{pathSegment: "/workloads/replicationcontrollers", kind: "ReplicationController"},
+	{pathSegment: "/configuration/configmaps", kind: "ConfigMap"},
+	{pathSegment: "/configuration/secrets", kind: "Secret"},
+	{pathSegment: "/configuration/hpas", kind: "HorizontalPodAutoscaler"},
+	{pathSegment: "/configuration/poddisruptionbudgets", kind: "PodDisruptionBudget"},
+	{pathSegment: "/configuration/priorityclasses", kind: "PriorityClass"},
+	{pathSegment: "/configuration/runtimeclasses", kind: "RuntimeClass"},
+	{pathSegment: "/configuration/mutatingwebhookconfigurations", kind: "MutatingWebhookConfiguration"},
+	{pathSegment: "/configuration/validatingwebhookconfigurations", kind: "ValidatingWebhookConfiguration"},
+	{pathSegment: "/configuration/resourcequotas", kind: "ResourceQuota"},
+	{pathSegment: "/configuration/limitranges", kind: "LimitRange"},
+	{pathSegment: "/configuration/leases", kind: "Lease"},
+	{pathSegment: "/access-control/serviceaccounts", kind: "ServiceAccount"},
+	{pathSegment: "/access-control/roles", kind: "Role"},
+	{pathSegment: "/access-control/rolebindings", kind: "RoleBinding"},
+	{pathSegment: "/access-control/clusterroles", kind: "ClusterRole"},
+	{pathSegment: "/access-control/clusterrolebindings", kind: "ClusterRoleBinding"},
+	{pathSegment: "/network/services", kind: "Service"},
+	{pathSegment: "/network/ingresses", kind: "Ingress"},
+	{pathSegment: "/network/endpointslices", kind: "EndpointSlice"},
+	{pathSegment: "/network/networkpolicies", kind: "NetworkPolicy"},
+	{pathSegment: "/network/ingressclasses", kind: "IngressClass"},
+	{pathSegment: "/network/gatewayclasses", kind: "GatewayClass"},
+	{pathSegment: "/network/gateways", kind: "Gateway"},
+	{pathSegment: "/network/port-forwards", kind: "PortForward"},
+	{pathSegment: "/storage/persistentvolumeclaims", kind: "PersistentVolumeClaim"},
+	{pathSegment: "/storage/persistentvolumes", kind: "PersistentVolume"},
+	{pathSegment: "/storage/storageclasses", kind: "StorageClass"},
+	{pathSegment: "/extensions/crds/", kind: "CustomResource"},
+	{pathSegment: "/helm/", kind: "HelmRelease"},
 }

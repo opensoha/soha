@@ -31,7 +31,7 @@ func (r *Repository) ListInstalled(ctx context.Context) ([]domainplugin.Installe
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []domainplugin.InstalledPlugin{}
 	for rows.Next() {
 		item, err := scanInstalledPlugin(rows)

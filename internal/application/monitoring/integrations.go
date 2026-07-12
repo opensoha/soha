@@ -21,10 +21,10 @@ func (s *Service) ListAlertIntegrations(ctx context.Context, principal domainide
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertIntegrationsView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.integrations == nil {
 		return []domainalert.AlertIntegration{}, nil
 	}
-	items, err := s.repo.ListAlertIntegrations(ctx)
+	items, err := s.integrations.ListAlertIntegrations(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -38,10 +38,10 @@ func (s *Service) GetAlertIntegration(ctx context.Context, principal domainident
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertIntegrationsView); err != nil {
 		return domainalert.AlertIntegration{}, err
 	}
-	if s.repo == nil {
+	if s.integrations == nil {
 		return domainalert.AlertIntegration{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	item, err := s.repo.GetAlertIntegration(ctx, strings.TrimSpace(integrationID))
+	item, err := s.integrations.GetAlertIntegration(ctx, strings.TrimSpace(integrationID))
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.AlertIntegration{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(integrationID))
@@ -55,13 +55,13 @@ func (s *Service) CreateAlertIntegration(ctx context.Context, principal domainid
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertIntegrationsManage); err != nil {
 		return domainalert.AlertIntegration{}, err
 	}
-	if s.repo == nil {
+	if s.integrations == nil {
 		return domainalert.AlertIntegration{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := validateAlertIntegrationInput(input, true); err != nil {
 		return domainalert.AlertIntegration{}, err
 	}
-	item, err := s.repo.CreateAlertIntegration(ctx, input)
+	item, err := s.integrations.CreateAlertIntegration(ctx, input)
 	if err != nil {
 		return domainalert.AlertIntegration{}, err
 	}
@@ -72,13 +72,13 @@ func (s *Service) UpdateAlertIntegration(ctx context.Context, principal domainid
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertIntegrationsManage); err != nil {
 		return domainalert.AlertIntegration{}, err
 	}
-	if s.repo == nil {
+	if s.integrations == nil {
 		return domainalert.AlertIntegration{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := validateAlertIntegrationInput(input, false); err != nil {
 		return domainalert.AlertIntegration{}, err
 	}
-	item, err := s.repo.UpdateAlertIntegration(ctx, strings.TrimSpace(integrationID), input)
+	item, err := s.integrations.UpdateAlertIntegration(ctx, strings.TrimSpace(integrationID), input)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.AlertIntegration{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(integrationID))
@@ -123,13 +123,13 @@ func (s *Service) TestAlertIntegration(ctx context.Context, principal domainiden
 }
 
 func (s *Service) IngestAlertIntegration(ctx context.Context, integrationID string, token string, payload map[string]any) (int, error) {
-	if s.repo == nil {
+	if s.integrations == nil {
 		return 0, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if !s.enabled {
 		return 0, fmt.Errorf("%w: monitoring integrations are disabled", apperrors.ErrAccessDenied)
 	}
-	integration, err := s.repo.GetAlertIntegration(ctx, strings.TrimSpace(integrationID))
+	integration, err := s.integrations.GetAlertIntegration(ctx, strings.TrimSpace(integrationID))
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return 0, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(integrationID))
@@ -144,15 +144,15 @@ func (s *Service) IngestAlertIntegration(ctx context.Context, integrationID stri
 	}
 	source, alerts, _, err := normalizeAlertIntegrationPayload(integration, payload)
 	if err != nil {
-		_, _ = s.repo.UpdateAlertIntegrationStatus(ctx, integration.ID, domainalert.AlertIntegrationStatusInput{Status: "error", LastError: err.Error()})
+		_, _ = s.integrations.UpdateAlertIntegrationStatus(ctx, integration.ID, domainalert.AlertIntegrationStatusInput{Status: "error", LastError: err.Error()})
 		return 0, err
 	}
 	count, err := s.Ingest(ctx, domainalert.IngestRequest{Source: source, Alerts: alerts})
 	if err != nil {
-		_, _ = s.repo.UpdateAlertIntegrationStatus(ctx, integration.ID, domainalert.AlertIntegrationStatusInput{Status: "error", LastError: err.Error()})
+		_, _ = s.integrations.UpdateAlertIntegrationStatus(ctx, integration.ID, domainalert.AlertIntegrationStatusInput{Status: "error", LastError: err.Error()})
 		return 0, err
 	}
-	_, _ = s.repo.UpdateAlertIntegrationStatus(ctx, integration.ID, domainalert.AlertIntegrationStatusInput{Status: "active", LastReceivedAt: time.Now().UTC()})
+	_, _ = s.integrations.UpdateAlertIntegrationStatus(ctx, integration.ID, domainalert.AlertIntegrationStatusInput{Status: "active", LastReceivedAt: time.Now().UTC()})
 	return count, nil
 }
 

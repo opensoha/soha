@@ -26,14 +26,14 @@ func TestAgentStreamPodLogsDelegatesToAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &Service{
-		agents:     agentinfra.NewRegistry(0),
-		resolver:   stubConnectionResolver{connection: agentConnection(server.URL)},
-		authorizer: allowAllResourceAuthorizer{},
-		audit:      noopResourceAuditRecorder{},
-	}
+	service := New(Dependencies{
+		Agents:      testAgentClients(agentinfra.NewRegistry(0)),
+		Connections: stubConnectionResolver{connection: agentConnection(server.URL)},
+		Authorizer:  allowAllResourceAuthorizer{},
+		Audit:       noopResourceAuditRecorder{},
+	})
 	var out bytes.Buffer
-	err := service.StreamPodLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", 10, 5, &out)
+	err := service.Workloads().StreamPodLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", 10, 5, &out)
 	if err != nil {
 		t.Fatalf("StreamPodLogs() error = %v", err)
 	}
@@ -56,7 +56,7 @@ func TestAgentStreamPodTerminalDelegatesToAgent(t *testing.T) {
 		if err != nil {
 			t.Fatalf("upgrade websocket: %v", err)
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		var message struct {
 			Type string `json:"type"`
 			Data string `json:"data"`
@@ -72,15 +72,15 @@ func TestAgentStreamPodTerminalDelegatesToAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &Service{
-		agents:     agentinfra.NewRegistry(0),
-		resolver:   stubConnectionResolver{connection: agentConnection(server.URL)},
-		authorizer: allowAllResourceAuthorizer{},
-		audit:      noopResourceAuditRecorder{},
-	}
+	service := New(Dependencies{
+		Agents:      testAgentClients(agentinfra.NewRegistry(0)),
+		Connections: stubConnectionResolver{connection: agentConnection(server.URL)},
+		Authorizer:  allowAllResourceAuthorizer{},
+		Audit:       noopResourceAuditRecorder{},
+	})
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err := service.StreamPodTerminal(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", "/bin/sh", strings.NewReader("whoami\n"), &stdout, &stderr, nil)
+	err := service.Workloads().StreamPodTerminal(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", "/bin/sh", strings.NewReader("whoami\n"), &stdout, &stderr, nil)
 	if err != nil {
 		t.Fatalf("StreamPodTerminal() error = %v", err)
 	}

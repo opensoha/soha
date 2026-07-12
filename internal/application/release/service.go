@@ -8,9 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appsv1 "k8s.io/api/apps/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	execution "github.com/opensoha/soha/internal/application/execution"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
@@ -23,8 +20,6 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
-	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
-	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
@@ -65,6 +60,17 @@ type OperationRecorder interface {
 	Record(context.Context, domainoperation.Entry) error
 }
 
+type DirectRuntime interface {
+	Metadata(string) (domaincluster.Summary, error)
+	UpdateDeploymentImage(context.Context, string, string, string, string, string) (string, string, error)
+}
+
+type AgentDeploymentClient interface {
+	UpdateDeploymentImage(context.Context, string, string, string, string) (string, string, error)
+}
+
+type AgentClientFactory func(domaincluster.Connection) (AgentDeploymentClient, error)
+
 type Service struct {
 	repo        ReleaseRepository
 	apps        ApplicationReader
@@ -76,16 +82,16 @@ type Service struct {
 	events      EventWriter
 	audit       AuditRecorder
 	operations  OperationRecorder
-	clusters    *k8sinfra.Manager
-	agents      *agentinfra.Registry
+	direct      DirectRuntime
+	agents      AgentClientFactory
 }
 
 type releasePruner interface {
 	DeleteByIDs(context.Context, []string) error
 }
 
-func New(repo ReleaseRepository, apps ApplicationReader, bindings BindingReader, resolver ConnectionResolver, execution ExecutionPlane, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, events EventWriter, audit AuditRecorder, operations OperationRecorder, clusters *k8sinfra.Manager, agents *agentinfra.Registry) *Service {
-	return &Service{repo: repo, apps: apps, bindings: bindings, resolver: resolver, execution: execution, authorizer: authorizer, permissions: permissions, events: events, audit: audit, operations: operations, clusters: clusters, agents: agents}
+func New(repo ReleaseRepository, apps ApplicationReader, bindings BindingReader, resolver ConnectionResolver, execution ExecutionPlane, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, events EventWriter, audit AuditRecorder, operations OperationRecorder, direct DirectRuntime, agents AgentClientFactory) *Service {
+	return &Service{repo: repo, apps: apps, bindings: bindings, resolver: resolver, execution: execution, authorizer: authorizer, permissions: permissions, events: events, audit: audit, operations: operations, direct: direct, agents: agents}
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainrelease.Filter) ([]domainrelease.Record, error) {
@@ -160,122 +166,55 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryReleasesTrigger); err != nil {
 		return domainrelease.Record{}, err
 	}
-	if strings.TrimSpace(input.ApplicationID) == "" {
-		return domainrelease.Record{}, fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
-	}
-	if strings.TrimSpace(input.ClusterID) == "" {
-		return domainrelease.Record{}, fmt.Errorf("%w: clusterId is required", apperrors.ErrInvalidArgument)
-	}
-	if strings.TrimSpace(input.Namespace) == "" {
-		return domainrelease.Record{}, fmt.Errorf("%w: namespace is required", apperrors.ErrInvalidArgument)
-	}
-	if strings.TrimSpace(input.DeploymentName) == "" {
-		return domainrelease.Record{}, fmt.Errorf("%w: deploymentName is required", apperrors.ErrInvalidArgument)
+	if err := validateReleaseTriggerInput(input); err != nil {
+		return domainrelease.Record{}, err
 	}
 
-	app, err := s.apps.Get(ctx, input.ApplicationID)
-	if err != nil {
-		return domainrelease.Record{}, normalizeApplicationError(err)
-	}
-	target, targetErr := s.resolveTarget(ctx, input)
-	if targetErr != nil {
-		return domainrelease.Record{}, targetErr
-	}
-	connection, err := s.loadConnection(ctx, input.ClusterID)
+	prepared, err := s.prepareReleaseTrigger(ctx, principal, input)
 	if err != nil {
 		return domainrelease.Record{}, err
 	}
-	resourceKind := "Deployment"
-	if strings.TrimSpace(target.WorkloadKind) != "" {
-		resourceKind = strings.TrimSpace(target.WorkloadKind)
-	}
-	if err := s.authorize(ctx, principal, connection.Summary.ID, input.Namespace, resourceKind, input.DeploymentName, app.BusinessLineID, app.Group, input.ApplicationID, domainaccess.ActionTrigger); err != nil {
-		return domainrelease.Record{}, err
-	}
+	app := prepared.app
+	target := prepared.target
+	connection := prepared.connection
 
 	resolvedImage, err := resolveImage(app, input)
 	if err != nil {
 		return domainrelease.Record{}, err
 	}
 	bundleID := strings.TrimSpace(input.ReleaseBundleID)
-	taskID := ""
 	providerKind := resolveReleaseProviderKind(target)
 	targetKind := resolveReleaseTargetKind(target)
-	if s.execution != nil {
-		bundle, task, execErr := s.execution.StartReleaseExecution(ctx, execution.ReleasePlan{
-			ApplicationID:            app.ID,
-			ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
-			ReleaseBundleID:          bundleID,
-			Version:                  firstNonEmpty(strings.TrimSpace(input.ReleaseName), strings.TrimSpace(input.ImageTag)),
-			SourceType:               firstNonEmpty(strings.TrimSpace(input.ActionKind), "release"),
-			ProviderKind:             providerKind,
-			TargetKind:               targetKind,
-			ArtifactRef:              resolvedImage,
-			Metadata:                 buildReleaseExecutionMetadata(app, input, target, resolvedImage),
-		})
-		if execErr == nil {
-			bundleID = bundle.ID
-			taskID = task.ID
-		}
-	}
+	bundleID, taskID := s.startReleaseExecution(ctx, app, input, target, resolvedImage, bundleID, providerKind, targetKind)
 	if !shouldApplyReleaseDirectly(target) {
-		now := time.Now().UTC()
-		record := domainrelease.Record{
-			ID:             fmt.Sprintf("release:%s:%d", input.ApplicationID, now.UnixNano()),
-			ApplicationID:  input.ApplicationID,
-			ClusterID:      connection.Summary.ID,
-			Namespace:      input.Namespace,
-			DeploymentName: strings.TrimSpace(input.DeploymentName),
-			Status:         "queued",
-			Metadata: map[string]any{
-				"applicationName":          app.Name,
-				"applicationEnvironmentId": strings.TrimSpace(input.ApplicationEnvironmentID),
-				"releaseBundleId":          bundleID,
-				"executionTaskId":          taskID,
-				"clusterId":                input.ClusterID,
-				"namespace":                input.Namespace,
-				"targetKind":               targetKind,
-				"executorKind":             providerKind,
-				"deploymentName":           input.DeploymentName,
-				"workloadKind":             target.WorkloadKind,
-				"workloadName":             target.WorkloadName,
-				"containerName":            input.ContainerName,
-				"releaseName":              input.ReleaseName,
-				"imageTag":                 strings.TrimSpace(input.ImageTag),
-				"image":                    resolvedImage,
-			},
-			CreatedAt: now,
-		}
-		record, err = s.repo.Create(ctx, record)
-		if err != nil {
-			return domainrelease.Record{}, err
-		}
-		if s.events != nil {
-			_ = s.events.Create(ctx, domainevent.Envelope{
-				ID:        "event:" + record.ID,
-				Source:    "release",
-				Category:  "release",
-				Severity:  "info",
-				ClusterID: record.ClusterID,
-				Namespace: record.Namespace,
-				Summary:   fmt.Sprintf("Queued %s release task for %s/%s", app.Name, record.ClusterID, record.Namespace),
-				Payload: map[string]any{
-					"releaseId":       record.ID,
-					"applicationId":   record.ApplicationID,
-					"executionTaskId": taskID,
-					"releaseBundleId": bundleID,
-				},
-			})
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "queued async release task", map[string]any{"image": resolvedImage})
-		return record, nil
+		return s.createQueuedRelease(ctx, principal, app, connection, target, input, resolvedImage, bundleID, taskID, providerKind, targetKind)
 	}
-	containerName, previousImage, err := s.applyDeploymentImage(ctx, connection, input.Namespace, input.DeploymentName, input.ContainerName, resolvedImage)
-	status := "deployed"
+	applied, err := s.applyAndPersistDirectRelease(ctx, app, connection, input, resolvedImage, bundleID, taskID)
 	if err != nil {
+		return domainrelease.Record{}, err
+	}
+	if applied.applyErr != nil {
+		s.recordFailedReleaseExecution(ctx, principal, connection, input, resolvedImage, bundleID, taskID, applied.applyErr)
+		return domainrelease.Record{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, applied.applyErr)
+	}
+	s.completeReleaseExecution(ctx, connection, input, resolvedImage, bundleID, taskID, applied)
+	s.recordTriggeredRelease(ctx, principal, app, input, applied.record, resolvedImage)
+	return applied.record, nil
+}
+
+type appliedDirectRelease struct {
+	record        domainrelease.Record
+	containerName string
+	previousImage string
+	applyErr      error
+}
+
+func (s *Service) applyAndPersistDirectRelease(ctx context.Context, app domainapp.App, connection domaincluster.Connection, input domainrelease.TriggerInput, resolvedImage, bundleID, taskID string) (appliedDirectRelease, error) {
+	containerName, previousImage, applyErr := s.applyDeploymentImage(ctx, connection, input.Namespace, input.DeploymentName, input.ContainerName, resolvedImage)
+	status := "deployed"
+	if applyErr != nil {
 		status = "failed"
 	}
-
 	now := time.Now().UTC()
 	record := domainrelease.Record{
 		ID:             fmt.Sprintf("release:%s:%d", input.ApplicationID, now.UnixNano()),
@@ -303,28 +242,33 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	}
 	record, saveErr := s.repo.Create(ctx, record)
 	if saveErr != nil {
-		return domainrelease.Record{}, saveErr
+		return appliedDirectRelease{}, saveErr
 	}
+	return appliedDirectRelease{record: record, containerName: containerName, previousImage: previousImage, applyErr: applyErr}, nil
+}
 
-	if err != nil {
-		if s.execution != nil && bundleID != "" && taskID != "" {
-			_ = s.execution.CompleteReleaseExecution(ctx, bundleID, taskID, "failed", map[string]any{"error": err.Error(), "image": resolvedImage})
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "failure", err.Error(), map[string]any{"image": resolvedImage})
-		return domainrelease.Record{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+func (s *Service) recordFailedReleaseExecution(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, input domainrelease.TriggerInput, resolvedImage, bundleID, taskID string, applyErr error) {
+	if s.execution != nil && bundleID != "" && taskID != "" {
+		_ = s.execution.CompleteReleaseExecution(ctx, bundleID, taskID, "failed", map[string]any{"error": applyErr.Error(), "image": resolvedImage})
 	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "failure", applyErr.Error(), map[string]any{"image": resolvedImage})
+}
+
+func (s *Service) completeReleaseExecution(ctx context.Context, connection domaincluster.Connection, input domainrelease.TriggerInput, resolvedImage, bundleID, taskID string, applied appliedDirectRelease) {
 	if s.execution != nil && bundleID != "" && taskID != "" {
 		_ = s.execution.CompleteReleaseExecution(ctx, bundleID, taskID, "completed", map[string]any{
 			"image":          resolvedImage,
-			"previousImage":  previousImage,
-			"containerName":  containerName,
+			"previousImage":  applied.previousImage,
+			"containerName":  applied.containerName,
 			"clusterId":      connection.Summary.ID,
 			"namespace":      input.Namespace,
 			"deploymentName": input.DeploymentName,
-			"recordId":       record.ID,
+			"recordId":       applied.record.ID,
 		})
 	}
+}
 
+func (s *Service) recordTriggeredRelease(ctx context.Context, principal domainidentity.Principal, app domainapp.App, input domainrelease.TriggerInput, record domainrelease.Record, resolvedImage string) {
 	if s.events != nil {
 		_ = s.events.Create(ctx, domainevent.Envelope{
 			ID:        "event:" + record.ID,
@@ -342,7 +286,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 			},
 		})
 	}
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "triggered deployment release", map[string]any{"image": resolvedImage})
+	_ = s.recordAudit(ctx, principal, record.ClusterID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "triggered deployment release", map[string]any{"image": resolvedImage})
 	if s.operations != nil {
 		_ = s.operations.Record(ctx, operationentry.New(
 			ctx,
@@ -367,6 +311,123 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 			},
 		))
 	}
+}
+
+type preparedReleaseTrigger struct {
+	app        domainapp.App
+	target     domaincatalog.ReleaseTarget
+	connection domaincluster.Connection
+}
+
+func (s *Service) prepareReleaseTrigger(ctx context.Context, principal domainidentity.Principal, input domainrelease.TriggerInput) (preparedReleaseTrigger, error) {
+	app, err := s.apps.Get(ctx, input.ApplicationID)
+	if err != nil {
+		return preparedReleaseTrigger{}, normalizeApplicationError(err)
+	}
+	target, err := s.resolveTarget(ctx, input)
+	if err != nil {
+		return preparedReleaseTrigger{}, err
+	}
+	connection, err := s.loadConnection(ctx, input.ClusterID)
+	if err != nil {
+		return preparedReleaseTrigger{}, err
+	}
+	resourceKind := "Deployment"
+	if strings.TrimSpace(target.WorkloadKind) != "" {
+		resourceKind = strings.TrimSpace(target.WorkloadKind)
+	}
+	if err := s.authorize(ctx, principal, connection.Summary.ID, input.Namespace, resourceKind, input.DeploymentName, app.BusinessLineID, app.Group, input.ApplicationID, domainaccess.ActionTrigger); err != nil {
+		return preparedReleaseTrigger{}, err
+	}
+	return preparedReleaseTrigger{app: app, target: target, connection: connection}, nil
+}
+
+func validateReleaseTriggerInput(input domainrelease.TriggerInput) error {
+	switch {
+	case strings.TrimSpace(input.ApplicationID) == "":
+		return fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
+	case strings.TrimSpace(input.ClusterID) == "":
+		return fmt.Errorf("%w: clusterId is required", apperrors.ErrInvalidArgument)
+	case strings.TrimSpace(input.Namespace) == "":
+		return fmt.Errorf("%w: namespace is required", apperrors.ErrInvalidArgument)
+	case strings.TrimSpace(input.DeploymentName) == "":
+		return fmt.Errorf("%w: deploymentName is required", apperrors.ErrInvalidArgument)
+	default:
+		return nil
+	}
+}
+
+func (s *Service) startReleaseExecution(ctx context.Context, app domainapp.App, input domainrelease.TriggerInput, target domaincatalog.ReleaseTarget, image, bundleID, providerKind, targetKind string) (string, string) {
+	if s.execution == nil {
+		return bundleID, ""
+	}
+	bundle, task, err := s.execution.StartReleaseExecution(ctx, execution.ReleasePlan{
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
+		ReleaseBundleID:          bundleID,
+		Version:                  firstNonEmpty(strings.TrimSpace(input.ReleaseName), strings.TrimSpace(input.ImageTag)),
+		SourceType:               firstNonEmpty(strings.TrimSpace(input.ActionKind), "release"),
+		ProviderKind:             providerKind,
+		TargetKind:               targetKind,
+		ArtifactRef:              image,
+		Metadata:                 buildReleaseExecutionMetadata(app, input, target, image),
+	})
+	if err != nil {
+		return bundleID, ""
+	}
+	return bundle.ID, task.ID
+}
+
+func (s *Service) createQueuedRelease(ctx context.Context, principal domainidentity.Principal, app domainapp.App, connection domaincluster.Connection, target domaincatalog.ReleaseTarget, input domainrelease.TriggerInput, image, bundleID, taskID, providerKind, targetKind string) (domainrelease.Record, error) {
+	now := time.Now().UTC()
+	record := domainrelease.Record{
+		ID:             fmt.Sprintf("release:%s:%d", input.ApplicationID, now.UnixNano()),
+		ApplicationID:  input.ApplicationID,
+		ClusterID:      connection.Summary.ID,
+		Namespace:      input.Namespace,
+		DeploymentName: strings.TrimSpace(input.DeploymentName),
+		Status:         "queued",
+		Metadata: map[string]any{
+			"applicationName":          app.Name,
+			"applicationEnvironmentId": strings.TrimSpace(input.ApplicationEnvironmentID),
+			"releaseBundleId":          bundleID,
+			"executionTaskId":          taskID,
+			"clusterId":                input.ClusterID,
+			"namespace":                input.Namespace,
+			"targetKind":               targetKind,
+			"executorKind":             providerKind,
+			"deploymentName":           input.DeploymentName,
+			"workloadKind":             target.WorkloadKind,
+			"workloadName":             target.WorkloadName,
+			"containerName":            input.ContainerName,
+			"releaseName":              input.ReleaseName,
+			"imageTag":                 strings.TrimSpace(input.ImageTag),
+			"image":                    image,
+		},
+		CreatedAt: now,
+	}
+	record, err := s.repo.Create(ctx, record)
+	if err != nil {
+		return domainrelease.Record{}, err
+	}
+	if s.events != nil {
+		_ = s.events.Create(ctx, domainevent.Envelope{
+			ID:        "event:" + record.ID,
+			Source:    "release",
+			Category:  "release",
+			Severity:  "info",
+			ClusterID: record.ClusterID,
+			Namespace: record.Namespace,
+			Summary:   fmt.Sprintf("Queued %s release task for %s/%s", app.Name, record.ClusterID, record.Namespace),
+			Payload: map[string]any{
+				"releaseId":       record.ID,
+				"applicationId":   record.ApplicationID,
+				"executionTaskId": taskID,
+				"releaseBundleId": bundleID,
+			},
+		})
+	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "queued async release task", map[string]any{"image": image})
 	return record, nil
 }
 
@@ -379,48 +440,11 @@ func (s *Service) applyDeploymentImage(ctx context.Context, connection domainclu
 		}
 		return client.UpdateDeploymentImage(ctx, namespace, name, containerName, image)
 	default:
-		return s.updateDirectDeploymentImage(ctx, connection.Summary.ID, namespace, name, containerName, image)
-	}
-}
-
-func (s *Service) updateDirectDeploymentImage(ctx context.Context, clusterID, namespace, name, containerName, image string) (string, string, error) {
-	bundle, err := s.clusters.Bundle(ctx, clusterID)
-	if err != nil {
-		return "", "", fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-	}
-	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-	deployment, err := bundle.Typed.AppsV1().Deployments(namespace).Get(queryCtx, name, metav1.GetOptions{})
-	if err != nil {
-		return "", "", err
-	}
-	resolvedContainer, previousImage, err := mutateDeploymentImage(deployment, containerName, image)
-	if err != nil {
-		return "", "", err
-	}
-	if _, err := bundle.Typed.AppsV1().Deployments(namespace).Update(queryCtx, deployment, metav1.UpdateOptions{}); err != nil {
-		return "", "", err
-	}
-	return resolvedContainer, previousImage, nil
-}
-
-func mutateDeploymentImage(deployment *appsv1.Deployment, containerName, image string) (string, string, error) {
-	if len(deployment.Spec.Template.Spec.Containers) == 0 {
-		return "", "", fmt.Errorf("deployment has no containers")
-	}
-	if strings.TrimSpace(containerName) == "" {
-		previous := deployment.Spec.Template.Spec.Containers[0].Image
-		deployment.Spec.Template.Spec.Containers[0].Image = image
-		return deployment.Spec.Template.Spec.Containers[0].Name, previous, nil
-	}
-	for index := range deployment.Spec.Template.Spec.Containers {
-		if deployment.Spec.Template.Spec.Containers[index].Name == containerName {
-			previous := deployment.Spec.Template.Spec.Containers[index].Image
-			deployment.Spec.Template.Spec.Containers[index].Image = image
-			return deployment.Spec.Template.Spec.Containers[index].Name, previous, nil
+		if s.direct == nil {
+			return "", "", fmt.Errorf("%w: direct cluster runtime is not configured", apperrors.ErrClusterUnready)
 		}
+		return s.direct.UpdateDeploymentImage(ctx, connection.Summary.ID, namespace, name, containerName, image)
 	}
-	return "", "", fmt.Errorf("container %s not found in deployment", containerName)
 }
 
 func resolveImage(app domainapp.App, input domainrelease.TriggerInput) (string, error) {
@@ -704,11 +728,11 @@ func (s *Service) resolveTarget(ctx context.Context, input domainrelease.Trigger
 	return domaincatalog.ReleaseTarget{}, fmt.Errorf("%w: no enabled target is configured for application environment", apperrors.ErrInvalidArgument)
 }
 
-func (s *Service) agentClient(connection domaincluster.Connection) (*agentinfra.Client, error) {
+func (s *Service) agentClient(connection domaincluster.Connection) (AgentDeploymentClient, error) {
 	if s.agents == nil {
 		return nil, fmt.Errorf("%w: agent registry is not configured", apperrors.ErrClusterUnready)
 	}
-	client, err := s.agents.ClientFor(connection)
+	client, err := s.agents(connection)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 	}
@@ -723,7 +747,10 @@ func (s *Service) loadConnection(ctx context.Context, clusterID string) (domainc
 		}
 		return connection, nil
 	}
-	summary, err := s.clusters.Metadata(clusterID)
+	if s.direct == nil {
+		return domaincluster.Connection{}, fmt.Errorf("%w: direct cluster runtime is not configured", apperrors.ErrClusterUnready)
+	}
+	summary, err := s.direct.Metadata(clusterID)
 	if err != nil {
 		return domaincluster.Connection{}, fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
 	}

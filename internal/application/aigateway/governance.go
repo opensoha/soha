@@ -18,15 +18,7 @@ func (s *Service) GovernanceStatus(ctx context.Context, principal domainidentity
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	personalTokenRepo := s.personalTokenRepository()
-	serviceAccountRepo := s.serviceAccountRepository()
-	clientRepo := s.clientRepository()
-	accessPolicyRepo := s.accessPolicyRepository()
-	toolGrantRepo := s.toolGrantRepository()
-	skillBindingRepo := s.skillBindingRepository()
-	auditRepo := s.auditLogRepository()
-	approvalRepo := s.approvalRepository()
-	if personalTokenRepo == nil || serviceAccountRepo == nil || clientRepo == nil || accessPolicyRepo == nil || toolGrantRepo == nil || skillBindingRepo == nil || auditRepo == nil || approvalRepo == nil {
+	if !s.governanceRepositoriesConfigured() {
 		return domainaigateway.GovernanceStatus{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := s.expirePendingApprovalRequests(ctx); err != nil {
@@ -41,40 +33,64 @@ func (s *Service) GovernanceStatus(ctx context.Context, principal domainidentity
 	}
 	now := time.Now().UTC()
 	from := now.Add(-time.Duration(windowHours) * time.Hour)
-	personalTokens, err := personalTokenRepo.ListAllPersonalAccessTokens(ctx)
+	data, err := s.loadGovernanceStatusData(ctx, from, now)
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	serviceTokens, err := serviceAccountRepo.ListAllServiceAccountTokens(ctx)
-	if err != nil {
-		return domainaigateway.GovernanceStatus{}, err
-	}
-	clients, err := clientRepo.ListAIClients(ctx)
-	if err != nil {
-		return domainaigateway.GovernanceStatus{}, err
-	}
-	accessPolicies, err := accessPolicyRepo.ListAccessPolicies(ctx, domainaigateway.AccessPolicyFilter{IncludeDisabled: true})
-	if err != nil {
-		return domainaigateway.GovernanceStatus{}, err
-	}
-	toolGrants, err := toolGrantRepo.ListToolGrants(ctx, domainaigateway.ToolGrantFilter{IncludeExpired: true})
-	if err != nil {
-		return domainaigateway.GovernanceStatus{}, err
-	}
-	skillBindings, err := skillBindingRepo.ListSkillBindings(ctx, domainaigateway.SkillBindingFilter{IncludeDisabled: true})
-	if err != nil {
-		return domainaigateway.GovernanceStatus{}, err
-	}
-	audits, err := auditRepo.ListAuditLogs(ctx, domainaigateway.AuditLogFilter{From: &from, To: &now, Limit: 500})
-	if err != nil {
-		return domainaigateway.GovernanceStatus{}, err
-	}
-	pendingApprovals, err := approvalRepo.ListApprovalRequests(ctx, domainaigateway.ApprovalRequestFilter{Status: "pending", Limit: 500})
-	if err != nil {
-		return domainaigateway.GovernanceStatus{}, err
-	}
-	status := s.buildGovernanceStatus(now, windowHours, personalTokens, serviceTokens, clients, accessPolicies, toolGrants, skillBindings, audits, pendingApprovals)
+	status := s.buildGovernanceStatus(now, windowHours, data.personalTokens, data.serviceTokens, data.clients, data.accessPolicies, data.toolGrants, data.skillBindings, data.audits, data.pendingApprovals)
 	return s.mergeGovernanceRelayHealth(ctx, status, from, now)
+}
+
+func (s *Service) governanceRepositoriesConfigured() bool {
+	return s.personalTokenRepository() != nil &&
+		s.serviceAccountRepository() != nil &&
+		s.clientRepository() != nil &&
+		s.accessPolicyRepository() != nil &&
+		s.toolGrantRepository() != nil &&
+		s.skillBindingRepository() != nil &&
+		s.auditLogRepository() != nil &&
+		s.approvalRepository() != nil
+}
+
+type governanceStatusData struct {
+	personalTokens   []domainaigateway.PersonalAccessToken
+	serviceTokens    []domainaigateway.ServiceAccountToken
+	clients          []domainaigateway.AIClient
+	accessPolicies   []domainaigateway.AccessPolicy
+	toolGrants       []domainaigateway.ToolGrant
+	skillBindings    []domainaigateway.SkillBinding
+	audits           []domainaigateway.AuditLog
+	pendingApprovals []domainaigateway.ApprovalRequest
+}
+
+func (s *Service) loadGovernanceStatusData(ctx context.Context, from, now time.Time) (governanceStatusData, error) {
+	var data governanceStatusData
+	var err error
+	if data.personalTokens, err = s.personalTokenRepository().ListAllPersonalAccessTokens(ctx); err != nil {
+		return governanceStatusData{}, err
+	}
+	if data.serviceTokens, err = s.serviceAccountRepository().ListAllServiceAccountTokens(ctx); err != nil {
+		return governanceStatusData{}, err
+	}
+	if data.clients, err = s.clientRepository().ListAIClients(ctx); err != nil {
+		return governanceStatusData{}, err
+	}
+	if data.accessPolicies, err = s.accessPolicyRepository().ListAccessPolicies(ctx, domainaigateway.AccessPolicyFilter{IncludeDisabled: true}); err != nil {
+		return governanceStatusData{}, err
+	}
+	if data.toolGrants, err = s.toolGrantRepository().ListToolGrants(ctx, domainaigateway.ToolGrantFilter{IncludeExpired: true}); err != nil {
+		return governanceStatusData{}, err
+	}
+	if data.skillBindings, err = s.skillBindingRepository().ListSkillBindings(ctx, domainaigateway.SkillBindingFilter{IncludeDisabled: true}); err != nil {
+		return governanceStatusData{}, err
+	}
+	if data.audits, err = s.auditLogRepository().ListAuditLogs(ctx, domainaigateway.AuditLogFilter{From: &from, To: &now, Limit: 500}); err != nil {
+		return governanceStatusData{}, err
+	}
+	if data.pendingApprovals, err = s.approvalRepository().ListApprovalRequests(ctx, domainaigateway.ApprovalRequestFilter{Status: "pending", Limit: 500}); err != nil {
+		return governanceStatusData{}, err
+	}
+	return data, nil
 }
 
 func (s *Service) mergeGovernanceRelayHealth(ctx context.Context, status domainaigateway.GovernanceStatus, from, now time.Time) (domainaigateway.GovernanceStatus, error) {
@@ -104,9 +120,6 @@ func (s *Service) mergeGovernanceRelayHealth(ctx context.Context, status domaina
 	return status, nil
 }
 
-func buildGovernanceStatus(now time.Time, windowHours int, personalTokens []domainaigateway.PersonalAccessToken, serviceTokens []domainaigateway.ServiceAccountToken, clients []domainaigateway.AIClient, accessPolicies []domainaigateway.AccessPolicy, toolGrants []domainaigateway.ToolGrant, skillBindings []domainaigateway.SkillBinding, audits []domainaigateway.AuditLog, pendingApprovals []domainaigateway.ApprovalRequest) domainaigateway.GovernanceStatus {
-	return buildGovernanceStatusWithCapabilities(now, windowHours, personalTokens, serviceTokens, clients, accessPolicies, toolGrants, skillBindings, audits, pendingApprovals, defaultTools(), defaultSkills())
-}
 func (s *Service) buildGovernanceStatus(now time.Time, windowHours int, personalTokens []domainaigateway.PersonalAccessToken, serviceTokens []domainaigateway.ServiceAccountToken, clients []domainaigateway.AIClient, accessPolicies []domainaigateway.AccessPolicy, toolGrants []domainaigateway.ToolGrant, skillBindings []domainaigateway.SkillBinding, audits []domainaigateway.AuditLog, pendingApprovals []domainaigateway.ApprovalRequest) domainaigateway.GovernanceStatus {
 	return buildGovernanceStatusWithCapabilities(now, windowHours, personalTokens, serviceTokens, clients, accessPolicies, toolGrants, skillBindings, audits, pendingApprovals, s.gatewayTools(), s.gatewaySkills())
 }
