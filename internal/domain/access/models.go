@@ -145,16 +145,24 @@ type Policy struct {
 }
 
 type UserRecord struct {
-	ID          string     `json:"id"`
-	Username    string     `json:"username"`
-	Email       string     `json:"email"`
-	DisplayName string     `json:"displayName"`
-	Status      string     `json:"status"`
-	LastLoginAt *time.Time `json:"lastLoginAt,omitempty"`
-	Tags        []string   `json:"tags"`
-	Roles       []string   `json:"roles"`
-	Teams       []string   `json:"teams"`
-	Projects    []string   `json:"projects"`
+	ID           string            `json:"id"`
+	Username     string            `json:"username"`
+	Email        string            `json:"email"`
+	DisplayName  string            `json:"displayName"`
+	AvatarURL    string            `json:"avatarUrl,omitempty"`
+	AvatarFit    string            `json:"avatarFit,omitempty"`
+	Status       string            `json:"status"`
+	LastLoginAt  *time.Time        `json:"lastLoginAt,omitempty"`
+	Tags         []string          `json:"tags"`
+	Roles        []string          `json:"roles"`
+	Teams        []string          `json:"teams"`
+	Projects     []string          `json:"projects"`
+	LoginSources []UserLoginSource `json:"loginSources"`
+}
+
+type UserLoginSource struct {
+	Type       string `json:"type"`
+	ProviderID string `json:"providerId,omitempty"`
 }
 
 type UserInput struct {

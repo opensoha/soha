@@ -112,6 +112,36 @@ type testCapabilityProvider struct {
 	invoke       func(context.Context, domainidentity.Principal, domainaigateway.ToolCapability, map[string]any) (any, map[string]any, error)
 }
 
+func customTestCapabilityProvider() testCapabilityProvider {
+	return testCapabilityProvider{
+		tools: []domainaigateway.ToolCapability{
+			{Name: "custom.echo", RiskLevel: domainaigateway.RiskLevelRead, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
+			{Name: "custom.blocked", RiskLevel: domainaigateway.RiskLevelRead, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
+		},
+		resources: []domainaigateway.ResourceCapability{{Name: "soha://custom/context", PermissionKeys: []string{appaccess.PermAIGatewayInvoke}}},
+		prompts: []domainaigateway.PromptCapability{
+			{Name: "custom.prompt", PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
+			{Name: "custom.blocked_prompt", PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
+		},
+		skills:       []domainaigateway.SkillCapability{{ID: "custom-skill", Name: "Custom Skill", CapabilityRefs: []string{"custom.echo"}, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}}},
+		resourceRefs: []ResourceCapabilityRefs{{Resource: "soha://custom/context", Tools: []string{"custom.echo"}, Prompts: []string{"custom.prompt"}, Skills: []string{"custom-skill"}}},
+	}
+}
+
+func newSecretClassifierTestService(policyID string, secretTypes []any) (*fakeApplicationService, *memoryGatewayRepository, *Service) {
+	apps := &fakeApplicationService{}
+	repo := &memoryGatewayRepository{accessPolicies: []domainaigateway.AccessPolicy{{
+		ID: policyID, Enabled: true, SubjectType: "role", SubjectID: "developer", Effect: "allow",
+		ToolPatterns: []string{"delivery.applications.list"},
+		Conditions:   map[string]any{"redactionPolicy": map[string]any{"mode": "strict", "secretTypes": secretTypes}},
+	}}}
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{
+		"developer": {appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+	}}), nil, repo)
+	service.SetDeliveryServices(apps, &fakeDeliveryService{})
+	return apps, repo, service
+}
+
 func (p testCapabilityProvider) Tools() []domainaigateway.ToolCapability {
 	return append([]domainaigateway.ToolCapability(nil), p.tools...)
 }
@@ -379,40 +409,7 @@ func (r *memoryGatewayRepository) CreateAuditLog(_ context.Context, item domaina
 func (r *memoryGatewayRepository) ListAuditLogs(_ context.Context, filter domainaigateway.AuditLogFilter) ([]domainaigateway.AuditLog, error) {
 	items := make([]domainaigateway.AuditLog, 0)
 	for _, item := range r.auditLogs {
-		if filter.ActorType != "" && item.ActorType != filter.ActorType {
-			continue
-		}
-		if filter.ActorID != "" && item.ActorID != filter.ActorID {
-			continue
-		}
-		if filter.AIClientID != "" && item.AIClientID != filter.AIClientID {
-			continue
-		}
-		if filter.SkillID != "" && item.SkillID != filter.SkillID {
-			continue
-		}
-		if filter.ToolName != "" && item.ToolName != filter.ToolName {
-			continue
-		}
-		if filter.ApprovalRequestID != "" {
-			approvalRequestID := firstMapString(item.Metadata, "approvalRequestId")
-			if approvalRequestID == "" {
-				approvalRequestID = firstMapString(mapValue(item.Metadata["relatedIds"]), "approvalRequestId")
-			}
-			if approvalRequestID != filter.ApprovalRequestID {
-				continue
-			}
-		}
-		if filter.RiskLevel != "" && item.RiskLevel != filter.RiskLevel {
-			continue
-		}
-		if filter.Result != "" && item.Result != filter.Result {
-			continue
-		}
-		if filter.From != nil && item.CreatedAt.Before(*filter.From) {
-			continue
-		}
-		if filter.To != nil && item.CreatedAt.After(*filter.To) {
+		if !auditLogMatchesFilter(item, filter) {
 			continue
 		}
 		items = append(items, item)
@@ -421,6 +418,28 @@ func (r *memoryGatewayRepository) ListAuditLogs(_ context.Context, filter domain
 		}
 	}
 	return items, nil
+}
+
+func auditLogMatchesFilter(item domainaigateway.AuditLog, filter domainaigateway.AuditLogFilter) bool {
+	if filter.ApprovalRequestID != "" && auditApprovalRequestID(item) != filter.ApprovalRequestID {
+		return false
+	}
+	return (filter.ActorType == "" || item.ActorType == filter.ActorType) &&
+		(filter.ActorID == "" || item.ActorID == filter.ActorID) &&
+		(filter.AIClientID == "" || item.AIClientID == filter.AIClientID) &&
+		(filter.SkillID == "" || item.SkillID == filter.SkillID) &&
+		(filter.ToolName == "" || item.ToolName == filter.ToolName) &&
+		(filter.RiskLevel == "" || item.RiskLevel == filter.RiskLevel) &&
+		(filter.Result == "" || item.Result == filter.Result) &&
+		(filter.From == nil || !item.CreatedAt.Before(*filter.From)) &&
+		(filter.To == nil || !item.CreatedAt.After(*filter.To))
+}
+
+func auditApprovalRequestID(item domainaigateway.AuditLog) string {
+	if id := firstMapString(item.Metadata, "approvalRequestId"); id != "" {
+		return id
+	}
+	return firstMapString(mapValue(item.Metadata["relatedIds"]), "approvalRequestId")
 }
 
 func (r *memoryGatewayRepository) IncrementRateLimitCounter(_ context.Context, item domainaigateway.RateLimitCounter) (domainaigateway.RateLimitCounter, error) {
@@ -518,40 +537,7 @@ func (r *memoryGatewayRepository) GetApprovalRequest(_ context.Context, requestI
 func (r *memoryGatewayRepository) ListApprovalRequests(_ context.Context, filter domainaigateway.ApprovalRequestFilter) ([]domainaigateway.ApprovalRequest, error) {
 	items := make([]domainaigateway.ApprovalRequest, 0)
 	for _, item := range r.approvalRequests {
-		if filter.ID != "" && item.ID != filter.ID {
-			continue
-		}
-		if filter.Status != "" && item.Status != filter.Status {
-			continue
-		}
-		if filter.ActorType != "" && item.ActorType != filter.ActorType {
-			continue
-		}
-		if filter.ActorID != "" && item.ActorID != filter.ActorID {
-			continue
-		}
-		if filter.AIClientID != "" && item.AIClientID != filter.AIClientID {
-			continue
-		}
-		if filter.SkillID != "" && item.SkillID != filter.SkillID {
-			continue
-		}
-		if filter.ToolName != "" && item.ToolName != filter.ToolName {
-			continue
-		}
-		if filter.RiskLevel != "" && item.RiskLevel != filter.RiskLevel {
-			continue
-		}
-		if filter.Strategy != "" && item.Strategy != filter.Strategy {
-			continue
-		}
-		if filter.From != nil && item.CreatedAt.Before(*filter.From) {
-			continue
-		}
-		if filter.To != nil && item.CreatedAt.After(*filter.To) {
-			continue
-		}
-		if filter.ExpiresBefore != nil && (item.ExpiresAt == nil || item.ExpiresAt.After(*filter.ExpiresBefore)) {
+		if !approvalRequestMatchesFilter(item, filter) {
 			continue
 		}
 		items = append(items, item)
@@ -560,6 +546,28 @@ func (r *memoryGatewayRepository) ListApprovalRequests(_ context.Context, filter
 		}
 	}
 	return items, nil
+}
+
+func approvalRequestMatchesFilter(item domainaigateway.ApprovalRequest, filter domainaigateway.ApprovalRequestFilter) bool {
+	expiresBeforeMatches := filter.ExpiresBefore == nil || (item.ExpiresAt != nil && !item.ExpiresAt.After(*filter.ExpiresBefore))
+	return approvalRequestIdentityMatches(item, filter) && approvalRequestTimeMatches(item, filter, expiresBeforeMatches)
+}
+
+func approvalRequestIdentityMatches(item domainaigateway.ApprovalRequest, filter domainaigateway.ApprovalRequestFilter) bool {
+	return (filter.ID == "" || item.ID == filter.ID) &&
+		(filter.Status == "" || item.Status == filter.Status) &&
+		(filter.ActorType == "" || item.ActorType == filter.ActorType) &&
+		(filter.ActorID == "" || item.ActorID == filter.ActorID) &&
+		(filter.AIClientID == "" || item.AIClientID == filter.AIClientID) &&
+		(filter.SkillID == "" || item.SkillID == filter.SkillID) &&
+		(filter.ToolName == "" || item.ToolName == filter.ToolName) &&
+		(filter.RiskLevel == "" || item.RiskLevel == filter.RiskLevel) &&
+		(filter.Strategy == "" || item.Strategy == filter.Strategy)
+}
+
+func approvalRequestTimeMatches(item domainaigateway.ApprovalRequest, filter domainaigateway.ApprovalRequestFilter, expiresBeforeMatches bool) bool {
+	return (filter.From == nil || !item.CreatedAt.Before(*filter.From)) &&
+		(filter.To == nil || !item.CreatedAt.After(*filter.To)) && expiresBeforeMatches
 }
 
 func (r *memoryGatewayRepository) UpdateApprovalRequest(_ context.Context, requestID string, update domainaigateway.ApprovalRequestUpdate) (domainaigateway.ApprovalRequest, error) {
@@ -907,7 +915,6 @@ type fakeResourceService struct {
 	readLogs      bool
 	listedEvents  bool
 	tailLines     int64
-	logLimit      int
 	eventLimit    int
 	clusterID     string
 	namespace     string
@@ -1727,25 +1734,7 @@ func TestCapabilitiesAccessPolicySkillIDsUseInjectedSkills(t *testing.T) {
 			"developer": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
 		},
 	}), nil, repo)
-	service.SetCapabilityProviders(testCapabilityProvider{
-		tools: []domainaigateway.ToolCapability{
-			{Name: "custom.echo", RiskLevel: domainaigateway.RiskLevelRead, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-			{Name: "custom.blocked", RiskLevel: domainaigateway.RiskLevelRead, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-		},
-		resources: []domainaigateway.ResourceCapability{
-			{Name: "soha://custom/context", PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-		},
-		prompts: []domainaigateway.PromptCapability{
-			{Name: "custom.prompt", PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-			{Name: "custom.blocked_prompt", PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-		},
-		skills: []domainaigateway.SkillCapability{
-			{ID: "custom-skill", Name: "Custom Skill", CapabilityRefs: []string{"custom.echo"}, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-		},
-		resourceRefs: []ResourceCapabilityRefs{
-			{Resource: "soha://custom/context", Tools: []string{"custom.echo"}, Prompts: []string{"custom.prompt"}, Skills: []string{"custom-skill"}},
-		},
-	})
+	service.SetCapabilityProviders(customTestCapabilityProvider())
 
 	manifest, err := service.Capabilities(context.Background(), testPrincipal("developer"), domainaigateway.ManifestRequest{})
 	if err != nil {
@@ -1825,25 +1814,7 @@ func TestCapabilitiesSkillBindingsUseInjectedSkillDefaults(t *testing.T) {
 			"developer": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
 		},
 	}), nil, repo)
-	service.SetCapabilityProviders(testCapabilityProvider{
-		tools: []domainaigateway.ToolCapability{
-			{Name: "custom.echo", RiskLevel: domainaigateway.RiskLevelRead, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-			{Name: "custom.blocked", RiskLevel: domainaigateway.RiskLevelRead, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-		},
-		resources: []domainaigateway.ResourceCapability{
-			{Name: "soha://custom/context", PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-		},
-		prompts: []domainaigateway.PromptCapability{
-			{Name: "custom.prompt", PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-			{Name: "custom.blocked_prompt", PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-		},
-		skills: []domainaigateway.SkillCapability{
-			{ID: "custom-skill", Name: "Custom Skill", CapabilityRefs: []string{"custom.echo"}, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
-		},
-		resourceRefs: []ResourceCapabilityRefs{
-			{Resource: "soha://custom/context", Tools: []string{"custom.echo"}, Prompts: []string{"custom.prompt"}, Skills: []string{"custom-skill"}},
-		},
-	})
+	service.SetCapabilityProviders(customTestCapabilityProvider())
 
 	manifest, err := service.Capabilities(context.Background(), testPrincipal("developer"), domainaigateway.ManifestRequest{SkillID: "custom-skill"})
 	if err != nil {
@@ -2011,7 +1982,7 @@ func TestInvokeToolUsesInjectedProviderInvoker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	if !invoked || result.Output.(map[string]any)["echo"] != "hello" || result.RelatedIDs["customId"] != "custom-1" {
+	if !invoked || mustValueAs[map[string]any](t, result.Output)["echo"] != "hello" || result.RelatedIDs["customId"] != "custom-1" {
 		t.Fatalf("expected injected provider to execute custom tool, result=%#v invoked=%v", result, invoked)
 	}
 	if len(repo.auditLogs) != 1 || repo.auditLogs[0].ToolName != "custom.echo" || repo.auditLogs[0].Result != "success" {
@@ -3193,70 +3164,9 @@ func TestGovernanceStatusSummarizesTokensAuditAndPolicyCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GovernanceStatus returned error: %v", err)
 	}
-	if status.Tokens.PersonalAccessTokens.Expired != 1 || len(status.Tokens.ExpiredActive) != 1 {
-		t.Fatalf("expected expired active personal token finding, got %#v", status.Tokens)
-	}
-	if status.Tokens.PersonalAccessTokens.ExpiringSoon != 1 || len(status.Tokens.ExpiringSoon) != 1 {
-		t.Fatalf("expected expiring token finding, got %#v", status.Tokens)
-	}
-	if status.Tokens.ServiceAccountTokens.Stale != 1 || len(status.Tokens.Stale) != 1 {
-		t.Fatalf("expected stale service token finding, got %#v", status.Tokens)
-	}
-	if status.Metrics.TotalCalls != 3 || status.Metrics.DenyCount != 2 || status.Metrics.FailureCount != 1 || status.Metrics.PendingApprovalCount == 0 {
-		t.Fatalf("unexpected metrics: %#v", status.Metrics)
-	}
-	if status.Approvals.Pending != 2 || status.Approvals.DueSoon != 1 || status.Approvals.StalePending != 1 || status.Approvals.NextDueRequestID != "approval-due-soon" || status.Approvals.OldestPendingRequestID != "approval-stale" {
-		t.Fatalf("unexpected approval governance summary: %#v", status.Approvals)
-	}
-	if status.PolicyCoverage.BudgetPolicies != 1 || status.PolicyCoverage.RateLimitPolicies != 1 || status.PolicyCoverage.RedactionPolicies != 1 {
-		t.Fatalf("expected governance policy coverage, got %#v", status.PolicyCoverage)
-	}
-	if status.Redaction.TotalMatches != 5 || status.Redaction.AuditsWithRedaction != 2 || status.Redaction.InputAudits != 1 || status.Redaction.OutputAudits != 1 {
-		t.Fatalf("expected governance redaction audit summary, got %#v", status.Redaction)
-	}
-	if status.Redaction.FieldMatches != 1 || status.Redaction.SensitiveKeyMatches != 1 || status.Redaction.SecretClassifierMatches != 1 || status.Redaction.ValuePatternMatches != 1 || status.Redaction.StructuredSecretMatches != 1 {
-		t.Fatalf("expected governance redaction match type counts, got %#v", status.Redaction)
-	}
-	if !slices.ContainsFunc(status.Redaction.TopClassifiers, func(item domainaigateway.GovernanceMetricCount) bool {
-		return item.Key == "github" && item.Count == 1
-	}) || !slices.ContainsFunc(status.Redaction.TopTools, func(item domainaigateway.GovernanceMetricCount) bool {
-		return item.Key == "k8s.pods.logs" && item.Count == 1
-	}) || !slices.ContainsFunc(status.Redaction.TopPolicies, func(item domainaigateway.GovernanceMetricCount) bool {
-		return item.Key == "policy-1" && item.Count == 2
-	}) {
-		t.Fatalf("expected governance redaction top counts, got %#v", status.Redaction)
-	}
-	if status.Clients.RegistrationApproval != "configured" {
-		t.Fatalf("expected client registration approval metadata to be detected, got %#v", status.Clients)
-	}
-	if status.Health.Status != "critical" {
-		t.Fatalf("expired active token should make governance critical, got %#v", status.Health)
-	}
-	if len(status.Anomalies) == 0 {
-		t.Fatalf("expected anomaly findings, got %#v", status)
-	}
-	for _, kind := range []string{"approval_sla_due_soon", "stale_gateway_approvals"} {
-		if !slices.ContainsFunc(status.Anomalies, func(item domainaigateway.GovernanceFinding) bool {
-			return item.Type == kind && item.ApprovalRequestID != ""
-		}) {
-			t.Fatalf("expected %s anomaly with approval request id, got %#v", kind, status.Anomalies)
-		}
-	}
-	if !slices.ContainsFunc(status.RecommendationActions, func(item domainaigateway.GovernanceRecommendationAction) bool {
-		return item.Type == "token_rotation" && item.Severity == "critical" && slices.Contains(item.Refs, "pat-expired") && slices.Contains(item.Refs, "pat-soon")
-	}) {
-		t.Fatalf("expected token rotation recommendation action, got %#v", status.RecommendationActions)
-	}
-	if !slices.ContainsFunc(status.RecommendationActions, func(item domainaigateway.GovernanceRecommendationAction) bool {
-		return item.Type == "token_hygiene" && slices.Contains(item.Refs, "sat-stale") && governanceRecommendationHasServiceTokenRef(item)
-	}) {
-		t.Fatalf("expected token hygiene recommendation action with service token ref metadata, got %#v", status.RecommendationActions)
-	}
-	if !slices.ContainsFunc(status.RecommendationActions, func(item domainaigateway.GovernanceRecommendationAction) bool {
-		return item.Type == "approval_sla" && item.TargetKind == "approval_requests" && slices.Contains(item.Refs, "approval-due-soon") && slices.Contains(item.Refs, "approval-stale")
-	}) {
-		t.Fatalf("expected approval SLA recommendation action, got %#v", status.RecommendationActions)
-	}
+	assertGovernanceTokenAndPolicySummary(t, status)
+	assertGovernanceRedactionSummary(t, status)
+	assertGovernanceRecommendations(t, status)
 }
 
 func TestGovernanceApprovalSummaryTracksOverdueDueSoonAndStale(t *testing.T) {
@@ -3642,57 +3552,7 @@ func TestGovernanceStatusFlagsUnguardedHighRiskAllows(t *testing.T) {
 		t.Fatalf("GovernanceStatus returned error: %v", err)
 	}
 
-	byPolicyID := map[string]domainaigateway.GovernanceFinding{}
-	byGrantID := map[string]domainaigateway.GovernanceFinding{}
-	for _, finding := range status.Anomalies {
-		if finding.PolicyID != "" && finding.Type == "high_risk_allow_without_approval" {
-			byPolicyID[finding.PolicyID] = finding
-		}
-		if finding.GrantID != "" && finding.Type == "high_risk_grant_without_approval" {
-			byGrantID[finding.GrantID] = finding
-		}
-	}
-	policyFinding, ok := byPolicyID["policy-risk-open"]
-	if !ok || policyFinding.Type != "high_risk_allow_without_approval" || policyFinding.RiskLevel != domainaigateway.RiskLevelMutate {
-		t.Fatalf("expected unguarded access policy finding, got %#v", byPolicyID)
-	}
-	grantFinding, ok := byGrantID["grant-risk-open"]
-	if !ok || grantFinding.Type != "high_risk_grant_without_approval" || grantFinding.RiskLevel != domainaigateway.RiskLevelMutate {
-		t.Fatalf("expected unguarded grant finding, got %#v", byGrantID)
-	}
-	for _, id := range []string{"policy-risk-safe", "policy-catalog-guarded", "policy-disabled"} {
-		if _, ok := byPolicyID[id]; ok {
-			t.Fatalf("did not expect finding for guarded or inactive policy %s: %#v", id, byPolicyID[id])
-		}
-	}
-	for _, id := range []string{"grant-risk-safe", "grant-catalog-guarded", "grant-expired"} {
-		if _, ok := byGrantID[id]; ok {
-			t.Fatalf("did not expect finding for guarded or inactive grant %s: %#v", id, byGrantID[id])
-		}
-	}
-	var guardrailCheck domainaigateway.GovernanceHealthCheck
-	for _, check := range status.Health.Checks {
-		if check.Name == "high_risk_guardrails" {
-			guardrailCheck = check
-			break
-		}
-	}
-	if guardrailCheck.Status != "degraded" || guardrailCheck.Count != 2 {
-		t.Fatalf("expected degraded high-risk guardrail health check, got %#v", status.Health.Checks)
-	}
-	if status.Health.Status != "degraded" {
-		t.Fatalf("expected warning findings to degrade governance health, got %#v", status.Health)
-	}
-	if !slices.ContainsFunc(status.Recommendations, func(item string) bool {
-		return strings.Contains(item, "high-risk Gateway allow")
-	}) {
-		t.Fatalf("expected high-risk allow recommendation, got %#v", status.Recommendations)
-	}
-	if !slices.ContainsFunc(status.RecommendationActions, func(item domainaigateway.GovernanceRecommendationAction) bool {
-		return item.Type == "high_risk_guardrails" && item.Action == "create_high_risk_approval_guardrail" && item.Count == 2 && slices.Contains(item.Refs, "policy-risk-open") && slices.Contains(item.Refs, "grant-risk-open")
-	}) {
-		t.Fatalf("expected high-risk guardrail recommendation action, got %#v", status.RecommendationActions)
-	}
+	assertHighRiskGovernanceFindings(t, status)
 }
 
 func TestGovernanceStatusUsesInjectedCapabilityProvider(t *testing.T) {
@@ -3786,149 +3646,7 @@ func TestGatewayGovernanceStatusRuntimeTool(t *testing.T) {
 }
 
 func TestGatewayGovernanceListRuntimeTools(t *testing.T) {
-	now := time.Now().UTC()
-	serviceAccountTokenLastUsed := now.Add(-time.Hour)
-	repo := &memoryGatewayRepository{
-		personalTokens: []domainaigateway.PersonalAccessToken{
-			{
-				ID:          "pat-1",
-				UserID:      "user-2",
-				Name:        "other user",
-				TokenHash:   "hash-should-not-leak",
-				TokenPrefix: "soha_pat_abcd",
-				Metadata:    map[string]any{"token": "secret", "purpose": "automation"},
-				CreatedAt:   now,
-				UpdatedAt:   now,
-			},
-		},
-		serviceAccounts: map[string]domainaigateway.ServiceAccount{
-			"svc-1": {
-				ID:          "svc-1",
-				Name:        "Deploy Bot",
-				Status:      "active",
-				OwnerUserID: "owner-1",
-				RoleIDs:     []string{"deployer"},
-				CreatedAt:   now,
-				UpdatedAt:   now,
-			},
-		},
-		serviceAccountTokens: []domainaigateway.ServiceAccountToken{
-			{
-				ID:               "sat-1",
-				ServiceAccountID: "svc-1",
-				Name:             "deploy",
-				TokenHash:        "service-hash-should-not-leak",
-				TokenPrefix:      "soha_sat_abcd",
-				Metadata:         map[string]any{"apiKey": "secret", "purpose": "deploy"},
-				LastUsedAt:       &serviceAccountTokenLastUsed,
-				CreatedAt:        now,
-				UpdatedAt:        now,
-			},
-		},
-		aiClients: map[string]domainaigateway.AIClient{
-			"codex": {
-				ID:        "codex",
-				Name:      "Codex",
-				Kind:      "mcp",
-				Status:    "active",
-				CreatedAt: now,
-				UpdatedAt: now,
-			},
-			"disabled": {
-				ID:        "disabled",
-				Name:      "Disabled",
-				Kind:      "mcp",
-				Status:    "disabled",
-				CreatedAt: now,
-				UpdatedAt: now,
-			},
-		},
-		toolGrants: []domainaigateway.ToolGrant{
-			{
-				ID:          "grant-1",
-				SubjectType: "role",
-				SubjectID:   "auditor",
-				AIClientID:  "codex",
-				ToolName:    "k8s.pods.logs",
-				Effect:      "allow",
-				RiskLevel:   domainaigateway.RiskLevelRead,
-				CreatedAt:   now,
-				UpdatedAt:   now,
-			},
-		},
-		accessPolicies: []domainaigateway.AccessPolicy{
-			{
-				ID:           "policy-1",
-				Name:         "allow audit",
-				Enabled:      true,
-				SubjectType:  "role",
-				SubjectID:    "auditor",
-				AIClientID:   "codex",
-				Effect:       "allow",
-				ToolPatterns: []string{"k8s.*"},
-				CreatedAt:    now,
-				UpdatedAt:    now,
-			},
-		},
-		skillBindings: []domainaigateway.SkillBinding{
-			{
-				ID:             "binding-1",
-				SubjectType:    "role",
-				SubjectID:      "auditor",
-				AIClientID:     "codex",
-				SkillID:        "k8s-sre",
-				CapabilityRefs: []string{"k8s.*"},
-				Enabled:        true,
-				CreatedAt:      now,
-				UpdatedAt:      now,
-			},
-		},
-		approvalRequests: []domainaigateway.ApprovalRequest{
-			{
-				ID:         "approval-1",
-				Status:     "pending",
-				Strategy:   "require_approval",
-				ActorType:  "user",
-				ActorID:    "user-2",
-				AIClientID: "codex",
-				SkillID:    "delivery-tester",
-				ToolName:   "delivery.actions.trigger",
-				RiskLevel:  domainaigateway.RiskLevelExecute,
-				ToolInput:  map[string]any{"token": "secret-token", "applicationId": "app-1"},
-				RelatedIDs: map[string]any{
-					"approvalRouting": map[string]any{
-						"approvalMode":      "all",
-						"requiredApprovals": 1,
-						"decisions": []any{
-							map[string]any{"userId": "approver-1", "comment": "token=secret"},
-						},
-					},
-				},
-				Summary:   "pending token=secret",
-				CreatedAt: now,
-				UpdatedAt: now,
-			},
-		},
-		auditLogs: []domainaigateway.AuditLog{
-			{
-				ID:         "audit-1",
-				ActorType:  "user",
-				ActorID:    "user-2",
-				AIClientID: "codex",
-				SkillID:    "delivery-tester",
-				ToolName:   "delivery.actions.trigger",
-				RiskLevel:  domainaigateway.RiskLevelExecute,
-				Action:     "ai_gateway.tool.invoke",
-				Result:     "pending",
-				Summary:    "held token=secret",
-				Metadata: map[string]any{
-					"approvalRequestId": "approval-1",
-					"token":             "secret-token",
-				},
-				CreatedAt: now,
-			},
-		},
-	}
+	repo := newGatewayGovernanceListRepository(time.Now().UTC())
 	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {
@@ -3940,28 +3658,7 @@ func TestGatewayGovernanceListRuntimeTools(t *testing.T) {
 	}), &captureAuditRecorder{}, repo)
 	principal := testPrincipal("admin")
 
-	manifest, err := service.Capabilities(context.Background(), principal, domainaigateway.ManifestRequest{})
-	if err != nil {
-		t.Fatalf("Capabilities returned error: %v", err)
-	}
-	for _, toolName := range []string{
-		"gateway.clients.list",
-		"gateway.tokens.list",
-		"gateway.service_accounts.list",
-		"gateway.tool_grants.list",
-		"gateway.access_policies.list",
-		"gateway.skill_bindings.list",
-		"gateway.approvals.list",
-		"gateway.audit_logs.list",
-	} {
-		tool, ok := toolByNameFrom(toolName, manifest.Tools)
-		if !ok {
-			t.Fatalf("expected %s in manifest", toolName)
-		}
-		if tool.RiskLevel != domainaigateway.RiskLevelRead || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayManage) {
-			t.Fatalf("unexpected manifest posture for %s: %#v", toolName, tool)
-		}
-	}
+	assertGatewayGovernanceListToolManifest(t, service, principal)
 
 	tests := []struct {
 		name     string
@@ -3973,109 +3670,49 @@ func TestGatewayGovernanceListRuntimeTools(t *testing.T) {
 			name:     "clients list",
 			toolName: "gateway.clients.list",
 			input:    map[string]any{"status": "active"},
-			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
-				items := result.Output.([]domainaigateway.AIClient)
-				if len(items) != 1 || items[0].ID != "codex" || result.RelatedIDs["count"] != 1 {
-					t.Fatalf("expected active codex client, got %#v", result)
-				}
-			},
+			check:    assertGatewayClientsListResult,
 		},
 		{
 			name:     "tokens list redacts hashes",
 			toolName: "gateway.tokens.list",
 			input:    map[string]any{"userId": "user-2"},
-			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
-				output := result.Output.(map[string]any)
-				personalTokens := output["personalAccessTokens"].([]domainaigateway.PersonalAccessToken)
-				serviceTokens := output["serviceAccountTokens"].([]domainaigateway.ServiceAccountToken)
-				if len(personalTokens) != 1 || personalTokens[0].TokenHash != "" || personalTokens[0].Metadata["token"] != "[REDACTED]" {
-					t.Fatalf("expected redacted personal token metadata, got %#v", personalTokens)
-				}
-				if len(serviceTokens) != 1 || serviceTokens[0].TokenHash != "" || serviceTokens[0].Metadata["apiKey"] != "[REDACTED]" {
-					t.Fatalf("expected redacted service token metadata, got %#v", serviceTokens)
-				}
-				if result.RelatedIDs["personalAccessTokenCount"] != 1 || result.RelatedIDs["serviceAccountTokenCount"] != 1 {
-					t.Fatalf("unexpected token related ids: %#v", result.RelatedIDs)
-				}
-			},
+			check:    assertGatewayTokensListResult,
 		},
 		{
 			name:     "service accounts list",
 			toolName: "gateway.service_accounts.list",
 			input:    map[string]any{"status": "active"},
-			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
-				items := result.Output.([]domainaigateway.ServiceAccount)
-				if len(items) != 1 || items[0].ID != "svc-1" || result.RelatedIDs["count"] != 1 {
-					t.Fatalf("expected active service account, got %#v", result)
-				}
-			},
+			check:    assertGatewayServiceAccountsListResult,
 		},
 		{
 			name:     "tool grants list",
 			toolName: "gateway.tool_grants.list",
 			input:    map[string]any{"subjectType": "role", "subjectId": "auditor"},
-			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
-				items := result.Output.([]domainaigateway.ToolGrant)
-				if len(items) != 1 || items[0].ID != "grant-1" || result.RelatedIDs["subjectId"] != "auditor" {
-					t.Fatalf("expected grant-1, got %#v", result)
-				}
-			},
+			check:    assertGatewayToolGrantsListResult,
 		},
 		{
 			name:     "access policies list",
 			toolName: "gateway.access_policies.list",
 			input:    map[string]any{"subjectType": "role", "subjectId": "auditor"},
-			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
-				items := result.Output.([]domainaigateway.AccessPolicy)
-				if len(items) != 1 || items[0].ID != "policy-1" {
-					t.Fatalf("expected policy-1, got %#v", result)
-				}
-			},
+			check:    assertGatewayAccessPoliciesListResult,
 		},
 		{
 			name:     "skill bindings list",
 			toolName: "gateway.skill_bindings.list",
 			input:    map[string]any{"skillId": "k8s-sre"},
-			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
-				items := result.Output.([]domainaigateway.SkillBinding)
-				if len(items) != 1 || items[0].ID != "binding-1" || result.RelatedIDs["skillId"] != "k8s-sre" {
-					t.Fatalf("expected binding-1, got %#v", result)
-				}
-			},
+			check:    assertGatewaySkillBindingsListResult,
 		},
 		{
 			name:     "approvals list redacts input",
 			toolName: "gateway.approvals.list",
 			input:    map[string]any{"status": "pending"},
-			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
-				items := result.Output.([]domainaigateway.ApprovalRequest)
-				if len(items) != 1 || items[0].ID != "approval-1" {
-					t.Fatalf("expected approval-1, got %#v", result)
-				}
-				if items[0].ToolInput["token"] != "[REDACTED]" || strings.Contains(items[0].Summary, "secret") {
-					t.Fatalf("expected redacted approval payload, got %#v", items[0])
-				}
-				if items[0].ApprovalTrace == nil || len(items[0].ApprovalTrace.Decisions) != 1 || strings.Contains(items[0].ApprovalTrace.Decisions[0].Comment, "secret") {
-					t.Fatalf("expected redacted approval trace, got %#v", items[0].ApprovalTrace)
-				}
-			},
+			check:    assertGatewayApprovalsListResult,
 		},
 		{
 			name:     "audit logs list redacts metadata",
 			toolName: "gateway.audit_logs.list",
 			input:    map[string]any{"approvalRequestId": "approval-1", "limit": 10},
-			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
-				items := result.Output.([]domainaigateway.AuditLog)
-				if len(items) != 1 || items[0].ID != "audit-1" {
-					t.Fatalf("expected audit-1, got %#v", result)
-				}
-				if items[0].Metadata["token"] != "[REDACTED]" || strings.Contains(items[0].Summary, "secret") {
-					t.Fatalf("expected redacted audit log, got %#v", items[0])
-				}
-				if result.RelatedIDs["approvalRequestId"] != "approval-1" || result.RelatedIDs["limit"] != 10 {
-					t.Fatalf("unexpected audit related ids: %#v", result.RelatedIDs)
-				}
-			},
+			check:    assertGatewayAuditLogsListResult,
 		},
 	}
 	for _, tt := range tests {
@@ -4163,71 +3800,10 @@ func TestGatewayManifestAndRelayRuntimeTools(t *testing.T) {
 	}), &captureAuditRecorder{}, repo, relayRepo)
 	principal := testPrincipal("admin")
 
-	manifest, err := service.Capabilities(context.Background(), principal, domainaigateway.ManifestRequest{})
-	if err != nil {
-		t.Fatalf("Capabilities returned error: %v", err)
-	}
-	for _, toolName := range []string{
-		"gateway.manifest.read",
-		"gateway.relay.upstreams.list",
-		"gateway.relay.model_routes.list",
-	} {
-		tool, ok := toolByNameFrom(toolName, manifest.Tools)
-		if !ok {
-			t.Fatalf("expected %s in manifest", toolName)
-		}
-		if tool.RiskLevel != domainaigateway.RiskLevelRead || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) {
-			t.Fatalf("unexpected manifest posture for %s: %#v", toolName, tool)
-		}
-	}
-
-	manifestResult, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "gateway.manifest.read",
-		Input:    map[string]any{"aiClientId": "codex", "skillId": "k8s-sre"},
-	})
-	if err != nil {
-		t.Fatalf("gateway.manifest.read returned error: %v", err)
-	}
-	manifestOutput := manifestResult.Output.(domainaigateway.Manifest)
-	if manifestOutput.Caller.AIClientID != "codex" || manifestOutput.Caller.SkillID != "k8s-sre" {
-		t.Fatalf("expected caller context to be preserved, got %#v", manifestOutput.Caller)
-	}
-	if manifestResult.RelatedIDs["toolCount"] != manifestOutput.Summary.ToolCount || manifestResult.RelatedIDs["skillId"] != "k8s-sre" {
-		t.Fatalf("unexpected manifest related ids: %#v", manifestResult.RelatedIDs)
-	}
-
-	upstreamsResult, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "gateway.relay.upstreams.list",
-		Input:    map[string]any{"providerKind": "openai"},
-	})
-	if err != nil {
-		t.Fatalf("gateway.relay.upstreams.list returned error: %v", err)
-	}
-	upstreams := upstreamsResult.Output.([]domainaigateway.LLMUpstream)
-	if len(upstreams) != 1 || upstreams[0].ID != "upstream-openai" {
-		t.Fatalf("expected active openai upstream, got %#v", upstreamsResult)
-	}
-	if strings.Contains(upstreams[0].BaseURL, "password") || strings.Contains(upstreams[0].BaseURL, "secret") || upstreams[0].APIKeyCiphertext != "" {
-		t.Fatalf("expected relay upstream credentials to be redacted, got %#v", upstreams[0])
-	}
-	if upstreams[0].DefaultHeaders["Authorization"] != "[REDACTED]" || upstreams[0].Metadata["credential"] != "[REDACTED]" {
-		t.Fatalf("expected relay upstream metadata to be redacted, got %#v", upstreams[0])
-	}
-
-	routesResult, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "gateway.relay.model_routes.list",
-		Input:    map[string]any{"publicModel": "gpt-4.1"},
-	})
-	if err != nil {
-		t.Fatalf("gateway.relay.model_routes.list returned error: %v", err)
-	}
-	routes := routesResult.Output.([]domainaigateway.LLMModelRoute)
-	if len(routes) != 1 || routes[0].ID != "route-gpt" || routesResult.RelatedIDs["publicModel"] != "gpt-4.1" {
-		t.Fatalf("expected route-gpt, got %#v", routesResult)
-	}
-	if routes[0].TransformPolicy["apiKey"] != "[REDACTED]" || routes[0].Metadata["token"] != "[REDACTED]" {
-		t.Fatalf("expected route policy metadata to be redacted, got %#v", routes[0])
-	}
+	assertRelayRuntimeToolManifest(t, service, principal)
+	assertManifestRuntimeTool(t, service, principal)
+	assertRelayUpstreamsRuntimeTool(t, service, principal)
+	assertRelayRoutesRuntimeTool(t, service, principal)
 }
 
 func TestGatewayApprovalRelayCallAndCacheRuntimeTools(t *testing.T) {
@@ -4256,25 +3832,25 @@ func TestGatewayApprovalRelayCallAndCacheRuntimeTools(t *testing.T) {
 	relayRepo := &relayTestRepository{
 		callLogs: []domainaigateway.LLMCallLog{
 			{
-				ID:             "call-1",
-				ActorType:      "user",
-				ActorID:        "user-2",
-				TokenID:        "pat-1",
-				TokenPrefix:    "soha_pat_secret",
-				TokenKind:      "personal_access_token",
-				AIClientID:     "codex",
-				PublicModel:    "gpt-4.1",
-				UpstreamID:     "upstream-openai",
-				ProviderKind:   "openai",
-				Status:         "success",
-				CacheStatus:    "hit",
-				ErrorMessage:   "token=secret",
-				RouteTrace:     map[string]any{"Authorization": "Bearer secret", "route": "primary"},
-				SourceIP:       "203.0.113.10",
-				UserAgent:      "secret-agent",
-				Metadata:       map[string]any{"apiKey": "secret", "region": "us"},
-				TotalTokens:    42,
-				CreatedAt:      now,
+				ID:           "call-1",
+				ActorType:    "user",
+				ActorID:      "user-2",
+				TokenID:      "pat-1",
+				TokenPrefix:  "soha_pat_secret",
+				TokenKind:    "personal_access_token",
+				AIClientID:   "codex",
+				PublicModel:  "gpt-4.1",
+				UpstreamID:   "upstream-openai",
+				ProviderKind: "openai",
+				Status:       "success",
+				CacheStatus:  "hit",
+				ErrorMessage: "token=secret",
+				RouteTrace:   map[string]any{"Authorization": "Bearer secret", "route": "primary"},
+				SourceIP:     "203.0.113.10",
+				UserAgent:    "secret-agent",
+				Metadata:     map[string]any{"apiKey": "secret", "region": "us"},
+				TotalTokens:  42,
+				CreatedAt:    now,
 			},
 			{
 				ID:           "call-other",
@@ -4321,91 +3897,11 @@ func TestGatewayApprovalRelayCallAndCacheRuntimeTools(t *testing.T) {
 		},
 	}), &captureAuditRecorder{}, repo, relayRepo)
 
-	manifest, err := service.Capabilities(context.Background(), testPrincipal("admin"), domainaigateway.ManifestRequest{})
-	if err != nil {
-		t.Fatalf("Capabilities returned error: %v", err)
-	}
-	for _, expected := range []struct {
-		name       string
-		risk       domainaigateway.RiskLevel
-		permission string
-		approval   bool
-	}{
-		{name: "gateway.approvals.decide", risk: domainaigateway.RiskLevelExecute, permission: appaccess.PermAIGatewayManage},
-		{name: "gateway.relay.model_calls.list", risk: domainaigateway.RiskLevelRead, permission: appaccess.PermAIGatewayRelayView},
-		{name: "gateway.relay.cache.purge", risk: domainaigateway.RiskLevelExecute, permission: appaccess.PermAIGatewayRelayManage, approval: true},
-	} {
-		tool, ok := toolByNameFrom(expected.name, manifest.Tools)
-		if !ok {
-			t.Fatalf("expected %s in manifest", expected.name)
-		}
-		if tool.RiskLevel != expected.risk || tool.RequiresApproval != expected.approval || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) || !slices.Contains(tool.PermissionKeys, expected.permission) {
-			t.Fatalf("unexpected manifest posture for %s: %#v", expected.name, tool)
-		}
-	}
-
-	callsResult, err := service.InvokeTool(context.Background(), testPrincipal("relay-viewer"), domainaigateway.ToolInvocationRequest{
-		ToolName: "gateway.relay.model_calls.list",
-		Input:    map[string]any{"publicModel": "gpt-4.1", "limit": 10},
-	})
-	if err != nil {
-		t.Fatalf("gateway.relay.model_calls.list returned error: %v", err)
-	}
-	calls := callsResult.Output.([]domainaigateway.LLMCallLog)
-	if len(calls) != 1 || calls[0].ID != "call-1" || callsResult.RelatedIDs["publicModel"] != "gpt-4.1" {
-		t.Fatalf("expected filtered call-1, got %#v", callsResult)
-	}
-	if calls[0].TokenID != "" || calls[0].TokenPrefix != "" || calls[0].SourceIP != "" || calls[0].UserAgent != "" {
-		t.Fatalf("expected relay call identity fields to be redacted, got %#v", calls[0])
-	}
-	if calls[0].RouteTrace["Authorization"] != "[REDACTED]" || calls[0].Metadata["apiKey"] != "[REDACTED]" || strings.Contains(calls[0].ErrorMessage, "secret") {
-		t.Fatalf("expected relay call metadata to be redacted, got %#v", calls[0])
-	}
-	if _, err := service.ListLLMCallLogs(context.Background(), testPrincipal("relay-viewer"), domainaigateway.LLMCallLogFilter{PublicModel: "gpt-4.1"}); err == nil {
-		t.Fatalf("expected raw relay call log API to require relay manage permission")
-	}
-
-	dryRunResult, err := service.InvokeTool(context.Background(), testPrincipal("admin"), domainaigateway.ToolInvocationRequest{
-		ToolName: "gateway.relay.cache.purge",
-		Input:    map[string]any{"publicModel": "gpt-4.1", "dryRun": true},
-	})
-	if err != nil {
-		t.Fatalf("gateway.relay.cache.purge dry run returned error: %v", err)
-	}
-	if dryRunResult.Result != "pending_approval" || dryRunResult.RelatedIDs["approvalRequestId"] == "" || len(relayRepo.cacheEntries()) != 2 {
-		t.Fatalf("expected direct cache purge to require approval without deleting, result=%#v caches=%#v", dryRunResult, relayRepo.cacheEntries())
-	}
-
-	decisionResult, err := service.InvokeTool(context.Background(), testPrincipal("admin"), domainaigateway.ToolInvocationRequest{
-		ToolName: "gateway.approvals.decide",
-		Input:    map[string]any{"approvalRequestId": "approval-reject", "decision": "reject", "comment": "no token=secret"},
-	})
-	if err != nil {
-		t.Fatalf("gateway.approvals.decide returned error: %v", err)
-	}
-	decision := decisionResult.Output.(domainaigateway.ApprovalDecisionResult)
-	if decision.Request.Status != "rejected" || decision.Invocation != nil || decisionResult.RelatedIDs["decision"] != "reject" {
-		t.Fatalf("expected rejected approval decision, got %#v", decisionResult)
-	}
-	if strings.Contains(decision.Request.DecisionComment, "secret") || decision.Request.ToolInput["token"] != "[REDACTED]" {
-		t.Fatalf("expected redacted approval decision output, got %#v", decision.Request)
-	}
-
-	cacheDecisionResult, err := service.InvokeTool(context.Background(), testPrincipal("admin"), domainaigateway.ToolInvocationRequest{
-		ToolName: "gateway.approvals.decide",
-		Input:    map[string]any{"approvalRequestId": "approval-cache-purge", "decision": "approve", "comment": "purge ok"},
-	})
-	if err != nil {
-		t.Fatalf("gateway.approvals.decide approve cache purge returned error: %v", err)
-	}
-	cacheDecision := cacheDecisionResult.Output.(domainaigateway.ApprovalDecisionResult)
-	if cacheDecision.Request.Status != "executed" || cacheDecision.Invocation == nil || len(relayRepo.cacheEntries()) != 1 {
-		t.Fatalf("expected cache purge approval to execute, result=%#v caches=%#v", cacheDecisionResult, relayRepo.cacheEntries())
-	}
-	purge := cacheDecision.Invocation.Output.(domainaigateway.LLMRelayCachePurgeResult)
-	if purge.Status != "purged" || purge.PurgedCount != 1 {
-		t.Fatalf("expected approved purge to delete one entry, got %#v", purge)
-	}
+	assertApprovalRelayRuntimeToolManifest(t, service)
+	assertRelayModelCallsRuntimeTool(t, service)
+	assertRelayCachePurgeRequiresApproval(t, service, relayRepo)
+	assertApprovalDecisionRuntimeTool(t, service)
+	assertApprovedRelayCachePurge(t, service, relayRepo)
 }
 
 func TestGovernanceStatusFlagsUnscopedHighRiskAllows(t *testing.T) {
@@ -4484,61 +3980,7 @@ func TestGovernanceStatusFlagsUnscopedHighRiskAllows(t *testing.T) {
 		t.Fatalf("GovernanceStatus returned error: %v", err)
 	}
 
-	if status.PolicyCoverage.ResourceScopedAccessPolicies != 1 || status.PolicyCoverage.ResourceScopedToolGrants != 1 || status.PolicyCoverage.ResourceScopeState != "configured" {
-		t.Fatalf("expected resource scope policy coverage, got %#v", status.PolicyCoverage)
-	}
-	byPolicyID := map[string]domainaigateway.GovernanceFinding{}
-	byGrantID := map[string]domainaigateway.GovernanceFinding{}
-	for _, finding := range status.Anomalies {
-		if finding.Type == "high_risk_allow_without_resource_scope" {
-			byPolicyID[finding.PolicyID] = finding
-		}
-		if finding.Type == "high_risk_grant_without_resource_scope" {
-			byGrantID[finding.GrantID] = finding
-		}
-	}
-	for _, id := range []string{"policy-unscoped", "policy-wildcard-scope"} {
-		finding, ok := byPolicyID[id]
-		if !ok || finding.RiskLevel != domainaigateway.RiskLevelExecute {
-			t.Fatalf("expected unscoped high-risk policy finding for %s, got %#v", id, byPolicyID)
-		}
-	}
-	for _, id := range []string{"policy-scoped", "policy-read", "policy-dry-run"} {
-		if _, ok := byPolicyID[id]; ok {
-			t.Fatalf("did not expect resource scope finding for %s: %#v", id, byPolicyID)
-		}
-	}
-	for _, id := range []string{"grant-unscoped", "grant-wildcard-scope"} {
-		finding, ok := byGrantID[id]
-		if !ok || finding.RiskLevel != domainaigateway.RiskLevelExecute {
-			t.Fatalf("expected unscoped high-risk grant finding for %s, got %#v", id, byGrantID)
-		}
-	}
-	for _, id := range []string{"grant-scoped", "grant-read", "grant-expired"} {
-		if _, ok := byGrantID[id]; ok {
-			t.Fatalf("did not expect resource scope finding for %s: %#v", id, byGrantID)
-		}
-	}
-	var scopeCheck domainaigateway.GovernanceHealthCheck
-	for _, check := range status.Health.Checks {
-		if check.Name == "high_risk_resource_scopes" {
-			scopeCheck = check
-			break
-		}
-	}
-	if scopeCheck.Status != "degraded" || scopeCheck.Count != 4 {
-		t.Fatalf("expected degraded resource-scope health check, got %#v", status.Health.Checks)
-	}
-	if !slices.ContainsFunc(status.Recommendations, func(item string) bool {
-		return strings.Contains(item, "resourceScopes")
-	}) {
-		t.Fatalf("expected resource scope recommendation, got %#v", status.Recommendations)
-	}
-	if !slices.ContainsFunc(status.RecommendationActions, func(item domainaigateway.GovernanceRecommendationAction) bool {
-		return item.Type == "high_risk_resource_scopes" && item.Action == "create_resource_scope_guardrail" && item.Count == 4 && item.Metadata["policyTemplate"] == "resource_scope_guardrail"
-	}) {
-		t.Fatalf("expected high-risk resource-scope recommendation action, got %#v", status.RecommendationActions)
-	}
+	assertResourceScopeGovernanceStatus(t, status)
 }
 
 func TestInvokeToolRoutesDeliveryListThroughApplicationService(t *testing.T) {
@@ -4612,7 +4054,7 @@ func TestInvokeDeliveryP1ReadToolsUseOwningServices(t *testing.T) {
 	if !apps.servicesListed || servicesResult.RelatedIDs["count"] != 1 {
 		t.Fatalf("expected application service list to be called, result=%#v apps=%#v", servicesResult, apps)
 	}
-	services := servicesResult.Output.([]domainapp.Service)
+	services := mustValueAs[[]domainapp.Service](t, servicesResult.Output)
 	if services[0].Metadata["token"] != "[REDACTED]" || services[0].Containers[0].EnvSchema["password"] != "[REDACTED]" {
 		t.Fatalf("expected service and container config to be redacted, got %#v", services[0])
 	}
@@ -4624,8 +4066,8 @@ func TestInvokeDeliveryP1ReadToolsUseOwningServices(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build sources tool returned error: %v", err)
 	}
-	buildSourcesOutput := buildSourcesResult.Output.(map[string]any)
-	buildSources := buildSourcesOutput["buildSources"].([]domainapp.BuildSource)
+	buildSourcesOutput := mustValueAs[map[string]any](t, buildSourcesResult.Output)
+	buildSources := mustMapFieldAs[[]domainapp.BuildSource](t, buildSourcesOutput, "buildSources")
 	if len(buildSources) != 1 || buildSourcesResult.RelatedIDs["bindingCount"] != 1 {
 		t.Fatalf("expected build source and binding usage output, got %#v", buildSourcesResult)
 	}
@@ -4673,7 +4115,7 @@ func TestInvokeDeliveryExecutionLogsStandaloneToolRedacts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("execution logs tool returned error: %v", err)
 	}
-	logs := result.Output.([]domaindelivery.ExecutionLog)
+	logs := mustValueAs[[]domaindelivery.ExecutionLog](t, result.Output)
 	if logs[0].Message != "build failed token=[REDACTED]" || logs[0].Metadata["password"] != "[REDACTED]" {
 		t.Fatalf("expected redacted execution logs, got %#v", logs[0])
 	}
@@ -4708,8 +4150,8 @@ func TestInvokeDeliveryReleaseAndRollbackContextAreReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("release context diff returned error: %v", err)
 	}
-	diffOutput := diffResult.Output.(map[string]any)
-	comparison := diffOutput["comparison"].(map[string]any)
+	diffOutput := mustValueAs[map[string]any](t, diffResult.Output)
+	comparison := mustMapFieldAs[map[string]any](t, diffOutput, "comparison")
 	if comparison["sourceBundleId"] != "bundle-0" || comparison["targetBundleId"] != "bundle-1" {
 		t.Fatalf("expected source/target comparison, got %#v", comparison)
 	}
@@ -4728,12 +4170,12 @@ func TestInvokeDeliveryReleaseAndRollbackContextAreReadOnly(t *testing.T) {
 	if delivery.triggered {
 		t.Fatalf("rollback context must not trigger delivery actions")
 	}
-	rollbackOutput := rollbackResult.Output.(map[string]any)
-	logs := rollbackOutput["executionLogs"].([]domaindelivery.ExecutionLog)
+	rollbackOutput := mustValueAs[map[string]any](t, rollbackResult.Output)
+	logs := mustMapFieldAs[[]domaindelivery.ExecutionLog](t, rollbackOutput, "executionLogs")
 	if logs[0].Message != "build failed token=[REDACTED]" {
 		t.Fatalf("expected redacted rollback context logs, got %#v", logs)
 	}
-	suggestions := rollbackOutput["suggestions"].([]map[string]any)
+	suggestions := mustMapFieldAs[[]map[string]any](t, rollbackOutput, "suggestions")
 	if len(suggestions) == 0 {
 		t.Fatalf("expected rollback suggestions, got %#v", rollbackOutput)
 	}
@@ -4765,8 +4207,8 @@ func TestInvokeDeliveryAICapabilitiesReturnDraftsWithoutExecution(t *testing.T) 
 	if err != nil {
 		t.Fatalf("onboarding analysis returned error: %v", err)
 	}
-	onboardingOutput := onboardingResult.Output.(map[string]any)
-	draft := onboardingOutput["deliveryDraftInput"].(domaindelivery.DeliveryDraftInput)
+	onboardingOutput := mustValueAs[map[string]any](t, onboardingResult.Output)
+	draft := mustMapFieldAs[domaindelivery.DeliveryDraftInput](t, onboardingOutput, "deliveryDraftInput")
 	if draft.Source != domaindelivery.DeliveryDraftSourceAI || draft.ApplicationDraft.Key != "payments-api" || len(draft.Files) == 0 {
 		t.Fatalf("expected AI DeliveryDraft suggestion, got %#v", draft)
 	}
@@ -4787,8 +4229,8 @@ func TestInvokeDeliveryAICapabilitiesReturnDraftsWithoutExecution(t *testing.T) 
 	if err != nil {
 		t.Fatalf("spec render returned error: %v", err)
 	}
-	specOutput := specResult.Output.(map[string]any)
-	renderedDraft := specOutput["deliveryDraftInput"].(domaindelivery.DeliveryDraftInput)
+	specOutput := mustValueAs[map[string]any](t, specResult.Output)
+	renderedDraft := mustMapFieldAs[domaindelivery.DeliveryDraftInput](t, specOutput, "deliveryDraftInput")
 	if renderedDraft.ApplicationDraft.Key != "payments-api" || len(renderedDraft.Services) != 1 {
 		t.Fatalf("expected rendered draft payload, got %#v", renderedDraft)
 	}
@@ -4806,8 +4248,8 @@ func TestInvokeDeliveryAICapabilitiesReturnDraftsWithoutExecution(t *testing.T) 
 	if err != nil {
 		t.Fatalf("release plan returned error: %v", err)
 	}
-	planOutput := planResult.Output.(map[string]any)
-	plan := planOutput["deliveryPlanInput"].(domaindelivery.DeliveryPlanInput)
+	planOutput := mustValueAs[map[string]any](t, planResult.Output)
+	plan := mustMapFieldAs[domaindelivery.DeliveryPlanInput](t, planOutput, "deliveryPlanInput")
 	if plan.Source != domaindelivery.DeliveryPlanSourceAI || plan.RiskLevel != "high" || !plan.RequiresApproval {
 		t.Fatalf("expected high-risk AI plan draft, got %#v", plan)
 	}
@@ -6035,34 +5477,8 @@ func TestInvokeToolRejectsAdditionalProviderSecretClassifiers(t *testing.T) {
 }
 
 func TestInvokeToolRejectsAdditionalAIToolSecretClassifiers(t *testing.T) {
-	apps := &fakeApplicationService{}
-	repo := &memoryGatewayRepository{
-		accessPolicies: []domainaigateway.AccessPolicy{
-			{
-				ID:           "policy-ai-tool-classifiers",
-				Enabled:      true,
-				SubjectType:  "role",
-				SubjectID:    "developer",
-				Effect:       "allow",
-				ToolPatterns: []string{"delivery.applications.list"},
-				Conditions: map[string]any{
-					"redactionPolicy": map[string]any{
-						"mode":        "strict",
-						"secretTypes": []any{"cohere", "mistral", "deepseek", "groq", "together", "replicate", "langsmith", "pinecone"},
-					},
-				},
-			},
-		},
-	}
-	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
-		matrix: map[string][]string{
-			"developer": {
-				appaccess.PermAIGatewayInvoke,
-				appaccess.PermDeliveryApplicationsView,
-			},
-		},
-	}), nil, repo)
-	service.SetDeliveryServices(apps, &fakeDeliveryService{})
+	secretTypes := []any{"cohere", "mistral", "deepseek", "groq", "together", "replicate", "langsmith", "pinecone"}
+	apps, repo, service := newSecretClassifierTestService("policy-ai-tool-classifiers", secretTypes)
 
 	_, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
 		ToolName:   "delivery.applications.list",
@@ -6078,22 +5494,7 @@ func TestInvokeToolRejectsAdditionalAIToolSecretClassifiers(t *testing.T) {
 			"pinecone":  "pcsk_12345678901234567890",
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "redaction policy") {
-		t.Fatalf("expected AI tool classifier rejection, got %v", err)
-	}
-	if apps.listed {
-		t.Fatalf("application service should not be called after AI tool classifier rejection")
-	}
-	redaction := mapValue(repo.auditLogs[0].Metadata["redaction"])
-	classifiers := fmt.Sprint(redaction["classifiers"])
-	for _, classifier := range []string{"cohere", "mistral", "deepseek", "groq", "together", "replicate", "langsmith", "pinecone"} {
-		if !strings.Contains(classifiers, classifier) {
-			t.Fatalf("expected classifier %s in redaction summary, got %#v", classifier, redaction)
-		}
-	}
-	if text := fmt.Sprint(repo.auditLogs[0].Metadata); strings.Contains(text, "12345678901234567890") {
-		t.Fatalf("classifier audit leaked raw secret: %s", text)
-	}
+	assertSecretClassifierRejected(t, apps, repo, err, []string{"cohere", "mistral", "deepseek", "groq", "together", "replicate", "langsmith", "pinecone"})
 }
 
 func TestInvokeToolRejectsNewProviderSecretClassifiers(t *testing.T) {
@@ -6161,34 +5562,8 @@ func TestInvokeToolRejectsNewProviderSecretClassifiers(t *testing.T) {
 }
 
 func TestInvokeToolRejectsAgentToolingSecretClassifiers(t *testing.T) {
-	apps := &fakeApplicationService{}
-	repo := &memoryGatewayRepository{
-		accessPolicies: []domainaigateway.AccessPolicy{
-			{
-				ID:           "policy-agent-tooling-classifiers",
-				Enabled:      true,
-				SubjectType:  "role",
-				SubjectID:    "developer",
-				Effect:       "allow",
-				ToolPatterns: []string{"delivery.applications.list"},
-				Conditions: map[string]any{
-					"redactionPolicy": map[string]any{
-						"mode":        "strict",
-						"secretTypes": []any{"brave_search", "serpapi", "browserbase", "exa", "jina", "unstructured", "llama_cloud", "helicone"},
-					},
-				},
-			},
-		},
-	}
-	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
-		matrix: map[string][]string{
-			"developer": {
-				appaccess.PermAIGatewayInvoke,
-				appaccess.PermDeliveryApplicationsView,
-			},
-		},
-	}), nil, repo)
-	service.SetDeliveryServices(apps, &fakeDeliveryService{})
+	secretTypes := []any{"brave_search", "serpapi", "browserbase", "exa", "jina", "unstructured", "llama_cloud", "helicone"}
+	apps, repo, service := newSecretClassifierTestService("policy-agent-tooling-classifiers", secretTypes)
 
 	_, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
 		ToolName:   "delivery.applications.list",
@@ -6204,22 +5579,7 @@ func TestInvokeToolRejectsAgentToolingSecretClassifiers(t *testing.T) {
 			"helicone":     "sk-helicone-12345678901234567890",
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "redaction policy") {
-		t.Fatalf("expected agent tooling classifier rejection, got %v", err)
-	}
-	if apps.listed {
-		t.Fatalf("application service should not be called after agent tooling classifier rejection")
-	}
-	redaction := mapValue(repo.auditLogs[0].Metadata["redaction"])
-	classifiers := fmt.Sprint(redaction["classifiers"])
-	for _, classifier := range []string{"brave_search", "serpapi", "browserbase", "exa", "jina", "unstructured", "llama_cloud", "helicone"} {
-		if !strings.Contains(classifiers, classifier) {
-			t.Fatalf("expected classifier %s in redaction summary, got %#v", classifier, redaction)
-		}
-	}
-	if text := fmt.Sprint(repo.auditLogs[0].Metadata); strings.Contains(text, "12345678901234567890") {
-		t.Fatalf("agent tooling classifier audit leaked raw secret: %s", text)
-	}
+	assertSecretClassifierRejected(t, apps, repo, err, []string{"brave_search", "serpapi", "browserbase", "exa", "jina", "unstructured", "llama_cloud", "helicone"})
 }
 
 func TestInvokeToolRejectsChinaCloudSecretClassifiers(t *testing.T) {
@@ -6384,7 +5744,7 @@ func TestGatewayRedactionClassifiesStructuredSecrets(t *testing.T) {
 			t.Fatalf("expected classifier %s, got %#v", classifier, summary.Classifiers)
 		}
 	}
-	redacted := applyGatewayRedactionValue(value, rule, "").(map[string]any)
+	redacted := mustValueAs[map[string]any](t, applyGatewayRedactionValue(value, rule, ""))
 	text := fmt.Sprint(redacted)
 	for _, raw := range []string{"prod", "raw-docker-auth", "raw-gcp-private-key", "ci@example.iam.gserviceaccount.com", fakeAWSAccessKeyIDForTest(), "raw-aws-secret"} {
 		if strings.Contains(text, raw) {
@@ -6591,9 +5951,10 @@ func TestInvokeToolAppliesOutputRedactionPolicy(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected redacted output map, got %#v", result.Output)
 	}
-	application := output["application"].(map[string]any)
-	buildSources := application["buildSources"].([]any)
-	config := buildSources[0].(map[string]any)["config"].(map[string]any)
+	application := mustMapFieldAs[map[string]any](t, output, "application")
+	buildSources := mustMapFieldAs[[]any](t, application, "buildSources")
+	buildSource := mustValueAs[map[string]any](t, buildSources[0])
+	config := mustMapFieldAs[map[string]any](t, buildSource, "config")
 	if config["token"] != "[REDACTED]" {
 		t.Fatalf("expected output redaction to sanitize build source config, got %#v", config)
 	}
@@ -7061,20 +6422,21 @@ func TestApproveApprovalRequestAppliesOutputRedactionPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	decision, err := service.ApproveApprovalRequest(context.Background(), testPrincipal("admin"), held.RelatedIDs["approvalRequestId"].(string), domainaigateway.ApprovalDecisionInput{Comment: "ok"})
+	approvalRequestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
+	decision, err := service.ApproveApprovalRequest(context.Background(), testPrincipal("admin"), approvalRequestID, domainaigateway.ApprovalDecisionInput{Comment: "ok"})
 	if err != nil {
 		t.Fatalf("ApproveApprovalRequest returned error: %v", err)
 	}
 	if decision.Invocation == nil {
 		t.Fatalf("expected replay invocation")
 	}
-	output := decision.Invocation.Output.(map[string]any)
-	metadata := output["metadata"].(map[string]any)
+	output := mustValueAs[map[string]any](t, decision.Invocation.Output)
+	metadata := mustMapFieldAs[map[string]any](t, output, "metadata")
 	if metadata["token"] != "[REDACTED]" || metadata["team"] != "payments" {
 		t.Fatalf("expected approved replay output redaction, got %#v", metadata)
 	}
-	requestOutput := decision.Request.Output.(map[string]any)
-	requestMetadata := requestOutput["metadata"].(map[string]any)
+	requestOutput := mustValueAs[map[string]any](t, decision.Request.Output)
+	requestMetadata := mustMapFieldAs[map[string]any](t, requestOutput, "metadata")
 	if requestMetadata["token"] != "[REDACTED]" {
 		t.Fatalf("expected persisted approval output to be redacted, got %#v", requestMetadata)
 	}
@@ -7119,7 +6481,8 @@ func TestApproveApprovalRequestWritesProviderUsageSummaryToAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	decision, err := service.ApproveApprovalRequest(context.Background(), testPrincipal("admin"), held.RelatedIDs["approvalRequestId"].(string), domainaigateway.ApprovalDecisionInput{Comment: "ok"})
+	approvalRequestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
+	decision, err := service.ApproveApprovalRequest(context.Background(), testPrincipal("admin"), approvalRequestID, domainaigateway.ApprovalDecisionInput{Comment: "ok"})
 	if err != nil {
 		t.Fatalf("ApproveApprovalRequest returned error: %v", err)
 	}
@@ -7211,40 +6574,8 @@ func TestInvokeToolHoldsDeliveryActionWhenApprovalRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	if delivery.triggered {
-		t.Fatalf("delivery service should not be called before approval")
-	}
-	if result.Result != "pending_approval" || !result.RequiresApproval {
-		t.Fatalf("expected pending approval result, got %#v", result)
-	}
-	if result.RelatedIDs["approvalRequestId"] == "" {
-		t.Fatalf("expected approval request tracking id, got %#v", result.RelatedIDs)
-	}
-	if len(repo.approvalRequests) != 1 {
-		t.Fatalf("expected durable approval request, got %#v", repo.approvalRequests)
-	}
-	request := repo.approvalRequests[0]
-	if request.Status != "pending" || request.ToolName != "delivery.actions.trigger" || request.ToolInput["applicationId"] != "app-1" {
-		t.Fatalf("unexpected approval request: %#v", request)
-	}
-	if request.ExpiresAt == nil {
-		t.Fatalf("expected approval request timeout")
-	}
-	if len(repo.auditLogs) != 1 || repo.auditLogs[0].Result != "pending_approval" {
-		t.Fatalf("expected pending approval gateway audit, got %#v", repo.auditLogs)
-	}
-	if len(operations.entries) != 1 || operations.entries[0].Result != "pending_approval" {
-		t.Fatalf("expected pending approval operation log, got %#v", operations.entries)
-	}
-	if repo.auditLogs[0].Metadata["approvalRequestId"] != request.ID || repo.auditLogs[0].Metadata["approvalId"] != request.ID {
-		t.Fatalf("expected pending gateway audit to expose approval linkage, got %#v", repo.auditLogs[0].Metadata)
-	}
-	if operations.entries[0].Metadata["approvalRequestId"] != request.ID || operations.entries[0].Metadata["approvalId"] != request.ID {
-		t.Fatalf("expected pending operation log to expose approval linkage, got %#v", operations.entries[0].Metadata)
-	}
-	if operations.entries[0].Metadata["strategy"] != "require_approval" || operations.entries[0].Metadata["toolName"] != "delivery.actions.trigger" {
-		t.Fatalf("expected pending operation metadata to include approval context, got %#v", operations.entries[0].Metadata)
-	}
+	assertHeldDeliveryAction(t, result, delivery, repo)
+	assertHeldDeliveryAudit(t, repo, operations)
 }
 
 func TestApproveApprovalRequestExecutesThroughOwningService(t *testing.T) {
@@ -7280,59 +6611,14 @@ func TestApproveApprovalRequestExecutesThroughOwningService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	requestID := result.RelatedIDs["approvalRequestId"].(string)
+	requestID := mustMapFieldAs[string](t, result.RelatedIDs, "approvalRequestId")
 	decision, err := service.ApproveApprovalRequest(context.Background(), testPrincipal("admin"), requestID, domainaigateway.ApprovalDecisionInput{Comment: "ship it"})
 	if err != nil {
 		t.Fatalf("ApproveApprovalRequest returned error: %v", err)
 	}
-	if !delivery.triggered {
-		t.Fatalf("approval should execute through delivery service")
-	}
-	if decision.Request.Status != "executed" {
-		t.Fatalf("expected executed request, got %#v", decision.Request)
-	}
-	if decision.Invocation == nil || decision.Invocation.Result != "success" || decision.Invocation.RelatedIDs["executionTaskId"] != "task-1" {
-		t.Fatalf("expected successful invocation result, got %#v", decision.Invocation)
-	}
-	if decision.Invocation.RelatedIDs["workflowRunId"] != "workflow-1" || decision.Request.RelatedIDs["workflowRunId"] != "workflow-1" {
-		t.Fatalf("expected workflow run linkage in related ids, invocation=%#v request=%#v", decision.Invocation.RelatedIDs, decision.Request.RelatedIDs)
-	}
-	if delivery.lastActionInput.Variables["aiGatewayApprovalRequestId"] != requestID || delivery.lastActionInput.Variables["aiGatewayToolName"] != "delivery.actions.trigger" {
-		t.Fatalf("expected replay variables to include gateway approval linkage, got %#v", delivery.lastActionInput.Variables)
-	}
-	if decision.Request.DecisionComment != "ship it" || decision.Request.DecidedBy != "user-1" {
-		t.Fatalf("expected decision metadata, got %#v", decision.Request)
-	}
-	if len(operations.entries) < 4 {
-		t.Fatalf("expected pending, approve, tool execution, and execute operation logs, got %#v", operations.entries)
-	}
-	operationsByType := map[string]domainoperation.Entry{}
-	for _, entry := range operations.entries {
-		operationsByType[entry.OperationType+":"+entry.Result] = entry
-	}
-	for key, entry := range operationsByType {
-		if entry.Metadata["approvalRequestId"] != requestID || entry.Metadata["approvalId"] != requestID {
-			t.Fatalf("expected operation %s to expose approval linkage, got %#v", key, entry.Metadata)
-		}
-	}
-	if operationsByType["ai_gateway.approval.approve:approved"].TargetScope["approvalRequestId"] != requestID {
-		t.Fatalf("expected approval operation target scope linkage, got %#v", operationsByType["ai_gateway.approval.approve:approved"].TargetScope)
-	}
-	if operationsByType["ai_gateway.tool.invoke:success"].Metadata["workflowRunId"] != "workflow-1" || operationsByType["ai_gateway.approval.execute:executed"].Metadata["workflowRunId"] != "workflow-1" {
-		t.Fatalf("expected replay operation metadata to include workflow linkage, got %#v", operations.entries)
-	}
-	gatewayAuditsByAction := map[string]domainaigateway.AuditLog{}
-	for _, entry := range repo.auditLogs {
-		gatewayAuditsByAction[entry.Action+":"+entry.Result] = entry
-	}
-	for key, entry := range gatewayAuditsByAction {
-		if entry.Metadata["approvalRequestId"] != requestID || entry.Metadata["approvalId"] != requestID {
-			t.Fatalf("expected gateway audit %s to expose approval linkage, got %#v", key, entry.Metadata)
-		}
-	}
-	if gatewayAuditsByAction["ai_gateway.tool.invoke:success"].Metadata["workflowRunId"] != "workflow-1" || gatewayAuditsByAction["ai_gateway.approval.execute:executed"].Metadata["workflowRunId"] != "workflow-1" {
-		t.Fatalf("expected replay gateway audit metadata to include workflow linkage, got %#v", repo.auditLogs)
-	}
+	assertApprovedDeliveryDecision(t, decision, delivery, requestID)
+	assertApprovalOperationEntries(t, operations.entries, requestID)
+	assertApprovalGatewayAudits(t, repo.auditLogs, requestID)
 }
 
 func TestApproveApprovalRequestCanTriggerRollbackDeliveryAction(t *testing.T) {
@@ -7371,7 +6657,7 @@ func TestApproveApprovalRequestCanTriggerRollbackDeliveryAction(t *testing.T) {
 		t.Fatalf("delivery service should not be called before approval")
 	}
 
-	requestID := result.RelatedIDs["approvalRequestId"].(string)
+	requestID := mustMapFieldAs[string](t, result.RelatedIDs, "approvalRequestId")
 	decision, err := service.ApproveApprovalRequest(context.Background(), testPrincipal("admin"), requestID, domainaigateway.ApprovalDecisionInput{Comment: "rollback approved"})
 	if err != nil {
 		t.Fatalf("ApproveApprovalRequest returned error: %v", err)
@@ -7414,7 +6700,8 @@ func TestRejectAndCancelApprovalRequestTransitionWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	rejected, err := service.RejectApprovalRequest(context.Background(), testPrincipal("admin"), first.RelatedIDs["approvalRequestId"].(string), domainaigateway.ApprovalDecisionInput{Comment: "no window"})
+	firstRequestID := mustMapFieldAs[string](t, first.RelatedIDs, "approvalRequestId")
+	rejected, err := service.RejectApprovalRequest(context.Background(), testPrincipal("admin"), firstRequestID, domainaigateway.ApprovalDecisionInput{Comment: "no window"})
 	if err != nil {
 		t.Fatalf("RejectApprovalRequest returned error: %v", err)
 	}
@@ -7426,7 +6713,8 @@ func TestRejectAndCancelApprovalRequestTransitionWithoutMutation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	canceled, err := service.CancelApprovalRequest(context.Background(), testPrincipal("admin"), second.RelatedIDs["approvalRequestId"].(string), domainaigateway.ApprovalDecisionInput{Comment: "duplicate"})
+	secondRequestID := mustMapFieldAs[string](t, second.RelatedIDs, "approvalRequestId")
+	canceled, err := service.CancelApprovalRequest(context.Background(), testPrincipal("admin"), secondRequestID, domainaigateway.ApprovalDecisionInput{Comment: "duplicate"})
 	if err != nil {
 		t.Fatalf("CancelApprovalRequest returned error: %v", err)
 	}
@@ -7547,25 +6835,7 @@ func TestApprovalRequestUsesInlineApprovalPolicySLAAndRouting(t *testing.T) {
 			},
 		},
 	}
-	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
-		matrix: map[string][]string{
-			"developer": {
-				appaccess.PermAIGatewayInvoke,
-				appaccess.PermDeliveryApplicationsCreate,
-			},
-			"release-manager": {
-				appaccess.PermAIGatewayManage,
-				appaccess.PermAIGatewayInvoke,
-				appaccess.PermDeliveryApplicationsCreate,
-			},
-			"security-reviewer": {
-				appaccess.PermAIGatewayManage,
-				appaccess.PermAIGatewayInvoke,
-				appaccess.PermDeliveryApplicationsCreate,
-			},
-		},
-	}), nil, repo)
-	service.SetDeliveryServices(apps, &fakeDeliveryService{})
+	service := newGroupQuotaTestService(repo, apps)
 
 	held, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
 		ToolName: "delivery.applications.create",
@@ -7598,7 +6868,8 @@ func TestApprovalRequestUsesInlineApprovalPolicySLAAndRouting(t *testing.T) {
 	releaseApprover := testPrincipal("release-manager")
 	releaseApprover.UserID = "release-1"
 	releaseApprover.Teams = []string{"platform-ops"}
-	first, err := service.ApproveApprovalRequest(context.Background(), releaseApprover, held.RelatedIDs["approvalRequestId"].(string), domainaigateway.ApprovalDecisionInput{Comment: "release"})
+	requestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
+	first, err := service.ApproveApprovalRequest(context.Background(), releaseApprover, requestID, domainaigateway.ApprovalDecisionInput{Comment: "release"})
 	if err != nil {
 		t.Fatalf("release approval returned error: %v", err)
 	}
@@ -7607,7 +6878,7 @@ func TestApprovalRequestUsesInlineApprovalPolicySLAAndRouting(t *testing.T) {
 	}
 	securityApprover := testPrincipal("security-reviewer")
 	securityApprover.UserID = "security-1"
-	final, err := service.ApproveApprovalRequest(context.Background(), securityApprover, held.RelatedIDs["approvalRequestId"].(string), domainaigateway.ApprovalDecisionInput{Comment: "security"})
+	final, err := service.ApproveApprovalRequest(context.Background(), securityApprover, requestID, domainaigateway.ApprovalDecisionInput{Comment: "security"})
 	if err != nil {
 		t.Fatalf("security approval returned error: %v", err)
 	}
@@ -7669,7 +6940,7 @@ func TestApprovalRequestStoresRoutingAndRestrictsDecisionCandidates(t *testing.T
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	requestID := held.RelatedIDs["approvalRequestId"].(string)
+	requestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
 	request := repo.approvalRequests[0]
 	routing := mapValue(request.RelatedIDs["approvalRouting"])
 	if fmt.Sprint(routing["candidateRoles"]) != "[release-manager]" || fmt.Sprint(routing["candidateTeams"]) != "[platform-ops]" || routing["onCallRef"] != "oncall-prod" {
@@ -7750,7 +7021,7 @@ func TestApprovalRequestResolvesOnCallCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	requestID := held.RelatedIDs["approvalRequestId"].(string)
+	requestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
 	if oncall.lastRef != "prod-release-oncall" {
 		t.Fatalf("expected on-call ref lookup, got %q", oncall.lastRef)
 	}
@@ -7819,51 +7090,15 @@ func TestApprovalRequestRequiresMultipleApprovalsBeforeReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	requestID := held.RelatedIDs["approvalRequestId"].(string)
+	requestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
 	firstApprover := testPrincipal("release-manager")
 	firstApprover.UserID = "approver-1"
 	firstApprover.UserName = "Approver One"
-	first, err := service.ApproveApprovalRequest(context.Background(), firstApprover, requestID, domainaigateway.ApprovalDecisionInput{Comment: "first"})
-	if err != nil {
-		t.Fatalf("first approval returned error: %v", err)
-	}
-	if first.Request.Status != "pending" || apps.created {
-		t.Fatalf("expected first approval to keep request pending without replay, request=%#v apps=%#v", first.Request, apps)
-	}
-	routing := mapValue(first.Request.RelatedIDs["approvalRouting"])
-	if routing["approvedCount"] != 1 || routing["requiredApprovals"] != 2 {
-		t.Fatalf("expected 1/2 approval routing, got %#v", routing)
-	}
-	firstDecisions := gatewayApprovalDecisions(routing)
-	if len(firstDecisions) != 1 || firstDecisions[0]["userId"] != "approver-1" || firstDecisions[0]["comment"] != "first" {
-		t.Fatalf("expected first approval decision metadata, got %#v", firstDecisions)
-	}
-	repeated, err := service.ApproveApprovalRequest(context.Background(), firstApprover, requestID, domainaigateway.ApprovalDecisionInput{Comment: "still first"})
-	if err != nil {
-		t.Fatalf("repeated approval returned error: %v", err)
-	}
-	repeatedRouting := mapValue(repeated.Request.RelatedIDs["approvalRouting"])
-	repeatedDecisions := gatewayApprovalDecisions(repeatedRouting)
-	if repeated.Request.Status != "pending" || repeatedRouting["approvedCount"] != 1 || apps.created {
-		t.Fatalf("expected repeated approver not to satisfy quorum, request=%#v apps=%#v", repeated.Request, apps)
-	}
-	if len(repeatedDecisions) != 1 || repeatedDecisions[0]["userId"] != "approver-1" || repeatedDecisions[0]["comment"] != "still first" {
-		t.Fatalf("expected repeated approval to replace same approver decision, got %#v", repeatedDecisions)
-	}
+	assertFirstAndRepeatedApproval(t, service, apps, firstApprover, requestID)
 	secondApprover := testPrincipal("release-manager")
 	secondApprover.UserID = "approver-2"
 	secondApprover.UserName = "Approver Two"
-	second, err := service.ApproveApprovalRequest(context.Background(), secondApprover, requestID, domainaigateway.ApprovalDecisionInput{Comment: "second"})
-	if err != nil {
-		t.Fatalf("second approval returned error: %v", err)
-	}
-	if second.Request.Status != "executed" || !apps.created {
-		t.Fatalf("expected second approval to execute owning service, request=%#v apps=%#v", second.Request, apps)
-	}
-	finalRouting := mapValue(second.Request.RelatedIDs["approvalRouting"])
-	if finalRouting["approvedCount"] != 2 || len(gatewayApprovalDecisions(finalRouting)) != 2 {
-		t.Fatalf("expected final 2/2 approval routing, got %#v", finalRouting)
-	}
+	assertSecondApprovalExecutes(t, service, apps, secondApprover, requestID)
 }
 
 func TestApprovalRequestRequiresRoleAndTeamQuotasBeforeReplay(t *testing.T) {
@@ -7891,25 +7126,7 @@ func TestApprovalRequestRequiresRoleAndTeamQuotasBeforeReplay(t *testing.T) {
 			},
 		},
 	}
-	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
-		matrix: map[string][]string{
-			"developer": {
-				appaccess.PermAIGatewayInvoke,
-				appaccess.PermDeliveryApplicationsCreate,
-			},
-			"release-manager": {
-				appaccess.PermAIGatewayManage,
-				appaccess.PermAIGatewayInvoke,
-				appaccess.PermDeliveryApplicationsCreate,
-			},
-			"security-reviewer": {
-				appaccess.PermAIGatewayManage,
-				appaccess.PermAIGatewayInvoke,
-				appaccess.PermDeliveryApplicationsCreate,
-			},
-		},
-	}), nil, repo)
-	service.SetDeliveryServices(apps, &fakeDeliveryService{})
+	service := newGroupQuotaTestService(repo, apps)
 
 	held, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
 		ToolName: "delivery.applications.create",
@@ -7918,7 +7135,7 @@ func TestApprovalRequestRequiresRoleAndTeamQuotasBeforeReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	requestID := held.RelatedIDs["approvalRequestId"].(string)
+	requestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
 	initialRouting := mapValue(repo.approvalRequests[0].RelatedIDs["approvalRouting"])
 	if fmt.Sprint(initialRouting["candidateRoles"]) != "[release-manager security-reviewer]" || fmt.Sprint(initialRouting["candidateTeams"]) != "[platform-ops]" {
 		t.Fatalf("expected quota groups to become candidate routing, got %#v", initialRouting)
@@ -8023,7 +7240,7 @@ func TestApprovalRequestAnyModeReplaysWhenAnyQuotaMatches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	requestID := held.RelatedIDs["approvalRequestId"].(string)
+	requestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
 	approver := testPrincipal("release-manager")
 	approver.UserID = "release-1"
 	approver.UserName = "Release One"
@@ -8100,7 +7317,7 @@ func TestApprovalRequestAdvancesApprovalStagesBeforeReplay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	requestID := held.RelatedIDs["approvalRequestId"].(string)
+	requestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
 	initialRouting := mapValue(repo.approvalRequests[0].RelatedIDs["approvalRouting"])
 	if initialRouting["currentStageIndex"] != 0 || initialRouting["currentStageName"] != "release" || len(gatewayApprovalStages(initialRouting)) != 2 {
 		t.Fatalf("expected initial staged routing, got %#v", initialRouting)
@@ -8151,7 +7368,22 @@ func TestGetApprovalTimelineAggregatesTraceAndAuditEvents(t *testing.T) {
 	now := time.Now().UTC()
 	stageTime := now.Add(2 * time.Minute)
 	decisionTime := now.Add(3 * time.Minute)
-	repo := &memoryGatewayRepository{
+	repo := approvalTimelineTestRepository(now, stageTime, decisionTime)
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin": {appaccess.PermAIGatewayManage},
+		},
+	}), nil, repo)
+
+	timeline, err := service.GetApprovalTimeline(context.Background(), testPrincipal("admin"), "approval-1")
+	if err != nil {
+		t.Fatalf("GetApprovalTimeline returned error: %v", err)
+	}
+	assertApprovalTimeline(t, timeline)
+}
+
+func approvalTimelineTestRepository(now, stageTime, decisionTime time.Time) *memoryGatewayRepository {
+	return &memoryGatewayRepository{
 		approvalRequests: []domainaigateway.ApprovalRequest{
 			{
 				ID:        "approval-1",
@@ -8228,16 +7460,10 @@ func TestGetApprovalTimelineAggregatesTraceAndAuditEvents(t *testing.T) {
 			},
 		},
 	}
-	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
-		matrix: map[string][]string{
-			"admin": {appaccess.PermAIGatewayManage},
-		},
-	}), nil, repo)
+}
 
-	timeline, err := service.GetApprovalTimeline(context.Background(), testPrincipal("admin"), "approval-1")
-	if err != nil {
-		t.Fatalf("GetApprovalTimeline returned error: %v", err)
-	}
+func assertApprovalTimeline(t *testing.T, timeline domainaigateway.ApprovalTimeline) {
+	t.Helper()
 	if timeline.Request.ApprovalTrace == nil || timeline.Trace == nil {
 		t.Fatalf("expected approval trace in timeline: %#v", timeline)
 	}
@@ -8309,7 +7535,8 @@ func TestApprovalRequestRejectsApproveOutsideChangeWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	_, err = service.ApproveApprovalRequest(context.Background(), testPrincipal("release-manager"), held.RelatedIDs["approvalRequestId"].(string), domainaigateway.ApprovalDecisionInput{Comment: "too early"})
+	requestID := mustMapFieldAs[string](t, held.RelatedIDs, "approvalRequestId")
+	_, err = service.ApproveApprovalRequest(context.Background(), testPrincipal("release-manager"), requestID, domainaigateway.ApprovalDecisionInput{Comment: "too early"})
 	if err == nil || !strings.Contains(err.Error(), "change window") {
 		t.Fatalf("expected change-window approval rejection, got %v", err)
 	}
@@ -8555,86 +7782,9 @@ func TestInvokeKubernetesP1DiagnosticsUseResourceService(t *testing.T) {
 	service.SetResourceService(resources)
 	principal := testPrincipal("sre")
 
-	rollout, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "k8s.deployments.rollout_status",
-		Input:    map[string]any{"clusterId": "cluster-a", "namespace": "prod", "deploymentName": "api"},
-	})
-	if err != nil {
-		t.Fatalf("rollout status returned error: %v", err)
-	}
-	if rollout.Output.(domainresource.DeploymentRolloutStatusView).Status != "progressing" {
-		t.Fatalf("expected rollout status output, got %#v", rollout.Output)
-	}
-
-	events, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "k8s.deployments.events",
-		Input:    map[string]any{"clusterId": "cluster-a", "namespace": "prod", "deploymentName": "api"},
-	})
-	if err != nil {
-		t.Fatalf("deployment events returned error: %v", err)
-	}
-	if len(events.Output.([]domainresource.ClusterEventView)) != 1 || events.RelatedIDs["count"] != 1 {
-		t.Fatalf("expected deployment-specific events, got %#v", events)
-	}
-
-	describe, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "k8s.pods.describe",
-		Input:    map[string]any{"clusterId": "cluster-a", "namespace": "prod", "podName": "api-7d9f"},
-	})
-	if err != nil {
-		t.Fatalf("pod describe returned error: %v", err)
-	}
-	describeOutput := describe.Output.(map[string]any)
-	if describeOutput["name"] != "api-7d9f" || describeOutput["summary"].(map[string]any)["restarts"] != int32(1) {
-		t.Fatalf("expected pod describe summary, got %#v", describeOutput)
-	}
-
-	backends, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "k8s.services.backends",
-		Input:    map[string]any{"clusterId": "cluster-a", "namespace": "prod", "serviceName": "api"},
-	})
-	if err != nil {
-		t.Fatalf("service backends returned error: %v", err)
-	}
-	backendsOutput := backends.Output.(map[string]any)
-	if backendsOutput["backendPodCount"] != 1 || backends.RelatedIDs["backendPodCount"] != 1 {
-		t.Fatalf("expected one matching backend pod, got %#v", backendsOutput)
-	}
-
-	routes, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "k8s.routes.context",
-		Input:    map[string]any{"clusterId": "cluster-a", "namespace": "prod", "serviceName": "api"},
-	})
-	if err != nil {
-		t.Fatalf("route context returned error: %v", err)
-	}
-	routeOutput := routes.Output.(map[string]any)
-	if routeOutput["ingressCount"] != 1 || routeOutput["httpRouteCount"] != 1 || routeOutput["grpcRouteCount"] != 1 {
-		t.Fatalf("expected ingress and Gateway API route context, got %#v", routeOutput)
-	}
-
-	storage, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "k8s.storage.context",
-		Input:    map[string]any{"clusterId": "cluster-a", "namespace": "prod"},
-	})
-	if err != nil {
-		t.Fatalf("storage context returned error: %v", err)
-	}
-	storageOutput := storage.Output.(map[string]any)
-	if storageOutput["persistentVolumeClaimCount"] != 1 || len(storageOutput["unboundPersistentVolumeClaims"].([]string)) != 1 {
-		t.Fatalf("expected PVC/PV/storage class context, got %#v", storageOutput)
-	}
-
-	node, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
-		ToolName: "k8s.nodes.detail",
-		Input:    map[string]any{"clusterId": "cluster-a", "nodeName": "node-a"},
-	})
-	if err != nil {
-		t.Fatalf("node detail returned error: %v", err)
-	}
-	if node.Output.(domainresource.NodeDetailView).PodCount != 1 || node.RelatedIDs["scheduledPodCount"] != 1 {
-		t.Fatalf("expected node scheduled pod context, got %#v", node)
-	}
+	assertKubernetesWorkloadDiagnostics(t, service, principal)
+	assertKubernetesNetworkDiagnostics(t, service, principal)
+	assertKubernetesInfrastructureDiagnostics(t, service, principal)
 }
 
 func TestInvokeKubernetesListRequiresResourceService(t *testing.T) {
@@ -8691,50 +7841,8 @@ func TestInvokeReleaseFailureDiagnosisCollectsDeliveryAndRuntimeEvidence(t *test
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	if !resources.listedPods || !resources.listedEvents || !resources.readLogs || resources.eventLimit != 25 {
-		t.Fatalf("expected runtime evidence collection, got %#v", resources)
-	}
-	output, ok := result.Output.(map[string]any)
-	if !ok {
-		t.Fatalf("expected diagnosis context map, got %#v", result.Output)
-	}
-	deliveryEvidence := output["delivery"].(map[string]any)
-	logs := deliveryEvidence["executionLogs"].([]domaindelivery.ExecutionLog)
-	if logs[0].Message != "build failed token=[REDACTED]" || logs[0].Metadata["password"] != "[REDACTED]" {
-		t.Fatalf("expected redacted delivery logs, got %#v", logs[0])
-	}
-	runtimeEvidence := output["runtime"].(map[string]any)
-	podLogs := runtimeEvidence["podLogs"].(domainresource.PodLogsView)
-	if podLogs.Content != "startup failed password=[REDACTED]" {
-		t.Fatalf("expected redacted pod logs, got %#v", podLogs)
-	}
-	if result.RelatedIDs["executionTaskId"] != "task-1" || result.RelatedIDs["clusterId"] != "cluster-a" {
-		t.Fatalf("expected related ids, got %#v", result.RelatedIDs)
-	}
-	if result.RelatedIDs["agentRunId"] != "agent:gateway-1" {
-		t.Fatalf("expected persisted analysis artifact run id, got %#v", result.RelatedIDs)
-	}
-	artifact := output["analysisArtifact"].(map[string]any)
-	if artifact["artifactStored"] != true || artifact["agentRunId"] != "agent:gateway-1" {
-		t.Fatalf("expected artifact persistence metadata, got %#v", artifact)
-	}
-	if recorder.input.CapabilityID != "delivery_failure" || len(recorder.input.Evidence) == 0 || len(recorder.input.Hypotheses) == 0 {
-		t.Fatalf("expected structured delivery failure artifact input, got %#v", recorder.input)
-	}
-	if recorder.input.Scope.ClusterID != "cluster-a" || recorder.input.Scope.Namespace != "prod" || recorder.input.Scope.Workload != "api" {
-		t.Fatalf("unexpected artifact scope: %#v", recorder.input.Scope)
-	}
-	if len(recorder.input.ToolExecutions) != 1 || recorder.input.ToolExecutions[0].ToolName != "diagnosis.release_failure.analyze" {
-		t.Fatalf("expected Gateway tool execution snapshot, got %#v", recorder.input.ToolExecutions)
-	}
-	outputSnapshot := recorder.input.Output["evidenceSummary"].(map[string]any)
-	runtimeSnapshot := outputSnapshot["runtime"].(map[string]any)
-	if _, ok := runtimeSnapshot["podLogs"]; ok {
-		t.Fatalf("artifact snapshot must not persist raw pod log content: %#v", runtimeSnapshot)
-	}
-	if runtimeSnapshot["podLogBytes"] == 0 {
-		t.Fatalf("expected pod log byte summary, got %#v", runtimeSnapshot)
-	}
+	output := assertReleaseFailureEvidence(t, resources, result)
+	assertReleaseFailureArtifact(t, recorder, result, output)
 }
 
 func TestInvokeReleaseFailureDiagnosisQueuesExternalAgentRuntime(t *testing.T) {
@@ -8771,8 +7879,8 @@ func TestInvokeReleaseFailureDiagnosisQueuesExternalAgentRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	output := result.Output.(map[string]any)
-	artifact := output["analysisArtifact"].(map[string]any)
+	output := mustValueAs[map[string]any](t, result.Output)
+	artifact := mustMapFieldAs[map[string]any](t, output, "analysisArtifact")
 	if artifact["queued"] != true || artifact["artifactStored"] != false || artifact["agentRunId"] != "agent:queued-1" {
 		t.Fatalf("expected queued external Agent Runtime metadata, got %#v", artifact)
 	}

@@ -8,14 +8,11 @@ import (
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 )
 
-func (h *PlatformHandler) genericResourceYAMLGet(kind string) gin.HandlerFunc {
-	return h.genericResourceYAMLGetWithParam(kind, "name")
-}
-func (h *PlatformHandler) genericResourceYAMLGetWithParam(kind, nameParam string) gin.HandlerFunc {
+func (h *genericResourceHandler) genericResourceYAMLGetWithParam(kind, nameParam string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		principal := apiMiddleware.PrincipalFromContext(c)
 		namespace := c.Query("namespace")
-		item, err := h.resources.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam))
+		item, err := h.service.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam))
 		if err != nil {
 			writeError(c, err)
 			return
@@ -23,10 +20,7 @@ func (h *PlatformHandler) genericResourceYAMLGetWithParam(kind, nameParam string
 		apiresponse.Item(c, http.StatusOK, item)
 	}
 }
-func (h *PlatformHandler) genericResourceYAMLApply(kind string) gin.HandlerFunc {
-	return h.genericResourceYAMLApplyWithParam(kind, "name")
-}
-func (h *PlatformHandler) genericResourceYAMLApplyWithParam(kind, nameParam string) gin.HandlerFunc {
+func (h *genericResourceHandler) genericResourceYAMLApplyWithParam(kind, nameParam string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		principal := apiMiddleware.PrincipalFromContext(c)
 		namespace := c.Query("namespace")
@@ -37,7 +31,7 @@ func (h *PlatformHandler) genericResourceYAMLApplyWithParam(kind, nameParam stri
 			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid yaml payload")
 			return
 		}
-		item, err := h.resources.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam), payload.Content)
+		item, err := h.service.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam), payload.Content)
 		if err != nil {
 			writeError(c, err)
 			return
@@ -45,14 +39,11 @@ func (h *PlatformHandler) genericResourceYAMLApplyWithParam(kind, nameParam stri
 		apiresponse.Item(c, http.StatusOK, item)
 	}
 }
-func (h *PlatformHandler) genericResourceDelete(kind string) gin.HandlerFunc {
-	return h.genericResourceDeleteWithParam(kind, "name")
-}
-func (h *PlatformHandler) genericResourceDeleteWithParam(kind, nameParam string) gin.HandlerFunc {
+func (h *genericResourceHandler) genericResourceDeleteWithParam(kind, nameParam string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		principal := apiMiddleware.PrincipalFromContext(c)
 		namespace := c.Query("namespace")
-		if err := h.resources.DeleteResourceByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam)); err != nil {
+		if err := h.service.DeleteResourceByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam)); err != nil {
 			writeError(c, err)
 			return
 		}
@@ -62,7 +53,7 @@ func (h *PlatformHandler) genericResourceDeleteWithParam(kind, nameParam string)
 
 // RegisterGenericResourceRoutes wires delete + yaml view/apply endpoints for
 // platform resources backed by the generic dynamic-client path.
-func (h *PlatformHandler) RegisterGenericResourceRoutes(group gin.IRoutes) {
+func (h *genericResourceHandler) RegisterGenericResourceRoutes(group gin.IRoutes) {
 	kinds := []struct {
 		path      string
 		kind      string

@@ -68,37 +68,34 @@ func TestIngestConnectorEventsPersistsEventStreamEnvelopeAndAudit(t *testing.T) 
 			},
 		},
 	})
-	if err != nil {
-		t.Fatalf("IngestConnectorEvents returned error: %v", err)
-	}
-	if accepted != 1 {
-		t.Fatalf("accepted = %d, want 1", accepted)
-	}
-	if len(repo.created) != 1 {
-		t.Fatalf("created events = %d, want 1", len(repo.created))
-	}
+	expectEvent(t, err == nil, "IngestConnectorEvents returned error: %v", err)
+	expectEvent(t, accepted == 1, "accepted = %d, want 1", accepted)
+	expectEvent(t, len(repo.created) == 1, "created events = %d, want 1", len(repo.created))
 	event := repo.created[0]
-	if event.ID != "connector:feishu:event-1" || event.Source != "connector.feishu" || event.Category != "connector" || event.Severity != "info" {
-		t.Fatalf("unexpected envelope identity: %#v", event)
-	}
-	if event.ClusterID != "cluster-a" || event.Namespace != "default" {
-		t.Fatalf("unexpected envelope scope: %#v", event)
-	}
-	if event.Payload["connectorId"] != "feishu" || event.Payload["connectorEventId"] != "event-1" || event.Payload["connectorEventType"] != "im.message.receive_v1" {
-		t.Fatalf("missing connector metadata in payload: %#v", event.Payload)
-	}
-	if event.OccurredAt.IsZero() || !event.OccurredAt.Equal(time.Date(2026, 6, 11, 8, 0, 0, 0, time.UTC)) {
-		t.Fatalf("unexpected occurredAt: %v", event.OccurredAt)
-	}
-	if len(audit.entries) != 1 {
-		t.Fatalf("audit entries = %d, want 1", len(audit.entries))
-	}
+	expectEvent(t, event.ID == "connector:feishu:event-1", "event id = %q", event.ID)
+	expectEvent(t, event.Source == "connector.feishu", "event source = %q", event.Source)
+	expectEvent(t, event.Category == "connector", "event category = %q", event.Category)
+	expectEvent(t, event.Severity == "info", "event severity = %q", event.Severity)
+	expectEvent(t, event.ClusterID == "cluster-a", "event cluster = %q", event.ClusterID)
+	expectEvent(t, event.Namespace == "default", "event namespace = %q", event.Namespace)
+	expectEvent(t, event.Payload["connectorId"] == "feishu", "connector id payload = %#v", event.Payload)
+	expectEvent(t, event.Payload["connectorEventId"] == "event-1", "event id payload = %#v", event.Payload)
+	expectEvent(t, event.Payload["connectorEventType"] == "im.message.receive_v1", "event type payload = %#v", event.Payload)
+	expectEvent(t, !event.OccurredAt.IsZero(), "occurredAt is zero")
+	expectEvent(t, event.OccurredAt.Equal(time.Date(2026, 6, 11, 8, 0, 0, 0, time.UTC)), "unexpected occurredAt: %v", event.OccurredAt)
+	expectEvent(t, len(audit.entries) == 1, "audit entries = %d, want 1", len(audit.entries))
 	entry := audit.entries[0]
-	if entry.ActorID != "connector:feishu" || entry.Action != "connector.events.ingest" || entry.Result != "success" {
-		t.Fatalf("unexpected audit entry: %#v", entry)
-	}
-	if entry.RequestID != "request-1" || entry.RequestPath != "/api/v1/connectors/events" {
-		t.Fatalf("audit request metadata missing: %#v", entry)
+	expectEvent(t, entry.ActorID == "connector:feishu", "audit actor = %q", entry.ActorID)
+	expectEvent(t, entry.Action == "connector.events.ingest", "audit action = %q", entry.Action)
+	expectEvent(t, entry.Result == "success", "audit result = %q", entry.Result)
+	expectEvent(t, entry.RequestID == "request-1", "audit request id = %q", entry.RequestID)
+	expectEvent(t, entry.RequestPath == "/api/v1/connectors/events", "audit request path = %q", entry.RequestPath)
+}
+
+func expectEvent(t *testing.T, condition bool, format string, args ...any) {
+	t.Helper()
+	if !condition {
+		t.Fatalf(format, args...)
 	}
 }
 

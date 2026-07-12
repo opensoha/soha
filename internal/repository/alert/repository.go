@@ -187,7 +187,7 @@ func (r *Repository) List(ctx context.Context, filter domainalert.Filter) ([]dom
 	if err != nil {
 		return nil, fmt.Errorf("query alerts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.Instance, 0, limit)
 	for rows.Next() {
@@ -290,7 +290,7 @@ func (r *Repository) ListChannels(ctx context.Context) ([]domainalert.Notificati
 	if err != nil {
 		return nil, fmt.Errorf("query notification channels: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.NotificationChannel, 0)
 	for rows.Next() {
@@ -354,7 +354,7 @@ func (r *Repository) ListRoutes(ctx context.Context) ([]domainalert.AlertRoute, 
 	if err != nil {
 		return nil, fmt.Errorf("query alert routes: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.AlertRoute, 0)
 	for rows.Next() {
@@ -460,7 +460,7 @@ func (r *Repository) ListDeliveryLogs(ctx context.Context, filter domainalert.De
 	if err != nil {
 		return nil, fmt.Errorf("query alert delivery logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.DeliveryLog, 0, limit)
 	for rows.Next() {
@@ -494,7 +494,7 @@ func (r *Repository) ListSilences(ctx context.Context) ([]domainalert.AlertSilen
 	if err != nil {
 		return nil, fmt.Errorf("query alert silences: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.AlertSilence, 0)
 	for rows.Next() {

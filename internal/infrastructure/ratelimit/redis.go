@@ -182,6 +182,9 @@ func redisResultInt64(value any) (int64, error) {
 	case int:
 		return int64(typed), nil
 	case uint64:
+		if typed > math.MaxInt64 {
+			return 0, fmt.Errorf("redis integer result %d exceeds int64", typed)
+		}
 		return int64(typed), nil
 	case string:
 		return strconv.ParseInt(typed, 10, 64)

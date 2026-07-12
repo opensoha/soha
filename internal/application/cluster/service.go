@@ -13,10 +13,7 @@ import (
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
-	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
-	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
-	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
-	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	"github.com/opensoha/soha/internal/platform/appconfig"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
@@ -45,10 +42,35 @@ type OperationRecorder interface {
 	Record(context.Context, domainoperation.Entry) error
 }
 
+type RuntimeRegistry interface {
+	RegisterCluster(appconfig.Cluster)
+	UnregisterCluster(string)
+	ValidateCluster(appconfig.Cluster) error
+}
+
+type RuntimeReader interface {
+	ClusterIDs() []string
+	ListClusters(context.Context) ([]domaincluster.Summary, error)
+	GetCluster(context.Context, string) (domaincluster.Summary, error)
+}
+
+type RuntimeCache interface {
+	RegisterCluster(context.Context, string) error
+	UnregisterCluster(string)
+	Ready(string) bool
+}
+
+type AgentSummaryClient interface {
+	GetSummary(context.Context) (domaincluster.Summary, error)
+}
+
+type AgentSummaryClientFactory func(domaincluster.Connection) (AgentSummaryClient, error)
+
 type Service struct {
-	manager    *k8sinfra.Manager
-	cache      *informerinfra.Service
-	agents     *agentinfra.Registry
+	registry   RuntimeRegistry
+	manager    RuntimeReader
+	cache      RuntimeCache
+	agents     AgentSummaryClientFactory
 	repo       Repository
 	authorizer domainaccess.Authorizer
 	audit      AuditRecorder
@@ -58,9 +80,16 @@ type Service struct {
 	metrics    *runtimeobs.Registry
 }
 
-func New(manager *k8sinfra.Manager, cache *informerinfra.Service, agents *agentinfra.Registry, repo Repository, authorizer domainaccess.Authorizer, audit AuditRecorder, operations OperationRecorder) *Service {
+func New(registry RuntimeRegistry, runtime RuntimeReader, cache RuntimeCache, agents AgentSummaryClientFactory, repo Repository, authorizer domainaccess.Authorizer, audit AuditRecorder, operations OperationRecorder) (*Service, error) {
+	if registry == nil {
+		return nil, fmt.Errorf("%w: cluster runtime registry is required", apperrors.ErrInvalidArgument)
+	}
+	if runtime == nil {
+		return nil, fmt.Errorf("%w: cluster runtime reader is required", apperrors.ErrInvalidArgument)
+	}
 	return &Service{
-		manager:    manager,
+		registry:   registry,
+		manager:    runtime,
 		cache:      cache,
 		agents:     agents,
 		repo:       repo,
@@ -68,7 +97,7 @@ func New(manager *k8sinfra.Manager, cache *informerinfra.Service, agents *agenti
 		audit:      audit,
 		operations: operations,
 		syncLimit:  defaultSyncConcurrency,
-	}
+	}, nil
 }
 
 func (s *Service) SetInstrumentation(logger *zap.Logger, metrics *runtimeobs.Registry) {
@@ -117,7 +146,7 @@ func (s *Service) restoreRuntimeRegistrations(ctx context.Context) {
 			s.logWarnCtx(ctx, "cluster runtime config invalid", zap.String("clusterID", connection.Summary.ID), zap.Error(err))
 			continue
 		}
-		s.manager.RegisterCluster(*cfg)
+		s.registry.RegisterCluster(*cfg)
 		if s.cache != nil {
 			if err := s.cache.RegisterCluster(ctx, connection.Summary.ID); err != nil {
 				s.logWarnCtx(ctx, "cluster informer registration failed", zap.String("clusterID", connection.Summary.ID), zap.Error(err))
@@ -292,7 +321,7 @@ func (s *Service) Register(ctx context.Context, principal domainidentity.Princip
 		return domaincluster.Summary{}, err
 	}
 	if cfg != nil {
-		if err := s.manager.ValidateCluster(*cfg); err != nil {
+		if err := s.registry.ValidateCluster(*cfg); err != nil {
 			return domaincluster.Summary{}, fmt.Errorf("%w: invalid kubeconfig: %v", apperrors.ErrInvalidArgument, err)
 		}
 	}
@@ -300,14 +329,13 @@ func (s *Service) Register(ctx context.Context, principal domainidentity.Princip
 		return domaincluster.Summary{}, fmt.Errorf("persist cluster registration: %w", err)
 	}
 	if cfg != nil {
-		s.manager.RegisterCluster(*cfg)
+		s.registry.RegisterCluster(*cfg)
 		if s.cache != nil {
 			_ = s.cache.RegisterCluster(ctx, connection.Summary.ID)
 		}
 	}
-	if err := s.syncOne(ctx, connection.Summary.ID); err != nil {
-		// keep the registration even if the target cluster or agent is temporarily unreachable.
-	}
+	// Keep the registration even if the target cluster or agent is temporarily unreachable.
+	_ = s.syncOne(ctx, connection.Summary.ID)
 	item, err := s.repo.Get(ctx, connection.Summary.ID)
 	if err != nil {
 		return domaincluster.Summary{}, err
@@ -352,26 +380,25 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 		return domaincluster.Summary{}, err
 	}
 	if cfg != nil {
-		if err := s.manager.ValidateCluster(*cfg); err != nil {
+		if err := s.registry.ValidateCluster(*cfg); err != nil {
 			return domaincluster.Summary{}, fmt.Errorf("%w: invalid kubeconfig: %v", apperrors.ErrInvalidArgument, err)
 		}
-	}
-	s.manager.UnregisterCluster(clusterID)
-	if s.cache != nil {
-		s.cache.UnregisterCluster(clusterID)
 	}
 	if err := s.repo.UpdateRegistration(ctx, connection); err != nil {
 		return domaincluster.Summary{}, fmt.Errorf("update cluster registration: %w", err)
 	}
+	s.registry.UnregisterCluster(clusterID)
+	if s.cache != nil {
+		s.cache.UnregisterCluster(clusterID)
+	}
 	if cfg != nil {
-		s.manager.RegisterCluster(*cfg)
+		s.registry.RegisterCluster(*cfg)
 		if s.cache != nil {
 			_ = s.cache.RegisterCluster(ctx, connection.Summary.ID)
 		}
 	}
-	if err := s.syncOne(ctx, connection.Summary.ID); err != nil {
-		// keep the registration even if the target cluster or agent is temporarily unreachable.
-	}
+	// Keep the registration even if the target cluster or agent is temporarily unreachable.
+	_ = s.syncOne(ctx, connection.Summary.ID)
 	item, err := s.repo.Get(ctx, connection.Summary.ID)
 	if err != nil {
 		return domaincluster.Summary{}, err
@@ -397,7 +424,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 	if err := s.repo.Delete(ctx, clusterID); err != nil {
 		return err
 	}
-	s.manager.UnregisterCluster(clusterID)
+	s.registry.UnregisterCluster(clusterID)
 	if s.cache != nil {
 		s.cache.UnregisterCluster(clusterID)
 	}
@@ -541,7 +568,7 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 			summary.Health = domaincluster.Health{Status: "degraded", Message: "agent registry is not configured", LastChecked: time.Now().UTC()}
 			break
 		}
-		client, err := s.agents.ClientFor(connection)
+		client, err := s.agents(connection)
 		if err != nil {
 			summary.Health = domaincluster.Health{Status: "degraded", Message: clusterHealthMessage(err, "agent client unavailable"), LastChecked: time.Now().UTC()}
 			break
@@ -564,7 +591,7 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 			summary.Health = domaincluster.Health{Status: "degraded", Message: clusterHealthMessage(cfgErr, "cluster configuration unavailable"), LastChecked: time.Now().UTC()}
 			break
 		}
-		s.manager.RegisterCluster(*cfg)
+		s.registry.RegisterCluster(*cfg)
 		if s.cache != nil {
 			_ = s.cache.RegisterCluster(ctx, connection.Summary.ID)
 		}
@@ -606,7 +633,7 @@ func clusterHealthMessage(err error, fallback string) string {
 	return fallback
 }
 
-func runtimeClusterConfig(connection domaincluster.Connection) (*cfgpkg.ClusterConfig, error) {
+func runtimeClusterConfig(connection domaincluster.Connection) (*appconfig.Cluster, error) {
 	kubeconfigData, _ := connection.Metadata["kubeconfig_data"].(string)
 	kubeconfigValue, _ := connection.Metadata["kubeconfig"].(string)
 	contextName, _ := connection.Metadata["context"].(string)
@@ -629,7 +656,7 @@ func runtimeClusterConfig(connection domaincluster.Connection) (*cfgpkg.ClusterC
 		return nil, fmt.Errorf("cluster %s has no kubeconfig metadata", connection.Summary.ID)
 	}
 
-	return &cfgpkg.ClusterConfig{
+	return &appconfig.Cluster{
 		ID:                     connection.Summary.ID,
 		Name:                   connection.Summary.Name,
 		Kubeconfig:             strings.TrimSpace(kubeconfigPath),
@@ -645,7 +672,7 @@ func runtimeClusterConfig(connection domaincluster.Connection) (*cfgpkg.ClusterC
 	}, nil
 }
 
-func (s *Service) buildConnection(input domaincluster.RegisterInput) (domaincluster.Connection, *cfgpkg.ClusterConfig, error) {
+func (s *Service) buildConnection(input domaincluster.RegisterInput) (domaincluster.Connection, *appconfig.Cluster, error) {
 	if strings.TrimSpace(input.Name) == "" {
 		return domaincluster.Connection{}, nil, fmt.Errorf("%w: cluster name is required", apperrors.ErrInvalidArgument)
 	}
@@ -687,7 +714,7 @@ func (s *Service) buildConnection(input domaincluster.RegisterInput) (domainclus
 			"prometheus_cluster_label": strings.TrimSpace(input.PrometheusClusterLabel),
 			"grafana_base_url":         strings.TrimSpace(input.GrafanaBaseURL),
 		}
-		cfg := &cfgpkg.ClusterConfig{
+		cfg := &appconfig.Cluster{
 			ID:                     connection.Summary.ID,
 			Name:                   connection.Summary.Name,
 			KubeconfigData:         input.Kubeconfig,
@@ -732,45 +759,57 @@ func mergeClusterUpdateInput(existing domaincluster.Connection, next domainclust
 
 	switch next.ConnectionMode {
 	case domaincluster.ConnectionModeDirectKubeconfig:
-		if strings.TrimSpace(next.Kubeconfig) == "" && existing.Summary.ConnectionMode == domaincluster.ConnectionModeDirectKubeconfig {
-			if kubeconfig, _ := existing.Metadata["kubeconfig"].(string); strings.TrimSpace(kubeconfig) != "" {
-				next.Kubeconfig = kubeconfig
-			}
-		}
-		if strings.TrimSpace(next.Context) == "" && existing.Summary.ConnectionMode == domaincluster.ConnectionModeDirectKubeconfig {
-			if contextName, _ := existing.Metadata["context"].(string); strings.TrimSpace(contextName) != "" {
-				next.Context = contextName
-			}
-		}
+		mergeDirectClusterUpdate(&next, existing)
 	case domaincluster.ConnectionModeAgent:
-		if strings.TrimSpace(next.AgentEndpoint) == "" && existing.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-			if endpoint, _ := existing.Metadata["endpoint"].(string); strings.TrimSpace(endpoint) != "" {
-				next.AgentEndpoint = endpoint
-			}
-		}
-		if strings.TrimSpace(next.AgentToken) == "" && existing.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-			if token, _ := existing.Metadata["token"].(string); strings.TrimSpace(token) != "" {
-				next.AgentToken = token
-			}
-		}
+		mergeAgentClusterUpdate(&next, existing)
 	}
-	if strings.TrimSpace(next.PrometheusBearerToken) == "" {
-		if token, _ := existing.Metadata["prometheus_bearer_token"].(string); strings.TrimSpace(token) != "" {
-			next.PrometheusBearerToken = token
-		}
-	}
-	if strings.TrimSpace(next.PrometheusClusterLabel) == "" {
-		if label, _ := existing.Metadata["prometheus_cluster_label"].(string); strings.TrimSpace(label) != "" {
-			next.PrometheusClusterLabel = label
-		}
-	}
-	if strings.TrimSpace(next.GrafanaBaseURL) == "" {
-		if baseURL, _ := existing.Metadata["grafana_base_url"].(string); strings.TrimSpace(baseURL) != "" {
-			next.GrafanaBaseURL = baseURL
-		}
-	}
+	mergeClusterObservabilityUpdate(&next, existing.Metadata)
 
 	return next
+}
+
+func mergeDirectClusterUpdate(next *domaincluster.RegisterInput, existing domaincluster.Connection) {
+	if existing.Summary.ConnectionMode != domaincluster.ConnectionModeDirectKubeconfig {
+		return
+	}
+	if strings.TrimSpace(next.Kubeconfig) == "" {
+		next.Kubeconfig = preservedMetadataString(existing.Metadata, "kubeconfig")
+	}
+	if strings.TrimSpace(next.Context) == "" {
+		next.Context = preservedMetadataString(existing.Metadata, "context")
+	}
+}
+
+func mergeAgentClusterUpdate(next *domaincluster.RegisterInput, existing domaincluster.Connection) {
+	if existing.Summary.ConnectionMode != domaincluster.ConnectionModeAgent {
+		return
+	}
+	if strings.TrimSpace(next.AgentEndpoint) == "" {
+		next.AgentEndpoint = preservedMetadataString(existing.Metadata, "endpoint")
+	}
+	if strings.TrimSpace(next.AgentToken) == "" {
+		next.AgentToken = preservedMetadataString(existing.Metadata, "token")
+	}
+}
+
+func mergeClusterObservabilityUpdate(next *domaincluster.RegisterInput, metadata map[string]any) {
+	if strings.TrimSpace(next.PrometheusBearerToken) == "" {
+		next.PrometheusBearerToken = preservedMetadataString(metadata, "prometheus_bearer_token")
+	}
+	if strings.TrimSpace(next.PrometheusClusterLabel) == "" {
+		next.PrometheusClusterLabel = preservedMetadataString(metadata, "prometheus_cluster_label")
+	}
+	if strings.TrimSpace(next.GrafanaBaseURL) == "" {
+		next.GrafanaBaseURL = preservedMetadataString(metadata, "grafana_base_url")
+	}
+}
+
+func preservedMetadataString(metadata map[string]any, key string) string {
+	value := metadataString(metadata, key)
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return value
 }
 
 func metadataString(metadata map[string]any, key string) string {

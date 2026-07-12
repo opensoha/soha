@@ -13,7 +13,7 @@ func TestExecuteMigrationStatementResetsSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sql mock: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	store := &Store{sqlDB: sqlDB}
 	mock.ExpectExec(`SET search_path = ''`).WillReturnResult(sqlmock.NewResult(0, 0))
@@ -32,7 +32,7 @@ func TestExecuteMigrationStatementResetsSessionOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sql mock: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	store := &Store{sqlDB: sqlDB}
 	mock.ExpectExec(`bad migration`).WillReturnError(errors.New("boom"))

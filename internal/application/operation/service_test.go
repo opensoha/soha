@@ -70,7 +70,7 @@ func TestRecordRedactsOperationSensitiveFields(t *testing.T) {
 	if repo.created.Metadata["authorization"] != "[REDACTED]" {
 		t.Fatalf("authorization metadata was not redacted: %#v", repo.created.Metadata)
 	}
-	nested := repo.created.Metadata["nested"].(map[string]any)
+	nested := mustOperationValue[map[string]any](t, repo.created.Metadata["nested"])
 	if nested["password"] != "[REDACTED]" {
 		t.Fatalf("nested metadata was not redacted: %#v", nested)
 	}
@@ -143,12 +143,21 @@ func TestListRedactsOperationSensitiveFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
-	content := items[0].Summary + items[0].TargetScope["apiKey"].(string) + items[0].Metadata["note"].(string)
+	content := items[0].Summary + mustOperationValue[string](t, items[0].TargetScope["apiKey"]) + mustOperationValue[string](t, items[0].Metadata["note"])
 	for _, leaked := range []string{"raw-api-key", "raw-bearer", "raw-secret"} {
 		if strings.Contains(content, leaked) {
 			t.Fatalf("list leaked %q in %#v", leaked, items[0])
 		}
 	}
+}
+
+func mustOperationValue[T any](t *testing.T, value any) T {
+	t.Helper()
+	result, ok := value.(T)
+	if !ok {
+		t.Fatalf("value has type %T, want %T", value, *new(T))
+	}
+	return result
 }
 
 func TestListNormalizesExpandedOperationFilter(t *testing.T) {

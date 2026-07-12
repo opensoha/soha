@@ -64,6 +64,9 @@ jobs:
       - name: Vet
         working-directory: soha
         run: GOWORK=off go vet ./...
+      - name: Production complexity gate
+        working-directory: soha
+        run: make complexity-check
       - name: Govulncheck
         working-directory: soha
         run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...

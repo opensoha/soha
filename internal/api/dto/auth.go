@@ -10,7 +10,8 @@ type LoginVerificationOptions struct {
 }
 
 type LoginOptionsResponse struct {
-	Verification LoginVerificationOptions `json:"verification"`
+	Verification              LoginVerificationOptions `json:"verification"`
+	LocalPasswordLoginEnabled bool                     `json:"localPasswordLoginEnabled"`
 }
 
 type ProPasswordLoginRequest struct {

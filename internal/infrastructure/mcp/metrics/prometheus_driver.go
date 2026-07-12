@@ -141,7 +141,7 @@ func (d prometheusDriver) queryRangeSeries(ctx context.Context, endpoint, bearer
 	if err != nil {
 		return nil, 0, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return nil, 0, fmt.Errorf("prometheus query_range failed with status %d", resp.StatusCode)
 	}

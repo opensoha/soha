@@ -24,7 +24,7 @@ func (r *Repository) ListRules(ctx context.Context) ([]domainalert.AlertRule, er
 	if err != nil {
 		return nil, fmt.Errorf("query alert rules: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.AlertRule, 0)
 	for rows.Next() {
@@ -163,7 +163,7 @@ func (r *Repository) ListRuleRuns(ctx context.Context, filter domainalert.AlertR
 	if err != nil {
 		return nil, fmt.Errorf("query alert rule runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainalert.AlertRuleRun, 0, limit)
 	for rows.Next() {
 		item, err := scanAlertRuleRun(rows)
@@ -223,7 +223,7 @@ func (r *Repository) ListEvents(ctx context.Context, filter domainalert.AlertEve
 	if err != nil {
 		return nil, fmt.Errorf("query alert events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.AlertEvent, 0, limit)
 	for rows.Next() {
@@ -344,7 +344,7 @@ func (r *Repository) ListNotificationPolicies(ctx context.Context) ([]domainaler
 	if err != nil {
 		return nil, fmt.Errorf("query notification policies: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.NotificationPolicy, 0)
 	for rows.Next() {
@@ -421,7 +421,7 @@ func (r *Repository) ListNotificationTemplates(ctx context.Context) ([]domainale
 	if err != nil {
 		return nil, fmt.Errorf("query notification templates: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.NotificationTemplate, 0)
 	for rows.Next() {
@@ -498,7 +498,7 @@ func (r *Repository) ListHealingPolicies(ctx context.Context) ([]domainalert.Hea
 	if err != nil {
 		return nil, fmt.Errorf("query healing policies: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.HealingPolicy, 0)
 	for rows.Next() {
@@ -592,7 +592,7 @@ func (r *Repository) ListHealingRuns(ctx context.Context, filter domainalert.Hea
 	if err != nil {
 		return nil, fmt.Errorf("query healing runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.HealingRun, 0, limit)
 	for rows.Next() {
@@ -663,7 +663,7 @@ func (r *Repository) ListOnCallSchedules(ctx context.Context) ([]domainalert.OnC
 	if err != nil {
 		return nil, fmt.Errorf("query oncall schedules: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.OnCallSchedule, 0)
 	for rows.Next() {
@@ -721,7 +721,7 @@ func (r *Repository) ListOnCallRotations(ctx context.Context) ([]domainalert.OnC
 	if err != nil {
 		return nil, fmt.Errorf("query oncall rotations: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.OnCallRotation, 0)
 	for rows.Next() {
@@ -792,7 +792,7 @@ func (r *Repository) ListOnCallEscalationPolicies(ctx context.Context) ([]domain
 	if err != nil {
 		return nil, fmt.Errorf("query oncall escalation policies: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.OnCallEscalationPolicy, 0)
 	for rows.Next() {
@@ -853,7 +853,7 @@ func (r *Repository) ListOnCallAssignmentRules(ctx context.Context) ([]domainale
 	if err != nil {
 		return nil, fmt.Errorf("query oncall assignment rules: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainalert.OnCallAssignmentRule, 0)
 	for rows.Next() {

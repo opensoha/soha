@@ -26,6 +26,15 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
+func mustCopilotValue[T any](t *testing.T, value any) T {
+	t.Helper()
+	result, ok := value.(T)
+	if !ok {
+		t.Fatalf("value has type %T, want %T", value, *new(T))
+	}
+	return result
+}
+
 func TestToolsetAllowsToolHonorsAdapterSelectionAndDisabledTools(t *testing.T) {
 	toolset := domaincopilot.SessionToolset{
 		EnabledAdapterIDs: []string{"metrics.v1"},
@@ -451,7 +460,7 @@ func TestFinalWorkbenchMetadataMapsAgentRunStatusToWorkbenchStatus(t *testing.T)
 
 	for _, tc := range cases {
 		metadata := finalWorkbenchMessageMetadata(map[string]any{"source": "test"}, nil, nil, map[string]any{"status": tc.input})
-		status := metadata["agentStatus"].(map[string]any)
+		status := mustCopilotValue[map[string]any](t, metadata["agentStatus"])
 		if status["status"] != tc.want {
 			t.Fatalf("status %q mapped to %q, want %q", tc.input, status["status"], tc.want)
 		}
@@ -685,43 +694,9 @@ func TestSendMessageGeneralModeRequiresGatewayRouteWithoutAutoAnalysis(t *testin
 	if err != nil {
 		t.Fatalf("send general chat message: %v", err)
 	}
-	if len(envelope.ToolCalls) != 0 || len(envelope.AnalysisArtifacts) != 0 || len(envelope.SessionPatch) != 0 {
-		t.Fatalf("expected general chat to skip automatic analysis, got toolCalls=%#v artifacts=%#v patch=%#v", envelope.ToolCalls, envelope.AnalysisArtifacts, envelope.SessionPatch)
-	}
-	if len(envelope.Messages) != 2 {
-		t.Fatalf("expected user and assistant messages, got %#v", envelope.Messages)
-	}
-	if envelope.Messages[1].Content != "hello from gateway" {
-		t.Fatalf("assistant content = %q, want gateway reply", envelope.Messages[1].Content)
-	}
-	metadata := envelope.Messages[1].Metadata
-	if metadata["source"] != "gateway-model-route" || metadata["model"] != "gpt-public" {
-		t.Fatalf("expected gateway route metadata, got %#v", metadata)
-	}
-	if metadata["thinkingSummary"] == "" || metadata["agentStatus"] == nil {
-		t.Fatalf("expected final replay metadata snapshot, got %#v", metadata)
-	}
-	if artifacts, ok := metadata["analysisArtifacts"].([]domaincopilot.AnalysisArtifact); !ok || len(artifacts) != 0 {
-		t.Fatalf("expected empty analysis artifact snapshot for general chat, got %#v", metadata["analysisArtifacts"])
-	}
-	if _, ok := metadata["providerKind"]; ok {
-		t.Fatalf("general chat metadata must not expose settings provider kind, got %#v", metadata)
-	}
-	if _, ok := metadata["providerId"]; ok {
-		t.Fatalf("general chat metadata must not expose settings provider id, got %#v", metadata)
-	}
-	if len(repo.createdMessages) != 2 {
-		t.Fatalf("expected user and assistant messages to be persisted, got %#v", repo.createdMessages)
-	}
-	if invoker.request.PublicModel != "gpt-public" || invoker.request.RouteID != "route-openai" || invoker.request.Endpoint != "chat/completions" {
-		t.Fatalf("unexpected workbench invoker request: %#v", invoker.request)
-	}
-	if invoker.request.SessionID != "session-1" || invoker.request.Mode != "general" {
-		t.Fatalf("expected session correlation in invoker request, got %#v", invoker.request)
-	}
-	if len(invoker.request.Messages) == 0 || invoker.request.Messages[len(invoker.request.Messages)-1].Content != "hi" {
-		t.Fatalf("expected current user message to be sent to invoker, got %#v", invoker.request.Messages)
-	}
+	assertGeneralGatewayEnvelope(t, envelope)
+	assertGeneralGatewayPersistence(t, repo)
+	assertGeneralGatewayRequest(t, invoker.request)
 }
 
 func TestSendMessageGeneralModeIgnoresLegacyProviderConfig(t *testing.T) {
@@ -848,36 +823,8 @@ func TestStreamMessageRequestModeOverridesSessionAndNarrowsToolset(t *testing.T)
 	if err != nil {
 		t.Fatalf("stream message: %v", err)
 	}
-	if len(result.Envelope.AnalysisArtifacts) != 1 {
-		t.Fatalf("expected inspection artifact, got %#v", result.Envelope.AnalysisArtifacts)
-	}
-	artifact := result.Envelope.AnalysisArtifacts[0]
-	if artifact.Scope.ClusterID != "cluster-a" || artifact.Scope.Namespace != "payments" || artifact.Scope.TimeRangeMinutes != 30 {
-		t.Fatalf("unexpected narrowed scope: %#v", artifact.Scope)
-	}
-	if got := artifact.DataSourceSnapshot["enabledAdapterIds"].([]string); len(got) != 1 || got[0] != "metrics.v1" {
-		t.Fatalf("adapter allowlist should be intersection/subset, got %#v", got)
-	}
-	if got := artifact.DataSourceSnapshot["enabledSkillIds"].([]string); len(got) != 1 || got[0] != "inspection-review" {
-		t.Fatalf("skill allowlist should be intersection/subset, got %#v", got)
-	}
-	if got := artifact.DataSourceSnapshot["disabledToolNames"].([]string); !containsString(got, "logs.v1.logs.raw") || !containsString(got, "metrics.v1.metrics.raw") {
-		t.Fatalf("disabled tools should be union, got %#v", got)
-	}
-	budget := artifact.ToolExecutions[0].Output["budgetOverrides"].(map[string]any)
-	if budget["timeoutSeconds"] != 60 || budget["maxEvidenceItems"] != 10 {
-		t.Fatalf("budget overrides were not conservative, got %#v", budget)
-	}
-	if _, ok := budget["maxIterations"]; ok {
-		t.Fatalf("request-only unknown budget key should not be accepted, got %#v", budget)
-	}
-	if !containsStreamEvent(result.Events, "thinking.delta") || !containsStreamEvent(result.Events, "tool.completed") || !containsStreamEvent(result.Events, "artifact.updated") {
-		t.Fatalf("analysis stream missing expected events: %#v", result.Events)
-	}
-	assistant := result.Envelope.Messages[len(result.Envelope.Messages)-1]
-	if assistant.Metadata["thinkingSummary"] == "" || assistant.Metadata["toolExecutions"] == nil || assistant.Metadata["sources"] == nil || assistant.Metadata["agentStatus"] == nil {
-		t.Fatalf("assistant metadata missing replay snapshot: %#v", assistant.Metadata)
-	}
+	assertNarrowedInspectionArtifact(t, result.Envelope.AnalysisArtifacts)
+	assertInspectionStreamContract(t, result)
 }
 
 func TestStreamMessageInternalAnalysisCallsLiveEventSink(t *testing.T) {
@@ -1013,42 +960,8 @@ func TestStreamMessageGeneralUsesGatewayTokenStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream general message: %v", err)
 	}
-	if len(result.Events) != 0 {
-		t.Fatalf("live stream path should not return duplicate events, got %#v", result.Events)
-	}
-	if len(result.Envelope.Messages) != 2 || result.Envelope.Messages[1].Content != "hello stream" {
-		t.Fatalf("unexpected stream envelope: %#v", result.Envelope)
-	}
-	if invoker.request.RouteID != "route-openai" || invoker.request.Endpoint != "chat/completions" {
-		t.Fatalf("unexpected stream invoker request: %#v", invoker.request)
-	}
-	deltaContent := ""
-	for _, event := range liveEvents {
-		if event.Type == "message.delta" {
-			deltaContent += event.ContentDelta
-		}
-	}
-	if deltaContent != "hello stream" {
-		t.Fatalf("unexpected live deltas %q from events %#v", deltaContent, liveEvents)
-	}
-	if liveEvents[0].Type != "agent.status" || liveEvents[0].ProviderID != agentProviderInternal || liveEvents[0].ProviderKind != "openai" || liveEvents[0].Status != "running" {
-		t.Fatalf("expected provider-aware initial running status, got %#v", liveEvents[0])
-	}
-	if !containsStreamEvent(liveEvents, "message.done") || liveEvents[len(liveEvents)-1].Type != "agent.status" {
-		t.Fatalf("expected message.done and final agent.status, got %#v", liveEvents)
-	}
-	finalStatus := liveEvents[len(liveEvents)-1]
-	if finalStatus.ProviderID != agentProviderInternal || finalStatus.ProviderKind != "openai" || finalStatus.Status != "succeeded" {
-		t.Fatalf("expected provider-aware final status, got %#v", finalStatus)
-	}
-	assistant := result.Envelope.Messages[1]
-	if assistant.Metadata["source"] != "gateway-model-route-stream" || assistant.Metadata["thinkingSummary"] == "" || assistant.Metadata["agentStatus"] == nil {
-		t.Fatalf("assistant metadata missing stream replay snapshot: %#v", assistant.Metadata)
-	}
-	status := assistant.Metadata["agentStatus"].(map[string]any)
-	if status["providerId"] != agentProviderInternal || status["providerKind"] != "openai" {
-		t.Fatalf("assistant metadata should keep gateway provider status, got %#v", status)
-	}
+	assertGatewayTokenStreamResult(t, result, invoker.request)
+	assertGatewayTokenStreamEvents(t, liveEvents)
 }
 
 func TestStreamMessageGeneralDoesNotPersistPartialAssistantWhenStreamStops(t *testing.T) {
@@ -1153,7 +1066,7 @@ func TestStreamMessageInternalAnalysisToolFailureReturnsFailedEvents(t *testing.
 		t.Fatalf("expected failed tool completion, got %#v", completed.ToolCall)
 	}
 	assistant := result.Envelope.Messages[len(result.Envelope.Messages)-1]
-	status := assistant.Metadata["agentStatus"].(map[string]any)
+	status := mustCopilotValue[map[string]any](t, assistant.Metadata["agentStatus"])
 	if status["status"] != "failed" {
 		t.Fatalf("expected failed final metadata status, got %#v", status)
 	}
@@ -1247,7 +1160,7 @@ func TestRecordAgentRunCallbackSynthesizesArtifactBeforePersist(t *testing.T) {
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-1",
@@ -1314,7 +1227,7 @@ func TestRecordAgentRunCallbackEnrichesProvidedArtifactUsage(t *testing.T) {
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-usage",
@@ -1366,7 +1279,7 @@ func TestRecordAgentRunCallbackMapsNativeProviderUsageFields(t *testing.T) {
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-native-usage",
@@ -1429,7 +1342,7 @@ func TestRecordAgentRunCallbackMapsAdditionalProviderUsageAliases(t *testing.T) 
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-additional-usage",
@@ -1501,7 +1414,7 @@ func TestRecordAgentRunCallbackMapsExpandedProviderUsageAliases(t *testing.T) {
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-expanded-usage",
@@ -1575,7 +1488,7 @@ func TestRecordAgentRunCallbackMapsEmergingProviderUsageAliases(t *testing.T) {
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-emerging-usage",
@@ -1646,7 +1559,7 @@ func TestRecordAgentRunCallbackMapsChinaCloudProviderUsageAliases(t *testing.T) 
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-china-cloud-usage",
@@ -1727,7 +1640,7 @@ func TestRecordAgentRunCallbackPrefersBilledUsageUnits(t *testing.T) {
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-billed-usage",
@@ -1804,7 +1717,7 @@ func TestRecordAgentRunCallbackMapsAgentToolingUsageAliases(t *testing.T) {
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-tooling-usage",
@@ -1921,7 +1834,7 @@ func TestRecordAgentRunCallbackSynthesizesFailureArtifact(t *testing.T) {
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-2",
@@ -1963,7 +1876,7 @@ func TestRecordAgentRunCallbackSynthesizesStructuredArtifactFields(t *testing.T)
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-structured",
@@ -2363,7 +2276,7 @@ func TestRunSessionAnalysisQueuesExternalRootCauseBusinessRun(t *testing.T) {
 	if metadata["thinkingSummary"] == "" || metadata["analysisArtifacts"] == nil || metadata["agentStatus"] == nil {
 		t.Fatalf("expected external queue placeholder replay metadata, got %#v", metadata)
 	}
-	status := metadata["agentStatus"].(map[string]any)
+	status := mustCopilotValue[map[string]any](t, metadata["agentStatus"])
 	if status["status"] != domaincopilot.AgentRunStatusQueued || status["agentRunId"] != repo.createdAgentRun.ID {
 		t.Fatalf("unexpected external queue agent status: %#v", status)
 	}
@@ -2490,7 +2403,7 @@ func TestRecordAgentRunCallbackBackfillsRootCauseRun(t *testing.T) {
 			UpdatedAt: createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-3",
@@ -2553,7 +2466,7 @@ func TestRecordAgentRunCallbackBackfillsSessionOwnedRootCauseRun(t *testing.T) {
 			UpdatedAt: createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-session",
@@ -2600,7 +2513,7 @@ func TestRecordAgentRunCallbackPersistsFinalMessageReplayMetadata(t *testing.T) 
 		},
 	}
 	repo.session = domaincopilot.Session{ID: "session-1", CreatedBy: "user-1", Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "root_cause"})}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-message",
@@ -2622,7 +2535,7 @@ func TestRecordAgentRunCallbackPersistsFinalMessageReplayMetadata(t *testing.T) 
 	if metadata["thinkingSummary"] == "" || metadata["toolExecutions"] == nil || metadata["sources"] == nil || metadata["analysisArtifacts"] == nil || metadata["agentStatus"] == nil {
 		t.Fatalf("final callback message missing replay metadata: %#v", metadata)
 	}
-	status := metadata["agentStatus"].(map[string]any)
+	status := mustCopilotValue[map[string]any](t, metadata["agentStatus"])
 	if status["status"] != "succeeded" || status["agentRunId"] != "agent:run-message" {
 		t.Fatalf("unexpected final callback agent status: %#v", status)
 	}
@@ -2655,7 +2568,7 @@ func TestRecordAgentRunCallbackLateTerminalDoesNotDuplicateMessageOrSessionRef(t
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 	input := domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:late-terminal",
 		CallbackToken: "callback-token",
@@ -2698,7 +2611,7 @@ func TestRecordAgentToolCallRejectsUnboundTool(t *testing.T) {
 			UpdatedAt: time.Now().UTC(),
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
 		RunID:         "agent:tool-denied",
@@ -2740,26 +2653,24 @@ func TestRecordAgentToolCallExecutesBoundEventsTool(t *testing.T) {
 			UpdatedAt: time.Now().UTC(),
 		},
 	}
-	service := &Service{
-		repo: repo,
-		events: agentToolEventReader{items: []domainevent.Envelope{{
-			ID:        "event-1",
-			Source:    "kubernetes",
-			Category:  "workload",
-			Severity:  "warning",
-			ClusterID: "cluster-a",
-			Namespace: "payments",
-			Summary:   "payment-api restart backoff",
-		}, {
-			ID:        "event-2",
-			Source:    "kubernetes",
-			Category:  "workload",
-			Severity:  "warning",
-			ClusterID: "cluster-a",
-			Namespace: "orders",
-			Summary:   "orders-api restart backoff",
-		}}},
-	}
+	service := newTestService(repo)
+	service.events = agentToolEventReader{items: []domainevent.Envelope{{
+		ID:        "event-1",
+		Source:    "kubernetes",
+		Category:  "workload",
+		Severity:  "warning",
+		ClusterID: "cluster-a",
+		Namespace: "payments",
+		Summary:   "payment-api restart backoff",
+	}, {
+		ID:        "event-2",
+		Source:    "kubernetes",
+		Category:  "workload",
+		Severity:  "warning",
+		ClusterID: "cluster-a",
+		Namespace: "orders",
+		Summary:   "orders-api restart backoff",
+	}}}
 
 	result, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
 		RunID:         "agent:tool-events",
@@ -2789,6 +2700,32 @@ func TestRecordAgentToolCallExecutesBoundEventsTool(t *testing.T) {
 }
 
 func TestRecordAgentToolCallExecutesDeliveryAndAlertTools(t *testing.T) {
+	service, repo := newDeliveryAgentToolCallTestService()
+	releaseResult := recordAgentToolCallCount(t, service, "delivery.releases")
+	if releaseResult.Output["count"] != 1 {
+		t.Fatalf("expected one scoped release, got %#v", releaseResult.Output)
+	}
+	buildResult := recordAgentToolCallCount(t, service, "delivery.builds")
+	if buildResult.Output["count"] != 1 {
+		t.Fatalf("expected one build, got %#v", buildResult.Output)
+	}
+	alertResult := recordAgentToolCallCount(t, service, "observability.alerts")
+	if alertResult.Output["count"] != 1 {
+		t.Fatalf("expected one alert, got %#v", alertResult.Output)
+	}
+	alerts, ok := alertResult.Output["alerts"].([]map[string]any)
+	if !ok || len(alerts) != 1 {
+		t.Fatalf("expected one alert summary, got %#v", alertResult.Output["alerts"])
+	}
+	if alerts[0]["startsAt"] != "" || alerts[0]["lastSeenAt"] != "" {
+		t.Fatalf("expected zero alert times to be omitted, got %#v", alerts[0])
+	}
+	if len(repo.agentRun.ToolExecutions) != 3 {
+		t.Fatalf("expected three tool executions, got %#v", repo.agentRun.ToolExecutions)
+	}
+}
+
+func newDeliveryAgentToolCallTestService() (*Service, *agentRuntimeCallbackTestRepository) {
 	repo := &agentRuntimeCallbackTestRepository{
 		agentRun: domaincopilot.AgentRun{
 			ID:            "agent:tool-delivery",
@@ -2819,91 +2756,57 @@ func TestRecordAgentToolCallExecutesDeliveryAndAlertTools(t *testing.T) {
 			UpdatedAt: time.Now().UTC(),
 		},
 	}
-	service := &Service{
-		repo: repo,
-		releases: agentToolReleaseReader{items: []domainrelease.Record{{
-			ID:             "release-1",
-			ApplicationID:  "app-payments",
-			ClusterID:      "cluster-a",
-			Namespace:      "payments",
-			DeploymentName: "payment-api",
-			Status:         "failed",
-			CreatedAt:      time.Now().UTC(),
-		}, {
-			ID:             "release-2",
-			ApplicationID:  "app-payments",
-			ClusterID:      "cluster-a",
-			Namespace:      "orders",
-			DeploymentName: "orders-api",
-			Status:         "completed",
-			CreatedAt:      time.Now().UTC(),
-		}}},
-		builds: agentToolBuildReader{items: []domainbuild.Record{{
-			ID:            "build-1",
-			ApplicationID: "app-payments",
-			SourceSystem:  "ci",
-			Status:        "failed",
-			CreatedAt:     time.Now().UTC(),
-		}}},
-		alerts: agentToolAlertReader{items: []domainalert.Instance{{
-			ID:        "alert-1",
-			Title:     "payment-api high error rate",
-			Summary:   "payment-api has high 5xx rate",
-			Severity:  "critical",
-			Status:    "firing",
-			ClusterID: "cluster-a",
-			Namespace: "payments",
-			CreatedAt: time.Now().UTC(),
-			UpdatedAt: time.Now().UTC(),
-		}}},
-	}
+	service := newTestService(repo)
+	service.releases = agentToolReleaseReader{items: []domainrelease.Record{{
+		ID:             "release-1",
+		ApplicationID:  "app-payments",
+		ClusterID:      "cluster-a",
+		Namespace:      "payments",
+		DeploymentName: "payment-api",
+		Status:         "failed",
+		CreatedAt:      time.Now().UTC(),
+	}, {
+		ID:             "release-2",
+		ApplicationID:  "app-payments",
+		ClusterID:      "cluster-a",
+		Namespace:      "orders",
+		DeploymentName: "orders-api",
+		Status:         "completed",
+		CreatedAt:      time.Now().UTC(),
+	}}}
+	service.builds = agentToolBuildReader{items: []domainbuild.Record{{
+		ID:            "build-1",
+		ApplicationID: "app-payments",
+		SourceSystem:  "ci",
+		Status:        "failed",
+		CreatedAt:     time.Now().UTC(),
+	}}}
+	service.alerts = agentToolAlertReader{items: []domainalert.Instance{{
+		ID:        "alert-1",
+		Title:     "payment-api high error rate",
+		Summary:   "payment-api has high 5xx rate",
+		Severity:  "critical",
+		Status:    "firing",
+		ClusterID: "cluster-a",
+		Namespace: "payments",
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}}}
+	return service, repo
+}
 
-	releaseResult, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
+func recordAgentToolCallCount(t *testing.T, service *Service, bindingID string) domaincopilot.AgentToolCallResult {
+	t.Helper()
+	result, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
 		RunID:         "agent:tool-delivery",
 		CallbackToken: "callback-token",
-		ToolBindingID: "delivery.releases",
+		ToolBindingID: bindingID,
 		Input:         map[string]any{"limit": 5},
 	})
 	if err != nil {
-		t.Fatalf("record release tool call: %v", err)
+		t.Fatalf("record %s tool call: %v", bindingID, err)
 	}
-	if releaseResult.Output["count"] != 1 {
-		t.Fatalf("expected one scoped release, got %#v", releaseResult.Output)
-	}
-	buildResult, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
-		RunID:         "agent:tool-delivery",
-		CallbackToken: "callback-token",
-		ToolBindingID: "delivery.builds",
-		Input:         map[string]any{"limit": 5},
-	})
-	if err != nil {
-		t.Fatalf("record build tool call: %v", err)
-	}
-	if buildResult.Output["count"] != 1 {
-		t.Fatalf("expected one build, got %#v", buildResult.Output)
-	}
-	alertResult, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
-		RunID:         "agent:tool-delivery",
-		CallbackToken: "callback-token",
-		ToolBindingID: "observability.alerts",
-		Input:         map[string]any{"limit": 5},
-	})
-	if err != nil {
-		t.Fatalf("record alert tool call: %v", err)
-	}
-	if alertResult.Output["count"] != 1 {
-		t.Fatalf("expected one alert, got %#v", alertResult.Output)
-	}
-	alerts, ok := alertResult.Output["alerts"].([]map[string]any)
-	if !ok || len(alerts) != 1 {
-		t.Fatalf("expected one alert summary, got %#v", alertResult.Output["alerts"])
-	}
-	if alerts[0]["startsAt"] != "" || alerts[0]["lastSeenAt"] != "" {
-		t.Fatalf("expected zero alert times to be omitted, got %#v", alerts[0])
-	}
-	if len(repo.agentRun.ToolExecutions) != 3 {
-		t.Fatalf("expected three tool executions, got %#v", repo.agentRun.ToolExecutions)
-	}
+	return result
 }
 
 func TestRecordAgentToolCallExecutesWorkbenchContextTools(t *testing.T) {
@@ -2952,29 +2855,27 @@ func TestRecordAgentToolCallExecutesWorkbenchContextTools(t *testing.T) {
 			UpdatedAt: time.Now().UTC(),
 		},
 	}
-	service := &Service{
-		repo: repo,
-		execution: agentToolExecutionReader{items: []domaindelivery.ExecutionTask{{
-			ID:            "task-1",
-			ApplicationID: "app-payments",
-			TaskKind:      "release",
-			ProviderKind:  "ci_agent_runner",
-			Status:        "failed",
-			CreatedAt:     time.Now().UTC(),
-		}}},
-		resources: agentToolResourceReader{
-			nodes:       []domainresource.NodeView{{Name: "node-1", Status: "Ready", PodCount: 12}},
-			pods:        []domainresource.PodView{{Name: "payment-api-abc", Namespace: "payments", Phase: "Running", ReadyContainers: "1/1"}},
-			deployments: []domainresource.DeploymentView{{Name: "payment-api", Namespace: "payments", DesiredReplicas: 2, ReadyReplicas: 1}},
-			services:    []domainresource.ServiceView{{Name: "payment-api", Namespace: "payments", Type: "ClusterIP", Selector: map[string]string{"app": "payment-api"}}},
-		},
-		docker: agentToolDockerReader{
-			operations: []domaindocker.Operation{{ID: "docker-op-1", HostID: "docker-host-1", ProjectID: "compose-1", OperationKind: "project_deploy", Status: "failed", CreatedAt: time.Now().UTC()}},
-			services:   []domaindocker.Service{{ID: "docker-svc-1", HostID: "docker-host-1", ProjectID: "compose-1", Name: "payment-api", Status: "exited"}},
-		},
-		virtualization: agentToolVirtualizationReader{items: []domainvirtualization.Task{{ID: "virt-task-1", Provider: "pve", ConnectionID: "pve-1", VMID: "vm-1", TaskKind: "vm_action", Status: "failed", CreatedAt: time.Now().UTC()}}},
-		oncall:         agentToolOnCallResolver{result: map[string]any{"routeId": "route-1", "targetRef": "schedule:payments"}},
+	service := newTestService(repo)
+	service.execution = agentToolExecutionReader{items: []domaindelivery.ExecutionTask{{
+		ID:            "task-1",
+		ApplicationID: "app-payments",
+		TaskKind:      "release",
+		ProviderKind:  "ci_agent_runner",
+		Status:        "failed",
+		CreatedAt:     time.Now().UTC(),
+	}}}
+	service.resources = agentToolResourceReader{
+		nodes:       []domainresource.NodeView{{Name: "node-1", Status: "Ready", PodCount: 12}},
+		pods:        []domainresource.PodView{{Name: "payment-api-abc", Namespace: "payments", Phase: "Running", ReadyContainers: "1/1"}},
+		deployments: []domainresource.DeploymentView{{Name: "payment-api", Namespace: "payments", DesiredReplicas: 2, ReadyReplicas: 1}},
+		services:    []domainresource.ServiceView{{Name: "payment-api", Namespace: "payments", Type: "ClusterIP", Selector: map[string]string{"app": "payment-api"}}},
 	}
+	service.docker = agentToolDockerReader{
+		operations: []domaindocker.Operation{{ID: "docker-op-1", HostID: "docker-host-1", ProjectID: "compose-1", OperationKind: "project_deploy", Status: "failed", CreatedAt: time.Now().UTC()}},
+		services:   []domaindocker.Service{{ID: "docker-svc-1", HostID: "docker-host-1", ProjectID: "compose-1", Name: "payment-api", Status: "exited"}},
+	}
+	service.virtualization = agentToolVirtualizationReader{items: []domainvirtualization.Task{{ID: "virt-task-1", Provider: "pve", ConnectionID: "pve-1", VMID: "vm-1", TaskKind: "vm_action", Status: "failed", CreatedAt: time.Now().UTC()}}}
+	service.oncall = agentToolOnCallResolver{result: map[string]any{"routeId": "route-1", "targetRef": "schedule:payments"}}
 
 	for _, item := range []struct {
 		bindingID string
@@ -3025,7 +2926,7 @@ func TestRecordAgentRunCallbackPreservesPriorToolCalls(t *testing.T) {
 			UpdatedAt: createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-tools",
@@ -3076,7 +2977,7 @@ func TestRecordAgentRunCallbackMergesAndFiltersWorkbenchEvents(t *testing.T) {
 			UpdatedAt:     createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:run-events",
@@ -3129,7 +3030,7 @@ func TestRecordAgentRunCallbackPayloadWorkbenchEventsAreReservedNormalizedAndCap
 			UpdatedAt:      createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 	payloadEvents := []domaincopilot.WorkbenchStreamEvent{{
 		ID:       "runner-foreign",
 		Type:     "message.done",
@@ -3204,7 +3105,7 @@ func TestRecordAgentRunCallbackSanitizesRunnerToolsAndEvents(t *testing.T) {
 		CreatedAt: createdAt,
 		UpdatedAt: createdAt,
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:sanitize",
@@ -3279,7 +3180,7 @@ func TestRecordAgentRunCallbackWithoutEventsKeepsLegacyRunnerPath(t *testing.T) 
 			UpdatedAt:     createdAt,
 		},
 	}
-	service := &Service{repo: repo}
+	service := newTestService(repo)
 
 	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:legacy-runner",
@@ -3330,7 +3231,40 @@ func TestAgentRunHeartbeatExpiredUsesQueuedStartedAndHeartbeatTimes(t *testing.T
 
 func newInspectionAuthzTestService(matrix map[string][]string) (*Service, *inspectionAuthzTestRepository) {
 	repo := &inspectionAuthzTestRepository{}
-	return New(repo, nil, nil, nil, nil, nil, nil, nil, nil, appaccess.NewPermissionResolver(inspectionAuthzRoleReader{matrix: matrix})), repo
+	deps := newTestDependencies(repo)
+	deps.Permissions = appaccess.NewPermissionResolver(inspectionAuthzRoleReader{matrix: matrix})
+	service, err := New(deps)
+	if err != nil {
+		panic(err)
+	}
+	return service, repo
+}
+
+func newTestService(repo any, options ...Option) *Service {
+	service, err := New(newTestDependencies(repo), options...)
+	if err != nil {
+		panic(err)
+	}
+	return service
+}
+
+func newTestDependencies(repo any) Dependencies {
+	switch store := repo.(type) {
+	case *inspectionAuthzTestRepository:
+		return Dependencies{
+			Sessions: store, Messages: store, DataSources: store, AnalysisProfiles: store,
+			AutomationPolicies: store, RootCauseRuns: store, AgentRuns: store,
+			InspectionTasks: store, InspectionRuns: store,
+		}
+	case *agentRuntimeCallbackTestRepository:
+		return Dependencies{
+			Sessions: store, Messages: store, DataSources: store, AnalysisProfiles: store,
+			AutomationPolicies: store, RootCauseRuns: store, AgentRuns: store,
+			InspectionTasks: store, InspectionRuns: store,
+		}
+	default:
+		panic(fmt.Sprintf("unsupported copilot test repository %T", repo))
+	}
 }
 
 type inspectionAuthzRoleReader struct {

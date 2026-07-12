@@ -11,23 +11,23 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
-func (h *PlatformHandler) ListClusters(c *gin.Context) {
+func (h *clusterHandler) ListClusters(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.clusters.ListAccessible(c.Request.Context(), principal)
+	items, err := h.service.ListAccessible(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) CreateCluster(c *gin.Context) {
+func (h *clusterHandler) CreateCluster(c *gin.Context) {
 	var req dto.CreateClusterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid cluster payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.clusters.Register(c.Request.Context(), principal, domaincluster.RegisterInput{
+	item, err := h.service.Register(c.Request.Context(), principal, domaincluster.RegisterInput{
 		ID:                     req.ID,
 		Name:                   req.Name,
 		Region:                 req.Region,
@@ -49,32 +49,32 @@ func (h *PlatformHandler) CreateCluster(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusCreated, item)
 }
-func (h *PlatformHandler) DescribeCluster(c *gin.Context) {
+func (h *clusterHandler) DescribeCluster(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.clusters.Describe(c.Request.Context(), principal, c.Param("clusterID"))
+	item, err := h.service.Describe(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ClusterCapabilityMatrix(c *gin.Context) {
+func (h *clusterHandler) ClusterCapabilityMatrix(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.clusters.CapabilityMatrix(c.Request.Context(), principal)
+	items, err := h.service.CapabilityMatrix(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) UpdateCluster(c *gin.Context) {
+func (h *clusterHandler) UpdateCluster(c *gin.Context) {
 	var req dto.UpdateClusterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid cluster payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.clusters.Update(c.Request.Context(), principal, c.Param("clusterID"), domaincluster.UpdateInput{
+	item, err := h.service.Update(c.Request.Context(), principal, c.Param("clusterID"), domaincluster.UpdateInput{
 		Name:                   req.Name,
 		Region:                 req.Region,
 		Environment:            req.Environment,
@@ -95,31 +95,31 @@ func (h *PlatformHandler) UpdateCluster(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) DeleteCluster(c *gin.Context) {
+func (h *clusterHandler) DeleteCluster(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.clusters.Delete(c.Request.Context(), principal, c.Param("clusterID")); err != nil {
+	if err := h.service.Delete(c.Request.Context(), principal, c.Param("clusterID")); err != nil {
 		writeError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *PlatformHandler) ListNamespaces(c *gin.Context) {
+func (h *namespaceResourceHandler) ListNamespaces(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListNamespaces(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.service.ListNamespaces(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) CreateNamespace(c *gin.Context) {
+func (h *namespaceResourceHandler) CreateNamespace(c *gin.Context) {
 	var req dto.NamespaceUpsertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid namespace payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.CreateNamespace(c.Request.Context(), principal, c.Param("clusterID"), domainresource.NamespaceUpsertInput{
+	item, err := h.service.CreateNamespace(c.Request.Context(), principal, c.Param("clusterID"), domainresource.NamespaceUpsertInput{
 		Name:        req.Name,
 		Labels:      req.Labels,
 		Annotations: req.Annotations,
@@ -130,14 +130,14 @@ func (h *PlatformHandler) CreateNamespace(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusCreated, item)
 }
-func (h *PlatformHandler) UpdateNamespace(c *gin.Context) {
+func (h *namespaceResourceHandler) UpdateNamespace(c *gin.Context) {
 	var req dto.NamespaceUpsertRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid namespace payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.UpdateNamespace(c.Request.Context(), principal, c.Param("clusterID"), c.Param("namespaceName"), domainresource.NamespaceUpsertInput{
+	item, err := h.service.UpdateNamespace(c.Request.Context(), principal, c.Param("clusterID"), c.Param("namespaceName"), domainresource.NamespaceUpsertInput{
 		Name:        req.Name,
 		Labels:      req.Labels,
 		Annotations: req.Annotations,
@@ -148,56 +148,56 @@ func (h *PlatformHandler) UpdateNamespace(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) DeleteNamespace(c *gin.Context) {
+func (h *namespaceResourceHandler) DeleteNamespace(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.resources.DeleteNamespace(c.Request.Context(), principal, c.Param("clusterID"), c.Param("namespaceName")); err != nil {
+	if err := h.service.DeleteNamespace(c.Request.Context(), principal, c.Param("clusterID"), c.Param("namespaceName")); err != nil {
 		writeError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *PlatformHandler) ListNodes(c *gin.Context) {
+func (h *nodeResourceHandler) ListNodes(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListNodes(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.reader.ListNodes(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetNodeDetail(c *gin.Context) {
+func (h *nodeResourceHandler) GetNodeDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.GetNodeDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"))
+	item, err := h.reader.GetNodeDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetNodeYAML(c *gin.Context) {
+func (h *nodeResourceHandler) GetNodeYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.GetNodeYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"))
+	item, err := h.reader.GetNodeYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ApplyNodeYAML(c *gin.Context) {
+func (h *nodeResourceHandler) ApplyNodeYAML(c *gin.Context) {
 	var req dto.ApplyResourceYAMLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid node yaml payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.ApplyNodeYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"), req.Content)
+	item, err := h.editor.ApplyNodeYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"), req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) UpdateNode(c *gin.Context) {
+func (h *nodeResourceHandler) UpdateNode(c *gin.Context) {
 	var req dto.NodeUpdateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid node payload")
@@ -212,7 +212,7 @@ func (h *PlatformHandler) UpdateNode(c *gin.Context) {
 		})
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.UpdateNode(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"), domainresource.NodeUpdateInput{
+	item, err := h.editor.UpdateNode(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"), domainresource.NodeUpdateInput{
 		Labels: req.Labels,
 		Taints: taints,
 	})
@@ -222,9 +222,9 @@ func (h *PlatformHandler) UpdateNode(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) DeleteNode(c *gin.Context) {
+func (h *nodeResourceHandler) DeleteNode(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.resources.DeleteNode(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName")); err != nil {
+	if err := h.editor.DeleteNode(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName")); err != nil {
 		writeError(c, err)
 		return
 	}

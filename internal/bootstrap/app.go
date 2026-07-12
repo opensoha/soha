@@ -13,7 +13,7 @@ func New(ctx context.Context) (*App, error) {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
 
-	infra, initErr := newInfrastructure(ctx, cfg)
+	infra, initErr := newInfrastructure(ctx, &cfg)
 	if initErr != nil {
 		return nil, initErr
 	}
@@ -30,7 +30,11 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
-	handlers := newHandlers(cfg, infra, core, delivery, gateway)
+	handlers, err := newHandlers(cfg, infra, repos, core, delivery, gateway)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
 	httpServer := newHTTPServer(cfg, infra.logger, handlers)
 
 	return &App{

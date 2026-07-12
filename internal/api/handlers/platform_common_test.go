@@ -3,8 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -37,11 +39,12 @@ func TestWriteErrorRedactsInternalServerErrorMessage(t *testing.T) {
 	}
 }
 
-func TestWriteErrorPreservesClientFacingMessageForNotFound(t *testing.T) {
+func TestWriteErrorUsesStableClientFacingMessageAndRecordsCause(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
+	cause := fmt.Errorf("load tenant database path: %w", apperrors.ErrNotFound)
 
-	writeError(ctx, apperrors.ErrNotFound)
+	writeError(ctx, cause)
 
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotFound)
@@ -58,7 +61,13 @@ func TestWriteErrorPreservesClientFacingMessageForNotFound(t *testing.T) {
 	if payload.Error.Code != "not_found" {
 		t.Fatalf("code = %q, want not_found", payload.Error.Code)
 	}
-	if payload.Error.Message != apperrors.ErrNotFound.Error() {
-		t.Fatalf("message = %q, want %q", payload.Error.Message, apperrors.ErrNotFound.Error())
+	if payload.Error.Message != "resource not found" {
+		t.Fatalf("message = %q, want resource not found", payload.Error.Message)
+	}
+	if len(ctx.Errors) != 1 || !errors.Is(ctx.Errors[0].Err, apperrors.ErrNotFound) {
+		t.Fatalf("recorded errors = %#v, want wrapped not-found cause", ctx.Errors)
+	}
+	if strings.Contains(recorder.Body.String(), "tenant database") {
+		t.Fatal("public response contains internal error details")
 	}
 }

@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,12 +14,7 @@ import (
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
-	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
-	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type Repository interface {
@@ -29,7 +25,7 @@ type Service struct {
 	repo          Repository
 	builds        BuildRecordRepository
 	releases      ReleaseRecordRepository
-	clusters      *k8sinfra.Manager
+	clusters      ClusterRuntime
 	jobClusterID  string
 	jobNamespace  string
 	jobImage      string
@@ -56,11 +52,7 @@ type WorkflowExecutionTaskSink interface {
 
 const executionMonitorInterval = 15 * time.Second
 
-type artifactBundleGetter interface {
-	GetReleaseBundle(context.Context, string) (domaindelivery.ReleaseBundle, error)
-}
-
-func New(repo Repository, builds BuildRecordRepository, releases ReleaseRecordRepository, clusters *k8sinfra.Manager, jobClusterID, jobNamespace, jobImage, jobGitImage string, jobTTLSeconds int, runnerToken string, permissions *appaccess.PermissionResolver) *Service {
+func New(repo Repository, builds BuildRecordRepository, releases ReleaseRecordRepository, clusters ClusterRuntime, jobClusterID, jobNamespace, jobImage, jobGitImage string, jobTTLSeconds int, runnerToken string, permissions *appaccess.PermissionResolver) *Service {
 	if strings.TrimSpace(jobNamespace) == "" {
 		jobNamespace = "soha-system"
 	}
@@ -711,7 +703,7 @@ func (s *Service) stopRemoteRuntimeTask(ctx context.Context, taskID string, resu
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("runtime cancel failed with status %d", resp.StatusCode)
 	}
@@ -883,18 +875,17 @@ func (s *Service) dispatchK8sJobExecution(ctx context.Context, task domaindelive
 		return false, domaindelivery.ExecutionTask{}, nil
 	}
 	namespace := firstNonEmpty(strings.TrimSpace(fmt.Sprint(task.Payload["jobNamespace"])), s.jobNamespace)
-	bundle, err := s.clusters.Bundle(ctx, clusterID)
-	if err != nil {
-		return false, domaindelivery.ExecutionTask{}, err
-	}
-	if err := ensureNamespaceExists(ctx, bundle, namespace); err != nil {
-		return false, domaindelivery.ExecutionTask{}, err
-	}
-	job, err := s.buildExecutionJob(task, namespace)
-	if err != nil {
-		return false, domaindelivery.ExecutionTask{}, err
-	}
-	created, err := bundle.Typed.BatchV1().Jobs(namespace).Create(ctx, &job, metav1.CreateOptions{})
+	created, err := s.clusters.CreateExecutionJob(ctx, clusterID, ExecutionJobRequest{
+		TaskID:          task.ID,
+		TaskKind:        task.TaskKind,
+		Namespace:       namespace,
+		Commands:        commands,
+		Runtime:         valueAsMap(task.Payload["runtime"]),
+		Workspace:       valueAsMap(task.Payload["workspace"]),
+		DefaultImage:    s.jobImage,
+		DefaultGitImage: s.jobGitImage,
+		TTLSeconds:      s.jobTTLSeconds,
+	})
 	if err != nil {
 		return false, domaindelivery.ExecutionTask{}, err
 	}
@@ -904,7 +895,7 @@ func (s *Service) dispatchK8sJobExecution(ctx context.Context, task domaindelive
 	task.UpdatedAt = now
 	task.Result = mergeMaps(task.Result, map[string]any{
 		"k8sJobClusterId": clusterID,
-		"k8sJobNamespace": namespace,
+		"k8sJobNamespace": created.Namespace,
 		"k8sJobName":      created.Name,
 		"k8sJobStatus":    "running",
 	})
@@ -916,10 +907,10 @@ func (s *Service) dispatchK8sJobExecution(ctx context.Context, task domaindelive
 		ID:              uuid.NewString(),
 		ExecutionTaskID: updated.ID,
 		LogLevel:        "info",
-		Message:         fmt.Sprintf("k8s_job_runner created Job %s/%s on cluster %s", namespace, created.Name, clusterID),
+		Message:         fmt.Sprintf("k8s_job_runner created Job %s/%s on cluster %s", created.Namespace, created.Name, clusterID),
 		Metadata: map[string]any{
 			"clusterId": clusterID,
-			"namespace": namespace,
+			"namespace": created.Namespace,
 			"jobName":   created.Name,
 		},
 		CreatedAt: now,
@@ -935,18 +926,14 @@ func (s *Service) reconcileK8sJobExecution(ctx context.Context, task domaindeliv
 	if clusterID == "" || namespace == "" || jobName == "" {
 		return false, nil
 	}
-	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	inspection, err := s.clusters.InspectExecutionJob(ctx, ExecutionJobRef{ClusterID: clusterID, Namespace: namespace, Name: jobName})
 	if err != nil {
-		return false, err
-	}
-	job, err := bundle.Typed.BatchV1().Jobs(namespace).Get(ctx, jobName, metav1.GetOptions{})
-	if err != nil {
-		if k8serrors.IsNotFound(err) {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return true, s.markTaskFailed(ctx, task, now, fmt.Sprintf("execution Job %s/%s was not found", namespace, jobName))
 		}
 		return true, err
 	}
-	if job.Status.Succeeded > 0 {
+	if inspection.State == ExecutionJobSucceeded {
 		task.Status = "completed"
 		task.LastHeartbeatAt = &now
 		task.FinishedAt = &now
@@ -974,15 +961,15 @@ func (s *Service) reconcileK8sJobExecution(ctx context.Context, task domaindeliv
 			Metadata:        map[string]any{"clusterId": clusterID, "namespace": namespace, "jobName": jobName},
 			CreatedAt:       now,
 		})
-		_ = s.captureK8sJobLogs(ctx, bundle, namespace, jobName, updated.ID, "info", now)
+		s.persistExecutionJobLogs(ctx, updated.ID, "info", inspection.Logs, now)
 		_ = s.syncBuildRecord(ctx, updated)
 		if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
 			return true, err
 		}
 		return true, nil
 	}
-	if job.Status.Failed > 0 {
-		_ = s.captureK8sJobLogs(ctx, bundle, namespace, jobName, task.ID, "error", now)
+	if inspection.State == ExecutionJobFailed {
+		s.persistExecutionJobLogs(ctx, task.ID, "error", inspection.Logs, now)
 		return true, s.markTaskFailed(ctx, task, now, fmt.Sprintf("k8s_job_runner Job %s/%s failed", namespace, jobName))
 	}
 	task.LastHeartbeatAt = &now
@@ -992,109 +979,6 @@ func (s *Service) reconcileK8sJobExecution(ctx context.Context, task domaindeliv
 	})
 	_, _ = s.repo.UpdateExecutionTask(ctx, task)
 	return true, nil
-}
-
-func (s *Service) buildExecutionJob(task domaindelivery.ExecutionTask, namespace string) (batchv1.Job, error) {
-	commands := valueAsStringSlice(task.Payload["commands"])
-	if len(commands) == 0 {
-		return batchv1.Job{}, fmt.Errorf("execution task %s does not contain commands", task.ID)
-	}
-	runtime := valueAsMap(task.Payload["runtime"])
-	workspace := valueAsMap(task.Payload["workspace"])
-	checkout := valueAsMap(workspace["checkout"])
-	jobName := buildExecutionJobName(task)
-	shell := firstNonEmpty(strings.TrimSpace(fmt.Sprint(runtime["shell"])), "/bin/sh")
-	script := "set -e\n" + strings.Join(commands, "\n")
-	workingDir := "/workspace"
-	if commandDir := strings.TrimSpace(fmt.Sprint(runtime["commandDir"])); commandDir != "" && commandDir != "." {
-		workingDir = "/workspace/" + trimRelativePath(commandDir)
-	}
-	container := corev1.Container{
-		Name:            "runner",
-		Image:           firstNonEmpty(strings.TrimSpace(fmt.Sprint(runtime["image"])), s.jobImage),
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{shell, "-lc", script},
-		WorkingDir:      workingDir,
-		VolumeMounts: []corev1.VolumeMount{
-			{Name: "workspace", MountPath: "/workspace"},
-		},
-	}
-	spec := corev1.PodSpec{
-		RestartPolicy: corev1.RestartPolicyNever,
-		Volumes: []corev1.Volume{
-			{Name: "workspace", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
-		},
-		Containers: []corev1.Container{container},
-	}
-	if repositoryURL := firstNonEmpty(strings.TrimSpace(fmt.Sprint(checkout["repositoryURL"])), strings.TrimSpace(fmt.Sprint(checkout["repositoryUrl"]))); repositoryURL != "" {
-		spec.InitContainers = []corev1.Container{
-			{
-				Name:            "checkout",
-				Image:           firstNonEmpty(strings.TrimSpace(fmt.Sprint(runtime["checkoutImage"])), s.jobGitImage),
-				ImagePullPolicy: corev1.PullIfNotPresent,
-				Command:         []string{"/bin/sh", "-lc", buildCheckoutScript(checkout, repositoryURL)},
-				VolumeMounts: []corev1.VolumeMount{
-					{Name: "workspace", MountPath: "/workspace"},
-				},
-			},
-		}
-	}
-	ttl := int32(s.jobTTLSeconds)
-	backoff := int32(0)
-	return batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
-			Namespace: namespace,
-			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "soha",
-				"soha.io/execution-task":       task.ID,
-				"soha.io/task-kind":            task.TaskKind,
-			},
-		},
-		Spec: batchv1.JobSpec{
-			BackoffLimit:            &backoff,
-			TTLSecondsAfterFinished: &ttl,
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
-						"app.kubernetes.io/managed-by": "soha",
-						"soha.io/execution-task":       task.ID,
-					},
-				},
-				Spec: spec,
-			},
-		},
-	}, nil
-}
-
-func buildExecutionJobName(task domaindelivery.ExecutionTask) string {
-	base := strings.NewReplacer(":", "-", "_", "-", "/", "-").Replace(strings.TrimSpace(task.ID))
-	if len(base) > 38 {
-		base = base[len(base)-38:]
-	}
-	return fmt.Sprintf("soha-exec-%s-%d", base, time.Now().UTC().Unix()%100000)
-}
-
-func buildCheckoutScript(checkout map[string]any, repositoryURL string) string {
-	refType := firstNonEmpty(strings.TrimSpace(fmt.Sprint(checkout["refType"])), "branch")
-	refName := strings.TrimSpace(fmt.Sprint(checkout["refName"]))
-	defaultBranch := strings.TrimSpace(fmt.Sprint(checkout["defaultBranch"]))
-	if refName == "" && refType == "branch" {
-		refName = defaultBranch
-	}
-	lines := []string{"set -e", "git clone " + shellQuote(repositoryURL) + " /workspace", "cd /workspace"}
-	if refName == "" {
-		return strings.Join(lines, "\n")
-	}
-	switch refType {
-	case "tag":
-		lines = append(lines, "git checkout tags/"+shellQuote(refName))
-	case "commit":
-		lines = append(lines, "git checkout "+shellQuote(refName))
-	default:
-		lines = append(lines, "git checkout "+shellQuote(refName))
-	}
-	return strings.Join(lines, "\n")
 }
 
 func (s *Service) resolveExecutionJobClusterID(task domaindelivery.ExecutionTask) string {
@@ -1120,21 +1004,6 @@ func executionJobRef(task domaindelivery.ExecutionTask) (string, string, string)
 	return strings.TrimSpace(fmt.Sprint(task.Result["k8sJobClusterId"])),
 		strings.TrimSpace(fmt.Sprint(task.Result["k8sJobNamespace"])),
 		strings.TrimSpace(fmt.Sprint(task.Result["k8sJobName"]))
-}
-
-func ensureNamespaceExists(ctx context.Context, bundle *k8sinfra.Bundle, namespace string) error {
-	if bundle == nil {
-		return fmt.Errorf("kubernetes bundle is not available")
-	}
-	if _, err := bundle.Typed.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{}); err == nil {
-		return nil
-	} else if !k8serrors.IsNotFound(err) {
-		return err
-	}
-	_, err := bundle.Typed.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: namespace},
-	}, metav1.CreateOptions{})
-	return err
 }
 
 func (s *Service) markTaskFailed(ctx context.Context, task domaindelivery.ExecutionTask, now time.Time, message string) error {
@@ -1183,14 +1052,7 @@ func (s *Service) stopK8sJobExecution(ctx context.Context, task domaindelivery.E
 	if clusterID == "" || namespace == "" || jobName == "" {
 		return nil
 	}
-	bundle, err := s.clusters.Bundle(ctx, clusterID)
-	if err != nil {
-		return err
-	}
-	propagation := metav1.DeletePropagationBackground
-	if err := bundle.Typed.BatchV1().Jobs(namespace).Delete(ctx, jobName, metav1.DeleteOptions{
-		PropagationPolicy: &propagation,
-	}); err != nil && !k8serrors.IsNotFound(err) {
+	if err := s.clusters.DeleteExecutionJob(ctx, ExecutionJobRef{ClusterID: clusterID, Namespace: namespace, Name: jobName}); err != nil {
 		return err
 	}
 	_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
@@ -1209,66 +1071,20 @@ func (s *Service) stopK8sJobExecution(ctx context.Context, task domaindelivery.E
 	return nil
 }
 
-func (s *Service) captureK8sJobLogs(ctx context.Context, bundle *k8sinfra.Bundle, namespace, jobName, taskID, level string, now time.Time) error {
-	if bundle == nil || strings.TrimSpace(namespace) == "" || strings.TrimSpace(jobName) == "" || strings.TrimSpace(taskID) == "" {
-		return nil
+func (s *Service) persistExecutionJobLogs(ctx context.Context, taskID, level string, logs []ExecutionJobLog, now time.Time) {
+	for _, item := range logs {
+		_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
+			ID:              uuid.NewString(),
+			ExecutionTaskID: taskID,
+			LogLevel:        firstNonEmpty(strings.TrimSpace(level), "info"),
+			Message:         item.Message,
+			Metadata: map[string]any{
+				"podName":       item.PodName,
+				"containerName": item.ContainerName,
+			},
+			CreatedAt: now,
+		})
 	}
-	pods, err := bundle.Typed.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
-		LabelSelector: "job-name=" + jobName,
-	})
-	if err != nil {
-		return err
-	}
-	for _, pod := range pods.Items {
-		for _, container := range pod.Spec.Containers {
-			request := bundle.Typed.CoreV1().Pods(namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-				Container: container.Name,
-				TailLines: int64ptr(200),
-			})
-			raw, readErr := request.DoRaw(ctx)
-			if readErr != nil {
-				continue
-			}
-			for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-				if strings.TrimSpace(line) == "" {
-					continue
-				}
-				_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
-					ID:              uuid.NewString(),
-					ExecutionTaskID: taskID,
-					LogLevel:        firstNonEmpty(strings.TrimSpace(level), "info"),
-					Message:         line,
-					Metadata: map[string]any{
-						"podName":       pod.Name,
-						"containerName": container.Name,
-					},
-					CreatedAt: now,
-				})
-			}
-		}
-	}
-	return nil
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
-func trimRelativePath(value string) string {
-	value = strings.TrimSpace(value)
-	value = strings.TrimPrefix(value, "./")
-	value = strings.TrimPrefix(value, "/")
-	for strings.HasPrefix(value, "../") {
-		value = strings.TrimPrefix(value, "../")
-	}
-	if value == "." {
-		return ""
-	}
-	return value
-}
-
-func int64ptr(value int64) *int64 {
-	return &value
 }
 
 func valueAsStringSlice(raw any) []string {

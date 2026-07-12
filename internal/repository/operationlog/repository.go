@@ -133,7 +133,7 @@ func (r *Repository) List(ctx context.Context, filter domainoperation.Filter) ([
 	if err != nil {
 		return nil, fmt.Errorf("query operation logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainoperation.Entry, 0, filter.Limit)
 	for rows.Next() {
@@ -174,45 +174,21 @@ func (r *Repository) Summary(ctx context.Context, filter domainoperation.Filter,
 	`)
 	args := []any{
 		cutoff,
-		filter.ActorID,
-		filter.ActorID,
-		filter.OperationType,
-		filter.OperationType,
-		filter.ClusterID,
-		filter.ClusterID,
-		filter.ClusterID,
-		filter.ClusterID,
-		filter.Namespace,
-		filter.Namespace,
-		filter.ResourceKind,
-		filter.ResourceKind,
-		filter.ResourceKind,
-		filter.ResourceName,
-		filter.ResourceName,
-		filter.ResourceName,
-		filter.Result,
-		filter.Result,
-		filter.RequestID,
-		filter.RequestID,
-		filter.RequestPath,
-		filter.RequestPath,
-		filter.RequestMethod,
-		filter.RequestMethod,
-		filter.SourceIP,
-		filter.SourceIP,
-		filter.ApprovalRequestID,
-		filter.ApprovalRequestID,
-		filter.ApprovalRequestID,
-		filter.AgentRunID,
-		filter.AgentRunID,
-		filter.AgentRunID,
-		filter.AgentRunID,
-		filter.RootCauseRunID,
-		filter.RootCauseRunID,
-		filter.RootCauseRunID,
-		filter.MetadataKey,
-		filter.MetadataKey,
-		filter.MetadataValue,
+		filter.ActorID, filter.ActorID,
+		filter.OperationType, filter.OperationType,
+		filter.ClusterID, filter.ClusterID, filter.ClusterID, filter.ClusterID,
+		filter.Namespace, filter.Namespace,
+		filter.ResourceKind, filter.ResourceKind, filter.ResourceKind,
+		filter.ResourceName, filter.ResourceName, filter.ResourceName,
+		filter.Result, filter.Result,
+		filter.RequestID, filter.RequestID,
+		filter.RequestPath, filter.RequestPath,
+		filter.RequestMethod, filter.RequestMethod,
+		filter.SourceIP, filter.SourceIP,
+		filter.ApprovalRequestID, filter.ApprovalRequestID, filter.ApprovalRequestID,
+		filter.AgentRunID, filter.AgentRunID, filter.AgentRunID, filter.AgentRunID,
+		filter.RootCauseRunID, filter.RootCauseRunID, filter.RootCauseRunID,
+		filter.MetadataKey, filter.MetadataKey, filter.MetadataValue,
 	}
 	if filter.From != nil {
 		query += "\n\t\t  AND created_at >= ?"

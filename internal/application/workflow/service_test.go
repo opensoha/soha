@@ -23,6 +23,15 @@ import (
 	apprepo "github.com/opensoha/soha/internal/repository/application"
 )
 
+func mustWorkflowValue[T any](t *testing.T, value any) T {
+	t.Helper()
+	result, ok := value.(T)
+	if !ok {
+		t.Fatalf("value has type %T, want %T", value, *new(T))
+	}
+	return result
+}
+
 type stubWorkflowRepository struct {
 	mu          sync.Mutex
 	items       []domainworkflow.Run
@@ -760,11 +769,14 @@ func TestTriggerExecutesDeliveryDAGNativeMetadata(t *testing.T) {
 		t.Fatalf("Trigger() error = %v", err)
 	}
 	finalRun := waitForWorkflowStatus(t, service, run.ID, "completed")
-	artifacts := finalRun.Metadata["artifacts"].(map[string]any)
-	imageArtifact, ok := artifacts["image"].(map[string]any)
-	if !ok {
-		t.Fatalf("artifacts = %#v, want image artifact", artifacts)
-	}
+	assertNativeWorkflowArtifacts(t, finalRun, artifactStore, releases)
+	assertNativeWorkflowEvents(t, finalRun)
+}
+
+func assertNativeWorkflowArtifacts(t *testing.T, finalRun domainworkflow.Run, artifactStore *recordingWorkflowArtifactStore, releases *recordingWorkflowReleaseExecutor) {
+	t.Helper()
+	artifacts := mustWorkflowValue[map[string]any](t, finalRun.Metadata["artifacts"])
+	imageArtifact := mustWorkflowValue[map[string]any](t, artifacts["image"])
 	if imageArtifact["id"] == nil || imageArtifact["workflowRunId"] == nil || imageArtifact["workflowNodeId"] == nil {
 		t.Fatalf("image artifact metadata = %#v, want persisted artifact reference", imageArtifact)
 	}
@@ -779,29 +791,33 @@ func TestTriggerExecutesDeliveryDAGNativeMetadata(t *testing.T) {
 	if len(releaseInputs) != 1 || releaseInputs[0].Image != "repo/demo:latest" {
 		t.Fatalf("release inputs = %+v, want image ref from artifact state", releaseInputs)
 	}
-	nodeOutputs := finalRun.Metadata["nodeOutputs"].(map[string]any)
-	buildOutput := nodeOutputs["build"].(map[string]any)
+	nodeOutputs := mustWorkflowValue[map[string]any](t, finalRun.Metadata["nodeOutputs"])
+	buildOutput := mustWorkflowValue[map[string]any](t, nodeOutputs["build"])
 	if buildOutput["inputs"] == nil || buildOutput["selectors"] == nil || buildOutput["artifacts"] == nil {
 		t.Fatalf("build node metadata = %#v, want inputs/selectors/artifacts", buildOutput)
 	}
-	buildArtifacts := buildOutput["artifacts"].(map[string]any)
-	buildImageArtifact := buildArtifacts["image"].(map[string]any)
+	buildArtifacts := mustWorkflowValue[map[string]any](t, buildOutput["artifacts"])
+	buildImageArtifact := mustWorkflowValue[map[string]any](t, buildArtifacts["image"])
 	if buildImageArtifact["id"] == nil {
 		t.Fatalf("build node artifacts = %#v, want persisted image reference", buildArtifacts)
 	}
 	if _, ok := buildImageArtifact["value"]; ok {
 		t.Fatalf("build node image artifact = %#v, want no raw value", buildImageArtifact)
 	}
-	deployOutput := nodeOutputs["deploy"].(map[string]any)
-	deployInputs := deployOutput["inputs"].(map[string]any)
-	deployImageInput := deployInputs["build.image"].(map[string]any)
+	deployOutput := mustWorkflowValue[map[string]any](t, nodeOutputs["deploy"])
+	deployInputs := mustWorkflowValue[map[string]any](t, deployOutput["inputs"])
+	deployImageInput := mustWorkflowValue[map[string]any](t, deployInputs["build.image"])
 	if deployImageInput["ref"] != "repo/demo:latest" {
 		t.Fatalf("deploy inputs = %#v, want build.image ref", deployInputs)
 	}
 	if _, ok := deployImageInput["value"]; ok {
 		t.Fatalf("deploy image input = %#v, want no raw value", deployImageInput)
 	}
-	events := finalRun.Metadata["events"].([]map[string]any)
+}
+
+func assertNativeWorkflowEvents(t *testing.T, finalRun domainworkflow.Run) {
+	t.Helper()
+	events := mustWorkflowValue[[]map[string]any](t, finalRun.Metadata["events"])
 	if len(events) == 0 {
 		t.Fatalf("events empty, metadata = %#v", finalRun.Metadata)
 	}
@@ -815,16 +831,16 @@ func TestTriggerExecutesDeliveryDAGNativeMetadata(t *testing.T) {
 		case "node_inputs_resolved":
 			if event["nodeId"] == "deploy" {
 				hasInputEvent = true
-				eventInputs := event["inputs"].(map[string]any)
-				eventImageInput := eventInputs["build.image"].(map[string]any)
+				eventInputs := mustWorkflowValue[map[string]any](t, event["inputs"])
+				eventImageInput := mustWorkflowValue[map[string]any](t, eventInputs["build.image"])
 				if _, ok := eventImageInput["value"]; ok {
 					t.Fatalf("input event = %#v, want no raw value", event)
 				}
 			}
 		case "artifact_outputs_recorded":
 			hasArtifactEvent = true
-			eventArtifacts := event["artifacts"].(map[string]any)
-			eventImageArtifact := eventArtifacts["image"].(map[string]any)
+			eventArtifacts := mustWorkflowValue[map[string]any](t, event["artifacts"])
+			eventImageArtifact := mustWorkflowValue[map[string]any](t, eventArtifacts["image"])
 			if _, ok := eventImageArtifact["value"]; ok {
 				t.Fatalf("artifact event = %#v, want no raw value", event)
 			}
@@ -836,59 +852,7 @@ func TestTriggerExecutesDeliveryDAGNativeMetadata(t *testing.T) {
 }
 
 func TestTriggerDeliveryDAGExternalVerifyCreatesExecutionTask(t *testing.T) {
-	repo := &stubWorkflowRepository{}
-	taskStore := &recordingWorkflowArtifactStore{}
-	template := &domaincatalog.WorkflowTemplate{
-		ID:   "wf-delivery",
-		Key:  "delivery-dag",
-		Name: "delivery-dag",
-		Definition: map[string]any{
-			"mode": "delivery_dag",
-			"nodes": []map[string]any{
-				{
-					"id":                  "external-ui-test",
-					"name":                "External UI Test",
-					"type":                "verify",
-					"executorKind":        "mcp",
-					"targetKind":          "ai_test",
-					"capabilityRef":       "testing.ui.run",
-					"providerRef":         "external-test-platform",
-					"serviceSelector":     map[string]any{"matchLabels": map[string]any{"service": "checkout"}},
-					"environmentSelector": map[string]any{"environmentKey": "staging"},
-					"inputMapping": map[string]any{
-						"baseUrl":         "${environment.url}",
-						"releaseBundleId": "${releaseBundle.id}",
-					},
-					"artifactKinds": []any{"test_report", "screenshot", "video", "junit"},
-				},
-			},
-		},
-	}
-	binding := domaincatalog.ApplicationEnvironment{
-		ID:                 "binding-1",
-		ApplicationID:      "app-1",
-		EnvironmentID:      "env-staging",
-		EnvironmentKey:     "staging",
-		WorkflowTemplateID: "wf-delivery",
-		WorkflowTemplate:   template,
-		Targets: []domaincatalog.ReleaseTarget{
-			{ID: "target-1", ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true},
-		},
-	}
-	service := &Service{
-		repo:        repo,
-		apps:        &stubWorkflowApps{},
-		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
-		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
-	}
-	service.SetArtifactStore(taskStore)
-	service.SetRuntimeOptions(1, 8, 1)
-	runnerCtx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	service.Start(runnerCtx)
-	defer func() {
-		_ = service.Shutdown(context.Background())
-	}()
+	service, repo, taskStore := newExternalVerifyWorkflowTest(t)
 
 	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
 		ApplicationID:            "app-1",
@@ -914,9 +878,9 @@ func TestTriggerDeliveryDAGExternalVerifyCreatesExecutionTask(t *testing.T) {
 	if task.ReleaseBundleID != "bundle-1" || task.Payload["capabilityRef"] != "testing.ui.run" || task.Payload["providerRef"] != "external-test-platform" {
 		t.Fatalf("task payload = %#v, releaseBundleID=%q", task.Payload, task.ReleaseBundleID)
 	}
-	nodeOutputs := waitingRun.Metadata["nodeOutputs"].(map[string]any)
-	verifyOutput := nodeOutputs["external-ui-test"].(map[string]any)
-	outputs := verifyOutput["outputs"].(map[string]any)
+	nodeOutputs := mustWorkflowValue[map[string]any](t, waitingRun.Metadata["nodeOutputs"])
+	verifyOutput := mustWorkflowValue[map[string]any](t, nodeOutputs["external-ui-test"])
+	outputs := mustWorkflowValue[map[string]any](t, verifyOutput["outputs"])
 	if outputs["executionTaskId"] != task.ID {
 		t.Fatalf("node outputs = %#v, want execution task id %s", outputs, task.ID)
 	}
@@ -935,15 +899,42 @@ func TestTriggerDeliveryDAGExternalVerifyCreatesExecutionTask(t *testing.T) {
 	if finalRun.Status != "completed" {
 		t.Fatalf("workflow status = %q, want completed", finalRun.Status)
 	}
-	finalNodeOutputs := finalRun.Metadata["nodeOutputs"].(map[string]any)
-	finalVerifyOutput := finalNodeOutputs["external-ui-test"].(map[string]any)
-	finalOutputs := finalVerifyOutput["outputs"].(map[string]any)
+	finalNodeOutputs := mustWorkflowValue[map[string]any](t, finalRun.Metadata["nodeOutputs"])
+	finalVerifyOutput := mustWorkflowValue[map[string]any](t, finalNodeOutputs["external-ui-test"])
+	finalOutputs := mustWorkflowValue[map[string]any](t, finalVerifyOutput["outputs"])
 	if finalOutputs["executionTaskStatus"] != "completed" {
 		t.Fatalf("final node outputs = %#v, want completed execution task status", finalOutputs)
 	}
 	if _, ok := finalOutputs["callbackToken"]; ok {
 		t.Fatalf("final node outputs leaked callback token: %#v", finalOutputs)
 	}
+}
+
+func newExternalVerifyWorkflowTest(t *testing.T) (*Service, *stubWorkflowRepository, *recordingWorkflowArtifactStore) {
+	t.Helper()
+	repo := &stubWorkflowRepository{}
+	taskStore := &recordingWorkflowArtifactStore{}
+	template := &domaincatalog.WorkflowTemplate{ID: "wf-delivery", Key: "delivery-dag", Name: "delivery-dag", Definition: map[string]any{
+		"mode": "delivery_dag",
+		"nodes": []map[string]any{{
+			"id": "external-ui-test", "name": "External UI Test", "type": "verify", "executorKind": "mcp", "targetKind": "ai_test",
+			"capabilityRef": "testing.ui.run", "providerRef": "external-test-platform",
+			"serviceSelector": map[string]any{"matchLabels": map[string]any{"service": "checkout"}}, "environmentSelector": map[string]any{"environmentKey": "staging"},
+			"inputMapping":  map[string]any{"baseUrl": "${environment.url}", "releaseBundleId": "${releaseBundle.id}"},
+			"artifactKinds": []any{"test_report", "screenshot", "video", "junit"},
+		}},
+	}}
+	binding := domaincatalog.ApplicationEnvironment{
+		ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-staging", EnvironmentKey: "staging", WorkflowTemplateID: "wf-delivery", WorkflowTemplate: template,
+		Targets: []domaincatalog.ReleaseTarget{{ID: "target-1", ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true}},
+	}
+	service := &Service{repo: repo, apps: &stubWorkflowApps{}, catalog: &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}}, permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}})}
+	service.SetArtifactStore(taskStore)
+	service.SetRuntimeOptions(1, 8, 1)
+	runnerCtx, cancel := context.WithCancel(context.Background())
+	service.Start(runnerCtx)
+	t.Cleanup(func() { cancel(); _ = service.Shutdown(context.Background()) })
+	return service, repo, taskStore
 }
 
 func TestExternalExecutionFailureResumeHonorsStopFailurePolicy(t *testing.T) {
@@ -1043,7 +1034,7 @@ func TestExternalExecutionFailureResumeHonorsStopFailurePolicy(t *testing.T) {
 	if releaseCount.Load() != 0 {
 		t.Fatalf("release count = %d, want 0", releaseCount.Load())
 	}
-	nodeStatus := finalRun.Metadata["nodeStatus"].(map[string]string)
+	nodeStatus := mustWorkflowValue[map[string]string](t, finalRun.Metadata["nodeStatus"])
 	if nodeStatus["rollback"] != "completed" || nodeStatus["release"] != "skipped" {
 		t.Fatalf("node status = %#v, want rollback completed and release skipped", nodeStatus)
 	}
@@ -1168,8 +1159,9 @@ func TestTriggerDeliveryDAGRunConditionSkipsNode(t *testing.T) {
 	if finalRun.NodeRuns[0].Status != "skipped" || finalRun.NodeRuns[1].Status != "completed" {
 		t.Fatalf("node runs = %+v, want build skipped and notify completed", finalRun.NodeRuns)
 	}
-	nodeOutputs := finalRun.Metadata["nodeOutputs"].(map[string]any)
-	condition := nodeOutputs["build"].(map[string]any)["runCondition"].(map[string]any)
+	nodeOutputs := mustWorkflowValue[map[string]any](t, finalRun.Metadata["nodeOutputs"])
+	buildOutput := mustWorkflowValue[map[string]any](t, nodeOutputs["build"])
+	condition := mustWorkflowValue[map[string]any](t, buildOutput["runCondition"])
 	if condition["matched"] != false {
 		t.Fatalf("runCondition metadata = %#v, want matched false", condition)
 	}
@@ -1241,7 +1233,7 @@ func TestTriggerDeliveryDAGFailurePolicyAndFailureBranch(t *testing.T) {
 	if statuses["build"] != "failed" || statuses["deploy"] != "skipped" || statuses["rollback"] != "completed" || statuses["notify"] != "completed" {
 		t.Fatalf("node statuses = %#v, want failed build, skipped deploy, completed rollback/notify", statuses)
 	}
-	policies := finalRun.Metadata["failurePolicies"].(map[string]any)
+	policies := mustWorkflowValue[map[string]any](t, finalRun.Metadata["failurePolicies"])
 	if policies["build"] == nil {
 		t.Fatalf("failurePolicies = %#v, want build policy", policies)
 	}
@@ -1315,13 +1307,14 @@ func TestTriggerDeliveryDAGReleaseFanOutTargets(t *testing.T) {
 	if strings.Join(namespaces, ",") != "blue-a,blue-b" {
 		t.Fatalf("release namespaces = %#v, want blue-a and blue-b", namespaces)
 	}
-	nodeOutputs := finalRun.Metadata["nodeOutputs"].(map[string]any)
-	deployOutput := nodeOutputs["deploy"].(map[string]any)
-	fanOut := deployOutput["outputs"].(map[string]any)["fanOut"].(map[string]any)
+	nodeOutputs := mustWorkflowValue[map[string]any](t, finalRun.Metadata["nodeOutputs"])
+	deployOutput := mustWorkflowValue[map[string]any](t, nodeOutputs["deploy"])
+	outputs := mustWorkflowValue[map[string]any](t, deployOutput["outputs"])
+	fanOut := mustWorkflowValue[map[string]any](t, outputs["fanOut"])
 	if fanOut["targetCount"] != 2 || fanOut["strategy"] != "batch" || fanOut["failurePolicy"] != "continue" {
 		t.Fatalf("fanOut output = %#v, want batch fan-out with two targets and continue policy", fanOut)
 	}
-	events := finalRun.Metadata["events"].([]map[string]any)
+	events := mustWorkflowValue[[]map[string]any](t, finalRun.Metadata["events"])
 	hasFanOutEvent := false
 	for _, event := range events {
 		if event["type"] == "node_fan_out_completed" {
@@ -1470,42 +1463,8 @@ func TestTriggerValidationExecutesOnlyValidationNodes(t *testing.T) {
 }
 
 func TestTriggerValidationRequiresValidationNodes(t *testing.T) {
-	repo := &stubWorkflowRepository{}
-	template := &domaincatalog.WorkflowTemplate{
-		ID:   "wf-build",
-		Key:  "release-dag",
-		Name: "Release DAG",
-		Definition: map[string]any{
-			"mode": "release_dag",
-			"nodes": []map[string]any{
-				{"id": "build", "name": "Build", "type": "build"},
-				{"id": "deploy", "name": "Deploy", "type": "deploy_update_image"},
-			},
-		},
-	}
-	binding := domaincatalog.ApplicationEnvironment{
-		ID:                 "binding-1",
-		ApplicationID:      "app-1",
-		WorkflowTemplateID: "wf-build",
-		WorkflowTemplate:   template,
-		Targets: []domaincatalog.ReleaseTarget{
-			{ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true},
-		},
-	}
-	service := &Service{
-		repo:        repo,
-		apps:        &stubWorkflowApps{},
-		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
-		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
-	}
-
-	_, err := service.TriggerValidation(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
-		ApplicationID:            "app-1",
-		ApplicationEnvironmentID: "binding-1",
-		ClusterID:                "cluster-1",
-		Namespace:                "default",
-		DeploymentName:           "demo",
-	})
+	service, repo, input := workflowWithoutActionNodes()
+	_, err := service.TriggerValidation(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, input)
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("TriggerValidation() error = %v, want invalid argument", err)
 	}
@@ -1591,46 +1550,30 @@ func TestTriggerRollbackExecutesOnlyRollbackNodes(t *testing.T) {
 }
 
 func TestTriggerRollbackRequiresRollbackNodes(t *testing.T) {
-	repo := &stubWorkflowRepository{}
-	template := &domaincatalog.WorkflowTemplate{
-		ID:   "wf-build",
-		Key:  "release-dag",
-		Name: "Release DAG",
-		Definition: map[string]any{
-			"mode": "release_dag",
-			"nodes": []map[string]any{
-				{"id": "build", "name": "Build", "type": "build"},
-				{"id": "deploy", "name": "Deploy", "type": "deploy_update_image"},
-			},
-		},
-	}
-	binding := domaincatalog.ApplicationEnvironment{
-		ID:                 "binding-1",
-		ApplicationID:      "app-1",
-		WorkflowTemplateID: "wf-build",
-		WorkflowTemplate:   template,
-		Targets: []domaincatalog.ReleaseTarget{
-			{ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true},
-		},
-	}
-	service := &Service{
-		repo:        repo,
-		apps:        &stubWorkflowApps{},
-		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
-		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
-	}
-
-	_, err := service.TriggerRollback(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
-		ApplicationID:            "app-1",
-		ApplicationEnvironmentID: "binding-1",
-		ClusterID:                "cluster-1",
-		Namespace:                "default",
-		DeploymentName:           "demo",
-	})
+	service, repo, input := workflowWithoutActionNodes()
+	_, err := service.TriggerRollback(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, input)
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("TriggerRollback() error = %v, want invalid argument", err)
 	}
 	if got := repo.createCallCount(); got != 0 {
 		t.Fatalf("Create() called %d times, want 0", got)
 	}
+}
+
+func workflowWithoutActionNodes() (*Service, *stubWorkflowRepository, domainworkflow.Input) {
+	repo := &stubWorkflowRepository{}
+	template := &domaincatalog.WorkflowTemplate{ID: "wf-build", Key: "release-dag", Name: "Release DAG", Definition: map[string]any{
+		"mode":  "release_dag",
+		"nodes": []map[string]any{{"id": "build", "name": "Build", "type": "build"}, {"id": "deploy", "name": "Deploy", "type": "deploy_update_image"}},
+	}}
+	binding := domaincatalog.ApplicationEnvironment{
+		ID: "binding-1", ApplicationID: "app-1", WorkflowTemplateID: "wf-build", WorkflowTemplate: template,
+		Targets: []domaincatalog.ReleaseTarget{{ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true}},
+	}
+	service := &Service{
+		repo: repo, apps: &stubWorkflowApps{}, catalog: &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
+	}
+	input := domainworkflow.Input{ApplicationID: "app-1", ApplicationEnvironmentID: "binding-1", ClusterID: "cluster-1", Namespace: "default", DeploymentName: "demo"}
+	return service, repo, input
 }

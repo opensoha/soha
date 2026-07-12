@@ -19,7 +19,7 @@ func TestRepositoryUpsertInstalledPersistsManifestSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sql mock: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		Conn:                 sqlDB,
@@ -29,29 +29,7 @@ func TestRepositoryUpsertInstalledPersistsManifestSnapshot(t *testing.T) {
 		t.Fatalf("open gorm: %v", err)
 	}
 
-	now := time.Date(2026, 6, 8, 10, 0, 0, 0, time.UTC)
-	item := domainplugin.InstalledPlugin{
-		ID:              "opensoha.k8s-sre-pack",
-		Name:            "K8s SRE Pack",
-		Version:         "0.1.0",
-		Publisher:       "opensoha",
-		Type:            "skill-pack",
-		Status:          "enabled",
-		Source:          "marketplace:opensoha/k8s-sre-pack",
-		Manifest:        domainplugin.PluginManifest{ID: "opensoha.k8s-sre-pack", Name: "K8s SRE Pack", Version: "0.1.0", Publisher: "opensoha", Type: "skill-pack"},
-		ChecksumStatus:  "verified",
-		SignatureStatus: "catalog",
-		RequestedPermissions: &domainplugin.PluginPermissionRequest{
-			Required: []string{"ai.gateway.view", "ai.gateway.invoke"},
-			Domain:   []string{"workspace.resource.view"},
-		},
-		ConfiguredSecretRefs: map[string]string{"kubeconfig": "secret://k8s/default"},
-		InstalledBy:          "admin",
-		InstalledAt:          now,
-		UpdatedAt:            now,
-		EnabledAt:            &now,
-		Metadata:             map[string]any{"permissionModel": "requested-only"},
-	}
+	item := installedPluginFixture(time.Date(2026, 6, 8, 10, 0, 0, 0, time.UTC))
 
 	mock.ExpectExec(`(?s)INSERT INTO installed_plugins .*ON CONFLICT \(id\) DO UPDATE SET`).
 		WithArgs(
@@ -136,6 +114,31 @@ func TestRepositoryUpsertInstalledPersistsManifestSnapshot(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func installedPluginFixture(now time.Time) domainplugin.InstalledPlugin {
+	return domainplugin.InstalledPlugin{
+		ID:              "opensoha.k8s-sre-pack",
+		Name:            "K8s SRE Pack",
+		Version:         "0.1.0",
+		Publisher:       "opensoha",
+		Type:            "skill-pack",
+		Status:          "enabled",
+		Source:          "marketplace:opensoha/k8s-sre-pack",
+		Manifest:        domainplugin.PluginManifest{ID: "opensoha.k8s-sre-pack", Name: "K8s SRE Pack", Version: "0.1.0", Publisher: "opensoha", Type: "skill-pack"},
+		ChecksumStatus:  "verified",
+		SignatureStatus: "catalog",
+		RequestedPermissions: &domainplugin.PluginPermissionRequest{
+			Required: []string{"ai.gateway.view", "ai.gateway.invoke"},
+			Domain:   []string{"workspace.resource.view"},
+		},
+		ConfiguredSecretRefs: map[string]string{"kubeconfig": "secret://k8s/default"},
+		InstalledBy:          "admin",
+		InstalledAt:          now,
+		UpdatedAt:            now,
+		EnabledAt:            &now,
+		Metadata:             map[string]any{"permissionModel": "requested-only"},
 	}
 }
 

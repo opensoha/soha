@@ -33,7 +33,7 @@ func (r *Repository) List(ctx context.Context, limit int) ([]domainregistry.Conn
 	if err != nil {
 		return nil, fmt.Errorf("query registry connections: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainregistry.Connection, 0, limit)
 	for rows.Next() {
 		item, err := scanConnection(rows)

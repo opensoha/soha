@@ -21,78 +21,15 @@ import (
 func (s *Service) holdToolInvocation(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, tool domainaigateway.ToolCapability, decision gatewayRiskDecision, redactionSummary gatewayRedactionAuditSummary) (domainaigateway.ToolInvocationResult, error) {
 	trackingID := uuid.NewString()
 	result := decision.result()
-	relatedIDs := map[string]any{
-		"gatewayDecisionId": trackingID,
-		"strategy":          decision.Strategy,
-	}
-	if decision.PolicyID != "" {
-		relatedIDs["policyId"] = decision.PolicyID
-	}
-	if decision.ApprovalPolicyRef != "" {
-		relatedIDs["approvalPolicyRef"] = decision.ApprovalPolicyRef
-	}
-	switch decision.Strategy {
-	case gatewayRiskRequireApproval:
-		relatedIDs["approvalRequestId"] = trackingID
-	case gatewayRiskRequireHumanConfirm:
-		relatedIDs["confirmationRequestId"] = trackingID
-	case gatewayRiskDryRunOnly:
-		relatedIDs["dryRunId"] = trackingID
-	}
+	relatedIDs := gatewayHoldRelatedIDs(trackingID, decision)
+
 	summary := gatewayHoldSummary(tool, decision)
 	var expiresAt *time.Time
 	if decision.requiresApproval() {
-		repo := s.approvalRepository()
-		if repo == nil {
-			err := fmt.Errorf("%w: AI Gateway approval repository is not configured", apperrors.ErrInvalidArgument)
-			_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "failure", err.Error(), relatedIDs, redactionSummary)
-			return domainaigateway.ToolInvocationResult{}, err
-		}
-		now := time.Now().UTC()
-		expiresAt = gatewayApprovalExpiresAt(decision, now)
-		actorType, actorID := gatewaySubject(principal)
-		meta := requestctx.FromContext(ctx)
-		approvalRouting := gatewayApprovalRoutingFromDecision(decision)
-		approvalRouting = s.resolveGatewayApprovalOnCall(ctx, input, approvalRouting)
-		if len(approvalRouting) > 0 {
-			relatedIDs["approvalRouting"] = approvalRouting
-		}
-		request := domainaigateway.ApprovalRequest{
-			ID:                trackingID,
-			Status:            "pending",
-			Strategy:          string(decision.Strategy),
-			PolicyID:          decision.PolicyID,
-			ApprovalPolicyRef: decision.ApprovalPolicyRef,
-			ActorType:         actorType,
-			ActorID:           actorID,
-			ActorName:         principal.UserName,
-			ActorRoles:        normalizeStringSlice(principal.Roles),
-			ActorTeams:        normalizeStringSlice(principal.Teams),
-			AIClientID:        strings.TrimSpace(input.AIClientID),
-			AIClientName:      strings.TrimSpace(input.AIClientName),
-			SkillID:           strings.TrimSpace(input.SkillID),
-			ToolName:          tool.Name,
-			RiskLevel:         tool.RiskLevel,
-			RequiresApproval:  true,
-			ResourceScope:     gatewayAuditScope(input.Input, nil),
-			ToolInput:         sanitizeGatewayMap(input.Input),
-			RelatedIDs:        relatedIDs,
-			Output:            map[string]any{},
-			Summary:           summary,
-			RequestID:         firstNonEmpty(input.RequestID, meta.RequestID),
-			SourceIP:          meta.SourceIP,
-			ExpiresAt:         expiresAt,
-			CreatedAt:         now,
-			UpdatedAt:         now,
-		}
-		created, err := repo.CreateApprovalRequest(ctx, request)
+		var err error
+		relatedIDs, expiresAt, err = s.createToolApprovalRequest(ctx, principal, input, tool, decision, trackingID, summary, relatedIDs, redactionSummary)
 		if err != nil {
-			_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "failure", err.Error(), relatedIDs, redactionSummary)
 			return domainaigateway.ToolInvocationResult{}, err
-		}
-		relatedIDs = created.RelatedIDs
-		if relatedIDs == nil {
-			relatedIDs = map[string]any{}
 		}
 	}
 	_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, result, summary, relatedIDs, redactionSummary)
@@ -124,6 +61,80 @@ func (s *Service) holdToolInvocation(ctx context.Context, principal domainidenti
 		RelatedIDs: relatedIDs,
 		Audit:      audit,
 	}, nil
+}
+
+func gatewayHoldRelatedIDs(trackingID string, decision gatewayRiskDecision) map[string]any {
+	relatedIDs := map[string]any{"gatewayDecisionId": trackingID, "strategy": decision.Strategy}
+	if decision.PolicyID != "" {
+		relatedIDs["policyId"] = decision.PolicyID
+	}
+	if decision.ApprovalPolicyRef != "" {
+		relatedIDs["approvalPolicyRef"] = decision.ApprovalPolicyRef
+	}
+	switch decision.Strategy {
+	case gatewayRiskRequireApproval:
+		relatedIDs["approvalRequestId"] = trackingID
+	case gatewayRiskRequireHumanConfirm:
+		relatedIDs["confirmationRequestId"] = trackingID
+	case gatewayRiskDryRunOnly:
+		relatedIDs["dryRunId"] = trackingID
+	}
+	return relatedIDs
+}
+
+func (s *Service) createToolApprovalRequest(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, tool domainaigateway.ToolCapability, decision gatewayRiskDecision, trackingID, summary string, relatedIDs map[string]any, redactionSummary gatewayRedactionAuditSummary) (map[string]any, *time.Time, error) {
+	repo := s.approvalRepository()
+	if repo == nil {
+		err := fmt.Errorf("%w: AI Gateway approval repository is not configured", apperrors.ErrInvalidArgument)
+		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "failure", err.Error(), relatedIDs, redactionSummary)
+		return nil, nil, err
+	}
+	now := time.Now().UTC()
+	expiresAt := gatewayApprovalExpiresAt(decision, now)
+	actorType, actorID := gatewaySubject(principal)
+	meta := requestctx.FromContext(ctx)
+	approvalRouting := s.resolveGatewayApprovalOnCall(ctx, input, gatewayApprovalRoutingFromDecision(decision))
+	if len(approvalRouting) > 0 {
+		relatedIDs["approvalRouting"] = approvalRouting
+	}
+	request := domainaigateway.ApprovalRequest{
+		ID:                trackingID,
+		Status:            "pending",
+		Strategy:          string(decision.Strategy),
+		PolicyID:          decision.PolicyID,
+		ApprovalPolicyRef: decision.ApprovalPolicyRef,
+		ActorType:         actorType,
+		ActorID:           actorID,
+		ActorName:         principal.UserName,
+		ActorRoles:        normalizeStringSlice(principal.Roles),
+		ActorTeams:        normalizeStringSlice(principal.Teams),
+		AIClientID:        strings.TrimSpace(input.AIClientID),
+		AIClientName:      strings.TrimSpace(input.AIClientName),
+		SkillID:           strings.TrimSpace(input.SkillID),
+		ToolName:          tool.Name,
+		RiskLevel:         tool.RiskLevel,
+		RequiresApproval:  true,
+		ResourceScope:     gatewayAuditScope(input.Input, nil),
+		ToolInput:         sanitizeGatewayMap(input.Input),
+		RelatedIDs:        relatedIDs,
+		Output:            map[string]any{},
+		Summary:           summary,
+		RequestID:         firstNonEmpty(input.RequestID, meta.RequestID),
+		SourceIP:          meta.SourceIP,
+		ExpiresAt:         expiresAt,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	created, err := repo.CreateApprovalRequest(ctx, request)
+	if err != nil {
+		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "failure", err.Error(), relatedIDs, redactionSummary)
+		return nil, nil, err
+	}
+	relatedIDs = created.RelatedIDs
+	if relatedIDs == nil {
+		relatedIDs = map[string]any{}
+	}
+	return relatedIDs, expiresAt, nil
 }
 func gatewayHoldSummary(tool domainaigateway.ToolCapability, decision gatewayRiskDecision) string {
 	switch decision.Strategy {
@@ -666,9 +677,6 @@ func accessPolicyRiskDecision(policy domainaigateway.AccessPolicy) gatewayRiskDe
 		Reason:            "matched access policy " + policy.ID,
 		ApprovalPolicy:    sanitizeGatewayMap(policy.ApprovalPolicy),
 	}
-}
-func accessPolicyRequiresApproval(policy domainaigateway.AccessPolicy) bool {
-	return accessPolicyRiskDecision(policy).requiresApproval()
 }
 func gatewayApprovalRoutingFromDecision(decision gatewayRiskDecision) map[string]any {
 	routing := map[string]any{}
@@ -1393,7 +1401,24 @@ func gatewayApprovalQuorumStatusFromRouting(routing map[string]any) gatewayAppro
 	} else if totalQuotaApplies {
 		status.PendingRequirements = append(status.PendingRequirements, fmt.Sprintf("approvals:%d/%d", status.ApprovedCount, status.RequiredApprovals))
 	}
-	for _, decision := range gatewayApprovalDecisions(activeRouting) {
+	gatewayCountApprovalQuotaDecisions(activeRouting, &status)
+	gatewayEvaluateApprovalQuotas(&status, "role", status.RoleQuotas, status.RoleApprovedCounts)
+	gatewayEvaluateApprovalQuotas(&status, "team", status.TeamQuotas, status.TeamApprovedCounts)
+	switch status.Mode {
+	case "any":
+		status.Ready = len(status.SatisfiedRequirements) > 0
+	default:
+		status.Ready = len(status.PendingRequirements) == 0
+	}
+	if hasStage {
+		status.SatisfiedRequirements = gatewayPrefixApprovalRequirements(status.SatisfiedRequirements, fmt.Sprintf("stage:%d", status.StageIndex))
+		status.PendingRequirements = gatewayPrefixApprovalRequirements(status.PendingRequirements, fmt.Sprintf("stage:%d", status.StageIndex))
+	}
+	return status
+}
+
+func gatewayCountApprovalQuotaDecisions(routing map[string]any, status *gatewayApprovalQuorumStatus) {
+	for _, decision := range gatewayApprovalDecisions(routing) {
 		if !strings.EqualFold(strings.TrimSpace(fmt.Sprint(decision["result"])), "approved") {
 			continue
 		}
@@ -1408,33 +1433,17 @@ func gatewayApprovalQuorumStatusFromRouting(routing map[string]any) gatewayAppro
 			}
 		}
 	}
-	for _, role := range sortedStringKeys(status.RoleQuotas) {
-		required := status.RoleQuotas[role]
-		if status.RoleApprovedCounts[role] >= required {
-			status.SatisfiedRequirements = append(status.SatisfiedRequirements, fmt.Sprintf("role:%s:%d/%d", role, status.RoleApprovedCounts[role], required))
+}
+
+func gatewayEvaluateApprovalQuotas(status *gatewayApprovalQuorumStatus, quotaKind string, quotas, approvedCounts map[string]int) {
+	for _, name := range sortedStringKeys(quotas) {
+		required := quotas[name]
+		if approvedCounts[name] >= required {
+			status.SatisfiedRequirements = append(status.SatisfiedRequirements, fmt.Sprintf("%s:%s:%d/%d", quotaKind, name, approvedCounts[name], required))
 		} else {
-			status.PendingRequirements = append(status.PendingRequirements, fmt.Sprintf("role:%s:%d/%d", role, status.RoleApprovedCounts[role], required))
+			status.PendingRequirements = append(status.PendingRequirements, fmt.Sprintf("%s:%s:%d/%d", quotaKind, name, approvedCounts[name], required))
 		}
 	}
-	for _, team := range sortedStringKeys(status.TeamQuotas) {
-		required := status.TeamQuotas[team]
-		if status.TeamApprovedCounts[team] >= required {
-			status.SatisfiedRequirements = append(status.SatisfiedRequirements, fmt.Sprintf("team:%s:%d/%d", team, status.TeamApprovedCounts[team], required))
-		} else {
-			status.PendingRequirements = append(status.PendingRequirements, fmt.Sprintf("team:%s:%d/%d", team, status.TeamApprovedCounts[team], required))
-		}
-	}
-	switch status.Mode {
-	case "any":
-		status.Ready = len(status.SatisfiedRequirements) > 0
-	default:
-		status.Ready = len(status.PendingRequirements) == 0
-	}
-	if hasStage {
-		status.SatisfiedRequirements = gatewayPrefixApprovalRequirements(status.SatisfiedRequirements, fmt.Sprintf("stage:%d", status.StageIndex))
-		status.PendingRequirements = gatewayPrefixApprovalRequirements(status.PendingRequirements, fmt.Sprintf("stage:%d", status.StageIndex))
-	}
-	return status
 }
 func gatewayApprovalPendingSummary(status gatewayApprovalQuorumStatus) string {
 	if len(status.PendingRequirements) == 0 {
@@ -1698,52 +1707,72 @@ func gatewayApprovalQuotaMap(values map[string]any, keys ...string) map[string]i
 	return nil
 }
 func gatewayApprovalQuotaMapFromValue(value any) map[string]int {
-	out := map[string]int{}
+	var out map[string]int
 	switch typed := value.(type) {
 	case map[string]any:
-		for key, raw := range typed {
-			name := strings.TrimSpace(key)
-			required, ok := gatewayPositiveInt(raw)
-			if name != "" && ok {
-				out[name] = required
-			}
-		}
+		out = gatewayApprovalQuotaMapFromAnyMap(typed)
 	case map[string]int:
-		for key, required := range typed {
-			if name := strings.TrimSpace(key); name != "" && required > 0 {
-				out[name] = required
-			}
-		}
+		out = gatewayApprovalQuotaMapFromIntMap(typed)
 	case []any:
-		for _, item := range typed {
-			if mapped := mapValue(item); len(mapped) > 0 {
-				name := gatewayFirstString(mapped, "name", "id", "role", "roleId", "team", "teamId", "group", "groupId")
-				required, ok := gatewayFirstPositiveInt(mapped, "requiredApprovals", "minApprovals", "required", "count", "quorum")
-				if name != "" && ok {
-					out[name] = required
-				}
-				continue
-			}
-			name := strings.TrimSpace(fmt.Sprint(item))
-			if name != "" && name != "<nil>" {
-				out[name] = 1
-			}
-		}
+		out = gatewayApprovalQuotaMapFromAnySlice(typed)
 	case []string:
-		for _, item := range typed {
-			if name := strings.TrimSpace(item); name != "" {
-				out[name] = 1
-			}
-		}
+		out = gatewayApprovalQuotaMapFromStrings(typed)
 	case string:
-		for _, item := range gatewayStringList(typed) {
-			if name := strings.TrimSpace(item); name != "" {
-				out[name] = 1
-			}
-		}
+		out = gatewayApprovalQuotaMapFromStrings(gatewayStringList(typed))
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+func gatewayApprovalQuotaMapFromAnyMap(values map[string]any) map[string]int {
+	out := map[string]int{}
+	for key, raw := range values {
+		name := strings.TrimSpace(key)
+		required, ok := gatewayPositiveInt(raw)
+		if name != "" && ok {
+			out[name] = required
+		}
+	}
+	return out
+}
+
+func gatewayApprovalQuotaMapFromIntMap(values map[string]int) map[string]int {
+	out := map[string]int{}
+	for key, required := range values {
+		if name := strings.TrimSpace(key); name != "" && required > 0 {
+			out[name] = required
+		}
+	}
+	return out
+}
+
+func gatewayApprovalQuotaMapFromAnySlice(values []any) map[string]int {
+	out := map[string]int{}
+	for _, item := range values {
+		if mapped := mapValue(item); len(mapped) > 0 {
+			name := gatewayFirstString(mapped, "name", "id", "role", "roleId", "team", "teamId", "group", "groupId")
+			required, ok := gatewayFirstPositiveInt(mapped, "requiredApprovals", "minApprovals", "required", "count", "quorum")
+			if name != "" && ok {
+				out[name] = required
+			}
+			continue
+		}
+		name := strings.TrimSpace(fmt.Sprint(item))
+		if name != "" && name != "<nil>" {
+			out[name] = 1
+		}
+	}
+	return out
+}
+
+func gatewayApprovalQuotaMapFromStrings(values []string) map[string]int {
+	out := map[string]int{}
+	for _, item := range values {
+		if name := strings.TrimSpace(item); name != "" {
+			out[name] = 1
+		}
 	}
 	return out
 }

@@ -17,36 +17,48 @@ func TestBuildWorkloadOverviewAggregatesPodRiskByScope(t *testing.T) {
 		{Name: "failing", Namespace: "team-b", Phase: "Failed", ReadyContainers: "0/1", Restarts: 1, NodeName: "node-5", AgeSeconds: 30},
 	})
 
-	if view.ClusterID != "cluster-a" {
-		t.Fatalf("ClusterID = %q, want cluster-a", view.ClusterID)
+	assertWorkloadOverviewSummary(t, view)
+	assertWorkloadOverviewRiskDetails(t, view)
+}
+
+func assertWorkloadOverviewSummary(t *testing.T, view domainresource.WorkloadOverviewView) {
+	t.Helper()
+	stringCases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{name: "ClusterID", got: view.ClusterID, want: "cluster-a"},
+		{name: "Namespace", got: view.Namespace, want: ""},
+		{name: "Source", got: view.Source, want: "live"},
 	}
-	if view.Namespace != "" {
-		t.Fatalf("Namespace = %q, want empty", view.Namespace)
+	for _, testCase := range stringCases {
+		if testCase.got != testCase.want {
+			t.Errorf("%s = %q, want %q", testCase.name, testCase.got, testCase.want)
+		}
 	}
-	if view.Source != "live" {
-		t.Fatalf("Source = %q, want live", view.Source)
+	countCases := []struct {
+		name string
+		got  int
+		want int
+	}{
+		{name: "TotalPods", got: view.TotalPods, want: 5},
+		{name: "RunningPods", got: view.RunningPods, want: 2},
+		{name: "PendingPods", got: view.PendingPods, want: 1},
+		{name: "SucceededPods", got: view.SucceededPods, want: 1},
+		{name: "FailedPods", got: view.FailedPods, want: 1},
+		{name: "RestartingPods", got: view.RestartingPods, want: 2},
+		{name: "AtRiskPods", got: view.AtRiskPods, want: 3},
 	}
-	if view.TotalPods != 5 {
-		t.Fatalf("TotalPods = %d, want 5", view.TotalPods)
+	for _, testCase := range countCases {
+		if testCase.got != testCase.want {
+			t.Errorf("%s = %d, want %d", testCase.name, testCase.got, testCase.want)
+		}
 	}
-	if view.RunningPods != 2 {
-		t.Fatalf("RunningPods = %d, want 2", view.RunningPods)
-	}
-	if view.PendingPods != 1 {
-		t.Fatalf("PendingPods = %d, want 1", view.PendingPods)
-	}
-	if view.SucceededPods != 1 {
-		t.Fatalf("SucceededPods = %d, want 1", view.SucceededPods)
-	}
-	if view.FailedPods != 1 {
-		t.Fatalf("FailedPods = %d, want 1", view.FailedPods)
-	}
-	if view.RestartingPods != 2 {
-		t.Fatalf("RestartingPods = %d, want 2", view.RestartingPods)
-	}
-	if view.AtRiskPods != 3 {
-		t.Fatalf("AtRiskPods = %d, want 3", view.AtRiskPods)
-	}
+}
+
+func assertWorkloadOverviewRiskDetails(t *testing.T, view domainresource.WorkloadOverviewView) {
+	t.Helper()
 	if len(view.NamespaceBreakdown) != 2 {
 		t.Fatalf("len(NamespaceBreakdown) = %d, want 2", len(view.NamespaceBreakdown))
 	}

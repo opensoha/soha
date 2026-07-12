@@ -50,7 +50,7 @@ func (r *Repository) List(ctx context.Context, limit int) ([]domainevent.Envelop
 	if err != nil {
 		return nil, fmt.Errorf("query event stream: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainevent.Envelope, 0, limit)
 	for rows.Next() {

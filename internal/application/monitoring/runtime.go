@@ -66,10 +66,10 @@ func (s *Service) ListRuleRuns(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertRulesView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.ruleRuns == nil {
 		return []domainalert.AlertRuleRun{}, nil
 	}
-	return s.repo.ListRuleRuns(ctx, filter)
+	return s.ruleRuns.ListRuleRuns(ctx, filter)
 }
 
 func (s *Service) PreviewNotificationPolicy(ctx context.Context, principal domainidentity.Principal, policyID, eventID string) ([]map[string]any, error) {
@@ -80,7 +80,7 @@ func (s *Service) PreviewNotificationPolicy(ctx context.Context, principal domai
 	if err != nil {
 		return nil, err
 	}
-	event, err := s.repo.GetEvent(ctx, strings.TrimSpace(eventID))
+	event, err := s.alertEvents.GetEvent(ctx, strings.TrimSpace(eventID))
 	if err != nil {
 		return nil, err
 	}
@@ -95,10 +95,10 @@ func (s *Service) GetCurrentOnCall(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) evaluateEnabledRules(ctx context.Context) {
-	if s == nil || s.repo == nil || s.dataSources == nil {
+	if s == nil || s.rules == nil || s.dataSources == nil {
 		return
 	}
-	rules, err := s.repo.ListRules(ctx)
+	rules, err := s.rules.ListRules(ctx)
 	if err != nil {
 		return
 	}
@@ -136,7 +136,7 @@ func (s *Service) evaluateRuleRun(ctx context.Context, rule domainalert.AlertRul
 	} else if result.Matched {
 		runInput.Status = "matched"
 	}
-	run, createErr := s.repo.CreateRuleRun(ctx, runInput)
+	run, createErr := s.ruleRuns.CreateRuleRun(ctx, runInput)
 	if createErr != nil || err != nil {
 		return
 	}
@@ -171,7 +171,7 @@ func (s *Service) ruleWindowSatisfied(ctx context.Context, rule domainalert.Aler
 	if intervalSeconds <= 0 {
 		intervalSeconds = 60
 	}
-	runs, err := s.repo.ListRuleRuns(ctx, domainalert.AlertRuleRunFilter{
+	runs, err := s.ruleRuns.ListRuleRuns(ctx, domainalert.AlertRuleRunFilter{
 		RuleID: rule.ID,
 		Limit:  maxInt(10, rule.ForSeconds/intervalSeconds+5),
 	})
@@ -200,7 +200,7 @@ func (s *Service) ruleWindowSatisfied(ctx context.Context, rule domainalert.Aler
 }
 
 func (s *Service) resolveInternalRuleEvents(ctx context.Context, rule domainalert.AlertRule, activeFingerprints []string, now time.Time) {
-	events, err := s.repo.ListEvents(ctx, domainalert.AlertEventFilter{RuleID: rule.ID, Limit: 200})
+	events, err := s.alertEvents.ListEvents(ctx, domainalert.AlertEventFilter{RuleID: rule.ID, Limit: 200})
 	if err != nil {
 		return
 	}
@@ -223,14 +223,14 @@ func (s *Service) resolveInternalRuleEvents(ctx context.Context, rule domainaler
 		event.EndsAt = now
 		event.LastSeenAt = now
 		event.UpdatedAt = now
-		_, _ = s.repo.UpdateEvent(ctx, event.ID, toAlertEventInput(event))
+		_, _ = s.alertEvents.UpdateEvent(ctx, event.ID, toAlertEventInput(event))
 	}
 }
 
 func (s *Service) upsertInternalRuleEvent(ctx context.Context, rule domainalert.AlertRule, result domainalert.RuleTestResult, run domainalert.AlertRuleRun, matchStart time.Time, match ruleMatch) domainalert.AlertEvent {
 	now := time.Now().UTC()
 	eventID := internalRuleEventID(rule, match.Fingerprint)
-	event, err := s.repo.GetEvent(ctx, eventID)
+	event, err := s.alertEvents.GetEvent(ctx, eventID)
 	if err != nil {
 		event = domainalert.AlertEvent{
 			ID:          eventID,
@@ -273,11 +273,11 @@ func (s *Service) upsertInternalRuleEvent(ctx context.Context, rule domainalert.
 		event.StartsAt = matchStart
 	}
 	input := toAlertEventInput(event)
-	item, createErr := s.repo.CreateEvent(ctx, input)
+	item, createErr := s.alertEvents.CreateEvent(ctx, input)
 	if createErr == nil {
 		return item
 	}
-	item, updateErr := s.repo.UpdateEvent(ctx, event.ID, input)
+	item, updateErr := s.alertEvents.UpdateEvent(ctx, event.ID, input)
 	if updateErr == nil {
 		return item
 	}
@@ -310,53 +310,25 @@ func (s *Service) resolveCurrentOnCall(ctx context.Context, ref string) (map[str
 	if ref == "" {
 		return nil, fmt.Errorf("%w: ref is required", apperrors.ErrInvalidArgument)
 	}
-	schedules, err := s.repo.ListOnCallSchedules(ctx)
+	schedules, err := s.onCallSchedules.ListOnCallSchedules(ctx)
 	if err != nil {
 		return nil, err
 	}
-	rotations, err := s.repo.ListOnCallRotations(ctx)
+	rotations, err := s.onCallRotations.ListOnCallRotations(ctx)
 	if err != nil {
 		return nil, err
 	}
-	policies, err := s.repo.ListOnCallEscalationPolicies(ctx)
+	policies, err := s.onCallEscalations.ListOnCallEscalationPolicies(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	scheduleID := ref
-	escalationRef := ""
-	for _, policy := range policies {
-		if policy.ID != ref {
-			continue
-		}
-		escalationRef = policy.ID
-		if len(policy.Steps) > 0 {
-			if value := stringValue(policy.Steps[0]["scheduleId"], ""); value != "" {
-				scheduleID = value
-			}
-		}
-	}
-
-	var schedule domainalert.OnCallSchedule
-	found := false
-	for _, item := range schedules {
-		if onCallRefMatches(item.ID, scheduleID) {
-			schedule = item
-			found = true
-			break
-		}
-	}
+	scheduleID, escalationRef := resolveOnCallScheduleReference(ref, policies)
+	schedule, found := findOnCallSchedule(schedules, scheduleID)
 	if !found {
 		return nil, fmt.Errorf("%w: oncall schedule not found", apperrors.ErrNotFound)
 	}
-	var rotation *domainalert.OnCallRotation
-	for _, item := range rotations {
-		if item.ScheduleID == schedule.ID && item.Enabled {
-			copyItem := item
-			rotation = &copyItem
-			break
-		}
-	}
+	rotation := findEnabledOnCallRotation(rotations, schedule.ID)
 	if rotation == nil {
 		return map[string]any{
 			"ref":        ref,
@@ -365,28 +337,9 @@ func (s *Service) resolveCurrentOnCall(ctx context.Context, ref string) (map[str
 			"status":     "no_rotation",
 		}, nil
 	}
-	now := time.Now().UTC()
-	if strings.TrimSpace(schedule.TimeZone) != "" {
-		if location, locErr := time.LoadLocation(strings.TrimSpace(schedule.TimeZone)); locErr == nil {
-			now = now.In(location)
-		}
-	}
-	shiftMinutes := intValue(rotation.RotationConfig["rotationMinutes"], 0)
-	if shiftMinutes <= 0 {
-		shiftMinutes = intValue(rotation.RotationConfig["shiftHours"], 24) * 60
-	}
-	if shiftMinutes <= 0 {
-		shiftMinutes = 24 * 60
-	}
-	startAt := schedule.CreatedAt
-	if text := stringValue(rotation.RotationConfig["startAt"], ""); text != "" {
-		if parsed, parseErr := time.Parse(time.RFC3339, text); parseErr == nil {
-			startAt = parsed
-		}
-	}
-	if startAt.IsZero() {
-		startAt = now
-	}
+	now := onCallScheduleNow(schedule)
+	shiftMinutes := onCallShiftMinutes(rotation.RotationConfig)
+	startAt := onCallRotationStart(schedule.CreatedAt, rotation.RotationConfig, now)
 	if overrideParticipants := onCallDateOverrideParticipants(rotation.RotationConfig, now); len(overrideParticipants) > 0 {
 		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 		dayEnd := dayStart.AddDate(0, 0, 1)
@@ -441,6 +394,77 @@ func (s *Service) resolveCurrentOnCall(ctx context.Context, ref string) (map[str
 	}, nil
 }
 
+func resolveOnCallScheduleReference(ref string, policies []domainalert.OnCallEscalationPolicy) (string, string) {
+	for _, policy := range policies {
+		if policy.ID != ref {
+			continue
+		}
+		scheduleID := ref
+		if len(policy.Steps) > 0 {
+			if value := stringValue(policy.Steps[0]["scheduleId"], ""); value != "" {
+				scheduleID = value
+			}
+		}
+		return scheduleID, policy.ID
+	}
+	return ref, ""
+}
+
+func findOnCallSchedule(schedules []domainalert.OnCallSchedule, scheduleID string) (domainalert.OnCallSchedule, bool) {
+	for _, item := range schedules {
+		if onCallRefMatches(item.ID, scheduleID) {
+			return item, true
+		}
+	}
+	return domainalert.OnCallSchedule{}, false
+}
+
+func findEnabledOnCallRotation(rotations []domainalert.OnCallRotation, scheduleID string) *domainalert.OnCallRotation {
+	for _, item := range rotations {
+		if item.ScheduleID == scheduleID && item.Enabled {
+			copyItem := item
+			return &copyItem
+		}
+	}
+	return nil
+}
+
+func onCallScheduleNow(schedule domainalert.OnCallSchedule) time.Time {
+	now := time.Now().UTC()
+	if strings.TrimSpace(schedule.TimeZone) == "" {
+		return now
+	}
+	location, err := time.LoadLocation(strings.TrimSpace(schedule.TimeZone))
+	if err != nil {
+		return now
+	}
+	return now.In(location)
+}
+
+func onCallShiftMinutes(config map[string]any) int {
+	shiftMinutes := intValue(config["rotationMinutes"], 0)
+	if shiftMinutes <= 0 {
+		shiftMinutes = intValue(config["shiftHours"], 24) * 60
+	}
+	if shiftMinutes <= 0 {
+		return 24 * 60
+	}
+	return shiftMinutes
+}
+
+func onCallRotationStart(createdAt time.Time, config map[string]any, now time.Time) time.Time {
+	startAt := createdAt
+	if text := stringValue(config["startAt"], ""); text != "" {
+		if parsed, err := time.Parse(time.RFC3339, text); err == nil {
+			startAt = parsed
+		}
+	}
+	if startAt.IsZero() {
+		return now
+	}
+	return startAt
+}
+
 func onCallDateOverrideParticipants(rotationConfig map[string]any, now time.Time) []string {
 	if len(rotationConfig) == 0 {
 		return nil
@@ -488,13 +512,13 @@ func (s *Service) resolveOnCallAssignment(ctx context.Context, input domainalert
 	rawInput := input
 	context := normalizeOnCallResolveInput(input)
 	if strings.TrimSpace(context.AlertID) != "" {
-		event, err := s.repo.GetEvent(ctx, strings.TrimSpace(context.AlertID))
+		event, err := s.alertEvents.GetEvent(ctx, strings.TrimSpace(context.AlertID))
 		if err != nil {
 			return nil, err
 		}
 		context = mergeOnCallResolveInput(onCallResolveInputFromEvent(event), rawInput)
 	}
-	rules, err := s.repo.ListOnCallAssignmentRules(ctx)
+	rules, err := s.onCallAssignments.ListOnCallAssignmentRules(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -1025,12 +1049,12 @@ func ruleRunMatchedFingerprint(run domainalert.AlertRuleRun, fingerprint string)
 }
 
 func (s *Service) fanOutEvent(ctx context.Context, event domainalert.AlertEvent) (bool, error) {
-	policies, err := s.repo.ListNotificationPolicies(ctx)
+	policies, err := s.notificationPolicies.ListNotificationPolicies(ctx)
 	if err != nil || len(policies) == 0 {
 		return false, err
 	}
 	if silence, ok := s.firstMatchingSilenceForEvent(ctx, event); ok {
-		_ = s.repo.CreateDeliveryLog(ctx, domainalert.DeliveryLog{
+		_ = s.deliveryLogs.CreateDeliveryLog(ctx, domainalert.DeliveryLog{
 			ID:        "delivery:" + internalRuleFingerprint(event.RuleID, map[string]string{"eventId": event.ID}),
 			AlertID:   event.ID,
 			Status:    "silenced",
@@ -1052,7 +1076,7 @@ func (s *Service) fanOutEvent(ctx context.Context, event domainalert.AlertEvent)
 		handled = true
 		for _, preview := range s.buildNotificationOutputs(ctx, policy, event) {
 			if strings.TrimSpace(fmt.Sprint(preview["status"])) == "preview_failed" {
-				_ = s.repo.CreateDeliveryLog(ctx, domainalert.DeliveryLog{
+				_ = s.deliveryLogs.CreateDeliveryLog(ctx, domainalert.DeliveryLog{
 					ID:        "delivery:" + time.Now().UTC().Format("20060102150405.000000000"),
 					AlertID:   event.ID,
 					ChannelID: stringValue(preview["channelId"], ""),
@@ -1064,7 +1088,7 @@ func (s *Service) fanOutEvent(ctx context.Context, event domainalert.AlertEvent)
 				continue
 			}
 			status, summary, metadata := s.sendNotificationOutput(ctx, preview)
-			_ = s.repo.CreateDeliveryLog(ctx, domainalert.DeliveryLog{
+			_ = s.deliveryLogs.CreateDeliveryLog(ctx, domainalert.DeliveryLog{
 				ID:        "delivery:" + time.Now().UTC().Format("20060102150405.000000000"),
 				AlertID:   event.ID,
 				ChannelID: stringValue(preview["channelId"], ""),
@@ -1076,7 +1100,7 @@ func (s *Service) fanOutEvent(ctx context.Context, event domainalert.AlertEvent)
 			now := time.Now().UTC()
 			event.LastNotificationAt = now
 			event.UpdatedAt = now
-			_, _ = s.repo.UpdateEvent(ctx, event.ID, toAlertEventInput(event))
+			_, _ = s.alertEvents.UpdateEvent(ctx, event.ID, toAlertEventInput(event))
 		}
 		if containsString(policy.ProcessorChain, "self_heal_trigger") {
 			_ = s.triggerSelfHealFromPolicy(ctx, event)
@@ -1089,7 +1113,7 @@ func (s *Service) notificationCoolingDown(ctx context.Context, event domainalert
 	if policy.CooldownSeconds <= 0 {
 		return false
 	}
-	logs, err := s.repo.ListDeliveryLogs(ctx, domainalert.DeliveryFilter{AlertID: event.ID, Limit: 50})
+	logs, err := s.deliveryLogs.ListDeliveryLogs(ctx, domainalert.DeliveryFilter{AlertID: event.ID, Limit: 50})
 	if err != nil {
 		return false
 	}
@@ -1109,11 +1133,11 @@ func (s *Service) notificationCoolingDown(ctx context.Context, event domainalert
 }
 
 func (s *Service) buildNotificationOutputs(ctx context.Context, policy domainalert.NotificationPolicy, event domainalert.AlertEvent) []map[string]any {
-	channels, err := s.repo.ListChannels(ctx)
+	channels, err := s.channels.ListChannels(ctx)
 	if err != nil || len(channels) == 0 {
 		return []map[string]any{{"status": "preview_failed", "summary": "no notification channels available", "policyId": policy.ID}}
 	}
-	templates, _ := s.repo.ListNotificationTemplates(ctx)
+	templates, _ := s.notificationTemplates.ListNotificationTemplates(ctx)
 	channelMap := make(map[string]domainalert.NotificationChannel, len(channels))
 	for _, item := range channels {
 		channelMap[item.ID] = item
@@ -1158,7 +1182,7 @@ func (s *Service) sendNotificationOutput(ctx context.Context, output map[string]
 	if err != nil {
 		return "failed", err.Error(), output
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		return "failed", fmt.Sprintf("delivery failed with status %d", resp.StatusCode), output
 	}
@@ -1215,7 +1239,7 @@ func (s *Service) renderNotificationOutput(policy domainalert.NotificationPolicy
 }
 
 func (s *Service) firstMatchingSilenceForEvent(ctx context.Context, event domainalert.AlertEvent) (domainalert.AlertSilence, bool) {
-	silences, err := s.repo.ListSilences(ctx)
+	silences, err := s.silences.ListSilences(ctx)
 	if err != nil {
 		return domainalert.AlertSilence{}, false
 	}
@@ -1235,17 +1259,17 @@ func (s *Service) triggerSelfHealFromPolicy(ctx context.Context, event domainale
 	if strings.TrimSpace(event.RuleID) == "" {
 		return nil
 	}
-	rule, err := s.repo.GetRule(ctx, event.RuleID)
+	rule, err := s.rules.GetRule(ctx, event.RuleID)
 	if err != nil || len(rule.HealingPolicyIDs) == 0 {
 		return err
 	}
-	existing, _ := s.repo.ListHealingRuns(ctx, domainalert.HealingRunFilter{EventID: event.ID, Limit: 20})
+	existing, _ := s.healingRuns.ListHealingRuns(ctx, domainalert.HealingRunFilter{EventID: event.ID, Limit: 20})
 	for _, run := range existing {
 		if run.PolicyID == rule.HealingPolicyIDs[0] && run.Status != "rejected" && run.Status != "failed" && run.Status != "completed" {
 			return nil
 		}
 	}
-	_, err = s.repo.CreateHealingRun(ctx, domainalert.HealingRunInput{
+	_, err = s.healingRuns.CreateHealingRun(ctx, domainalert.HealingRunInput{
 		PolicyID:       rule.HealingPolicyIDs[0],
 		EventID:        event.ID,
 		Status:         "pending_approval",
@@ -1382,7 +1406,7 @@ func containsMatcher(values []string, actual string) bool {
 }
 
 func (s *Service) findNotificationPolicy(ctx context.Context, policyID string) (domainalert.NotificationPolicy, error) {
-	policies, err := s.repo.ListNotificationPolicies(ctx)
+	policies, err := s.notificationPolicies.ListNotificationPolicies(ctx)
 	if err != nil {
 		return domainalert.NotificationPolicy{}, err
 	}
@@ -1552,13 +1576,6 @@ func firstNonEmpty(values ...string) string {
 
 func maxInt(left, right int) int {
 	if left > right {
-		return left
-	}
-	return right
-}
-
-func minInt(left, right int) int {
-	if left < right {
 		return left
 	}
 	return right

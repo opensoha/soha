@@ -78,6 +78,20 @@ func TestIdentitySettingsKeepsDeletedLoginProvidersDeleted(t *testing.T) {
 	}
 }
 
+func TestLoginProviderProfileFieldsRoundTrip(t *testing.T) {
+	provider := normalizeLoginProvider(domainsettings.LoginProviderSettings{
+		ID:          "feishu-main",
+		Name:        "Feishu",
+		Type:        "feishu",
+		PhoneField:  "contact.mobile",
+		AvatarField: "avatar.url",
+	}, 0)
+	stored := loginProvidersToMaps([]domainsettings.LoginProviderSettings{provider})[0]
+	if stored["phoneField"] != "contact.mobile" || stored["avatarField"] != "avatar.url" {
+		t.Fatalf("profile field mappings not persisted: %#v", stored)
+	}
+}
+
 func TestAISettingsIgnoresLegacyProviderSecrets(t *testing.T) {
 	store := &captureSettingsStore{
 		values: map[string]capturedSetting{

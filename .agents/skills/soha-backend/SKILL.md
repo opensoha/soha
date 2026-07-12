@@ -2,7 +2,7 @@
 name: soha-backend
 description: >-
   Implement and refactor soha backend capabilities in `cmd/**`,
-  `internal/**`, and `configs/**` for Go 1.23, Gin, PostgreSQL, Kubernetes
+  `internal/**`, and `configs/**` for Go 1.25, Gin, PostgreSQL, Kubernetes
   `client-go`, and agent-connected clusters. Use when adding or changing HTTP
   routes, handlers, application services, repositories, policy checks,
   bootstrap wiring, cluster or resource aggregation, or delivery,
@@ -24,12 +24,12 @@ Implement backend changes through the repository's layered Go architecture. Keep
 ## Workflow
 
 1. Identify the change boundary first: transport, orchestration, policy, infrastructure, repository, or bootstrap.
-2. Read the existing handler, service, repository, and route wiring before editing. Follow the current module rather than creating a parallel path.
+2. Read `references/go-engineering-standards.md` for every production Go change, then inspect the existing handler, service, port, adapter, and route wiring before editing. Follow the current module rather than creating a parallel path.
 3. Keep authorization, scope semantics, audit, and operation logging aligned with the behavior change.
 4. For Kubernetes-facing work, decide whether the capability should use informer/cache, live query fallback, or agent mode, and make unsupported agent paths explicit.
 5. For delivery, Docker, virtualization, and AI work, identify the durable control-plane object first: release bundle, execution task, Docker operation, virtualization task, AI session, analysis run, or inspection task.
 6. Update tests, config defaults, deployment-facing manifests, menu seeds, permissions, and memory or docs in the same task when contracts or semantics change.
-7. Validate with focused `go test` runs, or at minimum with the affected package tests and a repo build path.
+7. Run focused tests while iterating, then apply the verification tier from `references/go-engineering-standards.md`; architecture, dependency, security, module, or release changes require the full gate.
 
 ## Non-Negotiables
 
@@ -38,6 +38,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - `internal/repository` owns durable persistence details. Keep SQL and GORM concerns out of handlers and orchestration code.
 - `internal/infrastructure` owns external clients and vendor-specific wiring such as Kubernetes managers, informer startup, agent HTTP clients, config loading, DB, Swagger, and MCP registries.
 - `internal/bootstrap` wires dependencies and startup lifecycle. Do not hide new cross-module dependencies in ad hoc globals.
+- Keep manual constructor injection and `internal/bootstrap` as the composition root. Define narrow interfaces in the consuming package, reject missing or typed-nil required dependencies, and do not introduce a DI container or service locator without an explicit architecture decision.
 - Prefer domain or platform view models for API output. Do not return raw Kubernetes schema objects unless the route is explicitly a YAML or passthrough surface.
 - Runtime shell work does not belong in handlers. Build, release, Docker Compose, Docker Engine, and VM-control execution must go through application services plus durable task/operation records and runner callbacks.
 
@@ -58,8 +59,9 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 - Split oversized files by stable behavior domains before changing logic. Prefer same-package file moves first so method receivers, private helpers, tests, and API contracts stay intact.
 - Platform handler REST methods are split by resource domain: `platform_inventory.go`, `platform_workloads.go`, `platform_configuration.go`, `platform_network.go`, `platform_storage.go`, `platform_rbac.go`, `platform_crd_helm.go`, `platform_generic.go`, and `platform_observability.go`. WebSocket stream behavior belongs in `platform_streams.go`; keep the shared `websocketStreamSession` lifecycle helper there.
-- Platform resource application methods are split by resource family: `pods.go`/`pods_helpers.go`, `workloads.go`, `configuration.go`, `rbac.go`, `network.go`, `storage.go`, `crd.go`, `events.go`, and `resource_yaml.go`. Shared authorization/audit helpers belong in `common.go`; shared direct Kubernetes bundle and timeout helpers belong in `direct_query.go`.
-- When changing resource-service behavior, keep the existing family file boundaries and run at least `go test ./internal/application/resource`. Avoid changing agent/direct behavior in the same patch as a mechanical move.
+- Platform resource application methods are split by resource family: `pods.go`/`pods_helpers.go`, `workloads.go`, `configuration.go`, `rbac.go`, `network.go`, `storage.go`, `crd.go`, `events.go`, and `resource_yaml.go`. Keep authorization, audit, capability orchestration, typed connection routing, and platform DTO contracts in application code. Keep direct Kubernetes/Helm clients, cache/live fallback, SPDY transport, and provider-object mapping in `internal/infrastructure/resourcebackend`.
+- Application production code must not import Kubernetes/Helm SDKs or `internal/infrastructure`. Preserve the zero-tolerance dependency boundary tests; do not recreate `DirectClients`, an application `ResourceCache`, or connection-mode branch clones.
+- When changing resource behavior, keep the existing family boundaries and run at least `go test ./internal/application/resource ./internal/infrastructure/resourcebackend`. Avoid mixing semantic changes with mechanical file moves unless tests prove the contract is unchanged.
 - AI Gateway is split by behavior domain: `manifest.go`, `tools.go`, `policies.go`, `rate_limit_budget.go`, `redaction.go`, `approval.go`, `tokens.go`, `audit.go`, and `governance.go`; keep `service.go` for wiring, interfaces, and constructor/setter methods.
 - Execution-plane changes must include focused tests around status transitions, callback tokens, late callbacks, retry, cancel, timeout, artifact persistence, and build/release backfill. The execution service started with explicit state-machine coverage; do not let it regress to untested callback behavior.
 - Handler coverage is currently low, so new transport behavior should add handler tests. Pure file moves may rely on package compile plus route-registration comparison, but stream behavior changes need websocket or writer lifecycle tests.
@@ -103,6 +105,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## Read These References When Needed
 
+- `references/go-engineering-standards.md`: mandatory Go construction, package-boundary, complexity, security, testing, and CI gates for production backend changes.
 - `references/architecture.md`: module responsibilities, bootstrap wiring, and where common backend changes should land.
 - `references/platform-rules.md`: cluster-access behavior, scope semantics, performance expectations, and backend verification prompts.
 
@@ -122,4 +125,5 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - New platform reads avoid unnecessary live-query or frontend fan-out regressions.
 - Long-running or external execution is task/operation-backed and callback-safe.
 - Menus, module status, route visibility, and permission keys are aligned when API surface changes affect navigation.
-- Affected packages are tested, and memory or docs are updated when contracts changed.
+- Production complexity stays at or below 20, consumer capability interfaces stay small, and dependency boundary tests remain green.
+- Affected packages are tested, the applicable full Go gate passes, and memory or docs are updated when contracts changed.

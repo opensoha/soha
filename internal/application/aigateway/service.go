@@ -25,9 +25,11 @@ const manifestVersion = "v1alpha1"
 const rotatedTokenDefaultTTL = 90 * 24 * time.Hour
 
 const (
-	defaultRelayTimeout         = 120 * time.Second
-	defaultRelayStreamTimeout   = 300 * time.Second
-	defaultRelayMaxRequestBytes = 32 << 20
+	defaultRelayTimeout           = 120 * time.Second
+	defaultRelayStreamTimeout     = 300 * time.Second
+	defaultRelayFirstByteTimeout  = 30 * time.Second
+	defaultRelayStreamIdleTimeout = 60 * time.Second
+	defaultRelayMaxRequestBytes   = 32 << 20
 )
 
 var gatewaySensitiveValuePattern = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-]?key|authorization|credential)(\s*[:=]\s*)([^\s,;]+)`)
@@ -51,41 +53,89 @@ type ApplicationService interface {
 	ListServices(context.Context, domainidentity.Principal, string) ([]domainapp.Service, error)
 }
 
-type DeliveryService interface {
+type DeliveryApplicationReader interface {
 	GetApplicationDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationDetail, error)
 	GetApplicationEnvironmentDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationEnvironmentDetail, error)
+}
+
+type DeliveryActionExecutor interface {
 	TriggerApplicationDeliveryAction(context.Context, domainidentity.Principal, string, domaindelivery.ApplicationDeliveryActionInput) (domaindelivery.ApplicationDeliveryActionResult, error)
+}
+
+type ReleaseBundleReader interface {
 	ListReleaseBundles(context.Context, domainidentity.Principal, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error)
 	GetReleaseBundle(context.Context, domainidentity.Principal, string) (domaindelivery.ReleaseBundle, error)
 	ListReleaseBundleArtifacts(context.Context, domainidentity.Principal, string) ([]domaindelivery.ExecutionArtifact, error)
+}
+
+type ExecutionTaskReader interface {
 	ListExecutionTasks(context.Context, domainidentity.Principal, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error)
 	GetExecutionTask(context.Context, domainidentity.Principal, string) (domaindelivery.ExecutionTask, error)
 	ListExecutionLogs(context.Context, domainidentity.Principal, string, int) ([]domaindelivery.ExecutionLog, error)
+}
+
+type DeliveryService interface {
+	DeliveryApplicationReader
+	DeliveryActionExecutor
+	ReleaseBundleReader
+	ExecutionTaskReader
 }
 
 type CatalogService interface {
 	ListWorkflowTemplates(context.Context, domainidentity.Principal) ([]domaincatalog.WorkflowTemplate, error)
 }
 
-type ResourceService interface {
+type PodResourceReader interface {
 	ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error)
 	GetPodDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PodDetailView, error)
 	GetPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
+}
+
+type DeploymentResourceReader interface {
 	ListDeployments(context.Context, domainidentity.Principal, string, string) ([]domainresource.DeploymentView, error)
 	GetDeploymentRolloutStatus(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentRolloutStatusView, error)
+}
+
+type NetworkResourceReader interface {
 	ListServices(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceView, error)
 	ListIngresses(context.Context, domainidentity.Principal, string, string) ([]domainresource.IngressView, error)
+}
+
+type GatewayResourceReader interface {
 	ListGatewayClasses(context.Context, domainidentity.Principal, string) ([]domainresource.GatewayClassView, error)
 	ListGateways(context.Context, domainidentity.Principal, string, string) ([]domainresource.GatewayView, error)
 	ListHTTPRoutes(context.Context, domainidentity.Principal, string, string) ([]domainresource.HTTPRouteView, error)
+}
+
+type GatewayPolicyResourceReader interface {
 	ListBackendTLSPolicies(context.Context, domainidentity.Principal, string, string) ([]domainresource.BackendTLSPolicyView, error)
 	ListGRPCRoutes(context.Context, domainidentity.Principal, string, string) ([]domainresource.GRPCRouteView, error)
 	ListReferenceGrants(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReferenceGrantView, error)
+}
+
+type StorageResourceReader interface {
 	ListPersistentVolumeClaims(context.Context, domainidentity.Principal, string, string) ([]domainresource.PersistentVolumeClaimView, error)
 	ListPersistentVolumes(context.Context, domainidentity.Principal, string) ([]domainresource.PersistentVolumeView, error)
 	ListStorageClasses(context.Context, domainidentity.Principal, string) ([]domainresource.StorageClassView, error)
+}
+
+type NodeResourceReader interface {
 	GetNodeDetail(context.Context, domainidentity.Principal, string, string) (domainresource.NodeDetailView, error)
+}
+
+type ClusterEventReader interface {
 	ListClusterEvents(context.Context, domainidentity.Principal, string, string, int) ([]domainresource.ClusterEventView, error)
+}
+
+type ResourceService interface {
+	PodResourceReader
+	DeploymentResourceReader
+	NetworkResourceReader
+	GatewayResourceReader
+	GatewayPolicyResourceReader
+	StorageResourceReader
+	NodeResourceReader
+	ClusterEventReader
 }
 
 type AnalysisArtifactRecorder interface {
@@ -117,6 +167,10 @@ type Service struct {
 	rateLimits         RateLimitBackend
 	relayConfig        LLMRelayConfig
 	httpClient         *http.Client
+	relaySelector      *relaySelector
+	relayCredentials   *relayCredentialCodec
+	relayTransport     *relayHTTPTransport
+	relayCache         *relayResponseCache
 	relayConcurrencyMu sync.Mutex
 	relayConcurrency   map[string]int
 	relayHealthOnce    sync.Once
@@ -130,24 +184,32 @@ type Service struct {
 }
 
 func NewWithDeps(deps ServiceDeps) *Service {
-	return &Service{
-		permissions:     deps.Permissions,
-		audit:           deps.Audit,
-		personalTokens:  deps.PersonalTokens,
-		serviceAccounts: deps.ServiceAccounts,
-		clients:         deps.Clients,
-		toolGrants:      deps.ToolGrants,
-		accessPolicies:  deps.AccessPolicies,
-		skillBindings:   deps.SkillBindings,
-		auditLogs:       deps.AuditLogs,
-		approvals:       deps.Approvals,
-		rateLimitRepo:   deps.RateLimits,
-		llmRelayRepo:    deps.LLMRelay,
-		rateLimits:      deps.RateLimitBackend,
-		relayConfig:     normalizedRelayConfig(deps.RelayConfig),
-		httpClient:      normalizedHTTPClient(deps.HTTPClient),
-		registry:        newDefaultCapabilityRegistry(),
+	relayConfig := normalizedRelayConfig(deps.RelayConfig)
+	httpClient := normalizedHTTPClient(deps.HTTPClient)
+	credentials := newRelayCredentialCodec(relayConfig)
+	service := &Service{
+		permissions:      deps.Permissions,
+		audit:            deps.Audit,
+		personalTokens:   deps.PersonalTokens,
+		serviceAccounts:  deps.ServiceAccounts,
+		clients:          deps.Clients,
+		toolGrants:       deps.ToolGrants,
+		accessPolicies:   deps.AccessPolicies,
+		skillBindings:    deps.SkillBindings,
+		auditLogs:        deps.AuditLogs,
+		approvals:        deps.Approvals,
+		rateLimitRepo:    deps.RateLimits,
+		llmRelayRepo:     deps.LLMRelay,
+		rateLimits:       deps.RateLimitBackend,
+		relayConfig:      relayConfig,
+		httpClient:       httpClient,
+		relaySelector:    newRelaySelector(deps.LLMRelay),
+		relayCredentials: credentials,
+		registry:         newDefaultCapabilityRegistry(),
 	}
+	service.relayTransport = newRelayHTTPTransport(httpClient, relayConfig, credentials)
+	service.relayCache = newRelayResponseCache(deps.LLMRelay, credentials, relayConfig)
+	return service
 }
 
 func (s *Service) SetCapabilityProviders(providers ...CapabilityProvider) {
@@ -267,6 +329,12 @@ func normalizedRelayConfig(cfg LLMRelayConfig) LLMRelayConfig {
 	if cfg.StreamTimeout <= 0 {
 		cfg.StreamTimeout = defaultRelayStreamTimeout
 	}
+	if cfg.FirstByteTimeout <= 0 {
+		cfg.FirstByteTimeout = defaultRelayFirstByteTimeout
+	}
+	if cfg.StreamIdleTimeout <= 0 {
+		cfg.StreamIdleTimeout = defaultRelayStreamIdleTimeout
+	}
 	if cfg.HealthCheckInterval <= 0 {
 		cfg.HealthCheckInterval = time.Minute
 	}
@@ -280,5 +348,7 @@ func normalizedHTTPClient(client *http.Client) *http.Client {
 	if client != nil {
 		return client
 	}
-	return &http.Client{Timeout: defaultRelayTimeout}
+	// Relay requests carry per-operation deadlines. A client-wide timeout would
+	// incorrectly cap streams before their longer StreamTimeout expires.
+	return &http.Client{}
 }

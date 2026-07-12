@@ -1,197 +1,93 @@
 package virtualization
 
 import (
-	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
+
+	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 )
 
 var (
-	ErrUnsupported = errors.New("virtualization adapter unsupported")
-	ErrInvalid     = errors.New("virtualization adapter invalid input")
+	ErrUnsupported = domainvirtualization.ErrUnsupported
+	ErrInvalid     = domainvirtualization.ErrInvalid
 )
 
 type Adapter interface {
-	TestConnection(ctx context.Context, connection Connection) (ConnectionTestResult, error)
-	SyncAssets(ctx context.Context, connection Connection) (AssetSyncResult, error)
-	CreateVM(ctx context.Context, connection Connection, input CreateVMInput) (VM, error)
-	PowerAction(ctx context.Context, connection Connection, vm VM, action PowerAction) (PowerActionResult, error)
-	GetVMMetrics(ctx context.Context, connection Connection, vm VM, rangeMinutes, stepSeconds int) (VMMetricsResult, error)
-	GetConsoleURL(ctx context.Context, connection Connection, vm VM) (ConsoleURLResult, error)
+	domainvirtualization.Adapter
+	consoleport.Adapter
 }
-
-type Connection struct {
-	ID                    string
-	Name                  string
-	Provider              string
-	Mode                  string
-	ClusterID             string
-	Endpoint              string
-	EncryptedCredential   []byte
-	Credential            map[string]any
-	Options               map[string]any
-	BackendURL            string
-	InsecureSkipTLSVerify bool
-}
-
-type ConnectionTestResult struct {
-	Healthy    bool
-	Status     string
-	Message    string
-	Reason     string
-	HTTPStatus int
-	NextAction string
-}
-
-type AssetSyncResult struct {
-	Health AssetHealth
-	Assets []Asset
-}
-
-type AssetHealth struct {
-	Status     string
-	Message    string
-	Reason     string
-	HTTPStatus int
-	NextAction string
-}
-
-type Asset struct {
-	Type      string
-	Name      string
-	Namespace string
-	Node      string
-	Status    string
-	Metadata  map[string]string
-}
-
-type CreateVMInput struct {
-	Name             string
-	Architecture     string
-	Namespace        string
-	Node             string
-	CPU              int
-	Memory           string
-	BootImage        string
-	DiskSize         string
-	Network          string
-	CloudInit        string
-	StartAfterCreate bool
-	TemplateID       string
-	SourceMode       string
-	SourceRef        string
-	ProviderParams   map[string]any
-}
-
-type VM struct {
-	ID          string
-	Name        string
-	Namespace   string
-	Node        string
-	Status      string
-	IPAddresses []string
-	Endpoint    string
-	Metadata    map[string]string
-}
-
-type PowerAction string
+type Connection = domainvirtualization.AdapterConnection
+type ConnectionTestResult = domainvirtualization.ConnectionTestResult
+type AssetSyncResult = domainvirtualization.AssetSyncResult
+type AssetHealth = domainvirtualization.AssetHealth
+type Asset = domainvirtualization.Asset
+type CreateVMInput = domainvirtualization.AdapterCreateVMInput
+type VM = domainvirtualization.AdapterVM
+type PowerAction = domainvirtualization.PowerAction
 
 const (
-	PowerActionStart   PowerAction = "start"
-	PowerActionStop    PowerAction = "stop"
-	PowerActionRestart PowerAction = "restart"
-	PowerActionDelete  PowerAction = "delete"
+	PowerActionStart   = domainvirtualization.PowerActionStart
+	PowerActionStop    = domainvirtualization.PowerActionStop
+	PowerActionRestart = domainvirtualization.PowerActionRestart
+	PowerActionDelete  = domainvirtualization.PowerActionDelete
 )
 
-type PowerActionResult struct {
-	Accepted bool
-	Action   PowerAction
-	Message  string
-	UPID     string
+type PowerActionResult = domainvirtualization.PowerActionResult
+type AdapterError = domainvirtualization.AdapterError
+type MetricPoint = domainvirtualization.MetricPoint
+type MetricSeries = domainvirtualization.MetricSeries
+type VMMetricsResult = domainvirtualization.VMMetricsResult
+type ConsoleURLResult = consoleport.ConsoleURLResult
+type BackendTLS = consoleport.BackendTLS
+
+func ConsoleBackendHeaders(result ConsoleURLResult) http.Header {
+	headers := make(http.Header, len(result.BackendHeaders))
+	for name, values := range result.BackendHeaders {
+		headers[name] = append([]string(nil), values...)
+	}
+	return headers
 }
 
-type AdapterError struct {
-	Cause      error
-	Reason     string
-	Message    string
-	HTTPStatus int
-	NextAction string
-}
-
-func (e *AdapterError) Error() string {
-	if e == nil {
-		return ""
+func ConsoleBackendTLSConfig(result ConsoleURLResult) (*tls.Config, error) {
+	config := result.BackendTLS
+	empty := config.ServerName == "" && !config.InsecureSkipVerify && len(config.CAData) == 0 &&
+		len(config.CertData) == 0 && len(config.KeyData) == 0 && len(config.NextProtos) == 0
+	if empty {
+		return nil, nil
 	}
-	if strings.TrimSpace(e.Message) != "" {
-		return e.Message
+	tlsConfig := &tls.Config{
+		ServerName:         config.ServerName,
+		InsecureSkipVerify: config.InsecureSkipVerify, //nolint:gosec // Explicit per-connection operator setting.
+		NextProtos:         append([]string(nil), config.NextProtos...),
 	}
-	if e.HTTPStatus > 0 && strings.TrimSpace(e.Reason) != "" {
-		return fmt.Sprintf("virtualization adapter failed: %s (status %d)", e.Reason, e.HTTPStatus)
+	if len(config.CAData) > 0 {
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(config.CAData) {
+			return nil, errors.New("virtualization backend TLS CA data is invalid")
+		}
+		tlsConfig.RootCAs = roots
 	}
-	if e.HTTPStatus > 0 {
-		return fmt.Sprintf("virtualization adapter failed with status %d", e.HTTPStatus)
+	if len(config.CertData) > 0 || len(config.KeyData) > 0 {
+		if len(config.CertData) == 0 || len(config.KeyData) == 0 {
+			return nil, errors.New("virtualization backend TLS client certificate and key must be provided together")
+		}
+		certificate, err := tls.X509KeyPair(config.CertData, config.KeyData)
+		if err != nil {
+			return nil, fmt.Errorf("parse virtualization backend TLS client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{certificate}
 	}
-	if strings.TrimSpace(e.Reason) != "" {
-		return "virtualization adapter failed: " + e.Reason
-	}
-	return "virtualization adapter failed"
-}
-
-func (e *AdapterError) Unwrap() error {
-	if e == nil {
-		return nil
-	}
-	return e.Cause
+	return tlsConfig, nil
 }
 
 func AdapterErrorDetails(err error) (AdapterError, bool) {
-	var adapterErr *AdapterError
-	if !errors.As(err, &adapterErr) || adapterErr == nil {
-		return AdapterError{}, false
-	}
-	return *adapterErr, true
+	return domainvirtualization.AdapterErrorDetails(err)
 }
 
 func invalidf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
-}
-
-func unsupportedf(format string, args ...any) error {
-	return fmt.Errorf("%w: %s", ErrUnsupported, fmt.Sprintf(format, args...))
-}
-
-type MetricPoint struct {
-	Timestamp int64   `json:"timestamp"`
-	Value     float64 `json:"value"`
-}
-
-type MetricSeries struct {
-	Key    string        `json:"key"`
-	Label  string        `json:"label"`
-	Unit   string        `json:"unit"`
-	Points []MetricPoint `json:"points"`
-}
-
-type VMMetricsResult struct {
-	Series  []MetricSeries `json:"series"`
-	Message string         `json:"message,omitempty"`
-	Ready   bool           `json:"ready"`
-	Source  string         `json:"source,omitempty"`
-}
-
-type ConsoleURLResult struct {
-	Type                  string      `json:"type"`
-	URL                   string      `json:"url"`
-	BackendURL            string      `json:"backendUrl,omitempty"`
-	Token                 string      `json:"token,omitempty"`
-	Message               string      `json:"message,omitempty"`
-	Ready                 bool        `json:"ready"`
-	Provider              string      `json:"provider,omitempty"`
-	ProxyMode             string      `json:"proxyMode,omitempty"`
-	BackendHeaders        http.Header `json:"-"`
-	BackendTLSConfig      *tls.Config `json:"-"`
-	InsecureSkipTLSVerify bool        `json:"-"`
 }

@@ -19,11 +19,17 @@ func main() {
 func run() int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if err := runServer(ctx); err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
 
+func runServer(ctx context.Context) error {
 	application, err := bootstrap.New(ctx)
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "bootstrap soha api: %v\n", err)
-		return 1
+		return fmt.Errorf("bootstrap soha api: %w", err)
 	}
 
 	runErr := make(chan error, 1)
@@ -33,14 +39,13 @@ func run() int {
 
 	application.Logger.Info("soha api started")
 
-	exitCode := 0
+	var runFailure error
 	select {
 	case <-ctx.Done():
-		stop()
 	case err := <-runErr:
 		if err != nil {
 			application.Logger.Error("server exited with error", zap.Error(err))
-			exitCode = 1
+			runFailure = fmt.Errorf("run soha api: %w", err)
 		}
 	}
 
@@ -48,8 +53,7 @@ func run() int {
 	defer cancel()
 	if err := application.Shutdown(shutdownCtx); err != nil {
 		application.Logger.Error("graceful shutdown failed", zap.Error(err))
-		return 1
+		return fmt.Errorf("graceful shutdown: %w", err)
 	}
-
-	return exitCode
+	return runFailure
 }

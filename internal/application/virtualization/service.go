@@ -2,8 +2,8 @@ package virtualization
 
 import (
 	"context"
-	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -13,14 +13,15 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
-	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
-	"gorm.io/gorm"
+	"github.com/opensoha/soha/internal/platform/secretcrypto"
 )
 
 const (
@@ -42,20 +43,30 @@ const (
 	defaultTaskTimeoutSeconds = 1800
 )
 
-type Repository = domainvirtualization.Repository
-
-type Adapter = infravirtualization.Adapter
+type Adapter interface {
+	domainvirtualization.Adapter
+	consoleport.Adapter
+}
 
 type OperationRecorder interface {
 	Record(context.Context, domainoperation.Entry) error
 }
 
 type Service struct {
-	repo               Repository
+	connections        ConnectionReader
+	connectionWriter   ConnectionWriter
+	dockerLinks        DockerLinkRepository
+	vms                VMRepository
+	images             ImageRepository
+	flavors            FlavorRepository
+	tasks              TaskRepository
+	taskQueue          TaskQueueRepository
+	taskLogs           TaskLogRepository
 	adapters           map[string]Adapter
 	permissions        *appaccess.PermissionResolver
 	operations         OperationRecorder
 	credentialKey      string
+	credentialKeys     keyring.Ring
 	workerInterval     time.Duration
 	syncConcurrency    int
 	startupSyncEnabled bool
@@ -70,11 +81,12 @@ type Service struct {
 }
 
 type Options struct {
-	CredentialEncryptionKey string
-	StartupSyncEnabled      bool
-	WorkerInterval          time.Duration
-	SyncConcurrency         int
-	CredentialProvider      CredentialProvider
+	CredentialEncryptionKey  string
+	CredentialEncryptionKeys keyring.Ring
+	StartupSyncEnabled       bool
+	WorkerInterval           time.Duration
+	SyncConcurrency          int
+	CredentialProvider       CredentialProvider
 }
 
 type CredentialProvider interface {
@@ -240,7 +252,10 @@ type ConnectionHealthStats struct {
 	Unavailable int `json:"unavailable"`
 }
 
-func New(repo Repository, adapters map[string]Adapter, permissions *appaccess.PermissionResolver, operations OperationRecorder, opts Options) *Service {
+func New(deps Dependencies, adapters map[string]Adapter, permissions *appaccess.PermissionResolver, operations OperationRecorder, opts Options) (*Service, error) {
+	if err := deps.validate(); err != nil {
+		return nil, err
+	}
 	normalized := make(map[string]Adapter, len(adapters))
 	for provider, adapter := range adapters {
 		if adapter != nil {
@@ -256,11 +271,20 @@ func New(repo Repository, adapters map[string]Adapter, permissions *appaccess.Pe
 		syncConcurrency = 1
 	}
 	return &Service{
-		repo:               repo,
+		connections:        deps.Connections,
+		connectionWriter:   deps.ConnectionWriter,
+		dockerLinks:        deps.DockerLinks,
+		vms:                deps.VMs,
+		images:             deps.Images,
+		flavors:            deps.Flavors,
+		tasks:              deps.Tasks,
+		taskQueue:          deps.TaskQueue,
+		taskLogs:           deps.TaskLogs,
 		adapters:           normalized,
 		permissions:        permissions,
 		operations:         operations,
 		credentialKey:      strings.TrimSpace(opts.CredentialEncryptionKey),
+		credentialKeys:     opts.CredentialEncryptionKeys,
 		workerInterval:     interval,
 		syncConcurrency:    syncConcurrency,
 		startupSyncEnabled: opts.StartupSyncEnabled,
@@ -271,7 +295,15 @@ func New(repo Repository, adapters map[string]Adapter, permissions *appaccess.Pe
 			UserName: "System",
 			Roles:    []string{"admin"},
 		},
+	}, nil
+}
+
+func MustNew(deps Dependencies, adapters map[string]Adapter, permissions *appaccess.PermissionResolver, operations OperationRecorder, opts Options) *Service {
+	service, err := New(deps, adapters, permissions, operations, opts)
+	if err != nil {
+		panic(err)
 	}
+	return service
 }
 
 func (s *Service) SetInstrumentation(metrics *runtimeobs.Registry) {
@@ -282,34 +314,80 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationOverviewView); err != nil {
 		return Overview{}, err
 	}
-	connections, err := s.repo.ListConnections(ctx, domainvirtualization.ConnectionFilter{Limit: 1000})
+	source, err := s.loadOverviewSource(ctx)
 	if err != nil {
 		return Overview{}, err
 	}
-	vms, err := s.repo.ListVMs(ctx, domainvirtualization.VMFilter{Limit: 1000})
-	if err != nil {
-		return Overview{}, err
-	}
-	images, err := s.repo.ListImages(ctx, domainvirtualization.ImageFilter{Limit: 1000})
-	if err != nil {
-		return Overview{}, err
-	}
-	flavors, err := s.repo.ListFlavors(ctx, domainvirtualization.FlavorFilter{Limit: 1000})
-	if err != nil {
-		return Overview{}, err
-	}
-	recentTasks, err := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{Limit: 20})
-	if err != nil {
-		return Overview{}, err
-	}
-	recentTasks = domainvirtualization.WithOperationStates(recentTasks, time.Now().UTC())
-	attentionTasks, err := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{Limit: 100})
-	if err != nil {
-		return Overview{}, err
-	}
-	attentionTasks = domainvirtualization.WithOperationStates(attentionTasks, time.Now().UTC())
-	out := Overview{RecentOperations: recentTasks}
+	out := Overview{RecentOperations: source.recentTasks}
 	providerSummaries := map[string]*OverviewProviderSummary{}
+	addOverviewConnectionSummary(&out, providerSummaries, source.connections)
+	addOverviewVMSummary(&out, providerSummaries, source.vms)
+	out.Stats.ImageCount = len(source.images)
+	out.Stats.FlavorCount = countActiveFlavors(source.flavors)
+	addOverviewTaskSummary(&out, source.attentionTasks)
+	out.Attention.RiskyConnections = topRiskyConnections(source.connections, 5)
+	out.Attention.FailedSyncTasks = topFailedTasks(source.attentionTasks, 5, func(task domainvirtualization.Task) bool {
+		return task.TaskKind == TaskKindAssetSync && isAbnormalTaskStatus(task.Status)
+	})
+	out.Attention.FailedOperations = topFailedTasks(source.attentionTasks, 5, func(task domainvirtualization.Task) bool {
+		return isAbnormalTaskStatus(task.Status)
+	})
+	out.ProviderSummary = sortedProviderSummary(providerSummaries)
+	return out, nil
+}
+
+type overviewSource struct {
+	connections    []domainvirtualization.Connection
+	vms            []domainvirtualization.VM
+	images         []domainvirtualization.Image
+	flavors        []domainvirtualization.Flavor
+	recentTasks    []domainvirtualization.Task
+	attentionTasks []domainvirtualization.Task
+}
+
+func (s *Service) loadOverviewSource(ctx context.Context) (overviewSource, error) {
+	var source overviewSource
+	var err error
+	if source.connections, err = s.connections.ListConnections(
+		ctx, domainvirtualization.ConnectionFilter{Limit: 1000},
+	); err != nil {
+		return overviewSource{}, err
+	}
+	if source.vms, err = s.vms.ListVMs(ctx, domainvirtualization.VMFilter{Limit: 1000}); err != nil {
+		return overviewSource{}, err
+	}
+	if source.images, err = s.images.ListImages(
+		ctx, domainvirtualization.ImageFilter{Limit: 1000},
+	); err != nil {
+		return overviewSource{}, err
+	}
+	if source.flavors, err = s.flavors.ListFlavors(
+		ctx, domainvirtualization.FlavorFilter{Limit: 1000},
+	); err != nil {
+		return overviewSource{}, err
+	}
+	if source.recentTasks, err = s.tasks.ListTasks(
+		ctx, domainvirtualization.TaskFilter{Limit: 20},
+	); err != nil {
+		return overviewSource{}, err
+	}
+	source.recentTasks = domainvirtualization.WithOperationStates(source.recentTasks, time.Now().UTC())
+	if source.attentionTasks, err = s.tasks.ListTasks(
+		ctx, domainvirtualization.TaskFilter{Limit: 100},
+	); err != nil {
+		return overviewSource{}, err
+	}
+	source.attentionTasks = domainvirtualization.WithOperationStates(
+		source.attentionTasks, time.Now().UTC(),
+	)
+	return source, nil
+}
+
+func addOverviewConnectionSummary(
+	out *Overview,
+	providerSummaries map[string]*OverviewProviderSummary,
+	connections []domainvirtualization.Connection,
+) {
 	out.Stats.Connections.Total = len(connections)
 	out.ConnectionSummary.Total = len(connections)
 	for _, connection := range connections {
@@ -337,6 +415,13 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 			out.ConnectionSummary.CredentialMissing++
 		}
 	}
+}
+
+func addOverviewVMSummary(
+	out *Overview,
+	providerSummaries map[string]*OverviewProviderSummary,
+	vms []domainvirtualization.VM,
+) {
 	out.Stats.VMCount = len(vms)
 	for _, vm := range vms {
 		providerSummary := providerSummaryFor(providerSummaries, vm.Provider)
@@ -349,10 +434,11 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 			out.Stats.StoppedVMCount++
 		}
 	}
-	out.Stats.ImageCount = len(images)
-	out.Stats.FlavorCount = countActiveFlavors(flavors)
-	for i := range attentionTasks {
-		switch attentionTasks[i].Status {
+}
+
+func addOverviewTaskSummary(out *Overview, tasks []domainvirtualization.Task) {
+	for i := range tasks {
+		switch tasks[i].Status {
 		case TaskStatusQueued:
 			out.Stats.PendingTaskCount++
 			out.TaskSummary.Queued++
@@ -369,27 +455,18 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 		case TaskStatusSucceeded:
 			out.TaskSummary.Completed++
 		}
-		if attentionTasks[i].TaskKind == TaskKindAssetSync && out.LastSyncTask == nil {
-			item := attentionTasks[i]
+		if tasks[i].TaskKind == TaskKindAssetSync && out.LastSyncTask == nil {
+			item := tasks[i]
 			out.LastSyncTask = &item
 		}
 	}
-	out.Attention.RiskyConnections = topRiskyConnections(connections, 5)
-	out.Attention.FailedSyncTasks = topFailedTasks(attentionTasks, 5, func(task domainvirtualization.Task) bool {
-		return task.TaskKind == TaskKindAssetSync && isAbnormalTaskStatus(task.Status)
-	})
-	out.Attention.FailedOperations = topFailedTasks(attentionTasks, 5, func(task domainvirtualization.Task) bool {
-		return isAbnormalTaskStatus(task.Status)
-	})
-	out.ProviderSummary = sortedProviderSummary(providerSummaries)
-	return out, nil
 }
 
 func (s *Service) ListConnections(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.ConnectionFilter) ([]domainvirtualization.Connection, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersView); err != nil {
 		return nil, err
 	}
-	items, err := s.repo.ListConnections(ctx, filter)
+	items, err := s.connections.ListConnections(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -401,11 +478,11 @@ func (s *Service) ListConnectionsPage(ctx context.Context, principal domainident
 		return domainvirtualization.Page[domainvirtualization.Connection]{}, err
 	}
 	filter.Page, filter.PageSize = normalizedPageRequest(filter.Page, filter.PageSize, filter.Limit)
-	items, err := s.repo.ListConnections(ctx, filter)
+	items, err := s.connections.ListConnections(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Connection]{}, err
 	}
-	total, err := s.repo.CountConnections(ctx, filter)
+	total, err := s.connections.CountConnections(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Connection]{}, err
 	}
@@ -420,7 +497,7 @@ func (s *Service) CreateConnection(ctx context.Context, principal domainidentity
 	if err != nil {
 		return domainvirtualization.Connection{}, err
 	}
-	item, err := s.repo.CreateConnection(ctx, repoInput)
+	item, err := s.connectionWriter.CreateConnection(ctx, repoInput)
 	if err != nil {
 		return domainvirtualization.Connection{}, err
 	}
@@ -432,7 +509,7 @@ func (s *Service) UpdateConnection(ctx context.Context, principal domainidentity
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
 		return domainvirtualization.Connection{}, err
 	}
-	current, err := s.repo.GetConnection(ctx, strings.TrimSpace(id))
+	current, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return domainvirtualization.Connection{}, mapNotFound(err)
 	}
@@ -440,7 +517,7 @@ func (s *Service) UpdateConnection(ctx context.Context, principal domainidentity
 	if err != nil {
 		return domainvirtualization.Connection{}, err
 	}
-	item, err := s.repo.UpdateConnection(ctx, id, repoInput)
+	item, err := s.connectionWriter.UpdateConnection(ctx, id, repoInput)
 	if err != nil {
 		return domainvirtualization.Connection{}, mapNotFound(err)
 	}
@@ -452,7 +529,7 @@ func (s *Service) GetConnectionDeleteDependencies(ctx context.Context, principal
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
 		return domainvirtualization.ConnectionDeleteDependencies{}, err
 	}
-	current, err := s.repo.GetConnection(ctx, strings.TrimSpace(id))
+	current, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return domainvirtualization.ConnectionDeleteDependencies{}, mapNotFound(err)
 	}
@@ -468,7 +545,7 @@ func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
 		return err
 	}
-	current, err := s.repo.GetConnection(ctx, strings.TrimSpace(id))
+	current, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return mapNotFound(err)
 	}
@@ -486,11 +563,11 @@ func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity
 		if err := s.snapshotConnectionDeleteTasks(ctx, current, principal); err != nil {
 			return err
 		}
-		if err := s.repo.MarkDockerHostsUnavailableByConnection(ctx, current.ID); err != nil {
+		if err := s.dockerLinks.MarkDockerHostsUnavailableByConnection(ctx, current.ID); err != nil {
 			return err
 		}
 	}
-	if err := s.repo.DeleteConnection(ctx, current.ID); err != nil {
+	if err := s.connectionWriter.DeleteConnection(ctx, current.ID); err != nil {
 		return mapNotFound(err)
 	}
 	s.recordOperation(ctx, principal, "virtualization.connection.delete", current.ID, firstNonEmpty(current.Name, current.ID), "success", "deleted virtualization connection", map[string]any{
@@ -509,11 +586,11 @@ func (s *Service) TestConnection(ctx context.Context, principal domainidentity.P
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	connection, err := s.repo.GetConnection(ctx, strings.TrimSpace(id))
+	connection, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
-	adapterConnection, err := s.adapterConnection(connection)
+	adapterConnection, err := s.adapterConnection(ctx, connection)
 	if err != nil {
 		return domainvirtualization.Task{}, err
 	}
@@ -541,8 +618,8 @@ func (s *Service) TestConnection(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		health["status"] = "unavailable"
 	}
-	_, _ = s.repo.UpdateConnectionHealth(ctx, connection.ID, health, nil)
-	task, createErr := s.repo.CreateTask(ctx, domainvirtualization.Task{
+	_, _ = s.connectionWriter.UpdateConnectionHealth(ctx, connection.ID, health, nil)
+	task, createErr := s.tasks.CreateTask(ctx, domainvirtualization.Task{
 		Provider:     connection.Provider,
 		ConnectionID: connection.ID,
 		TaskKind:     "connection_test",
@@ -567,7 +644,7 @@ func (s *Service) TestConnection(ctx context.Context, principal domainidentity.P
 	if status == TaskStatusFailed {
 		level = "error"
 	}
-	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: level, Message: firstNonEmpty(message, "connection test completed")})
+	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: level, Message: firstNonEmpty(message, "connection test completed")})
 	s.recordOperation(ctx, principal, "virtualization.connection.test", connection.ID, connection.Name, status, "tested virtualization connection", map[string]any{"taskId": task.ID})
 	if err != nil {
 		return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
@@ -579,7 +656,7 @@ func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.P
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationSyncManage); err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	connection, err := s.repo.GetConnection(ctx, strings.TrimSpace(id))
+	connection, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
@@ -610,7 +687,7 @@ func (s *Service) ListVMs(ctx context.Context, principal domainidentity.Principa
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListVMs(ctx, filter)
+	return s.vms.ListVMs(ctx, filter)
 }
 
 func (s *Service) ListVMsPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.VMFilter) (domainvirtualization.Page[domainvirtualization.VM], error) {
@@ -618,11 +695,11 @@ func (s *Service) ListVMsPage(ctx context.Context, principal domainidentity.Prin
 		return domainvirtualization.Page[domainvirtualization.VM]{}, err
 	}
 	filter.Page, filter.PageSize = normalizedPageRequest(filter.Page, filter.PageSize, filter.Limit)
-	items, err := s.repo.ListVMs(ctx, filter)
+	items, err := s.vms.ListVMs(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.VM]{}, err
 	}
-	total, err := s.repo.CountVMs(ctx, filter)
+	total, err := s.vms.CountVMs(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.VM]{}, err
 	}
@@ -633,7 +710,7 @@ func (s *Service) GetVM(ctx context.Context, principal domainidentity.Principal,
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsView); err != nil {
 		return domainvirtualization.VM{}, err
 	}
-	item, err := s.repo.GetVM(ctx, strings.TrimSpace(id))
+	item, err := s.vms.GetVM(ctx, strings.TrimSpace(id))
 	return item, mapNotFound(err)
 }
 
@@ -643,28 +720,28 @@ func (s *Service) GetVMDetail(ctx context.Context, principal domainidentity.Prin
 		return VMDetail{}, err
 	}
 	detail := VMDetail{VM: vm}
-	if connection, err := s.repo.GetConnection(ctx, vm.ConnectionID); err == nil {
+	if connection, err := s.connections.GetConnection(ctx, vm.ConnectionID); err == nil {
 		sanitized := sanitizeConnection(connection)
 		detail.Connection = &sanitized
 	}
 	if vm.ImageID != "" {
-		if image, err := s.repo.GetImage(ctx, vm.ImageID); err == nil {
+		if image, err := s.images.GetImage(ctx, vm.ImageID); err == nil {
 			detail.Image = &image
 		}
 	}
 	if vm.FlavorID != "" {
-		if flavor, err := s.repo.GetFlavor(ctx, vm.FlavorID); err == nil {
+		if flavor, err := s.flavors.GetFlavor(ctx, vm.FlavorID); err == nil {
 			detail.Flavor = &flavor
 		}
 	}
-	tasks, err := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{VMID: vm.ID, Limit: 20})
+	tasks, err := s.tasks.ListTasks(ctx, domainvirtualization.TaskFilter{VMID: vm.ID, Limit: 20})
 	if err != nil {
 		return VMDetail{}, err
 	}
 	tasks = domainvirtualization.WithOperationStates(tasks, time.Now().UTC())
 	detail.Operations = make([]OperationWithLogs, 0, len(tasks))
 	for index, task := range tasks {
-		logs, _ := s.repo.ListTaskLogs(ctx, task.ID, 100)
+		logs, _ := s.taskLogs.ListTaskLogs(ctx, task.ID, 100)
 		detail.Operations = append(detail.Operations, OperationWithLogs{Task: task, Logs: logs})
 		if index == 0 {
 			detail.Logs = logs
@@ -677,7 +754,7 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsManage); err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	connection, err := s.repo.GetConnection(ctx, strings.TrimSpace(input.ConnectionID))
+	connection, err := s.connections.GetConnection(ctx, strings.TrimSpace(input.ConnectionID))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
@@ -691,7 +768,7 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 	input.Architecture = architecture
 	flavor := domainvirtualization.Flavor{}
 	if strings.TrimSpace(input.FlavorID) != "" {
-		flavor, err = s.repo.GetFlavor(ctx, strings.TrimSpace(input.FlavorID))
+		flavor, err = s.flavors.GetFlavor(ctx, strings.TrimSpace(input.FlavorID))
 		if err != nil {
 			return domainvirtualization.Task{}, mapNotFound(err)
 		}
@@ -711,7 +788,7 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 	imageID := firstNonEmpty(input.ImageID, input.BootImageID)
 	image := domainvirtualization.Image{}
 	if strings.TrimSpace(imageID) != "" {
-		image, err = s.repo.GetImage(ctx, strings.TrimSpace(imageID))
+		image, err = s.images.GetImage(ctx, strings.TrimSpace(imageID))
 		if err != nil {
 			return domainvirtualization.Task{}, mapNotFound(err)
 		}
@@ -721,7 +798,7 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 		input.BootImageID = image.ID
 	}
 	sourceRef := firstNonEmpty(stringValue(image.Config, "sourceRef"), image.ExternalID, imageID)
-	task, err := s.repo.CreateTask(ctx, domainvirtualization.Task{
+	task, err := s.tasks.CreateTask(ctx, domainvirtualization.Task{
 		Provider:       connection.Provider,
 		ConnectionID:   connection.ID,
 		TaskKind:       TaskKindVMCreate,
@@ -761,7 +838,7 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsManage); err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	vm, err := s.repo.GetVM(ctx, strings.TrimSpace(id))
+	vm, err := s.vms.GetVM(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
@@ -769,7 +846,7 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 	if err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	task, err := s.repo.CreateTask(ctx, domainvirtualization.Task{
+	task, err := s.tasks.CreateTask(ctx, domainvirtualization.Task{
 		Provider:       vm.Provider,
 		ConnectionID:   vm.ConnectionID,
 		VMID:           vm.ID,
@@ -794,7 +871,7 @@ func (s *Service) ListImages(ctx context.Context, principal domainidentity.Princ
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationImagesView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListImages(ctx, filter)
+	return s.images.ListImages(ctx, filter)
 }
 
 func (s *Service) ListImagesPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.ImageFilter) (domainvirtualization.Page[domainvirtualization.Image], error) {
@@ -802,11 +879,11 @@ func (s *Service) ListImagesPage(ctx context.Context, principal domainidentity.P
 		return domainvirtualization.Page[domainvirtualization.Image]{}, err
 	}
 	filter.Page, filter.PageSize = normalizedPageRequest(filter.Page, filter.PageSize, filter.Limit)
-	items, err := s.repo.ListImages(ctx, filter)
+	items, err := s.images.ListImages(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Image]{}, err
 	}
-	total, err := s.repo.CountImages(ctx, filter)
+	total, err := s.images.CountImages(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Image]{}, err
 	}
@@ -821,7 +898,7 @@ func (s *Service) CreateImage(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return domainvirtualization.Image{}, err
 	}
-	stored, err := s.repo.UpsertImage(ctx, item)
+	stored, err := s.images.UpsertImage(ctx, item)
 	if err != nil {
 		return domainvirtualization.Image{}, err
 	}
@@ -837,7 +914,7 @@ func (s *Service) UpdateImage(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return domainvirtualization.Image{}, err
 	}
-	stored, err := s.repo.UpsertImage(ctx, item)
+	stored, err := s.images.UpsertImage(ctx, item)
 	if err != nil {
 		return domainvirtualization.Image{}, err
 	}
@@ -849,12 +926,12 @@ func (s *Service) DeleteImage(ctx context.Context, principal domainidentity.Prin
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationImagesManage); err != nil {
 		return err
 	}
-	current, err := s.repo.GetImage(ctx, strings.TrimSpace(id))
+	current, err := s.images.GetImage(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return mapNotFound(err)
 	}
 	current.Status = "deleted"
-	if _, err := s.repo.UpsertImage(ctx, current); err != nil {
+	if _, err := s.images.UpsertImage(ctx, current); err != nil {
 		return err
 	}
 	s.recordOperation(ctx, principal, "virtualization.image.delete", current.ID, current.Name, "success", "deleted virtualization image or template", nil)
@@ -865,7 +942,7 @@ func (s *Service) ListFlavors(ctx context.Context, principal domainidentity.Prin
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationFlavorsView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListFlavors(ctx, filter)
+	return s.flavors.ListFlavors(ctx, filter)
 }
 
 func (s *Service) ListFlavorsPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.FlavorFilter) (domainvirtualization.Page[domainvirtualization.Flavor], error) {
@@ -873,11 +950,11 @@ func (s *Service) ListFlavorsPage(ctx context.Context, principal domainidentity.
 		return domainvirtualization.Page[domainvirtualization.Flavor]{}, err
 	}
 	filter.Page, filter.PageSize = normalizedPageRequest(filter.Page, filter.PageSize, filter.Limit)
-	items, err := s.repo.ListFlavors(ctx, filter)
+	items, err := s.flavors.ListFlavors(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Flavor]{}, err
 	}
-	total, err := s.repo.CountFlavors(ctx, filter)
+	total, err := s.flavors.CountFlavors(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Flavor]{}, err
 	}
@@ -888,7 +965,7 @@ func (s *Service) CreateFlavor(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationFlavorsManage); err != nil {
 		return domainvirtualization.Flavor{}, err
 	}
-	item, err := s.repo.UpsertFlavor(ctx, flavorFromInput(input, ""))
+	item, err := s.flavors.UpsertFlavor(ctx, flavorFromInput(input, ""))
 	if err != nil {
 		return domainvirtualization.Flavor{}, err
 	}
@@ -900,7 +977,7 @@ func (s *Service) UpdateFlavor(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationFlavorsManage); err != nil {
 		return domainvirtualization.Flavor{}, err
 	}
-	item, err := s.repo.UpsertFlavor(ctx, flavorFromInput(input, strings.TrimSpace(id)))
+	item, err := s.flavors.UpsertFlavor(ctx, flavorFromInput(input, strings.TrimSpace(id)))
 	if err != nil {
 		return domainvirtualization.Flavor{}, err
 	}
@@ -912,13 +989,13 @@ func (s *Service) DeleteFlavor(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationFlavorsManage); err != nil {
 		return err
 	}
-	current, err := s.repo.GetFlavor(ctx, strings.TrimSpace(id))
+	current, err := s.flavors.GetFlavor(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return mapNotFound(err)
 	}
 	item := current
 	item.Status = "deleted"
-	if _, err := s.repo.UpsertFlavor(ctx, item); err != nil {
+	if _, err := s.flavors.UpsertFlavor(ctx, item); err != nil {
 		return err
 	}
 	s.recordOperation(ctx, principal, "virtualization.flavor.delete", id, firstNonEmpty(current.Name, id), "success", "deleted virtualization flavor", nil)
@@ -929,7 +1006,7 @@ func (s *Service) ListOperations(ctx context.Context, principal domainidentity.P
 	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView); err != nil {
 		return nil, err
 	}
-	items, err := s.repo.ListTasks(ctx, filter)
+	items, err := s.tasks.ListTasks(ctx, filter)
 	return domainvirtualization.WithOperationStates(items, time.Now().UTC()), err
 }
 
@@ -938,12 +1015,12 @@ func (s *Service) ListOperationsPage(ctx context.Context, principal domainidenti
 		return domainvirtualization.Page[domainvirtualization.Task]{}, err
 	}
 	filter.Page, filter.PageSize = normalizedPageRequest(filter.Page, filter.PageSize, filter.Limit)
-	items, err := s.repo.ListTasks(ctx, filter)
+	items, err := s.tasks.ListTasks(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Task]{}, err
 	}
 	items = domainvirtualization.WithOperationStates(items, time.Now().UTC())
-	total, err := s.repo.CountTasks(ctx, filter)
+	total, err := s.tasks.CountTasks(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Task]{}, err
 	}
@@ -954,7 +1031,7 @@ func (s *Service) GetOperation(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView); err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	item, err := s.repo.GetTask(ctx, strings.TrimSpace(taskID))
+	item, err := s.tasks.GetTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
@@ -965,14 +1042,14 @@ func (s *Service) ListOperationLogs(ctx context.Context, principal domainidentit
 	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListTaskLogs(ctx, strings.TrimSpace(taskID), limit)
+	return s.taskLogs.ListTaskLogs(ctx, strings.TrimSpace(taskID), limit)
 }
 
 func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationOperationsManage); err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	task, err := s.repo.GetTask(ctx, strings.TrimSpace(taskID))
+	task, err := s.tasks.GetTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
@@ -987,11 +1064,11 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 		"canceledBy": principal.UserID,
 		"canceledAt": now.Format(time.RFC3339),
 	})
-	updated, err := s.repo.UpdateTask(ctx, task)
+	updated, err := s.tasks.UpdateTask(ctx, task)
 	if err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "warn", Message: "operation canceled", Payload: map[string]any{"actor": principal.UserID}})
+	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "warn", Message: "operation canceled", Payload: map[string]any{"actor": principal.UserID}})
 	s.recordOperation(ctx, principal, "virtualization.operation.cancel", updated.ID, updated.TaskKind, "success", "canceled virtualization operation", map[string]any{"taskId": updated.ID})
 	return domainvirtualization.WithOperationState(updated, time.Now().UTC()), nil
 }
@@ -1000,7 +1077,7 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationOperationsManage); err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	task, err := s.repo.GetTask(ctx, strings.TrimSpace(taskID))
+	task, err := s.tasks.GetTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
@@ -1023,41 +1100,41 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 		"retriedBy": principal.UserID,
 		"retriedAt": time.Now().UTC().Format(time.RFC3339),
 	})
-	updated, err := s.repo.UpdateTask(ctx, task)
+	updated, err := s.tasks.UpdateTask(ctx, task)
 	if err != nil {
 		return domainvirtualization.Task{}, err
 	}
-	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "info", Message: "operation queued for retry", Payload: map[string]any{"actor": principal.UserID}})
+	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "info", Message: "operation queued for retry", Payload: map[string]any{"actor": principal.UserID}})
 	s.recordOperation(ctx, principal, "virtualization.operation.retry", updated.ID, updated.TaskKind, "success", "queued virtualization operation retry", map[string]any{"taskId": updated.ID})
 	return domainvirtualization.WithOperationState(updated, time.Now().UTC()), nil
 }
 
-func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Principal, vmID string, rangeMinutes, stepSeconds int) (infravirtualization.VMMetricsResult, error) {
+func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Principal, vmID string, rangeMinutes, stepSeconds int) (domainvirtualization.VMMetricsResult, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsMetrics); err != nil {
-		return infravirtualization.VMMetricsResult{}, err
+		return domainvirtualization.VMMetricsResult{}, err
 	}
 
-	vm, err := s.repo.GetVM(ctx, strings.TrimSpace(vmID))
+	vm, err := s.vms.GetVM(ctx, strings.TrimSpace(vmID))
 	if err != nil {
-		return infravirtualization.VMMetricsResult{}, mapNotFound(err)
+		return domainvirtualization.VMMetricsResult{}, mapNotFound(err)
 	}
 
-	connection, err := s.repo.GetConnection(ctx, vm.ConnectionID)
+	connection, err := s.connections.GetConnection(ctx, vm.ConnectionID)
 	if err != nil {
-		return infravirtualization.VMMetricsResult{}, mapNotFound(err)
+		return domainvirtualization.VMMetricsResult{}, mapNotFound(err)
 	}
 
 	adapter, err := s.adapterFor(connection.Provider)
 	if err != nil {
-		return infravirtualization.VMMetricsResult{}, err
+		return domainvirtualization.VMMetricsResult{}, err
 	}
 
-	adapterConn, err := s.adapterConnection(connection)
+	adapterConn, err := s.adapterConnection(ctx, connection)
 	if err != nil {
-		return infravirtualization.VMMetricsResult{}, err
+		return domainvirtualization.VMMetricsResult{}, err
 	}
 
-	adapterVM := infravirtualization.VM{
+	adapterVM := domainvirtualization.AdapterVM{
 		ID:        vm.ID,
 		Name:      vm.Name,
 		Namespace: vm.Namespace,
@@ -1069,32 +1146,32 @@ func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Pri
 	return adapter.GetVMMetrics(ctx, adapterConn, adapterVM, rangeMinutes, stepSeconds)
 }
 
-func (s *Service) GetConsoleURL(ctx context.Context, principal domainidentity.Principal, vmID string) (infravirtualization.ConsoleURLResult, error) {
+func (s *Service) GetConsoleURL(ctx context.Context, principal domainidentity.Principal, vmID string) (consoleport.ConsoleURLResult, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsConsole); err != nil {
-		return infravirtualization.ConsoleURLResult{}, err
+		return consoleport.ConsoleURLResult{}, err
 	}
 
-	vm, err := s.repo.GetVM(ctx, strings.TrimSpace(vmID))
+	vm, err := s.vms.GetVM(ctx, strings.TrimSpace(vmID))
 	if err != nil {
-		return infravirtualization.ConsoleURLResult{}, mapNotFound(err)
+		return consoleport.ConsoleURLResult{}, mapNotFound(err)
 	}
 
-	connection, err := s.repo.GetConnection(ctx, vm.ConnectionID)
+	connection, err := s.connections.GetConnection(ctx, vm.ConnectionID)
 	if err != nil {
-		return infravirtualization.ConsoleURLResult{}, mapNotFound(err)
+		return consoleport.ConsoleURLResult{}, mapNotFound(err)
 	}
 
 	adapter, err := s.adapterFor(connection.Provider)
 	if err != nil {
-		return infravirtualization.ConsoleURLResult{}, err
+		return consoleport.ConsoleURLResult{}, err
 	}
 
-	adapterConn, err := s.adapterConnection(connection)
+	adapterConn, err := s.adapterConnection(ctx, connection)
 	if err != nil {
-		return infravirtualization.ConsoleURLResult{}, err
+		return consoleport.ConsoleURLResult{}, err
 	}
 
-	adapterVM := infravirtualization.VM{
+	adapterVM := domainvirtualization.AdapterVM{
 		ID:        vm.ID,
 		Name:      vm.Name,
 		Namespace: vm.Namespace,
@@ -1157,7 +1234,36 @@ func (s *Service) authorizeAny(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) connectionInput(input ConnectionInput, current *domainvirtualization.Connection) (domainvirtualization.ConnectionInput, error) {
-	provider := normalizeProvider(input.Provider)
+	provider, err := connectionInputProvider(input.Provider, current)
+	if err != nil {
+		return domainvirtualization.ConnectionInput{}, err
+	}
+	config, credentialInput := connectionConfigAndCredential(input, provider, current)
+	enabled, verifyTLS := connectionInputFlags(input, current)
+	encrypted, err := s.connectionEncryptedCredential(provider, credentialInput, current)
+	if err != nil {
+		return domainvirtualization.ConnectionInput{}, err
+	}
+	return domainvirtualization.ConnectionInput{
+		ID:                  input.ID,
+		Provider:            provider,
+		Name:                strings.TrimSpace(input.Name),
+		Endpoint:            strings.TrimSpace(input.Endpoint),
+		KubernetesClusterID: strings.TrimSpace(input.KubernetesClusterID),
+		DefaultNamespace:    strings.TrimSpace(input.DefaultNamespace),
+		Enabled:             enabled,
+		VerifyTLS:           verifyTLS,
+		EncryptedCredential: encrypted,
+		Config:              config,
+		Health:              connectionInputHealth(current),
+	}, nil
+}
+
+func connectionInputProvider(
+	provider string,
+	current *domainvirtualization.Connection,
+) (string, error) {
+	provider = normalizeProvider(provider)
 	if provider == "" && current != nil {
 		provider = current.Provider
 	}
@@ -1165,8 +1271,18 @@ func (s *Service) connectionInput(input ConnectionInput, current *domainvirtuali
 		provider = ProviderKubeVirt
 	}
 	if provider != ProviderKubeVirt && provider != ProviderPVE {
-		return domainvirtualization.ConnectionInput{}, fmt.Errorf("%w: unsupported virtualization provider %q", apperrors.ErrInvalidArgument, provider)
+		return "", fmt.Errorf(
+			"%w: unsupported virtualization provider %q", apperrors.ErrInvalidArgument, provider,
+		)
 	}
+	return provider, nil
+}
+
+func connectionConfigAndCredential(
+	input ConnectionInput,
+	provider string,
+	current *domainvirtualization.Connection,
+) (map[string]any, map[string]any) {
 	config := cloneMap(input.Config)
 	if config == nil && current != nil {
 		config = cloneMap(current.Config)
@@ -1180,63 +1296,70 @@ func (s *Service) connectionInput(input ConnectionInput, current *domainvirtuali
 	if input.Description != "" {
 		config["description"] = input.Description
 	}
-	credentialInput := compactCredential(cloneMap(input.Credential))
-	if provider == ProviderKubeVirt {
-		if token := strings.TrimSpace(stringValue(config, "prometheusBearerToken")); token != "" {
-			if credentialInput == nil {
-				credentialInput = map[string]any{}
-			}
-			credentialInput["prometheusBearerToken"] = token
-		}
-		delete(config, "prometheusBearerToken")
+	credential := compactCredential(cloneMap(input.Credential))
+	if provider != ProviderKubeVirt {
+		return config, credential
 	}
-	enabled := true
+	if token := strings.TrimSpace(stringValue(config, "prometheusBearerToken")); token != "" {
+		if credential == nil {
+			credential = map[string]any{}
+		}
+		credential["prometheusBearerToken"] = token
+	}
+	delete(config, "prometheusBearerToken")
+	return config, credential
+}
+
+func connectionInputFlags(
+	input ConnectionInput,
+	current *domainvirtualization.Connection,
+) (enabled, verifyTLS bool) {
+	enabled, verifyTLS = true, true
 	if current != nil {
-		enabled = current.Enabled
+		enabled, verifyTLS = current.Enabled, current.VerifyTLS
 	}
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
-	verifyTLS := true
-	if current != nil {
-		verifyTLS = current.VerifyTLS
-	}
 	if input.VerifyTLS != nil {
 		verifyTLS = *input.VerifyTLS
 	}
+	return enabled, verifyTLS
+}
+
+func (s *Service) connectionEncryptedCredential(
+	provider string,
+	credential map[string]any,
+	current *domainvirtualization.Connection,
+) (map[string]any, error) {
 	encrypted := map[string]any{}
 	if current != nil {
 		encrypted = cloneMap(current.EncryptedCredential)
 	}
-	if len(credentialInput) > 0 {
-		if provider == ProviderPVE || provider == ProviderKubeVirt {
-			if strings.TrimSpace(s.credentialKey) == "" {
-				return domainvirtualization.ConnectionInput{}, fmt.Errorf("%w: security.credential_encryption_key is required for %s credentials", apperrors.ErrInvalidArgument, provider)
-			}
-			sealed, err := infravirtualization.EncryptCredentialJSON(s.credentialKey, credentialInput)
-			if err != nil {
-				return domainvirtualization.ConnectionInput{}, fmt.Errorf("%w: encrypt %s credential: %v", apperrors.ErrInvalidArgument, provider, err)
-			}
-			encrypted = map[string]any{"ciphertext": base64.StdEncoding.EncodeToString(sealed)}
-		}
+	if len(credential) == 0 {
+		return encrypted, nil
 	}
-	health := map[string]any{"status": "unknown"}
+	if s.credentialKeys.Active().ID() == "" && strings.TrimSpace(s.credentialKey) == "" {
+		return nil, fmt.Errorf(
+			"%w: security.credential_encryption_key is required for %s credentials",
+			apperrors.ErrInvalidArgument,
+			provider,
+		)
+	}
+	ciphertext, err := s.encryptCredentialJSON(credential)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"%w: encrypt %s credential: %v", apperrors.ErrInvalidArgument, provider, err,
+		)
+	}
+	return map[string]any{"ciphertext": ciphertext}, nil
+}
+
+func connectionInputHealth(current *domainvirtualization.Connection) map[string]any {
 	if current != nil && len(current.Health) > 0 {
-		health = cloneMap(current.Health)
+		return cloneMap(current.Health)
 	}
-	return domainvirtualization.ConnectionInput{
-		ID:                  input.ID,
-		Provider:            provider,
-		Name:                strings.TrimSpace(input.Name),
-		Endpoint:            strings.TrimSpace(input.Endpoint),
-		KubernetesClusterID: strings.TrimSpace(input.KubernetesClusterID),
-		DefaultNamespace:    strings.TrimSpace(input.DefaultNamespace),
-		Enabled:             enabled,
-		VerifyTLS:           verifyTLS,
-		EncryptedCredential: encrypted,
-		Config:              config,
-		Health:              health,
-	}, nil
+	return map[string]any{"status": "unknown"}
 }
 
 func (s *Service) adapterFor(provider string) (Adapter, error) {
@@ -1247,33 +1370,29 @@ func (s *Service) adapterFor(provider string) (Adapter, error) {
 	return adapter, nil
 }
 
-func (s *Service) adapterConnection(connection domainvirtualization.Connection) (infravirtualization.Connection, error) {
+func (s *Service) adapterConnection(ctx context.Context, connection domainvirtualization.Connection) (domainvirtualization.AdapterConnection, error) {
 	credential := map[string]any{}
 	secretRef := strings.TrimSpace(stringValue(connection.Config, "credentialSecretRef"))
 	if s.secretProvider != nil {
-		if resolved, err := s.secretProvider.ResolveVirtualizationCredential(context.Background(), connection); err != nil {
-			return infravirtualization.Connection{}, fmt.Errorf("%w: resolve virtualization credential: %v", apperrors.ErrInvalidArgument, err)
+		if resolved, err := s.secretProvider.ResolveVirtualizationCredential(ctx, connection); err != nil {
+			return domainvirtualization.AdapterConnection{}, fmt.Errorf("%w: resolve virtualization credential: %w", apperrors.ErrInvalidArgument, err)
 		} else if len(resolved) > 0 {
 			credential = resolved
 		}
 	} else if secretRef != "" {
-		return infravirtualization.Connection{}, fmt.Errorf("%w: credential secret provider is not configured for %s", apperrors.ErrInvalidArgument, secretRef)
+		return domainvirtualization.AdapterConnection{}, fmt.Errorf("%w: credential secret provider is not configured for %s", apperrors.ErrInvalidArgument, secretRef)
 	}
 	if len(connection.EncryptedCredential) > 0 {
-		if strings.TrimSpace(s.credentialKey) == "" {
-			return infravirtualization.Connection{}, fmt.Errorf("%w: security.credential_encryption_key is required for %s credentials", apperrors.ErrInvalidArgument, connection.Provider)
+		if s.credentialKeys.Active().ID() == "" && strings.TrimSpace(s.credentialKey) == "" {
+			return domainvirtualization.AdapterConnection{}, fmt.Errorf("%w: security.credential_encryption_key is required for %s credentials", apperrors.ErrInvalidArgument, connection.Provider)
 		}
 		encoded := stringValue(connection.EncryptedCredential, "ciphertext")
 		if encoded == "" {
-			return infravirtualization.Connection{}, fmt.Errorf("%w: encrypted virtualization credential payload is invalid", apperrors.ErrInvalidArgument)
+			return domainvirtualization.AdapterConnection{}, fmt.Errorf("%w: encrypted virtualization credential payload is invalid", apperrors.ErrInvalidArgument)
 		}
-		sealed, err := base64.StdEncoding.DecodeString(encoded)
+		decrypted, err := s.decryptCredentialJSON(encoded)
 		if err != nil {
-			return infravirtualization.Connection{}, fmt.Errorf("%w: encrypted virtualization credential payload is invalid", apperrors.ErrInvalidArgument)
-		}
-		decrypted, err := infravirtualization.DecryptCredentialJSON(s.credentialKey, sealed)
-		if err != nil {
-			return infravirtualization.Connection{}, fmt.Errorf("%w: decrypt %s credential: %v", apperrors.ErrInvalidArgument, connection.Provider, err)
+			return domainvirtualization.AdapterConnection{}, fmt.Errorf("%w: decrypt %s credential: %v", apperrors.ErrInvalidArgument, connection.Provider, err)
 		}
 		credential = mergeMaps(credential, decrypted)
 	}
@@ -1284,7 +1403,7 @@ func (s *Service) adapterConnection(connection domainvirtualization.Connection) 
 	if connection.DefaultNamespace != "" {
 		options["namespace"] = connection.DefaultNamespace
 	}
-	return infravirtualization.Connection{
+	return domainvirtualization.AdapterConnection{
 		ID:                    connection.ID,
 		Name:                  connection.Name,
 		Provider:              connection.Provider,
@@ -1296,6 +1415,55 @@ func (s *Service) adapterConnection(connection domainvirtualization.Connection) 
 		BackendURL:            stringValue(options, "backendUrl"),
 		InsecureSkipTLSVerify: !connection.VerifyTLS,
 	}, nil
+}
+
+func (s *Service) encryptCredentialJSON(credential map[string]any) (string, error) {
+	if s.credentialKeys.Active().ID() != "" {
+		plain, err := json.Marshal(credential)
+		if err != nil {
+			return "", fmt.Errorf("marshal credential json: %w", err)
+		}
+		return secretcrypto.EncryptStringWithKeyring(s.credentialKeys, string(plain))
+	}
+	sealed, err := secretcrypto.EncryptJSON(s.credentialKey, credential)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(sealed), nil
+}
+
+func (s *Service) decryptCredentialJSON(ciphertext string) (map[string]any, error) {
+	if strings.HasPrefix(ciphertext, secretcrypto.Prefix) || strings.HasPrefix(ciphertext, secretcrypto.PrefixV2) {
+		var plaintext string
+		var err error
+		if s.credentialKeys.Active().ID() != "" {
+			plaintext, err = secretcrypto.DecryptStringWithKeyring(s.credentialKeys, ciphertext)
+		} else {
+			plaintext, err = secretcrypto.DecryptString(s.credentialKey, ciphertext)
+		}
+		if err != nil {
+			return nil, err
+		}
+		var credential map[string]any
+		if err := json.Unmarshal([]byte(plaintext), &credential); err != nil {
+			return nil, fmt.Errorf("unmarshal credential json: %w", err)
+		}
+		return credential, nil
+	}
+	sealed, err := base64.StdEncoding.DecodeString(ciphertext)
+	if err != nil {
+		return nil, errors.New("encrypted virtualization credential payload is invalid")
+	}
+	if s.credentialKeys.Active().ID() == "" {
+		return secretcrypto.DecryptJSON(s.credentialKey, sealed)
+	}
+	for _, key := range s.credentialKeys.ValidKeys(time.Now().UTC()) {
+		credential, err := secretcrypto.DecryptJSON(key.Secret(), sealed)
+		if err == nil {
+			return credential, nil
+		}
+	}
+	return nil, errors.New("decrypt virtualization credential with credential keyring")
 }
 
 func adapterVMMetadata(vm domainvirtualization.VM) map[string]string {
@@ -1354,48 +1522,76 @@ func (s *Service) connectionDeleteDependencies(ctx context.Context, connection d
 	deps := domainvirtualization.ConnectionDeleteDependencies{
 		Connection: sanitizeConnection(connection),
 	}
+	if err := s.addConnectionDeleteCounts(ctx, connectionID, &deps); err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, err
+	}
+	if err := s.addConnectionDeleteSamples(ctx, connectionID, &deps); err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, err
+	}
+	finalizeConnectionDeleteDependencies(&deps)
+	return deps, nil
+}
 
+func (s *Service) addConnectionDeleteCounts(
+	ctx context.Context,
+	connectionID string,
+	deps *domainvirtualization.ConnectionDeleteDependencies,
+) error {
 	var err error
-	if deps.VMCount, err = s.repo.CountVMs(ctx, domainvirtualization.VMFilter{ConnectionID: connectionID}); err != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count virtualization vms for connection delete: %w", err)
+	if deps.VMCount, err = s.vms.CountVMs(ctx, domainvirtualization.VMFilter{ConnectionID: connectionID}); err != nil {
+		return fmt.Errorf("count virtualization vms for connection delete: %w", err)
 	}
-	if deps.ImageCount, err = s.repo.CountImages(ctx, domainvirtualization.ImageFilter{ConnectionID: connectionID}); err != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count virtualization images for connection delete: %w", err)
+	if deps.ImageCount, err = s.images.CountImages(ctx, domainvirtualization.ImageFilter{ConnectionID: connectionID}); err != nil {
+		return fmt.Errorf("count virtualization images for connection delete: %w", err)
 	}
-	if deps.FlavorCount, err = s.repo.CountFlavors(ctx, domainvirtualization.FlavorFilter{ConnectionID: connectionID}); err != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count virtualization flavors for connection delete: %w", err)
+	if deps.FlavorCount, err = s.flavors.CountFlavors(ctx, domainvirtualization.FlavorFilter{ConnectionID: connectionID}); err != nil {
+		return fmt.Errorf("count virtualization flavors for connection delete: %w", err)
 	}
-	if deps.TaskCount, err = s.repo.CountTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID}); err != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count virtualization tasks for connection delete: %w", err)
+	if deps.TaskCount, err = s.tasks.CountTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID}); err != nil {
+		return fmt.Errorf("count virtualization tasks for connection delete: %w", err)
 	}
-	if deps.PendingTaskCount, err = s.repo.CountTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID, Pending: true}); err != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count pending virtualization tasks for connection delete: %w", err)
+	if deps.PendingTaskCount, err = s.tasks.CountTasks(
+		ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID, Pending: true},
+	); err != nil {
+		return fmt.Errorf("count pending virtualization tasks for connection delete: %w", err)
 	}
-	if deps.DockerHostCount, err = s.repo.CountDockerHostsByConnection(ctx, connectionID); err != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count docker hosts for connection delete: %w", err)
+	if deps.DockerHostCount, err = s.dockerLinks.CountDockerHostsByConnection(ctx, connectionID); err != nil {
+		return fmt.Errorf("count docker hosts for connection delete: %w", err)
 	}
+	return nil
+}
 
-	if vms, listErr := s.repo.ListVMs(ctx, domainvirtualization.VMFilter{ConnectionID: connectionID, Limit: 5}); listErr != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("list virtualization vm delete samples: %w", listErr)
-	} else {
-		deps.VMSamples = vmDeleteSamples(vms)
+func (s *Service) addConnectionDeleteSamples(
+	ctx context.Context,
+	connectionID string,
+	deps *domainvirtualization.ConnectionDeleteDependencies,
+) error {
+	vms, err := s.vms.ListVMs(ctx, domainvirtualization.VMFilter{ConnectionID: connectionID, Limit: 5})
+	if err != nil {
+		return fmt.Errorf("list virtualization vm delete samples: %w", err)
 	}
-	if images, listErr := s.repo.ListImages(ctx, domainvirtualization.ImageFilter{ConnectionID: connectionID, Limit: 5}); listErr != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("list virtualization image delete samples: %w", listErr)
-	} else {
-		deps.ImageSamples = imageDeleteSamples(images)
+	deps.VMSamples = vmDeleteSamples(vms)
+	images, err := s.images.ListImages(ctx, domainvirtualization.ImageFilter{ConnectionID: connectionID, Limit: 5})
+	if err != nil {
+		return fmt.Errorf("list virtualization image delete samples: %w", err)
 	}
-	if flavors, listErr := s.repo.ListFlavors(ctx, domainvirtualization.FlavorFilter{ConnectionID: connectionID, Limit: 5}); listErr != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("list virtualization flavor delete samples: %w", listErr)
-	} else {
-		deps.FlavorSamples = flavorDeleteSamples(flavors)
+	deps.ImageSamples = imageDeleteSamples(images)
+	flavors, err := s.flavors.ListFlavors(ctx, domainvirtualization.FlavorFilter{ConnectionID: connectionID, Limit: 5})
+	if err != nil {
+		return fmt.Errorf("list virtualization flavor delete samples: %w", err)
 	}
-	if tasks, listErr := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID, Limit: 5}); listErr != nil {
-		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("list virtualization task delete samples: %w", listErr)
-	} else {
-		deps.TaskSamples = taskDeleteSamples(tasks)
+	deps.FlavorSamples = flavorDeleteSamples(flavors)
+	tasks, err := s.tasks.ListTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID, Limit: 5})
+	if err != nil {
+		return fmt.Errorf("list virtualization task delete samples: %w", err)
 	}
+	deps.TaskSamples = taskDeleteSamples(tasks)
+	return nil
+}
 
+func finalizeConnectionDeleteDependencies(
+	deps *domainvirtualization.ConnectionDeleteDependencies,
+) {
 	if deps.VMCount > 0 {
 		deps.BlockingReasons = append(deps.BlockingReasons, "virtual_machines")
 	}
@@ -1416,7 +1612,6 @@ func (s *Service) connectionDeleteDependencies(ctx context.Context, connection d
 	}
 	deps.ForceRequired = deps.VMCount > 0 || deps.ImageCount > 0 || deps.FlavorCount > 0 || deps.TaskCount > 0 || deps.DockerHostCount > 0
 	deps.Blocking = deps.ForceRequired || deps.PendingTaskCount > 0
-	return deps, nil
 }
 
 func (s *Service) snapshotConnectionDeleteTasks(ctx context.Context, connection domainvirtualization.Connection, principal domainidentity.Principal) error {
@@ -1451,7 +1646,7 @@ func (s *Service) snapshotConnectionDeleteTasks(ctx context.Context, connection 
 			}
 		}
 		task.Result = result
-		if _, err := s.repo.UpdateTask(ctx, task); err != nil {
+		if _, err := s.tasks.UpdateTask(ctx, task); err != nil {
 			return fmt.Errorf("snapshot virtualization task %s before connection delete: %w", task.ID, err)
 		}
 	}
@@ -1461,7 +1656,7 @@ func (s *Service) snapshotConnectionDeleteTasks(ctx context.Context, connection 
 func (s *Service) listAllConnectionTasks(ctx context.Context, connectionID string) ([]domainvirtualization.Task, error) {
 	var out []domainvirtualization.Task
 	for page := 1; ; page++ {
-		items, err := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID, Page: page, PageSize: 500})
+		items, err := s.tasks.ListTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID, Page: page, PageSize: 500})
 		if err != nil {
 			return nil, fmt.Errorf("list virtualization tasks for connection delete snapshot: %w", err)
 		}
@@ -1475,7 +1670,7 @@ func (s *Service) listAllConnectionTasks(ctx context.Context, connectionID strin
 func (s *Service) listAllConnectionVMs(ctx context.Context, connectionID string) ([]domainvirtualization.VM, error) {
 	var out []domainvirtualization.VM
 	for page := 1; ; page++ {
-		items, err := s.repo.ListVMs(ctx, domainvirtualization.VMFilter{ConnectionID: connectionID, Page: page, PageSize: 500})
+		items, err := s.vms.ListVMs(ctx, domainvirtualization.VMFilter{ConnectionID: connectionID, Page: page, PageSize: 500})
 		if err != nil {
 			return nil, fmt.Errorf("list virtualization vms for connection delete snapshot: %w", err)
 		}
@@ -1581,16 +1776,16 @@ func normalizeProvider(provider string) string {
 	return strings.ToLower(strings.TrimSpace(provider))
 }
 
-func normalizeAction(action string) (infravirtualization.PowerAction, error) {
+func normalizeAction(action string) (domainvirtualization.PowerAction, error) {
 	switch strings.ToLower(strings.TrimSpace(action)) {
 	case "start":
-		return infravirtualization.PowerActionStart, nil
+		return domainvirtualization.PowerActionStart, nil
 	case "stop", "shutdown":
-		return infravirtualization.PowerActionStop, nil
+		return domainvirtualization.PowerActionStop, nil
 	case "restart", "reboot":
-		return infravirtualization.PowerActionRestart, nil
+		return domainvirtualization.PowerActionRestart, nil
 	case "delete":
-		return infravirtualization.PowerActionDelete, nil
+		return domainvirtualization.PowerActionDelete, nil
 	default:
 		return "", fmt.Errorf("%w: unsupported vm action %q", apperrors.ErrInvalidArgument, action)
 	}
@@ -1599,16 +1794,6 @@ func normalizeAction(action string) (infravirtualization.PowerAction, error) {
 func mapNotFound(err error) error {
 	if err == nil {
 		return nil
-	}
-	if errors.Is(err, apperrors.ErrNotFound) {
-		return err
-	}
-	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, gorm.ErrRecordNotFound) {
-		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
-	}
-	lowered := strings.ToLower(err.Error())
-	if strings.Contains(lowered, "not found") || strings.Contains(lowered, "no rows") {
-		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
 	}
 	return err
 }
@@ -1844,7 +2029,7 @@ func (s *Service) imageFromInput(ctx context.Context, input ImageInput, id strin
 	if connectionID == "" {
 		return domainvirtualization.Image{}, fmt.Errorf("%w: connectionId is required", apperrors.ErrInvalidArgument)
 	}
-	connection, err := s.repo.GetConnection(ctx, connectionID)
+	connection, err := s.connections.GetConnection(ctx, connectionID)
 	if err != nil {
 		return domainvirtualization.Image{}, mapNotFound(err)
 	}
@@ -2000,7 +2185,7 @@ func isRetryableTaskStatus(status string) bool {
 }
 
 func isUnsupported(err error) bool {
-	return errors.Is(err, infravirtualization.ErrUnsupported)
+	return errors.Is(err, domainvirtualization.ErrUnsupported)
 }
 
 func newID() string {

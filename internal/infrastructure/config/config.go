@@ -2,18 +2,25 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/opensoha/soha/internal/platform/appconfig"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/spf13/viper"
 )
 
 const (
 	defaultDevPrincipalUserID = "67d90df8-9de4-4a7b-b3f8-86cd36f899e2"
-	defaultProjectSecret      = "soha-1234567890123456789012345678901234567890"
+	defaultSystemSecret       = "soha-123456789012345678901234567890"
+	jwtKeyID                  = "config-jwt-v1"
+	runnerKeyID               = "config-runner-v1"
+	webhookKeyID              = "config-webhook-v1"
+	encryptionKeyID           = "config-credential-v1"
 )
 
 type Config struct {
@@ -44,8 +51,11 @@ type HTTPConfig struct {
 	Addr               string        `mapstructure:"addr"`
 	ReadTimeout        time.Duration `mapstructure:"read_timeout"`
 	WriteTimeout       time.Duration `mapstructure:"write_timeout"`
+	IdleTimeout        time.Duration `mapstructure:"idle_timeout"`
+	MaxHeaderBytes     int           `mapstructure:"max_header_bytes"`
 	BasePath           string        `mapstructure:"base_path"`
 	CORSAllowedOrigins []string      `mapstructure:"cors_allowed_origins"`
+	TrustedProxies     []string      `mapstructure:"trusted_proxies"`
 }
 
 type LoggerConfig struct {
@@ -64,6 +74,7 @@ type RuntimeConfig struct {
 	VirtualizationWorkerInterval  time.Duration `mapstructure:"virtualization_worker_interval"`
 	VirtualizationSyncConcurrency int           `mapstructure:"virtualization_sync_concurrency"`
 	ExecutionRunnerToken          string        `mapstructure:"execution_runner_token"`
+	ExecutionRunnerKeys           keyring.Ring  `mapstructure:"-"`
 	ExecutionJobClusterID         string        `mapstructure:"execution_job_cluster_id"`
 	ExecutionJobNamespace         string        `mapstructure:"execution_job_namespace"`
 	ExecutionJobImage             string        `mapstructure:"execution_job_image"`
@@ -87,17 +98,9 @@ type DatabaseConfig struct {
 	MigrationFile   string        `mapstructure:"migration_file"`
 }
 
-type AuthConfig struct {
-	EnableDevAuth     bool                    `mapstructure:"enable_dev_auth"`
-	LoginVerification LoginVerificationConfig `mapstructure:"login_verification"`
-	DevPrincipal      DevPrincipalConfig      `mapstructure:"dev_principal"`
-	JWT               JWTConfig               `mapstructure:"jwt"`
-	OIDC              OIDCConfig              `mapstructure:"oidc"`
-}
+type AuthConfig = appconfig.Auth
 
-type LoginVerificationConfig struct {
-	SliderEnabled bool `mapstructure:"slider_enabled"`
-}
+type LoginVerificationConfig = appconfig.LoginVerification
 
 type GitLabConfig struct {
 	Enabled bool          `mapstructure:"enabled"`
@@ -108,43 +111,13 @@ type GitLabConfig struct {
 	Timeout time.Duration `mapstructure:"timeout"`
 }
 
-type DevPrincipalConfig struct {
-	UserID   string   `mapstructure:"user_id"`
-	Name     string   `mapstructure:"name"`
-	Email    string   `mapstructure:"email"`
-	Password string   `mapstructure:"password"`
-	Roles    []string `mapstructure:"roles"`
-}
+type DevPrincipalConfig = appconfig.DevPrincipal
 
-type JWTConfig struct {
-	Secret     string        `mapstructure:"secret"`
-	Issuer     string        `mapstructure:"issuer"`
-	AccessTTL  time.Duration `mapstructure:"access_ttl"`
-	RefreshTTL time.Duration `mapstructure:"refresh_ttl"`
-}
+type JWTConfig = appconfig.JWT
 
-type OIDCConfig struct {
-	Enabled             bool     `mapstructure:"enabled"`
-	ProviderName        string   `mapstructure:"provider_name"`
-	Issuer              string   `mapstructure:"issuer"`
-	ClientID            string   `mapstructure:"client_id"`
-	ClientSecret        string   `mapstructure:"client_secret"`
-	RedirectURL         string   `mapstructure:"redirect_url"`
-	FrontendRedirectURL string   `mapstructure:"frontend_redirect_url"`
-	Scopes              []string `mapstructure:"scopes"`
-	DefaultRoles        []string `mapstructure:"default_roles"`
-}
+type OIDCConfig = appconfig.OIDC
 
-type MonitoringConfig struct {
-	Enabled                       bool   `mapstructure:"enabled"`
-	WebhookToken                  string `mapstructure:"webhook_token"`
-	PrometheusURL                 string `mapstructure:"prometheus_url"`
-	PrometheusBearerToken         string `mapstructure:"prometheus_bearer_token"`
-	PrometheusDefaultRangeMinutes int    `mapstructure:"prometheus_default_range_minutes"`
-	PrometheusStepSeconds         int    `mapstructure:"prometheus_step_seconds"`
-	PrometheusClusterLabel        string `mapstructure:"prometheus_cluster_label"`
-	GrafanaBaseURL                string `mapstructure:"grafana_base_url"`
-}
+type MonitoringConfig = appconfig.Monitoring
 
 type SwaggerConfig struct {
 	Enabled bool   `mapstructure:"enabled"`
@@ -168,6 +141,8 @@ type AIGatewayRelayConfig struct {
 	Enabled                     bool          `mapstructure:"enabled"`
 	DefaultTimeout              time.Duration `mapstructure:"default_timeout"`
 	StreamTimeout               time.Duration `mapstructure:"stream_timeout"`
+	FirstByteTimeout            time.Duration `mapstructure:"first_byte_timeout"`
+	StreamIdleTimeout           time.Duration `mapstructure:"stream_idle_timeout"`
 	HealthCheckEnabled          bool          `mapstructure:"health_check_enabled"`
 	HealthCheckInterval         time.Duration `mapstructure:"health_check_interval"`
 	MaxRequestBodyMB            int           `mapstructure:"max_request_body_mb"`
@@ -240,20 +215,9 @@ func (c AIGatewayConnectorRuntimeConfig) normalized() AIGatewayConnectorRuntimeC
 	}
 }
 
-type ModuleToggleConfig struct {
-	Enabled bool `mapstructure:"enabled"`
-}
+type ModuleToggleConfig = appconfig.ModuleToggle
 
-type ModulesConfig struct {
-	Delivery       ModuleToggleConfig `mapstructure:"delivery"`
-	Monitoring     ModuleToggleConfig `mapstructure:"monitoring"`
-	AI             ModuleToggleConfig `mapstructure:"ai"`
-	AIGateway      ModuleToggleConfig `mapstructure:"ai_gateway"`
-	Virtualization ModuleToggleConfig `mapstructure:"virtualization"`
-	Docker         ModuleToggleConfig `mapstructure:"docker"`
-	Security       ModuleToggleConfig `mapstructure:"security"`
-	CMDB           ModuleToggleConfig `mapstructure:"cmdb"`
-}
+type ModulesConfig = appconfig.Modules
 
 type AssetsConfig struct {
 	Web  WebAssetsConfig  `mapstructure:"web"`
@@ -274,8 +238,9 @@ type DocsAssetsConfig struct {
 }
 
 type SecurityConfig struct {
-	CredentialEncryptionKey string `mapstructure:"credential_encryption_key"`
-	SecretProvider          string `mapstructure:"secret_provider"`
+	CredentialEncryptionKey  string       `mapstructure:"credential_encryption_key"`
+	CredentialEncryptionKeys keyring.Ring `mapstructure:"-"`
+	SecretProvider           string       `mapstructure:"secret_provider"`
 }
 
 type BootstrapConfig struct {
@@ -286,20 +251,7 @@ type KubernetesConfig struct {
 	Clusters []ClusterConfig `mapstructure:"clusters"`
 }
 
-type ClusterConfig struct {
-	ID                     string            `mapstructure:"id"`
-	Name                   string            `mapstructure:"name"`
-	Kubeconfig             string            `mapstructure:"kubeconfig"`
-	KubeconfigData         string            `mapstructure:"kubeconfig_data"`
-	Context                string            `mapstructure:"context"`
-	Region                 string            `mapstructure:"region"`
-	Environment            string            `mapstructure:"environment"`
-	Labels                 map[string]string `mapstructure:"labels"`
-	PrometheusURL          string            `mapstructure:"prometheus_url"`
-	PrometheusBearerToken  string            `mapstructure:"prometheus_bearer_token"`
-	PrometheusClusterLabel string            `mapstructure:"prometheus_cluster_label"`
-	GrafanaBaseURL         string            `mapstructure:"grafana_base_url"`
-}
+type ClusterConfig = appconfig.Cluster
 
 func Load() (Config, error) {
 	v := newConfigViper("SOHA", "SOHA_CONFIG_FILE", "config", "configs", ".")
@@ -318,6 +270,9 @@ func Load() (Config, error) {
 	cfg.expandEnv()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
+	}
+	if err := cfg.initializeRuntimeKeyrings(); err != nil {
+		return Config{}, fmt.Errorf("initialize configured keyrings: %w", err)
 	}
 	return cfg, nil
 }
@@ -390,25 +345,79 @@ func (c *AIGatewayConnectorRuntimeConfig) expandEnv() {
 }
 
 func (c Config) Validate() error {
-	var problems []string
+	problems := c.staticProblems()
+	if len(problems) > 0 {
+		return fmt.Errorf("config validation failed: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func (c Config) staticProblems() []string {
+	problems := make([]string, 0)
 	if c.Auth.EnableDevAuth {
 		problems = append(problems, "auth.enable_dev_auth must be false")
 	}
-	problems = appendSecretProblem(problems, "auth.jwt.secret", c.Auth.JWT.Secret, true, 32)
-	problems = appendSecretProblem(problems, "runtime.execution_runner_token", c.Runtime.ExecutionRunnerToken, true, 32)
-	if c.Monitoring.Enabled || c.Modules.Monitoring.Enabled {
-		problems = appendSecretProblem(problems, "monitoring.webhook_token", c.Monitoring.WebhookToken, true, 32)
+	for _, proxy := range c.HTTP.TrustedProxies {
+		if !validTrustedProxy(proxy) {
+			problems = append(problems, fmt.Sprintf("http.trusted_proxies contains invalid IP or CIDR %q", proxy))
+		}
 	}
-	if c.Modules.Virtualization.Enabled {
-		problems = appendSecretProblem(problems, "security.credential_encryption_key", c.Security.CredentialEncryptionKey, true, 32)
+	coreSecrets := []struct {
+		name  string
+		value string
+	}{
+		{name: "auth.jwt.secret", value: c.Auth.JWT.Secret},
+		{name: "runtime.execution_runner_token", value: c.Runtime.ExecutionRunnerToken},
+		{name: "monitoring.webhook_token", value: c.Monitoring.WebhookToken},
+		{name: "security.credential_encryption_key", value: c.Security.CredentialEncryptionKey},
+	}
+	for _, item := range coreSecrets {
+		problems = appendSecretProblem(problems, item.name, item.value, true, 32)
+		if strings.TrimSpace(item.value) != item.value {
+			problems = append(problems, fmt.Sprintf("%s must not have leading or trailing whitespace", item.name))
+		}
 	}
 	if c.GitLab.Enabled {
 		problems = appendSecretProblem(problems, "gitlab.token", c.GitLab.Token, true, 20)
 	}
 	problems = append(problems, validateSharedConfigProblems(c)...)
+	return problems
+}
 
-	if len(problems) > 0 {
-		return fmt.Errorf("config validation failed: %s", strings.Join(problems, "; "))
+func validTrustedProxy(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false
+	}
+	if net.ParseIP(value) != nil {
+		return true
+	}
+	_, _, err := net.ParseCIDR(value)
+	return err == nil
+}
+
+func (c *Config) initializeRuntimeKeyrings() error {
+	type configuredKey struct {
+		id     string
+		secret string
+		assign func(keyring.Ring)
+	}
+	items := []configuredKey{
+		{id: jwtKeyID, secret: c.Auth.JWT.Secret, assign: func(ring keyring.Ring) { c.Auth.JWT.Keys = ring }},
+		{id: runnerKeyID, secret: c.Runtime.ExecutionRunnerToken, assign: func(ring keyring.Ring) { c.Runtime.ExecutionRunnerKeys = ring }},
+		{id: webhookKeyID, secret: c.Monitoring.WebhookToken, assign: func(ring keyring.Ring) { c.Monitoring.WebhookKeys = ring }},
+		{id: encryptionKeyID, secret: c.Security.CredentialEncryptionKey, assign: func(ring keyring.Ring) { c.Security.CredentialEncryptionKeys = ring }},
+	}
+	for _, item := range items {
+		key, err := keyring.NewKey(item.id, item.secret, time.Unix(0, 0).UTC(), nil)
+		if err != nil {
+			return fmt.Errorf("build %s: %w", item.id, err)
+		}
+		ring, err := keyring.New(key, nil)
+		if err != nil {
+			return fmt.Errorf("build %s keyring: %w", item.id, err)
+		}
+		item.assign(ring)
 	}
 	return nil
 }
@@ -480,119 +489,133 @@ func (c DatabaseConfig) ResolveMigrationPath() string {
 	return candidate
 }
 
+var configDefaults = []struct {
+	key   string
+	value any
+}{
+	{"app.name", "soha"},
+	{"http.addr", ":8080"},
+	{"http.read_timeout", "15s"},
+	{"http.write_timeout", "15s"},
+	{"http.idle_timeout", "120s"},
+	{"http.max_header_bytes", 1 << 20},
+	{"http.base_path", "/api/v1"},
+	{"http.cors_allowed_origins", []string{"http://localhost:*", "http://127.0.0.1:*"}},
+	{"http.trusted_proxies", []string{}},
+	{"logger.level", "info"},
+	{"logger.format", "console"},
+	{"runtime.workflow_workers", 4},
+	{"runtime.workflow_queue_size", 64},
+	{"runtime.workflow_node_parallelism", 4},
+	{"runtime.cluster_sync_parallelism", 4},
+	{"runtime.copilot_inspection_parallelism", 2},
+	{"runtime.alert_upsert_batch_size", 100},
+	{"runtime.virtualization_startup_sync_enabled", true},
+	{"runtime.virtualization_worker_interval", "2s"},
+	{"runtime.virtualization_sync_concurrency", 1},
+	{"runtime.execution_runner_token", defaultSystemSecret},
+	{"runtime.execution_job_cluster_id", ""},
+	{"runtime.execution_job_namespace", "soha-system"},
+	{"runtime.execution_job_image", "alpine:3.20"},
+	{"runtime.execution_job_git_image", "alpine/git:2.47.0"},
+	{"runtime.execution_job_ttl_seconds", 3600},
+	{"database.driver", "postgres"},
+	{"database.host", "localhost"},
+	{"database.port", 5432},
+	{"database.name", "soha"},
+	{"database.user", "pgsql"},
+	{"database.password", "pgsql"},
+	{"database.sslmode", "disable"},
+	{"database.max_open_conns", 20},
+	{"database.max_idle_conns", 10},
+	{"database.conn_max_lifetime", "1h"},
+	{"database.auto_migrate", true},
+	{"database.migration_path", "migrations"},
+	{"database.migration_file", "migrations/postgres/0001_init.sql"},
+	{"auth.enable_dev_auth", true},
+	{"auth.login_verification.slider_enabled", false},
+	{"auth.dev_principal.user_id", defaultDevPrincipalUserID},
+	{"auth.dev_principal.name", "OpenSoha"},
+	{"auth.dev_principal.email", "opensoha@soha.local"},
+	{"auth.dev_principal.password", "opensoha"},
+	{"auth.dev_principal.roles", []string{"admin", "ops", "auditor"}},
+	{"auth.jwt.issuer", "soha"},
+	{"auth.jwt.secret", defaultSystemSecret},
+	{"auth.jwt.access_ttl", "15m"},
+	{"auth.jwt.refresh_ttl", "168h"},
+	{"auth.oidc.enabled", false},
+	{"auth.oidc.scopes", []string{"openid", "profile", "email"}},
+	{"auth.oidc.default_roles", []string{"readonly"}},
+	{"gitlab.enabled", false},
+	{"gitlab.base_url", "https://gitlab.com/api/v4"},
+	{"gitlab.group_id", ""},
+	{"gitlab.per_page", 50},
+	{"gitlab.timeout", "10s"},
+	{"monitoring.enabled", true},
+	{"monitoring.webhook_token", defaultSystemSecret},
+	{"monitoring.prometheus_url", ""},
+	{"monitoring.prometheus_bearer_token", ""},
+	{"monitoring.prometheus_default_range_minutes", 60},
+	{"monitoring.prometheus_step_seconds", 60},
+	{"monitoring.prometheus_cluster_label", "cluster"},
+	{"monitoring.grafana_base_url", ""},
+	{"swagger.enabled", true},
+	{"swagger.path", "/swagger/*any"},
+	{"mcp.enabled", true},
+	{"mcp.default_timeout", "10s"},
+	{"ai_gateway.rate_limit.backend", "postgres"},
+	{"ai_gateway.rate_limit.redis.addr", ""},
+	{"ai_gateway.rate_limit.redis.username", ""},
+	{"ai_gateway.rate_limit.redis.password", ""},
+	{"ai_gateway.rate_limit.redis.db", 0},
+	{"ai_gateway.rate_limit.redis.tls", false},
+	{"ai_gateway.rate_limit.redis.key_prefix", "soha:ai-gateway:rate-limit"},
+	{"ai_gateway.rate_limit.redis.timeout", "500ms"},
+	{"ai_gateway.relay.enabled", true},
+	{"ai_gateway.relay.default_timeout", "120s"},
+	{"ai_gateway.relay.stream_timeout", "300s"},
+	{"ai_gateway.relay.first_byte_timeout", "30s"},
+	{"ai_gateway.relay.stream_idle_timeout", "60s"},
+	{"ai_gateway.relay.health_check_enabled", false},
+	{"ai_gateway.relay.health_check_interval", "1m"},
+	{"ai_gateway.relay.max_request_body_mb", 32},
+	{"ai_gateway.relay.allow_insecure_upstream_http", false},
+	{"ai_gateway.relay.allow_private_upstream_hosts", false},
+	{"ai_gateway.relay.include_usage_for_openai_stream", true},
+	{"ai_gateway.connector_runtime.endpoint", ""},
+	{"ai_gateway.connector_runtime.token", ""},
+	{"ai_gateway.connector_runtime.plugin_id", ""},
+	{"ai_gateway.connector_runtime.connector_id", ""},
+	{"ai_gateway.connector_runtimes", []map[string]any{}},
+	{"ai_gateway.connector_event_sink.token", ""},
+	{"plugins.marketplace.url", ""},
+	{"plugins.marketplace.source_id", "opensoha-official"},
+	{"plugins.marketplace.sources", []map[string]any{}},
+	{"modules.delivery.enabled", true},
+	{"modules.monitoring.enabled", true},
+	{"modules.ai.enabled", true},
+	{"modules.ai_gateway.enabled", true},
+	{"modules.virtualization.enabled", true},
+	{"modules.docker.enabled", true},
+	{"modules.security.enabled", false},
+	{"modules.cmdb.enabled", false},
+	{"assets.web.mode", "embed"},
+	{"assets.web.dir", "internal/staticassets/web/dist"},
+	{"assets.web.proxy_url", "http://localhost:5173"},
+	{"assets.docs.mode", "external"},
+	{"assets.docs.dir", "../soha-docs/build"},
+	{"assets.docs.proxy_url", "http://localhost:3000"},
+	{"assets.docs.external_url", "https://docs.opensoha.dev/"},
+	{"security.credential_encryption_key", defaultSystemSecret},
+	{"security.secret_provider", ""},
+	{"bootstrap.seed_defaults", true},
+	{"kubernetes.clusters", []map[string]any{}},
+}
+
 func setDefaults(v *viper.Viper) {
-	v.SetDefault("app.name", "soha")
-	v.SetDefault("http.addr", ":8080")
-	v.SetDefault("http.read_timeout", "15s")
-	v.SetDefault("http.write_timeout", "15s")
-	v.SetDefault("http.base_path", "/api/v1")
-	v.SetDefault("http.cors_allowed_origins", []string{"http://localhost:*", "http://127.0.0.1:*"})
-	v.SetDefault("logger.level", "info")
-	v.SetDefault("logger.format", "console")
-	v.SetDefault("runtime.workflow_workers", 4)
-	v.SetDefault("runtime.workflow_queue_size", 64)
-	v.SetDefault("runtime.workflow_node_parallelism", 4)
-	v.SetDefault("runtime.cluster_sync_parallelism", 4)
-	v.SetDefault("runtime.copilot_inspection_parallelism", 2)
-	v.SetDefault("runtime.alert_upsert_batch_size", 100)
-	v.SetDefault("runtime.virtualization_startup_sync_enabled", true)
-	v.SetDefault("runtime.virtualization_worker_interval", "2s")
-	v.SetDefault("runtime.virtualization_sync_concurrency", 1)
-	v.SetDefault("runtime.execution_runner_token", defaultProjectSecret)
-	v.SetDefault("runtime.execution_job_cluster_id", "")
-	v.SetDefault("runtime.execution_job_namespace", "soha-system")
-	v.SetDefault("runtime.execution_job_image", "alpine:3.20")
-	v.SetDefault("runtime.execution_job_git_image", "alpine/git:2.47.0")
-	v.SetDefault("runtime.execution_job_ttl_seconds", 3600)
-	v.SetDefault("database.driver", "postgres")
-	v.SetDefault("database.host", "localhost")
-	v.SetDefault("database.port", 5432)
-	v.SetDefault("database.name", "soha")
-	v.SetDefault("database.user", "pgsql")
-	v.SetDefault("database.password", "pgsql")
-	v.SetDefault("database.sslmode", "disable")
-	v.SetDefault("database.max_open_conns", 20)
-	v.SetDefault("database.max_idle_conns", 10)
-	v.SetDefault("database.conn_max_lifetime", "1h")
-	v.SetDefault("database.auto_migrate", true)
-	v.SetDefault("database.migration_path", "migrations")
-	v.SetDefault("database.migration_file", "migrations/postgres/0001_init.sql")
-	v.SetDefault("auth.enable_dev_auth", true)
-	v.SetDefault("auth.login_verification.slider_enabled", false)
-	v.SetDefault("auth.dev_principal.user_id", defaultDevPrincipalUserID)
-	v.SetDefault("auth.dev_principal.name", "OpenSoha")
-	v.SetDefault("auth.dev_principal.email", "opensoha@soha.local")
-	v.SetDefault("auth.dev_principal.password", "opensoha")
-	v.SetDefault("auth.dev_principal.roles", []string{"admin", "ops", "auditor"})
-	v.SetDefault("auth.jwt.issuer", "soha")
-	v.SetDefault("auth.jwt.secret", defaultProjectSecret)
-	v.SetDefault("auth.jwt.access_ttl", "15m")
-	v.SetDefault("auth.jwt.refresh_ttl", "168h")
-	v.SetDefault("auth.oidc.enabled", false)
-	v.SetDefault("auth.oidc.scopes", []string{"openid", "profile", "email"})
-	v.SetDefault("auth.oidc.default_roles", []string{"readonly"})
-	v.SetDefault("gitlab.enabled", false)
-	v.SetDefault("gitlab.base_url", "https://gitlab.com/api/v4")
-	v.SetDefault("gitlab.group_id", "")
-	v.SetDefault("gitlab.per_page", 50)
-	v.SetDefault("gitlab.timeout", "10s")
-	v.SetDefault("monitoring.enabled", true)
-	v.SetDefault("monitoring.webhook_token", defaultProjectSecret)
-	v.SetDefault("monitoring.prometheus_url", "")
-	v.SetDefault("monitoring.prometheus_bearer_token", "")
-	v.SetDefault("monitoring.prometheus_default_range_minutes", 60)
-	v.SetDefault("monitoring.prometheus_step_seconds", 60)
-	v.SetDefault("monitoring.prometheus_cluster_label", "cluster")
-	v.SetDefault("monitoring.grafana_base_url", "")
-	v.SetDefault("swagger.enabled", true)
-	v.SetDefault("swagger.path", "/swagger/*any")
-	v.SetDefault("mcp.enabled", true)
-	v.SetDefault("mcp.default_timeout", "10s")
-	v.SetDefault("ai_gateway.rate_limit.backend", "postgres")
-	v.SetDefault("ai_gateway.rate_limit.redis.addr", "")
-	v.SetDefault("ai_gateway.rate_limit.redis.username", "")
-	v.SetDefault("ai_gateway.rate_limit.redis.password", "")
-	v.SetDefault("ai_gateway.rate_limit.redis.db", 0)
-	v.SetDefault("ai_gateway.rate_limit.redis.tls", false)
-	v.SetDefault("ai_gateway.rate_limit.redis.key_prefix", "soha:ai-gateway:rate-limit")
-	v.SetDefault("ai_gateway.rate_limit.redis.timeout", "500ms")
-	v.SetDefault("ai_gateway.relay.enabled", true)
-	v.SetDefault("ai_gateway.relay.default_timeout", "120s")
-	v.SetDefault("ai_gateway.relay.stream_timeout", "300s")
-	v.SetDefault("ai_gateway.relay.health_check_enabled", false)
-	v.SetDefault("ai_gateway.relay.health_check_interval", "1m")
-	v.SetDefault("ai_gateway.relay.max_request_body_mb", 32)
-	v.SetDefault("ai_gateway.relay.allow_insecure_upstream_http", false)
-	v.SetDefault("ai_gateway.relay.allow_private_upstream_hosts", false)
-	v.SetDefault("ai_gateway.relay.include_usage_for_openai_stream", true)
-	v.SetDefault("ai_gateway.connector_runtime.endpoint", "")
-	v.SetDefault("ai_gateway.connector_runtime.token", "")
-	v.SetDefault("ai_gateway.connector_runtime.plugin_id", "")
-	v.SetDefault("ai_gateway.connector_runtime.connector_id", "")
-	v.SetDefault("ai_gateway.connector_runtimes", []map[string]any{})
-	v.SetDefault("ai_gateway.connector_event_sink.token", "")
-	v.SetDefault("plugins.marketplace.url", "")
-	v.SetDefault("plugins.marketplace.source_id", "opensoha-official")
-	v.SetDefault("plugins.marketplace.sources", []map[string]any{})
-	v.SetDefault("modules.delivery.enabled", true)
-	v.SetDefault("modules.monitoring.enabled", true)
-	v.SetDefault("modules.ai.enabled", true)
-	v.SetDefault("modules.ai_gateway.enabled", true)
-	v.SetDefault("modules.virtualization.enabled", true)
-	v.SetDefault("modules.docker.enabled", true)
-	v.SetDefault("modules.security.enabled", false)
-	v.SetDefault("modules.cmdb.enabled", false)
-	v.SetDefault("assets.web.mode", "embed")
-	v.SetDefault("assets.web.dir", "internal/staticassets/web/dist")
-	v.SetDefault("assets.web.proxy_url", "http://localhost:5173")
-	v.SetDefault("assets.docs.mode", "external")
-	v.SetDefault("assets.docs.dir", "../soha-docs/build")
-	v.SetDefault("assets.docs.proxy_url", "http://localhost:3000")
-	v.SetDefault("assets.docs.external_url", "https://docs.opensoha.dev/")
-	v.SetDefault("security.credential_encryption_key", defaultProjectSecret)
-	v.SetDefault("security.secret_provider", "")
-	v.SetDefault("bootstrap.seed_defaults", true)
-	v.SetDefault("kubernetes.clusters", []map[string]any{})
+	for _, item := range configDefaults {
+		v.SetDefault(item.key, item.value)
+	}
 }
 
 func stringsReplacer() *strings.Replacer {

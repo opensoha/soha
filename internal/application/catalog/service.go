@@ -905,59 +905,80 @@ func (s *Service) workflowTemplateRuntimeSummary(ctx context.Context, principal 
 			continue
 		}
 		seenApps[appID] = struct{}{}
-		if s.runtime.Workflows != nil {
-			if workflows, err := s.runtime.Workflows.List(ctx, principal, appID, 20); err == nil {
-				for _, run := range workflows {
-					if !workflowRunMatchesUsageBindings(run, bindings, templateID) {
-						continue
-					}
-					collector.add("workflow", run.ID, run.Status, parseTemplateUsageTime(run.UpdatedAt, run.CreatedAt), map[string]any{
-						"applicationId":            run.ApplicationID,
-						"applicationEnvironmentId": metadataString(run.Metadata, "bindingId"),
-						"workflowName":             run.WorkflowName,
-						"workflowTemplateId":       metadataString(run.Metadata, "workflowTemplateId"),
-					})
-				}
-			}
-		}
-		if s.runtime.Releases != nil {
-			if releases, err := s.runtime.Releases.List(ctx, principal, domainrelease.Filter{ApplicationID: appID, Limit: 20}); err == nil {
-				for _, release := range releases {
-					if !metadataMatchesAnyBindingID(release.Metadata, bindings) && !releaseMatchesAnyUsageBindingTarget(release, bindings) {
-						continue
-					}
-					collector.add("release", release.ID, release.Status, release.CreatedAt, map[string]any{
-						"applicationId":            release.ApplicationID,
-						"applicationEnvironmentId": metadataString(release.Metadata, "applicationEnvironmentId"),
-						"releaseBundleId":          metadataString(release.Metadata, "releaseBundleId"),
-						"executionTaskId":          metadataString(release.Metadata, "executionTaskId"),
-						"clusterId":                release.ClusterID,
-						"namespace":                release.Namespace,
-						"deploymentName":           release.DeploymentName,
-					})
-				}
-			}
-		}
-		if s.runtime.Delivery != nil {
-			if tasks, err := s.runtime.Delivery.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: appID, Limit: 20}); err == nil {
-				tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
-				for _, task := range tasks {
-					if !taskMatchesAnyUsageBinding(task, bindings) {
-						continue
-					}
-					collector.add("execution_task", task.ID, task.Status, task.UpdatedAt, map[string]any{
-						"applicationId":            task.ApplicationID,
-						"applicationEnvironmentId": task.ApplicationEnvironmentID,
-						"releaseBundleId":          task.ReleaseBundleID,
-						"taskKind":                 task.TaskKind,
-						"providerKind":             task.ProviderKind,
-						"operationState":           task.OperationState,
-					})
-				}
-			}
-		}
+		s.collectWorkflowUsage(ctx, principal, collector, appID, templateID, bindings)
+		s.collectReleaseUsage(ctx, principal, collector, appID, bindings)
+		s.collectExecutionTaskUsage(ctx, collector, appID, bindings)
 	}
 	return collector.summary("latest workflow, release, and execution task evidence for matched bindings")
+}
+
+func (s *Service) collectWorkflowUsage(ctx context.Context, principal domainidentity.Principal, collector *templateUsageRuntimeCollector, appID, templateID string, bindings []domaincatalog.TemplateUsageBinding) {
+	if s.runtime.Workflows == nil {
+		return
+	}
+	workflows, err := s.runtime.Workflows.List(ctx, principal, appID, 20)
+	if err != nil {
+		return
+	}
+	for _, run := range workflows {
+		if !workflowRunMatchesUsageBindings(run, bindings, templateID) {
+			continue
+		}
+		collector.add("workflow", run.ID, run.Status, parseTemplateUsageTime(run.UpdatedAt, run.CreatedAt), map[string]any{
+			"applicationId":            run.ApplicationID,
+			"applicationEnvironmentId": metadataString(run.Metadata, "bindingId"),
+			"workflowName":             run.WorkflowName,
+			"workflowTemplateId":       metadataString(run.Metadata, "workflowTemplateId"),
+		})
+	}
+}
+
+func (s *Service) collectReleaseUsage(ctx context.Context, principal domainidentity.Principal, collector *templateUsageRuntimeCollector, appID string, bindings []domaincatalog.TemplateUsageBinding) {
+	if s.runtime.Releases == nil {
+		return
+	}
+	releases, err := s.runtime.Releases.List(ctx, principal, domainrelease.Filter{ApplicationID: appID, Limit: 20})
+	if err != nil {
+		return
+	}
+	for _, release := range releases {
+		if !metadataMatchesAnyBindingID(release.Metadata, bindings) && !releaseMatchesAnyUsageBindingTarget(release, bindings) {
+			continue
+		}
+		collector.add("release", release.ID, release.Status, release.CreatedAt, map[string]any{
+			"applicationId":            release.ApplicationID,
+			"applicationEnvironmentId": metadataString(release.Metadata, "applicationEnvironmentId"),
+			"releaseBundleId":          metadataString(release.Metadata, "releaseBundleId"),
+			"executionTaskId":          metadataString(release.Metadata, "executionTaskId"),
+			"clusterId":                release.ClusterID,
+			"namespace":                release.Namespace,
+			"deploymentName":           release.DeploymentName,
+		})
+	}
+}
+
+func (s *Service) collectExecutionTaskUsage(ctx context.Context, collector *templateUsageRuntimeCollector, appID string, bindings []domaincatalog.TemplateUsageBinding) {
+	if s.runtime.Delivery == nil {
+		return
+	}
+	tasks, err := s.runtime.Delivery.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: appID, Limit: 20})
+	if err != nil {
+		return
+	}
+	tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
+	for _, task := range tasks {
+		if !taskMatchesAnyUsageBinding(task, bindings) {
+			continue
+		}
+		collector.add("execution_task", task.ID, task.Status, task.UpdatedAt, map[string]any{
+			"applicationId":            task.ApplicationID,
+			"applicationEnvironmentId": task.ApplicationEnvironmentID,
+			"releaseBundleId":          task.ReleaseBundleID,
+			"taskKind":                 task.TaskKind,
+			"providerKind":             task.ProviderKind,
+			"operationState":           task.OperationState,
+		})
+	}
 }
 
 func (s *Service) buildTemplateRuntimeSummary(ctx context.Context, principal domainidentity.Principal, sources []domaincatalog.TemplateUsageBuildSource, bindings []domaincatalog.TemplateUsageBinding) map[string]any {
@@ -1377,7 +1398,20 @@ func validateWorkflowTemplateSteps(steps []any) error {
 }
 
 func validateDeliveryDAGNode(node map[string]any) error {
-	for _, key := range []string{"inputs", "outputs"} {
+	if err := validateDeliveryDAGStringArrays(node, []string{"inputs", "outputs"}); err != nil {
+		return err
+	}
+	if err := validateDeliveryDAGObjects(node); err != nil {
+		return err
+	}
+	if err := validateDeliveryDAGArtifactKinds(node); err != nil {
+		return err
+	}
+	return validateDeliveryDAGArtifactOutputs(node)
+}
+
+func validateDeliveryDAGStringArrays(node map[string]any, keys []string) error {
+	for _, key := range keys {
 		if value, ok := node[key]; ok {
 			items, ok := toSliceAny(value)
 			if !ok {
@@ -1390,6 +1424,10 @@ func validateDeliveryDAGNode(node map[string]any) error {
 			}
 		}
 	}
+	return nil
+}
+
+func validateDeliveryDAGObjects(node map[string]any) error {
 	for _, key := range []string{"serviceSelector", "environmentSelector", "targetSelector", "inputMapping", "observability"} {
 		if value, ok := node[key]; ok && value != nil {
 			if _, ok := value.(map[string]any); !ok {
@@ -1397,41 +1435,49 @@ func validateDeliveryDAGNode(node map[string]any) error {
 			}
 		}
 	}
-	for _, key := range []string{"artifactKinds"} {
-		if value, ok := node[key]; ok {
-			items, ok := toSliceAny(value)
-			if !ok {
-				return fmt.Errorf("%w: delivery_dag node.%s must be an array", apperrors.ErrInvalidArgument, key)
-			}
-			for _, item := range items {
-				kind := strings.TrimSpace(fmt.Sprint(item))
-				if kind == "" {
-					return fmt.Errorf("%w: delivery_dag node.%s cannot contain empty values", apperrors.ErrInvalidArgument, key)
-				}
-				if !isAllowedDeliveryDAGArtifactKind(kind) {
-					return fmt.Errorf("%w: unsupported delivery_dag artifact kind %s", apperrors.ErrInvalidArgument, kind)
-				}
-			}
+	return nil
+}
+
+func validateDeliveryDAGArtifactKinds(node map[string]any) error {
+	value, exists := node["artifactKinds"]
+	if !exists {
+		return nil
+	}
+	items, ok := toSliceAny(value)
+	if !ok {
+		return fmt.Errorf("%w: delivery_dag node.artifactKinds must be an array", apperrors.ErrInvalidArgument)
+	}
+	for _, item := range items {
+		kind := strings.TrimSpace(fmt.Sprint(item))
+		if kind == "" {
+			return fmt.Errorf("%w: delivery_dag node.artifactKinds cannot contain empty values", apperrors.ErrInvalidArgument)
+		}
+		if !isAllowedDeliveryDAGArtifactKind(kind) {
+			return fmt.Errorf("%w: unsupported delivery_dag artifact kind %s", apperrors.ErrInvalidArgument, kind)
 		}
 	}
-	if rawOutputs, ok := node["artifactOutputs"]; ok {
-		outputs, ok := toSliceAny(rawOutputs)
+	return nil
+}
+
+func validateDeliveryDAGArtifactOutputs(node map[string]any) error {
+	rawOutputs, exists := node["artifactOutputs"]
+	if !exists {
+		return nil
+	}
+	outputs, ok := toSliceAny(rawOutputs)
+	if !ok {
+		return fmt.Errorf("%w: delivery_dag node.artifactOutputs must be an array", apperrors.ErrInvalidArgument)
+	}
+	for _, rawOutput := range outputs {
+		output, ok := rawOutput.(map[string]any)
 		if !ok {
-			return fmt.Errorf("%w: delivery_dag node.artifactOutputs must be an array", apperrors.ErrInvalidArgument)
+			return fmt.Errorf("%w: delivery_dag node.artifactOutputs must contain objects", apperrors.ErrInvalidArgument)
 		}
-		for _, rawOutput := range outputs {
-			output, ok := rawOutput.(map[string]any)
-			if !ok {
-				return fmt.Errorf("%w: delivery_dag node.artifactOutputs must contain objects", apperrors.ErrInvalidArgument)
-			}
-			if strings.TrimSpace(fmt.Sprint(output["name"])) == "" {
-				return fmt.Errorf("%w: delivery_dag artifact output requires name", apperrors.ErrInvalidArgument)
-			}
-			switch strings.TrimSpace(fmt.Sprint(output["kind"])) {
-			case "image", "test_report", "scan_report", "sbom", "screenshot", "video", "junit", "log":
-			default:
-				return fmt.Errorf("%w: unsupported delivery_dag artifact output kind %s", apperrors.ErrInvalidArgument, output["kind"])
-			}
+		if strings.TrimSpace(fmt.Sprint(output["name"])) == "" {
+			return fmt.Errorf("%w: delivery_dag artifact output requires name", apperrors.ErrInvalidArgument)
+		}
+		if !isAllowedDeliveryDAGArtifactKind(strings.TrimSpace(fmt.Sprint(output["kind"]))) {
+			return fmt.Errorf("%w: unsupported delivery_dag artifact output kind %s", apperrors.ErrInvalidArgument, output["kind"])
 		}
 	}
 	return nil

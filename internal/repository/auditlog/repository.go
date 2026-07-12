@@ -145,7 +145,7 @@ func (r *Repository) List(ctx context.Context, filter domainaudit.Filter) ([]dom
 	if err != nil {
 		return nil, fmt.Errorf("query audit logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	entries := make([]domainaudit.Entry, 0, filter.Limit)
 	for rows.Next() {

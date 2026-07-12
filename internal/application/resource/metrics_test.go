@@ -9,9 +9,6 @@ import (
 	"testing"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 )
@@ -66,7 +63,7 @@ func TestQueryMetricSeriesWithFallbackAllowsUnambiguousFallback(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &Service{httpClient: server.Client()}
+	service := &metricsSupport{httpClient: server.Client()}
 	series, firstError := service.queryMetricSeriesWithFallback(
 		context.Background(),
 		server.URL,
@@ -130,7 +127,7 @@ func TestQueryMetricSeriesWithFallbackRejectsAmbiguousFallback(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &Service{httpClient: server.Client()}
+	service := &metricsSupport{httpClient: server.Client()}
 	series, firstError := service.queryMetricSeriesWithFallback(
 		context.Background(),
 		server.URL,
@@ -202,7 +199,7 @@ func TestListPodUsageValuesFallsBackWithoutClusterMatcher(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := &Service{httpClient: server.Client()}
+	service := &metricsSupport{httpClient: server.Client()}
 	values, err := service.listPodUsageValues(
 		context.Background(),
 		domainsettings.PrometheusSettings{
@@ -211,7 +208,7 @@ func TestListPodUsageValuesFallsBackWithoutClusterMatcher(t *testing.T) {
 			ClusterLabel: "cluster",
 		},
 		"cluster-a",
-		[]corev1.Pod{{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "team-a"}}},
+		[]podIdentity{{Name: "api", Namespace: "team-a"}},
 	)
 	if err != nil {
 		t.Fatalf("listPodUsageValues() error = %v, want nil", err)
@@ -248,7 +245,7 @@ func (s stubConnectionResolver) GetConnection(context.Context, string) (domaincl
 func TestResolveClusterPrometheusSettingsPrefersClusterOverride(t *testing.T) {
 	t.Parallel()
 
-	service := &Service{
+	service := &metricsSupport{
 		settings: stubMonitoringSettingsResolver{
 			settings: domainsettings.MonitoringSettings{
 				Prometheus: domainsettings.PrometheusSettings{
@@ -301,7 +298,7 @@ func TestResolveClusterPrometheusSettingsPrefersClusterOverride(t *testing.T) {
 func TestResolveClusterPrometheusSettingsFallsBackToGlobalSettings(t *testing.T) {
 	t.Parallel()
 
-	service := &Service{
+	service := &metricsSupport{
 		settings: stubMonitoringSettingsResolver{
 			settings: domainsettings.MonitoringSettings{
 				Prometheus: domainsettings.PrometheusSettings{

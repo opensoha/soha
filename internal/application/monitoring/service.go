@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -16,68 +17,9 @@ import (
 	domaingovernance "github.com/opensoha/soha/internal/domain/governance"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
+	"github.com/opensoha/soha/internal/platform/telemetry"
 )
-
-type Repository interface {
-	Upsert(context.Context, string, []domainalert.IngestAlert) ([]domainalert.Instance, error)
-	List(context.Context, domainalert.Filter) ([]domainalert.Instance, error)
-	Get(context.Context, string) (domainalert.Instance, error)
-	UpdateOwnership(context.Context, string, domainalert.OwnershipInput) (domainalert.Instance, error)
-	Acknowledge(context.Context, string, string, string) (domainalert.Instance, error)
-	Summary(context.Context) (domainalert.Summary, error)
-	ListChannels(context.Context) ([]domainalert.NotificationChannel, error)
-	CreateChannel(context.Context, domainalert.ChannelInput) (domainalert.NotificationChannel, error)
-	UpdateChannel(context.Context, string, domainalert.ChannelInput) (domainalert.NotificationChannel, error)
-	ListRoutes(context.Context) ([]domainalert.AlertRoute, error)
-	CreateRoute(context.Context, domainalert.RouteInput) (domainalert.AlertRoute, error)
-	UpdateRoute(context.Context, string, domainalert.RouteInput) (domainalert.AlertRoute, error)
-	ListSilences(context.Context) ([]domainalert.AlertSilence, error)
-	CreateSilence(context.Context, domainalert.SilenceInput) (domainalert.AlertSilence, error)
-	UpdateSilence(context.Context, string, domainalert.SilenceInput) (domainalert.AlertSilence, error)
-	ListDeliveryLogs(context.Context, domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error)
-	CreateDeliveryLog(context.Context, domainalert.DeliveryLog) error
-	ListRules(context.Context) ([]domainalert.AlertRule, error)
-	GetRule(context.Context, string) (domainalert.AlertRule, error)
-	CreateRule(context.Context, domainalert.AlertRuleInput) (domainalert.AlertRule, error)
-	UpdateRule(context.Context, string, domainalert.AlertRuleInput) (domainalert.AlertRule, error)
-	ListRuleRuns(context.Context, domainalert.AlertRuleRunFilter) ([]domainalert.AlertRuleRun, error)
-	CreateRuleRun(context.Context, domainalert.AlertRuleRunInput) (domainalert.AlertRuleRun, error)
-	ListEvents(context.Context, domainalert.AlertEventFilter) ([]domainalert.AlertEvent, error)
-	GetEvent(context.Context, string) (domainalert.AlertEvent, error)
-	CreateEvent(context.Context, domainalert.AlertEventInput) (domainalert.AlertEvent, error)
-	UpdateEvent(context.Context, string, domainalert.AlertEventInput) (domainalert.AlertEvent, error)
-	ListNotificationPolicies(context.Context) ([]domainalert.NotificationPolicy, error)
-	CreateNotificationPolicy(context.Context, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
-	UpdateNotificationPolicy(context.Context, string, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
-	ListNotificationTemplates(context.Context) ([]domainalert.NotificationTemplate, error)
-	CreateNotificationTemplate(context.Context, domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error)
-	UpdateNotificationTemplate(context.Context, string, domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error)
-	ListHealingPolicies(context.Context) ([]domainalert.HealingPolicy, error)
-	GetHealingPolicy(context.Context, string) (domainalert.HealingPolicy, error)
-	CreateHealingPolicy(context.Context, domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error)
-	UpdateHealingPolicy(context.Context, string, domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error)
-	ListHealingRuns(context.Context, domainalert.HealingRunFilter) ([]domainalert.HealingRun, error)
-	GetHealingRun(context.Context, string) (domainalert.HealingRun, error)
-	CreateHealingRun(context.Context, domainalert.HealingRunInput) (domainalert.HealingRun, error)
-	UpdateHealingRun(context.Context, string, domainalert.HealingRunInput) (domainalert.HealingRun, error)
-	ListOnCallSchedules(context.Context) ([]domainalert.OnCallSchedule, error)
-	CreateOnCallSchedule(context.Context, domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error)
-	UpdateOnCallSchedule(context.Context, string, domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error)
-	ListOnCallRotations(context.Context) ([]domainalert.OnCallRotation, error)
-	CreateOnCallRotation(context.Context, domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error)
-	UpdateOnCallRotation(context.Context, string, domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error)
-	ListOnCallEscalationPolicies(context.Context) ([]domainalert.OnCallEscalationPolicy, error)
-	CreateOnCallEscalationPolicy(context.Context, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
-	UpdateOnCallEscalationPolicy(context.Context, string, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
-	ListOnCallAssignmentRules(context.Context) ([]domainalert.OnCallAssignmentRule, error)
-	CreateOnCallAssignmentRule(context.Context, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
-	UpdateOnCallAssignmentRule(context.Context, string, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
-	ListAlertIntegrations(context.Context) ([]domainalert.AlertIntegration, error)
-	GetAlertIntegration(context.Context, string) (domainalert.AlertIntegration, error)
-	CreateAlertIntegration(context.Context, domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error)
-	UpdateAlertIntegration(context.Context, string, domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error)
-	UpdateAlertIntegrationStatus(context.Context, string, domainalert.AlertIntegrationStatusInput) (domainalert.AlertIntegration, error)
-}
 
 type EventWriter interface {
 	Create(context.Context, domainevent.Envelope) error
@@ -87,31 +29,172 @@ type AlertAutomationHandler interface {
 	HandleAlertAutomation(context.Context, domainalert.Instance) error
 }
 
-type Service struct {
-	repo         Repository
-	events       EventWriter
-	permissions  *appaccess.PermissionResolver
-	webhookToken string
-	enabled      bool
-	httpClient   *http.Client
-	automation   AlertAutomationHandler
-	dataSources  DataSourceRepository
-	workflow     WorkflowExecutor
-	ruleInterval time.Duration
-	startMu      sync.Mutex
-	started      bool
+type LogTelemetry interface {
+	Correlate(context.Context, string, string, map[string]any, telemetry.LogCorrelationQuery) (telemetry.LogCorrelationResult, error)
 }
 
-func New(repo Repository, events EventWriter, dataSources DataSourceRepository, permissions *appaccess.PermissionResolver, enabled bool, webhookToken string) *Service {
-	return &Service{
-		repo:         repo,
-		events:       events,
-		dataSources:  dataSources,
-		permissions:  permissions,
-		enabled:      enabled,
-		webhookToken: webhookToken,
-		httpClient:   &http.Client{Timeout: 8 * time.Second},
-		ruleInterval: 1 * time.Minute,
+type MetricTelemetry interface {
+	Analyze(context.Context, string, string, map[string]any, telemetry.MetricRangeQuery) (telemetry.MetricAnomalySummary, error)
+}
+
+type TraceTelemetry interface {
+	FindSlowSpans(context.Context, string, string, map[string]any, telemetry.TraceQuery) (telemetry.TraceResult, error)
+}
+
+type Service struct {
+	alertReader           AlertReader
+	alertWriter           AlertWriter
+	channels              ChannelRepository
+	silences              SilenceRepository
+	deliveryLogs          DeliveryLogRepository
+	rules                 RuleRepository
+	ruleRuns              RuleRunRepository
+	alertEvents           AlertEventRepository
+	notificationPolicies  NotificationPolicyRepository
+	notificationTemplates NotificationTemplateRepository
+	healingPolicies       HealingPolicyRepository
+	healingRuns           HealingRunRepository
+	onCallSchedules       OnCallScheduleRepository
+	onCallRotations       OnCallRotationRepository
+	onCallEscalations     OnCallEscalationRepository
+	onCallAssignments     OnCallAssignmentRepository
+	integrations          AlertIntegrationRepository
+	events                EventWriter
+	permissions           *appaccess.PermissionResolver
+	webhookToken          string
+	webhookKeys           keyring.Ring
+	enabled               bool
+	httpClient            *http.Client
+	automation            AlertAutomationHandler
+	dataSources           DataSourceRepository
+	workflow              WorkflowExecutor
+	ruleInterval          time.Duration
+	logs                  LogTelemetry
+	metrics               MetricTelemetry
+	traces                TraceTelemetry
+	startMu               sync.Mutex
+	started               bool
+}
+
+type Dependencies struct {
+	AlertReader           AlertReader
+	AlertWriter           AlertWriter
+	Channels              ChannelRepository
+	Silences              SilenceRepository
+	DeliveryLogs          DeliveryLogRepository
+	Rules                 RuleRepository
+	RuleRuns              RuleRunRepository
+	AlertEvents           AlertEventRepository
+	NotificationPolicies  NotificationPolicyRepository
+	NotificationTemplates NotificationTemplateRepository
+	HealingPolicies       HealingPolicyRepository
+	HealingRuns           HealingRunRepository
+	OnCallSchedules       OnCallScheduleRepository
+	OnCallRotations       OnCallRotationRepository
+	OnCallEscalations     OnCallEscalationRepository
+	OnCallAssignments     OnCallAssignmentRepository
+	Integrations          AlertIntegrationRepository
+	Events                EventWriter
+	DataSources           DataSourceRepository
+	Permissions           *appaccess.PermissionResolver
+	Enabled               bool
+	WebhookKeys           keyring.Ring
+}
+
+type Option func(*Service)
+
+func WithTelemetryBackends(logs LogTelemetry, metrics MetricTelemetry, traces TraceTelemetry) Option {
+	return func(service *Service) {
+		if logs != nil {
+			service.logs = logs
+		}
+		if metrics != nil {
+			service.metrics = metrics
+		}
+		if traces != nil {
+			service.traces = traces
+		}
+	}
+}
+
+func New(deps Dependencies, options ...Option) (*Service, error) {
+	required := []struct {
+		name  string
+		value any
+	}{
+		{"alert reader", deps.AlertReader},
+		{"alert writer", deps.AlertWriter},
+		{"channels", deps.Channels},
+		{"silences", deps.Silences},
+		{"delivery logs", deps.DeliveryLogs},
+		{"rules", deps.Rules},
+		{"rule runs", deps.RuleRuns},
+		{"alert events", deps.AlertEvents},
+		{"notification policies", deps.NotificationPolicies},
+		{"notification templates", deps.NotificationTemplates},
+		{"healing policies", deps.HealingPolicies},
+		{"healing runs", deps.HealingRuns},
+		{"on-call schedules", deps.OnCallSchedules},
+		{"on-call rotations", deps.OnCallRotations},
+		{"on-call escalations", deps.OnCallEscalations},
+		{"on-call assignments", deps.OnCallAssignments},
+		{"alert integrations", deps.Integrations},
+		{"events", deps.Events},
+		{"data sources", deps.DataSources},
+		{"permissions", deps.Permissions},
+	}
+	for _, dependency := range required {
+		if isNilMonitoringDependency(dependency.value) {
+			return nil, fmt.Errorf("%w: monitoring service: %s dependency is required", apperrors.ErrInvalidArgument, dependency.name)
+		}
+	}
+	service := &Service{
+		alertReader:           deps.AlertReader,
+		alertWriter:           deps.AlertWriter,
+		channels:              deps.Channels,
+		silences:              deps.Silences,
+		deliveryLogs:          deps.DeliveryLogs,
+		rules:                 deps.Rules,
+		ruleRuns:              deps.RuleRuns,
+		alertEvents:           deps.AlertEvents,
+		notificationPolicies:  deps.NotificationPolicies,
+		notificationTemplates: deps.NotificationTemplates,
+		healingPolicies:       deps.HealingPolicies,
+		healingRuns:           deps.HealingRuns,
+		onCallSchedules:       deps.OnCallSchedules,
+		onCallRotations:       deps.OnCallRotations,
+		onCallEscalations:     deps.OnCallEscalations,
+		onCallAssignments:     deps.OnCallAssignments,
+		integrations:          deps.Integrations,
+		events:                deps.Events,
+		dataSources:           deps.DataSources,
+		permissions:           deps.Permissions,
+		enabled:               deps.Enabled,
+		webhookKeys:           deps.WebhookKeys,
+		httpClient:            &http.Client{Timeout: 8 * time.Second},
+		ruleInterval:          1 * time.Minute,
+		logs:                  unavailableTelemetry{},
+		metrics:               unavailableTelemetry{},
+		traces:                unavailableTelemetry{},
+	}
+	for _, option := range options {
+		if option != nil {
+			option(service)
+		}
+	}
+	return service, nil
+}
+
+func isNilMonitoringDependency(dependency any) bool {
+	if dependency == nil {
+		return true
+	}
+	value := reflect.ValueOf(dependency)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
 	}
 }
 
@@ -127,12 +210,47 @@ func (s *Service) SetWorkflowExecutor(workflow WorkflowExecutor) {
 	s.workflow = workflow
 }
 
+func (s *Service) logBackend() LogTelemetry {
+	if s.logs != nil {
+		return s.logs
+	}
+	return unavailableTelemetry{}
+}
+
+func (s *Service) metricBackend() MetricTelemetry {
+	if s.metrics != nil {
+		return s.metrics
+	}
+	return unavailableTelemetry{}
+}
+
+func (s *Service) traceBackend() TraceTelemetry {
+	if s.traces != nil {
+		return s.traces
+	}
+	return unavailableTelemetry{}
+}
+
+type unavailableTelemetry struct{}
+
+func (unavailableTelemetry) Correlate(context.Context, string, string, map[string]any, telemetry.LogCorrelationQuery) (telemetry.LogCorrelationResult, error) {
+	return telemetry.LogCorrelationResult{}, errors.New("log telemetry backend is not configured")
+}
+
+func (unavailableTelemetry) Analyze(context.Context, string, string, map[string]any, telemetry.MetricRangeQuery) (telemetry.MetricAnomalySummary, error) {
+	return telemetry.MetricAnomalySummary{}, errors.New("metric telemetry backend is not configured")
+}
+
+func (unavailableTelemetry) FindSlowSpans(context.Context, string, string, map[string]any, telemetry.TraceQuery) (telemetry.TraceResult, error) {
+	return telemetry.TraceResult{}, errors.New("trace telemetry backend is not configured")
+}
+
 func (s *Service) RecordGovernanceAlert(ctx context.Context, input domaingovernance.AlertInput) error {
-	if s.repo == nil {
+	if s.alertEvents == nil {
 		return nil
 	}
 	event := governanceAlertEventInput(input)
-	item, err := s.repo.CreateEvent(ctx, event)
+	item, err := s.alertEvents.CreateEvent(ctx, event)
 	if err != nil {
 		return err
 	}
@@ -144,30 +262,30 @@ func (s *Service) Summary(ctx context.Context, principal domainidentity.Principa
 	if err := s.authorize(ctx, principal, appaccess.PermObserveMonitoringView); err != nil {
 		return domainalert.Summary{}, err
 	}
-	if s.repo == nil {
+	if s.alertReader == nil {
 		return domainalert.Summary{}, nil
 	}
-	return s.repo.Summary(ctx)
+	return s.alertReader.Summary(ctx)
 }
 
 func (s *Service) ListAlerts(ctx context.Context, principal domainidentity.Principal, filter domainalert.Filter) ([]domainalert.Instance, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.alertReader == nil {
 		return []domainalert.Instance{}, nil
 	}
-	return s.repo.List(ctx, filter)
+	return s.alertReader.List(ctx, filter)
 }
 
 func (s *Service) GetAlert(ctx context.Context, principal domainidentity.Principal, alertID string) (domainalert.Instance, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsView); err != nil {
 		return domainalert.Instance{}, err
 	}
-	if s.repo == nil {
+	if s.alertReader == nil {
 		return domainalert.Instance{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	item, err := s.repo.Get(ctx, strings.TrimSpace(alertID))
+	item, err := s.alertReader.Get(ctx, strings.TrimSpace(alertID))
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.Instance{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(alertID))
@@ -181,13 +299,13 @@ func (s *Service) UpdateOwnership(ctx context.Context, principal domainidentity.
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsAssign); err != nil {
 		return domainalert.Instance{}, err
 	}
-	if s.repo == nil {
+	if s.alertWriter == nil {
 		return domainalert.Instance{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if strings.TrimSpace(alertID) == "" {
 		return domainalert.Instance{}, fmt.Errorf("%w: alert id is required", apperrors.ErrInvalidArgument)
 	}
-	item, err := s.repo.UpdateOwnership(ctx, alertID, input)
+	item, err := s.alertWriter.UpdateOwnership(ctx, alertID, input)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.Instance{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(alertID))
@@ -201,13 +319,13 @@ func (s *Service) Acknowledge(ctx context.Context, principal domainidentity.Prin
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsAcknowledge); err != nil {
 		return domainalert.Instance{}, err
 	}
-	if s.repo == nil {
+	if s.alertWriter == nil {
 		return domainalert.Instance{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if strings.TrimSpace(alertID) == "" {
 		return domainalert.Instance{}, fmt.Errorf("%w: alert id is required", apperrors.ErrInvalidArgument)
 	}
-	item, err := s.repo.Acknowledge(ctx, alertID, userID, userName)
+	item, err := s.alertWriter.Acknowledge(ctx, alertID, userID, userName)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.Instance{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(alertID))
@@ -221,56 +339,48 @@ func (s *Service) ListChannels(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.channels == nil {
 		return []domainalert.NotificationChannel{}, nil
 	}
-	return s.repo.ListChannels(ctx)
+	return s.channels.ListChannels(ctx)
 }
 
 func (s *Service) CreateChannel(ctx context.Context, principal domainidentity.Principal, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.NotificationChannel{}, err
 	}
-	if s.repo == nil {
+	if s.channels == nil {
 		return domainalert.NotificationChannel{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := validateChannelInput(input); err != nil {
 		return domainalert.NotificationChannel{}, err
 	}
-	return s.repo.CreateChannel(ctx, input)
+	return s.channels.CreateChannel(ctx, input)
 }
 
 func (s *Service) UpdateChannel(ctx context.Context, principal domainidentity.Principal, channelID string, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.NotificationChannel{}, err
 	}
-	if s.repo == nil {
+	if s.channels == nil {
 		return domainalert.NotificationChannel{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	if strings.TrimSpace(channelID) == "" {
-		return domainalert.NotificationChannel{}, fmt.Errorf("%w: notification channel id is required", apperrors.ErrInvalidArgument)
-	}
-	if err := validateChannelInput(input); err != nil {
-		return domainalert.NotificationChannel{}, err
-	}
-	item, err := s.repo.UpdateChannel(ctx, channelID, input)
-	if err != nil {
-		if errors.Is(err, apperrors.ErrNotFound) {
-			return domainalert.NotificationChannel{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(channelID))
-		}
-		return domainalert.NotificationChannel{}, err
-	}
-	return item, nil
+	return updateMonitoringResource(
+		ctx, channelID, "notification channel", func() error { return validateChannelInput(input) },
+		func(ctx context.Context, id string) (domainalert.NotificationChannel, error) {
+			return s.channels.UpdateChannel(ctx, id, input)
+		},
+	)
 }
 
 func (s *Service) ListRoutes(ctx context.Context, principal domainidentity.Principal) ([]domainalert.AlertRoute, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.notificationPolicies == nil {
 		return []domainalert.AlertRoute{}, nil
 	}
-	items, err := s.repo.ListNotificationPolicies(ctx)
+	items, err := s.notificationPolicies.ListNotificationPolicies(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -281,69 +391,80 @@ func (s *Service) ListSilences(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.silences == nil {
 		return []domainalert.AlertSilence{}, nil
 	}
-	return s.repo.ListSilences(ctx)
+	return s.silences.ListSilences(ctx)
 }
 
 func (s *Service) CreateSilence(ctx context.Context, principal domainidentity.Principal, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.AlertSilence{}, err
 	}
-	if s.repo == nil {
+	if s.silences == nil {
 		return domainalert.AlertSilence{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := validateSilenceInput(input); err != nil {
 		return domainalert.AlertSilence{}, err
 	}
-	return s.repo.CreateSilence(ctx, input)
+	return s.silences.CreateSilence(ctx, input)
 }
 
 func (s *Service) UpdateSilence(ctx context.Context, principal domainidentity.Principal, silenceID string, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.AlertSilence{}, err
 	}
-	if s.repo == nil {
+	if s.silences == nil {
 		return domainalert.AlertSilence{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	if strings.TrimSpace(silenceID) == "" {
-		return domainalert.AlertSilence{}, fmt.Errorf("%w: alert silence id is required", apperrors.ErrInvalidArgument)
+	return updateMonitoringResource(
+		ctx, silenceID, "alert silence", func() error { return validateSilenceInput(input) },
+		func(ctx context.Context, id string) (domainalert.AlertSilence, error) {
+			return s.silences.UpdateSilence(ctx, id, input)
+		},
+	)
+}
+
+func updateMonitoringResource[T any](ctx context.Context, id, resourceName string, validate func() error, update func(context.Context, string) (T, error)) (T, error) {
+	var zero T
+	trimmedID := strings.TrimSpace(id)
+	if trimmedID == "" {
+		return zero, fmt.Errorf("%w: %s id is required", apperrors.ErrInvalidArgument, resourceName)
 	}
-	if err := validateSilenceInput(input); err != nil {
-		return domainalert.AlertSilence{}, err
+	if err := validate(); err != nil {
+		return zero, err
 	}
-	item, err := s.repo.UpdateSilence(ctx, silenceID, input)
-	if err != nil {
-		if errors.Is(err, apperrors.ErrNotFound) {
-			return domainalert.AlertSilence{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(silenceID))
-		}
-		return domainalert.AlertSilence{}, err
+	item, err := update(ctx, id)
+	if err == nil {
+		return item, nil
 	}
-	return item, nil
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return zero, fmt.Errorf("%w: %s", apperrors.ErrNotFound, trimmedID)
+	}
+	return zero, err
 }
 
 func (s *Service) ListDeliveryLogs(ctx context.Context, principal domainidentity.Principal, filter domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.deliveryLogs == nil {
 		return []domainalert.DeliveryLog{}, nil
 	}
-	return s.repo.ListDeliveryLogs(ctx, filter)
+	return s.deliveryLogs.ListDeliveryLogs(ctx, filter)
 }
 
 func (s *Service) CreateRoute(ctx context.Context, principal domainidentity.Principal, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
-	if s.repo == nil {
+	if s.notificationPolicies == nil {
 		return domainalert.AlertRoute{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := validateRouteInput(input); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
-	item, err := s.repo.CreateNotificationPolicy(ctx, compatNotificationPolicyInput(input))
+	item, err := s.notificationPolicies.CreateNotificationPolicy(ctx, compatNotificationPolicyInput(input))
 	if err != nil {
 		return domainalert.AlertRoute{}, err
 	}
@@ -354,7 +475,7 @@ func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Prin
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
-	if s.repo == nil {
+	if s.notificationPolicies == nil {
 		return domainalert.AlertRoute{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if strings.TrimSpace(routeID) == "" {
@@ -363,7 +484,7 @@ func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Prin
 	if err := validateRouteInput(input); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
-	item, err := s.repo.UpdateNotificationPolicy(ctx, routeID, compatNotificationPolicyInput(input))
+	item, err := s.notificationPolicies.UpdateNotificationPolicy(ctx, routeID, compatNotificationPolicyInput(input))
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.AlertRoute{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(routeID))
@@ -377,6 +498,12 @@ func (s *Service) ValidateWebhookToken(token string) error {
 	if !s.enabled {
 		return fmt.Errorf("%w: monitoring integrations are disabled", apperrors.ErrAccessDenied)
 	}
+	if s.webhookKeys.Active().ID() != "" {
+		if !s.webhookKeys.Match(token, time.Now().UTC()) {
+			return fmt.Errorf("%w: invalid monitoring webhook token", apperrors.ErrUnauthorized)
+		}
+		return nil
+	}
 	if strings.TrimSpace(s.webhookToken) == "" {
 		return nil
 	}
@@ -387,7 +514,7 @@ func (s *Service) ValidateWebhookToken(token string) error {
 }
 
 func (s *Service) Ingest(ctx context.Context, req domainalert.IngestRequest) (int, error) {
-	if s.repo == nil {
+	if s.alertWriter == nil {
 		return 0, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if !s.enabled {
@@ -396,7 +523,7 @@ func (s *Service) Ingest(ctx context.Context, req domainalert.IngestRequest) (in
 	if len(req.Alerts) == 0 {
 		return 0, fmt.Errorf("%w: alerts payload cannot be empty", apperrors.ErrInvalidArgument)
 	}
-	instances, err := s.repo.Upsert(ctx, req.Source, req.Alerts)
+	instances, err := s.alertWriter.Upsert(ctx, req.Source, req.Alerts)
 	if err != nil {
 		return 0, err
 	}
@@ -426,7 +553,7 @@ func (s *Service) Ingest(ctx context.Context, req domainalert.IngestRequest) (in
 				},
 			})
 		}
-		event, _ := s.repo.CreateEvent(ctx, domainalert.AlertEventInput{
+		event, _ := s.alertEvents.CreateEvent(ctx, domainalert.AlertEventInput{
 			ID:           instance.ID,
 			RuleID:       "",
 			SourceType:   "external_webhook",

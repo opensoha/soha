@@ -56,7 +56,7 @@ func (h *SettingsHandler) UploadBrandingAsset(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "missing file field")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if header.Size > brandingMaxFileSize {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "file size exceeds 2MB limit")

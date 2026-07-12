@@ -4,145 +4,93 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/client-go/dynamic"
-	"sigs.k8s.io/yaml"
 
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
-	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"sigs.k8s.io/yaml"
 )
 
-func (s *Service) ListCRDs(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.CRDView, error) {
-	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "CRD", domainaccess.ActionList)
+func (c *CustomResources) ListCRDs(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.CRDView, error) {
+	connection, decision, err := c.authorize(ctx, principal, clusterID, "", "CRD", domainaccess.ActionList)
 	if err != nil {
 		return nil, err
 	}
-	var (
-		items  []domainresource.CRDView
-		source string
-	)
-	switch connection.Summary.ConnectionMode {
-	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
-		if err != nil {
-			return nil, err
-		}
-		items, err = client.ListCRDs(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-		}
-		source = "agent"
-	default:
-		items, err = s.listDirectCRDs(ctx, clusterID)
-		if err != nil {
-			return nil, err
-		}
-		source = "live"
+	items, source, err := c.listCRDs(ctx, connection)
+	if err != nil {
+		return nil, err
 	}
 	populateAllowedActionsCRDs(items, decision)
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", "CRD", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed crds via %s", source))
+	_ = c.recordAudit(ctx, principal, connection.Summary.ID, "", "CRD", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed crds via %s", source))
 	return items, nil
 }
-func (s *Service) ListCRDResources(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace string) ([]domainresource.CustomResourceView, error) {
-	connection, err := s.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionList)
-	if err != nil {
-		return nil, err
-	}
-	definition, err := s.resolveCRDResourceDefinition(ctx, clusterID, crdName)
-	if err != nil {
-		return nil, err
-	}
-	_, decision, err := s.authorize(ctx, principal, clusterID, normalizeCustomResourceNamespaceForAuth(namespace, definition.Namespaced), definition.Kind, domainaccess.ActionList)
-	if err != nil {
-		return nil, err
-	}
 
-	var (
-		items  []domainresource.CustomResourceView
-		source string
-	)
-	switch connection.Summary.ConnectionMode {
-	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
-		if err != nil {
-			return nil, err
-		}
-		items, err = client.ListCustomResources(ctx, definition.AgentDefinition(), namespace)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-		}
-		for index := range items {
-			items[index].AllowedActions = stringifyActions(decision.AllowedActions)
-		}
-		if definition.Namespaced {
-			items = filterScopedNamespaceItems(items, decision, func(item domainresource.CustomResourceView) string { return item.Namespace })
-		}
-		source = "agent"
-	default:
-		items, err = s.listDirectCRDResources(ctx, clusterID, definition, namespace, decision)
-		if err != nil {
-			return nil, err
-		}
-		source = "live"
+func (c *CustomResources) ListCRDResources(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace string) ([]domainresource.CustomResourceView, error) {
+	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionList)
+	if err != nil {
+		return nil, err
 	}
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, normalizeCustomResourceNamespaceForAudit(namespace, definition.Namespaced), definition.Kind, "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed custom resources for crd %s via %s", crdName, source))
+	definition, err := c.resolveCRDResourceDefinition(ctx, connection, crdName)
+	if err != nil {
+		return nil, err
+	}
+	authNamespace := normalizeCustomResourceNamespace(namespace, definition.Namespaced)
+	_, decision, err := c.authorize(ctx, principal, clusterID, authNamespace, definition.Kind, domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	items, source, err := c.listCustomResources(ctx, connection, definition, namespace)
+	if err != nil {
+		return nil, err
+	}
+	for index := range items {
+		items[index].AllowedActions = stringifyActions(decision.AllowedActions)
+	}
+	if definition.Namespaced {
+		items = filterScopedNamespaceItems(items, decision, func(item domainresource.CustomResourceView) string { return item.Namespace })
+	}
+	_ = c.recordAudit(ctx, principal, connection.Summary.ID, authNamespace, definition.Kind, "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed custom resources for crd %s via %s", crdName, source))
 	return items, nil
 }
-func (s *Service) CreateCRDResourceFromYAML(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, content string) (domainresource.ResourceYAMLView, error) {
-	connection, err := s.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
+
+func (c *CustomResources) CreateCRDResourceFromYAML(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, content string) (domainresource.ResourceYAMLView, error) {
+	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	definition, err := s.resolveCRDResourceDefinition(ctx, clusterID, crdName)
+	definition, err := c.resolveCRDResourceDefinition(ctx, connection, crdName)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	item, effectiveNamespace, err := buildCustomResourceFromYAML(definition, content, namespace, "")
+	metadata, effectiveNamespace, err := inspectCustomResourceYAML(definition, content, namespace, "")
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if _, _, err := s.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionCreate); err != nil {
+	if _, _, err := c.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionCreate); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	switch connection.Summary.ConnectionMode {
-	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
-		if err != nil {
-			return domainresource.ResourceYAMLView{}, err
-		}
-		created, err := client.CreateCustomResourceYAML(ctx, definition.AgentDefinition(), effectiveNamespace, content)
-		if err != nil {
-			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, item.GetName(), string(domainaccess.ActionCreate), "failure", err.Error())
-			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, string(domainaccess.ActionCreate), "success", "created custom resource from yaml via agent")
-		s.recordOperation(ctx, principal, "platform.custom_resource.create", connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, "created custom resource from yaml via agent", map[string]any{"crdName": crdName})
-		return created, nil
-	default:
-		created, err := s.createDirectCustomResource(ctx, clusterID, definition, item, effectiveNamespace)
-		if err != nil {
-			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, item.GetName(), string(domainaccess.ActionCreate), "failure", err.Error())
-			return domainresource.ResourceYAMLView{}, err
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, string(domainaccess.ActionCreate), "success", "created custom resource from yaml")
-		s.recordOperation(ctx, principal, "platform.custom_resource.create", connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, "created custom resource from yaml", map[string]any{"crdName": crdName})
-		return created, nil
+	created, source, err := c.createCustomResource(ctx, connection, definition, effectiveNamespace, content)
+	if err != nil {
+		_ = c.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, metadata.Name, string(domainaccess.ActionCreate), "failure", err.Error())
+		return domainresource.ResourceYAMLView{}, err
 	}
+	summary := "created custom resource from yaml"
+	if source == "agent" {
+		summary += " via agent"
+	}
+	_ = c.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, string(domainaccess.ActionCreate), "success", summary)
+	c.recordOperation(ctx, principal, "platform.custom_resource.create", connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, summary, map[string]any{"crdName": crdName})
+	return created, nil
 }
-func (s *Service) GetCRDResourceYAML(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, name string) (domainresource.ResourceYAMLView, error) {
-	connection, err := s.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
+
+func (c *CustomResources) GetCRDResourceYAML(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, name string) (domainresource.ResourceYAMLView, error) {
+	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	definition, err := s.resolveCRDResourceDefinition(ctx, clusterID, crdName)
+	definition, err := c.resolveCRDResourceDefinition(ctx, connection, crdName)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
@@ -150,77 +98,57 @@ func (s *Service) GetCRDResourceYAML(ctx context.Context, principal domainidenti
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if _, _, err := s.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionView); err != nil {
+	if _, _, err := c.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionView); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	switch connection.Summary.ConnectionMode {
-	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
-		if err != nil {
-			return domainresource.ResourceYAMLView{}, err
-		}
-		item, err := client.GetCustomResourceYAML(ctx, definition.AgentDefinition(), effectiveNamespace, name)
-		if err != nil {
-			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionView), "success", "viewed custom resource yaml via agent")
-		return item, nil
-	default:
-		item, err := s.getDirectCustomResourceYAML(ctx, clusterID, definition, effectiveNamespace, name)
-		if err != nil {
-			return domainresource.ResourceYAMLView{}, err
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionView), "success", "viewed custom resource yaml")
-		return item, nil
+	item, source, err := c.getCustomResourceYAML(ctx, connection, definition, effectiveNamespace, name)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
 	}
+	summary := "viewed custom resource yaml"
+	if source == "agent" {
+		summary += " via agent"
+	}
+	_ = c.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionView), "success", summary)
+	return item, nil
 }
-func (s *Service) ApplyCRDResourceYAML(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, name, content string) (domainresource.ResourceYAMLView, error) {
-	connection, err := s.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
+
+func (c *CustomResources) ApplyCRDResourceYAML(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, name, content string) (domainresource.ResourceYAMLView, error) {
+	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	definition, err := s.resolveCRDResourceDefinition(ctx, clusterID, crdName)
+	definition, err := c.resolveCRDResourceDefinition(ctx, connection, crdName)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	item, effectiveNamespace, err := buildCustomResourceFromYAML(definition, content, namespace, name)
+	_, effectiveNamespace, err := inspectCustomResourceYAML(definition, content, namespace, name)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if _, _, err := s.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionUpdate); err != nil {
+	if _, _, err := c.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionUpdate); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	switch connection.Summary.ConnectionMode {
-	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
-		if err != nil {
-			return domainresource.ResourceYAMLView{}, err
-		}
-		updated, err := client.ApplyCustomResourceYAML(ctx, definition.AgentDefinition(), effectiveNamespace, name, content)
-		if err != nil {
-			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionUpdate), "failure", err.Error())
-			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionUpdate), "success", "applied custom resource yaml via agent")
-		s.recordOperation(ctx, principal, "platform.custom_resource.apply", connection.Summary.ID, effectiveNamespace, definition.Kind, name, "applied custom resource yaml via agent", map[string]any{"crdName": crdName})
-		return updated, nil
-	default:
-		updated, err := s.applyDirectCustomResourceYAML(ctx, clusterID, definition, item, effectiveNamespace, name)
-		if err != nil {
-			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionUpdate), "failure", err.Error())
-			return domainresource.ResourceYAMLView{}, err
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionUpdate), "success", "applied custom resource yaml")
-		s.recordOperation(ctx, principal, "platform.custom_resource.apply", connection.Summary.ID, effectiveNamespace, definition.Kind, name, "applied custom resource yaml", map[string]any{"crdName": crdName})
-		return updated, nil
+	updated, source, err := c.applyCustomResourceYAML(ctx, connection, definition, effectiveNamespace, name, content)
+	if err != nil {
+		_ = c.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionUpdate), "failure", err.Error())
+		return domainresource.ResourceYAMLView{}, err
 	}
+	summary := "applied custom resource yaml"
+	if source == "agent" {
+		summary += " via agent"
+	}
+	_ = c.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionUpdate), "success", summary)
+	c.recordOperation(ctx, principal, "platform.custom_resource.apply", connection.Summary.ID, effectiveNamespace, definition.Kind, name, summary, map[string]any{"crdName": crdName})
+	return updated, nil
 }
-func (s *Service) DeleteCRDResource(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, name string) error {
-	connection, err := s.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
+
+func (c *CustomResources) DeleteCRDResource(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, name string) error {
+	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
 	if err != nil {
 		return err
 	}
-	definition, err := s.resolveCRDResourceDefinition(ctx, clusterID, crdName)
+	definition, err := c.resolveCRDResourceDefinition(ctx, connection, crdName)
 	if err != nil {
 		return err
 	}
@@ -228,210 +156,132 @@ func (s *Service) DeleteCRDResource(ctx context.Context, principal domainidentit
 	if err != nil {
 		return err
 	}
-	if _, _, err := s.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionDelete); err != nil {
+	if _, _, err := c.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionDelete); err != nil {
 		return err
 	}
-	switch connection.Summary.ConnectionMode {
-	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
-		if err != nil {
-			return err
-		}
-		if err := client.DeleteCustomResource(ctx, definition.AgentDefinition(), effectiveNamespace, name); err != nil {
-			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
-			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "success", "deleted custom resource via agent")
-		s.recordOperation(ctx, principal, "platform.custom_resource.delete", connection.Summary.ID, effectiveNamespace, definition.Kind, name, "deleted custom resource via agent", map[string]any{"crdName": crdName})
-		return nil
-	default:
-		if err := s.deleteDirectCustomResource(ctx, clusterID, definition, effectiveNamespace, name); err != nil {
-			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
-			return err
-		}
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "success", "deleted custom resource")
-		s.recordOperation(ctx, principal, "platform.custom_resource.delete", connection.Summary.ID, effectiveNamespace, definition.Kind, name, "deleted custom resource", map[string]any{"crdName": crdName})
-		return nil
-	}
-}
-func (s *Service) getDirectCustomResourceYAML(ctx context.Context, clusterID string, definition crdResourceDefinition, namespace, name string) (domainresource.ResourceYAMLView, error) {
-	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
+	source, err := c.deleteCustomResource(ctx, connection, definition, effectiveNamespace, name)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
-	}
-	defer cancel()
-	var resource dynamic.ResourceInterface
-	if definition.Namespaced {
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource()).Namespace(namespace)
-	} else {
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource())
-	}
-	item, err := resource.Get(queryCtx, name, metav1.GetOptions{})
-	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
-	}
-	unstructured.RemoveNestedField(item.Object, "metadata", "managedFields")
-	content, err := yaml.Marshal(item.Object)
-	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
-	}
-	return domainresource.ResourceYAMLView{
-		Kind:      definition.Kind,
-		Name:      item.GetName(),
-		Namespace: item.GetNamespace(),
-		Content:   string(content),
-	}, nil
-}
-func (s *Service) deleteDirectCustomResource(ctx context.Context, clusterID string, definition crdResourceDefinition, namespace, name string) error {
-	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
-	if err != nil {
+		_ = c.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
 		return err
 	}
-	defer cancel()
-	var resource dynamic.ResourceInterface
-	if definition.Namespaced {
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource()).Namespace(namespace)
-	} else {
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource())
+	summary := "deleted custom resource"
+	if source == "agent" {
+		summary += " via agent"
 	}
-	return resource.Delete(queryCtx, name, metav1.DeleteOptions{})
+	_ = c.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "success", summary)
+	c.recordOperation(ctx, principal, "platform.custom_resource.delete", connection.Summary.ID, effectiveNamespace, definition.Kind, name, summary, map[string]any{"crdName": crdName})
+	return nil
 }
-func (s *Service) applyDirectCustomResourceYAML(ctx context.Context, clusterID string, definition crdResourceDefinition, item *unstructured.Unstructured, namespace, name string) (domainresource.ResourceYAMLView, error) {
-	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
-	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
-	}
-	defer cancel()
-	var resource dynamic.ResourceInterface
-	if definition.Namespaced {
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource()).Namespace(namespace)
-	} else {
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource())
-	}
-	if item.GetResourceVersion() == "" {
-		current, err := resource.Get(queryCtx, name, metav1.GetOptions{})
+
+func (c *CustomResources) listCRDs(ctx context.Context, connection domaincluster.Connection) ([]domainresource.CRDView, string, error) {
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := c.customResourceAgentClient(connection)
 		if err != nil {
-			return domainresource.ResourceYAMLView{}, err
+			return nil, "agent", err
 		}
-		item.SetResourceVersion(current.GetResourceVersion())
+		items, err := client.ListCRDs(ctx)
+		return items, "agent", wrapAgentResourceError(err)
 	}
-	updated, err := resource.Update(queryCtx, item, metav1.UpdateOptions{})
+	direct, err := c.directCustomResources()
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return nil, "live", err
 	}
-	rendered, err := yaml.Marshal(updated.Object)
-	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
-	}
-	return domainresource.ResourceYAMLView{
-		Kind:      definition.Kind,
-		Name:      updated.GetName(),
-		Namespace: updated.GetNamespace(),
-		Content:   string(rendered),
-	}, nil
+	items, err := direct.ListCRDs(ctx, connection.Summary.ID)
+	return items, "live", err
 }
-func (s *Service) createDirectCustomResource(ctx context.Context, clusterID string, definition crdResourceDefinition, item *unstructured.Unstructured, namespace string) (domainresource.ResourceYAMLView, error) {
-	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
-	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
-	}
-	defer cancel()
-	var resource dynamic.ResourceInterface
-	if definition.Namespaced {
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource()).Namespace(namespace)
-	} else {
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource())
-	}
-	item.SetResourceVersion("")
-	created, err := resource.Create(queryCtx, item, metav1.CreateOptions{})
-	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
-	}
-	rendered, err := yaml.Marshal(created.Object)
-	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
-	}
-	return domainresource.ResourceYAMLView{
-		Kind:      definition.Kind,
-		Name:      created.GetName(),
-		Namespace: created.GetNamespace(),
-		Content:   string(rendered),
-	}, nil
-}
-func (s *Service) listDirectCRDs(ctx context.Context, clusterID string) ([]domainresource.CRDView, error) {
-	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-	gvr := schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
-	items, err := bundle.Dynamic.Resource(gvr).List(queryCtx, metav1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	views := make([]domainresource.CRDView, 0, len(items.Items))
-	for _, item := range items.Items {
-		views = append(views, mapCRD(item))
-	}
-	return views, nil
-}
-func (s *Service) listDirectCRDResources(ctx context.Context, clusterID string, definition crdResourceDefinition, namespace string, decision domainaccess.Decision) ([]domainresource.CustomResourceView, error) {
-	bundle, err := s.clusters.Bundle(ctx, clusterID)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-	}
-	if definition.Namespaced && strings.TrimSpace(namespace) == "" {
-		items, err := listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]unstructured.Unstructured, error) {
-			list, listErr := bundle.Dynamic.Resource(definition.GroupVersionResource()).Namespace(namespace).List(queryCtx, metav1.ListOptions{})
-			if listErr != nil {
-				return nil, listErr
-			}
-			return list.Items, nil
-		})
+
+func (c *CustomResources) listCustomResources(ctx context.Context, connection domaincluster.Connection, definition crdResourceDefinition, namespace string) ([]domainresource.CustomResourceView, string, error) {
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := c.customResourceAgentClient(connection)
 		if err != nil {
-			return nil, err
+			return nil, "agent", err
 		}
-		views := make([]domainresource.CustomResourceView, 0, len(items))
-		for _, item := range items {
-			views = append(views, mapCustomResource(item, definition, decision))
-		}
-		return filterScopedNamespaceItems(views, decision, func(item domainresource.CustomResourceView) string { return item.Namespace }), nil
+		items, err := client.ListCustomResources(ctx, definition.AgentDefinition(), namespace)
+		return items, "agent", wrapAgentResourceError(err)
 	}
-	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	var resource dynamic.ResourceInterface
-	if definition.Namespaced {
-		effectiveNamespace, err := requiredCustomResourceNamespace(definition, namespace)
-		if err != nil {
-			return nil, err
-		}
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource()).Namespace(effectiveNamespace)
-	} else {
-		resource = bundle.Dynamic.Resource(definition.GroupVersionResource())
-	}
-	items, err := resource.List(queryCtx, metav1.ListOptions{})
+	direct, err := c.directCustomResources()
 	if err != nil {
-		return nil, err
+		return nil, "live", err
 	}
-	views := make([]domainresource.CustomResourceView, 0, len(items.Items))
-	for _, item := range items.Items {
-		views = append(views, mapCustomResource(item, definition, decision))
-	}
-	if definition.Namespaced {
-		return filterScopedNamespaceItems(views, decision, func(item domainresource.CustomResourceView) string { return item.Namespace }), nil
-	}
-	return views, nil
+	items, err := direct.ListCustomResources(ctx, connection.Summary.ID, definition.AgentDefinition(), namespace)
+	return items, "live", err
 }
-func (s *Service) resolveCRDResourceDefinition(ctx context.Context, clusterID, crdName string) (crdResourceDefinition, error) {
-	connection, err := s.loadConnection(ctx, clusterID)
-	if err == nil && connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		client, err := s.agentClient(connection)
+
+func (c *CustomResources) createCustomResource(ctx context.Context, connection domaincluster.Connection, definition crdResourceDefinition, namespace, content string) (domainresource.ResourceYAMLView, string, error) {
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := c.customResourceAgentClient(connection)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, "agent", err
+		}
+		item, err := client.CreateCustomResourceYAML(ctx, definition.AgentDefinition(), namespace, content)
+		return item, "agent", wrapAgentResourceError(err)
+	}
+	direct, err := c.directCustomResources()
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, "live", err
+	}
+	item, err := direct.CreateCustomResourceYAML(ctx, connection.Summary.ID, definition.AgentDefinition(), namespace, content)
+	return item, "live", err
+}
+
+func (c *CustomResources) getCustomResourceYAML(ctx context.Context, connection domaincluster.Connection, definition crdResourceDefinition, namespace, name string) (domainresource.ResourceYAMLView, string, error) {
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := c.customResourceAgentClient(connection)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, "agent", err
+		}
+		item, err := client.GetCustomResourceYAML(ctx, definition.AgentDefinition(), namespace, name)
+		return item, "agent", wrapAgentResourceError(err)
+	}
+	direct, err := c.directCustomResources()
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, "live", err
+	}
+	item, err := direct.GetCustomResourceYAML(ctx, connection.Summary.ID, definition.AgentDefinition(), namespace, name)
+	return item, "live", err
+}
+
+func (c *CustomResources) applyCustomResourceYAML(ctx context.Context, connection domaincluster.Connection, definition crdResourceDefinition, namespace, name, content string) (domainresource.ResourceYAMLView, string, error) {
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := c.customResourceAgentClient(connection)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, "agent", err
+		}
+		item, err := client.ApplyCustomResourceYAML(ctx, definition.AgentDefinition(), namespace, name, content)
+		return item, "agent", wrapAgentResourceError(err)
+	}
+	direct, err := c.directCustomResources()
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, "live", err
+	}
+	item, err := direct.ApplyCustomResourceYAML(ctx, connection.Summary.ID, definition.AgentDefinition(), namespace, name, content)
+	return item, "live", err
+}
+
+func (c *CustomResources) deleteCustomResource(ctx context.Context, connection domaincluster.Connection, definition crdResourceDefinition, namespace, name string) (string, error) {
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := c.customResourceAgentClient(connection)
+		if err != nil {
+			return "agent", err
+		}
+		return "agent", wrapAgentResourceError(client.DeleteCustomResource(ctx, definition.AgentDefinition(), namespace, name))
+	}
+	direct, err := c.directCustomResources()
+	if err != nil {
+		return "live", err
+	}
+	return "live", direct.DeleteCustomResource(ctx, connection.Summary.ID, definition.AgentDefinition(), namespace, name)
+}
+
+func (c *CustomResources) resolveCRDResourceDefinition(ctx context.Context, connection domaincluster.Connection, crdName string) (crdResourceDefinition, error) {
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := c.customResourceAgentClient(connection)
 		if err != nil {
 			return crdResourceDefinition{}, err
 		}
 		items, err := client.ListCRDs(ctx)
 		if err != nil {
-			return crdResourceDefinition{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return crdResourceDefinition{}, wrapAgentResourceError(err)
 		}
 		for _, item := range items {
 			if item.Name == crdName {
@@ -440,174 +290,64 @@ func (s *Service) resolveCRDResourceDefinition(ctx context.Context, clusterID, c
 		}
 		return crdResourceDefinition{}, fmt.Errorf("%w: crd %s", apperrors.ErrNotFound, crdName)
 	}
-	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
+	direct, err := c.directCustomResources()
 	if err != nil {
 		return crdResourceDefinition{}, err
 	}
-	defer cancel()
-	crdGVR := schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}
-	item, err := bundle.Dynamic.Resource(crdGVR).Get(queryCtx, crdName, metav1.GetOptions{})
+	definition, err := direct.ResolveCRD(ctx, connection.Summary.ID, crdName)
 	if err != nil {
 		return crdResourceDefinition{}, err
 	}
-	return parseCRDResourceDefinition(*item)
+	return crdResourceDefinitionFromDomain(definition)
 }
-func mapCRD(item unstructured.Unstructured) domainresource.CRDView {
-	group, _, _ := unstructured.NestedString(item.Object, "spec", "group")
-	scope, _, _ := unstructured.NestedString(item.Object, "spec", "scope")
-	kind, _, _ := unstructured.NestedString(item.Object, "spec", "names", "kind")
-	plural, _, _ := unstructured.NestedString(item.Object, "spec", "names", "plural")
-	versionItems, _, _ := unstructured.NestedSlice(item.Object, "spec", "versions")
-	versions := make([]string, 0, len(versionItems))
-	for _, raw := range versionItems {
-		value, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		name, _ := value["name"].(string)
-		if strings.TrimSpace(name) != "" {
-			versions = append(versions, name)
-		}
+
+func (c *CustomResources) directCustomResources() (DirectCustomResource, error) {
+	if c.direct == nil {
+		return nil, fmt.Errorf("%w: direct custom resource adapter is not configured", apperrors.ErrClusterUnready)
 	}
-	return domainresource.CRDView{
-		Name:       item.GetName(),
-		Group:      group,
-		Scope:      scope,
-		Kind:       kind,
-		Plural:     plural,
-		Version:    firstCRDVersion(versions),
-		Versions:   versions,
-		CreatedAt:  item.GetCreationTimestamp().Time.UTC().Format(time.RFC3339),
-		AgeSeconds: secondsSince(item.GetCreationTimestamp().Time),
-	}
+	return c.direct, nil
 }
-func mapCustomResource(item unstructured.Unstructured, definition crdResourceDefinition, decision domainaccess.Decision) domainresource.CustomResourceView {
-	apiVersion := strings.TrimSpace(item.GetAPIVersion())
-	if apiVersion == "" && definition.Group != "" && definition.Version != "" {
-		apiVersion = definition.Group + "/" + definition.Version
+
+func wrapAgentResourceError(err error) error {
+	if err == nil {
+		return nil
 	}
-	return domainresource.CustomResourceView{
-		APIVersion:     apiVersion,
-		Kind:           definition.Kind,
-		Name:           item.GetName(),
-		Namespace:      item.GetNamespace(),
-		Labels:         item.GetLabels(),
-		CreatedAt:      item.GetCreationTimestamp().Time.UTC().Format(time.RFC3339),
-		AgeSeconds:     secondsSince(item.GetCreationTimestamp().Time),
-		AllowedActions: stringifyActions(decision.AllowedActions),
-	}
+	return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 }
+
 func populateAllowedActionsCRDs(items []domainresource.CRDView, decision domainaccess.Decision) {
-	for i := range items {
-		if len(items[i].AllowedActions) == 0 {
-			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+	for index := range items {
+		if len(items[index].AllowedActions) == 0 {
+			items[index].AllowedActions = stringifyActions(decision.AllowedActions)
 		}
 	}
 }
-func (d crdResourceDefinition) GroupVersionResource() schema.GroupVersionResource {
-	return schema.GroupVersionResource{Group: d.Group, Version: d.Version, Resource: d.Resource}
-}
+
 func (d crdResourceDefinition) AgentDefinition() domainresource.CRDResourceDefinition {
-	return domainresource.CRDResourceDefinition{
-		CRDName:    d.CRDName,
-		Kind:       d.Kind,
-		Group:      d.Group,
-		Version:    d.Version,
-		Resource:   d.Resource,
-		Namespaced: d.Namespaced,
-	}
+	return domainresource.CRDResourceDefinition{CRDName: d.CRDName, Kind: d.Kind, Group: d.Group, Version: d.Version, Resource: d.Resource, Namespaced: d.Namespaced}
 }
-func parseCRDResourceDefinition(item unstructured.Unstructured) (crdResourceDefinition, error) {
-	group, _, _ := unstructured.NestedString(item.Object, "spec", "group")
-	kind, _, _ := unstructured.NestedString(item.Object, "spec", "names", "kind")
-	resource, _, _ := unstructured.NestedString(item.Object, "spec", "names", "plural")
-	scope, _, _ := unstructured.NestedString(item.Object, "spec", "scope")
-	version, err := servedCRDVersion(item)
-	if err != nil {
-		return crdResourceDefinition{}, err
+
+func crdResourceDefinitionFromDomain(item domainresource.CRDResourceDefinition) (crdResourceDefinition, error) {
+	if strings.TrimSpace(item.Group) == "" || strings.TrimSpace(item.Kind) == "" || strings.TrimSpace(item.Resource) == "" || strings.TrimSpace(item.Version) == "" {
+		return crdResourceDefinition{}, fmt.Errorf("%w: crd %s is missing required group, kind, plural, or version metadata", apperrors.ErrInvalidArgument, item.CRDName)
 	}
-	if strings.TrimSpace(group) == "" || strings.TrimSpace(kind) == "" || strings.TrimSpace(resource) == "" {
-		return crdResourceDefinition{}, fmt.Errorf("%w: crd %s is missing required group, kind, or plural metadata", apperrors.ErrInvalidArgument, item.GetName())
-	}
-	namespaced, err := namespacedFromCRDScope(scope, item.GetName())
-	if err != nil {
-		return crdResourceDefinition{}, err
-	}
-	return crdResourceDefinition{
-		CRDName:    item.GetName(),
-		Kind:       kind,
-		Group:      group,
-		Version:    version,
-		Resource:   resource,
-		Namespaced: namespaced,
-	}, nil
+	return crdResourceDefinition{CRDName: item.CRDName, Kind: item.Kind, Group: item.Group, Version: item.Version, Resource: item.Resource, Namespaced: item.Namespaced}, nil
 }
+
 func crdResourceDefinitionFromView(item domainresource.CRDView) (crdResourceDefinition, error) {
 	version := strings.TrimSpace(item.Version)
 	if version == "" && len(item.Versions) > 0 {
 		version = item.Versions[0]
 	}
-	if strings.TrimSpace(item.Group) == "" || strings.TrimSpace(item.Kind) == "" || strings.TrimSpace(item.Plural) == "" || version == "" {
-		return crdResourceDefinition{}, fmt.Errorf("%w: crd %s is missing required group, kind, plural, or version metadata", apperrors.ErrInvalidArgument, item.Name)
-	}
 	namespaced, err := namespacedFromCRDScope(item.Scope, item.Name)
 	if err != nil {
 		return crdResourceDefinition{}, err
 	}
-	return crdResourceDefinition{
-		CRDName:    item.Name,
-		Kind:       item.Kind,
-		Group:      item.Group,
-		Version:    version,
-		Resource:   item.Plural,
-		Namespaced: namespaced,
-	}, nil
+	return crdResourceDefinitionFromDomain(domainresource.CRDResourceDefinition{
+		CRDName: item.Name, Kind: item.Kind, Group: item.Group, Version: version, Resource: item.Plural, Namespaced: namespaced,
+	})
 }
-func servedCRDVersion(item unstructured.Unstructured) (string, error) {
-	versions, _, _ := unstructured.NestedSlice(item.Object, "spec", "versions")
-	var fallback string
-	for _, raw := range versions {
-		version, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		name, _ := version["name"].(string)
-		if strings.TrimSpace(name) == "" {
-			continue
-		}
-		if fallback == "" {
-			fallback = name
-		}
-		if served, _ := version["served"].(bool); served {
-			if storage, _ := version["storage"].(bool); storage {
-				return name, nil
-			}
-		}
-	}
-	for _, raw := range versions {
-		version, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		name, _ := version["name"].(string)
-		if strings.TrimSpace(name) == "" {
-			continue
-		}
-		if served, _ := version["served"].(bool); served {
-			return name, nil
-		}
-	}
-	if fallback != "" {
-		return fallback, nil
-	}
-	return "", fmt.Errorf("%w: crd %s does not expose any version metadata", apperrors.ErrInvalidArgument, item.GetName())
-}
-func firstCRDVersion(versions []string) string {
-	if len(versions) == 0 {
-		return ""
-	}
-	return versions[0]
-}
+
 func namespacedFromCRDScope(scope, crdName string) (bool, error) {
 	switch strings.ToLower(strings.TrimSpace(scope)) {
 	case "namespaced":
@@ -618,6 +358,7 @@ func namespacedFromCRDScope(scope, crdName string) (bool, error) {
 		return false, fmt.Errorf("%w: crd %s has unsupported scope %q", apperrors.ErrInvalidArgument, crdName, scope)
 	}
 }
+
 func requiredCustomResourceNamespace(definition crdResourceDefinition, namespace string) (string, error) {
 	namespace = strings.TrimSpace(namespace)
 	if definition.Namespaced {
@@ -631,68 +372,64 @@ func requiredCustomResourceNamespace(definition crdResourceDefinition, namespace
 	}
 	return "", nil
 }
-func buildCustomResourceFromYAML(definition crdResourceDefinition, content, namespace, expectedName string) (*unstructured.Unstructured, string, error) {
-	if strings.TrimSpace(content) == "" {
-		return nil, "", fmt.Errorf("%w: yaml content is required", apperrors.ErrInvalidArgument)
-	}
-	var object map[string]any
-	if err := yaml.Unmarshal([]byte(content), &object); err != nil {
-		return nil, "", fmt.Errorf("%w: invalid yaml: %v", apperrors.ErrInvalidArgument, err)
-	}
-	item := &unstructured.Unstructured{Object: object}
-	if item.GetKind() == "" {
-		item.SetKind(definition.Kind)
-	}
-	if !strings.EqualFold(item.GetKind(), definition.Kind) {
-		return nil, "", fmt.Errorf("%w: yaml kind %s does not match target %s", apperrors.ErrInvalidArgument, item.GetKind(), definition.Kind)
-	}
-	if item.GetAPIVersion() == "" {
-		item.SetAPIVersion(definition.Group + "/" + definition.Version)
-	}
-	if strings.TrimSpace(item.GetName()) == "" {
-		if strings.TrimSpace(expectedName) == "" {
-			return nil, "", fmt.Errorf("%w: yaml metadata.name is required", apperrors.ErrInvalidArgument)
-		}
-		item.SetName(expectedName)
-	}
-	if expectedName = strings.TrimSpace(expectedName); expectedName != "" && item.GetName() != expectedName {
-		return nil, "", fmt.Errorf("%w: yaml metadata.name does not match target resource", apperrors.ErrInvalidArgument)
-	}
-	effectiveNamespace, err := requiredCustomResourceNamespace(definition, firstNonEmpty(item.GetNamespace(), namespace))
-	if err != nil {
-		return nil, "", err
-	}
-	if definition.Namespaced {
-		item.SetNamespace(effectiveNamespace)
-	} else {
-		item.SetNamespace("")
-	}
-	return item, effectiveNamespace, nil
+
+type customResourceMetadata struct {
+	Name       string
+	Namespace  string
+	Kind       string
+	APIVersion string
 }
+
+func inspectCustomResourceYAML(definition crdResourceDefinition, content, namespace, expectedName string) (customResourceMetadata, string, error) {
+	if strings.TrimSpace(content) == "" {
+		return customResourceMetadata{}, "", fmt.Errorf("%w: yaml content is required", apperrors.ErrInvalidArgument)
+	}
+	var document struct {
+		APIVersion string `yaml:"apiVersion"`
+		Kind       string `yaml:"kind"`
+		Metadata   struct {
+			Name      string `yaml:"name"`
+			Namespace string `yaml:"namespace"`
+		} `yaml:"metadata"`
+	}
+	if err := yaml.Unmarshal([]byte(content), &document); err != nil {
+		return customResourceMetadata{}, "", fmt.Errorf("%w: invalid yaml: %v", apperrors.ErrInvalidArgument, err)
+	}
+	kind := firstNonEmpty(document.Kind, definition.Kind)
+	if !strings.EqualFold(kind, definition.Kind) {
+		return customResourceMetadata{}, "", fmt.Errorf("%w: yaml kind %s does not match target %s", apperrors.ErrInvalidArgument, kind, definition.Kind)
+	}
+	name := firstNonEmpty(document.Metadata.Name, expectedName)
+	if name == "" {
+		return customResourceMetadata{}, "", fmt.Errorf("%w: yaml metadata.name is required", apperrors.ErrInvalidArgument)
+	}
+	if expectedName = strings.TrimSpace(expectedName); expectedName != "" && name != expectedName {
+		return customResourceMetadata{}, "", fmt.Errorf("%w: yaml metadata.name does not match target resource", apperrors.ErrInvalidArgument)
+	}
+	effectiveNamespace, err := requiredCustomResourceNamespace(definition, firstNonEmpty(document.Metadata.Namespace, namespace))
+	if err != nil {
+		return customResourceMetadata{}, "", err
+	}
+	return customResourceMetadata{Name: name, Namespace: effectiveNamespace, Kind: kind, APIVersion: firstNonEmpty(document.APIVersion, definition.Group+"/"+definition.Version)}, effectiveNamespace, nil
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
+		if value = strings.TrimSpace(value); value != "" {
+			return value
 		}
 	}
 	return ""
 }
-func normalizeCustomResourceNamespaceForAuth(namespace string, namespaced bool) string {
+
+func normalizeCustomResourceNamespace(namespace string, namespaced bool) string {
 	if !namespaced {
 		return ""
 	}
 	return strings.TrimSpace(namespace)
 }
-func normalizeCustomResourceNamespaceForAudit(namespace string, namespaced bool) string {
-	if !namespaced {
-		return ""
-	}
-	return strings.TrimSpace(namespace)
-}
-func (s *Service) authorizeCRDDefinitionAccess(ctx context.Context, principal domainidentity.Principal, clusterID string, action domainaccess.Action) (domaincluster.Connection, error) {
-	connection, _, err := s.authorize(ctx, principal, clusterID, "", "CRD", action)
-	if err != nil {
-		return domaincluster.Connection{}, err
-	}
-	return connection, nil
+
+func (c *CustomResources) authorizeCRDDefinitionAccess(ctx context.Context, principal domainidentity.Principal, clusterID string, action domainaccess.Action) (domaincluster.Connection, error) {
+	connection, _, err := c.authorize(ctx, principal, clusterID, "", "CRD", action)
+	return connection, err
 }

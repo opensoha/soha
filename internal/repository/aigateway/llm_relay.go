@@ -39,7 +39,7 @@ func (r *Repository) ListLLMUpstreams(ctx context.Context, filter domainaigatewa
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanLLMUpstreamRows(rows)
 }
 
@@ -141,22 +141,10 @@ func (r *Repository) ListLLMModelRoutes(ctx context.Context, filter domainaigate
 		WHERE 1 = 1
 	`
 	args := make([]any, 0)
-	if filter.PublicModel != "" {
-		query += " AND public_model = ?"
-		args = append(args, filter.PublicModel)
-	}
-	if filter.ProviderKind != "" {
-		query += " AND provider_kind = ?"
-		args = append(args, filter.ProviderKind)
-	}
-	if filter.UpstreamID != "" {
-		query += " AND upstream_id = ?"
-		args = append(args, filter.UpstreamID)
-	}
-	if filter.RouteGroup != "" {
-		query += " AND route_group = ?"
-		args = append(args, filter.RouteGroup)
-	}
+	appendStringFilter(&query, &args, "public_model", filter.PublicModel)
+	appendStringFilter(&query, &args, "provider_kind", filter.ProviderKind)
+	appendStringFilter(&query, &args, "upstream_id", filter.UpstreamID)
+	appendStringFilter(&query, &args, "route_group", filter.RouteGroup)
 	if !filter.IncludeDisabled {
 		query += " AND enabled = TRUE"
 	}
@@ -165,7 +153,7 @@ func (r *Repository) ListLLMModelRoutes(ctx context.Context, filter domainaigate
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanLLMModelRouteRows(rows)
 }
 
@@ -300,7 +288,7 @@ func (r *Repository) ListLLMCallLogs(ctx context.Context, filter domainaigateway
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanLLMCallLogRows(rows)
 }
 
@@ -374,7 +362,7 @@ func (r *Repository) llmRelayCallLogModelRanking(ctx context.Context, filter dom
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainaigateway.GovernanceMetricCount, 0)
 	for rows.Next() {
 		var item domainaigateway.GovernanceMetricCount
@@ -406,7 +394,7 @@ func (r *Repository) llmRelayRecentErrorLogs(ctx context.Context, filter domaina
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanLLMCallLogRows(rows)
 }
 
@@ -489,7 +477,7 @@ func (r *Repository) llmRelayCacheStatsBreakdown(ctx context.Context, filter dom
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]map[string]any, 0)
 	for rows.Next() {
 		var value string
@@ -620,7 +608,7 @@ func (r *Repository) ListLLMCacheEntries(ctx context.Context, filter domainaigat
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanLLMCacheEntryRows(rows)
 }
 
@@ -849,7 +837,7 @@ func (r *Repository) ListLLMHealthEvents(ctx context.Context, filter domainaigat
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanLLMHealthEventRows(rows)
 }
 

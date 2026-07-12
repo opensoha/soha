@@ -3,6 +3,14 @@ package routes
 import "github.com/gin-gonic/gin"
 
 func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerPlatformClusterRoutes(protected, deps)
+	registerPlatformWorkloadRoutes(protected, deps)
+	registerPlatformConfigurationRoutes(protected, deps)
+	registerPlatformNetworkStorageRoutes(protected, deps)
+	registerPlatformExtensionRoutes(protected, deps)
+}
+
+func registerPlatformClusterRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/clusters", deps.Platform.ListClusters)
 	protected.GET("/clusters/capabilities", deps.Platform.ClusterCapabilityMatrix)
 	protected.POST("/clusters", deps.Platform.CreateCluster)
@@ -21,6 +29,9 @@ func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.PUT("/clusters/:clusterID/infrastructure/nodes/:nodeName", deps.Platform.UpdateNode)
 	protected.DELETE("/clusters/:clusterID/infrastructure/nodes/:nodeName", deps.Platform.DeleteNode)
 
+}
+
+func registerPlatformWorkloadRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/clusters/:clusterID/workloads/overview", deps.Platform.GetWorkloadOverview)
 	protected.GET("/clusters/:clusterID/workloads/pods", deps.Platform.ListPods)
 	protected.GET("/clusters/:clusterID/workloads/pods/:podName/detail", deps.Platform.GetPodDetail)
@@ -69,6 +80,9 @@ func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/clusters/:clusterID/workloads/statefulsets/scale", deps.Platform.ScaleStatefulSet)
 	protected.POST("/clusters/:clusterID/workloads/daemonsets/restart", deps.Platform.RestartDaemonSet)
 
+}
+
+func registerPlatformConfigurationRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/clusters/:clusterID/configuration/configmaps", deps.Platform.ListConfigMaps)
 	protected.POST("/clusters/:clusterID/configuration/configmaps", deps.Platform.CreateConfigMap)
 	protected.GET("/clusters/:clusterID/configuration/configmaps/:name/detail", deps.Platform.GetConfigMapDetail)
@@ -105,6 +119,9 @@ func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/clusters/:clusterID/access-control/clusterrolebindings", deps.Platform.CreateClusterRoleBinding)
 	protected.GET("/clusters/:clusterID/access-control/clusterrolebindings/:name/detail", deps.Platform.GetClusterRoleBindingDetail)
 
+}
+
+func registerPlatformNetworkStorageRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/clusters/:clusterID/network/services", deps.Platform.ListServices)
 	protected.GET("/clusters/:clusterID/network/topology", deps.Platform.GetNetworkTopology)
 	protected.GET("/clusters/:clusterID/network/services/:serviceName/metrics", deps.Platform.GetServiceMetrics)
@@ -134,6 +151,9 @@ func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 
 	deps.Platform.RegisterGenericResourceRoutes(protected)
 	deps.Platform.RegisterWorkloadDeleteRoutes(protected)
+}
+
+func registerPlatformExtensionRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/clusters/:clusterID/extensions/crds", deps.Platform.ListCRDs)
 	protected.GET("/clusters/:clusterID/extensions/crds/:crdName/resources", deps.Platform.ListCRDResources)
 	protected.POST("/clusters/:clusterID/extensions/crds/:crdName/resources", deps.Platform.CreateCRDResource)

@@ -13,30 +13,53 @@ import (
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 )
 
-type SettingsService interface {
+type IdentitySettingsService interface {
 	GetIdentitySettings(context.Context, domainidentity.Principal) (domainsettings.IdentitySettings, error)
-	UpdateLoginProvidersSettings(context.Context, domainidentity.Principal, []domainsettings.LoginProviderSettings, string) (domainsettings.IdentitySettings, error)
+	UpdateLoginProvidersSettings(context.Context, domainidentity.Principal, []domainsettings.LoginProviderSettings, string, bool) (domainsettings.IdentitySettings, error)
+}
+
+type MonitoringSettingsService interface {
 	GetMonitoringSettings(context.Context, domainidentity.Principal) (domainsettings.MonitoringSettings, error)
 	UpdatePrometheusSettings(context.Context, domainidentity.Principal, domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error)
+}
+
+type AISettingsService interface {
 	GetAISettings(context.Context, domainidentity.Principal) (domainsettings.AISettings, error)
 	UpdateAIWorkbenchModelSettings(context.Context, domainidentity.Principal, domainsettings.AIWorkbenchModelSettings) (domainsettings.AISettings, error)
 	UpdateAISkillsRegistry(context.Context, domainidentity.Principal, []domainsettings.AISkillSettings) (domainsettings.AISettings, error)
+}
+
+type BrandingSettingsService interface {
 	GetBrandingSettings(context.Context, domainidentity.Principal) (domainsettings.BrandingSettings, error)
 	UpdateBrandingSettings(context.Context, domainidentity.Principal, domainsettings.BrandingSettings) (domainsettings.BrandingSettings, error)
 }
 
+type SettingsService interface {
+	IdentitySettingsService
+	MonitoringSettingsService
+	AISettingsService
+	BrandingSettingsService
+}
+
 type SettingsHandler struct {
-	service     SettingsService
+	identity    IdentitySettingsService
+	monitoring  MonitoringSettingsService
+	ai          AISettingsService
+	branding    BrandingSettingsService
 	permissions *appaccess.PermissionResolver
 }
 
 func NewSettingsHandler(service SettingsService, permissions *appaccess.PermissionResolver) *SettingsHandler {
-	return &SettingsHandler{service: service, permissions: permissions}
+	return NewSettingsHandlerWithServices(service, service, service, service, permissions)
+}
+
+func NewSettingsHandlerWithServices(identity IdentitySettingsService, monitoring MonitoringSettingsService, ai AISettingsService, branding BrandingSettingsService, permissions *appaccess.PermissionResolver) *SettingsHandler {
+	return &SettingsHandler{identity: identity, monitoring: monitoring, ai: ai, branding: branding, permissions: permissions}
 }
 
 func (h *SettingsHandler) GetIdentitySettings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetIdentitySettings(c.Request.Context(), principal)
+	item, err := h.identity.GetIdentitySettings(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -51,7 +74,16 @@ func (h *SettingsHandler) UpdateLoginProvidersSettings(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateLoginProvidersSettings(c.Request.Context(), principal, mapLoginProviders(req.Providers), req.DefaultProviderID)
+	current, err := h.identity.GetIdentitySettings(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	localPasswordEnabled := current.LocalPasswordLoginEnabled
+	if req.LocalPasswordLoginEnabled != nil {
+		localPasswordEnabled = *req.LocalPasswordLoginEnabled
+	}
+	item, err := h.identity.UpdateLoginProvidersSettings(c.Request.Context(), principal, mapLoginProviders(req.Providers), req.DefaultProviderID, localPasswordEnabled)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -61,7 +93,7 @@ func (h *SettingsHandler) UpdateLoginProvidersSettings(c *gin.Context) {
 
 func (h *SettingsHandler) GetMonitoringSettings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetMonitoringSettings(c.Request.Context(), principal)
+	item, err := h.monitoring.GetMonitoringSettings(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -76,7 +108,7 @@ func (h *SettingsHandler) UpdatePrometheusSettings(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdatePrometheusSettings(c.Request.Context(), principal, domainsettings.PrometheusSettings{
+	item, err := h.monitoring.UpdatePrometheusSettings(c.Request.Context(), principal, domainsettings.PrometheusSettings{
 		Enabled:             req.Enabled,
 		BaseURL:             req.BaseURL,
 		BearerToken:         req.BearerToken,
@@ -94,7 +126,7 @@ func (h *SettingsHandler) UpdatePrometheusSettings(c *gin.Context) {
 
 func (h *SettingsHandler) GetAISettings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetAISettings(c.Request.Context(), principal)
+	item, err := h.ai.GetAISettings(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -109,7 +141,7 @@ func (h *SettingsHandler) UpdateAIWorkbenchModelSettings(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateAIWorkbenchModelSettings(c.Request.Context(), principal, mapAIWorkbenchModel(req.WorkbenchModel))
+	item, err := h.ai.UpdateAIWorkbenchModelSettings(c.Request.Context(), principal, mapAIWorkbenchModel(req.WorkbenchModel))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -124,7 +156,7 @@ func (h *SettingsHandler) UpdateAISkills(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateAISkillsRegistry(c.Request.Context(), principal, mapAISkills(req.SkillsRegistry))
+	item, err := h.ai.UpdateAISkillsRegistry(c.Request.Context(), principal, mapAISkills(req.SkillsRegistry))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -134,7 +166,7 @@ func (h *SettingsHandler) UpdateAISkills(c *gin.Context) {
 
 func (h *SettingsHandler) GetBrandingSettings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetBrandingSettings(c.Request.Context(), principal)
+	item, err := h.branding.GetBrandingSettings(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -191,6 +223,7 @@ func mapLoginProviders(items []dto.LoginProviderSettings) []domainsettings.Login
 			ID:                  item.ID,
 			Name:                item.Name,
 			Type:                item.Type,
+			IconURL:             item.IconURL,
 			Enabled:             item.Enabled,
 			ClientID:            item.ClientID,
 			ClientSecret:        item.ClientSecret,
@@ -206,6 +239,8 @@ func mapLoginProviders(items []dto.LoginProviderSettings) []domainsettings.Login
 			UserIDField:         item.UserIDField,
 			UserNameField:       item.UserNameField,
 			EmailField:          item.EmailField,
+			PhoneField:          item.PhoneField,
+			AvatarField:         item.AvatarField,
 			RoleField:           item.RoleField,
 			OrganizationField:   item.OrganizationField,
 			SyncRolesOnLogin:    item.SyncRolesOnLogin,
@@ -227,7 +262,7 @@ func (h *SettingsHandler) UpdateBrandingSettings(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateBrandingSettings(c.Request.Context(), principal, domainsettings.BrandingSettings{
+	item, err := h.branding.UpdateBrandingSettings(c.Request.Context(), principal, domainsettings.BrandingSettings{
 		AppTitle:         req.AppTitle,
 		SidebarTitle:     req.SidebarTitle,
 		LoginLogoURL:     req.LoginLogoURL,

@@ -16,6 +16,15 @@ type stubScopeGrantReader struct {
 	items []domainscopegrant.Record
 }
 
+func TestAdminRoleContainsDirectoryPermissions(t *testing.T) {
+	permissions := defaultRolePermissions()["admin"]
+	for _, key := range []string{PermAccessDirectoryView, PermAccessDirectoryManage, PermAccessDirectorySync, PermAccessDirectoryPeopleManage, PermAccessIdentityLinkManage} {
+		if !slices.Contains(permissions, key) {
+			t.Fatalf("admin permissions missing %q", key)
+		}
+	}
+}
+
 func (s stubScopeGrantReader) List(context.Context) ([]domainscopegrant.Record, error) {
 	return s.items, nil
 }
@@ -310,52 +319,9 @@ func TestAuthorizeFiltersPlatformActionsByScopeGrantRole(t *testing.T) {
 }
 
 func TestAuthorizeAllowsDeveloperTriggerActionWithinScopedGrant(t *testing.T) {
-	service := New(
-		policy.NewEngine(),
-		nil,
-		stubScopeGrantReader{items: []domainscopegrant.Record{
-			{
-				ID:             "grant-1",
-				SubjectType:    "user",
-				SubjectID:      "user-1",
-				BusinessLineID: "bl-retail",
-				EnvironmentIDs: []string{"env-dev"},
-				ApplicationIDs: []string{"app-1"},
-				Role:           "developer",
-				Effect:         "allow",
-				Enabled:        true,
-			},
-		}},
-		stubCatalogReader{
-			environments: []domaincatalog.Environment{
-				{ID: "env-dev", Key: "dev"},
-			},
-		},
-	)
-
-	decision, err := service.Authorize(context.Background(), domainaccess.Request{
-		Principal: domainidentity.Principal{
-			UserID: "user-1",
-			Roles:  []string{"developer"},
-		},
-		Action: domainaccess.ActionTrigger,
-		Subject: domainaccess.SubjectAttributes{
-			UserID: "user-1",
-			Roles:  []string{"developer"},
-		},
-		Resource: domainaccess.ResourceAttributes{Kind: "Workflow", Name: "app-1"},
-		Delivery: domainaccess.DeliveryAttributes{
-			BusinessLineID: "bl-retail",
-			EnvironmentKey: "dev",
-			ApplicationID:  "app-1",
-		},
+	assertDeveloperTriggerAllowed(t, "bl-retail", domainaccess.DeliveryAttributes{
+		BusinessLineID: "bl-retail", EnvironmentKey: "dev", ApplicationID: "app-1",
 	})
-	if err != nil {
-		t.Fatalf("Authorize returned error: %v", err)
-	}
-	if !decision.Allowed {
-		t.Fatalf("decision.Allowed = false, reason=%q", decision.Reason)
-	}
 }
 
 func TestAuthorizeAllowsApplicationUpdateWithinApplicationGroupScopeGrant(t *testing.T) {
@@ -400,6 +366,13 @@ func TestAuthorizeAllowsApplicationUpdateWithinApplicationGroupScopeGrant(t *tes
 }
 
 func TestAuthorizeAllowsDeveloperTriggerActionWithinApplicationGroupScopeGrant(t *testing.T) {
+	assertDeveloperTriggerAllowed(t, "retail", domainaccess.DeliveryAttributes{
+		ApplicationGroup: "core, retail", EnvironmentKey: "dev", ApplicationID: "app-1",
+	})
+}
+
+func assertDeveloperTriggerAllowed(t *testing.T, grantBusinessLine string, delivery domainaccess.DeliveryAttributes) {
+	t.Helper()
 	service := New(
 		policy.NewEngine(),
 		nil,
@@ -408,7 +381,7 @@ func TestAuthorizeAllowsDeveloperTriggerActionWithinApplicationGroupScopeGrant(t
 				ID:             "grant-1",
 				SubjectType:    "user",
 				SubjectID:      "user-1",
-				BusinessLineID: "retail",
+				BusinessLineID: grantBusinessLine,
 				EnvironmentIDs: []string{"env-dev"},
 				ApplicationIDs: []string{"app-1"},
 				Role:           "developer",
@@ -434,11 +407,7 @@ func TestAuthorizeAllowsDeveloperTriggerActionWithinApplicationGroupScopeGrant(t
 			Roles:  []string{"developer"},
 		},
 		Resource: domainaccess.ResourceAttributes{Kind: "Workflow", Name: "app-1"},
-		Delivery: domainaccess.DeliveryAttributes{
-			ApplicationGroup: "core, retail",
-			EnvironmentKey:   "dev",
-			ApplicationID:    "app-1",
-		},
+		Delivery: delivery,
 	})
 	if err != nil {
 		t.Fatalf("Authorize returned error: %v", err)

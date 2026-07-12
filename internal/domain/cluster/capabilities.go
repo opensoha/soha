@@ -44,10 +44,6 @@ func partial(notes ...string) CapabilityModeSupport {
 	return capabilityModeSupport(CapabilityStatusPartial, notes...)
 }
 
-func unsupported(notes ...string) CapabilityModeSupport {
-	return capabilityModeSupport(CapabilityStatusUnsupported, notes...)
-}
-
 func capabilityModeSupport(status CapabilityStatus, notes ...string) CapabilityModeSupport {
 	cleaned := cleanNotes(notes)
 	reason := ""

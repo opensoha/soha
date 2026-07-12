@@ -12,10 +12,8 @@ import (
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
-	mcplogs "github.com/opensoha/soha/internal/infrastructure/mcp/logs"
-	mcpmetrics "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
-	mcptraces "github.com/opensoha/soha/internal/infrastructure/mcp/traces"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/telemetry"
 )
 
 type DataSourceRepository interface {
@@ -27,46 +25,46 @@ func (s *Service) ListRules(ctx context.Context, principal domainidentity.Princi
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertRulesView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.rules == nil {
 		return []domainalert.AlertRule{}, nil
 	}
-	return s.repo.ListRules(ctx)
+	return s.rules.ListRules(ctx)
 }
 
 func (s *Service) GetRule(ctx context.Context, principal domainidentity.Principal, ruleID string) (domainalert.AlertRule, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertRulesView); err != nil {
 		return domainalert.AlertRule{}, err
 	}
-	if s.repo == nil {
+	if s.rules == nil {
 		return domainalert.AlertRule{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	return s.repo.GetRule(ctx, strings.TrimSpace(ruleID))
+	return s.rules.GetRule(ctx, strings.TrimSpace(ruleID))
 }
 
 func (s *Service) CreateRule(ctx context.Context, principal domainidentity.Principal, input domainalert.AlertRuleInput) (domainalert.AlertRule, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertRulesManage); err != nil {
 		return domainalert.AlertRule{}, err
 	}
-	if s.repo == nil {
+	if s.rules == nil {
 		return domainalert.AlertRule{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := validateRuleInput(input); err != nil {
 		return domainalert.AlertRule{}, err
 	}
-	return s.repo.CreateRule(ctx, input)
+	return s.rules.CreateRule(ctx, input)
 }
 
 func (s *Service) UpdateRule(ctx context.Context, principal domainidentity.Principal, ruleID string, input domainalert.AlertRuleInput) (domainalert.AlertRule, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertRulesManage); err != nil {
 		return domainalert.AlertRule{}, err
 	}
-	if s.repo == nil {
+	if s.rules == nil {
 		return domainalert.AlertRule{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := validateRuleInput(input); err != nil {
 		return domainalert.AlertRule{}, err
 	}
-	return s.repo.UpdateRule(ctx, strings.TrimSpace(ruleID), input)
+	return s.rules.UpdateRule(ctx, strings.TrimSpace(ruleID), input)
 }
 
 func (s *Service) TestRule(ctx context.Context, principal domainidentity.Principal, input domainalert.AlertRuleInput) (domainalert.RuleTestResult, error) {
@@ -95,37 +93,37 @@ func (s *Service) ListEvents(ctx context.Context, principal domainidentity.Princ
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.alertEvents == nil {
 		return []domainalert.AlertEvent{}, nil
 	}
-	return s.repo.ListEvents(ctx, filter)
+	return s.alertEvents.ListEvents(ctx, filter)
 }
 
 func (s *Service) GetEvent(ctx context.Context, principal domainidentity.Principal, eventID string) (domainalert.AlertEvent, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsView); err != nil {
 		return domainalert.AlertEvent{}, err
 	}
-	return s.repo.GetEvent(ctx, strings.TrimSpace(eventID))
+	return s.alertEvents.GetEvent(ctx, strings.TrimSpace(eventID))
 }
 
 func (s *Service) AcknowledgeEvent(ctx context.Context, principal domainidentity.Principal, eventID string) (domainalert.AlertEvent, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsAcknowledge); err != nil {
 		return domainalert.AlertEvent{}, err
 	}
-	item, err := s.repo.GetEvent(ctx, strings.TrimSpace(eventID))
+	item, err := s.alertEvents.GetEvent(ctx, strings.TrimSpace(eventID))
 	if err != nil {
 		return domainalert.AlertEvent{}, err
 	}
 	item.CurrentState = "acknowledged"
 	item.UpdatedAt = time.Now().UTC()
-	return s.repo.UpdateEvent(ctx, eventID, toAlertEventInput(item))
+	return s.alertEvents.UpdateEvent(ctx, eventID, toAlertEventInput(item))
 }
 
 func (s *Service) ResolveEvent(ctx context.Context, principal domainidentity.Principal, eventID string) (domainalert.AlertEvent, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsManage); err != nil {
 		return domainalert.AlertEvent{}, err
 	}
-	item, err := s.repo.GetEvent(ctx, strings.TrimSpace(eventID))
+	item, err := s.alertEvents.GetEvent(ctx, strings.TrimSpace(eventID))
 	if err != nil {
 		return domainalert.AlertEvent{}, err
 	}
@@ -133,18 +131,18 @@ func (s *Service) ResolveEvent(ctx context.Context, principal domainidentity.Pri
 	item.CurrentState = "resolved"
 	item.EndsAt = time.Now().UTC()
 	item.UpdatedAt = time.Now().UTC()
-	return s.repo.UpdateEvent(ctx, eventID, toAlertEventInput(item))
+	return s.alertEvents.UpdateEvent(ctx, eventID, toAlertEventInput(item))
 }
 
 func (s *Service) HealEvent(ctx context.Context, principal domainidentity.Principal, eventID string, policyID string) (domainalert.HealingRun, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
 		return domainalert.HealingRun{}, err
 	}
-	event, err := s.repo.GetEvent(ctx, strings.TrimSpace(eventID))
+	event, err := s.alertEvents.GetEvent(ctx, strings.TrimSpace(eventID))
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
-	policy, err := s.repo.GetHealingPolicy(ctx, strings.TrimSpace(policyID))
+	policy, err := s.healingPolicies.GetHealingPolicy(ctx, strings.TrimSpace(policyID))
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
@@ -155,7 +153,7 @@ func (s *Service) HealEvent(ctx context.Context, principal domainidentity.Princi
 		"policy":  policy.Name,
 	}
 	if strings.TrimSpace(event.RuleID) != "" {
-		if rule, ruleErr := s.repo.GetRule(ctx, event.RuleID); ruleErr == nil && strings.TrimSpace(rule.NotificationPolicyID) != "" {
+		if rule, ruleErr := s.rules.GetRule(ctx, event.RuleID); ruleErr == nil && strings.TrimSpace(rule.NotificationPolicyID) != "" {
 			if notificationPolicy, notifyErr := s.findNotificationPolicy(ctx, rule.NotificationPolicyID); notifyErr == nil {
 				currentOnCall := s.resolveEventOnCall(ctx, notificationPolicy, event)
 				if len(currentOnCall) > 0 {
@@ -175,14 +173,14 @@ func (s *Service) HealEvent(ctx context.Context, principal domainidentity.Princi
 		RequestedBy:    principal.UserID,
 		Result:         result,
 	}
-	return s.repo.CreateHealingRun(ctx, run)
+	return s.healingRuns.CreateHealingRun(ctx, run)
 }
 
 func (s *Service) GetHealingRun(ctx context.Context, principal domainidentity.Principal, runID string) (domainalert.HealingRun, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingView); err != nil {
 		return domainalert.HealingRun{}, err
 	}
-	item, err := s.repo.GetHealingRun(ctx, strings.TrimSpace(runID))
+	item, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
@@ -193,11 +191,11 @@ func (s *Service) ApproveHealingRun(ctx context.Context, principal domainidentit
 	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
 		return domainalert.HealingRun{}, err
 	}
-	run, err := s.repo.GetHealingRun(ctx, strings.TrimSpace(runID))
+	run, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
-	policy, err := s.repo.GetHealingPolicy(ctx, run.PolicyID)
+	policy, err := s.healingPolicies.GetHealingPolicy(ctx, run.PolicyID)
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
@@ -207,7 +205,7 @@ func (s *Service) ApproveHealingRun(ctx context.Context, principal domainidentit
 			return domainalert.HealingRun{}, fmt.Errorf("%w: current approver is not part of oncall approval candidates", apperrors.ErrAccessDenied)
 		}
 	}
-	event, err := s.repo.GetEvent(ctx, run.EventID)
+	event, err := s.alertEvents.GetEvent(ctx, run.EventID)
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
@@ -242,7 +240,7 @@ func (s *Service) ApproveHealingRun(ctx context.Context, principal domainidentit
 			run.Status = "failed"
 			run.Result["executionError"] = execErr.Error()
 			run.CompletedAt = time.Now().UTC()
-			return s.repo.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
+			return s.healingRuns.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
 		}
 		run.WorkflowRunID = workflowRun.ID
 		run.WorkflowStatus = workflowRun.Status
@@ -252,7 +250,7 @@ func (s *Service) ApproveHealingRun(ctx context.Context, principal domainidentit
 		run.Result["workflowStatus"] = workflowRun.Status
 		run.Result["workflowSummary"] = run.WorkflowSummary
 	}
-	updated, err := s.repo.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
+	updated, err := s.healingRuns.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
@@ -263,7 +261,7 @@ func (s *Service) RejectHealingRun(ctx context.Context, principal domainidentity
 	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
 		return domainalert.HealingRun{}, err
 	}
-	run, err := s.repo.GetHealingRun(ctx, strings.TrimSpace(runID))
+	run, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
@@ -276,14 +274,14 @@ func (s *Service) RejectHealingRun(ctx context.Context, principal domainidentity
 		"decision": "rejected",
 		"comment":  strings.TrimSpace(comment),
 	}
-	return s.repo.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
+	return s.healingRuns.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
 }
 
 func (s *Service) RetryHealingRun(ctx context.Context, principal domainidentity.Principal, runID string) (domainalert.HealingRun, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
 		return domainalert.HealingRun{}, err
 	}
-	run, err := s.repo.GetHealingRun(ctx, strings.TrimSpace(runID))
+	run, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
 	if err != nil {
 		return domainalert.HealingRun{}, err
 	}
@@ -296,7 +294,7 @@ func (s *Service) RetryHealingRun(ctx context.Context, principal domainidentity.
 	run.WorkflowSummary = ""
 	run.CompletedAt = time.Time{}
 	run.Result = map[string]any{"retryOf": run.ID}
-	return s.repo.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
+	return s.healingRuns.UpdateHealingRun(ctx, runID, toHealingRunInput(run))
 }
 
 func (s *Service) ListDataSources(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.DataSource, error) {
@@ -323,7 +321,7 @@ func (s *Service) ListNotificationPolicies(ctx context.Context, principal domain
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListNotificationPolicies(ctx)
+	return s.notificationPolicies.ListNotificationPolicies(ctx)
 }
 
 func (s *Service) CreateNotificationPolicy(ctx context.Context, principal domainidentity.Principal, input domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error) {
@@ -333,7 +331,7 @@ func (s *Service) CreateNotificationPolicy(ctx context.Context, principal domain
 	if err := validateNotificationPolicyInput(input); err != nil {
 		return domainalert.NotificationPolicy{}, err
 	}
-	return s.repo.CreateNotificationPolicy(ctx, input)
+	return s.notificationPolicies.CreateNotificationPolicy(ctx, input)
 }
 
 func (s *Service) UpdateNotificationPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error) {
@@ -343,14 +341,14 @@ func (s *Service) UpdateNotificationPolicy(ctx context.Context, principal domain
 	if err := validateNotificationPolicyInput(input); err != nil {
 		return domainalert.NotificationPolicy{}, err
 	}
-	return s.repo.UpdateNotificationPolicy(ctx, policyID, input)
+	return s.notificationPolicies.UpdateNotificationPolicy(ctx, policyID, input)
 }
 
 func (s *Service) ListNotificationTemplates(ctx context.Context, principal domainidentity.Principal) ([]domainalert.NotificationTemplate, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListNotificationTemplates(ctx)
+	return s.notificationTemplates.ListNotificationTemplates(ctx)
 }
 
 func (s *Service) CreateNotificationTemplate(ctx context.Context, principal domainidentity.Principal, input domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error) {
@@ -360,7 +358,7 @@ func (s *Service) CreateNotificationTemplate(ctx context.Context, principal doma
 	if err := validateNotificationTemplateInput(input); err != nil {
 		return domainalert.NotificationTemplate{}, err
 	}
-	return s.repo.CreateNotificationTemplate(ctx, input)
+	return s.notificationTemplates.CreateNotificationTemplate(ctx, input)
 }
 
 func (s *Service) UpdateNotificationTemplate(ctx context.Context, principal domainidentity.Principal, templateID string, input domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error) {
@@ -370,14 +368,14 @@ func (s *Service) UpdateNotificationTemplate(ctx context.Context, principal doma
 	if err := validateNotificationTemplateInput(input); err != nil {
 		return domainalert.NotificationTemplate{}, err
 	}
-	return s.repo.UpdateNotificationTemplate(ctx, templateID, input)
+	return s.notificationTemplates.UpdateNotificationTemplate(ctx, templateID, input)
 }
 
 func (s *Service) ListHealingPolicies(ctx context.Context, principal domainidentity.Principal) ([]domainalert.HealingPolicy, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListHealingPolicies(ctx)
+	return s.healingPolicies.ListHealingPolicies(ctx)
 }
 
 func (s *Service) CreateHealingPolicy(ctx context.Context, principal domainidentity.Principal, input domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error) {
@@ -387,7 +385,7 @@ func (s *Service) CreateHealingPolicy(ctx context.Context, principal domainident
 	if err := validateHealingPolicyInput(input); err != nil {
 		return domainalert.HealingPolicy{}, err
 	}
-	return s.repo.CreateHealingPolicy(ctx, input)
+	return s.healingPolicies.CreateHealingPolicy(ctx, input)
 }
 
 func (s *Service) UpdateHealingPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error) {
@@ -397,14 +395,14 @@ func (s *Service) UpdateHealingPolicy(ctx context.Context, principal domainident
 	if err := validateHealingPolicyInput(input); err != nil {
 		return domainalert.HealingPolicy{}, err
 	}
-	return s.repo.UpdateHealingPolicy(ctx, policyID, input)
+	return s.healingPolicies.UpdateHealingPolicy(ctx, policyID, input)
 }
 
 func (s *Service) ListHealingRuns(ctx context.Context, principal domainidentity.Principal, filter domainalert.HealingRunFilter) ([]domainalert.HealingRun, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingView); err != nil {
 		return nil, err
 	}
-	items, err := s.repo.ListHealingRuns(ctx, filter)
+	items, err := s.healingRuns.ListHealingRuns(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -418,70 +416,70 @@ func (s *Service) ListOnCallSchedules(ctx context.Context, principal domainident
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListOnCallSchedules(ctx)
+	return s.onCallSchedules.ListOnCallSchedules(ctx)
 }
 
 func (s *Service) CreateOnCallSchedule(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
 		return domainalert.OnCallSchedule{}, err
 	}
-	return s.repo.CreateOnCallSchedule(ctx, input)
+	return s.onCallSchedules.CreateOnCallSchedule(ctx, input)
 }
 
 func (s *Service) UpdateOnCallSchedule(ctx context.Context, principal domainidentity.Principal, scheduleID string, input domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
 		return domainalert.OnCallSchedule{}, err
 	}
-	return s.repo.UpdateOnCallSchedule(ctx, scheduleID, input)
+	return s.onCallSchedules.UpdateOnCallSchedule(ctx, scheduleID, input)
 }
 
 func (s *Service) ListOnCallRotations(ctx context.Context, principal domainidentity.Principal) ([]domainalert.OnCallRotation, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListOnCallRotations(ctx)
+	return s.onCallRotations.ListOnCallRotations(ctx)
 }
 
 func (s *Service) CreateOnCallRotation(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
 		return domainalert.OnCallRotation{}, err
 	}
-	return s.repo.CreateOnCallRotation(ctx, input)
+	return s.onCallRotations.CreateOnCallRotation(ctx, input)
 }
 
 func (s *Service) UpdateOnCallRotation(ctx context.Context, principal domainidentity.Principal, rotationID string, input domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
 		return domainalert.OnCallRotation{}, err
 	}
-	return s.repo.UpdateOnCallRotation(ctx, rotationID, input)
+	return s.onCallRotations.UpdateOnCallRotation(ctx, rotationID, input)
 }
 
 func (s *Service) ListOnCallEscalationPolicies(ctx context.Context, principal domainidentity.Principal) ([]domainalert.OnCallEscalationPolicy, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListOnCallEscalationPolicies(ctx)
+	return s.onCallEscalations.ListOnCallEscalationPolicies(ctx)
 }
 
 func (s *Service) CreateOnCallEscalationPolicy(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
 		return domainalert.OnCallEscalationPolicy{}, err
 	}
-	return s.repo.CreateOnCallEscalationPolicy(ctx, input)
+	return s.onCallEscalations.CreateOnCallEscalationPolicy(ctx, input)
 }
 
 func (s *Service) UpdateOnCallEscalationPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
 		return domainalert.OnCallEscalationPolicy{}, err
 	}
-	return s.repo.UpdateOnCallEscalationPolicy(ctx, policyID, input)
+	return s.onCallEscalations.UpdateOnCallEscalationPolicy(ctx, policyID, input)
 }
 
 func (s *Service) ListOnCallAssignmentRules(ctx context.Context, principal domainidentity.Principal) ([]domainalert.OnCallAssignmentRule, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListOnCallAssignmentRules(ctx)
+	return s.onCallAssignments.ListOnCallAssignmentRules(ctx)
 }
 
 func (s *Service) CreateOnCallAssignmentRule(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
@@ -491,7 +489,7 @@ func (s *Service) CreateOnCallAssignmentRule(ctx context.Context, principal doma
 	if err := validateOnCallAssignmentRuleInput(input); err != nil {
 		return domainalert.OnCallAssignmentRule{}, err
 	}
-	return s.repo.CreateOnCallAssignmentRule(ctx, input)
+	return s.onCallAssignments.CreateOnCallAssignmentRule(ctx, input)
 }
 
 func (s *Service) UpdateOnCallAssignmentRule(ctx context.Context, principal domainidentity.Principal, ruleID string, input domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
@@ -501,7 +499,7 @@ func (s *Service) UpdateOnCallAssignmentRule(ctx context.Context, principal doma
 	if err := validateOnCallAssignmentRuleInput(input); err != nil {
 		return domainalert.OnCallAssignmentRule{}, err
 	}
-	return s.repo.UpdateOnCallAssignmentRule(ctx, ruleID, input)
+	return s.onCallAssignments.UpdateOnCallAssignmentRule(ctx, ruleID, input)
 }
 
 func (s *Service) ResolveOnCall(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallResolveInput) (map[string]any, error) {
@@ -515,10 +513,10 @@ func (s *Service) ListOnCallTasks(ctx context.Context, principal domainidentity.
 	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallView); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	if s.alertEvents == nil {
 		return []domainalert.OnCallTask{}, nil
 	}
-	events, err := s.repo.ListEvents(ctx, domainalert.AlertEventFilter{Status: "firing", Limit: limit})
+	events, err := s.alertEvents.ListEvents(ctx, domainalert.AlertEventFilter{Status: "firing", Limit: limit})
 	if err != nil {
 		return nil, err
 	}
@@ -530,13 +528,13 @@ func (s *Service) ListOnCallTasks(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) CreateWorkflowSilence(ctx context.Context, principal domainidentity.Principal, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
-	if s.repo == nil {
+	if s.silences == nil {
 		return domainalert.AlertSilence{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := validateSilenceInput(input); err != nil {
 		return domainalert.AlertSilence{}, err
 	}
-	return s.repo.CreateSilence(ctx, input)
+	return s.silences.CreateSilence(ctx, input)
 }
 
 func (s *Service) normalizeRuleInput(input domainalert.AlertRuleInput) (domainalert.AlertRule, error) {
@@ -592,7 +590,7 @@ func (s *Service) evaluateMetricRule(ctx context.Context, rule domainalert.Alert
 		result.Summary = "no matching metrics data source found"
 		return result, nil
 	}
-	scope := mcpmetrics.Scope{
+	scope := telemetry.MetricScope{
 		ClusterID: stringValue(rule.DatasourceSelector["clusterId"], ""),
 		Namespace: stringValue(rule.DatasourceSelector["namespace"], ""),
 		Workload:  stringValue(rule.DatasourceSelector["workload"], ""),
@@ -604,7 +602,7 @@ func (s *Service) evaluateMetricRule(ctx context.Context, rule domainalert.Alert
 		if source.SourceKind != "metrics" {
 			continue
 		}
-		summary, err := mcpmetrics.DefaultRegistry().Analyze(ctx, source.BackendType, source.ID, source.Config, mcpmetrics.RangeQuery{
+		summary, err := s.metricBackend().Analyze(ctx, source.BackendType, source.ID, source.Config, telemetry.MetricRangeQuery{
 			Scope:     scope,
 			MetricKey: query,
 			TimeFrom:  time.Now().UTC().Add(-time.Duration(intValue(rule.QuerySpec["windowMinutes"], 60)) * time.Minute),
@@ -668,7 +666,7 @@ func (s *Service) evaluateLogRule(ctx context.Context, rule domainalert.AlertRul
 		result.Summary = "no matching logs data source found"
 		return result, nil
 	}
-	scope := mcplogs.Scope{
+	scope := telemetry.LogScope{
 		ClusterID: stringValue(rule.DatasourceSelector["clusterId"], ""),
 		Namespace: stringValue(rule.DatasourceSelector["namespace"], ""),
 		Workload:  stringValue(rule.DatasourceSelector["workload"], ""),
@@ -682,7 +680,7 @@ func (s *Service) evaluateLogRule(ctx context.Context, rule domainalert.AlertRul
 		if source.SourceKind != "logs" {
 			continue
 		}
-		correlation, err := mcplogs.DefaultRegistry().Correlate(ctx, source.BackendType, source.ID, source.Config, mcplogs.CorrelationQuery{
+		correlation, err := s.logBackend().Correlate(ctx, source.BackendType, source.ID, source.Config, telemetry.LogCorrelationQuery{
 			Scope:    scope,
 			Query:    query,
 			TimeFrom: time.Now().UTC().Add(-time.Duration(intValue(rule.QuerySpec["windowMinutes"], 60)) * time.Minute),
@@ -716,7 +714,7 @@ func (s *Service) evaluateTraceRule(ctx context.Context, rule domainalert.AlertR
 		result.Summary = "no matching traces data source found"
 		return result, nil
 	}
-	scope := mcptraces.Scope{
+	scope := telemetry.TraceScope{
 		ClusterID: stringValue(rule.DatasourceSelector["clusterId"], ""),
 		Namespace: stringValue(rule.DatasourceSelector["namespace"], ""),
 		Workload:  stringValue(rule.DatasourceSelector["workload"], ""),
@@ -726,7 +724,7 @@ func (s *Service) evaluateTraceRule(ctx context.Context, rule domainalert.AlertR
 		if source.SourceKind != "traces" {
 			continue
 		}
-		traceResult, err := mcptraces.DefaultRegistry().FindSlowSpans(ctx, source.BackendType, source.ID, source.Config, mcptraces.Query{
+		traceResult, err := s.traceBackend().FindSlowSpans(ctx, source.BackendType, source.ID, source.Config, telemetry.TraceQuery{
 			Scope:       scope,
 			TimeFrom:    time.Now().UTC().Add(-time.Duration(intValue(rule.QuerySpec["windowMinutes"], 60)) * time.Minute),
 			TimeTo:      time.Now().UTC(),

@@ -259,12 +259,8 @@ func normalizeGatewayResourceURI(value string) string {
 		return ""
 	}
 	const legacyPrefix = "soha://resource/"
-	if strings.HasPrefix(value, legacyPrefix) {
-		value = strings.TrimPrefix(value, legacyPrefix)
-	}
-	if strings.HasPrefix(value, "resource/") {
-		value = strings.TrimPrefix(value, "resource/")
-	}
+	value = strings.TrimPrefix(value, legacyPrefix)
+	value = strings.TrimPrefix(value, "resource/")
 	if strings.HasPrefix(value, "soha://") {
 		return value
 	}
@@ -279,9 +275,6 @@ func marshalGatewayDocument(value any) (string, error) {
 		return "", fmt.Errorf("%w: failed to render AI Gateway manifest document", apperrors.ErrInvalidArgument)
 	}
 	return string(raw), nil
-}
-func gatewayResourceDocument(resource domainaigateway.ResourceCapability, input domainaigateway.ResourceReadRequest, bindings []domainaigateway.SkillBinding, skillID string) map[string]any {
-	return gatewayResourceDocumentWithCapabilities(resource, input, bindings, skillID, resourceToolRefs(resource.Name), resourcePromptRefs(resource.Name), resourceSkillRefs(resource.Name), defaultTools(), defaultPrompts(), defaultSkills())
 }
 func gatewayResourceDocumentWithCapabilities(resource domainaigateway.ResourceCapability, input domainaigateway.ResourceReadRequest, bindings []domainaigateway.SkillBinding, skillID string, toolRefs []string, promptRefs []string, skillRefs []string, tools []domainaigateway.ToolCapability, prompts []domainaigateway.PromptCapability, skills []domainaigateway.SkillCapability) map[string]any {
 	toolRefs = filterToolRefsBySkillBindingsWithSkills(toolRefs, bindings, skillID, skills)
@@ -362,9 +355,6 @@ func gatewayPromptInstruction(name string) string {
 		return "Use the visible Gateway manifest to gather evidence first, keep outputs redacted, and state any missing scope or permission before suggesting a next action."
 	}
 }
-func compactToolCapabilities(names []string) []map[string]any {
-	return compactToolCapabilitiesFrom(names, defaultTools())
-}
 func compactToolCapabilitiesFrom(names []string, tools []domainaigateway.ToolCapability) []map[string]any {
 	out := make([]map[string]any, 0, len(names))
 	for _, name := range names {
@@ -383,9 +373,6 @@ func compactToolCapabilitiesFrom(names []string, tools []domainaigateway.ToolCap
 	}
 	return out
 }
-func compactPromptCapabilities(names []string) []map[string]any {
-	return compactPromptCapabilitiesFrom(names, defaultPrompts())
-}
 func compactPromptCapabilitiesFrom(names []string, prompts []domainaigateway.PromptCapability) []map[string]any {
 	out := make([]map[string]any, 0, len(names))
 	for _, name := range names {
@@ -401,9 +388,6 @@ func compactPromptCapabilitiesFrom(names []string, prompts []domainaigateway.Pro
 		})
 	}
 	return out
-}
-func compactSkillCapabilities(ids []string) []map[string]any {
-	return compactSkillCapabilitiesFrom(ids, defaultSkills())
 }
 func compactSkillCapabilitiesFrom(ids []string, skills []domainaigateway.SkillCapability) []map[string]any {
 	out := make([]map[string]any, 0, len(ids))
@@ -423,9 +407,6 @@ func compactSkillCapabilitiesFrom(ids []string, skills []domainaigateway.SkillCa
 		})
 	}
 	return out
-}
-func compactSkillCapabilitiesForBindings(ids []string, bindings []domainaigateway.SkillBinding, skillID string) []map[string]any {
-	return compactSkillCapabilitiesForBindingsWithSkills(ids, bindings, skillID, defaultSkills())
 }
 func compactSkillCapabilitiesForBindingsWithSkills(ids []string, bindings []domainaigateway.SkillBinding, skillID string, skills []domainaigateway.SkillCapability) []map[string]any {
 	if len(bindings) == 0 {
@@ -452,9 +433,6 @@ func compactSkillCapabilitiesForBindingsWithSkills(ids []string, bindings []doma
 		})
 	}
 	return out
-}
-func narrowSkillCapabilityByBindings(skill domainaigateway.SkillCapability, bindings []domainaigateway.SkillBinding, skillID string) domainaigateway.SkillCapability {
-	return narrowSkillCapabilityByBindingsWithSkills(skill, bindings, skillID, defaultSkills())
 }
 func narrowSkillCapabilityByBindingsWithSkills(skill domainaigateway.SkillCapability, bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) domainaigateway.SkillCapability {
 	if len(bindings) == 0 {
@@ -487,15 +465,6 @@ func promptByNameFrom(name string, prompts []domainaigateway.PromptCapability) (
 		}
 	}
 	return domainaigateway.PromptCapability{}, false
-}
-func resourceToolRefs(name string) []string {
-	return resourceCapabilityRefsFrom(defaultResourceCapabilityRefs(), name).Tools
-}
-func resourcePromptRefs(name string) []string {
-	return resourceCapabilityRefsFrom(defaultResourceCapabilityRefs(), name).Prompts
-}
-func resourceSkillRefs(name string) []string {
-	return resourceCapabilityRefsFrom(defaultResourceCapabilityRefs(), name).Skills
 }
 func sortedGatewayMapKeys(values map[string]any) []string {
 	out := make([]string, 0, len(values))

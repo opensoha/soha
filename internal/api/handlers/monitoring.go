@@ -13,82 +13,209 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
-type MonitoringService interface {
+type AlertService interface {
 	Summary(context.Context, domainidentity.Principal) (domainalert.Summary, error)
 	ListAlerts(context.Context, domainidentity.Principal, domainalert.Filter) ([]domainalert.Instance, error)
 	GetAlert(context.Context, domainidentity.Principal, string) (domainalert.Instance, error)
 	UpdateOwnership(context.Context, domainidentity.Principal, string, domainalert.OwnershipInput) (domainalert.Instance, error)
 	Acknowledge(context.Context, domainidentity.Principal, string, string, string) (domainalert.Instance, error)
+}
+
+type ChannelService interface {
 	ListChannels(context.Context, domainidentity.Principal) ([]domainalert.NotificationChannel, error)
 	CreateChannel(context.Context, domainidentity.Principal, domainalert.ChannelInput) (domainalert.NotificationChannel, error)
 	UpdateChannel(context.Context, domainidentity.Principal, string, domainalert.ChannelInput) (domainalert.NotificationChannel, error)
+}
+
+type AlertRouteService interface {
 	ListRoutes(context.Context, domainidentity.Principal) ([]domainalert.AlertRoute, error)
 	CreateRoute(context.Context, domainidentity.Principal, domainalert.RouteInput) (domainalert.AlertRoute, error)
 	UpdateRoute(context.Context, domainidentity.Principal, string, domainalert.RouteInput) (domainalert.AlertRoute, error)
+}
+
+type SilenceService interface {
 	ListSilences(context.Context, domainidentity.Principal) ([]domainalert.AlertSilence, error)
 	CreateSilence(context.Context, domainidentity.Principal, domainalert.SilenceInput) (domainalert.AlertSilence, error)
 	UpdateSilence(context.Context, domainidentity.Principal, string, domainalert.SilenceInput) (domainalert.AlertSilence, error)
+}
+
+type DeliveryLogService interface {
 	ListDeliveryLogs(context.Context, domainidentity.Principal, domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error)
+}
+
+type WebhookService interface {
 	ValidateWebhookToken(string) error
 	Ingest(context.Context, domainalert.IngestRequest) (int, error)
+}
+
+type AlertIntegrationService interface {
 	ListAlertIntegrations(context.Context, domainidentity.Principal) ([]domainalert.AlertIntegration, error)
 	GetAlertIntegration(context.Context, domainidentity.Principal, string) (domainalert.AlertIntegration, error)
 	CreateAlertIntegration(context.Context, domainidentity.Principal, domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error)
 	UpdateAlertIntegration(context.Context, domainidentity.Principal, string, domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error)
 	TestAlertIntegration(context.Context, domainidentity.Principal, domainalert.AlertIntegrationTestInput) (domainalert.AlertIntegrationTestResult, error)
 	IngestAlertIntegration(context.Context, string, string, map[string]any) (int, error)
+}
+
+type AlertRuleService interface {
 	ListRules(context.Context, domainidentity.Principal) ([]domainalert.AlertRule, error)
 	GetRule(context.Context, domainidentity.Principal, string) (domainalert.AlertRule, error)
 	CreateRule(context.Context, domainidentity.Principal, domainalert.AlertRuleInput) (domainalert.AlertRule, error)
 	UpdateRule(context.Context, domainidentity.Principal, string, domainalert.AlertRuleInput) (domainalert.AlertRule, error)
 	TestRule(context.Context, domainidentity.Principal, domainalert.AlertRuleInput) (domainalert.RuleTestResult, error)
 	ListRuleRuns(context.Context, domainidentity.Principal, domainalert.AlertRuleRunFilter) ([]domainalert.AlertRuleRun, error)
+}
+
+type AlertEventService interface {
 	ListEvents(context.Context, domainidentity.Principal, domainalert.AlertEventFilter) ([]domainalert.AlertEvent, error)
 	GetEvent(context.Context, domainidentity.Principal, string) (domainalert.AlertEvent, error)
 	AcknowledgeEvent(context.Context, domainidentity.Principal, string) (domainalert.AlertEvent, error)
 	ResolveEvent(context.Context, domainidentity.Principal, string) (domainalert.AlertEvent, error)
 	HealEvent(context.Context, domainidentity.Principal, string, string) (domainalert.HealingRun, error)
+}
+
+type HealingRunService interface {
 	GetHealingRun(context.Context, domainidentity.Principal, string) (domainalert.HealingRun, error)
 	ApproveHealingRun(context.Context, domainidentity.Principal, string, string) (domainalert.HealingRun, error)
 	RejectHealingRun(context.Context, domainidentity.Principal, string, string) (domainalert.HealingRun, error)
 	RetryHealingRun(context.Context, domainidentity.Principal, string) (domainalert.HealingRun, error)
+	ListHealingRuns(context.Context, domainidentity.Principal, domainalert.HealingRunFilter) ([]domainalert.HealingRun, error)
+}
+
+type NotificationPolicyService interface {
 	ListNotificationPolicies(context.Context, domainidentity.Principal) ([]domainalert.NotificationPolicy, error)
 	CreateNotificationPolicy(context.Context, domainidentity.Principal, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
 	UpdateNotificationPolicy(context.Context, domainidentity.Principal, string, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
 	PreviewNotificationPolicy(context.Context, domainidentity.Principal, string, string) ([]map[string]any, error)
+}
+
+type NotificationTemplateService interface {
 	ListNotificationTemplates(context.Context, domainidentity.Principal) ([]domainalert.NotificationTemplate, error)
 	CreateNotificationTemplate(context.Context, domainidentity.Principal, domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error)
 	UpdateNotificationTemplate(context.Context, domainidentity.Principal, string, domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error)
+}
+
+type HealingPolicyService interface {
 	ListHealingPolicies(context.Context, domainidentity.Principal) ([]domainalert.HealingPolicy, error)
 	CreateHealingPolicy(context.Context, domainidentity.Principal, domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error)
 	UpdateHealingPolicy(context.Context, domainidentity.Principal, string, domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error)
-	ListHealingRuns(context.Context, domainidentity.Principal, domainalert.HealingRunFilter) ([]domainalert.HealingRun, error)
+}
+
+type OnCallScheduleService interface {
 	ListOnCallSchedules(context.Context, domainidentity.Principal) ([]domainalert.OnCallSchedule, error)
 	CreateOnCallSchedule(context.Context, domainidentity.Principal, domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error)
 	UpdateOnCallSchedule(context.Context, domainidentity.Principal, string, domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error)
+}
+
+type OnCallRotationService interface {
 	ListOnCallRotations(context.Context, domainidentity.Principal) ([]domainalert.OnCallRotation, error)
 	CreateOnCallRotation(context.Context, domainidentity.Principal, domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error)
 	UpdateOnCallRotation(context.Context, domainidentity.Principal, string, domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error)
+}
+
+type OnCallEscalationService interface {
 	ListOnCallEscalationPolicies(context.Context, domainidentity.Principal) ([]domainalert.OnCallEscalationPolicy, error)
 	CreateOnCallEscalationPolicy(context.Context, domainidentity.Principal, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
 	UpdateOnCallEscalationPolicy(context.Context, domainidentity.Principal, string, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
+}
+
+type OnCallAssignmentService interface {
 	ListOnCallAssignmentRules(context.Context, domainidentity.Principal) ([]domainalert.OnCallAssignmentRule, error)
 	CreateOnCallAssignmentRule(context.Context, domainidentity.Principal, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
 	UpdateOnCallAssignmentRule(context.Context, domainidentity.Principal, string, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
+}
+
+type OnCallRuntimeService interface {
 	GetCurrentOnCall(context.Context, domainidentity.Principal, string) (map[string]any, error)
 	ResolveOnCall(context.Context, domainidentity.Principal, domainalert.OnCallResolveInput) (map[string]any, error)
 	ListOnCallTasks(context.Context, domainidentity.Principal, int) ([]domainalert.OnCallTask, error)
 }
 
 type MonitoringHandler struct {
-	service MonitoringService
+	alertHandler
+	channelHandler
+	alertRouteHandler
+	silenceHandler
+	deliveryLogHandler
+	webhookHandler
+	integrationHandler
+	ruleHandler
+	eventHandler
+	healingRunHandler
+	notificationPolicyHandler
+	notificationTemplateHandler
+	healingPolicyHandler
+	onCallScheduleHandler
+	onCallRotationHandler
+	onCallEscalationHandler
+	onCallAssignmentHandler
+	onCallRuntimeHandler
 }
 
-func NewMonitoringHandler(service MonitoringService) *MonitoringHandler {
-	return &MonitoringHandler{service: service}
+type MonitoringDependencies struct {
+	Alerts                AlertService
+	Channels              ChannelService
+	Routes                AlertRouteService
+	Silences              SilenceService
+	DeliveryLogs          DeliveryLogService
+	Webhooks              WebhookService
+	Integrations          AlertIntegrationService
+	Rules                 AlertRuleService
+	Events                AlertEventService
+	HealingRuns           HealingRunService
+	NotificationPolicies  NotificationPolicyService
+	NotificationTemplates NotificationTemplateService
+	HealingPolicies       HealingPolicyService
+	OnCallSchedules       OnCallScheduleService
+	OnCallRotations       OnCallRotationService
+	OnCallEscalations     OnCallEscalationService
+	OnCallAssignments     OnCallAssignmentService
+	OnCallRuntime         OnCallRuntimeService
 }
 
-func (h *MonitoringHandler) Summary(c *gin.Context) {
+type alertHandler struct{ service AlertService }
+type channelHandler struct{ service ChannelService }
+type alertRouteHandler struct{ service AlertRouteService }
+type silenceHandler struct{ service SilenceService }
+type deliveryLogHandler struct{ service DeliveryLogService }
+type webhookHandler struct{ service WebhookService }
+type integrationHandler struct{ service AlertIntegrationService }
+type ruleHandler struct{ service AlertRuleService }
+type eventHandler struct{ service AlertEventService }
+type healingRunHandler struct{ service HealingRunService }
+type notificationPolicyHandler struct{ service NotificationPolicyService }
+type notificationTemplateHandler struct{ service NotificationTemplateService }
+type healingPolicyHandler struct{ service HealingPolicyService }
+type onCallScheduleHandler struct{ service OnCallScheduleService }
+type onCallRotationHandler struct{ service OnCallRotationService }
+type onCallEscalationHandler struct{ service OnCallEscalationService }
+type onCallAssignmentHandler struct{ service OnCallAssignmentService }
+type onCallRuntimeHandler struct{ service OnCallRuntimeService }
+
+func NewMonitoringHandler(deps MonitoringDependencies) *MonitoringHandler {
+	return &MonitoringHandler{
+		alertHandler:                alertHandler{service: deps.Alerts},
+		channelHandler:              channelHandler{service: deps.Channels},
+		alertRouteHandler:           alertRouteHandler{service: deps.Routes},
+		silenceHandler:              silenceHandler{service: deps.Silences},
+		deliveryLogHandler:          deliveryLogHandler{service: deps.DeliveryLogs},
+		webhookHandler:              webhookHandler{service: deps.Webhooks},
+		integrationHandler:          integrationHandler{service: deps.Integrations},
+		ruleHandler:                 ruleHandler{service: deps.Rules},
+		eventHandler:                eventHandler{service: deps.Events},
+		healingRunHandler:           healingRunHandler{service: deps.HealingRuns},
+		notificationPolicyHandler:   notificationPolicyHandler{service: deps.NotificationPolicies},
+		notificationTemplateHandler: notificationTemplateHandler{service: deps.NotificationTemplates},
+		healingPolicyHandler:        healingPolicyHandler{service: deps.HealingPolicies},
+		onCallScheduleHandler:       onCallScheduleHandler{service: deps.OnCallSchedules},
+		onCallRotationHandler:       onCallRotationHandler{service: deps.OnCallRotations},
+		onCallEscalationHandler:     onCallEscalationHandler{service: deps.OnCallEscalations},
+		onCallAssignmentHandler:     onCallAssignmentHandler{service: deps.OnCallAssignments},
+		onCallRuntimeHandler:        onCallRuntimeHandler{service: deps.OnCallRuntime},
+	}
+}
+
+func (h *alertHandler) Summary(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.Summary(c.Request.Context(), principal)
 	if err != nil {
@@ -98,7 +225,7 @@ func (h *MonitoringHandler) Summary(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListAlerts(c *gin.Context) {
+func (h *alertHandler) ListAlerts(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListAlerts(c.Request.Context(), principal, domainalert.Filter{
 		Status:    c.Query("status"),
@@ -112,7 +239,7 @@ func (h *MonitoringHandler) ListAlerts(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) GetAlert(c *gin.Context) {
+func (h *alertHandler) GetAlert(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetAlert(c.Request.Context(), principal, c.Param("alertID"))
 	if err != nil {
@@ -122,7 +249,7 @@ func (h *MonitoringHandler) GetAlert(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) UpdateAlertOwnership(c *gin.Context) {
+func (h *alertHandler) UpdateAlertOwnership(c *gin.Context) {
 	var req dto.AlertOwnershipRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert ownership payload")
@@ -140,7 +267,7 @@ func (h *MonitoringHandler) UpdateAlertOwnership(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) AcknowledgeAlert(c *gin.Context) {
+func (h *alertHandler) AcknowledgeAlert(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.Acknowledge(c.Request.Context(), principal, c.Param("alertID"), principal.UserID, principal.UserName)
 	if err != nil {
@@ -150,7 +277,7 @@ func (h *MonitoringHandler) AcknowledgeAlert(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListChannels(c *gin.Context) {
+func (h *channelHandler) ListChannels(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListChannels(c.Request.Context(), principal)
 	if err != nil {
@@ -160,7 +287,7 @@ func (h *MonitoringHandler) ListChannels(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateChannel(c *gin.Context) {
+func (h *channelHandler) CreateChannel(c *gin.Context) {
 	var req dto.NotificationChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid notification channel payload")
@@ -181,7 +308,7 @@ func (h *MonitoringHandler) CreateChannel(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateChannel(c *gin.Context) {
+func (h *channelHandler) UpdateChannel(c *gin.Context) {
 	var req dto.NotificationChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid notification channel payload")
@@ -202,7 +329,7 @@ func (h *MonitoringHandler) UpdateChannel(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListRoutes(c *gin.Context) {
+func (h *alertRouteHandler) ListRoutes(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListRoutes(c.Request.Context(), principal)
 	if err != nil {
@@ -212,7 +339,7 @@ func (h *MonitoringHandler) ListRoutes(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateRoute(c *gin.Context) {
+func (h *alertRouteHandler) CreateRoute(c *gin.Context) {
 	var req dto.AlertRouteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert route payload")
@@ -233,7 +360,7 @@ func (h *MonitoringHandler) CreateRoute(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateRoute(c *gin.Context) {
+func (h *alertRouteHandler) UpdateRoute(c *gin.Context) {
 	var req dto.AlertRouteRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert route payload")
@@ -254,7 +381,7 @@ func (h *MonitoringHandler) UpdateRoute(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListSilences(c *gin.Context) {
+func (h *silenceHandler) ListSilences(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListSilences(c.Request.Context(), principal)
 	if err != nil {
@@ -264,7 +391,7 @@ func (h *MonitoringHandler) ListSilences(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateSilence(c *gin.Context) {
+func (h *silenceHandler) CreateSilence(c *gin.Context) {
 	var req dto.AlertSilenceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert silence payload")
@@ -287,7 +414,7 @@ func (h *MonitoringHandler) CreateSilence(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateSilence(c *gin.Context) {
+func (h *silenceHandler) UpdateSilence(c *gin.Context) {
 	var req dto.AlertSilenceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert silence payload")
@@ -310,7 +437,7 @@ func (h *MonitoringHandler) UpdateSilence(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListDeliveryLogs(c *gin.Context) {
+func (h *deliveryLogHandler) ListDeliveryLogs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListDeliveryLogs(c.Request.Context(), principal, domainalert.DeliveryFilter{
 		AlertID: c.Query("alertId"),
@@ -324,7 +451,7 @@ func (h *MonitoringHandler) ListDeliveryLogs(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) IngestWebhook(c *gin.Context) {
+func (h *webhookHandler) IngestWebhook(c *gin.Context) {
 	token := strings.TrimSpace(c.GetHeader("X-Soha-Webhook-Token"))
 	if token == "" {
 		token = strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
@@ -365,7 +492,7 @@ func (h *MonitoringHandler) IngestWebhook(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusAccepted, gin.H{"accepted": count})
 }
 
-func (h *MonitoringHandler) ListAlertIntegrations(c *gin.Context) {
+func (h *integrationHandler) ListAlertIntegrations(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListAlertIntegrations(c.Request.Context(), principal)
 	if err != nil {
@@ -375,7 +502,7 @@ func (h *MonitoringHandler) ListAlertIntegrations(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) GetAlertIntegration(c *gin.Context) {
+func (h *integrationHandler) GetAlertIntegration(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetAlertIntegration(c.Request.Context(), principal, c.Param("integrationID"))
 	if err != nil {
@@ -385,7 +512,7 @@ func (h *MonitoringHandler) GetAlertIntegration(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) CreateAlertIntegration(c *gin.Context) {
+func (h *integrationHandler) CreateAlertIntegration(c *gin.Context) {
 	var req dto.AlertIntegrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert integration payload")
@@ -400,7 +527,7 @@ func (h *MonitoringHandler) CreateAlertIntegration(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateAlertIntegration(c *gin.Context) {
+func (h *integrationHandler) UpdateAlertIntegration(c *gin.Context) {
 	var req dto.AlertIntegrationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert integration payload")
@@ -415,7 +542,7 @@ func (h *MonitoringHandler) UpdateAlertIntegration(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) TestAlertIntegration(c *gin.Context) {
+func (h *integrationHandler) TestAlertIntegration(c *gin.Context) {
 	var req dto.AlertIntegrationTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert integration test payload")
@@ -435,7 +562,7 @@ func (h *MonitoringHandler) TestAlertIntegration(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) IngestIntegrationWebhook(c *gin.Context) {
+func (h *integrationHandler) IngestIntegrationWebhook(c *gin.Context) {
 	token := strings.TrimSpace(c.GetHeader("X-Soha-Webhook-Token"))
 	if token == "" {
 		token = strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))

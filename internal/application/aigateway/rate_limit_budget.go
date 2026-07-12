@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -511,51 +512,7 @@ func gatewayCollectProviderUsageCandidates(value any, key string, depth int, out
 	}
 	switch typed := value.(type) {
 	case map[string]any:
-		if context := gatewayUsageDetailContext(key); context != "" {
-			if usage := gatewayProviderUsageDetailNumbers(typed, context); len(usage) > 0 {
-				*out = append(*out, usage)
-				for childKey, child := range typed {
-					switch child.(type) {
-					case map[string]any, []any, []map[string]any:
-						gatewayCollectProviderUsageCandidates(child, childKey, depth+1, out)
-					}
-				}
-				return
-			}
-		}
-		if gatewayUsageContainerKey(key) {
-			if usage := gatewayPreferredBilledUsageNumbers(typed); len(usage) > 0 {
-				*out = append(*out, usage)
-				for childKey, child := range typed {
-					switch normalizeGatewayConditionKey(childKey) {
-					case "billedunits", "billedunit", "tokens":
-						continue
-					}
-					switch child.(type) {
-					case map[string]any, []any, []map[string]any:
-						gatewayCollectProviderUsageCandidates(child, childKey, depth+1, out)
-					}
-				}
-				return
-			}
-			if usage := gatewayUsageNumbersOnly(typed); len(usage) > 0 {
-				*out = append(*out, usage)
-				for childKey, child := range typed {
-					switch child.(type) {
-					case map[string]any, []any, []map[string]any:
-						gatewayCollectProviderUsageCandidates(child, childKey, depth+1, out)
-					}
-				}
-				return
-			}
-		}
-		if usage := gatewayProviderNativeUsageNumbers(typed); len(usage) > 0 {
-			*out = append(*out, usage)
-			return
-		}
-		for childKey, child := range typed {
-			gatewayCollectProviderUsageCandidates(child, childKey, depth+1, out)
-		}
+		gatewayCollectProviderUsageMap(typed, key, depth, out)
 	case []any:
 		for _, item := range typed {
 			gatewayCollectProviderUsageCandidates(item, key, depth+1, out)
@@ -563,6 +520,47 @@ func gatewayCollectProviderUsageCandidates(value any, key string, depth int, out
 	case []map[string]any:
 		for _, item := range typed {
 			gatewayCollectProviderUsageCandidates(item, key, depth+1, out)
+		}
+	}
+}
+
+func gatewayCollectProviderUsageMap(typed map[string]any, key string, depth int, out *[]map[string]any) {
+	if context := gatewayUsageDetailContext(key); context != "" {
+		if usage := gatewayProviderUsageDetailNumbers(typed, context); len(usage) > 0 {
+			*out = append(*out, usage)
+			gatewayCollectProviderUsageChildren(typed, depth, out, false)
+			return
+		}
+	}
+	if gatewayUsageContainerKey(key) {
+		if usage := gatewayPreferredBilledUsageNumbers(typed); len(usage) > 0 {
+			*out = append(*out, usage)
+			gatewayCollectProviderUsageChildren(typed, depth, out, true)
+			return
+		}
+		if usage := gatewayUsageNumbersOnly(typed); len(usage) > 0 {
+			*out = append(*out, usage)
+			gatewayCollectProviderUsageChildren(typed, depth, out, false)
+			return
+		}
+	}
+	if usage := gatewayProviderNativeUsageNumbers(typed); len(usage) > 0 {
+		*out = append(*out, usage)
+		return
+	}
+	for childKey, child := range typed {
+		gatewayCollectProviderUsageCandidates(child, childKey, depth+1, out)
+	}
+}
+
+func gatewayCollectProviderUsageChildren(typed map[string]any, depth int, out *[]map[string]any, skipBilled bool) {
+	for childKey, child := range typed {
+		if skipBilled && slices.Contains([]string{"billedunits", "billedunit", "tokens"}, normalizeGatewayConditionKey(childKey)) {
+			continue
+		}
+		switch child.(type) {
+		case map[string]any, []any, []map[string]any:
+			gatewayCollectProviderUsageCandidates(child, childKey, depth+1, out)
 		}
 	}
 }
@@ -779,8 +777,8 @@ func gatewayAddNativeUsageNumber(out map[string]any, key string, number float64,
 	if gatewaySupplementalInputTokenKey(normalized) || gatewaySupplementalOutputTokenKey(normalized) {
 		return
 	}
-	additiveInput := !hasGenericInput && (normalized == "inputtexttokens" || normalized == "inputimagetokens" || normalized == "inputaudiotokens" || normalized == "textinputtokens" || normalized == "imageinputtokens" || normalized == "audioinputtokens" || normalized == "imagetokens" || normalized == "videotokens" || normalized == "audiotokens")
-	additiveOutput := !hasGenericOutput && (normalized == "outputtexttokens" || normalized == "outputimagetokens" || normalized == "outputaudiotokens" || normalized == "textoutputtokens" || normalized == "imageoutputtokens" || normalized == "audiooutputtokens")
+	additiveInput := !hasGenericInput && slices.Contains(gatewayAdditiveInputUsageKeys, normalized)
+	additiveOutput := !hasGenericOutput && slices.Contains(gatewayAdditiveOutputUsageKeys, normalized)
 	if additiveInput || additiveOutput {
 		existing, _ := gatewayPositiveFloat(out[canonical])
 		out[canonical] = existing + number
@@ -790,6 +788,16 @@ func gatewayAddNativeUsageNumber(out map[string]any, key string, number float64,
 		out[canonical] = number
 	}
 }
+
+var gatewayAdditiveInputUsageKeys = []string{
+	"inputtexttokens", "inputimagetokens", "inputaudiotokens", "textinputtokens", "imageinputtokens",
+	"audioinputtokens", "imagetokens", "videotokens", "audiotokens",
+}
+
+var gatewayAdditiveOutputUsageKeys = []string{
+	"outputtexttokens", "outputimagetokens", "outputaudiotokens", "textoutputtokens", "imageoutputtokens", "audiooutputtokens",
+}
+
 func gatewayNormalizeNativeUsageNumber(key string, number float64) float64 {
 	switch normalizeGatewayConditionKey(key) {
 	case "costmicros", "totalcostmicros", "estimatedcostmicros", "inputcostmicros", "promptcostmicros", "outputcostmicros", "completioncostmicros":

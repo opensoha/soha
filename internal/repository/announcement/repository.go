@@ -34,7 +34,7 @@ func (r *Repository) List(ctx context.Context, limit int) ([]domainannouncement.
 	if err != nil {
 		return nil, fmt.Errorf("query announcements: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainannouncement.Record, 0, limit)
 	for rows.Next() {
@@ -168,7 +168,7 @@ func (r *Repository) ListInbox(ctx context.Context, userID string, limit int, no
 	if err != nil {
 		return domainannouncement.Inbox{}, fmt.Errorf("query announcement inbox: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainannouncement.InboxItem, 0, limit)
 	for rows.Next() {

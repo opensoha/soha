@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	domainmodule "github.com/opensoha/soha/internal/domain/module"
-	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"github.com/opensoha/soha/internal/platform/appconfig"
 )
 
 type Service struct {
-	cfg cfgpkg.ModulesConfig
+	cfg appconfig.Modules
 }
 
-func New(cfg cfgpkg.ModulesConfig) *Service {
+func New(cfg appconfig.Modules) *Service {
 	return &Service{cfg: cfg}
 }
 

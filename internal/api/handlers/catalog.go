@@ -12,19 +12,23 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
-type CatalogService interface {
+type ApplicationEnvironmentService interface {
 	ListApplicationEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error)
 	GetApplicationEnvironment(context.Context, domainidentity.Principal, string) (domaincatalog.ApplicationEnvironment, error)
 	CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
 	UpdateApplicationEnvironment(context.Context, domainidentity.Principal, string, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
 	DeleteApplicationEnvironment(context.Context, domainidentity.Principal, string) error
+}
 
+type BuildTemplateService interface {
 	ListBuildTemplates(context.Context, domainidentity.Principal) ([]domaincatalog.BuildTemplate, error)
 	GetBuildTemplateUsage(context.Context, domainidentity.Principal, string) (domaincatalog.TemplateUsageSummary, error)
 	CreateBuildTemplate(context.Context, domainidentity.Principal, domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error)
 	UpdateBuildTemplate(context.Context, domainidentity.Principal, string, domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error)
 	DeleteBuildTemplate(context.Context, domainidentity.Principal, string) error
+}
 
+type WorkflowTemplateService interface {
 	ListWorkflowTemplates(context.Context, domainidentity.Principal) ([]domaincatalog.WorkflowTemplate, error)
 	GetWorkflowTemplateUsage(context.Context, domainidentity.Principal, string) (domaincatalog.TemplateUsageSummary, error)
 	CreateWorkflowTemplate(context.Context, domainidentity.Principal, domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error)
@@ -32,17 +36,29 @@ type CatalogService interface {
 	DeleteWorkflowTemplate(context.Context, domainidentity.Principal, string) error
 }
 
+type CatalogService interface {
+	ApplicationEnvironmentService
+	BuildTemplateService
+	WorkflowTemplateService
+}
+
 type CatalogHandler struct {
-	service CatalogService
+	environments ApplicationEnvironmentService
+	builds       BuildTemplateService
+	workflows    WorkflowTemplateService
 }
 
 func NewCatalogHandler(service CatalogService) *CatalogHandler {
-	return &CatalogHandler{service: service}
+	return NewCatalogHandlerWithServices(service, service, service)
+}
+
+func NewCatalogHandlerWithServices(environments ApplicationEnvironmentService, builds BuildTemplateService, workflows WorkflowTemplateService) *CatalogHandler {
+	return &CatalogHandler{environments: environments, builds: builds, workflows: workflows}
 }
 
 func (h *CatalogHandler) ListApplicationEnvironments(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListApplicationEnvironments(c.Request.Context(), principal)
+	items, err := h.environments.ListApplicationEnvironments(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -52,7 +68,7 @@ func (h *CatalogHandler) ListApplicationEnvironments(c *gin.Context) {
 
 func (h *CatalogHandler) GetApplicationEnvironment(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetApplicationEnvironment(c.Request.Context(), principal, c.Param("applicationEnvironmentID"))
+	item, err := h.environments.GetApplicationEnvironment(c.Request.Context(), principal, c.Param("applicationEnvironmentID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -67,7 +83,7 @@ func (h *CatalogHandler) CreateApplicationEnvironment(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateApplicationEnvironment(c.Request.Context(), principal, mapApplicationEnvironmentInput(req))
+	item, err := h.environments.CreateApplicationEnvironment(c.Request.Context(), principal, mapApplicationEnvironmentInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -82,7 +98,7 @@ func (h *CatalogHandler) UpdateApplicationEnvironment(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateApplicationEnvironment(c.Request.Context(), principal, c.Param("applicationEnvironmentID"), mapApplicationEnvironmentInput(req))
+	item, err := h.environments.UpdateApplicationEnvironment(c.Request.Context(), principal, c.Param("applicationEnvironmentID"), mapApplicationEnvironmentInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -92,7 +108,7 @@ func (h *CatalogHandler) UpdateApplicationEnvironment(c *gin.Context) {
 
 func (h *CatalogHandler) DeleteApplicationEnvironment(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.service.DeleteApplicationEnvironment(c.Request.Context(), principal, c.Param("applicationEnvironmentID")); err != nil {
+	if err := h.environments.DeleteApplicationEnvironment(c.Request.Context(), principal, c.Param("applicationEnvironmentID")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -101,7 +117,7 @@ func (h *CatalogHandler) DeleteApplicationEnvironment(c *gin.Context) {
 
 func (h *CatalogHandler) ListBuildTemplates(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListBuildTemplates(c.Request.Context(), principal)
+	items, err := h.builds.ListBuildTemplates(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -111,7 +127,7 @@ func (h *CatalogHandler) ListBuildTemplates(c *gin.Context) {
 
 func (h *CatalogHandler) GetBuildTemplateUsage(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetBuildTemplateUsage(c.Request.Context(), principal, c.Param("buildTemplateID"))
+	item, err := h.builds.GetBuildTemplateUsage(c.Request.Context(), principal, c.Param("buildTemplateID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -126,18 +142,7 @@ func (h *CatalogHandler) CreateBuildTemplate(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateBuildTemplate(c.Request.Context(), principal, domaincatalog.BuildTemplateInput{
-		ID:                 req.ID,
-		Key:                req.Key,
-		Name:               req.Name,
-		Description:        req.Description,
-		BuilderKind:        req.BuilderKind,
-		DockerfileTemplate: req.DockerfileTemplate,
-		BuildCommands:      req.BuildCommands,
-		VariableSchema:     req.VariableSchema,
-		DefaultVariables:   req.DefaultVariables,
-		Enabled:            req.Enabled,
-	})
+	item, err := h.builds.CreateBuildTemplate(c.Request.Context(), principal, buildTemplateInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -152,7 +157,16 @@ func (h *CatalogHandler) UpdateBuildTemplate(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateBuildTemplate(c.Request.Context(), principal, c.Param("buildTemplateID"), domaincatalog.BuildTemplateInput{
+	item, err := h.builds.UpdateBuildTemplate(c.Request.Context(), principal, c.Param("buildTemplateID"), buildTemplateInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func buildTemplateInput(req dto.BuildTemplateRequest) domaincatalog.BuildTemplateInput {
+	return domaincatalog.BuildTemplateInput{
 		ID:                 req.ID,
 		Key:                req.Key,
 		Name:               req.Name,
@@ -163,17 +177,12 @@ func (h *CatalogHandler) UpdateBuildTemplate(c *gin.Context) {
 		VariableSchema:     req.VariableSchema,
 		DefaultVariables:   req.DefaultVariables,
 		Enabled:            req.Enabled,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *CatalogHandler) DeleteBuildTemplate(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.service.DeleteBuildTemplate(c.Request.Context(), principal, c.Param("buildTemplateID")); err != nil {
+	if err := h.builds.DeleteBuildTemplate(c.Request.Context(), principal, c.Param("buildTemplateID")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -182,7 +191,7 @@ func (h *CatalogHandler) DeleteBuildTemplate(c *gin.Context) {
 
 func (h *CatalogHandler) ListWorkflowTemplates(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListWorkflowTemplates(c.Request.Context(), principal)
+	items, err := h.workflows.ListWorkflowTemplates(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -192,7 +201,7 @@ func (h *CatalogHandler) ListWorkflowTemplates(c *gin.Context) {
 
 func (h *CatalogHandler) GetWorkflowTemplateUsage(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetWorkflowTemplateUsage(c.Request.Context(), principal, c.Param("workflowTemplateID"))
+	item, err := h.workflows.GetWorkflowTemplateUsage(c.Request.Context(), principal, c.Param("workflowTemplateID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -207,7 +216,7 @@ func (h *CatalogHandler) CreateWorkflowTemplate(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateWorkflowTemplate(c.Request.Context(), principal, domaincatalog.WorkflowTemplateInput{
+	item, err := h.workflows.CreateWorkflowTemplate(c.Request.Context(), principal, domaincatalog.WorkflowTemplateInput{
 		ID:          req.ID,
 		Key:         req.Key,
 		Name:        req.Name,
@@ -230,7 +239,7 @@ func (h *CatalogHandler) UpdateWorkflowTemplate(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateWorkflowTemplate(c.Request.Context(), principal, c.Param("workflowTemplateID"), domaincatalog.WorkflowTemplateInput{
+	item, err := h.workflows.UpdateWorkflowTemplate(c.Request.Context(), principal, c.Param("workflowTemplateID"), domaincatalog.WorkflowTemplateInput{
 		ID:          req.ID,
 		Key:         req.Key,
 		Name:        req.Name,
@@ -248,7 +257,7 @@ func (h *CatalogHandler) UpdateWorkflowTemplate(c *gin.Context) {
 
 func (h *CatalogHandler) DeleteWorkflowTemplate(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.service.DeleteWorkflowTemplate(c.Request.Context(), principal, c.Param("workflowTemplateID")); err != nil {
+	if err := h.workflows.DeleteWorkflowTemplate(c.Request.Context(), principal, c.Param("workflowTemplateID")); err != nil {
 		writeError(c, err)
 		return
 	}

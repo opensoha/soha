@@ -2,20 +2,124 @@ package identity
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
+	"golang.org/x/oauth2"
 )
+
+func TestJWTKeyringSignsWithKidAndVerifiesPreviousKeys(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	active, err := keyring.NewKey("active-key-id", "active-jwt-secret-value", now, nil)
+	if err != nil {
+		t.Fatalf("NewKey() active error = %v", err)
+	}
+	expiresAt := now.Add(time.Hour)
+	previous, err := keyring.NewKey("previous-key-id", "previous-jwt-secret-value", now.Add(-time.Hour), &expiresAt)
+	if err != nil {
+		t.Fatalf("NewKey() previous error = %v", err)
+	}
+	ring, err := keyring.New(active, []keyring.Key{previous})
+	if err != nil {
+		t.Fatalf("keyring.New() error = %v", err)
+	}
+	service := &Service{cfg: cfgpkg.AuthConfig{JWT: cfgpkg.JWTConfig{
+		Secret: "active-jwt-secret-value", Keys: ring, Issuer: "soha-test",
+		AccessTTL: time.Minute, RefreshTTL: time.Hour,
+	}}}
+
+	signed, _, err := service.signAccessToken(domainidentity.Principal{UserID: "user-1"}, "session-1")
+	if err != nil {
+		t.Fatalf("signAccessToken() error = %v", err)
+	}
+	unverified, _, err := jwt.NewParser().ParseUnverified(signed, &tokenClaims{})
+	if err != nil {
+		t.Fatalf("ParseUnverified() error = %v", err)
+	}
+	if unverified.Header["kid"] != active.ID() {
+		t.Fatalf("signed token kid = %#v, want %q", unverified.Header["kid"], active.ID())
+	}
+
+	claims := &tokenClaims{
+		TokenType: "access",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject: "user-1", ExpiresAt: jwt.NewNumericDate(now.Add(time.Minute)),
+		},
+	}
+	oldToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	oldToken.Header["kid"] = previous.ID()
+	oldSigned, err := oldToken.SignedString([]byte(previous.Secret()))
+	if err != nil {
+		t.Fatalf("SignedString() previous error = %v", err)
+	}
+	if _, err := service.parseToken(oldSigned, "access"); err != nil {
+		t.Fatalf("parseToken() previous error = %v", err)
+	}
+
+	legacyToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	legacySigned, err := legacyToken.SignedString([]byte(previous.Secret()))
+	if err != nil {
+		t.Fatalf("SignedString() legacy error = %v", err)
+	}
+	if _, err := service.parseToken(legacySigned, "access"); err != nil {
+		t.Fatalf("parseToken() kid-less previous error = %v", err)
+	}
+}
+
+func TestNewRejectsMissingDependency(t *testing.T) {
+	t.Parallel()
+
+	_, err := New(Dependencies{})
+	if err == nil || !strings.Contains(err.Error(), "accounts dependency is required") {
+		t.Fatalf("New() error = %v, want missing accounts error", err)
+	}
+}
+
+func TestNewRejectsTypedNilDependency(t *testing.T) {
+	t.Parallel()
+
+	store := newLoginMappingUserRepo()
+	deps := testDependenciesWithUserStore(store)
+	var passwords *loginMappingUserRepo
+	deps.Passwords = passwords
+	_, err := New(deps)
+	if err == nil || !strings.Contains(err.Error(), "passwords dependency is required") {
+		t.Fatalf("New() error = %v, want typed nil passwords error", err)
+	}
+}
+
+func TestLoginWithPasswordRejectsWhenLocalLoginIsDisabled(t *testing.T) {
+	store := newLoginMappingUserRepo()
+	deps := testDependenciesWithUserStore(store)
+	deps.Settings = loginProviderSettingsStub{passwordDisabled: true}
+	service, err := New(deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = service.LoginWithPassword(context.Background(), "opensoha", "secret")
+	if !errors.Is(err, apperrors.ErrUnauthorized) || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("LoginWithPassword() error = %v, want disabled unauthorized", err)
+	}
+}
 
 func TestReconcileExternalUserSyncsLoginRolesAndOrganizations(t *testing.T) {
 	ctx := context.Background()
@@ -23,7 +127,7 @@ func TestReconcileExternalUserSyncsLoginRolesAndOrganizations(t *testing.T) {
 	repo.roleRefs["readonly"] = "readonly"
 	repo.roleRefs["ops"] = "ops"
 	repo.teamRefs["dept-open-1"] = "platform-org"
-	service := &Service{users: repo}
+	service := newTestServiceWithUserStore(repo)
 
 	principal, err := service.reconcileExternalUser(ctx, domainsettings.LoginProviderSettings{
 		ID:                "feishu-main",
@@ -36,9 +140,11 @@ func TestReconcileExternalUserSyncsLoginRolesAndOrganizations(t *testing.T) {
 		RoleSyncMode:      "append",
 		OrgSyncMode:       "append",
 	}, genericProfile{
-		ID:    "ou_1",
-		Email: "user@example.com",
-		Name:  "User",
+		ID:        "ou_1",
+		Email:     "user@example.com",
+		Name:      "User",
+		Phone:     "13800138000",
+		AvatarURL: "https://example.com/avatar.png",
 		Raw: map[string]any{
 			"role_ids":       []any{"ops"},
 			"department_ids": []any{"dept-open-1"},
@@ -54,11 +160,154 @@ func TestReconcileExternalUserSyncsLoginRolesAndOrganizations(t *testing.T) {
 	if !hasString(principal.Teams, "platform-org") {
 		t.Fatalf("expected synced organization, got %#v", principal.Teams)
 	}
+	if principal.AvatarURL != "https://example.com/avatar.png" {
+		t.Fatalf("expected external avatar, got %q", principal.AvatarURL)
+	}
+	user := repo.usersByID[principal.UserID]
+	if user.Username != "ou_1" || user.DisplayName != "User" || user.Email != "user@example.com" {
+		t.Fatalf("expected external identity profile, got %#v", user)
+	}
+	if user.Preferences["phone"] != "13800138000" || user.Preferences[avatarURLPreferenceKey] != "https://example.com/avatar.png" {
+		t.Fatalf("expected external profile preferences, got %#v", user.Preferences)
+	}
 	if binding := repo.roleBindings[principal.UserID]["ops"]; binding.source != "feishu" || binding.providerID != "feishu-main" {
 		t.Fatalf("expected provider-managed role binding, got %#v", binding)
 	}
 	if binding := repo.teamBindings[principal.UserID]["platform-org"]; binding.source != "feishu" || binding.providerID != "feishu-main" {
 		t.Fatalf("expected provider-managed team binding, got %#v", binding)
+	}
+}
+
+func TestReconcileExternalUserRefreshesExistingIdentityProfile(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	repo := newLoginMappingUserRepo()
+	repo.usersByID["user-1"] = userrepo.User{
+		ID:          "user-1",
+		Username:    "user-ea5ff349",
+		Email:       "ou_1@feishu.login.local",
+		DisplayName: "旧名称",
+		Status:      "active",
+		Preferences: map[string]any{},
+	}
+	repo.identities["feishu|feishu-main|ou_1"] = userrepo.OIDCIdentity{
+		ID:             "identity-1",
+		UserID:         "user-1",
+		ProviderType:   "feishu",
+		ProviderID:     "feishu-main",
+		ProviderUserID: "ou_1",
+	}
+	service := newTestServiceWithUserStore(repo)
+
+	_, err := service.reconcileExternalUser(ctx, domainsettings.LoginProviderSettings{
+		ID:   "feishu-main",
+		Type: "feishu",
+	}, genericProfile{
+		ID:        "ou_1",
+		Email:     "user@example.com",
+		Name:      "山吹",
+		AvatarURL: "https://example.com/avatar.png",
+		Raw:       map[string]any{"open_id": "ou_1"},
+	})
+	if err != nil {
+		t.Fatalf("reconcile external user: %v", err)
+	}
+
+	user := repo.usersByID["user-1"]
+	if user.Username != "ou_1" || user.DisplayName != "山吹" || user.Email != "user@example.com" {
+		t.Fatalf("expected refreshed external identity profile, got %#v", user)
+	}
+	if user.Preferences[avatarURLPreferenceKey] != "https://example.com/avatar.png" {
+		t.Fatalf("expected refreshed avatar preference, got %#v", user.Preferences)
+	}
+}
+
+func TestFetchOAuth2ProfileUsesConfiguredProfileFields(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer access-token" {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"open_id":          "ou_1",
+				"name":             "Ada",
+				"enterprise_email": "ada@example.com",
+				"contact":          map[string]any{"mobile": "13800138000"},
+				"avatar":           map[string]any{"url": "https://example.com/ada.png"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	profile, err := (&Service{}).fetchOAuth2Profile(context.Background(), domainsettings.LoginProviderSettings{
+		ID:            "feishu-main",
+		Type:          "feishu",
+		UserInfoURL:   server.URL,
+		UserIDField:   "open_id",
+		UserNameField: "name",
+		EmailField:    "enterprise_email",
+		PhoneField:    "contact.mobile",
+		AvatarField:   "avatar.url",
+	}, (&oauth2.Token{AccessToken: "access-token"}))
+	if err != nil {
+		t.Fatalf("fetchOAuth2Profile() error = %v", err)
+	}
+	if profile.ID != "ou_1" || profile.Email != "ada@example.com" || profile.Phone != "13800138000" || profile.AvatarURL != "https://example.com/ada.png" {
+		t.Fatalf("unexpected profile: %#v", profile)
+	}
+}
+
+func TestFetchOAuth2ProfileEnrichesFeishuDepartmentsWhenOrganizationSyncEnabled(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/userinfo":
+			if r.Header.Get("Authorization") != "Bearer access-token" {
+				t.Fatalf("user info authorization = %q", r.Header.Get("Authorization"))
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+				"open_id": "ou_1", "name": "Ada", "email": "ada@example.com",
+			}})
+		case "/open-apis/auth/v3/tenant_access_token/internal":
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "tenant_access_token": "tenant-token"})
+		case "/open-apis/contact/v3/users/ou_1":
+			if r.Header.Get("Authorization") != "Bearer tenant-token" {
+				t.Fatalf("contact authorization = %q", r.Header.Get("Authorization"))
+			}
+			if got := r.URL.Query().Get("user_id_type"); got != "open_id" {
+				t.Fatalf("user_id_type = %q", got)
+			}
+			if got := r.URL.Query().Get("department_id_type"); got != "open_department_id" {
+				t.Fatalf("department_id_type = %q", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"user": map[string]any{
+				"open_id": "ou_1", "department_ids": []string{"od-1", "od-2"},
+			}}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	profile, err := (&Service{}).fetchOAuth2Profile(context.Background(), domainsettings.LoginProviderSettings{
+		ID:                "feishu-main",
+		Type:              "feishu",
+		ClientID:          "app-id",
+		ClientSecret:      "app-secret",
+		UserInfoURL:       server.URL + "/userinfo",
+		UserIDField:       "open_id",
+		UserNameField:     "name",
+		EmailField:        "email",
+		SyncOrgsOnLogin:   true,
+		OrganizationField: "department_ids",
+	}, &oauth2.Token{AccessToken: "access-token"})
+	if err != nil {
+		t.Fatalf("fetchOAuth2Profile() error = %v", err)
+	}
+	if got := nestedStrings(profile.Raw, "department_ids"); !slices.Equal(got, []string{"od-1", "od-2"}) {
+		t.Fatalf("department_ids = %#v", got)
 	}
 }
 
@@ -91,7 +340,7 @@ func TestUpdateCurrentProfileStoresAvatarPreferences(t *testing.T) {
 		Preferences: map[string]any{},
 	}
 	repo.emailToID["old@example.com"] = "u-1"
-	service := &Service{users: repo}
+	service := newTestServiceWithUserStore(repo)
 
 	profile, err := service.UpdateCurrentProfile(ctx, domainidentity.Principal{UserID: "u-1"}, domainidentity.ProfileUpdate{
 		DisplayName: "OpenSoha",
@@ -131,7 +380,7 @@ func TestUpdateCurrentProfileRejectsDuplicateEmail(t *testing.T) {
 	}
 	repo.emailToID["old@example.com"] = "u-1"
 	repo.emailToID["taken@example.com"] = "u-2"
-	service := &Service{users: repo}
+	service := newTestServiceWithUserStore(repo)
 
 	_, err := service.UpdateCurrentProfile(ctx, domainidentity.Principal{UserID: "u-1"}, domainidentity.ProfileUpdate{
 		DisplayName: "OpenSoha",
@@ -164,7 +413,7 @@ func TestSyncLoginProviderBindingsReplaceExternalOnly(t *testing.T) {
 		"local-team": {source: "local"},
 		"stale-team": {source: "feishu", providerID: "feishu-main"},
 	}
-	service := &Service{users: repo}
+	service := newTestServiceWithUserStore(repo)
 
 	err := service.syncLoginProviderBindings(ctx, "u1", domainsettings.LoginProviderSettings{
 		ID:                "feishu-main",
@@ -207,15 +456,13 @@ func TestAccessTokenRequiresFreshAuthzVersion(t *testing.T) {
 	}
 	repo.roleBindings["u1"] = map[string]loginMappingBinding{"readonly": {source: "local"}}
 
-	service := &Service{
-		cfg: cfgpkg.AuthConfig{JWT: cfgpkg.JWTConfig{
-			Secret:     "test-secret",
-			Issuer:     "soha-test",
-			AccessTTL:  time.Minute,
-			RefreshTTL: time.Hour,
-		}},
-		users: repo,
-	}
+	service := newTestServiceWithUserStore(repo)
+	service.cfg = cfgpkg.AuthConfig{JWT: cfgpkg.JWTConfig{
+		Secret:     "test-secret",
+		Issuer:     "soha-test",
+		AccessTTL:  time.Minute,
+		RefreshTTL: time.Hour,
+	}}
 	result, err := service.issueAuthResult(ctx, domainidentity.Principal{
 		UserID:   "u1",
 		UserName: "User One",
@@ -262,10 +509,8 @@ func TestBeginProviderLoginStoresSafeReturnToInState(t *testing.T) {
 		RedirectURL:  "https://soha.example/api/v1/auth/login/oauth-main/callback",
 		Scopes:       []string{"profile"},
 	}
-	service := &Service{
-		users:    repo,
-		settings: loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{provider.ID: provider}},
-	}
+	service := newTestServiceWithUserStore(repo)
+	service.settings = loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{provider.ID: provider}}
 	returnTo := "/oauth2/authorize?client_id=portal#resume"
 
 	loginURL, err := service.BeginProviderLogin(ctx, provider.ID, returnTo)
@@ -289,6 +534,48 @@ func TestBeginProviderLoginStoresSafeReturnToInState(t *testing.T) {
 	}
 }
 
+func TestBeginProviderLinkBindsStateToCurrentUser(t *testing.T) {
+	ctx := context.Background()
+	repo := newLoginMappingUserRepo()
+	provider := domainsettings.LoginProviderSettings{
+		ID: "oauth-main", Name: "OAuth Main", Type: "oauth2", Enabled: true,
+		ClientID: "client-1", AuthorizeURL: "https://idp.example/authorize",
+		RedirectURL: "https://soha.example/api/v1/auth/login/oauth-main/callback",
+	}
+	service := newTestServiceWithUserStore(repo)
+	service.settings = loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{provider.ID: provider}}
+
+	loginURL, err := service.BeginProviderLink(ctx, domainidentity.Principal{UserID: "user-1"}, provider.ID, "/account/profile")
+	if err != nil {
+		t.Fatalf("BeginProviderLink returned error: %v", err)
+	}
+	parsed, err := url.Parse(loginURL)
+	if err != nil {
+		t.Fatalf("parse login url: %v", err)
+	}
+	stateToken := repo.ephemeral[oauthStateKind+"|"+parsed.Query().Get("state")]
+	if got := stateToken.Payload["linkUserId"]; got != "user-1" {
+		t.Fatalf("linkUserId payload = %#v, want user-1", got)
+	}
+}
+
+func TestLinkExternalIdentityRejectsIdentityOwnedByAnotherUser(t *testing.T) {
+	repo := newLoginMappingUserRepo()
+	repo.identities["oauth2|oauth-main|external-1"] = userrepo.OIDCIdentity{
+		UserID: "other-user", ProviderType: "oauth2", ProviderID: "oauth-main", ProviderUserID: "external-1",
+	}
+	service := newTestServiceWithUserStore(repo)
+	err := service.linkExternalIdentity(context.Background(), "current-user", domainsettings.LoginProviderSettings{
+		ID: "oauth-main", Type: "oauth2",
+	}, genericProfile{ID: "external-1"})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("linkExternalIdentity error = %v, want conflict", err)
+	}
+	if got := repo.identities["oauth2|oauth-main|external-1"].UserID; got != "other-user" {
+		t.Fatalf("identity owner = %q, want other-user", got)
+	}
+}
+
 func TestBeginProviderLoginRejectsUnsafeReturnTo(t *testing.T) {
 	ctx := context.Background()
 	repo := newLoginMappingUserRepo()
@@ -300,10 +587,8 @@ func TestBeginProviderLoginRejectsUnsafeReturnTo(t *testing.T) {
 		AuthorizeURL: "https://idp.example/authorize",
 		RedirectURL:  "https://soha.example/api/v1/auth/login/oauth-main/callback",
 	}
-	service := &Service{
-		users:    repo,
-		settings: loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{provider.ID: provider}},
-	}
+	service := newTestServiceWithUserStore(repo)
+	service.settings = loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{provider.ID: provider}}
 
 	for _, value := range []string{
 		"//evil.example/path",
@@ -359,7 +644,7 @@ func TestStreamTicketIsSingleUseAndPathBound(t *testing.T) {
 		ExpiresAt:    time.Now().UTC().Add(time.Hour),
 		AuthzVersion: 1,
 	}
-	service := &Service{users: repo}
+	service := newTestServiceWithUserStore(repo)
 
 	path := "/api/v1/clusters/cluster-a/workloads/pods/pod-a/logs/stream"
 	ticket, err := service.IssueStreamTicket(ctx, domainidentity.Principal{UserID: "u1"}, domainidentity.AccessContext{TokenKind: "session_access", SessionID: "s1"}, domainidentity.StreamTicketRequest{Path: path})
@@ -403,7 +688,7 @@ func TestStreamTicketAllowsDockerRuntimeStreams(t *testing.T) {
 		ExpiresAt:    time.Now().UTC().Add(time.Hour),
 		AuthzVersion: 1,
 	}
-	service := &Service{users: repo}
+	service := newTestServiceWithUserStore(repo)
 
 	for _, path := range []string{
 		"/api/v1/docker/projects/project-1/runtime/logs/stream",
@@ -439,7 +724,7 @@ func TestStreamTicketRejectsMismatchedPath(t *testing.T) {
 		ExpiresAt:    time.Now().UTC().Add(time.Hour),
 		AuthzVersion: 1,
 	}
-	service := &Service{users: repo}
+	service := newTestServiceWithUserStore(repo)
 
 	ticket, err := service.IssueStreamTicket(ctx, domainidentity.Principal{UserID: "u1"}, domainidentity.AccessContext{TokenKind: "session_access", SessionID: "s1"}, domainidentity.StreamTicketRequest{Path: "/api/v1/virtualization/operations/task-1/stream"})
 	if err != nil {
@@ -469,7 +754,7 @@ func TestReconcileOIDCUserMigratesLegacyProviderIdentity(t *testing.T) {
 		Profile:        map[string]any{"email": "user@example.com", "name": "User One"},
 		LastLoginAt:    time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC),
 	}
-	service := &Service{users: repo}
+	service := newTestServiceWithUserStore(repo)
 
 	principal, err := service.reconcileOIDCUser(ctx, oidcProfile{
 		Sub:   "sub-1",
@@ -506,8 +791,29 @@ type loginMappingBinding struct {
 	providerID string
 }
 
+func newTestServiceWithUserStore(store *loginMappingUserRepo) *Service {
+	service, err := New(testDependenciesWithUserStore(store))
+	if err != nil {
+		panic(err)
+	}
+	return service
+}
+
+func testDependenciesWithUserStore(store *loginMappingUserRepo) Dependencies {
+	return Dependencies{
+		Accounts: store, Passwords: store, Authorization: store,
+		RoleBindings: store, TeamBindings: store, Identities: store,
+		Sessions: store, SessionAdmin: store, EphemeralTokens: store,
+	}
+}
+
 type loginProviderSettingsStub struct {
-	providers map[string]domainsettings.LoginProviderSettings
+	providers        map[string]domainsettings.LoginProviderSettings
+	passwordDisabled bool
+}
+
+func (s loginProviderSettingsStub) LocalPasswordLoginEnabled(context.Context) (bool, error) {
+	return !s.passwordDisabled, nil
 }
 
 func (s loginProviderSettingsStub) ResolveLoginProviders(context.Context) ([]domainsettings.LoginProviderSettings, string, error) {

@@ -13,9 +13,6 @@ import (
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -63,7 +60,30 @@ type podUsageValue struct {
 	MemoryBytes float64
 }
 
-func (s *Service) GetPodMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, podName string, rangeMinutes, stepSeconds int) (domainresource.PodMetricsView, error) {
+type podIdentity struct {
+	Name      string
+	Namespace string
+}
+
+type metricsSupport struct {
+	*resourceAccess
+	resolver   ConnectionResolver
+	settings   MonitoringSettingsResolver
+	httpClient *http.Client
+}
+
+type workloadMetricsRequest struct {
+	principal    domainidentity.Principal
+	clusterID    string
+	namespace    string
+	kind         string
+	name         string
+	rangeMinutes int
+	stepSeconds  int
+}
+
+func (w *Workloads) GetPodMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, podName string, rangeMinutes, stepSeconds int) (domainresource.PodMetricsView, error) {
+	s := w
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionList)
 	if err != nil {
 		return domainresource.PodMetricsView{}, err
@@ -135,85 +155,75 @@ func (s *Service) GetPodMetrics(ctx context.Context, principal domainidentity.Pr
 	return view, nil
 }
 
-func (s *Service) GetDeploymentMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, deploymentName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
-	view := domainresource.ResourceMetricsView{
-		ResourceKind: "Deployment",
-		ResourceName: deploymentName,
-		Namespace:    namespace,
-		Source:       "prometheus",
-		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
-		RangeMinutes: rangeMinutes,
-		StepSeconds:  stepSeconds,
-	}
-	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Deployment", domainaccess.ActionList)
-	if err != nil {
-		return view, err
-	}
-	detail, err := s.GetDeploymentDetail(ctx, principal, clusterID, namespace, deploymentName)
-	if err != nil {
-		return view, err
-	}
-	pods, err := s.ListPods(ctx, principal, clusterID, namespace)
-	if err != nil {
-		return view, err
-	}
-	names := selectPodsBySelector(pods, detail.Selector)
-	return s.queryResourceMetrics(ctx, principal, connection.Summary.ID, namespace, "Deployment", deploymentName, names, rangeMinutes, stepSeconds)
+func (w *Workloads) GetDeploymentMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, deploymentName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	request := newWorkloadMetricsRequest(principal, clusterID, namespace, "Deployment", deploymentName, rangeMinutes, stepSeconds)
+	return getWorkloadMetrics(ctx, w, request, bindWorkloadDetail(w, ctx, request, (*Workloads).GetDeploymentDetail), deploymentSelector)
 }
 
-func (s *Service) GetStatefulSetMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, statefulSetName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
-	view := domainresource.ResourceMetricsView{
-		ResourceKind: "StatefulSet",
-		ResourceName: statefulSetName,
-		Namespace:    namespace,
-		Source:       "prometheus",
-		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
-		RangeMinutes: rangeMinutes,
-		StepSeconds:  stepSeconds,
-	}
-	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "StatefulSet", domainaccess.ActionList)
-	if err != nil {
-		return view, err
-	}
-	detail, err := s.GetStatefulSetDetail(ctx, principal, clusterID, namespace, statefulSetName)
-	if err != nil {
-		return view, err
-	}
-	pods, err := s.ListPods(ctx, principal, clusterID, namespace)
-	if err != nil {
-		return view, err
-	}
-	names := selectPodsBySelector(pods, detail.Selector)
-	return s.queryResourceMetrics(ctx, principal, connection.Summary.ID, namespace, "StatefulSet", statefulSetName, names, rangeMinutes, stepSeconds)
+func (w *Workloads) GetStatefulSetMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, statefulSetName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	request := newWorkloadMetricsRequest(principal, clusterID, namespace, "StatefulSet", statefulSetName, rangeMinutes, stepSeconds)
+	return getWorkloadMetrics(ctx, w, request, bindWorkloadDetail(w, ctx, request, (*Workloads).GetStatefulSetDetail), statefulSetSelector)
 }
 
-func (s *Service) GetDaemonSetMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, daemonSetName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
-	view := domainresource.ResourceMetricsView{
-		ResourceKind: "DaemonSet",
-		ResourceName: daemonSetName,
-		Namespace:    namespace,
-		Source:       "prometheus",
-		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
-		RangeMinutes: rangeMinutes,
-		StepSeconds:  stepSeconds,
-	}
-	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "DaemonSet", domainaccess.ActionList)
-	if err != nil {
-		return view, err
-	}
-	detail, err := s.GetDaemonSetDetail(ctx, principal, clusterID, namespace, daemonSetName)
-	if err != nil {
-		return view, err
-	}
-	pods, err := s.ListPods(ctx, principal, clusterID, namespace)
-	if err != nil {
-		return view, err
-	}
-	names := selectPodsBySelector(pods, detail.Selector)
-	return s.queryResourceMetrics(ctx, principal, connection.Summary.ID, namespace, "DaemonSet", daemonSetName, names, rangeMinutes, stepSeconds)
+func (w *Workloads) GetDaemonSetMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, daemonSetName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	request := newWorkloadMetricsRequest(principal, clusterID, namespace, "DaemonSet", daemonSetName, rangeMinutes, stepSeconds)
+	return getWorkloadMetrics(ctx, w, request, bindWorkloadDetail(w, ctx, request, (*Workloads).GetDaemonSetDetail), daemonSetSelector)
 }
 
-func (s *Service) GetServiceMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, serviceName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+func newWorkloadMetricsRequest(principal domainidentity.Principal, clusterID, namespace, kind, name string, rangeMinutes, stepSeconds int) workloadMetricsRequest {
+	return workloadMetricsRequest{
+		principal: principal, clusterID: clusterID, namespace: namespace,
+		kind: kind, name: name, rangeMinutes: rangeMinutes, stepSeconds: stepSeconds,
+	}
+}
+
+func bindWorkloadDetail[T any](w *Workloads, ctx context.Context, request workloadMetricsRequest, get func(*Workloads, context.Context, domainidentity.Principal, string, string, string) (T, error)) func() (T, error) {
+	return func() (T, error) {
+		return get(w, ctx, request.principal, request.clusterID, request.namespace, request.name)
+	}
+}
+
+func getWorkloadMetrics[T any](ctx context.Context, w *Workloads, request workloadMetricsRequest, loadDetail func() (T, error), selectorOf func(T) map[string]string) (domainresource.ResourceMetricsView, error) {
+	view := domainresource.ResourceMetricsView{
+		ResourceKind: request.kind,
+		ResourceName: request.name,
+		Namespace:    request.namespace,
+		Source:       "prometheus",
+		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
+		RangeMinutes: request.rangeMinutes,
+		StepSeconds:  request.stepSeconds,
+	}
+	connection, _, err := w.authorize(ctx, request.principal, request.clusterID, request.namespace, request.kind, domainaccess.ActionList)
+	if err != nil {
+		return view, err
+	}
+	detail, err := loadDetail()
+	if err != nil {
+		return view, err
+	}
+	pods, err := w.ListPods(ctx, request.principal, request.clusterID, request.namespace)
+	if err != nil {
+		return view, err
+	}
+	names := selectPodsBySelector(pods, selectorOf(detail))
+	return w.queryResourceMetrics(
+		ctx, request.principal, connection.Summary.ID, request.namespace,
+		request.kind, request.name, names, request.rangeMinutes, request.stepSeconds,
+	)
+}
+
+func deploymentSelector(detail domainresource.DeploymentDetailView) map[string]string {
+	return detail.Selector
+}
+func statefulSetSelector(detail domainresource.StatefulSetDetailView) map[string]string {
+	return detail.Selector
+}
+func daemonSetSelector(detail domainresource.DaemonSetDetailView) map[string]string {
+	return detail.Selector
+}
+
+func (n *Network) GetServiceMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, serviceName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	s := n
 	view := domainresource.ResourceMetricsView{
 		ResourceKind: "Service",
 		ResourceName: serviceName,
@@ -227,7 +237,7 @@ func (s *Service) GetServiceMetrics(ctx context.Context, principal domainidentit
 	if err != nil {
 		return view, err
 	}
-	services, err := s.ListServices(ctx, principal, clusterID, namespace)
+	services, err := n.ListServices(ctx, principal, clusterID, namespace)
 	if err != nil {
 		return view, err
 	}
@@ -238,7 +248,7 @@ func (s *Service) GetServiceMetrics(ctx context.Context, principal domainidentit
 			break
 		}
 	}
-	pods, err := s.ListPods(ctx, principal, clusterID, namespace)
+	pods, err := n.pods.ListPods(ctx, principal, clusterID, namespace)
 	if err != nil {
 		return view, err
 	}
@@ -246,7 +256,7 @@ func (s *Service) GetServiceMetrics(ctx context.Context, principal domainidentit
 	return s.queryResourceMetrics(ctx, principal, connection.Summary.ID, namespace, "Service", serviceName, names, rangeMinutes, stepSeconds)
 }
 
-func (s *Service) queryResourceMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name string, podNames []string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+func (s *metricsSupport) queryResourceMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name string, podNames []string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
 	view := domainresource.ResourceMetricsView{
 		ResourceKind: kind,
 		ResourceName: name,
@@ -430,7 +440,7 @@ func buildPodSetMetricMatcher(namespace string, podNames []string, clusterID, cl
 	return strings.Join(matchers, ",")
 }
 
-func (s *Service) listPodUsageSummaries(ctx context.Context, clusterID, namespace string, pods []domainresource.PodView) map[string]podUsageSummary {
+func (s *metricsSupport) listPodUsageSummaries(ctx context.Context, clusterID, namespace string, pods []domainresource.PodView) map[string]podUsageSummary {
 	if len(pods) == 0 {
 		return nil
 	}
@@ -440,9 +450,9 @@ func (s *Service) listPodUsageSummaries(ctx context.Context, clusterID, namespac
 		return nil
 	}
 
-	rawPods := make([]corev1.Pod, 0, len(pods))
+	rawPods := make([]podIdentity, 0, len(pods))
 	for _, pod := range pods {
-		rawPods = append(rawPods, corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: pod.Name, Namespace: pod.Namespace}})
+		rawPods = append(rawPods, podIdentity{Name: pod.Name, Namespace: pod.Namespace})
 	}
 
 	values, err := s.listPodUsageValues(ctx, settings, clusterID, rawPods)
@@ -468,7 +478,7 @@ func (s *Service) listPodUsageSummaries(ctx context.Context, clusterID, namespac
 	return out
 }
 
-func (s *Service) resolveClusterPrometheusSettings(ctx context.Context, clusterID string) (domainsettings.PrometheusSettings, error) {
+func (s *metricsSupport) resolveClusterPrometheusSettings(ctx context.Context, clusterID string) (domainsettings.PrometheusSettings, error) {
 	settings := domainsettings.PrometheusSettings{
 		DefaultRangeMinutes: 60,
 		StepSeconds:         60,
@@ -493,7 +503,7 @@ func (s *Service) resolveClusterPrometheusSettings(ctx context.Context, clusterI
 	return settings, nil
 }
 
-func (s *Service) clusterPrometheusMetadata(ctx context.Context, clusterID string) map[string]any {
+func (s *metricsSupport) clusterPrometheusMetadata(ctx context.Context, clusterID string) map[string]any {
 	if s.resolver == nil || strings.TrimSpace(clusterID) == "" {
 		return nil
 	}
@@ -532,87 +542,103 @@ func podMetricsKey(namespace, name string) string {
 	return strings.TrimSpace(namespace) + "/" + strings.TrimSpace(name)
 }
 
-func (s *Service) listPodUsageValues(ctx context.Context, settings domainsettings.PrometheusSettings, clusterID string, pods []corev1.Pod) (map[string]podUsageValue, error) {
+func (s *metricsSupport) listPodUsageValues(ctx context.Context, settings domainsettings.PrometheusSettings, clusterID string, pods []podIdentity) (map[string]podUsageValue, error) {
 	if len(pods) == 0 || !settings.Enabled || strings.TrimSpace(settings.BaseURL) == "" {
 		return nil, nil
 	}
-
-	podsByNamespace := make(map[string][]string)
-	seen := make(map[string]struct{}, len(pods))
-	for _, pod := range pods {
-		namespace := strings.TrimSpace(pod.Namespace)
-		name := strings.TrimSpace(pod.Name)
-		if namespace == "" || name == "" {
-			continue
-		}
-		key := podMetricsKey(namespace, name)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		podsByNamespace[namespace] = append(podsByNamespace[namespace], name)
-	}
-
+	podsByNamespace := groupPodNamesByNamespace(pods)
 	if len(podsByNamespace) == 0 {
 		return nil, nil
 	}
-
 	out := make(map[string]podUsageValue, len(pods))
 	var firstErr error
 	for namespace, names := range podsByNamespace {
-		filter := buildPodSetMetricMatcher(namespace, names, clusterID, settings.ClusterLabel)
-		if filter == "" {
-			continue
-		}
-
-		cpuByPod, cpuErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (rate(container_cpu_usage_seconds_total{%s}[5m]))`, filter))
-		memoryByPod, memoryErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (container_memory_working_set_bytes{%s})`, filter))
-		if hasPrometheusClusterMatcher(clusterID, settings.ClusterLabel) && len(cpuByPod) == 0 && len(memoryByPod) == 0 {
-			fallbackFilter := buildPodSetMetricMatcher(namespace, names, "", "")
-			fallbackCPUByPod, fallbackCPUErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (rate(container_cpu_usage_seconds_total{%s}[5m]))`, fallbackFilter))
-			fallbackMemoryByPod, fallbackMemoryErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (container_memory_working_set_bytes{%s})`, fallbackFilter))
-			if len(fallbackCPUByPod) > 0 || len(fallbackMemoryByPod) > 0 {
-				cpuByPod = fallbackCPUByPod
-				memoryByPod = fallbackMemoryByPod
-				cpuErr = fallbackCPUErr
-				memoryErr = fallbackMemoryErr
-			} else {
-				cpuErr = firstNonNilError(cpuErr, fallbackCPUErr)
-				memoryErr = firstNonNilError(memoryErr, fallbackMemoryErr)
-			}
-		}
-		if cpuErr != nil && memoryErr != nil {
+		usage := s.queryNamespacePodUsage(ctx, settings, clusterID, namespace, names)
+		if usage.cpuErr != nil && usage.memoryErr != nil {
 			if firstErr == nil {
-				firstErr = firstNonNilError(cpuErr, memoryErr)
+				firstErr = firstNonNilError(usage.cpuErr, usage.memoryErr)
 			}
 			continue
 		}
-
-		for _, name := range names {
-			usage := out[podMetricsKey(namespace, name)]
-			if value, ok := cpuByPod[name]; ok {
-				usage.CPUCores = value
-			}
-			if value, ok := memoryByPod[name]; ok {
-				usage.MemoryBytes = value
-			}
-			if usage.CPUCores > 0 || usage.MemoryBytes > 0 {
-				out[podMetricsKey(namespace, name)] = usage
-			}
-		}
+		mergeNamespacePodUsage(out, namespace, names, usage)
 	}
-
 	if len(out) == 0 && firstErr != nil {
 		return nil, firstErr
 	}
 	return out, nil
 }
 
+func groupPodNamesByNamespace(pods []podIdentity) map[string][]string {
+	grouped := make(map[string][]string)
+	seen := make(map[string]struct{}, len(pods))
+	for _, pod := range pods {
+		namespace := strings.TrimSpace(pod.Namespace)
+		name := strings.TrimSpace(pod.Name)
+		key := podMetricsKey(namespace, name)
+		if namespace == "" || name == "" {
+			continue
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		grouped[namespace] = append(grouped[namespace], name)
+	}
+	return grouped
+}
+
+type namespacePodUsage struct {
+	cpu       map[string]float64
+	memory    map[string]float64
+	cpuErr    error
+	memoryErr error
+}
+
+func (s *metricsSupport) queryNamespacePodUsage(ctx context.Context, settings domainsettings.PrometheusSettings, clusterID, namespace string, names []string) namespacePodUsage {
+	filter := buildPodSetMetricMatcher(namespace, names, clusterID, settings.ClusterLabel)
+	if filter == "" {
+		return namespacePodUsage{}
+	}
+	usage := s.queryPodUsageWithFilter(ctx, settings, filter)
+	if !hasPrometheusClusterMatcher(clusterID, settings.ClusterLabel) || len(usage.cpu) > 0 || len(usage.memory) > 0 {
+		return usage
+	}
+	fallback := s.queryPodUsageWithFilter(ctx, settings, buildPodSetMetricMatcher(namespace, names, "", ""))
+	if len(fallback.cpu) > 0 || len(fallback.memory) > 0 {
+		return fallback
+	}
+	usage.cpuErr = firstNonNilError(usage.cpuErr, fallback.cpuErr)
+	usage.memoryErr = firstNonNilError(usage.memoryErr, fallback.memoryErr)
+	return usage
+}
+
+func (s *metricsSupport) queryPodUsageWithFilter(ctx context.Context, settings domainsettings.PrometheusSettings, filter string) namespacePodUsage {
+	cpu, cpuErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (rate(container_cpu_usage_seconds_total{%s}[5m]))`, filter))
+	memory, memoryErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (container_memory_working_set_bytes{%s})`, filter))
+	return namespacePodUsage{cpu: cpu, memory: memory, cpuErr: cpuErr, memoryErr: memoryErr}
+}
+
+func mergeNamespacePodUsage(out map[string]podUsageValue, namespace string, names []string, values namespacePodUsage) {
+	for _, name := range names {
+		key := podMetricsKey(namespace, name)
+		usage := out[key]
+		if value, ok := values.cpu[name]; ok {
+			usage.CPUCores = value
+		}
+		if value, ok := values.memory[name]; ok {
+			usage.MemoryBytes = value
+		}
+		if usage.CPUCores > 0 || usage.MemoryBytes > 0 {
+			out[key] = usage
+		}
+	}
+}
+
 func hasPrometheusClusterMatcher(clusterID, clusterLabel string) bool {
 	return strings.TrimSpace(clusterID) != "" && strings.TrimSpace(clusterLabel) != ""
 }
 
-func (s *Service) canUseUnscopedPodMetricsFallback(ctx context.Context, baseURL, bearerToken, namespace string, podNames []string) (bool, error) {
+func (s *metricsSupport) canUseUnscopedPodMetricsFallback(ctx context.Context, baseURL, bearerToken, namespace string, podNames []string) (bool, error) {
 	filter := buildPodSetMetricMatcher(namespace, podNames, "", "")
 	if filter == "" {
 		return false, nil
@@ -643,7 +669,7 @@ func firstNonNilError(errors ...error) error {
 	return nil
 }
 
-func (s *Service) queryMetricSeries(ctx context.Context, baseURL, bearerToken string, definitions []metricDefinition, queryRange, step time.Duration) ([]domainresource.MetricSeriesView, string) {
+func (s *metricsSupport) queryMetricSeries(ctx context.Context, baseURL, bearerToken string, definitions []metricDefinition, queryRange, step time.Duration) ([]domainresource.MetricSeriesView, string) {
 	series := make([]domainresource.MetricSeriesView, 0, len(definitions))
 	var firstError string
 	for _, definition := range definitions {
@@ -668,7 +694,7 @@ func (s *Service) queryMetricSeries(ctx context.Context, baseURL, bearerToken st
 	return series, firstError
 }
 
-func (s *Service) queryMetricSeriesWithFallback(ctx context.Context, baseURL, bearerToken string, definitions, fallbackDefinitions []metricDefinition, namespace string, podNames []string, queryRange, step time.Duration) ([]domainresource.MetricSeriesView, string) {
+func (s *metricsSupport) queryMetricSeriesWithFallback(ctx context.Context, baseURL, bearerToken string, definitions, fallbackDefinitions []metricDefinition, namespace string, podNames []string, queryRange, step time.Duration) ([]domainresource.MetricSeriesView, string) {
 	series, firstError := s.queryMetricSeries(ctx, baseURL, bearerToken, definitions, queryRange, step)
 	if len(series) > 0 || len(fallbackDefinitions) == 0 {
 		return series, firstError
@@ -718,7 +744,7 @@ func labelsMatchSelector(labels map[string]string, selector map[string]string) b
 	return true
 }
 
-func (s *Service) queryPrometheusRange(ctx context.Context, baseURL, bearerToken, promQuery string, queryRange, step time.Duration) ([]domainresource.MetricPointView, float64, error) {
+func (s *metricsSupport) queryPrometheusRange(ctx context.Context, baseURL, bearerToken, promQuery string, queryRange, step time.Duration) ([]domainresource.MetricPointView, float64, error) {
 	end := time.Now().UTC()
 	start := end.Add(-queryRange)
 	requestURL, err := url.Parse(strings.TrimRight(baseURL, "/") + "/api/v1/query_range")
@@ -743,7 +769,7 @@ func (s *Service) queryPrometheusRange(ctx context.Context, baseURL, bearerToken
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode >= http.StatusBadRequest {
 		return nil, 0, fmt.Errorf("%w: prometheus returned %s", apperrors.ErrClusterUnready, response.Status)
 	}
@@ -792,7 +818,7 @@ func (s *Service) queryPrometheusRange(ctx context.Context, baseURL, bearerToken
 	return points, latest, nil
 }
 
-func (s *Service) queryPrometheusInstantByPod(ctx context.Context, baseURL, bearerToken, promQuery string) (map[string]float64, error) {
+func (s *metricsSupport) queryPrometheusInstantByPod(ctx context.Context, baseURL, bearerToken, promQuery string) (map[string]float64, error) {
 	requestURL, err := url.Parse(strings.TrimRight(baseURL, "/") + "/api/v1/query")
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid prometheus url", apperrors.ErrInvalidArgument)
@@ -814,7 +840,7 @@ func (s *Service) queryPrometheusInstantByPod(ctx context.Context, baseURL, bear
 	if err != nil {
 		return nil, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode >= 400 {
 		return nil, fmt.Errorf("prometheus request failed with status %d", response.StatusCode)

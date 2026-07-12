@@ -17,7 +17,6 @@ import (
 	"github.com/gorilla/websocket"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
-	"k8s.io/client-go/tools/remotecommand"
 )
 
 type Registry struct {
@@ -279,7 +278,7 @@ func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container s
 	if err != nil {
 		return fmt.Errorf("execute agent stream request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("agent stream request failed with status %d", resp.StatusCode)
 	}
@@ -305,7 +304,7 @@ func (c *Client) ExecPod(ctx context.Context, namespace, name, container, comman
 	return payload.Data, nil
 }
 
-func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue remotecommand.TerminalSizeQueue) error {
+func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue) error {
 	values := url.Values{}
 	values.Set("namespace", namespace)
 	if container != "" {
@@ -326,11 +325,14 @@ func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, contain
 	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, endpoint, headers)
 	if err != nil {
 		if resp != nil {
+			if resp.Body != nil {
+				_ = resp.Body.Close()
+			}
 			return fmt.Errorf("agent terminal websocket failed with status %d", resp.StatusCode)
 		}
 		return fmt.Errorf("connect agent terminal websocket: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	var writeMu sync.Mutex
 	errCh := make(chan error, 1)
@@ -400,7 +402,7 @@ func (c *Client) copyAgentTerminalInput(ctx context.Context, conn *websocket.Con
 	}
 }
 
-func (c *Client) forwardAgentTerminalResizes(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, sizeQueue remotecommand.TerminalSizeQueue) {
+func (c *Client) forwardAgentTerminalResizes(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, sizeQueue domainresource.TerminalSizeQueue) {
 	for {
 		size := sizeQueue.Next()
 		if size == nil || ctx.Err() != nil {
@@ -1296,13 +1298,16 @@ func (c *Client) StreamPortForward(ctx context.Context, sessionID string, local 
 		headers.Set("Authorization", "Bearer "+c.token)
 	}
 	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, endpoint, headers)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if err != nil {
 		if resp != nil {
 			return fmt.Errorf("agent port-forward tunnel failed with status %d", resp.StatusCode)
 		}
 		return fmt.Errorf("connect agent port-forward tunnel: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	return bridgeAgentPortForwardTunnel(ctx, conn, local)
 }
 
@@ -1450,7 +1455,7 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 	if err != nil {
 		return fmt.Errorf("execute agent request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("agent request failed with status %d", resp.StatusCode)
 	}

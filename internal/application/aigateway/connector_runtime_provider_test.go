@@ -15,53 +15,7 @@ import (
 func TestConnectorRuntimeProviderDiscoversManifestAndInvokesThroughGateway(t *testing.T) {
 	const runtimeToken = "runtime-secret-token"
 	var invoked bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/manifest":
-			if r.Header.Get("Authorization") != "Bearer "+runtimeToken {
-				t.Fatalf("manifest request missing bearer token: %q", r.Header.Get("Authorization"))
-			}
-			writeJSON(t, w, map[string]any{
-				"id":          "feishu",
-				"name":        "Feishu Connector",
-				"description": "Feishu connector runtime.",
-				"actions": []map[string]any{
-					{
-						"name":        "feishu.message.send_text",
-						"description": "Send a text message.",
-						"inputSchema": map[string]any{
-							"type":     "object",
-							"required": []string{"receiveIdType", "receiveId", "text"},
-						},
-					},
-				},
-			})
-		case "/actions/feishu.message.send_text":
-			if r.Method != http.MethodPost {
-				t.Fatalf("action method = %s, want POST", r.Method)
-			}
-			if r.Header.Get("Authorization") != "Bearer "+runtimeToken {
-				t.Fatalf("action request missing bearer token: %q", r.Header.Get("Authorization"))
-			}
-			var input map[string]any
-			if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-				t.Fatalf("decode action input: %v", err)
-			}
-			if input["text"] != "hello" || input["receiveId"] != "chat-1" {
-				t.Fatalf("unexpected action input: %#v", input)
-			}
-			invoked = true
-			writeJSON(t, w, map[string]any{
-				"ok": true,
-				"output": map[string]any{
-					"messageId": "msg-1",
-					"status":    "sent",
-				},
-			})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
+	server := newConnectorRuntimeTestServer(t, runtimeToken, &invoked)
 	defer server.Close()
 
 	provider, err := DiscoverConnectorRuntime(
@@ -88,12 +42,7 @@ func TestConnectorRuntimeProviderDiscoversManifestAndInvokesThroughGateway(t *te
 	if err != nil {
 		t.Fatalf("Capabilities returned error: %v", err)
 	}
-	if len(manifest.Tools) != 1 || manifest.Tools[0].Name != "feishu.message.send_text" {
-		t.Fatalf("expected connector tool in manifest, got %#v", manifest.Tools)
-	}
-	if manifest.Tools[0].RiskLevel != domainaigateway.RiskLevelMutate || manifest.Tools[0].PermissionKeys[0] != appaccess.PermAIGatewayInvoke {
-		t.Fatalf("unexpected connector tool policy metadata: %#v", manifest.Tools[0])
-	}
+	assertConnectorRuntimeManifest(t, manifest)
 
 	result, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
 		ToolName: "feishu.message.send_text",
@@ -106,30 +55,92 @@ func TestConnectorRuntimeProviderDiscoversManifestAndInvokesThroughGateway(t *te
 	if err != nil {
 		t.Fatalf("InvokeTool returned error: %v", err)
 	}
-	if !invoked {
-		t.Fatalf("expected connector runtime action to be invoked")
+	assertConnectorRuntimeInvocation(t, result, invoked, runtimeToken)
+	assertConnectorRuntimeAudit(t, repo, audit, runtimeToken)
+}
+
+func newConnectorRuntimeTestServer(t *testing.T, runtimeToken string, invoked *bool) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/manifest":
+			writeConnectorRuntimeManifest(t, w, r, runtimeToken)
+		case "/actions/feishu.message.send_text":
+			invokeConnectorRuntimeAction(t, w, r, runtimeToken, invoked)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func writeConnectorRuntimeManifest(t *testing.T, w http.ResponseWriter, r *http.Request, runtimeToken string) {
+	t.Helper()
+	if r.Header.Get("Authorization") != "Bearer "+runtimeToken {
+		t.Fatalf("manifest request missing bearer token: %q", r.Header.Get("Authorization"))
 	}
-	output := result.Output.(map[string]any)
+	writeJSON(t, w, map[string]any{
+		"id": "feishu", "name": "Feishu Connector", "description": "Feishu connector runtime.",
+		"actions": []map[string]any{{
+			"name": "feishu.message.send_text", "description": "Send a text message.",
+			"inputSchema": map[string]any{"type": "object", "required": []string{"receiveIdType", "receiveId", "text"}},
+		}},
+	})
+}
+
+func invokeConnectorRuntimeAction(t *testing.T, w http.ResponseWriter, r *http.Request, runtimeToken string, invoked *bool) {
+	t.Helper()
+	if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer "+runtimeToken {
+		t.Fatalf("invalid action request: method=%s authorization=%q", r.Method, r.Header.Get("Authorization"))
+	}
+	var input map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		t.Fatalf("decode action input: %v", err)
+	}
+	if input["text"] != "hello" || input["receiveId"] != "chat-1" {
+		t.Fatalf("unexpected action input: %#v", input)
+	}
+	*invoked = true
+	writeJSON(t, w, map[string]any{"ok": true, "output": map[string]any{"messageId": "msg-1", "status": "sent"}})
+}
+
+func assertConnectorRuntimeManifest(t *testing.T, manifest domainaigateway.Manifest) {
+	t.Helper()
+	if len(manifest.Tools) != 1 || manifest.Tools[0].Name != "feishu.message.send_text" {
+		t.Fatalf("connector manifest tools: %#v", manifest.Tools)
+	}
+	tool := manifest.Tools[0]
+	if tool.RiskLevel != domainaigateway.RiskLevelMutate || tool.PermissionKeys[0] != appaccess.PermAIGatewayInvoke {
+		t.Fatalf("connector tool policy: %#v", tool)
+	}
+}
+
+func assertConnectorRuntimeInvocation(t *testing.T, result domainaigateway.ToolInvocationResult, invoked bool, runtimeToken string) {
+	t.Helper()
+	if !invoked {
+		t.Fatal("connector runtime action was not invoked")
+	}
+	output := mustValueAs[map[string]any](t, result.Output)
 	if output["messageId"] != "msg-1" || output["status"] != "sent" {
-		t.Fatalf("unexpected connector output: %#v", output)
+		t.Fatalf("connector output: %#v", output)
 	}
 	if result.RelatedIDs["pluginId"] != "opensoha.feishu" || result.RelatedIDs["connectorId"] != "feishu" || result.RelatedIDs["actionName"] != "feishu.message.send_text" {
-		t.Fatalf("unexpected related ids: %#v", result.RelatedIDs)
+		t.Fatalf("connector related ids: %#v", result.RelatedIDs)
 	}
 	for key, value := range result.RelatedIDs {
 		if strings.Contains(strings.ToLower(key), "token") || strings.Contains(strings.ToLower(key), "secret") || value == runtimeToken {
-			t.Fatalf("related ids leaked runtime credential: %#v", result.RelatedIDs)
+			t.Fatalf("related ids leaked credential: %#v", result.RelatedIDs)
 		}
 	}
+}
+
+func assertConnectorRuntimeAudit(t *testing.T, repo *memoryGatewayRepository, audit *captureAuditRecorder, runtimeToken string) {
+	t.Helper()
 	if len(repo.auditLogs) != 1 || repo.auditLogs[0].ToolName != "feishu.message.send_text" || repo.auditLogs[0].Result != "success" {
-		t.Fatalf("expected Gateway audit log for connector invocation, got %#v", repo.auditLogs)
+		t.Fatalf("connector audit log: %#v", repo.auditLogs)
 	}
-	metadataRelatedIDs, ok := repo.auditLogs[0].Metadata["relatedIds"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected connector related ids in audit metadata, got %#v", repo.auditLogs[0].Metadata)
-	}
-	if metadataRelatedIDs["pluginId"] != "opensoha.feishu" || metadataRelatedIDs["connectorId"] != "feishu" || metadataRelatedIDs["actionName"] != "feishu.message.send_text" {
-		t.Fatalf("expected connector related ids in audit metadata, got %#v", metadataRelatedIDs)
+	related := mustValueAs[map[string]any](t, repo.auditLogs[0].Metadata["relatedIds"])
+	if related["pluginId"] != "opensoha.feishu" || related["connectorId"] != "feishu" || related["actionName"] != "feishu.message.send_text" {
+		t.Fatalf("audit related ids: %#v", related)
 	}
 	if strings.Contains(jsonString(t, repo.auditLogs[0]), runtimeToken) || strings.Contains(jsonString(t, audit.entries), runtimeToken) {
 		t.Fatalf("audit leaked runtime token: gateway=%#v generic=%#v", repo.auditLogs, audit.entries)

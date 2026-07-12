@@ -15,60 +15,126 @@ import (
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/keyring"
 )
 
-type DeliveryService interface {
+type DeliveryApplicationService interface {
 	GetApplicationDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationDetail, error)
 	GetApplicationRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationRuntimeDetail, error)
 	GetApplicationWorkloadRuntimeDetail(context.Context, domainidentity.Principal, string, string, string) (domaindelivery.ApplicationWorkloadRuntimeDetail, error)
 	GetApplicationEnvironmentDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationEnvironmentDetail, error)
 	TriggerApplicationDeliveryAction(context.Context, domainidentity.Principal, string, domaindelivery.ApplicationDeliveryActionInput) (domaindelivery.ApplicationDeliveryActionResult, error)
+}
+
+type DeliveryReleaseService interface {
 	ListReleaseBoard(context.Context, domainidentity.Principal) ([]domaindelivery.ReleaseBoardEntry, error)
 	ListTargetCandidates(context.Context, domainidentity.Principal, string, string, string) ([]domaindelivery.TargetCandidate, error)
 	ListReleaseBundles(context.Context, domainidentity.Principal, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error)
 	GetReleaseBundle(context.Context, domainidentity.Principal, string) (domaindelivery.ReleaseBundle, error)
+}
+
+type DeliveryExecutionQueryService interface {
 	ListExecutionTasks(context.Context, domainidentity.Principal, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error)
 	GetExecutionTask(context.Context, domainidentity.Principal, string) (domaindelivery.ExecutionTask, error)
 	ListExecutionLogs(context.Context, domainidentity.Principal, string, int) ([]domaindelivery.ExecutionLog, error)
 	ListArtifacts(context.Context, domainidentity.Principal, domaindelivery.ArtifactFilter) ([]domaindelivery.ExecutionArtifact, error)
 	ListExecutionArtifacts(context.Context, domainidentity.Principal, string) ([]domaindelivery.ExecutionArtifact, error)
 	ListReleaseBundleArtifacts(context.Context, domainidentity.Principal, string) ([]domaindelivery.ExecutionArtifact, error)
+}
+
+type DeliveryRuntimeService interface {
 	GetBuildRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.RuntimeObjectDetail, error)
 	GetWorkflowRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.RuntimeObjectDetail, error)
 	GetReleaseRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.RuntimeObjectDetail, error)
 	GetReleaseBundleRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.RuntimeObjectDetail, error)
 	GetExecutionTaskRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.RuntimeObjectDetail, error)
+}
+
+type DeliveryBlueprintService interface {
 	ListDeliveryBlueprints(context.Context, domainidentity.Principal) ([]domaindelivery.DeliveryBlueprint, error)
 	CreateDeliveryBlueprint(context.Context, domainidentity.Principal, domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error)
 	UpdateDeliveryBlueprint(context.Context, domainidentity.Principal, string, domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error)
 	GetDeliveryBlueprintUsage(context.Context, domainidentity.Principal, string) (domaincatalog.TemplateUsageSummary, error)
 	RenderDeliveryBlueprintSpec(context.Context, domainidentity.Principal, string) (domaindelivery.RenderedDeliverySpec, error)
 	BootstrapApplicationFromBlueprint(context.Context, domainidentity.Principal, string) (domaindelivery.BlueprintBootstrapResult, error)
+}
+
+type DeliveryDraftPlanService interface {
 	CreateDeliveryDraft(context.Context, domainidentity.Principal, domaindelivery.DeliveryDraftInput) (domaindelivery.DeliveryDraft, error)
 	GetDeliveryDraft(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryDraft, error)
 	ConfirmDeliveryDraft(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryDraftConfirmResult, error)
 	CreateDeliveryPlan(context.Context, domainidentity.Principal, domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error)
 	GetDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlan, error)
 	ConfirmDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlanConfirmResult, error)
+}
+
+type DeliveryExecutionActionService interface {
 	CancelExecutionTask(context.Context, domainidentity.Principal, string, domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error)
 	RetryExecutionTask(context.Context, domainidentity.Principal, string, domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error)
+}
+
+type DeliveryRunnerService interface {
 	GetExecutionTaskForRunner(context.Context, string) (domaindelivery.ExecutionTask, error)
 	RecordCallback(context.Context, domaindelivery.ExecutionCallbackInput) (domaindelivery.ExecutionTask, error)
 	ClaimExecutionTask(context.Context, []string, string, string) (domaindelivery.ExecutionTask, error)
 }
 
+type DeliveryService interface {
+	DeliveryApplicationService
+	DeliveryReleaseService
+	DeliveryExecutionQueryService
+	DeliveryRuntimeService
+	DeliveryBlueprintService
+	DeliveryDraftPlanService
+	DeliveryExecutionActionService
+	DeliveryRunnerService
+}
+
+type DeliveryServices struct {
+	Applications DeliveryApplicationService
+	Releases     DeliveryReleaseService
+	Executions   DeliveryExecutionQueryService
+	Runtime      DeliveryRuntimeService
+	Blueprints   DeliveryBlueprintService
+	Drafts       DeliveryDraftPlanService
+	Actions      DeliveryExecutionActionService
+	Runner       DeliveryRunnerService
+}
+
 type DeliveryHandler struct {
-	service     DeliveryService
-	runnerToken string
+	applications DeliveryApplicationService
+	releases     DeliveryReleaseService
+	executions   DeliveryExecutionQueryService
+	runtime      DeliveryRuntimeService
+	blueprints   DeliveryBlueprintService
+	drafts       DeliveryDraftPlanService
+	actions      DeliveryExecutionActionService
+	runner       DeliveryRunnerService
+	runnerKeys   keyring.Ring
 }
 
 func NewDeliveryHandler(service DeliveryService, runnerToken string) *DeliveryHandler {
-	return &DeliveryHandler{service: service, runnerToken: runnerToken}
+	return NewDeliveryHandlerWithRunnerKeys(service, legacyRunnerKeyring(runnerToken))
+}
+
+func NewDeliveryHandlerWithRunnerKeys(service DeliveryService, keys keyring.Ring) *DeliveryHandler {
+	return NewDeliveryHandlerWithServices(DeliveryServices{
+		Applications: service, Releases: service, Executions: service, Runtime: service,
+		Blueprints: service, Drafts: service, Actions: service, Runner: service,
+	}, keys)
+}
+
+func NewDeliveryHandlerWithServices(services DeliveryServices, keys keyring.Ring) *DeliveryHandler {
+	return &DeliveryHandler{
+		applications: services.Applications, releases: services.Releases, executions: services.Executions,
+		runtime: services.Runtime, blueprints: services.Blueprints, drafts: services.Drafts,
+		actions: services.Actions, runner: services.Runner, runnerKeys: keys,
+	}
 }
 
 func (h *DeliveryHandler) GetApplicationDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetApplicationDetail(c.Request.Context(), principal, c.Param("applicationID"))
+	item, err := h.applications.GetApplicationDetail(c.Request.Context(), principal, c.Param("applicationID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -78,7 +144,7 @@ func (h *DeliveryHandler) GetApplicationDetail(c *gin.Context) {
 
 func (h *DeliveryHandler) GetApplicationRuntimeDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetApplicationRuntimeDetail(c.Request.Context(), principal, c.Param("applicationID"))
+	item, err := h.applications.GetApplicationRuntimeDetail(c.Request.Context(), principal, c.Param("applicationID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -88,7 +154,7 @@ func (h *DeliveryHandler) GetApplicationRuntimeDetail(c *gin.Context) {
 
 func (h *DeliveryHandler) GetApplicationWorkloadRuntimeDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetApplicationWorkloadRuntimeDetail(
+	item, err := h.applications.GetApplicationWorkloadRuntimeDetail(
 		c.Request.Context(),
 		principal,
 		c.Param("applicationID"),
@@ -104,7 +170,7 @@ func (h *DeliveryHandler) GetApplicationWorkloadRuntimeDetail(c *gin.Context) {
 
 func (h *DeliveryHandler) GetApplicationEnvironmentDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetApplicationEnvironmentDetail(c.Request.Context(), principal, c.Param("applicationEnvironmentID"))
+	item, err := h.applications.GetApplicationEnvironmentDetail(c.Request.Context(), principal, c.Param("applicationEnvironmentID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -119,7 +185,7 @@ func (h *DeliveryHandler) TriggerApplicationDeliveryAction(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.TriggerApplicationDeliveryAction(c.Request.Context(), principal, c.Param("applicationID"), domaindelivery.ApplicationDeliveryActionInput{
+	item, err := h.applications.TriggerApplicationDeliveryAction(c.Request.Context(), principal, c.Param("applicationID"), domaindelivery.ApplicationDeliveryActionInput{
 		Action:                   domaindelivery.ApplicationDeliveryActionKind(req.Action),
 		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
 		TargetID:                 req.TargetID,
@@ -141,7 +207,7 @@ func (h *DeliveryHandler) TriggerApplicationDeliveryAction(c *gin.Context) {
 
 func (h *DeliveryHandler) ListReleaseBoard(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListReleaseBoard(c.Request.Context(), principal)
+	items, err := h.releases.ListReleaseBoard(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -151,7 +217,7 @@ func (h *DeliveryHandler) ListReleaseBoard(c *gin.Context) {
 
 func (h *DeliveryHandler) ListTargetCandidates(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListTargetCandidates(c.Request.Context(), principal, c.Query("clusterId"), c.Query("namespace"), c.Query("search"))
+	items, err := h.releases.ListTargetCandidates(c.Request.Context(), principal, c.Query("clusterId"), c.Query("namespace"), c.Query("search"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -161,7 +227,7 @@ func (h *DeliveryHandler) ListTargetCandidates(c *gin.Context) {
 
 func (h *DeliveryHandler) ListReleaseBundles(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListReleaseBundles(c.Request.Context(), principal, domaindelivery.ReleaseBundleFilter{
+	items, err := h.releases.ListReleaseBundles(c.Request.Context(), principal, domaindelivery.ReleaseBundleFilter{
 		ApplicationID:            c.Query("applicationId"),
 		ApplicationEnvironmentID: c.Query("applicationEnvironmentId"),
 		Limit:                    parseLimit(c.Query("limit"), 50),
@@ -175,7 +241,7 @@ func (h *DeliveryHandler) ListReleaseBundles(c *gin.Context) {
 
 func (h *DeliveryHandler) GetReleaseBundle(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetReleaseBundle(c.Request.Context(), principal, c.Param("bundleID"))
+	item, err := h.releases.GetReleaseBundle(c.Request.Context(), principal, c.Param("bundleID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -185,7 +251,7 @@ func (h *DeliveryHandler) GetReleaseBundle(c *gin.Context) {
 
 func (h *DeliveryHandler) ListExecutionTasks(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListExecutionTasks(c.Request.Context(), principal, domaindelivery.ExecutionTaskFilter{
+	items, err := h.executions.ListExecutionTasks(c.Request.Context(), principal, domaindelivery.ExecutionTaskFilter{
 		ApplicationID:            c.Query("applicationId"),
 		ApplicationEnvironmentID: c.Query("applicationEnvironmentId"),
 		ReleaseBundleID:          c.Query("releaseBundleId"),
@@ -202,7 +268,7 @@ func (h *DeliveryHandler) ListExecutionTasks(c *gin.Context) {
 
 func (h *DeliveryHandler) GetExecutionTask(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetExecutionTask(c.Request.Context(), principal, c.Param("taskID"))
+	item, err := h.executions.GetExecutionTask(c.Request.Context(), principal, c.Param("taskID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -212,7 +278,7 @@ func (h *DeliveryHandler) GetExecutionTask(c *gin.Context) {
 
 func (h *DeliveryHandler) ListExecutionLogs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListExecutionLogs(c.Request.Context(), principal, c.Param("taskID"), parseLimit(c.Query("limit"), 200))
+	items, err := h.executions.ListExecutionLogs(c.Request.Context(), principal, c.Param("taskID"), parseLimit(c.Query("limit"), 200))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -222,7 +288,7 @@ func (h *DeliveryHandler) ListExecutionLogs(c *gin.Context) {
 
 func (h *DeliveryHandler) ListArtifacts(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListArtifacts(c.Request.Context(), principal, domaindelivery.ArtifactFilter{
+	items, err := h.executions.ListArtifacts(c.Request.Context(), principal, domaindelivery.ArtifactFilter{
 		ApplicationID:            c.Query("applicationId"),
 		ApplicationEnvironmentID: c.Query("applicationEnvironmentId"),
 		WorkflowRunID:            c.Query("workflowRunId"),
@@ -242,7 +308,7 @@ func (h *DeliveryHandler) ListArtifacts(c *gin.Context) {
 
 func (h *DeliveryHandler) ListExecutionArtifacts(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListExecutionArtifacts(c.Request.Context(), principal, c.Param("taskID"))
+	items, err := h.executions.ListExecutionArtifacts(c.Request.Context(), principal, c.Param("taskID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -252,7 +318,7 @@ func (h *DeliveryHandler) ListExecutionArtifacts(c *gin.Context) {
 
 func (h *DeliveryHandler) GetBuildRuntimeDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetBuildRuntimeDetail(c.Request.Context(), principal, c.Param("buildID"))
+	item, err := h.runtime.GetBuildRuntimeDetail(c.Request.Context(), principal, c.Param("buildID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -262,7 +328,7 @@ func (h *DeliveryHandler) GetBuildRuntimeDetail(c *gin.Context) {
 
 func (h *DeliveryHandler) GetWorkflowRuntimeDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetWorkflowRuntimeDetail(c.Request.Context(), principal, c.Param("workflowRunID"))
+	item, err := h.runtime.GetWorkflowRuntimeDetail(c.Request.Context(), principal, c.Param("workflowRunID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -272,7 +338,7 @@ func (h *DeliveryHandler) GetWorkflowRuntimeDetail(c *gin.Context) {
 
 func (h *DeliveryHandler) GetReleaseRuntimeDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetReleaseRuntimeDetail(c.Request.Context(), principal, c.Param("releaseID"))
+	item, err := h.runtime.GetReleaseRuntimeDetail(c.Request.Context(), principal, c.Param("releaseID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -282,7 +348,7 @@ func (h *DeliveryHandler) GetReleaseRuntimeDetail(c *gin.Context) {
 
 func (h *DeliveryHandler) GetReleaseBundleRuntimeDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetReleaseBundleRuntimeDetail(c.Request.Context(), principal, c.Param("bundleID"))
+	item, err := h.runtime.GetReleaseBundleRuntimeDetail(c.Request.Context(), principal, c.Param("bundleID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -292,7 +358,7 @@ func (h *DeliveryHandler) GetReleaseBundleRuntimeDetail(c *gin.Context) {
 
 func (h *DeliveryHandler) GetExecutionTaskRuntimeDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetExecutionTaskRuntimeDetail(c.Request.Context(), principal, c.Param("taskID"))
+	item, err := h.runtime.GetExecutionTaskRuntimeDetail(c.Request.Context(), principal, c.Param("taskID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -302,7 +368,7 @@ func (h *DeliveryHandler) GetExecutionTaskRuntimeDetail(c *gin.Context) {
 
 func (h *DeliveryHandler) ListReleaseBundleArtifacts(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListReleaseBundleArtifacts(c.Request.Context(), principal, c.Param("bundleID"))
+	items, err := h.executions.ListReleaseBundleArtifacts(c.Request.Context(), principal, c.Param("bundleID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -312,7 +378,7 @@ func (h *DeliveryHandler) ListReleaseBundleArtifacts(c *gin.Context) {
 
 func (h *DeliveryHandler) ListDeliveryBlueprints(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListDeliveryBlueprints(c.Request.Context(), principal)
+	items, err := h.blueprints.ListDeliveryBlueprints(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -327,7 +393,7 @@ func (h *DeliveryHandler) CreateDeliveryBlueprint(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateDeliveryBlueprint(c.Request.Context(), principal, input)
+	item, err := h.blueprints.CreateDeliveryBlueprint(c.Request.Context(), principal, input)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -342,7 +408,7 @@ func (h *DeliveryHandler) UpdateDeliveryBlueprint(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateDeliveryBlueprint(c.Request.Context(), principal, c.Param("blueprintID"), input)
+	item, err := h.blueprints.UpdateDeliveryBlueprint(c.Request.Context(), principal, c.Param("blueprintID"), input)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -352,7 +418,7 @@ func (h *DeliveryHandler) UpdateDeliveryBlueprint(c *gin.Context) {
 
 func (h *DeliveryHandler) GetDeliveryBlueprintUsage(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetDeliveryBlueprintUsage(c.Request.Context(), principal, c.Param("blueprintID"))
+	item, err := h.blueprints.GetDeliveryBlueprintUsage(c.Request.Context(), principal, c.Param("blueprintID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -362,7 +428,7 @@ func (h *DeliveryHandler) GetDeliveryBlueprintUsage(c *gin.Context) {
 
 func (h *DeliveryHandler) RenderDeliveryBlueprintSpec(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.RenderDeliveryBlueprintSpec(c.Request.Context(), principal, c.Param("blueprintID"))
+	item, err := h.blueprints.RenderDeliveryBlueprintSpec(c.Request.Context(), principal, c.Param("blueprintID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -372,7 +438,7 @@ func (h *DeliveryHandler) RenderDeliveryBlueprintSpec(c *gin.Context) {
 
 func (h *DeliveryHandler) BootstrapApplicationFromBlueprint(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.BootstrapApplicationFromBlueprint(c.Request.Context(), principal, c.Param("blueprintID"))
+	item, err := h.blueprints.BootstrapApplicationFromBlueprint(c.Request.Context(), principal, c.Param("blueprintID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -387,7 +453,7 @@ func (h *DeliveryHandler) CreateDeliveryDraft(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateDeliveryDraft(c.Request.Context(), principal, input)
+	item, err := h.drafts.CreateDeliveryDraft(c.Request.Context(), principal, input)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -397,7 +463,7 @@ func (h *DeliveryHandler) CreateDeliveryDraft(c *gin.Context) {
 
 func (h *DeliveryHandler) GetDeliveryDraft(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetDeliveryDraft(c.Request.Context(), principal, c.Param("draftID"))
+	item, err := h.drafts.GetDeliveryDraft(c.Request.Context(), principal, c.Param("draftID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -407,7 +473,7 @@ func (h *DeliveryHandler) GetDeliveryDraft(c *gin.Context) {
 
 func (h *DeliveryHandler) ConfirmDeliveryDraft(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.ConfirmDeliveryDraft(c.Request.Context(), principal, c.Param("draftID"))
+	item, err := h.drafts.ConfirmDeliveryDraft(c.Request.Context(), principal, c.Param("draftID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -422,7 +488,7 @@ func (h *DeliveryHandler) CreateDeliveryPlan(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateDeliveryPlan(c.Request.Context(), principal, deliveryPlanInputFromRequest(req))
+	item, err := h.drafts.CreateDeliveryPlan(c.Request.Context(), principal, deliveryPlanInputFromRequest(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -432,7 +498,7 @@ func (h *DeliveryHandler) CreateDeliveryPlan(c *gin.Context) {
 
 func (h *DeliveryHandler) GetDeliveryPlan(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetDeliveryPlan(c.Request.Context(), principal, c.Param("planID"))
+	item, err := h.drafts.GetDeliveryPlan(c.Request.Context(), principal, c.Param("planID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -442,7 +508,7 @@ func (h *DeliveryHandler) GetDeliveryPlan(c *gin.Context) {
 
 func (h *DeliveryHandler) ConfirmDeliveryPlan(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.ConfirmDeliveryPlan(c.Request.Context(), principal, c.Param("planID"))
+	item, err := h.drafts.ConfirmDeliveryPlan(c.Request.Context(), principal, c.Param("planID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -457,7 +523,7 @@ func (h *DeliveryHandler) CancelExecutionTask(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CancelExecutionTask(c.Request.Context(), principal, c.Param("taskID"), domaindelivery.ExecutionTaskActionInput{
+	item, err := h.actions.CancelExecutionTask(c.Request.Context(), principal, c.Param("taskID"), domaindelivery.ExecutionTaskActionInput{
 		Reason: req.Reason,
 	})
 	if err != nil {
@@ -474,7 +540,7 @@ func (h *DeliveryHandler) RetryExecutionTask(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.RetryExecutionTask(c.Request.Context(), principal, c.Param("taskID"), domaindelivery.ExecutionTaskActionInput{
+	item, err := h.actions.RetryExecutionTask(c.Request.Context(), principal, c.Param("taskID"), domaindelivery.ExecutionTaskActionInput{
 		Reason: req.Reason,
 	})
 	if err != nil {
@@ -485,11 +551,11 @@ func (h *DeliveryHandler) RetryExecutionTask(c *gin.Context) {
 }
 
 func (h *DeliveryHandler) GetExecutionTaskRunnerStatus(c *gin.Context) {
-	if !authorizeDeliveryRunner(c, h.runnerToken) {
+	if !authorizeDeliveryRunnerKeys(c, h.runnerKeys) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid runner token")
 		return
 	}
-	item, err := h.service.GetExecutionTaskForRunner(c.Request.Context(), c.Param("taskID"))
+	item, err := h.runner.GetExecutionTaskForRunner(c.Request.Context(), c.Param("taskID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -503,7 +569,7 @@ func (h *DeliveryHandler) RecordExecutionCallback(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid execution callback payload")
 		return
 	}
-	item, err := h.service.RecordCallback(c.Request.Context(), domaindelivery.ExecutionCallbackInput{
+	item, err := h.runner.RecordCallback(c.Request.Context(), domaindelivery.ExecutionCallbackInput{
 		CallbackToken: req.CallbackToken,
 		Status:        req.Status,
 		Payload:       req.Payload,
@@ -516,7 +582,7 @@ func (h *DeliveryHandler) RecordExecutionCallback(c *gin.Context) {
 }
 
 func (h *DeliveryHandler) ClaimExecutionTask(c *gin.Context) {
-	if !authorizeDeliveryRunner(c, h.runnerToken) {
+	if !authorizeDeliveryRunnerKeys(c, h.runnerKeys) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid runner token")
 		return
 	}
@@ -525,7 +591,7 @@ func (h *DeliveryHandler) ClaimExecutionTask(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid execution claim payload")
 		return
 	}
-	item, err := h.service.ClaimExecutionTask(c.Request.Context(), req.ProviderKinds, req.AgentID, req.RuntimeEndpoint)
+	item, err := h.runner.ClaimExecutionTask(c.Request.Context(), req.ProviderKinds, req.AgentID, req.RuntimeEndpoint)
 	if err != nil {
 		writeError(c, err)
 		return

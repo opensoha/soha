@@ -223,9 +223,7 @@ func (s *Service) enforceAccessPolicyConditions(ctx context.Context, principal d
 		if !gatewayResourceScopeMatches(policy.ResourceScopes, invocationScope) {
 			continue
 		}
-		for _, limit := range gatewayRateLimitRules(policy.Conditions, policy.ID) {
-			rateLimits = append(rateLimits, limit)
-		}
+		rateLimits = append(rateLimits, gatewayRateLimitRules(policy.Conditions, policy.ID)...)
 		for _, limit := range gatewayBudgetLimitRules(policy.Conditions, policy.ID) {
 			if err := s.enforceGatewayInvocationLimit(ctx, principal, aiClientID, tool.Name, limit); err != nil {
 				return out, redactionSummary, err
@@ -319,48 +317,9 @@ func (s *Service) activeAccessPolicies(ctx context.Context, principal domainiden
 	if repo == nil {
 		return nil, nil
 	}
-	aiClientID = strings.TrimSpace(aiClientID)
-	out := make([]domainaigateway.AccessPolicy, 0)
-	seen := map[string]struct{}{}
-	appendPolicies := func(subjectType, subjectID string) error {
-		subjectType = normalizeSubjectType(subjectType)
-		subjectID = strings.TrimSpace(subjectID)
-		if subjectType == "" || subjectID == "" {
-			return nil
-		}
-		items, err := repo.ListActiveAccessPolicies(ctx, subjectType, subjectID, aiClientID)
-		if err != nil {
-			return err
-		}
-		for _, item := range items {
-			if _, ok := seen[item.ID]; ok {
-				continue
-			}
-			seen[item.ID] = struct{}{}
-			out = append(out, item)
-		}
-		return nil
-	}
-	subjectType, subjectID := gatewaySubject(principal)
-	if err := appendPolicies(subjectType, subjectID); err != nil {
-		return nil, err
-	}
-	for _, role := range principal.Roles {
-		if err := appendPolicies("role", role); err != nil {
-			return nil, err
-		}
-	}
-	for _, team := range principal.Teams {
-		if err := appendPolicies("team", team); err != nil {
-			return nil, err
-		}
-	}
-	if aiClientID != "" {
-		if err := appendPolicies("ai_client", aiClientID); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return activeItemsForPrincipal(principal, aiClientID, func(subjectType, subjectID, clientID string) ([]domainaigateway.AccessPolicy, error) {
+		return repo.ListActiveAccessPolicies(ctx, subjectType, subjectID, clientID)
+	}, func(item domainaigateway.AccessPolicy) string { return item.ID })
 }
 func (s *Service) authorizeSkillBinding(ctx context.Context, principal domainidentity.Principal, aiClientID, skillID string, tool domainaigateway.ToolCapability) error {
 	bindings, err := s.activeSkillBindings(ctx, principal, aiClientID)
@@ -381,45 +340,48 @@ func (s *Service) activeSkillBindings(ctx context.Context, principal domainident
 	if repo == nil {
 		return nil, nil
 	}
+	return activeItemsForPrincipal(principal, aiClientID, func(subjectType, subjectID, clientID string) ([]domainaigateway.SkillBinding, error) {
+		return repo.ListActiveSkillBindings(ctx, subjectType, subjectID, clientID)
+	}, func(item domainaigateway.SkillBinding) string { return item.ID })
+}
+
+type gatewayPolicySubject struct {
+	typeName string
+	id       string
+}
+
+func activeItemsForPrincipal[T any](principal domainidentity.Principal, aiClientID string, list func(string, string, string) ([]T, error), itemID func(T) string) ([]T, error) {
 	aiClientID = strings.TrimSpace(aiClientID)
-	out := make([]domainaigateway.SkillBinding, 0)
-	seen := map[string]struct{}{}
-	appendBindings := func(subjectType, subjectID string) error {
-		subjectType = normalizeSubjectType(subjectType)
-		subjectID = strings.TrimSpace(subjectID)
-		if subjectType == "" || subjectID == "" {
-			return nil
-		}
-		items, err := repo.ListActiveSkillBindings(ctx, subjectType, subjectID, aiClientID)
-		if err != nil {
-			return err
-		}
-		for _, item := range items {
-			if _, ok := seen[item.ID]; ok {
-				continue
-			}
-			seen[item.ID] = struct{}{}
-			out = append(out, item)
-		}
-		return nil
-	}
 	subjectType, subjectID := gatewaySubject(principal)
-	if err := appendBindings(subjectType, subjectID); err != nil {
-		return nil, err
-	}
+	subjects := []gatewayPolicySubject{{typeName: subjectType, id: subjectID}}
 	for _, role := range principal.Roles {
-		if err := appendBindings("role", role); err != nil {
-			return nil, err
-		}
+		subjects = append(subjects, gatewayPolicySubject{typeName: "role", id: role})
 	}
 	for _, team := range principal.Teams {
-		if err := appendBindings("team", team); err != nil {
-			return nil, err
-		}
+		subjects = append(subjects, gatewayPolicySubject{typeName: "team", id: team})
 	}
 	if aiClientID != "" {
-		if err := appendBindings("ai_client", aiClientID); err != nil {
+		subjects = append(subjects, gatewayPolicySubject{typeName: "ai_client", id: aiClientID})
+	}
+	out := make([]T, 0)
+	seen := map[string]struct{}{}
+	for _, subject := range subjects {
+		typeName := normalizeSubjectType(subject.typeName)
+		id := strings.TrimSpace(subject.id)
+		if typeName == "" || id == "" {
+			continue
+		}
+		items, err := list(typeName, id, aiClientID)
+		if err != nil {
 			return nil, err
+		}
+		for _, item := range items {
+			id := itemID(item)
+			if _, exists := seen[id]; exists {
+				continue
+			}
+			seen[id] = struct{}{}
+			out = append(out, item)
 		}
 	}
 	return out, nil
@@ -795,9 +757,6 @@ func aiClientRegistrationApprovalPending(client domainaigateway.AIClient) bool {
 func isAIClientRegistrationApprovalRequest(request domainaigateway.ApprovalRequest) bool {
 	return request.ToolName == "ai_gateway.ai_client.registration"
 }
-func buildToolGrant(principal domainidentity.Principal, input domainaigateway.ToolGrantInput) (domainaigateway.ToolGrant, error) {
-	return buildToolGrantWithToolLookup(principal, input, toolByName)
-}
 func (s *Service) buildToolGrant(principal domainidentity.Principal, input domainaigateway.ToolGrantInput) (domainaigateway.ToolGrant, error) {
 	return buildToolGrantWithToolLookup(principal, input, s.toolByName)
 }
@@ -907,9 +866,6 @@ func buildAccessPolicy(principal domainidentity.Principal, input domainaigateway
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}, nil
-}
-func buildSkillBinding(principal domainidentity.Principal, input domainaigateway.SkillBindingInput, forcedID string) (domainaigateway.SkillBinding, error) {
-	return buildSkillBindingWithSkillLookup(principal, input, forcedID, skillByID)
 }
 func (s *Service) buildSkillBinding(principal domainidentity.Principal, input domainaigateway.SkillBindingInput, forcedID string) (domainaigateway.SkillBinding, error) {
 	return buildSkillBindingWithSkillLookup(principal, input, forcedID, s.skillByID)
@@ -1071,24 +1027,6 @@ func toolByName(name string) (domainaigateway.ToolCapability, bool) {
 	}
 	return domainaigateway.ToolCapability{}, false
 }
-func resourceByName(name string) (domainaigateway.ResourceCapability, bool) {
-	name = normalizeGatewayResourceURI(name)
-	for _, item := range defaultResources() {
-		if item.Name == name {
-			return item, true
-		}
-	}
-	return domainaigateway.ResourceCapability{}, false
-}
-func promptByName(name string) (domainaigateway.PromptCapability, bool) {
-	name = strings.TrimSpace(name)
-	for _, item := range defaultPrompts() {
-		if item.Name == name {
-			return item, true
-		}
-	}
-	return domainaigateway.PromptCapability{}, false
-}
 func skillByID(id string) (domainaigateway.SkillCapability, bool) {
 	for _, item := range defaultSkills() {
 		if item.ID == id {
@@ -1243,24 +1181,11 @@ func (ctx policyEvaluationContext) hasInvocationScope() bool {
 	return ctx.InvocationScope != nil
 }
 
-func toolAllowedByAccessPolicies(tool domainaigateway.ToolCapability, policies []domainaigateway.AccessPolicy, skillID string) (bool, gatewayRiskDecision, string) {
-	return evaluateToolAccessPolicies(policyEvaluationContext{
-		Tool:    tool,
-		SkillID: skillID,
-	}, policies)
-}
 func toolAllowedByAccessPoliciesWithSkills(tool domainaigateway.ToolCapability, policies []domainaigateway.AccessPolicy, skillID string, knownSkills []domainaigateway.SkillCapability) (bool, gatewayRiskDecision, string) {
 	return evaluateToolAccessPolicies(policyEvaluationContext{
 		Tool:        tool,
 		SkillID:     skillID,
 		KnownSkills: knownSkills,
-	}, policies)
-}
-func toolAllowedByAccessPoliciesForInvocation(tool domainaigateway.ToolCapability, policies []domainaigateway.AccessPolicy, skillID string, invocationScope map[string]string) (bool, gatewayRiskDecision, string) {
-	return evaluateToolAccessPolicies(policyEvaluationContext{
-		Tool:            tool,
-		SkillID:         skillID,
-		InvocationScope: invocationScope,
 	}, policies)
 }
 func toolAllowedByAccessPoliciesForInvocationWithSkills(tool domainaigateway.ToolCapability, policies []domainaigateway.AccessPolicy, skillID string, invocationScope map[string]string, knownSkills []domainaigateway.SkillCapability) (bool, gatewayRiskDecision, string) {
@@ -1340,15 +1265,6 @@ func skillAllowedByAccessPolicies(skill domainaigateway.SkillCapability, policie
 	}
 	return true, ""
 }
-func accessPolicyMatchesTool(policy domainaigateway.AccessPolicy, tool domainaigateway.ToolCapability, skillID string) bool {
-	return accessPolicyMatchesToolWithSkills(policy, tool, skillID, defaultSkills())
-}
-func accessPolicyMatchesToolWithSkills(policy domainaigateway.AccessPolicy, tool domainaigateway.ToolCapability, skillID string, knownSkills []domainaigateway.SkillCapability) bool {
-	return accessPolicyToolSelectorsMatchWithSkills(policy, tool, skillID, knownSkills)
-}
-func accessPolicyToolSelectorsMatch(policy domainaigateway.AccessPolicy, tool domainaigateway.ToolCapability, skillID string) bool {
-	return accessPolicyToolSelectorsMatchWithSkills(policy, tool, skillID, defaultSkills())
-}
 func accessPolicyToolSelectorsMatchWithSkills(policy domainaigateway.AccessPolicy, tool domainaigateway.ToolCapability, skillID string, knownSkills []domainaigateway.SkillCapability) bool {
 	if len(policy.ToolPatterns) > 0 && !matchesToolPatternList(policy.ToolPatterns, tool.Name) {
 		return false
@@ -1379,9 +1295,6 @@ const (
 	gatewayRiskDryRunOnly          gatewayRiskStrategy = "dry_run_only"
 )
 
-func filterSkillsByBindings(skills []domainaigateway.SkillCapability, bindings []domainaigateway.SkillBinding) ([]domainaigateway.SkillCapability, int) {
-	return filterSkillsByBindingsWithSkills(skills, bindings, defaultSkills())
-}
 func filterSkillsByBindingsWithSkills(skills []domainaigateway.SkillCapability, bindings []domainaigateway.SkillBinding, knownSkills []domainaigateway.SkillCapability) ([]domainaigateway.SkillCapability, int) {
 	if len(bindings) == 0 {
 		return skills, 0
@@ -1402,9 +1315,6 @@ func filterSkillsByBindingsWithSkills(skills []domainaigateway.SkillCapability, 
 	}
 	return out, denied
 }
-func filterToolsBySkillBindings(tools []domainaigateway.ToolCapability, bindings []domainaigateway.SkillBinding, skillID string) ([]domainaigateway.ToolCapability, int) {
-	return filterToolsBySkillBindingsWithSkills(tools, bindings, skillID, defaultSkills())
-}
 func filterToolsBySkillBindingsWithSkills(tools []domainaigateway.ToolCapability, bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) ([]domainaigateway.ToolCapability, int) {
 	if len(bindings) == 0 {
 		return tools, 0
@@ -1420,12 +1330,6 @@ func filterToolsBySkillBindingsWithSkills(tools []domainaigateway.ToolCapability
 		denied++
 	}
 	return out, denied
-}
-func filterResourcesBySkillBindings(resources []domainaigateway.ResourceCapability, bindings []domainaigateway.SkillBinding, skillID string) ([]domainaigateway.ResourceCapability, int) {
-	return filterResourcesBySkillBindingsWithSkills(resources, bindings, skillID, defaultSkills())
-}
-func filterResourcesBySkillBindingsWithSkills(resources []domainaigateway.ResourceCapability, bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) ([]domainaigateway.ResourceCapability, int) {
-	return filterResourcesBySkillBindingsWithCapabilities(resources, bindings, skillID, defaultResourceCapabilityRefs(), knownSkills)
 }
 func filterResourcesBySkillBindingsWithCapabilities(resources []domainaigateway.ResourceCapability, bindings []domainaigateway.SkillBinding, skillID string, resourceRefs []ResourceCapabilityRefs, knownSkills []domainaigateway.SkillCapability) ([]domainaigateway.ResourceCapability, int) {
 	if len(bindings) == 0 {
@@ -1443,9 +1347,6 @@ func filterResourcesBySkillBindingsWithCapabilities(resources []domainaigateway.
 	}
 	return out, denied
 }
-func filterPromptsBySkillBindings(prompts []domainaigateway.PromptCapability, bindings []domainaigateway.SkillBinding, skillID string) ([]domainaigateway.PromptCapability, int) {
-	return filterPromptsBySkillBindingsWithCapabilities(prompts, bindings, skillID, defaultResources(), defaultResourceCapabilityRefs(), defaultSkills())
-}
 func filterPromptsBySkillBindingsWithCapabilities(prompts []domainaigateway.PromptCapability, bindings []domainaigateway.SkillBinding, skillID string, knownResources []domainaigateway.ResourceCapability, resourceRefs []ResourceCapabilityRefs, knownSkills []domainaigateway.SkillCapability) ([]domainaigateway.PromptCapability, int) {
 	if len(bindings) == 0 {
 		return prompts, 0
@@ -1460,9 +1361,6 @@ func filterPromptsBySkillBindingsWithCapabilities(prompts []domainaigateway.Prom
 		denied++
 	}
 	return out, denied
-}
-func toolAllowedBySkillBindings(tool domainaigateway.ToolCapability, bindings []domainaigateway.SkillBinding, skillID string) (bool, string) {
-	return toolAllowedBySkillBindingsWithSkills(tool, bindings, skillID, defaultSkills())
 }
 func toolAllowedBySkillBindingsWithSkills(tool domainaigateway.ToolCapability, bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) (bool, string) {
 	allowedRefs := allowedCapabilityRefsForBindingsWithSkills(bindings, skillID, knownSkills)
@@ -1480,12 +1378,6 @@ func toolAllowedBySkillBindingsWithSkills(tool domainaigateway.ToolCapability, b
 	}
 	return false, "tool is outside bound capability refs"
 }
-func authorizeResourceSkillBinding(resource domainaigateway.ResourceCapability, bindings []domainaigateway.SkillBinding, skillID string) error {
-	return authorizeResourceSkillBindingWithSkills(resource, bindings, skillID, defaultSkills())
-}
-func authorizeResourceSkillBindingWithSkills(resource domainaigateway.ResourceCapability, bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) error {
-	return authorizeResourceSkillBindingWithRefs(resource, bindings, skillID, resourceToolRefs(resource.Name), knownSkills)
-}
 func authorizeResourceSkillBindingWithRefs(resource domainaigateway.ResourceCapability, bindings []domainaigateway.SkillBinding, skillID string, toolRefs []string, knownSkills []domainaigateway.SkillCapability) error {
 	if len(bindings) == 0 {
 		return nil
@@ -1494,9 +1386,6 @@ func authorizeResourceSkillBindingWithRefs(resource domainaigateway.ResourceCapa
 		return nil
 	}
 	return fmt.Errorf("%w: AI Gateway skill binding rejected %s: resource is outside bound capability refs", apperrors.ErrAccessDenied, resource.Name)
-}
-func authorizePromptSkillBinding(prompt domainaigateway.PromptCapability, bindings []domainaigateway.SkillBinding, skillID string) error {
-	return authorizePromptSkillBindingWithCapabilities(prompt, bindings, skillID, defaultResources(), defaultResourceCapabilityRefs(), defaultSkills())
 }
 func authorizePromptSkillBindingWithCapabilities(prompt domainaigateway.PromptCapability, bindings []domainaigateway.SkillBinding, skillID string, knownResources []domainaigateway.ResourceCapability, resourceRefs []ResourceCapabilityRefs, knownSkills []domainaigateway.SkillCapability) error {
 	if len(bindings) == 0 {
@@ -1507,17 +1396,8 @@ func authorizePromptSkillBindingWithCapabilities(prompt domainaigateway.PromptCa
 	}
 	return fmt.Errorf("%w: AI Gateway skill binding rejected %s: prompt is outside bound capability refs", apperrors.ErrAccessDenied, prompt.Name)
 }
-func resourceAllowedBySkillBindings(resource domainaigateway.ResourceCapability, bindings []domainaigateway.SkillBinding, skillID string) bool {
-	return resourceAllowedBySkillBindingsWithSkills(resource, bindings, skillID, defaultSkills())
-}
-func resourceAllowedBySkillBindingsWithSkills(resource domainaigateway.ResourceCapability, bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) bool {
-	return resourceAllowedBySkillBindingsWithRefs(resource, bindings, skillID, resourceToolRefs(resource.Name), knownSkills)
-}
 func resourceAllowedBySkillBindingsWithRefs(_ domainaigateway.ResourceCapability, bindings []domainaigateway.SkillBinding, skillID string, toolRefs []string, knownSkills []domainaigateway.SkillCapability) bool {
 	return capabilityRefsAllowedBySkillBindingsWithSkills(toolRefs, bindings, skillID, knownSkills)
-}
-func promptAllowedBySkillBindings(prompt domainaigateway.PromptCapability, bindings []domainaigateway.SkillBinding, skillID string) bool {
-	return promptAllowedBySkillBindingsWithCapabilities(prompt, bindings, skillID, defaultResources(), defaultResourceCapabilityRefs(), defaultSkills())
 }
 func promptAllowedBySkillBindingsWithCapabilities(prompt domainaigateway.PromptCapability, bindings []domainaigateway.SkillBinding, skillID string, knownResources []domainaigateway.ResourceCapability, resourceRefs []ResourceCapabilityRefs, knownSkills []domainaigateway.SkillCapability) bool {
 	for _, resource := range knownResources {
@@ -1531,9 +1411,6 @@ func promptAllowedBySkillBindingsWithCapabilities(prompt domainaigateway.PromptC
 	}
 	return false
 }
-func capabilityRefsAllowedBySkillBindings(capabilityRefs []string, bindings []domainaigateway.SkillBinding, skillID string) bool {
-	return capabilityRefsAllowedBySkillBindingsWithSkills(capabilityRefs, bindings, skillID, defaultSkills())
-}
 func capabilityRefsAllowedBySkillBindingsWithSkills(capabilityRefs []string, bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) bool {
 	allowedRefs := allowedCapabilityRefsForBindingsWithSkills(bindings, skillID, knownSkills)
 	if len(allowedRefs) == 0 || len(capabilityRefs) == 0 {
@@ -1546,9 +1423,6 @@ func capabilityRefsAllowedBySkillBindingsWithSkills(capabilityRefs []string, bin
 	}
 	return false
 }
-func filterToolRefsBySkillBindings(refs []string, bindings []domainaigateway.SkillBinding, skillID string) []string {
-	return filterToolRefsBySkillBindingsWithSkills(refs, bindings, skillID, defaultSkills())
-}
 func filterToolRefsBySkillBindingsWithSkills(refs []string, bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) []string {
 	if len(bindings) == 0 {
 		return refs
@@ -1557,21 +1431,6 @@ func filterToolRefsBySkillBindingsWithSkills(refs []string, bindings []domainaig
 	out := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		if matchesToolPatternList(allowedRefs, ref) {
-			out = append(out, ref)
-		}
-	}
-	return out
-}
-func filterPromptRefsBySkillBindings(refs []string, bindings []domainaigateway.SkillBinding, skillID string) []string {
-	return filterPromptRefsBySkillBindingsWithCapabilities(refs, bindings, skillID, defaultResources(), defaultResourceCapabilityRefs(), defaultSkills())
-}
-func filterPromptRefsBySkillBindingsWithCapabilities(refs []string, bindings []domainaigateway.SkillBinding, skillID string, knownResources []domainaigateway.ResourceCapability, resourceRefs []ResourceCapabilityRefs, knownSkills []domainaigateway.SkillCapability) []string {
-	if len(bindings) == 0 {
-		return refs
-	}
-	out := make([]string, 0, len(refs))
-	for _, ref := range refs {
-		if promptAllowedBySkillBindingsWithCapabilities(domainaigateway.PromptCapability{Name: ref}, bindings, skillID, knownResources, resourceRefs, knownSkills) {
 			out = append(out, ref)
 		}
 	}
@@ -1593,9 +1452,6 @@ func filterPromptRefsBySkillBindingsWithResourceRefs(refs []string, bindings []d
 	}
 	return out
 }
-func filterSkillRefsByBindings(refs []string, bindings []domainaigateway.SkillBinding, skillID string) []string {
-	return filterSkillRefsByBindingsWithSkills(refs, bindings, skillID, defaultSkills())
-}
 func filterSkillRefsByBindingsWithSkills(refs []string, bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) []string {
 	if len(bindings) == 0 {
 		return refs
@@ -1609,9 +1465,6 @@ func filterSkillRefsByBindingsWithSkills(refs []string, bindings []domainaigatew
 	}
 	return out
 }
-func allowedCapabilityRefsForBindings(bindings []domainaigateway.SkillBinding, skillID string) []string {
-	return allowedCapabilityRefsForBindingsWithSkills(bindings, skillID, defaultSkills())
-}
 func allowedCapabilityRefsForBindingsWithSkills(bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) []string {
 	refsBySkill := skillBindingRefsWithSkills(bindings, skillID, knownSkills)
 	out := make([]string, 0)
@@ -1619,9 +1472,6 @@ func allowedCapabilityRefsForBindingsWithSkills(bindings []domainaigateway.Skill
 		out = append(out, refs...)
 	}
 	return normalizeStringSlice(out)
-}
-func skillBindingRefs(bindings []domainaigateway.SkillBinding, skillID string) map[string][]string {
-	return skillBindingRefsWithSkills(bindings, skillID, defaultSkills())
 }
 func skillBindingRefsWithSkills(bindings []domainaigateway.SkillBinding, skillID string, knownSkills []domainaigateway.SkillCapability) map[string][]string {
 	skillID = strings.TrimSpace(skillID)
@@ -1643,9 +1493,6 @@ func skillBindingRefsWithSkills(bindings []domainaigateway.SkillBinding, skillID
 		out[bindingSkillID] = normalizeStringSlice(append(out[bindingSkillID], refs...))
 	}
 	return out
-}
-func toolInAnySkill(skillIDs []string, toolName string) bool {
-	return toolInAnySkillWithSkills(skillIDs, toolName, defaultSkills())
 }
 func toolInAnySkillWithSkills(skillIDs []string, toolName string, knownSkills []domainaigateway.SkillCapability) bool {
 	for _, skillID := range skillIDs {

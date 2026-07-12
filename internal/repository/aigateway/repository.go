@@ -17,6 +17,29 @@ type Repository struct {
 	db *gorm.DB
 }
 
+func appendStringFilter(query *string, args *[]any, column, value string) {
+	if value == "" {
+		return
+	}
+	clauses := map[string]string{
+		"subject_type":  " AND subject_type = ?",
+		"subject_id":    " AND subject_id = ?",
+		"ai_client_id":  " AND ai_client_id = ?",
+		"effect":        " AND effect = ?",
+		"skill_id":      " AND skill_id = ?",
+		"public_model":  " AND public_model = ?",
+		"provider_kind": " AND provider_kind = ?",
+		"upstream_id":   " AND upstream_id = ?",
+		"route_group":   " AND route_group = ?",
+	}
+	clause, ok := clauses[column]
+	if !ok {
+		return
+	}
+	*query += clause
+	*args = append(*args, value)
+}
+
 func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
@@ -31,7 +54,7 @@ func (r *Repository) ListPersonalAccessTokens(ctx context.Context, userID string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanPersonalAccessTokenRows(rows)
 }
 
@@ -44,7 +67,7 @@ func (r *Repository) ListAllPersonalAccessTokens(ctx context.Context) ([]domaina
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanPersonalAccessTokenRows(rows)
 }
 
@@ -53,13 +76,7 @@ func (r *Repository) CreatePersonalAccessToken(ctx context.Context, item domaina
 	if err != nil {
 		return domainaigateway.PersonalAccessToken{}, err
 	}
-	now := time.Now().UTC()
-	if item.CreatedAt.IsZero() {
-		item.CreatedAt = now
-	}
-	if item.UpdatedAt.IsZero() {
-		item.UpdatedAt = now
-	}
+	setCreateTimestamps(&item.CreatedAt, &item.UpdatedAt)
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO personal_access_tokens (id, user_id, name, token_hash, token_prefix, scopes, permission_keys, metadata, expires_at, last_used_at, revoked_at, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -111,7 +128,7 @@ func (r *Repository) ListServiceAccounts(ctx context.Context) ([]domainaigateway
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanServiceAccountRows(rows)
 }
 
@@ -120,13 +137,7 @@ func (r *Repository) CreateServiceAccount(ctx context.Context, item domainaigate
 	if err != nil {
 		return domainaigateway.ServiceAccount{}, err
 	}
-	now := time.Now().UTC()
-	if item.CreatedAt.IsZero() {
-		item.CreatedAt = now
-	}
-	if item.UpdatedAt.IsZero() {
-		item.UpdatedAt = now
-	}
+	setCreateTimestamps(&item.CreatedAt, &item.UpdatedAt)
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO service_accounts (id, name, description, status, owner_user_id, role_ids, team_ids, scope_grant_ids, metadata, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -134,6 +145,16 @@ func (r *Repository) CreateServiceAccount(ctx context.Context, item domainaigate
 		return domainaigateway.ServiceAccount{}, err
 	}
 	return item, nil
+}
+
+func setCreateTimestamps(createdAt, updatedAt *time.Time) {
+	now := time.Now().UTC()
+	if createdAt.IsZero() {
+		*createdAt = now
+	}
+	if updatedAt.IsZero() {
+		*updatedAt = now
+	}
 }
 
 func (r *Repository) GetServiceAccount(ctx context.Context, serviceAccountID string) (domainaigateway.ServiceAccount, error) {
@@ -176,7 +197,7 @@ func (r *Repository) ListAllServiceAccountTokens(ctx context.Context) ([]domaina
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanServiceAccountTokenRows(rows)
 }
 
@@ -222,7 +243,7 @@ func (r *Repository) ListAIClients(ctx context.Context) ([]domainaigateway.AICli
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanAIClientRows(rows)
 }
 
@@ -319,7 +340,7 @@ func (r *Repository) ListToolGrants(ctx context.Context, filter domainaigateway.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanToolGrantRows(rows)
 }
 
@@ -368,7 +389,7 @@ func (r *Repository) ListActiveToolGrants(ctx context.Context, subjectType, subj
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanToolGrantRows(rows)
 }
 
@@ -379,22 +400,10 @@ func (r *Repository) ListAccessPolicies(ctx context.Context, filter domainaigate
 		WHERE 1 = 1
 	`
 	args := make([]any, 0)
-	if filter.SubjectType != "" {
-		query += " AND subject_type = ?"
-		args = append(args, filter.SubjectType)
-	}
-	if filter.SubjectID != "" {
-		query += " AND subject_id = ?"
-		args = append(args, filter.SubjectID)
-	}
-	if filter.AIClientID != "" {
-		query += " AND ai_client_id = ?"
-		args = append(args, filter.AIClientID)
-	}
-	if filter.Effect != "" {
-		query += " AND effect = ?"
-		args = append(args, filter.Effect)
-	}
+	appendStringFilter(&query, &args, "subject_type", filter.SubjectType)
+	appendStringFilter(&query, &args, "subject_id", filter.SubjectID)
+	appendStringFilter(&query, &args, "ai_client_id", filter.AIClientID)
+	appendStringFilter(&query, &args, "effect", filter.Effect)
 	if !filter.IncludeDisabled {
 		query += " AND enabled = TRUE"
 	}
@@ -403,7 +412,7 @@ func (r *Repository) ListAccessPolicies(ctx context.Context, filter domainaigate
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanAccessPolicyRows(rows)
 }
 
@@ -472,7 +481,7 @@ func (r *Repository) ListActiveAccessPolicies(ctx context.Context, subjectType, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanAccessPolicyRows(rows)
 }
 
@@ -493,22 +502,10 @@ func (r *Repository) ListSkillBindings(ctx context.Context, filter domainaigatew
 		WHERE 1 = 1
 	`
 	args := make([]any, 0)
-	if filter.SubjectType != "" {
-		query += " AND subject_type = ?"
-		args = append(args, filter.SubjectType)
-	}
-	if filter.SubjectID != "" {
-		query += " AND subject_id = ?"
-		args = append(args, filter.SubjectID)
-	}
-	if filter.AIClientID != "" {
-		query += " AND ai_client_id = ?"
-		args = append(args, filter.AIClientID)
-	}
-	if filter.SkillID != "" {
-		query += " AND skill_id = ?"
-		args = append(args, filter.SkillID)
-	}
+	appendStringFilter(&query, &args, "subject_type", filter.SubjectType)
+	appendStringFilter(&query, &args, "subject_id", filter.SubjectID)
+	appendStringFilter(&query, &args, "ai_client_id", filter.AIClientID)
+	appendStringFilter(&query, &args, "skill_id", filter.SkillID)
 	if !filter.IncludeDisabled {
 		query += " AND enabled = TRUE"
 	}
@@ -517,7 +514,7 @@ func (r *Repository) ListSkillBindings(ctx context.Context, filter domainaigatew
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanSkillBindingRows(rows)
 }
 
@@ -586,7 +583,7 @@ func (r *Repository) ListActiveSkillBindings(ctx context.Context, subjectType, s
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanSkillBindingRows(rows)
 }
 
@@ -675,7 +672,7 @@ func (r *Repository) ListAuditLogs(ctx context.Context, filter domainaigateway.A
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanAuditLogRows(rows)
 }
 
@@ -908,7 +905,7 @@ func (r *Repository) ListApprovalRequests(ctx context.Context, filter domainaiga
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	return scanApprovalRequestRows(rows)
 }
 
@@ -1277,21 +1274,7 @@ func scanPersonalAccessTokenScanner(scanner interface {
 	if err := scanner.Scan(&item.ID, &item.UserID, &item.Name, &item.TokenHash, &item.TokenPrefix, &scopes, &permissionKeys, &metadata, &expiresAt, &lastUsedAt, &revokedAt, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domainaigateway.PersonalAccessToken{}, err
 	}
-	item.ExpiresAt = nullTimePointer(expiresAt)
-	item.LastUsedAt = nullTimePointer(lastUsedAt)
-	item.RevokedAt = nullTimePointer(revokedAt)
-	unmarshalJSON(scopes, &item.Scopes)
-	unmarshalJSON(permissionKeys, &item.PermissionKeys)
-	unmarshalJSON(metadata, &item.Metadata)
-	if item.Scopes == nil {
-		item.Scopes = []string{}
-	}
-	if item.PermissionKeys == nil {
-		item.PermissionKeys = []string{}
-	}
-	if item.Metadata == nil {
-		item.Metadata = map[string]any{}
-	}
+	decodeGatewayTokenFields(scopes, permissionKeys, metadata, expiresAt, lastUsedAt, revokedAt, &item.Scopes, &item.PermissionKeys, &item.Metadata, &item.ExpiresAt, &item.LastUsedAt, &item.RevokedAt)
 	return item, nil
 }
 
@@ -1374,22 +1357,26 @@ func scanServiceAccountTokenScanner(scanner interface {
 	if err := scanner.Scan(&item.ID, &item.ServiceAccountID, &item.Name, &item.TokenHash, &item.TokenPrefix, &scopes, &permissionKeys, &metadata, &expiresAt, &lastUsedAt, &revokedAt, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domainaigateway.ServiceAccountToken{}, err
 	}
-	item.ExpiresAt = nullTimePointer(expiresAt)
-	item.LastUsedAt = nullTimePointer(lastUsedAt)
-	item.RevokedAt = nullTimePointer(revokedAt)
-	unmarshalJSON(scopes, &item.Scopes)
-	unmarshalJSON(permissionKeys, &item.PermissionKeys)
-	unmarshalJSON(metadata, &item.Metadata)
-	if item.Scopes == nil {
-		item.Scopes = []string{}
-	}
-	if item.PermissionKeys == nil {
-		item.PermissionKeys = []string{}
-	}
-	if item.Metadata == nil {
-		item.Metadata = map[string]any{}
-	}
+	decodeGatewayTokenFields(scopes, permissionKeys, metadata, expiresAt, lastUsedAt, revokedAt, &item.Scopes, &item.PermissionKeys, &item.Metadata, &item.ExpiresAt, &item.LastUsedAt, &item.RevokedAt)
 	return item, nil
+}
+
+func decodeGatewayTokenFields(scopesJSON, permissionsJSON, metadataJSON []byte, expires, lastUsed, revoked sql.NullTime, scopes, permissions *[]string, metadata *map[string]any, expiresAt, lastUsedAt, revokedAt **time.Time) {
+	*expiresAt = nullTimePointer(expires)
+	*lastUsedAt = nullTimePointer(lastUsed)
+	*revokedAt = nullTimePointer(revoked)
+	unmarshalJSON(scopesJSON, scopes)
+	unmarshalJSON(permissionsJSON, permissions)
+	unmarshalJSON(metadataJSON, metadata)
+	if *scopes == nil {
+		*scopes = []string{}
+	}
+	if *permissions == nil {
+		*permissions = []string{}
+	}
+	if *metadata == nil {
+		*metadata = map[string]any{}
+	}
 }
 
 func scanToolGrantRows(rows *sql.Rows) ([]domainaigateway.ToolGrant, error) {

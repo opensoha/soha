@@ -13,6 +13,7 @@ type LoginProviderSettings struct {
 	ID                  string   `json:"id"`
 	Name                string   `json:"name"`
 	Type                string   `json:"type"`
+	IconURL             string   `json:"iconUrl,omitempty"`
 	Enabled             bool     `json:"enabled"`
 	ClientID            string   `json:"clientId,omitempty"`
 	ClientSecret        string   `json:"clientSecret,omitempty"`
@@ -28,6 +29,8 @@ type LoginProviderSettings struct {
 	UserIDField         string   `json:"userIdField,omitempty"`
 	UserNameField       string   `json:"userNameField,omitempty"`
 	EmailField          string   `json:"emailField,omitempty"`
+	PhoneField          string   `json:"phoneField,omitempty"`
+	AvatarField         string   `json:"avatarField,omitempty"`
 	RoleField           string   `json:"roleField,omitempty"`
 	OrganizationField   string   `json:"organizationField,omitempty"`
 	SyncRolesOnLogin    bool     `json:"syncRolesOnLogin,omitempty"`
@@ -40,8 +43,9 @@ type LoginProviderSettings struct {
 }
 
 type IdentitySettings struct {
-	Providers         []LoginProviderSettings `json:"providers,omitempty"`
-	DefaultProviderID string                  `json:"defaultProviderId,omitempty"`
+	Providers                 []LoginProviderSettings `json:"providers,omitempty"`
+	DefaultProviderID         string                  `json:"defaultProviderId,omitempty"`
+	LocalPasswordLoginEnabled bool                    `json:"localPasswordLoginEnabled"`
 }
 
 type PrometheusSettings struct {

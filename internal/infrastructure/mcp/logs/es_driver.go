@@ -75,7 +75,7 @@ func (d esDriver) Correlate(ctx context.Context, sourceID string, config map[str
 	if err != nil {
 		return CorrelationResult{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return CorrelationResult{}, fmt.Errorf("es correlate failed with status %d", resp.StatusCode)
 	}

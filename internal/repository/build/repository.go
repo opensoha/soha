@@ -41,7 +41,7 @@ func (r *Repository) List(ctx context.Context, filter domainbuild.Filter) ([]dom
 	if err != nil {
 		return nil, fmt.Errorf("query build records: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainbuild.Record, 0, limit)
 	for rows.Next() {

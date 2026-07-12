@@ -12,11 +12,14 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
-type AnnouncementService interface {
+type AnnouncementReader interface {
 	List(context.Context, domainidentity.Principal, int) ([]domainannouncement.Record, error)
 	Get(context.Context, domainidentity.Principal, string) (domainannouncement.Record, error)
 	Inbox(context.Context, domainidentity.Principal, int) (domainannouncement.Inbox, error)
 	MarkRead(context.Context, domainidentity.Principal, string) error
+}
+
+type AnnouncementWriter interface {
 	Create(context.Context, domainidentity.Principal, domainannouncement.Input) (domainannouncement.Record, error)
 	Update(context.Context, domainidentity.Principal, string, domainannouncement.Input) (domainannouncement.Record, error)
 	Publish(context.Context, domainidentity.Principal, string) (domainannouncement.Record, error)
@@ -24,17 +27,27 @@ type AnnouncementService interface {
 	Delete(context.Context, domainidentity.Principal, string) error
 }
 
+type AnnouncementService interface {
+	AnnouncementReader
+	AnnouncementWriter
+}
+
 type AnnouncementHandler struct {
-	service AnnouncementService
+	reader AnnouncementReader
+	writer AnnouncementWriter
 }
 
 func NewAnnouncementHandler(service AnnouncementService) *AnnouncementHandler {
-	return &AnnouncementHandler{service: service}
+	return NewAnnouncementHandlerWithServices(service, service)
+}
+
+func NewAnnouncementHandlerWithServices(reader AnnouncementReader, writer AnnouncementWriter) *AnnouncementHandler {
+	return &AnnouncementHandler{reader: reader, writer: writer}
 }
 
 func (h *AnnouncementHandler) List(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.List(c.Request.Context(), principal, parseLimit(c.Query("limit"), 50))
+	items, err := h.reader.List(c.Request.Context(), principal, parseLimit(c.Query("limit"), 50))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -44,7 +57,7 @@ func (h *AnnouncementHandler) List(c *gin.Context) {
 
 func (h *AnnouncementHandler) Get(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Get(c.Request.Context(), principal, c.Param("announcementID"))
+	item, err := h.reader.Get(c.Request.Context(), principal, c.Param("announcementID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -54,7 +67,7 @@ func (h *AnnouncementHandler) Get(c *gin.Context) {
 
 func (h *AnnouncementHandler) Inbox(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Inbox(c.Request.Context(), principal, parseLimit(c.Query("limit"), 10))
+	item, err := h.reader.Inbox(c.Request.Context(), principal, parseLimit(c.Query("limit"), 10))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -64,7 +77,7 @@ func (h *AnnouncementHandler) Inbox(c *gin.Context) {
 
 func (h *AnnouncementHandler) MarkRead(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.service.MarkRead(c.Request.Context(), principal, c.Param("announcementID")); err != nil {
+	if err := h.reader.MarkRead(c.Request.Context(), principal, c.Param("announcementID")); err != nil {
 		writeError(c, err)
 		return
 	}
@@ -78,18 +91,7 @@ func (h *AnnouncementHandler) Create(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Create(c.Request.Context(), principal, domainannouncement.Input{
-		ID:       req.ID,
-		Title:    req.Title,
-		Summary:  req.Summary,
-		Content:  req.Content,
-		Level:    req.Level,
-		Status:   req.Status,
-		Audience: req.Audience,
-		Sticky:   req.Sticky,
-		StartsAt: req.StartsAt,
-		EndsAt:   req.EndsAt,
-	})
+	item, err := h.writer.Create(c.Request.Context(), principal, announcementInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -104,7 +106,16 @@ func (h *AnnouncementHandler) Update(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Update(c.Request.Context(), principal, c.Param("announcementID"), domainannouncement.Input{
+	item, err := h.writer.Update(c.Request.Context(), principal, c.Param("announcementID"), announcementInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func announcementInput(req dto.UpsertAnnouncementRequest) domainannouncement.Input {
+	return domainannouncement.Input{
 		ID:       req.ID,
 		Title:    req.Title,
 		Summary:  req.Summary,
@@ -115,17 +126,12 @@ func (h *AnnouncementHandler) Update(c *gin.Context) {
 		Sticky:   req.Sticky,
 		StartsAt: req.StartsAt,
 		EndsAt:   req.EndsAt,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *AnnouncementHandler) Publish(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Publish(c.Request.Context(), principal, c.Param("announcementID"))
+	item, err := h.writer.Publish(c.Request.Context(), principal, c.Param("announcementID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -135,7 +141,7 @@ func (h *AnnouncementHandler) Publish(c *gin.Context) {
 
 func (h *AnnouncementHandler) Withdraw(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Withdraw(c.Request.Context(), principal, c.Param("announcementID"))
+	item, err := h.writer.Withdraw(c.Request.Context(), principal, c.Param("announcementID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -145,7 +151,7 @@ func (h *AnnouncementHandler) Withdraw(c *gin.Context) {
 
 func (h *AnnouncementHandler) Delete(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.service.Delete(c.Request.Context(), principal, c.Param("announcementID")); err != nil {
+	if err := h.writer.Delete(c.Request.Context(), principal, c.Param("announcementID")); err != nil {
 		writeError(c, err)
 		return
 	}

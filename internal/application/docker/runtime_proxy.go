@@ -39,7 +39,11 @@ var (
 )
 
 func newDockerRuntimeHTTPTransport() *http.Transport {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	}
+	transport := base.Clone()
 	transport.ResponseHeaderTimeout = 15 * time.Second
 	transport.MaxIdleConns = 100
 	transport.MaxIdleConnsPerHost = 20
@@ -108,7 +112,7 @@ func (s *Service) StreamProjectLogs(ctx context.Context, principal domainidentit
 	if err != nil {
 		return fmt.Errorf("%w: docker agent log stream unavailable: %v", apperrors.ErrClusterUnready, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("%w: docker agent log stream returned %d: %s", apperrors.ErrClusterUnready, resp.StatusCode, strings.TrimSpace(string(detail)))
@@ -135,11 +139,14 @@ func (s *Service) StreamProjectTerminal(ctx context.Context, principal domainide
 	if s.runtimeBearerToken != "" {
 		headers.Set("Authorization", "Bearer "+s.runtimeBearerToken)
 	}
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, wsURL, headers)
+	conn, handshakeResponse, err := websocket.DefaultDialer.DialContext(ctx, wsURL, headers)
+	if handshakeResponse != nil {
+		defer func() { _ = handshakeResponse.Body.Close() }()
+	}
 	if err != nil {
 		return fmt.Errorf("%w: docker agent terminal unavailable: %v", apperrors.ErrClusterUnready, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if err := conn.WriteJSON(dockerRuntimeMessage{Type: "init", Data: mustJSON(req)}); err != nil {
 		return err
 	}
@@ -297,7 +304,7 @@ func postDockerRuntime[T any](ctx context.Context, endpoint string, token string
 	if err != nil {
 		return zero, fmt.Errorf("%w: docker agent runtime unavailable: %v", apperrors.ErrClusterUnready, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		detail, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return zero, fmt.Errorf("%w: docker agent runtime returned %d: %s", apperrors.ErrClusterUnready, resp.StatusCode, strings.TrimSpace(string(detail)))

@@ -66,8 +66,8 @@ func TestRecordRedactsAuditSensitiveFields(t *testing.T) {
 	if repo.created.Metadata["apiKey"] != "[REDACTED]" {
 		t.Fatalf("apiKey metadata was not redacted: %#v", repo.created.Metadata)
 	}
-	nested := repo.created.Metadata["nested"].(map[string]any)
-	if strings.Contains(nested["note"].(string), "raw-bearer") {
+	nested := mustAuditValue[map[string]any](t, repo.created.Metadata["nested"])
+	if strings.Contains(mustAuditValue[string](t, nested["note"]), "raw-bearer") {
 		t.Fatalf("nested metadata text was not redacted: %#v", nested)
 	}
 }
@@ -137,12 +137,21 @@ func TestListRedactsAuditSensitiveFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
-	content := items[0].Summary + items[0].Metadata["password"].(string) + items[0].Metadata["note"].(string)
+	content := items[0].Summary + mustAuditValue[string](t, items[0].Metadata["password"]) + mustAuditValue[string](t, items[0].Metadata["note"])
 	for _, leaked := range []string{"raw-bearer", "raw-password", "raw-secret"} {
 		if strings.Contains(content, leaked) {
 			t.Fatalf("list leaked %q in %#v", leaked, items[0])
 		}
 	}
+}
+
+func mustAuditValue[T any](t *testing.T, value any) T {
+	t.Helper()
+	result, ok := value.(T)
+	if !ok {
+		t.Fatalf("value has type %T, want %T", value, *new(T))
+	}
+	return result
 }
 
 func TestListNormalizesExpandedAuditFilter(t *testing.T) {

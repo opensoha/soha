@@ -87,9 +87,17 @@ func (s *Store) MigrateFromFile(ctx context.Context, path string) error {
 		if applied {
 			continue
 		}
-		statement, err := os.ReadFile(migrationFile)
+		migrationRoot, err := os.OpenRoot(filepath.Dir(migrationFile))
 		if err != nil {
-			return fmt.Errorf("read migration file %s: %w", migrationFile, err)
+			return fmt.Errorf("open migration directory %s: %w", filepath.Dir(migrationFile), err)
+		}
+		statement, readErr := migrationRoot.ReadFile(filepath.Base(migrationFile))
+		closeErr := migrationRoot.Close()
+		if readErr != nil {
+			return fmt.Errorf("read migration file %s: %w", migrationFile, readErr)
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close migration directory %s: %w", filepath.Dir(migrationFile), closeErr)
 		}
 		if err := s.executeMigrationStatement(ctx, string(statement)); err != nil {
 			return fmt.Errorf("execute migration file %s: %w", migrationFile, err)
@@ -115,7 +123,7 @@ func (s *Store) executeMigrationStatement(ctx context.Context, statement string)
 	if err != nil {
 		return fmt.Errorf("get migration connection: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if _, err := conn.ExecContext(ctx, statement); err != nil {
 		_, _ = conn.ExecContext(ctx, `ROLLBACK`)

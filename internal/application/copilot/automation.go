@@ -13,130 +13,129 @@ import (
 const automationRootCauseCreatedBy = "system:automation"
 
 func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainalert.Instance) error {
-	policies, err := s.repo.ListAutomationPolicies(ctx)
+	policies, err := s.automationPolicies.ListAutomationPolicies(ctx)
 	if err != nil {
 		return err
 	}
 	for _, policy := range policies {
-		if !policy.Enabled || policy.TriggerType != "alert_webhook" {
+		if !s.shouldRunAlertAutomationPolicy(ctx, instance, policy) {
 			continue
 		}
-		matched, err := s.matchesAlertAutomationPolicy(instance, policy)
-		if err != nil || !matched {
-			continue
-		}
-		policyRuns, err := s.repo.ListRootCauseRuns(ctx, automationRootCauseCreatedBy, domaincopilot.RootCauseRunFilter{
-			TriggerType:    "alert_webhook",
-			DedupKeyPrefix: buildAlertAutomationDedupPrefix(policy.ID),
-			Limit:          1,
-		})
-		if err == nil && withinCooldownWindow(policyRuns, policy.CooldownSeconds) {
-			continue
-		}
-		policyAgentRuns, err := s.repo.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{
-			CreatedBy:      automationRootCauseCreatedBy,
-			TriggerType:    "alert_webhook",
-			DedupKeyPrefix: buildAlertAutomationDedupPrefix(policy.ID),
-			Limit:          1,
-		})
-		if err == nil && withinAgentRunCooldownWindow(policyAgentRuns, policy.CooldownSeconds) {
-			continue
-		}
-		dedupKey := buildAlertAutomationDedupKey(policy.ID, instance)
-		existing, err := s.repo.ListRootCauseRuns(ctx, automationRootCauseCreatedBy, domaincopilot.RootCauseRunFilter{
-			AlertID:     instance.ID,
-			TriggerType: "alert_webhook",
-			DedupKey:    dedupKey,
-			Limit:       5,
-		})
-		if err == nil && withinDedupWindow(existing, policy.DedupWindowSeconds) {
-			continue
-		}
-		existingAgentRuns, err := s.repo.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{
-			CreatedBy:   automationRootCauseCreatedBy,
-			TriggerType: "alert_webhook",
-			DedupKey:    dedupKey,
-			Limit:       5,
-		})
-		if err == nil && withinAgentRunDedupWindow(existingAgentRuns, policy.DedupWindowSeconds) {
-			continue
-		}
-		kinds := policy.AnalysisKinds
-		if len(kinds) == 0 {
-			kinds = []string{"root_cause"}
-		}
-		for _, kind := range kinds {
-			var runErr error
-			kind = strings.TrimSpace(kind)
-			if s.shouldUseExternalAgent(policy.AgentProviderID) {
-				if normalizeAnalysisKind(kind) == "root_cause" {
-					_, runErr = s.queueRootCauseAgentRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, domaincopilot.RootCauseRunInput{
-						Kind:              "root_cause",
-						Title:             instance.Title,
-						AnalysisProfileID: policy.AnalysisProfileID,
-						AgentProviderID:   policy.AgentProviderID,
-						TriggerType:       "alert_webhook",
-						ClusterID:         instance.ClusterID,
-						Namespace:         instance.Namespace,
-						WorkloadKind:      "Deployment",
-						WorkloadName:      resolveAlertWorkload(instance),
-						AlertID:           instance.ID,
-						TimeRangeMinutes:  policyTimeRangeMinutes(policy),
-						Question:          fmt.Sprintf("Investigate alert %s", instance.ID),
-					}, dedupKey, "en-US")
-				} else {
-					_, runErr = s.queueAutomationAgentRun(ctx, policy, kind, instance, dedupKey)
-				}
-				if runErr != nil {
-					return runErr
-				}
-				continue
-			}
-			switch kind {
-			case "performance", "trace":
-				_, _, _ = s.analyzeConversation(ctx, systemPrincipal(), domaincopilot.Session{
-					ID:        "automation:" + policy.ID,
-					Title:     instance.Title,
-					CreatedBy: automationRootCauseCreatedBy,
-					Metadata: map[string]any{
-						"mode": kind,
-						"pinnedContext": map[string]any{
-							"automationPolicyId": policy.ID,
-							"dedupKey":           dedupKey,
-							"triggerType":        "alert_webhook",
-						},
-						"scope": map[string]any{
-							"clusterId":        instance.ClusterID,
-							"namespace":        instance.Namespace,
-							"workload":         resolveAlertWorkload(instance),
-							"alertId":          instance.ID,
-							"timeRangeMinutes": policyTimeRangeMinutes(policy),
-						},
-					},
-				}, fmt.Sprintf("Investigate alert %s", instance.ID), "en-US")
-			case "root_cause":
-				_, runErr = s.executeRootCauseRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, domaincopilot.RootCauseRunInput{
-					Kind:              "root_cause",
-					Title:             instance.Title,
-					AnalysisProfileID: policy.AnalysisProfileID,
-					TriggerType:       "alert_webhook",
-					ClusterID:         instance.ClusterID,
-					Namespace:         instance.Namespace,
-					WorkloadKind:      "Deployment",
-					WorkloadName:      resolveAlertWorkload(instance),
-					AlertID:           instance.ID,
-					TimeRangeMinutes:  policyTimeRangeMinutes(policy),
-					Question:          fmt.Sprintf("Investigate alert %s", instance.ID),
-				}, dedupKey, domaincopilot.SessionToolset{}, "en-US")
-			default:
-				continue
-			}
-			if runErr != nil {
-				return runErr
-			}
+		if err := s.runAlertAutomationPolicy(ctx, policy, instance); err != nil {
+			return err
 		}
 	}
 	return nil
+}
+
+func (s *Service) shouldRunAlertAutomationPolicy(ctx context.Context, instance domainalert.Instance, policy domaincopilot.AutomationPolicy) bool {
+	if !policy.Enabled || policy.TriggerType != "alert_webhook" {
+		return false
+	}
+	matched, err := s.matchesAlertAutomationPolicy(instance, policy)
+	if err != nil || !matched {
+		return false
+	}
+	return !s.alertAutomationSuppressed(ctx, instance, policy)
+}
+
+func (s *Service) alertAutomationSuppressed(ctx context.Context, instance domainalert.Instance, policy domaincopilot.AutomationPolicy) bool {
+	dedupPrefix := buildAlertAutomationDedupPrefix(policy.ID)
+	policyRuns, err := s.rootCauseRuns.ListRootCauseRuns(ctx, automationRootCauseCreatedBy, domaincopilot.RootCauseRunFilter{TriggerType: "alert_webhook", DedupKeyPrefix: dedupPrefix, Limit: 1})
+	if err == nil && withinCooldownWindow(policyRuns, policy.CooldownSeconds) {
+		return true
+	}
+	policyAgentRuns, err := s.agentRuns.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{CreatedBy: automationRootCauseCreatedBy, TriggerType: "alert_webhook", DedupKeyPrefix: dedupPrefix, Limit: 1})
+	if err == nil && withinAgentRunCooldownWindow(policyAgentRuns, policy.CooldownSeconds) {
+		return true
+	}
+	dedupKey := buildAlertAutomationDedupKey(policy.ID, instance)
+	existing, err := s.rootCauseRuns.ListRootCauseRuns(ctx, automationRootCauseCreatedBy, domaincopilot.RootCauseRunFilter{AlertID: instance.ID, TriggerType: "alert_webhook", DedupKey: dedupKey, Limit: 5})
+	if err == nil && withinDedupWindow(existing, policy.DedupWindowSeconds) {
+		return true
+	}
+	existingAgentRuns, err := s.agentRuns.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{CreatedBy: automationRootCauseCreatedBy, TriggerType: "alert_webhook", DedupKey: dedupKey, Limit: 5})
+	return err == nil && withinAgentRunDedupWindow(existingAgentRuns, policy.DedupWindowSeconds)
+}
+
+func (s *Service) runAlertAutomationPolicy(ctx context.Context, policy domaincopilot.AutomationPolicy, instance domainalert.Instance) error {
+	kinds := policy.AnalysisKinds
+	if len(kinds) == 0 {
+		kinds = []string{"root_cause"}
+	}
+	dedupKey := buildAlertAutomationDedupKey(policy.ID, instance)
+	for _, kind := range kinds {
+		if err := s.runAlertAutomationKind(ctx, policy, strings.TrimSpace(kind), instance, dedupKey); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) runAlertAutomationKind(ctx context.Context, policy domaincopilot.AutomationPolicy, kind string, instance domainalert.Instance, dedupKey string) error {
+	if s.shouldUseExternalAgent(policy.AgentProviderID) {
+		return s.runExternalAlertAutomation(ctx, policy, kind, instance, dedupKey)
+	}
+	switch kind {
+	case "performance", "trace":
+		_, _, _ = s.analyzeConversation(ctx, systemPrincipal(), alertAutomationSession(policy, kind, instance, dedupKey), fmt.Sprintf("Investigate alert %s", instance.ID), "en-US")
+		return nil
+	case "root_cause":
+		_, err := s.executeRootCauseRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, alertAutomationRootCauseInput(policy, instance), dedupKey, domaincopilot.SessionToolset{}, "en-US")
+		return err
+	default:
+		return nil
+	}
+}
+
+func (s *Service) runExternalAlertAutomation(ctx context.Context, policy domaincopilot.AutomationPolicy, kind string, instance domainalert.Instance, dedupKey string) error {
+	if normalizeAnalysisKind(kind) != "root_cause" {
+		_, err := s.queueAutomationAgentRun(ctx, policy, kind, instance, dedupKey)
+		return err
+	}
+	input := alertAutomationRootCauseInput(policy, instance)
+	input.AgentProviderID = policy.AgentProviderID
+	_, err := s.queueRootCauseAgentRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, input, dedupKey, "en-US")
+	return err
+}
+
+func alertAutomationRootCauseInput(policy domaincopilot.AutomationPolicy, instance domainalert.Instance) domaincopilot.RootCauseRunInput {
+	return domaincopilot.RootCauseRunInput{
+		Kind:              "root_cause",
+		Title:             instance.Title,
+		AnalysisProfileID: policy.AnalysisProfileID,
+		TriggerType:       "alert_webhook",
+		ClusterID:         instance.ClusterID,
+		Namespace:         instance.Namespace,
+		WorkloadKind:      "Deployment",
+		WorkloadName:      resolveAlertWorkload(instance),
+		AlertID:           instance.ID,
+		TimeRangeMinutes:  policyTimeRangeMinutes(policy),
+		Question:          fmt.Sprintf("Investigate alert %s", instance.ID),
+	}
+}
+
+func alertAutomationSession(policy domaincopilot.AutomationPolicy, kind string, instance domainalert.Instance, dedupKey string) domaincopilot.Session {
+	return domaincopilot.Session{
+		ID:        "automation:" + policy.ID,
+		Title:     instance.Title,
+		CreatedBy: automationRootCauseCreatedBy,
+		Metadata: map[string]any{
+			"mode": kind,
+			"pinnedContext": map[string]any{
+				"automationPolicyId": policy.ID,
+				"dedupKey":           dedupKey,
+				"triggerType":        "alert_webhook",
+			},
+			"scope": map[string]any{
+				"clusterId":        instance.ClusterID,
+				"namespace":        instance.Namespace,
+				"workload":         resolveAlertWorkload(instance),
+				"alertId":          instance.ID,
+				"timeRangeMinutes": policyTimeRangeMinutes(policy),
+			},
+		},
+	}
 }
 
 func (s *Service) queueAutomationAgentRun(ctx context.Context, policy domaincopilot.AutomationPolicy, kind string, instance domainalert.Instance, dedupKey string) (domaincopilot.AgentRun, error) {
@@ -148,7 +147,7 @@ func (s *Service) queueAutomationAgentRun(ctx context.Context, policy domaincopi
 		AlertID:          instance.ID,
 		TimeRangeMinutes: policyTimeRangeMinutes(policy),
 	}
-	profile, _ := s.repo.GetAnalysisProfile(ctx, policy.AnalysisProfileID)
+	profile, _ := s.analysisProfiles.GetAnalysisProfile(ctx, policy.AnalysisProfileID)
 	toolset := domaincopilot.SessionToolset{
 		EnabledAdapterIDs: profile.EnabledSources,
 		EnabledSkillIDs:   profile.EnabledPlaybooks,

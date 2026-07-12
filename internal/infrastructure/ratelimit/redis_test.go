@@ -20,7 +20,7 @@ func TestNewRedisBackendUsesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build redis backend: %v", err)
 	}
-	defer backend.Close()
+	defer func() { _ = backend.Close() }()
 	if backend.prefix != defaultRedisRateLimitPrefix {
 		t.Fatalf("expected default prefix %q, got %q", defaultRedisRateLimitPrefix, backend.prefix)
 	}

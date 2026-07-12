@@ -68,7 +68,7 @@ func (d clickHouseDriver) Correlate(ctx context.Context, sourceID string, config
 	if err != nil {
 		return CorrelationResult{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return CorrelationResult{}, fmt.Errorf("clickhouse correlate failed with status %d", resp.StatusCode)
 	}

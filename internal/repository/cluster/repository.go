@@ -32,7 +32,7 @@ func (r *Repository) List(ctx context.Context) ([]domaincluster.Summary, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaincluster.Summary, 0)
 	for rows.Next() {
@@ -72,7 +72,7 @@ func (r *Repository) ListConnections(ctx context.Context) ([]domaincluster.Conne
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaincluster.Connection, 0)
 	for rows.Next() {

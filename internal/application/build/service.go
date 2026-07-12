@@ -118,6 +118,16 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app.ID); err != nil {
 		return domainbuild.Record{}, err
 	}
+	metadata := s.buildTriggerMetadata(ctx, app, buildSource, input, effectiveImageTag, imageRef)
+	record, err := s.repo.Create(ctx, input, metadata)
+	if err != nil {
+		return domainbuild.Record{}, err
+	}
+	s.recordTriggeredBuild(ctx, principal, app, input, record)
+	return record, nil
+}
+
+func (s *Service) buildTriggerMetadata(ctx context.Context, app domainapp.App, buildSource *domainapp.BuildSource, input domainbuild.TriggerInput, effectiveImageTag, imageRef string) map[string]any {
 	metadata := map[string]any{
 		"applicationName":          app.Name,
 		"applicationEnvironmentId": strings.TrimSpace(input.ApplicationEnvironmentID),
@@ -147,7 +157,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		metadata["workspace"] = workspace
 	}
 	metadata["runtime"] = buildExecutionRuntime(buildSource, metadata)
-	if commands := buildExecutionCommands(app, buildSource, metadata, imageRef); len(commands) > 0 {
+	if commands := buildExecutionCommands(buildSource, metadata, imageRef); len(commands) > 0 {
 		metadata["commands"] = commands
 	}
 	if s.execution != nil {
@@ -168,10 +178,10 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 			metadata["executionTaskStatus"] = task.Status
 		}
 	}
-	record, err := s.repo.Create(ctx, input, metadata)
-	if err != nil {
-		return domainbuild.Record{}, err
-	}
+	return metadata
+}
+
+func (s *Service) recordTriggeredBuild(ctx context.Context, principal domainidentity.Principal, app domainapp.App, input domainbuild.TriggerInput, record domainbuild.Record) {
 	if s.events != nil {
 		_ = s.events.Create(ctx, domainevent.Envelope{
 			ID:       "event:" + record.ID,
@@ -207,7 +217,6 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 			},
 		))
 	}
-	return record, nil
 }
 
 func (s *Service) Execute(ctx context.Context, principal domainidentity.Principal, input domainbuild.TriggerInput) (domainbuild.Record, error) {
@@ -421,65 +430,77 @@ func appendBuildSourceMetadata(ctx context.Context, templates BuildTemplateReade
 	metadata["buildTemplateDockerfileTemplate"] = template.DockerfileTemplate
 }
 
-func buildExecutionCommands(app domainapp.App, source *domainapp.BuildSource, metadata map[string]any, imageRef string) []string {
+func buildExecutionCommands(source *domainapp.BuildSource, metadata map[string]any, imageRef string) []string {
 	if source == nil {
 		return nil
 	}
 	switch source.Type {
 	case domainapp.BuildSourceTypePlatformTemplate:
-		if raw, ok := metadata["buildTemplateCommands"].([]string); ok && len(raw) > 0 {
-			return renderCommands(raw, source, imageRef)
-		}
-		if raw, ok := metadata["buildTemplateCommands"].([]any); ok && len(raw) > 0 {
-			items := make([]string, 0, len(raw))
-			for _, item := range raw {
-				text := strings.TrimSpace(fmt.Sprint(item))
-				if text != "" {
-					items = append(items, text)
-				}
-			}
-			return renderCommands(items, source, imageRef)
-		}
+		return platformTemplateExecutionCommands(source, metadata, imageRef)
 	case domainapp.BuildSourceTypeExternalPipeline:
-		if value, ok := source.Config["triggerConfig"].(map[string]any); ok {
-			if commands, ok := value["commands"].([]any); ok {
-				items := make([]string, 0, len(commands))
-				for _, item := range commands {
-					text := strings.TrimSpace(fmt.Sprint(item))
-					if text != "" {
-						items = append(items, text)
-					}
-				}
-				return items
-			}
-		}
+		return externalPipelineExecutionCommands(source)
 	default:
-		contextDir := strings.TrimSpace(fmt.Sprint(source.Config["contextDir"]))
-		if contextDir == "" {
-			contextDir = "."
-		}
-		dockerfilePath := strings.TrimSpace(fmt.Sprint(source.Config["dockerfilePath"]))
-		if dockerfilePath == "" {
-			dockerfilePath = "Dockerfile"
-		}
-		builderKind := strings.TrimSpace(fmt.Sprint(source.Config["builderKind"]))
-		if builderKind == "" {
-			builderKind = "docker"
-		}
-		if resolveBuildProviderKind(source) == "k8s_job_runner" && (builderKind == "docker" || builderKind == "buildx") {
-			builderKind = "kaniko"
-		}
-		switch builderKind {
-		case "kaniko":
-			return []string{fmt.Sprintf("executor --dockerfile=%s --context=%s --destination=%s", dockerfilePath, contextDir, imageRef)}
-		case "buildx":
-			return []string{fmt.Sprintf("docker buildx build -f %s -t %s %s", dockerfilePath, imageRef, contextDir)}
-		default:
-			return []string{fmt.Sprintf("docker build -f %s -t %s %s", dockerfilePath, imageRef, contextDir)}
+		return containerBuildExecutionCommands(source, imageRef)
+	}
+}
+
+func platformTemplateExecutionCommands(source *domainapp.BuildSource, metadata map[string]any, imageRef string) []string {
+	if raw, ok := metadata["buildTemplateCommands"].([]string); ok && len(raw) > 0 {
+		return renderCommands(raw, source, imageRef)
+	}
+	raw, ok := metadata["buildTemplateCommands"].([]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	return renderCommands(nonEmptyStrings(raw), source, imageRef)
+}
+
+func externalPipelineExecutionCommands(source *domainapp.BuildSource) []string {
+	value, ok := source.Config["triggerConfig"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	commands, ok := value["commands"].([]any)
+	if !ok {
+		return nil
+	}
+	return nonEmptyStrings(commands)
+}
+
+func nonEmptyStrings(items []any) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
+			out = append(out, text)
 		}
 	}
-	_ = app
-	return nil
+	return out
+}
+
+func containerBuildExecutionCommands(source *domainapp.BuildSource, imageRef string) []string {
+	contextDir := strings.TrimSpace(fmt.Sprint(source.Config["contextDir"]))
+	if contextDir == "" {
+		contextDir = "."
+	}
+	dockerfilePath := strings.TrimSpace(fmt.Sprint(source.Config["dockerfilePath"]))
+	if dockerfilePath == "" {
+		dockerfilePath = "Dockerfile"
+	}
+	builderKind := strings.TrimSpace(fmt.Sprint(source.Config["builderKind"]))
+	if builderKind == "" {
+		builderKind = "docker"
+	}
+	if resolveBuildProviderKind(source) == "k8s_job_runner" && (builderKind == "docker" || builderKind == "buildx") {
+		builderKind = "kaniko"
+	}
+	switch builderKind {
+	case "kaniko":
+		return []string{fmt.Sprintf("executor --dockerfile=%s --context=%s --destination=%s", dockerfilePath, contextDir, imageRef)}
+	case "buildx":
+		return []string{fmt.Sprintf("docker buildx build -f %s -t %s %s", dockerfilePath, imageRef, contextDir)}
+	default:
+		return []string{fmt.Sprintf("docker build -f %s -t %s %s", dockerfilePath, imageRef, contextDir)}
+	}
 }
 
 func renderCommands(commands []string, source *domainapp.BuildSource, imageRef string) []string {

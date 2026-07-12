@@ -108,14 +108,19 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RecordOperationCallback() error = %v", err)
 	}
+	assertCompletedDockerOperation(t, repo, operation.ID, updated)
+}
+
+func assertCompletedDockerOperation(t *testing.T, repo *memoryDockerRepo, operationID string, updated domaindocker.Operation) {
+	t.Helper()
 	if updated.Status != OperationStatusCompleted || updated.FinishedAt == nil {
 		t.Fatalf("updated operation status = %s finishedAt=%v, want completed with finishedAt", updated.Status, updated.FinishedAt)
 	}
 	if updated.OperationState == nil || !updated.OperationState.Terminal || updated.OperationState.Phase != "succeeded" || updated.OperationState.Retryable {
 		t.Fatalf("updated operation state = %#v", updated.OperationState)
 	}
-	if repo.operations[operation.ID].OperationState != nil {
-		t.Fatalf("stored operation should not keep derived operation state: %#v", repo.operations[operation.ID].OperationState)
+	if repo.operations[operationID].OperationState != nil {
+		t.Fatalf("stored operation should not keep derived operation state: %#v", repo.operations[operationID].OperationState)
 	}
 	if repo.projects["project-1"].Status != "running" {
 		t.Fatalf("project status = %s, want running", repo.projects["project-1"].Status)
@@ -123,7 +128,7 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	if _, ok := repo.services["project-1:web"]; !ok {
 		t.Fatalf("callback did not upsert service web")
 	}
-	if len(repo.logs[operation.ID]) == 0 {
+	if len(repo.logs[operationID]) == 0 {
 		t.Fatalf("callback did not append operation logs")
 	}
 }

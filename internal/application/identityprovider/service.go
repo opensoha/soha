@@ -28,9 +28,9 @@ import (
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
 	domainportal "github.com/opensoha/soha/internal/domain/providerportal"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
-	userrepo "github.com/opensoha/soha/internal/repository/user"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -49,19 +49,20 @@ type AuditRecorder interface {
 }
 
 type UserRepository interface {
-	GetByID(context.Context, string) (userrepo.User, error)
-	GetAuthzState(context.Context, string) (userrepo.AuthzState, error)
+	GetByID(context.Context, string) (domainidentity.User, error)
+	GetAuthzState(context.Context, string) (domainidentity.AuthzState, error)
 	ListRoles(context.Context, string) ([]string, error)
 	ListTeams(context.Context, string) ([]string, error)
 	ListProjects(context.Context, string) ([]string, error)
 }
 
 type Service struct {
-	repo          domainprovider.Repository
-	users         UserRepository
-	permissions   *appaccess.PermissionResolver
-	audit         AuditRecorder
-	encryptionKey string
+	repo           domainprovider.Repository
+	users          UserRepository
+	permissions    *appaccess.PermissionResolver
+	audit          AuditRecorder
+	encryptionKey  string
+	encryptionKeys keyring.Ring
 }
 
 func New(repo domainprovider.Repository, users UserRepository, permissions *appaccess.PermissionResolver, audit AuditRecorder, encryptionKey string) *Service {
@@ -71,6 +72,16 @@ func New(repo domainprovider.Repository, users UserRepository, permissions *appa
 		permissions:   permissions,
 		audit:         audit,
 		encryptionKey: strings.TrimSpace(encryptionKey),
+	}
+}
+
+func NewWithEncryptionKeys(repo domainprovider.Repository, users UserRepository, permissions *appaccess.PermissionResolver, audit AuditRecorder, encryptionKeys keyring.Ring) *Service {
+	return &Service{
+		repo:           repo,
+		users:          users,
+		permissions:    permissions,
+		audit:          audit,
+		encryptionKeys: encryptionKeys,
 	}
 }
 
@@ -292,49 +303,15 @@ func (s *Service) Token(ctx context.Context, issuer string, input domainprovider
 	issuer = normalizeIssuer(issuer)
 	accessTTL := ttlSeconds(client.AccessTokenTTLSeconds, defaultOIDCAccessTokenTTLSeconds)
 	idTTL := ttlSeconds(client.IDTokenTTLSeconds, defaultOIDCIDTokenTTLSeconds)
-	accessToken, err := signOIDCToken(privateKey, signingKey.KeyID, oidcTokenClaims{
-		TokenType: domainprovider.TokenTypeAccess,
-		ClientID:  client.ClientID,
-		Scope:     strings.Join(code.Scopes, " "),
-		UserName:  principal.UserName,
-		Email:     principal.Email,
-		Roles:     append([]string(nil), principal.Roles...),
-		Teams:     append([]string(nil), principal.Teams...),
-		Projects:  append([]string(nil), principal.Projects...),
-		Tags:      append([]string(nil), principal.Tags...),
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    issuer,
-			Subject:   principal.UserID,
-			Audience:  jwt.ClaimStrings{client.ClientID},
-			ID:        uuid.NewString(),
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(accessTTL) * time.Second)),
-		},
-	})
+	accessClaims := newOIDCTokenClaims(domainprovider.TokenTypeAccess, issuer, client.ClientID, principal, now, accessTTL)
+	accessClaims.Scope = strings.Join(code.Scopes, " ")
+	accessToken, err := signOIDCToken(privateKey, signingKey.KeyID, accessClaims)
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
 	}
-	idToken, err := signOIDCToken(privateKey, signingKey.KeyID, oidcTokenClaims{
-		TokenType: domainprovider.TokenTypeID,
-		ClientID:  client.ClientID,
-		Nonce:     code.Nonce,
-		UserName:  principal.UserName,
-		Email:     principal.Email,
-		Roles:     append([]string(nil), principal.Roles...),
-		Teams:     append([]string(nil), principal.Teams...),
-		Projects:  append([]string(nil), principal.Projects...),
-		Tags:      append([]string(nil), principal.Tags...),
-		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    issuer,
-			Subject:   principal.UserID,
-			Audience:  jwt.ClaimStrings{client.ClientID},
-			ID:        uuid.NewString(),
-			IssuedAt:  jwt.NewNumericDate(now),
-			NotBefore: jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(idTTL) * time.Second)),
-		},
-	})
+	idClaims := newOIDCTokenClaims(domainprovider.TokenTypeID, issuer, client.ClientID, principal, now, idTTL)
+	idClaims.Nonce = code.Nonce
+	idToken, err := signOIDCToken(privateKey, signingKey.KeyID, idClaims)
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
 	}
@@ -348,6 +325,23 @@ func (s *Service) Token(ctx context.Context, issuer string, input domainprovider
 		ExpiresIn:   int64(accessTTL),
 		Scope:       strings.Join(code.Scopes, " "),
 	}, nil
+}
+
+func newOIDCTokenClaims(tokenType, issuer, clientID string, principal domainidentity.Principal, now time.Time, ttl int) oidcTokenClaims {
+	return oidcTokenClaims{
+		TokenType: tokenType,
+		ClientID:  clientID,
+		UserName:  principal.UserName,
+		Email:     principal.Email,
+		Roles:     append([]string(nil), principal.Roles...),
+		Teams:     append([]string(nil), principal.Teams...),
+		Projects:  append([]string(nil), principal.Projects...),
+		Tags:      append([]string(nil), principal.Tags...),
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer: issuer, Subject: principal.UserID, Audience: jwt.ClaimStrings{clientID}, ID: uuid.NewString(),
+			IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(ttl) * time.Second)),
+		},
+	}
 }
 
 func (s *Service) Introspect(ctx context.Context, issuer, token string, auth domainprovider.ClientAuthInput) (domainprovider.IntrospectionResponse, error) {
@@ -378,13 +372,13 @@ func (s *Service) Introspect(ctx context.Context, issuer, token string, auth dom
 		Username:  claims.UserName,
 	}
 	if claims.ExpiresAt != nil {
-		out.ExpiresAt = claims.ExpiresAt.Time.Unix()
+		out.ExpiresAt = claims.ExpiresAt.Unix()
 	}
 	if claims.IssuedAt != nil {
-		out.IssuedAt = claims.IssuedAt.Time.Unix()
+		out.IssuedAt = claims.IssuedAt.Unix()
 	}
 	if claims.NotBefore != nil {
-		out.NotBefore = claims.NotBefore.Time.Unix()
+		out.NotBefore = claims.NotBefore.Unix()
 	}
 	return out, nil
 }
@@ -1359,7 +1353,12 @@ func (s *Service) encryptPrivateKey(privateKey *ecdsa.PrivateKey) (string, error
 		return "", fmt.Errorf("marshal oidc signing key: %w", err)
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: der})
-	encrypted, err := secretcrypto.EncryptString(s.encryptionKey, string(pemBytes))
+	var encrypted string
+	if s.encryptionKeys.Active().ID() != "" {
+		encrypted, err = secretcrypto.EncryptStringWithKeyring(s.encryptionKeys, string(pemBytes))
+	} else {
+		encrypted, err = secretcrypto.EncryptString(s.encryptionKey, string(pemBytes))
+	}
 	if err != nil {
 		return "", fmt.Errorf("encrypt oidc signing key: %w", err)
 	}
@@ -1367,7 +1366,13 @@ func (s *Service) encryptPrivateKey(privateKey *ecdsa.PrivateKey) (string, error
 }
 
 func (s *Service) decryptPrivateKey(ciphertext string) (*ecdsa.PrivateKey, error) {
-	plaintext, err := secretcrypto.DecryptString(s.encryptionKey, ciphertext)
+	var plaintext string
+	var err error
+	if s.encryptionKeys.Active().ID() != "" {
+		plaintext, err = secretcrypto.DecryptStringWithKeyring(s.encryptionKeys, ciphertext)
+	} else {
+		plaintext, err = secretcrypto.DecryptString(s.encryptionKey, ciphertext)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("decrypt oidc signing key: %w", err)
 	}
@@ -1702,7 +1707,7 @@ func normalizeRedirectURIs(values []string) ([]string, error) {
 		if err != nil || !parsed.IsAbs() || parsed.Fragment != "" {
 			return nil, fmt.Errorf("%w: redirect_uri must be an absolute URI without fragment", apperrors.ErrInvalidArgument)
 		}
-		if parsed.Scheme != "https" && !(parsed.Scheme == "http" && isLoopbackHost(parsed.Hostname())) {
+		if parsed.Scheme != "https" && (parsed.Scheme != "http" || !isLoopbackHost(parsed.Hostname())) {
 			return nil, fmt.Errorf("%w: redirect_uri must use https except loopback localhost", apperrors.ErrInvalidArgument)
 		}
 	}

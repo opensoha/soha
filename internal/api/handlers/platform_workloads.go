@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -9,72 +10,73 @@ import (
 	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-func (h *PlatformHandler) ListPods(c *gin.Context) {
+func (h *podResourceHandler) ListPods(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListPods(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.reader.ListPods(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetWorkloadOverview(c *gin.Context) {
+func (h *podResourceHandler) GetWorkloadOverview(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetWorkloadOverview(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	item, err := h.reader.GetWorkloadOverview(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetPodDetail(c *gin.Context) {
+func (h *podResourceHandler) GetPodDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	item, err := h.resources.GetPodDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"))
+	item, err := h.reader.GetPodDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) DeletePod(c *gin.Context) {
+func (h *podResourceHandler) DeletePod(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	if err := h.resources.DeletePod(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName")); err != nil {
+	if err := h.editor.DeletePod(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName")); err != nil {
 		writeError(c, err)
 		return
 	}
 	c.Status(http.StatusNoContent)
 }
-func (h *PlatformHandler) GetPodLogs(c *gin.Context) {
+func (h *podResourceHandler) GetPodLogs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	tailLines := int64(parseLimit(c.Query("tailLines"), 200))
 	sinceSeconds := int64(parseLimit(c.Query("sinceSeconds"), 0))
 	previous := strings.EqualFold(c.Query("previous"), "true")
-	item, err := h.resources.GetPodLogs(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), c.Query("container"), tailLines, sinceSeconds, previous)
+	item, err := h.reader.GetPodLogs(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), c.Query("container"), tailLines, sinceSeconds, previous)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetPodYAML(c *gin.Context) {
+func (h *podResourceHandler) GetPodYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	item, err := h.resources.GetPodYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"))
+	item, err := h.editor.GetPodYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ApplyPodYAML(c *gin.Context) {
+func (h *podResourceHandler) ApplyPodYAML(c *gin.Context) {
 	var req dto.ApplyResourceYAMLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid pod yaml payload")
@@ -82,26 +84,26 @@ func (h *PlatformHandler) ApplyPodYAML(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	item, err := h.resources.ApplyPodYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), req.Content)
+	item, err := h.editor.ApplyPodYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetPodMetrics(c *gin.Context) {
+func (h *podResourceHandler) GetPodMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
 	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
-	item, err := h.resources.GetPodMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), rangeMinutes, stepSeconds)
+	item, err := h.diagnostics.GetPodMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ExecPod(c *gin.Context) {
+func (h *podResourceHandler) ExecPod(c *gin.Context) {
 	var req dto.ExecPodRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.Command == "" {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "command is required")
@@ -109,44 +111,44 @@ func (h *PlatformHandler) ExecPod(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	item, err := h.resources.ExecPod(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), req.Container, req.Command, req.TimeoutSeconds)
+	item, err := h.diagnostics.ExecPod(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), req.Container, req.Command, req.TimeoutSeconds)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListDeployments(c *gin.Context) {
+func (h *deploymentResourceHandler) ListDeployments(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListDeployments(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.reader.ListDeployments(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetDeploymentDetail(c *gin.Context) {
+func (h *deploymentResourceHandler) GetDeploymentDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	item, err := h.resources.GetDeploymentDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"))
+	item, err := h.reader.GetDeploymentDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetDeploymentYAML(c *gin.Context) {
+func (h *deploymentResourceHandler) GetDeploymentYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	item, err := h.resources.GetDeploymentYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"))
+	item, err := h.reader.GetDeploymentYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ApplyDeploymentYAML(c *gin.Context) {
+func (h *deploymentResourceHandler) ApplyDeploymentYAML(c *gin.Context) {
 	var req dto.ApplyResourceYAMLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid deployment yaml payload")
@@ -154,76 +156,76 @@ func (h *PlatformHandler) ApplyDeploymentYAML(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	item, err := h.resources.ApplyDeploymentYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"), req.Content)
+	item, err := h.editor.ApplyDeploymentYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"), req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetDeploymentMetrics(c *gin.Context) {
+func (h *deploymentResourceHandler) GetDeploymentMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
 	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
-	item, err := h.resources.GetDeploymentMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"), rangeMinutes, stepSeconds)
+	item, err := h.reader.GetDeploymentMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetDeploymentRolloutStatus(c *gin.Context) {
+func (h *deploymentResourceHandler) GetDeploymentRolloutStatus(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	item, err := h.resources.GetDeploymentRolloutStatus(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"))
+	item, err := h.reader.GetDeploymentRolloutStatus(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListDeploymentRollouts(c *gin.Context) {
+func (h *deploymentResourceHandler) ListDeploymentRollouts(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	items, err := h.resources.ListDeploymentRolloutHistory(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"))
+	items, err := h.editor.ListDeploymentRolloutHistory(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListStatefulSets(c *gin.Context) {
+func (h *statefulSetResourceHandler) ListStatefulSets(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListStatefulSets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.reader.ListStatefulSets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetStatefulSetDetail(c *gin.Context) {
+func (h *statefulSetResourceHandler) GetStatefulSetDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetStatefulSetDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"))
+	item, err := h.reader.GetStatefulSetDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetStatefulSetYAML(c *gin.Context) {
+func (h *statefulSetResourceHandler) GetStatefulSetYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetStatefulSetYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"))
+	item, err := h.reader.GetStatefulSetYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ApplyStatefulSetYAML(c *gin.Context) {
+func (h *statefulSetResourceHandler) ApplyStatefulSetYAML(c *gin.Context) {
 	var req dto.ApplyResourceYAMLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid statefulset yaml payload")
@@ -231,56 +233,56 @@ func (h *PlatformHandler) ApplyStatefulSetYAML(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.ApplyStatefulSetYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"), req.Content)
+	item, err := h.editor.ApplyStatefulSetYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"), req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetStatefulSetMetrics(c *gin.Context) {
+func (h *statefulSetResourceHandler) GetStatefulSetMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
 	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
-	item, err := h.resources.GetStatefulSetMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"), rangeMinutes, stepSeconds)
+	item, err := h.reader.GetStatefulSetMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListDaemonSets(c *gin.Context) {
+func (h *daemonSetResourceHandler) ListDaemonSets(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListDaemonSets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.reader.ListDaemonSets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetDaemonSetDetail(c *gin.Context) {
+func (h *daemonSetResourceHandler) GetDaemonSetDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetDaemonSetDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"))
+	item, err := h.reader.GetDaemonSetDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetDaemonSetYAML(c *gin.Context) {
+func (h *daemonSetResourceHandler) GetDaemonSetYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetDaemonSetYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"))
+	item, err := h.reader.GetDaemonSetYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ApplyDaemonSetYAML(c *gin.Context) {
+func (h *daemonSetResourceHandler) ApplyDaemonSetYAML(c *gin.Context) {
 	var req dto.ApplyResourceYAMLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid daemonset yaml payload")
@@ -288,56 +290,56 @@ func (h *PlatformHandler) ApplyDaemonSetYAML(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.ApplyDaemonSetYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"), req.Content)
+	item, err := h.editor.ApplyDaemonSetYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"), req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetDaemonSetMetrics(c *gin.Context) {
+func (h *daemonSetResourceHandler) GetDaemonSetMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
 	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
-	item, err := h.resources.GetDaemonSetMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"), rangeMinutes, stepSeconds)
+	item, err := h.reader.GetDaemonSetMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListJobs(c *gin.Context) {
+func (h *jobResourceHandler) ListJobs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListJobs(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListJobs(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetJobDetail(c *gin.Context) {
+func (h *jobResourceHandler) GetJobDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetJobDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("jobName"))
+	item, err := h.service.GetJobDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("jobName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetJobYAML(c *gin.Context) {
+func (h *jobResourceHandler) GetJobYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetJobYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("jobName"))
+	item, err := h.service.GetJobYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("jobName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ApplyJobYAML(c *gin.Context) {
+func (h *jobResourceHandler) ApplyJobYAML(c *gin.Context) {
 	var req dto.ApplyResourceYAMLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid job yaml payload")
@@ -345,44 +347,44 @@ func (h *PlatformHandler) ApplyJobYAML(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.ApplyJobYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("jobName"), req.Content)
+	item, err := h.service.ApplyJobYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("jobName"), req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListCronJobs(c *gin.Context) {
+func (h *cronJobResourceHandler) ListCronJobs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListCronJobs(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListCronJobs(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetCronJobDetail(c *gin.Context) {
+func (h *cronJobResourceHandler) GetCronJobDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetCronJobDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("cronJobName"))
+	item, err := h.service.GetCronJobDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("cronJobName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetCronJobYAML(c *gin.Context) {
+func (h *cronJobResourceHandler) GetCronJobYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetCronJobYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("cronJobName"))
+	item, err := h.service.GetCronJobYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("cronJobName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ApplyCronJobYAML(c *gin.Context) {
+func (h *cronJobResourceHandler) ApplyCronJobYAML(c *gin.Context) {
 	var req dto.ApplyResourceYAMLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid cronjob yaml payload")
@@ -390,14 +392,14 @@ func (h *PlatformHandler) ApplyCronJobYAML(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.ApplyCronJobYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("cronJobName"), req.Content)
+	item, err := h.service.ApplyCronJobYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("cronJobName"), req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) SetCronJobSuspend(c *gin.Context) {
+func (h *cronJobResourceHandler) SetCronJobSuspend(c *gin.Context) {
 	var req struct {
 		Suspend bool `json:"suspend"`
 	}
@@ -407,34 +409,44 @@ func (h *PlatformHandler) SetCronJobSuspend(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	item, err := h.resources.SetCronJobSuspend(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("cronJobName"), req.Suspend)
+	item, err := h.service.SetCronJobSuspend(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("cronJobName"), req.Suspend)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListReplicaSets(c *gin.Context) {
+func (h *workloadInventoryResourceHandler) ListReplicaSets(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListReplicaSets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListReplicaSets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetReplicaSetYAML(c *gin.Context) {
+func (h *workloadInventoryResourceHandler) ListReplicationControllers(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, "ReplicaSet", c.Param("replicaSetName"))
+	items, err := h.service.ListReplicationControllers(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+func (h *workloadInventoryResourceHandler) GetReplicaSetYAML(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.generic.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, "ReplicaSet", c.Param("replicaSetName"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ApplyReplicaSetYAML(c *gin.Context) {
+func (h *workloadInventoryResourceHandler) ApplyReplicaSetYAML(c *gin.Context) {
 	var req dto.ApplyResourceYAMLRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid replicaset yaml payload")
@@ -442,27 +454,27 @@ func (h *PlatformHandler) ApplyReplicaSetYAML(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, "ReplicaSet", c.Param("replicaSetName"), req.Content)
+	item, err := h.generic.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, "ReplicaSet", c.Param("replicaSetName"), req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListHorizontalPodAutoscalers(c *gin.Context) {
+func (h *workloadInventoryResourceHandler) ListHorizontalPodAutoscalers(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListHorizontalPodAutoscalers(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListHorizontalPodAutoscalers(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListPodDisruptionBudgets(c *gin.Context) {
+func (h *workloadInventoryResourceHandler) ListPodDisruptionBudgets(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListPodDisruptionBudgets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListPodDisruptionBudgets(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -473,7 +485,7 @@ func (h *PlatformHandler) ListPodDisruptionBudgets(c *gin.Context) {
 // RegisterWorkloadDeleteRoutes wires DELETE endpoints for built-in workloads using
 // the existing route param names (`:deploymentName`, etc.) to avoid route conflicts
 // with other GET/PUT entries already registered in router.go.
-func (h *PlatformHandler) RegisterWorkloadDeleteRoutes(group gin.IRoutes) {
+func (h *workloadInventoryResourceHandler) RegisterWorkloadDeleteRoutes(group gin.IRoutes) {
 	entries := []struct {
 		path  string
 		param string
@@ -492,7 +504,7 @@ func (h *PlatformHandler) RegisterWorkloadDeleteRoutes(group gin.IRoutes) {
 		group.DELETE(entry.path, func(c *gin.Context) {
 			principal := apiMiddleware.PrincipalFromContext(c)
 			namespace := c.Query("namespace")
-			if err := h.resources.DeleteResourceByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(paramName)); err != nil {
+			if err := h.generic.DeleteResourceByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(paramName)); err != nil {
 				writeError(c, err)
 				return
 			}
@@ -500,7 +512,7 @@ func (h *PlatformHandler) RegisterWorkloadDeleteRoutes(group gin.IRoutes) {
 		})
 	}
 }
-func (h *PlatformHandler) RestartDeployment(c *gin.Context) {
+func (h *deploymentResourceHandler) RestartDeployment(c *gin.Context) {
 	var req dto.RestartDeploymentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid restart deployment payload")
@@ -511,34 +523,16 @@ func (h *PlatformHandler) RestartDeployment(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.resources.RestartDeployment(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name); err != nil {
+	if err := h.editor.RestartDeployment(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name); err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
-func (h *PlatformHandler) ScaleDeployment(c *gin.Context) {
-	var req dto.ScaleDeploymentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid scale deployment payload")
-		return
-	}
-	if req.Namespace == "" || req.Name == "" {
-		writeError(c, fmt.Errorf("%w: namespace and name are required", apperrors.ErrInvalidArgument))
-		return
-	}
-	if req.Replicas < 0 {
-		writeError(c, fmt.Errorf("%w: replicas must be greater than or equal to zero", apperrors.ErrInvalidArgument))
-		return
-	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.resources.ScaleDeployment(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name, req.Replicas); err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+func (h *deploymentResourceHandler) ScaleDeployment(c *gin.Context) {
+	handleScaleResource(c, "invalid scale deployment payload", h.editor.ScaleDeployment)
 }
-func (h *PlatformHandler) RestartStatefulSet(c *gin.Context) {
+func (h *statefulSetResourceHandler) RestartStatefulSet(c *gin.Context) {
 	var req dto.RestartStatefulSetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid restart statefulset payload")
@@ -549,16 +543,26 @@ func (h *PlatformHandler) RestartStatefulSet(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.resources.RestartStatefulSet(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name); err != nil {
+	if err := h.editor.RestartStatefulSet(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name); err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
-func (h *PlatformHandler) ScaleStatefulSet(c *gin.Context) {
-	var req dto.ScaleStatefulSetRequest
+func (h *statefulSetResourceHandler) ScaleStatefulSet(c *gin.Context) {
+	handleScaleResource(c, "invalid scale statefulset payload", h.editor.ScaleStatefulSet)
+}
+
+type scaleResourceRequest struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Replicas  int32  `json:"replicas"`
+}
+
+func handleScaleResource(c *gin.Context, invalidPayload string, scale func(context.Context, domainidentity.Principal, string, string, string, int32) error) {
+	var req scaleResourceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid scale statefulset payload")
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", invalidPayload)
 		return
 	}
 	if req.Namespace == "" || req.Name == "" {
@@ -570,13 +574,13 @@ func (h *PlatformHandler) ScaleStatefulSet(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.resources.ScaleStatefulSet(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name, req.Replicas); err != nil {
+	if err := scale(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name, req.Replicas); err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
-func (h *PlatformHandler) RestartDaemonSet(c *gin.Context) {
+func (h *daemonSetResourceHandler) RestartDaemonSet(c *gin.Context) {
 	var req dto.RestartDaemonSetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid restart daemonset payload")
@@ -587,13 +591,13 @@ func (h *PlatformHandler) RestartDaemonSet(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.resources.RestartDaemonSet(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name); err != nil {
+	if err := h.editor.RestartDaemonSet(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name); err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
-func (h *PlatformHandler) RollbackDeployment(c *gin.Context) {
+func (h *deploymentResourceHandler) RollbackDeployment(c *gin.Context) {
 	var req dto.RollbackDeploymentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid rollback deployment payload")
@@ -604,7 +608,7 @@ func (h *PlatformHandler) RollbackDeployment(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.resources.RollbackDeployment(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name, req.Revision)
+	item, err := h.editor.RollbackDeployment(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name, req.Revision)
 	if err != nil {
 		writeError(c, err)
 		return

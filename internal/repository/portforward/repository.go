@@ -4,24 +4,13 @@ import (
 	"context"
 	"time"
 
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"gorm.io/gorm"
 )
 
-type Record struct {
-	SessionID      string
-	ClusterID      string
-	Namespace      string
-	TargetKind     string
-	TargetName     string
-	LocalPort      int
-	RemotePort     int
-	Status         string
-	ConnectionMode string
-	LastError      string
-	CreatedBy      string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-}
+// Record is kept as a compatibility alias for repository callers. The port
+// record contract is owned by the application package that consumes it.
+type Record = domainresource.PortForwardRecord
 
 type Repository struct {
 	db *gorm.DB
@@ -42,7 +31,7 @@ func (r *Repository) List(ctx context.Context) ([]Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []Record{}
 	for rows.Next() {
 		var rec Record

@@ -19,6 +19,21 @@ func registerPublicRoutes(v1 gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) 
 	v1.GET("/auth/login/:providerID/callback", deps.Auth.ProviderCallback)
 	v1.POST("/auth/oidc/exchange", deps.Auth.OIDCExchange)
 	registerProviderProtocolRoutes(v1, deps)
+	if deps.DirectorySync != nil {
+		v1.GET("/integrations/directory/:connectionID/events", deps.DirectorySync.VerifyEventEndpoint)
+		v1.POST("/integrations/directory/:connectionID/events", deps.DirectorySync.IngestEvent)
+		v1.GET("/scim/v2/ServiceProviderConfig", deps.DirectorySync.SCIMServiceProviderConfig)
+		v1.GET("/scim/v2/Users", deps.DirectorySync.SCIMListUsers)
+		v1.POST("/scim/v2/Users", deps.DirectorySync.SCIMCreateUser)
+		v1.GET("/scim/v2/Users/:resourceID", deps.DirectorySync.SCIMGetUser)
+		v1.PATCH("/scim/v2/Users/:resourceID", deps.DirectorySync.SCIMPatchUser)
+		v1.DELETE("/scim/v2/Users/:resourceID", deps.DirectorySync.SCIMDeleteUser)
+		v1.GET("/scim/v2/Groups", deps.DirectorySync.SCIMListGroups)
+		v1.POST("/scim/v2/Groups", deps.DirectorySync.SCIMCreateGroup)
+		v1.GET("/scim/v2/Groups/:resourceID", deps.DirectorySync.SCIMGetGroup)
+		v1.PATCH("/scim/v2/Groups/:resourceID", deps.DirectorySync.SCIMPatchGroup)
+		v1.DELETE("/scim/v2/Groups/:resourceID", deps.DirectorySync.SCIMDeleteGroup)
+	}
 
 	if cfg.Modules.Monitoring.Enabled {
 		v1.POST("/integrations/alerts/webhook", deps.Monitoring.IngestWebhook)

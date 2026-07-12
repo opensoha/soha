@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,10 +21,8 @@ import (
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
-	mcplogs "github.com/opensoha/soha/internal/infrastructure/mcp/logs"
-	mcpmetrics "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
-	mcptraces "github.com/opensoha/soha/internal/infrastructure/mcp/traces"
 	aperrors "github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/telemetry"
 	"go.uber.org/zap"
 )
 
@@ -45,7 +44,7 @@ func (s *Service) ListAgentRuns(ctx context.Context, principal domainidentity.Pr
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return nil, err
 	}
-	items, err := s.repo.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{Limit: 50})
+	items, err := s.agentRuns.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{Limit: 50})
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +62,7 @@ func (s *Service) ClaimAgentRun(ctx context.Context, input domaincopilot.AgentRu
 		input.ProviderIDs = []string{agentProviderHermes}
 		input.Kinds = []string{agentProviderHermes}
 	}
-	run, err := s.repo.ClaimAgentRun(ctx, input)
+	run, err := s.agentRuns.ClaimAgentRun(ctx, input)
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
@@ -78,7 +77,7 @@ func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilo
 	input.Payload = normalizeAgentRunCallbackProviderUsage(input.Payload)
 	input.AnalysisArtifacts = normalizeAgentRunCallbackProviderUsageArtifacts(input.AnalysisArtifacts, input.Payload)
 	if agentRunCallbackProducesArtifact(input.Status) && len(input.AnalysisArtifacts) == 0 {
-		if current, err := s.repo.GetAgentRun(ctx, "", input.RunID); err == nil {
+		if current, err := s.agentRuns.GetAgentRun(ctx, "", input.RunID); err == nil {
 			synthetic := current
 			synthetic.Output = mergeAgentRunCallbackPayload(current.Output, input.Payload)
 			if len(input.ToolExecutions) > 0 {
@@ -93,7 +92,7 @@ func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilo
 			input.AnalysisArtifacts = []domaincopilot.AnalysisArtifact{s.synthesizeAgentArtifact(synthetic)}
 		}
 	}
-	updated, err := s.repo.UpdateAgentRunCallback(ctx, input)
+	updated, err := s.agentRuns.UpdateAgentRunCallback(ctx, input)
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
@@ -119,7 +118,7 @@ func (s *Service) CancelAgentRun(ctx context.Context, principal domainidentity.P
 	if runID == "" {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: runId is required", aperrors.ErrInvalidArgument)
 	}
-	canceled, err := s.repo.CancelAgentRun(ctx, domaincopilot.AgentRunCancelInput{
+	canceled, err := s.agentRuns.CancelAgentRun(ctx, domaincopilot.AgentRunCancelInput{
 		RunID:       runID,
 		RequestedBy: firstNonEmpty(principal.UserID, principal.UserName, "unknown"),
 		Reason:      "canceled by user",
@@ -140,7 +139,7 @@ func (s *Service) RecordAgentToolCall(ctx context.Context, input domaincopilot.A
 	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.CallbackToken) == "" {
 		return domaincopilot.AgentToolCallResult{}, fmt.Errorf("%w: runId and callbackToken are required", aperrors.ErrInvalidArgument)
 	}
-	run, err := s.repo.GetAgentRun(ctx, "", input.RunID)
+	run, err := s.agentRuns.GetAgentRun(ctx, "", input.RunID)
 	if err != nil {
 		return domaincopilot.AgentToolCallResult{}, err
 	}
@@ -156,7 +155,7 @@ func (s *Service) RecordAgentToolCall(ctx context.Context, input domaincopilot.A
 	}
 	toolExecution, output, _ := s.executeAgentToolBinding(ctx, run, binding, input)
 	nextExecutions := append(append([]domaincopilot.ToolExecution{}, run.ToolExecutions...), toolExecution)
-	updated, persistErr := s.repo.UpdateAgentRunCallback(ctx, domaincopilot.AgentRunCallbackInput{
+	updated, persistErr := s.agentRuns.UpdateAgentRunCallback(ctx, domaincopilot.AgentRunCallbackInput{
 		RunID:          run.ID,
 		CallbackToken:  run.CallbackToken,
 		AgentID:        input.AgentID,
@@ -174,15 +173,15 @@ func (s *Service) RecordAgentToolCall(ctx context.Context, input domaincopilot.A
 }
 
 func (s *Service) sweepAgentRunTimeouts(ctx context.Context) (int, error) {
-	if s == nil || s.repo == nil {
+	if s == nil || s.agentRuns == nil {
 		return 0, nil
 	}
 	now := time.Now().UTC()
-	runs, err := s.repo.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{Status: domaincopilot.AgentRunStatusQueued, Limit: 200})
+	runs, err := s.agentRuns.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{Status: domaincopilot.AgentRunStatusQueued, Limit: 200})
 	if err != nil {
 		return 0, err
 	}
-	runningRuns, err := s.repo.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{Status: domaincopilot.AgentRunStatusRunning, Limit: 200})
+	runningRuns, err := s.agentRuns.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{Status: domaincopilot.AgentRunStatusRunning, Limit: 200})
 	if err != nil {
 		return 0, err
 	}
@@ -407,51 +406,7 @@ func collectAgentProviderUsageCandidates(value any, key string, depth int, out *
 	}
 	switch typed := value.(type) {
 	case map[string]any:
-		if context := agentUsageDetailContext(key); context != "" {
-			if usage := agentProviderUsageDetailNumbers(typed, context); len(usage) > 0 {
-				*out = append(*out, usage)
-				for childKey, child := range typed {
-					switch child.(type) {
-					case map[string]any, []any, []map[string]any:
-						collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
-					}
-				}
-				return
-			}
-		}
-		if agentUsageContainerKey(key) {
-			if usage := preferredAgentBilledUsageNumbers(typed); len(usage) > 0 {
-				*out = append(*out, usage)
-				for childKey, child := range typed {
-					switch normalizeAgentUsageKey(childKey) {
-					case "billedunits", "billedunit", "tokens":
-						continue
-					}
-					switch child.(type) {
-					case map[string]any, []any, []map[string]any:
-						collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
-					}
-				}
-				return
-			}
-			if usage := agentUsageNumbersOnly(typed); len(usage) > 0 {
-				*out = append(*out, usage)
-				for childKey, child := range typed {
-					switch child.(type) {
-					case map[string]any, []any, []map[string]any:
-						collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
-					}
-				}
-				return
-			}
-		}
-		if usage := agentProviderNativeUsageNumbers(typed); len(usage) > 0 {
-			*out = append(*out, usage)
-			return
-		}
-		for childKey, child := range typed {
-			collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
-		}
+		collectAgentProviderUsageMap(typed, key, depth, out)
 	case []any:
 		for _, item := range typed {
 			collectAgentProviderUsageCandidates(item, key, depth+1, out)
@@ -459,6 +414,47 @@ func collectAgentProviderUsageCandidates(value any, key string, depth int, out *
 	case []map[string]any:
 		for _, item := range typed {
 			collectAgentProviderUsageCandidates(item, key, depth+1, out)
+		}
+	}
+}
+
+func collectAgentProviderUsageMap(typed map[string]any, key string, depth int, out *[]map[string]any) {
+	if context := agentUsageDetailContext(key); context != "" {
+		if usage := agentProviderUsageDetailNumbers(typed, context); len(usage) > 0 {
+			*out = append(*out, usage)
+			collectAgentProviderUsageChildren(typed, depth, out, false)
+			return
+		}
+	}
+	if agentUsageContainerKey(key) {
+		if usage := preferredAgentBilledUsageNumbers(typed); len(usage) > 0 {
+			*out = append(*out, usage)
+			collectAgentProviderUsageChildren(typed, depth, out, true)
+			return
+		}
+		if usage := agentUsageNumbersOnly(typed); len(usage) > 0 {
+			*out = append(*out, usage)
+			collectAgentProviderUsageChildren(typed, depth, out, false)
+			return
+		}
+	}
+	if usage := agentProviderNativeUsageNumbers(typed); len(usage) > 0 {
+		*out = append(*out, usage)
+		return
+	}
+	for childKey, child := range typed {
+		collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
+	}
+}
+
+func collectAgentProviderUsageChildren(typed map[string]any, depth int, out *[]map[string]any, skipBilled bool) {
+	for childKey, child := range typed {
+		if skipBilled && slices.Contains([]string{"billedunits", "billedunit", "tokens"}, normalizeAgentUsageKey(childKey)) {
+			continue
+		}
+		switch child.(type) {
+		case map[string]any, []any, []map[string]any:
+			collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
 		}
 	}
 }
@@ -684,8 +680,8 @@ func addNativeAgentUsageNumber(out map[string]any, key string, number float64, h
 	if supplementalAgentInputTokenKey(normalized) || supplementalAgentOutputTokenKey(normalized) {
 		return
 	}
-	additiveInput := !hasGenericInput && (normalized == "inputtexttokens" || normalized == "inputimagetokens" || normalized == "inputaudiotokens" || normalized == "textinputtokens" || normalized == "imageinputtokens" || normalized == "audioinputtokens" || normalized == "imagetokens" || normalized == "videotokens" || normalized == "audiotokens")
-	additiveOutput := !hasGenericOutput && (normalized == "outputtexttokens" || normalized == "outputimagetokens" || normalized == "outputaudiotokens" || normalized == "textoutputtokens" || normalized == "imageoutputtokens" || normalized == "audiooutputtokens")
+	additiveInput := !hasGenericInput && slices.Contains(agentAdditiveInputUsageKeys, normalized)
+	additiveOutput := !hasGenericOutput && slices.Contains(agentAdditiveOutputUsageKeys, normalized)
 	if additiveInput || additiveOutput {
 		existing, _ := positiveFloat(out[canonical])
 		out[canonical] = existing + number
@@ -694,6 +690,15 @@ func addNativeAgentUsageNumber(out map[string]any, key string, number float64, h
 	if existing, ok := positiveFloat(out[canonical]); !ok || number > existing {
 		out[canonical] = number
 	}
+}
+
+var agentAdditiveInputUsageKeys = []string{
+	"inputtexttokens", "inputimagetokens", "inputaudiotokens", "textinputtokens", "imageinputtokens",
+	"audioinputtokens", "imagetokens", "videotokens", "audiotokens",
+}
+
+var agentAdditiveOutputUsageKeys = []string{
+	"outputtexttokens", "outputimagetokens", "outputaudiotokens", "textoutputtokens", "imageoutputtokens", "audiooutputtokens",
 }
 
 func normalizeNativeAgentUsageNumber(key string, number float64) float64 {
@@ -977,8 +982,8 @@ func (s *Service) executeAgentLogsTool(ctx context.Context, run domaincopilot.Ag
 	}
 	timeFrom, timeTo := agentToolTimeRange(run, input)
 	limit := firstPositive(intCondition(input["limit"]), evidenceBudget(run.Toolset, 20))
-	result, err := mcplogs.DefaultRegistry().Correlate(ctx, source.BackendType, source.ID, source.Config, mcplogs.CorrelationQuery{
-		Scope: mcplogs.Scope{
+	result, err := s.logBackend().Correlate(ctx, source.BackendType, source.ID, source.Config, telemetry.LogCorrelationQuery{
+		Scope: telemetry.LogScope{
 			ClusterID: run.Scope.ClusterID,
 			Namespace: run.Scope.Namespace,
 			Workload:  run.Scope.Workload,
@@ -1011,8 +1016,8 @@ func (s *Service) executeAgentMetricsTool(ctx context.Context, run domaincopilot
 		return nil, firstNonNilError(err, fmt.Errorf("%w: no enabled metrics data source", aperrors.ErrNotFound))
 	}
 	timeFrom, timeTo := agentToolTimeRange(run, input)
-	summary, err := mcpmetrics.DefaultRegistry().Analyze(ctx, source.BackendType, source.ID, source.Config, mcpmetrics.RangeQuery{
-		Scope: mcpmetrics.Scope{
+	summary, err := s.metricBackend().Analyze(ctx, source.BackendType, source.ID, source.Config, telemetry.MetricRangeQuery{
+		Scope: telemetry.MetricScope{
 			ClusterID: run.Scope.ClusterID,
 			Namespace: run.Scope.Namespace,
 			Workload:  run.Scope.Workload,
@@ -1043,8 +1048,8 @@ func (s *Service) executeAgentTracesTool(ctx context.Context, run domaincopilot.
 	}
 	timeFrom, timeTo := agentToolTimeRange(run, input)
 	limit := firstPositive(intCondition(input["limit"]), evidenceBudget(run.Toolset, 20))
-	result, err := mcptraces.DefaultRegistry().FindSlowSpans(ctx, source.BackendType, source.ID, source.Config, mcptraces.Query{
-		Scope: mcptraces.Scope{
+	result, err := s.traceBackend().FindSlowSpans(ctx, source.BackendType, source.ID, source.Config, telemetry.TraceQuery{
+		Scope: telemetry.TraceScope{
 			ClusterID: run.Scope.ClusterID,
 			Namespace: run.Scope.Namespace,
 			Workload:  run.Scope.Workload,
@@ -1318,7 +1323,7 @@ func (s *Service) executeAgentOnCallResolveTool(ctx context.Context, run domainc
 }
 
 func (s *Service) findAgentDataSource(ctx context.Context, sourceKind, adapterID string, input map[string]any) (domaincopilot.DataSource, bool, error) {
-	sources, err := s.repo.ListDataSources(ctx)
+	sources, err := s.dataSources.ListDataSources(ctx)
 	if err != nil {
 		return domaincopilot.DataSource{}, false, err
 	}
@@ -1791,7 +1796,7 @@ func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.P
 	if run.CreatedBy == "" {
 		run.CreatedBy = automationRootCauseCreatedBy
 	}
-	created, err := s.repo.CreateAgentRun(ctx, run)
+	created, err := s.agentRuns.CreateAgentRun(ctx, run)
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
@@ -1858,7 +1863,7 @@ func (s *Service) RecordGatewayAnalysisArtifact(ctx context.Context, principal d
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	created, err := s.repo.CreateAgentRun(ctx, run)
+	created, err := s.agentRuns.CreateAgentRun(ctx, run)
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
@@ -2158,116 +2163,24 @@ func defaultAgentCapabilities() []domaincopilot.AgentCapability {
 	bindings := defaultAgentToolBindings()
 	skillBindings := defaultAgentSkillBindings()
 	return []domaincopilot.AgentCapability{
-		{
-			ID:             "root_cause",
-			Name:           "根因分析",
-			Category:       "observability",
-			Description:    "汇总告警、事件、日志、指标、链路和发布上下文生成根因假设与建议。",
-			AnalysisKinds:  []string{"root_cause"},
-			RequiredScopes: []string{"cluster", "namespace", "workload", "alert"},
-			ToolRefs:       []string{"platform.events", "observability.logs", "observability.metrics", "observability.traces", "delivery.releases"},
-			ToolBindings:   filterToolBindings(bindings, "root_cause"),
-			SkillBindings:  filterSkillBindings(skillBindings, "root_cause"),
-		},
-		{
-			ID:             "performance",
-			Name:           "性能分析",
-			Category:       "observability",
-			Description:    "聚合指标、事件和资源范围，分析容量、延迟、错误率和瓶颈。",
-			AnalysisKinds:  []string{"performance"},
-			RequiredScopes: []string{"cluster", "namespace", "workload"},
-			ToolRefs:       []string{"observability.metrics", "platform.events"},
-			ToolBindings:   filterToolBindings(bindings, "performance"),
-			SkillBindings:  filterSkillBindings(skillBindings, "performance"),
-		},
-		{
-			ID:             "trace",
-			Name:           "链路分析",
-			Category:       "observability",
-			Description:    "通过 Trace/Metrics/事件上下文定位跨服务调用异常。",
-			AnalysisKinds:  []string{"trace"},
-			RequiredScopes: []string{"service", "workload"},
-			ToolRefs:       []string{"observability.traces", "observability.metrics", "observability.logs"},
-			ToolBindings:   filterToolBindings(bindings, "trace"),
-			SkillBindings:  filterSkillBindings(skillBindings, "trace"),
-		},
-		{
-			ID:             "inspection_review",
-			Name:           "巡检复盘",
-			Category:       "inspection",
-			Description:    "将定期巡检结果转换为风险摘要、证据和整改动作。",
-			AnalysisKinds:  []string{"inspection_review"},
-			RequiredScopes: []string{"cluster", "namespace"},
-			ToolRefs:       []string{"platform.events", "observability.metrics"},
-			ToolBindings:   filterToolBindings(bindings, "inspection_review"),
-			SkillBindings:  filterSkillBindings(skillBindings, "inspection_review"),
-		},
-		{
-			ID:             "delivery_failure",
-			Name:           "交付失败分析",
-			Category:       "delivery",
-			Description:    "关联构建、发布、执行任务和运行态事件定位交付失败原因。",
-			AnalysisKinds:  []string{"delivery_failure"},
-			RequiredScopes: []string{"application", "environment", "release"},
-			ToolRefs:       []string{"delivery.builds", "delivery.releases", "delivery.execution_tasks", "platform.events"},
-			ToolBindings:   filterToolBindings(bindings, "delivery_failure"),
-			SkillBindings:  filterSkillBindings(skillBindings, "delivery_failure"),
-		},
-		{
-			ID:             "post_deploy_observation",
-			Name:           "发布后观察",
-			Category:       "delivery",
-			Description:    "围绕发布窗口检查告警、事件、指标与链路变化。",
-			AnalysisKinds:  []string{"post_deploy_observation"},
-			RequiredScopes: []string{"application", "cluster", "namespace"},
-			ToolRefs:       []string{"delivery.releases", "observability.metrics", "observability.traces", "platform.events"},
-			ToolBindings:   filterToolBindings(bindings, "post_deploy_observation"),
-			SkillBindings:  filterSkillBindings(skillBindings, "post_deploy_observation"),
-		},
-		{
-			ID:             "platform_resource_diagnosis",
-			Name:           "平台资源诊断",
-			Category:       "platform",
-			Description:    "针对 Kubernetes 资源、节点、事件和配置漂移生成诊断结论。",
-			AnalysisKinds:  []string{"platform_resource_diagnosis"},
-			RequiredScopes: []string{"cluster", "namespace", "resource"},
-			ToolRefs:       []string{"platform.resources", "platform.events", "observability.metrics"},
-			ToolBindings:   filterToolBindings(bindings, "platform_resource_diagnosis"),
-			SkillBindings:  filterSkillBindings(skillBindings, "platform_resource_diagnosis"),
-		},
-		{
-			ID:             "docker_diagnosis",
-			Name:           "Docker 工作台诊断",
-			Category:       "docker",
-			Description:    "关联 Docker host、Compose 项目、服务和 operation 日志分析故障。",
-			AnalysisKinds:  []string{"docker_diagnosis"},
-			RequiredScopes: []string{"dockerHost", "composeProject"},
-			ToolRefs:       []string{"docker.operations", "docker.services"},
-			ToolBindings:   filterToolBindings(bindings, "docker_diagnosis"),
-			SkillBindings:  filterSkillBindings(skillBindings, "docker_diagnosis"),
-		},
-		{
-			ID:             "virtualization_diagnosis",
-			Name:           "虚拟化诊断",
-			Category:       "virtualization",
-			Description:    "关联虚拟机、连接、任务和运行时指标进行故障分析。",
-			AnalysisKinds:  []string{"virtualization_diagnosis"},
-			RequiredScopes: []string{"virtualizationConnection", "vm"},
-			ToolRefs:       []string{"virtualization.operations", "observability.metrics"},
-			ToolBindings:   filterToolBindings(bindings, "virtualization_diagnosis"),
-			SkillBindings:  filterSkillBindings(skillBindings, "virtualization_diagnosis"),
-		},
-		{
-			ID:             "oncall_brief",
-			Name:           "OnCall 处置简报",
-			Category:       "oncall",
-			Description:    "为告警组和值班任务生成可执行处置摘要。",
-			AnalysisKinds:  []string{"oncall_brief"},
-			RequiredScopes: []string{"alert", "oncallRoute"},
-			ToolRefs:       []string{"observability.alerts", "oncall.routes", "platform.events"},
-			ToolBindings:   filterToolBindings(bindings, "oncall_brief"),
-			SkillBindings:  filterSkillBindings(skillBindings, "oncall_brief"),
-		},
+		agentCapability(bindings, skillBindings, "root_cause", "根因分析", "observability", "汇总告警、事件、日志、指标、链路和发布上下文生成根因假设与建议。", []string{"cluster", "namespace", "workload", "alert"}, []string{"platform.events", "observability.logs", "observability.metrics", "observability.traces", "delivery.releases"}),
+		agentCapability(bindings, skillBindings, "performance", "性能分析", "observability", "聚合指标、事件和资源范围，分析容量、延迟、错误率和瓶颈。", []string{"cluster", "namespace", "workload"}, []string{"observability.metrics", "platform.events"}),
+		agentCapability(bindings, skillBindings, "trace", "链路分析", "observability", "通过 Trace/Metrics/事件上下文定位跨服务调用异常。", []string{"service", "workload"}, []string{"observability.traces", "observability.metrics", "observability.logs"}),
+		agentCapability(bindings, skillBindings, "inspection_review", "巡检复盘", "inspection", "将定期巡检结果转换为风险摘要、证据和整改动作。", []string{"cluster", "namespace"}, []string{"platform.events", "observability.metrics"}),
+		agentCapability(bindings, skillBindings, "delivery_failure", "交付失败分析", "delivery", "关联构建、发布、执行任务和运行态事件定位交付失败原因。", []string{"application", "environment", "release"}, []string{"delivery.builds", "delivery.releases", "delivery.execution_tasks", "platform.events"}),
+		agentCapability(bindings, skillBindings, "post_deploy_observation", "发布后观察", "delivery", "围绕发布窗口检查告警、事件、指标与链路变化。", []string{"application", "cluster", "namespace"}, []string{"delivery.releases", "observability.metrics", "observability.traces", "platform.events"}),
+		agentCapability(bindings, skillBindings, "platform_resource_diagnosis", "平台资源诊断", "platform", "针对 Kubernetes 资源、节点、事件和配置漂移生成诊断结论。", []string{"cluster", "namespace", "resource"}, []string{"platform.resources", "platform.events", "observability.metrics"}),
+		agentCapability(bindings, skillBindings, "docker_diagnosis", "Docker 工作台诊断", "docker", "关联 Docker host、Compose 项目、服务和 operation 日志分析故障。", []string{"dockerHost", "composeProject"}, []string{"docker.operations", "docker.services"}),
+		agentCapability(bindings, skillBindings, "virtualization_diagnosis", "虚拟化诊断", "virtualization", "关联虚拟机、连接、任务和运行时指标进行故障分析。", []string{"virtualizationConnection", "vm"}, []string{"virtualization.operations", "observability.metrics"}),
+		agentCapability(bindings, skillBindings, "oncall_brief", "OnCall 处置简报", "oncall", "为告警组和值班任务生成可执行处置摘要。", []string{"alert", "oncallRoute"}, []string{"observability.alerts", "oncall.routes", "platform.events"}),
+	}
+}
+
+func agentCapability(toolBindings []domaincopilot.AgentToolBinding, skillBindings []domaincopilot.AgentSkillBinding, id, name, category, description string, scopes, toolRefs []string) domaincopilot.AgentCapability {
+	return domaincopilot.AgentCapability{
+		ID: id, Name: name, Category: category, Description: description, AnalysisKinds: []string{id},
+		RequiredScopes: scopes, ToolRefs: toolRefs,
+		ToolBindings: filterToolBindings(toolBindings, id), SkillBindings: filterSkillBindings(skillBindings, id),
 	}
 }
 
@@ -2478,7 +2391,7 @@ func (s *Service) persistAgentRunMessage(ctx context.Context, run domaincopilot.
 	if strings.TrimSpace(reply) == "" {
 		reply = fmt.Sprintf("Agent run %s completed.", run.ID)
 	}
-	_, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+	_, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: run.SessionID,
 		Role:      "assistant",
@@ -2504,7 +2417,7 @@ func (s *Service) persistAgentRunMessage(ctx context.Context, run domaincopilot.
 	if err != nil {
 		return err
 	}
-	session, err := s.repo.GetSession(ctx, run.CreatedBy, run.SessionID)
+	session, err := s.sessions.GetSession(ctx, run.CreatedBy, run.SessionID)
 	if err != nil {
 		return nil
 	}
@@ -2518,13 +2431,13 @@ func (s *Service) persistAgentRunMessage(ctx context.Context, run domaincopilot.
 	})
 	session.Metadata = sessionMetadataMap(metadata)
 	session.UpdatedAt = time.Now().UTC()
-	_, _ = s.repo.UpdateSession(ctx, run.CreatedBy, run.SessionID, session)
+	_, _ = s.sessions.UpdateSession(ctx, run.CreatedBy, run.SessionID, session)
 	return nil
 }
 
 func (s *Service) persistAgentRunRootCauseResult(ctx context.Context, run domaincopilot.AgentRun) error {
 	rootRunOwner := firstNonEmpty(stringValue(run.Input["rootCauseRunOwner"]), run.CreatedBy)
-	rootRun, err := s.repo.GetRootCauseRun(ctx, rootRunOwner, run.RootCauseRunID)
+	rootRun, err := s.rootCauseRuns.GetRootCauseRun(ctx, rootRunOwner, run.RootCauseRunID)
 	if err != nil {
 		return nil
 	}
@@ -2569,7 +2482,7 @@ func (s *Service) persistAgentRunRootCauseResult(ctx context.Context, run domain
 		"actions": buildRemediationActions(rootRun.Recommendations),
 	})
 	rootRun.UpdatedAt = time.Now().UTC()
-	_, err = s.repo.UpdateRootCauseRun(ctx, rootRun)
+	_, err = s.rootCauseRuns.UpdateRootCauseRun(ctx, rootRun)
 	return err
 }
 

@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"net/http"
+	"errors"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -27,11 +27,11 @@ func parseOffset(value string) int {
 	return offset
 }
 func writeError(c *gin.Context, err error) {
+	if err == nil {
+		err = errors.New("handler returned a nil error")
+	}
+	_ = c.Error(err)
 	status := aperrors.StatusCode(err)
 	code := aperrors.Code(err)
-	message := err.Error()
-	if status == http.StatusInternalServerError {
-		message = "internal server error"
-	}
-	apiresponse.Error(c, status, code, message)
+	apiresponse.Error(c, status, code, aperrors.Message(err))
 }

@@ -14,87 +14,96 @@ type visibilityRule struct {
 
 func workspacePermissionForMenu(item domainmenu.Record) string {
 	path := strings.TrimSpace(item.Path)
-	switch {
-	case path == "/" ||
-		strings.HasPrefix(path, "/cluster-resources") ||
-		strings.HasPrefix(path, "/workloads") ||
-		strings.HasPrefix(path, "/configuration") ||
-		strings.HasPrefix(path, "/network") ||
-		strings.HasPrefix(path, "/storage") ||
-		strings.HasPrefix(path, "/platform-access-control") ||
-		strings.HasPrefix(path, "/helm") ||
-		strings.HasPrefix(path, "/extensions") ||
-		strings.HasPrefix(path, "/clusters") ||
-		strings.HasPrefix(path, "/monitoring-workbench") ||
-		strings.HasPrefix(path, "/ai-gateway") ||
-		strings.HasPrefix(path, "/plugins") ||
-		strings.HasPrefix(path, "/ai-workbench") ||
-		strings.HasPrefix(path, "/virtualization") ||
-		strings.HasPrefix(path, "/observability") ||
-		strings.HasPrefix(path, "/ai-observe") ||
-		strings.HasPrefix(path, "/chat"):
+	if path == "/" || hasMenuPathPrefix(path, workspaceResourceMenuPrefixes) {
 		return appaccess.PermWorkspaceResourceView
-	case strings.HasPrefix(path, "/applications") ||
-		strings.HasPrefix(path, "/application-environments") ||
-		strings.HasPrefix(path, "/build-templates") ||
-		strings.HasPrefix(path, "/delivery/onboarding") ||
-		strings.HasPrefix(path, "/delivery/testing") ||
-		strings.HasPrefix(path, "/delivery/analysis") ||
-		strings.HasPrefix(path, "/delivery/blueprints") ||
-		strings.HasPrefix(path, "/delivery/release-bundles") ||
-		strings.HasPrefix(path, "/delivery/execution-tasks") ||
-		strings.HasPrefix(path, "/workflow-templates") ||
-		strings.HasPrefix(path, "/release-board") ||
-		strings.HasPrefix(path, "/workflows") ||
-		strings.HasPrefix(path, "/releases") ||
-		strings.HasPrefix(path, "/registries"):
-		return appaccess.PermWorkspaceApplicationView
-	default:
-		return ""
 	}
+	if hasMenuPathPrefix(path, workspaceApplicationMenuPrefixes) {
+		return appaccess.PermWorkspaceApplicationView
+	}
+	return ""
+}
+
+var workspaceResourceMenuPrefixes = []string{
+	"/cluster-resources", "/workloads", "/configuration", "/network", "/storage",
+	"/platform-access-control", "/helm", "/extensions", "/clusters", "/monitoring-workbench",
+	"/ai-gateway", "/plugins", "/ai-workbench", "/virtualization", "/observability", "/ai-observe", "/chat",
+}
+
+var workspaceApplicationMenuPrefixes = []string{
+	"/applications", "/application-environments", "/build-templates", "/delivery/onboarding",
+	"/delivery/testing", "/delivery/analysis", "/delivery/blueprints", "/delivery/release-bundles",
+	"/delivery/execution-tasks", "/workflow-templates", "/release-board", "/workflows", "/releases", "/registries",
+}
+
+func hasMenuPathPrefix(path string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
-	switch {
-	case item.ID == "dashboard":
+	resolvers := []func(string) (visibilityRule, bool){
+		coreDeliveryMenuRule,
+		observabilityAIMenuRule,
+		virtualizationAccessMenuRule,
+		identitySystemMenuRule,
+		platformFamilyMenuRule,
+	}
+	for _, resolve := range resolvers {
+		if rule, ok := resolve(item.ID); ok {
+			return rule, true
+		}
+	}
+	return visibilityRule{}, false
+}
+
+func coreDeliveryMenuRule(id string) (visibilityRule, bool) {
+	switch id {
+	case "dashboard":
 		return visibilityRule{permissions: []string{appaccess.PermOverviewView}}, true
-	case item.ID == "cluster-resources-nodes":
+	case "cluster-resources-nodes":
 		return visibilityRule{permissions: []string{appaccess.PermPlatformNodesView}}, true
-	case item.ID == "cluster-resources-namespaces":
+	case "cluster-resources-namespaces":
 		return visibilityRule{permissions: []string{appaccess.PermPlatformNamespacesView}}, true
-	case item.ID == "extensions":
+	case "extensions":
 		return visibilityRule{permissions: []string{appaccess.PermPlatformExtensionsView}}, true
-	case item.ID == "clusters":
+	case "clusters":
 		return visibilityRule{permissions: []string{appaccess.PermPlatformClustersView}}, true
-	case item.ID == "builds":
+	case "builds", "delivery-blueprints", "delivery-onboarding":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
-	case item.ID == "delivery-blueprints":
-		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
-	case item.ID == "delivery-onboarding":
-		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
-	case item.ID == "delivery-testing":
+	case "delivery-testing":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryExecutionTasksView, appaccess.PermDeliveryReleaseBoardView}}, true
-	case item.ID == "delivery-analysis":
+	case "delivery-analysis":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryExecutionTasksView, appaccess.PermDeliveryReleaseBoardView, appaccess.PermDeliveryReleaseBundlesView}}, true
-	case item.ID == "build-templates":
+	case "build-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryBuildTemplatesView}}, true
-	case item.ID == "release-bundles":
+	case "release-bundles":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBundlesView}}, true
-	case item.ID == "execution-tasks":
+	case "execution-tasks":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryExecutionTasksView}}, true
-	case item.ID == "workflow-templates":
+	case "workflow-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowTemplatesView}}, true
-	case item.ID == "release-board":
+	case "release-board":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBoardView}}, true
-	case item.ID == "application-environments":
+	case "application-environments":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationEnvView}}, true
-	case item.ID == "workflows":
+	case "workflows":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowsView}}, true
-	case item.ID == "releases":
+	case "releases":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleasesView}}, true
-	case item.ID == "registries":
+	case "registries":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryRegistriesView}}, true
-	case item.ID == "monitoring-workbench":
+	default:
+		return visibilityRule{}, false
+	}
+}
+
+func observabilityAIMenuRule(id string) (visibilityRule, bool) {
+	switch id {
+	case "monitoring-workbench":
 		return visibilityRule{permissions: []string{
 			appaccess.PermObserveMonitoringView,
 			appaccess.PermObserveAlertRulesView,
@@ -104,39 +113,44 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 			appaccess.PermObserveHealingView,
 			appaccess.PermObserveEventsView,
 		}}, true
-	case item.ID == "monitoring-workbench-overview", item.ID == "monitoring":
+	case "monitoring-workbench-overview", "monitoring":
 		return visibilityRule{permissions: []string{appaccess.PermObserveMonitoringView}}, true
-	case item.ID == "monitoring-workbench-alerts", item.ID == "alerts":
+	case "monitoring-workbench-alerts", "alerts":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAlertsView}}, true
-	case item.ID == "monitoring-workbench-rules", item.ID == "rules":
+	case "monitoring-workbench-rules", "rules":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAlertRulesView}}, true
-	case item.ID == "monitoring-workbench-notifications", item.ID == "notifications":
+	case "monitoring-workbench-notifications", "notifications":
 		return visibilityRule{permissions: []string{appaccess.PermObserveNotificationsView}}, true
-	case item.ID == "monitoring-workbench-oncall", item.ID == "oncall":
+	case "monitoring-workbench-oncall", "oncall":
 		return visibilityRule{permissions: []string{appaccess.PermObserveOncallView}}, true
-	case item.ID == "monitoring-workbench-healing", item.ID == "healing":
+	case "monitoring-workbench-healing", "healing":
 		return visibilityRule{permissions: []string{appaccess.PermObserveHealingView}}, true
-	case item.ID == "monitoring-workbench-events", item.ID == "events":
+	case "monitoring-workbench-events", "events":
 		return visibilityRule{permissions: []string{appaccess.PermObserveEventsView}}, true
-	case item.ID == "ai-workbench":
+	case "ai-workbench":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView, appaccess.PermObserveAIChatUse}}, true
-	case item.ID == "ai-workbench-chat", item.ID == "ai-workbench-investigation", item.ID == "assistant-workbench":
+	case "ai-workbench-chat", "ai-workbench-investigation", "assistant-workbench":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
-	case item.ID == "ai-workbench-inspection", item.ID == "ai-workbench-tool-settings", item.ID == "ai-workbench-operations", item.ID == "ai-workbench-tools", item.ID == "assistant-operations", item.ID == "assistant-tools":
+	case "ai-workbench-inspection", "ai-workbench-tool-settings", "ai-workbench-operations", "ai-workbench-tools", "assistant-operations", "assistant-tools":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
-	case item.ID == "ai-workbench-model-settings":
+	case "ai-workbench-model-settings":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
-	case item.ID == "ai-gateway":
+	case "ai-gateway", "ai-gateway-tokens":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage}}, true
-	case item.ID == "ai-gateway-overview", item.ID == "ai-gateway-manifest":
+	case "ai-gateway-overview", "ai-gateway-manifest":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true
-	case item.ID == "ai-gateway-tokens":
-		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage}}, true
-	case item.ID == "ai-gateway-clients", item.ID == "ai-gateway-governance", item.ID == "ai-gateway-call-logs":
+	case "ai-gateway-clients", "ai-gateway-governance", "ai-gateway-call-logs":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayManage}}, true
-	case item.ID == "plugins", item.ID == "plugins-marketplace", item.ID == "plugins-installed":
+	case "plugins", "plugins-marketplace", "plugins-installed":
 		return visibilityRule{permissions: []string{appaccess.PermPluginView}}, true
-	case item.ID == "virtualization-workbench":
+	default:
+		return visibilityRule{}, false
+	}
+}
+
+func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
+	switch id {
+	case "virtualization-workbench":
 		return visibilityRule{permissions: []string{
 			appaccess.PermVirtualizationOverviewView,
 			appaccess.PermVirtualizationVMsView,
@@ -147,21 +161,21 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 			appaccess.PermVirtualizationSyncView,
 			appaccess.PermVirtualizationSyncManage,
 		}}, true
-	case item.ID == "virtualization-workbench-overview":
+	case "virtualization-workbench-overview":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOverviewView}}, true
-	case item.ID == "virtualization-workbench-vms":
+	case "virtualization-workbench-vms":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationVMsView}}, true
-	case item.ID == "virtualization-workbench-clusters":
+	case "virtualization-workbench-clusters":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationClustersView}}, true
-	case item.ID == "virtualization-workbench-images":
+	case "virtualization-workbench-images":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationImagesView}}, true
-	case item.ID == "virtualization-workbench-flavors":
+	case "virtualization-workbench-flavors":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationFlavorsView}}, true
-	case item.ID == "virtualization-workbench-operations":
+	case "virtualization-workbench-operations":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView}}, true
-	case item.ID == "virtualization-workbench-sync":
+	case "virtualization-workbench-sync":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationSyncView, appaccess.PermVirtualizationSyncManage}}, true
-	case item.ID == "access":
+	case "access":
 		return visibilityRule{permissions: []string{
 			appaccess.PermAccessUsersView,
 			appaccess.PermAccessRolesView,
@@ -169,15 +183,22 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 			appaccess.PermAccessPoliciesView,
 			appaccess.PermAccessScopeGrantsView,
 		}}, true
-	case item.ID == "access-users":
+	case "access-users":
 		return visibilityRule{permissions: []string{appaccess.PermAccessUsersView}}, true
-	case item.ID == "access-roles":
+	case "access-roles":
 		return visibilityRule{permissions: []string{appaccess.PermAccessRolesView}}, true
-	case item.ID == "access-teams":
+	case "access-teams":
 		return visibilityRule{permissions: []string{appaccess.PermAccessGroupsView}}, true
-	case item.ID == "access-policies":
+	case "access-policies":
 		return visibilityRule{permissions: []string{appaccess.PermAccessPoliciesView}}, true
-	case item.ID == "system":
+	default:
+		return visibilityRule{}, false
+	}
+}
+
+func identitySystemMenuRule(id string) (visibilityRule, bool) {
+	switch id {
+	case "system":
 		return visibilityRule{permissions: []string{
 			appaccess.PermSystemOnlineUsersView,
 			appaccess.PermSystemAnnouncementsView,
@@ -185,7 +206,7 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 			appaccess.PermSystemAuditView,
 			appaccess.PermSystemOperationsView,
 		}}, true
-	case item.ID == "identity":
+	case "identity", "identity-overview":
 		return visibilityRule{permissions: []string{
 			appaccess.PermIdentityApplicationsView,
 			appaccess.PermIdentityProvidersView,
@@ -194,57 +215,55 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 			appaccess.PermIdentitySessionsView,
 			appaccess.PermIdentityAuditView,
 		}}, true
-	case item.ID == "identity-overview":
-		return visibilityRule{permissions: []string{
-			appaccess.PermIdentityApplicationsView,
-			appaccess.PermIdentityProvidersView,
-			appaccess.PermIdentityOutpostsView,
-			appaccess.PermIdentityPoliciesView,
-			appaccess.PermIdentitySessionsView,
-			appaccess.PermIdentityAuditView,
-		}}, true
-	case item.ID == "identity-applications":
+	case "identity-applications":
 		return visibilityRule{permissions: []string{appaccess.PermIdentityApplicationsView}}, true
-	case item.ID == "identity-providers":
+	case "identity-providers":
 		return visibilityRule{permissions: []string{appaccess.PermIdentityProvidersView}}, true
-	case item.ID == "identity-outposts":
+	case "identity-outposts":
 		return visibilityRule{permissions: []string{appaccess.PermIdentityOutpostsView}}, true
-	case item.ID == "identity-policies":
+	case "identity-policies":
 		return visibilityRule{permissions: []string{appaccess.PermIdentityPoliciesView}}, true
-	case item.ID == "identity-sessions":
+	case "identity-sessions":
 		return visibilityRule{permissions: []string{appaccess.PermIdentitySessionsView}}, true
-	case item.ID == "identity-audit":
+	case "identity-audit":
 		return visibilityRule{permissions: []string{appaccess.PermIdentityAuditView}}, true
-	case item.ID == "system-online-users":
+	case "system-online-users":
 		return visibilityRule{permissions: []string{appaccess.PermSystemOnlineUsersView}}, true
-	case item.ID == "announcements":
+	case "announcements":
 		return visibilityRule{permissions: []string{appaccess.PermSystemAnnouncementsView}}, true
-	case item.ID == "menus":
+	case "menus":
 		return visibilityRule{permissions: []string{appaccess.PermSystemMenusView}}, true
-	case item.ID == "audit":
+	case "audit":
 		return visibilityRule{permissions: []string{appaccess.PermSystemAuditView}}, true
-	case item.ID == "operations":
+	case "operations":
 		return visibilityRule{permissions: []string{appaccess.PermSystemOperationsView}}, true
-	case item.ID == "settings":
+	case "settings":
 		return visibilityRule{permissions: []string{
 			appaccess.PermSettingsIdentityView,
 			appaccess.PermSettingsMonitoringView,
 			appaccess.PermSettingsAIView,
 			appaccess.PermSettingsBrandingView,
 		}}, true
-	case item.ID == "settings-login":
+	case "settings-login":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsIdentityView}}, true
-	case item.ID == "settings-branding":
+	case "settings-branding":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsBrandingView}}, true
-	case item.ID == "helm" || strings.HasPrefix(item.ID, "helm-"):
+	default:
+		return visibilityRule{}, false
+	}
+}
+
+func platformFamilyMenuRule(id string) (visibilityRule, bool) {
+	switch {
+	case id == "helm" || strings.HasPrefix(id, "helm-"):
 		return visibilityRule{permissions: []string{appaccess.PermPlatformHelmView}}, true
-	case item.ID == "workloads" || strings.HasPrefix(item.ID, "workloads-"):
+	case id == "workloads" || strings.HasPrefix(id, "workloads-"):
 		return visibilityRule{permissions: []string{appaccess.PermPlatformWorkloadsView}}, true
-	case item.ID == "configuration" || strings.HasPrefix(item.ID, "configuration-"):
+	case id == "configuration" || strings.HasPrefix(id, "configuration-"):
 		return visibilityRule{permissions: []string{appaccess.PermPlatformConfigurationView}}, true
-	case item.ID == "network" || strings.HasPrefix(item.ID, "network-"):
+	case id == "network" || strings.HasPrefix(id, "network-"):
 		return visibilityRule{permissions: []string{appaccess.PermPlatformNetworkView}}, true
-	case item.ID == "storage" || strings.HasPrefix(item.ID, "storage-"):
+	case id == "storage" || strings.HasPrefix(id, "storage-"):
 		return visibilityRule{permissions: []string{appaccess.PermPlatformStorageView}}, true
 	default:
 		return visibilityRule{}, false

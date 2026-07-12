@@ -15,7 +15,7 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 		"contracts_ref:",
 		"CONTRACTS_REF: ${{ inputs.contracts_ref || github.ref_name }}",
 		"WEB_SHA256: ${{ inputs.web_sha256 }}",
-		"go mod edit -dropreplace=github.com/opensoha/soha-contracts@v0.1.1",
+		"go mod edit -dropreplace=github.com/opensoha/soha-contracts@v0.1.2",
 		"go get \"github.com/opensoha/soha-contracts@${CONTRACTS_REF}\"",
 		"go list -m github.com/opensoha/soha-contracts",
 		"soha-web-dist-${WEB_REF}.tar.gz.sha256",

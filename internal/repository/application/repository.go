@@ -48,7 +48,7 @@ func (r *Repository) List(ctx context.Context, filter domainapp.Filter) ([]domai
 	if err != nil {
 		return nil, fmt.Errorf("query applications: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainapp.App, 0, limit)
 	for rows.Next() {
@@ -167,7 +167,7 @@ func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("query application services: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainapp.Service, 0)
 	for rows.Next() {
@@ -297,7 +297,7 @@ func (r *Repository) listBuildSources(ctx context.Context, applicationID string,
 	if err != nil {
 		return nil, fmt.Errorf("query application build sources: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainapp.BuildSource, 0)
 	for rows.Next() {
@@ -672,7 +672,7 @@ func (r *Repository) listServiceContainers(ctx context.Context, serviceID string
 	if err != nil {
 		return nil, fmt.Errorf("query application service containers: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainapp.ServiceContainer, 0)
 	for rows.Next() {

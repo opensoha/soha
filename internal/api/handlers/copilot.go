@@ -11,56 +11,110 @@ import (
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
+	"github.com/opensoha/soha/internal/platform/keyring"
 )
 
-type CopilotService interface {
+type CopilotSessionService interface {
 	ListSessions(context.Context, domainidentity.Principal) ([]domaincopilot.Session, error)
 	GetSession(context.Context, domainidentity.Principal, string) (domaincopilot.Session, error)
 	CreateSession(context.Context, domainidentity.Principal, string, string, string, map[string]any, map[string]any, string, []string, string) (domaincopilot.Session, error)
 	UpdateSession(context.Context, domainidentity.Principal, string, string, string, string, string, string, map[string]any, map[string]any, string, map[string]any, []string, bool) (domaincopilot.Session, error)
 	DeleteSession(context.Context, domainidentity.Principal, string) error
+}
+
+type CopilotMessageService interface {
 	ListMessages(context.Context, domainidentity.Principal, string) ([]domaincopilot.Message, error)
 	SendMessage(context.Context, domainidentity.Principal, string, string, string) (domaincopilot.SessionMessageEnvelope, error)
+}
+
+type CopilotStreamService interface {
 	StreamMessage(context.Context, domainidentity.Principal, string, domaincopilot.WorkbenchSendMessageInput, string) (domaincopilot.WorkbenchStreamResult, error)
+}
+
+type CopilotWorkbenchService interface {
 	RecordGlobalAssistantEvent(context.Context, domainidentity.Principal, domaincopilot.WorkbenchGlobalAssistantEventInput) error
 	Insights(context.Context, domainidentity.Principal, string) ([]domaincopilot.Insight, error)
 	ListDataSourceCapabilities(context.Context, domainidentity.Principal) ([]domainmcp.Adapter, error)
 	GetWorkbenchCatalog(context.Context, domainidentity.Principal) (domaincopilot.WorkbenchCatalog, error)
+}
+
+type CopilotDataSourceService interface {
 	ListDataSources(context.Context, domainidentity.Principal) ([]domaincopilot.DataSource, error)
 	CreateDataSource(context.Context, domainidentity.Principal, domaincopilot.DataSourceInput) (domaincopilot.DataSource, error)
 	UpdateDataSource(context.Context, domainidentity.Principal, string, domaincopilot.DataSourceInput) (domaincopilot.DataSource, error)
 	ValidateDataSource(context.Context, domainidentity.Principal, string) (domaincopilot.DataSource, error)
+}
+
+type CopilotAnalysisProfileService interface {
 	ListAnalysisProfiles(context.Context, domainidentity.Principal) ([]domaincopilot.AnalysisProfile, error)
 	CreateAnalysisProfile(context.Context, domainidentity.Principal, domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error)
 	UpdateAnalysisProfile(context.Context, domainidentity.Principal, string, domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error)
+}
+
+type CopilotAutomationService interface {
 	ListAutomationPolicies(context.Context, domainidentity.Principal) ([]domaincopilot.AutomationPolicy, error)
 	CreateAutomationPolicy(context.Context, domainidentity.Principal, domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error)
 	UpdateAutomationPolicy(context.Context, domainidentity.Principal, string, domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error)
 	DeleteAutomationPolicy(context.Context, domainidentity.Principal, string) error
+}
+
+type CopilotRootCauseService interface {
 	ListRootCauseRuns(context.Context, domainidentity.Principal, domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error)
 	ListAnalysisRuns(context.Context, domainidentity.Principal, domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error)
 	GetRootCauseRun(context.Context, domainidentity.Principal, string) (domaincopilot.RootCauseRun, error)
 	RunRootCauseAnalysis(context.Context, domainidentity.Principal, domaincopilot.RootCauseRunInput, string) (domaincopilot.RootCauseRun, error)
 	RunSessionAnalysis(context.Context, domainidentity.Principal, string, domaincopilot.RootCauseRunInput, string) (domaincopilot.SessionMessageEnvelope, error)
+}
+
+type CopilotAgentRunService interface {
 	ListAgentProviders(context.Context, domainidentity.Principal) ([]domaincopilot.AgentProvider, error)
 	ListAgentRuns(context.Context, domainidentity.Principal) ([]domaincopilot.AgentRun, error)
 	CancelAgentRun(context.Context, domainidentity.Principal, string) (domaincopilot.AgentRun, error)
 	ClaimAgentRun(context.Context, domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error)
 	RecordAgentRunCallback(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error)
 	RecordAgentToolCall(context.Context, domaincopilot.AgentToolCallInput) (domaincopilot.AgentToolCallResult, error)
+}
+
+type CopilotInspectionTaskService interface {
 	ListInspectionTasks(context.Context, domainidentity.Principal) ([]domaincopilot.InspectionTask, error)
 	CreateInspectionTask(context.Context, domainidentity.Principal, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
 	UpdateInspectionTask(context.Context, domainidentity.Principal, string, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
 	DeleteInspectionTask(context.Context, domainidentity.Principal, string) error
+}
+
+type CopilotInspectionRunService interface {
 	ListInspectionRuns(context.Context, domainidentity.Principal, domaincopilot.InspectionRunFilter) ([]domaincopilot.InspectionRun, error)
 	ExecuteInspectionTask(context.Context, domainidentity.Principal, string, string) (domaincopilot.InspectionRun, error)
 	CreateSessionFromInspectionRun(context.Context, domainidentity.Principal, string, string) (domaincopilot.Session, error)
 	CreateInspectionTaskFromSession(context.Context, domainidentity.Principal, string, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
 }
 
+type CopilotService interface {
+	CopilotSessionService
+	CopilotMessageService
+	CopilotStreamService
+	CopilotWorkbenchService
+	CopilotDataSourceService
+	CopilotAnalysisProfileService
+	CopilotAutomationService
+	CopilotRootCauseService
+	CopilotAgentRunService
+	CopilotInspectionTaskService
+	CopilotInspectionRunService
+}
+
 type CopilotHandler struct {
-	service     CopilotService
-	runnerToken string
+	copilotSessionHandler
+	copilotMessageHandler
+	copilotStreamHandler
+	copilotWorkbenchHandler
+	copilotDataSourceHandler
+	copilotAnalysisProfileHandler
+	copilotAutomationHandler
+	copilotRootCauseHandler
+	copilotAgentRunHandler
+	copilotInspectionTaskHandler
+	copilotInspectionRunHandler
 }
 
 func NewCopilotHandler(service CopilotService, runnerToken ...string) *CopilotHandler {
@@ -68,10 +122,63 @@ func NewCopilotHandler(service CopilotService, runnerToken ...string) *CopilotHa
 	if len(runnerToken) > 0 {
 		token = runnerToken[0]
 	}
-	return &CopilotHandler{service: service, runnerToken: token}
+	return NewCopilotHandlerWithRunnerKeys(service, legacyRunnerKeyring(token))
 }
 
-func (h *CopilotHandler) ListInsights(c *gin.Context) {
+func NewCopilotHandlerWithRunnerKeys(service CopilotService, keys keyring.Ring) *CopilotHandler {
+	return NewCopilotHandlerWithServices(CopilotServices{
+		Sessions: service, Messages: service, Streams: service, Workbench: service,
+		DataSources: service, AnalysisProfiles: service, Automation: service,
+		RootCause: service, AgentRuns: service, InspectionTasks: service, InspectionRuns: service,
+	}, keys)
+}
+
+type CopilotServices struct {
+	Sessions         CopilotSessionService
+	Messages         CopilotMessageService
+	Streams          CopilotStreamService
+	Workbench        CopilotWorkbenchService
+	DataSources      CopilotDataSourceService
+	AnalysisProfiles CopilotAnalysisProfileService
+	Automation       CopilotAutomationService
+	RootCause        CopilotRootCauseService
+	AgentRuns        CopilotAgentRunService
+	InspectionTasks  CopilotInspectionTaskService
+	InspectionRuns   CopilotInspectionRunService
+}
+
+type copilotSessionHandler struct{ service CopilotSessionService }
+type copilotMessageHandler struct{ service CopilotMessageService }
+type copilotStreamHandler struct{ service CopilotStreamService }
+type copilotWorkbenchHandler struct{ service CopilotWorkbenchService }
+type copilotDataSourceHandler struct{ service CopilotDataSourceService }
+type copilotAnalysisProfileHandler struct{ service CopilotAnalysisProfileService }
+type copilotAutomationHandler struct{ service CopilotAutomationService }
+type copilotRootCauseHandler struct{ service CopilotRootCauseService }
+type copilotAgentRunHandler struct {
+	service    CopilotAgentRunService
+	runnerKeys keyring.Ring
+}
+type copilotInspectionTaskHandler struct{ service CopilotInspectionTaskService }
+type copilotInspectionRunHandler struct{ service CopilotInspectionRunService }
+
+func NewCopilotHandlerWithServices(services CopilotServices, keys keyring.Ring) *CopilotHandler {
+	return &CopilotHandler{
+		copilotSessionHandler:         copilotSessionHandler{service: services.Sessions},
+		copilotMessageHandler:         copilotMessageHandler{service: services.Messages},
+		copilotStreamHandler:          copilotStreamHandler{service: services.Streams},
+		copilotWorkbenchHandler:       copilotWorkbenchHandler{service: services.Workbench},
+		copilotDataSourceHandler:      copilotDataSourceHandler{service: services.DataSources},
+		copilotAnalysisProfileHandler: copilotAnalysisProfileHandler{service: services.AnalysisProfiles},
+		copilotAutomationHandler:      copilotAutomationHandler{service: services.Automation},
+		copilotRootCauseHandler:       copilotRootCauseHandler{service: services.RootCause},
+		copilotAgentRunHandler:        copilotAgentRunHandler{service: services.AgentRuns, runnerKeys: keys},
+		copilotInspectionTaskHandler:  copilotInspectionTaskHandler{service: services.InspectionTasks},
+		copilotInspectionRunHandler:   copilotInspectionRunHandler{service: services.InspectionRuns},
+	}
+}
+
+func (h *copilotWorkbenchHandler) ListInsights(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.Insights(c.Request.Context(), principal, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
@@ -81,7 +188,7 @@ func (h *CopilotHandler) ListInsights(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) ListDataSourceCapabilities(c *gin.Context) {
+func (h *copilotWorkbenchHandler) ListDataSourceCapabilities(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListDataSourceCapabilities(c.Request.Context(), principal)
 	if err != nil {
@@ -91,7 +198,7 @@ func (h *CopilotHandler) ListDataSourceCapabilities(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) GetWorkbenchCatalog(c *gin.Context) {
+func (h *copilotWorkbenchHandler) GetWorkbenchCatalog(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetWorkbenchCatalog(c.Request.Context(), principal)
 	if err != nil {
@@ -101,7 +208,7 @@ func (h *CopilotHandler) GetWorkbenchCatalog(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *CopilotHandler) ListAgentProviders(c *gin.Context) {
+func (h *copilotAgentRunHandler) ListAgentProviders(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListAgentProviders(c.Request.Context(), principal)
 	if err != nil {
@@ -111,7 +218,7 @@ func (h *CopilotHandler) ListAgentProviders(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) ListAgentRuns(c *gin.Context) {
+func (h *copilotAgentRunHandler) ListAgentRuns(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListAgentRuns(c.Request.Context(), principal)
 	if err != nil {
@@ -121,7 +228,7 @@ func (h *CopilotHandler) ListAgentRuns(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) CancelAgentRun(c *gin.Context) {
+func (h *copilotAgentRunHandler) CancelAgentRun(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.CancelAgentRun(c.Request.Context(), principal, c.Param("runID"))
 	if err != nil {
@@ -131,8 +238,8 @@ func (h *CopilotHandler) CancelAgentRun(c *gin.Context) {
 	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
-func (h *CopilotHandler) ClaimAgentRun(c *gin.Context) {
-	if !authorizeAIAgentRunner(c, h.runnerToken) {
+func (h *copilotAgentRunHandler) ClaimAgentRun(c *gin.Context) {
+	if !authorizeAIAgentRunnerKeys(c, h.runnerKeys) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid ai agent runner token")
 		return
 	}
@@ -153,8 +260,8 @@ func (h *CopilotHandler) ClaimAgentRun(c *gin.Context) {
 	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
-func (h *CopilotHandler) RecordAgentRunCallback(c *gin.Context) {
-	if !authorizeAIAgentRunner(c, h.runnerToken) {
+func (h *copilotAgentRunHandler) RecordAgentRunCallback(c *gin.Context) {
+	if !authorizeAIAgentRunnerKeys(c, h.runnerKeys) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid ai agent runner token")
 		return
 	}
@@ -182,8 +289,8 @@ func (h *CopilotHandler) RecordAgentRunCallback(c *gin.Context) {
 	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
-func (h *CopilotHandler) RecordAgentToolCall(c *gin.Context) {
-	if !authorizeAIAgentRunner(c, h.runnerToken) {
+func (h *copilotAgentRunHandler) RecordAgentToolCall(c *gin.Context) {
+	if !authorizeAIAgentRunnerKeys(c, h.runnerKeys) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid ai agent runner token")
 		return
 	}
@@ -208,7 +315,7 @@ func (h *CopilotHandler) RecordAgentToolCall(c *gin.Context) {
 	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
-func (h *CopilotHandler) ListDataSources(c *gin.Context) {
+func (h *copilotDataSourceHandler) ListDataSources(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListDataSources(c.Request.Context(), principal)
 	if err != nil {
@@ -218,26 +325,14 @@ func (h *CopilotHandler) ListDataSources(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) CreateDataSource(c *gin.Context) {
+func (h *copilotDataSourceHandler) CreateDataSource(c *gin.Context) {
 	var req dto.DataSourceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid data source payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateDataSource(c.Request.Context(), principal, domaincopilot.DataSourceInput{
-		ID:              req.ID,
-		Name:            req.Name,
-		SourceKind:      req.SourceKind,
-		BackendType:     req.BackendType,
-		Enabled:         req.Enabled,
-		CredentialRef:   req.CredentialRef,
-		Scope:           req.Scope,
-		QueryBudget:     req.QueryBudget,
-		RedactionPolicy: req.RedactionPolicy,
-		MCPAdapter:      req.MCPAdapter,
-		Config:          req.Config,
-	})
+	item, err := h.service.CreateDataSource(c.Request.Context(), principal, dataSourceInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -245,14 +340,23 @@ func (h *CopilotHandler) CreateDataSource(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *CopilotHandler) UpdateDataSource(c *gin.Context) {
+func (h *copilotDataSourceHandler) UpdateDataSource(c *gin.Context) {
 	var req dto.DataSourceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid data source payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateDataSource(c.Request.Context(), principal, c.Param("dataSourceID"), domaincopilot.DataSourceInput{
+	item, err := h.service.UpdateDataSource(c.Request.Context(), principal, c.Param("dataSourceID"), dataSourceInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func dataSourceInput(req dto.DataSourceRequest) domaincopilot.DataSourceInput {
+	return domaincopilot.DataSourceInput{
 		ID:              req.ID,
 		Name:            req.Name,
 		SourceKind:      req.SourceKind,
@@ -264,15 +368,10 @@ func (h *CopilotHandler) UpdateDataSource(c *gin.Context) {
 		RedactionPolicy: req.RedactionPolicy,
 		MCPAdapter:      req.MCPAdapter,
 		Config:          req.Config,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *CopilotHandler) ValidateDataSource(c *gin.Context) {
+func (h *copilotDataSourceHandler) ValidateDataSource(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.ValidateDataSource(c.Request.Context(), principal, c.Param("dataSourceID"))
 	if err != nil {
@@ -282,7 +381,7 @@ func (h *CopilotHandler) ValidateDataSource(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *CopilotHandler) ListAnalysisProfiles(c *gin.Context) {
+func (h *copilotAnalysisProfileHandler) ListAnalysisProfiles(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListAnalysisProfiles(c.Request.Context(), principal)
 	if err != nil {
@@ -292,26 +391,14 @@ func (h *CopilotHandler) ListAnalysisProfiles(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) CreateAnalysisProfile(c *gin.Context) {
+func (h *copilotAnalysisProfileHandler) CreateAnalysisProfile(c *gin.Context) {
 	var req dto.AnalysisProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid analysis profile payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateAnalysisProfile(c.Request.Context(), principal, domaincopilot.AnalysisProfileInput{
-		ID:                      req.ID,
-		Name:                    req.Name,
-		Mode:                    req.Mode,
-		EnabledSources:          req.EnabledSources,
-		EnabledPlaybooks:        req.EnabledPlaybooks,
-		QueryBudgets:            req.QueryBudgets,
-		OutputStyle:             req.OutputStyle,
-		RemediationPolicy:       req.RemediationPolicy,
-		DefaultTimeRangeMinutes: req.DefaultTimeRangeMinutes,
-		TimeoutSeconds:          req.TimeoutSeconds,
-		Enabled:                 req.Enabled,
-	})
+	item, err := h.service.CreateAnalysisProfile(c.Request.Context(), principal, analysisProfileInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -319,14 +406,23 @@ func (h *CopilotHandler) CreateAnalysisProfile(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *CopilotHandler) UpdateAnalysisProfile(c *gin.Context) {
+func (h *copilotAnalysisProfileHandler) UpdateAnalysisProfile(c *gin.Context) {
 	var req dto.AnalysisProfileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid analysis profile payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateAnalysisProfile(c.Request.Context(), principal, c.Param("profileID"), domaincopilot.AnalysisProfileInput{
+	item, err := h.service.UpdateAnalysisProfile(c.Request.Context(), principal, c.Param("profileID"), analysisProfileInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func analysisProfileInput(req dto.AnalysisProfileRequest) domaincopilot.AnalysisProfileInput {
+	return domaincopilot.AnalysisProfileInput{
 		ID:                      req.ID,
 		Name:                    req.Name,
 		Mode:                    req.Mode,
@@ -338,15 +434,10 @@ func (h *CopilotHandler) UpdateAnalysisProfile(c *gin.Context) {
 		DefaultTimeRangeMinutes: req.DefaultTimeRangeMinutes,
 		TimeoutSeconds:          req.TimeoutSeconds,
 		Enabled:                 req.Enabled,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *CopilotHandler) ListAutomationPolicies(c *gin.Context) {
+func (h *copilotAutomationHandler) ListAutomationPolicies(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListAutomationPolicies(c.Request.Context(), principal)
 	if err != nil {
@@ -356,27 +447,14 @@ func (h *CopilotHandler) ListAutomationPolicies(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) CreateAutomationPolicy(c *gin.Context) {
+func (h *copilotAutomationHandler) CreateAutomationPolicy(c *gin.Context) {
 	var req dto.AutomationPolicyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid automation policy payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateAutomationPolicy(c.Request.Context(), principal, domaincopilot.AutomationPolicyInput{
-		ID:                 req.ID,
-		Name:               req.Name,
-		Enabled:            req.Enabled,
-		TriggerType:        req.TriggerType,
-		AnalysisKinds:      req.AnalysisKinds,
-		AgentProviderID:    req.AgentProviderID,
-		TriggerConditions:  req.TriggerConditions,
-		DedupWindowSeconds: req.DedupWindowSeconds,
-		AnalysisProfileID:  req.AnalysisProfileID,
-		RemediationPolicy:  req.RemediationPolicy,
-		ApprovalPolicy:     req.ApprovalPolicy,
-		CooldownSeconds:    req.CooldownSeconds,
-	})
+	item, err := h.service.CreateAutomationPolicy(c.Request.Context(), principal, automationPolicyInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -384,14 +462,23 @@ func (h *CopilotHandler) CreateAutomationPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *CopilotHandler) UpdateAutomationPolicy(c *gin.Context) {
+func (h *copilotAutomationHandler) UpdateAutomationPolicy(c *gin.Context) {
 	var req dto.AutomationPolicyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid automation policy payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateAutomationPolicy(c.Request.Context(), principal, c.Param("policyID"), domaincopilot.AutomationPolicyInput{
+	item, err := h.service.UpdateAutomationPolicy(c.Request.Context(), principal, c.Param("policyID"), automationPolicyInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func automationPolicyInput(req dto.AutomationPolicyRequest) domaincopilot.AutomationPolicyInput {
+	return domaincopilot.AutomationPolicyInput{
 		ID:                 req.ID,
 		Name:               req.Name,
 		Enabled:            req.Enabled,
@@ -404,15 +491,10 @@ func (h *CopilotHandler) UpdateAutomationPolicy(c *gin.Context) {
 		RemediationPolicy:  req.RemediationPolicy,
 		ApprovalPolicy:     req.ApprovalPolicy,
 		CooldownSeconds:    req.CooldownSeconds,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *CopilotHandler) DeleteAutomationPolicy(c *gin.Context) {
+func (h *copilotAutomationHandler) DeleteAutomationPolicy(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.service.DeleteAutomationPolicy(c.Request.Context(), principal, c.Param("policyID")); err != nil {
 		writeError(c, err)
@@ -421,7 +503,7 @@ func (h *CopilotHandler) DeleteAutomationPolicy(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *CopilotHandler) ListSessions(c *gin.Context) {
+func (h *copilotSessionHandler) ListSessions(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListSessions(c.Request.Context(), principal)
 	if err != nil {
@@ -431,7 +513,7 @@ func (h *CopilotHandler) ListSessions(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) GetSession(c *gin.Context) {
+func (h *copilotSessionHandler) GetSession(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetSession(c.Request.Context(), principal, c.Param("sessionID"))
 	if err != nil {
@@ -441,7 +523,7 @@ func (h *CopilotHandler) GetSession(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *CopilotHandler) CreateSession(c *gin.Context) {
+func (h *copilotSessionHandler) CreateSession(c *gin.Context) {
 	var req dto.CreateCopilotSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid copilot session payload")
@@ -466,7 +548,7 @@ func (h *CopilotHandler) CreateSession(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *CopilotHandler) UpdateSession(c *gin.Context) {
+func (h *copilotSessionHandler) UpdateSession(c *gin.Context) {
 	var req dto.UpdateCopilotSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid copilot session patch payload")
@@ -481,7 +563,7 @@ func (h *CopilotHandler) UpdateSession(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *CopilotHandler) RecordGlobalAssistantEvent(c *gin.Context) {
+func (h *copilotWorkbenchHandler) RecordGlobalAssistantEvent(c *gin.Context) {
 	var req dto.WorkbenchGlobalAssistantOpenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid global assistant event payload")
@@ -502,7 +584,7 @@ func (h *CopilotHandler) RecordGlobalAssistantEvent(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusAccepted, map[string]any{"ok": true})
 }
 
-func (h *CopilotHandler) DeleteSession(c *gin.Context) {
+func (h *copilotSessionHandler) DeleteSession(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.service.DeleteSession(c.Request.Context(), principal, c.Param("sessionID")); err != nil {
 		writeError(c, err)
@@ -511,7 +593,7 @@ func (h *CopilotHandler) DeleteSession(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusNoContent, nil)
 }
 
-func (h *CopilotHandler) ListMessages(c *gin.Context) {
+func (h *copilotMessageHandler) ListMessages(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListMessages(c.Request.Context(), principal, c.Param("sessionID"))
 	if err != nil {
@@ -521,7 +603,7 @@ func (h *CopilotHandler) ListMessages(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) SendMessage(c *gin.Context) {
+func (h *copilotMessageHandler) SendMessage(c *gin.Context) {
 	var req dto.SendCopilotMessageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid copilot message payload")
@@ -536,7 +618,7 @@ func (h *CopilotHandler) SendMessage(c *gin.Context) {
 	apiresponse.Item(c, http.StatusAccepted, items)
 }
 
-func (h *CopilotHandler) ListRootCauseRuns(c *gin.Context) {
+func (h *copilotRootCauseHandler) ListRootCauseRuns(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListRootCauseRuns(c.Request.Context(), principal, domaincopilot.RootCauseRunFilter{
 		ClusterID: c.Query("clusterId"),
@@ -550,7 +632,7 @@ func (h *CopilotHandler) ListRootCauseRuns(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) ListAnalysisRuns(c *gin.Context) {
+func (h *copilotRootCauseHandler) ListAnalysisRuns(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListAnalysisRuns(c.Request.Context(), principal, domaincopilot.RootCauseRunFilter{
 		ClusterID: c.Query("clusterId"),
@@ -564,7 +646,7 @@ func (h *CopilotHandler) ListAnalysisRuns(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) GetRootCauseRun(c *gin.Context) {
+func (h *copilotRootCauseHandler) GetRootCauseRun(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetRootCauseRun(c.Request.Context(), principal, c.Param("runID"))
 	if err != nil {
@@ -574,7 +656,7 @@ func (h *CopilotHandler) GetRootCauseRun(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *CopilotHandler) CreateRootCauseRun(c *gin.Context) {
+func (h *copilotRootCauseHandler) CreateRootCauseRun(c *gin.Context) {
 	var req dto.CreateRootCauseRunRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid root cause analysis payload")
@@ -603,7 +685,7 @@ func (h *CopilotHandler) CreateRootCauseRun(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *CopilotHandler) AnalyzeSession(c *gin.Context) {
+func (h *copilotRootCauseHandler) AnalyzeSession(c *gin.Context) {
 	var req dto.AnalyzeSessionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid analyze session payload")
@@ -629,7 +711,7 @@ func (h *CopilotHandler) AnalyzeSession(c *gin.Context) {
 	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
-func (h *CopilotHandler) ListInspectionTasks(c *gin.Context) {
+func (h *copilotInspectionTaskHandler) ListInspectionTasks(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListInspectionTasks(c.Request.Context(), principal)
 	if err != nil {
@@ -639,24 +721,14 @@ func (h *CopilotHandler) ListInspectionTasks(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) CreateInspectionTask(c *gin.Context) {
+func (h *copilotInspectionTaskHandler) CreateInspectionTask(c *gin.Context) {
 	var req dto.CreateInspectionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid inspection task payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateInspectionTask(c.Request.Context(), principal, domaincopilot.InspectionTaskInput{
-		ID:              req.ID,
-		Title:           req.Title,
-		ScopeType:       req.ScopeType,
-		ClusterID:       req.ClusterID,
-		Namespace:       req.Namespace,
-		Checks:          req.Checks,
-		Enabled:         req.Enabled,
-		IntervalMinutes: req.IntervalMinutes,
-		Metadata:        req.Metadata,
-	}, localeFromRequest(c.GetHeader("Accept-Language")))
+	item, err := h.service.CreateInspectionTask(c.Request.Context(), principal, inspectionTaskInput(req), localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -664,24 +736,14 @@ func (h *CopilotHandler) CreateInspectionTask(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *CopilotHandler) UpdateInspectionTask(c *gin.Context) {
+func (h *copilotInspectionTaskHandler) UpdateInspectionTask(c *gin.Context) {
 	var req dto.CreateInspectionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid inspection task payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateInspectionTask(c.Request.Context(), principal, c.Param("taskID"), domaincopilot.InspectionTaskInput{
-		ID:              req.ID,
-		Title:           req.Title,
-		ScopeType:       req.ScopeType,
-		ClusterID:       req.ClusterID,
-		Namespace:       req.Namespace,
-		Checks:          req.Checks,
-		Enabled:         req.Enabled,
-		IntervalMinutes: req.IntervalMinutes,
-		Metadata:        req.Metadata,
-	}, localeFromRequest(c.GetHeader("Accept-Language")))
+	item, err := h.service.UpdateInspectionTask(c.Request.Context(), principal, c.Param("taskID"), inspectionTaskInput(req), localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -689,7 +751,7 @@ func (h *CopilotHandler) UpdateInspectionTask(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *CopilotHandler) DeleteInspectionTask(c *gin.Context) {
+func (h *copilotInspectionTaskHandler) DeleteInspectionTask(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.service.DeleteInspectionTask(c.Request.Context(), principal, c.Param("taskID")); err != nil {
 		writeError(c, err)
@@ -698,7 +760,7 @@ func (h *CopilotHandler) DeleteInspectionTask(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (h *CopilotHandler) ListInspectionRuns(c *gin.Context) {
+func (h *copilotInspectionRunHandler) ListInspectionRuns(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListInspectionRuns(c.Request.Context(), principal, domaincopilot.InspectionRunFilter{
 		TaskID:     c.Query("taskId"),
@@ -715,7 +777,7 @@ func (h *CopilotHandler) ListInspectionRuns(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *CopilotHandler) ExecuteInspectionTask(c *gin.Context) {
+func (h *copilotInspectionRunHandler) ExecuteInspectionTask(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.ExecuteInspectionTask(c.Request.Context(), principal, c.Param("taskID"), localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
@@ -725,7 +787,7 @@ func (h *CopilotHandler) ExecuteInspectionTask(c *gin.Context) {
 	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
-func (h *CopilotHandler) CreateSessionFromInspectionRun(c *gin.Context) {
+func (h *copilotInspectionRunHandler) CreateSessionFromInspectionRun(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.CreateSessionFromInspectionRun(c.Request.Context(), principal, c.Param("runID"), localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
@@ -735,14 +797,23 @@ func (h *CopilotHandler) CreateSessionFromInspectionRun(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *CopilotHandler) CreateInspectionTaskFromSession(c *gin.Context) {
+func (h *copilotInspectionRunHandler) CreateInspectionTaskFromSession(c *gin.Context) {
 	var req dto.CreateInspectionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid inspection task payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateInspectionTaskFromSession(c.Request.Context(), principal, c.Param("sessionID"), domaincopilot.InspectionTaskInput{
+	item, err := h.service.CreateInspectionTaskFromSession(c.Request.Context(), principal, c.Param("sessionID"), inspectionTaskInput(req), localeFromRequest(c.GetHeader("Accept-Language")))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func inspectionTaskInput(req dto.CreateInspectionTaskRequest) domaincopilot.InspectionTaskInput {
+	return domaincopilot.InspectionTaskInput{
 		ID:              req.ID,
 		Title:           req.Title,
 		ScopeType:       req.ScopeType,
@@ -752,12 +823,7 @@ func (h *CopilotHandler) CreateInspectionTaskFromSession(c *gin.Context) {
 		Enabled:         req.Enabled,
 		IntervalMinutes: req.IntervalMinutes,
 		Metadata:        req.Metadata,
-	}, localeFromRequest(c.GetHeader("Accept-Language")))
-	if err != nil {
-		writeError(c, err)
-		return
 	}
-	apiresponse.Item(c, http.StatusCreated, item)
 }
 
 func localeFromRequest(value string) string {

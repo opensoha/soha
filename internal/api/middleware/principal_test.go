@@ -94,6 +94,68 @@ func TestBuildPrincipalMiddlewareIgnoresXAPIKeyForAIGatewayManagementPath(t *tes
 	}
 }
 
+func TestBuildPrincipalMiddlewareIgnoresAccessTokenQueryParameter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	parser := &stubAccessTokenParser{}
+	router := gin.New()
+	router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser), RequireAuth())
+	router.GET("/api/v1/auth/me", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me?access_token=valid-key", nil)
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+	if parser.calls != 0 {
+		t.Fatalf("parser calls=%d, want query token ignored", parser.calls)
+	}
+}
+
+func TestBuildPrincipalMiddlewareRejectsMultipleAuthorizationHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	parser := &stubAccessTokenParser{}
+	router := gin.New()
+	router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser))
+	router.GET("/api/v1/auth/me", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	request.Header["Authorization"] = []string{"Bearer valid-key", "Bearer attacker-key"}
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+	if parser.calls != 0 {
+		t.Fatalf("parser calls = %d, want duplicate header rejected before parsing", parser.calls)
+	}
+}
+
+func TestBuildPrincipalMiddlewareRejectsMultipleXAPIKeyHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	parser := &stubAccessTokenParser{}
+	router := gin.New()
+	router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser))
+	router.GET("/api/v1/ai-gateway/llm/openai/v1/models", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/ai-gateway/llm/openai/v1/models", nil)
+	request.Header["X-Api-Key"] = []string{"valid-key", "attacker-key"}
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+	if parser.calls != 0 {
+		t.Fatalf("parser calls = %d, want duplicate header rejected before parsing", parser.calls)
+	}
+}
+
 func TestBuildPrincipalMiddlewareIgnoresBasicAuthForOIDCTokenEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	parser := &stubAccessTokenParser{}

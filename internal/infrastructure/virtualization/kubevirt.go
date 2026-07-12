@@ -2,7 +2,6 @@ package virtualization
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -282,6 +281,7 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 		_ = unstructured.SetNestedSlice(spec, networks, "template", "spec", "networks")
 		_ = unstructured.SetNestedSlice(spec, interfaces, "template", "spec", "domain", "devices", "interfaces")
 	}
+	_ = unstructured.SetNestedSlice(spec, disks, "template", "spec", "domain", "devices", "disks")
 	_ = unstructured.SetNestedSlice(spec, volumes, "template", "spec", "volumes")
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "kubevirt.io/v1",
@@ -433,107 +433,129 @@ func assetFromUnstructured(kind string, item *unstructured.Unstructured) Asset {
 			"uid": string(item.GetUID()),
 		},
 	}
-	if kind == "virtualmachineinstance" {
-		for _, owner := range item.GetOwnerReferences() {
-			if owner.Kind == "VirtualMachine" && owner.UID != "" {
-				asset.Metadata["uid"] = string(owner.UID)
-				asset.Metadata["vmiUid"] = string(item.GetUID())
-				break
-			}
-		}
-		if ips := vmiIPAddresses(item); len(ips) > 0 {
-			asset.Metadata["ipAddress"] = ips[0]
-			asset.Metadata["ipAddresses"] = strings.Join(ips, ",")
-		}
-	}
-	if kind == "virtualmachine" {
-		if printable := nestedString(item.Object, "status", "printableStatus"); printable != "" {
-			asset.Metadata["printableStatus"] = printable
-		}
-		if runStrategy := nestedString(item.Object, "spec", "runStrategy"); runStrategy != "" {
-			asset.Metadata["runStrategy"] = runStrategy
-		}
-		if cpu := nestedInt64(item.Object, "spec", "template", "spec", "domain", "cpu", "cores"); cpu > 0 {
-			asset.Metadata["cpu"] = strconv.FormatInt(cpu, 10)
-		}
-		if memory := nestedString(item.Object, "spec", "template", "spec", "domain", "resources", "requests", "memory"); memory != "" {
-			asset.Metadata["memory"] = memory
-		}
-		if sourceMode, sourceRef := vmBootSource(item); sourceRef != "" {
-			asset.Metadata["sourceMode"] = sourceMode
-			asset.Metadata["sourceRef"] = sourceRef
-			if sourceMode == "datasource_clone" {
-				asset.Metadata["dataVolumeName"] = sourceRef
-			}
-			if sourceMode == "pvc_clone" {
-				asset.Metadata["pvcName"] = sourceRef
-			}
-		}
-		addVMDataVolumeTemplateMetadata(asset.Metadata, item)
-	}
-	if node, ok, _ := unstructured.NestedString(item.Object, "spec", "nodeName"); ok {
-		asset.Node = node
-	} else if node, ok, _ := unstructured.NestedString(item.Object, "status", "nodeName"); ok {
-		asset.Node = node
-	}
-	if kind == "flavor" {
-		asset.Metadata["cpu"] = strconv.FormatInt(nestedInt64(item.Object, "spec", "cpu", "guest"), 10)
-		asset.Metadata["memory"] = nestedString(item.Object, "spec", "memory", "guest")
-		if item.GetNamespace() == "" {
-			asset.Metadata["scope"] = "cluster"
-		} else {
-			asset.Metadata["scope"] = "namespace"
-		}
-	}
-	if kind == "datavolume" {
-		if phase := nestedString(item.Object, "status", "phase"); phase != "" {
-			asset.Metadata["phase"] = phase
-		}
-		if progress := nestedString(item.Object, "status", "progress"); progress != "" {
-			asset.Metadata["progress"] = progress
-		}
-		if claimName := nestedString(item.Object, "status", "claimName"); claimName != "" {
-			asset.Metadata["pvcName"] = claimName
-		} else {
-			asset.Metadata["pvcName"] = item.GetName()
-		}
-		if storageClass := nestedString(item.Object, "spec", "storage", "storageClassName"); storageClass != "" {
-			asset.Metadata["storageClass"] = storageClass
-		}
-		if sourceKind := nestedString(item.Object, "spec", "sourceRef", "kind"); sourceKind != "" {
-			asset.Metadata["sourceKind"] = sourceKind
-		}
-		if sourceName := nestedString(item.Object, "spec", "sourceRef", "name"); sourceName != "" {
-			asset.Metadata["sourceRef"] = sourceName
-		}
-		if sourceNamespace := nestedString(item.Object, "spec", "sourceRef", "namespace"); sourceNamespace != "" {
-			asset.Metadata["sourceNamespace"] = sourceNamespace
-		}
-		addConditionMetadata(asset.Metadata, item, "")
-	}
-	if kind == "persistentvolumeclaim" {
-		if phase := nestedString(item.Object, "status", "phase"); phase != "" {
-			asset.Metadata["phase"] = phase
-		}
-		if storageClass := nestedString(item.Object, "spec", "storageClassName"); storageClass != "" {
-			asset.Metadata["storageClass"] = storageClass
-		}
-		if requested := nestedString(item.Object, "spec", "resources", "requests", "storage"); requested != "" {
-			asset.Metadata["requestedStorage"] = requested
-		}
-		if capacity := nestedString(item.Object, "status", "capacity", "storage"); capacity != "" {
-			asset.Metadata["capacityStorage"] = capacity
-		}
-		if volumeName := nestedString(item.Object, "spec", "volumeName"); volumeName != "" {
-			asset.Metadata["volumeName"] = volumeName
-		}
-		addConditionMetadata(asset.Metadata, item, "")
-	}
-	if kind == "networkattachmentdefinition" {
+	switch kind {
+	case "virtualmachineinstance":
+		addVMIAssetMetadata(asset.Metadata, item)
+	case "virtualmachine":
+		addVMAssetMetadata(asset.Metadata, item)
+	case "flavor":
+		addFlavorAssetMetadata(asset.Metadata, item)
+	case "datavolume":
+		addDataVolumeAssetMetadata(asset.Metadata, item)
+	case "persistentvolumeclaim":
+		addPVCAssetMetadata(asset.Metadata, item)
+	case "networkattachmentdefinition":
 		asset.Metadata["sourceKind"] = "networkattachmentdefinition"
 		asset.Metadata["networkAttachmentDefinition"] = namespacedName(item.GetNamespace(), item.GetName())
 	}
+	asset.Node = unstructuredAssetNode(item)
 	return asset
+}
+
+func addVMIAssetMetadata(metadata map[string]string, item *unstructured.Unstructured) {
+	for _, owner := range item.GetOwnerReferences() {
+		if owner.Kind == "VirtualMachine" && owner.UID != "" {
+			metadata["uid"] = string(owner.UID)
+			metadata["vmiUid"] = string(item.GetUID())
+			break
+		}
+	}
+	if ips := vmiIPAddresses(item); len(ips) > 0 {
+		metadata["ipAddress"] = ips[0]
+		metadata["ipAddresses"] = strings.Join(ips, ",")
+	}
+}
+
+func addVMAssetMetadata(metadata map[string]string, item *unstructured.Unstructured) {
+	if printable := nestedString(item.Object, "status", "printableStatus"); printable != "" {
+		metadata["printableStatus"] = printable
+	}
+	if runStrategy := nestedString(item.Object, "spec", "runStrategy"); runStrategy != "" {
+		metadata["runStrategy"] = runStrategy
+	}
+	if cpu := nestedInt64(item.Object, "spec", "template", "spec", "domain", "cpu", "cores"); cpu > 0 {
+		metadata["cpu"] = strconv.FormatInt(cpu, 10)
+	}
+	if memory := nestedString(item.Object, "spec", "template", "spec", "domain", "resources", "requests", "memory"); memory != "" {
+		metadata["memory"] = memory
+	}
+	addVMBootSourceMetadata(metadata, item)
+	addVMDataVolumeTemplateMetadata(metadata, item)
+}
+
+func addVMBootSourceMetadata(metadata map[string]string, item *unstructured.Unstructured) {
+	sourceMode, sourceRef := vmBootSource(item)
+	if sourceRef == "" {
+		return
+	}
+	metadata["sourceMode"] = sourceMode
+	metadata["sourceRef"] = sourceRef
+	switch sourceMode {
+	case "datasource_clone":
+		metadata["dataVolumeName"] = sourceRef
+	case "pvc_clone":
+		metadata["pvcName"] = sourceRef
+	}
+}
+
+func unstructuredAssetNode(item *unstructured.Unstructured) string {
+	if node, ok, _ := unstructured.NestedString(item.Object, "spec", "nodeName"); ok {
+		return node
+	}
+	node, _, _ := unstructured.NestedString(item.Object, "status", "nodeName")
+	return node
+}
+
+func addFlavorAssetMetadata(metadata map[string]string, item *unstructured.Unstructured) {
+	metadata["cpu"] = strconv.FormatInt(nestedInt64(item.Object, "spec", "cpu", "guest"), 10)
+	metadata["memory"] = nestedString(item.Object, "spec", "memory", "guest")
+	metadata["scope"] = "namespace"
+	if item.GetNamespace() == "" {
+		metadata["scope"] = "cluster"
+	}
+}
+
+func addDataVolumeAssetMetadata(metadata map[string]string, item *unstructured.Unstructured) {
+	copyNestedMetadata(metadata, item, []nestedMetadataField{
+		{"phase", []string{"status", "phase"}},
+		{"progress", []string{"status", "progress"}},
+		{"storageClass", []string{"spec", "storage", "storageClassName"}},
+		{"sourceKind", []string{"spec", "sourceRef", "kind"}},
+		{"sourceRef", []string{"spec", "sourceRef", "name"}},
+		{"sourceNamespace", []string{"spec", "sourceRef", "namespace"}},
+	})
+	metadata["pvcName"] = firstNonEmpty(
+		nestedString(item.Object, "status", "claimName"), item.GetName(),
+	)
+	addConditionMetadata(metadata, item, "")
+}
+
+func addPVCAssetMetadata(metadata map[string]string, item *unstructured.Unstructured) {
+	copyNestedMetadata(metadata, item, []nestedMetadataField{
+		{"phase", []string{"status", "phase"}},
+		{"storageClass", []string{"spec", "storageClassName"}},
+		{"requestedStorage", []string{"spec", "resources", "requests", "storage"}},
+		{"capacityStorage", []string{"status", "capacity", "storage"}},
+		{"volumeName", []string{"spec", "volumeName"}},
+	})
+	addConditionMetadata(metadata, item, "")
+}
+
+type nestedMetadataField struct {
+	name string
+	path []string
+}
+
+func copyNestedMetadata(
+	metadata map[string]string,
+	item *unstructured.Unstructured,
+	fields []nestedMetadataField,
+) {
+	for _, field := range fields {
+		if value := nestedString(item.Object, field.path...); value != "" {
+			metadata[field.name] = value
+		}
+	}
 }
 
 func vmFromUnstructured(item *unstructured.Unstructured) VM {
@@ -1007,15 +1029,14 @@ func (a *KubeVirtAdapter) GetConsoleURL(ctx context.Context, connection Connecti
 	vncURL := fmt.Sprintf("/api/v1/virtualization/vms/%s/console/vnc", vm.ID)
 
 	return ConsoleURLResult{
-		Type:                  "vnc",
-		URL:                   vncURL,
-		BackendURL:            queryURL.String(),
-		Ready:                 true,
-		Provider:              "kubevirt",
-		ProxyMode:             "backend-ws-proxy",
-		BackendHeaders:        headers,
-		BackendTLSConfig:      tlsConfig,
-		InsecureSkipTLSVerify: connection.InsecureSkipTLSVerify,
+		Type:           "vnc",
+		URL:            vncURL,
+		BackendURL:     queryURL.String(),
+		Ready:          true,
+		Provider:       "kubevirt",
+		ProxyMode:      "backend-ws-proxy",
+		BackendHeaders: headers,
+		BackendTLS:     tlsConfig,
 	}, nil
 }
 
@@ -1054,18 +1075,26 @@ func (r *headerCaptureRoundTripper) RoundTrip(req *http.Request) (*http.Response
 	}, nil
 }
 
-func kubeVirtConsoleTLSConfig(config *rest.Config) (*tls.Config, error) {
+func kubeVirtConsoleTLSConfig(config *rest.Config) (BackendTLS, error) {
 	if config == nil {
-		return nil, nil
+		return BackendTLS{}, nil
 	}
-	tlsConfig, err := rest.TLSConfigFor(config)
-	if err != nil {
-		return nil, err
+	configCopy := rest.CopyConfig(config)
+	if err := rest.LoadTLSFiles(configCopy); err != nil {
+		return BackendTLS{}, err
 	}
-	if tlsConfig == nil {
-		return nil, nil
+	transport := BackendTLS{
+		ServerName:         configCopy.ServerName,
+		InsecureSkipVerify: configCopy.Insecure,
+		CAData:             append([]byte(nil), configCopy.CAData...),
+		CertData:           append([]byte(nil), configCopy.CertData...),
+		KeyData:            append([]byte(nil), configCopy.KeyData...),
+		NextProtos:         append([]string(nil), configCopy.NextProtos...),
 	}
-	return tlsConfig.Clone(), nil
+	if _, err := ConsoleBackendTLSConfig(ConsoleURLResult{BackendTLS: transport}); err != nil {
+		return BackendTLS{}, err
+	}
+	return transport, nil
 }
 
 var prometheusHTTPClient = &http.Client{Timeout: 10 * time.Second}
@@ -1094,7 +1123,7 @@ func queryPrometheusRange(ctx context.Context, endpoint, bearerToken, query stri
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("prometheus query_range returned status %d", resp.StatusCode)
 	}

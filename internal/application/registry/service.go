@@ -12,13 +12,15 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainregistry "github.com/opensoha/soha/internal/domain/registry"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 )
 
 type Service struct {
-	repo          domainregistry.Repository
-	permissions   *appaccess.PermissionResolver
-	credentialKey string
+	repo           domainregistry.Repository
+	permissions    *appaccess.PermissionResolver
+	credentialKey  string
+	credentialKeys keyring.Ring
 }
 
 type Option func(*Service)
@@ -26,6 +28,12 @@ type Option func(*Service)
 func WithCredentialEncryptionKey(key string) Option {
 	return func(s *Service) {
 		s.credentialKey = strings.TrimSpace(key)
+	}
+}
+
+func WithCredentialEncryptionKeys(keys keyring.Ring) Option {
+	return func(s *Service) {
+		s.credentialKeys = keys
 	}
 }
 
@@ -143,10 +151,10 @@ func (s *Service) encryptSecret(item *domainregistry.Connection) error {
 	if item == nil || strings.TrimSpace(item.Secret) == "" || secretcrypto.Encrypted(item.Secret) {
 		return nil
 	}
-	if strings.TrimSpace(s.credentialKey) == "" {
+	if s.credentialKeys.Active().ID() == "" && strings.TrimSpace(s.credentialKey) == "" {
 		return fmt.Errorf("%w: security.credential_encryption_key is required for registry secrets", apperrors.ErrInvalidArgument)
 	}
-	encrypted, err := secretcrypto.EncryptString(s.credentialKey, item.Secret)
+	encrypted, err := s.encryptCredential(item.Secret)
 	if err != nil {
 		return fmt.Errorf("%w: encrypt registry secret: %v", apperrors.ErrInvalidArgument, err)
 	}
@@ -175,7 +183,7 @@ func scrubConnection(item domainregistry.Connection) domainregistry.Connection {
 }
 
 func (s *Service) migrateLegacySecrets(ctx context.Context, items []domainregistry.Connection) {
-	if s == nil || strings.TrimSpace(s.credentialKey) == "" || len(items) == 0 {
+	if s == nil || (s.credentialKeys.Active().ID() == "" && strings.TrimSpace(s.credentialKey) == "") || len(items) == 0 {
 		return
 	}
 	for index := range items {
@@ -183,7 +191,7 @@ func (s *Service) migrateLegacySecrets(ctx context.Context, items []domainregist
 		if secret == "" || secretcrypto.Encrypted(secret) {
 			continue
 		}
-		encrypted, err := secretcrypto.EncryptString(s.credentialKey, secret)
+		encrypted, err := s.encryptCredential(secret)
 		if err != nil {
 			continue
 		}
@@ -193,6 +201,13 @@ func (s *Service) migrateLegacySecrets(ctx context.Context, items []domainregist
 			continue
 		}
 	}
+}
+
+func (s *Service) encryptCredential(value string) (string, error) {
+	if s.credentialKeys.Active().ID() != "" {
+		return secretcrypto.EncryptStringWithKeyring(s.credentialKeys, value)
+	}
+	return secretcrypto.EncryptString(s.credentialKey, value)
 }
 
 func normalizeID(value, fallback string) string {

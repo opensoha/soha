@@ -8,121 +8,130 @@ import (
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 )
 
-func (h *PlatformHandler) ListServices(c *gin.Context) {
+func (h *networkOverviewResourceHandler) ListServices(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListServices(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListServices(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) GetNetworkTopology(c *gin.Context) {
+func (h *networkOverviewResourceHandler) GetNetworkTopology(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	item, err := h.resources.GetNetworkTopology(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	item, err := h.service.GetNetworkTopology(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) GetServiceMetrics(c *gin.Context) {
+func (h *networkOverviewResourceHandler) GetServiceMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
 	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
-	item, err := h.resources.GetServiceMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("serviceName"), rangeMinutes, stepSeconds)
+	item, err := h.service.GetServiceMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("serviceName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
-func (h *PlatformHandler) ListIngresses(c *gin.Context) {
+func (h *networkInventoryResourceHandler) ListIngresses(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListIngresses(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListIngresses(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListEndpointSlices(c *gin.Context) {
+func (h *networkInventoryResourceHandler) ListEndpointSlices(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListEndpointSlices(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListEndpointSlices(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListNetworkPolicies(c *gin.Context) {
+func (h *networkInventoryResourceHandler) ListNetworkPolicies(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListNetworkPolicies(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.service.ListNetworkPolicies(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListGatewayClasses(c *gin.Context) {
+func (h *networkInventoryResourceHandler) ListIngressClasses(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.resources.ListGatewayClasses(c.Request.Context(), principal, c.Param("clusterID"))
+	items, err := h.service.ListIngressClasses(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListGateways(c *gin.Context) {
+func (h *gatewayResourceHandler) ListGatewayClasses(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	namespace := c.Query("namespace")
-	items, err := h.resources.ListGateways(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.routing.ListGatewayClasses(c.Request.Context(), principal, c.Param("clusterID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListHTTPRoutes(c *gin.Context) {
+func (h *gatewayResourceHandler) ListGateways(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListHTTPRoutes(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.routing.ListGateways(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListBackendTLSPolicies(c *gin.Context) {
+func (h *gatewayResourceHandler) ListHTTPRoutes(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListBackendTLSPolicies(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.routing.ListHTTPRoutes(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListGRPCRoutes(c *gin.Context) {
+func (h *gatewayResourceHandler) ListBackendTLSPolicies(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListGRPCRoutes(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.policy.ListBackendTLSPolicies(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
-func (h *PlatformHandler) ListReferenceGrants(c *gin.Context) {
+func (h *gatewayResourceHandler) ListGRPCRoutes(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.resources.ListReferenceGrants(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	items, err := h.policy.ListGRPCRoutes(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+func (h *gatewayResourceHandler) ListReferenceGrants(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.policy.ListReferenceGrants(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return

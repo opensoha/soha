@@ -34,7 +34,7 @@ func (r *Repository) ListEnvironments(ctx context.Context) ([]domaincatalog.Envi
 	if err != nil {
 		return nil, fmt.Errorf("query delivery environments: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaincatalog.Environment, 0)
 	for rows.Next() {
@@ -58,7 +58,7 @@ func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domainc
 	if err != nil {
 		return nil, fmt.Errorf("query application environments: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaincatalog.ApplicationEnvironment, 0)
 	for rows.Next() {
@@ -191,7 +191,7 @@ func (r *Repository) ListBuildTemplates(ctx context.Context) ([]domaincatalog.Bu
 	if err != nil {
 		return nil, fmt.Errorf("query build templates: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaincatalog.BuildTemplate, 0)
 	for rows.Next() {
@@ -287,7 +287,7 @@ func (r *Repository) ListWorkflowTemplates(ctx context.Context) ([]domaincatalog
 	if err != nil {
 		return nil, fmt.Errorf("query workflow templates: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaincatalog.WorkflowTemplate, 0)
 	for rows.Next() {
@@ -368,7 +368,7 @@ func (r *Repository) listReleaseTargets(ctx context.Context, applicationEnvironm
 	if err != nil {
 		return nil, fmt.Errorf("query release targets: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaincatalog.ReleaseTarget, 0)
 	for rows.Next() {

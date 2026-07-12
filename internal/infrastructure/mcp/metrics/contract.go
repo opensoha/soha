@@ -7,45 +7,15 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/opensoha/soha/internal/platform/telemetry"
 )
 
-type Scope struct {
-	ClusterID string
-	Namespace string
-	Workload  string
-	Service   string
-}
-
-type RangeQuery struct {
-	Scope     Scope
-	MetricKey string
-	TimeFrom  time.Time
-	TimeTo    time.Time
-	Step      time.Duration
-}
-
-type Point struct {
-	Timestamp time.Time `json:"timestamp"`
-	Value     float64   `json:"value"`
-}
-
-type Series struct {
-	Key    string  `json:"key"`
-	Label  string  `json:"label"`
-	Unit   string  `json:"unit,omitempty"`
-	Points []Point `json:"points"`
-	Latest float64 `json:"latest"`
-}
-
-type AnomalySummary struct {
-	MetricKey    string           `json:"metricKey"`
-	Scope        Scope            `json:"scope"`
-	Series       []Series         `json:"series"`
-	Signals      []map[string]any `json:"signals"`
-	Summary      string           `json:"summary"`
-	QueryCost    map[string]any   `json:"queryCost"`
-	SampleWindow map[string]any   `json:"sampleWindow"`
-}
+type Scope = telemetry.MetricScope
+type RangeQuery = telemetry.MetricRangeQuery
+type Point = telemetry.MetricPoint
+type Series = telemetry.MetricSeries
+type AnomalySummary = telemetry.MetricAnomalySummary
 
 type Driver interface {
 	BackendType() string

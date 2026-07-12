@@ -59,7 +59,7 @@ func (r *Repository) ListReleaseBundles(ctx context.Context, filter domaindelive
 	if err != nil {
 		return nil, fmt.Errorf("query release bundles: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaindelivery.ReleaseBundle, 0, limit)
 	for rows.Next() {
@@ -156,7 +156,7 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 	if err != nil {
 		return nil, fmt.Errorf("query execution tasks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaindelivery.ExecutionTask, 0, limit)
 	for rows.Next() {
@@ -210,7 +210,7 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 		if queryErr != nil {
 			return fmt.Errorf("claim execution task query: %w", queryErr)
 		}
-		defer rows.Close()
+		defer func() { _ = rows.Close() }()
 		if !rows.Next() {
 			return ErrNotFound
 		}
@@ -329,7 +329,7 @@ func (r *Repository) ListExecutionLogs(ctx context.Context, taskID string, limit
 	if err != nil {
 		return nil, fmt.Errorf("query execution logs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaindelivery.ExecutionLog, 0, limit)
 	for rows.Next() {
@@ -413,7 +413,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, filter domaindelivery.Ar
 	if err != nil {
 		return nil, fmt.Errorf("query execution artifacts: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaindelivery.ExecutionArtifact, 0)
 	for rows.Next() {
@@ -481,7 +481,7 @@ func (r *Repository) ListDeliveryBlueprints(ctx context.Context) ([]domaindelive
 	if err != nil {
 		return nil, fmt.Errorf("query delivery blueprints: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domaindelivery.DeliveryBlueprint, 0)
 	for rows.Next() {

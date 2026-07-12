@@ -15,11 +15,10 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
-	userrepo "github.com/opensoha/soha/internal/repository/user"
 )
 
 type UserManager interface {
-	GetByID(context.Context, string) (userrepo.User, error)
+	GetByID(context.Context, string) (domainidentity.User, error)
 	CreateUser(context.Context, domainaccess.UserInput) (domainaccess.UserRecord, error)
 	UpdateUser(context.Context, string, domainaccess.UserInput) (domainaccess.UserRecord, error)
 	DeleteUser(context.Context, string) error
@@ -428,7 +427,7 @@ func normalizeWriteError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, apperrors.ErrNotFound) || errors.Is(err, userrepo.ErrNotFound) {
+	if errors.Is(err, apperrors.ErrNotFound) {
 		return fmt.Errorf("%w", apperrors.ErrNotFound)
 	}
 	return err

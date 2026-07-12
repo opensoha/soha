@@ -18,71 +18,192 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
-type AIGatewayService interface {
+type AIGatewayCapabilityService interface {
 	Capabilities(context.Context, domainidentity.Principal, domainaigateway.ManifestRequest) (domainaigateway.Manifest, error)
 	InvokeTool(context.Context, domainidentity.Principal, domainaigateway.ToolInvocationRequest) (domainaigateway.ToolInvocationResult, error)
 	ReadResource(context.Context, domainidentity.Principal, domainaigateway.ResourceReadRequest) (domainaigateway.ResourceReadResult, error)
 	GetPrompt(context.Context, domainidentity.Principal, domainaigateway.PromptGetRequest) (domainaigateway.PromptGetResult, error)
+}
+
+type AIGatewayPersonalTokenService interface {
 	ListPersonalAccessTokens(context.Context, domainidentity.Principal, domainaigateway.PersonalAccessTokenListRequest) ([]domainaigateway.PersonalAccessToken, error)
 	CreatePersonalAccessToken(context.Context, domainidentity.Principal, domainaigateway.PersonalAccessTokenInput) (domainaigateway.CreatedPersonalAccessToken, error)
 	RevokePersonalAccessToken(context.Context, domainidentity.Principal, string) error
 	RotatePersonalAccessToken(context.Context, domainidentity.Principal, string, domainaigateway.TokenRotationInput) (domainaigateway.CreatedPersonalAccessToken, error)
+}
+
+type AIGatewayServiceAccountService interface {
 	ListServiceAccounts(context.Context, domainidentity.Principal) ([]domainaigateway.ServiceAccount, error)
 	CreateServiceAccount(context.Context, domainidentity.Principal, domainaigateway.ServiceAccountInput) (domainaigateway.ServiceAccount, error)
 	ListServiceAccountTokens(context.Context, domainidentity.Principal) ([]domainaigateway.ServiceAccountToken, error)
 	CreateServiceAccountToken(context.Context, domainidentity.Principal, string, domainaigateway.ServiceAccountTokenInput) (domainaigateway.CreatedServiceAccountToken, error)
 	RevokeServiceAccountToken(context.Context, domainidentity.Principal, string) error
 	RotateServiceAccountToken(context.Context, domainidentity.Principal, string, domainaigateway.TokenRotationInput) (domainaigateway.CreatedServiceAccountToken, error)
+}
+
+type AIGatewayClientService interface {
 	ListAIClients(context.Context, domainidentity.Principal) ([]domainaigateway.AIClient, error)
 	CreateAIClient(context.Context, domainidentity.Principal, domainaigateway.AIClientInput) (domainaigateway.AIClient, error)
 	UpdateAIClient(context.Context, domainidentity.Principal, string, domainaigateway.AIClientInput) (domainaigateway.AIClient, error)
+}
+
+type AIGatewayToolGrantService interface {
 	ListToolGrants(context.Context, domainidentity.Principal, domainaigateway.ToolGrantFilter) ([]domainaigateway.ToolGrant, error)
 	CreateToolGrant(context.Context, domainidentity.Principal, domainaigateway.ToolGrantInput) (domainaigateway.ToolGrant, error)
 	DeleteToolGrant(context.Context, domainidentity.Principal, string) error
+}
+
+type AIGatewayAccessPolicyService interface {
 	ListAccessPolicies(context.Context, domainidentity.Principal, domainaigateway.AccessPolicyFilter) ([]domainaigateway.AccessPolicy, error)
 	CreateAccessPolicy(context.Context, domainidentity.Principal, domainaigateway.AccessPolicyInput) (domainaigateway.AccessPolicy, error)
 	UpdateAccessPolicy(context.Context, domainidentity.Principal, string, domainaigateway.AccessPolicyInput) (domainaigateway.AccessPolicy, error)
 	DeleteAccessPolicy(context.Context, domainidentity.Principal, string) error
+}
+
+type AIGatewayGovernanceService interface {
 	GovernanceStatus(context.Context, domainidentity.Principal, domainaigateway.GovernanceStatusRequest) (domainaigateway.GovernanceStatus, error)
 	ListSkillBindings(context.Context, domainidentity.Principal, domainaigateway.SkillBindingFilter) ([]domainaigateway.SkillBinding, error)
 	CreateSkillBinding(context.Context, domainidentity.Principal, domainaigateway.SkillBindingInput) (domainaigateway.SkillBinding, error)
 	UpdateSkillBinding(context.Context, domainidentity.Principal, string, domainaigateway.SkillBindingInput) (domainaigateway.SkillBinding, error)
 	DeleteSkillBinding(context.Context, domainidentity.Principal, string) error
+}
+
+type AIGatewayAuditService interface {
 	ListAuditLogs(context.Context, domainidentity.Principal, domainaigateway.AuditLogFilter) ([]domainaigateway.AuditLog, error)
+}
+
+type AIGatewayApprovalService interface {
 	ListApprovalRequests(context.Context, domainidentity.Principal, domainaigateway.ApprovalRequestFilter) ([]domainaigateway.ApprovalRequest, error)
 	GetApprovalTimeline(context.Context, domainidentity.Principal, string) (domainaigateway.ApprovalTimeline, error)
 	ApproveApprovalRequest(context.Context, domainidentity.Principal, string, domainaigateway.ApprovalDecisionInput) (domainaigateway.ApprovalDecisionResult, error)
 	RejectApprovalRequest(context.Context, domainidentity.Principal, string, domainaigateway.ApprovalDecisionInput) (domainaigateway.ApprovalDecisionResult, error)
 	CancelApprovalRequest(context.Context, domainidentity.Principal, string, domainaigateway.ApprovalDecisionInput) (domainaigateway.ApprovalDecisionResult, error)
+}
+
+type AIGatewayUpstreamService interface {
 	ListLLMUpstreams(context.Context, domainidentity.Principal, domainaigateway.LLMUpstreamFilter) ([]domainaigateway.LLMUpstream, error)
 	CreateLLMUpstream(context.Context, domainidentity.Principal, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error)
 	UpdateLLMUpstream(context.Context, domainidentity.Principal, string, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error)
 	TestLLMUpstream(context.Context, domainidentity.Principal, string) (domainaigateway.LLMUpstreamTestResult, error)
 	RunLLMRelayHealthChecks(context.Context, domainidentity.Principal) (domainaigateway.LLMRelayHealthCheckRun, error)
+}
+
+type AIGatewayModelRouteService interface {
 	ListLLMModelRoutes(context.Context, domainidentity.Principal, domainaigateway.LLMModelRouteFilter) ([]domainaigateway.LLMModelRoute, error)
 	CreateLLMModelRoute(context.Context, domainidentity.Principal, domainaigateway.LLMModelRouteInput) (domainaigateway.LLMModelRoute, error)
 	UpdateLLMModelRoute(context.Context, domainidentity.Principal, string, domainaigateway.LLMModelRouteInput) (domainaigateway.LLMModelRoute, error)
 	DeleteLLMModelRoute(context.Context, domainidentity.Principal, string) error
+}
+
+type AIGatewayRelayObservabilityService interface {
 	ListLLMCallLogs(context.Context, domainidentity.Principal, domainaigateway.LLMCallLogFilter) ([]domainaigateway.LLMCallLog, error)
 	LLMRelayMetrics(context.Context, domainidentity.Principal) (domainaigateway.LLMRelayMetrics, error)
 	LLMRelayCacheStats(context.Context, domainidentity.Principal, domainaigateway.LLMRelayCacheStatsRequest) (domainaigateway.LLMRelayCacheStats, error)
 	PurgeLLMRelayCache(context.Context, domainidentity.Principal, domainaigateway.LLMRelayCachePurgeRequest) (domainaigateway.LLMRelayCachePurgeResult, error)
+}
+
+type AIGatewayRelayService interface {
 	LLMRelayMaxRequestBodyBytes() int64
 	RelayLLMHTTP(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, http.ResponseWriter) error
 	RelayLLMWebSocket(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, http.ResponseWriter, *http.Request) error
 }
 
+type AIGatewayService interface {
+	AIGatewayCapabilityService
+	AIGatewayPersonalTokenService
+	AIGatewayServiceAccountService
+	AIGatewayClientService
+	AIGatewayToolGrantService
+	AIGatewayAccessPolicyService
+	AIGatewayGovernanceService
+	AIGatewayAuditService
+	AIGatewayApprovalService
+	AIGatewayUpstreamService
+	AIGatewayModelRouteService
+	AIGatewayRelayObservabilityService
+	AIGatewayRelayService
+}
+
 type AIGatewayHandler struct {
-	service AIGatewayService
+	aiGatewayCapabilityHandler
+	aiGatewayPersonalTokenHandler
+	aiGatewayServiceAccountHandler
+	aiGatewayClientHandler
+	aiGatewayToolGrantHandler
+	aiGatewayAccessPolicyHandler
+	aiGatewayGovernanceHandler
+	aiGatewayAuditHandler
+	aiGatewayApprovalHandler
+	aiGatewayUpstreamHandler
+	aiGatewayModelRouteHandler
+	aiGatewayRelayObservabilityHandler
+	aiGatewayRelayHandler
 }
 
 const maxAIGatewayGovernanceWindowHours = 168
 
 func NewAIGatewayHandler(service AIGatewayService) *AIGatewayHandler {
-	return &AIGatewayHandler{service: service}
+	return NewAIGatewayHandlerWithServices(AIGatewayServices{
+		Capabilities: service, PersonalTokens: service, ServiceAccounts: service,
+		Clients: service, ToolGrants: service, AccessPolicies: service, Governance: service,
+		Audit: service, Approvals: service, Upstreams: service, ModelRoutes: service,
+		RelayObservability: service, Relay: service,
+	})
 }
 
-func (h *AIGatewayHandler) Capabilities(c *gin.Context) {
+type AIGatewayServices struct {
+	Capabilities       AIGatewayCapabilityService
+	PersonalTokens     AIGatewayPersonalTokenService
+	ServiceAccounts    AIGatewayServiceAccountService
+	Clients            AIGatewayClientService
+	ToolGrants         AIGatewayToolGrantService
+	AccessPolicies     AIGatewayAccessPolicyService
+	Governance         AIGatewayGovernanceService
+	Audit              AIGatewayAuditService
+	Approvals          AIGatewayApprovalService
+	Upstreams          AIGatewayUpstreamService
+	ModelRoutes        AIGatewayModelRouteService
+	RelayObservability AIGatewayRelayObservabilityService
+	Relay              AIGatewayRelayService
+}
+
+type aiGatewayCapabilityHandler struct{ service AIGatewayCapabilityService }
+type aiGatewayPersonalTokenHandler struct{ service AIGatewayPersonalTokenService }
+type aiGatewayServiceAccountHandler struct {
+	service AIGatewayServiceAccountService
+}
+type aiGatewayClientHandler struct{ service AIGatewayClientService }
+type aiGatewayToolGrantHandler struct{ service AIGatewayToolGrantService }
+type aiGatewayAccessPolicyHandler struct{ service AIGatewayAccessPolicyService }
+type aiGatewayGovernanceHandler struct{ service AIGatewayGovernanceService }
+type aiGatewayAuditHandler struct{ service AIGatewayAuditService }
+type aiGatewayApprovalHandler struct{ service AIGatewayApprovalService }
+type aiGatewayUpstreamHandler struct{ service AIGatewayUpstreamService }
+type aiGatewayModelRouteHandler struct{ service AIGatewayModelRouteService }
+type aiGatewayRelayObservabilityHandler struct {
+	service AIGatewayRelayObservabilityService
+}
+type aiGatewayRelayHandler struct{ service AIGatewayRelayService }
+
+func NewAIGatewayHandlerWithServices(services AIGatewayServices) *AIGatewayHandler {
+	return &AIGatewayHandler{
+		aiGatewayCapabilityHandler:         aiGatewayCapabilityHandler{service: services.Capabilities},
+		aiGatewayPersonalTokenHandler:      aiGatewayPersonalTokenHandler{service: services.PersonalTokens},
+		aiGatewayServiceAccountHandler:     aiGatewayServiceAccountHandler{service: services.ServiceAccounts},
+		aiGatewayClientHandler:             aiGatewayClientHandler{service: services.Clients},
+		aiGatewayToolGrantHandler:          aiGatewayToolGrantHandler{service: services.ToolGrants},
+		aiGatewayAccessPolicyHandler:       aiGatewayAccessPolicyHandler{service: services.AccessPolicies},
+		aiGatewayGovernanceHandler:         aiGatewayGovernanceHandler{service: services.Governance},
+		aiGatewayAuditHandler:              aiGatewayAuditHandler{service: services.Audit},
+		aiGatewayApprovalHandler:           aiGatewayApprovalHandler{service: services.Approvals},
+		aiGatewayUpstreamHandler:           aiGatewayUpstreamHandler{service: services.Upstreams},
+		aiGatewayModelRouteHandler:         aiGatewayModelRouteHandler{service: services.ModelRoutes},
+		aiGatewayRelayObservabilityHandler: aiGatewayRelayObservabilityHandler{service: services.RelayObservability},
+		aiGatewayRelayHandler:              aiGatewayRelayHandler{service: services.Relay},
+	}
+}
+
+func (h *aiGatewayCapabilityHandler) Capabilities(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	accessCtx := apiMiddleware.AccessContextFromContext(c)
 	item, err := h.service.Capabilities(c.Request.Context(), principal, domainaigateway.ManifestRequest{
@@ -103,7 +224,7 @@ func (h *AIGatewayHandler) Capabilities(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) InvokeTool(c *gin.Context) {
+func (h *aiGatewayCapabilityHandler) InvokeTool(c *gin.Context) {
 	var req domainaigateway.ToolInvocationRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI Gateway tool invocation payload")
@@ -126,7 +247,7 @@ func (h *AIGatewayHandler) InvokeTool(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) ReadResource(c *gin.Context) {
+func (h *aiGatewayCapabilityHandler) ReadResource(c *gin.Context) {
 	var req domainaigateway.ResourceReadRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI Gateway resource read payload")
@@ -150,7 +271,7 @@ func (h *AIGatewayHandler) ReadResource(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) GetPrompt(c *gin.Context) {
+func (h *aiGatewayCapabilityHandler) GetPrompt(c *gin.Context) {
 	var req domainaigateway.PromptGetRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI Gateway prompt payload")
@@ -176,7 +297,7 @@ func (h *AIGatewayHandler) GetPrompt(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) ListPersonalAccessTokens(c *gin.Context) {
+func (h *aiGatewayPersonalTokenHandler) ListPersonalAccessTokens(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListPersonalAccessTokens(c.Request.Context(), principal, domainaigateway.PersonalAccessTokenListRequest{
 		Scope:  c.Query("scope"),
@@ -189,7 +310,7 @@ func (h *AIGatewayHandler) ListPersonalAccessTokens(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) CreatePersonalAccessToken(c *gin.Context) {
+func (h *aiGatewayPersonalTokenHandler) CreatePersonalAccessToken(c *gin.Context) {
 	var req domainaigateway.PersonalAccessTokenInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid personal access token payload")
@@ -204,7 +325,7 @@ func (h *AIGatewayHandler) CreatePersonalAccessToken(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) RevokePersonalAccessToken(c *gin.Context) {
+func (h *aiGatewayPersonalTokenHandler) RevokePersonalAccessToken(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.service.RevokePersonalAccessToken(c.Request.Context(), principal, c.Param("tokenID")); err != nil {
 		writeError(c, err)
@@ -213,7 +334,7 @@ func (h *AIGatewayHandler) RevokePersonalAccessToken(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (h *AIGatewayHandler) RotatePersonalAccessToken(c *gin.Context) {
+func (h *aiGatewayPersonalTokenHandler) RotatePersonalAccessToken(c *gin.Context) {
 	var req domainaigateway.TokenRotationInput
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid personal access token rotation payload")
@@ -228,7 +349,7 @@ func (h *AIGatewayHandler) RotatePersonalAccessToken(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) ListServiceAccounts(c *gin.Context) {
+func (h *aiGatewayServiceAccountHandler) ListServiceAccounts(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListServiceAccounts(c.Request.Context(), principal)
 	if err != nil {
@@ -238,7 +359,7 @@ func (h *AIGatewayHandler) ListServiceAccounts(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) CreateServiceAccount(c *gin.Context) {
+func (h *aiGatewayServiceAccountHandler) CreateServiceAccount(c *gin.Context) {
 	var req domainaigateway.ServiceAccountInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid service account payload")
@@ -253,7 +374,7 @@ func (h *AIGatewayHandler) CreateServiceAccount(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) ListServiceAccountTokens(c *gin.Context) {
+func (h *aiGatewayServiceAccountHandler) ListServiceAccountTokens(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListServiceAccountTokens(c.Request.Context(), principal)
 	if err != nil {
@@ -263,7 +384,7 @@ func (h *AIGatewayHandler) ListServiceAccountTokens(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) CreateServiceAccountToken(c *gin.Context) {
+func (h *aiGatewayServiceAccountHandler) CreateServiceAccountToken(c *gin.Context) {
 	var req domainaigateway.ServiceAccountTokenInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid service account token payload")
@@ -278,7 +399,7 @@ func (h *AIGatewayHandler) CreateServiceAccountToken(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) RevokeServiceAccountToken(c *gin.Context) {
+func (h *aiGatewayServiceAccountHandler) RevokeServiceAccountToken(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.service.RevokeServiceAccountToken(c.Request.Context(), principal, c.Param("tokenID")); err != nil {
 		writeError(c, err)
@@ -287,7 +408,7 @@ func (h *AIGatewayHandler) RevokeServiceAccountToken(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (h *AIGatewayHandler) RotateServiceAccountToken(c *gin.Context) {
+func (h *aiGatewayServiceAccountHandler) RotateServiceAccountToken(c *gin.Context) {
 	var req domainaigateway.TokenRotationInput
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid service account token rotation payload")
@@ -302,7 +423,7 @@ func (h *AIGatewayHandler) RotateServiceAccountToken(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) ListAIClients(c *gin.Context) {
+func (h *aiGatewayClientHandler) ListAIClients(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListAIClients(c.Request.Context(), principal)
 	if err != nil {
@@ -312,7 +433,7 @@ func (h *AIGatewayHandler) ListAIClients(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) CreateAIClient(c *gin.Context) {
+func (h *aiGatewayClientHandler) CreateAIClient(c *gin.Context) {
 	var req domainaigateway.AIClientInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI client payload")
@@ -327,7 +448,7 @@ func (h *AIGatewayHandler) CreateAIClient(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) UpdateAIClient(c *gin.Context) {
+func (h *aiGatewayClientHandler) UpdateAIClient(c *gin.Context) {
 	var req domainaigateway.AIClientInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI client payload")
@@ -342,7 +463,7 @@ func (h *AIGatewayHandler) UpdateAIClient(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) ListToolGrants(c *gin.Context) {
+func (h *aiGatewayToolGrantHandler) ListToolGrants(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListToolGrants(c.Request.Context(), principal, domainaigateway.ToolGrantFilter{
 		SubjectType:    c.Query("subjectType"),
@@ -358,7 +479,7 @@ func (h *AIGatewayHandler) ListToolGrants(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) CreateToolGrant(c *gin.Context) {
+func (h *aiGatewayToolGrantHandler) CreateToolGrant(c *gin.Context) {
 	var req domainaigateway.ToolGrantInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid MCP tool grant payload")
@@ -373,7 +494,7 @@ func (h *AIGatewayHandler) CreateToolGrant(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) DeleteToolGrant(c *gin.Context) {
+func (h *aiGatewayToolGrantHandler) DeleteToolGrant(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.service.DeleteToolGrant(c.Request.Context(), principal, c.Param("grantID")); err != nil {
 		writeError(c, err)
@@ -382,7 +503,7 @@ func (h *AIGatewayHandler) DeleteToolGrant(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (h *AIGatewayHandler) ListAccessPolicies(c *gin.Context) {
+func (h *aiGatewayAccessPolicyHandler) ListAccessPolicies(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListAccessPolicies(c.Request.Context(), principal, domainaigateway.AccessPolicyFilter{
 		SubjectType:     c.Query("subjectType"),
@@ -398,7 +519,7 @@ func (h *AIGatewayHandler) ListAccessPolicies(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) CreateAccessPolicy(c *gin.Context) {
+func (h *aiGatewayAccessPolicyHandler) CreateAccessPolicy(c *gin.Context) {
 	var req domainaigateway.AccessPolicyInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI access policy payload")
@@ -413,7 +534,7 @@ func (h *AIGatewayHandler) CreateAccessPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) UpdateAccessPolicy(c *gin.Context) {
+func (h *aiGatewayAccessPolicyHandler) UpdateAccessPolicy(c *gin.Context) {
 	var req domainaigateway.AccessPolicyInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI access policy payload")
@@ -428,7 +549,7 @@ func (h *AIGatewayHandler) UpdateAccessPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) DeleteAccessPolicy(c *gin.Context) {
+func (h *aiGatewayAccessPolicyHandler) DeleteAccessPolicy(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.service.DeleteAccessPolicy(c.Request.Context(), principal, c.Param("policyID")); err != nil {
 		writeError(c, err)
@@ -437,7 +558,7 @@ func (h *AIGatewayHandler) DeleteAccessPolicy(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (h *AIGatewayHandler) GovernanceStatus(c *gin.Context) {
+func (h *aiGatewayGovernanceHandler) GovernanceStatus(c *gin.Context) {
 	windowHours, err := parseAIGatewayWindowHours(c.Query("windowHours"), 0)
 	if err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
@@ -452,7 +573,7 @@ func (h *AIGatewayHandler) GovernanceStatus(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) ListSkillBindings(c *gin.Context) {
+func (h *aiGatewayGovernanceHandler) ListSkillBindings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListSkillBindings(c.Request.Context(), principal, domainaigateway.SkillBindingFilter{
 		SubjectType:     c.Query("subjectType"),
@@ -468,7 +589,7 @@ func (h *AIGatewayHandler) ListSkillBindings(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) CreateSkillBinding(c *gin.Context) {
+func (h *aiGatewayGovernanceHandler) CreateSkillBinding(c *gin.Context) {
 	var req domainaigateway.SkillBindingInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI skill binding payload")
@@ -483,7 +604,7 @@ func (h *AIGatewayHandler) CreateSkillBinding(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) UpdateSkillBinding(c *gin.Context) {
+func (h *aiGatewayGovernanceHandler) UpdateSkillBinding(c *gin.Context) {
 	var req domainaigateway.SkillBindingInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI skill binding payload")
@@ -498,7 +619,7 @@ func (h *AIGatewayHandler) UpdateSkillBinding(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) DeleteSkillBinding(c *gin.Context) {
+func (h *aiGatewayGovernanceHandler) DeleteSkillBinding(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.service.DeleteSkillBinding(c.Request.Context(), principal, c.Param("bindingID")); err != nil {
 		writeError(c, err)
@@ -507,7 +628,7 @@ func (h *AIGatewayHandler) DeleteSkillBinding(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (h *AIGatewayHandler) ListAuditLogs(c *gin.Context) {
+func (h *aiGatewayAuditHandler) ListAuditLogs(c *gin.Context) {
 	filter, err := parseAIGatewayAuditLogFilter(c)
 	if err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
@@ -522,7 +643,7 @@ func (h *AIGatewayHandler) ListAuditLogs(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) ListApprovalRequests(c *gin.Context) {
+func (h *aiGatewayApprovalHandler) ListApprovalRequests(c *gin.Context) {
 	filter, err := parseAIGatewayApprovalRequestFilter(c)
 	if err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
@@ -537,7 +658,7 @@ func (h *AIGatewayHandler) ListApprovalRequests(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) GetApprovalTimeline(c *gin.Context) {
+func (h *aiGatewayApprovalHandler) GetApprovalTimeline(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetApprovalTimeline(c.Request.Context(), principal, c.Param("requestID"))
 	if err != nil {
@@ -547,19 +668,19 @@ func (h *AIGatewayHandler) GetApprovalTimeline(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) ApproveApprovalRequest(c *gin.Context) {
+func (h *aiGatewayApprovalHandler) ApproveApprovalRequest(c *gin.Context) {
 	h.decideApprovalRequest(c, "approve")
 }
 
-func (h *AIGatewayHandler) RejectApprovalRequest(c *gin.Context) {
+func (h *aiGatewayApprovalHandler) RejectApprovalRequest(c *gin.Context) {
 	h.decideApprovalRequest(c, "reject")
 }
 
-func (h *AIGatewayHandler) CancelApprovalRequest(c *gin.Context) {
+func (h *aiGatewayApprovalHandler) CancelApprovalRequest(c *gin.Context) {
 	h.decideApprovalRequest(c, "cancel")
 }
 
-func (h *AIGatewayHandler) ListLLMUpstreams(c *gin.Context) {
+func (h *aiGatewayUpstreamHandler) ListLLMUpstreams(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListLLMUpstreams(c.Request.Context(), principal, domainaigateway.LLMUpstreamFilter{
 		ProviderKind: c.Query("providerKind"),
@@ -573,7 +694,7 @@ func (h *AIGatewayHandler) ListLLMUpstreams(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) CreateLLMUpstream(c *gin.Context) {
+func (h *aiGatewayUpstreamHandler) CreateLLMUpstream(c *gin.Context) {
 	var req domainaigateway.LLMUpstreamInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM upstream payload")
@@ -588,7 +709,7 @@ func (h *AIGatewayHandler) CreateLLMUpstream(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) UpdateLLMUpstream(c *gin.Context) {
+func (h *aiGatewayUpstreamHandler) UpdateLLMUpstream(c *gin.Context) {
 	var req domainaigateway.LLMUpstreamInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM upstream payload")
@@ -603,7 +724,7 @@ func (h *AIGatewayHandler) UpdateLLMUpstream(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) TestLLMUpstream(c *gin.Context) {
+func (h *aiGatewayUpstreamHandler) TestLLMUpstream(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.TestLLMUpstream(c.Request.Context(), principal, c.Param("upstreamID"))
 	if err != nil {
@@ -613,7 +734,7 @@ func (h *AIGatewayHandler) TestLLMUpstream(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) RunLLMRelayHealthChecks(c *gin.Context) {
+func (h *aiGatewayUpstreamHandler) RunLLMRelayHealthChecks(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.RunLLMRelayHealthChecks(c.Request.Context(), principal)
 	if err != nil {
@@ -623,7 +744,7 @@ func (h *AIGatewayHandler) RunLLMRelayHealthChecks(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) ListLLMModelRoutes(c *gin.Context) {
+func (h *aiGatewayModelRouteHandler) ListLLMModelRoutes(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListLLMModelRoutes(c.Request.Context(), principal, domainaigateway.LLMModelRouteFilter{
 		PublicModel:     c.Query("publicModel"),
@@ -639,7 +760,7 @@ func (h *AIGatewayHandler) ListLLMModelRoutes(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) CreateLLMModelRoute(c *gin.Context) {
+func (h *aiGatewayModelRouteHandler) CreateLLMModelRoute(c *gin.Context) {
 	var req domainaigateway.LLMModelRouteInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM model route payload")
@@ -654,7 +775,7 @@ func (h *AIGatewayHandler) CreateLLMModelRoute(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *AIGatewayHandler) UpdateLLMModelRoute(c *gin.Context) {
+func (h *aiGatewayModelRouteHandler) UpdateLLMModelRoute(c *gin.Context) {
 	var req domainaigateway.LLMModelRouteInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM model route payload")
@@ -669,7 +790,7 @@ func (h *AIGatewayHandler) UpdateLLMModelRoute(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) DeleteLLMModelRoute(c *gin.Context) {
+func (h *aiGatewayModelRouteHandler) DeleteLLMModelRoute(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.service.DeleteLLMModelRoute(c.Request.Context(), principal, c.Param("routeID")); err != nil {
 		writeError(c, err)
@@ -678,7 +799,7 @@ func (h *AIGatewayHandler) DeleteLLMModelRoute(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
-func (h *AIGatewayHandler) ListLLMCallLogs(c *gin.Context) {
+func (h *aiGatewayRelayObservabilityHandler) ListLLMCallLogs(c *gin.Context) {
 	filter, err := parseLLMCallLogFilter(c)
 	if err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
@@ -693,7 +814,7 @@ func (h *AIGatewayHandler) ListLLMCallLogs(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *AIGatewayHandler) LLMRelayMetrics(c *gin.Context) {
+func (h *aiGatewayRelayObservabilityHandler) LLMRelayMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.LLMRelayMetrics(c.Request.Context(), principal)
 	if err != nil {
@@ -703,7 +824,7 @@ func (h *AIGatewayHandler) LLMRelayMetrics(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) LLMRelayCacheStats(c *gin.Context) {
+func (h *aiGatewayRelayObservabilityHandler) LLMRelayCacheStats(c *gin.Context) {
 	windowHours, err := parseAIGatewayWindowHours(c.Query("windowHours"), 24)
 	if err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
@@ -722,7 +843,7 @@ func (h *AIGatewayHandler) LLMRelayCacheStats(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) PurgeLLMRelayCache(c *gin.Context) {
+func (h *aiGatewayRelayObservabilityHandler) PurgeLLMRelayCache(c *gin.Context) {
 	var req domainaigateway.LLMRelayCachePurgeRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM relay cache purge payload")
@@ -737,219 +858,219 @@ func (h *AIGatewayHandler) PurgeLLMRelayCache(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *AIGatewayHandler) RelayOpenAIModels(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIModels(c *gin.Context) {
 	h.relayLLM(c, "openai", "models")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIChatCompletions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIChatCompletions(c *gin.Context) {
 	h.relayLLM(c, "openai", "chat/completions")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIResponses(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIResponses(c *gin.Context) {
 	h.relayLLM(c, "openai", "responses")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIEmbeddings(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIEmbeddings(c *gin.Context) {
 	h.relayLLM(c, "openai", "embeddings")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIImageGenerations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIImageGenerations(c *gin.Context) {
 	h.relayLLM(c, "openai", "images/generations")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIImageEdits(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIImageEdits(c *gin.Context) {
 	h.relayLLM(c, "openai", "images/edits")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIImageVariations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIImageVariations(c *gin.Context) {
 	h.relayLLM(c, "openai", "images/variations")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIAudioSpeech(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIAudioSpeech(c *gin.Context) {
 	h.relayLLM(c, "openai", "audio/speech")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIAudioTranscriptions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIAudioTranscriptions(c *gin.Context) {
 	h.relayLLM(c, "openai", "audio/transcriptions")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIAudioTranslations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIAudioTranslations(c *gin.Context) {
 	h.relayLLM(c, "openai", "audio/translations")
 }
 
-func (h *AIGatewayHandler) RelayOpenAIRealtime(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenAIRealtime(c *gin.Context) {
 	h.relayLLMWebSocket(c, "openai", "realtime")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekModels(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekModels(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "models")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekChatCompletions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekChatCompletions(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "chat/completions")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekResponses(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekResponses(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "responses")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekEmbeddings(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekEmbeddings(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "embeddings")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekImageGenerations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekImageGenerations(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "images/generations")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekImageEdits(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekImageEdits(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "images/edits")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekImageVariations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekImageVariations(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "images/variations")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekAudioSpeech(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekAudioSpeech(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "audio/speech")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekAudioTranscriptions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekAudioTranscriptions(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "audio/transcriptions")
 }
 
-func (h *AIGatewayHandler) RelayDeepSeekAudioTranslations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayDeepSeekAudioTranslations(c *gin.Context) {
 	h.relayLLM(c, "deepseek", "audio/translations")
 }
 
-func (h *AIGatewayHandler) RelayQwenModels(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenModels(c *gin.Context) {
 	h.relayLLM(c, "qwen", "models")
 }
 
-func (h *AIGatewayHandler) RelayQwenChatCompletions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenChatCompletions(c *gin.Context) {
 	h.relayLLM(c, "qwen", "chat/completions")
 }
 
-func (h *AIGatewayHandler) RelayQwenResponses(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenResponses(c *gin.Context) {
 	h.relayLLM(c, "qwen", "responses")
 }
 
-func (h *AIGatewayHandler) RelayQwenEmbeddings(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenEmbeddings(c *gin.Context) {
 	h.relayLLM(c, "qwen", "embeddings")
 }
 
-func (h *AIGatewayHandler) RelayQwenImageGenerations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenImageGenerations(c *gin.Context) {
 	h.relayLLM(c, "qwen", "images/generations")
 }
 
-func (h *AIGatewayHandler) RelayQwenImageEdits(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenImageEdits(c *gin.Context) {
 	h.relayLLM(c, "qwen", "images/edits")
 }
 
-func (h *AIGatewayHandler) RelayQwenImageVariations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenImageVariations(c *gin.Context) {
 	h.relayLLM(c, "qwen", "images/variations")
 }
 
-func (h *AIGatewayHandler) RelayQwenAudioSpeech(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenAudioSpeech(c *gin.Context) {
 	h.relayLLM(c, "qwen", "audio/speech")
 }
 
-func (h *AIGatewayHandler) RelayQwenAudioTranscriptions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenAudioTranscriptions(c *gin.Context) {
 	h.relayLLM(c, "qwen", "audio/transcriptions")
 }
 
-func (h *AIGatewayHandler) RelayQwenAudioTranslations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayQwenAudioTranslations(c *gin.Context) {
 	h.relayLLM(c, "qwen", "audio/translations")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterModels(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterModels(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "models")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterChatCompletions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterChatCompletions(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "chat/completions")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterResponses(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterResponses(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "responses")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterEmbeddings(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterEmbeddings(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "embeddings")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterImageGenerations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterImageGenerations(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "images/generations")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterImageEdits(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterImageEdits(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "images/edits")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterImageVariations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterImageVariations(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "images/variations")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterAudioSpeech(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterAudioSpeech(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "audio/speech")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterAudioTranscriptions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterAudioTranscriptions(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "audio/transcriptions")
 }
 
-func (h *AIGatewayHandler) RelayOpenRouterAudioTranslations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayOpenRouterAudioTranslations(c *gin.Context) {
 	h.relayLLM(c, "openrouter", "audio/translations")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIModels(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIModels(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "models")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIChatCompletions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIChatCompletions(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "chat/completions")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIResponses(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIResponses(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "responses")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIEmbeddings(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIEmbeddings(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "embeddings")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIImageGenerations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIImageGenerations(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "images/generations")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIImageEdits(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIImageEdits(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "images/edits")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIImageVariations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIImageVariations(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "images/variations")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIAudioSpeech(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIAudioSpeech(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "audio/speech")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIAudioTranscriptions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIAudioTranscriptions(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "audio/transcriptions")
 }
 
-func (h *AIGatewayHandler) RelayAzureOpenAIAudioTranslations(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAzureOpenAIAudioTranslations(c *gin.Context) {
 	h.relayLLM(c, "azure-openai", "audio/translations")
 }
 
-func (h *AIGatewayHandler) RelayGeminiModels(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayGeminiModels(c *gin.Context) {
 	h.relayLLM(c, "gemini", "models")
 }
 
-func (h *AIGatewayHandler) RelayGeminiInteractions(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayGeminiInteractions(c *gin.Context) {
 	h.relayLLM(c, "gemini", "interactions")
 }
 
-func (h *AIGatewayHandler) RelayGeminiModelAction(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayGeminiModelAction(c *gin.Context) {
 	pathModel, endpoint, ok := parseGeminiRelayModelAction(c.Param("modelAction"))
 	if !ok {
 		relayNativeError(c, http.StatusBadRequest, "invalid_argument", "unsupported Gemini relay model action")
@@ -958,23 +1079,23 @@ func (h *AIGatewayHandler) RelayGeminiModelAction(c *gin.Context) {
 	h.relayLLMWithPathModel(c, "gemini", endpoint, pathModel)
 }
 
-func (h *AIGatewayHandler) RelayCohereRerank(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayCohereRerank(c *gin.Context) {
 	h.relayLLM(c, "cohere", "rerank")
 }
 
-func (h *AIGatewayHandler) RelayAnthropicModels(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAnthropicModels(c *gin.Context) {
 	h.relayLLM(c, "anthropic", "models")
 }
 
-func (h *AIGatewayHandler) RelayAnthropicMessages(c *gin.Context) {
+func (h *aiGatewayRelayHandler) RelayAnthropicMessages(c *gin.Context) {
 	h.relayLLM(c, "anthropic", "messages")
 }
 
-func (h *AIGatewayHandler) relayLLM(c *gin.Context, providerKind, endpoint string) {
+func (h *aiGatewayRelayHandler) relayLLM(c *gin.Context, providerKind, endpoint string) {
 	h.relayLLMWithPathModel(c, providerKind, endpoint, "")
 }
 
-func (h *AIGatewayHandler) relayLLMWebSocket(c *gin.Context, providerKind, endpoint string) {
+func (h *aiGatewayRelayHandler) relayLLMWebSocket(c *gin.Context, providerKind, endpoint string) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	accessCtx := apiMiddleware.AccessContextFromContext(c)
 	err := h.service.RelayLLMWebSocket(c.Request.Context(), principal, accessCtx, appaigateway.LLMRelayHTTPRequest{
@@ -992,7 +1113,7 @@ func (h *AIGatewayHandler) relayLLMWebSocket(c *gin.Context, providerKind, endpo
 	}
 }
 
-func (h *AIGatewayHandler) relayLLMWithPathModel(c *gin.Context, providerKind, endpoint, pathModel string) {
+func (h *aiGatewayRelayHandler) relayLLMWithPathModel(c *gin.Context, providerKind, endpoint, pathModel string) {
 	var body []byte
 	if c.Request.Body != nil {
 		limited := http.MaxBytesReader(c.Writer, c.Request.Body, h.service.LLMRelayMaxRequestBodyBytes())
@@ -1002,6 +1123,11 @@ func (h *AIGatewayHandler) relayLLMWithPathModel(c *gin.Context, providerKind, e
 			relayNativeError(c, http.StatusRequestEntityTooLarge, "request_too_large", "relay request body is too large")
 			return
 		}
+	}
+	if err := clearResponseWriteDeadline(c); err != nil {
+		_ = c.Error(err)
+		relayNativeError(c, http.StatusInternalServerError, "stream_unavailable", "relay response streaming is unavailable")
+		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	accessCtx := apiMiddleware.AccessContextFromContext(c)
@@ -1037,7 +1163,7 @@ func parseGeminiRelayModelAction(modelAction string) (string, string, bool) {
 	}
 }
 
-func (h *AIGatewayHandler) decideApprovalRequest(c *gin.Context, action string) {
+func (h *aiGatewayApprovalHandler) decideApprovalRequest(c *gin.Context, action string) {
 	var req domainaigateway.ApprovalDecisionInput
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid AI Gateway approval decision payload")

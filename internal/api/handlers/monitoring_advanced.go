@@ -11,7 +11,7 @@ import (
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 )
 
-func (h *MonitoringHandler) ListRules(c *gin.Context) {
+func (h *ruleHandler) ListRules(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListRules(c.Request.Context(), principal)
 	if err != nil {
@@ -21,7 +21,7 @@ func (h *MonitoringHandler) ListRules(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) GetRule(c *gin.Context) {
+func (h *ruleHandler) GetRule(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetRule(c.Request.Context(), principal, c.Param("ruleID"))
 	if err != nil {
@@ -31,28 +31,14 @@ func (h *MonitoringHandler) GetRule(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) CreateRule(c *gin.Context) {
+func (h *ruleHandler) CreateRule(c *gin.Context) {
 	var req dto.AlertRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert rule payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateRule(c.Request.Context(), principal, domainalert.AlertRuleInput{
-		ID:                   req.ID,
-		Name:                 req.Name,
-		RuleType:             req.RuleType,
-		DatasourceSelector:   req.DatasourceSelector,
-		QuerySpec:            req.QuerySpec,
-		ThresholdSpec:        req.ThresholdSpec,
-		ForSeconds:           req.ForSeconds,
-		GroupBy:              req.GroupBy,
-		Labels:               req.Labels,
-		Annotations:          req.Annotations,
-		NotificationPolicyID: req.NotificationPolicyID,
-		HealingPolicyIDs:     req.HealingPolicyIDs,
-		Enabled:              req.Enabled,
-	})
+	item, err := h.service.CreateRule(c.Request.Context(), principal, alertRuleInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -60,14 +46,38 @@ func (h *MonitoringHandler) CreateRule(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateRule(c *gin.Context) {
+func (h *ruleHandler) UpdateRule(c *gin.Context) {
 	var req dto.AlertRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert rule payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateRule(c.Request.Context(), principal, c.Param("ruleID"), domainalert.AlertRuleInput{
+	item, err := h.service.UpdateRule(c.Request.Context(), principal, c.Param("ruleID"), alertRuleInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *ruleHandler) TestRule(c *gin.Context) {
+	var req dto.AlertRuleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert rule payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.TestRule(c.Request.Context(), principal, alertRuleInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func alertRuleInput(req dto.AlertRuleRequest) domainalert.AlertRuleInput {
+	return domainalert.AlertRuleInput{
 		ID:                   req.ID,
 		Name:                 req.Name,
 		RuleType:             req.RuleType,
@@ -81,44 +91,10 @@ func (h *MonitoringHandler) UpdateRule(c *gin.Context) {
 		NotificationPolicyID: req.NotificationPolicyID,
 		HealingPolicyIDs:     req.HealingPolicyIDs,
 		Enabled:              req.Enabled,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) TestRule(c *gin.Context) {
-	var req dto.AlertRuleRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert rule payload")
-		return
-	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.TestRule(c.Request.Context(), principal, domainalert.AlertRuleInput{
-		ID:                   req.ID,
-		Name:                 req.Name,
-		RuleType:             req.RuleType,
-		DatasourceSelector:   req.DatasourceSelector,
-		QuerySpec:            req.QuerySpec,
-		ThresholdSpec:        req.ThresholdSpec,
-		ForSeconds:           req.ForSeconds,
-		GroupBy:              req.GroupBy,
-		Labels:               req.Labels,
-		Annotations:          req.Annotations,
-		NotificationPolicyID: req.NotificationPolicyID,
-		HealingPolicyIDs:     req.HealingPolicyIDs,
-		Enabled:              req.Enabled,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, item)
-}
-
-func (h *MonitoringHandler) ListRuleRuns(c *gin.Context) {
+func (h *ruleHandler) ListRuleRuns(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListRuleRuns(c.Request.Context(), principal, domainalert.AlertRuleRunFilter{
 		RuleID: c.Query("ruleId"),
@@ -131,7 +107,7 @@ func (h *MonitoringHandler) ListRuleRuns(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) ListEvents(c *gin.Context) {
+func (h *eventHandler) ListEvents(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListEvents(c.Request.Context(), principal, domainalert.AlertEventFilter{
 		Status:    c.Query("status"),
@@ -146,7 +122,7 @@ func (h *MonitoringHandler) ListEvents(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) GetEvent(c *gin.Context) {
+func (h *eventHandler) GetEvent(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetEvent(c.Request.Context(), principal, c.Param("eventID"))
 	if err != nil {
@@ -156,7 +132,7 @@ func (h *MonitoringHandler) GetEvent(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) AcknowledgeEvent(c *gin.Context) {
+func (h *eventHandler) AcknowledgeEvent(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.AcknowledgeEvent(c.Request.Context(), principal, c.Param("eventID"))
 	if err != nil {
@@ -166,7 +142,7 @@ func (h *MonitoringHandler) AcknowledgeEvent(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ResolveEvent(c *gin.Context) {
+func (h *eventHandler) ResolveEvent(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.ResolveEvent(c.Request.Context(), principal, c.Param("eventID"))
 	if err != nil {
@@ -176,7 +152,7 @@ func (h *MonitoringHandler) ResolveEvent(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) HealEvent(c *gin.Context) {
+func (h *eventHandler) HealEvent(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.HealEvent(c.Request.Context(), principal, c.Param("eventID"), c.Query("policyId"))
 	if err != nil {
@@ -186,7 +162,7 @@ func (h *MonitoringHandler) HealEvent(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) GetHealingRun(c *gin.Context) {
+func (h *healingRunHandler) GetHealingRun(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetHealingRun(c.Request.Context(), principal, c.Param("runID"))
 	if err != nil {
@@ -196,7 +172,7 @@ func (h *MonitoringHandler) GetHealingRun(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ApproveHealingRun(c *gin.Context) {
+func (h *healingRunHandler) ApproveHealingRun(c *gin.Context) {
 	var req dto.WorkflowApprovalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid healing approval payload")
@@ -211,7 +187,7 @@ func (h *MonitoringHandler) ApproveHealingRun(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) RejectHealingRun(c *gin.Context) {
+func (h *healingRunHandler) RejectHealingRun(c *gin.Context) {
 	var req dto.WorkflowApprovalRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid healing approval payload")
@@ -226,7 +202,7 @@ func (h *MonitoringHandler) RejectHealingRun(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) RetryHealingRun(c *gin.Context) {
+func (h *healingRunHandler) RetryHealingRun(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.RetryHealingRun(c.Request.Context(), principal, c.Param("runID"))
 	if err != nil {
@@ -236,7 +212,7 @@ func (h *MonitoringHandler) RetryHealingRun(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListNotificationPolicies(c *gin.Context) {
+func (h *notificationPolicyHandler) ListNotificationPolicies(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListNotificationPolicies(c.Request.Context(), principal)
 	if err != nil {
@@ -246,7 +222,7 @@ func (h *MonitoringHandler) ListNotificationPolicies(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateNotificationPolicy(c *gin.Context) {
+func (h *notificationPolicyHandler) CreateNotificationPolicy(c *gin.Context) {
 	var req dto.NotificationPolicyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid notification policy payload")
@@ -271,7 +247,7 @@ func (h *MonitoringHandler) CreateNotificationPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateNotificationPolicy(c *gin.Context) {
+func (h *notificationPolicyHandler) UpdateNotificationPolicy(c *gin.Context) {
 	var req dto.NotificationPolicyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid notification policy payload")
@@ -296,7 +272,7 @@ func (h *MonitoringHandler) UpdateNotificationPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) PreviewNotificationPolicy(c *gin.Context) {
+func (h *notificationPolicyHandler) PreviewNotificationPolicy(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.PreviewNotificationPolicy(c.Request.Context(), principal, c.Param("policyID"), c.Query("eventId"))
 	if err != nil {
@@ -306,7 +282,7 @@ func (h *MonitoringHandler) PreviewNotificationPolicy(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) ListNotificationTemplates(c *gin.Context) {
+func (h *notificationTemplateHandler) ListNotificationTemplates(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListNotificationTemplates(c.Request.Context(), principal)
 	if err != nil {
@@ -316,7 +292,7 @@ func (h *MonitoringHandler) ListNotificationTemplates(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateNotificationTemplate(c *gin.Context) {
+func (h *notificationTemplateHandler) CreateNotificationTemplate(c *gin.Context) {
 	var req dto.NotificationTemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid notification template payload")
@@ -341,7 +317,7 @@ func (h *MonitoringHandler) CreateNotificationTemplate(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateNotificationTemplate(c *gin.Context) {
+func (h *notificationTemplateHandler) UpdateNotificationTemplate(c *gin.Context) {
 	var req dto.NotificationTemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid notification template payload")
@@ -366,7 +342,7 @@ func (h *MonitoringHandler) UpdateNotificationTemplate(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListHealingPolicies(c *gin.Context) {
+func (h *healingPolicyHandler) ListHealingPolicies(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListHealingPolicies(c.Request.Context(), principal)
 	if err != nil {
@@ -376,25 +352,14 @@ func (h *MonitoringHandler) ListHealingPolicies(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateHealingPolicy(c *gin.Context) {
+func (h *healingPolicyHandler) CreateHealingPolicy(c *gin.Context) {
 	var req dto.HealingPolicyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid healing policy payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateHealingPolicy(c.Request.Context(), principal, domainalert.HealingPolicyInput{
-		ID:                  req.ID,
-		Name:                req.Name,
-		TriggerMode:         req.TriggerMode,
-		WorkflowTemplateID:  req.WorkflowTemplateID,
-		ApprovalPolicyRef:   req.ApprovalPolicyRef,
-		CooldownSeconds:     req.CooldownSeconds,
-		ConcurrencyKey:      req.ConcurrencyKey,
-		SafetyWindowSeconds: req.SafetyWindowSeconds,
-		Definition:          req.Definition,
-		Enabled:             req.Enabled,
-	})
+	item, err := h.service.CreateHealingPolicy(c.Request.Context(), principal, healingPolicyInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -402,14 +367,23 @@ func (h *MonitoringHandler) CreateHealingPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateHealingPolicy(c *gin.Context) {
+func (h *healingPolicyHandler) UpdateHealingPolicy(c *gin.Context) {
 	var req dto.HealingPolicyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid healing policy payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateHealingPolicy(c.Request.Context(), principal, c.Param("policyID"), domainalert.HealingPolicyInput{
+	item, err := h.service.UpdateHealingPolicy(c.Request.Context(), principal, c.Param("policyID"), healingPolicyInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func healingPolicyInput(req dto.HealingPolicyRequest) domainalert.HealingPolicyInput {
+	return domainalert.HealingPolicyInput{
 		ID:                  req.ID,
 		Name:                req.Name,
 		TriggerMode:         req.TriggerMode,
@@ -420,15 +394,10 @@ func (h *MonitoringHandler) UpdateHealingPolicy(c *gin.Context) {
 		SafetyWindowSeconds: req.SafetyWindowSeconds,
 		Definition:          req.Definition,
 		Enabled:             req.Enabled,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListHealingRuns(c *gin.Context) {
+func (h *healingRunHandler) ListHealingRuns(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListHealingRuns(c.Request.Context(), principal, domainalert.HealingRunFilter{
 		PolicyID: c.Query("policyId"),
@@ -443,7 +412,7 @@ func (h *MonitoringHandler) ListHealingRuns(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) ListOnCallSchedules(c *gin.Context) {
+func (h *onCallScheduleHandler) ListOnCallSchedules(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListOnCallSchedules(c.Request.Context(), principal)
 	if err != nil {
@@ -453,7 +422,7 @@ func (h *MonitoringHandler) ListOnCallSchedules(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateOnCallSchedule(c *gin.Context) {
+func (h *onCallScheduleHandler) CreateOnCallSchedule(c *gin.Context) {
 	var req dto.OnCallScheduleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall schedule payload")
@@ -474,7 +443,7 @@ func (h *MonitoringHandler) CreateOnCallSchedule(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateOnCallSchedule(c *gin.Context) {
+func (h *onCallScheduleHandler) UpdateOnCallSchedule(c *gin.Context) {
 	var req dto.OnCallScheduleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall schedule payload")
@@ -495,7 +464,7 @@ func (h *MonitoringHandler) UpdateOnCallSchedule(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListOnCallRotations(c *gin.Context) {
+func (h *onCallRotationHandler) ListOnCallRotations(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListOnCallRotations(c.Request.Context(), principal)
 	if err != nil {
@@ -505,7 +474,7 @@ func (h *MonitoringHandler) ListOnCallRotations(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateOnCallRotation(c *gin.Context) {
+func (h *onCallRotationHandler) CreateOnCallRotation(c *gin.Context) {
 	var req dto.OnCallRotationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall rotation payload")
@@ -527,7 +496,7 @@ func (h *MonitoringHandler) CreateOnCallRotation(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateOnCallRotation(c *gin.Context) {
+func (h *onCallRotationHandler) UpdateOnCallRotation(c *gin.Context) {
 	var req dto.OnCallRotationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall rotation payload")
@@ -549,7 +518,7 @@ func (h *MonitoringHandler) UpdateOnCallRotation(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListOnCallEscalationPolicies(c *gin.Context) {
+func (h *onCallEscalationHandler) ListOnCallEscalationPolicies(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListOnCallEscalationPolicies(c.Request.Context(), principal)
 	if err != nil {
@@ -559,7 +528,7 @@ func (h *MonitoringHandler) ListOnCallEscalationPolicies(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateOnCallEscalationPolicy(c *gin.Context) {
+func (h *onCallEscalationHandler) CreateOnCallEscalationPolicy(c *gin.Context) {
 	var req dto.OnCallEscalationPolicyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall escalation policy payload")
@@ -579,7 +548,7 @@ func (h *MonitoringHandler) CreateOnCallEscalationPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateOnCallEscalationPolicy(c *gin.Context) {
+func (h *onCallEscalationHandler) UpdateOnCallEscalationPolicy(c *gin.Context) {
 	var req dto.OnCallEscalationPolicyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall escalation policy payload")
@@ -599,7 +568,7 @@ func (h *MonitoringHandler) UpdateOnCallEscalationPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListOnCallAssignmentRules(c *gin.Context) {
+func (h *onCallAssignmentHandler) ListOnCallAssignmentRules(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListOnCallAssignmentRules(c.Request.Context(), principal)
 	if err != nil {
@@ -609,7 +578,7 @@ func (h *MonitoringHandler) ListOnCallAssignmentRules(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
-func (h *MonitoringHandler) CreateOnCallAssignmentRule(c *gin.Context) {
+func (h *onCallAssignmentHandler) CreateOnCallAssignmentRule(c *gin.Context) {
 	var req dto.OnCallAssignmentRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall assignment rule payload")
@@ -642,7 +611,7 @@ func (h *MonitoringHandler) CreateOnCallAssignmentRule(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
-func (h *MonitoringHandler) UpdateOnCallAssignmentRule(c *gin.Context) {
+func (h *onCallAssignmentHandler) UpdateOnCallAssignmentRule(c *gin.Context) {
 	var req dto.OnCallAssignmentRuleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall assignment rule payload")
@@ -685,7 +654,7 @@ func firstNonEmptyParam(values ...string) string {
 	return ""
 }
 
-func (h *MonitoringHandler) GetCurrentOnCall(c *gin.Context) {
+func (h *onCallRuntimeHandler) GetCurrentOnCall(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetCurrentOnCall(c.Request.Context(), principal, c.Query("ref"))
 	if err != nil {
@@ -695,7 +664,7 @@ func (h *MonitoringHandler) GetCurrentOnCall(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ResolveOnCall(c *gin.Context) {
+func (h *onCallRuntimeHandler) ResolveOnCall(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.ResolveOnCall(c.Request.Context(), principal, domainalert.OnCallResolveInput{
 		AlertID:         c.Query("alertId"),
@@ -717,7 +686,7 @@ func (h *MonitoringHandler) ResolveOnCall(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
-func (h *MonitoringHandler) ListOnCallTasks(c *gin.Context) {
+func (h *onCallRuntimeHandler) ListOnCallTasks(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListOnCallTasks(c.Request.Context(), principal, parseLimit(c.Query("limit"), 50))
 	if err != nil {

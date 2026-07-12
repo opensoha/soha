@@ -243,6 +243,44 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
 	}
 	switch tool.Name {
+	case "delivery.onboarding.analyze_repo",
+		"delivery.standards.dockerfile.generate",
+		"delivery.standards.dockerfile.validate",
+		"delivery.standards.helm.generate",
+		"delivery.standards.k8s.validate",
+		"delivery.spec.render",
+		"delivery.application.bootstrap",
+		"delivery.release.plan":
+		return s.invokeDeliveryPlanningTool(ctx, principal, tool.Name, input)
+	}
+	if s.apps == nil || s.delivery == nil {
+		return nil, nil, fmt.Errorf("%w: delivery gateway services are not configured", apperrors.ErrInvalidArgument)
+	}
+	switch tool.Name {
+	case "delivery.applications.list",
+		"delivery.applications.detail",
+		"delivery.applications.create",
+		"delivery.application_environments.list",
+		"delivery.application_services.list",
+		"delivery.build_sources.list",
+		"delivery.release_targets.list":
+		return s.invokeDeliveryApplicationTool(ctx, principal, tool.Name, input)
+	case "delivery.actions.trigger",
+		"delivery.release_bundles.list",
+		"delivery.execution_tasks.list",
+		"delivery.execution_logs.list":
+		return s.invokeDeliveryRuntimeTool(ctx, principal, tool.Name, input)
+	case "delivery.workflow_templates.list",
+		"delivery.release_context.diff",
+		"delivery.rollback.context":
+		return s.invokeDeliveryContextTool(ctx, principal, tool.Name, input)
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
+	}
+}
+
+func (s *Service) invokeDeliveryPlanningTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "delivery.onboarding.analyze_repo":
 		return s.buildOnboardingRepositoryAnalysis(input)
 	case "delivery.standards.dockerfile.generate":
@@ -259,11 +297,28 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		return prepareApplicationBootstrap(input)
 	case "delivery.release.plan":
 		return s.buildDeliveryReleasePlan(ctx, principal, input)
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
 	}
-	if s.apps == nil || s.delivery == nil {
-		return nil, nil, fmt.Errorf("%w: delivery gateway services are not configured", apperrors.ErrInvalidArgument)
+}
+
+func (s *Service) invokeDeliveryApplicationTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
+	case "delivery.applications.list",
+		"delivery.applications.detail",
+		"delivery.applications.create",
+		"delivery.application_environments.list",
+		"delivery.application_services.list":
+		return s.invokeDeliveryApplicationCoreTool(ctx, principal, toolName, input)
+	case "delivery.build_sources.list", "delivery.release_targets.list":
+		return s.invokeDeliveryApplicationTopologyTool(ctx, principal, toolName, input)
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
 	}
-	switch tool.Name {
+}
+
+func (s *Service) invokeDeliveryApplicationCoreTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "delivery.applications.list":
 		var req struct {
 			Search string `json:"search"`
@@ -311,6 +366,13 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		items, err := s.apps.ListServices(ctx, principal, applicationID)
 		items = redactedApplicationServices(items)
 		return items, map[string]any{"applicationId": applicationID, "count": len(items)}, err
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeDeliveryApplicationTopologyTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "delivery.build_sources.list":
 		var req struct {
 			ApplicationID string `json:"applicationId"`
@@ -359,6 +421,13 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		}
 		targets := releaseTargetsFromApplicationDetail(detail)
 		return targets, map[string]any{"applicationId": applicationID, "count": len(targets)}, nil
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeDeliveryRuntimeTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "delivery.actions.trigger":
 		var req struct {
 			ApplicationID string `json:"applicationId"`
@@ -442,6 +511,13 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		items, err := s.delivery.ListExecutionLogs(ctx, principal, req.TaskID, req.Limit)
 		items = redactExecutionLogs(items)
 		return items, map[string]any{"executionTaskId": req.TaskID, "count": len(items)}, err
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeDeliveryContextTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "delivery.workflow_templates.list":
 		if s.catalog == nil {
 			return nil, nil, fmt.Errorf("%w: catalog gateway services are not configured", apperrors.ErrInvalidArgument)
@@ -453,26 +529,29 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 	case "delivery.rollback.context":
 		return s.buildRollbackContext(ctx, principal, input)
 	default:
-		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
 	}
 }
+
+type kubernetesToolRequest struct {
+	ClusterID      string `json:"clusterId"`
+	Namespace      string `json:"namespace"`
+	PodName        string `json:"podName"`
+	DeploymentName string `json:"deploymentName"`
+	ServiceName    string `json:"serviceName"`
+	NodeName       string `json:"nodeName"`
+	Container      string `json:"container"`
+	TailLines      int64  `json:"tailLines"`
+	SinceSeconds   int64  `json:"sinceSeconds"`
+	Previous       bool   `json:"previous"`
+	Limit          int    `json:"limit"`
+}
+
 func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error) {
 	if s.resources == nil {
 		return nil, nil, fmt.Errorf("%w: Kubernetes resource gateway service is not configured", apperrors.ErrInvalidArgument)
 	}
-	var req struct {
-		ClusterID      string `json:"clusterId"`
-		Namespace      string `json:"namespace"`
-		PodName        string `json:"podName"`
-		DeploymentName string `json:"deploymentName"`
-		ServiceName    string `json:"serviceName"`
-		NodeName       string `json:"nodeName"`
-		Container      string `json:"container"`
-		TailLines      int64  `json:"tailLines"`
-		SinceSeconds   int64  `json:"sinceSeconds"`
-		Previous       bool   `json:"previous"`
-		Limit          int    `json:"limit"`
-	}
+	var req kubernetesToolRequest
 	if err := mapInput(input, &req); err != nil {
 		return nil, nil, err
 	}
@@ -483,6 +562,21 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 	}
 	related := map[string]any{"clusterId": req.ClusterID, "namespace": req.Namespace}
 	switch tool.Name {
+	case "k8s.pods.list", "k8s.pods.logs", "k8s.pods.describe":
+		return s.invokeKubernetesPodTool(ctx, principal, tool.Name, req, related)
+	case "k8s.deployments.list", "k8s.deployments.rollout_status", "k8s.deployments.events":
+		return s.invokeKubernetesDeploymentTool(ctx, principal, tool.Name, req, related)
+	case "k8s.services.list", "k8s.services.backends", "k8s.routes.context", "k8s.storage.context":
+		return s.invokeKubernetesNetworkStorageTool(ctx, principal, tool.Name, req, related)
+	case "k8s.nodes.detail", "k8s.events.list":
+		return s.invokeKubernetesClusterTool(ctx, principal, tool.Name, req, related)
+	default:
+		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
+	}
+}
+
+func (s *Service) invokeKubernetesPodTool(ctx context.Context, principal domainidentity.Principal, toolName string, req kubernetesToolRequest, related map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "k8s.pods.list":
 		items, err := s.resources.ListPods(ctx, principal, req.ClusterID, req.Namespace)
 		related["count"] = len(items)
@@ -505,6 +599,13 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 		item, err := s.resources.GetPodDetail(ctx, principal, req.ClusterID, req.Namespace, req.PodName)
 		related["podName"] = req.PodName
 		return podDescribeContext(item), related, err
+	default:
+		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeKubernetesDeploymentTool(ctx context.Context, principal domainidentity.Principal, toolName string, req kubernetesToolRequest, related map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "k8s.deployments.list":
 		items, err := s.resources.ListDeployments(ctx, principal, req.ClusterID, req.Namespace)
 		related["count"] = len(items)
@@ -532,6 +633,13 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 		related["count"] = len(filtered)
 		related["limit"] = limit
 		return filtered, related, err
+	default:
+		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeKubernetesNetworkStorageTool(ctx context.Context, principal domainidentity.Principal, toolName string, req kubernetesToolRequest, related map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "k8s.services.list":
 		items, err := s.resources.ListServices(ctx, principal, req.ClusterID, req.Namespace)
 		related["count"] = len(items)
@@ -557,6 +665,13 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 		related["persistentVolumeCount"] = item["persistentVolumeCount"]
 		related["storageClassCount"] = item["storageClassCount"]
 		return item, related, err
+	default:
+		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeKubernetesClusterTool(ctx context.Context, principal domainidentity.Principal, toolName string, req kubernetesToolRequest, related map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "k8s.nodes.detail":
 		req.NodeName = strings.TrimSpace(req.NodeName)
 		if req.NodeName == "" {
@@ -576,11 +691,26 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 		related["limit"] = limit
 		return items, related, err
 	default:
-		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
+		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
 	}
 }
 func (s *Service) invokeGatewayGovernanceTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error) {
 	switch tool.Name {
+	case "gateway.manifest.read", "gateway.clients.list", "gateway.tokens.list", "gateway.service_accounts.list":
+		return s.invokeGatewayIdentityTool(ctx, principal, tool.Name, input)
+	case "gateway.tool_grants.list", "gateway.access_policies.list", "gateway.skill_bindings.list":
+		return s.invokeGatewayPolicyTool(ctx, principal, tool.Name, input)
+	case "gateway.approvals.list", "gateway.approvals.decide", "gateway.audit_logs.list", "gateway.governance.status":
+		return s.invokeGatewayControlTool(ctx, principal, tool.Name, input)
+	case "gateway.relay.upstreams.list", "gateway.relay.model_routes.list", "gateway.relay.model_calls.list", "gateway.relay.cache.purge":
+		return s.invokeGatewayRelayTool(ctx, principal, tool.Name, input)
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
+	}
+}
+
+func (s *Service) invokeGatewayIdentityTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "gateway.manifest.read":
 		req := gatewayManifestRequest(input)
 		item, err := s.Capabilities(ctx, principal, req)
@@ -635,6 +765,13 @@ func (s *Service) invokeGatewayGovernanceTool(ctx context.Context, principal dom
 		items = filterGatewayServiceAccounts(items, input)
 		items = redactedServiceAccounts(items)
 		return items, map[string]any{"count": len(items)}, err
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeGatewayPolicyTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "gateway.tool_grants.list":
 		filter := gatewayToolGrantFilter(input)
 		items, err := s.ListToolGrants(ctx, principal, filter)
@@ -671,6 +808,13 @@ func (s *Service) invokeGatewayGovernanceTool(ctx context.Context, principal dom
 			"skillId":         filter.SkillID,
 			"includeDisabled": filter.IncludeDisabled,
 		}), err
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeGatewayControlTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "gateway.approvals.list":
 		filter := gatewayApprovalRequestFilter(input)
 		items, err := s.ListApprovalRequests(ctx, principal, filter)
@@ -743,6 +887,13 @@ func (s *Service) invokeGatewayGovernanceTool(ctx context.Context, principal dom
 			"recommendationCount": len(item.Recommendations),
 			"anomalyCount":        len(item.Anomalies),
 		}, err
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeGatewayRelayTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
 	case "gateway.relay.upstreams.list":
 		filter := gatewayRelayUpstreamFilter(input)
 		items, err := s.ListLLMUpstreams(ctx, principal, filter)
@@ -800,7 +951,7 @@ func (s *Service) invokeGatewayGovernanceTool(ctx context.Context, principal dom
 			"purgedCount": item.PurgedCount,
 		}), err
 	default:
-		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
 	}
 }
 
@@ -1269,24 +1420,27 @@ func (s *Service) buildReleaseContextDiff(ctx context.Context, principal domaini
 	}
 	return output, related, nil
 }
-func (s *Service) buildRollbackContext(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
-	var req struct {
-		ApplicationID            string `json:"applicationId"`
-		ApplicationEnvironmentID string `json:"applicationEnvironmentId"`
-		ReleaseBundleID          string `json:"releaseBundleId"`
-		ExecutionTaskID          string `json:"executionTaskId"`
-		Limit                    int    `json:"limit"`
-		LogLimit                 int    `json:"logLimit"`
-	}
+
+type rollbackContextRequest struct {
+	ApplicationID            string `json:"applicationId"`
+	ApplicationEnvironmentID string `json:"applicationEnvironmentId"`
+	ReleaseBundleID          string `json:"releaseBundleId"`
+	ExecutionTaskID          string `json:"executionTaskId"`
+	Limit                    int    `json:"limit"`
+	LogLimit                 int    `json:"logLimit"`
+}
+
+func parseRollbackContextRequest(input map[string]any) (rollbackContextRequest, int, int, error) {
+	var req rollbackContextRequest
 	if err := mapInput(input, &req); err != nil {
-		return nil, nil, err
+		return req, 0, 0, err
 	}
 	req.ApplicationID = strings.TrimSpace(req.ApplicationID)
 	req.ApplicationEnvironmentID = strings.TrimSpace(req.ApplicationEnvironmentID)
 	req.ReleaseBundleID = strings.TrimSpace(req.ReleaseBundleID)
 	req.ExecutionTaskID = strings.TrimSpace(req.ExecutionTaskID)
 	if req.ApplicationID == "" {
-		return nil, nil, fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
+		return req, 0, 0, fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
 	}
 	limit := req.Limit
 	if limit <= 0 {
@@ -1295,6 +1449,14 @@ func (s *Service) buildRollbackContext(ctx context.Context, principal domainiden
 	logLimit := req.LogLimit
 	if logLimit <= 0 {
 		logLimit = 100
+	}
+	return req, limit, logLimit, nil
+}
+
+func (s *Service) buildRollbackContext(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
+	req, limit, logLimit, err := parseRollbackContextRequest(input)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	detail, err := s.delivery.GetApplicationDetail(ctx, principal, req.ApplicationID)
@@ -1402,29 +1564,53 @@ type onboardingAnalyzeRepoRequest struct {
 	Hints           map[string]any `json:"hints"`
 }
 
-func (s *Service) buildOnboardingRepositoryAnalysis(input map[string]any) (any, map[string]any, error) {
-	var req onboardingAnalyzeRepoRequest
-	if err := mapInput(input, &req); err != nil {
-		return nil, nil, err
-	}
-	req.RepositoryPath = strings.TrimSpace(req.RepositoryPath)
-	if req.RepositoryPath == "" {
-		return nil, nil, fmt.Errorf("%w: repositoryPath is required", apperrors.ErrInvalidArgument)
-	}
+type onboardingRepoDefaults struct {
+	language, framework, packageManager string
+	appName, appKey, serviceKey         string
+	serviceName, defaultBranch          string
+	buildContextDir, dockerfilePath     string
+	port                                int
+}
+
+func deriveOnboardingRepoDefaults(req onboardingAnalyzeRepoRequest) onboardingRepoDefaults {
 	language := firstNonEmpty(strings.TrimSpace(req.Language), inferDeliveryLanguage(req.Files))
-	framework := firstNonEmpty(strings.TrimSpace(req.Framework), inferDeliveryFramework(req.Files, language))
-	packageManager := firstNonEmpty(strings.TrimSpace(req.PackageManager), inferDeliveryPackageManager(req.Files, language))
 	appName := firstNonEmpty(strings.TrimSpace(req.ApplicationName), deliveryNameFromRepository(req.RepositoryPath))
-	appKey := firstNonEmpty(strings.TrimSpace(req.ApplicationKey), deliveryKeyFromText(appName))
-	serviceKey := firstNonEmpty(strings.TrimSpace(req.ServiceKey), "api")
-	serviceName := firstNonEmpty(strings.TrimSpace(req.ServiceName), appName)
-	defaultBranch := firstNonEmpty(strings.TrimSpace(req.DefaultBranch), "main")
-	buildContextDir := firstNonEmpty(strings.TrimSpace(req.BuildContextDir), ".")
-	dockerfilePath := firstNonEmpty(strings.TrimSpace(req.DockerfilePath), "Dockerfile")
 	port := req.Port
 	if port <= 0 {
 		port = defaultPortForLanguage(language)
 	}
+	return onboardingRepoDefaults{
+		language: language, framework: firstNonEmpty(strings.TrimSpace(req.Framework), inferDeliveryFramework(req.Files, language)),
+		packageManager: firstNonEmpty(strings.TrimSpace(req.PackageManager), inferDeliveryPackageManager(req.Files, language)),
+		appName:        appName, appKey: firstNonEmpty(strings.TrimSpace(req.ApplicationKey), deliveryKeyFromText(appName)),
+		serviceKey: firstNonEmpty(strings.TrimSpace(req.ServiceKey), "api"), serviceName: firstNonEmpty(strings.TrimSpace(req.ServiceName), appName),
+		defaultBranch: firstNonEmpty(strings.TrimSpace(req.DefaultBranch), "main"), buildContextDir: firstNonEmpty(strings.TrimSpace(req.BuildContextDir), "."),
+		dockerfilePath: firstNonEmpty(strings.TrimSpace(req.DockerfilePath), "Dockerfile"), port: port,
+	}
+}
+
+func parseOnboardingAnalyzeRepoRequest(input map[string]any) (onboardingAnalyzeRepoRequest, error) {
+	var req onboardingAnalyzeRepoRequest
+	if err := mapInput(input, &req); err != nil {
+		return req, err
+	}
+	req.RepositoryPath = strings.TrimSpace(req.RepositoryPath)
+	if req.RepositoryPath == "" {
+		return req, fmt.Errorf("%w: repositoryPath is required", apperrors.ErrInvalidArgument)
+	}
+	return req, nil
+}
+
+func (s *Service) buildOnboardingRepositoryAnalysis(input map[string]any) (any, map[string]any, error) {
+	req, err := parseOnboardingAnalyzeRepoRequest(input)
+	if err != nil {
+		return nil, nil, err
+	}
+	defaults := deriveOnboardingRepoDefaults(req)
+	language, framework, packageManager := defaults.language, defaults.framework, defaults.packageManager
+	appName, appKey := defaults.appName, defaults.appKey
+	serviceKey, serviceName := defaults.serviceKey, defaults.serviceName
+	defaultBranch, buildContextDir, dockerfilePath, port := defaults.defaultBranch, defaults.buildContextDir, defaults.dockerfilePath, defaults.port
 	buildSourceID := "default"
 	draft := domaindelivery.DeliveryDraftInput{
 		Source: domaindelivery.DeliveryDraftSourceAI,
@@ -1508,35 +1694,41 @@ func (s *Service) buildOnboardingRepositoryAnalysis(input map[string]any) (any, 
 			"confirmationRequired": true,
 		},
 	}
-	if binding := suggestedEnvironmentBindingFromRepoInput(req, buildSourceID, serviceKey, port); binding != nil {
+	finalizeOnboardingDraft(&draft, req, defaults, buildSourceID)
+	output := onboardingRepositoryAnalysisOutput(req, defaults, draft)
+	return output, map[string]any{
+		"repositoryPath": req.RepositoryPath,
+		"applicationKey": appKey,
+		"serviceKey":     serviceKey,
+		"fileCount":      len(draft.Files),
+	}, nil
+}
+
+func finalizeOnboardingDraft(draft *domaindelivery.DeliveryDraftInput, req onboardingAnalyzeRepoRequest, defaults onboardingRepoDefaults, buildSourceID string) {
+	if binding := suggestedEnvironmentBindingFromRepoInput(req, buildSourceID, defaults.serviceKey, defaults.port); binding != nil {
 		draft.EnvironmentBindings = []domaindelivery.BlueprintEnvironmentBindingTemplate{*binding}
 	}
-	dockerfileContent := dockerfileDraftContent(dockerfileDraftRequest{
-		Language:       language,
-		Framework:      framework,
-		PackageManager: packageManager,
-		BuildCommand:   strings.TrimSpace(req.BuildCommand),
-		StartCommand:   strings.TrimSpace(req.StartCommand),
-		Entrypoint:     strings.TrimSpace(req.Entrypoint),
-		Port:           port,
-		DockerfilePath: dockerfilePath,
-		ContextDir:     buildContextDir,
+	content := dockerfileDraftContent(dockerfileDraftRequest{
+		Language: defaults.language, Framework: defaults.framework, PackageManager: defaults.packageManager,
+		BuildCommand: strings.TrimSpace(req.BuildCommand), StartCommand: strings.TrimSpace(req.StartCommand), Entrypoint: strings.TrimSpace(req.Entrypoint),
+		Port: defaults.port, DockerfilePath: defaults.dockerfilePath, ContextDir: defaults.buildContextDir,
 	})
-	draft.Files = []domaindelivery.BlueprintFileTemplate{
-		{Path: dockerfilePath, Kind: "dockerfile", Content: dockerfileContent, Required: true, Purpose: "Build image draft for human review before repository changes."},
-	}
-	output := map[string]any{
+	draft.Files = []domaindelivery.BlueprintFileTemplate{{Path: defaults.dockerfilePath, Kind: "dockerfile", Content: content, Required: true, Purpose: "Build image draft for human review before repository changes."}}
+}
+
+func onboardingRepositoryAnalysisOutput(req onboardingAnalyzeRepoRequest, defaults onboardingRepoDefaults, draft domaindelivery.DeliveryDraftInput) map[string]any {
+	return map[string]any{
 		"summary": "generated DeliveryDraft onboarding suggestion from repository metadata",
 		"repository": map[string]any{
 			"path": req.RepositoryPath,
 			"url":  strings.TrimSpace(req.RepositoryURL),
 		},
 		"detected": map[string]any{
-			"language":       language,
-			"framework":      framework,
-			"packageManager": packageManager,
-			"defaultBranch":  defaultBranch,
-			"port":           port,
+			"language":       defaults.language,
+			"framework":      defaults.framework,
+			"packageManager": defaults.packageManager,
+			"defaultBranch":  defaults.defaultBranch,
+			"port":           defaults.port,
 		},
 		"deliveryDraftInput": draft,
 		"mutationBoundary": map[string]any{
@@ -1550,12 +1742,6 @@ func (s *Service) buildOnboardingRepositoryAnalysis(input map[string]any) (any, 
 			"Submit the DeliveryDraft to /delivery/drafts, then confirm only after human preview approval.",
 		},
 	}
-	return output, map[string]any{
-		"repositoryPath": req.RepositoryPath,
-		"applicationKey": appKey,
-		"serviceKey":     serviceKey,
-		"fileCount":      len(draft.Files),
-	}, nil
 }
 
 type dockerfileDraftRequest struct {
@@ -1634,7 +1820,11 @@ func validateDockerfileDraft(input map[string]any) (any, map[string]any, error) 
 			"createsPlatformObjects": false,
 		},
 	}
-	return output, map[string]any{"path": path, "issueCount": len(validation["issues"].([]map[string]any))}, nil
+	issues, ok := validation["issues"].([]map[string]any)
+	if !ok {
+		return nil, nil, fmt.Errorf("%w: validator returned an invalid issues result", apperrors.ErrInvalidArgument)
+	}
+	return output, map[string]any{"path": path, "issueCount": len(issues)}, nil
 }
 
 func buildHelmDraft(input map[string]any) (any, map[string]any, error) {
@@ -1930,230 +2120,16 @@ func (s *Service) buildDeliveryReleasePlan(ctx context.Context, principal domain
 }
 
 func (s *Service) invokeReleaseFailureDiagnosis(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
-	var req struct {
-		ApplicationID            string `json:"applicationId"`
-		ApplicationEnvironmentID string `json:"applicationEnvironmentId"`
-		ReleaseBundleID          string `json:"releaseBundleId"`
-		ExecutionTaskID          string `json:"executionTaskId"`
-		ClusterID                string `json:"clusterId"`
-		Namespace                string `json:"namespace"`
-		WorkloadKind             string `json:"workloadKind"`
-		WorkloadName             string `json:"workloadName"`
-		PodName                  string `json:"podName"`
-		Container                string `json:"container"`
-		LogLimit                 int    `json:"logLimit"`
-		EventLimit               int    `json:"eventLimit"`
-		AgentProviderID          string `json:"agentProviderId"`
-		ProviderID               string `json:"providerId"`
-		DeepAnalysis             bool   `json:"deepAnalysis"`
-		ExternalAnalysis         bool   `json:"externalAnalysis"`
-		TimeoutSeconds           int    `json:"timeoutSeconds"`
-	}
-	if err := mapInput(input, &req); err != nil {
+	req, err := parseReleaseFailureDiagnosisRequest(input)
+	if err != nil {
 		return nil, nil, err
 	}
-	agentProviderID := firstNonEmpty(strings.TrimSpace(req.AgentProviderID), strings.TrimSpace(req.ProviderID))
-	diagnosisReq := releaseFailureDiagnosisRequest{
-		ApplicationID:            strings.TrimSpace(req.ApplicationID),
-		ApplicationEnvironmentID: strings.TrimSpace(req.ApplicationEnvironmentID),
-		ReleaseBundleID:          strings.TrimSpace(req.ReleaseBundleID),
-		ExecutionTaskID:          strings.TrimSpace(req.ExecutionTaskID),
-		ClusterID:                strings.TrimSpace(req.ClusterID),
-		Namespace:                strings.TrimSpace(req.Namespace),
-		WorkloadKind:             strings.TrimSpace(req.WorkloadKind),
-		WorkloadName:             strings.TrimSpace(req.WorkloadName),
-		PodName:                  strings.TrimSpace(req.PodName),
-		Container:                strings.TrimSpace(req.Container),
-		AgentProviderID:          agentProviderID,
-		DeepAnalysis:             req.DeepAnalysis || req.ExternalAnalysis || agentProviderID != "",
-		TimeoutSeconds:           req.TimeoutSeconds,
-	}
-	req.ApplicationID = strings.TrimSpace(req.ApplicationID)
-	req.ApplicationEnvironmentID = strings.TrimSpace(req.ApplicationEnvironmentID)
-	req.ReleaseBundleID = strings.TrimSpace(req.ReleaseBundleID)
-	req.ExecutionTaskID = strings.TrimSpace(req.ExecutionTaskID)
-	req.ClusterID = strings.TrimSpace(req.ClusterID)
-	req.Namespace = strings.TrimSpace(req.Namespace)
-	req.WorkloadKind = strings.TrimSpace(req.WorkloadKind)
-	req.WorkloadName = strings.TrimSpace(req.WorkloadName)
-	req.PodName = strings.TrimSpace(req.PodName)
-	req.Container = strings.TrimSpace(req.Container)
-	related := map[string]any{
-		"applicationId":            req.ApplicationID,
-		"applicationEnvironmentId": req.ApplicationEnvironmentID,
-		"releaseBundleId":          req.ReleaseBundleID,
-		"executionTaskId":          req.ExecutionTaskID,
-		"clusterId":                req.ClusterID,
-		"namespace":                req.Namespace,
-	}
-	contextView := map[string]any{
-		"summary": "collected release failure diagnosis context",
-		"scope": map[string]any{
-			"applicationId":            req.ApplicationID,
-			"applicationEnvironmentId": req.ApplicationEnvironmentID,
-			"releaseBundleId":          req.ReleaseBundleID,
-			"executionTaskId":          req.ExecutionTaskID,
-			"clusterId":                req.ClusterID,
-			"namespace":                req.Namespace,
-			"workloadKind":             req.WorkloadKind,
-			"workloadName":             req.WorkloadName,
-			"podName":                  req.PodName,
-		},
-		"delivery": map[string]any{},
-		"runtime":  map[string]any{},
-		"findings": []string{
-			"Evidence is collected through soha application services; this Gateway tool does not execute cluster mutations.",
-		},
-		"nextChecks": []string{},
-	}
-	deliveryEvidence := contextView["delivery"].(map[string]any)
-	runtimeEvidence := contextView["runtime"].(map[string]any)
+	related, contextView := newReleaseFailureDiagnosisContext(req)
 	nextChecks := []string{}
-
-	if s.delivery != nil {
-		if taskID := req.ExecutionTaskID; taskID != "" {
-			limit := req.LogLimit
-			if limit <= 0 {
-				limit = 100
-			}
-			logs, err := s.delivery.ListExecutionLogs(ctx, principal, taskID, limit)
-			if err != nil {
-				deliveryEvidence["executionLogsError"] = err.Error()
-				nextChecks = append(nextChecks, "Re-check execution task logs after the delivery control plane is reachable.")
-			} else {
-				logs = redactExecutionLogs(logs)
-				deliveryEvidence["executionLogs"] = logs
-				deliveryEvidence["executionLogCount"] = len(logs)
-				related["executionLogCount"] = len(logs)
-			}
-		}
-		if bundleID := req.ReleaseBundleID; bundleID != "" {
-			artifacts, err := s.delivery.ListReleaseBundleArtifacts(ctx, principal, bundleID)
-			if err != nil {
-				deliveryEvidence["releaseBundleArtifactsError"] = err.Error()
-			} else {
-				deliveryEvidence["releaseBundleArtifacts"] = artifacts
-				deliveryEvidence["releaseBundleArtifactCount"] = len(artifacts)
-				related["releaseBundleArtifactCount"] = len(artifacts)
-			}
-		}
-		if req.ApplicationID != "" || req.ApplicationEnvironmentID != "" || req.ReleaseBundleID != "" {
-			tasks, err := s.delivery.ListExecutionTasks(ctx, principal, domaindelivery.ExecutionTaskFilter{
-				ApplicationID:            req.ApplicationID,
-				ApplicationEnvironmentID: req.ApplicationEnvironmentID,
-				ReleaseBundleID:          req.ReleaseBundleID,
-				Limit:                    10,
-			})
-			if err != nil {
-				deliveryEvidence["executionTasksError"] = err.Error()
-			} else {
-				deliveryEvidence["executionTasks"] = tasks
-				deliveryEvidence["executionTaskCount"] = len(tasks)
-			}
-		}
-	} else {
-		deliveryEvidence["error"] = "delivery gateway services are not configured"
-		nextChecks = append(nextChecks, "Configure delivery services before collecting release execution evidence.")
-	}
-
-	if s.resources != nil && req.ClusterID != "" {
-		clusterID := req.ClusterID
-		namespace := req.Namespace
-		eventLimit := req.EventLimit
-		if eventLimit <= 0 {
-			eventLimit = 100
-		}
-		if pods, err := s.resources.ListPods(ctx, principal, clusterID, namespace); err != nil {
-			runtimeEvidence["podsError"] = err.Error()
-		} else {
-			runtimeEvidence["pods"] = filterPodsForDiagnosis(pods, req.PodName, req.WorkloadName)
-		}
-		if deployments, err := s.resources.ListDeployments(ctx, principal, clusterID, namespace); err != nil {
-			runtimeEvidence["deploymentsError"] = err.Error()
-		} else {
-			runtimeEvidence["deployments"] = filterDeploymentsForDiagnosis(deployments, req.WorkloadName)
-		}
-		if services, err := s.resources.ListServices(ctx, principal, clusterID, namespace); err != nil {
-			runtimeEvidence["servicesError"] = err.Error()
-		} else {
-			runtimeEvidence["services"] = services
-		}
-		if events, err := s.resources.ListClusterEvents(ctx, principal, clusterID, namespace, eventLimit); err != nil {
-			runtimeEvidence["eventsError"] = err.Error()
-		} else {
-			runtimeEvidence["events"] = filterEventsForDiagnosis(events, req.PodName, req.WorkloadName)
-		}
-		if podName := req.PodName; podName != "" {
-			logs, err := s.resources.GetPodLogs(ctx, principal, clusterID, namespace, podName, req.Container, 200, 0, false)
-			if err != nil {
-				runtimeEvidence["podLogsError"] = err.Error()
-			} else {
-				runtimeEvidence["podLogs"] = redactPodLogs(logs)
-			}
-		}
-	} else if req.ClusterID == "" {
-		nextChecks = append(nextChecks, "Provide clusterId and namespace to collect runtime Kubernetes evidence.")
-	} else {
-		runtimeEvidence["error"] = "Kubernetes resource gateway service is not configured"
-	}
-
+	nextChecks = s.collectReleaseDeliveryEvidence(ctx, principal, req, contextView, related, nextChecks)
+	nextChecks = s.collectReleaseRuntimeEvidence(ctx, principal, req, contextView, nextChecks)
 	contextView["nextChecks"] = nextChecks
-	if s.copilot != nil {
-		artifactInput := buildReleaseFailureArtifactInput(diagnosisReq, input, contextView)
-		if diagnosisReq.DeepAnalysis {
-			run, err := s.copilot.QueueGatewayAnalysisAgentRun(ctx, principal, domaincopilot.GatewayAnalysisAgentRunInput{
-				GatewayAnalysisArtifactInput: artifactInput,
-				AgentProviderID:              agentProviderID,
-				TimeoutSeconds:               req.TimeoutSeconds,
-			})
-			if err != nil {
-				contextView["analysisArtifactError"] = err.Error()
-				nextChecks = append(nextChecks, "Retry external Agent Runtime queueing after the provider is available.")
-				contextView["nextChecks"] = nextChecks
-				related["analysisArtifactError"] = err.Error()
-			} else {
-				contextView["analysisArtifact"] = map[string]any{
-					"agentRunId":     run.ID,
-					"capabilityId":   run.CapabilityID,
-					"providerId":     run.ProviderID,
-					"providerKind":   run.ProviderKind,
-					"status":         run.Status,
-					"queued":         true,
-					"artifactStored": false,
-					"runtime":        "agent_runtime_claim_callback",
-				}
-				related["agentRunId"] = run.ID
-				related["agentProviderId"] = run.ProviderID
-				related["agentRunStatus"] = run.Status
-			}
-		} else {
-			run, err := s.copilot.RecordGatewayAnalysisArtifact(ctx, principal, artifactInput)
-			if err != nil {
-				contextView["analysisArtifactError"] = err.Error()
-				nextChecks = append(nextChecks, "Retry analysis artifact persistence after the AI Workbench runtime is available.")
-				contextView["nextChecks"] = nextChecks
-				related["analysisArtifactError"] = err.Error()
-			} else {
-				contextView["analysisArtifact"] = map[string]any{
-					"agentRunId":     run.ID,
-					"capabilityId":   run.CapabilityID,
-					"status":         run.Status,
-					"artifactCount":  len(run.AnalysisArtifacts),
-					"artifactKind":   firstAnalysisArtifactKind(run.AnalysisArtifacts),
-					"artifactRunId":  firstAnalysisArtifactRunID(run.AnalysisArtifacts),
-					"artifactTitle":  firstAnalysisArtifactTitle(run.AnalysisArtifacts),
-					"artifactStored": len(run.AnalysisArtifacts) > 0,
-				}
-				related["agentRunId"] = run.ID
-				related["analysisArtifactCount"] = len(run.AnalysisArtifacts)
-			}
-		}
-	} else {
-		contextView["analysisArtifact"] = map[string]any{
-			"artifactStored": false,
-			"reason":         "AI Workbench artifact recorder is not configured",
-		}
-	}
+	s.recordReleaseFailureAnalysis(ctx, principal, req, input, contextView, related, nextChecks)
 	return contextView, related, nil
 }
 
@@ -2168,6 +2144,8 @@ type releaseFailureDiagnosisRequest struct {
 	WorkloadName             string
 	PodName                  string
 	Container                string
+	LogLimit                 int
+	EventLimit               int
 	AgentProviderID          string
 	DeepAnalysis             bool
 	TimeoutSeconds           int
@@ -2264,6 +2242,11 @@ func releaseFailureArtifactSummary(req releaseFailureDiagnosisRequest, evidence 
 	return strings.Join(parts, " ")
 }
 func releaseFailureEvidence(req releaseFailureDiagnosisRequest, delivery, runtime map[string]any) []domaincopilot.RootCauseEvidence {
+	items := releaseFailureDeliveryEvidence(req, delivery)
+	items = append(items, releaseFailureRuntimeEvidence(req, runtime)...)
+	return appendReleaseFailureErrorEvidence(items, req, delivery, runtime)
+}
+func releaseFailureDeliveryEvidence(req releaseFailureDiagnosisRequest, delivery map[string]any) []domaincopilot.RootCauseEvidence {
 	items := make([]domaincopilot.RootCauseEvidence, 0)
 	if count := intFromAny(delivery["executionLogCount"]); count > 0 {
 		items = append(items, domaincopilot.RootCauseEvidence{
@@ -2313,6 +2296,10 @@ func releaseFailureEvidence(req releaseFailureDiagnosisRequest, delivery, runtim
 			},
 		})
 	}
+	return items
+}
+func releaseFailureRuntimeEvidence(req releaseFailureDiagnosisRequest, runtime map[string]any) []domaincopilot.RootCauseEvidence {
+	items := make([]domaincopilot.RootCauseEvidence, 0)
 	if count := sliceLen(runtime["pods"]); count > 0 {
 		items = append(items, domaincopilot.RootCauseEvidence{
 			ID:        "runtime:pods:" + firstNonEmpty(req.PodName, req.WorkloadName, "selected"),
@@ -2390,6 +2377,9 @@ func releaseFailureEvidence(req releaseFailureDiagnosisRequest, delivery, runtim
 			},
 		})
 	}
+	return items
+}
+func appendReleaseFailureErrorEvidence(items []domaincopilot.RootCauseEvidence, req releaseFailureDiagnosisRequest, delivery, runtime map[string]any) []domaincopilot.RootCauseEvidence {
 	for key, value := range delivery {
 		if !strings.HasSuffix(key, "Error") || strings.TrimSpace(fmt.Sprint(value)) == "" {
 			continue

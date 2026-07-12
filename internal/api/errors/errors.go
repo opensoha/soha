@@ -58,3 +58,24 @@ func Code(err error) string {
 		return "internal_error"
 	}
 }
+
+func Message(err error) string {
+	switch {
+	case errors.Is(err, ErrUnsupportedOperation):
+		return "operation is not supported"
+	case errors.Is(err, ErrInvalidArgument):
+		return "invalid request"
+	case errors.Is(err, ErrUnauthorized):
+		return "authentication required"
+	case errors.Is(err, ErrAccessDenied):
+		return "access denied"
+	case errors.Is(err, ErrConflict):
+		return "resource conflict"
+	case errors.Is(err, ErrNotFound):
+		return "resource not found"
+	case errors.Is(err, ErrClusterUnready):
+		return "cluster unavailable"
+	default:
+		return "internal server error"
+	}
+}

@@ -40,7 +40,7 @@ func (r *Repository) List(ctx context.Context, applicationID string, limit int) 
 	if err != nil {
 		return nil, fmt.Errorf("query workflow runs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainworkflow.Run, 0, limit)
 	for rows.Next() {
 		item, err := scanWorkflow(rows)

@@ -145,9 +145,15 @@ PostgreSQL + Kubernetes 集群
 
 ### 安装依赖并启动本地服务
 
+Soha 标准部署默认使用 PostgreSQL 密码 `pgsql`，初始化的 `opensoha` 管理员密码为 `opensoha`：
+
 ```bash
 make init
 ```
+
+本地进程、Docker、Compose、Kubernetes 与 Helm 使用相同的标准初始凭据。
+只有安装需要不同的数据库或管理员凭据时，才覆盖
+`SOHA_DATABASE_PASSWORD` 与 `SOHA_AUTH_DEV_PRINCIPAL_PASSWORD`。
 
 该命令会安装 Go 依赖，并从 `deploy/docker-compose.yaml` 启动本地 PostgreSQL 服务。前端依赖由 sibling 仓库 `../soha-web` 自己管理。
 
@@ -221,6 +227,36 @@ make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
 ```
 
+当 PostgreSQL 已经可访问、且不使用 Compose 时，可以直接启动应用容器。
+下面显式写出所有标准默认值，部署前可分别替换：
+
+```bash
+docker run -d \
+  --name soha \
+  --restart unless-stopped \
+  -p 8080:8080 \
+  --add-host host.docker.internal:host-gateway \
+  -e SOHA_DATABASE_HOST=host.docker.internal \
+  -e SOHA_DATABASE_PASSWORD=pgsql \
+  -e SOHA_AUTH_DEV_PRINCIPAL_PASSWORD=opensoha \
+  -e SOHA_AUTH_JWT_SECRET=soha-123456789012345678901234567890 \
+  -e SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN=soha-123456789012345678901234567890 \
+  -e SOHA_MONITORING_WEBHOOK_TOKEN=soha-123456789012345678901234567890 \
+  -e SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY=soha-123456789012345678901234567890 \
+  yshanchui/soha:latest
+```
+
+JWT、runner、webhook 与凭据加密设置统一默认使用公开值
+`soha-123456789012345678901234567890`。这让本地进程、raw Docker、Compose、
+Kubernetes 与 Helm 都能直接启动，但不适合公网部署。对公网暴露 Soha 前必须覆盖
+这四项，建议分别使用高熵值；所有 Soha 副本必须使用完全一致的配置。更换凭据加密
+key 不会自动重加密已有记录，必须先把全部已有密文迁移到新 key，再使用新配置重启，
+否则旧凭据将无法解密。
+
+Soha 启动不依赖 SecretStore 卷、secret bundle、writer lease 或 secrets CLI。
+多个 API 实例可在配置一致时连接同一数据库；raw Docker 并行启动时使用不同宿主机端口，
+常规多副本部署则通过共享负载均衡入口访问。
+
 推荐边界：
 
 - Docker 镜像：发布到 Docker Hub `yshanchui/soha`，本地默认 tag 为 `local`。
@@ -271,6 +307,9 @@ Helm Chart 源码与 Artifact Hub 发布流程在 `opensoha/soha-helm` 仓库维
 ```bash
 kubectl apply -k deploy
 ```
+
+raw manifest 的 `soha-app-config` 包含 `pgsql`/`opensoha` 标准初始凭据和四项
+公开 system key 默认值。公网发布前请通过 overlay 或外部 Secret 集成覆盖它们。
 
 ## 文档
 

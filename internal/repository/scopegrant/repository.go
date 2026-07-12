@@ -34,7 +34,7 @@ func (r *Repository) List(ctx context.Context) ([]domainscopegrant.Record, error
 	if err != nil {
 		return nil, fmt.Errorf("query scope grants: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	items := make([]domainscopegrant.Record, 0)
 	for rows.Next() {

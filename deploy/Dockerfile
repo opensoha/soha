@@ -8,7 +8,7 @@ RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./soha/
 COPY --from=contracts go.mod go.sum ./soha-contracts/
 RUN for attempt in 1 2 3; do \
-      printf 'go 1.25.0\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n\nreplace github.com/opensoha/soha-contracts v0.1.1 => ./soha-contracts\n' > go.work; \
+      printf 'go 1.25.0\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n\nreplace github.com/opensoha/soha-contracts v0.1.2 => ./soha-contracts\n' > go.work; \
       (cd soha && go mod download) && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
       sleep 2; \
@@ -23,8 +23,6 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
 FROM alpine:3.20
 RUN addgroup -S -g 10001 soha && adduser -S -D -H -u 10001 -G soha soha && apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-RUN mkdir -p /var/lib/soha \
-    && chown -R 10001:10001 /var/lib/soha
 COPY --from=go-build /out/soha /app/soha
 COPY configs /app/configs
 COPY migrations /app/migrations

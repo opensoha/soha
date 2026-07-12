@@ -700,7 +700,10 @@ func parseSemver(value string) [3]int {
 	var out [3]int
 	value = strings.Trim(strings.TrimSpace(value), "v")
 	parts := strings.Split(value, ".")
-	for i := 0; i < len(out) && i < len(parts); i++ {
+	for i := range out {
+		if i >= len(parts) {
+			break
+		}
 		part := parts[i]
 		for j, r := range part {
 			if r < '0' || r > '9' {
@@ -715,7 +718,14 @@ func parseSemver(value string) [3]int {
 			}
 			parsed = parsed*10 + int(r-'0')
 		}
-		out[i] = parsed
+		switch i {
+		case 0:
+			out[0] = parsed
+		case 1:
+			out[1] = parsed
+		case 2:
+			out[2] = parsed
+		}
 	}
 	return out
 }
@@ -752,8 +762,8 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func defaultMarketplace() []domainplugin.MarketplacePlugin {
-	k8sManifest := domainplugin.PluginManifest{
+func defaultK8sMarketplaceManifest() domainplugin.PluginManifest {
+	return domainplugin.PluginManifest{
 		ID:          "opensoha.k8s-sre-pack",
 		Name:        "K8s SRE Pack",
 		Version:     "0.1.0",
@@ -791,7 +801,10 @@ func defaultMarketplace() []domainplugin.MarketplacePlugin {
 			},
 		},
 	}
-	feishuManifest := domainplugin.PluginManifest{
+}
+
+func defaultFeishuMarketplaceManifest() domainplugin.PluginManifest {
+	return domainplugin.PluginManifest{
 		ID:          "opensoha.feishu",
 		Name:        "Feishu Connector",
 		Version:     "0.1.0",
@@ -837,6 +850,11 @@ func defaultMarketplace() []domainplugin.MarketplacePlugin {
 			},
 		},
 	}
+}
+
+func defaultMarketplace() []domainplugin.MarketplacePlugin {
+	k8sManifest := defaultK8sMarketplaceManifest()
+	feishuManifest := defaultFeishuMarketplaceManifest()
 	return []domainplugin.MarketplacePlugin{
 		{
 			ID:         k8sManifest.ID,

@@ -71,7 +71,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-07-08-settings-groups"
+const bootstrapSeedVersion = "2026-07-12-directory-sync"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -386,21 +386,8 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 		return err
 	}
 
-	if strings.TrimSpace(cfg.Auth.DevPrincipal.Password) != "" {
-		hash, err := bcrypt.GenerateFromPassword([]byte(cfg.Auth.DevPrincipal.Password), bcrypt.DefaultCost)
-		if err != nil {
-			return fmt.Errorf("hash bootstrap password: %w", err)
-		}
-		if err := db.WithContext(ctx).Exec(`
-			INSERT INTO user_password_credentials (user_id, password_hash, password_updated_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?)
-			ON CONFLICT (user_id) DO UPDATE SET
-				password_hash = EXCLUDED.password_hash,
-				password_updated_at = EXCLUDED.password_updated_at,
-				updated_at = EXCLUDED.updated_at
-		`, userID, string(hash), now, now, now).Error; err != nil {
-			return err
-		}
+	if err := seedUserPassword(ctx, db, cfg, userID, now); err != nil {
+		return err
 	}
 
 	if len(cfg.Auth.DevPrincipal.Roles) > 0 {
@@ -417,6 +404,37 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 		}
 	}
 	return nil
+}
+
+func seedUserPassword(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config, userID string, now time.Time) error {
+	password := strings.TrimSpace(cfg.Auth.DevPrincipal.Password)
+	if password == "" {
+		return nil
+	}
+
+	var existingHash string
+	err := db.WithContext(ctx).Raw(`
+		SELECT password_hash FROM user_password_credentials WHERE user_id = ? LIMIT 1
+	`, userID).Row().Scan(&existingHash)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("hash bootstrap password: %w", err)
+		}
+		if err := db.WithContext(ctx).Exec(`
+			INSERT INTO user_password_credentials (user_id, password_hash, password_updated_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT (user_id) DO NOTHING
+		`, userID, string(hash), now, now, now).Error; err != nil {
+			return fmt.Errorf("insert bootstrap password: %w", err)
+		}
+		return nil
+	case err != nil:
+		return fmt.Errorf("inspect bootstrap password: %w", err)
+	default:
+		return nil
+	}
 }
 
 func devPrincipalUsername(cfg cfgpkg.Config) string {

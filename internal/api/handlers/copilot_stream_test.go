@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -112,16 +113,31 @@ func TestStreamMessageLiveSinkFlushesBeforeServiceReturns(t *testing.T) {
 	<-done
 }
 
+func TestStreamMessageDoesNotExposeInternalError(t *testing.T) {
+	service := &streamHandlerService{err: errors.New("provider secret appeared in internal error")}
+	events := performStreamMessageRequest(t, service, `{"content":"hi","mode":"general"}`)
+	if len(events) != 2 || events[0].Type != "error" {
+		t.Fatalf("events = %#v, want public error and failed status", events)
+	}
+	if events[0].Message != "copilot stream failed" {
+		t.Fatalf("public error = %q", events[0].Message)
+	}
+}
+
 type streamHandlerService struct {
 	CopilotService
 	result         domaincopilot.WorkbenchStreamResult
 	inputs         []domaincopilot.WorkbenchSendMessageInput
 	liveStarted    chan struct{}
 	releaseService chan struct{}
+	err            error
 }
 
 func (s *streamHandlerService) StreamMessage(_ context.Context, _ domainidentity.Principal, sessionID string, input domaincopilot.WorkbenchSendMessageInput, _ string) (domaincopilot.WorkbenchStreamResult, error) {
 	s.inputs = append(s.inputs, input)
+	if s.err != nil {
+		return domaincopilot.WorkbenchStreamResult{}, s.err
+	}
 	if s.liveStarted != nil {
 		input.EventSink(domaincopilot.WorkbenchStreamEvent{
 			Type: "tool.started",

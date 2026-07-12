@@ -12,6 +12,16 @@ That means a production-style image can build the frontend and docs first, then 
 
 ## Choose the Right Asset
 
+### Raw Docker
+
+Use for:
+
+- a single Soha container with an existing reachable PostgreSQL service
+- hosts where Compose is intentionally unavailable
+- validating image startup and environment-variable overrides
+
+Follow the `docker run` commands in `README.md` or `README-cn.md`. Provide a database host reachable from the container and override the four public system-key defaults before public exposure. No SecretStore volume or initialization command is required.
+
 ### Docker Compose
 
 Use for:
@@ -22,6 +32,10 @@ Use for:
 
 Start from `deploy/docker-compose.yaml`.
 
+Compose uses the same standard defaults as local and raw Docker startup. Override
+the four system-key environment variables together when the stack is public, and
+give the Hermes runner the same execution-runner token as the control plane.
+
 ### Raw Kubernetes YAML
 
 Use for:
@@ -31,6 +45,10 @@ Use for:
 - fast manifest review in GitOps bootstrap work
 
 Start from `deploy/deployment.yaml`.
+
+Use normal rolling updates and horizontal scaling when needed. Keep all Soha pods
+on the same system-key Secret values; no SecretStore PVC or single-writer strategy
+is part of this topology.
 
 ## Scope of the Starter Assets
 
