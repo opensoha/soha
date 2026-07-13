@@ -75,6 +75,8 @@ func registerProviderProtocolRoutes(public gin.IRoutes, deps Dependencies) {
 	public.GET("/provider/proxy/start", deps.ProviderPortal.ProxyStart)
 	public.GET("/provider/proxy/callback", deps.ProviderPortal.ProxyCallback)
 	public.POST("/provider/proxy/logout", deps.ProviderPortal.ProxyLogout)
+	public.Any("/provider/proxy/reverse/:providerID", deps.ProviderPortal.ProxyReverse)
+	public.Any("/provider/proxy/reverse/:providerID/*proxyPath", deps.ProviderPortal.ProxyReverse)
 	public.POST("/provider/outposts/claim", deps.ProviderPortal.ClaimOutpost)
 	public.POST("/provider/outposts/:outpostID/heartbeat", deps.ProviderPortal.HeartbeatOutpost)
 	public.POST("/provider/outposts/:outpostID/check", deps.ProviderPortal.CheckOutpost)

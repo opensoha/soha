@@ -90,6 +90,195 @@ func TestProxyAuthInputReadsProxySessionCookie(t *testing.T) {
 	}
 }
 
+func TestProxyReverseForwardsAuthorizedRequestWithoutSohaCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		payload := map[string]string{
+			"path":          request.URL.Path,
+			"query":         request.URL.RawQuery,
+			"authorization": request.Header.Get("Authorization"),
+			"identity":      request.Header.Get("X-Soha-User-ID"),
+			"spoofed":       request.Header.Get("X-Soha-Spoofed"),
+			"proxySession":  cookieValue(request, proxySessionCookieName),
+			"application":   cookieValue(request, "application_session"),
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(payload)
+	}))
+	defer upstream.Close()
+
+	handler := newProtocolTestHandler(&stubProviderPortalIdentityProvider{
+		reverseProxyFunc: func(_ context.Context, _ domainidentity.Principal, input domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error) {
+			if input.ProviderID != "proxy-1" || input.Path != "/dashboards/main" || input.OriginalURL != "/api/v1/provider/proxy/reverse/proxy-1/dashboards/main?view=home" {
+				t.Fatalf("reverse proxy input = %#v", input)
+			}
+			return domainprovider.ReverseProxyResult{
+				Auth: domainprovider.ProxyAuthResult{
+					Decision: domainprovider.ProxyDecisionAllow,
+					Headers:  map[string]string{"X-Soha-User-ID": "user-1"},
+				},
+				UpstreamURL: upstream.URL + "/base",
+			}, nil
+		},
+	})
+	router := gin.New()
+	router.Any("/api/v1/provider/proxy/reverse/:providerID/*proxyPath", handler.ProxyReverse)
+	proxyServer := httptest.NewServer(router)
+	defer proxyServer.Close()
+
+	request, err := http.NewRequest(http.MethodGet, proxyServer.URL+"/api/v1/provider/proxy/reverse/proxy-1/dashboards/main?view=home", nil)
+	if err != nil {
+		t.Fatalf("create proxy request: %v", err)
+	}
+	request.Header.Set("Authorization", "Bearer must-not-leak")
+	request.Header.Set("X-Soha-Spoofed", "attacker")
+	request.AddCookie(&http.Cookie{Name: proxySessionCookieName, Value: "proxy-token"})
+	request.AddCookie(&http.Cookie{Name: "application_session", Value: "keep-me"})
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatalf("proxy request: %v", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", response.StatusCode)
+	}
+	var payload map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode upstream response: %v", err)
+	}
+	if payload["path"] != "/base/dashboards/main" || payload["query"] != "view=home" {
+		t.Fatalf("upstream target = %#v", payload)
+	}
+	if payload["authorization"] != "" || payload["spoofed"] != "" || payload["proxySession"] != "" {
+		t.Fatalf("credentials leaked upstream: %#v", payload)
+	}
+	if payload["identity"] != "user-1" || payload["application"] != "keep-me" {
+		t.Fatalf("authorized headers/cookies = %#v", payload)
+	}
+}
+
+func TestProxyReverseRewritesUpstreamRedirectAndCookieScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var upstream *httptest.Server
+	upstream = httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.Header().Set("Location", upstream.URL+"/login?next=%2Fdashboard")
+		writer.Header().Add("Set-Cookie", "application_session=session-1; Path=/; Domain=127.0.0.1; HttpOnly; SameSite=Lax")
+		writer.WriteHeader(http.StatusFound)
+	}))
+	defer upstream.Close()
+
+	handler := newProtocolTestHandler(&stubProviderPortalIdentityProvider{
+		reverseProxyFunc: func(_ context.Context, _ domainidentity.Principal, _ domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error) {
+			return domainprovider.ReverseProxyResult{
+				Auth:        domainprovider.ProxyAuthResult{Decision: domainprovider.ProxyDecisionAllow},
+				UpstreamURL: upstream.URL,
+			}, nil
+		},
+	})
+	router := gin.New()
+	router.Any("/api/v1/provider/proxy/reverse/:providerID/*proxyPath", handler.ProxyReverse)
+	proxyServer := httptest.NewServer(router)
+	defer proxyServer.Close()
+
+	client := proxyServer.Client()
+	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	response, err := client.Get(proxyServer.URL + "/api/v1/provider/proxy/reverse/proxy-1/dashboard")
+	if err != nil {
+		t.Fatalf("proxy request: %v", err)
+	}
+	defer response.Body.Close()
+
+	wantBasePath := "/api/v1/provider/proxy/reverse/proxy-1"
+	if location := response.Header.Get("Location"); location != wantBasePath+"/login?next=%2Fdashboard" {
+		t.Fatalf("Location = %q, want rewritten proxy path", location)
+	}
+	cookie := response.Header.Get("Set-Cookie")
+	if !strings.Contains(cookie, "Path="+wantBasePath+"/") || strings.Contains(strings.ToLower(cookie), "domain=") {
+		t.Fatalf("Set-Cookie = %q, want proxy-scoped path without upstream domain", cookie)
+	}
+}
+
+func TestProxyReverseHandlesLoginAndDenyDecisions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		decision string
+		loginURL string
+		wantCode int
+		wantBody string
+		wantLoc  string
+	}{
+		{
+			decision: domainprovider.ProxyDecisionLogin,
+			loginURL: "/api/v1/provider/proxy/start?return_to=%2Fprotected",
+			wantCode: http.StatusFound,
+			wantLoc:  "/api/v1/provider/proxy/start?return_to=%2Fprotected",
+		},
+		{
+			decision: domainprovider.ProxyDecisionDeny,
+			wantCode: http.StatusForbidden,
+			wantBody: "not assigned",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.decision, func(t *testing.T) {
+			handler := newProtocolTestHandler(&stubProviderPortalIdentityProvider{
+				reverseProxyFunc: func(_ context.Context, _ domainidentity.Principal, _ domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error) {
+					return domainprovider.ReverseProxyResult{Auth: domainprovider.ProxyAuthResult{
+						Decision: test.decision,
+						LoginURL: test.loginURL,
+						Reason:   test.wantBody,
+					}}, nil
+				},
+			})
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Params = gin.Params{{Key: "providerID", Value: "proxy-1"}}
+			c.Request = httptest.NewRequest(http.MethodGet, "http://soha.example/protected", nil)
+
+			handler.ProxyReverse(c)
+
+			if recorder.Code != test.wantCode || recorder.Header().Get("Location") != test.wantLoc || !strings.Contains(recorder.Body.String(), test.wantBody) {
+				t.Fatalf("response = %d location=%q body=%q", recorder.Code, recorder.Header().Get("Location"), recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestProxyReverseRejectsWebsocketWhenDisabled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := newProtocolTestHandler(&stubProviderPortalIdentityProvider{
+		reverseProxyFunc: func(_ context.Context, _ domainidentity.Principal, _ domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error) {
+			return domainprovider.ReverseProxyResult{
+				Auth:        domainprovider.ProxyAuthResult{Decision: domainprovider.ProxyDecisionAllow},
+				UpstreamURL: "http://127.0.0.1:1",
+			}, nil
+		},
+	})
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Params = gin.Params{{Key: "providerID", Value: "proxy-1"}, {Key: "proxyPath", Value: "/socket"}}
+	c.Request = httptest.NewRequest(http.MethodGet, "http://soha.example/socket", nil)
+	c.Request.Header.Set("Connection", "Upgrade")
+	c.Request.Header.Set("Upgrade", "websocket")
+
+	handler.ProxyReverse(c)
+
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "websocket proxying is disabled") {
+		t.Fatalf("response = %d %q, want disabled websocket error", recorder.Code, recorder.Body.String())
+	}
+}
+
+func cookieValue(request *http.Request, name string) string {
+	cookie, err := request.Cookie(name)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
 func TestOutpostTokenFromRequestPrefersBearerToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
@@ -389,6 +578,7 @@ type stubProviderPortalIdentityProvider struct {
 	issueProxySessionFunc func(context.Context, domainidentity.Principal) (domainprovider.ProxySession, error)
 	introspectFunc        func(context.Context, string, string, domainprovider.ClientAuthInput) (domainprovider.IntrospectionResponse, error)
 	revokeFunc            func(context.Context, string, string, domainprovider.ClientAuthInput) error
+	reverseProxyFunc      func(context.Context, domainidentity.Principal, domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error)
 }
 
 func newProtocolTestHandler(service *stubProviderPortalIdentityProvider) *Handler {
@@ -445,6 +635,13 @@ func (s *stubProviderPortalIdentityProvider) ProxyAuth(ctx context.Context, prin
 
 func (s *stubProviderPortalIdentityProvider) ProxyCookieDomain(context.Context, domainprovider.ProxyAuthInput) (string, error) {
 	return "", nil
+}
+
+func (s *stubProviderPortalIdentityProvider) ReverseProxy(ctx context.Context, principal domainidentity.Principal, input domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error) {
+	if s.reverseProxyFunc != nil {
+		return s.reverseProxyFunc(ctx, principal, input)
+	}
+	return domainprovider.ReverseProxyResult{}, apperrors.ErrUnsupportedOperation
 }
 
 func (s *stubProviderPortalIdentityProvider) IssueProxySession(ctx context.Context, principal domainidentity.Principal) (domainprovider.ProxySession, error) {

@@ -354,14 +354,6 @@ func TestDefaultMenuSeedsIncludeAIGatewayWorkbench(t *testing.T) {
 		"ai-gateway-tokens":     "/ai-gateway/tokens",
 		"ai-gateway-governance": "/ai-gateway/governance",
 		"ai-gateway-call-logs":  "/ai-gateway/call-logs",
-		"plugins":               "/plugins",
-		"plugins-marketplace":   "/plugins/marketplace",
-		"plugins-installed":     "/plugins/installed",
-	}
-	expectedParents := map[string]string{
-		"plugins":             "ai-gateway",
-		"plugins-marketplace": "plugins",
-		"plugins-installed":   "plugins",
 	}
 	for i := range items {
 		if items[i].ID == "ai-gateway" {
@@ -369,10 +361,7 @@ func TestDefaultMenuSeedsIncludeAIGatewayWorkbench(t *testing.T) {
 			continue
 		}
 		if wantPath, ok := children[items[i].ID]; ok {
-			wantParent := expectedParents[items[i].ID]
-			if wantParent == "" {
-				wantParent = "ai-gateway"
-			}
+			wantParent := "ai-gateway"
 			if items[i].ParentID != wantParent {
 				t.Fatalf("%s parent = %q, want %s", items[i].ID, items[i].ParentID, wantParent)
 			}
@@ -399,9 +388,51 @@ func TestDefaultMenuSeedsIncludeAIGatewayWorkbench(t *testing.T) {
 	}
 }
 
+func TestDefaultMenuSeedsIncludeExtensionCenter(t *testing.T) {
+	items := defaultMenuSeeds()
+	var center *menuSeed
+	children := map[string]string{
+		"settings-extensions-marketplace": "/plugins/marketplace",
+	}
+	for i := range items {
+		if items[i].ID == "settings-extensions" {
+			center = &items[i]
+			continue
+		}
+		wantPath, ok := children[items[i].ID]
+		if !ok {
+			continue
+		}
+		if items[i].ParentID != "settings-extensions" {
+			t.Fatalf("%s parent = %q, want settings-extensions", items[i].ID, items[i].ParentID)
+		}
+		if items[i].Path != wantPath {
+			t.Fatalf("%s path = %q, want %s", items[i].ID, items[i].Path, wantPath)
+		}
+		delete(children, items[i].ID)
+	}
+	if center == nil {
+		t.Fatal("default menu seeds missing settings-extensions")
+	}
+	if center.ParentID != "" || center.Path != "/settings/extensions" || center.Section != "admin" {
+		t.Fatalf("extension center = %#v, want settings workbench root /settings/extensions", center)
+	}
+	if len(children) > 0 {
+		t.Fatalf("default menu seeds missing extension center child menus: %v", children)
+	}
+}
+
 func TestDeprecatedMenusIncludeOldAIGatewayWorkbenchID(t *testing.T) {
 	if !slices.Contains(deprecatedMenuIDs(), "ai-workbench-gateway") {
 		t.Fatal("deprecated menu IDs should clean up ai-workbench-gateway")
+	}
+}
+
+func TestDeprecatedMenusIncludeLegacyPluginMenuIDs(t *testing.T) {
+	for _, id := range []string{"plugins", "plugins-marketplace", "plugins-installed", "extension-center", "extensions-marketplace", "extensions-installed", "extensions-capabilities", "settings-extensions-capabilities"} {
+		if !slices.Contains(deprecatedMenuIDs(), id) {
+			t.Fatalf("deprecated menu IDs should clean up %s", id)
+		}
 	}
 }
 
@@ -677,6 +708,7 @@ func TestFilterSeedMenusByModulesRemovesAIGatewayWhenDisabled(t *testing.T) {
 	})
 
 	foundAIWorkbench := false
+	foundExtensionCenter := false
 	for _, item := range items {
 		if isAIGatewayMenuSeed(item) {
 			t.Fatalf("AI Gateway seed menu %q should be filtered when module is disabled", item.ID)
@@ -684,9 +716,15 @@ func TestFilterSeedMenusByModulesRemovesAIGatewayWhenDisabled(t *testing.T) {
 		if isAIMenuSeed(item) && item.ID == "ai-workbench" {
 			foundAIWorkbench = true
 		}
+		if item.ID == "settings-extensions" {
+			foundExtensionCenter = true
+		}
 	}
 	if !foundAIWorkbench {
 		t.Fatal("AI workbench root should remain when only AI Gateway is disabled")
+	}
+	if !foundExtensionCenter {
+		t.Fatal("extension center should remain when AI Gateway is disabled")
 	}
 }
 
@@ -709,9 +747,6 @@ func TestDisabledModuleMenuIDsIncludesAIGatewayWhenSeedVersionIsCurrent(t *testi
 		"ai-gateway-tokens",
 		"ai-gateway-governance",
 		"ai-gateway-call-logs",
-		"plugins",
-		"plugins-marketplace",
-		"plugins-installed",
 	} {
 		if !slices.Contains(menuIDs, id) {
 			t.Fatalf("disabled module menu IDs = %v, missing %s", menuIDs, id)
@@ -719,6 +754,9 @@ func TestDisabledModuleMenuIDsIncludesAIGatewayWhenSeedVersionIsCurrent(t *testi
 	}
 	if slices.Contains(menuIDs, "ai-workbench") {
 		t.Fatalf("disabled module menu IDs should keep AI workbench when only AI Gateway is disabled: %v", menuIDs)
+	}
+	if slices.Contains(menuIDs, "settings-extensions") || slices.Contains(menuIDs, "settings-extensions-marketplace") {
+		t.Fatalf("disabled AI Gateway module should keep extension center menus: %v", menuIDs)
 	}
 }
 

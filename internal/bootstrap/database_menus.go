@@ -101,9 +101,8 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "ai-gateway-tokens", ParentID: "ai-gateway", Path: "/ai-gateway/tokens", LabelZH: "Tokens", LabelEN: "Tokens", IconKey: "key", Section: "ops", SortOrder: 25, Enabled: true},
 	{ID: "ai-gateway-governance", ParentID: "ai-gateway", Path: "/ai-gateway/governance", LabelZH: "Governance", LabelEN: "Governance", IconKey: "shield", Section: "ops", SortOrder: 26, Enabled: true},
 	{ID: "ai-gateway-call-logs", ParentID: "ai-gateway", Path: "/ai-gateway/call-logs", LabelZH: "调用日志", LabelEN: "Call Logs", IconKey: "history", Section: "ops", SortOrder: 27, Enabled: true},
-	{ID: "plugins", ParentID: "ai-gateway", Path: "/plugins", LabelZH: "插件", LabelEN: "Plugins", IconKey: "puzzle", Section: "ops", SortOrder: 28, Enabled: true},
-	{ID: "plugins-marketplace", ParentID: "plugins", Path: "/plugins/marketplace", LabelZH: "市场", LabelEN: "Marketplace", IconKey: "puzzle", Section: "ops", SortOrder: 29, Enabled: true},
-	{ID: "plugins-installed", ParentID: "plugins", Path: "/plugins/installed", LabelZH: "已安装", LabelEN: "Installed", IconKey: "blocks", Section: "ops", SortOrder: 30, Enabled: true},
+	{ID: "settings-extensions", Path: "/settings/extensions", LabelZH: "扩展", LabelEN: "Extensions", IconKey: "puzzle", Section: "admin", SortOrder: 250, Enabled: true},
+	{ID: "settings-extensions-marketplace", ParentID: "settings-extensions", Path: "/plugins/marketplace", LabelZH: "插件市场", LabelEN: "Marketplace", IconKey: "puzzle", Section: "extensions", SortOrder: 10, Enabled: true},
 	{ID: "virtualization-workbench", Path: "/virtualization", LabelZH: "虚拟化管理工作台", LabelEN: "Virtualization Workbench", IconKey: "server", Section: "ops", SortOrder: 80, Enabled: true},
 	{ID: "virtualization-workbench-overview", ParentID: "virtualization-workbench", Path: "/virtualization/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 81, Enabled: true},
 	{ID: "virtualization-workbench-vms", ParentID: "virtualization-workbench", Path: "/virtualization/vms", LabelZH: "虚拟机", LabelEN: "Virtual Machines", IconKey: "desktop", Section: "ops", SortOrder: 82, Enabled: true},
@@ -183,6 +182,14 @@ func deprecatedMenuIDs() []string {
 		"assistant-operations",
 		"assistant-tools",
 		"ai-workbench-gateway",
+		"plugins",
+		"plugins-marketplace",
+		"plugins-installed",
+		"extension-center",
+		"extensions-marketplace",
+		"extensions-installed",
+		"extensions-capabilities",
+		"settings-extensions-capabilities",
 		"docker-workbench-services",
 		"docker-workbench-ports",
 		"events",
@@ -219,7 +226,7 @@ func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) e
 	}
 	allItems := append([]menuSeed(nil), items...)
 	items = filterSeedMenusByModules(items, modules)
-	if err := upsertMenus(ctx, db, items, now); err != nil {
+	if err := upsertMenusAfterDeprecatedCleanup(ctx, db, items, deprecatedMenuIDs(), now); err != nil {
 		return err
 	}
 	if err := deleteDisabledModuleMenus(ctx, db, allItems, modules); err != nil {
@@ -241,7 +248,16 @@ func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) e
 			return err
 		}
 	}
-	return cleanupDeprecatedMenus(ctx, db, deprecatedMenuIDs())
+	return nil
+}
+
+func upsertMenusAfterDeprecatedCleanup(ctx context.Context, db *gorm.DB, items []menuSeed, deprecatedIDs []string, now time.Time) error {
+	// Deprecated IDs may still own paths reused by their replacements, so they
+	// must be removed before the unique menus.path constraint is evaluated.
+	if err := cleanupDeprecatedMenus(ctx, db, deprecatedIDs); err != nil {
+		return err
+	}
+	return upsertMenus(ctx, db, items, now)
 }
 
 func cleanupDeprecatedMenus(ctx context.Context, db *gorm.DB, deprecatedIDs []string) error {
@@ -513,8 +529,7 @@ func isAIMenuSeed(item menuSeed) bool {
 
 func isAIGatewayMenuSeed(item menuSeed) bool {
 	return item.ID == "ai-gateway" ||
-		strings.HasPrefix(item.Path, "/ai-gateway") ||
-		strings.HasPrefix(item.Path, "/plugins")
+		strings.HasPrefix(item.Path, "/ai-gateway")
 }
 
 func isVirtualizationMenuSeed(item menuSeed) bool {

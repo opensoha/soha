@@ -26,7 +26,7 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 var workspaceResourceMenuPrefixes = []string{
 	"/cluster-resources", "/workloads", "/configuration", "/network", "/storage",
 	"/platform-access-control", "/helm", "/extensions", "/clusters", "/monitoring-workbench",
-	"/ai-gateway", "/plugins", "/ai-workbench", "/virtualization", "/observability", "/ai-observe", "/chat",
+	"/ai-gateway", "/ai-workbench", "/virtualization", "/observability", "/ai-observe", "/chat",
 }
 
 var workspaceApplicationMenuPrefixes = []string{
@@ -141,8 +141,12 @@ func observabilityAIMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true
 	case "ai-gateway-clients", "ai-gateway-governance", "ai-gateway-call-logs":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayManage}}, true
-	case "plugins", "plugins-marketplace", "plugins-installed":
+	case "settings-extensions", "extension-center":
 		return visibilityRule{permissions: []string{appaccess.PermPluginView}}, true
+	case "settings-extensions-marketplace", "extensions-marketplace", "extensions-installed", "plugins", "plugins-marketplace", "plugins-installed":
+		return visibilityRule{permissions: []string{appaccess.PermPluginView}}, true
+	case "settings-extensions-capabilities", "extensions-capabilities":
+		return visibilityRule{permissions: []string{appaccess.PermPlatformExtensionsView}}, true
 	default:
 		return visibilityRule{}, false
 	}

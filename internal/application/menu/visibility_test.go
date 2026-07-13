@@ -121,21 +121,20 @@ func TestAIGatewayChildMenusUseSpecificPermissions(t *testing.T) {
 	}
 }
 
-func TestPluginMenusRequireWorkspaceAndPluginViewPermission(t *testing.T) {
-	for _, item := range []domainmenu.Record{
-		{ID: "plugins", Path: "/plugins"},
-		{ID: "plugins-marketplace", Path: "/plugins/marketplace"},
-		{ID: "plugins-installed", Path: "/plugins/installed"},
-	} {
-		if isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView}) {
-			t.Fatalf("%s should require %s", item.ID, appaccess.PermPluginView)
-		}
-		if isVisibleByPermissions(item, []string{appaccess.PermPluginView}) {
-			t.Fatalf("%s should require %s", item.ID, appaccess.PermWorkspaceResourceView)
-		}
-		if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermPluginView}) {
-			t.Fatalf("%s should be visible with workspace and plugin view permissions", item.ID)
-		}
+func TestExtensionMarketplaceMenuRequiresPluginViewPermission(t *testing.T) {
+	item := domainmenu.Record{ID: "settings-extensions-marketplace", Path: "/plugins/marketplace"}
+	if isVisibleByPermissions(item, nil) {
+		t.Fatalf("%s should require %s", item.ID, appaccess.PermPluginView)
+	}
+	if !isVisibleByPermissions(item, []string{appaccess.PermPluginView}) {
+		t.Fatalf("%s should be visible with plugin view permission", item.ID)
+	}
+}
+
+func TestExtensionCenterVisibleWithPluginViewPermission(t *testing.T) {
+	item := domainmenu.Record{ID: "settings-extensions", Path: "/settings/extensions"}
+	if !isVisibleByPermissions(item, []string{appaccess.PermPluginView}) {
+		t.Fatalf("extension center should be visible with %s", appaccess.PermPluginView)
 	}
 }
 
