@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"strings"
@@ -64,6 +65,7 @@ type ProxyService interface {
 	ProxyAuth(context.Context, domainidentity.Principal, domainprovider.ProxyAuthInput) (domainprovider.ProxyAuthResult, error)
 	ProxyCookieDomain(context.Context, domainprovider.ProxyAuthInput) (string, error)
 	IssueProxySession(context.Context, domainidentity.Principal) (domainprovider.ProxySession, error)
+	ReverseProxy(context.Context, domainidentity.Principal, domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error)
 }
 
 type ProviderService interface {
@@ -876,6 +878,166 @@ func (h *proxyHandler) ProxyLogout(c *gin.Context) {
 	}
 	clearProxySessionCookie(c, cookieDomain)
 	c.String(http.StatusOK, "OK")
+}
+
+func (h *proxyHandler) ProxyReverse(c *gin.Context) {
+	if h.service == nil {
+		writeProxyError(c, http.StatusServiceUnavailable, "proxy provider service is not configured")
+		return
+	}
+	proxyPath := normalizeProxyRequestPath(c.Param("proxyPath"))
+	result, err := h.service.ReverseProxy(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domainprovider.ReverseProxyInput{
+		ProviderID:   c.Param("providerID"),
+		Path:         proxyPath,
+		OriginalURL:  c.Request.URL.RequestURI(),
+		Method:       c.Request.Method,
+		SessionToken: proxySessionTokenFromRequest(c),
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	switch result.Auth.Decision {
+	case domainprovider.ProxyDecisionLogin:
+		c.Redirect(http.StatusFound, firstNonEmpty(result.Auth.LoginURL, "/login"))
+		return
+	case domainprovider.ProxyDecisionDeny:
+		writeProxyAuthResult(c, result.Auth)
+		return
+	case domainprovider.ProxyDecisionAllow:
+	default:
+		writeProxyError(c, http.StatusInternalServerError, "unsupported reverse proxy decision")
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(c.GetHeader("Upgrade")), "websocket") && !result.WebsocketEnabled {
+		writeProxyError(c, http.StatusBadRequest, "websocket proxying is disabled")
+		return
+	}
+	target, err := url.Parse(result.UpstreamURL)
+	if err != nil {
+		writeProxyError(c, http.StatusBadGateway, "reverse proxy upstream is invalid")
+		return
+	}
+	proxyBasePath := reverseProxyBasePath(c.Request.URL.Path, c.Param("proxyPath"))
+	c.Request.URL.Path = proxyPath
+	c.Request.URL.RawPath = ""
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	director := proxy.Director
+	proxy.Director = func(request *http.Request) {
+		director(request)
+		request.Host = target.Host
+		stripProxyCredentials(request)
+		for key, value := range result.Auth.Headers {
+			request.Header.Set(key, value)
+		}
+	}
+	proxy.ModifyResponse = func(response *http.Response) error {
+		rewriteReverseProxyLocation(response.Header, target, proxyBasePath)
+		rewriteReverseProxyCookies(response.Header, target, proxyBasePath)
+		return nil
+	}
+	proxy.ErrorHandler = func(writer http.ResponseWriter, _ *http.Request, _ error) {
+		http.Error(writer, "reverse proxy upstream unavailable", http.StatusBadGateway)
+	}
+	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+func normalizeProxyRequestPath(value string) string {
+	if value == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(value, "/") {
+		return "/" + value
+	}
+	return value
+}
+
+func reverseProxyBasePath(requestPath, proxyPath string) string {
+	basePath := strings.TrimSuffix(requestPath, proxyPath)
+	return strings.TrimRight(basePath, "/")
+}
+
+func rewriteReverseProxyLocation(headers http.Header, target *url.URL, proxyBasePath string) {
+	rawLocation := strings.TrimSpace(headers.Get("Location"))
+	if rawLocation == "" {
+		return
+	}
+	location, err := url.Parse(rawLocation)
+	if err != nil {
+		return
+	}
+	if location.Host != "" && !strings.EqualFold(location.Host, target.Host) {
+		return
+	}
+	if location.Path == "" || !strings.HasPrefix(location.Path, "/") {
+		return
+	}
+	location.Scheme = ""
+	location.Host = ""
+	location.User = nil
+	location.Path = joinReverseProxyPath(
+		proxyBasePath,
+		stripReverseProxyUpstreamBase(location.Path, target.Path),
+	)
+	location.RawPath = ""
+	headers.Set("Location", location.String())
+}
+
+func rewriteReverseProxyCookies(headers http.Header, target *url.URL, proxyBasePath string) {
+	response := &http.Response{Header: headers}
+	cookies := response.Cookies()
+	if len(cookies) == 0 {
+		return
+	}
+	headers.Del("Set-Cookie")
+	for _, cookie := range cookies {
+		cookie.Domain = ""
+		if cookie.Path != "" && !strings.HasPrefix(cookie.Name, "__Host-") {
+			cookie.Path = joinReverseProxyPath(
+				proxyBasePath,
+				stripReverseProxyUpstreamBase(cookie.Path, target.Path),
+			)
+		}
+		headers.Add("Set-Cookie", cookie.String())
+	}
+}
+
+func stripReverseProxyUpstreamBase(value, upstreamBase string) string {
+	upstreamBase = strings.TrimRight(upstreamBase, "/")
+	if upstreamBase == "" {
+		return value
+	}
+	if value == upstreamBase {
+		return "/"
+	}
+	if strings.HasPrefix(value, upstreamBase+"/") {
+		return strings.TrimPrefix(value, upstreamBase)
+	}
+	return value
+}
+
+func joinReverseProxyPath(basePath, suffix string) string {
+	basePath = strings.TrimRight(basePath, "/")
+	if suffix == "" || suffix == "/" {
+		return basePath + "/"
+	}
+	return basePath + "/" + strings.TrimLeft(suffix, "/")
+}
+
+func stripProxyCredentials(request *http.Request) {
+	request.Header.Del("Authorization")
+	for key := range request.Header {
+		if strings.HasPrefix(strings.ToLower(key), "x-soha-") {
+			request.Header.Del(key)
+		}
+	}
+	cookies := request.Cookies()
+	request.Header.Del("Cookie")
+	for _, cookie := range cookies {
+		if cookie.Name != proxySessionCookieName {
+			request.AddCookie(cookie)
+		}
+	}
 }
 
 func proxyAuthInputFromRequest(c *gin.Context) domainprovider.ProxyAuthInput {

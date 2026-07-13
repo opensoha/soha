@@ -21,9 +21,11 @@ const (
 	TokenTypeAccess = "access"
 	TokenTypeID     = "id"
 
-	ProxyDecisionAllow = "allow"
-	ProxyDecisionDeny  = "deny"
-	ProxyDecisionLogin = "login"
+	ProxyDecisionAllow    = "allow"
+	ProxyDecisionDeny     = "deny"
+	ProxyDecisionLogin    = "login"
+	ProxyModeForwardAuth  = "forward_auth"
+	ProxyModeReverseProxy = "reverse_proxy"
 
 	OutpostModeEmbedded   = "embedded"
 	OutpostModeAgent      = "agent"
@@ -370,6 +372,20 @@ type ProxyAuthResult struct {
 	Application  domainportal.Application `json:"application,omitempty"`
 	Headers      map[string]string        `json:"headers,omitempty"`
 	Skipped      bool                     `json:"skipped,omitempty"`
+}
+
+type ReverseProxyInput struct {
+	ProviderID   string
+	Path         string
+	OriginalURL  string
+	Method       string
+	SessionToken string
+}
+
+type ReverseProxyResult struct {
+	Auth             ProxyAuthResult
+	UpstreamURL      string
+	WebsocketEnabled bool
 }
 
 type Repository interface {

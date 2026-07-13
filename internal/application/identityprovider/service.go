@@ -521,6 +521,51 @@ func (s *Service) ProxyCookieDomain(ctx context.Context, input domainprovider.Pr
 	return proxyCookieDomain(provider, proxyRequestHost(input)), nil
 }
 
+func (s *Service) ReverseProxy(ctx context.Context, principal domainidentity.Principal, input domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error) {
+	providerID := strings.TrimSpace(input.ProviderID)
+	if providerID == "" {
+		return domainprovider.ReverseProxyResult{}, fmt.Errorf("%w: provider_id is required", apperrors.ErrInvalidArgument)
+	}
+	provider, err := s.repo.GetProvider(ctx, providerID)
+	if err != nil {
+		return domainprovider.ReverseProxyResult{}, err
+	}
+	if provider.Type != domainprovider.ProviderTypeProxy {
+		return domainprovider.ReverseProxyResult{}, fmt.Errorf("%w: provider is not a proxy provider", apperrors.ErrInvalidArgument)
+	}
+	if !providerEnabled(provider) {
+		return domainprovider.ReverseProxyResult{}, fmt.Errorf("%w: proxy provider is disabled", apperrors.ErrAccessDenied)
+	}
+	if mode := strings.ToLower(configString(provider.Config, "mode")); mode != domainprovider.ProxyModeReverseProxy {
+		return domainprovider.ReverseProxyResult{}, fmt.Errorf("%w: proxy provider is not in reverse_proxy mode", apperrors.ErrInvalidArgument)
+	}
+	upstreamURL, err := validateReverseProxyUpstream(configString(provider.Config, "upstreamUrl", "upstreamURL", "upstream_url"))
+	if err != nil {
+		return domainprovider.ReverseProxyResult{}, err
+	}
+	hosts := proxyHostCandidates(provider, domainportal.Application{})
+	if len(hosts) == 0 {
+		return domainprovider.ReverseProxyResult{}, fmt.Errorf("%w: reverse proxy external host is required", apperrors.ErrInvalidArgument)
+	}
+	auth, err := s.ProxyAuth(ctx, principal, domainprovider.ProxyAuthInput{
+		ProviderID:     providerID,
+		OriginalURL:    strings.TrimSpace(input.OriginalURL),
+		ForwardedHost:  hosts[0],
+		ForwardedProto: "https",
+		ForwardedURI:   normalizeReverseProxyPath(input.Path),
+		Method:         strings.TrimSpace(input.Method),
+		SessionToken:   strings.TrimSpace(input.SessionToken),
+	})
+	if err != nil {
+		return domainprovider.ReverseProxyResult{}, err
+	}
+	return domainprovider.ReverseProxyResult{
+		Auth:             auth,
+		UpstreamURL:      upstreamURL,
+		WebsocketEnabled: configBoolean(provider.Config, "websocketEnabled", "websocket_enabled"),
+	}, nil
+}
+
 func (s *Service) ListProviders(ctx context.Context, principal domainidentity.Principal, filter domainprovider.ProviderFilter) ([]domainprovider.Provider, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersView); err != nil {
 		return nil, err
@@ -1528,6 +1573,18 @@ func providerFromInput(providerID string, input domainprovider.ProviderInput, pr
 	if config == nil {
 		config = map[string]any{}
 	}
+	if providerType == domainprovider.ProviderTypeProxy {
+		mode := strings.ToLower(configString(config, "mode"))
+		switch mode {
+		case "", domainprovider.ProxyModeForwardAuth:
+		case domainprovider.ProxyModeReverseProxy:
+			if _, err := validateReverseProxyUpstream(configString(config, "upstreamUrl", "upstreamURL", "upstream_url")); err != nil {
+				return domainprovider.Provider{}, err
+			}
+		default:
+			return domainprovider.Provider{}, fmt.Errorf("%w: unsupported proxy mode", apperrors.ErrInvalidArgument)
+		}
+	}
 	secretRefs := input.SecretRefs
 	if secretRefs == nil {
 		secretRefs = map[string]any{}
@@ -1820,6 +1877,29 @@ func proxyPath(input domainprovider.ProxyAuthInput) string {
 	return value
 }
 
+func normalizeReverseProxyPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(value, "/") {
+		return "/" + value
+	}
+	return value
+}
+
+func validateReverseProxyUpstream(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return "", fmt.Errorf("%w: reverse proxy upstream URL must use http or https", apperrors.ErrInvalidArgument)
+	}
+	if parsed.User != nil || parsed.Fragment != "" {
+		return "", fmt.Errorf("%w: reverse proxy upstream URL must not include credentials or a fragment", apperrors.ErrInvalidArgument)
+	}
+	return parsed.String(), nil
+}
+
 func proxyLoginURL(originalURL string) string {
 	target := strings.TrimSpace(originalURL)
 	if target == "" {
@@ -2071,6 +2151,15 @@ func configStringMap(config map[string]any, keys ...string) map[string]string {
 		}
 	}
 	return out
+}
+
+func configBoolean(config map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if value, ok := config[key].(bool); ok {
+			return value
+		}
+	}
+	return false
 }
 
 func applicationMetadataString(metadata map[string]any, keys ...string) string {

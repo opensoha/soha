@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"testing"
 	"time"
@@ -701,6 +702,90 @@ func TestServiceProxyAuthAllowsSkipAuthPathWithoutPrincipal(t *testing.T) {
 	}
 	if len(result.Headers) != 0 {
 		t.Fatalf("skip auth headers = %#v, want none", result.Headers)
+	}
+}
+
+func TestServiceReverseProxyAuthorizesConfiguredUpstream(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.provider.Type = domainprovider.ProviderTypeProxy
+	repo.provider.Config = map[string]any{
+		"externalHost":      "grafana.example.com",
+		"mode":              domainprovider.ProxyModeReverseProxy,
+		"upstreamUrl":       "http://grafana.internal:3000/base",
+		"websocket_enabled": true,
+	}
+	repo.app.ProviderType = domainportal.ProviderTypeProxy
+	repo.app.Status = domainportal.ApplicationStatusEnabled
+	service := New(repo, &memoryUsers{}, nil, nil, "test-encryption-key-32-bytes-long")
+
+	result, err := service.ReverseProxy(ctx, (&memoryUsers{}).principal(), domainprovider.ReverseProxyInput{
+		ProviderID:  repo.provider.ID,
+		Path:        "/dashboards/main",
+		OriginalURL: "https://soha.example/api/v1/provider/proxy/reverse/provider-1/dashboards/main",
+		Method:      http.MethodGet,
+	})
+	if err != nil {
+		t.Fatalf("ReverseProxy returned error: %v", err)
+	}
+	if result.Auth.Decision != domainprovider.ProxyDecisionAllow {
+		t.Fatalf("ReverseProxy decision = %q, want allow", result.Auth.Decision)
+	}
+	if result.UpstreamURL != "http://grafana.internal:3000/base" {
+		t.Fatalf("ReverseProxy upstream = %q", result.UpstreamURL)
+	}
+	if !result.WebsocketEnabled {
+		t.Fatal("ReverseProxy websocket flag = false, want true")
+	}
+}
+
+func TestServiceReverseProxyRejectsForwardAuthAndUnsafeUpstream(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.provider.Type = domainprovider.ProviderTypeProxy
+	repo.provider.Config = map[string]any{
+		"externalHost": "grafana.example.com",
+		"mode":         domainprovider.ProxyModeForwardAuth,
+		"upstreamUrl":  "http://grafana.internal:3000",
+	}
+	service := New(repo, &memoryUsers{}, nil, nil, "test-encryption-key-32-bytes-long")
+
+	_, err := service.ReverseProxy(ctx, (&memoryUsers{}).principal(), domainprovider.ReverseProxyInput{ProviderID: repo.provider.ID})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("ReverseProxy forward-auth error = %v, want invalid argument", err)
+	}
+
+	repo.provider.Config["mode"] = domainprovider.ProxyModeReverseProxy
+	repo.provider.Config["upstreamUrl"] = "file:///etc/passwd"
+	_, err = service.ReverseProxy(ctx, (&memoryUsers{}).principal(), domainprovider.ReverseProxyInput{ProviderID: repo.provider.ID})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("ReverseProxy unsafe upstream error = %v, want invalid argument", err)
+	}
+}
+
+func TestProviderFromInputValidatesReverseProxyConfiguration(t *testing.T) {
+	input := domainprovider.ProviderInput{
+		ApplicationID: "app-1",
+		Name:          "Grafana",
+		Type:          domainprovider.ProviderTypeProxy,
+		Enabled:       true,
+		Config: map[string]any{
+			"mode":        domainprovider.ProxyModeReverseProxy,
+			"upstreamUrl": "file:///etc/passwd",
+		},
+	}
+	_, err := providerFromInput("provider-1", input, domainidentity.Principal{}, time.Now())
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("providerFromInput error = %v, want invalid reverse proxy upstream", err)
+	}
+
+	input.Config["upstreamUrl"] = "https://grafana.internal:3000"
+	provider, err := providerFromInput("provider-1", input, domainidentity.Principal{}, time.Now())
+	if err != nil {
+		t.Fatalf("providerFromInput valid reverse proxy: %v", err)
+	}
+	if provider.Config["mode"] != domainprovider.ProxyModeReverseProxy {
+		t.Fatalf("provider mode = %#v", provider.Config["mode"])
 	}
 }
 

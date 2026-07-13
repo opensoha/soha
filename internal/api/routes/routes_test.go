@@ -205,6 +205,8 @@ func TestRegisterProviderProtocolRoutesExposeProxyLogout(t *testing.T) {
 		"GET /api/v1/provider/proxy/start",
 		"GET /api/v1/provider/proxy/callback",
 		"POST /api/v1/provider/proxy/logout",
+		"GET /api/v1/provider/proxy/reverse/:providerID",
+		"GET /api/v1/provider/proxy/reverse/:providerID/*proxyPath",
 		"POST /api/v1/provider/outposts/claim",
 		"POST /api/v1/provider/outposts/:outpostID/heartbeat",
 		"POST /api/v1/provider/outposts/:outpostID/check",
