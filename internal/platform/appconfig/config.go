@@ -1,6 +1,8 @@
 package appconfig
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/opensoha/soha/internal/platform/keyring"
@@ -60,7 +62,32 @@ type Monitoring struct {
 }
 
 type ModuleToggle struct {
-	Enabled bool `mapstructure:"enabled"`
+	Enabled  bool           `mapstructure:"enabled"`
+	Features map[string]any `mapstructure:"features"`
+}
+
+func (m ModuleToggle) FeatureFlags() map[string]bool {
+	out := map[string]bool{}
+	var flatten func(string, map[string]any)
+	flatten = func(prefix string, values map[string]any) {
+		for key, value := range values {
+			name := strings.Trim(strings.TrimSpace(prefix+"."+key), ".")
+			switch typed := value.(type) {
+			case bool:
+				out[name] = typed
+			case map[string]any:
+				flatten(name, typed)
+			case map[any]any:
+				nested := make(map[string]any, len(typed))
+				for nestedKey, nestedValue := range typed {
+					nested[fmt.Sprint(nestedKey)] = nestedValue
+				}
+				flatten(name, nested)
+			}
+		}
+	}
+	flatten("", m.Features)
+	return out
 }
 
 type Modules struct {

@@ -38,6 +38,11 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 	effectiveMetadata.Mode = mode
 	effectiveMetadata.AgentProviderID = providerID
 	effectiveMetadata.Toolset = effectiveToolset
+	if input.KnowledgeContext != nil {
+		effectiveMetadata.KnowledgeContext = *input.KnowledgeContext
+		effectiveMetadata.KnowledgeContext.KnowledgeBaseIDs = normalizeStringList(effectiveMetadata.KnowledgeContext.KnowledgeBaseIDs)
+		effectiveMetadata.KnowledgeContext.TopK = min(max(effectiveMetadata.KnowledgeContext.TopK, 5), 50)
+	}
 	effectiveSession := session
 	effectiveSession.Metadata = sessionMetadataMap(effectiveMetadata)
 
@@ -153,7 +158,11 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 	priorMessages, _ := s.listRecentMessages(ctx, session.ID, 20)
 	emitWorkbenchModelRunning(ctx, s, eventSink)
 	emittedDelta := false
-	reply := s.generateReplyStream(ctx, principal, session.ID, sessionMeta.Mode, buildProviderChatMessages(priorMessages, userMessage, locale), locale, func(delta string) bool {
+	providerMessages, contextMeta, contextErr := s.groundedProviderMessages(ctx, principal, session, sessionMeta, priorMessages, userMessage, locale)
+	if contextErr != nil {
+		return domaincopilot.SessionMessageEnvelope{}, contextErr
+	}
+	reply := s.generateReplyStream(ctx, principal, session.ID, sessionMeta.Mode, providerMessages, locale, func(delta string) bool {
 		if delta == "" {
 			return true
 		}
@@ -193,6 +202,9 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 	}
 	if reply.Error != "" {
 		assistantMetadata["error"] = reply.Error
+	}
+	if contextMeta != nil {
+		assistantMetadata["contextEnvelope"] = contextMeta
 	}
 	agentStatus := map[string]any{
 		"status":       replyAgentStatus(reply),

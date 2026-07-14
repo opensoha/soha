@@ -554,6 +554,24 @@ func TestWorkbenchCatalogRejectsUsersWithoutAIWorkbenchPermissions(t *testing.T)
 	}
 }
 
+func TestWorkbenchCatalogAllowsAgentProviderViewPermission(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, _ := newInspectionAuthzTestService(map[string][]string{
+		"provider-viewer": {appaccess.PermAIAgentProvidersView},
+	})
+
+	catalog, err := service.GetWorkbenchCatalog(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"provider-viewer"},
+	})
+	if err != nil {
+		t.Fatalf("expected provider viewer to read workbench catalog, got %v", err)
+	}
+	if len(catalog.AgentProviders) == 0 {
+		t.Fatal("expected agent provider catalog")
+	}
+}
+
 func TestCreateSessionStoresGlobalAssistantMetadata(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, _ := newInspectionAuthzTestService(map[string][]string{

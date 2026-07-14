@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -170,6 +171,10 @@ type WorkbenchModelStreamInvoker interface {
 	InvokeWorkbenchModelStream(context.Context, domainidentity.Principal, appaigateway.WorkbenchRelayRequest, func(appaigateway.WorkbenchRelayStreamDelta) bool) (appaigateway.WorkbenchRelayResponse, error)
 }
 
+type WorkbenchContextBuilder interface {
+	BuildForCopilot(context.Context, domainidentity.Principal, domaincopilot.ContextBuildInput) (domaincopilot.ContextEnvelope, error)
+}
+
 type LogTelemetry interface {
 	Validate(string, map[string]any) error
 	Correlate(context.Context, string, string, map[string]any, telemetry.LogCorrelationQuery) (telemetry.LogCorrelationResult, error)
@@ -230,10 +235,12 @@ type Service struct {
 	metrics               *runtimeobs.Registry
 	inspectionParallelism int
 	mcpRegistry           MCPRegistry
+	agentProvidersMu      sync.RWMutex
 	agentProviders        []domaincopilot.AgentProvider
 	logs                  LogTelemetry
 	metricTelemetry       MetricTelemetry
 	traceTelemetry        TraceTelemetry
+	contextBuilder        WorkbenchContextBuilder
 }
 
 type MCPRegistry interface {
@@ -357,6 +364,10 @@ func (s *Service) SetInstrumentation(logger *zap.Logger, metrics *runtimeobs.Reg
 	s.metrics = metrics
 }
 
+func (s *Service) SetContextBuilder(builder WorkbenchContextBuilder) {
+	s.contextBuilder = builder
+}
+
 func (s *Service) logBackend() LogTelemetry {
 	if s.logs != nil {
 		return s.logs
@@ -407,7 +418,25 @@ func (s *Service) SetMCPRegistry(registry MCPRegistry) {
 }
 
 func (s *Service) SetAgentProviders(providers []domaincopilot.AgentProvider) {
+	s.agentProvidersMu.Lock()
+	defer s.agentProvidersMu.Unlock()
 	s.agentProviders = append([]domaincopilot.AgentProvider(nil), providers...)
+}
+
+// SetExternalAgentProviders preserves the governed in-process provider while
+// replacing legacy external defaults with the plugin catalog projection.
+func (s *Service) SetExternalAgentProviders(providers []domaincopilot.AgentProvider) {
+	configured := make([]domaincopilot.AgentProvider, 0, len(providers)+1)
+	for _, provider := range defaultAgentProviders() {
+		if provider.Kind == agentProviderInternal {
+			configured = append(configured, provider)
+			break
+		}
+	}
+	configured = append(configured, providers...)
+	s.agentProvidersMu.Lock()
+	defer s.agentProvidersMu.Unlock()
+	s.agentProviders = configured
 }
 
 func (s *Service) SetWorkbenchModelInvoker(invoker WorkbenchModelInvoker) {
@@ -595,7 +624,14 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 		reply = chatReply{Content: artifacts[0].Summary, Source: "analysis-artifact"}
 	} else {
 		priorMessages, _ := s.listRecentMessages(ctx, session.ID, 20)
-		reply = s.generateReply(ctx, principal, session.ID, sessionMeta.Mode, buildProviderChatMessages(priorMessages, userMessage, locale), locale)
+		providerMessages, contextMeta, contextErr := s.groundedProviderMessages(ctx, principal, session, sessionMeta, priorMessages, userMessage, locale)
+		if contextErr != nil {
+			return domaincopilot.SessionMessageEnvelope{}, contextErr
+		}
+		reply = s.generateReply(ctx, principal, session.ID, sessionMeta.Mode, providerMessages, locale)
+		if contextMeta != nil {
+			sessionPatch["contextEnvelope"] = contextMeta
+		}
 	}
 	assistantMetadata := map[string]any{
 		"mode":              sessionMeta.Mode,
@@ -611,6 +647,9 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 	}
 	if len(artifacts) > 0 {
 		assistantMetadata["analysisArtifacts"] = artifacts
+	}
+	if contextMeta, ok := sessionPatch["contextEnvelope"]; ok {
+		assistantMetadata["contextEnvelope"] = contextMeta
 	}
 	agentStatus := map[string]any{
 		"status":       replyAgentStatus(reply),

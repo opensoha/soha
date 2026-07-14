@@ -44,6 +44,11 @@ type Dependencies struct {
 	Registries     *apiHandlers.RegistryHandler
 	Releases       *apiHandlers.ReleaseHandler
 	Copilot        *apiHandlers.CopilotHandler
+	Knowledge      *apiHandlers.KnowledgeHandler
+	Evaluation     *apiHandlers.EvaluationHandler
+	AIAdvanced     *apiHandlers.AIAdvancedHandler
+	AIProduction   *apiHandlers.AIProductionHandler
+	AgentProviders *apiHandlers.AgentProviderHandler
 	AIGateway      *apiHandlers.AIGatewayHandler
 	Plugins        *apiHandlers.PluginHandler
 	Virtualization *apiHandlers.VirtualizationHandler

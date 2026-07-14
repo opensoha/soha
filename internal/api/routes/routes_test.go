@@ -1,6 +1,7 @@
 package routes
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -11,6 +12,14 @@ import (
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
+
+func routeMethodPaths(routes []gin.RouteInfo) []string {
+	items := make([]string, 0, len(routes))
+	for _, route := range routes {
+		items = append(items, route.Method+" "+route.Path)
+	}
+	return items
+}
 
 func TestRegisterPlatformRoutesKeepsCoreOperationalSurface(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -90,6 +99,111 @@ func TestRegisterCopilotRoutesExposesAgentRunCancel(t *testing.T) {
 		if _, ok := registered[route]; !ok {
 			t.Fatalf("missing route %s", route)
 		}
+	}
+}
+
+func TestRegisterKnowledgeRoutesExposesKnowledgeAndContextSurface(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	group := router.Group("/api/v1")
+	apiHandlers.RegisterKnowledgeRoutes(group, &apiHandlers.KnowledgeHandler{})
+
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, route := range []string{
+		"GET /api/v1/ai/knowledge-bases",
+		"POST /api/v1/ai/knowledge-bases",
+		"GET /api/v1/ai/knowledge-bases/:baseID",
+		"PATCH /api/v1/ai/knowledge-bases/:baseID",
+		"DELETE /api/v1/ai/knowledge-bases/:baseID",
+		"GET /api/v1/ai/knowledge-bases/:baseID/sources",
+		"POST /api/v1/ai/knowledge-bases/:baseID/sources",
+		"POST /api/v1/ai/knowledge-bases/:baseID/sources/:sourceID/sync",
+		"GET /api/v1/ai/knowledge-bases/:baseID/documents",
+		"GET /api/v1/ai/knowledge-bases/:baseID/sync-runs",
+		"GET /api/v1/ai/knowledge-bases/:baseID/index-revisions",
+		"POST /api/v1/ai/knowledge/search",
+		"GET /api/v1/ai/knowledge/connectors",
+		"POST /api/v1/ai/knowledge/connectors",
+		"POST /api/v1/ai/knowledge/connectors/:connectorID/validate",
+		"POST /api/v1/ai/knowledge-bases/:baseID/sync-jobs",
+		"GET /api/v1/ai/knowledge/sync-jobs/:jobID",
+		"POST /api/v1/ai/knowledge/sync-jobs/:jobID/cancel",
+		"POST /api/v1/ai/knowledge/sync-jobs/:jobID/retry",
+		"POST /api/v1/ai/context/inspect",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing route %s", route)
+		}
+	}
+}
+
+func TestRegisterAgentProviderRoutesExposesConsoleAndRunnerSurfaces(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	group := router.Group("/api/v1")
+	handler := &apiHandlers.AgentProviderHandler{}
+	apiHandlers.RegisterProtectedAgentProviderRoutes(group, handler)
+	apiHandlers.RegisterRunnerAgentProviderRoutes(group, handler)
+
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, route := range []string{
+		"GET /api/v1/ai/agent-providers/catalog",
+		"GET /api/v1/ai/agent-providers/registry-snapshot",
+		"POST /api/v1/ai/agent-providers/registry-acks",
+		"GET /api/v1/ai/agent-providers/runtime-status",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing route %s", route)
+		}
+	}
+}
+
+func TestRegisterEvaluationRoutesExposesDatasetRunAndResultSurface(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	group := router.Group("/api/v1")
+	apiHandlers.RegisterEvaluationRoutes(group, &apiHandlers.EvaluationHandler{})
+
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, route := range []string{
+		"GET /api/v1/ai/evaluations/datasets",
+		"POST /api/v1/ai/evaluations/datasets",
+		"GET /api/v1/ai/evaluations/runs",
+		"POST /api/v1/ai/evaluations/runs",
+		"GET /api/v1/ai/evaluations/runs/:runID",
+		"GET /api/v1/ai/evaluations/runs/:runID/results",
+		"POST /api/v1/ai/evaluations/runs/:runID/complete",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing route %s", route)
+		}
+	}
+}
+
+func TestAdvancedAIRoutesRespectIndependentFeatureFlags(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	group := router.Group("/api/v1")
+	apiHandlers.RegisterAIAdvancedRoutes(group, apiHandlers.NewAIAdvancedHandler(nil, nil, nil, nil, nil, nil, nil, map[string]bool{
+		"evaluation.release_gate": true,
+	}))
+	paths := routeMethodPaths(router.Routes())
+	if !slices.Contains(paths, "POST /api/v1/ai/evaluations/gates/evaluate") {
+		t.Fatalf("release gate route missing: %#v", paths)
+	}
+	if slices.Contains(paths, "GET /api/v1/ai/memory") || slices.Contains(paths, "POST /api/v1/ai/agent-runs/multi-agent") {
+		t.Fatalf("default-off advanced routes exposed: %#v", paths)
 	}
 }
 

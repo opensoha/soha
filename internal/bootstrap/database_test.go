@@ -343,45 +343,51 @@ func TestDockerHostProvisionerUsesPrivilegedVirtualizationBridge(t *testing.T) {
 	}
 }
 
-func TestDefaultMenuSeedsIncludeAIGatewayWorkbench(t *testing.T) {
+func TestDefaultMenuSeedsIncludeUnifiedAIWorkbench(t *testing.T) {
 	items := defaultMenuSeeds()
-	var gateway *menuSeed
-	children := map[string]string{
-		"ai-gateway-overview":   "/ai-gateway/overview",
-		"ai-gateway-relay":      "/ai-gateway/relay",
-		"ai-gateway-manifest":   "/ai-gateway/manifest",
-		"ai-gateway-clients":    "/ai-gateway/clients",
-		"ai-gateway-tokens":     "/ai-gateway/tokens",
-		"ai-gateway-governance": "/ai-gateway/governance",
-		"ai-gateway-call-logs":  "/ai-gateway/call-logs",
+	var workbench *menuSeed
+	children := map[string]struct {
+		path    string
+		section string
+	}{
+		"ai-workbench-overview":        {path: "/ai-workbench/overview"},
+		"ai-workbench-chat":            {path: "/ai-workbench/chat", section: "ai-interaction"},
+		"ai-workbench-knowledge":       {path: "/ai-workbench/knowledge", section: "ai-interaction"},
+		"ai-workbench-inspection":      {path: "/ai-workbench/inspection", section: "ai-interaction"},
+		"ai-workbench-agent-runs":      {path: "/ai-workbench/agent-runs", section: "ai-interaction"},
+		"ai-workbench-evaluations":     {path: "/ai-workbench/evaluations", section: "ai-interaction"},
+		"ai-workbench-context":         {path: "/ai-workbench/context", section: "ai-engineering"},
+		"ai-workbench-tool-settings":   {path: "/ai-workbench/tool-settings", section: "ai-engineering"},
+		"ai-workbench-agent-providers": {path: "/ai-workbench/agent-providers", section: "ai-engineering"},
+		"ai-workbench-model-settings":  {path: "/ai-workbench/model-settings", section: "ai-model-access"},
+		"ai-gateway-overview":          {path: "/ai-gateway/overview", section: "ai-model-access"},
+		"ai-gateway-relay":             {path: "/ai-gateway/relay", section: "ai-model-access"},
+		"ai-gateway-manifest":          {path: "/ai-gateway/manifest", section: "ai-governance"},
+		"ai-gateway-clients":           {path: "/ai-gateway/clients", section: "ai-model-access"},
+		"ai-gateway-tokens":            {path: "/ai-gateway/tokens", section: "ai-model-access"},
+		"ai-gateway-governance":        {path: "/ai-gateway/governance", section: "ai-governance"},
+		"ai-gateway-call-logs":         {path: "/ai-gateway/call-logs", section: "ai-governance"},
 	}
 	for i := range items {
-		if items[i].ID == "ai-gateway" {
-			gateway = &items[i]
+		if items[i].ID == "ai-workbench" {
+			workbench = &items[i]
 			continue
 		}
-		if wantPath, ok := children[items[i].ID]; ok {
-			wantParent := "ai-gateway"
-			if items[i].ParentID != wantParent {
-				t.Fatalf("%s parent = %q, want %s", items[i].ID, items[i].ParentID, wantParent)
+		if want, ok := children[items[i].ID]; ok {
+			if items[i].ParentID != "ai-workbench" {
+				t.Fatalf("%s parent = %q, want ai-workbench", items[i].ID, items[i].ParentID)
 			}
-			if items[i].Path != wantPath {
-				t.Fatalf("%s path = %q, want %s", items[i].ID, items[i].Path, wantPath)
+			if items[i].Path != want.path || items[i].Section != want.section {
+				t.Fatalf("%s = path %q section %q, want path %q section %q", items[i].ID, items[i].Path, items[i].Section, want.path, want.section)
 			}
 			delete(children, items[i].ID)
 		}
 	}
-	if gateway == nil {
-		t.Fatal("default menu seeds missing ai-gateway")
+	if workbench == nil {
+		t.Fatal("default menu seeds missing ai-workbench")
 	}
-	if gateway.ParentID != "" {
-		t.Fatalf("AI Gateway parent = %q, want root menu", gateway.ParentID)
-	}
-	if gateway.Path != "/ai-gateway" {
-		t.Fatalf("AI Gateway path = %q, want /ai-gateway", gateway.Path)
-	}
-	if gateway.Section != "ops" {
-		t.Fatalf("AI Gateway section = %q, want ops", gateway.Section)
+	if workbench.ParentID != "" || workbench.Path != "/ai-workbench" || workbench.Section != "ops" {
+		t.Fatalf("AI workbench root = %#v", workbench)
 	}
 	if len(children) > 0 {
 		t.Fatalf("default menu seeds missing AI Gateway child menus: %v", children)
@@ -713,7 +719,7 @@ func TestFilterSeedMenusByModulesRemovesAIGatewayWhenDisabled(t *testing.T) {
 		if isAIGatewayMenuSeed(item) {
 			t.Fatalf("AI Gateway seed menu %q should be filtered when module is disabled", item.ID)
 		}
-		if isAIMenuSeed(item) && item.ID == "ai-workbench" {
+		if item.ID == "ai-workbench" {
 			foundAIWorkbench = true
 		}
 		if item.ID == "settings-extensions" {
@@ -739,7 +745,6 @@ func TestDisabledModuleMenuIDsIncludesAIGatewayWhenSeedVersionIsCurrent(t *testi
 	})
 
 	for _, id := range []string{
-		"ai-gateway",
 		"ai-gateway-overview",
 		"ai-gateway-relay",
 		"ai-gateway-manifest",
@@ -771,7 +776,6 @@ func TestFilterSeedMenusByModulesKeepsAIGatewayWhenAIModuleDisabled(t *testing.T
 	})
 
 	foundGatewayIDs := map[string]bool{
-		"ai-gateway":            false,
 		"ai-gateway-overview":   false,
 		"ai-gateway-relay":      false,
 		"ai-gateway-manifest":   false,
@@ -780,13 +784,20 @@ func TestFilterSeedMenusByModulesKeepsAIGatewayWhenAIModuleDisabled(t *testing.T
 		"ai-gateway-governance": false,
 		"ai-gateway-call-logs":  false,
 	}
+	foundUnifiedRoot := false
 	for _, item := range items {
-		if isAIMenuSeed(item) {
-			t.Fatalf("AI workbench seed menu %q should be filtered when AI module is disabled", item.ID)
+		if isAIFeatureMenuSeed(item) {
+			t.Fatalf("AI feature seed menu %q should be filtered when AI module is disabled", item.ID)
+		}
+		if item.ID == "ai-workbench" {
+			foundUnifiedRoot = true
 		}
 		if _, ok := foundGatewayIDs[item.ID]; ok {
 			foundGatewayIDs[item.ID] = true
 		}
+	}
+	if !foundUnifiedRoot {
+		t.Fatal("unified AI workbench root should remain for Gateway-only deployments")
 	}
 	for id, found := range foundGatewayIDs {
 		if !found {

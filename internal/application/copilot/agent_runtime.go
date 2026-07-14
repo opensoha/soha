@@ -2094,7 +2094,9 @@ func (s *Service) shouldUseExternalAgent(providerID string) bool {
 }
 
 func (s *Service) agentProviderCatalog() []domaincopilot.AgentProvider {
+	s.agentProvidersMu.RLock()
 	configured := append([]domaincopilot.AgentProvider(nil), s.agentProviders...)
+	s.agentProvidersMu.RUnlock()
 	if len(configured) == 0 {
 		configured = defaultAgentProviders()
 	}

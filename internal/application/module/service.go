@@ -2,6 +2,7 @@ package module
 
 import (
 	"context"
+	"maps"
 	"strings"
 
 	domainmodule "github.com/opensoha/soha/internal/domain/module"
@@ -98,9 +99,14 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 	}
 	out := make([]domainmodule.Status, 0, len(descriptors))
 	for _, descriptor := range descriptors {
+		var features map[string]bool
+		if descriptor.ID == "ai" {
+			features = maps.Clone(s.cfg.AI.FeatureFlags())
+		}
 		out = append(out, domainmodule.Status{
 			Descriptor: descriptor,
 			Enabled:    s.enabled(descriptor.ID),
+			Features:   features,
 		})
 	}
 	return out, nil

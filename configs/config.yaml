@@ -145,6 +145,23 @@ modules:
     enabled: true
   ai:
     enabled: true
+    features:
+      knowledge.external_connectors: true
+      knowledge.async_ingestion: true
+      knowledge.gateway_embedding: true
+      knowledge.gateway_rerank: true
+      agent.fleet_rollout: true
+      agent.environment_management: true
+      agent.conformance_suite: true
+      evaluation.candidate_executor: true
+      evaluation.isolated_replay: true
+      evaluation.feedback_sampling: true
+      evaluation.release_gate: true
+      memory.long_term: false
+      retrieval.agentic: false
+      retrieval.graphrag: false
+      agent.multi_agent: false
+      ai.production_operations: true
   ai_gateway:
     enabled: true
   virtualization:

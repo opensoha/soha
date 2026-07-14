@@ -355,7 +355,7 @@ func testDeliveryExecutionContract(t *testing.T, now time.Time, app domainapp.Ap
 		UpdatedAt:                now,
 	}
 	contractPlan := roundTrip[sohaapi.DeliveryPlan](t, plan)
-	expectContract(t, contractPlan.Action == sohaapi.Verify, "delivery plan action mismatch: %#v", contractPlan)
+	expectContract(t, contractPlan.Action == sohaapi.ApplicationDeliveryActionKindVerify, "delivery plan action mismatch: %#v", contractPlan)
 	expectContract(t, contractPlan.EnvironmentKey == "test", "delivery plan environment mismatch: %#v", contractPlan)
 
 	detail := domaindelivery.ApplicationDetail{

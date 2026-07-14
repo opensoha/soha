@@ -12,7 +12,10 @@ import (
 	providerportalhandler "github.com/opensoha/soha/internal/api/handlers/providerportal"
 	apiRoutes "github.com/opensoha/soha/internal/api/routes"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appagentharness "github.com/opensoha/soha/internal/application/agentharness"
+	appaieval "github.com/opensoha/soha/internal/application/aieval"
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
+	appaiproduction "github.com/opensoha/soha/internal/application/aiproduction"
 	appannouncement "github.com/opensoha/soha/internal/application/announcement"
 	appregistry "github.com/opensoha/soha/internal/application/app"
 	appaudit "github.com/opensoha/soha/internal/application/audit"
@@ -28,9 +31,13 @@ import (
 	appidentity "github.com/opensoha/soha/internal/application/identity"
 	appidentityprovider "github.com/opensoha/soha/internal/application/identityprovider"
 	appintegration "github.com/opensoha/soha/internal/application/integration"
+	appknowledge "github.com/opensoha/soha/internal/application/knowledge"
+	appknowledgegraph "github.com/opensoha/soha/internal/application/knowledgegraph"
+	appmemory "github.com/opensoha/soha/internal/application/memory"
 	appmenu "github.com/opensoha/soha/internal/application/menu"
 	appmodule "github.com/opensoha/soha/internal/application/module"
 	appmonitoring "github.com/opensoha/soha/internal/application/monitoring"
+	appmultiagent "github.com/opensoha/soha/internal/application/multiagent"
 	appoperation "github.com/opensoha/soha/internal/application/operation"
 	appplugin "github.com/opensoha/soha/internal/application/plugin"
 	appproviderportal "github.com/opensoha/soha/internal/application/providerportal"
@@ -42,6 +49,7 @@ import (
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	appworkflow "github.com/opensoha/soha/internal/application/workflow"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	directorysyncdomain "github.com/opensoha/soha/internal/domain/directorysync"
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
@@ -50,6 +58,8 @@ import (
 	executionbackendinfra "github.com/opensoha/soha/internal/infrastructure/executionbackend"
 	gitlabinfra "github.com/opensoha/soha/internal/infrastructure/gitlab"
 	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
+	knowledgeconnectors "github.com/opensoha/soha/internal/infrastructure/knowledge/connectors"
+	knowledgemodelgateway "github.com/opensoha/soha/internal/infrastructure/knowledge/modelgateway"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	loggerinfra "github.com/opensoha/soha/internal/infrastructure/logger"
 	mcpinfra "github.com/opensoha/soha/internal/infrastructure/mcp"
@@ -63,7 +73,10 @@ import (
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"github.com/opensoha/soha/internal/policy"
+	agentharnessrepo "github.com/opensoha/soha/internal/repository/agentharness"
+	aievalrepo "github.com/opensoha/soha/internal/repository/aieval"
 	aigatewayrepo "github.com/opensoha/soha/internal/repository/aigateway"
+	aiproductionrepo "github.com/opensoha/soha/internal/repository/aiproduction"
 	alertrepo "github.com/opensoha/soha/internal/repository/alert"
 	announcementrepo "github.com/opensoha/soha/internal/repository/announcement"
 	applicationrepo "github.com/opensoha/soha/internal/repository/application"
@@ -77,7 +90,11 @@ import (
 	dockerrepo "github.com/opensoha/soha/internal/repository/docker"
 	eventrepo "github.com/opensoha/soha/internal/repository/eventstream"
 	identityproviderrepo "github.com/opensoha/soha/internal/repository/identityprovider"
+	knowledgerepo "github.com/opensoha/soha/internal/repository/knowledge"
+	knowledgegraphrepo "github.com/opensoha/soha/internal/repository/knowledgegraph"
+	memoryrepo "github.com/opensoha/soha/internal/repository/memory"
 	menurepo "github.com/opensoha/soha/internal/repository/menu"
+	multiagentrepo "github.com/opensoha/soha/internal/repository/multiagent"
 	operationrepo "github.com/opensoha/soha/internal/repository/operationlog"
 	pluginrepo "github.com/opensoha/soha/internal/repository/plugin"
 	policyrepo "github.com/opensoha/soha/internal/repository/policy"
@@ -130,6 +147,13 @@ type repositories struct {
 	aiGatewayRepository        *aigatewayrepo.Repository
 	pluginRepository           *pluginrepo.Repository
 	identityProviderRepository *identityproviderrepo.Repository
+	knowledgeRepository        *knowledgerepo.Repository
+	agentHarnessRepository     *agentharnessrepo.Repository
+	aiProductionRepository     *aiproductionrepo.Repository
+	evaluationRepository       *aievalrepo.Repository
+	memoryRepository           *memoryrepo.Repository
+	knowledgeGraphRepository   *knowledgegraphrepo.Repository
+	multiAgentRepository       *multiagentrepo.Repository
 	providerPortalRepository   *providerportalrepo.Repository
 	portForwardRepository      *portforwardrepo.Repository
 	directorySyncRepository    *directorysyncrepo.Repository
@@ -167,14 +191,48 @@ type coreServices struct {
 	providerPortalService   *appproviderportal.Service
 	directorySyncService    *appdirectorysync.Service
 	directorySyncConnectors *directorysynchandler.Registry
+	pluginExtensions        *appplugin.ExtensionRegistry
 }
 
 type deliveryServices struct {
-	workflowService       *appworkflow.Service
-	virtualizationService *appvirtualization.Service
-	dockerService         *appdocker.Service
-	copilotService        *appcopilot.Service
-	deliveryService       *appdelivery.Service
+	workflowService           *appworkflow.Service
+	virtualizationService     *appvirtualization.Service
+	dockerService             *appdocker.Service
+	copilotService            *appcopilot.Service
+	knowledgeService          *appknowledge.Service
+	contextBuilder            *appcopilot.ContextBuilder
+	evaluationService         *appaieval.Service
+	advancedEvaluationService *appaieval.AdvancedService
+	memoryService             *appmemory.Service
+	knowledgeGraphService     *appknowledgegraph.Service
+	multiAgentService         *appmultiagent.Service
+	aiProductionService       *appaiproduction.Service
+	agentProviderService      *appagentharness.ProviderControlPlane
+	deliveryService           *appdelivery.Service
+}
+
+type copilotProviderCatalogObserver struct {
+	service *appcopilot.Service
+}
+
+func (o copilotProviderCatalogObserver) ApplyProviderCatalog(catalog appagentharness.ProviderCatalog) {
+	providers := make([]domaincopilot.AgentProvider, 0, len(catalog.Providers))
+	for _, provider := range catalog.Providers {
+		providers = append(providers, domaincopilot.AgentProvider{
+			ID: provider.ID, Kind: provider.Kind, Name: provider.DisplayName, Enabled: true,
+			Capabilities:  append([]string(nil), provider.Capabilities...),
+			SupportsAsync: true, SupportsSkills: true, SupportsToolsets: true,
+			Config: map[string]any{
+				"adapterProtocol": provider.AdapterProtocol,
+				"catalogRevision": catalog.Revision,
+				"pluginId":        provider.PluginID,
+				"pluginVersion":   provider.PluginVersion,
+				"providerVersion": provider.ProviderVersion,
+				"runtime":         provider.Runtime,
+			},
+		})
+	}
+	o.service.SetExternalAgentProviders(providers)
 }
 
 type gatewayServices struct {
@@ -274,6 +332,13 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		aiGatewayRepository:        aigatewayrepo.New(db),
 		pluginRepository:           pluginrepo.New(db),
 		identityProviderRepository: identityproviderrepo.New(db),
+		knowledgeRepository:        knowledgerepo.New(db),
+		agentHarnessRepository:     agentharnessrepo.New(db),
+		aiProductionRepository:     aiproductionrepo.New(db),
+		evaluationRepository:       aievalrepo.New(db),
+		memoryRepository:           memoryrepo.New(db),
+		knowledgeGraphRepository:   knowledgegraphrepo.New(db),
+		multiAgentRepository:       multiagentrepo.New(db),
 		providerPortalRepository:   providerportalrepo.New(db),
 		portForwardRepository:      portforwardrepo.New(db),
 		directorySyncRepository:    directorysyncrepo.New(db, cfg.Security.CredentialEncryptionKeys),
@@ -358,6 +423,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		releaseService:          deliveryCore.releases,
 		integrationService:      deliveryCore.integration,
 		pluginService:           deliveryCore.plugins,
+		pluginExtensions:        deliveryCore.pluginExtensions,
 		identityProviderService: deliveryCore.identityProvider,
 		providerPortalService:   deliveryCore.providerPortal,
 		directorySyncService:    directorySyncService,
@@ -426,6 +492,7 @@ type deliveryCoreServices struct {
 	releases         *apprelease.Service
 	integration      *appintegration.Service
 	plugins          *appplugin.Service
+	pluginExtensions *appplugin.ExtensionRegistry
 	identityProvider *appidentityprovider.Service
 	providerPortal   *appproviderportal.Service
 }
@@ -452,7 +519,14 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 	if err != nil {
 		return nil, err
 	}
-	plugins := appplugin.NewWithOptions(repos.pluginRepository, permissions, audit, appplugin.WithMarketplaceProvider(marketplaceProvider))
+	pluginExtensions := appplugin.NewExtensionRegistry()
+	plugins := appplugin.NewWithOptions(
+		repos.pluginRepository,
+		permissions,
+		audit,
+		appplugin.WithMarketplaceProvider(marketplaceProvider),
+		appplugin.WithExtensionRegistry(pluginExtensions),
+	)
 	if err := plugins.Reconcile(infra.lifecycleCtx); err != nil {
 		return nil, err
 	}
@@ -467,6 +541,7 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 		scopeGrants: appscopegrant.New(repos.scopeGrantRepository, permissions, audit, operations),
 		registries:  appregistryconn.New(repos.registryRepository, permissions, appregistryconn.WithCredentialEncryptionKeys(cfg.Security.CredentialEncryptionKeys)),
 		releases:    releases, integration: appintegration.New(infra.mcpRegistry), plugins: plugins,
+		pluginExtensions: pluginExtensions,
 		identityProvider: identityProvider, providerPortal: providerPortal,
 	}, nil
 }
@@ -536,6 +611,31 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	copilotService.SetMCPRegistry(infra.mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
 	copilotService.SetInstrumentation(infra.logger, infra.runtimeMetrics)
+	agentProviderService, err := appagentharness.NewProviderControlPlane(
+		appagentharness.NewProviderReconciler(core.pluginExtensions),
+		core.permissionResolver,
+		appagentharness.WithProviderCatalogObserver(copilotProviderCatalogObserver{service: copilotService}),
+		appagentharness.WithProviderStateStore(repos.agentHarnessRepository),
+	)
+	if err != nil {
+		panic(fmt.Errorf("build agent provider control plane: %w", err))
+	}
+	connectorValidator := knowledgeconnectors.NewValidator()
+	knowledgeService, err := appknowledge.New(
+		repos.knowledgeRepository,
+		core.permissionResolver,
+		nil,
+		nil,
+		appknowledge.WithSourceLoader(knowledgeconnectors.ProductionLoader(knowledgeconnectors.UnavailableFetcher{}, connectorValidator)),
+		appknowledge.WithProductionRepository(repos.knowledgeRepository),
+		appknowledge.WithConnectorValidator(connectorValidator),
+		appknowledge.WithOperationRecorder(core.operationService),
+	)
+	if err != nil {
+		panic(fmt.Errorf("build knowledge service: %w", err))
+	}
+	contextBuilder := appcopilot.NewContextBuilder(knowledgeService, core.permissionResolver)
+	copilotService.SetContextBuilder(contextBuilder)
 	core.monitoringService.SetWorkflowExecutor(workflowService)
 	core.monitoringService.SetAutomation(copilotService)
 	if cfg.Modules.Monitoring.Enabled {
@@ -594,11 +694,36 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		Delivery:  repos.deliveryRepository,
 	})
 
+	memoryService, err := appmemory.NewService(repos.memoryRepository)
+	if err != nil {
+		panic(fmt.Errorf("build memory service: %w", err))
+	}
+	knowledgeGraphService, err := appknowledgegraph.NewService(repos.knowledgeGraphRepository)
+	if err != nil {
+		panic(fmt.Errorf("build knowledge graph service: %w", err))
+	}
+	multiAgentService, err := appmultiagent.NewService(repos.multiAgentRepository)
+	if err != nil {
+		panic(fmt.Errorf("build multi-agent service: %w", err))
+	}
+	aiProductionService, err := appaiproduction.New(repos.aiProductionRepository)
+	if err != nil {
+		panic(fmt.Errorf("build AI production service: %w", err))
+	}
+
 	return &deliveryServices{
 		workflowService:       workflowService,
 		virtualizationService: virtualizationService,
 		dockerService:         dockerService,
 		copilotService:        copilotService,
+		knowledgeService:      knowledgeService,
+		contextBuilder:        contextBuilder,
+		evaluationService:     appaieval.MustNewService(repos.evaluationRepository),
+		memoryService:         memoryService,
+		knowledgeGraphService: knowledgeGraphService,
+		multiAgentService:     multiAgentService,
+		aiProductionService:   aiProductionService,
+		agentProviderService:  agentProviderService,
 		deliveryService:       deliveryService,
 	}
 }
@@ -646,16 +771,40 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	aiGatewayService.SetCatalogService(core.catalogService)
 	aiGatewayService.SetResourceService(core.resourceService.Runtime())
 	aiGatewayService.SetAnalysisArtifactRecorder(delivery.copilotService)
+	aiGatewayService.AddCapabilityProviders(appaigateway.NewKnowledgeCapabilityProvider(delivery.knowledgeService))
 	aiGatewayService.SetOperationRecorder(core.operationService)
 	aiGatewayService.SetOnCallResolver(core.monitoringService)
+	candidateExecutor, err := appaieval.NewGatewayCandidateExecutor(aiGatewayService)
+	if err != nil {
+		return nil, fmt.Errorf("build evaluation candidate executor: %w", err)
+	}
+	delivery.advancedEvaluationService, err = appaieval.NewAdvancedService(delivery.evaluationService, repos.evaluationRepository, candidateExecutor)
+	if err != nil {
+		return nil, fmt.Errorf("build advanced evaluation service: %w", err)
+	}
+	delivery.advancedEvaluationService.SetGateDecisionSink(delivery.aiProductionService)
 	delivery.copilotService.SetWorkbenchModelInvoker(aiGatewayService)
-	aiGatewayService.StartRelayHealthChecks(ctx)
 	if err := registerAIGatewayConnectorRuntimes(ctx, aiGatewayService, cfg.AIGateway); err != nil {
 		if rateLimitBackend != nil {
 			_ = rateLimitBackend.Close()
 		}
 		return nil, err
 	}
+	connectorFetcher, err := knowledgeconnectors.NewGatewayFetcher(aiGatewayService)
+	if err != nil {
+		return nil, fmt.Errorf("build knowledge connector Gateway fetcher: %w", err)
+	}
+	delivery.knowledgeService.SetSourceLoader(knowledgeconnectors.ProductionLoader(connectorFetcher, knowledgeconnectors.NewValidator()))
+	knowledgeModels, err := knowledgemodelgateway.New(aiGatewayService, knowledgemodelgateway.Config{
+		EmbeddingModel: "text-embedding-3-small",
+		RerankModel:    "rerank-v3.5",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build knowledge model Gateway adapter: %w", err)
+	}
+	delivery.knowledgeService.SetRetrievalAdapters(knowledgeModels, knowledgeModels)
+	go delivery.knowledgeService.RunIngestionWorker(ctx)
+	aiGatewayService.StartRelayHealthChecks(ctx)
 	return &gatewayServices{
 		aiGatewayService: aiGatewayService,
 		rateLimitBackend: rateLimitBackend,
@@ -747,6 +896,14 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 			AgentRuns: delivery.copilotService, InspectionTasks: delivery.copilotService,
 			InspectionRuns: delivery.copilotService,
 		}, cfg.Runtime.ExecutionRunnerKeys),
+		Knowledge:    apiHandlers.NewKnowledgeHandler(delivery.knowledgeService, delivery.contextBuilder),
+		Evaluation:   apiHandlers.NewEvaluationHandler(delivery.evaluationService, core.permissionResolver),
+		AIAdvanced:   apiHandlers.NewAIAdvancedHandler(delivery.advancedEvaluationService, delivery.evaluationService, delivery.memoryService, delivery.knowledgeGraphService, delivery.multiAgentService, delivery.knowledgeService, core.permissionResolver, cfg.Modules.AI.FeatureFlags()),
+		AIProduction: apiHandlers.NewAIProductionHandler(delivery.aiProductionService, core.permissionResolver, cfg.Modules.AI.FeatureFlags()),
+		AgentProviders: apiHandlers.NewAgentProviderHandler(
+			delivery.agentProviderService,
+			cfg.Runtime.ExecutionRunnerKeys,
+		),
 		AIGateway: apiHandlers.NewAIGatewayHandlerWithServices(apiHandlers.AIGatewayServices{
 			Capabilities: gateway.aiGatewayService, PersonalTokens: gateway.aiGatewayService,
 			ServiceAccounts: gateway.aiGatewayService, Clients: gateway.aiGatewayService,

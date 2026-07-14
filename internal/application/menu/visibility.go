@@ -102,6 +102,9 @@ func coreDeliveryMenuRule(id string) (visibilityRule, bool) {
 }
 
 func observabilityAIMenuRule(id string) (visibilityRule, bool) {
+	if rule, ok := aiWorkbenchMenuRule(id); ok {
+		return rule, true
+	}
 	switch id {
 	case "monitoring-workbench":
 		return visibilityRule{permissions: []string{
@@ -127,26 +130,60 @@ func observabilityAIMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermObserveHealingView}}, true
 	case "monitoring-workbench-events", "events":
 		return visibilityRule{permissions: []string{appaccess.PermObserveEventsView}}, true
-	case "ai-workbench":
-		return visibilityRule{permissions: []string{appaccess.PermObserveAIView, appaccess.PermObserveAIChatUse}}, true
-	case "ai-workbench-chat", "ai-workbench-investigation", "assistant-workbench":
-		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
-	case "ai-workbench-inspection", "ai-workbench-tool-settings", "ai-workbench-operations", "ai-workbench-tools", "assistant-operations", "assistant-tools":
-		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
-	case "ai-workbench-model-settings":
-		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
-	case "ai-gateway", "ai-gateway-tokens":
-		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage}}, true
-	case "ai-gateway-overview", "ai-gateway-manifest":
-		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true
-	case "ai-gateway-clients", "ai-gateway-governance", "ai-gateway-call-logs":
-		return visibilityRule{permissions: []string{appaccess.PermAIGatewayManage}}, true
 	case "settings-extensions", "extension-center":
 		return visibilityRule{permissions: []string{appaccess.PermPluginView}}, true
 	case "settings-extensions-marketplace", "extensions-marketplace", "extensions-installed", "plugins", "plugins-marketplace", "plugins-installed":
 		return visibilityRule{permissions: []string{appaccess.PermPluginView}}, true
 	case "settings-extensions-capabilities", "extensions-capabilities":
 		return visibilityRule{permissions: []string{appaccess.PermPlatformExtensionsView}}, true
+	default:
+		return visibilityRule{}, false
+	}
+}
+
+func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
+	switch id {
+	case "ai-workbench", "ai-workbench-overview":
+		return visibilityRule{permissions: []string{
+			appaccess.PermObserveAIView,
+			appaccess.PermObserveAIChatUse,
+			appaccess.PermAIKnowledgeView,
+			appaccess.PermAIKnowledgeManage,
+			appaccess.PermAIContextInspect,
+			appaccess.PermAIEvaluationsView,
+			appaccess.PermAIEvaluationsManage,
+			appaccess.PermAIAgentProvidersView,
+			appaccess.PermAIAgentProvidersManage,
+			appaccess.PermSettingsAIView,
+			appaccess.PermAIGatewayView,
+			appaccess.PermAIGatewayInvoke,
+			appaccess.PermAIGatewayManage,
+			appaccess.PermAIGatewayRelayView,
+			appaccess.PermAIGatewayRelayInvoke,
+			appaccess.PermAIGatewayRelayManage,
+		}}, true
+	case "ai-workbench-chat", "ai-workbench-investigation", "assistant-workbench":
+		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
+	case "ai-workbench-agent-providers":
+		return visibilityRule{permissions: []string{appaccess.PermAIAgentProvidersView, appaccess.PermAIAgentProvidersManage}}, true
+	case "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-tool-settings", "ai-workbench-operations", "ai-workbench-tools", "assistant-operations", "assistant-tools":
+		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
+	case "ai-workbench-knowledge":
+		return visibilityRule{permissions: []string{appaccess.PermAIKnowledgeView, appaccess.PermAIKnowledgeManage}}, true
+	case "ai-workbench-context":
+		return visibilityRule{permissions: []string{appaccess.PermAIContextInspect}}, true
+	case "ai-workbench-evaluations":
+		return visibilityRule{permissions: []string{appaccess.PermAIEvaluationsView, appaccess.PermAIEvaluationsManage}}, true
+	case "ai-workbench-model-settings":
+		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
+	case "ai-gateway", "ai-gateway-tokens":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage}}, true
+	case "ai-gateway-overview", "ai-gateway-manifest":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true
+	case "ai-gateway-relay":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayRelayView, appaccess.PermAIGatewayRelayInvoke, appaccess.PermAIGatewayRelayManage}}, true
+	case "ai-gateway-clients", "ai-gateway-governance", "ai-gateway-call-logs":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayManage}}, true
 	default:
 		return visibilityRule{}, false
 	}

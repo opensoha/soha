@@ -2,6 +2,7 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
+	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
@@ -14,6 +15,21 @@ func registerProtectedRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depe
 	registerVirtualizationRoutes(protected, cfg, deps)
 	registerDockerRoutes(protected, cfg, deps)
 	registerCopilotRoutes(protected, cfg, deps)
+	if deps.Knowledge != nil {
+		apiHandlers.RegisterKnowledgeRoutes(protected, deps.Knowledge)
+	}
+	if deps.AgentProviders != nil {
+		apiHandlers.RegisterProtectedAgentProviderRoutes(protected, deps.AgentProviders)
+	}
+	if deps.Evaluation != nil {
+		apiHandlers.RegisterEvaluationRoutes(protected, deps.Evaluation)
+	}
+	if deps.AIAdvanced != nil {
+		apiHandlers.RegisterAIAdvancedRoutes(protected, deps.AIAdvanced)
+	}
+	if deps.AIProduction != nil {
+		apiHandlers.RegisterAIProductionRoutes(protected, deps.AIProduction)
+	}
 	registerOperationalAuditRoutes(protected, deps)
 	registerAccessRoutes(protected, deps)
 	registerDirectorySyncRoutes(protected, deps)

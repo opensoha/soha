@@ -67,6 +67,30 @@ const (
 	PermObserveAIRootCauseRun             = "observe.ai.root-cause.run"
 	PermObserveAIInspectionManage         = "observe.ai.inspection.manage"
 	PermObserveAIInspectionRun            = "observe.ai.inspection.run"
+	PermAIKnowledgeView                   = "ai.knowledge.view"
+	PermAIKnowledgeManage                 = "ai.knowledge.manage"
+	PermAIKnowledgeConnectorsView         = "ai.knowledge.connectors.view"
+	PermAIKnowledgeConnectorsManage       = "ai.knowledge.connectors.manage"
+	PermAIKnowledgeIngestionOperate       = "ai.knowledge.ingestion.operate"
+	PermAIKnowledgeRebuild                = "ai.knowledge.rebuild"
+	PermAIKnowledgeGraphManage            = "ai.knowledge.graph.manage"
+	PermAIContextInspect                  = "ai.context.inspect"
+	PermAIEvaluationsView                 = "ai.evaluations.view"
+	PermAIEvaluationsManage               = "ai.evaluations.manage"
+	PermAIEvaluationsExecute              = "ai.evaluations.execute"
+	PermAIEvaluationsGatesManage          = "ai.evaluations.gates.manage"
+	PermAIEvaluationsFeedbackCurate       = "ai.evaluations.feedback.curate"
+	PermAIAgentProvidersView              = "ai.agent-providers.view"
+	PermAIAgentProvidersManage            = "ai.agent-providers.manage"
+	PermAIAgentFleetView                  = "ai.agent-fleet.view"
+	PermAIAgentFleetManage                = "ai.agent-fleet.manage"
+	PermAIEnvironmentsView                = "ai.environments.view"
+	PermAIEnvironmentsManage              = "ai.environments.manage"
+	PermAIMemoryView                      = "ai.memory.view"
+	PermAIMemoryManage                    = "ai.memory.manage"
+	PermAIMultiAgentRun                   = "ai.multi-agent.run"
+	PermAIOperationsView                  = "ai.operations.view"
+	PermAIOperationsManage                = "ai.operations.manage"
 	PermAIGatewayView                     = "ai.gateway.view"
 	PermAIGatewayInvoke                   = "ai.gateway.invoke"
 	PermAIGatewayManage                   = "ai.gateway.manage"
@@ -216,6 +240,30 @@ var allPermissionKeySet = []string{
 	PermObserveAIRootCauseRun,
 	PermObserveAIInspectionManage,
 	PermObserveAIInspectionRun,
+	PermAIKnowledgeView,
+	PermAIKnowledgeManage,
+	PermAIKnowledgeConnectorsView,
+	PermAIKnowledgeConnectorsManage,
+	PermAIKnowledgeIngestionOperate,
+	PermAIKnowledgeRebuild,
+	PermAIKnowledgeGraphManage,
+	PermAIContextInspect,
+	PermAIEvaluationsView,
+	PermAIEvaluationsManage,
+	PermAIEvaluationsExecute,
+	PermAIEvaluationsGatesManage,
+	PermAIEvaluationsFeedbackCurate,
+	PermAIAgentProvidersView,
+	PermAIAgentProvidersManage,
+	PermAIAgentFleetView,
+	PermAIAgentFleetManage,
+	PermAIEnvironmentsView,
+	PermAIEnvironmentsManage,
+	PermAIMemoryView,
+	PermAIMemoryManage,
+	PermAIMultiAgentRun,
+	PermAIOperationsView,
+	PermAIOperationsManage,
 	PermAIGatewayView,
 	PermAIGatewayInvoke,
 	PermAIGatewayManage,
@@ -363,6 +411,16 @@ var opsRolePermissionKeys = []string{
 	PermObserveAIRootCauseRun,
 	PermObserveAIInspectionManage,
 	PermObserveAIInspectionRun,
+	PermAIKnowledgeView,
+	PermAIKnowledgeManage,
+	PermAIKnowledgeConnectorsView,
+	PermAIKnowledgeConnectorsManage,
+	PermAIKnowledgeIngestionOperate,
+	PermAIContextInspect,
+	PermAIEvaluationsView,
+	PermAIEvaluationsManage,
+	PermAIAgentProvidersView,
+	PermAIAgentProvidersManage,
 	PermAIGatewayView,
 	PermAIGatewayInvoke,
 	PermAIGatewayManage,
@@ -447,6 +505,12 @@ var developerRolePermissionKeys = []string{
 	PermObserveAIChatUse,
 	PermObserveAIRootCauseRun,
 	PermObserveAIInspectionRun,
+	PermAIKnowledgeView,
+	PermAIKnowledgeConnectorsView,
+	PermAIContextInspect,
+	PermAIEvaluationsView,
+	PermAIEvaluationsManage,
+	PermAIAgentProvidersView,
 	PermAIGatewayView,
 	PermAIGatewayInvoke,
 	PermAIGatewayRelayView,
@@ -514,6 +578,11 @@ var readonlyRolePermissionKeys = []string{
 	PermObserveAlertIntegrationsView,
 	PermObserveEventsView,
 	PermObserveAIView,
+	PermAIKnowledgeView,
+	PermAIKnowledgeConnectorsView,
+	PermAIContextInspect,
+	PermAIEvaluationsView,
+	PermAIAgentProvidersView,
 	PermAIGatewayView,
 	PermAIGatewayRelayView,
 	PermPluginView,

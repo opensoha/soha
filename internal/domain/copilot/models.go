@@ -62,17 +62,18 @@ type AnalysisRunRef struct {
 }
 
 type SessionMetadata struct {
-	Mode            string           `json:"mode,omitempty"`
-	Status          string           `json:"status,omitempty"`
-	AgentProviderID string           `json:"agentProviderId,omitempty"`
-	Scope           SessionScope     `json:"scope,omitempty"`
-	PinnedContext   map[string]any   `json:"pinnedContext,omitempty"`
-	Toolset         SessionToolset   `json:"toolset,omitempty"`
-	AnalysisRunRefs []AnalysisRunRef `json:"analysisRunRefs,omitempty"`
-	Summary         string           `json:"summary,omitempty"`
-	Tags            []string         `json:"tags,omitempty"`
-	ArchivedAt      string           `json:"archivedAt,omitempty"`
-	Source          string           `json:"source,omitempty"`
+	Mode             string                 `json:"mode,omitempty"`
+	Status           string                 `json:"status,omitempty"`
+	AgentProviderID  string                 `json:"agentProviderId,omitempty"`
+	Scope            SessionScope           `json:"scope,omitempty"`
+	PinnedContext    map[string]any         `json:"pinnedContext,omitempty"`
+	Toolset          SessionToolset         `json:"toolset,omitempty"`
+	AnalysisRunRefs  []AnalysisRunRef       `json:"analysisRunRefs,omitempty"`
+	Summary          string                 `json:"summary,omitempty"`
+	Tags             []string               `json:"tags,omitempty"`
+	ArchivedAt       string                 `json:"archivedAt,omitempty"`
+	Source           string                 `json:"source,omitempty"`
+	KnowledgeContext KnowledgeContextConfig `json:"knowledgeContext,omitempty"`
 }
 
 type Session struct {
@@ -164,6 +165,7 @@ type WorkbenchSendMessageInput struct {
 	LaunchContext    *WorkbenchLaunchContext    `json:"launchContext,omitempty"`
 	SelectionContext *WorkbenchSelectionContext `json:"selectionContext,omitempty"`
 	PinnedContext    map[string]any             `json:"pinnedContext,omitempty"`
+	KnowledgeContext *KnowledgeContextConfig    `json:"knowledgeContext,omitempty"`
 	EventSink        WorkbenchStreamEventSink   `json:"-"`
 }
 

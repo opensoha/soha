@@ -89,18 +89,23 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "monitoring-workbench-oncall", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/oncall", LabelZH: "值班协同", LabelEN: "On-Call Coordination", IconKey: "users", Section: "ops", SortOrder: 67, Enabled: true},
 	{ID: "monitoring-workbench-events", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/events", LabelZH: "事件流", LabelEN: "Events", IconKey: "bell", Section: "ops", SortOrder: 68, Enabled: true},
 	{ID: "ai-workbench", Path: "/ai-workbench", LabelZH: "AI工作台", LabelEN: "AI Workbench", IconKey: "bot", Section: "ops", SortOrder: 15, Enabled: true},
-	{ID: "ai-workbench-chat", ParentID: "ai-workbench", Path: "/ai-workbench/chat", LabelZH: "通用聊天", LabelEN: "Chat", IconKey: "bot", Section: "ops", SortOrder: 16, Enabled: true},
-	{ID: "ai-workbench-inspection", ParentID: "ai-workbench", Path: "/ai-workbench/inspection", LabelZH: "巡检", LabelEN: "Inspection", IconKey: "inspect", Section: "ops", SortOrder: 17, Enabled: true},
-	{ID: "ai-workbench-tool-settings", ParentID: "ai-workbench", Path: "/ai-workbench/tool-settings", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "wrench", Section: "ops", SortOrder: 18, Enabled: true},
-	{ID: "ai-workbench-model-settings", ParentID: "ai-workbench", Path: "/ai-workbench/model-settings", LabelZH: "AI 设置", LabelEN: "AI Settings", IconKey: "settings", Section: "ops", SortOrder: 19, Enabled: true},
-	{ID: "ai-gateway", Path: "/ai-gateway", LabelZH: "AI Gateway", LabelEN: "AI Gateway", IconKey: "shield", Section: "ops", SortOrder: 20, Enabled: true},
-	{ID: "ai-gateway-overview", ParentID: "ai-gateway", Path: "/ai-gateway/overview", LabelZH: "概览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 21, Enabled: true},
-	{ID: "ai-gateway-relay", ParentID: "ai-gateway", Path: "/ai-gateway/relay", LabelZH: "模型中转", LabelEN: "Model Relay", IconKey: "link", Section: "ops", SortOrder: 22, Enabled: true},
-	{ID: "ai-gateway-manifest", ParentID: "ai-gateway", Path: "/ai-gateway/manifest", LabelZH: "能力清单", LabelEN: "Manifest", IconKey: "shield", Section: "ops", SortOrder: 23, Enabled: true},
-	{ID: "ai-gateway-clients", ParentID: "ai-gateway", Path: "/ai-gateway/clients", LabelZH: "AI Clients", LabelEN: "AI Clients", IconKey: "link", Section: "ops", SortOrder: 24, Enabled: true},
-	{ID: "ai-gateway-tokens", ParentID: "ai-gateway", Path: "/ai-gateway/tokens", LabelZH: "Tokens", LabelEN: "Tokens", IconKey: "key", Section: "ops", SortOrder: 25, Enabled: true},
-	{ID: "ai-gateway-governance", ParentID: "ai-gateway", Path: "/ai-gateway/governance", LabelZH: "Governance", LabelEN: "Governance", IconKey: "shield", Section: "ops", SortOrder: 26, Enabled: true},
-	{ID: "ai-gateway-call-logs", ParentID: "ai-gateway", Path: "/ai-gateway/call-logs", LabelZH: "调用日志", LabelEN: "Call Logs", IconKey: "history", Section: "ops", SortOrder: 27, Enabled: true},
+	{ID: "ai-workbench-overview", ParentID: "ai-workbench", Path: "/ai-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true},
+	{ID: "ai-workbench-chat", ParentID: "ai-workbench", Path: "/ai-workbench/chat", LabelZH: "对话与分析", LabelEN: "Chat & Analysis", IconKey: "bot", Section: "ai-interaction", SortOrder: 10, Enabled: true},
+	{ID: "ai-workbench-knowledge", ParentID: "ai-workbench", Path: "/ai-workbench/knowledge", LabelZH: "Knowledge Center", LabelEN: "Knowledge Center", IconKey: "book", Section: "ai-interaction", SortOrder: 20, Enabled: true},
+	{ID: "ai-workbench-inspection", ParentID: "ai-workbench", Path: "/ai-workbench/inspection", LabelZH: "巡检与自动化", LabelEN: "Inspection & Automation", IconKey: "inspect", Section: "ai-interaction", SortOrder: 30, Enabled: true},
+	{ID: "ai-workbench-agent-runs", ParentID: "ai-workbench", Path: "/ai-workbench/agent-runs", LabelZH: "Agent Runs", LabelEN: "Agent Runs", IconKey: "history", Section: "ai-interaction", SortOrder: 40, Enabled: true},
+	{ID: "ai-workbench-evaluations", ParentID: "ai-workbench", Path: "/ai-workbench/evaluations", LabelZH: "Evaluation", LabelEN: "Evaluation", IconKey: "inspect", Section: "ai-interaction", SortOrder: 50, Enabled: true},
+	{ID: "ai-workbench-context", ParentID: "ai-workbench", Path: "/ai-workbench/context", LabelZH: "Context 与 Prompt", LabelEN: "Context & Prompt", IconKey: "inspect", Section: "ai-engineering", SortOrder: 10, Enabled: true},
+	{ID: "ai-workbench-tool-settings", ParentID: "ai-workbench", Path: "/ai-workbench/tool-settings", LabelZH: "Skills 与 MCP", LabelEN: "Skills & MCP", IconKey: "wrench", Section: "ai-engineering", SortOrder: 20, Enabled: true},
+	{ID: "ai-workbench-agent-providers", ParentID: "ai-workbench", Path: "/ai-workbench/agent-providers", LabelZH: "Agent Providers", LabelEN: "Agent Providers", IconKey: "puzzle", Section: "ai-engineering", SortOrder: 30, Enabled: true},
+	{ID: "ai-workbench-model-settings", ParentID: "ai-workbench", Path: "/ai-workbench/model-settings", LabelZH: "默认模型", LabelEN: "Default Model", IconKey: "settings", Section: "ai-model-access", SortOrder: 5, Enabled: true},
+	{ID: "ai-gateway-overview", ParentID: "ai-workbench", Path: "/ai-gateway/overview", LabelZH: "Gateway 概览", LabelEN: "Gateway Overview", IconKey: "gauge", Section: "ai-model-access", SortOrder: 8, Enabled: true},
+	{ID: "ai-gateway-relay", ParentID: "ai-workbench", Path: "/ai-gateway/relay", LabelZH: "模型与路由", LabelEN: "Models & Routes", IconKey: "link", Section: "ai-model-access", SortOrder: 10, Enabled: true},
+	{ID: "ai-gateway-clients", ParentID: "ai-workbench", Path: "/ai-gateway/clients", LabelZH: "AI Clients", LabelEN: "AI Clients", IconKey: "link", Section: "ai-model-access", SortOrder: 20, Enabled: true},
+	{ID: "ai-gateway-tokens", ParentID: "ai-workbench", Path: "/ai-gateway/tokens", LabelZH: "Tokens", LabelEN: "Tokens", IconKey: "key", Section: "ai-model-access", SortOrder: 30, Enabled: true},
+	{ID: "ai-gateway-manifest", ParentID: "ai-workbench", Path: "/ai-gateway/manifest", LabelZH: "Capability Manifest", LabelEN: "Capability Manifest", IconKey: "shield", Section: "ai-governance", SortOrder: 10, Enabled: true},
+	{ID: "ai-gateway-governance", ParentID: "ai-workbench", Path: "/ai-gateway/governance", LabelZH: "Policy 与 Approval", LabelEN: "Policy & Approval", IconKey: "shield", Section: "ai-governance", SortOrder: 20, Enabled: true},
+	{ID: "ai-gateway-call-logs", ParentID: "ai-workbench", Path: "/ai-gateway/call-logs", LabelZH: "Call Logs", LabelEN: "Call Logs", IconKey: "history", Section: "ai-governance", SortOrder: 30, Enabled: true},
 	{ID: "settings-extensions", Path: "/settings/extensions", LabelZH: "扩展", LabelEN: "Extensions", IconKey: "puzzle", Section: "admin", SortOrder: 250, Enabled: true},
 	{ID: "settings-extensions-marketplace", ParentID: "settings-extensions", Path: "/plugins/marketplace", LabelZH: "插件市场", LabelEN: "Marketplace", IconKey: "puzzle", Section: "extensions", SortOrder: 10, Enabled: true},
 	{ID: "virtualization-workbench", Path: "/virtualization", LabelZH: "虚拟化管理工作台", LabelEN: "Virtualization Workbench", IconKey: "server", Section: "ops", SortOrder: 80, Enabled: true},
@@ -182,6 +187,7 @@ func deprecatedMenuIDs() []string {
 		"assistant-operations",
 		"assistant-tools",
 		"ai-workbench-gateway",
+		"ai-gateway",
 		"plugins",
 		"plugins-marketplace",
 		"plugins-installed",
@@ -337,7 +343,32 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 	}
+	if err := syncAIWorkbenchMenuSeedUpgrades(ctx, db, now); err != nil {
+		return err
+	}
 	return syncGatewayMenuSeedUpgrades(ctx, db, now)
+}
+
+func syncAIWorkbenchMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time) error {
+	for _, item := range defaultMenuSeeds() {
+		if !isAIMenuSeed(item) && !isAIGatewayMenuSeed(item) {
+			continue
+		}
+		if err := db.WithContext(ctx).Exec(`
+			UPDATE menus
+			SET parent_id = ?,
+				label_zh = ?,
+				label_en = ?,
+				icon_key = ?,
+				section = ?,
+				sort_order = ?,
+				updated_at = ?
+			WHERE id = ? AND path = ?
+		`, nullableMenu(item.ParentID), item.LabelZH, item.LabelEN, item.IconKey, item.Section, item.SortOrder, now, item.ID, item.Path).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func syncAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time) error {
@@ -453,7 +484,9 @@ func filterSeedMenusByModules(items []menuSeed, modules cfgpkg.ModulesConfig) []
 			continue
 		case !modules.Monitoring.Enabled && isMonitoringMenuSeed(item):
 			continue
-		case !modules.AI.Enabled && isAIMenuSeed(item):
+		case !modules.AI.Enabled && !modules.AIGateway.Enabled && isAIWorkbenchSharedMenuSeed(item):
+			continue
+		case !modules.AI.Enabled && isAIFeatureMenuSeed(item):
 			continue
 		case !modules.AIGateway.Enabled && isAIGatewayMenuSeed(item):
 			continue
@@ -487,7 +520,9 @@ func disabledModuleMenuIDs(items []menuSeed, modules cfgpkg.ModulesConfig) []str
 			menuIDs = append(menuIDs, item.ID)
 		case !modules.Monitoring.Enabled && isMonitoringMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
-		case !modules.AI.Enabled && isAIMenuSeed(item):
+		case !modules.AI.Enabled && !modules.AIGateway.Enabled && isAIWorkbenchSharedMenuSeed(item):
+			menuIDs = append(menuIDs, item.ID)
+		case !modules.AI.Enabled && isAIFeatureMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
 		case !modules.AIGateway.Enabled && isAIGatewayMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
@@ -523,13 +558,19 @@ func isMonitoringMenuSeed(item menuSeed) bool {
 }
 
 func isAIMenuSeed(item menuSeed) bool {
-	return item.ID == "ai-workbench" ||
-		strings.HasPrefix(item.Path, "/ai-workbench")
+	return isAIWorkbenchSharedMenuSeed(item) || isAIFeatureMenuSeed(item)
+}
+
+func isAIWorkbenchSharedMenuSeed(item menuSeed) bool {
+	return item.ID == "ai-workbench" || item.ID == "ai-workbench-overview"
+}
+
+func isAIFeatureMenuSeed(item menuSeed) bool {
+	return strings.HasPrefix(item.Path, "/ai-workbench") && !isAIWorkbenchSharedMenuSeed(item)
 }
 
 func isAIGatewayMenuSeed(item menuSeed) bool {
-	return item.ID == "ai-gateway" ||
-		strings.HasPrefix(item.Path, "/ai-gateway")
+	return strings.HasPrefix(item.Path, "/ai-gateway")
 }
 
 func isVirtualizationMenuSeed(item menuSeed) bool {

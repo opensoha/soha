@@ -228,6 +228,10 @@ func allowsExternalBearerToken(path string) bool {
 		return true
 	case strings.HasSuffix(path, "/copilot/agent-runs/tool-call"):
 		return true
+	case strings.HasSuffix(path, "/ai/agent-providers/registry-snapshot"):
+		return true
+	case strings.HasSuffix(path, "/ai/agent-providers/registry-acks"):
+		return true
 	case strings.HasSuffix(path, "/connectors/events"):
 		return true
 	case strings.HasPrefix(path, "/api/v1/provider/outposts"):

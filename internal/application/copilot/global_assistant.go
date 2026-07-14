@@ -48,6 +48,12 @@ func applyGlobalAssistantInput(metadata domaincopilot.SessionMetadata, input dom
 			changed = true
 		}
 	}
+	if input.KnowledgeContext != nil {
+		metadata.KnowledgeContext = *input.KnowledgeContext
+		metadata.KnowledgeContext.KnowledgeBaseIDs = normalizeStringList(metadata.KnowledgeContext.KnowledgeBaseIDs)
+		metadata.KnowledgeContext.TopK = min(max(metadata.KnowledgeContext.TopK, 5), 50)
+		changed = true
+	}
 	if input.LaunchContext != nil {
 		scope := scopeFromLaunchContext(*input.LaunchContext)
 		if scope.ClusterID != "" || scope.Namespace != "" || scope.Workload != "" || scope.Service != "" || scope.Pod != "" || scope.Node != "" || scope.AlertID != "" || scope.TimeRangeMinutes > 0 {

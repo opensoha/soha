@@ -102,6 +102,7 @@ func (s *Service) authorizeAnyWorkbenchPermission(ctx context.Context, principal
 		appaccess.PermObserveAIChatUse,
 		appaccess.PermObserveAIView,
 		appaccess.PermSettingsAIView,
+		appaccess.PermAIAgentProvidersView,
 	} {
 		if slices.Contains(keys, permission) {
 			return nil

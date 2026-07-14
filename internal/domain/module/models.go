@@ -11,6 +11,7 @@ type Descriptor struct {
 }
 
 type Status struct {
-	Descriptor Descriptor `json:"descriptor"`
-	Enabled    bool       `json:"enabled"`
+	Descriptor Descriptor      `json:"descriptor"`
+	Enabled    bool            `json:"enabled"`
+	Features   map[string]bool `json:"features,omitempty"`
 }

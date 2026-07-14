@@ -2,6 +2,7 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
+	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
@@ -53,6 +54,9 @@ func registerPublicRoutes(v1 gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) 
 		v1.POST("/copilot/agent-runs/claim", deps.Copilot.ClaimAgentRun)
 		v1.POST("/copilot/agent-runs/callback", deps.Copilot.RecordAgentRunCallback)
 		v1.POST("/copilot/agent-runs/tool-call", deps.Copilot.RecordAgentToolCall)
+		if deps.AgentProviders != nil {
+			apiHandlers.RegisterRunnerAgentProviderRoutes(v1, deps.AgentProviders)
+		}
 	}
 	if cfg.Modules.AIGateway.Enabled && deps.Platform != nil {
 		v1.POST("/connectors/events", deps.Platform.IngestConnectorEvents)

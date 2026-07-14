@@ -121,6 +121,55 @@ func TestAIGatewayChildMenusUseSpecificPermissions(t *testing.T) {
 	}
 }
 
+func TestUnifiedAIWorkbenchRootAcceptsAIOrGatewayPermissions(t *testing.T) {
+	root := domainmenu.Record{ID: "ai-workbench", Path: "/ai-workbench"}
+	overview := domainmenu.Record{ID: "ai-workbench-overview", Path: "/ai-workbench/overview"}
+
+	for _, permission := range []string{
+		appaccess.PermObserveAIChatUse,
+		appaccess.PermAIKnowledgeView,
+		appaccess.PermAIContextInspect,
+		appaccess.PermAIEvaluationsView,
+		appaccess.PermAIGatewayView,
+		appaccess.PermAIGatewayRelayView,
+	} {
+		permissions := []string{appaccess.PermWorkspaceResourceView, permission}
+		if !isVisibleByPermissions(root, permissions) || !isVisibleByPermissions(overview, permissions) {
+			t.Fatalf("unified AI workbench should be visible with %s", permission)
+		}
+	}
+}
+
+func TestUnifiedAIWorkbenchLeafPermissionsStayNarrow(t *testing.T) {
+	knowledge := domainmenu.Record{ID: "ai-workbench-knowledge", Path: "/ai-workbench/knowledge"}
+	contextInspector := domainmenu.Record{ID: "ai-workbench-context", Path: "/ai-workbench/context"}
+	evaluations := domainmenu.Record{ID: "ai-workbench-evaluations", Path: "/ai-workbench/evaluations"}
+	relay := domainmenu.Record{ID: "ai-gateway-relay", Path: "/ai-gateway/relay"}
+	workspace := appaccess.PermWorkspaceResourceView
+
+	if isVisibleByPermissions(knowledge, []string{workspace, appaccess.PermObserveAIView}) {
+		t.Fatal("Knowledge Center should not inherit generic AI view permission")
+	}
+	if !isVisibleByPermissions(knowledge, []string{workspace, appaccess.PermAIKnowledgeView}) {
+		t.Fatal("Knowledge Center should accept knowledge view permission")
+	}
+	if !isVisibleByPermissions(contextInspector, []string{workspace, appaccess.PermAIContextInspect}) {
+		t.Fatal("Context Inspector should accept context inspect permission")
+	}
+	if isVisibleByPermissions(evaluations, []string{workspace, appaccess.PermAIKnowledgeView}) || isVisibleByPermissions(evaluations, []string{workspace, appaccess.PermAIContextInspect}) {
+		t.Fatal("Evaluation should not borrow knowledge or context permissions")
+	}
+	if !isVisibleByPermissions(evaluations, []string{workspace, appaccess.PermAIEvaluationsView}) {
+		t.Fatal("Evaluation should accept its dedicated view permission")
+	}
+	if isVisibleByPermissions(relay, []string{workspace, appaccess.PermAIGatewayView}) {
+		t.Fatal("model relay should require a relay-specific permission")
+	}
+	if !isVisibleByPermissions(relay, []string{workspace, appaccess.PermAIGatewayRelayView}) {
+		t.Fatal("model relay should accept relay view permission")
+	}
+}
+
 func TestExtensionMarketplaceMenuRequiresPluginViewPermission(t *testing.T) {
 	item := domainmenu.Record{ID: "settings-extensions-marketplace", Path: "/plugins/marketplace"}
 	if isVisibleByPermissions(item, nil) {

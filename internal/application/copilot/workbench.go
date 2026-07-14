@@ -49,17 +49,18 @@ func normalizeStringList(items []string) []string {
 
 func sessionMetadataMap(metadata domaincopilot.SessionMetadata) map[string]any {
 	return map[string]any{
-		"mode":            metadata.Mode,
-		"status":          metadata.Status,
-		"agentProviderId": metadata.AgentProviderID,
-		"scope":           metadata.Scope,
-		"pinnedContext":   metadata.PinnedContext,
-		"toolset":         metadata.Toolset,
-		"analysisRunRefs": metadata.AnalysisRunRefs,
-		"summary":         metadata.Summary,
-		"tags":            metadata.Tags,
-		"archivedAt":      metadata.ArchivedAt,
-		"source":          metadata.Source,
+		"mode":             metadata.Mode,
+		"status":           metadata.Status,
+		"agentProviderId":  metadata.AgentProviderID,
+		"scope":            metadata.Scope,
+		"pinnedContext":    metadata.PinnedContext,
+		"toolset":          metadata.Toolset,
+		"analysisRunRefs":  metadata.AnalysisRunRefs,
+		"summary":          metadata.Summary,
+		"tags":             metadata.Tags,
+		"archivedAt":       metadata.ArchivedAt,
+		"source":           metadata.Source,
+		"knowledgeContext": metadata.KnowledgeContext,
 	}
 }
 
@@ -74,6 +75,10 @@ func parseSessionMetadata(input map[string]any) domaincopilot.SessionMetadata {
 	metadata.Summary = stringValue(input["summary"])
 	metadata.ArchivedAt = stringValue(input["archivedAt"])
 	metadata.Source = stringValue(input["source"])
+	if decodeStructuredValue(input["knowledgeContext"], &metadata.KnowledgeContext) {
+		metadata.KnowledgeContext.KnowledgeBaseIDs = normalizeStringList(metadata.KnowledgeContext.KnowledgeBaseIDs)
+		metadata.KnowledgeContext.TopK = min(max(metadata.KnowledgeContext.TopK, 5), 50)
+	}
 	if tags, ok := input["tags"].([]any); ok {
 		values := make([]string, 0, len(tags))
 		for _, item := range tags {
