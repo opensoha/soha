@@ -147,7 +147,6 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "Outpost", LabelEN: "Outposts", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
 	{ID: "identity-policies", ParentID: "identity", Path: "/identity/policies", LabelZH: "访问策略", LabelEN: "Policies", IconKey: "shield", Section: "provider", SortOrder: 40, Enabled: true, Roles: []string{"admin"}},
 	{ID: "identity-sessions", ParentID: "identity", Path: "/identity/sessions", LabelZH: "会话", LabelEN: "Sessions", IconKey: "users", Section: "operations", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-audit", ParentID: "identity", Path: "/identity/audit", LabelZH: "审计", LabelEN: "Audit", IconKey: "file-clock", Section: "operations", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
 	{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 227, Enabled: true},
 	{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "operations", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
 	{ID: "access", Path: "/access", LabelZH: "访问控制", LabelEN: "Access Control", IconKey: "shield", Section: "admin", SortOrder: 240, Enabled: true, Roles: []string{"admin"}},
@@ -211,6 +210,7 @@ func deprecatedMenuIDs() []string {
 		"application-management",
 		"compute-workbench-tasks",
 		"compute-workbench-tasks-all",
+		"identity-audit",
 	}
 }
 
@@ -450,7 +450,6 @@ func syncAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time)
 		{id: "menus", section: "users", sortOrder: 60},
 		{id: "settings-login", section: "users", sortOrder: 70},
 		{id: "identity-sessions", section: "operations", sortOrder: 10},
-		{id: "identity-audit", section: "operations", sortOrder: 20},
 		{id: "announcements", section: "operations", sortOrder: 30},
 		{id: "system-online-users", section: "operations", sortOrder: 40},
 		{id: "operations", section: "operations", sortOrder: 50},

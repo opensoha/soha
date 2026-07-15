@@ -94,6 +94,18 @@ func TestDefaultMenuSeedsExcludeDeprecatedIDs(t *testing.T) {
 	}
 }
 
+func TestDeprecatedMenusRemoveIdentityAuditEntry(t *testing.T) {
+	if !slices.Contains(deprecatedMenuIDs(), "identity-audit") {
+		t.Fatal("deprecated menu IDs should clean up identity-audit")
+	}
+
+	if slices.ContainsFunc(defaultMenuSeeds(), func(item menuSeed) bool {
+		return item.ID == "identity-audit"
+	}) {
+		t.Fatal("default menu seeds should not include identity-audit")
+	}
+}
+
 func TestSyncDisabledModuleMenusCleansDeprecatedMenus(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {
@@ -538,7 +550,6 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 		"menus":                 {section: "users", sortOrder: 50},
 		"settings-login":        {section: "users", sortOrder: 60},
 		"identity-sessions":     {section: "operations", sortOrder: 10},
-		"identity-audit":        {section: "operations", sortOrder: 20},
 		"announcements":         {section: "operations", sortOrder: 30},
 		"system-online-users":   {section: "operations", sortOrder: 40},
 		"operations":            {section: "operations", sortOrder: 50},
