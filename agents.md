@@ -399,7 +399,7 @@ The repository has already converged on these rules:
 - backend all-namespaces aggregation is preferred over frontend namespace fan-out
 - identity bootstrap baseline is a single `admin / soha` seed from `auth.dev_principal`; legacy bootstrap migration and login fallback are removed
 - PostgreSQL bootstrap schema is now consolidated into `migrations/postgres/0001_init.sql`; duplicate legacy root migration mirrors are migration debt and should stay removed
-- deployment assets pin PostgreSQL 18.4; compose, raw Kubernetes, and Helm must mount persistent data at `/var/lib/postgresql` because the official image stores the default `PGDATA` below `/var/lib/postgresql/18/docker`
+- deployment assets pin pgvector 0.8.5 on PostgreSQL 18.4, enable `vector` and `pg_trgm`, and preload `pg_stat_statements`; compose, raw Kubernetes, and Helm must mount persistent data at `/var/lib/postgresql` because PostgreSQL 18 stores the default `PGDATA` below `/var/lib/postgresql/18/docker`
 - local `make dev` startup no longer creates or manages Kubernetes clusters; users provide their own cluster and register it explicitly when needed
 - built-in bootstrap defaults should be version-gated: first-time initialization and seed-version upgrades replay static roles/menus/policies/templates, while config-driven admin user and cluster sync stay as separate startup work
 - pod detail is now expected to be an operational workspace, not only a static detail page
