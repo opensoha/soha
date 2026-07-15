@@ -656,53 +656,6 @@ type ContainerStartInput struct {
 	Config               map[string]any                      `json:"config,omitempty"`
 }
 
-type Overview struct {
-	Stats            OverviewStats `json:"stats"`
-	HostSummary      HostSummary   `json:"hostSummary"`
-	ProjectSummary   StatusSummary `json:"projectSummary"`
-	ServiceSummary   StatusSummary `json:"serviceSummary"`
-	PortSummary      PortSummary   `json:"portSummary"`
-	RecentOperations []Operation   `json:"recentOperations"`
-	ExpiringProjects []Project     `json:"expiringProjects"`
-}
-
-type OverviewStats struct {
-	HostCount           int `json:"hostCount"`
-	OnlineHostCount     int `json:"onlineHostCount"`
-	ProjectCount        int `json:"projectCount"`
-	RunningProjectCount int `json:"runningProjectCount"`
-	ServiceCount        int `json:"serviceCount"`
-	RunningServiceCount int `json:"runningServiceCount"`
-	PortMappingCount    int `json:"portMappingCount"`
-	PendingTaskCount    int `json:"pendingTaskCount"`
-	FailedTaskCount     int `json:"failedTaskCount"`
-}
-
-type HostSummary struct {
-	Total        int `json:"total"`
-	Online       int `json:"online"`
-	Degraded     int `json:"degraded"`
-	Offline      int `json:"offline"`
-	Provisioning int `json:"provisioning"`
-}
-
-type StatusSummary struct {
-	Total   int `json:"total"`
-	Running int `json:"running"`
-	Pending int `json:"pending"`
-	Failed  int `json:"failed"`
-	Stopped int `json:"stopped"`
-	Unknown int `json:"unknown"`
-}
-
-type PortSummary struct {
-	Total    int `json:"total"`
-	Internal int `json:"internal"`
-	VPN      int `json:"vpn"`
-	Public   int `json:"public"`
-	Expired  int `json:"expired"`
-}
-
 type Repository interface {
 	ListHosts(context.Context, HostFilter) ([]Host, error)
 	CountHosts(context.Context, HostFilter) (int, error)

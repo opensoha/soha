@@ -138,6 +138,14 @@ ai_gateway:
   connector_event_sink:
     token: ""
 
+plugins:
+  marketplace:
+    # Local development marketplace. Override with
+    # https://marketplace.opensoha.com/marketplace/index.json in deployed environments.
+    url: http://127.0.0.1:8081/marketplace/index.json
+    source_id: opensoha-local
+    sources: []
+
 modules:
   delivery:
     enabled: true

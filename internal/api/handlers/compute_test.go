@@ -22,22 +22,12 @@ func (computeHandlerFake) Overview(context.Context, domainidentity.Principal) (s
 func (computeHandlerFake) ListAccessSources(context.Context, domainidentity.Principal, appcompute.AccessSourceFilter) (sohaapi.ComputeAccessSourceListEnvelope, error) {
 	return sohaapi.ComputeAccessSourceListEnvelope{}, nil
 }
-func (computeHandlerFake) ListProviders(context.Context, domainidentity.Principal, appcompute.ProviderFilter) (sohaapi.ComputeProviderListEnvelope, error) {
-	return sohaapi.ComputeProviderListEnvelope{}, nil
-}
-func (computeHandlerFake) ListRelations(context.Context, domainidentity.Principal, string, string, string, string, int) (sohaapi.ComputeResourceRelations, error) {
-	return sohaapi.ComputeResourceRelations{}, nil
-}
 func (computeHandlerFake) ListTasks(_ context.Context, _ domainidentity.Principal, filter appcompute.TaskFilter) (sohaapi.ComputeTaskListEnvelope, error) {
 	if filter.Cursor != "" {
 		return sohaapi.ComputeTaskListEnvelope{}, fmt.Errorf("%w: invalid cursor", apperrors.ErrInvalidArgument)
 	}
 	return sohaapi.ComputeTaskListEnvelope{}, nil
 }
-func (computeHandlerFake) GetTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error) {
-	return sohaapi.ComputeTaskView{}, nil
-}
-
 func TestComputeHandlerRejectsInvalidTaskFiltersAndCursor(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

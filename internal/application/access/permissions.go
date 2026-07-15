@@ -110,8 +110,6 @@ const (
 	PermIdentityOutpostsManage            = "identity.outposts.manage"
 	PermIdentityPoliciesView              = "identity.policies.view"
 	PermIdentityPoliciesManage            = "identity.policies.manage"
-	PermIdentitySessionsView              = "identity.sessions.view"
-	PermIdentitySessionsManage            = "identity.sessions.manage"
 	PermIdentityAuditView                 = "identity.audit.view"
 	PermVirtualizationOverviewView        = "virtualization.overview.view"
 	PermVirtualizationVMsView             = "virtualization.vms.view"
@@ -283,8 +281,6 @@ var allPermissionKeySet = []string{
 	PermIdentityOutpostsManage,
 	PermIdentityPoliciesView,
 	PermIdentityPoliciesManage,
-	PermIdentitySessionsView,
-	PermIdentitySessionsManage,
 	PermIdentityAuditView,
 	PermVirtualizationOverviewView,
 	PermVirtualizationVMsView,
@@ -432,7 +428,6 @@ var opsRolePermissionKeys = []string{
 	PermPluginManage,
 	PermPluginConfigureSecrets,
 	PermIdentityPortalView,
-	PermIdentitySessionsView,
 	PermIdentityAuditView,
 	PermVirtualizationOverviewView,
 	PermVirtualizationVMsView,

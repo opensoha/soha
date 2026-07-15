@@ -82,8 +82,8 @@ func (c *captureDockerProvisionVirtualization) RetryOperation(_ context.Context,
 }
 
 func TestDefaultMenuSeedsExcludeDeprecatedIDs(t *testing.T) {
-	deprecated := make(map[string]struct{}, len(deprecatedMenuIDs()))
-	for _, id := range deprecatedMenuIDs() {
+	deprecated := make(map[string]struct{}, len(obsoleteMenuIDsForCleanup()))
+	for _, id := range obsoleteMenuIDsForCleanup() {
 		deprecated[id] = struct{}{}
 	}
 
@@ -94,15 +94,18 @@ func TestDefaultMenuSeedsExcludeDeprecatedIDs(t *testing.T) {
 	}
 }
 
-func TestDeprecatedMenusRemoveIdentityAuditEntry(t *testing.T) {
-	if !slices.Contains(deprecatedMenuIDs(), "identity-audit") {
-		t.Fatal("deprecated menu IDs should clean up identity-audit")
-	}
-
-	if slices.ContainsFunc(defaultMenuSeeds(), func(item menuSeed) bool {
-		return item.ID == "identity-audit"
-	}) {
-		t.Fatal("default menu seeds should not include identity-audit")
+func TestObsoleteMenuCleanupIncludesPersistedLegacyIDs(t *testing.T) {
+	cleanupIDs := obsoleteMenuIDsForCleanup()
+	for _, id := range []string{
+		"plugins-marketplace",
+		"extensions-marketplace",
+		"ai-gateway-overview",
+		"compute-workbench-tasks-all",
+		"identity-sessions",
+	} {
+		if !slices.Contains(cleanupIDs, id) {
+			t.Fatalf("obsolete menu cleanup is missing persisted id %q", id)
+		}
 	}
 }
 
@@ -120,7 +123,7 @@ func TestSyncDisabledModuleMenusCleansDeprecatedMenus(t *testing.T) {
 		t.Fatalf("open gorm postgres mock: %v", err)
 	}
 
-	deprecatedIDs := deprecatedMenuIDs()
+	deprecatedIDs := obsoleteMenuIDsForCleanup()
 	deprecatedArgs := make([]driver.Value, 0, len(deprecatedIDs))
 	for _, id := range deprecatedIDs {
 		deprecatedArgs = append(deprecatedArgs, id)
@@ -332,8 +335,11 @@ func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T
 		"compute-workbench-tasks-operations": "/compute/tasks/operations",
 	}
 	for _, id := range []string{"compute-workbench-tasks", "compute-workbench-tasks-all"} {
-		if !slices.Contains(deprecatedMenuIDs(), id) {
-			t.Fatalf("deprecated compute menu ids missing %s", id)
+		if !slices.Contains(obsoleteMenuIDsForCleanup(), id) {
+			t.Fatalf("obsolete compute menu id %s must remain in database cleanup", id)
+		}
+		if slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id }) {
+			t.Fatalf("obsolete compute menu id %s must not remain in seeds", id)
 		}
 	}
 	for id, path := range expected {
@@ -424,7 +430,6 @@ func TestDefaultMenuSeedsIncludeUnifiedAIWorkbench(t *testing.T) {
 		"ai-workbench-tool-settings":   {path: "/ai-workbench/tool-settings", section: "ai-engineering"},
 		"ai-workbench-agent-providers": {path: "/ai-workbench/agent-providers", section: "ai-engineering"},
 		"ai-workbench-model-settings":  {path: "/ai-workbench/model-settings", section: "ai-model-access"},
-		"ai-gateway-overview":          {path: "/ai-gateway/overview", section: "ai-model-access"},
 		"ai-gateway-relay":             {path: "/ai-gateway/relay", section: "ai-model-access"},
 		"ai-gateway-manifest":          {path: "/ai-gateway/manifest", section: "ai-governance"},
 		"ai-gateway-clients":           {path: "/ai-gateway/clients", section: "ai-model-access"},
@@ -492,20 +497,6 @@ func TestDefaultMenuSeedsIncludeExtensionCenter(t *testing.T) {
 	}
 }
 
-func TestDeprecatedMenusIncludeOldAIGatewayWorkbenchID(t *testing.T) {
-	if !slices.Contains(deprecatedMenuIDs(), "ai-workbench-gateway") {
-		t.Fatal("deprecated menu IDs should clean up ai-workbench-gateway")
-	}
-}
-
-func TestDeprecatedMenusIncludeLegacyPluginMenuIDs(t *testing.T) {
-	for _, id := range []string{"plugins", "plugins-marketplace", "plugins-installed", "extension-center", "extensions-marketplace", "extensions-installed", "extensions-capabilities", "settings-extensions-capabilities"} {
-		if !slices.Contains(deprecatedMenuIDs(), id) {
-			t.Fatalf("deprecated menu IDs should clean up %s", id)
-		}
-	}
-}
-
 func TestDefaultMenuSeedsExposeAccessPagesAsDirectMenus(t *testing.T) {
 	items := defaultMenuSeeds()
 	expected := map[string]int{
@@ -549,7 +540,6 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 		"identity-policies":     {section: "provider", sortOrder: 40},
 		"menus":                 {section: "users", sortOrder: 50},
 		"settings-login":        {section: "users", sortOrder: 60},
-		"identity-sessions":     {section: "operations", sortOrder: 10},
 		"announcements":         {section: "operations", sortOrder: 30},
 		"system-online-users":   {section: "operations", sortOrder: 40},
 		"operations":            {section: "operations", sortOrder: 50},
@@ -808,7 +798,6 @@ func TestDisabledModuleMenuIDsIncludesAIGatewayWhenSeedVersionIsCurrent(t *testi
 	})
 
 	for _, id := range []string{
-		"ai-gateway-overview",
 		"ai-gateway-relay",
 		"ai-gateway-manifest",
 		"ai-gateway-clients",
@@ -839,7 +828,6 @@ func TestFilterSeedMenusByModulesKeepsAIGatewayWhenAIModuleDisabled(t *testing.T
 	})
 
 	foundGatewayIDs := map[string]bool{
-		"ai-gateway-overview":   false,
 		"ai-gateway-relay":      false,
 		"ai-gateway-manifest":   false,
 		"ai-gateway-clients":    false,

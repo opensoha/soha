@@ -20,7 +20,6 @@ import (
 )
 
 const (
-	defaultMarketplaceSourceID  = "static"
 	maxMarketplaceCatalogBytes  = 5 << 20
 	maxMarketplaceManifestBytes = 2 << 20
 )
@@ -69,73 +68,6 @@ type ResolvedManifest struct {
 	MarketplaceURL  string
 }
 
-type StaticMarketplaceProvider struct {
-	sourceID string
-	items    []domainplugin.MarketplacePlugin
-}
-
-func NewStaticMarketplaceProvider(items []domainplugin.MarketplacePlugin) *StaticMarketplaceProvider {
-	return &StaticMarketplaceProvider{
-		sourceID: defaultMarketplaceSourceID,
-		items:    normalizeMarketplaceItems(defaultMarketplaceSourceID, "", items),
-	}
-}
-
-func NewDefaultMarketplaceProvider() MarketplaceProvider {
-	return NewStaticMarketplaceProvider(defaultMarketplace())
-}
-
-func (p *StaticMarketplaceProvider) List(_ context.Context, filter domainplugin.MarketplaceFilter) ([]domainplugin.MarketplacePlugin, error) {
-	items := make([]domainplugin.MarketplacePlugin, 0, len(p.items))
-	for _, item := range p.items {
-		if matchesMarketplaceFilter(item, filter) {
-			items = append(items, item)
-		}
-	}
-	return items, nil
-}
-
-func (p *StaticMarketplaceProvider) Get(ctx context.Context, ref domainplugin.PluginVersionRef) (domainplugin.MarketplacePlugin, error) {
-	if strings.TrimSpace(ref.SourceID) != "" && strings.TrimSpace(ref.SourceID) != p.sourceID {
-		return domainplugin.MarketplacePlugin{}, fmt.Errorf("%w: marketplace plugin not found", apperrors.ErrNotFound)
-	}
-	items, err := p.List(ctx, domainplugin.MarketplaceFilter{
-		SourceID: p.sourceID,
-		Version:  ref.Version,
-	})
-	if err != nil {
-		return domainplugin.MarketplacePlugin{}, err
-	}
-	pluginID := strings.TrimSpace(ref.PluginID)
-	for _, item := range items {
-		if item.ID == pluginID && marketplaceVersionMatches(item, ref.Version) {
-			return item, nil
-		}
-	}
-	return domainplugin.MarketplacePlugin{}, fmt.Errorf("%w: marketplace plugin not found", apperrors.ErrNotFound)
-}
-
-func (p *StaticMarketplaceProvider) FetchManifest(ctx context.Context, ref domainplugin.PluginVersionRef) (ResolvedManifest, error) {
-	item, err := p.Get(ctx, ref)
-	if err != nil {
-		return ResolvedManifest{}, err
-	}
-	integrity := item.Manifest.Integrity
-	if integrity == nil {
-		integrity = &domainplugin.PluginIntegrity{}
-	}
-	return ResolvedManifest{
-		Plugin:          item,
-		Manifest:        item.Manifest,
-		Integrity:       integrity,
-		ChecksumStatus:  "not_provided",
-		SignatureStatus: integrityStatus(item.Manifest),
-		Source:          item.Source,
-		SourceID:        firstNonEmpty(item.SourceID, p.sourceID),
-		MarketplaceURL:  item.SourceURL,
-	}, nil
-}
-
 type MarketplaceSource struct {
 	ID  string
 	URL string
@@ -143,6 +75,22 @@ type MarketplaceSource struct {
 
 type CompositeMarketplaceProvider struct {
 	providers []MarketplaceProvider
+}
+
+func configuredMarketplaceProviderForURL(provider MarketplaceProvider, rawURL string) (MarketplaceProvider, bool) {
+	// Only URLs already present in the server-side provider graph bypass ad-hoc SSRF checks.
+	rawURL = strings.TrimSpace(rawURL)
+	switch candidate := provider.(type) {
+	case *RemoteMarketplaceProvider:
+		return candidate, rawURL != "" && rawURL == candidate.catalogURL
+	case *CompositeMarketplaceProvider:
+		for _, child := range candidate.providers {
+			if matched, ok := configuredMarketplaceProviderForURL(child, rawURL); ok {
+				return matched, true
+			}
+		}
+	}
+	return nil, false
 }
 
 func NewCompositeMarketplaceProvider(providers ...MarketplaceProvider) *CompositeMarketplaceProvider {

@@ -14,7 +14,6 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
-	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -25,38 +24,22 @@ const (
 )
 
 type VirtualizationReader interface {
-	GetConnection(context.Context, string) (domainvirtualization.Connection, error)
 	ListConnections(context.Context, domainvirtualization.ConnectionFilter) ([]domainvirtualization.Connection, error)
-	GetVM(context.Context, string) (domainvirtualization.VM, error)
 	ListVMs(context.Context, domainvirtualization.VMFilter) ([]domainvirtualization.VM, error)
-	GetImage(context.Context, string) (domainvirtualization.Image, error)
-	GetFlavor(context.Context, string) (domainvirtualization.Flavor, error)
-	GetTask(context.Context, string) (domainvirtualization.Task, error)
 	ListTasks(context.Context, domainvirtualization.TaskFilter) ([]domainvirtualization.Task, error)
 }
 
 type RuntimeReader interface {
-	GetHost(context.Context, string) (domaindocker.Host, error)
 	ListHosts(context.Context, domaindocker.HostFilter) ([]domaindocker.Host, error)
-	GetProject(context.Context, string) (domaindocker.Project, error)
 	ListProjects(context.Context, domaindocker.ProjectFilter) ([]domaindocker.Project, error)
-	GetService(context.Context, string) (domaindocker.Service, error)
 	ListServices(context.Context, domaindocker.ServiceFilter) ([]domaindocker.Service, error)
-	GetPortMapping(context.Context, string) (domaindocker.PortMapping, error)
 	ListPortMappings(context.Context, domaindocker.PortMappingFilter) ([]domaindocker.PortMapping, error)
-	GetTemplate(context.Context, string) (domaindocker.Template, error)
-	GetOperation(context.Context, string) (domaindocker.Operation, error)
 	ListOperations(context.Context, domaindocker.OperationFilter) ([]domaindocker.Operation, error)
-}
-
-type PluginReader interface {
-	ListInstalled(context.Context) ([]domainplugin.InstalledPlugin, error)
 }
 
 type Service struct {
 	virtualization        VirtualizationReader
 	runtime               RuntimeReader
-	plugins               PluginReader
 	permissions           *appaccess.PermissionResolver
 	virtualizationEnabled bool
 	runtimeEnabled        bool
@@ -64,8 +47,8 @@ type Service struct {
 
 type Options struct{ VirtualizationEnabled, RuntimeEnabled bool }
 
-func New(virtualization VirtualizationReader, runtime RuntimeReader, plugins PluginReader, permissions *appaccess.PermissionResolver, options Options) *Service {
-	return &Service{virtualization: virtualization, runtime: runtime, plugins: plugins, permissions: permissions, virtualizationEnabled: options.VirtualizationEnabled, runtimeEnabled: options.RuntimeEnabled}
+func New(virtualization VirtualizationReader, runtime RuntimeReader, permissions *appaccess.PermissionResolver, options Options) *Service {
+	return &Service{virtualization: virtualization, runtime: runtime, permissions: permissions, virtualizationEnabled: options.VirtualizationEnabled, runtimeEnabled: options.RuntimeEnabled}
 }
 
 func (s *Service) Overview(ctx context.Context, principal domainidentity.Principal) (sohaapi.ComputeOverview, error) {
@@ -74,32 +57,41 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 		return sohaapi.ComputeOverview{}, err
 	}
 	out := sohaapi.ComputeOverview{Attention: []sohaapi.ComputeAttention{}, ProviderHealth: []sohaapi.ComputeProviderHealth{}, Warnings: []sohaapi.ComputeWarning{}}
-	authorized := false
-
-	if s.virtualizationEnabled && virtualizationDomainVisible(keys) {
-		authorized = true
-		readConnections := hasAny(keys, appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationClustersView)
-		readVMs := hasAny(keys, appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationVMsView)
-		if readConnections || readVMs {
-			section, health, attention, failed := s.virtualizationOverview(ctx, readConnections, readVMs)
-			out.Virtualization = &section
-			out.ProviderHealth = append(out.ProviderHealth, health...)
-			out.Attention = append(out.Attention, attention...)
-			out.Partial = out.Partial || failed
-		} else {
-			out.Warnings = append(out.Warnings, sohaapi.ComputeWarning{Code: "virtualization_summary_redacted", Message: "Virtualization summary is hidden by resource permissions"})
-		}
+	authorized := s.appendVirtualizationOverview(ctx, keys, &out)
+	authorized = s.appendRuntimeOverview(ctx, keys, &out) || authorized
+	authorized = s.appendTaskOverview(ctx, keys, &out) || authorized
+	if !authorized {
+		return sohaapi.ComputeOverview{}, fmt.Errorf("%w: compute overview is not visible", apperrors.ErrAccessDenied)
 	}
+	return out, nil
+}
 
+func (s *Service) appendVirtualizationOverview(ctx context.Context, keys []string, out *sohaapi.ComputeOverview) bool {
+	if !s.virtualizationEnabled || !virtualizationDomainVisible(keys) {
+		return false
+	}
+	readConnections := hasAny(keys, appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationClustersView)
+	readVMs := hasAny(keys, appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationVMsView)
+	if !readConnections && !readVMs {
+		out.Warnings = append(out.Warnings, sohaapi.ComputeWarning{Code: "virtualization_summary_redacted", Message: "Virtualization summary is hidden by resource permissions"})
+		return true
+	}
+	section, health, attention, failed := s.virtualizationOverview(ctx, readConnections, readVMs)
+	out.Virtualization = &section
+	out.ProviderHealth = append(out.ProviderHealth, health...)
+	out.Attention = append(out.Attention, attention...)
+	out.Partial = out.Partial || failed
+	return true
+}
+
+func (s *Service) appendRuntimeOverview(ctx context.Context, keys []string, out *sohaapi.ComputeOverview) bool {
 	runtimeVisible := s.runtimeEnabled && runtimeDomainVisible(keys)
-	if runtimeVisible {
-		authorized = true
+	if !runtimeVisible {
+		return false
 	}
 	hostsAllowed := runtimeVisible && hasAny(keys, appaccess.PermDockerOverviewView, appaccess.PermDockerHostsView)
-	var hosts []domaindocker.Host
-	var hostsErr error
 	if hostsAllowed {
-		hosts, hostsErr = s.runtime.ListHosts(ctx, domaindocker.HostFilter{Limit: maxReadLimit})
+		hosts, hostsErr := s.runtime.ListHosts(ctx, domaindocker.HostFilter{Limit: maxReadLimit})
 		agents, runtimes, health, attention := runtimeHostOverview(hosts, hostsErr)
 		out.Agents, out.Runtimes = &agents, &runtimes
 		out.ProviderHealth = append(out.ProviderHealth, health)
@@ -117,17 +109,19 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 	} else if runtimeVisible && !hostsAllowed && !has(keys, appaccess.PermDockerOperationsView) {
 		out.Warnings = append(out.Warnings, sohaapi.ComputeWarning{Code: "runtime_summary_redacted", Message: "Container runtime summary is hidden by resource permissions"})
 	}
+	return true
+}
 
-	if (s.virtualizationEnabled && hasAny(keys, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView)) || (s.runtimeEnabled && has(keys, appaccess.PermDockerOperationsView)) {
-		authorized = true
-		section, failed := s.taskOverview(ctx, keys)
-		out.Tasks = &section
-		out.Partial = out.Partial || failed
+func (s *Service) appendTaskOverview(ctx context.Context, keys []string, out *sohaapi.ComputeOverview) bool {
+	virtualizationVisible := s.virtualizationEnabled && hasAny(keys, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView)
+	runtimeVisible := s.runtimeEnabled && has(keys, appaccess.PermDockerOperationsView)
+	if !virtualizationVisible && !runtimeVisible {
+		return false
 	}
-	if !authorized {
-		return sohaapi.ComputeOverview{}, fmt.Errorf("%w: compute overview is not visible", apperrors.ErrAccessDenied)
-	}
-	return out, nil
+	section, failed := s.taskOverview(ctx, keys)
+	out.Tasks = &section
+	out.Partial = out.Partial || failed
+	return true
 }
 
 func (s *Service) virtualizationOverview(ctx context.Context, readConnections, readVMs bool) (sohaapi.ComputeVirtualizationOverviewSection, []sohaapi.ComputeProviderHealth, []sohaapi.ComputeAttention, bool) {
@@ -346,36 +340,15 @@ func (s *Service) ListAccessSources(ctx context.Context, principal domainidentit
 	if !accessVisible {
 		return sohaapi.ComputeAccessSourceListEnvelope{}, fmt.Errorf("%w: compute access sources are not visible", apperrors.ErrAccessDenied)
 	}
-	items := []sohaapi.ComputeAccessSource{}
-	if s.virtualizationEnabled && (filter.SourceType == "" || filter.SourceType == string(sohaapi.ComputeAccessSourceTypeVirtualizationConnection)) {
-		if has(keys, appaccess.PermVirtualizationClustersView) {
-			connections, readErr := s.virtualization.ListConnections(ctx, domainvirtualization.ConnectionFilter{Provider: filter.ProviderKey, Limit: maxReadLimit})
-			if readErr != nil {
-				return sohaapi.ComputeAccessSourceListEnvelope{}, readErr
-			}
-			manage := has(keys, appaccess.PermVirtualizationClustersManage)
-			for _, item := range connections {
-				items = append(items, connectionAccessSource(item, manage))
-			}
-		}
+	items, err := s.virtualizationAccessSources(ctx, keys, filter)
+	if err != nil {
+		return sohaapi.ComputeAccessSourceListEnvelope{}, err
 	}
-	if s.runtimeEnabled && (filter.SourceType == "" || filter.SourceType == string(sohaapi.ComputeAccessSourceTypeRuntimeHost) || filter.SourceType == string(sohaapi.ComputeAccessSourceTypeAgentHost)) {
-		if has(keys, appaccess.PermDockerHostsView) && providerMatches(filter.ProviderKey, "docker") {
-			hosts, readErr := s.runtime.ListHosts(ctx, domaindocker.HostFilter{Limit: maxReadLimit})
-			if readErr != nil {
-				return sohaapi.ComputeAccessSourceListEnvelope{}, readErr
-			}
-			manage := has(keys, appaccess.PermDockerHostsManage)
-			for _, host := range hosts {
-				if filter.SourceType == "" || filter.SourceType == string(sohaapi.ComputeAccessSourceTypeRuntimeHost) {
-					items = append(items, runtimeAccessSource(host, manage))
-				}
-				if strings.TrimSpace(host.AgentID) != "" && (filter.SourceType == "" || filter.SourceType == string(sohaapi.ComputeAccessSourceTypeAgentHost)) {
-					items = append(items, agentAccessSource(host))
-				}
-			}
-		}
+	runtimeItems, err := s.runtimeAccessSources(ctx, keys, filter)
+	if err != nil {
+		return sohaapi.ComputeAccessSourceListEnvelope{}, err
 	}
+	items = append(items, runtimeItems...)
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	page, next, err := paginate(items, filter.Cursor, filter.Limit)
 	if err != nil {
@@ -384,48 +357,44 @@ func (s *Service) ListAccessSources(ctx context.Context, principal domainidentit
 	return sohaapi.ComputeAccessSourceListEnvelope{Items: page, NextCursor: next}, nil
 }
 
-type ProviderFilter struct {
-	Domain, Source, Cursor string
-	Limit                  int
+func (s *Service) virtualizationAccessSources(ctx context.Context, keys []string, filter AccessSourceFilter) ([]sohaapi.ComputeAccessSource, error) {
+	wantsConnections := filter.SourceType == "" || filter.SourceType == string(sohaapi.ComputeAccessSourceTypeVirtualizationConnection)
+	if !s.virtualizationEnabled || !wantsConnections || !has(keys, appaccess.PermVirtualizationClustersView) {
+		return []sohaapi.ComputeAccessSource{}, nil
+	}
+	connections, err := s.virtualization.ListConnections(ctx, domainvirtualization.ConnectionFilter{Provider: filter.ProviderKey, Limit: maxReadLimit})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]sohaapi.ComputeAccessSource, 0, len(connections))
+	manage := has(keys, appaccess.PermVirtualizationClustersManage)
+	for _, connection := range connections {
+		items = append(items, connectionAccessSource(connection, manage))
+	}
+	return items, nil
 }
 
-func (s *Service) ListProviders(ctx context.Context, principal domainidentity.Principal, filter ProviderFilter) (sohaapi.ComputeProviderListEnvelope, error) {
-	keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+func (s *Service) runtimeAccessSources(ctx context.Context, keys []string, filter AccessSourceFilter) ([]sohaapi.ComputeAccessSource, error) {
+	wantsRuntime := filter.SourceType == "" || filter.SourceType == string(sohaapi.ComputeAccessSourceTypeRuntimeHost)
+	wantsAgent := filter.SourceType == "" || filter.SourceType == string(sohaapi.ComputeAccessSourceTypeAgentHost)
+	if !s.runtimeEnabled || (!wantsRuntime && !wantsAgent) || !has(keys, appaccess.PermDockerHostsView) || !providerMatches(filter.ProviderKey, "docker") {
+		return []sohaapi.ComputeAccessSource{}, nil
+	}
+	hosts, err := s.runtime.ListHosts(ctx, domaindocker.HostFilter{Limit: maxReadLimit})
 	if err != nil {
-		return sohaapi.ComputeProviderListEnvelope{}, err
+		return nil, err
 	}
-	virtualizationVisible := s.virtualizationEnabled && virtualizationDomainVisible(keys)
-	runtimeVisible := s.runtimeEnabled && runtimeDomainVisible(keys)
-	if !virtualizationVisible && !runtimeVisible {
-		return sohaapi.ComputeProviderListEnvelope{}, fmt.Errorf("%w: compute providers are not visible", apperrors.ErrAccessDenied)
-	}
-	items := []sohaapi.ComputeProviderDescriptor{}
-	if filter.Source == "" || filter.Source == string(sohaapi.ComputeProviderSourceBuiltin) {
-		if virtualizationVisible && domainMatches(filter.Domain, string(sohaapi.ComputeProviderDomainVirtualization)) {
-			items = append(items, builtinVirtualizationProvider("pve", "Proxmox VE"), builtinVirtualizationProvider("kubevirt", "KubeVirt"))
+	items := make([]sohaapi.ComputeAccessSource, 0, len(hosts)*2)
+	manage := has(keys, appaccess.PermDockerHostsManage)
+	for _, host := range hosts {
+		if wantsRuntime {
+			items = append(items, runtimeAccessSource(host, manage))
 		}
-		if runtimeVisible && domainMatches(filter.Domain, string(sohaapi.ComputeProviderDomainContainerRuntime)) {
-			items = append(items, builtinRuntimeProvider())
+		if wantsAgent && strings.TrimSpace(host.AgentID) != "" {
+			items = append(items, agentAccessSource(host))
 		}
 	}
-	if s.plugins != nil && (filter.Source == "" || filter.Source == string(sohaapi.ComputeProviderSourcePlugin)) {
-		installed, readErr := s.plugins.ListInstalled(ctx)
-		if readErr != nil {
-			return sohaapi.ComputeProviderListEnvelope{}, readErr
-		}
-		items = append(items, pluginProviderDescriptors(installed, filter.Domain, virtualizationVisible, runtimeVisible)...)
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Domain != items[j].Domain {
-			return items[i].Domain < items[j].Domain
-		}
-		return items[i].ProviderKey < items[j].ProviderKey
-	})
-	page, next, err := paginate(items, filter.Cursor, filter.Limit)
-	if err != nil {
-		return sohaapi.ComputeProviderListEnvelope{}, err
-	}
-	return sohaapi.ComputeProviderListEnvelope{Items: page, NextCursor: next}, nil
+	return items, nil
 }
 
 type TaskFilter struct {
@@ -477,274 +446,6 @@ func (s *Service) ListTasks(ctx context.Context, principal domainidentity.Princi
 	return sohaapi.ComputeTaskListEnvelope{Items: page, NextCursor: next}, nil
 }
 
-func (s *Service) GetTask(ctx context.Context, principal domainidentity.Principal, domain, id string) (sohaapi.ComputeTaskView, error) {
-	keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
-	if err != nil {
-		return sohaapi.ComputeTaskView{}, err
-	}
-	switch strings.TrimSpace(domain) {
-	case string(sohaapi.ComputeTaskDomainVirtualization):
-		if !s.virtualizationEnabled {
-			return sohaapi.ComputeTaskView{}, fmt.Errorf("%w: virtualization module is disabled", apperrors.ErrNotFound)
-		}
-		if !hasAny(keys, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView) {
-			return sohaapi.ComputeTaskView{}, fmt.Errorf("%w: virtualization tasks are not visible", apperrors.ErrAccessDenied)
-		}
-		item, readErr := s.virtualization.GetTask(ctx, id)
-		if readErr != nil {
-			return sohaapi.ComputeTaskView{}, readErr
-		}
-		if !virtualizationTaskVisible(keys, item.TaskKind) {
-			return sohaapi.ComputeTaskView{}, fmt.Errorf("%w: virtualization task is not visible", apperrors.ErrAccessDenied)
-		}
-		return virtualizationTaskView(item), nil
-	case string(sohaapi.ComputeTaskDomainContainerRuntime):
-		if !s.runtimeEnabled {
-			return sohaapi.ComputeTaskView{}, fmt.Errorf("%w: container runtime module is disabled", apperrors.ErrNotFound)
-		}
-		if !has(keys, appaccess.PermDockerOperationsView) {
-			return sohaapi.ComputeTaskView{}, fmt.Errorf("%w: runtime tasks are not visible", apperrors.ErrAccessDenied)
-		}
-		item, readErr := s.runtime.GetOperation(ctx, id)
-		if readErr != nil {
-			return sohaapi.ComputeTaskView{}, readErr
-		}
-		return runtimeTaskView(item), nil
-	default:
-		return sohaapi.ComputeTaskView{}, fmt.Errorf("%w: invalid compute task domain", apperrors.ErrInvalidArgument)
-	}
-}
-
-func (s *Service) ListRelations(ctx context.Context, principal domainidentity.Principal, domain, kind, id, cursor string, limit int) (sohaapi.ComputeResourceRelations, error) {
-	keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
-	if err != nil {
-		return sohaapi.ComputeResourceRelations{}, err
-	}
-	domain, kind, id = strings.TrimSpace(domain), strings.TrimSpace(kind), strings.TrimSpace(id)
-	if id == "" {
-		return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: compute resource id is required", apperrors.ErrInvalidArgument)
-	}
-	var result sohaapi.ComputeResourceRelations
-	if domain == string(sohaapi.ComputeDomainVirtualization) {
-		if !s.virtualizationEnabled {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: virtualization module is disabled", apperrors.ErrNotFound)
-		}
-		result, err = s.virtualizationRelations(ctx, keys, kind, id)
-	} else if domain == string(sohaapi.ComputeDomainContainerRuntime) || domain == string(sohaapi.ComputeDomainAgent) {
-		if !s.runtimeEnabled {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: container runtime module is disabled", apperrors.ErrNotFound)
-		}
-		result, err = s.runtimeRelations(ctx, keys, kind, id)
-	} else {
-		return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: invalid compute resource domain", apperrors.ErrInvalidArgument)
-	}
-	if err != nil {
-		return sohaapi.ComputeResourceRelations{}, err
-	}
-	result.Relations, result.NextCursor, err = paginate(result.Relations, cursor, limit)
-	return result, err
-}
-
-func (s *Service) virtualizationRelations(ctx context.Context, keys []string, kind, id string) (sohaapi.ComputeResourceRelations, error) {
-	if kind == string(sohaapi.ComputeResourceKindConnection) {
-		if !has(keys, appaccess.PermVirtualizationClustersView) {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: virtualization connections are not visible", apperrors.ErrAccessDenied)
-		}
-		item, err := s.virtualization.GetConnection(ctx, id)
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		resource := connectionRef(item)
-		relations := []sohaapi.ComputeResourceRelation{}
-		if has(keys, appaccess.PermVirtualizationVMsView) {
-			vms, readErr := s.virtualization.ListVMs(ctx, domainvirtualization.VMFilter{ConnectionID: id, Limit: maxReadLimit})
-			if readErr != nil {
-				return sohaapi.ComputeResourceRelations{}, readErr
-			}
-			for _, vm := range vms {
-				relations = append(relations, relation(resource, sohaapi.ComputeRelationTypeContains, vmRef(vm), maxTime(item.UpdatedAt, vm.UpdatedAt)))
-			}
-		}
-		if has(keys, appaccess.PermDockerHostsView) {
-			hosts, readErr := s.runtime.ListHosts(ctx, domaindocker.HostFilter{Limit: maxReadLimit})
-			if readErr != nil {
-				return sohaapi.ComputeResourceRelations{}, readErr
-			}
-			for _, host := range hosts {
-				if host.VirtualizationConnectionID == id {
-					relations = append(relations, relation(resource, sohaapi.ComputeRelationTypeProvisions, runtimeHostRef(host), maxTime(item.UpdatedAt, host.UpdatedAt)))
-				}
-			}
-		}
-		return sohaapi.ComputeResourceRelations{Resource: resource, Relations: relations}, nil
-	}
-	if kind == string(sohaapi.ComputeResourceKindVM) {
-		if !has(keys, appaccess.PermVirtualizationVMsView) {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: virtual machines are not visible", apperrors.ErrAccessDenied)
-		}
-		item, err := s.virtualization.GetVM(ctx, id)
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		resource := vmRef(item)
-		relations := []sohaapi.ComputeResourceRelation{}
-		if has(keys, appaccess.PermVirtualizationClustersView) && item.ConnectionID != "" {
-			if connection, readErr := s.virtualization.GetConnection(ctx, item.ConnectionID); readErr == nil {
-				relations = append(relations, relation(resource, sohaapi.ComputeRelationTypeConnectedBy, connectionRef(connection), maxTime(item.UpdatedAt, connection.UpdatedAt)))
-			}
-		}
-		if has(keys, appaccess.PermDockerHostsView) {
-			hosts, readErr := s.runtime.ListHosts(ctx, domaindocker.HostFilter{Limit: maxReadLimit})
-			if readErr != nil {
-				return sohaapi.ComputeResourceRelations{}, readErr
-			}
-			for _, host := range hosts {
-				if host.VMID == id {
-					relations = append(relations, relation(runtimeHostRef(host), sohaapi.ComputeRelationTypeRunsOn, resource, maxTime(item.UpdatedAt, host.UpdatedAt)))
-				}
-			}
-		}
-		return sohaapi.ComputeResourceRelations{Resource: resource, Relations: relations}, nil
-	}
-	if kind == string(sohaapi.ComputeResourceKindImage) && has(keys, appaccess.PermVirtualizationImagesView) {
-		item, err := s.virtualization.GetImage(ctx, id)
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		return emptyRelations(virtualizationResourceRef(sohaapi.ComputeResourceKindImage, item.ID, item.Name, item.Provider, item.ConnectionID)), nil
-	}
-	if kind == string(sohaapi.ComputeResourceKindFlavor) && has(keys, appaccess.PermVirtualizationFlavorsView) {
-		item, err := s.virtualization.GetFlavor(ctx, id)
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		return emptyRelations(virtualizationResourceRef(sohaapi.ComputeResourceKindFlavor, item.ID, item.Name, item.Provider, item.ConnectionID)), nil
-	}
-	return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: compute resource is not visible or unsupported", apperrors.ErrNotFound)
-}
-
-func (s *Service) runtimeRelations(ctx context.Context, keys []string, kind, id string) (sohaapi.ComputeResourceRelations, error) {
-	switch kind {
-	case string(sohaapi.ComputeResourceKindRuntimeHost):
-		if !has(keys, appaccess.PermDockerHostsView) {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: runtime hosts are not visible", apperrors.ErrAccessDenied)
-		}
-		host, err := s.runtime.GetHost(ctx, id)
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		resource := runtimeHostRef(host)
-		relations := []sohaapi.ComputeResourceRelation{}
-		if host.VMID != "" && has(keys, appaccess.PermVirtualizationVMsView) {
-			if vm, readErr := s.virtualization.GetVM(ctx, host.VMID); readErr == nil {
-				relations = append(relations, relation(resource, sohaapi.ComputeRelationTypeRunsOn, vmRef(vm), maxTime(host.UpdatedAt, vm.UpdatedAt)))
-			}
-		}
-		if has(keys, appaccess.PermDockerProjectsView) {
-			projects, readErr := s.runtime.ListProjects(ctx, domaindocker.ProjectFilter{HostID: id, Limit: maxReadLimit})
-			if readErr != nil {
-				return sohaapi.ComputeResourceRelations{}, readErr
-			}
-			for _, project := range projects {
-				relations = append(relations, relation(resource, sohaapi.ComputeRelationTypeContains, projectRef(project), maxTime(host.UpdatedAt, project.UpdatedAt)))
-			}
-		}
-		return sohaapi.ComputeResourceRelations{Resource: resource, Relations: relations}, nil
-	case string(sohaapi.ComputeResourceKindAgentHost):
-		if !has(keys, appaccess.PermDockerHostsView) {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: agent hosts are not visible", apperrors.ErrAccessDenied)
-		}
-		hosts, err := s.runtime.ListHosts(ctx, domaindocker.HostFilter{Limit: maxReadLimit})
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		for _, host := range hosts {
-			if host.AgentID == id {
-				resource := agentHostRef(host)
-				return sohaapi.ComputeResourceRelations{Resource: resource, Relations: []sohaapi.ComputeResourceRelation{relation(resource, sohaapi.ComputeRelationTypeManages, runtimeHostRef(host), host.UpdatedAt)}}, nil
-			}
-		}
-		return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: agent host not found", apperrors.ErrNotFound)
-	case string(sohaapi.ComputeResourceKindProject):
-		if !has(keys, appaccess.PermDockerProjectsView) {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: runtime projects are not visible", apperrors.ErrAccessDenied)
-		}
-		project, err := s.runtime.GetProject(ctx, id)
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		resource := projectRef(project)
-		relations := []sohaapi.ComputeResourceRelation{}
-		if has(keys, appaccess.PermDockerHostsView) {
-			if host, readErr := s.runtime.GetHost(ctx, project.HostID); readErr == nil {
-				relations = append(relations, relation(resource, sohaapi.ComputeRelationTypeRunsOn, runtimeHostRef(host), maxTime(project.UpdatedAt, host.UpdatedAt)))
-			}
-		}
-		if has(keys, appaccess.PermDockerServicesView) {
-			services, readErr := s.runtime.ListServices(ctx, domaindocker.ServiceFilter{ProjectID: id, Limit: maxReadLimit})
-			if readErr != nil {
-				return sohaapi.ComputeResourceRelations{}, readErr
-			}
-			for _, service := range services {
-				relations = append(relations, relation(resource, sohaapi.ComputeRelationTypeContains, serviceRef(service), maxTime(project.UpdatedAt, service.UpdatedAt)))
-			}
-		}
-		return sohaapi.ComputeResourceRelations{Resource: resource, Relations: relations}, nil
-	case string(sohaapi.ComputeResourceKindService), string(sohaapi.ComputeResourceKindContainer):
-		if !has(keys, appaccess.PermDockerServicesView) {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: runtime services are not visible", apperrors.ErrAccessDenied)
-		}
-		service, err := s.runtime.GetService(ctx, id)
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		resource := serviceRef(service)
-		relations := []sohaapi.ComputeResourceRelation{}
-		if has(keys, appaccess.PermDockerProjectsView) {
-			if project, readErr := s.runtime.GetProject(ctx, service.ProjectID); readErr == nil {
-				relations = append(relations, relation(resource, sohaapi.ComputeRelationTypeRunsOn, projectRef(project), maxTime(service.UpdatedAt, project.UpdatedAt)))
-			}
-		}
-		if has(keys, appaccess.PermDockerPortsView) {
-			ports, readErr := s.runtime.ListPortMappings(ctx, domaindocker.PortMappingFilter{ServiceID: id, Limit: maxReadLimit})
-			if readErr != nil {
-				return sohaapi.ComputeResourceRelations{}, readErr
-			}
-			for _, port := range ports {
-				relations = append(relations, relation(resource, sohaapi.ComputeRelationTypeExposes, portRef(port), maxTime(service.UpdatedAt, port.UpdatedAt)))
-			}
-		}
-		return sohaapi.ComputeResourceRelations{Resource: resource, Relations: relations}, nil
-	case string(sohaapi.ComputeResourceKindPort):
-		if !has(keys, appaccess.PermDockerPortsView) {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: runtime ports are not visible", apperrors.ErrAccessDenied)
-		}
-		port, err := s.runtime.GetPortMapping(ctx, id)
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		resource := portRef(port)
-		relations := []sohaapi.ComputeResourceRelation{}
-		if port.ServiceID != "" && has(keys, appaccess.PermDockerServicesView) {
-			if service, readErr := s.runtime.GetService(ctx, port.ServiceID); readErr == nil {
-				relations = append(relations, relation(serviceRef(service), sohaapi.ComputeRelationTypeExposes, resource, maxTime(port.UpdatedAt, service.UpdatedAt)))
-			}
-		}
-		return sohaapi.ComputeResourceRelations{Resource: resource, Relations: relations}, nil
-	case string(sohaapi.ComputeResourceKindTemplate):
-		if !has(keys, appaccess.PermDockerTemplatesView) {
-			return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: runtime templates are not visible", apperrors.ErrAccessDenied)
-		}
-		item, err := s.runtime.GetTemplate(ctx, id)
-		if err != nil {
-			return sohaapi.ComputeResourceRelations{}, err
-		}
-		return emptyRelations(runtimeResourceRef(sohaapi.ComputeResourceKindTemplate, item.ID, item.Name)), nil
-	default:
-		return sohaapi.ComputeResourceRelations{}, fmt.Errorf("%w: compute resource kind is unsupported", apperrors.ErrNotFound)
-	}
-}
-
 func connectionAccessSource(item domainvirtualization.Connection, manage bool) sohaapi.ComputeAccessSource {
 	actions := []string{}
 	if manage {
@@ -763,88 +464,6 @@ func runtimeAccessSource(host domaindocker.Host, manage bool) sohaapi.ComputeAcc
 
 func agentAccessSource(host domaindocker.Host) sohaapi.ComputeAccessSource {
 	return sohaapi.ComputeAccessSource{ID: host.AgentID, SourceType: sohaapi.ComputeAccessSourceTypeAgentHost, Resource: agentHostRef(host), Status: runtimeHostStatus(host), ProviderKey: "docker", ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, AccessMode: sohaapi.ComputeAccessModeAgentProxy, AvailableActions: []string{}, LastObservedAt: host.LastHeartbeatAt, RelatedResources: []sohaapi.ComputeResourceRef{runtimeHostRef(host)}}
-}
-
-func builtinVirtualizationProvider(key, name string) sohaapi.ComputeProviderDescriptor {
-	kinds := []sohaapi.ComputeResourceKind{sohaapi.ComputeResourceKindConnection, sohaapi.ComputeResourceKindVM, sohaapi.ComputeResourceKindImage, sohaapi.ComputeResourceKindFlavor}
-	return builtinProvider(key, name, sohaapi.ComputeProviderDomainVirtualization, kinds, []sohaapi.ComputeProviderCapability{
-		capability("connection.read", sohaapi.ComputeProviderActivationLevelRead, []sohaapi.ComputeResourceKind{sohaapi.ComputeResourceKindConnection}),
-		capability("resource.read", sohaapi.ComputeProviderActivationLevelRead, kinds),
-		capability("lifecycle.write", sohaapi.ComputeProviderActivationLevelWrite, []sohaapi.ComputeResourceKind{sohaapi.ComputeResourceKindVM}),
-	})
-}
-
-func builtinRuntimeProvider() sohaapi.ComputeProviderDescriptor {
-	kinds := []sohaapi.ComputeResourceKind{sohaapi.ComputeResourceKindRuntimeHost, sohaapi.ComputeResourceKindProject, sohaapi.ComputeResourceKindContainer, sohaapi.ComputeResourceKindService, sohaapi.ComputeResourceKindPort, sohaapi.ComputeResourceKindTemplate}
-	return builtinProvider("docker", "Docker Engine", sohaapi.ComputeProviderDomainContainerRuntime, kinds, []sohaapi.ComputeProviderCapability{
-		capability("runtime.read", sohaapi.ComputeProviderActivationLevelRead, kinds), capability("runtime.write", sohaapi.ComputeProviderActivationLevelWrite, kinds),
-	})
-}
-
-func builtinProvider(key, name string, domain sohaapi.ComputeProviderDomain, kinds []sohaapi.ComputeResourceKind, capabilities []sohaapi.ComputeProviderCapability) sohaapi.ComputeProviderDescriptor {
-	return sohaapi.ComputeProviderDescriptor{ProviderKey: key, Domain: domain, DisplayName: name, Version: "builtin", Source: sohaapi.ComputeProviderSourceBuiltin, ContractVersion: "v1", ActivationLevel: sohaapi.ComputeProviderActivationLevelWrite, ResourceKinds: kinds, Capabilities: capabilities, RuntimeMode: sohaapi.ComputePluginRuntimeModeBuiltin, Generation: generation, Health: providerHealth(domain, key, sohaapi.ComputeHealthStatusUnknown), ResourceSchemas: []sohaapi.ComputeProviderResourceSchema{}, StatusMappings: []sohaapi.ComputeProviderStatusMapping{}}
-}
-
-func capability(id string, level sohaapi.ComputeProviderActivationLevel, kinds []sohaapi.ComputeResourceKind) sohaapi.ComputeProviderCapability {
-	return sohaapi.ComputeProviderCapability{ID: id, Level: level, ResourceKinds: kinds, Enabled: true}
-}
-
-func pluginProviderDescriptors(installed []domainplugin.InstalledPlugin, domainFilter string, virtualizationVisible, runtimeVisible bool) []sohaapi.ComputeProviderDescriptor {
-	out := []sohaapi.ComputeProviderDescriptor{}
-	for _, plugin := range installed {
-		if plugin.Status != "enabled" || plugin.Manifest.ExtensionPoints == nil || plugin.Manifest.ExtensionPoints.Compute == nil {
-			continue
-		}
-		compute := plugin.Manifest.ExtensionPoints.Compute
-		if virtualizationVisible && domainMatches(domainFilter, string(sohaapi.ComputeProviderDomainVirtualization)) {
-			for _, provider := range compute.VirtualizationProviders {
-				out = append(out, pluginProvider(plugin, provider.ProviderKey, provider.DisplayName, sohaapi.ComputeProviderDomainVirtualization, provider.ActivationLevel, stringsToKinds(provider.ResourceKinds), provider.Capabilities))
-			}
-		}
-		if runtimeVisible && domainMatches(domainFilter, string(sohaapi.ComputeProviderDomainContainerRuntime)) {
-			for _, provider := range compute.ContainerRuntimeProviders {
-				out = append(out, pluginProvider(plugin, provider.ProviderKey, provider.DisplayName, sohaapi.ComputeProviderDomainContainerRuntime, provider.ActivationLevel, stringsToKinds(provider.ResourceKinds), provider.Capabilities))
-			}
-		}
-	}
-	return out
-}
-
-func pluginProvider(plugin domainplugin.InstalledPlugin, key, name string, domain sohaapi.ComputeProviderDomain, level sohaapi.ComputeProviderActivationLevel, kinds []sohaapi.ComputeResourceKind, capabilityIDs []string) sohaapi.ComputeProviderDescriptor {
-	capabilities := make([]sohaapi.ComputeProviderCapability, 0, len(capabilityIDs))
-	for _, id := range capabilityIDs {
-		capabilities = append(capabilities, sohaapi.ComputeProviderCapability{ID: id, Level: level, ResourceKinds: kinds, Enabled: false, Reason: "provider invocation is not enabled"})
-	}
-	gen := plugin.UpdatedAt.Unix()
-	if gen < 1 {
-		gen = generation
-	}
-	return sohaapi.ComputeProviderDescriptor{ProviderKey: key, Domain: domain, DisplayName: name, Version: plugin.Version, Source: sohaapi.ComputeProviderSourcePlugin, PluginID: plugin.ID, PluginVersion: plugin.Version, ContractVersion: "v1", ActivationLevel: sohaapi.ComputeProviderActivationLevelDescriptor, ResourceKinds: kinds, Capabilities: capabilities, RuntimeMode: pluginRuntimeMode(plugin), Generation: gen, Health: sohaapi.ComputeProviderHealth{Domain: domain, ProviderKey: key, Status: sohaapi.ComputeHealthStatusPending, Generation: gen, Code: "descriptor_only", Message: "Provider invocation is not enabled", CheckedAt: &plugin.UpdatedAt}, ResourceSchemas: []sohaapi.ComputeProviderResourceSchema{}, StatusMappings: []sohaapi.ComputeProviderStatusMapping{}}
-}
-
-func pluginRuntimeMode(plugin domainplugin.InstalledPlugin) sohaapi.ComputePluginRuntimeMode {
-	if plugin.Manifest.Runtime == nil {
-		return sohaapi.ComputePluginRuntimeModeManifestOnly
-	}
-	switch string(plugin.Manifest.Runtime.Mode) {
-	case "external-http":
-		return sohaapi.ComputePluginRuntimeModeExternal
-	case "managed-container":
-		return sohaapi.ComputePluginRuntimeModeManaged
-	default:
-		return sohaapi.ComputePluginRuntimeModeManifestOnly
-	}
-}
-
-func stringsToKinds[T ~string](values []T) []sohaapi.ComputeResourceKind {
-	out := make([]sohaapi.ComputeResourceKind, 0, len(values))
-	for _, value := range values {
-		kind := sohaapi.ComputeResourceKind(value)
-		if kind.Valid() {
-			out = append(out, kind)
-		}
-	}
-	return out
 }
 
 func virtualizationTaskView(item domainvirtualization.Task) sohaapi.ComputeTaskView {
@@ -955,9 +574,6 @@ func addTaskSummary(summary *sohaapi.ComputeTaskSummary, status sohaapi.ComputeT
 func connectionRef(item domainvirtualization.Connection) sohaapi.ComputeResourceRef {
 	return virtualizationResourceRef(sohaapi.ComputeResourceKindConnection, item.ID, item.Name, item.Provider, item.ID)
 }
-func vmRef(item domainvirtualization.VM) sohaapi.ComputeResourceRef {
-	return virtualizationResourceRef(sohaapi.ComputeResourceKindVM, item.ID, item.Name, item.Provider, item.ConnectionID)
-}
 func virtualizationResourceRef(kind sohaapi.ComputeResourceKind, id, name, provider, instance string) sohaapi.ComputeResourceRef {
 	return sohaapi.ComputeResourceRef{Domain: sohaapi.ComputeDomainVirtualization, Kind: kind, ID: id, DisplayName: firstNonEmpty(name, id), ProviderKey: provider, ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderInstanceRef: instance, ProviderGeneration: generation, AccessMode: sohaapi.ComputeAccessModeDirect}
 }
@@ -969,19 +585,6 @@ func runtimeHostRef(item domaindocker.Host) sohaapi.ComputeResourceRef {
 }
 func agentHostRef(item domaindocker.Host) sohaapi.ComputeResourceRef {
 	return sohaapi.ComputeResourceRef{Domain: sohaapi.ComputeDomainAgent, Kind: sohaapi.ComputeResourceKindAgentHost, ID: item.AgentID, DisplayName: firstNonEmpty(item.Name, item.AgentID), ProviderKey: "docker", ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderInstanceRef: item.ID, ProviderGeneration: generation, AccessMode: sohaapi.ComputeAccessModeAgentProxy}
-}
-func projectRef(item domaindocker.Project) sohaapi.ComputeResourceRef {
-	ref := runtimeResourceRef(sohaapi.ComputeResourceKindProject, item.ID, item.Name)
-	ref.ProviderInstanceRef = item.HostID
-	return ref
-}
-func serviceRef(item domaindocker.Service) sohaapi.ComputeResourceRef {
-	ref := runtimeResourceRef(sohaapi.ComputeResourceKindService, item.ID, item.Name)
-	ref.ProviderInstanceRef = item.HostID
-	return ref
-}
-func portRef(item domaindocker.PortMapping) sohaapi.ComputeResourceRef {
-	return runtimeResourceRef(sohaapi.ComputeResourceKindPort, item.ID, firstNonEmpty(item.Name, strconv.Itoa(item.HostPort)))
 }
 func runtimeResourceRef(kind sohaapi.ComputeResourceKind, id, name string) sohaapi.ComputeResourceRef {
 	return sohaapi.ComputeResourceRef{Domain: sohaapi.ComputeDomainContainerRuntime, Kind: kind, ID: id, DisplayName: firstNonEmpty(name, id), ProviderKey: "docker", ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, AccessMode: sohaapi.ComputeAccessModeAgentProxy}
@@ -998,16 +601,6 @@ func relatedHostResources(host domaindocker.Host) []sohaapi.ComputeResourceRef {
 		out = append(out, agentHostRef(host))
 	}
 	return out
-}
-
-func relation(from sohaapi.ComputeResourceRef, relationType sohaapi.ComputeRelationType, to sohaapi.ComputeResourceRef, observed time.Time) sohaapi.ComputeResourceRelation {
-	if observed.IsZero() {
-		observed = time.Now().UTC()
-	}
-	return sohaapi.ComputeResourceRelation{From: from, Type: relationType, To: to, Source: sohaapi.ComputeRelationSourceDerived, ObservedAt: observed.UTC(), ProviderGeneration: generation, Metadata: []sohaapi.ComputeMetadataEntry{}}
-}
-func emptyRelations(resource sohaapi.ComputeResourceRef) sohaapi.ComputeResourceRelations {
-	return sohaapi.ComputeResourceRelations{Resource: resource, Relations: []sohaapi.ComputeResourceRelation{}}
 }
 
 func connectionHealth(item domainvirtualization.Connection) sohaapi.ComputeHealthStatus {
@@ -1200,7 +793,6 @@ func runtimeDomainVisible(keys []string) bool {
 func providerMatches(filter, provider string) bool {
 	return filter == "" || provider == "" || strings.EqualFold(filter, provider)
 }
-func domainMatches(filter, domain string) bool { return filter == "" || filter == domain }
 func firstMapString(values map[string]any, keys ...string) string {
 	for _, key := range keys {
 		if value := strings.TrimSpace(fmt.Sprint(values[key])); value != "" && value != "<nil>" {
@@ -1216,10 +808,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-func maxTime(left, right time.Time) time.Time {
-	if right.After(left) {
-		return right
-	}
-	return left
 }

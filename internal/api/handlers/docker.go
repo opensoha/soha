@@ -18,10 +18,6 @@ import (
 	"github.com/opensoha/soha/internal/platform/keyring"
 )
 
-type DockerOverviewService interface {
-	Overview(context.Context, domainidentity.Principal) (domaindocker.Overview, error)
-}
-
 type DockerHostService interface {
 	ListHosts(context.Context, domainidentity.Principal, domaindocker.HostFilter) (domaindocker.Page[domaindocker.Host], error)
 	GetHost(context.Context, domainidentity.Principal, string) (domaindocker.Host, error)
@@ -87,7 +83,6 @@ type DockerRunnerOperationService interface {
 }
 
 type DockerService interface {
-	DockerOverviewService
 	DockerHostService
 	DockerProjectService
 	DockerProjectRuntimeService
@@ -100,7 +95,6 @@ type DockerService interface {
 }
 
 type DockerServices struct {
-	Overview         DockerOverviewService
 	Hosts            DockerHostService
 	Projects         DockerProjectService
 	ProjectRuntime   DockerProjectRuntimeService
@@ -113,7 +107,6 @@ type DockerServices struct {
 }
 
 type DockerHandler struct {
-	overview         DockerOverviewService
 	hosts            DockerHostService
 	projects         DockerProjectService
 	projectRuntime   DockerProjectRuntimeService
@@ -136,7 +129,7 @@ func NewDockerHandler(service DockerService, runnerToken ...string) *DockerHandl
 
 func NewDockerHandlerWithRunnerKeys(service DockerService, keys keyring.Ring) *DockerHandler {
 	return NewDockerHandlerWithServices(DockerServices{
-		Overview: service, Hosts: service, Projects: service, ProjectRuntime: service,
+		Hosts: service, Projects: service, ProjectRuntime: service,
 		ProjectStorage: service, Services: service, PortMappings: service, Templates: service,
 		Operations: service, RunnerOperations: service,
 	}, keys)
@@ -144,20 +137,11 @@ func NewDockerHandlerWithRunnerKeys(service DockerService, keys keyring.Ring) *D
 
 func NewDockerHandlerWithServices(services DockerServices, keys keyring.Ring) *DockerHandler {
 	return &DockerHandler{
-		overview: services.Overview, hosts: services.Hosts, projects: services.Projects,
+		hosts: services.Hosts, projects: services.Projects,
 		projectRuntime: services.ProjectRuntime, projectStorage: services.ProjectStorage,
 		services: services.Services, portMappings: services.PortMappings, templates: services.Templates,
 		operations: services.Operations, runnerOperations: services.RunnerOperations, runnerKeys: keys,
 	}
-}
-
-func (h *DockerHandler) Overview(c *gin.Context) {
-	item, err := h.overview.Overview(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *DockerHandler) ListHosts(c *gin.Context) {

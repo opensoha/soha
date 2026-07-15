@@ -76,11 +76,11 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 		{
 			ID:                 "aiGateway",
 			Name:               "AI Gateway",
-			DefaultPath:        "/ai-gateway/overview",
+			DefaultPath:        "/ai-gateway/manifest",
 			EnabledConfigKey:   "modules.ai_gateway.enabled",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"ai.gateway.view", "ai.gateway.invoke", "ai.gateway.manage"},
-			SeedMenus:          []string{"ai-gateway", "ai-gateway-overview", "ai-gateway-manifest", "ai-gateway-clients", "ai-gateway-tokens", "ai-gateway-governance", "ai-gateway-call-logs"},
+			SeedMenus:          []string{"ai-gateway-relay", "ai-gateway-manifest", "ai-gateway-clients", "ai-gateway-tokens", "ai-gateway-governance", "ai-gateway-call-logs"},
 		},
 		{
 			ID:                 "monitoring",

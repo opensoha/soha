@@ -116,6 +116,21 @@ func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
 	}
 }
 
+func TestDefaultsConfigureOfficialMarketplace(t *testing.T) {
+	v := viper.New()
+	setDefaults(v)
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+	if cfg.Plugins.Marketplace.URL != DefaultMarketplaceURL {
+		t.Fatalf("marketplace URL default = %q, want %q", cfg.Plugins.Marketplace.URL, DefaultMarketplaceURL)
+	}
+	if cfg.Plugins.Marketplace.SourceID != DefaultMarketplaceSourceID {
+		t.Fatalf("marketplace source ID default = %q, want %q", cfg.Plugins.Marketplace.SourceID, DefaultMarketplaceSourceID)
+	}
+}
+
 func TestLoadRejectsDefaultConfigWhenFileMissing(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -190,6 +205,12 @@ func TestLoadRepoDefaultConfigWithoutGeneratedEnv(t *testing.T) {
 	}
 	if cfg.Auth.DevPrincipal.UserID != defaultDevPrincipalUserID {
 		t.Fatalf("dev principal user id = %q, want %q", cfg.Auth.DevPrincipal.UserID, defaultDevPrincipalUserID)
+	}
+	if cfg.Plugins.Marketplace.URL != "http://127.0.0.1:8081/marketplace/index.json" {
+		t.Fatalf("development marketplace URL = %q", cfg.Plugins.Marketplace.URL)
+	}
+	if cfg.Plugins.Marketplace.SourceID != "opensoha-local" {
+		t.Fatalf("development marketplace source ID = %q", cfg.Plugins.Marketplace.SourceID)
 	}
 	for name, value := range configuredSystemSecrets(cfg) {
 		if value != defaultSystemSecret {

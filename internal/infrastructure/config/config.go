@@ -15,12 +15,14 @@ import (
 )
 
 const (
-	defaultDevPrincipalUserID = "67d90df8-9de4-4a7b-b3f8-86cd36f899e2"
-	defaultSystemSecret       = "soha-123456789012345678901234567890"
-	jwtKeyID                  = "config-jwt-v1"
-	runnerKeyID               = "config-runner-v1"
-	webhookKeyID              = "config-webhook-v1"
-	encryptionKeyID           = "config-credential-v1"
+	defaultDevPrincipalUserID  = "67d90df8-9de4-4a7b-b3f8-86cd36f899e2"
+	defaultSystemSecret        = "soha-123456789012345678901234567890"
+	DefaultMarketplaceURL      = "https://marketplace.opensoha.com/marketplace/index.json"
+	DefaultMarketplaceSourceID = "opensoha-official"
+	jwtKeyID                   = "config-jwt-v1"
+	runnerKeyID                = "config-runner-v1"
+	webhookKeyID               = "config-webhook-v1"
+	encryptionKeyID            = "config-credential-v1"
 )
 
 type Config struct {
@@ -588,8 +590,8 @@ var configDefaults = []struct {
 	{"ai_gateway.connector_runtime.connector_id", ""},
 	{"ai_gateway.connector_runtimes", []map[string]any{}},
 	{"ai_gateway.connector_event_sink.token", ""},
-	{"plugins.marketplace.url", ""},
-	{"plugins.marketplace.source_id", "opensoha-official"},
+	{"plugins.marketplace.url", DefaultMarketplaceURL},
+	{"plugins.marketplace.source_id", DefaultMarketplaceSourceID},
 	{"plugins.marketplace.sources", []map[string]any{}},
 	{"modules.delivery.enabled", true},
 	{"modules.monitoring.enabled", true},

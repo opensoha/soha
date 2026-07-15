@@ -10,7 +10,6 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
-	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -186,18 +185,10 @@ func (f *runtimeFake) ListOperations(context.Context, domaindocker.OperationFilt
 	return append([]domaindocker.Operation(nil), f.operations...), nil
 }
 
-type pluginFake struct {
-	items []domainplugin.InstalledPlugin
-}
-
-func (f pluginFake) ListInstalled(context.Context) ([]domainplugin.InstalledPlugin, error) {
-	return f.items, nil
-}
-
 func newTestService(keys ...string) (*Service, *virtualizationFake, *runtimeFake) {
 	virt, runtime := &virtualizationFake{}, &runtimeFake{}
 	resolver := appaccess.NewPermissionResolver(roleReader{keys: keys})
-	return New(virt, runtime, nil, resolver, Options{VirtualizationEnabled: true, RuntimeEnabled: true}), virt, runtime
+	return New(virt, runtime, resolver, Options{VirtualizationEnabled: true, RuntimeEnabled: true}), virt, runtime
 }
 func testPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{UserID: "u", Roles: []string{"test"}}
@@ -293,12 +284,12 @@ func TestModuleFlagsIsolateComputeDomains(t *testing.T) {
 	}
 
 	service.virtualizationEnabled, service.runtimeEnabled = false, true
-	providers, err := service.ListProviders(context.Background(), testPrincipal(), ProviderFilter{Source: "builtin"})
+	overview, err = service.Overview(context.Background(), testPrincipal())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(providers.Items) != 1 || providers.Items[0].ProviderKey != "docker" {
-		t.Fatalf("runtime-only providers = %#v", providers.Items)
+	if overview.Virtualization != nil || overview.Runtimes == nil || overview.Agents == nil {
+		t.Fatalf("runtime-only overview = %#v", overview)
 	}
 }
 
@@ -312,9 +303,6 @@ func TestVirtualizationTaskPermissionsSeparateSyncAndOperations(t *testing.T) {
 	}
 	if len(result.Items) != 1 || result.Items[0].ID != "sync" {
 		t.Fatalf("items = %#v", result.Items)
-	}
-	if _, err := service.GetTask(context.Background(), testPrincipal(), "virtualization", "action"); !errors.Is(err, apperrors.ErrAccessDenied) {
-		t.Fatalf("GetTask error = %v", err)
 	}
 }
 
@@ -354,31 +342,5 @@ func TestTaskCursorRemainsStableWhenNewTaskArrives(t *testing.T) {
 	}
 	if _, err := service.ListTasks(context.Background(), testPrincipal(), TaskFilter{Cursor: "not-a-cursor"}); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("invalid cursor error = %v", err)
-	}
-}
-
-func TestPluginProvidersRemainDescriptorOnly(t *testing.T) {
-	service, virt, runtime := newTestService(appaccess.PermDockerOverviewView)
-	plugin := domainplugin.InstalledPlugin{ID: "podman-plugin", Name: "Podman", Version: "1", Status: "enabled", UpdatedAt: time.Now().UTC(), Manifest: sohaapi.PluginManifest{ID: "podman-plugin", Name: "Podman", Publisher: "test", Type: "resource-extension", Version: "1", ExtensionPoints: &sohaapi.PluginExtensionPoints{Compute: &sohaapi.PluginComputeExtensions{ContainerRuntimeProviders: []sohaapi.PluginComputeContainerRuntimeProvider{{ProviderKey: "podman", DisplayName: "Podman", ActivationLevel: sohaapi.ComputeProviderActivationLevelWrite, ResourceKinds: []sohaapi.PluginComputeContainerRuntimeProviderResourceKinds{"runtime_host"}, Capabilities: []string{"runtime.write"}}}}}}}
-	service = New(virt, runtime, pluginFake{items: []domainplugin.InstalledPlugin{plugin}}, service.permissions, Options{VirtualizationEnabled: true, RuntimeEnabled: true})
-	result, err := service.ListProviders(context.Background(), testPrincipal(), ProviderFilter{Source: "plugin"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Items) != 1 || result.Items[0].ActivationLevel != sohaapi.ComputeProviderActivationLevelDescriptor || result.Items[0].Capabilities[0].Enabled {
-		t.Fatalf("provider = %#v", result.Items)
-	}
-}
-
-func TestServiceRelationExposesPortInCorrectDirection(t *testing.T) {
-	service, _, runtime := newTestService(appaccess.PermDockerServicesView, appaccess.PermDockerPortsView)
-	runtime.services = []domaindocker.Service{{ID: "svc", Name: "web", UpdatedAt: time.Now().UTC()}}
-	runtime.ports = []domaindocker.PortMapping{{ID: "port", ServiceID: "svc", Name: "http", UpdatedAt: time.Now().UTC()}}
-	result, err := service.ListRelations(context.Background(), testPrincipal(), "container_runtime", "service", "svc", "", 50)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.Relations) != 1 || result.Relations[0].From.ID != "svc" || result.Relations[0].To.ID != "port" {
-		t.Fatalf("relations = %#v", result.Relations)
 	}
 }

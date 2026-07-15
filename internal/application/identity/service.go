@@ -638,7 +638,7 @@ func copyGatewayMetadata(metadata map[string]any) map[string]any {
 }
 
 func (s *Service) ListActiveSessions(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainidentity.SessionRecord, error) {
-	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemOnlineUsersView, appaccess.PermIdentitySessionsView); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemOnlineUsersView); err != nil {
 		return nil, err
 	}
 	if limit <= 0 {
@@ -659,7 +659,7 @@ func (s *Service) ListActiveSessions(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentity.Principal, sessionID string) error {
-	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemOnlineUsersManage, appaccess.PermIdentitySessionsManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemOnlineUsersManage); err != nil {
 		return err
 	}
 	session, err := s.sessionAdmin.GetSessionByID(ctx, strings.TrimSpace(sessionID))

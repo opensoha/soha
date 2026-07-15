@@ -549,13 +549,13 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 }
 
 func newMarketplaceProvider(cfg cfgpkg.Config) (appplugin.MarketplaceProvider, error) {
-	providers := []appplugin.MarketplaceProvider{appplugin.NewDefaultMarketplaceProvider()}
+	providers := make([]appplugin.MarketplaceProvider, 0, 1+len(cfg.Plugins.Marketplace.Sources))
 	addRemote := func(id, rawURL string) error {
 		if strings.TrimSpace(rawURL) == "" {
 			return nil
 		}
 		provider, err := appplugin.NewRemoteMarketplaceProvider(appplugin.MarketplaceSource{
-			ID:  firstNonEmpty(id, cfg.Plugins.Marketplace.SourceID, "opensoha-official"),
+			ID:  firstNonEmpty(id, cfg.Plugins.Marketplace.SourceID, cfgpkg.DefaultMarketplaceSourceID),
 			URL: rawURL,
 		}, nil)
 		if err != nil {
@@ -564,7 +564,10 @@ func newMarketplaceProvider(cfg cfgpkg.Config) (appplugin.MarketplaceProvider, e
 		providers = append(providers, provider)
 		return nil
 	}
-	if err := addRemote(cfg.Plugins.Marketplace.SourceID, cfg.Plugins.Marketplace.URL); err != nil {
+	if err := addRemote(
+		cfg.Plugins.Marketplace.SourceID,
+		firstNonEmpty(cfg.Plugins.Marketplace.URL, cfgpkg.DefaultMarketplaceURL),
+	); err != nil {
 		return nil, err
 	}
 	for _, source := range cfg.Plugins.Marketplace.Sources {
@@ -685,7 +688,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}),
 		appdocker.WithRuntimeBearerToken(cfg.Runtime.ExecutionRunnerToken),
 	)
-	computeService := appcompute.New(repos.virtualizationRepository, repos.dockerRepository, repos.pluginRepository, core.permissionResolver, appcompute.Options{VirtualizationEnabled: cfg.Modules.Virtualization.Enabled, RuntimeEnabled: cfg.Modules.Docker.Enabled})
+	computeService := appcompute.New(repos.virtualizationRepository, repos.dockerRepository, core.permissionResolver, appcompute.Options{VirtualizationEnabled: cfg.Modules.Virtualization.Enabled, RuntimeEnabled: cfg.Modules.Docker.Enabled})
 	copilotService.SetAgentRuntimeReaders(core.executionService, runtimeResources, dockerService, virtualizationService, core.monitoringService)
 
 	deliveryService := appdelivery.New(core.applicationService, core.catalogService, core.buildService, workflowService, core.releaseService, repos.deliveryRepository, core.executionService, runtimeResources, core.permissionResolver)
@@ -956,14 +959,14 @@ func newDeliveryHandler(service *appdelivery.Service, keys keyring.Ring) *apiHan
 
 func newVirtualizationHandler(service *appvirtualization.Service) *apiHandlers.VirtualizationHandler {
 	return apiHandlers.NewVirtualizationHandlerWithServices(apiHandlers.VirtualizationServices{
-		Overview: service, Connections: service, Sync: service, VMs: service,
+		Connections: service, Sync: service, VMs: service,
 		Images: service, Flavors: service, Operations: service, Runtime: service,
 	})
 }
 
 func newDockerHandler(service *appdocker.Service, keys keyring.Ring) *apiHandlers.DockerHandler {
 	return apiHandlers.NewDockerHandlerWithServices(apiHandlers.DockerServices{
-		Overview: service, Hosts: service, Projects: service, ProjectRuntime: service,
+		Hosts: service, Projects: service, ProjectRuntime: service,
 		ProjectStorage: service, Services: service, PortMappings: service, Templates: service,
 		Operations: service, RunnerOperations: service,
 	}, keys)

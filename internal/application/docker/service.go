@@ -121,65 +121,6 @@ func New(repo Repository, permissions *appaccess.PermissionResolver, operations 
 	return service
 }
 
-func (s *Service) Overview(ctx context.Context, principal domainidentity.Principal) (domaindocker.Overview, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerOverviewView); err != nil {
-		return domaindocker.Overview{}, err
-	}
-	s.reconcileHostProvisionOperations(ctx)
-	hosts, err := s.repo.ListHosts(ctx, domaindocker.HostFilter{Limit: 500})
-	if err != nil {
-		return domaindocker.Overview{}, err
-	}
-	projects, err := s.repo.ListProjects(ctx, domaindocker.ProjectFilter{Limit: 500})
-	if err != nil {
-		return domaindocker.Overview{}, err
-	}
-	services, err := s.repo.ListServices(ctx, domaindocker.ServiceFilter{Limit: 500})
-	if err != nil {
-		return domaindocker.Overview{}, err
-	}
-	ports, err := s.repo.ListPortMappings(ctx, domaindocker.PortMappingFilter{Limit: 500})
-	if err != nil {
-		return domaindocker.Overview{}, err
-	}
-	recent, err := s.repo.ListOperations(ctx, domaindocker.OperationFilter{Limit: 10})
-	if err != nil {
-		return domaindocker.Overview{}, err
-	}
-	now := time.Now().UTC()
-	expiring := make([]domaindocker.Project, 0)
-	for _, project := range projects {
-		if project.ExpiresAt != nil && project.ExpiresAt.After(now) && project.ExpiresAt.Before(now.Add(72*time.Hour)) {
-			expiring = append(expiring, project)
-		}
-	}
-	if len(expiring) > 8 {
-		expiring = expiring[:8]
-	}
-	overview := domaindocker.Overview{
-		HostSummary:      summarizeHosts(hosts),
-		ProjectSummary:   summarizeProjects(projects),
-		ServiceSummary:   summarizeServices(services),
-		PortSummary:      summarizePorts(ports),
-		RecentOperations: recent,
-		ExpiringProjects: expiring,
-	}
-	pending, _ := s.repo.CountOperations(ctx, domaindocker.OperationFilter{Pending: true})
-	failed, _ := s.repo.CountOperations(ctx, domaindocker.OperationFilter{Abnormal: true})
-	overview.Stats = domaindocker.OverviewStats{
-		HostCount:           overview.HostSummary.Total,
-		OnlineHostCount:     overview.HostSummary.Online,
-		ProjectCount:        overview.ProjectSummary.Total,
-		RunningProjectCount: overview.ProjectSummary.Running,
-		ServiceCount:        overview.ServiceSummary.Total,
-		RunningServiceCount: overview.ServiceSummary.Running,
-		PortMappingCount:    overview.PortSummary.Total,
-		PendingTaskCount:    pending,
-		FailedTaskCount:     failed,
-	}
-	return overview, nil
-}
-
 func (s *Service) ListHosts(ctx context.Context, principal domainidentity.Principal, filter domaindocker.HostFilter) (domaindocker.Page[domaindocker.Host], error) {
 	if err := s.authorize(ctx, principal, appaccess.PermDockerHostsView); err != nil {
 		return domaindocker.Page[domaindocker.Host]{}, err
@@ -2033,73 +1974,6 @@ func composeServiceNames(content string) []string {
 		}
 	}
 	return names
-}
-
-func summarizeHosts(items []domaindocker.Host) domaindocker.HostSummary {
-	out := domaindocker.HostSummary{Total: len(items)}
-	for _, item := range items {
-		switch strings.ToLower(item.Status) {
-		case "online", "ready", "healthy", HostStatusDockerReady:
-			out.Online++
-		case "degraded":
-			out.Degraded++
-		case "offline", "unavailable":
-			out.Offline++
-		case "provisioning", "pending", HostStatusVMReady, HostStatusWaitingAgent, HostStatusAgentBootstrap, HostStatusAgentRegistered:
-			out.Provisioning++
-		}
-	}
-	return out
-}
-
-func summarizeProjects(items []domaindocker.Project) domaindocker.StatusSummary {
-	out := domaindocker.StatusSummary{Total: len(items)}
-	for _, item := range items {
-		countStatus(&out, item.Status)
-	}
-	return out
-}
-
-func summarizeServices(items []domaindocker.Service) domaindocker.StatusSummary {
-	out := domaindocker.StatusSummary{Total: len(items)}
-	for _, item := range items {
-		countStatus(&out, item.Status)
-	}
-	return out
-}
-
-func summarizePorts(items []domaindocker.PortMapping) domaindocker.PortSummary {
-	out := domaindocker.PortSummary{Total: len(items)}
-	now := time.Now().UTC()
-	for _, item := range items {
-		switch strings.ToLower(item.ExposureScope) {
-		case "vpn":
-			out.VPN++
-		case "public":
-			out.Public++
-		default:
-			out.Internal++
-		}
-		if item.ExpiresAt != nil && item.ExpiresAt.Before(now) {
-			out.Expired++
-		}
-	}
-	return out
-}
-
-func countStatus(out *domaindocker.StatusSummary, status string) {
-	switch strings.ToLower(status) {
-	case "running", "online", "ready", "active", HostStatusDockerReady:
-		out.Running++
-	case "pending", "queued", "provisioning", "defined", "draft", HostStatusVMReady, HostStatusWaitingAgent, HostStatusAgentBootstrap, HostStatusAgentRegistered:
-		out.Pending++
-	case "failed", "error", "callback_timeout", HostStatusAgentFailed:
-		out.Failed++
-	case "stopped", "exited", "disabled":
-		out.Stopped++
-	default:
-		out.Unknown++
-	}
 }
 
 func pageOf[T any](items []T, total, page, pageSize int) domaindocker.Page[T] {

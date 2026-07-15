@@ -48,7 +48,7 @@ func TestResourceMenusRequireWorkspaceResourcePermission(t *testing.T) {
 }
 
 func TestVirtualizationMenusRequireWorkspaceResourcePermission(t *testing.T) {
-	item := domainmenu.Record{ID: "virtualization-workbench-vms", Path: "/virtualization/vms"}
+	item := domainmenu.Record{ID: "virtualization-workbench-vms", Path: "/compute/virtualization/vms"}
 
 	if isVisibleByPermissions(item, []string{appaccess.PermVirtualizationVMsView}) {
 		t.Fatalf("virtualization menu should require %s", appaccess.PermWorkspaceResourceView)
@@ -59,7 +59,7 @@ func TestVirtualizationMenusRequireWorkspaceResourcePermission(t *testing.T) {
 }
 
 func TestVirtualizationRootMenuVisibleWithAnyVirtualizationPermission(t *testing.T) {
-	item := domainmenu.Record{ID: "virtualization-workbench", Path: "/virtualization"}
+	item := domainmenu.Record{ID: "virtualization-workbench", Path: "/compute/virtualization"}
 
 	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationSyncView}) {
 		t.Fatalf("virtualization root menu should be visible with any virtualization view permission")
@@ -113,7 +113,7 @@ func TestComputeTaskMenusUseCategoryPermissions(t *testing.T) {
 }
 
 func TestAIGatewayMenuRequiresWorkspaceAndGatewayViewPermission(t *testing.T) {
-	item := domainmenu.Record{ID: "ai-gateway", Path: "/ai-gateway"}
+	item := domainmenu.Record{ID: "ai-gateway-tokens", Path: "/ai-gateway/tokens"}
 
 	if isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView}) {
 		t.Fatalf("AI Gateway menu should require %s", appaccess.PermAIGatewayView)
@@ -127,14 +127,14 @@ func TestAIGatewayMenuRequiresWorkspaceAndGatewayViewPermission(t *testing.T) {
 }
 
 func TestAIGatewayChildMenusUseSpecificPermissions(t *testing.T) {
-	overview := domainmenu.Record{ID: "ai-gateway-overview", Path: "/ai-gateway/overview"}
+	manifest := domainmenu.Record{ID: "ai-gateway-manifest", Path: "/ai-gateway/manifest"}
 	clients := domainmenu.Record{ID: "ai-gateway-clients", Path: "/ai-gateway/clients"}
 	tokens := domainmenu.Record{ID: "ai-gateway-tokens", Path: "/ai-gateway/tokens"}
 	governance := domainmenu.Record{ID: "ai-gateway-governance", Path: "/ai-gateway/governance"}
 	callLogs := domainmenu.Record{ID: "ai-gateway-call-logs", Path: "/ai-gateway/call-logs"}
 
-	if !isVisibleByPermissions(overview, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayView}) {
-		t.Fatalf("AI Gateway overview should be visible with view permission")
+	if !isVisibleByPermissions(manifest, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayView}) {
+		t.Fatalf("AI Gateway manifest should be visible with view permission")
 	}
 	if isVisibleByPermissions(clients, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayView}) {
 		t.Fatalf("AI Gateway clients should require manage permission")

@@ -125,7 +125,7 @@ func syncDisabledModuleMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.Mo
 	if err := deleteDisabledModuleMenus(ctx, db, items, modules); err != nil {
 		return err
 	}
-	return cleanupDeprecatedMenus(ctx, db, deprecatedMenuIDs())
+	return cleanupDeprecatedMenus(ctx, db, obsoleteMenuIDsForCleanup())
 }
 
 func syncBootstrapRuntime(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) error {

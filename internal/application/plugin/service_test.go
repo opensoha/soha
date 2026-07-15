@@ -77,6 +77,75 @@ type capturePluginAuditRecorder struct {
 	entries []domainaudit.Entry
 }
 
+type fixtureMarketplaceProvider struct {
+	items map[string]domainplugin.MarketplacePlugin
+}
+
+func newFixtureMarketplaceProvider() *fixtureMarketplaceProvider {
+	k8sManifest := domainplugin.PluginManifest{
+		ID: "opensoha.k8s-sre-pack", Name: "K8s SRE Pack", Version: "0.1.0",
+		Publisher: "opensoha", Type: "skill-pack",
+		Permissions: &domainplugin.PluginPermissionRequest{
+			Required: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
+		},
+		Runtime:   &domainplugin.PluginRuntimeSpec{Mode: "manifest-only"},
+		Integrity: &domainplugin.PluginIntegrity{Status: "catalog"},
+	}
+	feishuManifest := domainplugin.PluginManifest{
+		ID: "opensoha.feishu", Name: "Feishu Connector", Version: "0.1.0",
+		Publisher: "opensoha", Type: "connector",
+		Assets: &domainplugin.PluginAssetSnapshot{
+			Connectors: []string{"connectors/feishu/connector.manifest.json"},
+		},
+		Capabilities: &domainplugin.PluginCapabilityRequest{Tools: []string{"feishu.message.send_text"}},
+		Permissions: &domainplugin.PluginPermissionRequest{
+			Required: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
+		},
+		Runtime:   &domainplugin.PluginRuntimeSpec{Mode: "external-http"},
+		Integrity: &domainplugin.PluginIntegrity{Status: "catalog"},
+	}
+	return &fixtureMarketplaceProvider{items: map[string]domainplugin.MarketplacePlugin{
+		k8sManifest.ID: {
+			ID: k8sManifest.ID, Name: k8sManifest.Name, Version: k8sManifest.Version,
+			Publisher: k8sManifest.Publisher, Type: k8sManifest.Type,
+			Source: "marketplace:opensoha/k8s-sre-pack", SourceID: "fixture", Manifest: k8sManifest,
+		},
+		feishuManifest.ID: {
+			ID: feishuManifest.ID, Name: feishuManifest.Name, Version: feishuManifest.Version,
+			Publisher: feishuManifest.Publisher, Type: feishuManifest.Type,
+			Source: "marketplace:opensoha/feishu", SourceID: "fixture", Manifest: feishuManifest,
+		},
+	}}
+}
+
+func (p *fixtureMarketplaceProvider) List(_ context.Context, _ domainplugin.MarketplaceFilter) ([]domainplugin.MarketplacePlugin, error) {
+	items := make([]domainplugin.MarketplacePlugin, 0, len(p.items))
+	for _, item := range p.items {
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (p *fixtureMarketplaceProvider) Get(_ context.Context, ref domainplugin.PluginVersionRef) (domainplugin.MarketplacePlugin, error) {
+	item, ok := p.items[ref.PluginID]
+	if !ok {
+		return domainplugin.MarketplacePlugin{}, apperrors.ErrNotFound
+	}
+	return item, nil
+}
+
+func (p *fixtureMarketplaceProvider) FetchManifest(ctx context.Context, ref domainplugin.PluginVersionRef) (ResolvedManifest, error) {
+	item, err := p.Get(ctx, ref)
+	if err != nil {
+		return ResolvedManifest{}, err
+	}
+	return ResolvedManifest{
+		Plugin: item, Manifest: item.Manifest, Integrity: item.Manifest.Integrity,
+		ChecksumStatus: "not_provided", SignatureStatus: "catalog",
+		Source: item.Source, SourceID: item.SourceID,
+	}, nil
+}
+
 func (r *capturePluginAuditRecorder) Record(_ context.Context, entry domainaudit.Entry) error {
 	r.entries = append(r.entries, entry)
 	return nil
@@ -95,11 +164,29 @@ func TestInstallRequiresPluginInstallPermission(t *testing.T) {
 	}
 }
 
+func TestNewServiceDoesNotExposeEmbeddedMarketplacePlugins(t *testing.T) {
+	service := New(newMemoryPluginRepo(), appaccess.NewPermissionResolver(stubRolePermissions{
+		"viewer": {appaccess.PermPluginView},
+	}), nil)
+
+	items, err := service.ListMarketplace(
+		context.Background(),
+		domainidentity.Principal{Roles: []string{"viewer"}},
+		domainplugin.MarketplaceFilter{},
+	)
+	if err != nil {
+		t.Fatalf("ListMarketplace returned error: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("embedded marketplace plugins = %#v, want none", items)
+	}
+}
+
 func TestInstallStoresManifestSnapshotWithoutGrantingPermissions(t *testing.T) {
 	repo := newMemoryPluginRepo()
-	service := New(repo, appaccess.NewPermissionResolver(stubRolePermissions{
+	service := NewWithOptions(repo, appaccess.NewPermissionResolver(stubRolePermissions{
 		"installer": {appaccess.PermPluginView, appaccess.PermPluginInstall},
-	}), nil)
+	}), nil, WithMarketplaceProvider(newFixtureMarketplaceProvider()))
 
 	item, err := service.Install(context.Background(), domainidentity.Principal{UserID: "admin", Roles: []string{"installer"}}, domainplugin.PluginInstallRequest{
 		PluginID: "opensoha.k8s-sre-pack",
@@ -125,9 +212,9 @@ func TestInstallStoresManifestSnapshotWithoutGrantingPermissions(t *testing.T) {
 func TestInstallConnectorMarketplaceManifestRecordsSnapshotAndAudit(t *testing.T) {
 	repo := newMemoryPluginRepo()
 	audit := &capturePluginAuditRecorder{}
-	service := New(repo, appaccess.NewPermissionResolver(stubRolePermissions{
+	service := NewWithOptions(repo, appaccess.NewPermissionResolver(stubRolePermissions{
 		"installer": {appaccess.PermPluginView, appaccess.PermPluginInstall},
-	}), audit)
+	}), audit, WithMarketplaceProvider(newFixtureMarketplaceProvider()))
 
 	item, err := service.Install(context.Background(), domainidentity.Principal{
 		UserID:   "admin",
@@ -227,14 +314,15 @@ func TestInstallRemoteMarketplaceManifestVerifiesChecksumAndRegistersExtensions(
 			"installer": {appaccess.PermPluginView, appaccess.PermPluginInstall, appaccess.PermPlatformExtensionsView},
 		}),
 		nil,
-		WithMarketplaceProvider(NewCompositeMarketplaceProvider(NewDefaultMarketplaceProvider(), remoteProvider)),
+		WithMarketplaceProvider(NewCompositeMarketplaceProvider(remoteProvider)),
 	)
 
 	item, err := service.Install(context.Background(), domainidentity.Principal{Roles: []string{"installer"}}, domainplugin.PluginInstallRequest{
-		PluginID: "opensoha.remote-skill",
-		SourceID: "community",
-		Version:  "0.2.0",
-		Enable:   true,
+		PluginID:       "opensoha.remote-skill",
+		SourceID:       "community",
+		MarketplaceURL: server.URL + "/index.json",
+		Version:        "0.2.0",
+		Enable:         true,
 	})
 	if err != nil {
 		t.Fatalf("Install returned error: %v", err)

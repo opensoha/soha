@@ -152,7 +152,7 @@ func TestListIncludesAIGatewayDescriptor(t *testing.T) {
 	if !status.Enabled {
 		t.Fatalf("AI Gateway module should be enabled from config")
 	}
-	if status.Descriptor.DefaultPath != "/ai-gateway/overview" {
+	if status.Descriptor.DefaultPath != "/ai-gateway/manifest" {
 		t.Fatalf("AI Gateway default path = %q", status.Descriptor.DefaultPath)
 	}
 	if status.Descriptor.EnabledConfigKey != "modules.ai_gateway.enabled" {
@@ -166,13 +166,13 @@ func TestListIncludesAIGatewayDescriptor(t *testing.T) {
 			t.Fatalf("AI Gateway visible permissions = %v, missing %s", status.Descriptor.VisiblePermissions, permission)
 		}
 	}
-	for _, id := range []string{"ai-gateway", "ai-gateway-overview", "ai-gateway-manifest", "ai-gateway-clients", "ai-gateway-tokens", "ai-gateway-governance", "ai-gateway-call-logs"} {
+	for _, id := range []string{"ai-gateway-relay", "ai-gateway-manifest", "ai-gateway-clients", "ai-gateway-tokens", "ai-gateway-governance", "ai-gateway-call-logs"} {
 		if !slices.Contains(status.Descriptor.SeedMenus, id) {
 			t.Fatalf("AI Gateway seed menus = %v, missing %s", status.Descriptor.SeedMenus, id)
 		}
 	}
-	if slices.Contains(status.Descriptor.SeedMenus, "ai-workbench-gateway") {
-		t.Fatalf("AI Gateway seed menus should not include deprecated ai-workbench-gateway: %v", status.Descriptor.SeedMenus)
+	if len(status.Descriptor.SeedMenus) != 6 {
+		t.Fatalf("AI Gateway seed menus should contain only canonical leaves: %v", status.Descriptor.SeedMenus)
 	}
 }
 

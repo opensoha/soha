@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -61,8 +60,7 @@ type Service struct {
 type Option func(*Service)
 
 func New(repo domainplugin.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder) *Service {
-	staticProvider := NewStaticMarketplaceProvider(defaultMarketplace())
-	return NewWithOptions(repo, permissions, audit, WithMarketplaceProvider(staticProvider))
+	return NewWithOptions(repo, permissions, audit)
 }
 
 func NewWithOptions(repo domainplugin.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, options ...Option) *Service {
@@ -70,7 +68,7 @@ func NewWithOptions(repo domainplugin.Repository, permissions *appaccess.Permiss
 		repo:        repo,
 		permissions: permissions,
 		audit:       audit,
-		marketplace: NewDefaultMarketplaceProvider(),
+		marketplace: NewCompositeMarketplaceProvider(),
 		extensions:  NewExtensionRegistry(),
 	}
 	s.adHocProvider = func(marketplaceURL string) (MarketplaceProvider, error) {
@@ -483,6 +481,9 @@ func (s *Service) providerFor(marketplaceURL string) (MarketplaceProvider, error
 	if marketplaceURL == "" {
 		return s.marketplace, nil
 	}
+	if provider, ok := configuredMarketplaceProviderForURL(s.marketplace, marketplaceURL); ok {
+		return provider, nil
+	}
 	if s.adHocProvider == nil {
 		return nil, fmt.Errorf("%w: ad-hoc marketplace urls are not enabled", apperrors.ErrInvalidArgument)
 	}
@@ -760,129 +761,4 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func defaultK8sMarketplaceManifest() domainplugin.PluginManifest {
-	return domainplugin.PluginManifest{
-		ID:          "opensoha.k8s-sre-pack",
-		Name:        "K8s SRE Pack",
-		Version:     "0.1.0",
-		Publisher:   "opensoha",
-		Type:        "skill-pack",
-		Description: "Read-only Kubernetes SRE skills and MCP preset references for AI Gateway workflows.",
-		Assets: &domainplugin.PluginAssetSnapshot{
-			Skills:     []string{"skills/ai-gateway/k8s-sre/SKILL.md"},
-			MCPPresets: []string{"mcp-presets/k8s-readonly.yaml"},
-		},
-		Capabilities: &domainplugin.PluginCapabilityRequest{
-			Tools: []string{"k8s.pods.list", "k8s.pods.logs", "k8s.events.list"},
-		},
-		Permissions: &domainplugin.PluginPermissionRequest{
-			Required: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
-			Domain:   []string{appaccess.PermWorkspaceResourceView},
-		},
-		Runtime:   &domainplugin.PluginRuntimeSpec{Mode: "manifest-only"},
-		Integrity: &domainplugin.PluginIntegrity{Status: "catalog"},
-		ExtensionPoints: &domainplugin.PluginExtensionPoints{
-			AI: &sohaapi.PluginAIExtensions{
-				SkillPacks: []sohaapi.PluginExtensionContribution{
-					{
-						ID:             "k8s-sre-pack",
-						Label:          "Kubernetes SRE Pack",
-						PermissionKeys: []string{appaccess.PermAIGatewayView},
-					},
-				},
-				MCPPresets: []sohaapi.PluginExtensionContribution{
-					{
-						ID:    "k8s-readonly",
-						Label: "Kubernetes readonly MCP preset",
-					},
-				},
-			},
-		},
-	}
-}
-
-func defaultFeishuMarketplaceManifest() domainplugin.PluginManifest {
-	return domainplugin.PluginManifest{
-		ID:          "opensoha.feishu",
-		Name:        "Feishu Connector",
-		Version:     "0.1.0",
-		Publisher:   "opensoha",
-		Type:        "connector",
-		Description: "Feishu connector runtime capability bundle for AI Gateway actions.",
-		Assets: &domainplugin.PluginAssetSnapshot{
-			Connectors: []string{"connectors/feishu/connector.manifest.json"},
-		},
-		Capabilities: &domainplugin.PluginCapabilityRequest{
-			Tools: []string{"feishu.message.send_text"},
-		},
-		Permissions: &domainplugin.PluginPermissionRequest{
-			Required: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
-			Domain:   []string{"connector"},
-		},
-		Runtime: &domainplugin.PluginRuntimeSpec{
-			Mode:         "external-http",
-			HealthPath:   "/healthz",
-			ManifestPath: "/manifest",
-			ActionPath:   "/actions/{action}",
-		},
-		Integrity: &domainplugin.PluginIntegrity{Status: "catalog"},
-		ExtensionPoints: &domainplugin.PluginExtensionPoints{
-			AI: &sohaapi.PluginAIExtensions{
-				ToolProviders: []sohaapi.PluginExtensionContribution{
-					{
-						ID:             "feishu-message-tools",
-						Label:          "Feishu Message Tools",
-						ActionRef:      "feishu.message.send_text",
-						PermissionKeys: []string{appaccess.PermAIGatewayInvoke},
-					},
-				},
-			},
-			Alerts: &sohaapi.PluginAlertExtensions{
-				NotificationChannels: []sohaapi.PluginExtensionContribution{
-					{
-						ID:        "feishu-webhook",
-						Label:     "Feishu Webhook",
-						ActionRef: "feishu.message.send_text",
-					},
-				},
-			},
-		},
-	}
-}
-
-func defaultMarketplace() []domainplugin.MarketplacePlugin {
-	k8sManifest := defaultK8sMarketplaceManifest()
-	feishuManifest := defaultFeishuMarketplaceManifest()
-	return []domainplugin.MarketplacePlugin{
-		{
-			ID:         k8sManifest.ID,
-			Name:       k8sManifest.Name,
-			Version:    k8sManifest.Version,
-			Publisher:  k8sManifest.Publisher,
-			Type:       k8sManifest.Type,
-			Summary:    k8sManifest.Description,
-			Source:     "marketplace:opensoha/k8s-sre-pack",
-			SourceID:   defaultMarketplaceSourceID,
-			RiskLevel:  "read",
-			Categories: []string{"ai", "sre"},
-			Verified:   true,
-			Manifest:   k8sManifest,
-		},
-		{
-			ID:         feishuManifest.ID,
-			Name:       feishuManifest.Name,
-			Version:    feishuManifest.Version,
-			Publisher:  feishuManifest.Publisher,
-			Type:       feishuManifest.Type,
-			Summary:    feishuManifest.Description,
-			Source:     "marketplace:opensoha/feishu",
-			SourceID:   defaultMarketplaceSourceID,
-			RiskLevel:  "mutate",
-			Categories: []string{"connector", "alert.notification"},
-			Verified:   true,
-			Manifest:   feishuManifest,
-		},
-	}
 }

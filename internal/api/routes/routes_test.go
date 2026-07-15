@@ -111,8 +111,8 @@ func TestRegisterComputeRoutesFollowsModuleAvailability(t *testing.T) {
 		want int
 	}{
 		{name: "disabled", cfg: cfgpkg.Config{}, want: 0},
-		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 6},
-		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 6},
+		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 3},
+		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 3},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			router := gin.New()
@@ -479,8 +479,6 @@ func TestRegisterProviderPortalRoutesExposeIdentityProviderWorkbenchAndOIDCProto
 		"POST /api/v1/identity/outposts",
 		"PATCH /api/v1/identity/outposts/:outpostID",
 		"DELETE /api/v1/identity/outposts/:outpostID",
-		"GET /api/v1/identity/sessions",
-		"POST /api/v1/identity/sessions/:sessionID/revoke",
 		"GET /api/v1/identity/audit/events",
 		"GET /.well-known/openid-configuration",
 		"GET /oauth2/authorize",
@@ -663,7 +661,6 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 		{name: "docker project deploy", method: "POST", path: "/api/v1/docker/projects/:id/deploy", resourceKind: "DockerProject", action: "deploy", permission: appaccess.PermDockerProjectsDeploy},
 		{name: "access scope grant update", method: "PUT", path: "/api/v1/access/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "update", permission: appaccess.PermAccessScopeGrantsManage},
 		{name: "identity policy update", method: "PATCH", path: "/api/v1/identity/policies/:applicationID", resourceKind: "IdentityPolicy", action: "update", permission: appaccess.PermIdentityPoliciesManage},
-		{name: "identity session revoke", method: "POST", path: "/api/v1/identity/sessions/:sessionID/revoke", resourceKind: "IdentitySession", action: "revoke", permission: appaccess.PermIdentitySessionsManage},
 		{name: "identity outpost update", method: "PATCH", path: "/api/v1/identity/outposts/:outpostID", resourceKind: "IdentityOutpost", action: "update", permission: appaccess.PermIdentityOutpostsManage},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

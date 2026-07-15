@@ -26,7 +26,7 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 var workspaceResourceMenuPrefixes = []string{
 	"/cluster-resources", "/workloads", "/configuration", "/network", "/storage",
 	"/platform-access-control", "/helm", "/extensions", "/clusters", "/monitoring-workbench",
-	"/ai-gateway", "/ai-workbench", "/virtualization", "/observability", "/ai-observe", "/chat",
+	"/ai-gateway", "/ai-workbench", "/observability",
 	"/compute",
 }
 
@@ -117,26 +117,24 @@ func observabilityAIMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermObserveHealingView,
 			appaccess.PermObserveEventsView,
 		}}, true
-	case "monitoring-workbench-overview", "monitoring":
+	case "monitoring-workbench-overview":
 		return visibilityRule{permissions: []string{appaccess.PermObserveMonitoringView}}, true
-	case "monitoring-workbench-alerts", "alerts":
+	case "monitoring-workbench-alerts":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAlertsView}}, true
-	case "monitoring-workbench-rules", "rules":
+	case "monitoring-workbench-rules":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAlertRulesView}}, true
-	case "monitoring-workbench-notifications", "notifications":
+	case "monitoring-workbench-notifications":
 		return visibilityRule{permissions: []string{appaccess.PermObserveNotificationsView}}, true
-	case "monitoring-workbench-oncall", "oncall":
+	case "monitoring-workbench-oncall":
 		return visibilityRule{permissions: []string{appaccess.PermObserveOncallView}}, true
-	case "monitoring-workbench-healing", "healing":
+	case "monitoring-workbench-healing":
 		return visibilityRule{permissions: []string{appaccess.PermObserveHealingView}}, true
-	case "monitoring-workbench-events", "events":
+	case "monitoring-workbench-events":
 		return visibilityRule{permissions: []string{appaccess.PermObserveEventsView}}, true
-	case "settings-extensions", "extension-center":
+	case "settings-extensions":
 		return visibilityRule{permissions: []string{appaccess.PermPluginView}}, true
-	case "settings-extensions-marketplace", "extensions-marketplace", "extensions-installed", "plugins", "plugins-marketplace", "plugins-installed":
+	case "settings-extensions-marketplace":
 		return visibilityRule{permissions: []string{appaccess.PermPluginView}}, true
-	case "settings-extensions-capabilities", "extensions-capabilities":
-		return visibilityRule{permissions: []string{appaccess.PermPlatformExtensionsView}}, true
 	default:
 		return visibilityRule{}, false
 	}
@@ -163,11 +161,11 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermAIGatewayRelayInvoke,
 			appaccess.PermAIGatewayRelayManage,
 		}}, true
-	case "ai-workbench-chat", "ai-workbench-investigation", "assistant-workbench":
+	case "ai-workbench-chat", "ai-workbench-investigation":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
 	case "ai-workbench-agent-providers":
 		return visibilityRule{permissions: []string{appaccess.PermAIAgentProvidersView, appaccess.PermAIAgentProvidersManage}}, true
-	case "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-tool-settings", "ai-workbench-operations", "ai-workbench-tools", "assistant-operations", "assistant-tools":
+	case "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-tool-settings", "ai-workbench-operations", "ai-workbench-tools":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
 	case "ai-workbench-knowledge":
 		return visibilityRule{permissions: []string{appaccess.PermAIKnowledgeView, appaccess.PermAIKnowledgeManage}}, true
@@ -177,9 +175,9 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermAIEvaluationsView, appaccess.PermAIEvaluationsManage}}, true
 	case "ai-workbench-model-settings":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
-	case "ai-gateway", "ai-gateway-tokens":
+	case "ai-gateway-tokens":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage}}, true
-	case "ai-gateway-overview", "ai-gateway-manifest":
+	case "ai-gateway-manifest":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true
 	case "ai-gateway-relay":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayRelayView, appaccess.PermAIGatewayRelayInvoke, appaccess.PermAIGatewayRelayManage}}, true
@@ -206,8 +204,6 @@ func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermVirtualizationSyncView,
 			appaccess.PermVirtualizationSyncManage,
 		}}, true
-	case "virtualization-workbench-overview":
-		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOverviewView}}, true
 	case "virtualization-workbench-vms":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationVMsView}}, true
 	case "virtualization-workbench-clusters":
@@ -282,7 +278,6 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermIdentityProvidersView,
 			appaccess.PermIdentityOutpostsView,
 			appaccess.PermIdentityPoliciesView,
-			appaccess.PermIdentitySessionsView,
 			appaccess.PermIdentityAuditView,
 		}}, true
 	case "identity-applications":
@@ -293,10 +288,6 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermIdentityOutpostsView}}, true
 	case "identity-policies":
 		return visibilityRule{permissions: []string{appaccess.PermIdentityPoliciesView}}, true
-	case "identity-sessions":
-		return visibilityRule{permissions: []string{appaccess.PermIdentitySessionsView}}, true
-	case "identity-audit":
-		return visibilityRule{permissions: []string{appaccess.PermIdentityAuditView}}, true
 	case "system-online-users":
 		return visibilityRule{permissions: []string{appaccess.PermSystemOnlineUsersView}}, true
 	case "announcements":

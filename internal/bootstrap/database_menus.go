@@ -100,7 +100,6 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "ai-workbench-tool-settings", ParentID: "ai-workbench", Path: "/ai-workbench/tool-settings", LabelZH: "Skills 与 MCP", LabelEN: "Skills & MCP", IconKey: "wrench", Section: "ai-engineering", SortOrder: 20, Enabled: true},
 	{ID: "ai-workbench-agent-providers", ParentID: "ai-workbench", Path: "/ai-workbench/agent-providers", LabelZH: "Agent Providers", LabelEN: "Agent Providers", IconKey: "puzzle", Section: "ai-engineering", SortOrder: 30, Enabled: true},
 	{ID: "ai-workbench-model-settings", ParentID: "ai-workbench", Path: "/ai-workbench/model-settings", LabelZH: "默认模型", LabelEN: "Default Model", IconKey: "settings", Section: "ai-model-access", SortOrder: 5, Enabled: true},
-	{ID: "ai-gateway-overview", ParentID: "ai-workbench", Path: "/ai-gateway/overview", LabelZH: "Gateway 概览", LabelEN: "Gateway Overview", IconKey: "gauge", Section: "ai-model-access", SortOrder: 8, Enabled: true},
 	{ID: "ai-gateway-relay", ParentID: "ai-workbench", Path: "/ai-gateway/relay", LabelZH: "模型与路由", LabelEN: "Models & Routes", IconKey: "link", Section: "ai-model-access", SortOrder: 10, Enabled: true},
 	{ID: "ai-gateway-clients", ParentID: "ai-workbench", Path: "/ai-gateway/clients", LabelZH: "AI Clients", LabelEN: "AI Clients", IconKey: "link", Section: "ai-model-access", SortOrder: 20, Enabled: true},
 	{ID: "ai-gateway-tokens", ParentID: "ai-workbench", Path: "/ai-gateway/tokens", LabelZH: "Tokens", LabelEN: "Tokens", IconKey: "key", Section: "ai-model-access", SortOrder: 30, Enabled: true},
@@ -146,7 +145,6 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "Provider", LabelEN: "Providers", IconKey: "shield", Section: "provider", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
 	{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "Outpost", LabelEN: "Outposts", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
 	{ID: "identity-policies", ParentID: "identity", Path: "/identity/policies", LabelZH: "访问策略", LabelEN: "Policies", IconKey: "shield", Section: "provider", SortOrder: 40, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-sessions", ParentID: "identity", Path: "/identity/sessions", LabelZH: "会话", LabelEN: "Sessions", IconKey: "users", Section: "operations", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
 	{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 227, Enabled: true},
 	{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "operations", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
 	{ID: "access", Path: "/access", LabelZH: "访问控制", LabelEN: "Access Control", IconKey: "shield", Section: "admin", SortOrder: 240, Enabled: true, Roles: []string{"admin"}},
@@ -171,7 +169,7 @@ func defaultMenuSeeds() []menuSeed {
 	return append([]menuSeed(nil), builtinMenuSeeds...)
 }
 
-func deprecatedMenuIDs() []string {
+func obsoleteMenuIDsForCleanup() []string {
 	return []string{
 		"assistant-root-cause",
 		"assistant-performance",
@@ -192,6 +190,7 @@ func deprecatedMenuIDs() []string {
 		"assistant-tools",
 		"ai-workbench-gateway",
 		"ai-gateway",
+		"ai-gateway-overview",
 		"plugins",
 		"plugins-marketplace",
 		"plugins-installed",
@@ -211,6 +210,7 @@ func deprecatedMenuIDs() []string {
 		"compute-workbench-tasks",
 		"compute-workbench-tasks-all",
 		"identity-audit",
+		"identity-sessions",
 	}
 }
 
@@ -241,7 +241,7 @@ func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) e
 	}
 	allItems := append([]menuSeed(nil), items...)
 	items = filterSeedMenusByModules(items, modules)
-	if err := upsertMenusAfterDeprecatedCleanup(ctx, db, items, deprecatedMenuIDs(), now); err != nil {
+	if err := upsertMenusAfterDeprecatedCleanup(ctx, db, items, obsoleteMenuIDsForCleanup(), now); err != nil {
 		return err
 	}
 	if err := deleteDisabledModuleMenus(ctx, db, allItems, modules); err != nil {
@@ -449,7 +449,6 @@ func syncAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time)
 		{id: "access-directory-sync", section: "users", sortOrder: 50},
 		{id: "menus", section: "users", sortOrder: 60},
 		{id: "settings-login", section: "users", sortOrder: 70},
-		{id: "identity-sessions", section: "operations", sortOrder: 10},
 		{id: "announcements", section: "operations", sortOrder: 30},
 		{id: "system-online-users", section: "operations", sortOrder: 40},
 		{id: "operations", section: "operations", sortOrder: 50},

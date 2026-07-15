@@ -11,10 +11,7 @@ func registerComputeRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 	}
 	protected.GET("/compute/overview", deps.Compute.Overview)
 	protected.GET("/compute/access-sources", deps.Compute.ListAccessSources)
-	protected.GET("/compute/providers", deps.Compute.ListProviders)
-	protected.GET("/compute/resources/:domain/:kind/:id/relations", deps.Compute.ListRelations)
 	protected.GET("/compute/tasks", deps.Compute.ListTasks)
-	protected.GET("/compute/tasks/:domain/:id", deps.Compute.GetTask)
 }
 
 func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
@@ -22,7 +19,6 @@ func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps
 		return
 	}
 
-	protected.GET("/virtualization/overview", deps.Virtualization.Overview)
 	protected.GET("/virtualization/clusters", deps.Virtualization.ListConnections)
 	protected.POST("/virtualization/clusters", deps.Virtualization.CreateConnection)
 	protected.PUT("/virtualization/clusters/:id", deps.Virtualization.UpdateConnection)
@@ -62,7 +58,6 @@ func registerDockerRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depende
 		return
 	}
 
-	protected.GET("/docker/overview", deps.Docker.Overview)
 	protected.GET("/docker/hosts", deps.Docker.ListHosts)
 	protected.POST("/docker/hosts", deps.Docker.CreateHost)
 	protected.POST("/docker/hosts/quick-create", deps.Docker.QuickCreateHost)

@@ -48,10 +48,6 @@ func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.PATCH("/identity/outposts/:outpostID", deps.ProviderPortal.UpdateOutpost)
 	protected.DELETE("/identity/outposts/:outpostID", deps.ProviderPortal.DeleteOutpost)
 
-	if deps.Auth != nil {
-		protected.GET("/identity/sessions", deps.Auth.ListSessions)
-		protected.POST("/identity/sessions/:sessionID/revoke", deps.Auth.RevokeSession)
-	}
 	if deps.Platform != nil {
 		protected.GET("/identity/audit/events", deps.Platform.ListAuditLogs)
 	}

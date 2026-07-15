@@ -17,10 +17,7 @@ import (
 type ComputeService interface {
 	Overview(context.Context, domainidentity.Principal) (sohaapi.ComputeOverview, error)
 	ListAccessSources(context.Context, domainidentity.Principal, appcompute.AccessSourceFilter) (sohaapi.ComputeAccessSourceListEnvelope, error)
-	ListProviders(context.Context, domainidentity.Principal, appcompute.ProviderFilter) (sohaapi.ComputeProviderListEnvelope, error)
-	ListRelations(context.Context, domainidentity.Principal, string, string, string, string, int) (sohaapi.ComputeResourceRelations, error)
 	ListTasks(context.Context, domainidentity.Principal, appcompute.TaskFilter) (sohaapi.ComputeTaskListEnvelope, error)
-	GetTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error)
 }
 
 type ComputeHandler struct{ service ComputeService }
@@ -51,36 +48,6 @@ func (h *ComputeHandler) ListAccessSources(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, result)
 }
 
-func (h *ComputeHandler) ListProviders(c *gin.Context) {
-	if value := strings.TrimSpace(c.Query("domain")); value != "" && !sohaapi.ComputeProviderDomain(value).Valid() {
-		writeError(c, invalidComputeFilter("domain"))
-		return
-	}
-	if value := strings.TrimSpace(c.Query("source")); value != "" && !sohaapi.ComputeProviderSource(value).Valid() {
-		writeError(c, invalidComputeFilter("source"))
-		return
-	}
-	result, err := h.service.ListProviders(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), appcompute.ProviderFilter{Domain: c.Query("domain"), Source: c.Query("source"), Cursor: c.Query("cursor"), Limit: queryLimit(c, 50)})
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.JSON(c, http.StatusOK, result)
-}
-
-func (h *ComputeHandler) ListRelations(c *gin.Context) {
-	if !sohaapi.ComputeDomain(c.Param("domain")).Valid() || !sohaapi.ComputeResourceKind(c.Param("kind")).Valid() {
-		writeError(c, invalidComputeFilter("resource"))
-		return
-	}
-	result, err := h.service.ListRelations(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("domain"), c.Param("kind"), c.Param("id"), c.Query("cursor"), queryLimit(c, 50))
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, result)
-}
-
 func (h *ComputeHandler) ListTasks(c *gin.Context) {
 	if value := strings.TrimSpace(c.Query("domain")); value != "" && !sohaapi.ComputeTaskDomain(value).Valid() {
 		writeError(c, invalidComputeFilter("domain"))
@@ -100,19 +67,6 @@ func (h *ComputeHandler) ListTasks(c *gin.Context) {
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, result)
-}
-
-func (h *ComputeHandler) GetTask(c *gin.Context) {
-	if !sohaapi.ComputeTaskDomain(c.Param("domain")).Valid() {
-		writeError(c, invalidComputeFilter("domain"))
-		return
-	}
-	item, err := h.service.GetTask(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("domain"), c.Param("id"))
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func invalidComputeFilter(name string) error { return &computeInputError{name: name} }

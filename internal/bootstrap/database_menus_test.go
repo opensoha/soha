@@ -33,7 +33,7 @@ func TestUpsertMenusCleansDeprecatedPathOwnersFirst(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO menus`).WillReturnResult(sqlmock.NewResult(0, 1))
 
 	err = upsertMenusAfterDeprecatedCleanup(context.Background(), db, []menuSeed{{
-		ID:      "extensions-marketplace",
+		ID:      "settings-extensions-marketplace",
 		Path:    "/plugins/marketplace",
 		LabelZH: "插件市场",
 		LabelEN: "Marketplace",
@@ -60,7 +60,7 @@ func TestCleanupDeprecatedMenusDeletesMenuBindingsAndMenus(t *testing.T) {
 		t.Fatalf("open gorm postgres mock: %v", err)
 	}
 
-	deprecatedIDs := []string{"ai-workbench-gateway", "assistant"}
+	deprecatedIDs := []string{"identity-sessions", "identity-audit"}
 	mock.ExpectExec(`DELETE FROM menu_role_bindings WHERE menu_id IN`).WithArgs(deprecatedIDs[0], deprecatedIDs[1]).WillReturnResult(sqlmock.NewResult(0, 2))
 	mock.ExpectExec(`DELETE FROM menus WHERE id IN`).WithArgs(deprecatedIDs[0], deprecatedIDs[1]).WillReturnResult(sqlmock.NewResult(0, 2))
 

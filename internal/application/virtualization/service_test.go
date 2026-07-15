@@ -705,42 +705,6 @@ func TestListAndGetOperationsAttachOperationState(t *testing.T) {
 	}
 }
 
-func TestOverviewIncludesAttentionAndSummaries(t *testing.T) {
-	repo := newMemoryRepo()
-	unavailableConn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderPVE, Name: "pve-a", Enabled: true, Health: map[string]any{"status": "unavailable"}})
-	degradedConn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv-a", Enabled: true, CredentialConfigured: true, Health: map[string]any{"status": "degraded"}})
-	repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv-b", Enabled: true, CredentialConfigured: false, Health: map[string]any{"status": "healthy"}})
-	repo.vms["vm-pve"] = domainvirtualization.VM{ID: "vm-pve", Provider: ProviderPVE, ConnectionID: unavailableConn.ID, Name: "vm-pve", Status: "running"}
-	repo.vms["vm-kv"] = domainvirtualization.VM{ID: "vm-kv", Provider: ProviderKubeVirt, ConnectionID: degradedConn.ID, Name: "vm-kv", Status: "stopped"}
-	repo.tasks["sync-failed"] = domainvirtualization.Task{ID: "sync-failed", Provider: ProviderPVE, ConnectionID: unavailableConn.ID, TaskKind: TaskKindAssetSync, Status: TaskStatusFailed, Result: map[string]any{"message": "sync failed"}, CreatedAt: time.Now().UTC()}
-	repo.tasks["vm-failed"] = domainvirtualization.Task{ID: "vm-failed", Provider: ProviderKubeVirt, ConnectionID: degradedConn.ID, TaskKind: TaskKindVMAction, Status: TaskStatusTimeout, Result: map[string]any{"error": "timeout"}, CreatedAt: time.Now().UTC().Add(-time.Minute)}
-	repo.tasks["pending"] = domainvirtualization.Task{ID: "pending", Provider: ProviderKubeVirt, ConnectionID: degradedConn.ID, TaskKind: TaskKindVMCreate, Status: TaskStatusRunning, CreatedAt: time.Now().UTC().Add(-2 * time.Minute)}
-	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
-
-	overview, err := service.Overview(context.Background(), testPrincipal())
-	if err != nil {
-		t.Fatalf("Overview() error = %v", err)
-	}
-	if overview.ConnectionSummary.Unavailable != 1 || overview.ConnectionSummary.Degraded != 1 || overview.ConnectionSummary.CredentialMissing != 2 || overview.ConnectionSummary.NeverSynced != 3 {
-		t.Fatalf("connection summary = %#v", overview.ConnectionSummary)
-	}
-	if overview.TaskSummary.Running != 1 || overview.TaskSummary.Failed != 1 || overview.TaskSummary.Timeout != 1 {
-		t.Fatalf("task summary = %#v", overview.TaskSummary)
-	}
-	if len(overview.Attention.RiskyConnections) == 0 || len(overview.Attention.FailedSyncTasks) != 1 || len(overview.Attention.FailedOperations) != 2 {
-		t.Fatalf("attention = %#v", overview.Attention)
-	}
-	if len(overview.ProviderSummary) != 2 {
-		t.Fatalf("provider summary = %#v", overview.ProviderSummary)
-	}
-	if overview.ProviderSummary[0].Provider != ProviderKubeVirt || overview.ProviderSummary[0].Connections != 2 || overview.ProviderSummary[0].VMs != 1 {
-		t.Fatalf("kubevirt provider summary = %#v", overview.ProviderSummary[0])
-	}
-	if overview.ProviderSummary[1].Provider != ProviderPVE || overview.ProviderSummary[1].Unavailable != 1 || overview.ProviderSummary[1].RunningVMs != 1 {
-		t.Fatalf("pve provider summary = %#v", overview.ProviderSummary[1])
-	}
-}
-
 func TestCreateVMUsesFlavorAndImageSelection(t *testing.T) {
 	repo := newMemoryRepo()
 	conn := repo.addConnection(domainvirtualization.Connection{

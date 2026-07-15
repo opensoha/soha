@@ -329,8 +329,6 @@ func identityMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		return nonPlatformMutationEntry("IdentityApplication", nonPlatformMutationAction(method, path), appaccess.PermIdentityApplicationsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/identity/policies"):
 		return nonPlatformMutationEntry("IdentityPolicy", nonPlatformMutationAction(method, path), appaccess.PermIdentityPoliciesManage, false), true
-	case strings.HasPrefix(path, "/api/v1/identity/sessions/") && strings.HasSuffix(path, "/revoke"):
-		return nonPlatformMutationEntry("IdentitySession", "revoke", appaccess.PermIdentitySessionsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/identity/outposts"):
 		return nonPlatformMutationEntry("IdentityOutpost", nonPlatformMutationAction(method, path), appaccess.PermIdentityOutpostsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/identity/providers") && strings.Contains(path, "/oidc-clients"):

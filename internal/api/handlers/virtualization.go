@@ -25,10 +25,6 @@ import (
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 )
 
-type VirtualizationOverviewService interface {
-	Overview(context.Context, domainidentity.Principal) (appvirtualization.Overview, error)
-}
-
 type VirtualizationConnectionService interface {
 	ListConnections(context.Context, domainidentity.Principal, domainvirtualization.ConnectionFilter) ([]domainvirtualization.Connection, error)
 	CreateConnection(context.Context, domainidentity.Principal, appvirtualization.ConnectionInput) (domainvirtualization.Connection, error)
@@ -83,7 +79,6 @@ type VirtualizationRuntimeService interface {
 }
 
 type VirtualizationService interface {
-	VirtualizationOverviewService
 	VirtualizationConnectionService
 	VirtualizationSyncService
 	VirtualizationVMService
@@ -94,7 +89,6 @@ type VirtualizationService interface {
 }
 
 type VirtualizationServices struct {
-	Overview    VirtualizationOverviewService
 	Connections VirtualizationConnectionService
 	Sync        VirtualizationSyncService
 	VMs         VirtualizationVMService
@@ -105,7 +99,6 @@ type VirtualizationServices struct {
 }
 
 type VirtualizationHandler struct {
-	overview    VirtualizationOverviewService
 	connections VirtualizationConnectionService
 	sync        VirtualizationSyncService
 	vms         VirtualizationVMService
@@ -117,26 +110,17 @@ type VirtualizationHandler struct {
 
 func NewVirtualizationHandler(service VirtualizationService) *VirtualizationHandler {
 	return NewVirtualizationHandlerWithServices(VirtualizationServices{
-		Overview: service, Connections: service, Sync: service, VMs: service,
+		Connections: service, Sync: service, VMs: service,
 		Images: service, Flavors: service, Operations: service, Runtime: service,
 	})
 }
 
 func NewVirtualizationHandlerWithServices(services VirtualizationServices) *VirtualizationHandler {
 	return &VirtualizationHandler{
-		overview: services.Overview, connections: services.Connections, sync: services.Sync,
+		connections: services.Connections, sync: services.Sync,
 		vms: services.VMs, images: services.Images, flavors: services.Flavors,
 		operations: services.Operations, runtime: services.Runtime,
 	}
-}
-
-func (h *VirtualizationHandler) Overview(c *gin.Context) {
-	item, err := h.overview.Overview(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, mapOverview(item))
 }
 
 func (h *VirtualizationHandler) ListConnections(c *gin.Context) {
@@ -571,26 +555,6 @@ func firstQuery(c *gin.Context, keys ...string) string {
 		}
 	}
 	return ""
-}
-
-func mapOverview(item appvirtualization.Overview) gin.H {
-	attention := gin.H{
-		"riskyConnections": mapConnections(item.Attention.RiskyConnections),
-		"failedSyncTasks":  mapOperations(item.Attention.FailedSyncTasks),
-		"failedOperations": mapOperations(item.Attention.FailedOperations),
-	}
-	out := gin.H{
-		"stats":             item.Stats,
-		"connectionSummary": item.ConnectionSummary,
-		"taskSummary":       item.TaskSummary,
-		"providerSummary":   item.ProviderSummary,
-		"attention":         attention,
-		"recentOperations":  mapOperations(item.RecentOperations),
-	}
-	if item.LastSyncTask != nil {
-		out["lastSyncTask"] = mapOperation(*item.LastSyncTask)
-	}
-	return out
 }
 
 func mapConnections(items []domainvirtualization.Connection) []gin.H {
