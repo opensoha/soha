@@ -4,5 +4,7 @@ namespace: soha
 resources:
   - deployment.yaml
 images:
+  - name: pgvector/pgvector
+    newTag: 0.8.5-pg18-trixie
   - name: yshanchui/soha
     newTag: latest

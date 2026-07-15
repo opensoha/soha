@@ -141,7 +141,7 @@ See the published docs for the current route, bootstrap, multi-`cmd`, and reserv
 - Go 1.23+
 - Node.js 20+
 - Docker and Docker Compose
-- PostgreSQL 18.4 for local backend development
+- PostgreSQL 18.4 with pgvector 0.8.5 when using an external database
 
 ### Install dependencies and start local services
 
@@ -158,7 +158,7 @@ different database or administrator credentials.
 
 This installs Go dependencies, then starts the local PostgreSQL service from `deploy/docker-compose.yaml`. Frontend dependencies are managed in the sibling `../soha-web` repository.
 
-The compose stack uses `postgres:18.4` and mounts the named volume at `/var/lib/postgresql`, which is required for PostgreSQL 18's default data directory layout. Existing local volumes created by PostgreSQL 16 cannot be reused by changing only the image tag; recreate disposable volumes or migrate data with `pg_dump`/`pg_restore` or `pg_upgrade`.
+The compose stack uses `pgvector/pgvector:0.8.5-pg18-trixie`, currently based on PostgreSQL 18.4 and the same Debian generation as the standard PostgreSQL 18.4 image, enables `vector` and `pg_trgm`, and preloads `pg_stat_statements`. It mounts the named volume at `/var/lib/postgresql`, which is required for PostgreSQL 18's default data directory layout. Override the image with `SOHA_POSTGRES_IMAGE` only with a PostgreSQL 18 image that provides these extensions and a compatible libc collation version. Existing local volumes created by PostgreSQL 16 cannot be reused by changing only the image tag; recreate disposable volumes or migrate data with `pg_dump`/`pg_restore` or `pg_upgrade`.
 
 ### Start the API and console
 
@@ -235,6 +235,20 @@ docker compose -f deploy/docker-compose.yaml up -d --build
 Run the application container without Compose when PostgreSQL is already
 reachable. This example keeps every standard default explicit so each value can
 be replaced independently before deployment:
+
+The external PostgreSQL server must run PostgreSQL 18 and provide pgvector and
+`pg_trgm`. The application migration user creates both extensions automatically;
+when that user cannot create extensions, a database administrator must run:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+```
+
+`pg_stat_statements` remains optional for external PostgreSQL. To enable it, an
+administrator must add it to `shared_preload_libraries`, enable
+`compute_query_id`, restart PostgreSQL, and create the extension in the Soha
+database. Its absence never blocks Soha startup on an external database.
 
 ```bash
 docker run -d \

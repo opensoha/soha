@@ -141,7 +141,7 @@ PostgreSQL + Kubernetes 集群
 - Go 1.23+
 - Node.js 20+
 - Docker 与 Docker Compose
-- PostgreSQL 18.4，用于本地后端开发
+- 外部数据库使用 PostgreSQL 18.4，并安装 pgvector 0.8.5
 
 ### 安装依赖并启动本地服务
 
@@ -157,7 +157,7 @@ make init
 
 该命令会安装 Go 依赖，并从 `deploy/docker-compose.yaml` 启动本地 PostgreSQL 服务。前端依赖由 sibling 仓库 `../soha-web` 自己管理。
 
-Compose 栈使用 `postgres:18.4`，并把命名卷挂载到 `/var/lib/postgresql`，以匹配 PostgreSQL 18 的默认数据目录布局。由 PostgreSQL 16 创建的本地数据卷不能只改镜像标签后直接复用；可丢弃的本地数据卷请重建，需要保留的数据请通过 `pg_dump`/`pg_restore` 或 `pg_upgrade` 迁移。
+Compose 栈使用 `pgvector/pgvector:0.8.5-pg18-trixie`，当前基于 PostgreSQL 18.4，并与标准 PostgreSQL 18.4 镜像使用相同 Debian 代际；默认启用 `vector`、`pg_trgm` 并 preload `pg_stat_statements`。命名卷挂载到 `/var/lib/postgresql`，以匹配 PostgreSQL 18 的默认数据目录布局。只有同样提供这些扩展且 libc collation 版本兼容的 PostgreSQL 18 镜像才能通过 `SOHA_POSTGRES_IMAGE` 覆盖。由 PostgreSQL 16 创建的本地数据卷不能只改镜像标签后直接复用；可丢弃的本地数据卷请重建，需要保留的数据请通过 `pg_dump`/`pg_restore` 或 `pg_upgrade` 迁移。
 
 ### 启动 API 和控制台
 
@@ -229,6 +229,18 @@ docker compose -f deploy/docker-compose.yaml up -d --build
 
 当 PostgreSQL 已经可访问、且不使用 Compose 时，可以直接启动应用容器。
 下面显式写出所有标准默认值，部署前可分别替换：
+
+外部 PostgreSQL 必须使用 PostgreSQL 18 并提供 pgvector 与 `pg_trgm`。应用迁移账号会自动创建扩展；
+如果该账号没有扩展安装权限，需要数据库管理员先执行：
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+```
+
+外部 PostgreSQL 的 `pg_stat_statements` 保持可选。启用时由数据库管理员将其加入
+`shared_preload_libraries`，开启 `compute_query_id`，重启 PostgreSQL 后在 Soha 数据库中
+创建扩展；未启用不会阻止 Soha 启动。
 
 ```bash
 docker run -d \
