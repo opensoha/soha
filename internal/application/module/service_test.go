@@ -49,7 +49,6 @@ func TestListIncludesVirtualizationDescriptor(t *testing.T) {
 	}
 	for _, menuID := range []string{
 		"virtualization-workbench",
-		"virtualization-workbench-overview",
 		"virtualization-workbench-vms",
 		"virtualization-workbench-clusters",
 		"virtualization-workbench-images",
@@ -59,6 +58,32 @@ func TestListIncludesVirtualizationDescriptor(t *testing.T) {
 	} {
 		if !slices.Contains(status.Descriptor.SeedMenus, menuID) {
 			t.Fatalf("virtualization seed menus = %v, missing %s", status.Descriptor.SeedMenus, menuID)
+		}
+	}
+}
+
+func TestListIncludesUnifiedComputeDescriptor(t *testing.T) {
+	service := New(cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}})
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ok := moduleStatusByID(items, "compute")
+	if !ok || !status.Enabled || status.Descriptor.DefaultPath != "/compute/overview" {
+		t.Fatalf("compute module = %#v", status)
+	}
+	for _, permission := range []string{"virtualization.images.view", "virtualization.flavors.view", "virtualization.sync.view", "docker.templates.view", "docker.operations.view"} {
+		if !slices.Contains(status.Descriptor.VisiblePermissions, permission) {
+			t.Fatalf("compute permissions missing %s: %v", permission, status.Descriptor.VisiblePermissions)
+		}
+	}
+	for _, menuID := range []string{
+		"compute-workbench-tasks-sync",
+		"compute-workbench-tasks-build",
+		"compute-workbench-tasks-operations",
+	} {
+		if !slices.Contains(status.Descriptor.SeedMenus, menuID) {
+			t.Fatalf("compute seed menus missing %s: %v", menuID, status.Descriptor.SeedMenus)
 		}
 	}
 }
@@ -100,7 +125,7 @@ func TestListIncludesDockerDescriptorWithoutRemovedDetailMenus(t *testing.T) {
 			t.Fatalf("docker visible permissions = %v, missing %s", status.Descriptor.VisiblePermissions, permission)
 		}
 	}
-	for _, menuID := range []string{"docker-workbench", "docker-workbench-overview", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations"} {
+	for _, menuID := range []string{"docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations"} {
 		if !slices.Contains(status.Descriptor.SeedMenus, menuID) {
 			t.Fatalf("docker seed menus = %v, missing %s", status.Descriptor.SeedMenus, menuID)
 		}

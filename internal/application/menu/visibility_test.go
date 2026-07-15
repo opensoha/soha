@@ -77,6 +77,41 @@ func TestVirtualizationSyncMenuVisibleWithViewOrManagePermission(t *testing.T) {
 	}
 }
 
+func TestComputeRootVisibleWithAnyChildReadPermission(t *testing.T) {
+	item := domainmenu.Record{ID: "compute-workbench", Path: "/compute"}
+	for _, permission := range []string{
+		appaccess.PermVirtualizationImagesView,
+		appaccess.PermVirtualizationFlavorsView,
+		appaccess.PermVirtualizationSyncView,
+		appaccess.PermDockerTemplatesView,
+		appaccess.PermDockerOperationsView,
+	} {
+		if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, permission}) {
+			t.Fatalf("compute root should be visible with %s", permission)
+		}
+	}
+}
+
+func TestComputeTaskMenusUseCategoryPermissions(t *testing.T) {
+	tests := []struct {
+		id         string
+		permission string
+	}{
+		{id: "compute-workbench-tasks-sync", permission: appaccess.PermVirtualizationSyncManage},
+		{id: "compute-workbench-tasks-build", permission: appaccess.PermDockerOperationsView},
+		{id: "compute-workbench-tasks-operations", permission: appaccess.PermVirtualizationOperationsView},
+	}
+
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			item := domainmenu.Record{ID: test.id, Path: "/compute/tasks"}
+			if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, test.permission}) {
+				t.Fatalf("%s should be visible with %s", test.id, test.permission)
+			}
+		})
+	}
+}
+
 func TestAIGatewayMenuRequiresWorkspaceAndGatewayViewPermission(t *testing.T) {
 	item := domainmenu.Record{ID: "ai-gateway", Path: "/ai-gateway"}
 

@@ -28,13 +28,22 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			SeedMenus:          []string{"dashboard", "clusters", "workloads", "configuration", "network", "network-gateway-api-gatewayclasses", "network-gateway-api-gateways", "network-gateway-api-httproutes", "network-gateway-api-backendtlspolicies", "network-gateway-api-grpcroutes", "network-gateway-api-referencegrants", "storage", "platform-access-control", "extensions", "helm"},
 		},
 		{
+			ID:                 "compute",
+			Name:               "计算资源工作台",
+			DefaultPath:        "/compute/overview",
+			EnabledConfigKey:   "modules.virtualization.enabled|modules.docker.enabled",
+			Dependencies:       []string{},
+			VisiblePermissions: []string{"virtualization.overview.view", "virtualization.vms.view", "virtualization.clusters.view", "virtualization.images.view", "virtualization.flavors.view", "virtualization.operations.view", "virtualization.sync.view", "virtualization.sync.manage", "docker.overview.view", "docker.hosts.view", "docker.projects.view", "docker.services.view", "docker.ports.view", "docker.templates.view", "docker.operations.view"},
+			SeedMenus:          []string{"compute-workbench", "compute-workbench-overview", "compute-workbench-access", "virtualization-workbench", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-flavors", "virtualization-workbench-operations", "virtualization-workbench-sync", "docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations", "compute-workbench-tasks-sync", "compute-workbench-tasks-build", "compute-workbench-tasks-operations"},
+		},
+		{
 			ID:                 "virtualization",
 			Name:               "虚拟化管理工作台",
 			DefaultPath:        "/virtualization",
 			EnabledConfigKey:   "modules.virtualization.enabled",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"virtualization.overview.view", "virtualization.vms.view", "virtualization.clusters.view", "virtualization.images.view", "virtualization.flavors.view", "virtualization.operations.view", "virtualization.sync.view", "virtualization.sync.manage"},
-			SeedMenus:          []string{"virtualization-workbench", "virtualization-workbench-overview", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-flavors", "virtualization-workbench-operations", "virtualization-workbench-sync"},
+			SeedMenus:          []string{"virtualization-workbench", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-flavors", "virtualization-workbench-operations", "virtualization-workbench-sync"},
 		},
 		{
 			ID:                 "docker",
@@ -43,7 +52,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.docker.enabled",
 			Dependencies:       []string{"virtualization"},
 			VisiblePermissions: []string{"docker.overview.view", "docker.hosts.view", "docker.projects.view", "docker.services.view", "docker.ports.view", "docker.templates.view", "docker.operations.view"},
-			SeedMenus:          []string{"docker-workbench", "docker-workbench-overview", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations"},
+			SeedMenus:          []string{"docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations"},
 		},
 		{
 			ID:                 "delivery",
@@ -108,6 +117,8 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 
 func (s *Service) enabled(id string) bool {
 	switch strings.TrimSpace(id) {
+	case "compute":
+		return s.cfg.Virtualization.Enabled || s.cfg.Docker.Enabled
 	case "delivery":
 		return s.cfg.Delivery.Enabled
 	case "monitoring":

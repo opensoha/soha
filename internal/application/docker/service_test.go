@@ -473,6 +473,12 @@ func TestQuickCreateHostBuildsDefaultDockerReadyCloudInit(t *testing.T) {
 	if dockerInstall < 0 || agentStart < 0 || dockerInstall > agentStart {
 		t.Fatalf("default cloud-init should attempt docker install before starting agent: %s", cloudInit)
 	}
+	if !strings.Contains(cloudInit, "apk add --no-cache docker docker-cli-compose") ||
+		!strings.Contains(cloudInit, "rc-update add docker default") ||
+		!strings.Contains(cloudInit, "rc-service soha-agent start") ||
+		!strings.Contains(cloudInit, "kubernetes:\n        enabled: false") {
+		t.Fatalf("default cloud-init should support Alpine/OpenRC: %s", cloudInit)
+	}
 	if operation.Payload["cloudInitConfigured"] != true {
 		t.Fatalf("operation payload = %#v", operation.Payload)
 	}

@@ -93,6 +93,34 @@ func TestRegisterCopilotRoutesExposesAgentRunCancel(t *testing.T) {
 	}
 }
 
+func TestRegisterComputeRoutesFollowsModuleAvailability(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, test := range []struct {
+		name string
+		cfg  cfgpkg.Config
+		want int
+	}{
+		{name: "disabled", cfg: cfgpkg.Config{}, want: 0},
+		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 6},
+		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 6},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			router := gin.New()
+			group := router.Group("/api/v1")
+			registerComputeRoutes(group, test.cfg, Dependencies{Compute: &apiHandlers.ComputeHandler{}})
+			count := 0
+			for _, route := range router.Routes() {
+				if len(route.Path) >= len("/api/v1/compute") && route.Path[:len("/api/v1/compute")] == "/api/v1/compute" {
+					count++
+				}
+			}
+			if count != test.want {
+				t.Fatalf("compute routes = %d, want %d", count, test.want)
+			}
+		})
+	}
+}
+
 func TestRegisterProtectedRoutesExposesFirstClassOpenAICompatibleRelayRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -689,6 +717,7 @@ func routeTestDependencies() Dependencies {
 		Copilot:        &apiHandlers.CopilotHandler{},
 		AIGateway:      &apiHandlers.AIGatewayHandler{},
 		Plugins:        &apiHandlers.PluginHandler{},
+		Compute:        &apiHandlers.ComputeHandler{},
 		Virtualization: &apiHandlers.VirtualizationHandler{},
 		Docker:         &apiHandlers.DockerHandler{},
 		Access:         &accesshandler.Handler{},

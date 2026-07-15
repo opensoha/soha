@@ -19,6 +19,7 @@ import (
 	appbuild "github.com/opensoha/soha/internal/application/build"
 	appcatalog "github.com/opensoha/soha/internal/application/catalog"
 	appcluster "github.com/opensoha/soha/internal/application/cluster"
+	appcompute "github.com/opensoha/soha/internal/application/compute"
 	appcopilot "github.com/opensoha/soha/internal/application/copilot"
 	appdelivery "github.com/opensoha/soha/internal/application/delivery"
 	appdirectorysync "github.com/opensoha/soha/internal/application/directorysync"
@@ -171,6 +172,7 @@ type coreServices struct {
 
 type deliveryServices struct {
 	workflowService       *appworkflow.Service
+	computeService        *appcompute.Service
 	virtualizationService *appvirtualization.Service
 	dockerService         *appdocker.Service
 	copilotService        *appcopilot.Service
@@ -583,6 +585,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}),
 		appdocker.WithRuntimeBearerToken(cfg.Runtime.ExecutionRunnerToken),
 	)
+	computeService := appcompute.New(repos.virtualizationRepository, repos.dockerRepository, repos.pluginRepository, core.permissionResolver, appcompute.Options{VirtualizationEnabled: cfg.Modules.Virtualization.Enabled, RuntimeEnabled: cfg.Modules.Docker.Enabled})
 	copilotService.SetAgentRuntimeReaders(core.executionService, runtimeResources, dockerService, virtualizationService, core.monitoringService)
 
 	deliveryService := appdelivery.New(core.applicationService, core.catalogService, core.buildService, workflowService, core.releaseService, repos.deliveryRepository, core.executionService, runtimeResources, core.permissionResolver)
@@ -596,6 +599,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 
 	return &deliveryServices{
 		workflowService:       workflowService,
+		computeService:        computeService,
 		virtualizationService: virtualizationService,
 		dockerService:         dockerService,
 		copilotService:        copilotService,
@@ -759,6 +763,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Plugins: apiHandlers.NewPluginHandlerWithServices(
 			core.pluginService, core.pluginService, core.pluginService, core.pluginService,
 		),
+		Compute:        apiHandlers.NewComputeHandler(delivery.computeService),
 		Virtualization: newVirtualizationHandler(delivery.virtualizationService),
 		Docker:         newDockerHandler(delivery.dockerService, cfg.Runtime.ExecutionRunnerKeys),
 		Access: accesshandler.New(accesshandler.Services{

@@ -51,6 +51,20 @@ func (s stubRolePermissionReader) ListRolePermissions(context.Context) (map[stri
 	return s.matrix, nil
 }
 
+func TestBuildTreePreservesThirdLevelMenus(t *testing.T) {
+	items := buildTree([]domainmenu.Record{
+		{ID: "compute-workbench", Path: "/compute", Enabled: true},
+		{ID: "virtualization-workbench", ParentID: "compute-workbench", Path: "/compute/virtualization", Enabled: true},
+		{ID: "virtualization-workbench-vms", ParentID: "virtualization-workbench", Path: "/compute/virtualization/vms", Enabled: true},
+	})
+	if len(items) != 1 || len(items[0].Children) != 1 || len(items[0].Children[0].Children) != 1 {
+		t.Fatalf("nested menu tree = %#v, want root -> group -> leaf", items)
+	}
+	if items[0].Children[0].Children[0].ID != "virtualization-workbench-vms" {
+		t.Fatalf("nested leaf = %q, want virtualization-workbench-vms", items[0].Children[0].Children[0].ID)
+	}
+}
+
 func TestListVisibleDerivesMenusFromPermissionKeys(t *testing.T) {
 	service := New(stubRepository{
 		items: []domainmenu.Record{

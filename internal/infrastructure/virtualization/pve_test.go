@@ -508,6 +508,27 @@ func TestMergePVECloudInitIdentityPreservesExistingUsers(t *testing.T) {
 	}
 }
 
+func TestPVECloudInitConfigPayloadDoesNotDuplicateSSHKeysWithCICustom(t *testing.T) {
+	payload := pveCloudInitConfigPayload(CreateVMInput{ProviderParams: map[string]any{
+		"ciuser":  "alpine",
+		"sshkeys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey user@example",
+	}}, "user=local:snippets/soha-102-cloud-init.yaml", "vmbr0")
+	if payload["sshkeys"] != nil {
+		t.Fatalf("payload duplicated sshkeys alongside cicustom: %#v", payload)
+	}
+	if payload["ciuser"] != "alpine" || payload["cicustom"] == nil {
+		t.Fatalf("payload lost cloud-init identity or snippet reference: %#v", payload)
+	}
+}
+
+func TestNormalizePVECloudInitSSHKeysPreservesBase64Plus(t *testing.T) {
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest+Key user@example"
+	keys := normalizePVECloudInitSSHKeys(key)
+	if len(keys) != 1 || keys[0] != key {
+		t.Fatalf("normalizePVECloudInitSSHKeys() = %#v, want raw key preserved", keys)
+	}
+}
+
 func TestPVESSHWriteSnippetCommandInstallsWorldReadableSnippet(t *testing.T) {
 	command := pveSSHWriteSnippetCommand("/var/lib/vz/snippets", "soha-106-cloud-init.yaml")
 	if !strings.Contains(command, "install -m 0644") {
