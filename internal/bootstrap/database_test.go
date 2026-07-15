@@ -279,7 +279,6 @@ func TestDefaultMenuSeedsIncludeVirtualizationWorkbench(t *testing.T) {
 	items := defaultMenuSeeds()
 	for _, id := range []string{
 		"virtualization-workbench",
-		"virtualization-workbench-overview",
 		"virtualization-workbench-vms",
 		"virtualization-workbench-clusters",
 		"virtualization-workbench-images",
@@ -297,7 +296,6 @@ func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
 	items := defaultMenuSeeds()
 	for _, id := range []string{
 		"docker-workbench",
-		"docker-workbench-overview",
 		"docker-workbench-hosts",
 		"docker-workbench-projects",
 		"docker-workbench-templates",
@@ -305,6 +303,60 @@ func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
 	} {
 		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id }) {
 			t.Fatalf("default menu seeds missing %s", id)
+		}
+	}
+}
+
+func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T) {
+	items := defaultMenuSeeds()
+	expected := map[string]string{
+		"compute-workbench":                  "/compute",
+		"compute-workbench-overview":         "/compute/overview",
+		"compute-workbench-access":           "/compute/access",
+		"virtualization-workbench-clusters":  "/compute/virtualization/clusters",
+		"docker-workbench-hosts":             "/compute/runtimes/hosts",
+		"compute-workbench-tasks-sync":       "/compute/tasks/sync",
+		"compute-workbench-tasks-build":      "/compute/tasks/build",
+		"compute-workbench-tasks-operations": "/compute/tasks/operations",
+	}
+	for _, id := range []string{"compute-workbench-tasks", "compute-workbench-tasks-all"} {
+		if !slices.Contains(deprecatedMenuIDs(), id) {
+			t.Fatalf("deprecated compute menu ids missing %s", id)
+		}
+	}
+	for id, path := range expected {
+		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id && item.Path == path }) {
+			t.Fatalf("missing compute menu %s at %s", id, path)
+		}
+	}
+	for _, id := range []string{
+		"compute-workbench-tasks-sync",
+		"compute-workbench-tasks-build",
+		"compute-workbench-tasks-operations",
+	} {
+		if !slices.ContainsFunc(items, func(item menuSeed) bool {
+			return item.ID == id && item.ParentID == "compute-workbench" && item.Section == "management"
+		}) {
+			t.Fatalf("compute resource management menu %s is not attached directly to the workbench", id)
+		}
+	}
+	filtered := filterSeedMenusByModules(items, cfgpkg.ModulesConfig{})
+	for _, item := range filtered {
+		if isComputeMenuSeed(item) || isVirtualizationMenuSeed(item) || isDockerMenuSeed(item) {
+			t.Fatalf("disabled modules retained compute menu %s", item.ID)
+		}
+	}
+}
+
+func TestComputeWorkbenchSeedsBindDefaultResourceRoles(t *testing.T) {
+	for _, item := range defaultMenuSeeds() {
+		if !isComputeMenuSeed(item) && !isVirtualizationMenuSeed(item) && !isDockerMenuSeed(item) {
+			continue
+		}
+		for _, role := range defaultComputeRoles {
+			if !slices.Contains(item.Roles, role) {
+				t.Fatalf("compute menu %s roles = %v, missing %s", item.ID, item.Roles, role)
+			}
 		}
 	}
 }

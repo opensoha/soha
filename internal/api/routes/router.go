@@ -51,6 +51,7 @@ type Dependencies struct {
 	AgentProviders *apiHandlers.AgentProviderHandler
 	AIGateway      *apiHandlers.AIGatewayHandler
 	Plugins        *apiHandlers.PluginHandler
+	Compute        *apiHandlers.ComputeHandler
 	Virtualization *apiHandlers.VirtualizationHandler
 	Docker         *apiHandlers.DockerHandler
 	Access         *accesshandler.Handler

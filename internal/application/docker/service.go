@@ -2435,6 +2435,9 @@ func renderDefaultQuickCreateCloudInit(controlPlaneURL, token, runtimeEndpoint, 
 			"base_path": "/api/v1",
 		},
 		"auth": map[string]any{"bearer_token": token},
+		"kubernetes": map[string]any{
+			"enabled": false,
+		},
 		"control_plane": map[string]any{
 			"enabled":          true,
 			"base_url":         strings.TrimRight(controlPlaneURL, "/"),
@@ -2474,16 +2477,16 @@ func renderDefaultQuickCreateCloudInit(controlPlaneURL, token, runtimeEndpoint, 
 	}
 	lines = append(lines,
 		"runcmd:",
-		"  - [bash, -lc, \"ip route get 1.1.1.1 | awk '{print $7; exit}' | xargs -I{} sed -i 's#__SOHA_VM_IP__#{}#g' /etc/soha-agent.yaml\"]",
+		"  - [/bin/sh, -lc, \"ip route get 1.1.1.1 | awk '{print $7; exit}' | xargs -I{} sed -i 's#__SOHA_VM_IP__#{}#g' /etc/soha-agent.yaml\"]",
 	)
 	if installScript != "" {
-		lines = append(lines, "  - [bash, -lc, "+strconv.Quote(installScript)+"]")
+		lines = append(lines, "  - [/bin/sh, -lc, "+strconv.Quote(installScript)+"]")
 	}
 	lines = append(lines,
-		"  - [bash, -lc, "+strconv.Quote("export DEBIAN_FRONTEND=noninteractive; timeout 600 bash -lc 'apt-get update && (apt-get install -y docker.io docker-compose-v2 || apt-get install -y docker.io docker-compose-plugin || apt-get install -y docker.io)' >>/var/log/soha-docker-bootstrap.log 2>&1 || true")+"]",
-		"  - [bash, -lc, 'systemctl enable --now docker >>/var/log/soha-docker-bootstrap.log 2>&1 || true']",
+		"  - [/bin/sh, -lc, "+strconv.Quote("if command -v apk >/dev/null 2>&1; then apk add --no-cache docker docker-cli-compose bash curl ca-certificates; elif command -v apt-get >/dev/null 2>&1; then export DEBIAN_FRONTEND=noninteractive; apt-get update && (apt-get install -y docker.io docker-compose-v2 || apt-get install -y docker.io docker-compose-plugin || apt-get install -y docker.io); else echo 'unsupported package manager'; fi >>/var/log/soha-docker-bootstrap.log 2>&1 || true")+"]",
+		"  - [/bin/sh, -lc, "+strconv.Quote("if command -v systemctl >/dev/null 2>&1; then systemctl enable --now docker; elif command -v rc-update >/dev/null 2>&1; then rc-update add docker default && rc-service docker start; fi >>/var/log/soha-docker-bootstrap.log 2>&1 || true")+"]",
 	)
-	lines = append(lines, "  - [bash, -lc, 'command -v soha-agent >/dev/null 2>&1 && systemctl enable --now soha-agent || true']")
+	lines = append(lines, "  - [/bin/sh, -lc, "+strconv.Quote("if command -v soha-agent >/dev/null 2>&1; then if command -v systemctl >/dev/null 2>&1; then systemctl enable --now soha-agent; elif command -v rc-update >/dev/null 2>&1 && [ -x /etc/init.d/soha-agent ]; then rc-update add soha-agent default && rc-service soha-agent start; fi; fi")+"]")
 	return strings.Join(lines, "\n") + "\n"
 }
 

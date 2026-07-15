@@ -12,6 +12,7 @@ func registerProtectedRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depe
 	registerPlatformRoutes(protected, deps)
 	registerMonitoringRoutes(protected, cfg, deps)
 	registerDeliveryRoutes(protected, cfg, deps)
+	registerComputeRoutes(protected, cfg, deps)
 	registerVirtualizationRoutes(protected, cfg, deps)
 	registerDockerRoutes(protected, cfg, deps)
 	registerCopilotRoutes(protected, cfg, deps)

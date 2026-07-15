@@ -27,6 +27,7 @@ var workspaceResourceMenuPrefixes = []string{
 	"/cluster-resources", "/workloads", "/configuration", "/network", "/storage",
 	"/platform-access-control", "/helm", "/extensions", "/clusters", "/monitoring-workbench",
 	"/ai-gateway", "/ai-workbench", "/virtualization", "/observability", "/ai-observe", "/chat",
+	"/compute",
 }
 
 var workspaceApplicationMenuPrefixes = []string{
@@ -190,6 +191,9 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 }
 
 func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
+	if rule, ok := computeMenuRule(id); ok {
+		return rule, true
+	}
 	switch id {
 	case "virtualization-workbench":
 		return visibilityRule{permissions: []string{
@@ -232,6 +236,31 @@ func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermAccessGroupsView}}, true
 	case "access-policies":
 		return visibilityRule{permissions: []string{appaccess.PermAccessPoliciesView}}, true
+	default:
+		return visibilityRule{}, false
+	}
+}
+
+func computeMenuRule(id string) (visibilityRule, bool) {
+	switch id {
+	case "compute-workbench":
+		return visibilityRule{permissions: []string{
+			appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationVMsView,
+			appaccess.PermVirtualizationClustersView, appaccess.PermVirtualizationImagesView,
+			appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationOperationsView,
+			appaccess.PermVirtualizationSyncView, appaccess.PermVirtualizationSyncManage,
+			appaccess.PermDockerOverviewView, appaccess.PermDockerHostsView, appaccess.PermDockerProjectsView,
+			appaccess.PermDockerServicesView, appaccess.PermDockerPortsView, appaccess.PermDockerTemplatesView,
+			appaccess.PermDockerOperationsView,
+		}}, true
+	case "compute-workbench-overview":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOverviewView, appaccess.PermDockerOverviewView}}, true
+	case "compute-workbench-access":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationClustersView, appaccess.PermDockerHostsView}}, true
+	case "compute-workbench-tasks-sync":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationSyncView, appaccess.PermVirtualizationSyncManage, appaccess.PermDockerOperationsView}}, true
+	case "compute-workbench-tasks-build", "compute-workbench-tasks-operations":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView, appaccess.PermDockerOperationsView}}, true
 	default:
 		return visibilityRule{}, false
 	}

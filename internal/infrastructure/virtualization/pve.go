@@ -489,7 +489,7 @@ func addPVECloudInitPayload(payload map[string]any, plan pveCreatePlan) {
 	if ciuser := stringFromAny(plan.input.ProviderParams["ciuser"]); ciuser != "" {
 		payload["ciuser"] = ciuser
 	}
-	if sshKeys := stringFromAny(plan.input.ProviderParams["sshkeys"]); sshKeys != "" {
+	if sshKeys := stringFromAny(plan.input.ProviderParams["sshkeys"]); sshKeys != "" && plan.cicustom == "" {
 		payload["sshkeys"] = normalizePVESSHKeys(sshKeys)
 	}
 	if plan.cicustom != "" {
@@ -708,7 +708,7 @@ func pveCloudInitConfigPayload(input CreateVMInput, cicustom string, providerBri
 	if ciuser := stringFromAny(input.ProviderParams["ciuser"]); ciuser != "" {
 		payload["ciuser"] = ciuser
 	}
-	if sshKeys := stringFromAny(input.ProviderParams["sshkeys"]); sshKeys != "" {
+	if sshKeys := stringFromAny(input.ProviderParams["sshkeys"]); sshKeys != "" && cicustom == "" {
 		payload["sshkeys"] = normalizePVESSHKeys(sshKeys)
 	}
 	if cicustom != "" {
@@ -767,8 +767,10 @@ func normalizePVECloudInitSSHKeys(value string) []string {
 	if value == "" {
 		return nil
 	}
-	if decoded, err := url.QueryUnescape(value); err == nil && decoded != "" {
-		value = decoded
+	if strings.Contains(value, "%") {
+		if decoded, err := url.QueryUnescape(value); err == nil && decoded != "" {
+			value = decoded
+		}
 	}
 	normalized := strings.ReplaceAll(value, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\\n", "\n")

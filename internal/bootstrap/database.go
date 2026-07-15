@@ -71,7 +71,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-07-14-ai-platform-v6"
+const bootstrapSeedVersion = "2026-07-15-ai-compute-platform-v7"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 

@@ -5,6 +5,18 @@ import (
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
+func registerComputeRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
+	if !cfg.Modules.Virtualization.Enabled && !cfg.Modules.Docker.Enabled {
+		return
+	}
+	protected.GET("/compute/overview", deps.Compute.Overview)
+	protected.GET("/compute/access-sources", deps.Compute.ListAccessSources)
+	protected.GET("/compute/providers", deps.Compute.ListProviders)
+	protected.GET("/compute/resources/:domain/:kind/:id/relations", deps.Compute.ListRelations)
+	protected.GET("/compute/tasks", deps.Compute.ListTasks)
+	protected.GET("/compute/tasks/:domain/:id", deps.Compute.GetTask)
+}
+
 func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
 	if !cfg.Modules.Virtualization.Enabled {
 		return

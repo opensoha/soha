@@ -206,6 +206,7 @@ func normalizeInput(input domainmenu.Input) (domainmenu.Record, error) {
 
 func buildTree(items []domainmenu.Record) []domainmenu.Record {
 	nodes := make(map[string]*domainmenu.Record, len(items))
+	childrenByParent := make(map[string][]string, len(items))
 	for _, item := range items {
 		copyItem := item
 		copyItem.Children = nil
@@ -213,22 +214,26 @@ func buildTree(items []domainmenu.Record) []domainmenu.Record {
 	}
 	rootIDs := make([]string, 0)
 	for _, item := range items {
-		node := nodes[item.ID]
 		if item.ParentID == "" || nodes[item.ParentID] == nil {
 			rootIDs = append(rootIDs, item.ID)
 			continue
 		}
-		parent := nodes[item.ParentID]
-		parent.Children = append(parent.Children, *node)
+		childrenByParent[item.ParentID] = append(childrenByParent[item.ParentID], item.ID)
+	}
+	var buildNode func(string) domainmenu.Record
+	buildNode = func(id string) domainmenu.Record {
+		node := *nodes[id]
+		for _, childID := range childrenByParent[id] {
+			node.Children = append(node.Children, buildNode(childID))
+		}
+		sortChildren(&node)
+		return node
 	}
 	roots := make([]domainmenu.Record, 0, len(rootIDs))
 	for _, rootID := range rootIDs {
-		if node := nodes[rootID]; node != nil {
-			roots = append(roots, *node)
+		if nodes[rootID] != nil {
+			roots = append(roots, buildNode(rootID))
 		}
-	}
-	for index := range roots {
-		sortChildren(&roots[index])
 	}
 	slices.SortFunc(roots, func(left, right domainmenu.Record) int {
 		if left.Section != right.Section {
