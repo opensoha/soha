@@ -15,6 +15,7 @@ import (
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 )
 
@@ -593,6 +594,10 @@ func (h *DeliveryHandler) ClaimExecutionTask(c *gin.Context) {
 	}
 	item, err := h.runner.ClaimExecutionTask(c.Request.Context(), req.ProviderKinds, req.AgentID, req.RuntimeEndpoint)
 	if err != nil {
+		if errors.Is(err, apperrors.ErrNotFound) {
+			c.Status(http.StatusNoContent)
+			return
+		}
 		writeError(c, err)
 		return
 	}
