@@ -3,6 +3,7 @@ package compute
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sort"
@@ -37,18 +38,43 @@ type RuntimeReader interface {
 	ListOperations(context.Context, domaindocker.OperationFilter) ([]domaindocker.Operation, error)
 }
 
+type VirtualizationTaskController interface {
+	GetOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
+	ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domainvirtualization.TaskLog, error)
+	CancelOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
+	RetryOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
+}
+
+type RuntimeTaskController interface {
+	GetOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
+	ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domaindocker.OperationLog, error)
+	CancelOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
+	RetryOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
+}
+
 type Service struct {
 	virtualization        VirtualizationReader
 	runtime               RuntimeReader
+	virtualizationTasks   VirtualizationTaskController
+	runtimeTasks          RuntimeTaskController
 	permissions           *appaccess.PermissionResolver
 	virtualizationEnabled bool
 	runtimeEnabled        bool
 }
 
-type Options struct{ VirtualizationEnabled, RuntimeEnabled bool }
+type Options struct {
+	VirtualizationEnabled bool
+	RuntimeEnabled        bool
+	VirtualizationTasks   VirtualizationTaskController
+	RuntimeTasks          RuntimeTaskController
+}
 
 func New(virtualization VirtualizationReader, runtime RuntimeReader, permissions *appaccess.PermissionResolver, options Options) *Service {
-	return &Service{virtualization: virtualization, runtime: runtime, permissions: permissions, virtualizationEnabled: options.VirtualizationEnabled, runtimeEnabled: options.RuntimeEnabled}
+	return &Service{
+		virtualization: virtualization, runtime: runtime, permissions: permissions,
+		virtualizationTasks: options.VirtualizationTasks, runtimeTasks: options.RuntimeTasks,
+		virtualizationEnabled: options.VirtualizationEnabled, runtimeEnabled: options.RuntimeEnabled,
+	}
 }
 
 func (s *Service) Overview(ctx context.Context, principal domainidentity.Principal) (sohaapi.ComputeOverview, error) {
@@ -398,8 +424,8 @@ func (s *Service) runtimeAccessSources(ctx context.Context, keys []string, filte
 }
 
 type TaskFilter struct {
-	Domain, ProviderKey, Status, Category, Cursor string
-	Limit                                         int
+	Domain, ProviderKey, Status, Category, ResourceKind, ResourceID, Cursor string
+	Limit                                                                   int
 }
 
 func (s *Service) ListTasks(ctx context.Context, principal domainidentity.Principal, filter TaskFilter) (sohaapi.ComputeTaskListEnvelope, error) {
@@ -420,7 +446,7 @@ func (s *Service) ListTasks(ctx context.Context, principal domainidentity.Princi
 		}
 		for _, task := range tasks {
 			if virtualizationTaskVisible(keys, task.TaskKind) {
-				items = appendIfTaskMatches(items, virtualizationTaskView(task), filter)
+				items = appendIfTaskMatches(items, virtualizationTaskView(task, has(keys, appaccess.PermVirtualizationOperationsManage)), filter)
 			}
 		}
 	}
@@ -430,7 +456,7 @@ func (s *Service) ListTasks(ctx context.Context, principal domainidentity.Princi
 			return sohaapi.ComputeTaskListEnvelope{}, readErr
 		}
 		for _, task := range tasks {
-			items = appendIfTaskMatches(items, runtimeTaskView(task), filter)
+			items = appendIfTaskMatches(items, runtimeTaskView(task, has(keys, appaccess.PermDockerOperationsManage)), filter)
 		}
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -444,6 +470,161 @@ func (s *Service) ListTasks(ctx context.Context, principal domainidentity.Princi
 		return sohaapi.ComputeTaskListEnvelope{}, err
 	}
 	return sohaapi.ComputeTaskListEnvelope{Items: page, NextCursor: next}, nil
+}
+
+func (s *Service) GetTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string) (sohaapi.ComputeTaskView, error) {
+	switch strings.TrimSpace(domain) {
+	case string(sohaapi.ComputeTaskDomainVirtualization):
+		if !s.virtualizationEnabled || s.virtualizationTasks == nil {
+			return sohaapi.ComputeTaskView{}, unavailableTaskDomain(domain)
+		}
+		item, err := s.virtualizationTasks.GetOperation(ctx, principal, strings.TrimSpace(taskID))
+		if err != nil {
+			return sohaapi.ComputeTaskView{}, err
+		}
+		keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+		if err != nil {
+			return sohaapi.ComputeTaskView{}, err
+		}
+		if !virtualizationTaskVisible(keys, item.TaskKind) {
+			return sohaapi.ComputeTaskView{}, fmt.Errorf("%w: compute task is not visible", apperrors.ErrAccessDenied)
+		}
+		return virtualizationTaskView(item, has(keys, appaccess.PermVirtualizationOperationsManage)), nil
+	case string(sohaapi.ComputeTaskDomainContainerRuntime):
+		if !s.runtimeEnabled || s.runtimeTasks == nil {
+			return sohaapi.ComputeTaskView{}, unavailableTaskDomain(domain)
+		}
+		item, err := s.runtimeTasks.GetOperation(ctx, principal, strings.TrimSpace(taskID))
+		if err != nil {
+			return sohaapi.ComputeTaskView{}, err
+		}
+		keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+		if err != nil {
+			return sohaapi.ComputeTaskView{}, err
+		}
+		return runtimeTaskView(item, has(keys, appaccess.PermDockerOperationsManage)), nil
+	default:
+		return sohaapi.ComputeTaskView{}, invalidTaskDomain(domain)
+	}
+}
+
+func (s *Service) ListTaskLogs(ctx context.Context, principal domainidentity.Principal, domain, taskID string) (sohaapi.ComputeTaskLogListEnvelope, error) {
+	switch strings.TrimSpace(domain) {
+	case string(sohaapi.ComputeTaskDomainVirtualization):
+		if !s.virtualizationEnabled || s.virtualizationTasks == nil {
+			return sohaapi.ComputeTaskLogListEnvelope{}, unavailableTaskDomain(domain)
+		}
+		if _, err := s.virtualizationTasks.GetOperation(ctx, principal, strings.TrimSpace(taskID)); err != nil {
+			return sohaapi.ComputeTaskLogListEnvelope{}, err
+		}
+		items, err := s.virtualizationTasks.ListOperationLogs(ctx, principal, strings.TrimSpace(taskID), maxReadLimit)
+		if err != nil {
+			return sohaapi.ComputeTaskLogListEnvelope{}, err
+		}
+		return virtualizationTaskLogs(items)
+	case string(sohaapi.ComputeTaskDomainContainerRuntime):
+		if !s.runtimeEnabled || s.runtimeTasks == nil {
+			return sohaapi.ComputeTaskLogListEnvelope{}, unavailableTaskDomain(domain)
+		}
+		if _, err := s.runtimeTasks.GetOperation(ctx, principal, strings.TrimSpace(taskID)); err != nil {
+			return sohaapi.ComputeTaskLogListEnvelope{}, err
+		}
+		items, err := s.runtimeTasks.ListOperationLogs(ctx, principal, strings.TrimSpace(taskID), maxReadLimit)
+		if err != nil {
+			return sohaapi.ComputeTaskLogListEnvelope{}, err
+		}
+		return runtimeTaskLogs(items)
+	default:
+		return sohaapi.ComputeTaskLogListEnvelope{}, invalidTaskDomain(domain)
+	}
+}
+
+func (s *Service) CancelTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string) (sohaapi.ComputeTaskView, error) {
+	return s.mutateTask(ctx, principal, domain, taskID, true)
+}
+
+func (s *Service) RetryTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string) (sohaapi.ComputeTaskView, error) {
+	return s.mutateTask(ctx, principal, domain, taskID, false)
+}
+
+func (s *Service) mutateTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string, cancel bool) (sohaapi.ComputeTaskView, error) {
+	switch strings.TrimSpace(domain) {
+	case string(sohaapi.ComputeTaskDomainVirtualization):
+		if !s.virtualizationEnabled || s.virtualizationTasks == nil {
+			return sohaapi.ComputeTaskView{}, unavailableTaskDomain(domain)
+		}
+		var item domainvirtualization.Task
+		var err error
+		if cancel {
+			item, err = s.virtualizationTasks.CancelOperation(ctx, principal, strings.TrimSpace(taskID))
+		} else {
+			item, err = s.virtualizationTasks.RetryOperation(ctx, principal, strings.TrimSpace(taskID))
+		}
+		if err != nil {
+			return sohaapi.ComputeTaskView{}, err
+		}
+		return virtualizationTaskView(item, true), nil
+	case string(sohaapi.ComputeTaskDomainContainerRuntime):
+		if !s.runtimeEnabled || s.runtimeTasks == nil {
+			return sohaapi.ComputeTaskView{}, unavailableTaskDomain(domain)
+		}
+		var item domaindocker.Operation
+		var err error
+		if cancel {
+			item, err = s.runtimeTasks.CancelOperation(ctx, principal, strings.TrimSpace(taskID))
+		} else {
+			item, err = s.runtimeTasks.RetryOperation(ctx, principal, strings.TrimSpace(taskID))
+		}
+		if err != nil {
+			return sohaapi.ComputeTaskView{}, err
+		}
+		return runtimeTaskView(item, true), nil
+	default:
+		return sohaapi.ComputeTaskView{}, invalidTaskDomain(domain)
+	}
+}
+
+func invalidTaskDomain(domain string) error {
+	return fmt.Errorf("%w: unsupported compute task domain %q", apperrors.ErrInvalidArgument, strings.TrimSpace(domain))
+}
+
+func unavailableTaskDomain(domain string) error {
+	return fmt.Errorf("%w: compute task domain %q is unavailable", apperrors.ErrUnsupportedOperation, strings.TrimSpace(domain))
+}
+
+func virtualizationTaskLogs(items []domainvirtualization.TaskLog) (sohaapi.ComputeTaskLogListEnvelope, error) {
+	out := make([]sohaapi.ComputeTaskLog, 0, len(items))
+	for _, item := range items {
+		payload, err := taskLogPayload(item.Payload)
+		if err != nil {
+			return sohaapi.ComputeTaskLogListEnvelope{}, err
+		}
+		out = append(out, sohaapi.ComputeTaskLog{ID: item.ID, TaskID: item.TaskID, LogLevel: item.LogLevel, Message: item.Message, Payload: payload, CreatedAt: item.CreatedAt})
+	}
+	return sohaapi.ComputeTaskLogListEnvelope{Items: out}, nil
+}
+
+func runtimeTaskLogs(items []domaindocker.OperationLog) (sohaapi.ComputeTaskLogListEnvelope, error) {
+	out := make([]sohaapi.ComputeTaskLog, 0, len(items))
+	for _, item := range items {
+		payload, err := taskLogPayload(item.Payload)
+		if err != nil {
+			return sohaapi.ComputeTaskLogListEnvelope{}, err
+		}
+		out = append(out, sohaapi.ComputeTaskLog{ID: item.ID, TaskID: item.OperationID, LogLevel: item.LogLevel, Message: item.Message, Payload: payload, CreatedAt: item.CreatedAt})
+	}
+	return sohaapi.ComputeTaskLogListEnvelope{Items: out}, nil
+}
+
+func taskLogPayload(payload map[string]any) (string, error) {
+	if len(payload) == 0 {
+		return "", nil
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", fmt.Errorf("encode compute task log payload: %w", err)
+	}
+	return string(raw), nil
 }
 
 func connectionAccessSource(item domainvirtualization.Connection, manage bool) sohaapi.ComputeAccessSource {
@@ -466,7 +647,7 @@ func agentAccessSource(host domaindocker.Host) sohaapi.ComputeAccessSource {
 	return sohaapi.ComputeAccessSource{ID: host.AgentID, SourceType: sohaapi.ComputeAccessSourceTypeAgentHost, Resource: agentHostRef(host), Status: runtimeHostStatus(host), ProviderKey: "docker", ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, AccessMode: sohaapi.ComputeAccessModeAgentProxy, AvailableActions: []string{}, LastObservedAt: host.LastHeartbeatAt, RelatedResources: []sohaapi.ComputeResourceRef{runtimeHostRef(host)}}
 }
 
-func virtualizationTaskView(item domainvirtualization.Task) sohaapi.ComputeTaskView {
+func virtualizationTaskView(item domainvirtualization.Task, manage bool) sohaapi.ComputeTaskView {
 	status := normalizeTaskStatus(item.Status)
 	state := domainvirtualization.BuildOperationState(item, time.Now().UTC())
 	resources := []sohaapi.ComputeResourceRef{}
@@ -476,10 +657,11 @@ func virtualizationTaskView(item domainvirtualization.Task) sohaapi.ComputeTaskV
 	if item.VMID != "" {
 		resources = append(resources, virtualizationResourceRef(sohaapi.ComputeResourceKindVM, item.VMID, item.VMID, item.Provider, item.ConnectionID))
 	}
-	return sohaapi.ComputeTaskView{ID: item.ID, Domain: sohaapi.ComputeTaskDomainVirtualization, SourceType: "virtualization_task", SourceID: item.ID, ProviderKey: item.Provider, ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, Kind: item.TaskKind, Category: taskCategory(item.TaskKind), NormalizedStatus: status, RawStatus: item.Status, Resources: resources, RequestedBy: item.RequestedBy, Worker: item.ClaimedByWorkerID, AttemptCount: item.AttemptCount, Cancelable: state.Cancelable, Retryable: state.Retryable, AvailableActions: taskActions(state.Cancelable, state.Retryable), ErrorCode: state.FailureReason, CreatedAt: item.CreatedAt, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, Summary: state.FailureMessage}
+	cancelable, retryable := state.Cancelable && manage, state.Retryable && manage
+	return sohaapi.ComputeTaskView{ID: item.ID, Domain: sohaapi.ComputeTaskDomainVirtualization, SourceType: "virtualization_task", SourceID: item.ID, ProviderKey: item.Provider, ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, Kind: item.TaskKind, Category: taskCategory(item.TaskKind), NormalizedStatus: status, RawStatus: item.Status, Resources: resources, RequestedBy: item.RequestedBy, Worker: item.ClaimedByWorkerID, AttemptCount: item.AttemptCount, Cancelable: cancelable, Retryable: retryable, AvailableActions: taskActions(cancelable, retryable), ErrorCode: state.FailureReason, CreatedAt: item.CreatedAt, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, Summary: state.FailureMessage}
 }
 
-func runtimeTaskView(item domaindocker.Operation) sohaapi.ComputeTaskView {
+func runtimeTaskView(item domaindocker.Operation, manage bool) sohaapi.ComputeTaskView {
 	status := normalizeTaskStatus(item.Status)
 	state := domaindocker.BuildOperationState(item, time.Now().UTC())
 	resources := []sohaapi.ComputeResourceRef{}
@@ -492,7 +674,8 @@ func runtimeTaskView(item domaindocker.Operation) sohaapi.ComputeTaskView {
 	if item.ServiceID != "" {
 		resources = append(resources, runtimeResourceRef(sohaapi.ComputeResourceKindService, item.ServiceID, item.ServiceID))
 	}
-	return sohaapi.ComputeTaskView{ID: item.ID, Domain: sohaapi.ComputeTaskDomainContainerRuntime, SourceType: "docker_operation", SourceID: item.ID, ProviderKey: "docker", ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, Kind: item.OperationKind, Category: taskCategory(item.OperationKind), NormalizedStatus: status, RawStatus: item.Status, Resources: resources, RequestedBy: item.RequestedBy, Worker: item.ClaimedByWorkerID, AttemptCount: item.AttemptCount, Cancelable: state.Cancelable, Retryable: state.Retryable, AvailableActions: taskActions(state.Cancelable, state.Retryable), ErrorCode: state.FailureReason, CreatedAt: item.CreatedAt, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, Summary: state.FailureMessage}
+	cancelable, retryable := state.Cancelable && manage, state.Retryable && manage
+	return sohaapi.ComputeTaskView{ID: item.ID, Domain: sohaapi.ComputeTaskDomainContainerRuntime, SourceType: "docker_operation", SourceID: item.ID, ProviderKey: "docker", ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, Kind: item.OperationKind, Category: taskCategory(item.OperationKind), NormalizedStatus: status, RawStatus: item.Status, Resources: resources, RequestedBy: item.RequestedBy, Worker: item.ClaimedByWorkerID, AttemptCount: item.AttemptCount, Cancelable: cancelable, Retryable: retryable, AvailableActions: taskActions(cancelable, retryable), ErrorCode: state.FailureReason, CreatedAt: item.CreatedAt, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, Summary: state.FailureMessage}
 }
 
 func appendIfTaskMatches(items []sohaapi.ComputeTaskView, item sohaapi.ComputeTaskView, filter TaskFilter) []sohaapi.ComputeTaskView {
@@ -502,7 +685,23 @@ func appendIfTaskMatches(items []sohaapi.ComputeTaskView, item sohaapi.ComputeTa
 	if filter.Category != "" && !taskCategoryMatches(filter.Category, item.Category) {
 		return items
 	}
+	if !taskResourceMatches(item.Resources, filter.ResourceKind, filter.ResourceID) {
+		return items
+	}
 	return append(items, item)
+}
+
+func taskResourceMatches(resources []sohaapi.ComputeResourceRef, kind, id string) bool {
+	kind, id = strings.TrimSpace(kind), strings.TrimSpace(id)
+	if kind == "" && id == "" {
+		return true
+	}
+	for _, resource := range resources {
+		if (kind == "" || string(resource.Kind) == kind) && (id == "" || resource.ID == id) {
+			return true
+		}
+	}
+	return false
 }
 
 func taskCategoryMatches(filter string, category sohaapi.ComputeTaskCategory) bool {

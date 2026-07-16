@@ -123,9 +123,9 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "docker-workbench-projects", ParentID: "docker-workbench", Path: "/compute/runtimes/projects", LabelZH: "容器项目", LabelEN: "Container Projects", IconKey: "docker", Section: "runtime", SortOrder: 23, Enabled: true, Roles: defaultComputeRoles},
 	{ID: "docker-workbench-templates", ParentID: "docker-workbench", Path: "/compute/runtimes/templates", LabelZH: "模板", LabelEN: "Templates", IconKey: "code", Section: "runtime", SortOrder: 24, Enabled: true, Roles: defaultComputeRoles},
 	{ID: "docker-workbench-operations", ParentID: "docker-workbench", Path: "/compute/tasks?domain=container_runtime", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "history", Section: "runtime", SortOrder: 25, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "compute-workbench-tasks-sync", ParentID: "compute-workbench", Path: "/compute/tasks/sync", LabelZH: "同步任务", LabelEN: "Sync Tasks", IconKey: "sync", Section: "management", SortOrder: 83, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "compute-workbench-tasks-build", ParentID: "compute-workbench", Path: "/compute/tasks/build", LabelZH: "构建任务", LabelEN: "Build Tasks", IconKey: "activity", Section: "management", SortOrder: 84, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "compute-workbench-tasks-operations", ParentID: "compute-workbench", Path: "/compute/tasks/operations", LabelZH: "操作记录", LabelEN: "Operation Records", IconKey: "history", Section: "management", SortOrder: 85, Enabled: true, Roles: defaultComputeRoles},
+	{ID: "compute-workbench-tasks-sync", ParentID: "compute-workbench", Path: "/compute/tasks/sync", LabelZH: "同步任务", LabelEN: "Sync Tasks", IconKey: "sync", Section: "management", SortOrder: 83, Enabled: false, Roles: defaultComputeRoles},
+	{ID: "compute-workbench-tasks-build", ParentID: "compute-workbench", Path: "/compute/tasks/build", LabelZH: "构建任务", LabelEN: "Build Tasks", IconKey: "activity", Section: "management", SortOrder: 84, Enabled: false, Roles: defaultComputeRoles},
+	{ID: "compute-workbench-tasks-operations", ParentID: "compute-workbench", Path: "/compute/tasks/operations", LabelZH: "任务中心", LabelEN: "Task Center", IconKey: "history", Section: "management", SortOrder: 85, Enabled: true, Roles: defaultComputeRoles},
 	{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "delivery", SortOrder: 10, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
 	{ID: "delivery-onboarding", Path: "/delivery/onboarding", LabelZH: "应用接入", LabelEN: "Application Onboarding", IconKey: "code", Section: "delivery", SortOrder: 20, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 	{ID: "release-board", Path: "/release-board", LabelZH: "构建发布", LabelEN: "Build & Release", IconKey: "activity", Section: "delivery", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
@@ -397,9 +397,9 @@ func syncComputeMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time
 		case strings.HasPrefix(item.ID, "compute-workbench-tasks-"):
 			if err := db.WithContext(ctx).Exec(`
 			UPDATE menus
-			SET parent_id = ?, path = ?, label_zh = ?, label_en = ?, icon_key = ?, section = ?, sort_order = ?, updated_at = ?
+			SET parent_id = ?, path = ?, label_zh = ?, label_en = ?, icon_key = ?, section = ?, sort_order = ?, enabled = ?, updated_at = ?
 			WHERE id = ?
-		`, nullableMenu(item.ParentID), item.Path, item.LabelZH, item.LabelEN, item.IconKey, item.Section, item.SortOrder, now, item.ID).Error; err != nil {
+		`, nullableMenu(item.ParentID), item.Path, item.LabelZH, item.LabelEN, item.IconKey, item.Section, item.SortOrder, item.Enabled, now, item.ID).Error; err != nil {
 				return err
 			}
 		}

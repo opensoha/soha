@@ -271,9 +271,9 @@ Soha 启动不依赖 SecretStore 卷、secret bundle、writer lease 或 secrets 
 
 推荐边界：
 
-- Docker 镜像：发布到 Docker Hub `yshanchui/soha`，本地默认 tag 为 `local`。
-- Agent 镜像：从 sibling `soha-agent` 仓库发布 `yshanchui/soha-agent` 与 `yshanchui/soha-hermes-agent`。
-- CLI 工具镜像：从 sibling `soha-cli` 仓库发布 `yshanchui/soha-cli`，用于多阶段构建和运维容器。它是镜像制品，不作为 Helm workload 发布。
+- Docker 镜像：使用公开的 Docker Hub 镜像 `yshanchui/soha`，本地默认 tag 为 `local`。
+- Agent 镜像：使用 sibling `soha-agent` 仓库维护的 `yshanchui/soha-agent` 与 `yshanchui/soha-hermes-agent`。
+- CLI 工具镜像：使用 sibling `soha-cli` 仓库维护的 `yshanchui/soha-cli`，用于多阶段构建和运维容器。它是镜像制品，不作为 Helm workload 发布。
 - Docker Compose：面向本地开发和单机试跑，不作为生产编排主路径。
 - Helm：面向线上 Kubernetes 的主交付方式；`soha-helm` 发布 `soha`、`soha-agent`、`soha-hermes-agent` 三个 chart。
 - Kustomize：保留轻量 raw YAML 定制入口，避免维护第二套完整 Kubernetes 模板。

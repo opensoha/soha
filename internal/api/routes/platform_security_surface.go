@@ -175,6 +175,10 @@ func monitoringMutationSecuritySurface(method, path string) (nonPlatformMutation
 
 func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	switch {
+	case strings.HasPrefix(path, "/api/v1/compute/tasks/"):
+		// The facade delegates the domain-specific manage permission, audit, and
+		// operation record to the virtualization or Docker application service.
+		return nonPlatformMutationEntry("ComputeTask", nonPlatformMutationAction(method, path), appaccess.PermWorkspaceResourceView, false), true
 	case strings.HasPrefix(path, "/api/v1/virtualization/clusters"):
 		return nonPlatformMutationEntry("VirtualizationCluster", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationClustersManage, false), true
 	case strings.HasPrefix(path, "/api/v1/virtualization/vms"):

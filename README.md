@@ -286,9 +286,9 @@ Docker instances and a shared load balancer for normal multi-replica delivery.
 
 Recommended boundaries:
 
-- Docker image: publish to Docker Hub as `yshanchui/soha`; local builds default to the `local` tag.
-- Agent images: publish `yshanchui/soha-agent` and `yshanchui/soha-hermes-agent` from the sibling `soha-agent` repository.
-- CLI tool image: publish `yshanchui/soha-cli` from the sibling `soha-cli` repository for multi-stage builds and operational containers. It is an image artifact, not a Helm workload.
+- Docker image: use the public Docker Hub image `yshanchui/soha`; local builds default to the `local` tag.
+- Agent images: use `yshanchui/soha-agent` and `yshanchui/soha-hermes-agent` from the sibling `soha-agent` repository.
+- CLI tool image: use `yshanchui/soha-cli` from the sibling `soha-cli` repository for multi-stage builds and operational containers. It is an image artifact, not a Helm workload.
 - Docker Compose: use for local development and single-node trials, not as the primary production orchestrator.
 - Helm: use as the primary Kubernetes delivery path. `soha-helm` publishes `soha`, `soha-agent`, and `soha-hermes-agent` charts.
 - Kustomize: keep as a lightweight raw YAML customization entrypoint, avoiding a second full Kubernetes template set.
