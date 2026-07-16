@@ -335,6 +335,9 @@ func TestVirtualizationTaskPermissionsSeparateSyncAndOperations(t *testing.T) {
 	if len(result.Items) != 1 || result.Items[0].ID != "sync" {
 		t.Fatalf("items = %#v", result.Items)
 	}
+	if result.Items[0].Cancelable || len(result.Items[0].AvailableActions) != 1 || result.Items[0].AvailableActions[0] != sohaapi.ComputeTaskActionLogs {
+		t.Fatalf("read-only task actions = %#v", result.Items[0].AvailableActions)
+	}
 }
 
 func TestOperationTaskViewIncludesLifecycleAndGenericOperations(t *testing.T) {
