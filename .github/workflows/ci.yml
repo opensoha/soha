@@ -83,4 +83,4 @@ jobs:
         run: GOWORK=off CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
       - name: Docker build
         working-directory: soha
-        run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t yshanchui/soha:test -t yshanchui/soha:local .
+        run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
