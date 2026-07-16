@@ -688,7 +688,12 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}),
 		appdocker.WithRuntimeBearerToken(cfg.Runtime.ExecutionRunnerToken),
 	)
-	computeService := appcompute.New(repos.virtualizationRepository, repos.dockerRepository, core.permissionResolver, appcompute.Options{VirtualizationEnabled: cfg.Modules.Virtualization.Enabled, RuntimeEnabled: cfg.Modules.Docker.Enabled})
+	computeService := appcompute.New(repos.virtualizationRepository, repos.dockerRepository, core.permissionResolver, appcompute.Options{
+		VirtualizationEnabled: cfg.Modules.Virtualization.Enabled,
+		RuntimeEnabled:        cfg.Modules.Docker.Enabled,
+		VirtualizationTasks:   virtualizationService,
+		RuntimeTasks:          dockerService,
+	})
 	copilotService.SetAgentRuntimeReaders(core.executionService, runtimeResources, dockerService, virtualizationService, core.monitoringService)
 
 	deliveryService := appdelivery.New(core.applicationService, core.catalogService, core.buildService, workflowService, core.releaseService, repos.deliveryRepository, core.executionService, runtimeResources, core.permissionResolver)

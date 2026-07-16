@@ -12,6 +12,10 @@ func registerComputeRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 	protected.GET("/compute/overview", deps.Compute.Overview)
 	protected.GET("/compute/access-sources", deps.Compute.ListAccessSources)
 	protected.GET("/compute/tasks", deps.Compute.ListTasks)
+	protected.GET("/compute/tasks/:domain/:id", deps.Compute.GetTask)
+	protected.GET("/compute/tasks/:domain/:id/logs", deps.Compute.ListTaskLogs)
+	protected.POST("/compute/tasks/:domain/:id/cancel", deps.Compute.CancelTask)
+	protected.POST("/compute/tasks/:domain/:id/retry", deps.Compute.RetryTask)
 }
 
 func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {

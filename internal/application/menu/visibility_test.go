@@ -97,8 +97,6 @@ func TestComputeTaskMenusUseCategoryPermissions(t *testing.T) {
 		id         string
 		permission string
 	}{
-		{id: "compute-workbench-tasks-sync", permission: appaccess.PermVirtualizationSyncManage},
-		{id: "compute-workbench-tasks-build", permission: appaccess.PermDockerOperationsView},
 		{id: "compute-workbench-tasks-operations", permission: appaccess.PermVirtualizationOperationsView},
 	}
 
@@ -109,6 +107,12 @@ func TestComputeTaskMenusUseCategoryPermissions(t *testing.T) {
 				t.Fatalf("%s should be visible with %s", test.id, test.permission)
 			}
 		})
+	}
+	for _, id := range []string{"compute-workbench-tasks-sync", "compute-workbench-tasks-build"} {
+		item := domainmenu.Record{ID: id, Path: "/compute/tasks"}
+		if isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationSyncManage, appaccess.PermDockerOperationsView}) {
+			t.Fatalf("legacy task menu %s must not have a visibility rule", id)
+		}
 	}
 }
 

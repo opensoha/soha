@@ -358,6 +358,16 @@ func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T
 			t.Fatalf("compute resource management menu %s is not attached directly to the workbench", id)
 		}
 	}
+	for _, id := range []string{"compute-workbench-tasks-sync", "compute-workbench-tasks-build"} {
+		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id && !item.Enabled }) {
+			t.Fatalf("legacy compute task menu %s must be disabled", id)
+		}
+	}
+	if !slices.ContainsFunc(items, func(item menuSeed) bool {
+		return item.ID == "compute-workbench-tasks-operations" && item.Enabled && item.LabelZH == "任务中心" && item.LabelEN == "Task Center"
+	}) {
+		t.Fatal("canonical compute task menu must be enabled and labeled Task Center")
+	}
 	filtered := filterSeedMenusByModules(items, cfgpkg.ModulesConfig{})
 	for _, item := range filtered {
 		if isComputeMenuSeed(item) || isVirtualizationMenuSeed(item) || isDockerMenuSeed(item) {

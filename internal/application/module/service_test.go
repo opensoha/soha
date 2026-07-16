@@ -77,13 +77,14 @@ func TestListIncludesUnifiedComputeDescriptor(t *testing.T) {
 			t.Fatalf("compute permissions missing %s: %v", permission, status.Descriptor.VisiblePermissions)
 		}
 	}
-	for _, menuID := range []string{
-		"compute-workbench-tasks-sync",
-		"compute-workbench-tasks-build",
-		"compute-workbench-tasks-operations",
-	} {
+	for _, menuID := range []string{"compute-workbench-tasks-operations"} {
 		if !slices.Contains(status.Descriptor.SeedMenus, menuID) {
 			t.Fatalf("compute seed menus missing %s: %v", menuID, status.Descriptor.SeedMenus)
+		}
+	}
+	for _, menuID := range []string{"compute-workbench-tasks-sync", "compute-workbench-tasks-build"} {
+		if slices.Contains(status.Descriptor.SeedMenus, menuID) {
+			t.Fatalf("compute seed menus retained legacy %s: %v", menuID, status.Descriptor.SeedMenus)
 		}
 	}
 }

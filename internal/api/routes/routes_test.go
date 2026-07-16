@@ -111,8 +111,8 @@ func TestRegisterComputeRoutesFollowsModuleAvailability(t *testing.T) {
 		want int
 	}{
 		{name: "disabled", cfg: cfgpkg.Config{}, want: 0},
-		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 3},
-		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 3},
+		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 7},
+		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 7},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			router := gin.New()
@@ -126,6 +126,19 @@ func TestRegisterComputeRoutesFollowsModuleAvailability(t *testing.T) {
 			}
 			if count != test.want {
 				t.Fatalf("compute routes = %d, want %d", count, test.want)
+			}
+			if test.want > 0 {
+				registered := routeMethodPaths(router.Routes())
+				for _, route := range []string{
+					"GET /api/v1/compute/tasks/:domain/:id",
+					"GET /api/v1/compute/tasks/:domain/:id/logs",
+					"POST /api/v1/compute/tasks/:domain/:id/cancel",
+					"POST /api/v1/compute/tasks/:domain/:id/retry",
+				} {
+					if !slices.Contains(registered, route) {
+						t.Fatalf("missing route %s", route)
+					}
+				}
 			}
 		})
 	}

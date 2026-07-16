@@ -27,6 +27,9 @@ type virtualizationFake struct {
 	err             error
 	connectionReads int
 	vmReads         int
+	logs            []domainvirtualization.TaskLog
+	canceled        string
+	retried         string
 }
 
 func (f *virtualizationFake) GetConnection(_ context.Context, id string) (domainvirtualization.Connection, error) {
@@ -91,6 +94,20 @@ func (f *virtualizationFake) ListTasks(context.Context, domainvirtualization.Tas
 	}
 	return append([]domainvirtualization.Task(nil), f.tasks...), nil
 }
+func (f *virtualizationFake) GetOperation(_ context.Context, _ domainidentity.Principal, id string) (domainvirtualization.Task, error) {
+	return f.GetTask(context.Background(), id)
+}
+func (f *virtualizationFake) ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domainvirtualization.TaskLog, error) {
+	return append([]domainvirtualization.TaskLog(nil), f.logs...), nil
+}
+func (f *virtualizationFake) CancelOperation(_ context.Context, _ domainidentity.Principal, id string) (domainvirtualization.Task, error) {
+	f.canceled = id
+	return f.GetTask(context.Background(), id)
+}
+func (f *virtualizationFake) RetryOperation(_ context.Context, _ domainidentity.Principal, id string) (domainvirtualization.Task, error) {
+	f.retried = id
+	return f.GetTask(context.Background(), id)
+}
 
 type runtimeFake struct {
 	hosts        []domaindocker.Host
@@ -102,6 +119,9 @@ type runtimeFake struct {
 	projectReads int
 	serviceReads int
 	portReads    int
+	logs         []domaindocker.OperationLog
+	canceled     string
+	retried      string
 }
 
 func (f *runtimeFake) GetHost(_ context.Context, id string) (domaindocker.Host, error) {
@@ -173,7 +193,7 @@ func (f *runtimeFake) ListPortMappings(_ context.Context, filter domaindocker.Po
 func (f *runtimeFake) GetTemplate(context.Context, string) (domaindocker.Template, error) {
 	return domaindocker.Template{}, apperrors.ErrNotFound
 }
-func (f *runtimeFake) GetOperation(_ context.Context, id string) (domaindocker.Operation, error) {
+func (f *runtimeFake) GetOperation(_ context.Context, _ domainidentity.Principal, id string) (domaindocker.Operation, error) {
 	for _, item := range f.operations {
 		if item.ID == id {
 			return item, nil
@@ -184,11 +204,22 @@ func (f *runtimeFake) GetOperation(_ context.Context, id string) (domaindocker.O
 func (f *runtimeFake) ListOperations(context.Context, domaindocker.OperationFilter) ([]domaindocker.Operation, error) {
 	return append([]domaindocker.Operation(nil), f.operations...), nil
 }
+func (f *runtimeFake) ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domaindocker.OperationLog, error) {
+	return append([]domaindocker.OperationLog(nil), f.logs...), nil
+}
+func (f *runtimeFake) CancelOperation(_ context.Context, _ domainidentity.Principal, id string) (domaindocker.Operation, error) {
+	f.canceled = id
+	return f.GetOperation(context.Background(), domainidentity.Principal{}, id)
+}
+func (f *runtimeFake) RetryOperation(_ context.Context, _ domainidentity.Principal, id string) (domaindocker.Operation, error) {
+	f.retried = id
+	return f.GetOperation(context.Background(), domainidentity.Principal{}, id)
+}
 
 func newTestService(keys ...string) (*Service, *virtualizationFake, *runtimeFake) {
 	virt, runtime := &virtualizationFake{}, &runtimeFake{}
 	resolver := appaccess.NewPermissionResolver(roleReader{keys: keys})
-	return New(virt, runtime, resolver, Options{VirtualizationEnabled: true, RuntimeEnabled: true}), virt, runtime
+	return New(virt, runtime, resolver, Options{VirtualizationEnabled: true, RuntimeEnabled: true, VirtualizationTasks: virt, RuntimeTasks: runtime}), virt, runtime
 }
 func testPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{UserID: "u", Roles: []string{"test"}}
@@ -342,5 +373,50 @@ func TestTaskCursorRemainsStableWhenNewTaskArrives(t *testing.T) {
 	}
 	if _, err := service.ListTasks(context.Background(), testPrincipal(), TaskFilter{Cursor: "not-a-cursor"}); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("invalid cursor error = %v", err)
+	}
+}
+
+func TestListTasksFiltersExactReferencedResource(t *testing.T) {
+	service, virt, runtime := newTestService(appaccess.PermVirtualizationOperationsView, appaccess.PermDockerOperationsView)
+	now := time.Now().UTC()
+	virt.tasks = []domainvirtualization.Task{{ID: "virt-match", TaskKind: "vm_action", ConnectionID: "cluster-1", CreatedAt: now}}
+	runtime.operations = []domaindocker.Operation{
+		{ID: "runtime-match", OperationKind: "deploy", ProjectID: "project-1", CreatedAt: now},
+		{ID: "runtime-other", OperationKind: "deploy", ProjectID: "project-2", CreatedAt: now},
+	}
+
+	result, err := service.ListTasks(context.Background(), testPrincipal(), TaskFilter{ResourceKind: "project", ResourceID: "project-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || result.Items[0].ID != "runtime-match" {
+		t.Fatalf("resource-filtered tasks = %#v", result.Items)
+	}
+}
+
+func TestTaskFacadeRoutesDetailLogsCancelAndRetry(t *testing.T) {
+	service, virt, runtime := newTestService(appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationOperationsManage, appaccess.PermDockerOperationsView, appaccess.PermDockerOperationsManage)
+	now := time.Now().UTC()
+	virt.tasks = []domainvirtualization.Task{{ID: "virt-1", TaskKind: "vm_action", Status: "running", CreatedAt: now}}
+	virt.logs = []domainvirtualization.TaskLog{{ID: "v-log", TaskID: "virt-1", LogLevel: "info", Message: "started", Payload: map[string]any{"step": 1}, CreatedAt: now}}
+	runtime.operations = []domaindocker.Operation{{ID: "docker-1", OperationKind: "deploy", Status: "failed", CreatedAt: now}}
+	runtime.logs = []domaindocker.OperationLog{{ID: "d-log", OperationID: "docker-1", LogLevel: "error", Message: "failed", CreatedAt: now}}
+
+	task, err := service.GetTask(context.Background(), testPrincipal(), "virtualization", "virt-1")
+	if err != nil || task.ID != "virt-1" {
+		t.Fatalf("GetTask = %#v, %v", task, err)
+	}
+	logs, err := service.ListTaskLogs(context.Background(), testPrincipal(), "virtualization", "virt-1")
+	if err != nil || len(logs.Items) != 1 || logs.Items[0].Payload != `{"step":1}` {
+		t.Fatalf("ListTaskLogs = %#v, %v", logs, err)
+	}
+	if _, err := service.CancelTask(context.Background(), testPrincipal(), "virtualization", "virt-1"); err != nil || virt.canceled != "virt-1" {
+		t.Fatalf("CancelTask err=%v canceled=%q", err, virt.canceled)
+	}
+	if _, err := service.RetryTask(context.Background(), testPrincipal(), "container_runtime", "docker-1"); err != nil || runtime.retried != "docker-1" {
+		t.Fatalf("RetryTask err=%v retried=%q", err, runtime.retried)
+	}
+	if _, err := service.GetTask(context.Background(), testPrincipal(), "bogus", "task"); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("invalid domain error = %v", err)
 	}
 }
