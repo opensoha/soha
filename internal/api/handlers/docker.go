@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 )
 
@@ -713,6 +715,10 @@ func (h *DockerHandler) ClaimOperation(c *gin.Context) {
 	}
 	item, err := h.runnerOperations.ClaimOperation(c.Request.Context(), req)
 	if err != nil {
+		if errors.Is(err, apperrors.ErrNotFound) {
+			c.Status(http.StatusNoContent)
+			return
+		}
 		writeError(c, err)
 		return
 	}
