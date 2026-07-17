@@ -120,6 +120,7 @@ func TestRootServiceExportsOnlyCapabilityAccessors(t *testing.T) {
 		"Network",
 		"PortForwards",
 		"RBAC",
+		"ResourceCreation",
 		"Runtime",
 		"Storage",
 		"Workloads",

@@ -78,14 +78,20 @@ func (h *ScopeGrantHandler) Delete(c *gin.Context) {
 
 func mapScopeGrantInput(req dto.ScopeGrantRequest) domainscopegrant.Input {
 	return domainscopegrant.Input{
-		ID:             req.ID,
-		SubjectType:    req.SubjectType,
-		SubjectID:      req.SubjectID,
-		BusinessLineID: req.BusinessLineID,
-		EnvironmentIDs: req.EnvironmentIDs,
-		ApplicationIDs: req.ApplicationIDs,
-		Role:           req.Role,
-		Effect:         req.Effect,
-		Enabled:        req.Enabled,
+		ID:                req.ID,
+		SubjectType:       req.SubjectType,
+		SubjectID:         req.SubjectID,
+		BusinessLineID:    req.BusinessLineID,
+		EnvironmentIDs:    req.EnvironmentIDs,
+		ApplicationIDs:    req.ApplicationIDs,
+		ScopeType:         req.ScopeType,
+		ClusterIDs:        req.ClusterIDs,
+		Namespaces:        req.Namespaces,
+		NamespaceSelector: req.NamespaceSelector,
+		ResourceGroups:    req.ResourceGroups,
+		ResourceKinds:     req.ResourceKinds,
+		Role:              req.Role,
+		Effect:            req.Effect,
+		Enabled:           req.Enabled,
 	}
 }

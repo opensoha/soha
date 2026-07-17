@@ -37,17 +37,31 @@ func (*Cache) CacheUnavailable(err error) bool {
 
 func NewAgentClients(registry *agentinfra.Registry) appresource.AgentClients {
 	return appresource.AgentClients{
-		Workloads:       agentFactory[appresource.WorkloadAgent](registry),
-		Configuration:   agentFactory[appresource.ConfigurationAgent](registry),
-		Network:         agentFactory[appresource.NetworkAgent](registry),
-		Storage:         agentFactory[appresource.StorageAgent](registry),
-		RBAC:            agentFactory[appresource.RBACAgent](registry),
-		Helm:            agentFactory[appresource.HelmAgent](registry),
-		Inventory:       agentFactory[appresource.InventoryAgent](registry),
-		CustomResources: agentFactory[appresource.CustomResourceAgent](registry),
-		Generic:         agentFactory[appresource.GenericResourceAgent](registry),
-		Events:          agentFactory[appresource.EventAgent](registry),
-		PortForwards:    agentFactory[appresource.PortForwardAgent](registry),
+		Workloads:        agentFactory[appresource.WorkloadAgent](registry),
+		Configuration:    agentFactory[appresource.ConfigurationAgent](registry),
+		Network:          agentFactory[appresource.NetworkAgent](registry),
+		Storage:          agentFactory[appresource.StorageAgent](registry),
+		RBAC:             agentFactory[appresource.RBACAgent](registry),
+		Helm:             agentFactory[appresource.HelmAgent](registry),
+		Inventory:        agentFactory[appresource.InventoryAgent](registry),
+		CustomResources:  agentFactory[appresource.CustomResourceAgent](registry),
+		Generic:          agentFactory[appresource.GenericResourceAgent](registry),
+		Events:           agentFactory[appresource.EventAgent](registry),
+		PortForwards:     agentFactory[appresource.PortForwardAgent](registry),
+		ResourceCreation: agentResourceCreatorFactory(registry),
+	}
+}
+
+func agentResourceCreatorFactory(registry *agentinfra.Registry) appresource.AgentClientFactory[appresource.AgentResourceCreator] {
+	return func(connection domaincluster.Connection) (appresource.AgentResourceCreator, error) {
+		if registry == nil {
+			return nil, fmt.Errorf("agent registry is not configured")
+		}
+		client, err := registry.ClientFor(connection)
+		if err != nil {
+			return nil, err
+		}
+		return &agentResourceCreator{client: client}, nil
 	}
 }
 

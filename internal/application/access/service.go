@@ -186,8 +186,17 @@ func (s *Service) applyDeliveryScopeGrantConstraint(
 ) domainaccess.Decision {
 	matchedActions := make([]domainaccess.Action, 0)
 	for _, grant := range subjectGrants {
+		if normalizedScopeType(grant.ScopeType) == domainscopegrant.ScopeTypePlatform {
+			continue
+		}
 		if !grantMatchesDeliveryScope(grant, request.Delivery, envKeyMap) {
 			continue
+		}
+		if normalizedEffect(grant.Effect) == "deny" {
+			decision.Allowed = false
+			decision.Reason = "scope grant explicitly denies this delivery scope"
+			decision.AllowedActions = nil
+			return decision
 		}
 		matchedActions = unionActions(matchedActions, roleMatrix[grant.Role])
 	}
@@ -219,66 +228,7 @@ func (s *Service) applyPlatformScopeGrantConstraint(
 	envKeyMap map[string]string,
 	applicationEnvironments []domaincatalog.ApplicationEnvironment,
 ) domainaccess.Decision {
-	clusterNamespaces := make(map[string]map[string]struct{})
-	matchedActions := make([]domainaccess.Action, 0)
-	for _, binding := range applicationEnvironments {
-		for _, grant := range subjectGrants {
-			if !bindingMatchesScopeGrant(binding, grant, envKeyMap) {
-				continue
-			}
-			matchedActions = unionActions(matchedActions, roleMatrix[grant.Role])
-			for _, target := range binding.Targets {
-				if !target.Enabled || target.ClusterID == "" {
-					continue
-				}
-				if _, ok := clusterNamespaces[target.ClusterID]; !ok {
-					clusterNamespaces[target.ClusterID] = make(map[string]struct{})
-				}
-				namespace := strings.TrimSpace(target.Namespace)
-				if namespace != "" {
-					clusterNamespaces[target.ClusterID][namespace] = struct{}{}
-				}
-			}
-		}
-	}
-
-	allowedNamespaces, clusterAllowed := clusterNamespaces[request.Cluster.ClusterID]
-	if !clusterAllowed {
-		decision.Allowed = false
-		decision.Reason = "scope grant does not allow this cluster"
-		decision.AllowedActions = nil
-		return decision
-	}
-	if request.Namespace.Namespace != "" {
-		if _, ok := allowedNamespaces[request.Namespace.Namespace]; !ok {
-			decision.Allowed = false
-			decision.Reason = "scope grant does not allow this namespace"
-			decision.AllowedActions = nil
-			return decision
-		}
-	}
-	decision.AllowedActions = intersectActions(decision.AllowedActions, matchedActions)
-	if len(decision.AllowedActions) == 0 {
-		decision.Allowed = false
-		decision.Reason = "scope grant filtered out effective platform actions"
-		return decision
-	}
-	decision.Allowed = slices.Contains(decision.AllowedActions, request.Action)
-	if !decision.Allowed {
-		decision.Reason = fmt.Sprintf("action %s filtered out by platform scope grant", request.Action)
-		return decision
-	}
-
-	scope := &domainaccess.ResourceScope{
-		Clusters: []string{request.Cluster.ClusterID},
-	}
-	if request.Namespace.Namespace != "" {
-		scope.Namespaces = []string{request.Namespace.Namespace}
-	} else {
-		scope.Namespaces = sortedKeys(allowedNamespaces)
-	}
-	decision.ResourceScope = mergeResourceScopes(decision.ResourceScope, scope)
-	return decision
+	return evaluatePlatformScopeGrants(request, decision, roleMatrix, subjectGrants, envKeyMap, applicationEnvironments)
 }
 
 func matchedSubjectScopeGrants(grants []domainscopegrant.Record, request domainaccess.Request) ([]domainscopegrant.Record, bool) {
@@ -288,19 +238,36 @@ func matchedSubjectScopeGrants(grants []domainscopegrant.Record, request domaina
 		if !grant.Enabled {
 			continue
 		}
-		if grant.Effect != "" && grant.Effect != "allow" {
+		subjectType := strings.ToLower(strings.TrimSpace(grant.SubjectType))
+		if subjectType != "user" && subjectType != "team" {
 			continue
 		}
-		if grant.SubjectType == "user" && grant.SubjectID != request.Subject.UserID {
+		if subjectType == "user" && grant.SubjectID != request.Subject.UserID {
 			continue
 		}
-		if grant.SubjectType == "team" && !slices.Contains(request.Subject.Teams, grant.SubjectID) {
+		if subjectType == "team" && !slices.Contains(request.Subject.Teams, grant.SubjectID) {
 			continue
 		}
 		hasScopedGrant = true
 		items = append(items, grant)
 	}
 	return items, hasScopedGrant
+}
+
+func normalizedScopeType(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return domainscopegrant.ScopeTypeLegacy
+	}
+	return value
+}
+
+func normalizedEffect(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "allow"
+	}
+	return value
 }
 
 func grantMatchesDeliveryScope(grant domainscopegrant.Record, delivery domainaccess.DeliveryAttributes, envKeyMap map[string]string) bool {
@@ -395,9 +362,14 @@ func mergeResourceScopes(left *domainaccess.ResourceScope, right *domainaccess.R
 		return cloneResourceScope(left)
 	}
 	return &domainaccess.ResourceScope{
-		Clusters:      intersectScopeValues(left.Clusters, right.Clusters),
-		Namespaces:    intersectScopeValues(left.Namespaces, right.Namespaces),
-		LabelSelector: pickScopeLabelSelector(left.LabelSelector, right.LabelSelector),
+		Clusters:                   intersectScopeValues(left.Clusters, right.Clusters),
+		Namespaces:                 intersectScopeValues(left.Namespaces, right.Namespaces),
+		ExcludedNamespaces:         unionScopeValues(left.ExcludedNamespaces, right.ExcludedNamespaces),
+		LabelSelector:              pickScopeLabelSelector(left.LabelSelector, right.LabelSelector),
+		NamespaceSelectors:         unionScopeValues(left.NamespaceSelectors, right.NamespaceSelectors),
+		ExcludedNamespaceSelectors: unionScopeValues(left.ExcludedNamespaceSelectors, right.ExcludedNamespaceSelectors),
+		ResourceGroups:             intersectScopeValues(left.ResourceGroups, right.ResourceGroups),
+		ResourceKinds:              intersectScopeValues(left.ResourceKinds, right.ResourceKinds),
 	}
 }
 
@@ -406,10 +378,21 @@ func cloneResourceScope(scope *domainaccess.ResourceScope) *domainaccess.Resourc
 		return nil
 	}
 	return &domainaccess.ResourceScope{
-		Clusters:      append([]string(nil), scope.Clusters...),
-		Namespaces:    append([]string(nil), scope.Namespaces...),
-		LabelSelector: scope.LabelSelector,
+		Clusters:                   append([]string(nil), scope.Clusters...),
+		Namespaces:                 append([]string(nil), scope.Namespaces...),
+		ExcludedNamespaces:         append([]string(nil), scope.ExcludedNamespaces...),
+		LabelSelector:              scope.LabelSelector,
+		NamespaceSelectors:         append([]string(nil), scope.NamespaceSelectors...),
+		ExcludedNamespaceSelectors: append([]string(nil), scope.ExcludedNamespaceSelectors...),
+		ResourceGroups:             append([]string(nil), scope.ResourceGroups...),
+		ResourceKinds:              append([]string(nil), scope.ResourceKinds...),
 	}
+}
+
+func unionScopeValues(left []string, right []string) []string {
+	values := append(append([]string(nil), left...), right...)
+	slices.Sort(values)
+	return slices.Compact(values)
 }
 
 func intersectScopeValues(left []string, right []string) []string {

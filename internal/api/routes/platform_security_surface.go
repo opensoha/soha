@@ -17,7 +17,7 @@ type platformMutationSecuritySurfaceEntry struct {
 func platformMutationSecuritySurface(method, path string) (platformMutationSecuritySurfaceEntry, bool) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = strings.TrimSpace(path)
-	if !isMutationMethod(method) || !strings.HasPrefix(path, "/api/v1/clusters") {
+	if !isMutationMethod(method) || isPlatformReadOnlyPOST(method, path) || !strings.HasPrefix(path, "/api/v1/clusters") {
 		return platformMutationSecuritySurfaceEntry{}, false
 	}
 
@@ -33,6 +33,10 @@ func platformMutationSecuritySurface(method, path string) (platformMutationSecur
 		AuditRequired:     true,
 		OperationRequired: true,
 	}, true
+}
+
+func isPlatformReadOnlyPOST(method, path string) bool {
+	return method == "POST" && (strings.HasSuffix(path, "/resource-creation/scope-decision") || strings.HasSuffix(path, "/resource-creation/preflight"))
 }
 
 func isMutationMethod(method string) bool {
@@ -487,6 +491,8 @@ func platformMutationCapabilityKey(path string) string {
 	switch {
 	case strings.Contains(path, "/namespaces"):
 		return "namespace.lifecycle"
+	case strings.Contains(path, "/resource-creation/"):
+		return "resource.creation"
 	case strings.Contains(path, "/workloads/pods") && strings.Contains(path, "/exec"):
 		return "pod.exec"
 	case strings.Contains(path, "/workloads/deployments/restart"),
@@ -535,6 +541,7 @@ var platformMutationResourceKinds = []struct {
 	pathSegment string
 	kind        string
 }{
+	{pathSegment: "/resource-creation/", kind: "Resource"},
 	{pathSegment: "/namespaces", kind: "Namespace"},
 	{pathSegment: "/infrastructure/nodes", kind: "Node"},
 	{pathSegment: "/workloads/pods", kind: "Pod"},

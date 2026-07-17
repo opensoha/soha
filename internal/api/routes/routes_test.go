@@ -388,7 +388,7 @@ func TestPlatformMutatingRoutesHaveSecuritySurface(t *testing.T) {
 
 	checked := 0
 	for _, route := range router.Routes() {
-		if !isMutationMethod(route.Method) || !hasPlatformClusterPrefix(route.Path) {
+		if !isMutationMethod(route.Method) || isPlatformReadOnlyPOST(route.Method, route.Path) || !hasPlatformClusterPrefix(route.Path) {
 			continue
 		}
 		checked++

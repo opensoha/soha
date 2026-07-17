@@ -3,6 +3,9 @@ package routes
 import "github.com/gin-gonic/gin"
 
 func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.POST("/clusters/:clusterID/resource-creation/scope-decision", deps.Platform.DecideResourceCreationScope)
+	protected.POST("/clusters/:clusterID/resource-creation/preflight", deps.Platform.PreflightResourceCreation)
+	protected.POST("/clusters/:clusterID/resource-creation/execute", deps.Platform.ExecuteResourceCreation)
 	registerPlatformClusterRoutes(protected, deps)
 	registerPlatformWorkloadRoutes(protected, deps)
 	registerPlatformConfigurationRoutes(protected, deps)

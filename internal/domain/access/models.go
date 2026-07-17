@@ -53,6 +53,7 @@ type NamespaceAttributes struct {
 }
 
 type ResourceAttributes struct {
+	Group       string
 	Kind        string
 	Name        string
 	Labels      map[string]string
@@ -85,9 +86,14 @@ type Request struct {
 }
 
 type ResourceScope struct {
-	Clusters      []string `json:"clusters,omitempty"`
-	Namespaces    []string `json:"namespaces,omitempty"`
-	LabelSelector string   `json:"labelSelector,omitempty"`
+	Clusters                   []string `json:"clusters,omitempty"`
+	Namespaces                 []string `json:"namespaces,omitempty"`
+	ExcludedNamespaces         []string `json:"excludedNamespaces,omitempty"`
+	LabelSelector              string   `json:"labelSelector,omitempty"`
+	NamespaceSelectors         []string `json:"namespaceSelectors,omitempty"`
+	ExcludedNamespaceSelectors []string `json:"excludedNamespaceSelectors,omitempty"`
+	ResourceGroups             []string `json:"resourceGroups,omitempty"`
+	ResourceKinds              []string `json:"resourceKinds,omitempty"`
 }
 
 type Decision struct {

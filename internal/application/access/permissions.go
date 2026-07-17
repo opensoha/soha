@@ -20,9 +20,17 @@ const (
 	PermPlatformExtensionsView            = "platform.extensions.view"
 	PermPlatformHelmView                  = "platform.helm.view"
 	PermPlatformClustersView              = "platform.clusters.view"
+	PermPlatformResourceCreate            = "platform.resource.create"
 	PermPlatformDeploymentRestart         = "platform.deployment.restart"
 	PermPlatformDeploymentScale           = "platform.deployment.scale"
 	PermPlatformDeploymentRollback        = "platform.deployment.rollback"
+	PermPlatformRBACManage                = "platform.rbac.manage"
+	PermPlatformRBACEscalate              = "platform.rbac.escalate"
+	PermPlatformRBACBind                  = "platform.rbac.bind"
+	PermPlatformNamespacesManage          = "platform.namespaces.manage"
+	PermPlatformCRDsManage                = "platform.crds.manage"
+	PermPlatformAdmissionManage           = "platform.admission.manage"
+	PermPlatformClusterResourcesManage    = "platform.cluster-resources.manage"
 	PermDeliveryApplicationsView          = "delivery.applications.view"
 	PermDeliveryApplicationsCreate        = "delivery.application.create"
 	PermDeliveryApplicationsUpdate        = "delivery.application.update"
@@ -191,9 +199,17 @@ var allPermissionKeySet = []string{
 	PermPlatformExtensionsView,
 	PermPlatformHelmView,
 	PermPlatformClustersView,
+	PermPlatformResourceCreate,
 	PermPlatformDeploymentRestart,
 	PermPlatformDeploymentScale,
 	PermPlatformDeploymentRollback,
+	PermPlatformRBACManage,
+	PermPlatformRBACEscalate,
+	PermPlatformRBACBind,
+	PermPlatformNamespacesManage,
+	PermPlatformCRDsManage,
+	PermPlatformAdmissionManage,
+	PermPlatformClusterResourcesManage,
 	PermDeliveryApplicationsView,
 	PermDeliveryApplicationsCreate,
 	PermDeliveryApplicationsUpdate,
@@ -361,6 +377,7 @@ var opsRolePermissionKeys = []string{
 	PermPlatformExtensionsView,
 	PermPlatformHelmView,
 	PermPlatformClustersView,
+	PermPlatformResourceCreate,
 	PermPlatformDeploymentRestart,
 	PermPlatformDeploymentScale,
 	PermPlatformDeploymentRollback,

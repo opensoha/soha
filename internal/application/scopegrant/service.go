@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
@@ -85,13 +86,44 @@ func validateInput(input domainscopegrant.Input) error {
 	if strings.TrimSpace(input.SubjectType) == "" || strings.TrimSpace(input.SubjectID) == "" {
 		return fmt.Errorf("%w: subjectType and subjectId are required", apperrors.ErrInvalidArgument)
 	}
-	if strings.TrimSpace(input.BusinessLineID) == "" {
+	subjectType := strings.ToLower(strings.TrimSpace(input.SubjectType))
+	if subjectType != "user" && subjectType != "team" {
+		return fmt.Errorf("%w: subjectType must be user or team", apperrors.ErrInvalidArgument)
+	}
+	scopeType := strings.ToLower(strings.TrimSpace(input.ScopeType))
+	if scopeType == "" {
+		scopeType = domainscopegrant.ScopeTypeLegacy
+	}
+	if scopeType != domainscopegrant.ScopeTypeLegacy && scopeType != domainscopegrant.ScopeTypeDelivery && scopeType != domainscopegrant.ScopeTypePlatform {
+		return fmt.Errorf("%w: scopeType must be legacy, delivery, or platform", apperrors.ErrInvalidArgument)
+	}
+	if scopeType != domainscopegrant.ScopeTypePlatform && strings.TrimSpace(input.BusinessLineID) == "" {
 		return fmt.Errorf("%w: businessLineId is required", apperrors.ErrInvalidArgument)
+	}
+	if scopeType == domainscopegrant.ScopeTypePlatform && len(nonEmptyStrings(input.ClusterIDs)) == 0 {
+		return fmt.Errorf("%w: clusterIds are required for platform scope grants", apperrors.ErrInvalidArgument)
+	}
+	if !domainaccess.ValidNamespaceSelector(input.NamespaceSelector) {
+		return fmt.Errorf("%w: namespaceSelector is invalid", apperrors.ErrInvalidArgument)
 	}
 	if strings.TrimSpace(input.Role) == "" {
 		return fmt.Errorf("%w: role is required", apperrors.ErrInvalidArgument)
 	}
+	effect := strings.ToLower(strings.TrimSpace(input.Effect))
+	if effect != "" && effect != "allow" && effect != "deny" {
+		return fmt.Errorf("%w: effect must be allow or deny", apperrors.ErrInvalidArgument)
+	}
 	return nil
+}
+
+func nonEmptyStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			result = append(result, value)
+		}
+	}
+	return result
 }
 
 func normalizeRepoError(err error) error {

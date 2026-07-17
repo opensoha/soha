@@ -65,3 +65,29 @@ func TestCreateRequiresScopeGrantManagePermission(t *testing.T) {
 		t.Fatalf("Create error = nil, want access denied")
 	}
 }
+
+func TestValidatePlatformScopeGrantRequiresDirectClusterScope(t *testing.T) {
+	base := domainscopegrant.Input{
+		SubjectType: "user", SubjectID: "user-1", ScopeType: domainscopegrant.ScopeTypePlatform,
+		Role: "ops", Effect: "allow",
+	}
+	if err := validateInput(base); err == nil {
+		t.Fatal("validateInput() error = nil, want missing clusterIds error")
+	}
+	base.ClusterIDs = []string{"cluster-a"}
+	base.Namespaces = []string{"minio"}
+	if err := validateInput(base); err != nil {
+		t.Fatalf("validateInput() error = %v for valid platform grant", err)
+	}
+	base.NamespaceSelector = "tenant="
+	if err := validateInput(base); err == nil {
+		t.Fatal("validateInput() error = nil, want invalid namespaceSelector error")
+	}
+}
+
+func TestValidateLegacyScopeGrantPreservesBusinessLineRequirement(t *testing.T) {
+	input := domainscopegrant.Input{SubjectType: "user", SubjectID: "user-1", Role: "readonly"}
+	if err := validateInput(input); err == nil {
+		t.Fatal("validateInput() error = nil, want legacy businessLineId requirement")
+	}
+}

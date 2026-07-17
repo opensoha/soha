@@ -242,6 +242,7 @@ func TestNewAgentClientsProvidesCapabilityScopedFactories(t *testing.T) {
 		{name: "generic", resolve: func() (any, error) { return clients.Generic(connection) }},
 		{name: "events", resolve: func() (any, error) { return clients.Events(connection) }},
 		{name: "port forwards", resolve: func() (any, error) { return clients.PortForwards(connection) }},
+		{name: "resource creation", resolve: func() (any, error) { return clients.ResourceCreation(connection) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

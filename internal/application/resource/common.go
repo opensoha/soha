@@ -16,12 +16,17 @@ import (
 )
 
 type resourceAccess struct {
-	directClusters ClusterMetadataProvider
-	resolver       ConnectionResolver
-	authorizer     domainaccess.Authorizer
-	permissions    RuntimePermissionAuthorizer
-	audit          AuditRecorder
-	operations     OperationRecorder
+	directClusters  ClusterMetadataProvider
+	resolver        ConnectionResolver
+	authorizer      domainaccess.Authorizer
+	permissions     RuntimePermissionAuthorizer
+	audit           AuditRecorder
+	operations      OperationRecorder
+	namespaceLabels namespaceLabelResolver
+}
+
+type namespaceLabelResolver interface {
+	Resolve(context.Context, domaincluster.Connection, string) (map[string]string, error)
 }
 
 func resolveAgentClient[T any](factory AgentClientFactory[T], connection domaincluster.Connection) (T, error) {
@@ -116,12 +121,7 @@ func (s *resourceAccess) loadConnection(ctx context.Context, clusterID string) (
 	return domaincluster.Connection{Summary: summary}, nil
 }
 func (s *resourceAccess) authorize(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
-	connection, err := s.loadConnection(ctx, clusterID)
-	if err != nil {
-		return domaincluster.Connection{}, domainaccess.Decision{}, err
-	}
-	request := s.resourceAccessRequest(ctx, principal, connection, namespace, kind, action)
-	decision, err := s.authorizer.Authorize(ctx, request)
+	connection, decision, err := s.decide(ctx, principal, clusterID, namespace, resourceGroupForKind(kind), kind, action)
 	if err != nil {
 		return domaincluster.Connection{}, domainaccess.Decision{}, err
 	}
@@ -130,6 +130,39 @@ func (s *resourceAccess) authorize(ctx context.Context, principal domainidentity
 		return domaincluster.Connection{}, domainaccess.Decision{}, fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
 	}
 	return connection, decision, nil
+}
+
+func (s *resourceAccess) decide(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, resourceGroup, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
+	connection, err := s.loadConnection(ctx, clusterID)
+	if err != nil {
+		return domaincluster.Connection{}, domainaccess.Decision{}, err
+	}
+	request := s.resourceAccessRequest(ctx, principal, connection, namespace, kind, action)
+	if strings.TrimSpace(resourceGroup) != "" {
+		request.Resource.Group = strings.TrimSpace(resourceGroup)
+	}
+	decision, err := s.authorizer.Authorize(ctx, request)
+	if err != nil {
+		return domaincluster.Connection{}, domainaccess.Decision{}, err
+	}
+	if shouldResolveNamespaceLabels(decision, namespace, s.namespaceLabels) {
+		if labels, resolveErr := s.namespaceLabels.Resolve(ctx, connection, namespace); resolveErr == nil {
+			request.Namespace.Labels = labels
+			decision, err = s.authorizer.Authorize(ctx, request)
+			if err != nil {
+				return domaincluster.Connection{}, domainaccess.Decision{}, err
+			}
+		}
+	}
+	return connection, decision, nil
+}
+
+func shouldResolveNamespaceLabels(decision domainaccess.Decision, namespace string, resolver namespaceLabelResolver) bool {
+	if decision.Allowed || namespace == "" || resolver == nil {
+		return false
+	}
+	reason := strings.ToLower(decision.Reason)
+	return strings.Contains(reason, "namespace") || strings.Contains(reason, "scope grant")
 }
 func (s *resourceAccess) resourceAccessRequest(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind string, action domainaccess.Action) domainaccess.Request {
 	return domainaccess.Request{
@@ -149,7 +182,7 @@ func (s *resourceAccess) resourceAccessRequest(ctx context.Context, principal do
 			Labels:      connection.Summary.Labels,
 		},
 		Namespace: domainaccess.NamespaceAttributes{Namespace: namespace},
-		Resource:  domainaccess.ResourceAttributes{Kind: kind},
+		Resource:  domainaccess.ResourceAttributes{Group: resourceGroupForKind(kind), Kind: kind},
 		Context: domainaccess.ContextAttributes{
 			Source:     requestctx.FromContext(ctx).Source,
 			OccurredAt: time.Now().UTC(),
@@ -222,20 +255,58 @@ func (s *resourceAccess) authorizeDeploymentPermission(ctx context.Context, prin
 }
 
 func filterScopedNamespaceItems[T any](items []T, decision domainaccess.Decision, namespaceOf func(T) string) []T {
-	if decision.ResourceScope == nil || len(decision.ResourceScope.Namespaces) == 0 {
+	if decision.ResourceScope == nil {
 		return items
+	}
+	// Generic resource views do not carry namespace labels. Selector-only
+	// scopes therefore fail closed; Namespace inventory resolves selectors to
+	// concrete visible names before the user enters a namespaced resource page.
+	if len(decision.ResourceScope.ExcludedNamespaceSelectors) > 0 || (len(decision.ResourceScope.Namespaces) == 0 && len(decision.ResourceScope.NamespaceSelectors) > 0) {
+		return nil
 	}
 	allowed := make(map[string]struct{}, len(decision.ResourceScope.Namespaces))
 	for _, namespace := range decision.ResourceScope.Namespaces {
 		allowed[namespace] = struct{}{}
 	}
+	excluded := make(map[string]struct{}, len(decision.ResourceScope.ExcludedNamespaces))
+	for _, namespace := range decision.ResourceScope.ExcludedNamespaces {
+		excluded[namespace] = struct{}{}
+	}
 	filtered := make([]T, 0, len(items))
 	for _, item := range items {
-		if _, ok := allowed[namespaceOf(item)]; ok {
-			filtered = append(filtered, item)
+		namespace := namespaceOf(item)
+		if _, denied := excluded[namespace]; denied {
+			continue
 		}
+		if len(allowed) > 0 {
+			if _, ok := allowed[namespace]; !ok {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+func resourceGroupForKind(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "pod", "deployment", "statefulset", "daemonset", "job", "cronjob", "replicaset", "replicationcontroller":
+		return "workloads"
+	case "configmap", "secret", "horizontalpodautoscaler", "poddisruptionbudget", "priorityclass", "runtimeclass", "resourcequota", "limitrange", "lease", "mutatingwebhookconfiguration", "validatingwebhookconfiguration":
+		return "configuration"
+	case "service", "ingress", "endpointslice", "networkpolicy", "gatewayclass", "gateway", "httproute", "grpcroute", "backendtlspolicy", "referencegrant", "ingressclass":
+		return "network"
+	case "persistentvolumeclaim", "persistentvolume", "storageclass":
+		return "storage"
+	case "serviceaccount", "role", "rolebinding", "clusterrole", "clusterrolebinding":
+		return "access-control"
+	case "customresourcedefinition", "customresource", "helmrelease":
+		return "extensions"
+	case "namespace", "node", "cluster":
+		return "inventory"
+	default:
+		return ""
+	}
 }
 func stringifyActions(actions []domainaccess.Action) []string {
 	values := make([]string, 0, len(actions))

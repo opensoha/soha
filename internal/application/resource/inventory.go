@@ -19,13 +19,65 @@ func (i *Inventory) directInventory() (DirectInventory, error) {
 }
 
 func (i *Inventory) ListNamespaces(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.NamespaceView, error) {
-	request := resourceListRequest{clusterID: clusterID, kind: "Namespace", summary: func(source string) string { return fmt.Sprintf("listed namespaces via %s", source) }}
-	return listSourcedModeResources(
-		ctx, i.resourceAccess, principal, request, i.inventoryAgentClient, i.directInventory,
+	connection, decision, err := i.authorize(ctx, principal, clusterID, "", "Namespace", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	items, source, err := routeModeSourcedItems(
+		connection, i.inventoryAgentClient, i.directInventory,
 		bindClusterAgentList(ctx, InventoryAgent.ListNamespaces),
 		bindClusterSourcedDirectList(ctx, clusterID, DirectInventory.ListNamespaces),
-		nil, namespaceActions, setNamespaceActions,
 	)
+	if err != nil {
+		return nil, err
+	}
+	items = filterNamespaceViews(items, decision)
+	populateAllowedActions(items, decision, namespaceActions, setNamespaceActions)
+	_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Namespace", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed namespaces via %s", source))
+	return items, nil
+}
+
+func filterNamespaceViews(items []domainresource.NamespaceView, decision domainaccess.Decision) []domainresource.NamespaceView {
+	scope := decision.ResourceScope
+	if scope == nil {
+		return items
+	}
+	allowed := make(map[string]struct{}, len(scope.Namespaces))
+	addNamespaceNames(allowed, scope.Namespaces)
+	excluded := make(map[string]struct{}, len(scope.ExcludedNamespaces))
+	addNamespaceNames(excluded, scope.ExcludedNamespaces)
+	filtered := make([]domainresource.NamespaceView, 0, len(items))
+	for _, item := range items {
+		if _, denied := excluded[item.Name]; denied || matchesAnyNamespaceSelector(scope.ExcludedNamespaceSelectors, item.Labels) {
+			continue
+		}
+		_, explicitlyAllowed := allowed[item.Name]
+		selectorAllowed := matchesAnyNamespaceSelector(scope.NamespaceSelectors, item.Labels)
+		if len(allowed) > 0 || len(scope.NamespaceSelectors) > 0 {
+			if !explicitlyAllowed && !selectorAllowed {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func addNamespaceNames(target map[string]struct{}, values []string) {
+	for _, value := range values {
+		if value != "" {
+			target[value] = struct{}{}
+		}
+	}
+}
+
+func matchesAnyNamespaceSelector(selectors []string, labels map[string]string) bool {
+	for _, selector := range selectors {
+		if domainaccess.MatchesNamespaceSelector(selector, labels) {
+			return true
+		}
+	}
+	return false
 }
 
 func (i *Inventory) CreateNamespace(ctx context.Context, principal domainidentity.Principal, clusterID string, input domainresource.NamespaceUpsertInput) (domainresource.NamespaceView, error) {

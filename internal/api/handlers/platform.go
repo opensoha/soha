@@ -165,6 +165,7 @@ type PlatformHandler struct {
 	*clusterEventResourceHandler
 	*portForwardResourceHandler
 	*podStreamResourceHandler
+	*resourceCreationHandler
 
 	audit       AuditService
 	events      EventService
@@ -264,6 +265,7 @@ func NewPlatformHandlerWithResources(deps PlatformDependencies) (*PlatformHandle
 		clusterEventResourceHandler: &clusterEventResourceHandler{service: resources.Events},
 		portForwardResourceHandler:  &portForwardResourceHandler{service: resources.PortForwards},
 		podStreamResourceHandler:    &podStreamResourceHandler{service: resources.PodStreams},
+		resourceCreationHandler:     &resourceCreationHandler{service: resources.ResourceCreation},
 		audit:                       deps.Audit,
 		events:                      deps.Events,
 		operations:                  deps.Operations,
@@ -282,7 +284,8 @@ func validatePlatformDependencies(deps PlatformDependencies) error {
 		"daemonset reader": deps.Resources.DaemonSetReader, "daemonset editor": deps.Resources.DaemonSetEditor,
 		"jobs": deps.Resources.Jobs, "cronjobs": deps.Resources.CronJobs,
 		"workload inventory": deps.Resources.WorkloadInventory, "resource creator": deps.Resources.Creator,
-		"configmaps": deps.Resources.ConfigMaps, "secrets": deps.Resources.Secrets,
+		"resource creation": deps.Resources.ResourceCreation,
+		"configmaps":        deps.Resources.ConfigMaps, "secrets": deps.Resources.Secrets,
 		"configuration inventory": deps.Resources.ConfigurationInventory,
 		"network overview":        deps.Resources.NetworkOverview, "network inventory": deps.Resources.NetworkInventory,
 		"gateway routing": deps.Resources.GatewayRouting, "gateway policy": deps.Resources.GatewayPolicy,

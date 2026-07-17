@@ -425,6 +425,18 @@ type DirectGenericResource interface {
 	DeleteResource(context.Context, string, string, string, string) error
 }
 
+type DirectResourceCreator interface {
+	ResolveCreateManifests(context.Context, string, string, int) ([]domainresource.ResolvedCreateManifest, error)
+	DryRunCreateManifest(context.Context, string, domainresource.ResolvedCreateManifest, string) error
+	CreateResolvedManifest(context.Context, string, domainresource.ResolvedCreateManifest, string) (domainresource.ResourceYAMLView, error)
+}
+
+type AgentResourceCreator interface {
+	ResolveCreateManifests(context.Context, string, int) ([]domainresource.ResolvedCreateManifest, error)
+	DryRunCreateManifest(context.Context, string, string, domainresource.ResolvedCreateManifest) error
+	CreateResolvedManifest(context.Context, string, string, domainresource.ResolvedCreateManifest) (domainresource.ResourceYAMLView, error)
+}
+
 type EventAgent interface {
 	ListClusterEvents(context.Context, string, int) ([]domainresource.ClusterEventView, error)
 }
@@ -472,17 +484,18 @@ type AgentClientFactory[T any] func(domaincluster.Connection) (T, error)
 // AgentClients keeps agent protocol dependencies aligned with resource
 // capabilities instead of exposing the infrastructure client's full API.
 type AgentClients struct {
-	Workloads       AgentClientFactory[WorkloadAgent]
-	Configuration   AgentClientFactory[ConfigurationAgent]
-	Network         AgentClientFactory[NetworkAgent]
-	Storage         AgentClientFactory[StorageAgent]
-	RBAC            AgentClientFactory[RBACAgent]
-	Helm            AgentClientFactory[HelmAgent]
-	Inventory       AgentClientFactory[InventoryAgent]
-	CustomResources AgentClientFactory[CustomResourceAgent]
-	Generic         AgentClientFactory[GenericResourceAgent]
-	Events          AgentClientFactory[EventAgent]
-	PortForwards    AgentClientFactory[PortForwardAgent]
+	Workloads        AgentClientFactory[WorkloadAgent]
+	Configuration    AgentClientFactory[ConfigurationAgent]
+	Network          AgentClientFactory[NetworkAgent]
+	Storage          AgentClientFactory[StorageAgent]
+	RBAC             AgentClientFactory[RBACAgent]
+	Helm             AgentClientFactory[HelmAgent]
+	Inventory        AgentClientFactory[InventoryAgent]
+	CustomResources  AgentClientFactory[CustomResourceAgent]
+	Generic          AgentClientFactory[GenericResourceAgent]
+	Events           AgentClientFactory[EventAgent]
+	PortForwards     AgentClientFactory[PortForwardAgent]
+	ResourceCreation AgentClientFactory[AgentResourceCreator]
 }
 
 type PortForwardRecord = domainresource.PortForwardRecord

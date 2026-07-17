@@ -98,6 +98,12 @@ type ResourceCreator interface {
 	CreateResourceFromYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 }
 
+type ResourceCreationService interface {
+	DecideCreateScope(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateScopeDecisionRequest) (domainresource.ResourceCreateScopeDecision, error)
+	PreflightCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreatePreflight, error)
+	ExecuteCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, error)
+}
+
 type ConfigMapService interface {
 	ListConfigMaps(context.Context, domainidentity.Principal, string, string) ([]domainresource.ConfigMapView, error)
 	GetConfigMapDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ConfigMapDetailView, error)
@@ -280,6 +286,7 @@ type ResourceServices struct {
 	CronJobs               CronJobService
 	WorkloadInventory      WorkloadInventoryService
 	Creator                ResourceCreator
+	ResourceCreation       ResourceCreationService
 	ConfigMaps             ConfigMapService
 	Secrets                SecretService
 	ConfigurationInventory ConfigurationInventoryService

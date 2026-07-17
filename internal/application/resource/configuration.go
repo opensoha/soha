@@ -159,27 +159,29 @@ func (c *Configuration) listConfigReferences(ctx context.Context, principal doma
 }
 
 func (c *Configuration) CreateResourceFromYAML(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, content string) (domainresource.ResourceYAMLView, error) {
-	connection, _, err := c.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionCreate)
+	if c.creation == nil {
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: unified resource creation service is not configured", apperrors.ErrClusterUnready)
+	}
+	result, err := c.creation.ExecuteCreate(ctx, principal, clusterID, domainresource.ResourceCreateRequest{
+		Source: domainresource.ResourceCreateSourceList, DefaultNamespace: strings.TrimSpace(namespace),
+		ExpectedKind: kind, Content: content,
+	})
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if strings.TrimSpace(content) == "" {
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml content is required", apperrors.ErrInvalidArgument)
+	if result.Status != "succeeded" || len(result.Documents) != 1 || result.Documents[0].Status != "succeeded" {
+		if len(result.Documents) == 1 && result.Documents[0].Error != "" {
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%s", result.Documents[0].Error)
+		}
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: resource creation did not complete", apperrors.ErrInvalidArgument)
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.ResourceYAMLView{}, unsupportedAgentOperation("yaml create is not supported for agent-connected clusters yet")
+	document := result.Documents[0]
+	if c.generic != nil {
+		if created, getErr := c.generic.GetResourceYAML(ctx, clusterID, document.Resource.Namespace, document.Resource.Kind, document.Resource.Name); getErr == nil {
+			return created, nil
+		}
 	}
-	if c.generic == nil {
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: direct generic resource adapter is not configured", apperrors.ErrClusterUnready)
-	}
-	created, err := c.generic.CreateResourceYAML(ctx, clusterID, namespace, kind, content)
-	if err != nil {
-		_ = c.recordAudit(ctx, principal, clusterID, namespace, kind, "", string(domainaccess.ActionCreate), "failure", err.Error())
-		return domainresource.ResourceYAMLView{}, err
-	}
-	_ = c.recordAudit(ctx, principal, connection.Summary.ID, created.Namespace, kind, created.Name, string(domainaccess.ActionCreate), "success", "created resource from yaml")
-	c.recordOperation(ctx, principal, "platform.resource.create", connection.Summary.ID, created.Namespace, kind, created.Name, "created resource from yaml", nil)
-	return created, nil
+	return domainresource.ResourceYAMLView{Kind: document.Resource.Kind, Name: document.Resource.Name, Namespace: document.Resource.Namespace}, nil
 }
 
 func configurationItems[T any](connection domaincluster.Connection, agentCall func(ConfigurationAgent) ([]T, error), directCall func(DirectConfiguration) ([]T, error), agentFactory func(domaincluster.Connection) (ConfigurationAgent, error), directFactory func() (DirectConfiguration, error)) ([]T, string, error) {

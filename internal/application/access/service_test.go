@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 	"slices"
+	"strings"
 	"testing"
 
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
@@ -21,6 +22,20 @@ func TestAdminRoleContainsDirectoryPermissions(t *testing.T) {
 	for _, key := range []string{PermAccessDirectoryView, PermAccessDirectoryManage, PermAccessDirectorySync, PermAccessDirectoryPeopleManage, PermAccessIdentityLinkManage} {
 		if !slices.Contains(permissions, key) {
 			t.Fatalf("admin permissions missing %q", key)
+		}
+	}
+}
+
+func TestGlobalResourceCreateEntryPermissionDefaultsToAdminAndOps(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+	for _, role := range []string{"admin", "ops"} {
+		if !HasPermission([]string{role}, PermPlatformResourceCreate) {
+			t.Fatalf("%s should include %s", role, PermPlatformResourceCreate)
+		}
+	}
+	for _, role := range []string{"developer", "tester", "readonly", "auditor"} {
+		if HasPermission([]string{role}, PermPlatformResourceCreate) {
+			t.Fatalf("%s must not include %s", role, PermPlatformResourceCreate)
 		}
 	}
 }
@@ -499,5 +514,122 @@ func TestAuthorizeAllowsUnknownPlatformKindWhenRBACAndABACMatch(t *testing.T) {
 	}
 	if len(decision.AllowedActions) == 0 {
 		t.Fatal("decision.AllowedActions is empty, want effective actions for custom resource kind")
+	}
+}
+
+func TestAuthorizeDirectPlatformGrantsUnionUserAndTeamNamespaces(t *testing.T) {
+	service := New(policy.NewEngine(), nil, stubScopeGrantReader{items: []domainscopegrant.Record{
+		{
+			ID: "user-grant", SubjectType: "user", SubjectID: "user-1", ScopeType: domainscopegrant.ScopeTypePlatform,
+			ClusterIDs: []string{"cluster-a"}, Namespaces: []string{"minio"}, ResourceGroups: []string{"configuration"},
+			Role: "ops", Effect: "allow", Enabled: true,
+		},
+		{
+			ID: "team-grant", SubjectType: "team", SubjectID: "team-a", ScopeType: domainscopegrant.ScopeTypePlatform,
+			ClusterIDs: []string{"cluster-a"}, Namespaces: []string{"ops"}, ResourceKinds: []string{"ConfigMap"},
+			Role: "ops", Effect: "allow", Enabled: true,
+		},
+	}}, nil)
+
+	decision, err := service.Authorize(context.Background(), platformRequest(
+		domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}, Teams: []string{"team-a"}},
+		domainaccess.ActionList, "", "configuration", "ConfigMap",
+	))
+	if err != nil {
+		t.Fatalf("Authorize returned error: %v", err)
+	}
+	if !decision.Allowed {
+		t.Fatalf("decision.Allowed = false, reason=%q", decision.Reason)
+	}
+	if decision.ResourceScope == nil || !slices.Equal(decision.ResourceScope.Namespaces, []string{"minio", "ops"}) {
+		t.Fatalf("decision.ResourceScope.Namespaces = %#v, want [minio ops]", decision.ResourceScope)
+	}
+}
+
+func TestAuthorizeDirectPlatformKindDenyTakesPriority(t *testing.T) {
+	service := New(policy.NewEngine(), nil, stubScopeGrantReader{items: []domainscopegrant.Record{
+		{
+			ID: "allow", SubjectType: "user", SubjectID: "user-1", ScopeType: domainscopegrant.ScopeTypePlatform,
+			ClusterIDs: []string{"cluster-a"}, Namespaces: []string{"minio", "ops"}, ResourceGroups: []string{"configuration"},
+			Role: "ops", Effect: "allow", Enabled: true,
+		},
+		{
+			ID: "deny", SubjectType: "team", SubjectID: "team-a", ScopeType: domainscopegrant.ScopeTypePlatform,
+			ClusterIDs: []string{"cluster-a"}, Namespaces: []string{"ops"}, ResourceKinds: []string{"ConfigMap"},
+			Role: "ops", Effect: "deny", Enabled: true,
+		},
+	}}, nil)
+
+	decision, err := service.Authorize(context.Background(), platformRequest(
+		domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}, Teams: []string{"team-a"}},
+		domainaccess.ActionCreate, "ops", "configuration", "ConfigMap",
+	))
+	if err != nil {
+		t.Fatalf("Authorize returned error: %v", err)
+	}
+	if decision.Allowed || !strings.Contains(decision.Reason, "explicitly denies") {
+		t.Fatalf("decision = %#v, want explicit deny", decision)
+	}
+}
+
+func TestAuthorizeDirectPlatformCreateActionUsesGrantRoleIntersection(t *testing.T) {
+	tests := []struct {
+		name string
+		role string
+		want bool
+	}{
+		{name: "ops can create", role: "ops", want: true},
+		{name: "readonly cannot create", role: "readonly", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := New(policy.NewEngine(), nil, stubScopeGrantReader{items: []domainscopegrant.Record{{
+				ID: "grant", SubjectType: "user", SubjectID: "user-1", ScopeType: domainscopegrant.ScopeTypePlatform,
+				ClusterIDs: []string{"cluster-a"}, Namespaces: []string{"minio"}, ResourceKinds: []string{"ConfigMap"},
+				Role: tt.role, Effect: "allow", Enabled: true,
+			}}}, nil)
+			decision, err := service.Authorize(context.Background(), platformRequest(
+				domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}},
+				domainaccess.ActionCreate, "minio", "configuration", "ConfigMap",
+			))
+			if err != nil {
+				t.Fatalf("Authorize returned error: %v", err)
+			}
+			if decision.Allowed != tt.want {
+				t.Fatalf("decision.Allowed = %v, reason=%q, want %v", decision.Allowed, decision.Reason, tt.want)
+			}
+		})
+	}
+}
+
+func TestNamespaceDiscoveryDoesNotGrantNamespaceMutationFromOtherResourceGroup(t *testing.T) {
+	service := New(policy.NewEngine(), nil, stubScopeGrantReader{items: []domainscopegrant.Record{{
+		ID: "grant", SubjectType: "user", SubjectID: "user-1", ScopeType: domainscopegrant.ScopeTypePlatform,
+		ClusterIDs: []string{"cluster-a"}, Namespaces: []string{"minio"}, ResourceGroups: []string{"configuration"},
+		Role: "ops", Effect: "allow", Enabled: true,
+	}}}, nil)
+	request := platformRequest(domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}}, domainaccess.ActionList, "", "inventory", "Namespace")
+	decision, err := service.Authorize(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Authorize returned error: %v", err)
+	}
+	if !decision.Allowed || !slices.Contains(decision.AllowedActions, domainaccess.ActionList) {
+		t.Fatalf("decision = %#v, want namespace list", decision)
+	}
+	if slices.Contains(decision.AllowedActions, domainaccess.ActionCreate) || slices.Contains(decision.AllowedActions, domainaccess.ActionDelete) {
+		t.Fatalf("namespace discovery leaked mutation actions: %v", decision.AllowedActions)
+	}
+}
+
+func platformRequest(principal domainidentity.Principal, action domainaccess.Action, namespace, group, kind string) domainaccess.Request {
+	return domainaccess.Request{
+		Principal: principal,
+		Action:    action,
+		Subject: domainaccess.SubjectAttributes{
+			UserID: principal.UserID, Roles: principal.Roles, Teams: principal.Teams,
+		},
+		Cluster:   domainaccess.ClusterAttributes{ClusterID: "cluster-a", Environment: "development"},
+		Namespace: domainaccess.NamespaceAttributes{Namespace: namespace},
+		Resource:  domainaccess.ResourceAttributes{Group: group, Kind: kind},
 	}
 }

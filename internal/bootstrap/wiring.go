@@ -103,6 +103,7 @@ import (
 	providerportalrepo "github.com/opensoha/soha/internal/repository/providerportal"
 	registryrepo "github.com/opensoha/soha/internal/repository/registry"
 	releaserepo "github.com/opensoha/soha/internal/repository/release"
+	resourcecreationrepo "github.com/opensoha/soha/internal/repository/resourcecreation"
 	scopegrantrepo "github.com/opensoha/soha/internal/repository/scopegrant"
 	settingsrepo "github.com/opensoha/soha/internal/repository/settings"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
@@ -157,6 +158,7 @@ type repositories struct {
 	multiAgentRepository       *multiagentrepo.Repository
 	providerPortalRepository   *providerportalrepo.Repository
 	portForwardRepository      *portforwardrepo.Repository
+	resourceCreationRepository *resourcecreationrepo.Repository
 	directorySyncRepository    *directorysyncrepo.Repository
 }
 
@@ -343,6 +345,7 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		multiAgentRepository:       multiagentrepo.New(db),
 		providerPortalRepository:   providerportalrepo.New(db),
 		portForwardRepository:      portforwardrepo.New(db),
+		resourceCreationRepository: resourcecreationrepo.New(db),
 		directorySyncRepository:    directorysyncrepo.New(db, cfg.Security.CredentialEncryptionKeys),
 	}
 }
@@ -459,8 +462,8 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 	resourceDirect := resourcebackendinfra.NewDirect(resourceClusters, resourcebackendinfra.NewCache(infra.informers))
 	resourceService := appresource.New(appresource.Dependencies{
 		Clusters: resourceClusters, Agents: resourcebackendinfra.NewAgentClients(infra.agentRegistry), Connections: repos.clusterRepository,
-		Authorizer: access, Permissions: permissions, Audit: audit, Operations: operations, Settings: settings, PortForwards: repos.portForwardRepository,
-		DirectCustom: resourceDirect, DirectConfiguration: resourceDirect, DirectEvents: resourceDirect, DirectGeneric: resourceDirect,
+		Authorizer: access, Permissions: permissions, Audit: audit, Operations: operations, CreationOperations: operations, CreationBatches: repos.resourceCreationRepository, Settings: settings, PortForwards: repos.portForwardRepository,
+		DirectCustom: resourceDirect, DirectConfiguration: resourceDirect, DirectEvents: resourceDirect, DirectGeneric: resourceDirect, DirectResourceCreate: resourceDirect,
 		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectNetwork: resourceDirect,
 		DirectPods: resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
 	})
@@ -857,6 +860,7 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 		DaemonSetReader: workloads, DaemonSetEditor: workloads,
 		Jobs: workloads, CronJobs: workloads, WorkloadInventory: workloads,
 		Creator: configuration, ConfigMaps: configuration, Secrets: configuration,
+		ResourceCreation:       service.ResourceCreation(),
 		ConfigurationInventory: configuration,
 		NetworkOverview:        network, NetworkInventory: network, GatewayRouting: network, GatewayPolicy: network,
 		PersistentVolumeClaims: storage, PersistentVolumes: storage, StorageClasses: storage,

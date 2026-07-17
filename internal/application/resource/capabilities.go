@@ -32,9 +32,10 @@ type Workloads struct {
 
 type Configuration struct {
 	*resourceAccess
-	agent   AgentClientFactory[ConfigurationAgent]
-	direct  DirectConfiguration
-	generic DirectGenericResource
+	agent    AgentClientFactory[ConfigurationAgent]
+	direct   DirectConfiguration
+	generic  DirectGenericResource
+	creation *ResourceCreation
 }
 
 type Network struct {
@@ -174,6 +175,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 	access := &resourceAccess{
 		directClusters: deps.Clusters, resolver: deps.Connections, authorizer: deps.Authorizer,
 		permissions: deps.Permissions, audit: deps.Audit, operations: deps.Operations,
+		namespaceLabels: newClusterNamespaceLabelResolver(deps.Agents.Inventory, deps.DirectInventory),
 	}
 	metrics := &metricsSupport{
 		resourceAccess: access,
@@ -183,6 +185,14 @@ func newServiceCapabilities(deps Dependencies) *Service {
 	}
 	genericResources := &GenericResources{
 		resourceAccess: access, agent: deps.Agents.Generic, direct: deps.DirectGeneric,
+	}
+	creation := &ResourceCreation{
+		resourceAccess: access,
+		direct:         deps.DirectResourceCreate,
+		agent:          deps.Agents.ResourceCreation,
+		risk:           NewHighRiskResourcePolicy(deps.Permissions),
+		operations:     deps.CreationOperations,
+		batches:        deps.CreationBatches,
 	}
 	workloads := &Workloads{
 		resourceAccess: access, metricsSupport: metrics,
@@ -201,7 +211,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 	}
 	service := &Service{
 		workloads:        workloads,
-		configuration:    &Configuration{resourceAccess: access, agent: deps.Agents.Configuration, direct: deps.DirectConfiguration, generic: deps.DirectGeneric},
+		configuration:    &Configuration{resourceAccess: access, agent: deps.Agents.Configuration, direct: deps.DirectConfiguration, generic: deps.DirectGeneric, creation: creation},
 		network:          network,
 		storage:          &Storage{resourceAccess: access, agent: deps.Agents.Storage, direct: deps.DirectStorage},
 		rbac:             &RBAC{resourceAccess: access, agent: deps.Agents.RBAC, direct: deps.DirectRBAC},
@@ -211,6 +221,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		genericResources: genericResources,
 		events:           &Events{resourceAccess: access, agent: deps.Agents.Events, direct: deps.DirectEvents},
 		portForwards:     &PortForwards{resourceAccess: access, agent: deps.Agents.PortForwards, direct: deps.DirectTunnel, repository: deps.PortForwards},
+		creation:         creation,
 	}
 	service.runtime = &Runtime{
 		Workloads: workloads, Network: network, Storage: service.storage,
