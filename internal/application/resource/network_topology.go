@@ -18,17 +18,17 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 		Namespace:   namespace,
 		Source:      "backend-aggregate",
 		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Services:    []domainresource.ServiceView{},
-		Ingresses:   []domainresource.IngressView{},
-		HTTPRoutes:  []domainresource.HTTPRouteView{},
-		Gateways:    []domainresource.GatewayView{},
-		Pods:        []domainresource.PodView{},
 	}
 
 	var (
-		firstErr error
-		mu       sync.Mutex
-		wg       sync.WaitGroup
+		services   []domainresource.ServiceView
+		ingresses  []domainresource.IngressView
+		httpRoutes []domainresource.HTTPRouteView
+		gateways   []domainresource.GatewayView
+		pods       []domainresource.PodView
+		firstErr   error
+		mu         sync.Mutex
+		wg         sync.WaitGroup
 	)
 	recordWarning := func(kind string, err error) {
 		if err == nil {
@@ -52,7 +52,7 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 	run(func() error {
 		items, err := n.ListServices(ctx, principal, clusterID, namespace)
 		mu.Lock()
-		view.Services = items
+		services = items
 		mu.Unlock()
 		recordWarning("services", err)
 		return err
@@ -60,7 +60,7 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 	run(func() error {
 		items, err := n.ListIngresses(ctx, principal, clusterID, namespace)
 		mu.Lock()
-		view.Ingresses = items
+		ingresses = items
 		mu.Unlock()
 		recordWarning("ingresses", err)
 		return err
@@ -68,7 +68,7 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 	run(func() error {
 		items, err := n.ListHTTPRoutes(ctx, principal, clusterID, namespace)
 		mu.Lock()
-		view.HTTPRoutes = items
+		httpRoutes = items
 		mu.Unlock()
 		recordWarning("httpRoutes", err)
 		return err
@@ -76,7 +76,7 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 	run(func() error {
 		items, err := n.ListGateways(ctx, principal, clusterID, namespace)
 		mu.Lock()
-		view.Gateways = items
+		gateways = items
 		mu.Unlock()
 		recordWarning("gateways", err)
 		return err
@@ -84,17 +84,17 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 	run(func() error {
 		items, err := n.pods.ListPods(ctx, principal, clusterID, namespace)
 		mu.Lock()
-		view.Pods = items
+		pods = items
 		mu.Unlock()
 		recordWarning("pods", err)
 		return err
 	})
 
 	wg.Wait()
-	if firstErr != nil && len(view.Services) == 0 && len(view.Ingresses) == 0 && len(view.HTTPRoutes) == 0 && len(view.Gateways) == 0 && len(view.Pods) == 0 {
+	if firstErr != nil && len(services) == 0 && len(ingresses) == 0 && len(httpRoutes) == 0 && len(gateways) == 0 && len(pods) == 0 {
 		return domainresource.NetworkTopologyView{}, firstErr
 	}
-	view.Traces = buildNetworkTopologyTraces(view.Services, view.Ingresses, view.HTTPRoutes, view.Gateways, view.Pods)
+	view.Traces = buildNetworkTopologyTraces(services, ingresses, httpRoutes, gateways, pods)
 	view.Summary = summarizeNetworkTopologyTraces(view.Traces)
 	return view, nil
 }

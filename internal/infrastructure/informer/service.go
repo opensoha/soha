@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -18,10 +17,65 @@ import (
 	networkinglisters "k8s.io/client-go/listers/networking/v1"
 	"k8s.io/client-go/tools/cache"
 
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	"github.com/opensoha/soha/internal/platform/redaction"
 )
 
 var ErrCacheNotReady = errors.New("informer cache not ready")
+
+const (
+	resourceNamespaces   = "namespaces"
+	resourceNodes        = "nodes"
+	resourcePods         = "pods"
+	resourceServices     = "services"
+	resourceEvents       = "events"
+	resourceDeployments  = "deployments"
+	resourceStatefulSets = "statefulsets"
+	resourceIngresses    = "ingresses"
+)
+
+var informerResources = []string{
+	resourceNamespaces, resourceNodes, resourcePods, resourceServices,
+	resourceEvents, resourceDeployments, resourceStatefulSets, resourceIngresses,
+}
+
+type bundleManager interface {
+	ClusterIDs() []string
+	Bundle(context.Context, string) (*k8sinfra.Bundle, error)
+}
+
+type resourceState struct {
+	mu             sync.RWMutex
+	ready          bool
+	status         string
+	message        string
+	lastTransition time.Time
+}
+
+func newResourceState() *resourceState {
+	return &resourceState{status: "warming", lastTransition: time.Now().UTC()}
+}
+
+func (s *resourceState) transition(status, message string, ready bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.status != status || s.message != message || s.ready != ready {
+		s.lastTransition = time.Now().UTC()
+	}
+	s.status = status
+	s.message = message
+	s.ready = ready
+}
+
+func (s *resourceState) diagnostic(resource string) domaincluster.CacheResourceDiagnostic {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return domaincluster.CacheResourceDiagnostic{
+		Resource: resource, Status: s.status, Ready: s.ready,
+		Message: s.message, LastTransition: s.lastTransition,
+	}
+}
 
 type clusterCache struct {
 	factory           informers.SharedInformerFactory
@@ -34,17 +88,21 @@ type clusterCache struct {
 	statefulSetLister appslisters.StatefulSetLister
 	ingressLister     networkinglisters.IngressLister
 	stopCh            chan struct{}
-	ready             atomic.Bool
+	resources         map[string]*resourceState
 }
 
 type Service struct {
-	manager *k8sinfra.Manager
-	caches  map[string]*clusterCache
-	mu      sync.RWMutex
+	manager            bundleManager
+	caches             map[string]*clusterCache
+	registrationErrors map[string]domaincluster.CacheDiagnostic
+	mu                 sync.RWMutex
 }
 
-func New(manager *k8sinfra.Manager) *Service {
-	return &Service{manager: manager, caches: map[string]*clusterCache{}}
+func New(manager bundleManager) *Service {
+	return &Service{
+		manager: manager, caches: map[string]*clusterCache{},
+		registrationErrors: map[string]domaincluster.CacheDiagnostic{},
+	}
 }
 
 func (s *Service) Start(ctx context.Context) error {
@@ -66,6 +124,7 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 
 	bundle, err := s.manager.Bundle(ctx, clusterID)
 	if err != nil {
+		s.recordRegistrationError(clusterID, err)
 		return err
 	}
 	factory := informers.NewSharedInformerFactoryWithOptions(bundle.Typed, 2*time.Minute)
@@ -88,6 +147,28 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 		statefulSetLister: statefulSetInformer.Lister(),
 		ingressLister:     ingressInformer.Lister(),
 		stopCh:            make(chan struct{}),
+		resources:         newResourceStates(),
+	}
+	informers := []struct {
+		resource string
+		informer cache.SharedIndexInformer
+	}{
+		{resourceNamespaces, nsInformer.Informer()},
+		{resourceNodes, nodeInformer.Informer()},
+		{resourcePods, podInformer.Informer()},
+		{resourceServices, serviceInformer.Informer()},
+		{resourceEvents, eventInformer.Informer()},
+		{resourceDeployments, deployInformer.Informer()},
+		{resourceStatefulSets, statefulSetInformer.Informer()},
+		{resourceIngresses, ingressInformer.Informer()},
+	}
+	for _, item := range informers {
+		state := entry.resources[item.resource]
+		if err := item.informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) {
+			state.transition("degraded", redaction.Text(err.Error()), state.diagnostic("").Ready)
+		}); err != nil {
+			state.transition("error", redaction.Text(err.Error()), false)
+		}
 	}
 
 	s.mu.Lock()
@@ -97,21 +178,22 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 		return nil
 	}
 	s.caches[clusterID] = entry
+	delete(s.registrationErrors, clusterID)
 	s.mu.Unlock()
 
 	factory.Start(entry.stopCh)
-	go s.waitForSync(
-		entry,
-		nsInformer.Informer().HasSynced,
-		nodeInformer.Informer().HasSynced,
-		podInformer.Informer().HasSynced,
-		serviceInformer.Informer().HasSynced,
-		eventInformer.Informer().HasSynced,
-		deployInformer.Informer().HasSynced,
-		statefulSetInformer.Informer().HasSynced,
-		ingressInformer.Informer().HasSynced,
-	)
+	for _, item := range informers {
+		go s.waitForSync(entry, item.resource, item.informer.HasSynced)
+	}
 	return nil
+}
+
+func newResourceStates() map[string]*resourceState {
+	states := make(map[string]*resourceState, len(informerResources))
+	for _, resource := range informerResources {
+		states[resource] = newResourceState()
+	}
+	return states
 }
 
 func (s *Service) UnregisterCluster(clusterID string) {
@@ -121,24 +203,12 @@ func (s *Service) UnregisterCluster(clusterID string) {
 		close(entry.stopCh)
 		delete(s.caches, clusterID)
 	}
+	delete(s.registrationErrors, clusterID)
 }
 
-func (s *Service) waitForSync(entry *clusterCache, syncFns ...cache.InformerSynced) {
-	done := make(chan bool, 1)
-	go func() {
-		done <- cache.WaitForCacheSync(entry.stopCh, syncFns...)
-	}()
-
-	select {
-	case synced := <-done:
-		entry.ready.Store(synced)
-	case <-time.After(15 * time.Second):
-		entry.ready.Store(false)
-		go func() {
-			if synced := <-done; synced {
-				entry.ready.Store(true)
-			}
-		}()
+func (s *Service) waitForSync(entry *clusterCache, resource string, syncFn cache.InformerSynced) {
+	if cache.WaitForCacheSync(entry.stopCh, syncFn) {
+		entry.resources[resource].transition("ready", "", true)
 	}
 }
 
@@ -153,12 +223,65 @@ func (s *Service) Stop() {
 
 func (s *Service) Ready(clusterID string) bool {
 	entry, ok := s.entry(clusterID)
-	return ok && entry.ready.Load()
+	if !ok {
+		return false
+	}
+	for _, resource := range informerResources {
+		if !entry.resources[resource].diagnostic(resource).Ready {
+			return false
+		}
+	}
+	return true
 }
 
+func (s *Service) Status(clusterID string) domaincluster.CacheDiagnostic {
+	entry, ok := s.entry(clusterID)
+	if !ok {
+		s.mu.RLock()
+		status, failed := s.registrationErrors[clusterID]
+		s.mu.RUnlock()
+		if failed {
+			return status
+		}
+		return domaincluster.CacheDiagnostic{Status: "disabled", Message: "informer cache is not registered"}
+	}
+	resources := make([]domaincluster.CacheResourceDiagnostic, 0, len(informerResources))
+	readyCount := 0
+	degraded := false
+	for _, resource := range informerResources {
+		diagnostic := entry.resources[resource].diagnostic(resource)
+		resources = append(resources, diagnostic)
+		if diagnostic.Ready {
+			readyCount++
+		}
+		if diagnostic.Status == "degraded" || diagnostic.Status == "error" {
+			degraded = true
+		}
+	}
+	status := "warming"
+	if readyCount == len(resources) && !degraded {
+		status = "ready"
+	} else if readyCount > 0 || degraded {
+		status = "partial"
+	}
+	return domaincluster.CacheDiagnostic{Status: status, Ready: readyCount == len(resources), Resources: resources}
+}
+
+func (s *Service) recordRegistrationError(clusterID string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.registrationErrors[clusterID] = domaincluster.CacheDiagnostic{Status: "error", Message: redaction.Text(err.Error())}
+}
+
+func (s *Service) resourceReady(entry *clusterCache, resource string) bool {
+	return entry.resources[resource].diagnostic(resource).Ready
+}
+
+// List methods return shallow value snapshots of client-go's immutable cache
+// objects. Consumers must map them to response models without mutating nested fields.
 func (s *Service) ListNamespaces(clusterID string) ([]corev1.Namespace, error) {
 	entry, ok := s.entry(clusterID)
-	if !ok || !entry.ready.Load() {
+	if !ok || !s.resourceReady(entry, resourceNamespaces) {
 		return nil, ErrCacheNotReady
 	}
 	items, err := entry.namespaceLister.List(labels.Everything())
@@ -167,14 +290,14 @@ func (s *Service) ListNamespaces(clusterID string) ([]corev1.Namespace, error) {
 	}
 	out := make([]corev1.Namespace, 0, len(items))
 	for _, item := range items {
-		out = append(out, *item.DeepCopy())
+		out = append(out, *item)
 	}
 	return out, nil
 }
 
 func (s *Service) ListNodes(clusterID string) ([]corev1.Node, error) {
 	entry, ok := s.entry(clusterID)
-	if !ok || !entry.ready.Load() {
+	if !ok || !s.resourceReady(entry, resourceNodes) {
 		return nil, ErrCacheNotReady
 	}
 	items, err := entry.nodeLister.List(labels.Everything())
@@ -183,14 +306,14 @@ func (s *Service) ListNodes(clusterID string) ([]corev1.Node, error) {
 	}
 	out := make([]corev1.Node, 0, len(items))
 	for _, item := range items {
-		out = append(out, *item.DeepCopy())
+		out = append(out, *item)
 	}
 	return out, nil
 }
 
 func (s *Service) ListPods(clusterID, namespace string) ([]corev1.Pod, error) {
 	entry, ok := s.entry(clusterID)
-	if !ok || !entry.ready.Load() {
+	if !ok || !s.resourceReady(entry, resourcePods) {
 		return nil, ErrCacheNotReady
 	}
 	var (
@@ -207,14 +330,14 @@ func (s *Service) ListPods(clusterID, namespace string) ([]corev1.Pod, error) {
 	}
 	out := make([]corev1.Pod, 0, len(items))
 	for _, item := range items {
-		out = append(out, *item.DeepCopy())
+		out = append(out, *item)
 	}
 	return out, nil
 }
 
 func (s *Service) ListServices(clusterID, namespace string) ([]corev1.Service, error) {
 	entry, ok := s.entry(clusterID)
-	if !ok || !entry.ready.Load() {
+	if !ok || !s.resourceReady(entry, resourceServices) {
 		return nil, ErrCacheNotReady
 	}
 	var (
@@ -231,14 +354,14 @@ func (s *Service) ListServices(clusterID, namespace string) ([]corev1.Service, e
 	}
 	out := make([]corev1.Service, 0, len(items))
 	for _, item := range items {
-		out = append(out, *item.DeepCopy())
+		out = append(out, *item)
 	}
 	return out, nil
 }
 
 func (s *Service) ListDeployments(clusterID, namespace string) ([]appsv1.Deployment, error) {
 	entry, ok := s.entry(clusterID)
-	if !ok || !entry.ready.Load() {
+	if !ok || !s.resourceReady(entry, resourceDeployments) {
 		return nil, ErrCacheNotReady
 	}
 	var (
@@ -255,14 +378,14 @@ func (s *Service) ListDeployments(clusterID, namespace string) ([]appsv1.Deploym
 	}
 	out := make([]appsv1.Deployment, 0, len(items))
 	for _, item := range items {
-		out = append(out, *item.DeepCopy())
+		out = append(out, *item)
 	}
 	return out, nil
 }
 
 func (s *Service) ListStatefulSets(clusterID, namespace string) ([]appsv1.StatefulSet, error) {
 	entry, ok := s.entry(clusterID)
-	if !ok || !entry.ready.Load() {
+	if !ok || !s.resourceReady(entry, resourceStatefulSets) {
 		return nil, ErrCacheNotReady
 	}
 	var (
@@ -279,14 +402,14 @@ func (s *Service) ListStatefulSets(clusterID, namespace string) ([]appsv1.Statef
 	}
 	out := make([]appsv1.StatefulSet, 0, len(items))
 	for _, item := range items {
-		out = append(out, *item.DeepCopy())
+		out = append(out, *item)
 	}
 	return out, nil
 }
 
 func (s *Service) ListIngresses(clusterID, namespace string) ([]networkingv1.Ingress, error) {
 	entry, ok := s.entry(clusterID)
-	if !ok || !entry.ready.Load() {
+	if !ok || !s.resourceReady(entry, resourceIngresses) {
 		return nil, ErrCacheNotReady
 	}
 	var (
@@ -303,14 +426,14 @@ func (s *Service) ListIngresses(clusterID, namespace string) ([]networkingv1.Ing
 	}
 	out := make([]networkingv1.Ingress, 0, len(items))
 	for _, item := range items {
-		out = append(out, *item.DeepCopy())
+		out = append(out, *item)
 	}
 	return out, nil
 }
 
 func (s *Service) ListEvents(clusterID, namespace string) ([]corev1.Event, error) {
 	entry, ok := s.entry(clusterID)
-	if !ok || !entry.ready.Load() {
+	if !ok || !s.resourceReady(entry, resourceEvents) {
 		return nil, ErrCacheNotReady
 	}
 	var (
@@ -327,7 +450,7 @@ func (s *Service) ListEvents(clusterID, namespace string) ([]corev1.Event, error
 	}
 	out := make([]corev1.Event, 0, len(items))
 	for _, item := range items {
-		out = append(out, *item.DeepCopy())
+		out = append(out, *item)
 	}
 	return out, nil
 }

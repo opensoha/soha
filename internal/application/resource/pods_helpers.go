@@ -24,12 +24,6 @@ func normalizeTerminalShell(shell string) string {
 	}
 }
 
-// Namespace-scoped cache is reliable, but the current all-namespaces path can
-// return incomplete data from the informer branch. Use live queries there.
-func shouldUseInformerCache(namespace string) bool {
-	return strings.TrimSpace(namespace) != ""
-}
-
 func shouldPopulatePodUsageSummaries(namespace string) bool {
 	return strings.TrimSpace(namespace) != ""
 }
@@ -192,6 +186,19 @@ func selectorMatchesPodLabels(selector, labels map[string]string) bool {
 		}
 	}
 	return true
+}
+
+func filterPodsBySelector(items []domainresource.PodView, selector map[string]string) []domainresource.PodView {
+	if len(selector) == 0 {
+		return nil
+	}
+	filtered := make([]domainresource.PodView, 0, len(items))
+	for _, item := range items {
+		if selectorMatchesPodLabels(selector, item.Labels) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func (s *Workloads) listPodViews(ctx context.Context, clusterID, namespace string, connection domaincluster.Connection, decision domainaccess.Decision, includeUsage bool) ([]domainresource.PodView, string, error) {

@@ -159,10 +159,22 @@ func validateProviderDefinitions(providers []ProviderDefinition) error {
 }
 
 func validateProviderDefinition(provider ProviderDefinition) error {
+	if err := validateProviderIdentity(provider); err != nil {
+		return err
+	}
+	if err := validateProviderRuntime(provider.Runtime); err != nil {
+		return err
+	}
+	return validateProviderSecretRefs(provider.SecretRefs)
+}
+
+func validateProviderIdentity(provider ProviderDefinition) error {
 	if provider.SchemaVersion != "opensoha.dev/agent-provider-definition/v1" {
 		return fmt.Errorf("provider schema version is unsupported")
 	}
-	if strings.TrimSpace(provider.ID) == "" || strings.TrimSpace(provider.Kind) == "" || strings.TrimSpace(provider.PluginID) == "" || strings.TrimSpace(provider.PluginVersion) == "" || strings.TrimSpace(provider.ProviderVersion) == "" {
+	missingProviderIdentity := strings.TrimSpace(provider.ID) == "" || strings.TrimSpace(provider.Kind) == ""
+	missingPluginIdentity := strings.TrimSpace(provider.PluginID) == "" || strings.TrimSpace(provider.PluginVersion) == ""
+	if missingProviderIdentity || missingPluginIdentity || strings.TrimSpace(provider.ProviderVersion) == "" {
 		return fmt.Errorf("provider and plugin identity are required")
 	}
 	if strings.TrimSpace(provider.AdapterProtocol) == "" {
@@ -171,27 +183,41 @@ func validateProviderDefinition(provider ProviderDefinition) error {
 	if len(provider.Capabilities) == 0 {
 		return fmt.Errorf("provider capabilities are required")
 	}
-	switch provider.Runtime.Kind {
+	return nil
+}
+
+func validateProviderRuntime(runtime RuntimeDefinition) error {
+	switch runtime.Kind {
 	case "cli":
-		if strings.TrimSpace(provider.Runtime.Command) == "" {
+		if strings.TrimSpace(runtime.Command) == "" {
 			return fmt.Errorf("CLI provider command is required")
 		}
 	case "container":
-		if strings.TrimSpace(provider.Runtime.Image) == "" {
+		if strings.TrimSpace(runtime.Image) == "" {
 			return fmt.Errorf("container provider image is required")
 		}
 	case "remote":
-		if strings.TrimSpace(provider.Runtime.Endpoint) == "" {
+		if strings.TrimSpace(runtime.Endpoint) == "" {
 			return fmt.Errorf("remote provider endpoint is required")
 		}
-		endpoint, err := url.Parse(provider.Runtime.Endpoint)
-		if err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil {
-			return fmt.Errorf("remote provider endpoint must be an HTTPS URL without user info")
-		}
+		return validateRemoteProviderEndpoint(runtime.Endpoint)
 	default:
-		return fmt.Errorf("unsupported provider runtime %q", provider.Runtime.Kind)
+		return fmt.Errorf("unsupported provider runtime %q", runtime.Kind)
 	}
-	for _, secretRef := range provider.SecretRefs {
+	return nil
+}
+
+func validateRemoteProviderEndpoint(rawEndpoint string) error {
+	endpoint, err := url.Parse(rawEndpoint)
+	invalidEndpoint := err != nil || endpoint.Scheme != "https" || endpoint.Host == "" || endpoint.User != nil
+	if invalidEndpoint {
+		return fmt.Errorf("remote provider endpoint must be an HTTPS URL without user info")
+	}
+	return nil
+}
+
+func validateProviderSecretRefs(secretRefs []string) error {
+	for _, secretRef := range secretRefs {
 		if !strings.HasPrefix(secretRef, "secret:") || len(secretRef) > 247 {
 			return fmt.Errorf("provider secret values must use bounded secret refs")
 		}

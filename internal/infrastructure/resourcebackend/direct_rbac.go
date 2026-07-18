@@ -12,28 +12,21 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func (d *Direct) ListServiceAccounts(ctx context.Context, clusterID, namespace string) ([]domainresource.ServiceAccountView, error) {
-	items, err := directNamespacedList(ctx, d, clusterID, namespace, func(ctx context.Context, namespace string) ([]corev1.ServiceAccount, error) {
-		bundle, err := d.directClients(ctx, clusterID)
-		if err != nil {
-			return nil, err
-		}
-		result, err := bundle.Typed.CoreV1().ServiceAccounts(namespace).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return nil, err
-		}
-		return result.Items, nil
-	})
+	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}
-	views := make([]domainresource.ServiceAccountView, 0, len(items))
-	for _, item := range items {
-		views = append(views, mapServiceAccount(item))
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	table, err := listTable(queryCtx, bundle, schema.GroupVersionResource{Version: "v1", Resource: "serviceaccounts"}, true, namespace)
+	if err != nil {
+		return nil, err
 	}
-	return views, nil
+	return mapServiceAccountTable(table)
 }
 
 func (d *Direct) GetServiceAccountDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.ServiceAccountDetailView, error) {
@@ -51,25 +44,17 @@ func (d *Direct) GetServiceAccountDetail(ctx context.Context, clusterID, namespa
 }
 
 func (d *Direct) ListRoles(ctx context.Context, clusterID, namespace string) ([]domainresource.RoleView, error) {
-	items, err := directNamespacedList(ctx, d, clusterID, namespace, func(ctx context.Context, namespace string) ([]rbacv1.Role, error) {
-		bundle, err := d.directClients(ctx, clusterID)
-		if err != nil {
-			return nil, err
-		}
-		result, err := bundle.Typed.RbacV1().Roles(namespace).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return nil, err
-		}
-		return result.Items, nil
-	})
+	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}
-	views := make([]domainresource.RoleView, 0, len(items))
-	for _, item := range items {
-		views = append(views, mapRole(item))
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	table, err := listTable(queryCtx, bundle, schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"}, true, namespace)
+	if err != nil {
+		return nil, err
 	}
-	return views, nil
+	return mapRoleTable(table)
 }
 
 func (d *Direct) GetRoleDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.RoleDetailView, error) {
@@ -87,25 +72,46 @@ func (d *Direct) GetRoleDetail(ctx context.Context, clusterID, namespace, name s
 }
 
 func (d *Direct) ListRoleBindings(ctx context.Context, clusterID, namespace string) ([]domainresource.RoleBindingView, error) {
-	items, err := directNamespacedList(ctx, d, clusterID, namespace, func(ctx context.Context, namespace string) ([]rbacv1.RoleBinding, error) {
-		bundle, err := d.directClients(ctx, clusterID)
-		if err != nil {
-			return nil, err
-		}
-		result, err := bundle.Typed.RbacV1().RoleBindings(namespace).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			return nil, err
-		}
-		return result.Items, nil
-	})
+	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return nil, err
 	}
-	views := make([]domainresource.RoleBindingView, 0, len(items))
-	for _, item := range items {
-		views = append(views, mapRoleBinding(item))
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	table, err := listTable(queryCtx, bundle, schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"}, true, namespace)
+	if err != nil {
+		return nil, err
 	}
-	return views, nil
+	return mapRoleBindingTable(table)
+}
+
+func (d *Direct) ListRoleBindingsForServiceAccount(ctx context.Context, clusterID, namespace, name string) ([]domainresource.RoleBindingView, error) {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	views := make([]domainresource.RoleBindingView, 0)
+	options := metav1.ListOptions{Limit: tableListPageSize}
+	for {
+		items, err := bundle.Typed.RbacV1().RoleBindings(namespace).List(queryCtx, options)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items.Items {
+			if referencesServiceAccount(item.Subjects, namespace, name, item.Namespace) {
+				views = append(views, mapRoleBinding(item))
+			}
+		}
+		if items.Continue == "" {
+			return views, nil
+		}
+		if items.Continue == options.Continue {
+			return nil, fmt.Errorf("rolebinding listing returned a repeated continue token")
+		}
+		options.Continue = items.Continue
+	}
 }
 
 func (d *Direct) GetRoleBindingDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.RoleBindingDetailView, error) {
@@ -129,15 +135,11 @@ func (d *Direct) ListClusterRoles(ctx context.Context, clusterID string) ([]doma
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	items, err := bundle.Typed.RbacV1().ClusterRoles().List(queryCtx, metav1.ListOptions{})
+	table, err := listTable(queryCtx, bundle, schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"}, false, "")
 	if err != nil {
 		return nil, err
 	}
-	views := make([]domainresource.ClusterRoleView, 0, len(items.Items))
-	for _, item := range items.Items {
-		views = append(views, mapClusterRole(item))
-	}
-	return views, nil
+	return mapClusterRoleTable(table)
 }
 
 func (d *Direct) GetClusterRoleDetail(ctx context.Context, clusterID, name string) (domainresource.ClusterRoleDetailView, error) {
@@ -161,15 +163,40 @@ func (d *Direct) ListClusterRoleBindings(ctx context.Context, clusterID string) 
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	items, err := bundle.Typed.RbacV1().ClusterRoleBindings().List(queryCtx, metav1.ListOptions{})
+	table, err := listTable(queryCtx, bundle, schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"}, false, "")
 	if err != nil {
 		return nil, err
 	}
-	views := make([]domainresource.ClusterRoleBindingView, 0, len(items.Items))
-	for _, item := range items.Items {
-		views = append(views, mapClusterRoleBinding(item))
+	return mapClusterRoleBindingTable(table)
+}
+
+func (d *Direct) ListClusterRoleBindingsForServiceAccount(ctx context.Context, clusterID, namespace, name string) ([]domainresource.ClusterRoleBindingView, error) {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return nil, err
 	}
-	return views, nil
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	views := make([]domainresource.ClusterRoleBindingView, 0)
+	options := metav1.ListOptions{Limit: tableListPageSize}
+	for {
+		items, err := bundle.Typed.RbacV1().ClusterRoleBindings().List(queryCtx, options)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items.Items {
+			if referencesServiceAccount(item.Subjects, namespace, name, "") {
+				views = append(views, mapClusterRoleBinding(item))
+			}
+		}
+		if items.Continue == "" {
+			return views, nil
+		}
+		if items.Continue == options.Continue {
+			return nil, fmt.Errorf("clusterrolebinding listing returned a repeated continue token")
+		}
+		options.Continue = items.Continue
+	}
 }
 
 func (d *Direct) GetClusterRoleBindingDetail(ctx context.Context, clusterID, name string) (domainresource.ClusterRoleBindingDetailView, error) {
@@ -186,15 +213,10 @@ func (d *Direct) GetClusterRoleBindingDetail(ctx context.Context, clusterID, nam
 	return mapClusterRoleBindingDetail(*item), nil
 }
 
-func mapServiceAccount(item corev1.ServiceAccount) domainresource.ServiceAccountView {
-	return domainresource.ServiceAccountView{
-		Name:             item.Name,
-		Namespace:        item.Namespace,
-		Secrets:          len(item.Secrets),
-		ImagePullSecrets: len(item.ImagePullSecrets),
-		AutomountSAToken: item.AutomountServiceAccountToken != nil && *item.AutomountServiceAccountToken,
-		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
-	}
+func mapServiceAccountTable(table metav1.Table) ([]domainresource.ServiceAccountView, error) {
+	return tableViews(table, func(_ metav1.TableRow, metadata metav1.Object) (domainresource.ServiceAccountView, error) {
+		return domainresource.ServiceAccountView{Name: metadata.GetName(), Namespace: metadata.GetNamespace(), AgeSeconds: secondsSince(metadata.GetCreationTimestamp().Time)}, nil
+	})
 }
 
 func mapServiceAccountDetail(item corev1.ServiceAccount) domainresource.ServiceAccountDetailView {
@@ -257,11 +279,10 @@ func summarizeRBACPolicyRules(rules []rbacv1.PolicyRule) []string {
 	return summaries
 }
 
-func mapRole(item rbacv1.Role) domainresource.RoleView {
-	return domainresource.RoleView{
-		Name: item.Name, Namespace: item.Namespace, Rules: len(item.Rules),
-		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
-	}
+func mapRoleTable(table metav1.Table) ([]domainresource.RoleView, error) {
+	return tableViews(table, func(_ metav1.TableRow, metadata metav1.Object) (domainresource.RoleView, error) {
+		return domainresource.RoleView{Name: metadata.GetName(), Namespace: metadata.GetNamespace(), AgeSeconds: secondsSince(metadata.GetCreationTimestamp().Time)}, nil
+	})
 }
 
 func mapRoleDetail(item rbacv1.Role) domainresource.RoleDetailView {
@@ -275,8 +296,22 @@ func mapRoleDetail(item rbacv1.Role) domainresource.RoleDetailView {
 func mapRoleBinding(item rbacv1.RoleBinding) domainresource.RoleBindingView {
 	return domainresource.RoleBindingView{
 		Name: item.Name, Namespace: item.Namespace, RoleRef: formatRoleRef(item.RoleRef),
-		Subjects: formatSubjects(item.Subjects), AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
 	}
+}
+
+func mapRoleBindingTable(table metav1.Table) ([]domainresource.RoleBindingView, error) {
+	roleColumn := tableColumnIndex(table.ColumnDefinitions, "Role")
+	if roleColumn < 0 {
+		return nil, fmt.Errorf("role binding table is missing Role column")
+	}
+	return tableViews(table, func(row metav1.TableRow, metadata metav1.Object) (domainresource.RoleBindingView, error) {
+		roleRef, err := tableStringCell(row.Cells, roleColumn)
+		if err != nil {
+			return domainresource.RoleBindingView{}, err
+		}
+		return domainresource.RoleBindingView{Name: metadata.GetName(), Namespace: metadata.GetNamespace(), RoleRef: roleRef, AgeSeconds: secondsSince(metadata.GetCreationTimestamp().Time)}, nil
+	})
 }
 
 func mapRoleBindingDetail(item rbacv1.RoleBinding) domainresource.RoleBindingDetailView {
@@ -289,11 +324,10 @@ func mapRoleBindingDetail(item rbacv1.RoleBinding) domainresource.RoleBindingDet
 	}
 }
 
-func mapClusterRole(item rbacv1.ClusterRole) domainresource.ClusterRoleView {
-	return domainresource.ClusterRoleView{
-		Name: item.Name, Rules: len(item.Rules), AggregationRules: aggregationRuleCount(item.AggregationRule),
-		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
-	}
+func mapClusterRoleTable(table metav1.Table) ([]domainresource.ClusterRoleView, error) {
+	return tableViews(table, func(_ metav1.TableRow, metadata metav1.Object) (domainresource.ClusterRoleView, error) {
+		return domainresource.ClusterRoleView{Name: metadata.GetName(), AgeSeconds: secondsSince(metadata.GetCreationTimestamp().Time)}, nil
+	})
 }
 
 func mapClusterRoleDetail(item rbacv1.ClusterRole) domainresource.ClusterRoleDetailView {
@@ -306,9 +340,23 @@ func mapClusterRoleDetail(item rbacv1.ClusterRole) domainresource.ClusterRoleDet
 
 func mapClusterRoleBinding(item rbacv1.ClusterRoleBinding) domainresource.ClusterRoleBindingView {
 	return domainresource.ClusterRoleBindingView{
-		Name: item.Name, RoleRef: formatRoleRef(item.RoleRef), Subjects: formatSubjects(item.Subjects),
+		Name: item.Name, RoleRef: formatRoleRef(item.RoleRef),
 		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
 	}
+}
+
+func mapClusterRoleBindingTable(table metav1.Table) ([]domainresource.ClusterRoleBindingView, error) {
+	roleColumn := tableColumnIndex(table.ColumnDefinitions, "Role")
+	if roleColumn < 0 {
+		return nil, fmt.Errorf("cluster role binding table is missing Role column")
+	}
+	return tableViews(table, func(row metav1.TableRow, metadata metav1.Object) (domainresource.ClusterRoleBindingView, error) {
+		roleRef, err := tableStringCell(row.Cells, roleColumn)
+		if err != nil {
+			return domainresource.ClusterRoleBindingView{}, err
+		}
+		return domainresource.ClusterRoleBindingView{Name: metadata.GetName(), RoleRef: roleRef, AgeSeconds: secondsSince(metadata.GetCreationTimestamp().Time)}, nil
+	})
 }
 
 func mapClusterRoleBindingDetail(item rbacv1.ClusterRoleBinding) domainresource.ClusterRoleBindingDetailView {
@@ -331,6 +379,19 @@ func formatSubjects(subjects []rbacv1.Subject) []string {
 		formatted = append(formatted, fmt.Sprintf("%s:%s", subject.Kind, subject.Name))
 	}
 	return formatted
+}
+
+func referencesServiceAccount(subjects []rbacv1.Subject, namespace, name, defaultNamespace string) bool {
+	for _, subject := range subjects {
+		subjectNamespace := subject.Namespace
+		if subjectNamespace == "" {
+			subjectNamespace = defaultNamespace
+		}
+		if subject.Kind == "ServiceAccount" && subjectNamespace == namespace && subject.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func formatRoleRef(ref rbacv1.RoleRef) string {

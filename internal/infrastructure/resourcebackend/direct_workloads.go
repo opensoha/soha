@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	appresource "github.com/opensoha/soha/internal/application/resource"
@@ -14,6 +13,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -22,7 +22,7 @@ import (
 )
 
 func (d *Direct) ListDeployments(ctx context.Context, clusterID, namespace string) ([]domainresource.DeploymentView, string, error) {
-	items, source, err := listCachedResources(ctx, clusterID, namespace, strings.TrimSpace(namespace) != "" && d.cache != nil, d.listCachedDeployments, d.cacheUnavailable, d.listDeploymentsDirect)
+	items, source, err := listCachedResources(ctx, clusterID, namespace, d.cache != nil, d.listCachedDeployments, d.cacheUnavailable, d.listDeploymentsDirect)
 	if err != nil {
 		return nil, source, err
 	}
@@ -34,7 +34,9 @@ func (d *Direct) GetDeploymentDetail(ctx context.Context, clusterID, namespace, 
 	if err != nil {
 		return domainresource.DeploymentDetailView{}, err
 	}
-	return mapDeploymentDetail(*item), nil
+	view := mapDeploymentDetail(*item)
+	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, item.Spec.Selector, item.Spec.Template, item.OwnerReferences, "", "", "", "")
+	return view, err
 }
 
 func (d *Direct) GetDeploymentYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
@@ -129,7 +131,7 @@ func (d *Direct) RollbackDeployment(ctx context.Context, clusterID, namespace, n
 }
 
 func (d *Direct) ListStatefulSets(ctx context.Context, clusterID, namespace string) ([]domainresource.StatefulSetView, string, error) {
-	items, source, err := listCachedResources(ctx, clusterID, namespace, strings.TrimSpace(namespace) != "" && d.cache != nil, d.listCachedStatefulSets, d.cacheUnavailable, d.listStatefulSetsDirect)
+	items, source, err := listCachedResources(ctx, clusterID, namespace, d.cache != nil, d.listCachedStatefulSets, d.cacheUnavailable, d.listStatefulSetsDirect)
 	if err != nil {
 		return nil, source, err
 	}
@@ -137,7 +139,7 @@ func (d *Direct) ListStatefulSets(ctx context.Context, clusterID, namespace stri
 }
 
 func (d *Direct) listDeploymentsDirect(ctx context.Context, clusterID, namespace string) ([]appsv1.Deployment, error) {
-	return directNamespacedList(ctx, d, clusterID, namespace, func(queryCtx context.Context, namespace string) ([]appsv1.Deployment, error) {
+	return listNamespaced(ctx, d, clusterID, namespace, 4*time.Second, func(queryCtx context.Context, namespace string) ([]appsv1.Deployment, error) {
 		bundle, err := d.directClients(queryCtx, clusterID)
 		if err != nil {
 			return nil, err
@@ -151,7 +153,7 @@ func (d *Direct) listCachedDeployments(clusterID, namespace string) ([]appsv1.De
 }
 
 func (d *Direct) listStatefulSetsDirect(ctx context.Context, clusterID, namespace string) ([]appsv1.StatefulSet, error) {
-	return directNamespacedList(ctx, d, clusterID, namespace, func(queryCtx context.Context, namespace string) ([]appsv1.StatefulSet, error) {
+	return listNamespaced(ctx, d, clusterID, namespace, 4*time.Second, func(queryCtx context.Context, namespace string) ([]appsv1.StatefulSet, error) {
 		bundle, err := d.directClients(queryCtx, clusterID)
 		if err != nil {
 			return nil, err
@@ -169,7 +171,9 @@ func (d *Direct) GetStatefulSetDetail(ctx context.Context, clusterID, namespace,
 	if err != nil {
 		return domainresource.StatefulSetDetailView{}, err
 	}
-	return mapStatefulSetDetail(*item), nil
+	view := mapStatefulSetDetail(*item)
+	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, item.Spec.Selector, item.Spec.Template, item.OwnerReferences, "", "", "", "")
+	return view, err
 }
 
 func (d *Direct) GetStatefulSetYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
@@ -183,7 +187,7 @@ func (d *Direct) GetStatefulSetYAML(ctx context.Context, clusterID, namespace, n
 }
 
 func (d *Direct) ListDaemonSets(ctx context.Context, clusterID, namespace string) ([]domainresource.DaemonSetView, error) {
-	items, err := directNamespacedList(ctx, d, clusterID, namespace, func(queryCtx context.Context, namespace string) ([]appsv1.DaemonSet, error) {
+	items, err := listNamespaced(ctx, d, clusterID, namespace, 4*time.Second, func(queryCtx context.Context, namespace string) ([]appsv1.DaemonSet, error) {
 		bundle, err := d.directClients(queryCtx, clusterID)
 		if err != nil {
 			return nil, err
@@ -205,7 +209,9 @@ func (d *Direct) GetDaemonSetDetail(ctx context.Context, clusterID, namespace, n
 	if err != nil {
 		return domainresource.DaemonSetDetailView{}, err
 	}
-	return mapDaemonSetDetail(*item), nil
+	view := mapDaemonSetDetail(*item)
+	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, item.Spec.Selector, item.Spec.Template, item.OwnerReferences, "", "", "", "")
+	return view, err
 }
 
 func (d *Direct) GetDaemonSetYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
@@ -219,7 +225,7 @@ func (d *Direct) GetDaemonSetYAML(ctx context.Context, clusterID, namespace, nam
 }
 
 func (d *Direct) ListJobs(ctx context.Context, clusterID, namespace string) ([]domainresource.JobView, error) {
-	items, err := directNamespacedList(ctx, d, clusterID, namespace, func(queryCtx context.Context, namespace string) ([]batchv1.Job, error) {
+	items, err := listNamespaced(ctx, d, clusterID, namespace, 4*time.Second, func(queryCtx context.Context, namespace string) ([]batchv1.Job, error) {
 		bundle, err := d.directClients(queryCtx, clusterID)
 		if err != nil {
 			return nil, err
@@ -241,7 +247,9 @@ func (d *Direct) GetJobDetail(ctx context.Context, clusterID, namespace, name st
 	if err != nil {
 		return domainresource.JobDetailView{}, err
 	}
-	return mapJobDetail(*item), nil
+	view := mapJobDetail(*item)
+	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, nil, item.Spec.Template, item.OwnerReferences, "job-name", item.Name, item.UID, "Job")
+	return view, err
 }
 
 func (d *Direct) GetJobYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
@@ -255,7 +263,7 @@ func (d *Direct) GetJobYAML(ctx context.Context, clusterID, namespace, name stri
 }
 
 func (d *Direct) ListCronJobs(ctx context.Context, clusterID, namespace string) ([]domainresource.CronJobView, error) {
-	items, err := directNamespacedList(ctx, d, clusterID, namespace, func(queryCtx context.Context, namespace string) ([]batchv1.CronJob, error) {
+	items, err := listNamespaced(ctx, d, clusterID, namespace, 4*time.Second, func(queryCtx context.Context, namespace string) ([]batchv1.CronJob, error) {
 		bundle, err := d.directClients(queryCtx, clusterID)
 		if err != nil {
 			return nil, err
@@ -277,7 +285,9 @@ func (d *Direct) GetCronJobDetail(ctx context.Context, clusterID, namespace, nam
 	if err != nil {
 		return domainresource.CronJobDetailView{}, err
 	}
-	return mapCronJobDetail(*item), nil
+	view := mapCronJobDetail(*item)
+	view.Jobs, view.RelatedResources, err = d.cronJobAssociations(ctx, clusterID, *item)
+	return view, err
 }
 
 func (d *Direct) GetCronJobYAML(ctx context.Context, clusterID, namespace, name string) (domainresource.ResourceYAMLView, error) {
@@ -310,7 +320,7 @@ func (d *Direct) SetCronJobSuspend(ctx context.Context, clusterID, namespace, na
 }
 
 func (d *Direct) ListReplicaSets(ctx context.Context, clusterID, namespace string) ([]domainresource.ReplicaSetView, error) {
-	items, err := directNamespacedList(ctx, d, clusterID, namespace, func(queryCtx context.Context, namespace string) ([]appsv1.ReplicaSet, error) {
+	items, err := listNamespaced(ctx, d, clusterID, namespace, 4*time.Second, func(queryCtx context.Context, namespace string) ([]appsv1.ReplicaSet, error) {
 		bundle, err := d.directClients(queryCtx, clusterID)
 		if err != nil {
 			return nil, err
@@ -331,8 +341,33 @@ func (d *Direct) ListReplicaSets(ctx context.Context, clusterID, namespace strin
 	return views, nil
 }
 
+func (d *Direct) GetReplicaSetDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.ReplicaSetDetailView, error) {
+	item, err := d.getReplicaSet(ctx, clusterID, namespace, name)
+	if err != nil {
+		return domainresource.ReplicaSetDetailView{}, err
+	}
+	view := mapReplicaSetDetail(*item)
+	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, item.Spec.Selector, item.Spec.Template, item.OwnerReferences, "", "", item.UID, "ReplicaSet")
+	return view, err
+}
+
+func (d *Direct) GetReplicationControllerDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.ReplicationControllerDetailView, error) {
+	item, err := d.getReplicationController(ctx, clusterID, namespace, name)
+	if err != nil {
+		return domainresource.ReplicationControllerDetailView{}, err
+	}
+	template := corev1.PodTemplateSpec{}
+	if item.Spec.Template != nil {
+		template = *item.Spec.Template
+	}
+	view := mapReplicationControllerDetail(*item)
+	selector := &metav1.LabelSelector{MatchLabels: item.Spec.Selector}
+	view.Pods, view.RelatedResources, err = d.workloadPodRelations(ctx, clusterID, item.Namespace, selector, template, item.OwnerReferences, "", "", item.UID, "ReplicationController")
+	return view, err
+}
+
 func (d *Direct) ListHorizontalPodAutoscalers(ctx context.Context, clusterID, namespace string) ([]domainresource.HorizontalPodAutoscalerView, error) {
-	items, err := directNamespacedList(ctx, d, clusterID, namespace, func(queryCtx context.Context, namespace string) ([]autoscalingv2.HorizontalPodAutoscaler, error) {
+	items, err := listNamespaced(ctx, d, clusterID, namespace, 4*time.Second, func(queryCtx context.Context, namespace string) ([]autoscalingv2.HorizontalPodAutoscaler, error) {
 		bundle, err := d.directClients(queryCtx, clusterID)
 		if err != nil {
 			return nil, err
@@ -353,8 +388,22 @@ func (d *Direct) ListHorizontalPodAutoscalers(ctx context.Context, clusterID, na
 	return views, nil
 }
 
+func (d *Direct) GetHorizontalPodAutoscalerDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.HorizontalPodAutoscalerDetailView, error) {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return domainresource.HorizontalPodAutoscalerDetailView{}, err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	item, err := bundle.Typed.AutoscalingV2().HorizontalPodAutoscalers(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.HorizontalPodAutoscalerDetailView{}, err
+	}
+	return mapHorizontalPodAutoscalerDetail(*item), nil
+}
+
 func (d *Direct) ListPodDisruptionBudgets(ctx context.Context, clusterID, namespace string) ([]domainresource.PodDisruptionBudgetView, error) {
-	items, err := directNamespacedList(ctx, d, clusterID, namespace, func(queryCtx context.Context, namespace string) ([]policyv1.PodDisruptionBudget, error) {
+	items, err := listNamespaced(ctx, d, clusterID, namespace, 4*time.Second, func(queryCtx context.Context, namespace string) ([]policyv1.PodDisruptionBudget, error) {
 		bundle, err := d.directClients(queryCtx, clusterID)
 		if err != nil {
 			return nil, err
@@ -373,6 +422,82 @@ func (d *Direct) ListPodDisruptionBudgets(ctx context.Context, clusterID, namesp
 		views = append(views, mapPodDisruptionBudget(item))
 	}
 	return views, nil
+}
+
+func (d *Direct) GetPodDisruptionBudgetDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.PodDisruptionBudgetDetailView, error) {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return domainresource.PodDisruptionBudgetDetailView{}, err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	item, err := bundle.Typed.PolicyV1().PodDisruptionBudgets(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.PodDisruptionBudgetDetailView{}, err
+	}
+	detail := mapPodDisruptionBudgetDetail(*item)
+	selector, err := metav1.LabelSelectorAsSelector(item.Spec.Selector)
+	if err != nil {
+		return domainresource.PodDisruptionBudgetDetailView{}, fmt.Errorf("convert pod disruption budget selector: %w", err)
+	}
+	detail.Selector = selector.String()
+	pods, err := bundle.Typed.CoreV1().Pods(namespace).List(queryCtx, metav1.ListOptions{LabelSelector: detail.Selector})
+	if err != nil {
+		return domainresource.PodDisruptionBudgetDetailView{}, err
+	}
+	detail.Pods = mapResourceItems(pods.Items, mapPodView)
+	detail.Workload = commonPodController(queryCtx, bundle, pods.Items)
+	return detail, nil
+}
+
+type controllerIdentity struct {
+	kind, name, uid string
+}
+
+func commonPodController(ctx context.Context, bundle *k8sinfra.Bundle, pods []corev1.Pod) *domainresource.PodRelatedResourceView {
+	var common controllerIdentity
+	for index := range pods {
+		owner := metav1.GetControllerOf(&pods[index])
+		resolved, ok := resolveTopController(ctx, bundle, pods[index].Namespace, owner)
+		if !ok {
+			return nil
+		}
+		if index == 0 {
+			common = resolved
+		} else if resolved != common {
+			return nil
+		}
+	}
+	if len(pods) == 0 {
+		return nil
+	}
+	return &domainresource.PodRelatedResourceView{Kind: common.kind, Name: common.name, Namespace: pods[0].Namespace, Relations: []string{"selected-pods-controller"}}
+}
+
+func resolveTopController(ctx context.Context, bundle *k8sinfra.Bundle, namespace string, owner *metav1.OwnerReference) (controllerIdentity, bool) {
+	if owner == nil {
+		return controllerIdentity{}, false
+	}
+	resolved := controllerIdentity{kind: owner.Kind, name: owner.Name, uid: string(owner.UID)}
+	switch owner.Kind {
+	case "ReplicaSet":
+		item, err := bundle.Typed.AppsV1().ReplicaSets(namespace).Get(ctx, owner.Name, metav1.GetOptions{})
+		if err != nil {
+			return controllerIdentity{}, false
+		}
+		if parent := metav1.GetControllerOf(item); parent != nil && parent.Kind == "Deployment" {
+			return controllerIdentity{kind: parent.Kind, name: parent.Name, uid: string(parent.UID)}, true
+		}
+	case "Job":
+		item, err := bundle.Typed.BatchV1().Jobs(namespace).Get(ctx, owner.Name, metav1.GetOptions{})
+		if err != nil {
+			return controllerIdentity{}, false
+		}
+		if parent := metav1.GetControllerOf(item); parent != nil && parent.Kind == "CronJob" {
+			return controllerIdentity{kind: parent.Kind, name: parent.Name, uid: string(parent.UID)}, true
+		}
+	}
+	return resolved, true
 }
 
 func (d *Direct) getDeployment(ctx context.Context, clusterID, namespace, name string) (*appsv1.Deployment, error) {
@@ -418,6 +543,24 @@ func (d *Direct) getCronJob(ctx context.Context, clusterID, namespace, name stri
 	}
 	defer cancel()
 	return bundle.Typed.BatchV1().CronJobs(namespace).Get(queryCtx, name, metav1.GetOptions{})
+}
+
+func (d *Direct) getReplicaSet(ctx context.Context, clusterID, namespace, name string) (*appsv1.ReplicaSet, error) {
+	bundle, queryCtx, cancel, err := d.workloadQueryContext(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	return bundle.Typed.AppsV1().ReplicaSets(namespace).Get(queryCtx, name, metav1.GetOptions{})
+}
+
+func (d *Direct) getReplicationController(ctx context.Context, clusterID, namespace, name string) (*corev1.ReplicationController, error) {
+	bundle, queryCtx, cancel, err := d.workloadQueryContext(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	return bundle.Typed.CoreV1().ReplicationControllers(namespace).Get(queryCtx, name, metav1.GetOptions{})
 }
 
 func (d *Direct) workloadQueryContext(ctx context.Context, clusterID string) (*k8sinfra.Bundle, context.Context, context.CancelFunc, error) {

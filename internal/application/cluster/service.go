@@ -57,7 +57,7 @@ type RuntimeReader interface {
 type RuntimeCache interface {
 	RegisterCluster(context.Context, string) error
 	UnregisterCluster(string)
-	Ready(string) bool
+	Status(string) domaincluster.CacheDiagnostic
 }
 
 type AgentSummaryClient interface {
@@ -282,12 +282,7 @@ func (s *Service) Describe(ctx context.Context, principal domainidentity.Princip
 	default:
 		detail.Diagnostics.Transport = "client-go"
 		detail.Diagnostics.SyncStrategy = "informer_cache_then_live_fallback"
-		detail.Diagnostics.CacheReady = s.cache != nil && s.cache.Ready(id)
-		if detail.Diagnostics.CacheReady {
-			detail.Diagnostics.CacheStatus = "ready"
-		} else {
-			detail.Diagnostics.CacheStatus = "warming"
-		}
+		s.populateCacheDiagnostics(&detail.Diagnostics, id)
 		detail.Connection.Mode = domaincluster.ConnectionModeDirectKubeconfig
 		detail.Connection.UsesInformerCache = true
 		if contextName, _ := connection.Metadata["context"].(string); strings.TrimSpace(contextName) != "" {
@@ -303,6 +298,20 @@ func (s *Service) Describe(ctx context.Context, principal domainidentity.Princip
 	}
 
 	return detail, nil
+}
+
+func (s *Service) populateCacheDiagnostics(diagnostics *domaincluster.Diagnostics, clusterID string) {
+	if s.cache == nil {
+		diagnostics.CacheStatus = "disabled"
+		return
+	}
+	status := s.cache.Status(clusterID)
+	diagnostics.CacheReady = status.Ready
+	diagnostics.CacheStatus = status.Status
+	diagnostics.CacheResources = status.Resources
+	if status.Message != "" {
+		diagnostics.Message = status.Message
+	}
 }
 
 func (s *Service) CapabilityMatrix(context.Context, domainidentity.Principal) ([]domaincluster.CapabilityMatrixEntry, error) {
@@ -330,9 +339,7 @@ func (s *Service) Register(ctx context.Context, principal domainidentity.Princip
 	}
 	if cfg != nil {
 		s.registry.RegisterCluster(*cfg)
-		if s.cache != nil {
-			_ = s.cache.RegisterCluster(ctx, connection.Summary.ID)
-		}
+		s.registerCache(ctx, connection.Summary.ID)
 	}
 	// Keep the registration even if the target cluster or agent is temporarily unreachable.
 	_ = s.syncOne(ctx, connection.Summary.ID)
@@ -393,9 +400,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	}
 	if cfg != nil {
 		s.registry.RegisterCluster(*cfg)
-		if s.cache != nil {
-			_ = s.cache.RegisterCluster(ctx, connection.Summary.ID)
-		}
+		s.registerCache(ctx, connection.Summary.ID)
 	}
 	// Keep the registration even if the target cluster or agent is temporarily unreachable.
 	_ = s.syncOne(ctx, connection.Summary.ID)
@@ -592,9 +597,7 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 			break
 		}
 		s.registry.RegisterCluster(*cfg)
-		if s.cache != nil {
-			_ = s.cache.RegisterCluster(ctx, connection.Summary.ID)
-		}
+		s.registerCache(ctx, connection.Summary.ID)
 		observed, err := s.manager.GetCluster(inspectCtx, connection.Summary.ID)
 		if err != nil {
 			summary.Health = domaincluster.Health{Status: "degraded", Message: clusterHealthMessage(err, "cluster summary unavailable"), LastChecked: time.Now().UTC()}
@@ -621,6 +624,15 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 		summary.Labels = connection.Summary.Labels
 	}
 	return s.repo.UpsertSnapshot(ctx, summary)
+}
+
+func (s *Service) registerCache(ctx context.Context, clusterID string) {
+	if s.cache == nil {
+		return
+	}
+	if err := s.cache.RegisterCluster(ctx, clusterID); err != nil {
+		s.logWarnCtx(ctx, "cluster informer registration failed", zap.String("clusterID", clusterID), zap.Error(err))
+	}
 }
 
 func clusterHealthMessage(err error, fallback string) string {

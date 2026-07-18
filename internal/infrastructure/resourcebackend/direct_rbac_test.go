@@ -58,3 +58,37 @@ func TestMapServiceAccountDetailCollectsSecretNames(t *testing.T) {
 		t.Fatalf("ImagePullSecrets = %#v, want [registry-creds]", view.ImagePullSecrets)
 	}
 }
+
+func TestLightweightRBACTableMappings(t *testing.T) {
+	t.Parallel()
+	table := metav1.Table{
+		ColumnDefinitions: []metav1.TableColumnDefinition{{Name: "Name"}, {Name: "Role"}},
+		Rows:              []metav1.TableRow{{Cells: []any{"binding-a", "ClusterRole/view"}, Object: tableTestMetadata("binding-a", "team-a")}},
+	}
+	bindings, err := mapRoleBindingTable(table)
+	if err != nil || len(bindings) != 1 || bindings[0].Name != "binding-a" || bindings[0].Namespace != "team-a" || bindings[0].RoleRef != "ClusterRole/view" {
+		t.Fatalf("mapRoleBindingTable() = %#v, %v", bindings, err)
+	}
+	roles, err := mapRoleTable(table)
+	if err != nil || len(roles) != 1 || roles[0].Name != "binding-a" || roles[0].Namespace != "team-a" {
+		t.Fatalf("mapRoleTable() = %#v, %v", roles, err)
+	}
+}
+
+func TestReferencesServiceAccountMatchesExactSubject(t *testing.T) {
+	t.Parallel()
+	subjects := []rbacv1.Subject{{Kind: "ServiceAccount", Namespace: "team-a", Name: "builder"}}
+	if !referencesServiceAccount(subjects, "team-a", "builder", "") {
+		t.Fatal("referencesServiceAccount() = false, want true")
+	}
+	if referencesServiceAccount(subjects, "team-b", "builder", "") || referencesServiceAccount(subjects, "team-a", "other", "") {
+		t.Fatal("referencesServiceAccount() matched a different service account")
+	}
+	implicitNamespace := []rbacv1.Subject{{Kind: "ServiceAccount", Name: "builder"}}
+	if !referencesServiceAccount(implicitNamespace, "team-a", "builder", "team-a") {
+		t.Fatal("referencesServiceAccount() did not use the RoleBinding namespace")
+	}
+	if referencesServiceAccount(implicitNamespace, "team-a", "builder", "") {
+		t.Fatal("referencesServiceAccount() defaulted a ClusterRoleBinding subject namespace")
+	}
+}

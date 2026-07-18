@@ -34,6 +34,25 @@ func (d *Direct) ListGatewayClasses(ctx context.Context, clusterID string) ([]do
 	return views, nil
 }
 
+func (d *Direct) GetGatewayClassDetail(ctx context.Context, clusterID, name string) (domainresource.GatewayClassDetailView, error) {
+	item, err := d.getGatewayResource(ctx, clusterID, "", name, gatewayAPIVersions, "gatewayclasses", false)
+	if err != nil {
+		return domainresource.GatewayClassDetailView{}, err
+	}
+	gatewayItems, err := d.listGatewayRelationshipPage(ctx, clusterID, "", gatewayAPIVersions, "gateways")
+	if err != nil {
+		return domainresource.GatewayClassDetailView{}, err
+	}
+	matched := make([]domainresource.GatewayView, 0)
+	for _, item := range gatewayItems {
+		gateway := mapGateway(item)
+		if gateway.GatewayClass == name {
+			matched = append(matched, gateway)
+		}
+	}
+	return domainresource.GatewayClassDetailView{GatewayClassView: mapGatewayClass(item), Labels: item.GetLabels(), Annotations: item.GetAnnotations(), Conditions: gatewayConditions(item), Gateways: matched}, nil
+}
+
 func (d *Direct) ListGateways(ctx context.Context, clusterID, namespace string) ([]domainresource.GatewayView, error) {
 	items, err := d.listGatewayResources(ctx, clusterID, namespace, gatewayAPIVersions, "gateways", true)
 	if err != nil {
@@ -44,6 +63,18 @@ func (d *Direct) ListGateways(ctx context.Context, clusterID, namespace string) 
 		views = append(views, mapGateway(item))
 	}
 	return views, nil
+}
+
+func (d *Direct) GetGatewayDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.GatewayDetailView, error) {
+	item, err := d.getGatewayResource(ctx, clusterID, namespace, name, gatewayAPIVersions, "gateways", true)
+	if err != nil {
+		return domainresource.GatewayDetailView{}, err
+	}
+	routes, err := d.gatewayRouteReferences(ctx, clusterID, namespace, name)
+	if err != nil {
+		return domainresource.GatewayDetailView{}, err
+	}
+	return domainresource.GatewayDetailView{GatewayView: mapGateway(item), Labels: item.GetLabels(), Annotations: item.GetAnnotations(), Conditions: gatewayConditions(item), Listeners: gatewayListeners(item), Routes: routes}, nil
 }
 
 func (d *Direct) ListHTTPRoutes(ctx context.Context, clusterID, namespace string) ([]domainresource.HTTPRouteView, error) {
@@ -58,6 +89,16 @@ func (d *Direct) ListHTTPRoutes(ctx context.Context, clusterID, namespace string
 	return views, nil
 }
 
+func (d *Direct) GetHTTPRouteDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.HTTPRouteDetailView, error) {
+	item, err := d.getGatewayResource(ctx, clusterID, namespace, name, httpRouteAPIVersions, "httproutes", true)
+	if err != nil {
+		return domainresource.HTTPRouteDetailView{}, err
+	}
+	detail := domainresource.HTTPRouteDetailView{HTTPRouteView: mapHTTPRoute(item), Labels: item.GetLabels(), Annotations: item.GetAnnotations(), Conditions: gatewayConditions(item), ParentStatuses: gatewayParentStatuses(item), Rules: gatewayRouteRules(item, "HTTPRoute")}
+	enrichGatewayBackends(ctx, d, clusterID, &detail.Rules)
+	return detail, nil
+}
+
 func (d *Direct) ListBackendTLSPolicies(ctx context.Context, clusterID, namespace string) ([]domainresource.BackendTLSPolicyView, error) {
 	items, err := d.listGatewayResources(ctx, clusterID, namespace, backendTLSPolicyAPIVersions, "backendtlspolicies", true)
 	if err != nil {
@@ -68,6 +109,14 @@ func (d *Direct) ListBackendTLSPolicies(ctx context.Context, clusterID, namespac
 		views = append(views, mapBackendTLSPolicy(item))
 	}
 	return views, nil
+}
+
+func (d *Direct) GetBackendTLSPolicyDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.BackendTLSPolicyDetailView, error) {
+	item, err := d.getGatewayResource(ctx, clusterID, namespace, name, backendTLSPolicyAPIVersions, "backendtlspolicies", true)
+	if err != nil {
+		return domainresource.BackendTLSPolicyDetailView{}, err
+	}
+	return domainresource.BackendTLSPolicyDetailView{BackendTLSPolicyView: mapBackendTLSPolicy(item), Labels: item.GetLabels(), Annotations: item.GetAnnotations(), Conditions: gatewayConditions(item)}, nil
 }
 
 func (d *Direct) ListGRPCRoutes(ctx context.Context, clusterID, namespace string) ([]domainresource.GRPCRouteView, error) {
@@ -82,6 +131,16 @@ func (d *Direct) ListGRPCRoutes(ctx context.Context, clusterID, namespace string
 	return views, nil
 }
 
+func (d *Direct) GetGRPCRouteDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.GRPCRouteDetailView, error) {
+	item, err := d.getGatewayResource(ctx, clusterID, namespace, name, grpcRouteAPIVersions, "grpcroutes", true)
+	if err != nil {
+		return domainresource.GRPCRouteDetailView{}, err
+	}
+	detail := domainresource.GRPCRouteDetailView{GRPCRouteView: mapGRPCRoute(item), Labels: item.GetLabels(), Annotations: item.GetAnnotations(), Conditions: gatewayConditions(item), ParentStatuses: gatewayParentStatuses(item), Rules: gatewayRouteRules(item, "GRPCRoute")}
+	enrichGatewayBackends(ctx, d, clusterID, &detail.Rules)
+	return detail, nil
+}
+
 func (d *Direct) ListReferenceGrants(ctx context.Context, clusterID, namespace string) ([]domainresource.ReferenceGrantView, error) {
 	items, err := d.listGatewayResources(ctx, clusterID, namespace, referenceGrantAPIVersions, "referencegrants", true)
 	if err != nil {
@@ -92,6 +151,66 @@ func (d *Direct) ListReferenceGrants(ctx context.Context, clusterID, namespace s
 		views = append(views, mapReferenceGrant(item))
 	}
 	return views, nil
+}
+
+func (d *Direct) GetReferenceGrantDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.ReferenceGrantDetailView, error) {
+	item, err := d.getGatewayResource(ctx, clusterID, namespace, name, referenceGrantAPIVersions, "referencegrants", true)
+	if err != nil {
+		return domainresource.ReferenceGrantDetailView{}, err
+	}
+	return domainresource.ReferenceGrantDetailView{ReferenceGrantView: mapReferenceGrant(item), Labels: item.GetLabels(), Annotations: item.GetAnnotations(), FromRefs: referenceGrantFromRefs(item), ToRefs: referenceGrantToRefs(item)}, nil
+}
+
+func (d *Direct) getGatewayResource(ctx context.Context, clusterID, namespace, name string, versions []string, resource string, namespaced bool) (unstructured.Unstructured, error) {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return unstructured.Unstructured{}, err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	for _, version := range versions {
+		client := bundle.Dynamic.Resource(schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: version, Resource: resource})
+		var item *unstructured.Unstructured
+		if namespaced {
+			item, err = client.Namespace(namespace).Get(queryCtx, name, metav1.GetOptions{})
+		} else {
+			item, err = client.Get(queryCtx, name, metav1.GetOptions{})
+		}
+		if err == nil {
+			return *item, nil
+		}
+		if !isOptionalGatewayAPIResourceMissing(err) {
+			return unstructured.Unstructured{}, err
+		}
+	}
+	return unstructured.Unstructured{}, apierrors.NewNotFound(schema.GroupResource{Group: "gateway.networking.k8s.io", Resource: resource}, name)
+}
+
+func (d *Direct) listGatewayRelationshipPage(ctx context.Context, clusterID, namespace string, versions []string, resource string) ([]unstructured.Unstructured, error) {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	// ponytail: Gateway API has no portable field selector for these relations; cap detail enrichment until an informer index owns it.
+	const relationshipLimit = 500
+	for _, version := range versions {
+		client := bundle.Dynamic.Resource(schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: version, Resource: resource})
+		var items *unstructured.UnstructuredList
+		if namespace == "" {
+			items, err = client.List(queryCtx, metav1.ListOptions{Limit: relationshipLimit})
+		} else {
+			items, err = client.Namespace(namespace).List(queryCtx, metav1.ListOptions{Limit: relationshipLimit})
+		}
+		if err == nil {
+			return items.Items, nil
+		}
+		if !isOptionalGatewayAPIResourceMissing(err) {
+			return nil, err
+		}
+	}
+	return []unstructured.Unstructured{}, nil
 }
 
 func (d *Direct) listGatewayResources(ctx context.Context, clusterID, namespace string, versions []string, resource string, namespaced bool) ([]unstructured.Unstructured, error) {
@@ -408,6 +527,210 @@ func conditionStatus(item unstructured.Unstructured, conditionType string) strin
 		return strings.TrimSpace(status)
 	}
 	return ""
+}
+
+func gatewayConditions(item unstructured.Unstructured) []domainresource.WorkloadConditionView {
+	return mapGatewayConditions(nestedSlice(item.Object, "status", "conditions"))
+}
+
+func mapGatewayConditions(rawConditions []any) []domainresource.WorkloadConditionView {
+	conditions := make([]domainresource.WorkloadConditionView, 0, len(rawConditions))
+	for _, raw := range rawConditions {
+		condition, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		conditions = append(conditions, domainresource.WorkloadConditionView{
+			Type: stringValue(condition, "type"), Status: stringValue(condition, "status"),
+			Reason: stringValue(condition, "reason"), Message: stringValue(condition, "message"),
+			LastTransitionTime: stringValue(condition, "lastTransitionTime"),
+		})
+	}
+	return conditions
+}
+
+func gatewayListeners(item unstructured.Unstructured) []domainresource.GatewayListenerView {
+	statusByName := make(map[string]map[string]any)
+	for _, raw := range nestedSlice(item.Object, "status", "listeners") {
+		status, ok := raw.(map[string]any)
+		if ok {
+			statusByName[stringValue(status, "name")] = status
+		}
+	}
+	listeners := make([]domainresource.GatewayListenerView, 0)
+	for _, raw := range nestedSlice(item.Object, "spec", "listeners") {
+		listener, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := stringValue(listener, "name")
+		status := statusByName[name]
+		view := domainresource.GatewayListenerView{Name: name, Protocol: stringValue(listener, "protocol"), Port: int32Value(listener, "port"), Hostname: stringValue(listener, "hostname"), AttachedRoutes: int32Value(status, "attachedRoutes"), Conditions: mapGatewayConditions(nestedMapSlice(status, "conditions"))}
+		tls := mapValue(listener, "tls")
+		view.TLSMode = stringValue(tls, "mode")
+		view.CertificateRefs = formatObjectRefList(item.GetNamespace(), nestedMapSlice(tls, "certificateRefs"))
+		for _, rawKind := range nestedMapSlice(mapValue(listener, "allowedRoutes"), "kinds") {
+			if kind, ok := rawKind.(map[string]any); ok {
+				view.AllowedRouteKinds = append(view.AllowedRouteKinds, formatGroupKind(kind))
+			}
+		}
+		listeners = append(listeners, view)
+	}
+	return listeners
+}
+
+func (d *Direct) gatewayRouteReferences(ctx context.Context, clusterID, namespace, gatewayName string) ([]domainresource.GatewayRouteReferenceView, error) {
+	refs := make([]domainresource.GatewayRouteReferenceView, 0)
+	httpItems, err := d.listGatewayRelationshipPage(ctx, clusterID, namespace, httpRouteAPIVersions, "httproutes")
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range httpItems {
+		route := mapHTTPRoute(item)
+		if slices.Contains(route.ParentRefs, namespace+"/"+gatewayName) {
+			refs = append(refs, domainresource.GatewayRouteReferenceView{Kind: "HTTPRoute", Namespace: route.Namespace, Name: route.Name, Hostnames: route.Hostnames})
+		}
+	}
+	grpcItems, err := d.listGatewayRelationshipPage(ctx, clusterID, namespace, grpcRouteAPIVersions, "grpcroutes")
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range grpcItems {
+		route := mapGRPCRoute(item)
+		if slices.Contains(route.ParentRefs, namespace+"/"+gatewayName) {
+			refs = append(refs, domainresource.GatewayRouteReferenceView{Kind: "GRPCRoute", Namespace: route.Namespace, Name: route.Name, Hostnames: route.Hostnames})
+		}
+	}
+	return refs, nil
+}
+
+func gatewayParentStatuses(item unstructured.Unstructured) []domainresource.GatewayRouteParentStatusView {
+	parents := nestedSlice(item.Object, "status", "parents")
+	out := make([]domainresource.GatewayRouteParentStatusView, 0, len(parents))
+	for _, raw := range parents {
+		parent, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		out = append(out, domainresource.GatewayRouteParentStatusView{ParentRef: formatObjectRef(item.GetNamespace(), mapValue(parent, "parentRef")), ControllerName: stringValue(parent, "controllerName"), Conditions: mapGatewayConditions(nestedMapSlice(parent, "conditions"))})
+	}
+	return out
+}
+
+func gatewayRouteRules(item unstructured.Unstructured, kind string) []domainresource.GatewayRouteRuleView {
+	rawRules := nestedSlice(item.Object, "spec", "rules")
+	rules := make([]domainresource.GatewayRouteRuleView, 0, len(rawRules))
+	for _, raw := range rawRules {
+		rule, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		view := domainresource.GatewayRouteRuleView{}
+		for _, rawMatch := range nestedMapSlice(rule, "matches") {
+			if match, ok := rawMatch.(map[string]any); ok {
+				view.Matches = append(view.Matches, gatewayMatchLabel(match, kind))
+			}
+		}
+		for _, rawFilter := range nestedMapSlice(rule, "filters") {
+			if filter, ok := rawFilter.(map[string]any); ok {
+				if label := stringValue(filter, "type"); label != "" {
+					view.Filters = append(view.Filters, label)
+				}
+			}
+		}
+		for _, rawBackend := range nestedMapSlice(rule, "backendRefs") {
+			backend, ok := rawBackend.(map[string]any)
+			if !ok || stringValue(backend, "name") == "" {
+				continue
+			}
+			ns := stringValue(backend, "namespace")
+			if ns == "" {
+				ns = item.GetNamespace()
+			}
+			backendKind := stringValue(backend, "kind")
+			if backendKind == "" {
+				backendKind = "Service"
+			}
+			view.Backends = append(view.Backends, domainresource.GatewayRouteBackendView{Kind: backendKind, Namespace: ns, Name: stringValue(backend, "name"), Port: int32Value(backend, "port"), Weight: int32Value(backend, "weight")})
+		}
+		rules = append(rules, view)
+	}
+	return rules
+}
+
+func enrichGatewayBackends(ctx context.Context, direct *Direct, clusterID string, rules *[]domainresource.GatewayRouteRuleView) {
+	for ruleIndex := range *rules {
+		for backendIndex := range (*rules)[ruleIndex].Backends {
+			backend := &(*rules)[ruleIndex].Backends[backendIndex]
+			if !strings.EqualFold(backend.Kind, "Service") {
+				continue
+			}
+			service, err := direct.GetServiceDetail(ctx, clusterID, backend.Namespace, backend.Name)
+			if err != nil {
+				continue
+			}
+			backend.Endpoints = service.Endpoints
+			backend.BackendPods = service.BackendPods
+		}
+	}
+}
+
+func gatewayMatchLabel(match map[string]any, kind string) string {
+	if strings.EqualFold(kind, "GRPCRoute") {
+		method := mapValue(match, "method")
+		service, name := stringValue(method, "service"), stringValue(method, "method")
+		return strings.Trim(strings.Join([]string{service, name}, "/"), "/")
+	}
+	path := mapValue(match, "path")
+	value := stringValue(path, "value")
+	if method := stringValue(match, "method"); method != "" {
+		return strings.TrimSpace(method + " " + value)
+	}
+	return value
+}
+
+func referenceGrantFromRefs(item unstructured.Unstructured) []domainresource.ReferenceGrantFromView {
+	refs := make([]domainresource.ReferenceGrantFromView, 0)
+	for _, raw := range nestedSlice(item.Object, "spec", "from") {
+		if ref, ok := raw.(map[string]any); ok {
+			refs = append(refs, domainresource.ReferenceGrantFromView{Group: stringValue(ref, "group"), Kind: stringValue(ref, "kind"), Namespace: stringValue(ref, "namespace")})
+		}
+	}
+	return refs
+}
+
+func referenceGrantToRefs(item unstructured.Unstructured) []domainresource.ReferenceGrantToView {
+	refs := make([]domainresource.ReferenceGrantToView, 0)
+	for _, raw := range nestedSlice(item.Object, "spec", "to") {
+		if ref, ok := raw.(map[string]any); ok {
+			refs = append(refs, domainresource.ReferenceGrantToView{Group: stringValue(ref, "group"), Kind: stringValue(ref, "kind"), Name: stringValue(ref, "name")})
+		}
+	}
+	return refs
+}
+
+func mapValue(object map[string]any, key string) map[string]any {
+	value, _ := object[key].(map[string]any)
+	return value
+}
+func nestedMapSlice(object map[string]any, key string) []any {
+	value, _ := object[key].([]any)
+	return value
+}
+func stringValue(object map[string]any, key string) string {
+	value, _ := object[key].(string)
+	return strings.TrimSpace(value)
+}
+func int32Value(object map[string]any, key string) int32 {
+	value, _ := object[key].(int64)
+	return boundedInt32(int(value))
+}
+func formatGroupKind(ref map[string]any) string {
+	group, kind := stringValue(ref, "group"), stringValue(ref, "kind")
+	if group == "" {
+		return kind
+	}
+	return group + "/" + kind
 }
 
 var _ appresource.DirectGatewayReader = (*Direct)(nil)

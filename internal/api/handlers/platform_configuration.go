@@ -157,6 +157,15 @@ func (h *configurationInventoryResourceHandler) ListMutatingWebhookConfiguration
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
+func (h *configurationInventoryResourceHandler) GetMutatingWebhookConfigurationDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetMutatingWebhookConfigurationDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
 func (h *configurationInventoryResourceHandler) ListValidatingWebhookConfigurations(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListValidatingWebhookConfigurations(c.Request.Context(), principal, c.Param("clusterID"))
@@ -165,6 +174,15 @@ func (h *configurationInventoryResourceHandler) ListValidatingWebhookConfigurati
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+func (h *configurationInventoryResourceHandler) GetValidatingWebhookConfigurationDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetValidatingWebhookConfigurationDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 func (h *configurationInventoryResourceHandler) ListResourceQuotas(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -176,6 +194,15 @@ func (h *configurationInventoryResourceHandler) ListResourceQuotas(c *gin.Contex
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
+func (h *configurationInventoryResourceHandler) GetResourceQuotaDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetResourceQuotaDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Query("namespace"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
 func (h *configurationInventoryResourceHandler) ListLimitRanges(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -185,6 +212,15 @@ func (h *configurationInventoryResourceHandler) ListLimitRanges(c *gin.Context) 
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+func (h *configurationInventoryResourceHandler) GetLimitRangeDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetLimitRangeDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Query("namespace"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 func (h *configurationInventoryResourceHandler) ListLeases(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)

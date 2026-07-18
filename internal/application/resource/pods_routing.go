@@ -12,6 +12,7 @@ import (
 
 type podReadRoute interface {
 	ListPods(context.Context, string) ([]domainresource.PodView, string, error)
+	ListPodsBySelector(context.Context, string, map[string]string) ([]domainresource.PodView, error)
 	GetPodDetail(context.Context, string, string) (domainresource.PodDetailView, error)
 	GetPodLogs(context.Context, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
 	GetPodYAML(context.Context, string, string) (domainresource.ResourceYAMLView, error)
@@ -45,6 +46,14 @@ type agentPodRoute struct {
 func (r agentPodRoute) ListPods(ctx context.Context, namespace string) ([]domainresource.PodView, string, error) {
 	items, err := r.client.ListPods(ctx, namespace)
 	return items, r.Source(), err
+}
+
+func (r agentPodRoute) ListPodsBySelector(ctx context.Context, namespace string, selector map[string]string) ([]domainresource.PodView, error) {
+	items, err := r.client.ListPods(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+	return filterPodsBySelector(items, selector), nil
 }
 
 func (r agentPodRoute) GetPodDetail(ctx context.Context, namespace, name string) (domainresource.PodDetailView, error) {
@@ -101,6 +110,19 @@ type directPodRoute struct {
 
 func (r directPodRoute) ListPods(ctx context.Context, namespace string) ([]domainresource.PodView, string, error) {
 	return r.backend.ListPods(ctx, r.clusterID, namespace)
+}
+
+func (r directPodRoute) ListPodsBySelector(ctx context.Context, namespace string, selector map[string]string) ([]domainresource.PodView, error) {
+	if lister, ok := r.backend.(interface {
+		ListPodsBySelector(context.Context, string, string, map[string]string) ([]domainresource.PodView, error)
+	}); ok {
+		return lister.ListPodsBySelector(ctx, r.clusterID, namespace, selector)
+	}
+	items, _, err := r.backend.ListPods(ctx, r.clusterID, namespace)
+	if err != nil {
+		return nil, err
+	}
+	return filterPodsBySelector(items, selector), nil
 }
 
 func (r directPodRoute) GetPodDetail(ctx context.Context, namespace, name string) (domainresource.PodDetailView, error) {

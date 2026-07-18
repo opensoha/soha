@@ -3,6 +3,7 @@ package resourcebackend
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -115,5 +116,25 @@ func TestListAcrossNamespacesWithFallbackReturnsNamespaceAllErrorWhenDiscoveryFa
 	})
 	if !errors.Is(err, allErr) {
 		t.Fatalf("err = %v, want %v", err, allErr)
+	}
+}
+
+func TestListNamespaceNamesCancelsRemainingWorkAndPreservesCause(t *testing.T) {
+	t.Parallel()
+
+	rootErr := errors.New("namespace list denied")
+	namespaces := make([]domainresource.NamespaceView, namespaceListParallelism*2)
+	for index := range namespaces {
+		namespaces[index].Name = fmt.Sprintf("ns-%d", index)
+	}
+	_, err := listNamespaceNames(context.Background(), &k8sinfra.Bundle{}, namespaces, time.Second, func(ctx context.Context, _ *k8sinfra.Bundle, namespace string) ([]string, error) {
+		if namespace == "ns-0" {
+			return nil, rootErr
+		}
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	if !errors.Is(err, rootErr) {
+		t.Fatalf("err = %v, want root cause %v", err, rootErr)
 	}
 }

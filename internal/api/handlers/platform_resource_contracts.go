@@ -84,8 +84,12 @@ type CronJobService interface {
 
 type WorkloadInventoryService interface {
 	ListReplicaSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReplicaSetView, error)
+	GetReplicaSetDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ReplicaSetDetailView, error)
+	GetReplicationControllerDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ReplicationControllerDetailView, error)
 	ListHorizontalPodAutoscalers(context.Context, domainidentity.Principal, string, string) ([]domainresource.HorizontalPodAutoscalerView, error)
+	GetHorizontalPodAutoscalerDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.HorizontalPodAutoscalerDetailView, error)
 	ListPodDisruptionBudgets(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodDisruptionBudgetView, error)
+	GetPodDisruptionBudgetDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PodDisruptionBudgetDetailView, error)
 	ListReplicationControllers(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReplicationControllerView, error)
 }
 
@@ -122,12 +126,16 @@ type ClusterConfigurationInventory interface {
 	ListPriorityClasses(context.Context, domainidentity.Principal, string) ([]domainresource.PriorityClassView, error)
 	ListRuntimeClasses(context.Context, domainidentity.Principal, string) ([]domainresource.RuntimeClassView, error)
 	ListMutatingWebhookConfigurations(context.Context, domainidentity.Principal, string) ([]domainresource.MutatingWebhookConfigurationView, error)
+	GetMutatingWebhookConfigurationDetail(context.Context, domainidentity.Principal, string, string) (domainresource.AdmissionWebhookConfigurationDetailView, error)
 	ListValidatingWebhookConfigurations(context.Context, domainidentity.Principal, string) ([]domainresource.ValidatingWebhookConfigurationView, error)
+	GetValidatingWebhookConfigurationDetail(context.Context, domainidentity.Principal, string, string) (domainresource.AdmissionWebhookConfigurationDetailView, error)
 }
 
 type NamespaceConfigurationInventory interface {
 	ListResourceQuotas(context.Context, domainidentity.Principal, string, string) ([]domainresource.ResourceQuotaView, error)
+	GetResourceQuotaDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceQuotaDetailView, error)
 	ListLimitRanges(context.Context, domainidentity.Principal, string, string) ([]domainresource.LimitRangeView, error)
+	GetLimitRangeDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.LimitRangeDetailView, error)
 	ListLeases(context.Context, domainidentity.Principal, string, string) ([]domainresource.LeaseView, error)
 }
 
@@ -138,27 +146,38 @@ type ConfigurationInventoryService interface {
 
 type NetworkOverviewService interface {
 	ListServices(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceView, error)
+	GetServiceDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ServiceDetailView, error)
 	GetNetworkTopology(context.Context, domainidentity.Principal, string, string) (domainresource.NetworkTopologyView, error)
 	GetServiceMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.ResourceMetricsView, error)
 }
 
 type NetworkInventoryService interface {
 	ListIngresses(context.Context, domainidentity.Principal, string, string) ([]domainresource.IngressView, error)
+	GetIngressDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.IngressDetailView, error)
 	ListEndpointSlices(context.Context, domainidentity.Principal, string, string) ([]domainresource.EndpointSliceView, error)
+	GetEndpointSliceDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.EndpointSliceDetailView, error)
 	ListNetworkPolicies(context.Context, domainidentity.Principal, string, string) ([]domainresource.NetworkPolicyView, error)
+	GetNetworkPolicyDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.NetworkPolicyDetailView, error)
 	ListIngressClasses(context.Context, domainidentity.Principal, string) ([]domainresource.IngressClassView, error)
+	GetIngressClassDetail(context.Context, domainidentity.Principal, string, string) (domainresource.IngressClassDetailView, error)
 }
 
 type GatewayRoutingService interface {
 	ListGatewayClasses(context.Context, domainidentity.Principal, string) ([]domainresource.GatewayClassView, error)
+	GetGatewayClassDetail(context.Context, domainidentity.Principal, string, string) (domainresource.GatewayClassDetailView, error)
 	ListGateways(context.Context, domainidentity.Principal, string, string) ([]domainresource.GatewayView, error)
+	GetGatewayDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.GatewayDetailView, error)
 	ListHTTPRoutes(context.Context, domainidentity.Principal, string, string) ([]domainresource.HTTPRouteView, error)
+	GetHTTPRouteDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.HTTPRouteDetailView, error)
 }
 
 type GatewayPolicyService interface {
 	ListBackendTLSPolicies(context.Context, domainidentity.Principal, string, string) ([]domainresource.BackendTLSPolicyView, error)
+	GetBackendTLSPolicyDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.BackendTLSPolicyDetailView, error)
 	ListGRPCRoutes(context.Context, domainidentity.Principal, string, string) ([]domainresource.GRPCRouteView, error)
+	GetGRPCRouteDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.GRPCRouteDetailView, error)
 	ListReferenceGrants(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReferenceGrantView, error)
+	GetReferenceGrantDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ReferenceGrantDetailView, error)
 }
 
 type PersistentVolumeClaimService interface {
@@ -188,6 +207,7 @@ type RoleService interface {
 
 type RoleBindingService interface {
 	ListRoleBindings(context.Context, domainidentity.Principal, string, string) ([]domainresource.RoleBindingView, error)
+	ListRoleBindingsForServiceAccount(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.RoleBindingView, error)
 	GetRoleBindingDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.RoleBindingDetailView, error)
 }
 
@@ -201,6 +221,7 @@ type ClusterRBACService interface {
 	ListClusterRoles(context.Context, domainidentity.Principal, string) ([]domainresource.ClusterRoleView, error)
 	GetClusterRoleDetail(context.Context, domainidentity.Principal, string, string) (domainresource.ClusterRoleDetailView, error)
 	ListClusterRoleBindings(context.Context, domainidentity.Principal, string) ([]domainresource.ClusterRoleBindingView, error)
+	ListClusterRoleBindingsForServiceAccount(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.ClusterRoleBindingView, error)
 	GetClusterRoleBindingDetail(context.Context, domainidentity.Principal, string, string) (domainresource.ClusterRoleBindingDetailView, error)
 }
 

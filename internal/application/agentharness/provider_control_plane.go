@@ -173,53 +173,9 @@ func (s *ProviderControlPlane) RegistrySnapshot(runnerID string) (ProviderRegist
 }
 
 func (s *ProviderControlPlane) Acknowledge(input RegistryAcknowledgement) (RegistryAcknowledgement, error) {
-	input.RunnerID = strings.TrimSpace(input.RunnerID)
-	input.Reason = strings.TrimSpace(input.Reason)
-	if input.RunnerID == "" || len(input.RunnerID) > 160 || input.Revision == 0 {
-		return RegistryAcknowledgement{}, fmt.Errorf("%w: runnerId and revision are required", apperrors.ErrInvalidArgument)
-	}
-	if len(input.Reason) > 2048 {
-		return RegistryAcknowledgement{}, fmt.Errorf("%w: acknowledgement reason is too long", apperrors.ErrInvalidArgument)
-	}
-	if len(input.ProviderStatuses) > 256 {
-		return RegistryAcknowledgement{}, fmt.Errorf("%w: too many provider runtime statuses", apperrors.ErrInvalidArgument)
-	}
-	if len(input.ConformanceChecks) > 256 {
-		return RegistryAcknowledgement{}, fmt.Errorf("%w: too many provider conformance checks", apperrors.ErrInvalidArgument)
-	}
-	input.RolloutState = strings.TrimSpace(input.RolloutState)
-	if len(input.RolloutState) > 64 {
-		return RegistryAcknowledgement{}, fmt.Errorf("%w: rollout state is too long", apperrors.ErrInvalidArgument)
-	}
-	for i := range input.ConformanceChecks {
-		check := &input.ConformanceChecks[i]
-		check.ProviderID = strings.TrimSpace(check.ProviderID)
-		check.Status = strings.TrimSpace(check.Status)
-		check.Reason = strings.TrimSpace(check.Reason)
-		if check.ProviderID == "" || len(check.ProviderID) > 160 || (check.Status != "passed" && check.Status != "failed") || len(check.Reason) > 2048 {
-			return RegistryAcknowledgement{}, fmt.Errorf("%w: invalid provider conformance check", apperrors.ErrInvalidArgument)
-		}
-	}
-	for i := range input.ProviderStatuses {
-		status := &input.ProviderStatuses[i]
-		status.ProviderID = strings.TrimSpace(status.ProviderID)
-		status.ProviderVersion = strings.TrimSpace(status.ProviderVersion)
-		status.Health = strings.TrimSpace(status.Health)
-		status.Reason = strings.TrimSpace(status.Reason)
-		if status.ProviderID == "" || len(status.ProviderID) > 160 || len(status.Reason) > 2048 || status.ActiveRuns < 0 {
-			return RegistryAcknowledgement{}, fmt.Errorf("%w: invalid provider runtime status", apperrors.ErrInvalidArgument)
-		}
-		switch status.Health {
-		case "unknown", "healthy", "unhealthy":
-		default:
-			return RegistryAcknowledgement{}, fmt.Errorf("%w: invalid provider health", apperrors.ErrInvalidArgument)
-		}
-		status.ObservedAt = status.ObservedAt.UTC()
-	}
-	if input.ObservedAt.IsZero() {
-		input.ObservedAt = s.now().UTC()
-	} else {
-		input.ObservedAt = input.ObservedAt.UTC()
+	input, err := prepareRegistryAcknowledgement(input, s.now)
+	if err != nil {
+		return RegistryAcknowledgement{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -242,6 +198,79 @@ func (s *ProviderControlPlane) Acknowledge(input RegistryAcknowledgement) (Regis
 	s.acks[input.RunnerID] = input
 	s.pruneAcknowledgementsLocked()
 	return cloneRegistryAcknowledgement(input), nil
+}
+
+func prepareRegistryAcknowledgement(input RegistryAcknowledgement, now func() time.Time) (RegistryAcknowledgement, error) {
+	input.RunnerID = strings.TrimSpace(input.RunnerID)
+	input.Reason = strings.TrimSpace(input.Reason)
+	input.RolloutState = strings.TrimSpace(input.RolloutState)
+	if err := validateRegistryAcknowledgementHeader(input); err != nil {
+		return RegistryAcknowledgement{}, err
+	}
+	if err := normalizeConformanceChecks(input.ConformanceChecks); err != nil {
+		return RegistryAcknowledgement{}, err
+	}
+	if err := normalizeProviderStatuses(input.ProviderStatuses); err != nil {
+		return RegistryAcknowledgement{}, err
+	}
+	if input.ObservedAt.IsZero() {
+		input.ObservedAt = now().UTC()
+	} else {
+		input.ObservedAt = input.ObservedAt.UTC()
+	}
+	return input, nil
+}
+
+func validateRegistryAcknowledgementHeader(input RegistryAcknowledgement) error {
+	if input.RunnerID == "" || len(input.RunnerID) > 160 || input.Revision == 0 {
+		return fmt.Errorf("%w: runnerId and revision are required", apperrors.ErrInvalidArgument)
+	}
+	if len(input.Reason) > 2048 {
+		return fmt.Errorf("%w: acknowledgement reason is too long", apperrors.ErrInvalidArgument)
+	}
+	if len(input.ProviderStatuses) > 256 {
+		return fmt.Errorf("%w: too many provider runtime statuses", apperrors.ErrInvalidArgument)
+	}
+	if len(input.ConformanceChecks) > 256 {
+		return fmt.Errorf("%w: too many provider conformance checks", apperrors.ErrInvalidArgument)
+	}
+	if len(input.RolloutState) > 64 {
+		return fmt.Errorf("%w: rollout state is too long", apperrors.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func normalizeConformanceChecks(checks []ProviderConformanceResult) error {
+	for i := range checks {
+		check := &checks[i]
+		check.ProviderID = strings.TrimSpace(check.ProviderID)
+		check.Status = strings.TrimSpace(check.Status)
+		check.Reason = strings.TrimSpace(check.Reason)
+		if check.ProviderID == "" || len(check.ProviderID) > 160 || (check.Status != "passed" && check.Status != "failed") || len(check.Reason) > 2048 {
+			return fmt.Errorf("%w: invalid provider conformance check", apperrors.ErrInvalidArgument)
+		}
+	}
+	return nil
+}
+
+func normalizeProviderStatuses(statuses []RunnerProviderStatus) error {
+	for i := range statuses {
+		status := &statuses[i]
+		status.ProviderID = strings.TrimSpace(status.ProviderID)
+		status.ProviderVersion = strings.TrimSpace(status.ProviderVersion)
+		status.Health = strings.TrimSpace(status.Health)
+		status.Reason = strings.TrimSpace(status.Reason)
+		if status.ProviderID == "" || len(status.ProviderID) > 160 || len(status.Reason) > 2048 || status.ActiveRuns < 0 {
+			return fmt.Errorf("%w: invalid provider runtime status", apperrors.ErrInvalidArgument)
+		}
+		switch status.Health {
+		case "unknown", "healthy", "unhealthy":
+		default:
+			return fmt.Errorf("%w: invalid provider health", apperrors.ErrInvalidArgument)
+		}
+		status.ObservedAt = status.ObservedAt.UTC()
+	}
+	return nil
 }
 
 func (s *ProviderControlPlane) RuntimeStatus(ctx context.Context, principal domainidentity.Principal) (ProviderRuntimeStatus, error) {

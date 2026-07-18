@@ -11,6 +11,7 @@ import (
 type ResourceCreationBatchRepository interface {
 	Claim(context.Context, string, string, string, string, []domainresource.ResourceCreateExecutionDocument) (domainresource.ResourceCreateBatchClaim, error)
 	Get(context.Context, string) (domainresource.ResourceCreateBatch, error)
+	GetByIdentity(context.Context, string, string, string) (domainresource.ResourceCreateBatch, error)
 	UpdateDocument(context.Context, string, domainresource.ResourceCreateExecutionDocument) error
 	Complete(context.Context, string, domainresource.ResourceCreateBatchStatus) (domainresource.ResourceCreateBatch, error)
 }

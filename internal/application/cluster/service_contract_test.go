@@ -70,7 +70,9 @@ func (c *contractCache) UnregisterCluster(clusterID string) {
 	c.unregistered = append(c.unregistered, clusterID)
 }
 
-func (*contractCache) Ready(string) bool { return true }
+func (*contractCache) Status(string) domaincluster.CacheDiagnostic {
+	return domaincluster.CacheDiagnostic{Status: "ready", Ready: true}
+}
 
 type contractRepository struct {
 	context          context.Context

@@ -47,6 +47,28 @@ func TestClientResourceYAMLMethodsUseAgentPlatformEndpoints(t *testing.T) {
 	}
 }
 
+func TestClientRejectsOversizedJSONResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"items":[],"padding":"`)
+		_, _ = io.WriteString(w, strings.Repeat("x", maxAgentJSONResponseBytes))
+		_, _ = io.WriteString(w, `"}`)
+	}))
+	defer server.Close()
+
+	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
+		Summary:  domaincluster.Summary{ID: "cluster-a"},
+		Metadata: map[string]any{"endpoint": server.URL},
+	})
+	if err != nil {
+		t.Fatalf("ClientFor() error = %v", err)
+	}
+	_, err = client.ListNamespaces(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("ListNamespaces() error = %v, want response limit error", err)
+	}
+}
+
 func TestClientStreamPodLogsCopiesAgentStream(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer agent-token" {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"strings"
 	"time"
 
 	appresource "github.com/opensoha/soha/internal/application/resource"
@@ -29,7 +28,7 @@ func (d *Direct) ListClusterEvents(ctx context.Context, clusterID, namespace str
 		rawItems []corev1.Event
 		source   string
 	)
-	if shouldUseInformerCache(namespace) && d.cache != nil {
+	if d.cache != nil {
 		if items, err := d.cache.ListEvents(clusterID, namespace); err == nil {
 			rawItems = items
 			source = "cache"
@@ -73,10 +72,6 @@ func (d *Direct) directClients(ctx context.Context, clusterID string) (*k8sinfra
 		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 	}
 	return bundle, nil
-}
-
-func shouldUseInformerCache(namespace string) bool {
-	return strings.TrimSpace(namespace) != ""
 }
 
 func mapClusterEvent(item corev1.Event) domainresource.ClusterEventView {

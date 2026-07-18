@@ -1,12 +1,30 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
+
+func serviceAccountSubjectFilter(c *gin.Context) (namespace, name string, requested bool, err error) {
+	kind := strings.TrimSpace(c.Query("subjectKind"))
+	name = strings.TrimSpace(c.Query("subjectName"))
+	namespace = strings.TrimSpace(c.Query("subjectNamespace"))
+	requested = kind != "" || name != "" || namespace != ""
+	if !requested {
+		return "", "", false, nil
+	}
+	if kind != "ServiceAccount" || name == "" || namespace == "" {
+		return "", "", true, fmt.Errorf("%w: complete ServiceAccount subject filter is required", apperrors.ErrInvalidArgument)
+	}
+	return namespace, name, true, nil
+}
 
 func (h *namespacedRBACResourceHandler) ListServiceAccounts(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -57,7 +75,21 @@ func (h *namespacedRBACResourceHandler) CreateRole(c *gin.Context) {
 func (h *namespacedRBACResourceHandler) ListRoleBindings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
-	items, err := h.service.ListRoleBindings(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	subjectNamespace, subjectName, filtered, err := serviceAccountSubjectFilter(c)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	var items []domainresource.RoleBindingView
+	if filtered {
+		if strings.TrimSpace(namespace) != subjectNamespace {
+			writeError(c, fmt.Errorf("%w: binding namespace must match service account namespace", apperrors.ErrInvalidArgument))
+			return
+		}
+		items, err = h.service.ListRoleBindingsForServiceAccount(c.Request.Context(), principal, c.Param("clusterID"), subjectNamespace, subjectName)
+	} else {
+		items, err = h.service.ListRoleBindings(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	}
 	if err != nil {
 		writeError(c, err)
 		return
@@ -100,7 +132,17 @@ func (h *clusterRBACResourceHandler) CreateClusterRole(c *gin.Context) {
 }
 func (h *clusterRBACResourceHandler) ListClusterRoleBindings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListClusterRoleBindings(c.Request.Context(), principal, c.Param("clusterID"))
+	subjectNamespace, subjectName, filtered, err := serviceAccountSubjectFilter(c)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	var items []domainresource.ClusterRoleBindingView
+	if filtered {
+		items, err = h.service.ListClusterRoleBindingsForServiceAccount(c.Request.Context(), principal, c.Param("clusterID"), subjectNamespace, subjectName)
+	} else {
+		items, err = h.service.ListClusterRoleBindings(c.Request.Context(), principal, c.Param("clusterID"))
+	}
 	if err != nil {
 		writeError(c, err)
 		return

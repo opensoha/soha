@@ -7,6 +7,7 @@ import (
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -53,12 +54,77 @@ func getWorkloadResource[T any](ctx context.Context, w *Workloads, principal dom
 	if err != nil {
 		return zero, err
 	}
+	filterWorkloadDetailRelations(ctx, w.resourceAccess, principal, clusterID, namespace, &item)
 	if spec.finalize != nil {
 		spec.finalize(&item, decision)
 	}
 	_ = w.recordAudit(ctx, principal, connection.Summary.ID, namespace, spec.kind, name, string(domainaccess.ActionView), "success",
 		fmt.Sprintf("%s via %s in namespace %s", spec.auditText, source, displayNamespace(namespace)))
 	return item, nil
+}
+
+func filterWorkloadDetailRelations[T any](ctx context.Context, access *resourceAccess, principal domainidentity.Principal, clusterID, namespace string, item *T) {
+	var pods *[]domainresource.PodView
+	var jobs *[]domainresource.JobView
+	var related *[]domainresource.WorkloadRelationView
+	switch detail := any(item).(type) {
+	case *domainresource.DeploymentDetailView:
+		pods, related = &detail.Pods, &detail.RelatedResources
+	case *domainresource.StatefulSetDetailView:
+		pods, related = &detail.Pods, &detail.RelatedResources
+	case *domainresource.DaemonSetDetailView:
+		pods, related = &detail.Pods, &detail.RelatedResources
+	case *domainresource.JobDetailView:
+		pods, related = &detail.Pods, &detail.RelatedResources
+	case *domainresource.CronJobDetailView:
+		jobs, related = &detail.Jobs, &detail.RelatedResources
+	case *domainresource.ReplicaSetDetailView:
+		pods, related = &detail.Pods, &detail.RelatedResources
+	case *domainresource.ReplicationControllerDetailView:
+		pods, related = &detail.Pods, &detail.RelatedResources
+	default:
+		return
+	}
+
+	decisions := make(map[string]bool)
+	canView := func(itemNamespace, kind string) bool {
+		if itemNamespace == "" {
+			itemNamespace = namespace
+		}
+		key := itemNamespace + "\x00" + kind
+		allowed, ok := decisions[key]
+		if !ok {
+			allowed = canViewRelatedResource(ctx, access, principal, clusterID, itemNamespace, kind)
+			decisions[key] = allowed
+		}
+		return allowed
+	}
+	if pods != nil {
+		*pods = filterRelatedItems(*pods, func(item domainresource.PodView) bool {
+			return canView(item.Namespace, "Pod")
+		})
+	}
+	if jobs != nil {
+		*jobs = filterRelatedItems(*jobs, func(item domainresource.JobView) bool {
+			return canView(item.Namespace, "Job")
+		})
+	}
+	*related = filterRelatedItems(*related, func(item domainresource.WorkloadRelationView) bool {
+		return canView(item.Namespace, item.Kind)
+	})
+}
+
+func filterRelatedItems[T any](items []T, keep func(T) bool) []T {
+	filtered := make([]T, 0, len(items))
+	for _, item := range items {
+		if keep(item) {
+			filtered = append(filtered, item)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
 }
 
 func routeWorkload[T any](ctx context.Context, w *Workloads, connection domaincluster.Connection, agent func(WorkloadAgent) (T, error), direct func() (T, string, error)) (T, string, error) {

@@ -75,6 +75,23 @@ func (r *RBAC) ListRoleBindings(ctx context.Context, principal domainidentity.Pr
 	)
 }
 
+func (r *RBAC) ListRoleBindingsForServiceAccount(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) ([]domainresource.RoleBindingView, error) {
+	if strings.TrimSpace(namespace) == "" || strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("%w: service account namespace and name are required", apperrors.ErrInvalidArgument)
+	}
+	return listRoutedModeResources(ctx, r.resourceAccess, principal, namespacedListRequest(clusterID, namespace, "RoleBinding", "rolebindings for service account"), r.rbacAgentClient, r.directRBAC,
+		func(client RBACAgent) ([]domainresource.RoleBindingView, error) {
+			return client.ListRoleBindingsForServiceAccount(ctx, namespace, name)
+		},
+		func(direct DirectRBACReader) ([]domainresource.RoleBindingView, error) {
+			return direct.ListRoleBindingsForServiceAccount(ctx, clusterID, namespace, name)
+		},
+		func(item domainresource.RoleBindingView) string { return item.Namespace },
+		func(item domainresource.RoleBindingView) []string { return item.AllowedActions },
+		func(item *domainresource.RoleBindingView, actions []string) { item.AllowedActions = actions },
+	)
+}
+
 func (r *RBAC) GetRoleBindingDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.RoleBindingDetailView, error) {
 	return getNamespacedRBACDetail(ctx, r, principal, clusterID, namespace, "RoleBinding", name,
 		func(client RBACAgent) (domainresource.RoleBindingDetailView, error) {
@@ -116,6 +133,23 @@ func (r *RBAC) ListClusterRoleBindings(ctx context.Context, principal domainiden
 		},
 		func(direct DirectRBACReader) ([]domainresource.ClusterRoleBindingView, error) {
 			return direct.ListClusterRoleBindings(ctx, clusterID)
+		}, nil,
+		func(item domainresource.ClusterRoleBindingView) []string { return item.AllowedActions },
+		func(item *domainresource.ClusterRoleBindingView, actions []string) { item.AllowedActions = actions },
+	)
+}
+
+func (r *RBAC) ListClusterRoleBindingsForServiceAccount(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) ([]domainresource.ClusterRoleBindingView, error) {
+	if strings.TrimSpace(namespace) == "" || strings.TrimSpace(name) == "" {
+		return nil, fmt.Errorf("%w: service account namespace and name are required", apperrors.ErrInvalidArgument)
+	}
+	request := clusterRBACListRequest(clusterID, "ClusterRoleBinding", "clusterrolebindings for service account")
+	return listRoutedModeResources(ctx, r.resourceAccess, principal, request, r.rbacAgentClient, r.directRBAC,
+		func(client RBACAgent) ([]domainresource.ClusterRoleBindingView, error) {
+			return client.ListClusterRoleBindingsForServiceAccount(ctx, namespace, name)
+		},
+		func(direct DirectRBACReader) ([]domainresource.ClusterRoleBindingView, error) {
+			return direct.ListClusterRoleBindingsForServiceAccount(ctx, clusterID, namespace, name)
 		}, nil,
 		func(item domainresource.ClusterRoleBindingView) []string { return item.AllowedActions },
 		func(item *domainresource.ClusterRoleBindingView, actions []string) { item.AllowedActions = actions },

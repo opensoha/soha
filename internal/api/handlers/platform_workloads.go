@@ -426,6 +426,15 @@ func (h *workloadInventoryResourceHandler) ListReplicaSets(c *gin.Context) {
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
+func (h *workloadInventoryResourceHandler) GetReplicaSetDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetReplicaSetDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Query("namespace"), c.Param("replicaSetName"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
 func (h *workloadInventoryResourceHandler) ListReplicationControllers(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -436,10 +445,44 @@ func (h *workloadInventoryResourceHandler) ListReplicationControllers(c *gin.Con
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
+func (h *workloadInventoryResourceHandler) GetReplicationControllerDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetReplicationControllerDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Query("namespace"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
 func (h *workloadInventoryResourceHandler) GetReplicaSetYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
 	item, err := h.generic.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, "ReplicaSet", c.Param("replicaSetName"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+func (h *workloadInventoryResourceHandler) GetReplicationControllerYAML(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.generic.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, "ReplicationController", c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+func (h *workloadInventoryResourceHandler) ApplyReplicationControllerYAML(c *gin.Context) {
+	var req dto.ApplyResourceYAMLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid replicationcontroller yaml payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.generic.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, "ReplicationController", c.Param("name"), req.Content)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -471,6 +514,15 @@ func (h *workloadInventoryResourceHandler) ListHorizontalPodAutoscalers(c *gin.C
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
+func (h *workloadInventoryResourceHandler) GetHorizontalPodAutoscalerDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetHorizontalPodAutoscalerDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Query("namespace"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
 func (h *workloadInventoryResourceHandler) ListPodDisruptionBudgets(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -480,6 +532,15 @@ func (h *workloadInventoryResourceHandler) ListPodDisruptionBudgets(c *gin.Conte
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+func (h *workloadInventoryResourceHandler) GetPodDisruptionBudgetDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetPodDisruptionBudgetDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Query("namespace"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 // RegisterWorkloadDeleteRoutes wires DELETE endpoints for built-in workloads using

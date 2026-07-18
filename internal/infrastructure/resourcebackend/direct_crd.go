@@ -3,6 +3,7 @@ package resourcebackend
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,10 +11,13 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/yaml"
 )
 
@@ -26,9 +30,47 @@ func (d *Direct) ListCRDs(ctx context.Context, clusterID string) ([]domainresour
 	if err != nil {
 		return nil, err
 	}
-	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	queryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	items, err := bundle.Dynamic.Resource(crdGVR).List(queryCtx, metav1.ListOptions{})
+	items, err := listPartialMetadata(queryCtx, bundle, crdGVR, false, "", metav1.ListOptions{})
+	if err != nil {
+		if !metadataListUnsupported(err) {
+			return nil, err
+		}
+		return listFullCRDs(queryCtx, bundle)
+	}
+	resources, discoveryErr := listServerResources(bundle, 8*time.Second)
+	if discoveryErr != nil && len(resources) == 0 {
+		return listFullCRDs(queryCtx, bundle)
+	}
+	views, missing := mapCRDMetadata(items, resources)
+	for _, item := range missing {
+		full, err := bundle.Dynamic.Resource(crdGVR).Get(queryCtx, item.Name, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, mapCRD(*full))
+	}
+	sort.SliceStable(views, func(i, j int) bool { return views[i].Name < views[j].Name })
+	return views, nil
+}
+
+func listServerResources(bundle *k8sinfra.Bundle, timeout time.Duration) ([]*metav1.APIResourceList, error) {
+	config := rest.CopyConfig(bundle.RESTConfig)
+	config.Timeout = timeout
+	client, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	_, resources, err := client.ServerGroupsAndResources()
+	return resources, err
+}
+
+func listFullCRDs(ctx context.Context, bundle *k8sinfra.Bundle) ([]domainresource.CRDView, error) {
+	items, err := bundle.Dynamic.Resource(crdGVR).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +100,28 @@ func (d *Direct) ListCustomResources(ctx context.Context, clusterID string, defi
 	if err != nil {
 		return nil, err
 	}
+	effectiveNamespace := strings.TrimSpace(namespace)
+	if !definition.Namespaced {
+		var err error
+		effectiveNamespace, err = customResourceNamespace(definition, namespace)
+		if err != nil {
+			return nil, err
+		}
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	gvr := schema.GroupVersionResource{Group: definition.Group, Version: definition.Version, Resource: definition.Resource}
+	items, err := listPartialMetadata(queryCtx, bundle, gvr, definition.Namespaced, effectiveNamespace, metav1.ListOptions{})
+	if err != nil {
+		if !metadataListUnsupported(err) {
+			return nil, err
+		}
+		return d.listFullCustomResources(queryCtx, clusterID, definition, namespace)
+	}
+	return mapPartialCustomResources(items, definition), nil
+}
+
+func (d *Direct) listFullCustomResources(ctx context.Context, clusterID string, definition domainresource.CRDResourceDefinition, namespace string) ([]domainresource.CustomResourceView, error) {
 	if definition.Namespaced && strings.TrimSpace(namespace) == "" {
 		items, err := d.listCustomResourcesAcrossNamespaces(ctx, clusterID, definition)
 		if err != nil {
@@ -69,9 +133,11 @@ func (d *Direct) ListCustomResources(ctx context.Context, clusterID string, defi
 	if err != nil {
 		return nil, err
 	}
-	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	items, err := customResourceInterface(bundle.Dynamic, definition, effectiveNamespace).List(queryCtx, metav1.ListOptions{})
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	items, err := customResourceInterface(bundle.Dynamic, definition, effectiveNamespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -201,6 +267,76 @@ func mapCRD(item unstructured.Unstructured) domainresource.CRDView {
 	return view
 }
 
+type discoveredCRD struct {
+	group      string
+	plural     string
+	kind       string
+	scope      string
+	versions   []string
+	versionSet map[string]struct{}
+}
+
+func mapCRDMetadata(items []metav1.PartialObjectMetadata, resourceLists []*metav1.APIResourceList) ([]domainresource.CRDView, []metav1.PartialObjectMetadata) {
+	discovered := discoverCRDs(resourceLists)
+	views := make([]domainresource.CRDView, 0, len(items))
+	missing := make([]metav1.PartialObjectMetadata, 0)
+	for _, item := range items {
+		entry, ok := discovered[item.Name]
+		if !ok {
+			missing = append(missing, item)
+			continue
+		}
+		views = append(views, domainresource.CRDView{
+			Name:       item.Name,
+			Group:      entry.group,
+			Scope:      entry.scope,
+			Kind:       entry.kind,
+			Plural:     entry.plural,
+			Version:    firstValue(entry.versions...),
+			Versions:   entry.versions,
+			CreatedAt:  item.CreationTimestamp.Time.UTC().Format(time.RFC3339),
+			AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+		})
+	}
+	return views, missing
+}
+
+func discoverCRDs(resourceLists []*metav1.APIResourceList) map[string]*discoveredCRD {
+	result := make(map[string]*discoveredCRD)
+	for _, resourceList := range resourceLists {
+		if resourceList == nil {
+			continue
+		}
+		groupVersion, err := schema.ParseGroupVersion(resourceList.GroupVersion)
+		if err != nil || groupVersion.Group == "" {
+			continue
+		}
+		for _, resource := range resourceList.APIResources {
+			if strings.Contains(resource.Name, "/") {
+				continue
+			}
+			name := resource.Name + "." + groupVersion.Group
+			entry := result[name]
+			if entry == nil {
+				scope := "Cluster"
+				if resource.Namespaced {
+					scope = "Namespaced"
+				}
+				entry = &discoveredCRD{
+					group: groupVersion.Group, plural: resource.Name, kind: resource.Kind, scope: scope,
+					versionSet: make(map[string]struct{}),
+				}
+				result[name] = entry
+			}
+			if _, exists := entry.versionSet[groupVersion.Version]; !exists {
+				entry.versionSet[groupVersion.Version] = struct{}{}
+				entry.versions = append(entry.versions, groupVersion.Version)
+			}
+		}
+	}
+	return result
+}
+
 func mapCustomResources(items []unstructured.Unstructured, definition domainresource.CRDResourceDefinition) []domainresource.CustomResourceView {
 	views := make([]domainresource.CustomResourceView, 0, len(items))
 	for _, item := range items {
@@ -212,6 +348,22 @@ func mapCustomResources(items []unstructured.Unstructured, definition domainreso
 			APIVersion: apiVersion, Kind: definition.Kind, Name: item.GetName(), Namespace: item.GetNamespace(),
 			Labels: item.GetLabels(), CreatedAt: item.GetCreationTimestamp().Time.UTC().Format(time.RFC3339),
 			AgeSeconds: secondsSince(item.GetCreationTimestamp().Time),
+		})
+	}
+	return views
+}
+
+func mapPartialCustomResources(items []metav1.PartialObjectMetadata, definition domainresource.CRDResourceDefinition) []domainresource.CustomResourceView {
+	views := make([]domainresource.CustomResourceView, 0, len(items))
+	for _, item := range items {
+		views = append(views, domainresource.CustomResourceView{
+			APIVersion: definition.Group + "/" + definition.Version,
+			Kind:       definition.Kind,
+			Name:       item.Name,
+			Namespace:  item.Namespace,
+			Labels:     item.Labels,
+			CreatedAt:  item.CreationTimestamp.Time.UTC().Format(time.RFC3339),
+			AgeSeconds: secondsSince(item.CreationTimestamp.Time),
 		})
 	}
 	return views

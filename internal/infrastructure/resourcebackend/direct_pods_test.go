@@ -6,6 +6,7 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestMapPodViewIncludesRequestsAndLimits(t *testing.T) {
@@ -33,6 +34,26 @@ func TestMapPodViewIncludesRequestsAndLimits(t *testing.T) {
 	}
 	if view.Limits.CPU != "500m" || view.Limits.Memory != "256Mi" {
 		t.Fatalf("Limits = %+v, want cpu=500m memory=256Mi", view.Limits)
+	}
+}
+
+func TestPodOwnerNameReturnsExactOwner(t *testing.T) {
+	t.Parallel()
+	owners := []metav1.OwnerReference{{Kind: "Node", Name: "node-a"}, {Kind: "ReplicaSet", Name: "api-7d9f"}}
+	if got := podOwnerName(owners, "ReplicaSet"); got != "api-7d9f" {
+		t.Fatalf("podOwnerName() = %q, want api-7d9f", got)
+	}
+}
+
+func TestBuildPodContainersLabelsRoles(t *testing.T) {
+	view := buildPodContainers(corev1.Pod{
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{{Name: "init", Image: "init:v1"}},
+			Containers:     []corev1.Container{{Name: "app", Image: "app:v1"}, {Name: "proxy", Image: "proxy:v1"}},
+		},
+	})
+	if len(view) != 3 || view[0].Role != "init" || view[1].Role != "main" || view[2].Role != "sidecar" {
+		t.Fatalf("container roles = %#v, want init/main/sidecar", view)
 	}
 }
 

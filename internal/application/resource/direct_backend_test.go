@@ -97,8 +97,30 @@ type stubDirectHelmReleaseReader struct {
 type stubDirectPods struct {
 	clusterID string
 	namespace string
+	selector  map[string]string
 	items     []domainresource.PodView
 	source    string
+}
+
+func (s *stubDirectPods) ListPodsBySelector(_ context.Context, clusterID, namespace string, selector map[string]string) ([]domainresource.PodView, error) {
+	s.clusterID = clusterID
+	s.namespace = namespace
+	s.selector = selector
+	return s.items, nil
+}
+
+func TestDirectPodRouteUsesSelectorScopedCapability(t *testing.T) {
+	t.Parallel()
+	backend := &stubDirectPods{items: []domainresource.PodView{{Name: "api-0"}}}
+	route := directPodRoute{backend: backend, clusterID: "cluster-a"}
+
+	items, err := route.ListPodsBySelector(context.Background(), "team-a", map[string]string{"app": "api"})
+	if err != nil {
+		t.Fatalf("ListPodsBySelector() error = %v", err)
+	}
+	if len(items) != 1 || backend.clusterID != "cluster-a" || backend.namespace != "team-a" || backend.selector["app"] != "api" {
+		t.Fatalf("selector request = items %#v cluster %q namespace %q selector %#v", items, backend.clusterID, backend.namespace, backend.selector)
+	}
 }
 
 func (s *stubDirectPods) ListPods(_ context.Context, clusterID, namespace string) ([]domainresource.PodView, string, error) {

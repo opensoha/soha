@@ -127,3 +127,30 @@ func TestApplyOrganizationsMergesJSONMetadataWithoutJSONBTypeMismatch(t *testing
 		t.Fatal(err)
 	}
 }
+
+func TestPrepareProjectionDefaults(t *testing.T) {
+	now := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
+	organization := prepareOrganizationProjection(
+		domain.Organization{ExternalID: "org-1"},
+		"connection-1",
+		now,
+	)
+	if organization.ConnectionID != "connection-1" || organization.ID != "connection-1:org-1" || organization.Status != domain.ProjectionActive {
+		t.Fatalf("organization defaults = %#v", organization)
+	}
+	if !organization.FirstSeenAt.Equal(now) || !organization.LastSeenAt.Equal(now) {
+		t.Fatalf("organization timestamps = %v, %v", organization.FirstSeenAt, organization.LastSeenAt)
+	}
+
+	person := preparePersonProjection(
+		domain.Person{ExternalID: "person-1"},
+		"connection-1",
+		now,
+	)
+	if person.ConnectionID != "connection-1" || person.ID != "connection-1:person-1" || person.Status != domain.ProjectionActive {
+		t.Fatalf("person defaults = %#v", person)
+	}
+	if !person.FirstSeenAt.Equal(now) || !person.LastSeenAt.Equal(now) {
+		t.Fatalf("person timestamps = %v, %v", person.FirstSeenAt, person.LastSeenAt)
+	}
+}

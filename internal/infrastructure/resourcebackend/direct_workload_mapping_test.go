@@ -1,16 +1,21 @@
 package resourcebackend
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestWorkloadMappings(t *testing.T) {
@@ -136,5 +141,44 @@ func TestPolicyWorkloadMappings(t *testing.T) {
 	})
 	if pdb.MinAvailable != "2" || pdb.MaxUnavailable != "25%" || pdb.DisruptionsAllowed != 1 {
 		t.Fatalf("pdb = %#v", pdb)
+	}
+}
+
+func TestHPAStatusMetricsMatchByIdentity(t *testing.T) {
+	t.Parallel()
+	utilization, cpuCurrent := int32(70), int32(55)
+	hpa := mapHorizontalPodAutoscalerDetail(autoscalingv2.HorizontalPodAutoscaler{
+		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{Metrics: []autoscalingv2.MetricSpec{
+			{Type: autoscalingv2.ResourceMetricSourceType, Resource: &autoscalingv2.ResourceMetricSource{Name: corev1.ResourceCPU, Target: autoscalingv2.MetricTarget{Type: autoscalingv2.UtilizationMetricType, AverageUtilization: &utilization}}},
+			{Type: autoscalingv2.ExternalMetricSourceType, External: &autoscalingv2.ExternalMetricSource{Metric: autoscalingv2.MetricIdentifier{Name: "queue"}, Target: autoscalingv2.MetricTarget{Type: autoscalingv2.ValueMetricType, Value: resource.NewQuantity(100, resource.DecimalSI)}}},
+		}},
+		Status: autoscalingv2.HorizontalPodAutoscalerStatus{CurrentMetrics: []autoscalingv2.MetricStatus{
+			{Type: autoscalingv2.ExternalMetricSourceType, External: &autoscalingv2.ExternalMetricStatus{Metric: autoscalingv2.MetricIdentifier{Name: "queue"}, Current: autoscalingv2.MetricValueStatus{Value: resource.NewQuantity(42, resource.DecimalSI)}}},
+			{Type: autoscalingv2.ResourceMetricSourceType, Resource: &autoscalingv2.ResourceMetricStatus{Name: corev1.ResourceCPU, Current: autoscalingv2.MetricValueStatus{AverageUtilization: &cpuCurrent}}},
+		}},
+	})
+	if len(hpa.Metrics) != 2 || hpa.Metrics[0].Current != "55%" || hpa.Metrics[1].Current != "42" {
+		t.Fatalf("metrics = %#v", hpa.Metrics)
+	}
+}
+
+func TestCommonPodControllerResolvesReplicaSets(t *testing.T) {
+	t.Parallel()
+	controller := true
+	deploymentUID := types.UID("deployment-uid")
+	owner := func(name string) []metav1.OwnerReference {
+		return []metav1.OwnerReference{{Kind: "ReplicaSet", Name: name, UID: types.UID(name), Controller: &controller}}
+	}
+	replicaSet := func(name string) *appsv1.ReplicaSet {
+		return &appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "team-a", OwnerReferences: []metav1.OwnerReference{{Kind: "Deployment", Name: "api", UID: deploymentUID, Controller: &controller}}}}
+	}
+	bundle := &k8sinfra.Bundle{Typed: fake.NewSimpleClientset(replicaSet("api-old"), replicaSet("api-new"))}
+	pods := []corev1.Pod{
+		{ObjectMeta: metav1.ObjectMeta{Name: "api-1", Namespace: "team-a", OwnerReferences: owner("api-old")}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "api-2", Namespace: "team-a", OwnerReferences: owner("api-new")}},
+	}
+	workload := commonPodController(context.Background(), bundle, pods)
+	if workload == nil || workload.Kind != "Deployment" || workload.Name != "api" {
+		t.Fatalf("workload = %#v", workload)
 	}
 }

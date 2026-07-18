@@ -36,6 +36,8 @@ type Client struct {
 	httpClient *http.Client
 }
 
+const maxAgentJSONResponseBytes = 16 << 20
+
 type RuntimeExecutionTask struct {
 	TaskID                   string    `json:"taskId"`
 	ApplicationID            string    `json:"applicationId"`
@@ -608,6 +610,17 @@ func (c *Client) ListReplicaSets(ctx context.Context, namespace string) ([]domai
 	return payload.Items, nil
 }
 
+func (c *Client) GetReplicaSetDetail(ctx context.Context, namespace, name string) (domainresource.ReplicaSetDetailView, error) {
+	var payload struct {
+		Data domainresource.ReplicaSetDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/workloads/replicasets/%s/detail?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ReplicaSetDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListConfigMaps(ctx context.Context, namespace string) ([]domainresource.ConfigMapView, error) {
 	var payload struct {
 		Items []domainresource.ConfigMapView `json:"items"`
@@ -685,6 +698,22 @@ func (c *Client) ListRoleBindings(ctx context.Context, namespace string) ([]doma
 	return payload.Items, nil
 }
 
+func (c *Client) ListRoleBindingsForServiceAccount(ctx context.Context, namespace, name string) ([]domainresource.RoleBindingView, error) {
+	var payload struct {
+		Items []domainresource.RoleBindingView `json:"items"`
+	}
+	values := url.Values{}
+	values.Set("namespace", namespace)
+	values.Set("subjectKind", "ServiceAccount")
+	values.Set("subjectName", name)
+	values.Set("subjectNamespace", namespace)
+	path := "/api/v1/platform/access-control/rolebindings?" + values.Encode()
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
 func (c *Client) GetRoleBindingDetail(ctx context.Context, namespace, name string) (domainresource.RoleBindingDetailView, error) {
 	var payload struct {
 		Data domainresource.RoleBindingDetailView `json:"data"`
@@ -707,6 +736,17 @@ func (c *Client) ListHorizontalPodAutoscalers(ctx context.Context, namespace str
 	return payload.Items, nil
 }
 
+func (c *Client) GetHorizontalPodAutoscalerDetail(ctx context.Context, namespace, name string) (domainresource.HorizontalPodAutoscalerDetailView, error) {
+	var payload struct {
+		Data domainresource.HorizontalPodAutoscalerDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/configuration/hpas/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.HorizontalPodAutoscalerDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListPodDisruptionBudgets(ctx context.Context, namespace string) ([]domainresource.PodDisruptionBudgetView, error) {
 	var payload struct {
 		Items []domainresource.PodDisruptionBudgetView `json:"items"`
@@ -716,6 +756,17 @@ func (c *Client) ListPodDisruptionBudgets(ctx context.Context, namespace string)
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetPodDisruptionBudgetDetail(ctx context.Context, namespace, name string) (domainresource.PodDisruptionBudgetDetailView, error) {
+	var payload struct {
+		Data domainresource.PodDisruptionBudgetDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/configuration/poddisruptionbudgets/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.PodDisruptionBudgetDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) GetCronJobDetail(ctx context.Context, namespace, name string) (domainresource.CronJobDetailView, error) {
@@ -836,6 +887,17 @@ func (c *Client) ListServices(ctx context.Context, namespace string) ([]domainre
 	return payload.Items, nil
 }
 
+func (c *Client) GetServiceDetail(ctx context.Context, namespace, name string) (domainresource.ServiceDetailView, error) {
+	var payload struct {
+		Data domainresource.ServiceDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/network/services/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ServiceDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListIngresses(ctx context.Context, namespace string) ([]domainresource.IngressView, error) {
 	var payload struct {
 		Items []domainresource.IngressView `json:"items"`
@@ -845,6 +907,17 @@ func (c *Client) ListIngresses(ctx context.Context, namespace string) ([]domainr
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetIngressDetail(ctx context.Context, namespace, name string) (domainresource.IngressDetailView, error) {
+	var payload struct {
+		Data domainresource.IngressDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/network/ingresses/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.IngressDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListEndpointSlices(ctx context.Context, namespace string) ([]domainresource.EndpointSliceView, error) {
@@ -858,6 +931,17 @@ func (c *Client) ListEndpointSlices(ctx context.Context, namespace string) ([]do
 	return payload.Items, nil
 }
 
+func (c *Client) GetEndpointSliceDetail(ctx context.Context, namespace, name string) (domainresource.EndpointSliceDetailView, error) {
+	var payload struct {
+		Data domainresource.EndpointSliceDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/network/endpointslices/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.EndpointSliceDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListNetworkPolicies(ctx context.Context, namespace string) ([]domainresource.NetworkPolicyView, error) {
 	var payload struct {
 		Items []domainresource.NetworkPolicyView `json:"items"`
@@ -869,6 +953,17 @@ func (c *Client) ListNetworkPolicies(ctx context.Context, namespace string) ([]d
 	return payload.Items, nil
 }
 
+func (c *Client) GetNetworkPolicyDetail(ctx context.Context, namespace, name string) (domainresource.NetworkPolicyDetailView, error) {
+	var payload struct {
+		Data domainresource.NetworkPolicyDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/network/networkpolicies/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.NetworkPolicyDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListGatewayClasses(ctx context.Context) ([]domainresource.GatewayClassView, error) {
 	var payload struct {
 		Items []domainresource.GatewayClassView `json:"items"`
@@ -877,6 +972,17 @@ func (c *Client) ListGatewayClasses(ctx context.Context) ([]domainresource.Gatew
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetGatewayClassDetail(ctx context.Context, name string) (domainresource.GatewayClassDetailView, error) {
+	var payload struct {
+		Data domainresource.GatewayClassDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/network/gatewayclasses/%s/detail", url.PathEscape(name))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.GatewayClassDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListGateways(ctx context.Context, namespace string) ([]domainresource.GatewayView, error) {
@@ -890,6 +996,17 @@ func (c *Client) ListGateways(ctx context.Context, namespace string) ([]domainre
 	return payload.Items, nil
 }
 
+func (c *Client) GetGatewayDetail(ctx context.Context, namespace, name string) (domainresource.GatewayDetailView, error) {
+	var payload struct {
+		Data domainresource.GatewayDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/network/gateways/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.GatewayDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListHTTPRoutes(ctx context.Context, namespace string) ([]domainresource.HTTPRouteView, error) {
 	var payload struct {
 		Items []domainresource.HTTPRouteView `json:"items"`
@@ -899,6 +1016,17 @@ func (c *Client) ListHTTPRoutes(ctx context.Context, namespace string) ([]domain
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetHTTPRouteDetail(ctx context.Context, namespace, name string) (domainresource.HTTPRouteDetailView, error) {
+	var payload struct {
+		Data domainresource.HTTPRouteDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/network/httproutes/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.HTTPRouteDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListBackendTLSPolicies(ctx context.Context, namespace string) ([]domainresource.BackendTLSPolicyView, error) {
@@ -912,6 +1040,17 @@ func (c *Client) ListBackendTLSPolicies(ctx context.Context, namespace string) (
 	return payload.Items, nil
 }
 
+func (c *Client) GetBackendTLSPolicyDetail(ctx context.Context, namespace, name string) (domainresource.BackendTLSPolicyDetailView, error) {
+	var payload struct {
+		Data domainresource.BackendTLSPolicyDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/network/backendtlspolicies/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.BackendTLSPolicyDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListGRPCRoutes(ctx context.Context, namespace string) ([]domainresource.GRPCRouteView, error) {
 	var payload struct {
 		Items []domainresource.GRPCRouteView `json:"items"`
@@ -921,6 +1060,17 @@ func (c *Client) ListGRPCRoutes(ctx context.Context, namespace string) ([]domain
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetGRPCRouteDetail(ctx context.Context, namespace, name string) (domainresource.GRPCRouteDetailView, error) {
+	var payload struct {
+		Data domainresource.GRPCRouteDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/network/grpcroutes/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.GRPCRouteDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListReferenceGrants(ctx context.Context, namespace string) ([]domainresource.ReferenceGrantView, error) {
@@ -934,6 +1084,17 @@ func (c *Client) ListReferenceGrants(ctx context.Context, namespace string) ([]d
 	return payload.Items, nil
 }
 
+func (c *Client) GetReferenceGrantDetail(ctx context.Context, namespace, name string) (domainresource.ReferenceGrantDetailView, error) {
+	var payload struct {
+		Data domainresource.ReferenceGrantDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/network/referencegrants/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ReferenceGrantDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListPersistentVolumeClaims(ctx context.Context, namespace string) ([]domainresource.PersistentVolumeClaimView, error) {
 	var payload struct {
 		Items []domainresource.PersistentVolumeClaimView `json:"items"`
@@ -943,6 +1104,17 @@ func (c *Client) ListPersistentVolumeClaims(ctx context.Context, namespace strin
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetPersistentVolumeClaimDetail(ctx context.Context, namespace, name string) (domainresource.PersistentVolumeClaimDetailView, error) {
+	var payload struct {
+		Data domainresource.PersistentVolumeClaimDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/storage/persistentvolumeclaims/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.PersistentVolumeClaimDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListPersistentVolumes(ctx context.Context) ([]domainresource.PersistentVolumeView, error) {
@@ -955,6 +1127,16 @@ func (c *Client) ListPersistentVolumes(ctx context.Context) ([]domainresource.Pe
 	return payload.Items, nil
 }
 
+func (c *Client) GetPersistentVolumeDetail(ctx context.Context, name string) (domainresource.PersistentVolumeDetailView, error) {
+	var payload struct {
+		Data domainresource.PersistentVolumeDetailView `json:"data"`
+	}
+	if err := c.request(ctx, http.MethodGet, fmt.Sprintf("/api/v1/platform/storage/persistentvolumes/%s/detail", url.PathEscape(name)), nil, &payload); err != nil {
+		return domainresource.PersistentVolumeDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListStorageClasses(ctx context.Context) ([]domainresource.StorageClassView, error) {
 	var payload struct {
 		Items []domainresource.StorageClassView `json:"items"`
@@ -965,6 +1147,16 @@ func (c *Client) ListStorageClasses(ctx context.Context) ([]domainresource.Stora
 	return payload.Items, nil
 }
 
+func (c *Client) GetStorageClassDetail(ctx context.Context, name string) (domainresource.StorageClassDetailView, error) {
+	var payload struct {
+		Data domainresource.StorageClassDetailView `json:"data"`
+	}
+	if err := c.request(ctx, http.MethodGet, fmt.Sprintf("/api/v1/platform/storage/storageclasses/%s/detail", url.PathEscape(name)), nil, &payload); err != nil {
+		return domainresource.StorageClassDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListIngressClasses(ctx context.Context) ([]domainresource.IngressClassView, error) {
 	var payload struct {
 		Items []domainresource.IngressClassView `json:"items"`
@@ -973,6 +1165,17 @@ func (c *Client) ListIngressClasses(ctx context.Context) ([]domainresource.Ingre
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetIngressClassDetail(ctx context.Context, name string) (domainresource.IngressClassDetailView, error) {
+	var payload struct {
+		Data domainresource.IngressClassDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/network/ingressclasses/%s/detail", url.PathEscape(name))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.IngressClassDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListPriorityClasses(ctx context.Context) ([]domainresource.PriorityClassView, error) {
@@ -1026,6 +1229,21 @@ func (c *Client) ListClusterRoleBindings(ctx context.Context) ([]domainresource.
 	return payload.Items, nil
 }
 
+func (c *Client) ListClusterRoleBindingsForServiceAccount(ctx context.Context, namespace, name string) ([]domainresource.ClusterRoleBindingView, error) {
+	var payload struct {
+		Items []domainresource.ClusterRoleBindingView `json:"items"`
+	}
+	values := url.Values{}
+	values.Set("subjectKind", "ServiceAccount")
+	values.Set("subjectName", name)
+	values.Set("subjectNamespace", namespace)
+	path := "/api/v1/platform/access-control/clusterrolebindings?" + values.Encode()
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
 func (c *Client) GetClusterRoleBindingDetail(ctx context.Context, name string) (domainresource.ClusterRoleBindingDetailView, error) {
 	var payload struct {
 		Data domainresource.ClusterRoleBindingDetailView `json:"data"`
@@ -1047,6 +1265,17 @@ func (c *Client) ListMutatingWebhookConfigurations(ctx context.Context) ([]domai
 	return payload.Items, nil
 }
 
+func (c *Client) GetMutatingWebhookConfigurationDetail(ctx context.Context, name string) (domainresource.AdmissionWebhookConfigurationDetailView, error) {
+	var payload struct {
+		Data domainresource.AdmissionWebhookConfigurationDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/configuration/mutatingwebhookconfigurations/%s/detail", url.PathEscape(name))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.AdmissionWebhookConfigurationDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListValidatingWebhookConfigurations(ctx context.Context) ([]domainresource.ValidatingWebhookConfigurationView, error) {
 	var payload struct {
 		Items []domainresource.ValidatingWebhookConfigurationView `json:"items"`
@@ -1055,6 +1284,17 @@ func (c *Client) ListValidatingWebhookConfigurations(ctx context.Context) ([]dom
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetValidatingWebhookConfigurationDetail(ctx context.Context, name string) (domainresource.AdmissionWebhookConfigurationDetailView, error) {
+	var payload struct {
+		Data domainresource.AdmissionWebhookConfigurationDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/configuration/validatingwebhookconfigurations/%s/detail", url.PathEscape(name))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.AdmissionWebhookConfigurationDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListResourceQuotas(ctx context.Context, namespace string) ([]domainresource.ResourceQuotaView, error) {
@@ -1075,6 +1315,17 @@ func (c *Client) ListResourceQuotas(ctx context.Context, namespace string) ([]do
 	return payload.Items, nil
 }
 
+func (c *Client) GetResourceQuotaDetail(ctx context.Context, namespace, name string) (domainresource.ResourceQuotaDetailView, error) {
+	var payload struct {
+		Data domainresource.ResourceQuotaDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/configuration/resourcequotas/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ResourceQuotaDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListLimitRanges(ctx context.Context, namespace string) ([]domainresource.LimitRangeView, error) {
 	var payload struct {
 		Items []domainresource.LimitRangeView `json:"items"`
@@ -1091,6 +1342,17 @@ func (c *Client) ListLimitRanges(ctx context.Context, namespace string) ([]domai
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetLimitRangeDetail(ctx context.Context, namespace, name string) (domainresource.LimitRangeDetailView, error) {
+	var payload struct {
+		Data domainresource.LimitRangeDetailView `json:"data"`
+	}
+	path := withNamespace(fmt.Sprintf("/api/v1/platform/configuration/limitranges/%s/detail", url.PathEscape(name)), namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.LimitRangeDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListLeases(ctx context.Context, namespace string) ([]domainresource.LeaseView, error) {
@@ -1127,6 +1389,17 @@ func (c *Client) ListReplicationControllers(ctx context.Context, namespace strin
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetReplicationControllerDetail(ctx context.Context, namespace, name string) (domainresource.ReplicationControllerDetailView, error) {
+	var payload struct {
+		Data domainresource.ReplicationControllerDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/workloads/replicationcontrollers/%s/detail?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ReplicationControllerDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListClusterEvents(ctx context.Context, namespace string, limit int) ([]domainresource.ClusterEventView, error) {
@@ -1462,7 +1735,14 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 	if out == nil {
 		return nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	response, err := io.ReadAll(io.LimitReader(resp.Body, maxAgentJSONResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read agent response: %w", err)
+	}
+	if len(response) > maxAgentJSONResponseBytes {
+		return fmt.Errorf("agent response exceeds %d byte limit", maxAgentJSONResponseBytes)
+	}
+	if err := json.Unmarshal(response, out); err != nil {
 		return fmt.Errorf("decode agent response: %w", err)
 	}
 	return nil

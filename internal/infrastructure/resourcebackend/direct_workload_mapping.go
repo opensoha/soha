@@ -2,6 +2,7 @@ package resourcebackend
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -224,6 +225,37 @@ func mapReplicaSet(item appsv1.ReplicaSet) domainresource.ReplicaSetView {
 	}
 }
 
+func mapReplicaSetDetail(item appsv1.ReplicaSet) domainresource.ReplicaSetDetailView {
+	desired := int32(0)
+	if item.Spec.Replicas != nil {
+		desired = *item.Spec.Replicas
+	}
+	selector := map[string]string(nil)
+	if item.Spec.Selector != nil {
+		selector = item.Spec.Selector.MatchLabels
+	}
+	return domainresource.ReplicaSetDetailView{
+		Name: item.Name, Namespace: item.Namespace, DesiredReplicas: desired,
+		ReadyReplicas: item.Status.ReadyReplicas, AvailableReplicas: item.Status.AvailableReplicas,
+		CreatedAt: item.CreationTimestamp.Format(time.RFC3339), Labels: item.Labels,
+		Annotations: item.Annotations, Selector: selector,
+	}
+}
+
+func mapReplicationControllerDetail(item corev1.ReplicationController) domainresource.ReplicationControllerDetailView {
+	desired := int32(0)
+	if item.Spec.Replicas != nil {
+		desired = *item.Spec.Replicas
+	}
+	return domainresource.ReplicationControllerDetailView{
+		Name: item.Name, Namespace: item.Namespace, DesiredReplicas: desired,
+		CurrentReplicas: item.Status.Replicas, ReadyReplicas: item.Status.ReadyReplicas,
+		AvailableReplicas: item.Status.AvailableReplicas,
+		CreatedAt:         item.CreationTimestamp.Format(time.RFC3339), Labels: item.Labels,
+		Annotations: item.Annotations, Selector: item.Spec.Selector,
+	}
+}
+
 func mapHorizontalPodAutoscaler(item autoscalingv2.HorizontalPodAutoscaler) domainresource.HorizontalPodAutoscalerView {
 	minReplicas := int32(1)
 	if item.Spec.MinReplicas != nil {
@@ -236,6 +268,139 @@ func mapHorizontalPodAutoscaler(item autoscalingv2.HorizontalPodAutoscaler) doma
 		CurrentReplicas: item.Status.CurrentReplicas, DesiredReplicas: item.Status.DesiredReplicas,
 		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
 	}
+}
+
+func mapHorizontalPodAutoscalerDetail(item autoscalingv2.HorizontalPodAutoscaler) domainresource.HorizontalPodAutoscalerDetailView {
+	statuses := make(map[string]autoscalingv2.MetricStatus, len(item.Status.CurrentMetrics))
+	for _, status := range item.Status.CurrentMetrics {
+		statuses[metricStatusKey(status)] = status
+	}
+	metrics := make([]domainresource.HorizontalPodAutoscalerMetricView, 0, len(item.Spec.Metrics))
+	for _, spec := range item.Spec.Metrics {
+		metric := mapHorizontalPodAutoscalerMetric(spec)
+		if status, ok := statuses[metricSpecKey(spec)]; ok {
+			metric.Current = metricStatusValue(status)
+		}
+		metrics = append(metrics, metric)
+	}
+	conditions := make([]domainresource.WorkloadConditionView, 0, len(item.Status.Conditions))
+	for _, condition := range item.Status.Conditions {
+		conditions = append(conditions, domainresource.WorkloadConditionView{Type: string(condition.Type), Status: string(condition.Status), Reason: condition.Reason, Message: condition.Message, LastTransitionTime: condition.LastTransitionTime.Format(time.RFC3339)})
+	}
+	return domainresource.HorizontalPodAutoscalerDetailView{
+		HorizontalPodAutoscalerView: mapHorizontalPodAutoscaler(item), Labels: cloneMap(item.Labels), Annotations: cloneMap(item.Annotations),
+		CreatedAt: item.CreationTimestamp.Format(time.RFC3339), Metrics: metrics, Conditions: conditions,
+	}
+}
+
+func mapHorizontalPodAutoscalerMetric(spec autoscalingv2.MetricSpec) domainresource.HorizontalPodAutoscalerMetricView {
+	view := domainresource.HorizontalPodAutoscalerMetricView{Type: string(spec.Type)}
+	switch spec.Type {
+	case autoscalingv2.ResourceMetricSourceType:
+		if spec.Resource != nil {
+			view.Name, view.Target = string(spec.Resource.Name), metricTargetValue(spec.Resource.Target)
+		}
+	case autoscalingv2.ContainerResourceMetricSourceType:
+		if spec.ContainerResource != nil {
+			view.Name = spec.ContainerResource.Container + "/" + string(spec.ContainerResource.Name)
+			view.Target = metricTargetValue(spec.ContainerResource.Target)
+		}
+	case autoscalingv2.PodsMetricSourceType:
+		if spec.Pods != nil {
+			view.Name, view.Target = spec.Pods.Metric.Name, metricTargetValue(spec.Pods.Target)
+		}
+	case autoscalingv2.ObjectMetricSourceType:
+		if spec.Object != nil {
+			view.Name = spec.Object.DescribedObject.Kind + "/" + spec.Object.DescribedObject.Name + ":" + spec.Object.Metric.Name
+			view.Target = metricTargetValue(spec.Object.Target)
+		}
+	case autoscalingv2.ExternalMetricSourceType:
+		if spec.External != nil {
+			view.Name, view.Target = spec.External.Metric.Name, metricTargetValue(spec.External.Target)
+		}
+	}
+	return view
+}
+
+func metricTargetValue(target autoscalingv2.MetricTarget) string {
+	parts := []string{string(target.Type)}
+	if target.Value != nil {
+		parts = append(parts, target.Value.String())
+	}
+	if target.AverageValue != nil {
+		parts = append(parts, target.AverageValue.String())
+	}
+	if target.AverageUtilization != nil {
+		parts = append(parts, fmt.Sprintf("%d%%", *target.AverageUtilization))
+	}
+	return strings.Join(parts, " ")
+}
+
+func metricSpecKey(spec autoscalingv2.MetricSpec) string {
+	return string(spec.Type) + "/" + mapHorizontalPodAutoscalerMetric(spec).Name
+}
+
+func metricStatusKey(status autoscalingv2.MetricStatus) string {
+	name := ""
+	switch status.Type {
+	case autoscalingv2.ResourceMetricSourceType:
+		if status.Resource != nil {
+			name = string(status.Resource.Name)
+		}
+	case autoscalingv2.ContainerResourceMetricSourceType:
+		if status.ContainerResource != nil {
+			name = status.ContainerResource.Container + "/" + string(status.ContainerResource.Name)
+		}
+	case autoscalingv2.PodsMetricSourceType:
+		if status.Pods != nil {
+			name = status.Pods.Metric.Name
+		}
+	case autoscalingv2.ObjectMetricSourceType:
+		if status.Object != nil {
+			name = status.Object.DescribedObject.Kind + "/" + status.Object.DescribedObject.Name + ":" + status.Object.Metric.Name
+		}
+	case autoscalingv2.ExternalMetricSourceType:
+		if status.External != nil {
+			name = status.External.Metric.Name
+		}
+	}
+	return string(status.Type) + "/" + name
+}
+
+func metricStatusValue(status autoscalingv2.MetricStatus) string {
+	current := autoscalingv2.MetricValueStatus{}
+	switch status.Type {
+	case autoscalingv2.ResourceMetricSourceType:
+		if status.Resource != nil {
+			current = status.Resource.Current
+		}
+	case autoscalingv2.ContainerResourceMetricSourceType:
+		if status.ContainerResource != nil {
+			current = status.ContainerResource.Current
+		}
+	case autoscalingv2.PodsMetricSourceType:
+		if status.Pods != nil {
+			current = status.Pods.Current
+		}
+	case autoscalingv2.ObjectMetricSourceType:
+		if status.Object != nil {
+			current = status.Object.Current
+		}
+	case autoscalingv2.ExternalMetricSourceType:
+		if status.External != nil {
+			current = status.External.Current
+		}
+	}
+	if current.Value != nil {
+		return current.Value.String()
+	}
+	if current.AverageValue != nil {
+		return current.AverageValue.String()
+	}
+	if current.AverageUtilization != nil {
+		return fmt.Sprintf("%d%%", *current.AverageUtilization)
+	}
+	return ""
 }
 
 func mapPodDisruptionBudget(item policyv1.PodDisruptionBudget) domainresource.PodDisruptionBudgetView {
@@ -251,5 +416,16 @@ func mapPodDisruptionBudget(item policyv1.PodDisruptionBudget) domainresource.Po
 		MaxUnavailable: maxUnavailable, CurrentHealthy: item.Status.CurrentHealthy,
 		DesiredHealthy: item.Status.DesiredHealthy, DisruptionsAllowed: item.Status.DisruptionsAllowed,
 		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapPodDisruptionBudgetDetail(item policyv1.PodDisruptionBudget) domainresource.PodDisruptionBudgetDetailView {
+	conditions := make([]domainresource.WorkloadConditionView, 0, len(item.Status.Conditions))
+	for _, condition := range item.Status.Conditions {
+		conditions = append(conditions, domainresource.WorkloadConditionView{Type: string(condition.Type), Status: string(condition.Status), Reason: condition.Reason, Message: condition.Message, LastTransitionTime: condition.LastTransitionTime.Format(time.RFC3339)})
+	}
+	return domainresource.PodDisruptionBudgetDetailView{
+		PodDisruptionBudgetView: mapPodDisruptionBudget(item), Labels: cloneMap(item.Labels), Annotations: cloneMap(item.Annotations),
+		CreatedAt: item.CreationTimestamp.Format(time.RFC3339), Conditions: conditions,
 	}
 }

@@ -15,6 +15,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/yaml"
@@ -25,7 +26,7 @@ func (d *Direct) ListPods(ctx context.Context, clusterID, namespace string) ([]d
 		pods   []corev1.Pod
 		source string
 	)
-	if shouldUseInformerCache(namespace) && d.cache != nil {
+	if d.cache != nil {
 		if items, err := d.cache.ListPods(clusterID, namespace); err == nil {
 			pods = items
 			source = "cache"
@@ -52,6 +53,23 @@ func (d *Direct) ListPods(ctx context.Context, clusterID, namespace string) ([]d
 		views = append(views, mapPodView(pod))
 	}
 	return views, source, nil
+}
+
+func (d *Direct) ListPodsBySelector(ctx context.Context, clusterID, namespace string, selector map[string]string) ([]domainresource.PodView, error) {
+	if len(selector) == 0 {
+		return nil, nil
+	}
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.CoreV1().Pods(namespace).List(queryCtx, metav1.ListOptions{LabelSelector: labels.Set(selector).AsSelector().String()})
+	if err != nil {
+		return nil, err
+	}
+	return mapResourceItems(items.Items, mapPodView), nil
 }
 
 func (d *Direct) GetPodDetail(ctx context.Context, clusterID, namespace, name string) (domainresource.PodDetailView, error) {
@@ -256,22 +274,36 @@ func (d *Direct) buildPodDetail(ctx context.Context, clusterID string, pod corev
 }
 
 func buildPodContainers(pod corev1.Pod) []domainresource.WorkloadContainerView {
-	statuses := make(map[string]corev1.ContainerStatus, len(pod.Status.ContainerStatuses))
-	for _, status := range pod.Status.ContainerStatuses {
-		statuses[status.Name] = status
+	build := func(specs []corev1.Container, statuses []corev1.ContainerStatus, role string) []domainresource.WorkloadContainerView {
+		statusMap := make(map[string]corev1.ContainerStatus, len(statuses))
+		for _, status := range statuses {
+			statusMap[status.Name] = status
+		}
+		views := make([]domainresource.WorkloadContainerView, 0, len(specs))
+		for index, container := range specs {
+			status := statusMap[container.Name]
+			state, lastState := podContainerState(status.State), podContainerState(status.LastTerminationState)
+			startedAt, reason, message := podContainerStatusDetails(status.State)
+			containerRole := role
+			if role == "init" && container.RestartPolicy != nil && *container.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+				containerRole = "sidecar"
+			}
+			if containerRole == "" {
+				containerRole = "sidecar"
+				if index == 0 {
+					containerRole = "main"
+				}
+			}
+			views = append(views, domainresource.WorkloadContainerView{
+				Name: container.Name, Image: container.Image, Role: containerRole, Ready: status.Ready, RestartCount: status.RestartCount,
+				State: state, LastState: lastState, ContainerID: strings.TrimSpace(status.ContainerID),
+				StartedAt: startedAt, Reason: reason, Message: message,
+			})
+		}
+		return views
 	}
-	containers := make([]domainresource.WorkloadContainerView, 0, len(pod.Spec.Containers))
-	for _, container := range pod.Spec.Containers {
-		status := statuses[container.Name]
-		state, lastState := podContainerState(status.State), podContainerState(status.LastTerminationState)
-		startedAt, reason, message := podContainerStatusDetails(status.State)
-		containers = append(containers, domainresource.WorkloadContainerView{
-			Name: container.Name, Image: container.Image, Ready: status.Ready, RestartCount: status.RestartCount,
-			State: state, LastState: lastState, ContainerID: strings.TrimSpace(status.ContainerID),
-			StartedAt: startedAt, Reason: reason, Message: message,
-		})
-	}
-	return containers
+	containers := build(pod.Spec.InitContainers, pod.Status.InitContainerStatuses, "init")
+	return append(containers, build(pod.Spec.Containers, pod.Status.ContainerStatuses, "")...)
 }
 
 func podContainerStatusDetails(state corev1.ContainerState) (string, string, string) {
@@ -616,22 +648,43 @@ func (d *Direct) addPodWorkloadRelations(ctx context.Context, clusterID string, 
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	replicaSets, err := bundle.Typed.AppsV1().ReplicaSets(pod.Namespace).List(queryCtx, metav1.ListOptions{})
+	if replicaSetName := podOwnerName(pod.OwnerReferences, "ReplicaSet"); replicaSetName != "" {
+		replicaSet, getErr := bundle.Typed.AppsV1().ReplicaSets(pod.Namespace).Get(queryCtx, replicaSetName, metav1.GetOptions{})
+		if getErr == nil {
+			addReplicaSetRelations(*replicaSet, add)
+			return
+		}
+	}
+	selector := labels.Set(pod.Labels).AsSelector().String()
+	replicaSets, err := bundle.Typed.AppsV1().ReplicaSets(pod.Namespace).List(queryCtx, metav1.ListOptions{LabelSelector: selector})
 	if err == nil {
 		for _, replicaSet := range replicaSets.Items {
 			if selectorMatchesLabels(replicaSet.Spec.Selector.MatchLabels, pod.Labels) {
-				add("ReplicaSet", replicaSet.Namespace, replicaSet.Name, "selector-match")
-				for _, owner := range replicaSet.OwnerReferences {
-					if owner.Kind == "Deployment" {
-						add("Deployment", replicaSet.Namespace, owner.Name, "managed-by-replicaset", fmt.Sprintf("ReplicaSet: %s", replicaSet.Name))
-					}
-				}
+				addReplicaSetRelations(replicaSet, add)
 			}
 		}
 	}
-	deployments, err := bundle.Typed.AppsV1().Deployments(pod.Namespace).List(queryCtx, metav1.ListOptions{})
+	deployments, err := bundle.Typed.AppsV1().Deployments(pod.Namespace).List(queryCtx, metav1.ListOptions{LabelSelector: selector})
 	if err == nil {
 		addMatchingDeployments(deployments.Items, pod.Labels, add)
+	}
+}
+
+func podOwnerName(owners []metav1.OwnerReference, kind string) string {
+	for _, owner := range owners {
+		if owner.Kind == kind {
+			return owner.Name
+		}
+	}
+	return ""
+}
+
+func addReplicaSetRelations(replicaSet appsv1.ReplicaSet, add func(string, string, string, string, ...string)) {
+	add("ReplicaSet", replicaSet.Namespace, replicaSet.Name, "selector-match")
+	for _, owner := range replicaSet.OwnerReferences {
+		if owner.Kind == "Deployment" {
+			add("Deployment", replicaSet.Namespace, owner.Name, "managed-by-replicaset", fmt.Sprintf("ReplicaSet: %s", replicaSet.Name))
+		}
 	}
 }
 

@@ -99,7 +99,8 @@ func (s *ResourceCreation) preflightDocument(ctx context.Context, principal doma
 	if err != nil {
 		return failCreateDocument(document, createErrorCode(err), err)
 	}
-	connection, decision, err := s.authorize(ctx, principal, clusterID, manifest.Ref.Namespace, manifest.Ref.Kind, domainaccess.ActionCreate)
+	resourceGroup := resourceGroupForResolvedResource(manifest.Group, manifest.Resource, manifest.Ref.Kind)
+	connection, decision, err := s.authorizeResourceGroup(ctx, principal, clusterID, manifest.Ref.Namespace, resourceGroup, manifest.Ref.Kind, domainaccess.ActionCreate)
 	if connection.Summary.ID != "" {
 		document.Capability = resourceCreateCapability(connection)
 	}
@@ -109,7 +110,7 @@ func (s *ResourceCreation) preflightDocument(ctx context.Context, principal doma
 	}
 	document.Authorization = domainresource.ResourceCreateCheck{
 		Allowed: decision.Allowed, Reason: decision.Reason, AllowedActions: stringifyActions(decision.AllowedActions),
-		ClusterIDs: []string{connection.Summary.ID}, Namespaces: []string{}, ResourceGroups: []string{manifest.Group}, ResourceKinds: []string{manifest.Ref.Kind},
+		ClusterIDs: []string{connection.Summary.ID}, Namespaces: []string{}, ResourceGroups: []string{resourceGroup}, ResourceKinds: []string{manifest.Ref.Kind},
 	}
 	if decision.ResourceScope != nil {
 		document.Authorization.ClusterIDs = append([]string(nil), decision.ResourceScope.Clusters...)
@@ -158,6 +159,11 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	if err != nil {
 		return domainresource.ResourceCreateExecution{}, err
 	}
+	if existing, found, err := s.findExistingCreateBatch(ctx, principal, clusterID, request); err != nil {
+		return domainresource.ResourceCreateExecution{}, err
+	} else if found {
+		return existing, nil
+	}
 	preflight, err := s.PreflightCreate(ctx, principal, clusterID, request)
 	if err != nil {
 		return domainresource.ResourceCreateExecution{}, err
@@ -193,9 +199,7 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 		operationID = claim.Batch.ID
 		result.OperationID = operationID
 	}
-	if err := s.recordCreateBatch(ctx, principal, clusterID, request.RequestID, result, "running"); err != nil {
-		return domainresource.ResourceCreateExecution{}, fmt.Errorf("record resource creation batch: %w", err)
-	}
+	_ = s.recordCreateBatch(ctx, principal, clusterID, request.RequestID, result, "running")
 	result.Status = "succeeded"
 	for index, manifest := range manifests {
 		created, createErr := s.createResolvedManifest(ctx, connection, operationID, clusterID, manifest)
@@ -225,10 +229,26 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	if persistErr := s.completeCreateBatch(ctx, result.OperationID, result.Status); persistErr != nil {
 		return result, fmt.Errorf("complete resource creation batch: %w", persistErr)
 	}
-	if err := s.recordCreateBatch(ctx, principal, clusterID, request.RequestID, result, result.Status); err != nil {
-		return result, fmt.Errorf("record resource creation result: %w", err)
-	}
+	_ = s.recordCreateBatch(ctx, principal, clusterID, request.RequestID, result, result.Status)
 	return result, nil
+}
+
+func (s *ResourceCreation) findExistingCreateBatch(ctx context.Context, principal domainidentity.Principal, clusterID string, request domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, bool, error) {
+	if request.RequestID == "" || s.batches == nil {
+		return domainresource.ResourceCreateExecution{}, false, nil
+	}
+	batch, err := s.batches.GetByIdentity(ctx, principal.UserID, clusterID, request.RequestID)
+	if err != nil {
+		if errors.Is(err, apperrors.ErrNotFound) {
+			return domainresource.ResourceCreateExecution{}, false, nil
+		}
+		return domainresource.ResourceCreateExecution{}, false, fmt.Errorf("find resource creation batch: %w", err)
+	}
+	contentHash := hashResourceCreateRequest(request)
+	if batch.ContentHash != contentHash {
+		return domainresource.ResourceCreateExecution{}, false, fmt.Errorf("%w: idempotency key is already bound to different content", apperrors.ErrConflict)
+	}
+	return executionFromResourceCreateBatch(batch), true, nil
 }
 
 func (s *ResourceCreation) resolveCreateManifests(ctx context.Context, clusterID, content string) (domaincluster.Connection, []domainresource.ResolvedCreateManifest, error) {
@@ -299,6 +319,7 @@ func preflightRejectionError(preflight domainresource.ResourceCreatePreflight) e
 
 func normalizeResourceCreateRequest(request domainresource.ResourceCreateRequest) (domainresource.ResourceCreateRequest, error) {
 	request.DefaultNamespace = strings.TrimSpace(request.DefaultNamespace)
+	request.ResourceGroup = strings.TrimSpace(request.ResourceGroup)
 	request.ExpectedAPIVersion = strings.TrimSpace(request.ExpectedAPIVersion)
 	request.ExpectedKind = strings.TrimSpace(request.ExpectedKind)
 	request.RequestID = strings.TrimSpace(request.RequestID)
@@ -323,6 +344,10 @@ func resolveManifestTarget(manifest *domainresource.ResolvedCreateManifest, requ
 	}
 	if request.ExpectedAPIVersion != "" && request.ExpectedAPIVersion != manifest.Ref.APIVersion {
 		return nil, fmt.Errorf("%w: resource_kind_mismatch: manifest apiVersion %s does not match %s", apperrors.ErrInvalidArgument, manifest.Ref.APIVersion, request.ExpectedAPIVersion)
+	}
+	resolvedGroup := resourceGroupForResolvedResource(manifest.Group, manifest.Resource, manifest.Ref.Kind)
+	if request.ResourceGroup != "" && !strings.EqualFold(request.ResourceGroup, resolvedGroup) {
+		return nil, fmt.Errorf("%w: resource_kind_mismatch: manifest resource group %s does not match %s", apperrors.ErrInvalidArgument, resolvedGroup, request.ResourceGroup)
 	}
 	explicitNamespace := strings.TrimSpace(manifest.Ref.Namespace)
 	if !manifest.Ref.Namespaced {

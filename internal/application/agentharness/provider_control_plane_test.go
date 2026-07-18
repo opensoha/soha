@@ -173,6 +173,96 @@ func TestProviderControlPlaneAcknowledgementsAreIdempotentAndRejectFutureRevisio
 	}
 }
 
+func TestProviderControlPlaneAcknowledgementNormalizesRunnerStatus(t *testing.T) {
+	service, err := NewProviderControlPlane(
+		NewProviderReconciler(&mutableExtensionSource{}),
+		providerPermissionStub{want: appaccess.PermAIAgentProvidersView},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixedNow := time.Date(2026, 7, 17, 8, 30, 0, 0, time.UTC)
+	service.now = func() time.Time { return fixedNow }
+	statusObservedAt := time.Date(2026, 7, 17, 16, 0, 0, 0, time.FixedZone("UTC+8", 8*60*60))
+
+	acknowledgement, err := service.Acknowledge(RegistryAcknowledgement{
+		RunnerID:     " runner-1 ",
+		Revision:     1,
+		RolloutState: " active ",
+		Reason:       " ready ",
+		ConformanceChecks: []ProviderConformanceResult{{
+			ProviderID: " hermes ",
+			Status:     " passed ",
+			Reason:     " compatible ",
+		}},
+		ProviderStatuses: []RunnerProviderStatus{{
+			ProviderID:      " hermes ",
+			ProviderVersion: " 1.0.0 ",
+			Health:          " healthy ",
+			Reason:          " ready ",
+			ObservedAt:      statusObservedAt,
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acknowledgement.RunnerID != "runner-1" || acknowledgement.RolloutState != "active" || acknowledgement.Reason != "ready" {
+		t.Fatalf("acknowledgement was not normalized: %#v", acknowledgement)
+	}
+	if !acknowledgement.ObservedAt.Equal(fixedNow) || acknowledgement.ObservedAt.Location() != time.UTC {
+		t.Fatalf("observedAt = %v, want %v in UTC", acknowledgement.ObservedAt, fixedNow)
+	}
+	check := acknowledgement.ConformanceChecks[0]
+	if check.ProviderID != "hermes" || check.Status != "passed" || check.Reason != "compatible" {
+		t.Fatalf("conformance check was not normalized: %#v", check)
+	}
+	status := acknowledgement.ProviderStatuses[0]
+	if status.ProviderID != "hermes" || status.ProviderVersion != "1.0.0" || status.Health != "healthy" || status.Reason != "ready" {
+		t.Fatalf("provider status was not normalized: %#v", status)
+	}
+	if !status.ObservedAt.Equal(statusObservedAt) || status.ObservedAt.Location() != time.UTC {
+		t.Fatalf("provider observedAt = %v, want %v in UTC", status.ObservedAt, statusObservedAt)
+	}
+}
+
+func TestProviderControlPlaneAcknowledgementRejectsInvalidNestedStatus(t *testing.T) {
+	service, err := NewProviderControlPlane(
+		NewProviderReconciler(&mutableExtensionSource{}),
+		providerPermissionStub{want: appaccess.PermAIAgentProvidersView},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name  string
+		input RegistryAcknowledgement
+	}{
+		{
+			name: "conformance status",
+			input: RegistryAcknowledgement{
+				RunnerID:          "runner-1",
+				Revision:          1,
+				ConformanceChecks: []ProviderConformanceResult{{ProviderID: "hermes", Status: "unknown"}},
+			},
+		},
+		{
+			name: "provider health",
+			input: RegistryAcknowledgement{
+				RunnerID:         "runner-1",
+				Revision:         1,
+				ProviderStatuses: []RunnerProviderStatus{{ProviderID: "hermes", Health: "degraded"}},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := service.Acknowledge(test.input); err == nil {
+				t.Fatal("Acknowledge() error = nil")
+			}
+		})
+	}
+}
+
 func TestProviderControlPlaneSupportsConcurrentCatalogAndStatusReads(t *testing.T) {
 	source := &mutableExtensionSource{}
 	source.replace([]domainplugin.ExtensionRecord{providerExtension("1.0.0")})

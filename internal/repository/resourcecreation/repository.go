@@ -82,6 +82,16 @@ func (r *Repository) Get(ctx context.Context, batchID string) (domainresource.Re
 	return getByID(ctx, r.db, strings.TrimSpace(batchID))
 }
 
+func (r *Repository) GetByIdentity(ctx context.Context, actorID, clusterID, idempotencyKey string) (domainresource.ResourceCreateBatch, error) {
+	return getByIdentity(
+		ctx,
+		r.db,
+		strings.TrimSpace(actorID),
+		strings.TrimSpace(clusterID),
+		strings.TrimSpace(idempotencyKey),
+	)
+}
+
 func (r *Repository) UpdateDocument(ctx context.Context, batchID string, document domainresource.ResourceCreateExecutionDocument) error {
 	batchID = strings.TrimSpace(batchID)
 	if batchID == "" || (document.Status != "succeeded" && document.Status != "failed") {

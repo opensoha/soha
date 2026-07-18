@@ -38,7 +38,14 @@ func (p *DatabaseProjector) Apply(ctx context.Context, connection domain.Connect
 				return err
 			}
 		}
-		return applyProjections(tx, connection.ID, plan.Organizations, plan.People, plan.Memberships, policy.SyncPeople, p.now().UTC())
+		return applyProjections(tx, projectionBatch{
+			connectionID:  connection.ID,
+			organizations: plan.Organizations,
+			people:        plan.People,
+			memberships:   plan.Memberships,
+			includePeople: policy.SyncPeople,
+			now:           p.now().UTC(),
+		})
 	})
 }
 

@@ -107,8 +107,12 @@ type BatchWorkloadAgent interface {
 
 type WorkloadInventoryAgent interface {
 	ListReplicaSets(context.Context, string) ([]domainresource.ReplicaSetView, error)
+	GetReplicaSetDetail(context.Context, string, string) (domainresource.ReplicaSetDetailView, error)
+	GetReplicationControllerDetail(context.Context, string, string) (domainresource.ReplicationControllerDetailView, error)
 	ListHorizontalPodAutoscalers(context.Context, string) ([]domainresource.HorizontalPodAutoscalerView, error)
+	GetHorizontalPodAutoscalerDetail(context.Context, string, string) (domainresource.HorizontalPodAutoscalerDetailView, error)
 	ListPodDisruptionBudgets(context.Context, string) ([]domainresource.PodDisruptionBudgetView, error)
+	GetPodDisruptionBudgetDetail(context.Context, string, string) (domainresource.PodDisruptionBudgetDetailView, error)
 }
 
 type WorkloadAgent interface {
@@ -164,8 +168,12 @@ type DirectCronJob interface {
 
 type DirectWorkloadInventoryReader interface {
 	ListReplicaSets(context.Context, string, string) ([]domainresource.ReplicaSetView, error)
+	GetReplicaSetDetail(context.Context, string, string, string) (domainresource.ReplicaSetDetailView, error)
+	GetReplicationControllerDetail(context.Context, string, string, string) (domainresource.ReplicationControllerDetailView, error)
 	ListHorizontalPodAutoscalers(context.Context, string, string) ([]domainresource.HorizontalPodAutoscalerView, error)
+	GetHorizontalPodAutoscalerDetail(context.Context, string, string, string) (domainresource.HorizontalPodAutoscalerDetailView, error)
 	ListPodDisruptionBudgets(context.Context, string, string) ([]domainresource.PodDisruptionBudgetView, error)
+	GetPodDisruptionBudgetDetail(context.Context, string, string, string) (domainresource.PodDisruptionBudgetDetailView, error)
 }
 
 type DirectWorkloads interface {
@@ -185,18 +193,23 @@ type ConfigurationObjectAgent interface {
 
 type ClusterClassAgent interface {
 	ListIngressClasses(context.Context) ([]domainresource.IngressClassView, error)
+	GetIngressClassDetail(context.Context, string) (domainresource.IngressClassDetailView, error)
 	ListPriorityClasses(context.Context) ([]domainresource.PriorityClassView, error)
 	ListRuntimeClasses(context.Context) ([]domainresource.RuntimeClassView, error)
 }
 
 type AdmissionConfigurationAgent interface {
 	ListMutatingWebhookConfigurations(context.Context) ([]domainresource.MutatingWebhookConfigurationView, error)
+	GetMutatingWebhookConfigurationDetail(context.Context, string) (domainresource.AdmissionWebhookConfigurationDetailView, error)
 	ListValidatingWebhookConfigurations(context.Context) ([]domainresource.ValidatingWebhookConfigurationView, error)
+	GetValidatingWebhookConfigurationDetail(context.Context, string) (domainresource.AdmissionWebhookConfigurationDetailView, error)
 }
 
 type NamespaceConfigurationAgent interface {
 	ListResourceQuotas(context.Context, string) ([]domainresource.ResourceQuotaView, error)
+	GetResourceQuotaDetail(context.Context, string, string) (domainresource.ResourceQuotaDetailView, error)
 	ListLimitRanges(context.Context, string) ([]domainresource.LimitRangeView, error)
+	GetLimitRangeDetail(context.Context, string, string) (domainresource.LimitRangeDetailView, error)
 	ListLeases(context.Context, string) ([]domainresource.LeaseView, error)
 	ListReplicationControllers(context.Context, string) ([]domainresource.ReplicationControllerView, error)
 }
@@ -223,15 +236,20 @@ type DirectConfigurationObjectWriter interface {
 
 type DirectClusterConfigurationReader interface {
 	ListIngressClasses(context.Context, string) ([]domainresource.IngressClassView, error)
+	GetIngressClassDetail(context.Context, string, string) (domainresource.IngressClassDetailView, error)
 	ListPriorityClasses(context.Context, string) ([]domainresource.PriorityClassView, error)
 	ListRuntimeClasses(context.Context, string) ([]domainresource.RuntimeClassView, error)
 	ListMutatingWebhookConfigurations(context.Context, string) ([]domainresource.MutatingWebhookConfigurationView, error)
+	GetMutatingWebhookConfigurationDetail(context.Context, string, string) (domainresource.AdmissionWebhookConfigurationDetailView, error)
 	ListValidatingWebhookConfigurations(context.Context, string) ([]domainresource.ValidatingWebhookConfigurationView, error)
+	GetValidatingWebhookConfigurationDetail(context.Context, string, string) (domainresource.AdmissionWebhookConfigurationDetailView, error)
 }
 
 type DirectNamespaceConfigurationReader interface {
 	ListResourceQuotas(context.Context, string, string) ([]domainresource.ResourceQuotaView, error)
+	GetResourceQuotaDetail(context.Context, string, string, string) (domainresource.ResourceQuotaDetailView, error)
 	ListLimitRanges(context.Context, string, string) ([]domainresource.LimitRangeView, error)
+	GetLimitRangeDetail(context.Context, string, string, string) (domainresource.LimitRangeDetailView, error)
 	ListLeases(context.Context, string, string) ([]domainresource.LeaseView, error)
 	ListReplicationControllers(context.Context, string, string) ([]domainresource.ReplicationControllerView, error)
 }
@@ -245,30 +263,46 @@ type DirectConfiguration interface {
 
 type CoreNetworkAgent interface {
 	ListServices(context.Context, string) ([]domainresource.ServiceView, error)
+	GetServiceDetail(context.Context, string, string) (domainresource.ServiceDetailView, error)
 	ListIngresses(context.Context, string) ([]domainresource.IngressView, error)
+	GetIngressDetail(context.Context, string, string) (domainresource.IngressDetailView, error)
 	ListEndpointSlices(context.Context, string) ([]domainresource.EndpointSliceView, error)
+	GetEndpointSliceDetail(context.Context, string, string) (domainresource.EndpointSliceDetailView, error)
 	ListNetworkPolicies(context.Context, string) ([]domainresource.NetworkPolicyView, error)
+	GetNetworkPolicyDetail(context.Context, string, string) (domainresource.NetworkPolicyDetailView, error)
 }
 
 type GatewayAgent interface {
 	ListGatewayClasses(context.Context) ([]domainresource.GatewayClassView, error)
+	GetGatewayClassDetail(context.Context, string) (domainresource.GatewayClassDetailView, error)
 	ListGateways(context.Context, string) ([]domainresource.GatewayView, error)
+	GetGatewayDetail(context.Context, string, string) (domainresource.GatewayDetailView, error)
 	ListHTTPRoutes(context.Context, string) ([]domainresource.HTTPRouteView, error)
+	GetHTTPRouteDetail(context.Context, string, string) (domainresource.HTTPRouteDetailView, error)
 }
 
 type GatewayPolicyAgent interface {
 	ListBackendTLSPolicies(context.Context, string) ([]domainresource.BackendTLSPolicyView, error)
+	GetBackendTLSPolicyDetail(context.Context, string, string) (domainresource.BackendTLSPolicyDetailView, error)
 	ListGRPCRoutes(context.Context, string) ([]domainresource.GRPCRouteView, error)
+	GetGRPCRouteDetail(context.Context, string, string) (domainresource.GRPCRouteDetailView, error)
 	ListReferenceGrants(context.Context, string) ([]domainresource.ReferenceGrantView, error)
+	GetReferenceGrantDetail(context.Context, string, string) (domainresource.ReferenceGrantDetailView, error)
 }
 
 type DirectGatewayReader interface {
 	ListGatewayClasses(context.Context, string) ([]domainresource.GatewayClassView, error)
+	GetGatewayClassDetail(context.Context, string, string) (domainresource.GatewayClassDetailView, error)
 	ListGateways(context.Context, string, string) ([]domainresource.GatewayView, error)
+	GetGatewayDetail(context.Context, string, string, string) (domainresource.GatewayDetailView, error)
 	ListHTTPRoutes(context.Context, string, string) ([]domainresource.HTTPRouteView, error)
+	GetHTTPRouteDetail(context.Context, string, string, string) (domainresource.HTTPRouteDetailView, error)
 	ListBackendTLSPolicies(context.Context, string, string) ([]domainresource.BackendTLSPolicyView, error)
+	GetBackendTLSPolicyDetail(context.Context, string, string, string) (domainresource.BackendTLSPolicyDetailView, error)
 	ListGRPCRoutes(context.Context, string, string) ([]domainresource.GRPCRouteView, error)
+	GetGRPCRouteDetail(context.Context, string, string, string) (domainresource.GRPCRouteDetailView, error)
 	ListReferenceGrants(context.Context, string, string) ([]domainresource.ReferenceGrantView, error)
+	GetReferenceGrantDetail(context.Context, string, string, string) (domainresource.ReferenceGrantDetailView, error)
 }
 
 type NetworkAgent interface {
@@ -279,15 +313,22 @@ type NetworkAgent interface {
 
 type DirectNetworkReader interface {
 	ListServices(context.Context, string, string) ([]domainresource.ServiceView, string, error)
+	GetServiceDetail(context.Context, string, string, string) (domainresource.ServiceDetailView, error)
 	ListIngresses(context.Context, string, string) ([]domainresource.IngressView, string, error)
+	GetIngressDetail(context.Context, string, string, string) (domainresource.IngressDetailView, error)
 	ListEndpointSlices(context.Context, string, string) ([]domainresource.EndpointSliceView, error)
+	GetEndpointSliceDetail(context.Context, string, string, string) (domainresource.EndpointSliceDetailView, error)
 	ListNetworkPolicies(context.Context, string, string) ([]domainresource.NetworkPolicyView, error)
+	GetNetworkPolicyDetail(context.Context, string, string, string) (domainresource.NetworkPolicyDetailView, error)
 }
 
 type StorageAgent interface {
 	ListPersistentVolumeClaims(context.Context, string) ([]domainresource.PersistentVolumeClaimView, error)
+	GetPersistentVolumeClaimDetail(context.Context, string, string) (domainresource.PersistentVolumeClaimDetailView, error)
 	ListPersistentVolumes(context.Context) ([]domainresource.PersistentVolumeView, error)
+	GetPersistentVolumeDetail(context.Context, string) (domainresource.PersistentVolumeDetailView, error)
 	ListStorageClasses(context.Context) ([]domainresource.StorageClassView, error)
+	GetStorageClassDetail(context.Context, string) (domainresource.StorageClassDetailView, error)
 }
 
 type DirectStorageReader interface {
@@ -308,6 +349,7 @@ type NamespacedRoleAgent interface {
 	ListRoles(context.Context, string) ([]domainresource.RoleView, error)
 	GetRoleDetail(context.Context, string, string) (domainresource.RoleDetailView, error)
 	ListRoleBindings(context.Context, string) ([]domainresource.RoleBindingView, error)
+	ListRoleBindingsForServiceAccount(context.Context, string, string) ([]domainresource.RoleBindingView, error)
 	GetRoleBindingDetail(context.Context, string, string) (domainresource.RoleBindingDetailView, error)
 }
 
@@ -315,6 +357,7 @@ type ClusterRoleAgent interface {
 	ListClusterRoles(context.Context) ([]domainresource.ClusterRoleView, error)
 	GetClusterRoleDetail(context.Context, string) (domainresource.ClusterRoleDetailView, error)
 	ListClusterRoleBindings(context.Context) ([]domainresource.ClusterRoleBindingView, error)
+	ListClusterRoleBindingsForServiceAccount(context.Context, string, string) ([]domainresource.ClusterRoleBindingView, error)
 	GetClusterRoleBindingDetail(context.Context, string) (domainresource.ClusterRoleBindingDetailView, error)
 }
 
@@ -333,6 +376,7 @@ type DirectNamespacedRoleReader interface {
 	ListRoles(context.Context, string, string) ([]domainresource.RoleView, error)
 	GetRoleDetail(context.Context, string, string, string) (domainresource.RoleDetailView, error)
 	ListRoleBindings(context.Context, string, string) ([]domainresource.RoleBindingView, error)
+	ListRoleBindingsForServiceAccount(context.Context, string, string, string) ([]domainresource.RoleBindingView, error)
 	GetRoleBindingDetail(context.Context, string, string, string) (domainresource.RoleBindingDetailView, error)
 }
 
@@ -340,6 +384,7 @@ type DirectClusterRoleReader interface {
 	ListClusterRoles(context.Context, string) ([]domainresource.ClusterRoleView, error)
 	GetClusterRoleDetail(context.Context, string, string) (domainresource.ClusterRoleDetailView, error)
 	ListClusterRoleBindings(context.Context, string) ([]domainresource.ClusterRoleBindingView, error)
+	ListClusterRoleBindingsForServiceAccount(context.Context, string, string, string) ([]domainresource.ClusterRoleBindingView, error)
 	GetClusterRoleBindingDetail(context.Context, string, string) (domainresource.ClusterRoleBindingDetailView, error)
 }
 

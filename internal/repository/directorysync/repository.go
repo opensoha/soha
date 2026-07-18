@@ -228,73 +228,118 @@ func (r *Repository) ListMemberships(ctx context.Context, c string) ([]domain.Me
 }
 
 func (r *Repository) ApplyProjections(ctx context.Context, connectionID string, orgs []domain.Organization, people []domain.Person, memberships []domain.Membership, includePeople bool) error {
+	batch := projectionBatch{
+		connectionID:  connectionID,
+		organizations: orgs,
+		people:        people,
+		memberships:   memberships,
+		includePeople: includePeople,
+		now:           time.Now().UTC(),
+	}
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return applyProjections(tx, connectionID, orgs, people, memberships, includePeople, time.Now().UTC())
+		return applyProjections(tx, batch)
 	})
 }
 
-func applyProjections(tx *gorm.DB, connectionID string, orgs []domain.Organization, people []domain.Person, memberships []domain.Membership, includePeople bool, now time.Time) error {
-	if err := tx.Exec(`UPDATE directory_organizations SET status=?, archived_at=?, last_seen_at=? WHERE connection_id=? AND status<>?`, domain.ProjectionArchived, now, now, connectionID, domain.ProjectionArchived).Error; err != nil {
+type projectionBatch struct {
+	connectionID  string
+	organizations []domain.Organization
+	people        []domain.Person
+	memberships   []domain.Membership
+	includePeople bool
+	now           time.Time
+}
+
+func applyProjections(tx *gorm.DB, batch projectionBatch) error {
+	if err := applyOrganizationProjections(tx, batch); err != nil {
 		return err
 	}
-	for _, x := range orgs {
-		if x.ConnectionID == "" {
-			x.ConnectionID = connectionID
-		}
-		if x.ID == "" {
-			x.ID = x.ConnectionID + ":" + x.ExternalID
-		}
-		if x.Status == "" {
-			x.Status = domain.ProjectionActive
-		}
-		if x.FirstSeenAt.IsZero() {
-			x.FirstSeenAt = now
-		}
-		if x.LastSeenAt.IsZero() {
-			x.LastSeenAt = now
-		}
-		if e := tx.Exec(`INSERT INTO directory_organizations (id,connection_id,external_id,external_parent_id,local_team_id,name,path,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,external_id) DO UPDATE SET external_parent_id=EXCLUDED.external_parent_id,local_team_id=COALESCE(EXCLUDED.local_team_id,directory_organizations.local_team_id),name=EXCLUDED.name,path=EXCLUDED.path,status=EXCLUDED.status,source_version=EXCLUDED.source_version,raw_hash=EXCLUDED.raw_hash,last_seen_at=EXCLUDED.last_seen_at,archived_at=EXCLUDED.archived_at`, x.ID, x.ConnectionID, x.ExternalID, nullString(x.ExternalParentID), nullString(x.LocalTeamID), x.Name, x.Path, x.Status, x.SourceVersion, x.RawHash, x.FirstSeenAt, x.LastSeenAt, x.ArchivedAt).Error; e != nil {
-			return e
-		}
-	}
-	if !includePeople {
-		if len(people) > 0 || len(memberships) > 0 {
+	if !batch.includePeople {
+		if len(batch.people) > 0 || len(batch.memberships) > 0 {
 			return domain.ErrPeopleSyncDisabled
 		}
 		return nil
 	}
-	if err := tx.Exec(`UPDATE directory_people SET status=?, archived_at=?, last_seen_at=? WHERE connection_id=? AND status<>?`, domain.ProjectionArchived, now, now, connectionID, domain.ProjectionArchived).Error; err != nil {
+	if err := applyPeopleProjections(tx, batch); err != nil {
 		return err
 	}
-	for _, x := range people {
-		if x.ConnectionID == "" {
-			x.ConnectionID = connectionID
-		}
-		if x.ID == "" {
-			x.ID = x.ConnectionID + ":" + x.ExternalID
-		}
-		if x.Status == "" {
-			x.Status = domain.ProjectionActive
-		}
-		if x.FirstSeenAt.IsZero() {
-			x.FirstSeenAt = now
-		}
-		if x.LastSeenAt.IsZero() {
-			x.LastSeenAt = now
-		}
-		if e := tx.Exec(`INSERT INTO directory_people (id,connection_id,external_id,provider_subject,local_user_id,username,display_name,email,email_verified,phone,avatar_url,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,external_id) DO UPDATE SET provider_subject=EXCLUDED.provider_subject,local_user_id=COALESCE(EXCLUDED.local_user_id,directory_people.local_user_id),username=EXCLUDED.username,display_name=EXCLUDED.display_name,email=EXCLUDED.email,email_verified=EXCLUDED.email_verified,phone=EXCLUDED.phone,avatar_url=EXCLUDED.avatar_url,status=EXCLUDED.status,source_version=EXCLUDED.source_version,raw_hash=EXCLUDED.raw_hash,last_seen_at=EXCLUDED.last_seen_at,archived_at=EXCLUDED.archived_at`, x.ID, x.ConnectionID, x.ExternalID, x.ProviderSubject, nullString(x.LocalUserID), x.Username, x.DisplayName, x.Email, x.EmailVerified, x.Phone, x.AvatarURL, x.Status, x.SourceVersion, x.RawHash, x.FirstSeenAt, x.LastSeenAt, x.ArchivedAt).Error; e != nil {
-			return e
+	return replaceMembershipProjections(tx, batch)
+}
+
+func applyOrganizationProjections(tx *gorm.DB, batch projectionBatch) error {
+	if err := tx.Exec(`UPDATE directory_organizations SET status=?, archived_at=?, last_seen_at=? WHERE connection_id=? AND status<>?`, domain.ProjectionArchived, batch.now, batch.now, batch.connectionID, domain.ProjectionArchived).Error; err != nil {
+		return err
+	}
+	for _, organization := range batch.organizations {
+		organization = prepareOrganizationProjection(organization, batch.connectionID, batch.now)
+		if err := tx.Exec(`INSERT INTO directory_organizations (id,connection_id,external_id,external_parent_id,local_team_id,name,path,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,external_id) DO UPDATE SET external_parent_id=EXCLUDED.external_parent_id,local_team_id=COALESCE(EXCLUDED.local_team_id,directory_organizations.local_team_id),name=EXCLUDED.name,path=EXCLUDED.path,status=EXCLUDED.status,source_version=EXCLUDED.source_version,raw_hash=EXCLUDED.raw_hash,last_seen_at=EXCLUDED.last_seen_at,archived_at=EXCLUDED.archived_at`, organization.ID, organization.ConnectionID, organization.ExternalID, nullString(organization.ExternalParentID), nullString(organization.LocalTeamID), organization.Name, organization.Path, organization.Status, organization.SourceVersion, organization.RawHash, organization.FirstSeenAt, organization.LastSeenAt, organization.ArchivedAt).Error; err != nil {
+			return err
 		}
 	}
-	if e := tx.Exec(`DELETE FROM directory_memberships WHERE connection_id=?`, connectionID).Error; e != nil {
-		return e
+	return nil
+}
+
+func prepareOrganizationProjection(item domain.Organization, connectionID string, now time.Time) domain.Organization {
+	if item.ConnectionID == "" {
+		item.ConnectionID = connectionID
 	}
-	for _, x := range memberships {
-		if x.LastSeenAt.IsZero() {
-			x.LastSeenAt = now
+	if item.ID == "" {
+		item.ID = item.ConnectionID + ":" + item.ExternalID
+	}
+	if item.Status == "" {
+		item.Status = domain.ProjectionActive
+	}
+	if item.FirstSeenAt.IsZero() {
+		item.FirstSeenAt = now
+	}
+	if item.LastSeenAt.IsZero() {
+		item.LastSeenAt = now
+	}
+	return item
+}
+
+func applyPeopleProjections(tx *gorm.DB, batch projectionBatch) error {
+	if err := tx.Exec(`UPDATE directory_people SET status=?, archived_at=?, last_seen_at=? WHERE connection_id=? AND status<>?`, domain.ProjectionArchived, batch.now, batch.now, batch.connectionID, domain.ProjectionArchived).Error; err != nil {
+		return err
+	}
+	for _, person := range batch.people {
+		person = preparePersonProjection(person, batch.connectionID, batch.now)
+		if err := tx.Exec(`INSERT INTO directory_people (id,connection_id,external_id,provider_subject,local_user_id,username,display_name,email,email_verified,phone,avatar_url,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,external_id) DO UPDATE SET provider_subject=EXCLUDED.provider_subject,local_user_id=COALESCE(EXCLUDED.local_user_id,directory_people.local_user_id),username=EXCLUDED.username,display_name=EXCLUDED.display_name,email=EXCLUDED.email,email_verified=EXCLUDED.email_verified,phone=EXCLUDED.phone,avatar_url=EXCLUDED.avatar_url,status=EXCLUDED.status,source_version=EXCLUDED.source_version,raw_hash=EXCLUDED.raw_hash,last_seen_at=EXCLUDED.last_seen_at,archived_at=EXCLUDED.archived_at`, person.ID, person.ConnectionID, person.ExternalID, person.ProviderSubject, nullString(person.LocalUserID), person.Username, person.DisplayName, person.Email, person.EmailVerified, person.Phone, person.AvatarURL, person.Status, person.SourceVersion, person.RawHash, person.FirstSeenAt, person.LastSeenAt, person.ArchivedAt).Error; err != nil {
+			return err
 		}
-		if e := tx.Exec(`INSERT INTO directory_memberships (connection_id,external_person_id,external_organization_id,local_user_id,local_team_id,status,last_seen_at) VALUES (?,?,?,?,?,?,?)`, connectionID, x.ExternalPersonID, x.ExternalOrganizationID, nullString(x.LocalUserID), nullString(x.LocalTeamID), x.Status, x.LastSeenAt).Error; e != nil {
-			return e
+	}
+	return nil
+}
+
+func preparePersonProjection(item domain.Person, connectionID string, now time.Time) domain.Person {
+	if item.ConnectionID == "" {
+		item.ConnectionID = connectionID
+	}
+	if item.ID == "" {
+		item.ID = item.ConnectionID + ":" + item.ExternalID
+	}
+	if item.Status == "" {
+		item.Status = domain.ProjectionActive
+	}
+	if item.FirstSeenAt.IsZero() {
+		item.FirstSeenAt = now
+	}
+	if item.LastSeenAt.IsZero() {
+		item.LastSeenAt = now
+	}
+	return item
+}
+
+func replaceMembershipProjections(tx *gorm.DB, batch projectionBatch) error {
+	if err := tx.Exec(`DELETE FROM directory_memberships WHERE connection_id=?`, batch.connectionID).Error; err != nil {
+		return err
+	}
+	for _, membership := range batch.memberships {
+		if membership.LastSeenAt.IsZero() {
+			membership.LastSeenAt = batch.now
+		}
+		if err := tx.Exec(`INSERT INTO directory_memberships (connection_id,external_person_id,external_organization_id,local_user_id,local_team_id,status,last_seen_at) VALUES (?,?,?,?,?,?,?)`, batch.connectionID, membership.ExternalPersonID, membership.ExternalOrganizationID, nullString(membership.LocalUserID), nullString(membership.LocalTeamID), membership.Status, membership.LastSeenAt).Error; err != nil {
+			return err
 		}
 	}
 	return nil

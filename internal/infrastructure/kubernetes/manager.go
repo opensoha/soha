@@ -108,12 +108,22 @@ func (m *Manager) GetCluster(ctx context.Context, id string) (domaincluster.Summ
 		return summary, nil
 	}
 
-	serverVersion, err := bundle.Discovery.ServerVersion()
+	discoveryClient, err := requestDiscoveryClient(inspectCtx, bundle.RESTConfig)
 	if err != nil {
 		summary.Health.Message = err.Error()
 		return summary, nil
 	}
-	groups, err := bundle.Discovery.ServerGroups()
+	serverVersion, err := discoveryClient.ServerVersion()
+	if err != nil {
+		summary.Health.Message = err.Error()
+		return summary, nil
+	}
+	discoveryClient, err = requestDiscoveryClient(inspectCtx, bundle.RESTConfig)
+	if err != nil {
+		summary.Health.Message = err.Error()
+		return summary, nil
+	}
+	groups, err := discoveryClient.ServerGroups()
 	if err != nil {
 		summary.Health.Message = err.Error()
 		return summary, nil
@@ -131,6 +141,25 @@ func (m *Manager) GetCluster(ctx context.Context, id string) (domaincluster.Summ
 	summary.Capabilities = capabilities
 	summary.Health = domaincluster.Health{Status: "healthy", LastChecked: time.Now()}
 	return summary, nil
+}
+
+func requestDiscoveryClient(ctx context.Context, config *rest.Config) (discovery.DiscoveryInterface, error) {
+	if config == nil {
+		return nil, fmt.Errorf("build request discovery client: REST config is required")
+	}
+	requestConfig := rest.CopyConfig(config)
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, context.DeadlineExceeded
+		}
+		requestConfig.Timeout = remaining
+	}
+	client, err := discovery.NewDiscoveryClientForConfig(requestConfig)
+	if err != nil {
+		return nil, fmt.Errorf("build request discovery client: %w", err)
+	}
+	return client, nil
 }
 
 func (m *Manager) Metadata(id string) (domaincluster.Summary, error) {
@@ -211,7 +240,6 @@ func buildRESTConfig(cfg cfgpkg.ClusterConfig) (*rest.Config, error) {
 		}
 		restConfig.QPS = 50
 		restConfig.Burst = 100
-		restConfig.Timeout = 5 * time.Second
 		return restConfig, nil
 	}
 
@@ -227,6 +255,5 @@ func buildRESTConfig(cfg cfgpkg.ClusterConfig) (*rest.Config, error) {
 	}
 	restConfig.QPS = 50
 	restConfig.Burst = 100
-	restConfig.Timeout = 5 * time.Second
 	return restConfig, nil
 }

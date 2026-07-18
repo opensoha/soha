@@ -259,6 +259,13 @@ func listConfigurationResources[T any](ctx context.Context, access *resourceAcce
 	)
 }
 
+func getConfigurationDetail[T any](ctx context.Context, c *Configuration, principal domainidentity.Principal, clusterID, namespace, name, kind, auditText string, agentCall func(ConfigurationAgent) (T, error), directCall func(DirectConfiguration) (T, error), setActions func(*T, []string)) (T, error) {
+	request := resourceDetailRequest{clusterID: clusterID, namespace: namespace, kind: kind, name: name, summary: func(source string) string { return fmt.Sprintf("%s via %s", auditText, source) }}
+	return getModeResource(ctx, c.resourceAccess, principal, request, func(connection domaincluster.Connection) (T, string, error) {
+		return routeModeValue(connection, c.configurationAgentClient, c.directConfiguration, agentCall, directCall)
+	}, setActions)
+}
+
 func populateAllowedActions[T any](items []T, decision domainaccess.Decision, actionsOf func(T) []string, set func(*T, []string)) {
 	actions := stringifyActions(decision.AllowedActions)
 	for index := range items {

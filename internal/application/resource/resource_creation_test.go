@@ -160,6 +160,75 @@ func TestExecuteCreateReturnsOrderedPartialResultsWithoutRollback(t *testing.T) 
 	}
 }
 
+func TestExecuteCreateReturnsExistingIdempotentResultBeforePreflight(t *testing.T) {
+	t.Parallel()
+	request := domainresource.ResourceCreateRequest{
+		Source: domainresource.ResourceCreateSourceGlobal, DefaultNamespace: "minio",
+		Content: "manifest", RequestID: "request-1",
+	}
+	direct := &creationDirectStub{manifests: []domainresource.ResolvedCreateManifest{testCreateManifest("ConfigMap", "minio", true)}}
+	creation := testResourceCreation(direct, &recordingCreateAuthorizer{allow: true}, allowRuntimePermission{}, domaincluster.ConnectionModeDirectKubeconfig)
+	creation.batches = &resourceCreationBatchStub{batch: domainresource.ResourceCreateBatch{
+		ID: "batch-1", ActorID: "user-1", ClusterID: "cluster-a", IdempotencyKey: request.RequestID,
+		ContentHash: hashResourceCreateRequest(request), Status: domainresource.ResourceCreateBatchSucceeded,
+		Documents: []domainresource.ResourceCreateExecutionDocument{{
+			Index: 0, Resource: testCreateManifest("ConfigMap", "minio", true).Ref, Status: "succeeded",
+		}},
+	}}
+
+	result, err := creation.ExecuteCreate(context.Background(), domainidentity.Principal{UserID: "user-1"}, "cluster-a", request)
+	if err != nil || result.Status != "succeeded" || result.OperationID != "batch-1" {
+		t.Fatalf("ExecuteCreate() = %#v, %v, want existing successful batch", result, err)
+	}
+	if direct.dryRunCalls != 0 || direct.createCalls != 0 {
+		t.Fatalf("provider calls dry-run=%d create=%d, want zero", direct.dryRunCalls, direct.createCalls)
+	}
+}
+
+func TestExecuteCreateContinuesWhenOperationRecordingFails(t *testing.T) {
+	t.Parallel()
+	direct := &creationDirectStub{manifests: []domainresource.ResolvedCreateManifest{testCreateManifest("ConfigMap", "minio", true)}}
+	creation := testResourceCreation(direct, &recordingCreateAuthorizer{allow: true}, allowRuntimePermission{}, domaincluster.ConnectionModeDirectKubeconfig)
+	batches := &resourceCreationBatchStub{}
+	creation.batches = batches
+	creation.operations = failingCreateOperations{}
+
+	result, err := creation.ExecuteCreate(context.Background(), domainidentity.Principal{UserID: "user-1"}, "cluster-a", domainresource.ResourceCreateRequest{
+		Source: domainresource.ResourceCreateSourceGlobal, DefaultNamespace: "minio",
+		Content: "manifest", RequestID: "request-1",
+	})
+	if err != nil || result.Status != "succeeded" {
+		t.Fatalf("ExecuteCreate() = %#v, %v, want successful creation", result, err)
+	}
+	if direct.createCalls != 1 || batches.batch.Status != domainresource.ResourceCreateBatchSucceeded {
+		t.Fatalf("create calls=%d batch=%#v, want one create and completed batch", direct.createCalls, batches.batch)
+	}
+}
+
+func TestPreflightCreateAuthorizesResolvedResourceGroup(t *testing.T) {
+	t.Parallel()
+	manifest := testCreateManifest("Deployment", "minio", true)
+	manifest.Ref.APIVersion = "example.io/v1"
+	manifest.Group = "example.io"
+	manifest.Resource = "deployments"
+	direct := &creationDirectStub{manifests: []domainresource.ResolvedCreateManifest{manifest}}
+	authorizer := &recordingCreateAuthorizer{allow: true}
+	creation := testResourceCreation(direct, authorizer, allowRuntimePermission{}, domaincluster.ConnectionModeDirectKubeconfig)
+
+	result, err := creation.PreflightCreate(context.Background(), domainidentity.Principal{UserID: "user-1"}, "cluster-a", domainresource.ResourceCreateRequest{
+		Source: domainresource.ResourceCreateSourceGlobal, DefaultNamespace: "minio", Content: "manifest",
+	})
+	if err != nil || !result.Ready {
+		t.Fatalf("PreflightCreate() = %#v, %v, want ready", result, err)
+	}
+	if len(authorizer.requests) != 1 || authorizer.requests[0].Resource.Group != "extensions" {
+		t.Fatalf("authorization requests = %#v, want extensions resource group", authorizer.requests)
+	}
+	if got := result.Documents[0].Authorization.ResourceGroups; len(got) != 1 || got[0] != "extensions" {
+		t.Fatalf("authorization resource groups = %#v, want extensions", got)
+	}
+}
+
 func TestAgentCreateCapabilityNotPublishedDoesNotResolveAgentClient(t *testing.T) {
 	t.Parallel()
 	clientCalls := 0
@@ -284,7 +353,11 @@ func testResourceCreation(direct DirectResourceCreator, authorizer domainaccess.
 	}
 	creation := &ResourceCreation{resourceAccess: access, direct: direct}
 	if mode == domaincluster.ConnectionModeAgent {
-		stub := &agentCreationStub{manifests: direct.(*creationDirectStub).manifests, dryRunErr: apperrors.ErrUnsupportedOperation}
+		directStub, ok := direct.(*creationDirectStub)
+		if !ok {
+			panic("direct backend must be a *creationDirectStub")
+		}
+		stub := &agentCreationStub{manifests: directStub.manifests, dryRunErr: apperrors.ErrUnsupportedOperation}
 		creation.agent = func(domaincluster.Connection) (AgentResourceCreator, error) { return stub, nil }
 	}
 	return creation
@@ -366,6 +439,58 @@ func (c *captureCreateOperations) Record(_ context.Context, entry domainoperatio
 
 func (c *captureCreateOperations) List(context.Context, domainoperation.Filter) ([]domainoperation.Entry, error) {
 	return append([]domainoperation.Entry(nil), c.entries...), nil
+}
+
+type failingCreateOperations struct{}
+
+func (failingCreateOperations) Record(context.Context, domainoperation.Entry) error {
+	return errors.New("operation store unavailable")
+}
+
+func (failingCreateOperations) List(context.Context, domainoperation.Filter) ([]domainoperation.Entry, error) {
+	return nil, nil
+}
+
+type resourceCreationBatchStub struct {
+	batch domainresource.ResourceCreateBatch
+}
+
+func (s *resourceCreationBatchStub) GetByIdentity(context.Context, string, string, string) (domainresource.ResourceCreateBatch, error) {
+	if s.batch.ID == "" {
+		return domainresource.ResourceCreateBatch{}, apperrors.ErrNotFound
+	}
+	return s.batch, nil
+}
+
+func (s *resourceCreationBatchStub) Claim(_ context.Context, actorID, clusterID, key, contentHash string, documents []domainresource.ResourceCreateExecutionDocument) (domainresource.ResourceCreateBatchClaim, error) {
+	if s.batch.ID != "" {
+		return domainresource.ResourceCreateBatchClaim{Batch: s.batch}, nil
+	}
+	s.batch = domainresource.ResourceCreateBatch{
+		ID: "batch-1", ActorID: actorID, ClusterID: clusterID, IdempotencyKey: key,
+		ContentHash: contentHash, Status: domainresource.ResourceCreateBatchRunning,
+		Documents: append([]domainresource.ResourceCreateExecutionDocument(nil), documents...),
+	}
+	return domainresource.ResourceCreateBatchClaim{Batch: s.batch, Created: true}, nil
+}
+
+func (s *resourceCreationBatchStub) Get(context.Context, string) (domainresource.ResourceCreateBatch, error) {
+	return s.batch, nil
+}
+
+func (s *resourceCreationBatchStub) UpdateDocument(_ context.Context, _ string, document domainresource.ResourceCreateExecutionDocument) error {
+	for index := range s.batch.Documents {
+		if s.batch.Documents[index].Index == document.Index {
+			s.batch.Documents[index] = document
+			return nil
+		}
+	}
+	return apperrors.ErrNotFound
+}
+
+func (s *resourceCreationBatchStub) Complete(_ context.Context, _ string, status domainresource.ResourceCreateBatchStatus) (domainresource.ResourceCreateBatch, error) {
+	s.batch.Status = status
+	return s.batch, nil
 }
 
 type agentCreationStub struct {

@@ -2,6 +2,8 @@ package resourcebackend
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,6 +13,24 @@ import (
 )
 
 const namespaceListParallelism = 8
+
+func listNamespaced[T any](ctx context.Context, direct *Direct, clusterID, namespace string, timeout time.Duration, list func(context.Context, string) ([]T, error)) ([]T, error) {
+	if strings.TrimSpace(namespace) != "" {
+		queryCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return list(queryCtx, namespace)
+	}
+	bundle, err := direct.directClients(ctx, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	return listAcrossNamespacesWithFallback(ctx, bundle, timeout, func(ctx context.Context) ([]domainresource.NamespaceView, error) {
+		namespaces, _, err := direct.ListNamespaces(ctx, clusterID)
+		return namespaces, err
+	}, func(ctx context.Context, _ *k8sinfra.Bundle, namespace string) ([]T, error) {
+		return list(ctx, namespace)
+	})
+}
 
 func listAcrossNamespaces[T any](ctx context.Context, direct *Direct, clusterID string, timeout time.Duration, list func(context.Context, *k8sinfra.Bundle, string) ([]T, error)) ([]T, error) {
 	bundle, err := direct.directClients(ctx, clusterID)
@@ -53,6 +73,8 @@ func listNamespaceNames[T any](ctx context.Context, bundle *k8sinfra.Bundle, nam
 	if len(namespaces) < workers {
 		workers = len(namespaces)
 	}
+	fanoutCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	jobs := make(chan int)
 	results := make(chan result, len(namespaces))
 	var wg sync.WaitGroup
@@ -61,9 +83,12 @@ func listNamespaceNames[T any](ctx context.Context, bundle *k8sinfra.Bundle, nam
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
-				queryCtx, cancel := context.WithTimeout(ctx, timeout)
+				queryCtx, queryCancel := context.WithTimeout(fanoutCtx, timeout)
 				items, err := list(queryCtx, bundle, namespaces[index].Name)
-				cancel()
+				queryCancel()
+				if err != nil {
+					cancel()
+				}
 				results <- result{index: index, items: items, err: err}
 			}
 		}()
@@ -73,7 +98,7 @@ func listNamespaceNames[T any](ctx context.Context, bundle *k8sinfra.Bundle, nam
 		for index := range namespaces {
 			select {
 			case jobs <- index:
-			case <-ctx.Done():
+			case <-fanoutCtx.Done():
 				return
 			}
 		}
@@ -84,11 +109,23 @@ func listNamespaceNames[T any](ctx context.Context, bundle *k8sinfra.Bundle, nam
 		return nil, err
 	}
 	ordered := make([][]T, len(namespaces))
+	errorsByIndex := make([]error, len(namespaces))
 	for value := range results {
-		if value.err != nil {
-			return nil, value.err
-		}
+		errorsByIndex[value.index] = value.err
 		ordered[value.index] = value.items
+	}
+	var cancellationErr error
+	for _, err := range errorsByIndex {
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, context.Canceled) {
+			return nil, err
+		}
+		cancellationErr = err
+	}
+	if cancellationErr != nil {
+		return nil, cancellationErr
 	}
 	var out []T
 	for _, items := range ordered {

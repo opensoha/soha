@@ -353,6 +353,23 @@ func (w *Workloads) ListReplicaSets(ctx context.Context, principal domainidentit
 	})
 }
 
+func (w *Workloads) GetReplicaSetDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.ReplicaSetDetailView, error) {
+	return getWorkloadResource(ctx, w, principal, clusterID, namespace, name, workloadGetSpec[domainresource.ReplicaSetDetailView]{
+		kind: "ReplicaSet", auditText: "viewed replicaset detail",
+		agent: func(client WorkloadAgent) (domainresource.ReplicaSetDetailView, error) {
+			return client.GetReplicaSetDetail(ctx, namespace, name)
+		},
+		direct: func() (domainresource.ReplicaSetDetailView, string, error) {
+			return liveWorkload(func() (domainresource.ReplicaSetDetailView, error) {
+				return w.direct.GetReplicaSetDetail(ctx, clusterID, namespace, name)
+			})
+		},
+		finalize: func(item *domainresource.ReplicaSetDetailView, decision domainaccess.Decision) {
+			item.AllowedActions = stringifyActions(decision.AllowedActions)
+		},
+	})
+}
+
 func (w *Workloads) ListHorizontalPodAutoscalers(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.HorizontalPodAutoscalerView, error) {
 	return listWorkloadResources(ctx, w, principal, clusterID, namespace, workloadListSpec[domainresource.HorizontalPodAutoscalerView]{
 		kind: "HorizontalPodAutoscaler", auditText: "listed hpas",
@@ -365,6 +382,23 @@ func (w *Workloads) ListHorizontalPodAutoscalers(ctx context.Context, principal 
 			})
 		},
 		namespaceOf: func(item domainresource.HorizontalPodAutoscalerView) string { return item.Namespace }, populate: populateAllowedActionsHorizontalPodAutoscalers,
+	})
+}
+
+func (w *Workloads) GetHorizontalPodAutoscalerDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.HorizontalPodAutoscalerDetailView, error) {
+	return getWorkloadResource(ctx, w, principal, clusterID, namespace, name, workloadGetSpec[domainresource.HorizontalPodAutoscalerDetailView]{
+		kind: "HorizontalPodAutoscaler", auditText: "viewed hpa detail",
+		agent: func(client WorkloadAgent) (domainresource.HorizontalPodAutoscalerDetailView, error) {
+			return client.GetHorizontalPodAutoscalerDetail(ctx, namespace, name)
+		},
+		direct: func() (domainresource.HorizontalPodAutoscalerDetailView, string, error) {
+			return liveWorkload(func() (domainresource.HorizontalPodAutoscalerDetailView, error) {
+				return w.direct.GetHorizontalPodAutoscalerDetail(ctx, clusterID, namespace, name)
+			})
+		},
+		finalize: func(item *domainresource.HorizontalPodAutoscalerDetailView, decision domainaccess.Decision) {
+			item.AllowedActions = stringifyActions(decision.AllowedActions)
+		},
 	})
 }
 
@@ -381,6 +415,42 @@ func (w *Workloads) ListPodDisruptionBudgets(ctx context.Context, principal doma
 		},
 		namespaceOf: func(item domainresource.PodDisruptionBudgetView) string { return item.Namespace }, populate: populateAllowedActionsPodDisruptionBudgets,
 	})
+}
+
+func (w *Workloads) GetPodDisruptionBudgetDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.PodDisruptionBudgetDetailView, error) {
+	item, err := getWorkloadResource(ctx, w, principal, clusterID, namespace, name, workloadGetSpec[domainresource.PodDisruptionBudgetDetailView]{
+		kind: "PodDisruptionBudget", auditText: "viewed pod disruption budget detail",
+		agent: func(client WorkloadAgent) (domainresource.PodDisruptionBudgetDetailView, error) {
+			return client.GetPodDisruptionBudgetDetail(ctx, namespace, name)
+		},
+		direct: func() (domainresource.PodDisruptionBudgetDetailView, string, error) {
+			return liveWorkload(func() (domainresource.PodDisruptionBudgetDetailView, error) {
+				return w.direct.GetPodDisruptionBudgetDetail(ctx, clusterID, namespace, name)
+			})
+		},
+		finalize: func(item *domainresource.PodDisruptionBudgetDetailView, decision domainaccess.Decision) {
+			item.AllowedActions = stringifyActions(decision.AllowedActions)
+		},
+	})
+	if err != nil {
+		return domainresource.PodDisruptionBudgetDetailView{}, err
+	}
+	return w.redactPDBRelations(ctx, principal, clusterID, namespace, item), nil
+}
+
+func (w *Workloads) redactPDBRelations(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string, item domainresource.PodDisruptionBudgetDetailView) domainresource.PodDisruptionBudgetDetailView {
+	_, podsDecision, err := w.decide(ctx, principal, clusterID, namespace, "workloads", "Pod", domainaccess.ActionView)
+	if err != nil || !podsDecision.Allowed {
+		item.Pods, item.Workload = nil, nil
+		return item
+	}
+	if item.Workload != nil {
+		_, workloadDecision, err := w.decide(ctx, principal, clusterID, namespace, "workloads", item.Workload.Kind, domainaccess.ActionView)
+		if err != nil || !workloadDecision.Allowed {
+			item.Workload = nil
+		}
+	}
+	return item
 }
 
 func (w *Workloads) RestartDeployment(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {

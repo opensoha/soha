@@ -1,6 +1,7 @@
 package agentharness
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -54,5 +55,65 @@ func TestProviderReconcilerRejectsRemoteProviderOverPlainHTTP(t *testing.T) {
 	}}})
 	if _, _, err := reconciler.Reconcile(ProviderCatalog{}, time.Now()); err == nil {
 		t.Fatal("Reconcile() accepted insecure remote endpoint")
+	}
+}
+
+func TestValidateProviderDefinitionRuntimeAndSecretRefs(t *testing.T) {
+	validProvider := ProviderDefinition{
+		SchemaVersion:   "opensoha.dev/agent-provider-definition/v1",
+		ID:              "provider-1",
+		Kind:            "agent",
+		PluginID:        "agent.provider-1",
+		PluginVersion:   "1.0.0",
+		ProviderVersion: "1.0.0",
+		AdapterProtocol: "opensoha.agent-provider/v1",
+		Capabilities:    []string{"run"},
+		Runtime:         RuntimeDefinition{Kind: "cli", Command: "provider"},
+	}
+	tests := []struct {
+		name        string
+		mutate      func(*ProviderDefinition)
+		wantErrText string
+	}{
+		{name: "cli"},
+		{name: "container", mutate: func(provider *ProviderDefinition) {
+			provider.Runtime = RuntimeDefinition{Kind: "container", Image: "example/provider:1.0.0"}
+		}},
+		{name: "remote HTTPS", mutate: func(provider *ProviderDefinition) {
+			provider.Runtime = RuntimeDefinition{Kind: "remote", Endpoint: "https://provider.example.test/api"}
+		}},
+		{name: "remote user info", mutate: func(provider *ProviderDefinition) {
+			provider.Runtime = RuntimeDefinition{Kind: "remote", Endpoint: "https://user:pass@provider.example.test"}
+		}, wantErrText: "HTTPS URL without user info"},
+		{name: "missing container image", mutate: func(provider *ProviderDefinition) {
+			provider.Runtime = RuntimeDefinition{Kind: "container"}
+		}, wantErrText: "container provider image is required"},
+		{name: "unsupported runtime", mutate: func(provider *ProviderDefinition) {
+			provider.Runtime = RuntimeDefinition{Kind: "process"}
+		}, wantErrText: "unsupported provider runtime"},
+		{name: "valid secret ref", mutate: func(provider *ProviderDefinition) {
+			provider.SecretRefs = []string{"secret:provider/token"}
+		}},
+		{name: "inline secret", mutate: func(provider *ProviderDefinition) {
+			provider.SecretRefs = []string{"plain-text-token"}
+		}, wantErrText: "bounded secret refs"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			provider := validProvider
+			if test.mutate != nil {
+				test.mutate(&provider)
+			}
+			err := validateProviderDefinition(provider)
+			if test.wantErrText == "" {
+				if err != nil {
+					t.Fatalf("validateProviderDefinition() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.wantErrText) {
+				t.Fatalf("validateProviderDefinition() error = %v, want text %q", err, test.wantErrText)
+			}
+		})
 	}
 }

@@ -121,7 +121,11 @@ func (s *resourceAccess) loadConnection(ctx context.Context, clusterID string) (
 	return domaincluster.Connection{Summary: summary}, nil
 }
 func (s *resourceAccess) authorize(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
-	connection, decision, err := s.decide(ctx, principal, clusterID, namespace, resourceGroupForKind(kind), kind, action)
+	return s.authorizeResourceGroup(ctx, principal, clusterID, namespace, resourceGroupForKind(kind), kind, action)
+}
+
+func (s *resourceAccess) authorizeResourceGroup(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, resourceGroup, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
+	connection, decision, err := s.decide(ctx, principal, clusterID, namespace, resourceGroup, kind, action)
 	if err != nil {
 		return domaincluster.Connection{}, domainaccess.Decision{}, err
 	}
@@ -155,6 +159,14 @@ func (s *resourceAccess) decide(ctx context.Context, principal domainidentity.Pr
 		}
 	}
 	return connection, decision, nil
+}
+
+func canViewRelatedResource(ctx context.Context, access *resourceAccess, principal domainidentity.Principal, clusterID, namespace, kind string) bool {
+	if access == nil {
+		return false
+	}
+	_, decision, err := access.decide(ctx, principal, clusterID, namespace, resourceGroupForKind(kind), kind, domainaccess.ActionView)
+	return err == nil && decision.Allowed
 }
 
 func shouldResolveNamespaceLabels(decision domainaccess.Decision, namespace string, resolver namespaceLabelResolver) bool {
@@ -288,6 +300,43 @@ func filterScopedNamespaceItems[T any](items []T, decision domainaccess.Decision
 	return filtered
 }
 
+func needsPostListScopeFilter(namespace string, decision domainaccess.Decision) bool {
+	if strings.TrimSpace(namespace) != "" || decision.ResourceScope == nil {
+		return false
+	}
+	scope := decision.ResourceScope
+	return len(scope.Namespaces) > 0 || len(scope.ExcludedNamespaces) > 0 || len(scope.NamespaceSelectors) > 0 || len(scope.ExcludedNamespaceSelectors) > 0
+}
+
+func singleScopedNamespace(namespace string, decision domainaccess.Decision) (string, bool) {
+	if strings.TrimSpace(namespace) != "" || decision.ResourceScope == nil {
+		return "", false
+	}
+	scope := decision.ResourceScope
+	if len(scope.NamespaceSelectors) > 0 || len(scope.ExcludedNamespaceSelectors) > 0 {
+		return "", false
+	}
+	excluded := make(map[string]struct{}, len(scope.ExcludedNamespaces))
+	for _, name := range scope.ExcludedNamespaces {
+		excluded[strings.TrimSpace(name)] = struct{}{}
+	}
+	selected := ""
+	for _, name := range scope.Namespaces {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		if _, denied := excluded[name]; denied {
+			continue
+		}
+		if selected != "" && selected != name {
+			return "", false
+		}
+		selected = name
+	}
+	return selected, selected != ""
+}
+
 func resourceGroupForKind(kind string) string {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "pod", "deployment", "statefulset", "daemonset", "job", "cronjob", "replicaset", "replicationcontroller":
@@ -307,6 +356,32 @@ func resourceGroupForKind(kind string) string {
 	default:
 		return ""
 	}
+}
+
+func resourceGroupForResolvedResource(group, resource, kind string) string {
+	group = strings.ToLower(strings.TrimSpace(group))
+	resource = strings.ToLower(strings.TrimSpace(resource))
+	key := group + "/" + resource
+	switch key {
+	case "/pods", "apps/deployments", "apps/statefulsets", "apps/daemonsets", "apps/replicasets", "batch/jobs", "batch/cronjobs":
+		return "workloads"
+	case "/configmaps", "/secrets", "/resourcequotas", "/limitranges", "autoscaling/horizontalpodautoscalers", "policy/poddisruptionbudgets", "coordination.k8s.io/leases", "node.k8s.io/runtimeclasses", "scheduling.k8s.io/priorityclasses", "admissionregistration.k8s.io/mutatingwebhookconfigurations", "admissionregistration.k8s.io/validatingwebhookconfigurations":
+		return "configuration"
+	case "/services", "networking.k8s.io/ingresses", "networking.k8s.io/networkpolicies", "networking.k8s.io/ingressclasses", "discovery.k8s.io/endpointslices", "gateway.networking.k8s.io/gatewayclasses", "gateway.networking.k8s.io/gateways", "gateway.networking.k8s.io/httproutes", "gateway.networking.k8s.io/grpcroutes", "gateway.networking.k8s.io/backendtlspolicies", "gateway.networking.k8s.io/referencegrants":
+		return "network"
+	case "/persistentvolumeclaims", "/persistentvolumes", "storage.k8s.io/storageclasses":
+		return "storage"
+	case "/serviceaccounts", "rbac.authorization.k8s.io/roles", "rbac.authorization.k8s.io/rolebindings", "rbac.authorization.k8s.io/clusterroles", "rbac.authorization.k8s.io/clusterrolebindings":
+		return "access-control"
+	case "/namespaces", "/nodes":
+		return "inventory"
+	case "apiextensions.k8s.io/customresourcedefinitions":
+		return "extensions"
+	}
+	if group == "" && resource == "" {
+		return resourceGroupForKind(kind)
+	}
+	return "extensions"
 }
 func stringifyActions(actions []domainaccess.Action) []string {
 	values := make([]string, 0, len(actions))

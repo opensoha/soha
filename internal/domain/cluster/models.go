@@ -75,13 +75,29 @@ type CapabilityMatrixEntry struct {
 }
 
 type Diagnostics struct {
-	Transport       string    `json:"transport"`
-	SyncStrategy    string    `json:"syncStrategy"`
-	CacheStatus     string    `json:"cacheStatus"`
-	CacheReady      bool      `json:"cacheReady"`
-	LastChecked     time.Time `json:"lastChecked,omitempty"`
-	ConnectionState string    `json:"connectionState"`
-	Message         string    `json:"message,omitempty"`
+	Transport       string                    `json:"transport"`
+	SyncStrategy    string                    `json:"syncStrategy"`
+	CacheStatus     string                    `json:"cacheStatus"`
+	CacheReady      bool                      `json:"cacheReady"`
+	CacheResources  []CacheResourceDiagnostic `json:"cacheResources,omitempty"`
+	LastChecked     time.Time                 `json:"lastChecked,omitempty"`
+	ConnectionState string                    `json:"connectionState"`
+	Message         string                    `json:"message,omitempty"`
+}
+
+type CacheDiagnostic struct {
+	Status    string
+	Ready     bool
+	Message   string
+	Resources []CacheResourceDiagnostic
+}
+
+type CacheResourceDiagnostic struct {
+	Resource       string    `json:"resource"`
+	Status         string    `json:"status"`
+	Ready          bool      `json:"ready"`
+	Message        string    `json:"message,omitempty"`
+	LastTransition time.Time `json:"lastTransition,omitempty"`
 }
 
 type ConnectionDetail struct {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
@@ -201,11 +202,12 @@ func getWorkloadMetrics[T any](ctx context.Context, w *Workloads, request worklo
 	if err != nil {
 		return view, err
 	}
-	pods, err := w.ListPods(ctx, request.principal, request.clusterID, request.namespace)
+	selector := selectorOf(detail)
+	pods, err := w.listPodsBySelector(ctx, connection, request.clusterID, request.namespace, selector)
 	if err != nil {
 		return view, err
 	}
-	names := selectPodsBySelector(pods, selectorOf(detail))
+	names := selectPodsBySelector(pods, selector)
 	return w.queryResourceMetrics(
 		ctx, request.principal, connection.Summary.ID, request.namespace,
 		request.kind, request.name, names, request.rangeMinutes, request.stepSeconds,
@@ -237,23 +239,60 @@ func (n *Network) GetServiceMetrics(ctx context.Context, principal domainidentit
 	if err != nil {
 		return view, err
 	}
-	services, err := n.ListServices(ctx, principal, clusterID, namespace)
+	selector, err := n.serviceSelector(ctx, connection, principal, clusterID, namespace, serviceName)
 	if err != nil {
 		return view, err
 	}
-	var selector map[string]string
-	for _, service := range services {
-		if service.Name == serviceName {
-			selector = service.Selector
-			break
-		}
-	}
-	pods, err := n.pods.ListPods(ctx, principal, clusterID, namespace)
+	pods, err := n.listPodsBySelector(ctx, connection, principal, clusterID, namespace, selector)
 	if err != nil {
 		return view, err
 	}
 	names := selectPodsBySelector(pods, selector)
 	return s.queryResourceMetrics(ctx, principal, connection.Summary.ID, namespace, "Service", serviceName, names, rangeMinutes, stepSeconds)
+}
+
+func (n *Network) serviceSelector(ctx context.Context, connection domaincluster.Connection, principal domainidentity.Principal, clusterID, namespace, name string) (map[string]string, error) {
+	if connection.Summary.ConnectionMode != domaincluster.ConnectionModeAgent {
+		if getter, ok := n.directReader.(interface {
+			GetService(context.Context, string, string, string) (domainresource.ServiceView, error)
+		}); ok {
+			item, err := getter.GetService(ctx, clusterID, namespace, name)
+			return item.Selector, err
+		}
+	}
+	items, err := n.ListServices(ctx, principal, clusterID, namespace)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if item.Name == name {
+			return item.Selector, nil
+		}
+	}
+	return nil, nil
+}
+
+func (w *Workloads) listPodsBySelector(ctx context.Context, connection domaincluster.Connection, clusterID, namespace string, selector map[string]string) ([]domainresource.PodView, error) {
+	route, err := w.routePods(connection, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	items, err := route.ListPodsBySelector(ctx, namespace, selector)
+	if err != nil {
+		return nil, route.RuntimeError(err)
+	}
+	return items, nil
+}
+
+func (n *Network) listPodsBySelector(ctx context.Context, connection domaincluster.Connection, principal domainidentity.Principal, clusterID, namespace string, selector map[string]string) ([]domainresource.PodView, error) {
+	if workloads, ok := n.pods.(*Workloads); ok {
+		return workloads.listPodsBySelector(ctx, connection, clusterID, namespace, selector)
+	}
+	items, err := n.pods.ListPods(ctx, principal, clusterID, namespace)
+	if err != nil {
+		return nil, err
+	}
+	return filterPodsBySelector(items, selector), nil
 }
 
 func (s *metricsSupport) queryResourceMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name string, podNames []string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
