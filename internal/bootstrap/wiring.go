@@ -25,6 +25,7 @@ import (
 	appcompute "github.com/opensoha/soha/internal/application/compute"
 	appcopilot "github.com/opensoha/soha/internal/application/copilot"
 	appdelivery "github.com/opensoha/soha/internal/application/delivery"
+	appdeliverygovernance "github.com/opensoha/soha/internal/application/deliverygovernance"
 	appdirectorysync "github.com/opensoha/soha/internal/application/directorysync"
 	appdocker "github.com/opensoha/soha/internal/application/docker"
 	appevent "github.com/opensoha/soha/internal/application/event"
@@ -701,6 +702,9 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 
 	deliveryService := appdelivery.New(core.applicationService, core.catalogService, core.buildService, workflowService, core.releaseService, repos.deliveryRepository, core.executionService, runtimeResources, core.permissionResolver)
 	deliveryService.SetRecorders(core.auditService, core.operationService)
+	if governanceService, governanceErr := appdeliverygovernance.New(repos.deliveryRepository, core.auditService); governanceErr == nil {
+		deliveryService.SetGovernance(governanceService)
+	}
 	core.catalogService.SetTemplateUsageRuntimeReaders(appcatalog.TemplateUsageRuntimeReaders{
 		Builds:    core.buildService,
 		Workflows: workflowService,

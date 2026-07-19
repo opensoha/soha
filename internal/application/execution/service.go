@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -377,31 +378,15 @@ func (s *Service) CompleteBuildExecution(ctx context.Context, bundleID, taskID, 
 }
 
 func (s *Service) StartReleaseExecution(ctx context.Context, plan ReleasePlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
-	var (
-		bundle domaindelivery.ReleaseBundle
-		err    error
-	)
-	if strings.TrimSpace(plan.ReleaseBundleID) != "" {
-		bundle, err = s.repo.GetReleaseBundle(ctx, plan.ReleaseBundleID)
-		if err != nil {
-			return domaindelivery.ReleaseBundle{}, domaindelivery.ExecutionTask{}, err
-		}
-	} else {
-		bundle, err = s.repo.CreateReleaseBundle(ctx, domaindelivery.ReleaseBundle{
-			ID:                       "bundle:" + uuid.NewString(),
-			ApplicationID:            strings.TrimSpace(plan.ApplicationID),
-			ApplicationEnvironmentID: strings.TrimSpace(plan.ApplicationEnvironmentID),
-			Version:                  resolveVersion(plan.Version),
-			SourceType:               firstNonEmpty(plan.SourceType, "release"),
-			Status:                   "ready",
-			ArtifactRef:              strings.TrimSpace(plan.ArtifactRef),
-			Metadata:                 ensureMap(plan.Metadata),
-			CreatedAt:                time.Now().UTC(),
-			UpdatedAt:                time.Now().UTC(),
-		})
-		if err != nil {
-			return domaindelivery.ReleaseBundle{}, domaindelivery.ExecutionTask{}, err
-		}
+	if strings.TrimSpace(plan.ReleaseBundleID) == "" {
+		return domaindelivery.ReleaseBundle{}, domaindelivery.ExecutionTask{}, fmt.Errorf("%w: releaseBundleId referencing a completed build is required", apperrors.ErrInvalidArgument)
+	}
+	bundle, err := s.repo.GetReleaseBundle(ctx, plan.ReleaseBundleID)
+	if err != nil {
+		return domaindelivery.ReleaseBundle{}, domaindelivery.ExecutionTask{}, err
+	}
+	if err := validatePublishableBundle(bundle); err != nil {
+		return domaindelivery.ReleaseBundle{}, domaindelivery.ExecutionTask{}, err
 	}
 	task, err := s.repo.CreateExecutionTask(ctx, domaindelivery.ExecutionTask{
 		ID:                       "task:" + uuid.NewString(),
@@ -431,6 +416,29 @@ func (s *Service) StartReleaseExecution(ctx context.Context, plan ReleasePlan) (
 		task = dispatched
 	}
 	return bundle, domaindelivery.WithOperationState(task, time.Now().UTC()), nil
+}
+
+var immutableDigestPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9+._-]*:[a-fA-F0-9]{32,}$`)
+
+func validatePublishableBundle(bundle domaindelivery.ReleaseBundle) error {
+	status := strings.ToLower(strings.TrimSpace(bundle.Status))
+	if status != "ready" {
+		return fmt.Errorf("%w: release bundle %s is not built successfully (status %q)", apperrors.ErrInvalidArgument, bundle.ID, bundle.Status)
+	}
+	if err := validateImmutableArtifact(bundle.ArtifactRef, bundle.ArtifactDigest); err != nil {
+		return fmt.Errorf("%w: release bundle %s is not publishable: %v", apperrors.ErrInvalidArgument, bundle.ID, err)
+	}
+	return nil
+}
+
+func validateImmutableArtifact(ref, digest string) error {
+	if strings.TrimSpace(ref) == "" {
+		return fmt.Errorf("artifactRef is required")
+	}
+	if !immutableDigestPattern.MatchString(strings.TrimSpace(digest)) {
+		return fmt.Errorf("immutable artifact digest is required")
+	}
+	return nil
 }
 
 func (s *Service) CompleteReleaseExecution(ctx context.Context, bundleID, taskID, status string, result map[string]any) error {

@@ -67,6 +67,7 @@ type DeliveryDraftPlanService interface {
 	CreateDeliveryPlan(context.Context, domainidentity.Principal, domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error)
 	GetDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlan, error)
 	ConfirmDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlanConfirmResult, error)
+	DecideDeliveryPlanApproval(context.Context, domainidentity.Principal, string, domaindelivery.DeliveryPlanApprovalInput) (domaindelivery.DeliveryPlan, error)
 }
 
 type DeliveryExecutionActionService interface {
@@ -190,6 +191,7 @@ func (h *DeliveryHandler) TriggerApplicationDeliveryAction(c *gin.Context) {
 		Action:                   domaindelivery.ApplicationDeliveryActionKind(req.Action),
 		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
 		TargetID:                 req.TargetID,
+		TargetIDs:                req.TargetIDs,
 		BuildSourceID:            req.BuildSourceID,
 		RefType:                  req.RefType,
 		RefName:                  req.RefName,
@@ -517,6 +519,21 @@ func (h *DeliveryHandler) ConfirmDeliveryPlan(c *gin.Context) {
 	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
+func (h *DeliveryHandler) DecideDeliveryPlanApproval(c *gin.Context) {
+	var req dto.DeliveryPlanApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid delivery plan approval payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.drafts.DecideDeliveryPlanApproval(c.Request.Context(), principal, c.Param("planID"), domaindelivery.DeliveryPlanApprovalInput{Action: req.Action, Comment: req.Comment})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *DeliveryHandler) CancelExecutionTask(c *gin.Context) {
 	var req dto.ExecutionTaskActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
@@ -698,6 +715,7 @@ func deliveryPlanInputFromRequest(req dto.DeliveryPlanRequest) domaindelivery.De
 		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
 		Action:                   domaindelivery.ApplicationDeliveryActionKind(req.Action),
 		TargetID:                 req.TargetID,
+		TargetIDs:                req.TargetIDs,
 		BuildSourceID:            req.BuildSourceID,
 		ReleaseBundleID:          req.ReleaseBundleID,
 		RefType:                  req.RefType,

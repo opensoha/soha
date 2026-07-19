@@ -87,6 +87,44 @@ func (c *Client) ListTags(ctx context.Context, projectID, search string, limit i
 	return c.listReferences(ctx, projectID, search, limit, "tags")
 }
 
+func (c *Client) ListCommits(ctx context.Context, projectID, search string, page, limit int) (domainapp.GitCommitPage, error) {
+	if err := c.validateConfigured(); err != nil {
+		return domainapp.GitCommitPage{}, err
+	}
+	if strings.TrimSpace(projectID) == "" {
+		return domainapp.GitCommitPage{}, fmt.Errorf("%w: gitlab project id is required", apperrors.ErrInvalidArgument)
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = c.perPage
+	}
+	params := url.Values{
+		"page":     []string{strconv.Itoa(page)},
+		"per_page": []string{strconv.Itoa(limit + 1)},
+	}
+	if value := strings.TrimSpace(search); value != "" {
+		params.Set("search", value)
+	}
+	var response []commitResponse
+	if err := c.get(ctx, "/projects/"+url.PathEscape(projectID)+"/repository/commits", params, &response); err != nil {
+		return domainapp.GitCommitPage{}, err
+	}
+	hasMore := len(response) > limit
+	if hasMore {
+		response = response[:limit]
+	}
+	items := make([]domainapp.GitCommit, 0, len(response))
+	for _, item := range response {
+		items = append(items, domainapp.GitCommit{
+			ID: item.ID, ShortID: item.ShortID, Title: item.Title, Message: item.Message,
+			AuthorName: item.AuthorName, AuthorEmail: item.AuthorEmail, CommittedAt: item.CommittedDate, WebURL: item.WebURL,
+		})
+	}
+	return domainapp.GitCommitPage{Items: items, Page: page, Limit: limit, HasMore: hasMore}, nil
+}
+
 func (c *Client) listReferences(ctx context.Context, projectID, search string, limit int, kind string) ([]domainapp.GitReference, error) {
 	if err := c.validateConfigured(); err != nil {
 		return nil, err
@@ -170,5 +208,11 @@ type branchResponse struct {
 
 type commitResponse struct {
 	ID            string    `json:"id"`
+	ShortID       string    `json:"short_id"`
+	Title         string    `json:"title"`
+	Message       string    `json:"message"`
+	AuthorName    string    `json:"author_name"`
+	AuthorEmail   string    `json:"author_email"`
 	CommittedDate time.Time `json:"committed_date"`
+	WebURL        string    `json:"web_url"`
 }

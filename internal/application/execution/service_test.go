@@ -72,6 +72,70 @@ func TestTaskHeartbeatExpiredUsesHeartbeatStartedAndCreatedAt(t *testing.T) {
 	}
 }
 
+func TestStartReleaseExecutionRejectsUnbuiltBundle(t *testing.T) {
+	repo := newExecutionRepoFake()
+	repo.bundles["bundle-planned"] = domaindelivery.ReleaseBundle{
+		ID: "bundle-planned", ApplicationID: "app-1", Status: "planned",
+		ArtifactRef: "registry.example/app:v1", ArtifactDigest: "sha256:" + strings.Repeat("a", 64),
+	}
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+	_, _, err := service.StartReleaseExecution(context.Background(), ReleasePlan{ReleaseBundleID: "bundle-planned"})
+	if err == nil || !strings.Contains(err.Error(), "not built successfully") {
+		t.Fatalf("planned bundle error = %v", err)
+	}
+	if len(repo.tasks) != 0 {
+		t.Fatalf("release task created for planned bundle: %d", len(repo.tasks))
+	}
+}
+
+func TestStartReleaseExecutionRequiresImmutableDigest(t *testing.T) {
+	repo := newExecutionRepoFake()
+	repo.bundles["bundle-ready"] = domaindelivery.ReleaseBundle{
+		ID: "bundle-ready", ApplicationID: "app-1", Status: "ready", ArtifactRef: "registry.example/app:v1",
+	}
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+	_, _, err := service.StartReleaseExecution(context.Background(), ReleasePlan{
+		ReleaseBundleID: "bundle-ready",
+	})
+	if err == nil || !strings.Contains(err.Error(), "immutable artifact digest") {
+		t.Fatalf("missing digest error = %v", err)
+	}
+	if len(repo.tasks) != 0 {
+		t.Fatalf("unsafe release created task: %d", len(repo.tasks))
+	}
+}
+
+func TestStartReleaseExecutionAcceptsCompletedDigest(t *testing.T) {
+	repo := newExecutionRepoFake()
+	digest := "sha256:" + strings.Repeat("b", 64)
+	repo.bundles["bundle-ready"] = domaindelivery.ReleaseBundle{
+		ID: "bundle-ready", ApplicationID: "app-1", Status: "ready",
+		ArtifactRef: "registry.example/app@" + digest, ArtifactDigest: digest,
+	}
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+	bundle, _, err := service.StartReleaseExecution(context.Background(), ReleasePlan{ReleaseBundleID: "bundle-ready"})
+	if err != nil {
+		t.Fatalf("completed digest release error = %v", err)
+	}
+	if bundle.ArtifactDigest != "sha256:"+strings.Repeat("b", 64) {
+		t.Fatalf("digest = %q", bundle.ArtifactDigest)
+	}
+}
+
+func TestStartReleaseExecutionLegacyCallFailsClosed(t *testing.T) {
+	repo := newExecutionRepoFake()
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+	_, _, err := service.StartReleaseExecution(context.Background(), ReleasePlan{
+		ApplicationID: "app-1", ArtifactRef: "registry.example/app@sha256:" + strings.Repeat("c", 64),
+	})
+	if err == nil || !strings.Contains(err.Error(), "releaseBundleId") {
+		t.Fatalf("legacy call error = %v", err)
+	}
+	if len(repo.bundles) != 0 || len(repo.tasks) != 0 {
+		t.Fatalf("legacy call created records: bundles=%d tasks=%d", len(repo.bundles), len(repo.tasks))
+	}
+}
+
 func TestRecordCallbackIgnoresLateTerminalCallback(t *testing.T) {
 	repo := newExecutionRepoFake()
 	now := time.Date(2026, 6, 4, 10, 30, 0, 0, time.UTC)

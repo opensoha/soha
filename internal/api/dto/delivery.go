@@ -4,6 +4,7 @@ type ApplicationDeliveryActionRequest struct {
 	Action                   string         `json:"action"`
 	ApplicationEnvironmentID string         `json:"applicationEnvironmentId"`
 	TargetID                 string         `json:"targetId"`
+	TargetIDs                []string       `json:"targetIds"`
 	BuildSourceID            string         `json:"buildSourceId"`
 	RefType                  string         `json:"refType"`
 	RefName                  string         `json:"refName"`
@@ -71,6 +72,7 @@ type DeliveryPlanRequest struct {
 	ApplicationEnvironmentID string         `json:"applicationEnvironmentId"`
 	Action                   string         `json:"action"`
 	TargetID                 string         `json:"targetId"`
+	TargetIDs                []string       `json:"targetIds"`
 	BuildSourceID            string         `json:"buildSourceId"`
 	ReleaseBundleID          string         `json:"releaseBundleId"`
 	RefType                  string         `json:"refType"`
@@ -81,4 +83,9 @@ type DeliveryPlanRequest struct {
 	Reason                   string         `json:"reason"`
 	Variables                map[string]any `json:"variables"`
 	BuildArgs                map[string]any `json:"buildArgs"`
+}
+
+type DeliveryPlanApprovalRequest struct {
+	Action  string `json:"action" binding:"required"`
+	Comment string `json:"comment,omitempty"`
 }

@@ -671,7 +671,7 @@ func (r *Repository) CreateDeliveryPlan(ctx context.Context, input domaindeliver
 
 func (r *Repository) GetDeliveryPlan(ctx context.Context, id string) (domaindelivery.DeliveryPlan, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, created_by, confirmed_at, created_at, updated_at
+		SELECT id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, created_by, confirmed_at, created_at, updated_at
 		FROM delivery_plans
 		WHERE id = ?
 		LIMIT 1
@@ -710,20 +710,24 @@ func (r *Repository) saveDeliveryPlan(ctx context.Context, item domaindelivery.D
 	if err != nil {
 		return fmt.Errorf("marshal delivery plan build args: %w", err)
 	}
+	targetIDs, err := json.Marshal(item.TargetIDs)
+	if err != nil {
+		return fmt.Errorf("marshal delivery plan target ids: %w", err)
+	}
 	if create {
 		if err := r.db.WithContext(ctx).Exec(`
-			INSERT INTO delivery_plans (id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, created_by, confirmed_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, item.ID, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), nullableString(item.CreatedBy), item.ConfirmedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			INSERT INTO delivery_plans (id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, created_by, confirmed_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, item.ID, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), nullableString(item.CreatedBy), item.ConfirmedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return fmt.Errorf("create delivery plan: %w", err)
 		}
 		return nil
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE delivery_plans
-		SET source = ?, status = ?, application_id = ?, application_name = ?, application_environment_id = ?, environment_key = ?, action = ?, target_id = ?, target_summary = ?, build_source_id = ?, release_bundle_id = ?, ref_type = ?, ref_name = ?, image_tag = ?, release_name = ?, container_name = ?, reason = ?, risk_level = ?, requires_approval = ?, impact = ?, rollback_strategy = ?, variables = ?, build_args = ?, created_by = ?, confirmed_at = ?, updated_at = ?
+		SET source = ?, status = ?, application_id = ?, application_name = ?, application_environment_id = ?, environment_key = ?, action = ?, target_id = ?, target_ids = ?, target_summary = ?, build_source_id = ?, release_bundle_id = ?, ref_type = ?, ref_name = ?, image_tag = ?, release_name = ?, container_name = ?, reason = ?, risk_level = ?, requires_approval = ?, impact = ?, rollback_strategy = ?, variables = ?, build_args = ?, created_by = ?, confirmed_at = ?, updated_at = ?
 		WHERE id = ?
-	`, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), nullableString(item.CreatedBy), item.ConfirmedAt, item.UpdatedAt, item.ID)
+	`, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), nullableString(item.CreatedBy), item.ConfirmedAt, item.UpdatedAt, item.ID)
 	if result.Error != nil {
 		return fmt.Errorf("update delivery plan: %w", result.Error)
 	}
@@ -1050,6 +1054,7 @@ func scanDeliveryPlanRow(row *sql.Row) (domaindelivery.DeliveryPlan, error) {
 	var applicationName sql.NullString
 	var environmentKey sql.NullString
 	var targetID sql.NullString
+	var targetIDs []byte
 	var targetSummary sql.NullString
 	var buildSourceID sql.NullString
 	var releaseBundleID sql.NullString
@@ -1066,7 +1071,7 @@ func scanDeliveryPlanRow(row *sql.Row) (domaindelivery.DeliveryPlan, error) {
 	var buildArgs []byte
 	var createdBy sql.NullString
 	var confirmedAt sql.NullTime
-	if err := row.Scan(&item.ID, &item.Source, &item.Status, &item.ApplicationID, &applicationName, &item.ApplicationEnvironmentID, &environmentKey, &item.Action, &targetID, &targetSummary, &buildSourceID, &releaseBundleID, &refType, &refName, &imageTag, &releaseName, &containerName, &reason, &riskLevel, &item.RequiresApproval, &impact, &rollbackStrategy, &variables, &buildArgs, &createdBy, &confirmedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.Source, &item.Status, &item.ApplicationID, &applicationName, &item.ApplicationEnvironmentID, &environmentKey, &item.Action, &targetID, &targetIDs, &targetSummary, &buildSourceID, &releaseBundleID, &refType, &refName, &imageTag, &releaseName, &containerName, &reason, &riskLevel, &item.RequiresApproval, &impact, &rollbackStrategy, &variables, &buildArgs, &createdBy, &confirmedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaindelivery.DeliveryPlan{}, ErrNotFound
 		}
@@ -1075,6 +1080,7 @@ func scanDeliveryPlanRow(row *sql.Row) (domaindelivery.DeliveryPlan, error) {
 	item.ApplicationName = applicationName.String
 	item.EnvironmentKey = environmentKey.String
 	item.TargetID = targetID.String
+	_ = json.Unmarshal(targetIDs, &item.TargetIDs)
 	item.TargetSummary = targetSummary.String
 	item.BuildSourceID = buildSourceID.String
 	item.ReleaseBundleID = releaseBundleID.String
@@ -1312,6 +1318,7 @@ func normalizeDeliveryPlanInput(input domaindelivery.DeliveryPlanInput, createdB
 		EnvironmentKey:           strings.TrimSpace(input.EnvironmentKey),
 		Action:                   action,
 		TargetID:                 strings.TrimSpace(input.TargetID),
+		TargetIDs:                normalizedStrings(input.TargetIDs),
 		TargetSummary:            strings.TrimSpace(input.TargetSummary),
 		BuildSourceID:            strings.TrimSpace(input.BuildSourceID),
 		ReleaseBundleID:          strings.TrimSpace(input.ReleaseBundleID),
@@ -1495,4 +1502,21 @@ func parseRFC3339(raw any) *time.Time {
 		return nil
 	}
 	return &value
+}
+
+func normalizedStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	deliverygovernance "github.com/opensoha/soha/internal/application/deliverygovernance"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
@@ -101,6 +102,23 @@ type Service struct {
 	permissions  *appaccess.PermissionResolver
 	audit        AuditRecorder
 	operations   OperationRecorder
+	governance   *deliverygovernance.Service
+}
+
+func uniqueStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func New(applications ApplicationReader, catalog CatalogReader, builds BuildReader, workflows WorkflowReader, releases ReleaseReader, repository domaindelivery.Repository, execution ExecutionController, targets TargetReader, permissions *appaccess.PermissionResolver) *Service {
@@ -120,6 +138,10 @@ func New(applications ApplicationReader, catalog CatalogReader, builds BuildRead
 func (s *Service) SetRecorders(audit AuditRecorder, operations OperationRecorder) {
 	s.audit = audit
 	s.operations = operations
+}
+
+func (s *Service) SetGovernance(service *deliverygovernance.Service) {
+	s.governance = service
 }
 
 func (s *Service) GetApplicationDetail(ctx context.Context, principal domainidentity.Principal, applicationID string) (domaindelivery.ApplicationDetail, error) {
@@ -209,10 +231,14 @@ func (s *Service) GetApplicationRuntimeDetail(ctx context.Context, principal dom
 			Workloads:                workloads,
 		})
 	}
-	return domaindelivery.ApplicationRuntimeDetail{
+	detail := domaindelivery.ApplicationRuntimeDetail{
 		Application:  app,
 		Environments: items,
-	}, nil
+	}
+	if err := s.enrichApplicationRuntimeDetail(ctx, principal, &detail, bundles, tasks); err != nil {
+		return domaindelivery.ApplicationRuntimeDetail{}, err
+	}
+	return detail, nil
 }
 
 func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, principal domainidentity.Principal, applicationID, bindingID, workloadName string) (domaindelivery.ApplicationWorkloadRuntimeDetail, error) {
@@ -762,11 +788,11 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 	if binding.ApplicationID != app.ID {
 		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: application environment does not belong to application", apperrors.ErrInvalidArgument)
 	}
-	target, err := selectReleaseTarget(binding, input.TargetID)
+	targets, err := selectReleaseTargets(binding, input.TargetID, input.TargetIDs)
 	if err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
-	if action != domaindelivery.ApplicationDeliveryActionBuild && target == nil {
+	if action != domaindelivery.ApplicationDeliveryActionBuild && len(targets) == 0 {
 		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
 	}
 	environment := s.environmentForBinding(ctx, principal, binding)
@@ -777,10 +803,12 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 	planInput.ApplicationName = app.Name
 	planInput.ApplicationEnvironmentID = binding.ID
 	planInput.EnvironmentKey = firstNonEmpty(environment.Key, binding.EnvironmentKey)
-	planInput.TargetSummary = deliveryPlanTargetSummary(target)
+	planInput.TargetID = firstTargetID(targets, input.TargetID)
+	planInput.TargetIDs = targetIDs(targets, input.TargetIDs)
+	planInput.TargetSummary = deliveryPlanTargetSummary(targets)
 	planInput.RiskLevel = deliveryPlanRiskLevel(action, environment, requiresApproval)
 	planInput.RequiresApproval = requiresApproval
-	planInput.Impact = deliveryPlanImpact(app, binding, environment, target, planInput)
+	planInput.Impact = deliveryPlanImpact(app, binding, environment, firstTarget(targets), planInput)
 	planInput.RollbackStrategy = deliveryPlanRollbackStrategy(action, binding)
 	return s.repository.CreateDeliveryPlan(ctx, planInput, principal.UserID)
 }
@@ -802,12 +830,38 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 		return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery plan is already confirmed", apperrors.ErrInvalidArgument)
 	case domaindelivery.DeliveryPlanStatusConfirming:
 		return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery plan is already being confirmed", apperrors.ErrInvalidArgument)
+	case domaindelivery.DeliveryPlanStatusWaitingApproval:
+		return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery plan is waiting for approval", apperrors.ErrInvalidArgument)
 	case domaindelivery.DeliveryPlanStatusDraft:
 	default:
 		return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery plan status %s cannot be confirmed", apperrors.ErrInvalidArgument, plan.Status)
 	}
 	if err := s.authorizeApplicationDeliveryAction(ctx, principal, plan.Action); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
+	}
+	if plan.RequiresApproval && !deliveryPlanApprovalGranted(plan) {
+		plan.Status = domaindelivery.DeliveryPlanStatusWaitingApproval
+		plan.UpdatedAt = time.Now().UTC()
+		plan.Impact = deliveryPlanApprovalImpact(plan, principal, "requested", "")
+		updated, updateErr := s.repository.UpdateDeliveryPlan(ctx, plan)
+		if updateErr != nil {
+			return domaindelivery.DeliveryPlanConfirmResult{}, updateErr
+		}
+		s.recordDeliveryPlanApproval(ctx, principal, updated, "requested", "")
+		return domaindelivery.DeliveryPlanConfirmResult{Plan: updated}, nil
+	}
+	if s.governance != nil && strings.TrimSpace(plan.ReleaseBundleID) != "" && deliveryPlanRequiresValidation(plan) {
+		decision, gateErr := s.governance.Evaluate(ctx, principal, deliverygovernance.Request{
+			PlanID: plan.ID, ApplicationID: plan.ApplicationID, ApplicationEnvironmentID: plan.ApplicationEnvironmentID,
+			Action: string(plan.Action), ReleaseBundleID: plan.ReleaseBundleID, RequiresValidation: true,
+			RequiresApproval: plan.RequiresApproval, ApprovalStatus: approvalStatus(plan), AIStatus: "available",
+		})
+		if gateErr != nil {
+			return domaindelivery.DeliveryPlanConfirmResult{}, gateErr
+		}
+		if !decision.Allowed {
+			return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery governance %s: %s", apperrors.ErrInvalidArgument, decision.Status, strings.Join(decision.Reasons, "; "))
+		}
 	}
 	now := time.Now().UTC()
 	plan.Status = domaindelivery.DeliveryPlanStatusConfirming
@@ -832,6 +886,106 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 		Plan:   plan,
 		Result: result,
 	}, nil
+}
+
+func deliveryPlanRequiresValidation(plan domaindelivery.DeliveryPlan) bool {
+	if value, ok := plan.Impact["requiresValidation"].(bool); ok {
+		return value
+	}
+	return plan.Action == domaindelivery.ApplicationDeliveryActionDeploy || plan.Action == domaindelivery.ApplicationDeliveryActionBuildDeploy
+}
+
+func approvalStatus(plan domaindelivery.DeliveryPlan) string {
+	if deliveryPlanApprovalGranted(plan) {
+		return "approved"
+	}
+	return "pending"
+}
+
+func (s *Service) DecideDeliveryPlanApproval(ctx context.Context, principal domainidentity.Principal, planID string, input domaindelivery.DeliveryPlanApprovalInput) (domaindelivery.DeliveryPlan, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	plan, err := s.repository.GetDeliveryPlan(ctx, strings.TrimSpace(planID))
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	if !plan.RequiresApproval {
+		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: delivery plan does not require approval", apperrors.ErrInvalidArgument)
+	}
+	if plan.Status != domaindelivery.DeliveryPlanStatusWaitingApproval {
+		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: delivery plan is not waiting for approval", apperrors.ErrInvalidArgument)
+	}
+	if err := s.authorizeDeliveryPlanApprover(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	action := strings.ToLower(strings.TrimSpace(input.Action))
+	switch action {
+	case "approve", "approved":
+		action = "approved"
+	case "reject", "rejected":
+		action = "rejected"
+	default:
+		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: approval action must be approved or rejected", apperrors.ErrInvalidArgument)
+	}
+	plan.Status = domaindelivery.DeliveryPlanStatusDraft
+	plan.UpdatedAt = time.Now().UTC()
+	plan.Impact = deliveryPlanApprovalImpact(plan, principal, action, input.Comment)
+	updated, err := s.repository.UpdateDeliveryPlan(ctx, plan)
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	s.recordDeliveryPlanApproval(ctx, principal, updated, action, input.Comment)
+	return updated, nil
+}
+
+func deliveryPlanApprovalImpact(plan domaindelivery.DeliveryPlan, principal domainidentity.Principal, status, comment string) map[string]any {
+	impact := map[string]any{}
+	for key, value := range plan.Impact {
+		impact[key] = value
+	}
+	history, _ := impact["approval"].([]any)
+	history = append(history, map[string]any{"status": status, "comment": strings.TrimSpace(comment), "actorId": principal.UserID, "actorName": principal.UserName, "at": time.Now().UTC().Format(time.RFC3339)})
+	impact["approval"] = history
+	return impact
+}
+
+func deliveryPlanApprovalGranted(plan domaindelivery.DeliveryPlan) bool {
+	history, _ := plan.Impact["approval"].([]any)
+	if len(history) == 0 {
+		return false
+	}
+	decision, _ := history[len(history)-1].(map[string]any)
+	return strings.EqualFold(strings.TrimSpace(fmt.Sprint(decision["status"])), "approved")
+}
+
+func (s *Service) authorizeDeliveryPlanApprover(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan) error {
+	binding, err := s.catalog.GetApplicationEnvironment(ctx, principal, plan.ApplicationEnvironmentID)
+	if err != nil {
+		return err
+	}
+	if len(binding.ReleasePolicy.ApproverRoles) == 0 {
+		return nil
+	}
+	for _, required := range binding.ReleasePolicy.ApproverRoles {
+		for _, role := range principal.Roles {
+			if strings.EqualFold(strings.TrimSpace(required), strings.TrimSpace(role)) {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("%w: principal is not assigned an approver role", apperrors.ErrAccessDenied)
+}
+
+func (s *Service) recordDeliveryPlanApproval(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan, status, comment string) {
+	meta := requestctx.FromContext(ctx)
+	metadata := map[string]any{"planId": plan.ID, "approvalStatus": status, "comment": strings.TrimSpace(comment)}
+	if s.audit != nil {
+		_ = s.audit.Record(ctx, domainaudit.Entry{ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams, ResourceKind: "DeliveryPlan", ResourceName: plan.ID, Action: "delivery.plan.approval", Result: "success", Summary: "delivery plan approval " + status, RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP, Metadata: metadata})
+	}
+	if s.operations != nil {
+		_ = s.operations.Record(ctx, operationentry.New(ctx, principal, "delivery.plan.approval", map[string]any{"resourceKind": "DeliveryPlan", "planId": plan.ID}, "success", "delivery plan approval "+status, metadata))
+	}
 }
 
 func (s *Service) restoreDeliveryDraftConfirmFailure(ctx context.Context, draft domaindelivery.DeliveryDraft, cause error) error {
@@ -869,11 +1023,15 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 	if binding.ApplicationID != app.ID {
 		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: application environment does not belong to application", apperrors.ErrInvalidArgument)
 	}
-	target, err := selectReleaseTarget(binding, input.TargetID)
+	environment := s.environmentForBinding(ctx, principal, binding)
+	if requiresApproval(binding, environment) && !input.ApprovalGranted {
+		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: delivery approval is required", apperrors.ErrInvalidArgument)
+	}
+	targets, err := selectReleaseTargets(binding, input.TargetID, input.TargetIDs)
 	if err != nil {
 		return domaindelivery.ApplicationDeliveryActionResult{}, err
 	}
-	if action != domaindelivery.ApplicationDeliveryActionBuild && target == nil {
+	if action != domaindelivery.ApplicationDeliveryActionBuild && len(targets) == 0 {
 		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
 	}
 	if err := s.authorizeApplicationDeliveryAction(ctx, principal, action); err != nil {
@@ -883,9 +1041,10 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		Action:                   action,
 		ApplicationID:            app.ID,
 		ApplicationEnvironmentID: binding.ID,
-		Target:                   target,
+		Target:                   firstTarget(targets),
+		Targets:                  targets,
 	}
-	return s.executeApplicationDeliveryAction(ctx, principal, app, binding, target, input, result)
+	return s.executeApplicationDeliveryAction(ctx, principal, app, binding, targets, input, result)
 }
 
 func (s *Service) executeApplicationDeliveryAction(
@@ -893,7 +1052,7 @@ func (s *Service) executeApplicationDeliveryAction(
 	principal domainidentity.Principal,
 	app domainapp.App,
 	binding domaincatalog.ApplicationEnvironment,
-	target *domaincatalog.ReleaseTarget,
+	targets []domaincatalog.ReleaseTarget,
 	input domaindelivery.ApplicationDeliveryActionInput,
 	result domaindelivery.ApplicationDeliveryActionResult,
 ) (domaindelivery.ApplicationDeliveryActionResult, error) {
@@ -902,54 +1061,63 @@ func (s *Service) executeApplicationDeliveryAction(
 	case domaindelivery.ApplicationDeliveryActionBuild:
 		buildRecord, buildErr := s.triggerApplicationBuild(ctx, principal, app, binding, input)
 		if buildErr != nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, buildErr
+			return result, buildErr
 		}
 		result.Build = &buildRecord
 		applyBuildRelatedIDs(&result, buildRecord)
 	case domaindelivery.ApplicationDeliveryActionDeploy:
-		releaseRecord, releaseErr := s.triggerApplicationRelease(ctx, principal, app, binding, *target, input)
-		if releaseErr != nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, releaseErr
+		for _, target := range targets {
+			releaseRecord, releaseErr := s.triggerApplicationRelease(ctx, principal, app, binding, target, input)
+			if releaseErr != nil {
+				return result, releaseErr
+			}
+			result.Releases = append(result.Releases, releaseRecord)
+			if result.Release == nil {
+				result.Release = &result.Releases[0]
+			}
+			applyReleaseRelatedIDs(&result, releaseRecord)
 		}
-		result.Release = &releaseRecord
-		applyReleaseRelatedIDs(&result, releaseRecord)
 	case domaindelivery.ApplicationDeliveryActionWorkflow:
-		run, runErr := s.workflows.Trigger(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, false))
-		if runErr != nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
+		for _, target := range targets {
+			run, runErr := s.workflows.Trigger(ctx, principal, workflowInputForDeliveryAction(app, binding, &target, input, action, false))
+			if runErr != nil {
+				return result, runErr
+			}
+			appendWorkflowResult(&result, run)
 		}
-		result.Workflow = &run
-		applyWorkflowRelatedIDs(&result, run)
 	case domaindelivery.ApplicationDeliveryActionBuildDeploy:
 		if err := requireDeliveryWorkflowTemplate(binding, "workflow template is required"); err != nil {
 			return domaindelivery.ApplicationDeliveryActionResult{}, err
 		}
-		run, runErr := s.workflows.Trigger(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, false))
-		if runErr != nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
+		for _, target := range targets {
+			run, runErr := s.workflows.Trigger(ctx, principal, workflowInputForDeliveryAction(app, binding, &target, input, action, false))
+			if runErr != nil {
+				return result, runErr
+			}
+			appendWorkflowResult(&result, run)
 		}
-		result.Workflow = &run
-		applyWorkflowRelatedIDs(&result, run)
 	case domaindelivery.ApplicationDeliveryActionVerify:
 		if err := requireDeliveryWorkflowTemplate(binding, "workflow template is required"); err != nil {
 			return domaindelivery.ApplicationDeliveryActionResult{}, err
 		}
-		run, runErr := s.workflows.TriggerValidation(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, true))
-		if runErr != nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
+		for _, target := range targets {
+			run, runErr := s.workflows.TriggerValidation(ctx, principal, workflowInputForDeliveryAction(app, binding, &target, input, action, true))
+			if runErr != nil {
+				return result, runErr
+			}
+			appendWorkflowResult(&result, run)
 		}
-		result.Workflow = &run
-		applyWorkflowRelatedIDs(&result, run)
 	case domaindelivery.ApplicationDeliveryActionRollback:
 		if err := requireDeliveryWorkflowTemplate(binding, "rollback workflow template is required"); err != nil {
 			return domaindelivery.ApplicationDeliveryActionResult{}, err
 		}
-		run, runErr := s.workflows.TriggerRollback(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, false))
-		if runErr != nil {
-			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
+		for _, target := range targets {
+			run, runErr := s.workflows.TriggerRollback(ctx, principal, workflowInputForDeliveryAction(app, binding, &target, input, action, false))
+			if runErr != nil {
+				return result, runErr
+			}
+			appendWorkflowResult(&result, run)
 		}
-		result.Workflow = &run
-		applyWorkflowRelatedIDs(&result, run)
 	default:
 		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: unsupported application delivery action %q", apperrors.ErrInvalidArgument, action)
 	}
@@ -1023,12 +1191,16 @@ func (s *Service) triggerApplicationRelease(ctx context.Context, principal domai
 	})
 }
 
-func workflowInputForDeliveryAction(app domainapp.App, binding domaincatalog.ApplicationEnvironment, target domaincatalog.ReleaseTarget, input domaindelivery.ApplicationDeliveryActionInput, action domaindelivery.ApplicationDeliveryActionKind, validationOnly bool) domainworkflow.Input {
+func workflowInputForDeliveryAction(app domainapp.App, binding domaincatalog.ApplicationEnvironment, target *domaincatalog.ReleaseTarget, input domaindelivery.ApplicationDeliveryActionInput, action domaindelivery.ApplicationDeliveryActionKind, validationOnly bool) domainworkflow.Input {
 	workflowName := workflowTemplateName(binding)
 	if workflowName == "" {
 		workflowName = "build-release-verify"
 	}
 	buildSourceID, _, refType, refName, imageTag := resolveDeliveryBuildDefaults(app, binding, input)
+	resolvedTarget := domaincatalog.ReleaseTarget{}
+	if target != nil {
+		resolvedTarget = *target
+	}
 	variables := mergeActionMaps(binding.BuildPolicy.Variables, input.Variables)
 	if strings.TrimSpace(input.ReleaseBundleID) != "" {
 		variables["releaseBundleId"] = strings.TrimSpace(input.ReleaseBundleID)
@@ -1037,15 +1209,15 @@ func workflowInputForDeliveryAction(app domainapp.App, binding domaincatalog.App
 		ApplicationID:            app.ID,
 		ApplicationEnvironmentID: binding.ID,
 		WorkflowName:             workflowName,
-		ClusterID:                target.ClusterID,
-		Namespace:                target.Namespace,
-		DeploymentName:           target.WorkloadName,
+		ClusterID:                resolvedTarget.ClusterID,
+		Namespace:                resolvedTarget.Namespace,
+		DeploymentName:           resolvedTarget.WorkloadName,
 		BuildSourceID:            buildSourceID,
 		RefType:                  refType,
 		RefName:                  refName,
 		ImageTag:                 imageTag,
 		ReleaseName:              firstNonEmpty(input.ReleaseName, imageTag, binding.ID),
-		ContainerName:            firstNonEmpty(input.ContainerName, target.ContainerName),
+		ContainerName:            firstNonEmpty(input.ContainerName, resolvedTarget.ContainerName),
 		Variables:                variables,
 		BuildArgs:                mergeActionMaps(binding.BuildPolicy.BuildArgs, input.BuildArgs),
 		TriggerBuild:             action == domaindelivery.ApplicationDeliveryActionBuildDeploy || action == domaindelivery.ApplicationDeliveryActionWorkflow,
@@ -1087,28 +1259,57 @@ func resolveDeliveryImageRef(app domainapp.App, source *domainapp.BuildSource, i
 	return fmt.Sprintf("%s:%s", base, strings.TrimSpace(imageTag))
 }
 
-func selectReleaseTarget(binding domaincatalog.ApplicationEnvironment, targetID string) (*domaincatalog.ReleaseTarget, error) {
-	targetID = strings.TrimSpace(targetID)
-	if targetID != "" {
+func selectReleaseTargets(binding domaincatalog.ApplicationEnvironment, targetID string, targetIDs []string) ([]domaincatalog.ReleaseTarget, error) {
+	requested := uniqueStrings(append(append([]string(nil), targetIDs...), targetID))
+	if len(requested) == 0 {
 		for _, item := range binding.Targets {
-			if item.ID != targetID {
-				continue
+			if item.Enabled {
+				return []domaincatalog.ReleaseTarget{item}, nil
 			}
-			if !item.Enabled {
-				return nil, fmt.Errorf("%w: release target is disabled", apperrors.ErrInvalidArgument)
-			}
-			copyItem := item
-			return &copyItem, nil
 		}
-		return nil, fmt.Errorf("%w: release target %q not found", apperrors.ErrInvalidArgument, targetID)
+		return nil, nil
 	}
+	byID := make(map[string]domaincatalog.ReleaseTarget, len(binding.Targets))
 	for _, item := range binding.Targets {
-		if item.Enabled {
-			copyItem := item
-			return &copyItem, nil
-		}
+		byID[item.ID] = item
 	}
-	return nil, nil
+	selected := make([]domaincatalog.ReleaseTarget, 0, len(requested))
+	for _, id := range requested {
+		item, ok := byID[id]
+		if !ok {
+			return nil, fmt.Errorf("%w: release target %q not found", apperrors.ErrInvalidArgument, id)
+		}
+		if !item.Enabled {
+			return nil, fmt.Errorf("%w: release target %q is disabled", apperrors.ErrInvalidArgument, id)
+		}
+		selected = append(selected, item)
+	}
+	return selected, nil
+}
+
+func firstTarget(targets []domaincatalog.ReleaseTarget) *domaincatalog.ReleaseTarget {
+	if len(targets) == 0 {
+		return nil
+	}
+	return &targets[0]
+}
+
+func firstTargetID(targets []domaincatalog.ReleaseTarget, fallback string) string {
+	if target := firstTarget(targets); target != nil {
+		return target.ID
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func targetIDs(targets []domaincatalog.ReleaseTarget, fallback []string) []string {
+	if len(targets) == 0 {
+		return uniqueStrings(fallback)
+	}
+	ids := make([]string, 0, len(targets))
+	for _, target := range targets {
+		ids = append(ids, target.ID)
+	}
+	return ids
 }
 
 func (s *Service) environmentForBinding(ctx context.Context, principal domainidentity.Principal, binding domaincatalog.ApplicationEnvironment) domaincatalog.Environment {
@@ -1124,15 +1325,19 @@ func (s *Service) environmentForBinding(ctx context.Context, principal domainide
 	return domaincatalog.Environment{ID: binding.EnvironmentID, Key: binding.EnvironmentKey}
 }
 
-func deliveryPlanTargetSummary(target *domaincatalog.ReleaseTarget) string {
-	if target == nil {
+func deliveryPlanTargetSummary(targets []domaincatalog.ReleaseTarget) string {
+	if len(targets) == 0 {
 		return ""
 	}
-	return strings.Join([]string{
-		strings.TrimSpace(target.ClusterID),
-		strings.TrimSpace(target.Namespace),
-		strings.TrimSpace(target.WorkloadName),
-	}, " / ")
+	summaries := make([]string, 0, len(targets))
+	for _, target := range targets {
+		summaries = append(summaries, strings.Join([]string{
+			strings.TrimSpace(target.ClusterID),
+			strings.TrimSpace(target.Namespace),
+			strings.TrimSpace(target.WorkloadName),
+		}, " / "))
+	}
+	return strings.Join(summaries, "; ")
 }
 
 func deliveryPlanRiskLevel(action domaindelivery.ApplicationDeliveryActionKind, environment domaincatalog.Environment, requiresApproval bool) string {
@@ -1783,6 +1988,7 @@ func deliveryActionInputFromPlan(plan domaindelivery.DeliveryPlan) domaindeliver
 		Action:                   plan.Action,
 		ApplicationEnvironmentID: plan.ApplicationEnvironmentID,
 		TargetID:                 plan.TargetID,
+		TargetIDs:                append([]string(nil), plan.TargetIDs...),
 		BuildSourceID:            plan.BuildSourceID,
 		ReleaseBundleID:          plan.ReleaseBundleID,
 		RefType:                  plan.RefType,
@@ -1792,6 +1998,7 @@ func deliveryActionInputFromPlan(plan domaindelivery.DeliveryPlan) domaindeliver
 		ContainerName:            plan.ContainerName,
 		Variables:                ensureMap(plan.Variables),
 		BuildArgs:                ensureMap(plan.BuildArgs),
+		ApprovalGranted:          deliveryPlanApprovalGranted(plan),
 	}
 }
 
@@ -1944,7 +2151,19 @@ func applyWorkflowRelatedIDs(result *domaindelivery.ApplicationDeliveryActionRes
 	}
 	if strings.TrimSpace(run.ID) != "" {
 		result.RelatedIDs.WorkflowRunID = strings.TrimSpace(run.ID)
+		result.RelatedIDs.WorkflowRunIDs = append(result.RelatedIDs.WorkflowRunIDs, strings.TrimSpace(run.ID))
 	}
+}
+
+func appendWorkflowResult(result *domaindelivery.ApplicationDeliveryActionResult, run domainworkflow.Run) {
+	if result == nil {
+		return
+	}
+	result.Workflows = append(result.Workflows, run)
+	if result.Workflow == nil {
+		result.Workflow = &result.Workflows[0]
+	}
+	applyWorkflowRelatedIDs(result, run)
 }
 
 func applyRelatedIDsFromMetadata(result *domaindelivery.ApplicationDeliveryActionResult, metadata map[string]any) {
@@ -1953,9 +2172,11 @@ func applyRelatedIDsFromMetadata(result *domaindelivery.ApplicationDeliveryActio
 	}
 	if bundleID := metadataString(metadata, "releaseBundleId"); bundleID != "" {
 		result.RelatedIDs.ReleaseBundleID = bundleID
+		result.RelatedIDs.ReleaseBundleIDs = append(result.RelatedIDs.ReleaseBundleIDs, bundleID)
 	}
 	if taskID := metadataString(metadata, "executionTaskId"); taskID != "" {
 		result.RelatedIDs.ExecutionTaskID = taskID
+		result.RelatedIDs.ExecutionTaskIDs = append(result.RelatedIDs.ExecutionTaskIDs, taskID)
 	}
 }
 

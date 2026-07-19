@@ -480,6 +480,7 @@ type ApplicationDeliveryActionInput struct {
 	Action                   ApplicationDeliveryActionKind `json:"action"`
 	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
 	TargetID                 string                        `json:"targetId,omitempty"`
+	TargetIDs                []string                      `json:"targetIds,omitempty"`
 	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
 	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
 	RefType                  string                        `json:"refType,omitempty"`
@@ -489,12 +490,16 @@ type ApplicationDeliveryActionInput struct {
 	ContainerName            string                        `json:"containerName,omitempty"`
 	Variables                map[string]any                `json:"variables,omitempty"`
 	BuildArgs                map[string]any                `json:"buildArgs,omitempty"`
+	ApprovalGranted          bool                          `json:"-"`
 }
 
 type ApplicationDeliveryActionRelatedIDs struct {
-	ReleaseBundleID string `json:"releaseBundleId,omitempty"`
-	ExecutionTaskID string `json:"executionTaskId,omitempty"`
-	WorkflowRunID   string `json:"workflowRunId,omitempty"`
+	ReleaseBundleID  string   `json:"releaseBundleId,omitempty"`
+	ExecutionTaskID  string   `json:"executionTaskId,omitempty"`
+	WorkflowRunID    string   `json:"workflowRunId,omitempty"`
+	ReleaseBundleIDs []string `json:"releaseBundleIds,omitempty"`
+	ExecutionTaskIDs []string `json:"executionTaskIds,omitempty"`
+	WorkflowRunIDs   []string `json:"workflowRunIds,omitempty"`
 }
 
 type ApplicationDeliveryActionResult struct {
@@ -502,9 +507,12 @@ type ApplicationDeliveryActionResult struct {
 	ApplicationID            string                              `json:"applicationId"`
 	ApplicationEnvironmentID string                              `json:"applicationEnvironmentId"`
 	Target                   *domaincatalog.ReleaseTarget        `json:"target,omitempty"`
+	Targets                  []domaincatalog.ReleaseTarget       `json:"targets,omitempty"`
 	Build                    *domainbuild.Record                 `json:"build,omitempty"`
 	Workflow                 *domainworkflow.Run                 `json:"workflow,omitempty"`
 	Release                  *domainrelease.Record               `json:"release,omitempty"`
+	Releases                 []domainrelease.Record              `json:"releases,omitempty"`
+	Workflows                []domainworkflow.Run                `json:"workflows,omitempty"`
 	RelatedIDs               ApplicationDeliveryActionRelatedIDs `json:"relatedIds,omitempty"`
 }
 
@@ -512,10 +520,16 @@ const (
 	DeliveryPlanSourceManual = "manual"
 	DeliveryPlanSourceAI     = "ai"
 
-	DeliveryPlanStatusDraft      = "draft"
-	DeliveryPlanStatusConfirming = "confirming"
-	DeliveryPlanStatusConfirmed  = "confirmed"
+	DeliveryPlanStatusDraft           = "draft"
+	DeliveryPlanStatusWaitingApproval = "waiting_approval"
+	DeliveryPlanStatusConfirming      = "confirming"
+	DeliveryPlanStatusConfirmed       = "confirmed"
 )
+
+type DeliveryPlanApprovalInput struct {
+	Action  string `json:"action"`
+	Comment string `json:"comment,omitempty"`
+}
 
 type DeliveryPlan struct {
 	ID                       string                        `json:"id"`
@@ -527,6 +541,7 @@ type DeliveryPlan struct {
 	EnvironmentKey           string                        `json:"environmentKey,omitempty"`
 	Action                   ApplicationDeliveryActionKind `json:"action"`
 	TargetID                 string                        `json:"targetId,omitempty"`
+	TargetIDs                []string                      `json:"targetIds,omitempty"`
 	TargetSummary            string                        `json:"targetSummary,omitempty"`
 	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
 	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
@@ -557,6 +572,7 @@ type DeliveryPlanInput struct {
 	EnvironmentKey           string                        `json:"environmentKey,omitempty"`
 	Action                   ApplicationDeliveryActionKind `json:"action"`
 	TargetID                 string                        `json:"targetId,omitempty"`
+	TargetIDs                []string                      `json:"targetIds,omitempty"`
 	TargetSummary            string                        `json:"targetSummary,omitempty"`
 	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
 	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
@@ -613,6 +629,8 @@ type ApplicationDetail struct {
 
 type ApplicationRuntimeWorkload struct {
 	ApplicationEnvironmentID string                 `json:"applicationEnvironmentId"`
+	ServiceID                string                 `json:"serviceId,omitempty"`
+	ServiceKey               string                 `json:"serviceKey,omitempty"`
 	ClusterID                string                 `json:"clusterId"`
 	Namespace                string                 `json:"namespace"`
 	WorkloadKind             string                 `json:"workloadKind"`
@@ -623,12 +641,25 @@ type ApplicationRuntimeWorkload struct {
 	ReadyReplicas            int32                  `json:"readyReplicas"`
 	UpdatedReplicas          int32                  `json:"updatedReplicas"`
 	AvailableReplicas        int32                  `json:"availableReplicas"`
+	HealthStatus             string                 `json:"healthStatus"`
 	BuildSource              *domainapp.BuildSource `json:"buildSource,omitempty"`
 	LatestBundle             *ReleaseBundle         `json:"latestBundle,omitempty"`
 	LatestExecutionTask      *ExecutionTask         `json:"latestExecutionTask,omitempty"`
 	LatestBuild              *domainbuild.Record    `json:"latestBuild,omitempty"`
 	LatestWorkflow           *domainworkflow.Run    `json:"latestWorkflow,omitempty"`
 	LatestRelease            *domainrelease.Record  `json:"latestRelease,omitempty"`
+}
+
+type ApplicationRuntimeSummary struct {
+	ServiceCount          int    `json:"serviceCount"`
+	EnvironmentCount      int    `json:"environmentCount"`
+	WorkloadCount         int    `json:"workloadCount"`
+	HealthyWorkloadCount  int    `json:"healthyWorkloadCount"`
+	ProgressingWorkloads  int    `json:"progressingWorkloads"`
+	UnhealthyWorkloads    int    `json:"unhealthyWorkloads"`
+	HealthStatus          string `json:"healthStatus"`
+	LatestVersion         string `json:"latestVersion,omitempty"`
+	LatestExecutionStatus string `json:"latestExecutionStatus,omitempty"`
 }
 
 type ApplicationRuntimeEnvironment struct {
@@ -644,8 +675,12 @@ type ApplicationRuntimeEnvironment struct {
 }
 
 type ApplicationRuntimeDetail struct {
-	Application  domainapp.App                   `json:"application"`
-	Environments []ApplicationRuntimeEnvironment `json:"environments,omitempty"`
+	Application         domainapp.App                   `json:"application"`
+	Services            []domainapp.Service             `json:"services,omitempty"`
+	Environments        []ApplicationRuntimeEnvironment `json:"environments,omitempty"`
+	Summary             ApplicationRuntimeSummary       `json:"summary"`
+	LatestBundle        *ReleaseBundle                  `json:"latestBundle,omitempty"`
+	LatestExecutionTask *ExecutionTask                  `json:"latestExecutionTask,omitempty"`
 }
 
 type ApplicationWorkloadRuntimeDetail struct {

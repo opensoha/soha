@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -635,25 +636,40 @@ func buildReleaseExecutionCommands(target domaincatalog.ReleaseTarget, image str
 			fmt.Sprintf("systemctl restart %s", unit),
 		}
 	case "helm_release":
-		releaseName := strings.TrimSpace(target.WorkloadName)
-		if releaseName == "" {
-			releaseName = "release"
+		releaseName := firstNonEmpty(strings.TrimSpace(fmt.Sprint(target.Metadata["releaseName"])), strings.TrimSpace(target.WorkloadName), "release")
+		chartRef := firstNonEmpty(strings.TrimSpace(fmt.Sprint(target.Metadata["chartRef"])), strings.TrimSpace(target.ConfigRef), "chart")
+		command := fmt.Sprintf("helm upgrade --install %s %s", releaseName, chartRef)
+		if namespace := strings.TrimSpace(target.Namespace); namespace != "" {
+			command += " --namespace " + namespace + " --create-namespace"
 		}
-		chartRef := strings.TrimSpace(target.ConfigRef)
-		if chartRef == "" {
-			chartRef = "chart"
+		for _, file := range valueAsStringSlice(target.Metadata["valuesFiles"]) {
+			command += " -f " + file
 		}
-		return []string{
-			fmt.Sprintf("helm upgrade --install %s %s --set image.repository=%s", releaseName, chartRef, image),
+		if overrides, ok := target.Metadata["valuesOverrides"].(map[string]any); ok {
+			keys := make([]string, 0, len(overrides))
+			for key := range overrides {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				command += " --set " + key + "=" + fmt.Sprint(overrides[key])
+			}
 		}
+		if image != "" {
+			command += " --set image.repository=" + image
+		}
+		return []string{command}
 	case "kustomize_overlay":
-		overlay := strings.TrimSpace(target.ConfigRef)
-		if overlay == "" {
-			overlay = "."
+		base := firstNonEmpty(strings.TrimSpace(fmt.Sprint(target.Metadata["basePath"])), ".")
+		overlay := firstNonEmpty(strings.TrimSpace(fmt.Sprint(target.Metadata["overlayPath"])), strings.TrimSpace(target.ConfigRef), base)
+		output := "/tmp/" + strings.ReplaceAll(target.WorkloadName, "/", "-") + ".yaml"
+		build := fmt.Sprintf("kustomize build %s", overlay)
+		if namespace := strings.TrimSpace(target.Namespace); namespace != "" {
+			build += " --load-restrictor LoadRestrictionsNone"
 		}
 		return []string{
-			fmt.Sprintf("kustomize build %s > /tmp/%s.yaml", overlay, strings.ReplaceAll(target.WorkloadName, "/", "-")),
-			fmt.Sprintf("kubectl apply -f /tmp/%s.yaml", strings.ReplaceAll(target.WorkloadName, "/", "-")),
+			fmt.Sprintf("%s > %s", build, output),
+			fmt.Sprintf("kubectl apply -f %s", output),
 		}
 	default:
 		return nil

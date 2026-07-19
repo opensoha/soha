@@ -32,18 +32,29 @@ type ApplicationGitService interface {
 	ListGitRepositories(context.Context, domainidentity.Principal, string, int) ([]domainapp.GitRepository, error)
 	ListGitBranches(context.Context, domainidentity.Principal, string, string, int) ([]domainapp.GitReference, error)
 	ListGitTags(context.Context, domainidentity.Principal, string, string, int) ([]domainapp.GitReference, error)
+	ListGitCommits(context.Context, domainidentity.Principal, string, string, int, int) (domainapp.GitCommitPage, error)
+}
+
+type ApplicationRepositoryService interface {
+	ListRepositories(context.Context, domainidentity.Principal, domainapp.SourceRepositoryFilter) ([]domainapp.SourceRepository, error)
+	GetRepository(context.Context, domainidentity.Principal, string) (domainapp.SourceRepository, error)
+	CreateRepository(context.Context, domainidentity.Principal, domainapp.SourceRepositoryInput) (domainapp.SourceRepository, error)
+	UpdateRepository(context.Context, domainidentity.Principal, string, domainapp.SourceRepositoryInput) (domainapp.SourceRepository, error)
+	DeleteRepository(context.Context, domainidentity.Principal, string) error
 }
 
 type ApplicationService interface {
 	ApplicationCatalogService
 	ApplicationComponentService
 	ApplicationGitService
+	ApplicationRepositoryService
 }
 
 type ApplicationHandler struct {
 	applications ApplicationCatalogService
 	components   ApplicationComponentService
 	git          ApplicationGitService
+	repositories ApplicationRepositoryService
 }
 
 func NewApplicationHandler(service ApplicationService) *ApplicationHandler {
@@ -51,7 +62,7 @@ func NewApplicationHandler(service ApplicationService) *ApplicationHandler {
 }
 
 func NewApplicationHandlerWithServices(applications ApplicationCatalogService, components ApplicationComponentService, git ApplicationGitService) *ApplicationHandler {
-	return &ApplicationHandler{applications: applications, components: components, git: git}
+	return &ApplicationHandler{applications: applications, components: components, git: git, repositories: applications.(ApplicationRepositoryService)}
 }
 
 func (h *ApplicationHandler) ListApplications(c *gin.Context) {
@@ -205,6 +216,74 @@ func (h *ApplicationHandler) ListGitTags(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *ApplicationHandler) ListGitCommits(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.git.ListGitCommits(c.Request.Context(), principal, c.Query("projectId"), c.Query("search"), parseLimit(c.Query("page"), 1), parseLimit(c.Query("limit"), 50))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, items)
+}
+
+func (h *ApplicationHandler) ListRepositories(c *gin.Context) {
+	items, err := h.repositories.ListRepositories(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domainapp.SourceRepositoryFilter{ApplicationID: c.Query("applicationId"), Search: c.Query("search"), Limit: parseLimit(c.Query("limit"), 100)})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *ApplicationHandler) GetRepository(c *gin.Context) {
+	item, err := h.repositories.GetRepository(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("repositoryID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *ApplicationHandler) CreateRepository(c *gin.Context) {
+	var req dto.UpsertSourceRepositoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid repository payload")
+		return
+	}
+	item, err := h.repositories.CreateRepository(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), mapSourceRepositoryInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func (h *ApplicationHandler) UpdateRepository(c *gin.Context) {
+	var req dto.UpsertSourceRepositoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid repository payload")
+		return
+	}
+	item, err := h.repositories.UpdateRepository(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("repositoryID"), mapSourceRepositoryInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *ApplicationHandler) DeleteRepository(c *gin.Context) {
+	if err := h.repositories.DeleteRepository(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("repositoryID")); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+
+func mapSourceRepositoryInput(req dto.UpsertSourceRepositoryRequest) domainapp.SourceRepositoryInput {
+	return domainapp.SourceRepositoryInput{Name: req.Name, Provider: req.Provider, URL: req.URL, Protocol: req.Protocol, GitLabProjectID: req.GitLabProjectID, Path: req.Path, CredentialRef: req.CredentialRef, DefaultBranch: req.DefaultBranch, ApplicationIDs: req.ApplicationIDs}
+}
+
 func mapApplicationInput(req dto.UpsertApplicationRequest) domainapp.UpsertInput {
 	buildSources := make([]domainapp.BuildSourceInput, 0, len(req.BuildSources))
 	for _, item := range req.BuildSources {
@@ -229,6 +308,7 @@ func mapApplicationInput(req dto.UpsertApplicationRequest) domainapp.UpsertInput
 		Description:         req.Description,
 		OwnerTeam:           req.OwnerTeam,
 		RepositoryProvider:  req.RepositoryProvider,
+		RepositoryIDs:       req.RepositoryIDs,
 		RepositoryProjectID: req.RepositoryProjectID,
 		RepositoryPath:      req.RepositoryPath,
 		DefaultBranch:       req.DefaultBranch,
@@ -267,6 +347,7 @@ func mapApplicationServiceInput(req dto.UpsertApplicationServiceRequest) domaina
 		ServiceKind:         domainapp.ServiceKind(req.ServiceKind),
 		OwnerTeam:           req.OwnerTeam,
 		RepositoryProvider:  req.RepositoryProvider,
+		RepositoryID:        req.RepositoryID,
 		RepositoryProjectID: req.RepositoryProjectID,
 		RepositoryPath:      req.RepositoryPath,
 		DefaultBranch:       req.DefaultBranch,

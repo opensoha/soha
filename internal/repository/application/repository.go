@@ -60,6 +60,7 @@ func (r *Repository) List(ctx context.Context, filter domainapp.Filter) ([]domai
 		if err != nil {
 			return nil, err
 		}
+		item.RepositoryIDs, _ = r.listApplicationRepositoryIDs(ctx, item.ID)
 		items = append(items, item)
 	}
 	return items, rows.Err()
@@ -82,6 +83,7 @@ func (r *Repository) Get(ctx context.Context, applicationID string) (domainapp.A
 	if err != nil {
 		return domainapp.App{}, err
 	}
+	item.RepositoryIDs, _ = r.listApplicationRepositoryIDs(ctx, item.ID)
 	return item, nil
 }
 
@@ -103,7 +105,10 @@ func (r *Repository) Create(ctx context.Context, input domainapp.UpsertInput) (d
 			nullableString(item.BuildImage), nullableString(item.BuildContextDir), nullableString(item.DockerfilePath), item.Enabled, string(metadata), item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return fmt.Errorf("create application: %w", err)
 		}
-		return replaceBuildSourcesTx(tx, item.ID, resolveBuildSources(item, input.BuildSources), item.CreatedAt)
+		if err := replaceBuildSourcesTx(tx, item.ID, resolveBuildSources(item, input.BuildSources), item.CreatedAt); err != nil {
+			return err
+		}
+		return replaceApplicationRepositoriesTx(tx, item.ID, input.RepositoryIDs)
 	}); err != nil {
 		return domainapp.App{}, err
 	}
@@ -134,7 +139,10 @@ func (r *Repository) Update(ctx context.Context, applicationID string, input dom
 		if result.RowsAffected == 0 {
 			return ErrNotFound
 		}
-		return replaceBuildSourcesTx(tx, item.ID, resolveBuildSources(item, input.BuildSources), item.UpdatedAt)
+		if err := replaceBuildSourcesTx(tx, item.ID, resolveBuildSources(item, input.BuildSources), item.UpdatedAt); err != nil {
+			return err
+		}
+		return replaceApplicationRepositoriesTx(tx, item.ID, input.RepositoryIDs)
 	}); err != nil {
 		return domainapp.App{}, err
 	}
@@ -159,7 +167,7 @@ func (r *Repository) Delete(ctx context.Context, applicationID string) error {
 func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]domainapp.Service, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider,
-			repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
+			repository_id, repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
 		FROM application_services
 		WHERE application_id = ?
 		ORDER BY enabled DESC, service_key ASC, id ASC
@@ -187,7 +195,7 @@ func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]
 func (r *Repository) GetService(ctx context.Context, applicationID, serviceID string) (domainapp.Service, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider,
-			repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
+			repository_id, repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
 		FROM application_services
 		WHERE application_id = ? AND id = ?
 		LIMIT 1
@@ -228,10 +236,10 @@ func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID
 		}
 		result := tx.Exec(`
 			UPDATE application_services
-			SET service_key = ?, service_name = ?, description = ?, service_kind = ?, owner_team = ?, repository_provider = ?,
+			SET service_key = ?, service_name = ?, description = ?, service_kind = ?, owner_team = ?, repository_provider = ?, repository_id = ?,
 				repository_project_id = ?, repository_path = ?, default_branch = ?, build_source_id = ?, enabled = ?, metadata = ?, updated_at = ?
 			WHERE application_id = ? AND id = ?
-		`, item.Key, item.Name, nullableString(item.Description), string(item.ServiceKind), nullableString(item.OwnerTeam), nullableString(item.RepositoryProvider),
+		`, item.Key, item.Name, nullableString(item.Description), string(item.ServiceKind), nullableString(item.OwnerTeam), nullableString(item.RepositoryProvider), nullableString(item.RepositoryID),
 			nullableString(item.RepositoryProjectID), nullableString(item.RepositoryPath), nullableString(item.DefaultBranch), nullableString(item.BuildSourceID),
 			item.Enabled, string(metadata), item.UpdatedAt, item.ApplicationID, item.ID)
 		if result.Error != nil {
@@ -373,13 +381,14 @@ func scanService(rows *sql.Rows) (domainapp.Service, error) {
 	var description sql.NullString
 	var ownerTeam sql.NullString
 	var repositoryProvider sql.NullString
+	var repositoryID sql.NullString
 	var repositoryProjectID sql.NullString
 	var repositoryPath sql.NullString
 	var defaultBranch sql.NullString
 	var buildSourceID sql.NullString
 	var serviceKind string
 	var metadata []byte
-	if err := rows.Scan(&item.ID, &item.ApplicationID, &item.Key, &item.Name, &description, &serviceKind, &ownerTeam, &repositoryProvider,
+	if err := rows.Scan(&item.ID, &item.ApplicationID, &item.Key, &item.Name, &description, &serviceKind, &ownerTeam, &repositoryProvider, &repositoryID,
 		&repositoryProjectID, &repositoryPath, &defaultBranch, &buildSourceID, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domainapp.Service{}, fmt.Errorf("scan application service: %w", err)
 	}
@@ -387,6 +396,7 @@ func scanService(rows *sql.Rows) (domainapp.Service, error) {
 	item.ServiceKind = domainapp.ServiceKind(serviceKind)
 	item.OwnerTeam = ownerTeam.String
 	item.RepositoryProvider = repositoryProvider.String
+	item.RepositoryID = repositoryID.String
 	item.RepositoryProjectID = repositoryProjectID.String
 	item.RepositoryPath = repositoryPath.String
 	item.DefaultBranch = defaultBranch.String
@@ -405,13 +415,14 @@ func scanServiceRow(row *sql.Row) (domainapp.Service, error) {
 	var description sql.NullString
 	var ownerTeam sql.NullString
 	var repositoryProvider sql.NullString
+	var repositoryID sql.NullString
 	var repositoryProjectID sql.NullString
 	var repositoryPath sql.NullString
 	var defaultBranch sql.NullString
 	var buildSourceID sql.NullString
 	var serviceKind string
 	var metadata []byte
-	if err := row.Scan(&item.ID, &item.ApplicationID, &item.Key, &item.Name, &description, &serviceKind, &ownerTeam, &repositoryProvider,
+	if err := row.Scan(&item.ID, &item.ApplicationID, &item.Key, &item.Name, &description, &serviceKind, &ownerTeam, &repositoryProvider, &repositoryID,
 		&repositoryProjectID, &repositoryPath, &defaultBranch, &buildSourceID, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domainapp.Service{}, ErrNotFound
@@ -422,6 +433,7 @@ func scanServiceRow(row *sql.Row) (domainapp.Service, error) {
 	item.ServiceKind = domainapp.ServiceKind(serviceKind)
 	item.OwnerTeam = ownerTeam.String
 	item.RepositoryProvider = repositoryProvider.String
+	item.RepositoryID = repositoryID.String
 	item.RepositoryProjectID = repositoryProjectID.String
 	item.RepositoryPath = repositoryPath.String
 	item.DefaultBranch = defaultBranch.String
@@ -707,6 +719,7 @@ func normalizeServiceInput(applicationID string, input domainapp.ServiceInput, n
 		ServiceKind:         serviceKind,
 		OwnerTeam:           strings.TrimSpace(input.OwnerTeam),
 		RepositoryProvider:  strings.TrimSpace(input.RepositoryProvider),
+		RepositoryID:        strings.TrimSpace(input.RepositoryID),
 		RepositoryProjectID: strings.TrimSpace(input.RepositoryProjectID),
 		RepositoryPath:      strings.TrimSpace(input.RepositoryPath),
 		DefaultBranch:       strings.TrimSpace(input.DefaultBranch),
@@ -770,10 +783,10 @@ func insertServiceTx(tx *gorm.DB, item domainapp.Service) error {
 	}
 	if err := tx.Exec(`
 		INSERT INTO application_services (
-			id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider,
+			id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider, repository_id,
 			repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.ApplicationID, item.Key, item.Name, nullableString(item.Description), string(item.ServiceKind), nullableString(item.OwnerTeam), nullableString(item.RepositoryProvider),
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.ApplicationID, item.Key, item.Name, nullableString(item.Description), string(item.ServiceKind), nullableString(item.OwnerTeam), nullableString(item.RepositoryProvider), nullableString(item.RepositoryID),
 		nullableString(item.RepositoryProjectID), nullableString(item.RepositoryPath), nullableString(item.DefaultBranch), nullableString(item.BuildSourceID),
 		item.Enabled, string(metadata), item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return fmt.Errorf("create application service: %w", err)
@@ -827,4 +840,42 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (r *Repository) listApplicationRepositoryIDs(ctx context.Context, applicationID string) ([]string, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`SELECT repository_id FROM application_repositories WHERE application_id = ? ORDER BY repository_id`, strings.TrimSpace(applicationID)).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func replaceApplicationRepositoriesTx(tx *gorm.DB, applicationID string, repositoryIDs []string) error {
+	if err := tx.Exec(`DELETE FROM application_repositories WHERE application_id = ?`, strings.TrimSpace(applicationID)).Error; err != nil {
+		return err
+	}
+	seen := map[string]struct{}{}
+	for _, raw := range repositoryIDs {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		if err := tx.Exec(`INSERT INTO application_repositories (application_id, repository_id) VALUES (?, ?)`, strings.TrimSpace(applicationID), id).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }

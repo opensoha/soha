@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -36,6 +37,15 @@ type GitLabClient interface {
 	ListProjects(context.Context, string, int) ([]domainapp.GitRepository, error)
 	ListBranches(context.Context, string, string, int) ([]domainapp.GitReference, error)
 	ListTags(context.Context, string, string, int) ([]domainapp.GitReference, error)
+	ListCommits(context.Context, string, string, int, int) (domainapp.GitCommitPage, error)
+}
+
+type RepositoryCatalog interface {
+	ListRepositories(context.Context, domainapp.SourceRepositoryFilter) ([]domainapp.SourceRepository, error)
+	GetRepository(context.Context, string) (domainapp.SourceRepository, error)
+	CreateRepository(context.Context, domainapp.SourceRepositoryInput) (domainapp.SourceRepository, error)
+	UpdateRepository(context.Context, string, domainapp.SourceRepositoryInput) (domainapp.SourceRepository, error)
+	DeleteRepository(context.Context, string) error
 }
 
 type AuditRecorder interface {
@@ -47,16 +57,19 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	repo        Repository
-	gitlab      GitLabClient
-	authorizer  domainaccess.Authorizer
-	permissions *appaccess.PermissionResolver
-	audit       AuditRecorder
-	operations  OperationRecorder
+	repo         Repository
+	repositories RepositoryCatalog
+	gitlab       GitLabClient
+	authorizer   domainaccess.Authorizer
+	permissions  *appaccess.PermissionResolver
+	audit        AuditRecorder
+	operations   OperationRecorder
 }
 
 func New(repo Repository, gitlab GitLabClient, authorizer domainaccess.Authorizer, audit AuditRecorder, operations OperationRecorder) *Service {
-	return &Service{repo: repo, gitlab: gitlab, authorizer: authorizer, audit: audit, operations: operations}
+	service := &Service{repo: repo, gitlab: gitlab, authorizer: authorizer, audit: audit, operations: operations}
+	service.repositories, _ = repo.(RepositoryCatalog)
+	return service
 }
 
 func (s *Service) SetPermissionResolver(permissions *appaccess.PermissionResolver) {
@@ -296,6 +309,111 @@ func (s *Service) ListGitTags(ctx context.Context, principal domainidentity.Prin
 	}
 	_ = s.recordAudit(ctx, principal, "", "GitTag", projectID, string(domainaccess.ActionList), "success", "listed gitlab tags")
 	return items, nil
+}
+
+func (s *Service) ListGitCommits(ctx context.Context, principal domainidentity.Principal, projectID, search string, page, limit int) (domainapp.GitCommitPage, error) {
+	if s.gitlab == nil {
+		return domainapp.GitCommitPage{}, fmt.Errorf("%w: gitlab client is not configured", apperrors.ErrInvalidArgument)
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionList, "GitCommit", projectID, "", "", "", ""); err != nil {
+		return domainapp.GitCommitPage{}, err
+	}
+	items, err := s.gitlab.ListCommits(ctx, projectID, search, page, limit)
+	if err != nil {
+		return domainapp.GitCommitPage{}, err
+	}
+	_ = s.recordAudit(ctx, principal, "", "GitCommit", projectID, string(domainaccess.ActionList), "success", "listed gitlab commits")
+	return items, nil
+}
+
+func (s *Service) ListRepositories(ctx context.Context, principal domainidentity.Principal, filter domainapp.SourceRepositoryFilter) ([]domainapp.SourceRepository, error) {
+	if err := s.authorize(ctx, principal, domainaccess.ActionList, "Repository", "", "", "", "", filter.ApplicationID); err != nil {
+		return nil, err
+	}
+	if s.repositories == nil {
+		return nil, fmt.Errorf("%w: repository catalog is unavailable", apperrors.ErrInvalidArgument)
+	}
+	return s.repositories.ListRepositories(ctx, filter)
+}
+
+func (s *Service) GetRepository(ctx context.Context, principal domainidentity.Principal, id string) (domainapp.SourceRepository, error) {
+	if err := s.authorize(ctx, principal, domainaccess.ActionView, "Repository", id, "", "", "", ""); err != nil {
+		return domainapp.SourceRepository{}, err
+	}
+	if s.repositories == nil {
+		return domainapp.SourceRepository{}, fmt.Errorf("%w: repository catalog is unavailable", apperrors.ErrInvalidArgument)
+	}
+	return s.repositories.GetRepository(ctx, strings.TrimSpace(id))
+}
+
+func (s *Service) CreateRepository(ctx context.Context, principal domainidentity.Principal, input domainapp.SourceRepositoryInput) (domainapp.SourceRepository, error) {
+	if err := validateSourceRepositoryInput(input); err != nil {
+		return domainapp.SourceRepository{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "Repository", input.Name, "", "", "", ""); err != nil {
+		return domainapp.SourceRepository{}, err
+	}
+	if s.repositories == nil {
+		return domainapp.SourceRepository{}, fmt.Errorf("%w: repository catalog is unavailable", apperrors.ErrInvalidArgument)
+	}
+	item, err := s.repositories.CreateRepository(ctx, input)
+	if err == nil {
+		_ = s.recordAudit(ctx, principal, "", "Repository", item.Name, string(domainaccess.ActionCreate), "success", "created repository")
+	}
+	return item, err
+}
+
+func (s *Service) UpdateRepository(ctx context.Context, principal domainidentity.Principal, id string, input domainapp.SourceRepositoryInput) (domainapp.SourceRepository, error) {
+	if err := validateSourceRepositoryInput(input); err != nil {
+		return domainapp.SourceRepository{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "Repository", input.Name, "", "", "", ""); err != nil {
+		return domainapp.SourceRepository{}, err
+	}
+	if s.repositories == nil {
+		return domainapp.SourceRepository{}, fmt.Errorf("%w: repository catalog is unavailable", apperrors.ErrInvalidArgument)
+	}
+	return s.repositories.UpdateRepository(ctx, strings.TrimSpace(id), input)
+}
+
+func (s *Service) DeleteRepository(ctx context.Context, principal domainidentity.Principal, id string) error {
+	if err := s.authorize(ctx, principal, domainaccess.ActionDelete, "Repository", id, "", "", "", ""); err != nil {
+		return err
+	}
+	if s.repositories == nil {
+		return fmt.Errorf("%w: repository catalog is unavailable", apperrors.ErrInvalidArgument)
+	}
+	return s.repositories.DeleteRepository(ctx, strings.TrimSpace(id))
+}
+
+func validateSourceRepositoryInput(input domainapp.SourceRepositoryInput) error {
+	if strings.TrimSpace(input.Name) == "" {
+		return fmt.Errorf("%w: repository name is required", apperrors.ErrInvalidArgument)
+	}
+	provider := strings.ToLower(strings.TrimSpace(input.Provider))
+	if provider != "gitlab" && provider != "git" {
+		return fmt.Errorf("%w: repository provider must be gitlab or git", apperrors.ErrInvalidArgument)
+	}
+	protocol := strings.ToLower(strings.TrimSpace(input.Protocol))
+	if protocol != "https" && protocol != "ssh" {
+		return fmt.Errorf("%w: repository protocol must be https or ssh", apperrors.ErrInvalidArgument)
+	}
+	raw := strings.TrimSpace(input.URL)
+	parsed, err := url.Parse(raw)
+	validHTTPS := err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil
+	validSSH := protocol == "ssh" && ((err == nil && parsed.Scheme == "ssh" && parsed.Host != "") || (strings.Contains(raw, "@") && strings.Contains(raw, ":") && !strings.ContainsAny(raw, " \t\r\n")))
+	if err == nil && parsed.User != nil {
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			validSSH = false
+		}
+	}
+	if (protocol == "https" && !validHTTPS) || (protocol == "ssh" && !validSSH) {
+		return fmt.Errorf("%w: repository URL does not match protocol", apperrors.ErrInvalidArgument)
+	}
+	if provider == "gitlab" && strings.TrimSpace(input.GitLabProjectID) == "" {
+		return fmt.Errorf("%w: gitlabProjectId is required for gitlab repositories", apperrors.ErrInvalidArgument)
+	}
+	return nil
 }
 
 func validateInput(input domainapp.UpsertInput) error {

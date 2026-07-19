@@ -1043,6 +1043,60 @@ func TestConfirmDeliveryPlanTriggersExistingAction(t *testing.T) {
 	}
 }
 
+func TestDeliveryPlanApprovalBlocksExecutionUntilApproved(t *testing.T) {
+	buildCount := 0
+	repo := &planRepository{plan: domaindelivery.DeliveryPlan{
+		ID: "plan-approval", Status: domaindelivery.DeliveryPlanStatusDraft,
+		ApplicationID: "app-1", ApplicationEnvironmentID: "binding-1",
+		Action: domaindelivery.ApplicationDeliveryActionBuild, BuildSourceID: "source-1",
+		RefType: "branch", RefName: "main", ImageTag: "candidate", RequiresApproval: true,
+		Impact: map[string]any{"requiresApproval": true},
+	}}
+	service := New(
+		stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "Payments API", Key: "payments-api", DefaultBranch: "main", BuildSources: []domainapp.BuildSource{{ID: "source-1", IsDefault: true}}}},
+		stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-prod", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}}}},
+		stubBuildReader{triggerCount: &buildCount}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
+		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger, appaccess.PermDeliveryApplicationsUpdate),
+	)
+
+	result, err := service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), repo.plan.ID)
+	if err != nil {
+		t.Fatalf("ConfirmDeliveryPlan request approval returned error: %v", err)
+	}
+	if result.Plan.Status != domaindelivery.DeliveryPlanStatusWaitingApproval || buildCount != 0 {
+		t.Fatalf("approval request status/build count = %q/%d, want waiting_approval/0", result.Plan.Status, buildCount)
+	}
+	if _, err := service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), repo.plan.ID); err == nil {
+		t.Fatal("ConfirmDeliveryPlan while waiting approval returned nil error")
+	}
+	approved, err := service.DecideDeliveryPlanApproval(context.Background(), deliveryActionPrincipal(), repo.plan.ID, domaindelivery.DeliveryPlanApprovalInput{Action: "approve", Comment: "change reviewed"})
+	if err != nil {
+		t.Fatalf("DecideDeliveryPlanApproval returned error: %v", err)
+	}
+	if approved.Status != domaindelivery.DeliveryPlanStatusDraft || !deliveryPlanApprovalGranted(approved) {
+		t.Fatalf("approved plan state = %q impact=%#v", approved.Status, approved.Impact)
+	}
+	result, err = service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), repo.plan.ID)
+	if err != nil {
+		t.Fatalf("ConfirmDeliveryPlan after approval returned error: %v", err)
+	}
+	if result.Plan.Status != domaindelivery.DeliveryPlanStatusConfirmed || buildCount != 1 {
+		t.Fatalf("confirmed plan status/build count = %q/%d, want confirmed/1", result.Plan.Status, buildCount)
+	}
+}
+
+func TestDeliveryPlanApprovalRejectKeepsExecutionBlocked(t *testing.T) {
+	repo := &planRepository{plan: domaindelivery.DeliveryPlan{ID: "plan-reject", Status: domaindelivery.DeliveryPlanStatusWaitingApproval, RequiresApproval: true, Impact: map[string]any{"approval": []any{map[string]any{"status": "requested"}}}}}
+	service := New(stubApplicationReader{}, stubCatalogReader{}, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil, deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate))
+	plan, err := service.DecideDeliveryPlanApproval(context.Background(), deliveryActionPrincipal(), repo.plan.ID, domaindelivery.DeliveryPlanApprovalInput{Action: "reject", Comment: "missing evidence"})
+	if err != nil {
+		t.Fatalf("DecideDeliveryPlanApproval reject returned error: %v", err)
+	}
+	if plan.Status != domaindelivery.DeliveryPlanStatusDraft || deliveryPlanApprovalGranted(plan) {
+		t.Fatalf("rejected plan state = %q impact=%#v", plan.Status, plan.Impact)
+	}
+}
+
 func TestConfirmDeliveryPlanStopsWhenClaimUpdateFails(t *testing.T) {
 	buildCount := 0
 	repo := &planRepository{

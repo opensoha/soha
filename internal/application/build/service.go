@@ -3,6 +3,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -39,7 +40,6 @@ type BuildTemplateReader interface {
 
 type ExecutionPlane interface {
 	StartBuildExecution(context.Context, execution.BuildPlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error)
-	CompleteBuildExecution(context.Context, string, string, string, string, map[string]any) error
 }
 
 type EventWriter interface {
@@ -101,6 +101,10 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if input.RefName == "" {
 		return domainbuild.Record{}, fmt.Errorf("%w: refName is required", apperrors.ErrInvalidArgument)
 	}
+	input.RefType = strings.ToLower(strings.TrimSpace(input.RefType))
+	if input.RefType != "branch" && input.RefType != "tag" && input.RefType != "commit" {
+		return domainbuild.Record{}, fmt.Errorf("%w: refType must be branch, tag, or commit", apperrors.ErrInvalidArgument)
+	}
 	app, err := s.apps.Get(ctx, input.ApplicationID)
 	if err != nil {
 		return domainbuild.Record{}, err
@@ -119,10 +123,58 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		return domainbuild.Record{}, err
 	}
 	metadata := s.buildTriggerMetadata(ctx, app, buildSource, input, effectiveImageTag, imageRef)
+	metadata["serviceId"] = strings.TrimSpace(input.ServiceID)
+	metadata["repositoryId"] = strings.TrimSpace(input.RepositoryID)
+	metadata["resolvedCommit"] = strings.TrimSpace(input.ResolvedCommit)
 	record, err := s.repo.Create(ctx, input, metadata)
 	if err != nil {
 		return domainbuild.Record{}, err
 	}
+	if s.execution == nil {
+		return s.failRecord(ctx, record, "execution plane is not configured")
+	}
+	bundle, task, execErr := s.execution.StartBuildExecution(ctx, execution.BuildPlan{
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
+		Version:                  effectiveImageTag,
+		SourceType:               resolveSourceType(buildSource),
+		ProviderKind:             resolveBuildProviderKind(buildSource),
+		TargetKind:               "k8s_workload",
+		ArtifactRef:              imageRef,
+		Metadata:                 metadata,
+	})
+	if execErr != nil {
+		failed, _ := s.failRecord(ctx, record, execErr.Error())
+		return failed, execErr
+	}
+	metadata = mergeBuildMetadata(record.Metadata, task.Result)
+	metadata = mergeBuildMetadata(metadata, map[string]any{
+		"releaseBundleId":       bundle.ID,
+		"executionTaskId":       task.ID,
+		"executionProviderKind": task.ProviderKind,
+		"executionTaskStatus":   task.Status,
+	})
+	record.Metadata = metadata
+	switch task.Status {
+	case "running", "dispatching":
+		record.Status = "running"
+		if task.StartedAt != nil {
+			record.StartedAt = task.StartedAt
+		}
+	case "completed":
+		record.Status = "completed"
+		record.StartedAt = task.StartedAt
+		record.FinishedAt = task.FinishedAt
+	case "failed", "canceled", "callback_timeout":
+		record.Status = "failed"
+		record.StartedAt = task.StartedAt
+		record.FinishedAt = task.FinishedAt
+	}
+	updated, updateErr := s.repo.Update(ctx, record)
+	if updateErr != nil {
+		return domainbuild.Record{}, fmt.Errorf("link build record to execution task: %w", updateErr)
+	}
+	record = updated
 	s.recordTriggeredBuild(ctx, principal, app, input, record)
 	return record, nil
 }
@@ -139,12 +191,15 @@ func (s *Service) buildTriggerMetadata(ctx context.Context, app domainapp.App, b
 		"variables":                input.Variables,
 		"repositoryPath":           app.RepositoryPath,
 		"pipelineStages": []map[string]any{
-			{"name": "queued", "status": "completed", "timestamp": time.Now().UTC().Format(time.RFC3339)},
-			{"name": "planning", "status": "running", "timestamp": time.Now().UTC().Format(time.RFC3339)},
+			{"name": "checkout", "status": "queued"},
+			{"name": "prepare", "status": "queued"},
+			{"name": "build", "status": "queued"},
+			{"name": "push", "status": "queued"},
+			{"name": "publish", "status": "queued"},
 		},
 		"logs": []map[string]any{
 			{"level": "info", "message": fmt.Sprintf("Manual build requested for %s on %s:%s", app.Name, input.RefType, input.RefName), "timestamp": time.Now().UTC().Format(time.RFC3339)},
-			{"level": "info", "message": "Build execution worker has not started yet; record is queued for future runner integration", "timestamp": time.Now().UTC().Format(time.RFC3339)},
+			{"level": "info", "message": "Build execution task created; waiting for runner claim", "timestamp": time.Now().UTC().Format(time.RFC3339)},
 		},
 		"artifacts": []map[string]any{
 			{"kind": "image", "ref": imageRef, "status": "planned"},
@@ -159,24 +214,6 @@ func (s *Service) buildTriggerMetadata(ctx context.Context, app domainapp.App, b
 	metadata["runtime"] = buildExecutionRuntime(buildSource, metadata)
 	if commands := buildExecutionCommands(buildSource, metadata, imageRef); len(commands) > 0 {
 		metadata["commands"] = commands
-	}
-	if s.execution != nil {
-		bundle, task, execErr := s.execution.StartBuildExecution(ctx, execution.BuildPlan{
-			ApplicationID:            app.ID,
-			ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
-			Version:                  effectiveImageTag,
-			SourceType:               resolveSourceType(buildSource),
-			ProviderKind:             resolveBuildProviderKind(buildSource),
-			TargetKind:               "k8s_workload",
-			ArtifactRef:              imageRef,
-			Metadata:                 metadata,
-		})
-		if execErr == nil {
-			metadata["releaseBundleId"] = bundle.ID
-			metadata["executionTaskId"] = task.ID
-			metadata["executionProviderKind"] = task.ProviderKind
-			metadata["executionTaskStatus"] = task.Status
-		}
 	}
 	return metadata
 }
@@ -220,44 +257,7 @@ func (s *Service) recordTriggeredBuild(ctx context.Context, principal domainiden
 }
 
 func (s *Service) Execute(ctx context.Context, principal domainidentity.Principal, input domainbuild.TriggerInput) (domainbuild.Record, error) {
-	record, err := s.Trigger(ctx, principal, input)
-	if err != nil {
-		return domainbuild.Record{}, err
-	}
-	now := time.Now().UTC()
-	record.Status = "completed"
-	record.StartedAt = &now
-	record.FinishedAt = &now
-	if record.Metadata == nil {
-		record.Metadata = map[string]any{}
-	}
-	imageRef := resolveBuildImageRef(record.Metadata, input.ImageTag)
-	record.Metadata["applicationEnvironmentId"] = strings.TrimSpace(input.ApplicationEnvironmentID)
-	record.Metadata["buildSourceId"] = strings.TrimSpace(input.BuildSourceID)
-	record.Metadata["artifact"] = map[string]any{
-		"kind":   "image",
-		"status": "completed",
-		"ref":    imageRef,
-	}
-	record.Metadata["image"] = imageRef
-	record.Metadata["variables"] = input.Variables
-	record.Metadata["triggeredByWorkflowRunId"] = strings.TrimSpace(input.TriggeredByWorkflowRunID)
-	if s.execution != nil {
-		if bundleID := strings.TrimSpace(fmt.Sprint(record.Metadata["releaseBundleId"])); bundleID != "" {
-			_ = s.execution.CompleteBuildExecution(ctx, bundleID, strings.TrimSpace(fmt.Sprint(record.Metadata["executionTaskId"])), imageRef, strings.TrimSpace(fmt.Sprint(record.Metadata["imageDigest"])), map[string]any{
-				"image":       imageRef,
-				"artifact":    record.Metadata["artifact"],
-				"imageDigest": record.Metadata["imageDigest"],
-			})
-		}
-	}
-	if s.repo != nil {
-		updated, updateErr := s.repo.Update(ctx, record)
-		if updateErr == nil {
-			record = updated
-		}
-	}
-	return record, nil
+	return s.Trigger(ctx, principal, input)
 }
 
 func resolveSourceType(source *domainapp.BuildSource) string {
@@ -271,13 +271,13 @@ func resolveBuildProviderKind(source *domainapp.BuildSource) string {
 	if source == nil {
 		return "k8s_job_runner"
 	}
+	if configured := strings.TrimSpace(fmt.Sprint(source.Config["providerKind"])); configured != "" {
+		return configured
+	}
 	switch source.Type {
 	case domainapp.BuildSourceTypeExternalPipeline:
 		return "external_pipeline_adapter"
 	case domainapp.BuildSourceTypePlatformTemplate:
-		if strings.TrimSpace(fmt.Sprint(source.Config["providerKind"])) == "ci_agent_runner" {
-			return "ci_agent_runner"
-		}
 		return "k8s_job_runner"
 	default:
 		return "k8s_job_runner"
@@ -440,7 +440,7 @@ func buildExecutionCommands(source *domainapp.BuildSource, metadata map[string]a
 	case domainapp.BuildSourceTypeExternalPipeline:
 		return externalPipelineExecutionCommands(source)
 	default:
-		return containerBuildExecutionCommands(source, imageRef)
+		return containerBuildExecutionCommands(source, imageRef, metadataMap(metadata, "buildArgs"))
 	}
 }
 
@@ -477,7 +477,7 @@ func nonEmptyStrings(items []any) []string {
 	return out
 }
 
-func containerBuildExecutionCommands(source *domainapp.BuildSource, imageRef string) []string {
+func containerBuildExecutionCommands(source *domainapp.BuildSource, imageRef string, buildArgs map[string]any) []string {
 	contextDir := strings.TrimSpace(fmt.Sprint(source.Config["contextDir"]))
 	if contextDir == "" {
 		contextDir = "."
@@ -495,12 +495,36 @@ func containerBuildExecutionCommands(source *domainapp.BuildSource, imageRef str
 	}
 	switch builderKind {
 	case "kaniko":
-		return []string{fmt.Sprintf("executor --dockerfile=%s --context=%s --destination=%s", dockerfilePath, contextDir, imageRef)}
+		return []string{fmt.Sprintf("executor --dockerfile=%s --context=%s --destination=%s --digest-file=.soha-image-digest%s", shellQuote(dockerfilePath), shellQuote(contextDir), shellQuote(imageRef), renderBuildArgs(buildArgs))}
 	case "buildx":
-		return []string{fmt.Sprintf("docker buildx build -f %s -t %s %s", dockerfilePath, imageRef, contextDir)}
+		return []string{fmt.Sprintf("docker buildx build --push -f %s -t %s%s %s", shellQuote(dockerfilePath), shellQuote(imageRef), renderBuildArgs(buildArgs), shellQuote(contextDir))}
 	default:
-		return []string{fmt.Sprintf("docker build -f %s -t %s %s", dockerfilePath, imageRef, contextDir)}
+		return []string{
+			fmt.Sprintf("docker build -f %s -t %s%s %s", shellQuote(dockerfilePath), shellQuote(imageRef), renderBuildArgs(buildArgs), shellQuote(contextDir)),
+			fmt.Sprintf("docker push %s", shellQuote(imageRef)),
+			fmt.Sprintf("docker image inspect --format='{{index .RepoDigests 0}}' %s > .soha-image-digest", shellQuote(imageRef)),
+		}
 	}
+}
+
+func renderBuildArgs(values map[string]any) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		if strings.TrimSpace(key) != "" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	var builder strings.Builder
+	for _, key := range keys {
+		builder.WriteString(" --build-arg=")
+		builder.WriteString(shellQuote(strings.TrimSpace(key) + "=" + fmt.Sprint(values[key])))
+	}
+	return builder.String()
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func renderCommands(commands []string, source *domainapp.BuildSource, imageRef string) []string {
@@ -545,6 +569,9 @@ func buildExecutionWorkspace(app domainapp.App, source *domainapp.BuildSource, i
 	); len(artifactFiles) > 0 {
 		workspace["artifactFiles"] = artifactFiles
 	}
+	if resolveBuildProviderKind(source) != "external_pipeline_adapter" {
+		workspace["artifactFiles"] = appendUniqueString(valueStringSlice(workspace["artifactFiles"]), ".soha-image-digest")
+	}
 	checkoutEnabled := source != nil && source.Type != domainapp.BuildSourceTypeExternalPipeline
 	if source != nil {
 		if value, ok := source.Config["checkoutEnabled"]; ok {
@@ -563,6 +590,51 @@ func buildExecutionWorkspace(app domainapp.App, source *domainapp.BuildSource, i
 		workspace["checkout"] = checkout
 	}
 	return workspace
+}
+
+func (s *Service) failRecord(ctx context.Context, record domainbuild.Record, reason string) (domainbuild.Record, error) {
+	now := time.Now().UTC()
+	record.Status = "failed"
+	record.FinishedAt = &now
+	record.Metadata = mergeBuildMetadata(record.Metadata, map[string]any{
+		"executionTaskStatus": "failed",
+		"failureStage":        "prepare",
+		"error":               strings.TrimSpace(reason),
+	})
+	updated, err := s.repo.Update(ctx, record)
+	if err != nil {
+		return record, err
+	}
+	return updated, fmt.Errorf("%w: %s", apperrors.ErrInvalidArgument, strings.TrimSpace(reason))
+}
+
+func mergeBuildMetadata(base, overlay map[string]any) map[string]any {
+	if base == nil {
+		base = map[string]any{}
+	}
+	for key, value := range overlay {
+		base[key] = value
+	}
+	return base
+}
+
+func metadataMap(metadata map[string]any, key string) map[string]any {
+	value, _ := metadata[key].(map[string]any)
+	return value
+}
+
+func valueStringSlice(value any) []string {
+	items, _ := value.([]string)
+	return items
+}
+
+func appendUniqueString(items []string, value string) []string {
+	for _, item := range items {
+		if item == value {
+			return items
+		}
+	}
+	return append(items, value)
 }
 
 func buildExecutionRuntime(source *domainapp.BuildSource, metadata map[string]any) map[string]any {

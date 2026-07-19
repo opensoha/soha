@@ -59,12 +59,15 @@ func (h *BuildHandler) TriggerBuild(c *gin.Context) {
 	item, err := h.service.Trigger(c.Request.Context(), principal, domainbuild.TriggerInput{
 		ApplicationID:            req.ApplicationID,
 		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
+		ServiceID:                req.ServiceID,
+		RepositoryID:             req.RepositoryID,
 		BuildSourceID:            req.BuildSourceID,
 		RefType:                  req.RefType,
 		RefName:                  req.RefName,
 		ImageTag:                 req.ImageTag,
 		BuildArgs:                req.BuildArgs,
 		Variables:                req.Variables,
+		ResolvedCommit:           req.ResolvedCommit,
 	})
 	if err != nil {
 		writeError(c, err)

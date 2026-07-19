@@ -916,6 +916,7 @@ CREATE TABLE public.delivery_plans (
     environment_key text,
     action text NOT NULL,
     target_id text,
+    target_ids jsonb DEFAULT '[]'::jsonb NOT NULL,
     target_summary text,
     build_source_id text,
     release_bundle_id text,

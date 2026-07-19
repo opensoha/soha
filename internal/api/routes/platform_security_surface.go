@@ -123,6 +123,7 @@ func (r deliveryMutationRule) matches(path string) bool {
 }
 
 var deliveryMutationRules = []deliveryMutationRule{
+	{prefix: "/api/v1/repositories", resourceKind: "Repository", permission: appaccess.PermDeliveryRegistriesManage},
 	{prefix: "/api/v1/applications/", contains: "/services", resourceKind: "ApplicationService", permission: appaccess.PermDeliveryApplicationServicesManage, scopeRequired: true},
 	{prefix: "/api/v1/applications", resourceKind: "Application", scopeRequired: true, applicationPermission: true},
 	{prefix: "/api/v1/application-environments", resourceKind: "ApplicationEnvironment", permission: appaccess.PermDeliveryApplicationEnvManage, scopeRequired: true},

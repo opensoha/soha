@@ -47,6 +47,7 @@ func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/delivery/plans", deps.Delivery.CreateDeliveryPlan)
 	protected.GET("/delivery/plans/:planID", deps.Delivery.GetDeliveryPlan)
 	protected.POST("/delivery/plans/:planID/confirm", deps.Delivery.ConfirmDeliveryPlan)
+	protected.POST("/delivery/plans/:planID/approval", deps.Delivery.DecideDeliveryPlanApproval)
 }
 
 func registerDeliveryCatalogRoutes(protected gin.IRoutes, deps Dependencies) {
@@ -102,4 +103,10 @@ func registerDeliveryExecutionRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/integrations/gitlab/projects", deps.Applications.ListGitRepositories)
 	protected.GET("/integrations/gitlab/branches", deps.Applications.ListGitBranches)
 	protected.GET("/integrations/gitlab/tags", deps.Applications.ListGitTags)
+	protected.GET("/integrations/gitlab/commits", deps.Applications.ListGitCommits)
+	protected.GET("/repositories", deps.Applications.ListRepositories)
+	protected.POST("/repositories", deps.Applications.CreateRepository)
+	protected.GET("/repositories/:repositoryID", deps.Applications.GetRepository)
+	protected.PUT("/repositories/:repositoryID", deps.Applications.UpdateRepository)
+	protected.DELETE("/repositories/:repositoryID", deps.Applications.DeleteRepository)
 }

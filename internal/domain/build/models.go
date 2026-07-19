@@ -18,6 +18,8 @@ type Record struct {
 
 type TriggerInput struct {
 	ApplicationID            string         `json:"applicationId"`
+	ServiceID                string         `json:"serviceId,omitempty"`
+	RepositoryID             string         `json:"repositoryId,omitempty"`
 	ApplicationEnvironmentID string         `json:"applicationEnvironmentId,omitempty"`
 	BuildSourceID            string         `json:"buildSourceId,omitempty"`
 	RefType                  string         `json:"refType"`
@@ -26,6 +28,7 @@ type TriggerInput struct {
 	BuildArgs                map[string]any `json:"buildArgs,omitempty"`
 	Variables                map[string]any `json:"variables,omitempty"`
 	TriggeredByWorkflowRunID string         `json:"triggeredByWorkflowRunId,omitempty"`
+	ResolvedCommit           string         `json:"resolvedCommit,omitempty"`
 }
 
 type Filter struct {

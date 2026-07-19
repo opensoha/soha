@@ -86,6 +86,7 @@ type Service struct {
 	ServiceKind         ServiceKind        `json:"serviceKind"`
 	OwnerTeam           string             `json:"ownerTeam,omitempty"`
 	RepositoryProvider  string             `json:"repositoryProvider,omitempty"`
+	RepositoryID        string             `json:"repositoryId,omitempty"`
 	RepositoryProjectID string             `json:"repositoryProjectId,omitempty"`
 	RepositoryPath      string             `json:"repositoryPath,omitempty"`
 	DefaultBranch       string             `json:"defaultBranch,omitempty"`
@@ -105,6 +106,7 @@ type ServiceInput struct {
 	ServiceKind         ServiceKind             `json:"serviceKind"`
 	OwnerTeam           string                  `json:"ownerTeam,omitempty"`
 	RepositoryProvider  string                  `json:"repositoryProvider,omitempty"`
+	RepositoryID        string                  `json:"repositoryId,omitempty"`
 	RepositoryProjectID string                  `json:"repositoryProjectId,omitempty"`
 	RepositoryPath      string                  `json:"repositoryPath,omitempty"`
 	DefaultBranch       string                  `json:"defaultBranch,omitempty"`
@@ -124,6 +126,7 @@ type App struct {
 	Description         string         `json:"description,omitempty"`
 	OwnerTeam           string         `json:"ownerTeam,omitempty"`
 	RepositoryProvider  string         `json:"repositoryProvider,omitempty"`
+	RepositoryIDs       []string       `json:"repositoryIds,omitempty"`
 	RepositoryProjectID string         `json:"repositoryProjectId,omitempty"`
 	RepositoryPath      string         `json:"repositoryPath,omitempty"`
 	DefaultBranch       string         `json:"defaultBranch,omitempty"`
@@ -149,6 +152,7 @@ type UpsertInput struct {
 	Description         string             `json:"description,omitempty"`
 	OwnerTeam           string             `json:"ownerTeam,omitempty"`
 	RepositoryProvider  string             `json:"repositoryProvider,omitempty"`
+	RepositoryIDs       []string           `json:"repositoryIds,omitempty"`
 	RepositoryProjectID string             `json:"repositoryProjectId,omitempty"`
 	RepositoryPath      string             `json:"repositoryPath,omitempty"`
 	DefaultBranch       string             `json:"defaultBranch,omitempty"`
@@ -180,6 +184,57 @@ type GitReference struct {
 	CommitSHA string    `json:"commitSha,omitempty"`
 	Protected bool      `json:"protected"`
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
+}
+
+type SourceRepository struct {
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Provider        string    `json:"provider"`
+	URL             string    `json:"url"`
+	Protocol        string    `json:"protocol"`
+	GitLabProjectID string    `json:"gitlabProjectId,omitempty"`
+	Path            string    `json:"path,omitempty"`
+	CredentialRef   string    `json:"credentialRef,omitempty"`
+	DefaultBranch   string    `json:"defaultBranch,omitempty"`
+	ApplicationIDs  []string  `json:"applicationIds,omitempty"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+}
+
+type SourceRepositoryInput struct {
+	Name            string   `json:"name"`
+	Provider        string   `json:"provider"`
+	URL             string   `json:"url"`
+	Protocol        string   `json:"protocol"`
+	GitLabProjectID string   `json:"gitlabProjectId,omitempty"`
+	Path            string   `json:"path,omitempty"`
+	CredentialRef   string   `json:"credentialRef,omitempty"`
+	DefaultBranch   string   `json:"defaultBranch,omitempty"`
+	ApplicationIDs  []string `json:"applicationIds,omitempty"`
+}
+
+type SourceRepositoryFilter struct {
+	ApplicationID string
+	Search        string
+	Limit         int
+}
+
+type GitCommit struct {
+	ID          string    `json:"id"`
+	ShortID     string    `json:"shortId"`
+	Title       string    `json:"title"`
+	Message     string    `json:"message,omitempty"`
+	AuthorName  string    `json:"authorName,omitempty"`
+	AuthorEmail string    `json:"authorEmail,omitempty"`
+	CommittedAt time.Time `json:"committedAt"`
+	WebURL      string    `json:"webUrl,omitempty"`
+}
+
+type GitCommitPage struct {
+	Items   []GitCommit `json:"items"`
+	Page    int         `json:"page"`
+	Limit   int         `json:"limit"`
+	HasMore bool        `json:"hasMore"`
 }
 
 type Repository interface {
