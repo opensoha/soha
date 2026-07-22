@@ -2,6 +2,7 @@ package virtualization
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -193,12 +194,15 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 
 func adapterCreateVMInput(payload map[string]any) domainvirtualization.AdapterCreateVMInput {
 	sourceRef := firstNonEmpty(payloadString(payload, "sourceId"), payloadString(payload, "imageId"), payloadString(payload, "bootImageId"))
-	return domainvirtualization.AdapterCreateVMInput{
+	input := domainvirtualization.AdapterCreateVMInput{
 		Name: payloadString(payload, "name"), Architecture: payloadString(payload, "architecture"), Namespace: payloadString(payload, "namespace"), Node: payloadString(payload, "node"),
 		CPU: payloadInt(payload, "cpu"), Memory: memoryString(payloadInt(payload, "memoryMiB")), BootImage: sourceRef, DiskSize: diskString(payloadInt(payload, "diskGiB")),
 		Network: payloadString(payload, "network"), CloudInit: payloadString(payload, "cloudInit"), StartAfterCreate: boolValue(payload, "startAfterCreate"),
 		TemplateID: payloadString(payload, "templateId"), SourceMode: payloadString(payload, "sourceMode"), SourceRef: sourceRef, ProviderParams: mapValue(payload, "providerParams"),
 	}
+	decodePayloadValue(payload["disks"], &input.Disks)
+	decodePayloadValue(payload["networks"], &input.Networks)
+	return input
 }
 
 func createdVMRecord(connection domainvirtualization.Connection, payload map[string]any, vm domainvirtualization.AdapterVM) (domainvirtualization.VM, []string, string) {
@@ -260,7 +264,45 @@ func (s *Service) executeVMAction(ctx context.Context, task domainvirtualization
 		s.failTask(ctx, task, err)
 		return runtimeobs.OutcomeFailed, err
 	}
-	action, err := normalizeAction(payloadString(task.Payload, "action"))
+	rawAction := strings.ToLower(strings.TrimSpace(payloadString(task.Payload, "action")))
+	if rawAction == "resize" {
+		input := domainvirtualization.AdapterResizeVMInput{CPU: payloadInt(task.Payload, "cpu"), MemoryMiB: payloadInt(task.Payload, "memoryMiB"), DiskGiB: payloadInt(task.Payload, "diskGiB")}
+		decodePayloadValue(task.Payload["disks"], &input.Disks)
+		decodePayloadValue(task.Payload["networks"], &input.Networks)
+		resizer, ok := adapter.(domainvirtualization.ResizeAdapter)
+		if !ok {
+			err := domainvirtualization.ErrUnsupported
+			s.failTask(ctx, task, err)
+			return runtimeobs.OutcomeFailed, err
+		}
+		result, err := resizer.ResizeVM(ctx, adapterConnection, domainvirtualization.AdapterVM{ID: firstNonEmpty(vm.ExternalID, vm.ID), Name: vm.Name, Namespace: vm.Namespace, Node: vm.NodeName, Status: vm.Status}, input)
+		if err != nil {
+			s.failTask(ctx, task, err)
+			return runtimeobs.OutcomeFailed, err
+		}
+		if vm.Config == nil {
+			vm.Config = map[string]any{}
+		}
+		if input.CPU > 0 {
+			vm.Config["cpu"] = input.CPU
+		}
+		if input.MemoryMiB > 0 {
+			vm.Config["memoryMiB"] = input.MemoryMiB
+		}
+		if input.DiskGiB > 0 {
+			vm.Config["diskGiB"] = input.DiskGiB
+		}
+		stored, err := s.vms.UpsertVM(ctx, vm)
+		if err != nil {
+			s.failTask(ctx, task, err)
+			return runtimeobs.OutcomeFailed, err
+		}
+		task.Result = map[string]any{"accepted": result.Accepted, "action": "resize", "message": result.Message, "vmId": stored.ID}
+		s.completeTask(ctx, task)
+		_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine resize completed"})
+		return runtimeobs.OutcomeSucceeded, nil
+	}
+	action, err := normalizeAction(rawAction)
 	if err != nil {
 		s.failTask(ctx, task, err)
 		return runtimeobs.OutcomeFailed, err
@@ -309,6 +351,14 @@ func (s *Service) executeVMAction(ctx context.Context, task domainvirtualization
 	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine action completed"})
 	s.recordOperation(ctx, s.workerPrincipal, "virtualization.worker.vm_action", stored.ID, stored.Name, TaskStatusSucceeded, "virtual machine action completed", map[string]any{"taskId": task.ID, "action": string(action)})
 	return runtimeobs.OutcomeSucceeded, nil
+}
+
+func decodePayloadValue(value any, target any) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return
+	}
+	_ = json.Unmarshal(encoded, target)
 }
 
 func (s *Service) completeTask(ctx context.Context, task domainvirtualization.Task) {

@@ -39,16 +39,6 @@ type LoginProviderSettings struct {
 	Certificate         string   `json:"certificate"`
 }
 
-type UpdatePrometheusSettingsRequest struct {
-	Enabled             bool   `json:"enabled"`
-	BaseURL             string `json:"baseUrl"`
-	BearerToken         string `json:"bearerToken"`
-	DefaultRangeMinutes int    `json:"defaultRangeMinutes"`
-	StepSeconds         int    `json:"stepSeconds"`
-	ClusterLabel        string `json:"clusterLabel"`
-	GrafanaBaseURL      string `json:"grafanaBaseUrl"`
-}
-
 type UpdateAIWorkbenchModelRequest struct {
 	WorkbenchModel AIWorkbenchModelSettings `json:"workbenchModel"`
 }

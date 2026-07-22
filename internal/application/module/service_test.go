@@ -9,6 +9,30 @@ import (
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
+type fixedRuntimeModules map[string]bool
+
+func (s fixedRuntimeModules) ModuleEnabled(id string) bool       { return s[id] }
+func (s fixedRuntimeModules) FeatureEnabled(string, string) bool { return false }
+
+func TestListIncludesEnabledHomeWorkbench(t *testing.T) {
+	service := New(cfgpkg.ModulesConfig{Home: cfgpkg.ModuleToggleConfig{Enabled: true}})
+
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	status, ok := moduleStatusByID(items, "home")
+	if !ok || !status.Enabled {
+		t.Fatalf("home module = %#v", status)
+	}
+	if status.Descriptor.DefaultPath != "/portal" || status.Descriptor.EnabledConfigKey != "modules.home.enabled" {
+		t.Fatalf("home descriptor = %#v", status.Descriptor)
+	}
+	if !slices.Contains(status.Descriptor.SeedMenus, "home-workbench") {
+		t.Fatalf("home seed menus = %v", status.Descriptor.SeedMenus)
+	}
+}
+
 func TestListIncludesVirtualizationDescriptor(t *testing.T) {
 	service := New(cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}})
 
@@ -24,10 +48,10 @@ func TestListIncludesVirtualizationDescriptor(t *testing.T) {
 	if !status.Enabled {
 		t.Fatalf("virtualization module should be enabled from config")
 	}
-	if status.Descriptor.Name != "虚拟化管理工作台" {
+	if status.Descriptor.Name != "虚拟化资源" {
 		t.Fatalf("virtualization name = %q", status.Descriptor.Name)
 	}
-	if status.Descriptor.DefaultPath != "/virtualization" {
+	if status.Descriptor.DefaultPath != "/compute/virtualization" {
 		t.Fatalf("virtualization default path = %q", status.Descriptor.DefaultPath)
 	}
 	if status.Descriptor.EnabledConfigKey != "modules.virtualization.enabled" {
@@ -121,6 +145,15 @@ func TestListIncludesDockerDescriptorWithoutRemovedDetailMenus(t *testing.T) {
 	if !status.Enabled {
 		t.Fatalf("docker module should be enabled from config")
 	}
+	if status.Descriptor.Name != "容器运行时" {
+		t.Fatalf("docker name = %q", status.Descriptor.Name)
+	}
+	if status.Descriptor.DefaultPath != "/compute/runtimes" {
+		t.Fatalf("docker default path = %q", status.Descriptor.DefaultPath)
+	}
+	if len(status.Descriptor.Dependencies) != 0 {
+		t.Fatalf("container runtime should be independently toggleable, dependencies = %v", status.Descriptor.Dependencies)
+	}
 	for _, permission := range []string{"docker.services.view", "docker.ports.view"} {
 		if !slices.Contains(status.Descriptor.VisiblePermissions, permission) {
 			t.Fatalf("docker visible permissions = %v, missing %s", status.Descriptor.VisiblePermissions, permission)
@@ -191,6 +224,23 @@ func TestListReflectsDisabledAIGatewayModule(t *testing.T) {
 	}
 	if status.Enabled {
 		t.Fatalf("AI Gateway module should be disabled from config")
+	}
+}
+
+func TestRuntimeListPreservesDisabledSecurityAndCMDB(t *testing.T) {
+	service := NewRuntime(fixedRuntimeModules{"security": false, "cmdb": false})
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	for _, id := range []string{"security", "cmdb"} {
+		status, ok := moduleStatusByID(items, id)
+		if !ok {
+			t.Fatalf("%s module descriptor missing", id)
+		}
+		if status.Enabled {
+			t.Fatalf("%s module should preserve disabled runtime baseline", id)
+		}
 	}
 }
 

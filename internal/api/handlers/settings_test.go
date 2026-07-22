@@ -29,14 +29,6 @@ func (s stubSettingsService) UpdateLoginProvidersSettings(_ context.Context, _ d
 	return domainsettings.IdentitySettings{}, nil
 }
 
-func (s stubSettingsService) GetMonitoringSettings(context.Context, domainidentity.Principal) (domainsettings.MonitoringSettings, error) {
-	return domainsettings.MonitoringSettings{}, nil
-}
-
-func (s stubSettingsService) UpdatePrometheusSettings(context.Context, domainidentity.Principal, domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error) {
-	return domainsettings.MonitoringSettings{}, nil
-}
-
 func (s stubSettingsService) GetAISettings(context.Context, domainidentity.Principal) (domainsettings.AISettings, error) {
 	return s.ai, nil
 }

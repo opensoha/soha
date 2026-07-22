@@ -173,12 +173,14 @@ const (
 	PermSystemOperationsView              = "system.operations.view"
 	PermSettingsIdentityView              = "settings.identity.view"
 	PermSettingsIdentityManage            = "settings.identity.manage"
-	PermSettingsMonitoringView            = "settings.monitoring.view"
-	PermSettingsMonitoringManage          = "settings.monitoring.manage"
 	PermSettingsAIView                    = "settings.ai.view"
 	PermSettingsAIManage                  = "settings.ai.manage"
 	PermSettingsBrandingView              = "settings.branding.view"
 	PermSettingsBrandingManage            = "settings.branding.manage"
+	PermSettingsRuntimeConfigView         = "settings.runtime-config.view"
+	PermSettingsRuntimeConfigManage       = "settings.runtime-config.manage"
+	PermSettingsSystemIntegrationsView    = "settings.system-integrations.view"
+	PermSettingsSystemIntegrationsManage  = "settings.system-integrations.manage"
 )
 
 var (
@@ -352,12 +354,14 @@ var allPermissionKeySet = []string{
 	PermSystemOperationsView,
 	PermSettingsIdentityView,
 	PermSettingsIdentityManage,
-	PermSettingsMonitoringView,
-	PermSettingsMonitoringManage,
 	PermSettingsAIView,
 	PermSettingsAIManage,
 	PermSettingsBrandingView,
 	PermSettingsBrandingManage,
+	PermSettingsRuntimeConfigView,
+	PermSettingsRuntimeConfigManage,
+	PermSettingsSystemIntegrationsView,
+	PermSettingsSystemIntegrationsManage,
 }
 
 func allPermissionKeys() []string {
@@ -493,6 +497,7 @@ var opsRolePermissionKeys = []string{
 	PermSettingsAIManage,
 	PermSettingsBrandingView,
 	PermSettingsBrandingManage,
+	PermSettingsRuntimeConfigView,
 }
 var developerRolePermissionKeys = []string{
 	PermWorkspaceApplicationView,

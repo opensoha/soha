@@ -6,9 +6,7 @@ import (
 )
 
 func registerMonitoringRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
-	if !cfg.Modules.Monitoring.Enabled {
-		return
-	}
+	_ = cfg
 	registerAlertRoutes(protected, deps)
 	registerNotificationRoutes(protected, deps)
 	registerOnCallRoutes(protected, deps)

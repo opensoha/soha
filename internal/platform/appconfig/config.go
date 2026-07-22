@@ -91,6 +91,7 @@ func (m ModuleToggle) FeatureFlags() map[string]bool {
 }
 
 type Modules struct {
+	Home           ModuleToggle `mapstructure:"home"`
 	Delivery       ModuleToggle `mapstructure:"delivery"`
 	Monitoring     ModuleToggle `mapstructure:"monitoring"`
 	AI             ModuleToggle `mapstructure:"ai"`

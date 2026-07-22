@@ -241,6 +241,10 @@ type Service struct {
 	metricTelemetry       MetricTelemetry
 	traceTelemetry        TraceTelemetry
 	contextBuilder        WorkbenchContextBuilder
+	lifecycleMu           sync.Mutex
+	lifecycleCancel       context.CancelFunc
+	lifecycleDone         chan struct{}
+	running               bool
 }
 
 type MCPRegistry interface {

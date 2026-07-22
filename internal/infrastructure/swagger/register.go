@@ -57,7 +57,6 @@ func openAPISpec() gin.H {
 			"/api/v1/releases/trigger":                                  gin.H{"post": gin.H{"summary": "Trigger release"}},
 			"/api/v1/settings/identity":                                 gin.H{"get": gin.H{"summary": "Login settings"}},
 			"/api/v1/settings/identity/providers":                       gin.H{"put": gin.H{"summary": "Update login providers"}},
-			"/api/v1/settings/monitoring":                               gin.H{"get": gin.H{"summary": "Monitoring settings"}},
 			"/api/v1/mcp/capabilities":                                  gin.H{"get": gin.H{"summary": "List MCP capabilities"}},
 		},
 	}

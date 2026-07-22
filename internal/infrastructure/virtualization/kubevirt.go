@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 )
@@ -27,6 +28,43 @@ type KubeBundleProvider interface {
 
 type KubeVirtAdapter struct {
 	bundles KubeBundleProvider
+}
+
+func (a *KubeVirtAdapter) VMCapabilities() []string {
+	return []string{CapabilityResizeCPU, CapabilityResizeMemory}
+}
+
+func (a *KubeVirtAdapter) ListVMDevices(ctx context.Context, connection Connection, vm VM) ([]VMDevice, error) {
+	bundle, err := a.bundle(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+	namespace := vm.Namespace
+	if namespace == "" {
+		namespace = namespaceOrDefault(connection, "default")
+	}
+	item, err := bundle.Dynamic.Resource(kubeVirtVMGVR).Namespace(namespace).Get(ctx, vm.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	devices := make([]VMDevice, 0)
+	if disks, ok, _ := unstructured.NestedSlice(item.Object, "spec", "template", "spec", "domain", "devices", "disks"); ok {
+		for _, raw := range disks {
+			if disk, ok := raw.(map[string]any); ok {
+				id := stringFromAny(disk["name"])
+				devices = append(devices, VMDevice{ID: id, Kind: "disk", Name: id})
+			}
+		}
+	}
+	if interfaces, ok, _ := unstructured.NestedSlice(item.Object, "spec", "template", "spec", "domain", "devices", "interfaces"); ok {
+		for _, raw := range interfaces {
+			if iface, ok := raw.(map[string]any); ok {
+				id := stringFromAny(iface["name"])
+				devices = append(devices, VMDevice{ID: id, Kind: "network", Name: id, Model: stringFromAny(iface["model"])})
+			}
+		}
+	}
+	return devices, nil
 }
 
 func NewKubeVirtAdapter(bundles KubeBundleProvider) *KubeVirtAdapter {
@@ -169,6 +207,39 @@ func (a *KubeVirtAdapter) PowerAction(ctx context.Context, connection Connection
 	default:
 		return PowerActionResult{}, invalidf("unsupported power action %q", action)
 	}
+}
+
+func (a *KubeVirtAdapter) ResizeVM(ctx context.Context, connection Connection, vm VM, input AdapterResizeVMInput) (PowerActionResult, error) {
+	if vm.Name == "" {
+		return PowerActionResult{}, invalidf("vm name is required")
+	}
+	bundle, err := a.bundle(ctx, connection)
+	if err != nil {
+		return PowerActionResult{}, err
+	}
+	namespace := vm.Namespace
+	if namespace == "" {
+		namespace = namespaceOrDefault(connection, "default")
+	}
+	patch := map[string]any{"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"domain": map[string]any{}}}}}
+	domain := patch["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["domain"].(map[string]any)
+	if input.CPU > 0 {
+		domain["cpu"] = map[string]any{"cores": input.CPU}
+	}
+	if input.MemoryMiB > 0 {
+		domain["resources"] = map[string]any{"requests": map[string]any{"memory": fmt.Sprintf("%dMi", input.MemoryMiB)}}
+	}
+	patchBytes, err := json.Marshal(patch)
+	if err != nil {
+		return PowerActionResult{}, err
+	}
+	if _, err := bundle.Dynamic.Resource(kubeVirtVMGVR).Namespace(namespace).Patch(ctx, vm.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{}); err != nil {
+		return PowerActionResult{}, err
+	}
+	if input.DiskGiB > 0 {
+		return PowerActionResult{Accepted: true, Action: "resize", Message: "CPU and memory updated; disk expansion requires a DataVolume operation"}, nil
+	}
+	return PowerActionResult{Accepted: true, Action: "resize", Message: "virtual machine resources updated"}, nil
 }
 
 func (a *KubeVirtAdapter) bundle(ctx context.Context, connection Connection) (*kubeinfra.Bundle, error) {

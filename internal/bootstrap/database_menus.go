@@ -27,6 +27,7 @@ var defaultUserRoles = []string{"admin", "ops", "developer", "tester", "readonly
 var defaultComputeRoles = []string{"admin", "ops", "developer", "readonly"}
 
 var builtinMenuSeeds = []menuSeed{
+	{ID: "home-workbench", Path: "/portal", LabelZH: "首页", LabelEN: "Home", IconKey: "home", SortOrder: 1, Enabled: true, Roles: defaultUserRoles},
 	{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", SortOrder: 10, Enabled: true},
 	{ID: "cluster-resources-nodes", Path: "/cluster-resources/nodes", LabelZH: "节点", LabelEN: "Nodes", IconKey: "server", SortOrder: 20, Enabled: true},
 	{ID: "extensions", Path: "/extensions", LabelZH: "CRD", LabelEN: "CRD", IconKey: "puzzle", SortOrder: 90, Enabled: true},
@@ -159,10 +160,10 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计日志", LabelEN: "Audit Logs", IconKey: "file-clock", Section: "operations", SortOrder: 60, Enabled: true},
 	{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "delivery-platform", SortOrder: 70, Enabled: true, Roles: []string{"admin", "ops"}},
 	{ID: "settings", Path: "/settings", LabelZH: "设置中心", LabelEN: "Settings Center", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true, Roles: []string{"admin"}},
-	{ID: "account-profile", ParentID: "settings", Path: "/account/profile", LabelZH: "个人中心", LabelEN: "Profile", IconKey: "user", Section: "account", SortOrder: 10, Enabled: true, Roles: defaultUserRoles},
-	{ID: "settings-about", ParentID: "settings", Path: "/settings/about", LabelZH: "关于", LabelEN: "About", IconKey: "info", Section: "account", SortOrder: 20, Enabled: true, Roles: defaultUserRoles},
-	{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登陆设置", LabelEN: "Login Settings", IconKey: "shield", Section: "users", SortOrder: 60, Enabled: true, Roles: []string{"admin"}},
-	{ID: "settings-branding", ParentID: "settings", Path: "/settings/branding", LabelZH: "品牌设置", LabelEN: "Branding Settings", IconKey: "palette", Section: "operations", SortOrder: 70, Enabled: true, Roles: []string{"admin"}},
+	{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登陆设置", LabelEN: "Login Settings", IconKey: "shield", Section: "integrations", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
+	{ID: "settings-source-control", ParentID: "settings", Path: "/settings/source-control", LabelZH: "代码源", LabelEN: "Source Control", IconKey: "code", Section: "integrations", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
+	{ID: "settings-branding", ParentID: "settings", Path: "/settings/branding", LabelZH: "品牌设置", LabelEN: "Branding Settings", IconKey: "palette", Section: "extensions", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
+	{ID: "settings-runtime-configuration", ParentID: "settings", Path: "/settings/runtime-configuration", LabelZH: "运行时配置", LabelEN: "Runtime Configuration", IconKey: "settings", Section: "operations", SortOrder: 80, Enabled: true, Roles: []string{"admin"}},
 }
 
 func defaultMenuSeeds() []menuSeed {
@@ -199,6 +200,8 @@ func obsoleteMenuIDsForCleanup() []string {
 		"extensions-installed",
 		"extensions-capabilities",
 		"settings-extensions-capabilities",
+		"settings-system-integrations",
+		"settings-runtime-config",
 		"docker-workbench-services",
 		"docker-workbench-ports",
 		"virtualization-workbench-overview",
@@ -211,6 +214,8 @@ func obsoleteMenuIDsForCleanup() []string {
 		"compute-workbench-tasks-all",
 		"identity-audit",
 		"identity-sessions",
+		"account-profile",
+		"settings-about",
 	}
 }
 
@@ -234,17 +239,13 @@ func validateMenuSeeds(items []menuSeed) error {
 }
 
 func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) error {
+	_ = modules
 	now := time.Now().UTC()
 	items := defaultMenuSeeds()
 	if err := validateMenuSeeds(items); err != nil {
 		return err
 	}
-	allItems := append([]menuSeed(nil), items...)
-	items = filterSeedMenusByModules(items, modules)
 	if err := upsertMenusAfterDeprecatedCleanup(ctx, db, items, obsoleteMenuIDsForCleanup(), now); err != nil {
-		return err
-	}
-	if err := deleteDisabledModuleMenus(ctx, db, allItems, modules); err != nil {
 		return err
 	}
 	menuIDs := make([]string, 0, len(items))
@@ -441,6 +442,7 @@ func syncAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time)
 		{id: "identity-applications", section: "provider", sortOrder: 10},
 		{id: "identity-providers", section: "provider", sortOrder: 20},
 		{id: "identity-outposts", section: "provider", sortOrder: 30},
+		{id: "settings-source-control", section: "integrations", sortOrder: 10},
 		{id: "identity-policies", section: "provider", sortOrder: 40},
 		{id: "access-users", section: "users", sortOrder: 10},
 		{id: "access-roles", section: "users", sortOrder: 20},
@@ -448,12 +450,13 @@ func syncAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time)
 		{id: "access-policies", section: "users", sortOrder: 40},
 		{id: "access-directory-sync", section: "users", sortOrder: 50},
 		{id: "menus", section: "users", sortOrder: 60},
-		{id: "settings-login", section: "users", sortOrder: 70},
+		{id: "settings-login", section: "integrations", sortOrder: 20},
 		{id: "announcements", section: "operations", sortOrder: 30},
 		{id: "system-online-users", section: "operations", sortOrder: 40},
 		{id: "operations", section: "operations", sortOrder: 50},
 		{id: "audit", section: "operations", sortOrder: 60},
-		{id: "settings-branding", section: "operations", sortOrder: 70},
+		{id: "settings-branding", section: "extensions", sortOrder: 10},
+		{id: "settings-runtime-configuration", section: "operations", sortOrder: 80},
 	}
 	for _, item := range settingsItems {
 		if err := db.WithContext(ctx).Exec(`

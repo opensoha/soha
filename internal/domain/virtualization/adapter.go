@@ -81,6 +81,8 @@ type AdapterCreateVMInput struct {
 	SourceMode       string
 	SourceRef        string
 	ProviderParams   map[string]any
+	Disks            []AdapterDiskChange
+	Networks         []AdapterNetworkChange
 }
 
 type AdapterVM struct {
@@ -108,6 +110,53 @@ type PowerActionResult struct {
 	Action   PowerAction
 	Message  string
 	UPID     string
+}
+
+type AdapterResizeVMInput struct {
+	CPU       int
+	MemoryMiB int
+	DiskGiB   int
+	Disks     []AdapterDiskChange
+	Networks  []AdapterNetworkChange
+}
+
+type AdapterDiskChange struct {
+	ID, Name, Storage, Bus string
+	SizeGiB                int
+	Add                    bool
+}
+type AdapterNetworkChange struct {
+	ID, Name, Network, Model, Binding string
+	Add, Remove                       bool
+}
+type VMCapabilityProvider interface{ VMCapabilities() []string }
+
+type VMDevice struct {
+	ID      string         `json:"id"`
+	Kind    string         `json:"kind"`
+	Name    string         `json:"name,omitempty"`
+	SizeGiB int            `json:"sizeGiB,omitempty"`
+	Storage string         `json:"storage,omitempty"`
+	Network string         `json:"network,omitempty"`
+	Model   string         `json:"model,omitempty"`
+	Details map[string]any `json:"details,omitempty"`
+}
+
+type VMDeviceProvider interface {
+	ListVMDevices(context.Context, AdapterConnection, AdapterVM) ([]VMDevice, error)
+}
+
+const (
+	CapabilityResizeCPU     = "vm.resource.cpu.resize"
+	CapabilityResizeMemory  = "vm.resource.memory.resize"
+	CapabilityAddDisk       = "vm.resource.disk.add"
+	CapabilityResizeDisk    = "vm.resource.disk.resize"
+	CapabilityAddNetwork    = "vm.resource.network.add"
+	CapabilityRemoveNetwork = "vm.resource.network.remove"
+)
+
+type ResizeAdapter interface {
+	ResizeVM(context.Context, AdapterConnection, AdapterVM, AdapterResizeVMInput) (PowerActionResult, error)
 }
 
 type AdapterError struct {

@@ -46,8 +46,10 @@ import (
 	appregistryconn "github.com/opensoha/soha/internal/application/registry"
 	apprelease "github.com/opensoha/soha/internal/application/release"
 	appresource "github.com/opensoha/soha/internal/application/resource"
+	appruntimeconfig "github.com/opensoha/soha/internal/application/runtimeconfig"
 	appscopegrant "github.com/opensoha/soha/internal/application/scopegrant"
 	appsettings "github.com/opensoha/soha/internal/application/settings"
+	appsystemintegration "github.com/opensoha/soha/internal/application/systemintegration"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	appworkflow "github.com/opensoha/soha/internal/application/workflow"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
@@ -58,7 +60,6 @@ import (
 	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
 	feishudirectory "github.com/opensoha/soha/internal/infrastructure/directoryconnector/feishu"
 	executionbackendinfra "github.com/opensoha/soha/internal/infrastructure/executionbackend"
-	gitlabinfra "github.com/opensoha/soha/internal/infrastructure/gitlab"
 	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
 	knowledgeconnectors "github.com/opensoha/soha/internal/infrastructure/knowledge/connectors"
 	knowledgemodelgateway "github.com/opensoha/soha/internal/infrastructure/knowledge/modelgateway"
@@ -73,6 +74,7 @@ import (
 	resourcebackendinfra "github.com/opensoha/soha/internal/infrastructure/resourcebackend"
 	virtualizationinfra "github.com/opensoha/soha/internal/infrastructure/virtualization"
 	"github.com/opensoha/soha/internal/platform/keyring"
+	"github.com/opensoha/soha/internal/platform/runtimeinfo"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"github.com/opensoha/soha/internal/policy"
 	agentharnessrepo "github.com/opensoha/soha/internal/repository/agentharness"
@@ -105,8 +107,10 @@ import (
 	registryrepo "github.com/opensoha/soha/internal/repository/registry"
 	releaserepo "github.com/opensoha/soha/internal/repository/release"
 	resourcecreationrepo "github.com/opensoha/soha/internal/repository/resourcecreation"
+	runtimeconfigrepo "github.com/opensoha/soha/internal/repository/runtimeconfig"
 	scopegrantrepo "github.com/opensoha/soha/internal/repository/scopegrant"
 	settingsrepo "github.com/opensoha/soha/internal/repository/settings"
+	systemintegrationrepo "github.com/opensoha/soha/internal/repository/systemintegration"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
 	virtualizationrepo "github.com/opensoha/soha/internal/repository/virtualization"
 	workflowrepo "github.com/opensoha/soha/internal/repository/workflow"
@@ -126,76 +130,79 @@ type infrastructure struct {
 }
 
 type repositories struct {
-	auditRepository            *auditrepo.Repository
-	announcementRepository     *announcementrepo.Repository
-	eventRepository            *eventrepo.Repository
-	menuRepository             *menurepo.Repository
-	operationRepository        *operationrepo.Repository
-	alertRepository            *alertrepo.Repository
-	applicationRepository      *applicationrepo.Repository
-	buildRepository            *buildrepo.Repository
-	catalogRepository          *catalogrepo.Repository
-	workflowRepository         *workflowrepo.Repository
-	deliveryRepository         *deliveryrepo.Repository
-	registryRepository         *registryrepo.Repository
-	releaseRepository          *releaserepo.Repository
-	copilotRepository          *copilotrepo.Repository
-	identityRepository         *userrepo.Repository
-	settingsRepository         *settingsrepo.Repository
-	scopeGrantRepository       *scopegrantrepo.Repository
-	policyRepository           *policyrepo.Repository
-	clusterRepository          *clusterrepo.Repository
-	virtualizationRepository   *virtualizationrepo.Repository
-	dockerRepository           *dockerrepo.Repository
-	aiGatewayRepository        *aigatewayrepo.Repository
-	pluginRepository           *pluginrepo.Repository
-	identityProviderRepository *identityproviderrepo.Repository
-	knowledgeRepository        *knowledgerepo.Repository
-	agentHarnessRepository     *agentharnessrepo.Repository
-	aiProductionRepository     *aiproductionrepo.Repository
-	evaluationRepository       *aievalrepo.Repository
-	memoryRepository           *memoryrepo.Repository
-	knowledgeGraphRepository   *knowledgegraphrepo.Repository
-	multiAgentRepository       *multiagentrepo.Repository
-	providerPortalRepository   *providerportalrepo.Repository
-	portForwardRepository      *portforwardrepo.Repository
-	resourceCreationRepository *resourcecreationrepo.Repository
-	directorySyncRepository    *directorysyncrepo.Repository
+	auditRepository             *auditrepo.Repository
+	announcementRepository      *announcementrepo.Repository
+	eventRepository             *eventrepo.Repository
+	menuRepository              *menurepo.Repository
+	operationRepository         *operationrepo.Repository
+	alertRepository             *alertrepo.Repository
+	applicationRepository       *applicationrepo.Repository
+	buildRepository             *buildrepo.Repository
+	catalogRepository           *catalogrepo.Repository
+	workflowRepository          *workflowrepo.Repository
+	deliveryRepository          *deliveryrepo.Repository
+	registryRepository          *registryrepo.Repository
+	releaseRepository           *releaserepo.Repository
+	copilotRepository           *copilotrepo.Repository
+	identityRepository          *userrepo.Repository
+	settingsRepository          *settingsrepo.Repository
+	scopeGrantRepository        *scopegrantrepo.Repository
+	policyRepository            *policyrepo.Repository
+	clusterRepository           *clusterrepo.Repository
+	virtualizationRepository    *virtualizationrepo.Repository
+	dockerRepository            *dockerrepo.Repository
+	aiGatewayRepository         *aigatewayrepo.Repository
+	pluginRepository            *pluginrepo.Repository
+	identityProviderRepository  *identityproviderrepo.Repository
+	knowledgeRepository         *knowledgerepo.Repository
+	agentHarnessRepository      *agentharnessrepo.Repository
+	aiProductionRepository      *aiproductionrepo.Repository
+	evaluationRepository        *aievalrepo.Repository
+	memoryRepository            *memoryrepo.Repository
+	knowledgeGraphRepository    *knowledgegraphrepo.Repository
+	multiAgentRepository        *multiagentrepo.Repository
+	providerPortalRepository    *providerportalrepo.Repository
+	portForwardRepository       *portforwardrepo.Repository
+	resourceCreationRepository  *resourcecreationrepo.Repository
+	directorySyncRepository     *directorysyncrepo.Repository
+	runtimeConfigRepository     *runtimeconfigrepo.Repository
+	systemIntegrationRepository *systemintegrationrepo.Repository
 }
 
 type coreServices struct {
-	permissionResolver      *appaccess.PermissionResolver
-	auditService            *appaudit.Service
-	operationService        *appoperation.Service
-	announcementService     *appannouncement.Service
-	menuService             *appmenu.Service
-	moduleService           *appmodule.Service
-	settingsService         *appsettings.Service
-	identityService         *appidentity.Service
-	policyEngine            *policy.Engine
-	accessService           *appaccess.Service
-	accessCatalogService    *appaccess.CatalogService
-	accessManagementService *appaccess.ManagementService
-	accessConsoleService    *appaccess.ConsoleService
-	gitlabClient            *gitlabinfra.Client
-	clusterService          *appcluster.Service
-	resourceService         *appresource.Service
-	eventService            *appevent.Service
-	monitoringService       *appmonitoring.Service
-	applicationService      *appregistry.Service
-	executionService        *appexecution.Service
-	buildService            *appbuild.Service
-	catalogService          *appcatalog.Service
-	scopeGrantService       *appscopegrant.Service
-	registryService         *appregistryconn.Service
-	releaseService          *apprelease.Service
-	integrationService      *appintegration.Service
-	pluginService           *appplugin.Service
-	identityProviderService *appidentityprovider.Service
-	providerPortalService   *appproviderportal.Service
-	directorySyncService    *appdirectorysync.Service
-	directorySyncConnectors *directorysynchandler.Registry
-	pluginExtensions        *appplugin.ExtensionRegistry
+	permissionResolver       *appaccess.PermissionResolver
+	auditService             *appaudit.Service
+	operationService         *appoperation.Service
+	announcementService      *appannouncement.Service
+	menuService              *appmenu.Service
+	moduleService            *appmodule.Service
+	settingsService          *appsettings.Service
+	runtimeConfigService     *appruntimeconfig.Service
+	identityService          *appidentity.Service
+	policyEngine             *policy.Engine
+	accessService            *appaccess.Service
+	accessCatalogService     *appaccess.CatalogService
+	accessManagementService  *appaccess.ManagementService
+	accessConsoleService     *appaccess.ConsoleService
+	systemIntegrationService *appsystemintegration.Service
+	clusterService           *appcluster.Service
+	resourceService          *appresource.Service
+	eventService             *appevent.Service
+	monitoringService        *appmonitoring.Service
+	applicationService       *appregistry.Service
+	executionService         *appexecution.Service
+	buildService             *appbuild.Service
+	catalogService           *appcatalog.Service
+	scopeGrantService        *appscopegrant.Service
+	registryService          *appregistryconn.Service
+	releaseService           *apprelease.Service
+	integrationService       *appintegration.Service
+	pluginService            *appplugin.Service
+	identityProviderService  *appidentityprovider.Service
+	providerPortalService    *appproviderportal.Service
+	directorySyncService     *appdirectorysync.Service
+	directorySyncConnectors  *directorysynchandler.Registry
+	pluginExtensions         *appplugin.ExtensionRegistry
 }
 
 type deliveryServices struct {
@@ -313,41 +320,43 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 	alertRepository := alertrepo.New(db)
 	alertRepository.SetUpsertBatchSize(cfg.Runtime.AlertUpsertBatchSize)
 	return &repositories{
-		auditRepository:            auditrepo.New(db),
-		announcementRepository:     announcementrepo.New(db),
-		eventRepository:            eventrepo.New(db),
-		menuRepository:             menurepo.New(db),
-		operationRepository:        operationrepo.New(db),
-		alertRepository:            alertRepository,
-		applicationRepository:      applicationrepo.New(db),
-		buildRepository:            buildrepo.New(db),
-		catalogRepository:          catalogrepo.New(db),
-		workflowRepository:         workflowrepo.New(db),
-		deliveryRepository:         deliveryrepo.New(db),
-		registryRepository:         registryrepo.New(db),
-		releaseRepository:          releaserepo.New(db),
-		copilotRepository:          copilotrepo.New(db),
-		identityRepository:         userrepo.New(db),
-		settingsRepository:         settingsrepo.New(db),
-		scopeGrantRepository:       scopegrantrepo.New(db),
-		policyRepository:           policyrepo.New(db),
-		clusterRepository:          clusterrepo.New(db),
-		virtualizationRepository:   virtualizationrepo.New(db),
-		dockerRepository:           dockerrepo.New(db),
-		aiGatewayRepository:        aigatewayrepo.New(db),
-		pluginRepository:           pluginrepo.New(db),
-		identityProviderRepository: identityproviderrepo.New(db),
-		knowledgeRepository:        knowledgerepo.New(db),
-		agentHarnessRepository:     agentharnessrepo.New(db),
-		aiProductionRepository:     aiproductionrepo.New(db),
-		evaluationRepository:       aievalrepo.New(db),
-		memoryRepository:           memoryrepo.New(db),
-		knowledgeGraphRepository:   knowledgegraphrepo.New(db),
-		multiAgentRepository:       multiagentrepo.New(db),
-		providerPortalRepository:   providerportalrepo.New(db),
-		portForwardRepository:      portforwardrepo.New(db),
-		resourceCreationRepository: resourcecreationrepo.New(db),
-		directorySyncRepository:    directorysyncrepo.New(db, cfg.Security.CredentialEncryptionKeys),
+		auditRepository:             auditrepo.New(db),
+		announcementRepository:      announcementrepo.New(db),
+		eventRepository:             eventrepo.New(db),
+		menuRepository:              menurepo.New(db),
+		operationRepository:         operationrepo.New(db),
+		alertRepository:             alertRepository,
+		applicationRepository:       applicationrepo.New(db),
+		buildRepository:             buildrepo.New(db),
+		catalogRepository:           catalogrepo.New(db),
+		workflowRepository:          workflowrepo.New(db),
+		deliveryRepository:          deliveryrepo.New(db),
+		registryRepository:          registryrepo.New(db),
+		releaseRepository:           releaserepo.New(db),
+		copilotRepository:           copilotrepo.New(db),
+		identityRepository:          userrepo.New(db),
+		settingsRepository:          settingsrepo.New(db),
+		scopeGrantRepository:        scopegrantrepo.New(db),
+		policyRepository:            policyrepo.New(db),
+		clusterRepository:           clusterrepo.New(db),
+		virtualizationRepository:    virtualizationrepo.New(db),
+		dockerRepository:            dockerrepo.New(db),
+		aiGatewayRepository:         aigatewayrepo.New(db),
+		pluginRepository:            pluginrepo.New(db),
+		identityProviderRepository:  identityproviderrepo.New(db),
+		knowledgeRepository:         knowledgerepo.New(db),
+		agentHarnessRepository:      agentharnessrepo.New(db),
+		aiProductionRepository:      aiproductionrepo.New(db),
+		evaluationRepository:        aievalrepo.New(db),
+		memoryRepository:            memoryrepo.New(db),
+		knowledgeGraphRepository:    knowledgegraphrepo.New(db),
+		multiAgentRepository:        multiagentrepo.New(db),
+		providerPortalRepository:    providerportalrepo.New(db),
+		portForwardRepository:       portforwardrepo.New(db),
+		resourceCreationRepository:  resourcecreationrepo.New(db),
+		directorySyncRepository:     directorysyncrepo.New(db, cfg.Security.CredentialEncryptionKeys),
+		runtimeConfigRepository:     runtimeconfigrepo.New(db),
+		systemIntegrationRepository: systemintegrationrepo.New(db),
 	}
 }
 
@@ -355,10 +364,36 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	permissionResolver := appaccess.NewPermissionResolver(repos.policyRepository)
 	auditService := appaudit.New(repos.auditRepository, permissionResolver)
 	operationService := appoperation.New(repos.operationRepository, permissionResolver)
+	systemIntegrationService := appsystemintegration.New(repos.systemIntegrationRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
+	systemIntegrationService.RegisterSourceAdapter("gitlab", gitLabSourceAdapterFactory{})
+	if err := systemIntegrationService.ImportLegacyGitLab(ctx, appsystemintegration.LegacyGitLabConfig{
+		Enabled: cfg.GitLab.Enabled, BaseURL: cfg.GitLab.BaseURL, Token: cfg.GitLab.Token,
+		GroupID: cfg.GitLab.GroupID, PerPage: cfg.GitLab.PerPage, Timeout: cfg.GitLab.Timeout,
+	}); err != nil {
+		return nil, fmt.Errorf("import legacy gitlab integration: %w", err)
+	}
+	runtimeConfigService, err := appruntimeconfig.New(ctx, repos.runtimeConfigRepository, appruntimeconfig.NewRegistry(appruntimeconfig.RegistryOptions{
+		AssistantGlobal:      cfg.Modules.AI.FeatureFlags()["assistant.global"],
+		ModuleHome:           cfg.Modules.Home.Enabled,
+		ModuleAI:             cfg.Modules.AI.Enabled,
+		ModuleMonitoring:     cfg.Modules.Monitoring.Enabled,
+		ModuleVirtualization: cfg.Modules.Virtualization.Enabled,
+		ModuleDocker:         cfg.Modules.Docker.Enabled,
+		ModuleAIGateway:      cfg.Modules.AIGateway.Enabled,
+		ModuleDelivery:       cfg.Modules.Delivery.Enabled,
+		ModuleSecurity:       cfg.Modules.Security.Enabled,
+		ModuleCMDB:           cfg.Modules.CMDB.Enabled,
+		MarketplaceURL:       cfg.Plugins.Marketplace.URL,
+		MarketplaceSourceID:  cfg.Plugins.Marketplace.SourceID,
+	}), permissionResolver, auditService)
+	if err != nil {
+		return nil, fmt.Errorf("build runtime config service: %w", err)
+	}
 	announcementService := appannouncement.New(repos.announcementRepository, permissionResolver, auditService, operationService)
 	menuService := appmenu.New(repos.menuRepository, permissionResolver, auditService, operationService)
-	moduleService := appmodule.New(cfg.Modules)
-	settingsService := appsettings.New(repos.settingsRepository, cfg.Monitoring, permissionResolver)
+	menuService.SetModuleState(runtimeConfigService)
+	moduleService := appmodule.NewRuntime(runtimeConfigService)
+	settingsService := appsettings.New(repos.settingsRepository, permissionResolver)
 	directorySyncConnectors := directorysynchandler.NewRegistry(directorysynchandler.TokenResolver(
 		feishudirectory.NewTenantTokenResolver(settingsService, nil, ""),
 	), settingsService, repos.directorySyncRepository)
@@ -382,7 +417,6 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	accessCatalogService := appaccess.NewCatalog(repos.identityRepository, repos.policyRepository, accessService, menuService, permissionResolver)
 	accessManagementService := appaccess.NewManagement(repos.identityRepository, repos.policyRepository, permissionResolver, auditService, operationService)
 	accessConsoleService := appaccess.NewConsole(accessCatalogService, accessManagementService)
-	gitlabClient := gitlabinfra.New(cfg.GitLab)
 	directorySyncService := appdirectorysync.New(repos.directorySyncRepository, directorysyncrepo.NewDatabaseProjector(infra.databaseStore.DB()))
 	directoryScheduler := appdirectorysync.NewScheduler(repos.directorySyncRepository, directorySyncService, func(_ context.Context, connection directorysyncdomain.Connection) (appdirectorysync.Connector, error) {
 		return directorySyncConnectors.Connector(connection.ProviderType)
@@ -390,50 +424,52 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	directoryScheduler.SetInstrumentation(infra.runtimeMetrics)
 	go directoryScheduler.Start(infra.lifecycleCtx)
 
-	platformCore, err := newPlatformCoreServices(ctx, cfg, infra, repos, permissionResolver, auditService, operationService, accessService, settingsService)
+	platformCore, err := newPlatformCoreServices(ctx, cfg, infra, repos, permissionResolver, auditService, operationService, accessService)
 	if err != nil {
 		infra.cancel()
 		return nil, err
 	}
 
-	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, gitlabClient, identityService)
+	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, systemIntegrationService, identityService)
 	if err != nil {
 		return nil, err
 	}
+	runtimeConfigService.RegisterApplier(marketplaceConfigApplier{base: cfg, plugins: deliveryCore.plugins})
 
 	return &coreServices{
-		permissionResolver:      permissionResolver,
-		auditService:            auditService,
-		operationService:        operationService,
-		announcementService:     announcementService,
-		menuService:             menuService,
-		moduleService:           moduleService,
-		settingsService:         settingsService,
-		identityService:         identityService,
-		policyEngine:            policyEngine,
-		accessService:           accessService,
-		accessCatalogService:    accessCatalogService,
-		accessManagementService: accessManagementService,
-		accessConsoleService:    accessConsoleService,
-		gitlabClient:            gitlabClient,
-		clusterService:          platformCore.cluster,
-		resourceService:         platformCore.resources,
-		eventService:            platformCore.events,
-		monitoringService:       platformCore.monitoring,
-		applicationService:      deliveryCore.applications,
-		executionService:        deliveryCore.execution,
-		buildService:            deliveryCore.builds,
-		catalogService:          deliveryCore.catalog,
-		scopeGrantService:       deliveryCore.scopeGrants,
-		registryService:         deliveryCore.registries,
-		releaseService:          deliveryCore.releases,
-		integrationService:      deliveryCore.integration,
-		pluginService:           deliveryCore.plugins,
-		pluginExtensions:        deliveryCore.pluginExtensions,
-		identityProviderService: deliveryCore.identityProvider,
-		providerPortalService:   deliveryCore.providerPortal,
-		directorySyncService:    directorySyncService,
-		directorySyncConnectors: directorySyncConnectors,
+		permissionResolver:       permissionResolver,
+		auditService:             auditService,
+		operationService:         operationService,
+		announcementService:      announcementService,
+		menuService:              menuService,
+		moduleService:            moduleService,
+		settingsService:          settingsService,
+		runtimeConfigService:     runtimeConfigService,
+		identityService:          identityService,
+		policyEngine:             policyEngine,
+		accessService:            accessService,
+		accessCatalogService:     accessCatalogService,
+		accessManagementService:  accessManagementService,
+		accessConsoleService:     accessConsoleService,
+		systemIntegrationService: systemIntegrationService,
+		clusterService:           platformCore.cluster,
+		resourceService:          platformCore.resources,
+		eventService:             platformCore.events,
+		monitoringService:        platformCore.monitoring,
+		applicationService:       deliveryCore.applications,
+		executionService:         deliveryCore.execution,
+		buildService:             deliveryCore.builds,
+		catalogService:           deliveryCore.catalog,
+		scopeGrantService:        deliveryCore.scopeGrants,
+		registryService:          deliveryCore.registries,
+		releaseService:           deliveryCore.releases,
+		integrationService:       deliveryCore.integration,
+		pluginService:            deliveryCore.plugins,
+		pluginExtensions:         deliveryCore.pluginExtensions,
+		identityProviderService:  deliveryCore.identityProvider,
+		providerPortalService:    deliveryCore.providerPortal,
+		directorySyncService:     directorySyncService,
+		directorySyncConnectors:  directorySyncConnectors,
 	}, nil
 }
 
@@ -444,7 +480,7 @@ type platformCoreServices struct {
 	monitoring *appmonitoring.Service
 }
 
-func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, settings *appsettings.Service) (*platformCoreServices, error) {
+func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service) (*platformCoreServices, error) {
 	clusterService, err := appcluster.New(
 		infra.clusterManager, infra.clusterManager, infra.informers,
 		func(connection domaincluster.Connection) (appcluster.AgentSummaryClient, error) {
@@ -463,7 +499,7 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 	resourceDirect := resourcebackendinfra.NewDirect(resourceClusters, resourcebackendinfra.NewCache(infra.informers))
 	resourceService := appresource.New(appresource.Dependencies{
 		Clusters: resourceClusters, Agents: resourcebackendinfra.NewAgentClients(infra.agentRegistry), Connections: repos.clusterRepository,
-		Authorizer: access, Permissions: permissions, Audit: audit, Operations: operations, CreationOperations: operations, CreationBatches: repos.resourceCreationRepository, Settings: settings, PortForwards: repos.portForwardRepository,
+		Authorizer: access, Permissions: permissions, Audit: audit, Operations: operations, CreationOperations: operations, CreationBatches: repos.resourceCreationRepository, PortForwards: repos.portForwardRepository,
 		DirectCustom: resourceDirect, DirectConfiguration: resourceDirect, DirectEvents: resourceDirect, DirectGeneric: resourceDirect, DirectResourceCreate: resourceDirect,
 		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectNetwork: resourceDirect,
 		DirectPods: resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
@@ -503,8 +539,8 @@ type deliveryCoreServices struct {
 	providerPortal   *appproviderportal.Service
 }
 
-func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, gitlab *gitlabinfra.Client, identity *appidentity.Service) (*deliveryCoreServices, error) {
-	applications := appregistry.New(repos.applicationRepository, gitlab, access, audit, operations)
+func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, sources appregistry.GitLabClient, identity *appidentity.Service) (*deliveryCoreServices, error) {
+	applications := appregistry.New(repos.applicationRepository, sources, access, audit, operations)
 	applications.SetPermissionResolver(permissions)
 	executionService := appexecution.New(
 		repos.deliveryRepository, repos.buildRepository, repos.releaseRepository, executionbackendinfra.NewClusters(infra.clusterManager),
@@ -647,10 +683,10 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	copilotService.SetContextBuilder(contextBuilder)
 	core.monitoringService.SetWorkflowExecutor(workflowService)
 	core.monitoringService.SetAutomation(copilotService)
-	if cfg.Modules.Monitoring.Enabled {
+	if core.runtimeConfigService.ModuleEnabled("monitoring") {
 		core.monitoringService.Start(lifecycleCtx)
 	}
-	if cfg.Modules.AI.Enabled {
+	if core.runtimeConfigService.ModuleEnabled("ai") {
 		copilotService.Start(lifecycleCtx)
 	}
 
@@ -681,7 +717,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		},
 	)
 	virtualizationService.SetInstrumentation(infra.runtimeMetrics)
-	if cfg.Modules.Virtualization.Enabled {
+	if core.runtimeConfigService.ModuleEnabled("virtualization") {
 		virtualizationService.Start(lifecycleCtx)
 	}
 
@@ -695,6 +731,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	computeService := appcompute.New(repos.virtualizationRepository, repos.dockerRepository, core.permissionResolver, appcompute.Options{
 		VirtualizationEnabled: cfg.Modules.Virtualization.Enabled,
 		RuntimeEnabled:        cfg.Modules.Docker.Enabled,
+		ModuleState:           core.runtimeConfigService,
 		VirtualizationTasks:   virtualizationService,
 		RuntimeTasks:          dockerService,
 	})
@@ -728,8 +765,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	if err != nil {
 		panic(fmt.Errorf("build AI production service: %w", err))
 	}
-
-	return &deliveryServices{
+	result := &deliveryServices{
 		workflowService:       workflowService,
 		computeService:        computeService,
 		virtualizationService: virtualizationService,
@@ -745,6 +781,12 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		agentProviderService:  agentProviderService,
 		deliveryService:       deliveryService,
 	}
+	core.runtimeConfigService.RegisterApplier(newModuleLifecycleApplier(lifecycleCtx, map[string]restartableModule{
+		appruntimeconfig.KeyModuleMonitoring:     core.monitoringService,
+		appruntimeconfig.KeyModuleAI:             copilotService,
+		appruntimeconfig.KeyModuleVirtualization: virtualizationService,
+	}))
+	return result
 }
 
 func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositories, core *coreServices, delivery *deliveryServices) (*gatewayServices, error) {
@@ -887,6 +929,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Announcements: apiHandlers.NewAnnouncementHandlerWithServices(core.announcementService, core.announcementService),
 		Menu:          apiHandlers.NewMenuHandler(core.menuService),
 		Module:        apiHandlers.NewModuleHandler(core.moduleService),
+		ModuleState:   core.runtimeConfigService,
 		Monitoring: apiHandlers.NewMonitoringHandler(apiHandlers.MonitoringDependencies{
 			Alerts: core.monitoringService, Channels: core.monitoringService, Routes: core.monitoringService,
 			Silences: core.monitoringService, DeliveryLogs: core.monitoringService, Webhooks: core.monitoringService,
@@ -946,7 +989,12 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		DirectorySync: directorySyncHandler,
 		ScopeGrants:   accesshandler.NewScopeGrantHandler(core.scopeGrantService),
 		Settings:      newSettingsHandler(core.settingsService, core.permissionResolver),
-		Auth:          newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth),
+		RuntimeConfig: apiHandlers.NewRuntimeConfigHandler(
+			core.runtimeConfigService,
+			runtimeinfo.NewCollector(infra.runtimeMetrics),
+		),
+		SystemIntegrations: apiHandlers.NewSystemIntegrationHandler(core.systemIntegrationService),
+		Auth:               newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth),
 		ProviderPortal: providerportalhandler.New(providerportalhandler.Services{
 			PortalReader:     core.providerPortalService,
 			PortalInteractor: core.providerPortalService,
@@ -986,7 +1034,7 @@ func newDockerHandler(service *appdocker.Service, keys keyring.Ring) *apiHandler
 }
 
 func newSettingsHandler(service *appsettings.Service, permissions *appaccess.PermissionResolver) *apiHandlers.SettingsHandler {
-	return apiHandlers.NewSettingsHandlerWithServices(service, service, service, service, permissions)
+	return apiHandlers.NewSettingsHandlerWithServices(service, service, service, permissions)
 }
 
 func newAuthHandler(identity *appidentity.Service, access *appaccess.ConsoleService, settings *appsettings.Service, cfg cfgpkg.AuthConfig) *apiHandlers.AuthHandler {

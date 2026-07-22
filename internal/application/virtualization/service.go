@@ -70,10 +70,10 @@ type Service struct {
 	workerInterval     time.Duration
 	syncConcurrency    int
 	startupSyncEnabled bool
-	workerOnce         sync.Once
+	workerMu           sync.Mutex
 	workerCancel       context.CancelFunc
 	workerDone         chan struct{}
-	workerWG           sync.WaitGroup
+	running            bool
 	workerID           string
 	workerPrincipal    domainidentity.Principal
 	metrics            *runtimeobs.Registry
@@ -128,6 +128,8 @@ type CreateVMInput struct {
 	TemplateID        string         `json:"templateId,omitempty"`
 	ProviderParams    map[string]any `json:"providerParams,omitempty"`
 	ProviderExtraJSON map[string]any
+	Disks             []domainvirtualization.AdapterDiskChange    `json:"disks,omitempty"`
+	Networks          []domainvirtualization.AdapterNetworkChange `json:"networks,omitempty"`
 }
 
 type DeleteConnectionOptions struct {
@@ -135,8 +137,13 @@ type DeleteConnectionOptions struct {
 }
 
 type VMActionInput struct {
-	Action string         `json:"action"`
-	Config map[string]any `json:"config,omitempty"`
+	Action    string                                      `json:"action"`
+	Config    map[string]any                              `json:"config,omitempty"`
+	CPU       int                                         `json:"cpu,omitempty"`
+	MemoryMiB int                                         `json:"memoryMiB,omitempty"`
+	DiskGiB   int                                         `json:"diskGiB,omitempty"`
+	Disks     []domainvirtualization.AdapterDiskChange    `json:"disks,omitempty"`
+	Networks  []domainvirtualization.AdapterNetworkChange `json:"networks,omitempty"`
 }
 
 type ImageInput struct {
@@ -263,7 +270,7 @@ func (s *Service) ListConnections(ctx context.Context, principal domainidentity.
 	if err != nil {
 		return nil, err
 	}
-	return sanitizeConnections(items), nil
+	return s.decorateConnections(sanitizeConnections(items)), nil
 }
 
 func (s *Service) ListConnectionsPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.ConnectionFilter) (domainvirtualization.Page[domainvirtualization.Connection], error) {
@@ -279,7 +286,16 @@ func (s *Service) ListConnectionsPage(ctx context.Context, principal domainident
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Connection]{}, err
 	}
-	return pageOf(sanitizeConnections(items), total, filter.Page, filter.PageSize), nil
+	return pageOf(s.decorateConnections(sanitizeConnections(items)), total, filter.Page, filter.PageSize), nil
+}
+
+func (s *Service) decorateConnections(items []domainvirtualization.Connection) []domainvirtualization.Connection {
+	for index := range items {
+		if provider, ok := s.adapters[normalizeProvider(items[index].Provider)].(domainvirtualization.VMCapabilityProvider); ok {
+			items[index].Capabilities = provider.VMCapabilities()
+		}
+	}
+	return items
 }
 
 func (s *Service) CreateConnection(ctx context.Context, principal domainidentity.Principal, input ConnectionInput) (domainvirtualization.Connection, error) {
@@ -480,7 +496,8 @@ func (s *Service) ListVMs(ctx context.Context, principal domainidentity.Principa
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsView); err != nil {
 		return nil, err
 	}
-	return s.vms.ListVMs(ctx, filter)
+	items, err := s.vms.ListVMs(ctx, filter)
+	return s.decorateVMs(items), err
 }
 
 func (s *Service) ListVMsPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.VMFilter) (domainvirtualization.Page[domainvirtualization.VM], error) {
@@ -496,7 +513,7 @@ func (s *Service) ListVMsPage(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.VM]{}, err
 	}
-	return pageOf(items, total, filter.Page, filter.PageSize), nil
+	return pageOf(s.decorateVMs(items), total, filter.Page, filter.PageSize), nil
 }
 
 func (s *Service) GetVM(ctx context.Context, principal domainidentity.Principal, id string) (domainvirtualization.VM, error) {
@@ -504,7 +521,21 @@ func (s *Service) GetVM(ctx context.Context, principal domainidentity.Principal,
 		return domainvirtualization.VM{}, err
 	}
 	item, err := s.vms.GetVM(ctx, strings.TrimSpace(id))
-	return item, mapNotFound(err)
+	return s.decorateVM(item), mapNotFound(err)
+}
+
+func (s *Service) decorateVM(vm domainvirtualization.VM) domainvirtualization.VM {
+	if provider, ok := s.adapters[normalizeProvider(vm.Provider)].(domainvirtualization.VMCapabilityProvider); ok {
+		vm.Capabilities = provider.VMCapabilities()
+	}
+	return vm
+}
+
+func (s *Service) decorateVMs(items []domainvirtualization.VM) []domainvirtualization.VM {
+	for index := range items {
+		items[index] = s.decorateVM(items[index])
+	}
+	return items
 }
 
 func (s *Service) GetVMDetail(ctx context.Context, principal domainidentity.Principal, id string) (VMDetail, error) {
@@ -541,6 +572,26 @@ func (s *Service) GetVMDetail(ctx context.Context, principal domainidentity.Prin
 		}
 	}
 	return detail, nil
+}
+
+func (s *Service) ListVMDevices(ctx context.Context, principal domainidentity.Principal, id string) ([]domainvirtualization.VMDevice, error) {
+	vm, err := s.GetVM(ctx, principal, id)
+	if err != nil {
+		return nil, err
+	}
+	connection, err := s.connections.GetConnection(ctx, vm.ConnectionID)
+	if err != nil {
+		return nil, err
+	}
+	adapter, adapterConnection, err := s.adapterForConnection(ctx, connection)
+	if err != nil {
+		return nil, err
+	}
+	provider, ok := adapter.(domainvirtualization.VMDeviceProvider)
+	if !ok {
+		return nil, domainvirtualization.ErrUnsupported
+	}
+	return provider.ListVMDevices(ctx, adapterConnection, domainvirtualization.AdapterVM{ID: firstNonEmpty(vm.ExternalID, vm.ID), Name: vm.Name, Namespace: vm.Namespace, Node: vm.NodeName, Status: vm.Status})
 }
 
 func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Principal, input CreateVMInput) (domainvirtualization.Task, error) {
@@ -618,6 +669,8 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 			"templateId":       input.TemplateID,
 			"providerParams":   input.ProviderParams,
 			"providerExtra":    input.ProviderExtraJSON,
+			"disks":            input.Disks,
+			"networks":         input.Networks,
 		},
 	})
 	if err != nil {
@@ -639,6 +692,23 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 	if err != nil {
 		return domainvirtualization.Task{}, err
 	}
+	if action == "resize" {
+		currentDisk := payloadInt(vm.Config, "diskGiB")
+		if input.CPU < 0 || input.MemoryMiB < 0 || input.DiskGiB < 0 {
+			return domainvirtualization.Task{}, fmt.Errorf("%w: resize values cannot be negative", apperrors.ErrInvalidArgument)
+		}
+		if input.CPU == 0 && input.MemoryMiB == 0 && input.DiskGiB == 0 && len(input.Disks) == 0 && len(input.Networks) == 0 {
+			return domainvirtualization.Task{}, fmt.Errorf("%w: at least one resize change is required", apperrors.ErrInvalidArgument)
+		}
+		if input.DiskGiB > 0 && input.DiskGiB < currentDisk {
+			return domainvirtualization.Task{}, fmt.Errorf("%w: virtual machine disks cannot be reduced", apperrors.ErrInvalidArgument)
+		}
+		for _, disk := range input.Disks {
+			if disk.SizeGiB <= 0 {
+				return domainvirtualization.Task{}, fmt.Errorf("%w: disk sizeGiB must be positive", apperrors.ErrInvalidArgument)
+			}
+		}
+	}
 	task, err := s.tasks.CreateTask(ctx, domainvirtualization.Task{
 		Provider:       vm.Provider,
 		ConnectionID:   vm.ConnectionID,
@@ -651,6 +721,8 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 		Payload: map[string]any{
 			"action": string(action),
 			"vmId":   vm.ID,
+			"cpu":    input.CPU, "memoryMiB": input.MemoryMiB, "diskGiB": input.DiskGiB,
+			"disks": input.Disks, "networks": input.Networks,
 		},
 	})
 	if err != nil {
@@ -977,34 +1049,74 @@ func (s *Service) GetConsoleURL(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) Start(ctx context.Context) {
-	s.workerOnce.Do(func() {
-		workerCtx, cancel := context.WithCancel(ctx)
-		s.workerCancel = cancel
-		s.workerDone = make(chan struct{})
-		for i := 0; i < s.syncConcurrency; i++ {
-			s.workerWG.Add(1)
+	s.workerMu.Lock()
+	if s.running {
+		s.workerMu.Unlock()
+		return
+	}
+	workerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	s.workerCancel = cancel
+	s.workerDone = done
+	s.running = true
+	concurrency := s.syncConcurrency
+	s.workerMu.Unlock()
+
+	go func() {
+		var workers sync.WaitGroup
+		workers.Add(concurrency)
+		for i := 0; i < concurrency; i++ {
 			go func() {
-				defer s.workerWG.Done()
+				defer workers.Done()
 				s.runWorker(workerCtx)
 			}()
 		}
-		go func() {
-			s.workerWG.Wait()
-			close(s.workerDone)
-		}()
-		if s.startupSyncEnabled {
-			_, _ = s.enqueueStartupSync(ctx, s.workerPrincipal, map[string]any{"source": "startup"})
-		}
-	})
+		workers.Wait()
+		s.finishWorkers(done)
+	}()
+	if s.startupSyncEnabled {
+		_, _ = s.enqueueStartupSync(workerCtx, s.workerPrincipal, map[string]any{"source": "startup"})
+	}
+}
+
+func (s *Service) Stop(ctx context.Context) error {
+	s.workerMu.Lock()
+	if !s.running {
+		s.workerMu.Unlock()
+		return nil
+	}
+	cancel := s.workerCancel
+	done := s.workerDone
+	s.workerMu.Unlock()
+
+	cancel()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Service) Running() bool {
+	s.workerMu.Lock()
+	defer s.workerMu.Unlock()
+	return s.running
 }
 
 func (s *Service) Shutdown() {
-	if s.workerCancel != nil {
-		s.workerCancel()
+	_ = s.Stop(context.Background())
+}
+
+func (s *Service) finishWorkers(done chan struct{}) {
+	s.workerMu.Lock()
+	if s.workerDone == done {
+		s.workerCancel = nil
+		s.workerDone = nil
+		s.running = false
 	}
-	if s.workerDone != nil {
-		<-s.workerDone
-	}
+	s.workerMu.Unlock()
+	close(done)
 }
 
 func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
@@ -1579,6 +1691,8 @@ func normalizeAction(action string) (domainvirtualization.PowerAction, error) {
 		return domainvirtualization.PowerActionRestart, nil
 	case "delete":
 		return domainvirtualization.PowerActionDelete, nil
+	case "resize":
+		return "resize", nil
 	default:
 		return "", fmt.Errorf("%w: unsupported vm action %q", apperrors.ErrInvalidArgument, action)
 	}

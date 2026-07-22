@@ -593,6 +593,7 @@ var configDefaults = []struct {
 	{"plugins.marketplace.url", DefaultMarketplaceURL},
 	{"plugins.marketplace.source_id", DefaultMarketplaceSourceID},
 	{"plugins.marketplace.sources", []map[string]any{}},
+	{"modules.home.enabled", true},
 	{"modules.delivery.enabled", true},
 	{"modules.monitoring.enabled", true},
 	{"modules.ai.enabled", true},

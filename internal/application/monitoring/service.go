@@ -72,8 +72,10 @@ type Service struct {
 	logs                  LogTelemetry
 	metrics               MetricTelemetry
 	traces                TraceTelemetry
-	startMu               sync.Mutex
-	started               bool
+	lifecycleMu           sync.Mutex
+	lifecycleCancel       context.CancelFunc
+	lifecycleDone         chan struct{}
+	running               bool
 }
 
 type Dependencies struct {

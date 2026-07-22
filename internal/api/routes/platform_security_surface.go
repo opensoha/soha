@@ -352,10 +352,12 @@ func identityMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 
 func settingsMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	switch {
+	case strings.HasPrefix(path, "/api/v1/system-integrations"):
+		return nonPlatformMutationEntry("SystemIntegration", nonPlatformMutationAction(method, path), appaccess.PermSettingsSystemIntegrationsManage, false), true
+	case strings.HasPrefix(path, "/api/v1/settings/runtime-config"):
+		return nonPlatformMutationEntry("RuntimeConfigRevision", nonPlatformMutationAction(method, path), appaccess.PermSettingsRuntimeConfigManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/identity"):
 		return nonPlatformMutationEntry("IdentitySettings", "update", appaccess.PermSettingsIdentityManage, false), true
-	case strings.HasPrefix(path, "/api/v1/settings/monitoring"):
-		return nonPlatformMutationEntry("MonitoringSettings", "update", appaccess.PermSettingsMonitoringManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/ai"):
 		return nonPlatformMutationEntry("AISettings", nonPlatformMutationAction(method, path), appaccess.PermSettingsAIManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/branding"):

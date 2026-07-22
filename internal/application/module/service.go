@@ -10,15 +10,35 @@ import (
 )
 
 type Service struct {
-	cfg appconfig.Modules
+	cfg     appconfig.Modules
+	runtime interface {
+		ModuleEnabled(string) bool
+		FeatureEnabled(string, string) bool
+	}
 }
 
 func New(cfg appconfig.Modules) *Service {
 	return &Service{cfg: cfg}
 }
 
+func NewRuntime(runtime interface {
+	ModuleEnabled(string) bool
+	FeatureEnabled(string, string) bool
+}) *Service {
+	return &Service{runtime: runtime}
+}
+
 func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 	descriptors := []domainmodule.Descriptor{
+		{
+			ID:                 "home",
+			Name:               "首页",
+			DefaultPath:        "/portal",
+			EnabledConfigKey:   "modules.home.enabled",
+			Dependencies:       []string{},
+			VisiblePermissions: []string{"identity.portal.view"},
+			SeedMenus:          []string{"home-workbench"},
+		},
 		{
 			ID:                 "platform",
 			Name:               "k8s工作台",
@@ -39,8 +59,8 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 		},
 		{
 			ID:                 "virtualization",
-			Name:               "虚拟化管理工作台",
-			DefaultPath:        "/virtualization",
+			Name:               "虚拟化资源",
+			DefaultPath:        "/compute/virtualization",
 			EnabledConfigKey:   "modules.virtualization.enabled",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"virtualization.overview.view", "virtualization.vms.view", "virtualization.clusters.view", "virtualization.images.view", "virtualization.flavors.view", "virtualization.operations.view", "virtualization.sync.view", "virtualization.sync.manage"},
@@ -48,10 +68,10 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 		},
 		{
 			ID:                 "docker",
-			Name:               "Docker 工作台",
-			DefaultPath:        "/docker",
+			Name:               "容器运行时",
+			DefaultPath:        "/compute/runtimes",
 			EnabledConfigKey:   "modules.docker.enabled",
-			Dependencies:       []string{"virtualization"},
+			Dependencies:       []string{},
 			VisiblePermissions: []string{"docker.overview.view", "docker.hosts.view", "docker.projects.view", "docker.services.view", "docker.ports.view", "docker.templates.view", "docker.operations.view"},
 			SeedMenus:          []string{"docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations"},
 		},
@@ -111,6 +131,12 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 		var features map[string]bool
 		if descriptor.ID == "ai" {
 			features = maps.Clone(s.cfg.AI.FeatureFlags())
+			if s.runtime != nil {
+				if features == nil {
+					features = map[string]bool{}
+				}
+				features["assistant.global"] = s.runtime.FeatureEnabled("ai", "assistant.global")
+			}
 		}
 		out = append(out, domainmodule.Status{
 			Descriptor: descriptor,
@@ -122,7 +148,12 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 }
 
 func (s *Service) enabled(id string) bool {
+	if s.runtime != nil {
+		return s.runtime.ModuleEnabled(id)
+	}
 	switch strings.TrimSpace(id) {
+	case "home":
+		return s.cfg.Home.Enabled
 	case "compute":
 		return s.cfg.Virtualization.Enabled || s.cfg.Docker.Enabled
 	case "delivery":

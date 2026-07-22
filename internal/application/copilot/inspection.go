@@ -25,53 +25,117 @@ import (
 )
 
 func (s *Service) Start(ctx context.Context) {
+	s.lifecycleMu.Lock()
+	if s.running {
+		s.lifecycleMu.Unlock()
+		return
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	s.lifecycleCancel = cancel
+	s.lifecycleDone = done
+	s.running = true
+	s.lifecycleMu.Unlock()
+
 	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				startedAt := time.Now()
-				if s.metrics != nil {
-					s.metrics.RecordStart(runtimeobs.ComponentCopilotInspection, "scheduled", 0, 0)
-				}
-				taskCount, err := s.runDueInspectionTasks(ctx)
-				if s.metrics != nil {
-					outcome := runtimeobs.OutcomeSucceeded
-					if err != nil {
-						outcome = runtimeobs.OutcomeFailed
-					}
-					s.metrics.RecordFinish(runtimeobs.ComponentCopilotInspection, "scheduled", time.Since(startedAt), 0, taskCount, outcome, err)
-				}
+		var workers sync.WaitGroup
+		workers.Add(2)
+		go func() {
+			defer workers.Done()
+			s.runInspectionScheduler(runCtx)
+		}()
+		go func() {
+			defer workers.Done()
+			s.runAgentTimeoutSweeper(runCtx)
+		}()
+		workers.Wait()
+		s.finishLifecycle(done)
+	}()
+}
+
+func (s *Service) Stop(ctx context.Context) error {
+	s.lifecycleMu.Lock()
+	if !s.running {
+		s.lifecycleMu.Unlock()
+		return nil
+	}
+	cancel := s.lifecycleCancel
+	done := s.lifecycleDone
+	s.lifecycleMu.Unlock()
+
+	cancel()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Service) Running() bool {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.running
+}
+
+func (s *Service) finishLifecycle(done chan struct{}) {
+	s.lifecycleMu.Lock()
+	if s.lifecycleDone == done {
+		s.lifecycleCancel = nil
+		s.lifecycleDone = nil
+		s.running = false
+	}
+	s.lifecycleMu.Unlock()
+	close(done)
+}
+
+func (s *Service) runInspectionScheduler(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			startedAt := time.Now()
+			if s.metrics != nil {
+				s.metrics.RecordStart(runtimeobs.ComponentCopilotInspection, "scheduled", 0, 0)
+			}
+			taskCount, err := s.runDueInspectionTasks(ctx)
+			if s.metrics != nil {
+				outcome := runtimeobs.OutcomeSucceeded
 				if err != nil {
-					s.logWarn("copilot inspection cycle failed", zap.Int("tasks", taskCount), zap.Duration("duration", time.Since(startedAt)), zap.Error(err))
-					continue
+					outcome = runtimeobs.OutcomeFailed
 				}
-				s.logDebug("copilot inspection cycle completed", zap.Int("tasks", taskCount), zap.Duration("duration", time.Since(startedAt)))
+				s.metrics.RecordFinish(runtimeobs.ComponentCopilotInspection, "scheduled", time.Since(startedAt), 0, taskCount, outcome, err)
+			}
+			if err != nil {
+				s.logWarn("copilot inspection cycle failed", zap.Int("tasks", taskCount), zap.Duration("duration", time.Since(startedAt)), zap.Error(err))
+				continue
+			}
+			s.logDebug("copilot inspection cycle completed", zap.Int("tasks", taskCount), zap.Duration("duration", time.Since(startedAt)))
+		}
+	}
+}
+
+func (s *Service) runAgentTimeoutSweeper(ctx context.Context) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			count, err := s.sweepAgentRunTimeouts(ctx)
+			if err != nil {
+				s.logWarn("copilot agent runtime timeout sweep failed", zap.Error(err))
+				continue
+			}
+			if count > 0 {
+				s.logWarn("copilot agent runtime runs timed out", zap.Int("runs", count))
 			}
 		}
-	}()
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				count, err := s.sweepAgentRunTimeouts(ctx)
-				if err != nil {
-					s.logWarn("copilot agent runtime timeout sweep failed", zap.Error(err))
-					continue
-				}
-				if count > 0 {
-					s.logWarn("copilot agent runtime runs timed out", zap.Int("runs", count))
-				}
-			}
-		}
-	}()
+	}
 }
 
 func (s *Service) ListInspectionTasks(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.InspectionTask, error) {

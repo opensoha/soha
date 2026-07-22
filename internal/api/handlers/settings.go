@@ -18,11 +18,6 @@ type IdentitySettingsService interface {
 	UpdateLoginProvidersSettings(context.Context, domainidentity.Principal, []domainsettings.LoginProviderSettings, string, bool) (domainsettings.IdentitySettings, error)
 }
 
-type MonitoringSettingsService interface {
-	GetMonitoringSettings(context.Context, domainidentity.Principal) (domainsettings.MonitoringSettings, error)
-	UpdatePrometheusSettings(context.Context, domainidentity.Principal, domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error)
-}
-
 type AISettingsService interface {
 	GetAISettings(context.Context, domainidentity.Principal) (domainsettings.AISettings, error)
 	UpdateAIWorkbenchModelSettings(context.Context, domainidentity.Principal, domainsettings.AIWorkbenchModelSettings) (domainsettings.AISettings, error)
@@ -36,25 +31,23 @@ type BrandingSettingsService interface {
 
 type SettingsService interface {
 	IdentitySettingsService
-	MonitoringSettingsService
 	AISettingsService
 	BrandingSettingsService
 }
 
 type SettingsHandler struct {
 	identity    IdentitySettingsService
-	monitoring  MonitoringSettingsService
 	ai          AISettingsService
 	branding    BrandingSettingsService
 	permissions *appaccess.PermissionResolver
 }
 
 func NewSettingsHandler(service SettingsService, permissions *appaccess.PermissionResolver) *SettingsHandler {
-	return NewSettingsHandlerWithServices(service, service, service, service, permissions)
+	return NewSettingsHandlerWithServices(service, service, service, permissions)
 }
 
-func NewSettingsHandlerWithServices(identity IdentitySettingsService, monitoring MonitoringSettingsService, ai AISettingsService, branding BrandingSettingsService, permissions *appaccess.PermissionResolver) *SettingsHandler {
-	return &SettingsHandler{identity: identity, monitoring: monitoring, ai: ai, branding: branding, permissions: permissions}
+func NewSettingsHandlerWithServices(identity IdentitySettingsService, ai AISettingsService, branding BrandingSettingsService, permissions *appaccess.PermissionResolver) *SettingsHandler {
+	return &SettingsHandler{identity: identity, ai: ai, branding: branding, permissions: permissions}
 }
 
 func (h *SettingsHandler) GetIdentitySettings(c *gin.Context) {
@@ -84,39 +77,6 @@ func (h *SettingsHandler) UpdateLoginProvidersSettings(c *gin.Context) {
 		localPasswordEnabled = *req.LocalPasswordLoginEnabled
 	}
 	item, err := h.identity.UpdateLoginProvidersSettings(c.Request.Context(), principal, mapLoginProviders(req.Providers), req.DefaultProviderID, localPasswordEnabled)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, item)
-}
-
-func (h *SettingsHandler) GetMonitoringSettings(c *gin.Context) {
-	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.monitoring.GetMonitoringSettings(c.Request.Context(), principal)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, item)
-}
-
-func (h *SettingsHandler) UpdatePrometheusSettings(c *gin.Context) {
-	var req dto.UpdatePrometheusSettingsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid prometheus settings payload")
-		return
-	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.monitoring.UpdatePrometheusSettings(c.Request.Context(), principal, domainsettings.PrometheusSettings{
-		Enabled:             req.Enabled,
-		BaseURL:             req.BaseURL,
-		BearerToken:         req.BearerToken,
-		DefaultRangeMinutes: req.DefaultRangeMinutes,
-		StepSeconds:         req.StepSeconds,
-		ClusterLabel:        req.ClusterLabel,
-		GrafanaBaseURL:      req.GrafanaBaseURL,
-	})
 	if err != nil {
 		writeError(c, err)
 		return

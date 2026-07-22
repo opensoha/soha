@@ -31,10 +31,15 @@ type Service struct {
 	permissions *appaccess.PermissionResolver
 	audit       AuditRecorder
 	operations  OperationRecorder
+	modules     interface{ ModuleEnabled(string) bool }
 }
 
 func New(repo domainmenu.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder) *Service {
 	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations}
+}
+
+func (s *Service) SetModuleState(modules interface{ ModuleEnabled(string) bool }) {
+	s.modules = modules
 }
 
 func (s *Service) ListAll(ctx context.Context, principal domainidentity.Principal) ([]domainmenu.Record, error) {
@@ -75,7 +80,7 @@ func (s *Service) ListVisible(ctx context.Context, principal domainidentity.Prin
 	visibleIDs := make(map[string]struct{}, len(items))
 	for _, item := range items {
 		itemsByID[item.ID] = item
-		if shouldShowMenu(item, principal.Roles, permissionKeys) {
+		if s.moduleAvailable(item) && shouldShowMenu(item, principal.Roles, permissionKeys) {
 			visibleIDs[item.ID] = struct{}{}
 		}
 	}
@@ -103,6 +108,44 @@ func (s *Service) ListVisible(ctx context.Context, principal domainidentity.Prin
 		filtered = append(filtered, item)
 	}
 	return buildTree(filtered), nil
+}
+
+func (s *Service) moduleAvailable(item domainmenu.Record) bool {
+	if s.modules == nil {
+		return true
+	}
+	id, menuPath := strings.TrimSpace(item.ID), strings.TrimSpace(item.Path)
+	switch {
+	case id == "home-workbench" || menuPath == "/portal":
+		return s.modules.ModuleEnabled("home")
+	case strings.HasPrefix(menuPath, "/monitoring-workbench"):
+		return s.modules.ModuleEnabled("monitoring")
+	case strings.HasPrefix(menuPath, "/ai-gateway"):
+		return s.modules.ModuleEnabled("aiGateway")
+	case id == "ai-workbench" || id == "ai-workbench-overview":
+		return s.modules.ModuleEnabled("ai") || s.modules.ModuleEnabled("aiGateway")
+	case strings.HasPrefix(menuPath, "/ai-workbench"):
+		return s.modules.ModuleEnabled("ai")
+	case strings.HasPrefix(menuPath, "/compute/virtualization") || strings.HasPrefix(id, "virtualization-workbench") || strings.HasPrefix(menuPath, "/virtualization"):
+		return s.modules.ModuleEnabled("virtualization")
+	case strings.HasPrefix(menuPath, "/compute/docker") || strings.HasPrefix(id, "docker-workbench") || strings.HasPrefix(menuPath, "/docker"):
+		return s.modules.ModuleEnabled("docker")
+	case id == "compute-workbench" || strings.HasPrefix(id, "compute-workbench-"):
+		return s.modules.ModuleEnabled("compute")
+	case isDeliveryMenuPath(menuPath):
+		return s.modules.ModuleEnabled("delivery")
+	default:
+		return true
+	}
+}
+
+func isDeliveryMenuPath(menuPath string) bool {
+	for _, prefix := range []string{"/applications", "/application-environments", "/build-templates", "/delivery", "/workflow-templates", "/release-board", "/workflows", "/releases", "/registries"} {
+		if strings.HasPrefix(menuPath, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func shouldShowMenu(item domainmenu.Record, roleIDs []string, permissionKeys []string) bool {

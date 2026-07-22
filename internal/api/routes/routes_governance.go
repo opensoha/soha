@@ -227,12 +227,19 @@ func registerPluginRoutes(protected gin.IRoutes, deps Dependencies) {
 func registerSettingsRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/settings/identity", deps.Settings.GetIdentitySettings)
 	protected.PUT("/settings/identity/providers", deps.Settings.UpdateLoginProvidersSettings)
-	protected.GET("/settings/monitoring", deps.Settings.GetMonitoringSettings)
-	protected.PUT("/settings/monitoring/prometheus", deps.Settings.UpdatePrometheusSettings)
 	protected.GET("/settings/ai", deps.Settings.GetAISettings)
 	protected.PUT("/settings/ai/workbench-model", deps.Settings.UpdateAIWorkbenchModelSettings)
 	protected.PUT("/settings/ai/skills", deps.Settings.UpdateAISkills)
 	protected.GET("/settings/branding", deps.Settings.GetBrandingSettings)
 	protected.PUT("/settings/branding", deps.Settings.UpdateBrandingSettings)
 	protected.POST("/settings/branding/upload", deps.Settings.UploadBrandingAsset)
+	if deps.RuntimeConfig != nil {
+		protected.GET("/settings/runtime-config", deps.RuntimeConfig.Get)
+		protected.GET("/settings/runtime-config/resources", deps.RuntimeConfig.Resources)
+		protected.POST("/settings/runtime-config/validate", deps.RuntimeConfig.Validate)
+		protected.POST("/settings/runtime-config/apply", deps.RuntimeConfig.Apply)
+		protected.GET("/settings/runtime-config/history", deps.RuntimeConfig.History)
+		protected.POST("/settings/runtime-config/rollback", deps.RuntimeConfig.Rollback)
+		protected.GET("/settings/runtime-config/applications/:runtimeConfigApplicationID", deps.RuntimeConfig.Application)
+	}
 }

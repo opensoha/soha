@@ -36,6 +36,7 @@ func New(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 	httpServer := newHTTPServer(cfg, infra.logger, handlers)
+	core.runtimeConfigService.Start(infra.lifecycleCtx, 0)
 
 	return &App{
 		Config:                cfg,

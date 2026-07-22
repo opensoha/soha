@@ -6,9 +6,7 @@ import (
 )
 
 func registerComputeRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
-	if !cfg.Modules.Virtualization.Enabled && !cfg.Modules.Docker.Enabled {
-		return
-	}
+	_ = cfg
 	protected.GET("/compute/overview", deps.Compute.Overview)
 	protected.GET("/compute/access-sources", deps.Compute.ListAccessSources)
 	protected.GET("/compute/tasks", deps.Compute.ListTasks)
@@ -19,9 +17,7 @@ func registerComputeRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 }
 
 func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
-	if !cfg.Modules.Virtualization.Enabled {
-		return
-	}
+	_ = cfg
 
 	protected.GET("/virtualization/clusters", deps.Virtualization.ListConnections)
 	protected.POST("/virtualization/clusters", deps.Virtualization.CreateConnection)
@@ -33,6 +29,7 @@ func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps
 	protected.GET("/virtualization/vms", deps.Virtualization.ListVMs)
 	protected.POST("/virtualization/vms", deps.Virtualization.CreateVM)
 	protected.GET("/virtualization/vms/:id/detail", deps.Virtualization.GetVMDetail)
+	protected.GET("/virtualization/vms/:id/devices", deps.Virtualization.ListVMDevices)
 	protected.GET("/virtualization/vms/:id", deps.Virtualization.GetVM)
 	protected.POST("/virtualization/vms/:id/actions", deps.Virtualization.VMAction)
 	protected.POST("/virtualization/vms/:id/power", deps.Virtualization.VMAction)
@@ -58,9 +55,7 @@ func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps
 }
 
 func registerDockerRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
-	if !cfg.Modules.Docker.Enabled {
-		return
-	}
+	_ = cfg
 
 	protected.GET("/docker/hosts", deps.Docker.ListHosts)
 	protected.POST("/docker/hosts", deps.Docker.CreateHost)
@@ -99,9 +94,7 @@ func registerDockerRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depende
 }
 
 func registerCopilotRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
-	if !cfg.Modules.AI.Enabled {
-		return
-	}
+	_ = cfg
 
 	protected.GET("/copilot/insights", deps.Copilot.ListInsights)
 	protected.GET("/copilot/workbench/catalog", deps.Copilot.GetWorkbenchCatalog)

@@ -22,6 +22,7 @@ type Connection struct {
 	LastSyncedAt         *time.Time     `json:"lastSyncedAt,omitempty"`
 	CreatedAt            time.Time      `json:"createdAt"`
 	UpdatedAt            time.Time      `json:"updatedAt"`
+	Capabilities         []string       `json:"capabilities,omitempty" gorm:"-"`
 }
 
 type Page[T any] struct {
@@ -99,6 +100,7 @@ type VM struct {
 	Labels       map[string]any `json:"labels,omitempty"`
 	Config       map[string]any `json:"config,omitempty"`
 	Raw          map[string]any `json:"raw,omitempty"`
+	Capabilities []string       `json:"capabilities,omitempty" gorm:"-"`
 	LastSeenAt   *time.Time     `json:"lastSeenAt,omitempty"`
 	CreatedAt    time.Time      `json:"createdAt"`
 	UpdatedAt    time.Time      `json:"updatedAt"`

@@ -226,14 +226,6 @@ func TestListPodUsageValuesFallsBackWithoutClusterMatcher(t *testing.T) {
 	}
 }
 
-type stubMonitoringSettingsResolver struct {
-	settings domainsettings.MonitoringSettings
-}
-
-func (s stubMonitoringSettingsResolver) ResolveMonitoringSettings(context.Context) (domainsettings.MonitoringSettings, error) {
-	return s.settings, nil
-}
-
 type stubConnectionResolver struct {
 	connection domaincluster.Connection
 }
@@ -242,23 +234,10 @@ func (s stubConnectionResolver) GetConnection(context.Context, string) (domaincl
 	return s.connection, nil
 }
 
-func TestResolveClusterPrometheusSettingsPrefersClusterOverride(t *testing.T) {
+func TestResolveClusterPrometheusSettingsUsesClusterMetadata(t *testing.T) {
 	t.Parallel()
 
 	service := &metricsSupport{
-		settings: stubMonitoringSettingsResolver{
-			settings: domainsettings.MonitoringSettings{
-				Prometheus: domainsettings.PrometheusSettings{
-					Enabled:             true,
-					BaseURL:             "http://global-prometheus:9090",
-					BearerToken:         "global-token",
-					DefaultRangeMinutes: 30,
-					StepSeconds:         15,
-					ClusterLabel:        "cluster",
-					GrafanaBaseURL:      "http://global-grafana:3000",
-				},
-			},
-		},
 		resolver: stubConnectionResolver{
 			connection: domaincluster.Connection{
 				Metadata: map[string]any{
@@ -271,10 +250,7 @@ func TestResolveClusterPrometheusSettingsPrefersClusterOverride(t *testing.T) {
 		},
 	}
 
-	settings, err := service.resolveClusterPrometheusSettings(context.Background(), "cluster-a")
-	if err != nil {
-		t.Fatalf("resolveClusterPrometheusSettings() error = %v", err)
-	}
+	settings := service.resolveClusterPrometheusSettings(context.Background(), "cluster-a")
 	if settings.BaseURL != "http://cluster-prometheus:9090" {
 		t.Fatalf("BaseURL = %q, want cluster override value", settings.BaseURL)
 	}
@@ -287,47 +263,22 @@ func TestResolveClusterPrometheusSettingsPrefersClusterOverride(t *testing.T) {
 	if settings.GrafanaBaseURL != "http://cluster-grafana:3000" {
 		t.Fatalf("GrafanaBaseURL = %q, want cluster override value", settings.GrafanaBaseURL)
 	}
-	if settings.DefaultRangeMinutes != 30 {
-		t.Fatalf("DefaultRangeMinutes = %d, want 30", settings.DefaultRangeMinutes)
+	if settings.DefaultRangeMinutes != 60 {
+		t.Fatalf("DefaultRangeMinutes = %d, want 60", settings.DefaultRangeMinutes)
 	}
-	if settings.StepSeconds != 15 {
-		t.Fatalf("StepSeconds = %d, want 15", settings.StepSeconds)
+	if settings.StepSeconds != 60 {
+		t.Fatalf("StepSeconds = %d, want 60", settings.StepSeconds)
 	}
 }
 
-func TestResolveClusterPrometheusSettingsFallsBackToGlobalSettings(t *testing.T) {
+func TestResolveClusterPrometheusSettingsDoesNotUseGlobalFallback(t *testing.T) {
 	t.Parallel()
 
-	service := &metricsSupport{
-		settings: stubMonitoringSettingsResolver{
-			settings: domainsettings.MonitoringSettings{
-				Prometheus: domainsettings.PrometheusSettings{
-					Enabled:             true,
-					BaseURL:             "http://global-prometheus:9090",
-					BearerToken:         "global-token",
-					DefaultRangeMinutes: 30,
-					StepSeconds:         15,
-					ClusterLabel:        "cluster",
-					GrafanaBaseURL:      "http://global-grafana:3000",
-				},
-			},
-		},
+	settings := (&metricsSupport{}).resolveClusterPrometheusSettings(context.Background(), "cluster-a")
+	if settings.Enabled || settings.BaseURL != "" || settings.BearerToken != "" || settings.GrafanaBaseURL != "" {
+		t.Fatalf("unexpected global Prometheus fallback: %#v", settings)
 	}
-
-	settings, err := service.resolveClusterPrometheusSettings(context.Background(), "cluster-a")
-	if err != nil {
-		t.Fatalf("resolveClusterPrometheusSettings() error = %v", err)
-	}
-	if settings.BaseURL != "http://global-prometheus:9090" {
-		t.Fatalf("BaseURL = %q, want global settings value", settings.BaseURL)
-	}
-	if settings.BearerToken != "global-token" {
-		t.Fatalf("BearerToken = %q, want global settings value", settings.BearerToken)
-	}
-	if settings.ClusterLabel != "cluster" {
-		t.Fatalf("ClusterLabel = %q, want global settings value", settings.ClusterLabel)
-	}
-	if settings.GrafanaBaseURL != "http://global-grafana:3000" {
-		t.Fatalf("GrafanaBaseURL = %q, want global settings value", settings.GrafanaBaseURL)
+	if settings.DefaultRangeMinutes != 60 || settings.StepSeconds != 60 {
+		t.Fatalf("query defaults = range %d step %d, want 60/60", settings.DefaultRangeMinutes, settings.StepSeconds)
 	}
 }

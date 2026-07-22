@@ -507,3 +507,24 @@ func TestConfigureExplicitEnabledFalseDisablesPlugin(t *testing.T) {
 		t.Fatalf("enabledAt should be cleared")
 	}
 }
+
+func TestReconfigureMarketplacePublishesOnlyValidProvider(t *testing.T) {
+	first := newFixtureMarketplaceProvider()
+	second := newFixtureMarketplaceProvider()
+	service := NewWithOptions(nil, nil, nil, WithMarketplaceProvider(first))
+
+	if err := service.ReconfigureMarketplace(nil); err == nil {
+		t.Fatal("nil marketplace provider should be rejected")
+	}
+	provider, err := service.providerFor("")
+	if err != nil || provider != first {
+		t.Fatalf("failed reconfiguration replaced active provider: %T, %v", provider, err)
+	}
+	if err := service.ReconfigureMarketplace(second); err != nil {
+		t.Fatalf("ReconfigureMarketplace returned error: %v", err)
+	}
+	provider, err = service.providerFor("")
+	if err != nil || provider != second {
+		t.Fatalf("new provider was not atomically published: %T, %v", provider, err)
+	}
+}

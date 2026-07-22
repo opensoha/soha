@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
@@ -52,6 +53,7 @@ type Service struct {
 	repo          domainplugin.Repository
 	permissions   *appaccess.PermissionResolver
 	audit         AuditRecorder
+	marketplaceMu sync.RWMutex
 	marketplace   MarketplaceProvider
 	extensions    *ExtensionRegistry
 	adHocProvider func(string) (MarketplaceProvider, error)
@@ -478,16 +480,30 @@ func (s *Service) resolveInstallManifest(ctx context.Context, input domainplugin
 
 func (s *Service) providerFor(marketplaceURL string) (MarketplaceProvider, error) {
 	marketplaceURL = strings.TrimSpace(marketplaceURL)
+	s.marketplaceMu.RLock()
+	marketplace := s.marketplace
+	s.marketplaceMu.RUnlock()
 	if marketplaceURL == "" {
-		return s.marketplace, nil
+		return marketplace, nil
 	}
-	if provider, ok := configuredMarketplaceProviderForURL(s.marketplace, marketplaceURL); ok {
+	if provider, ok := configuredMarketplaceProviderForURL(marketplace, marketplaceURL); ok {
 		return provider, nil
 	}
 	if s.adHocProvider == nil {
 		return nil, fmt.Errorf("%w: ad-hoc marketplace urls are not enabled", apperrors.ErrInvalidArgument)
 	}
 	return s.adHocProvider(marketplaceURL)
+}
+
+// ReconfigureMarketplace atomically publishes a fully constructed provider.
+func (s *Service) ReconfigureMarketplace(provider MarketplaceProvider) error {
+	if provider == nil {
+		return fmt.Errorf("%w: marketplace provider is required", apperrors.ErrInvalidArgument)
+	}
+	s.marketplaceMu.Lock()
+	s.marketplace = provider
+	s.marketplaceMu.Unlock()
+	return nil
 }
 
 func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Principal, action string, item domainplugin.InstalledPlugin, summary string) {

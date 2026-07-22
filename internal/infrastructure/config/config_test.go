@@ -212,6 +212,9 @@ func TestLoadRepoDefaultConfigWithoutGeneratedEnv(t *testing.T) {
 	if cfg.Plugins.Marketplace.SourceID != "opensoha-local" {
 		t.Fatalf("development marketplace source ID = %q", cfg.Plugins.Marketplace.SourceID)
 	}
+	if !cfg.Modules.Home.Enabled {
+		t.Fatal("home workbench must be enabled in the repository default config")
+	}
 	for name, value := range configuredSystemSecrets(cfg) {
 		if value != defaultSystemSecret {
 			t.Fatalf("%s = %q, want documented project default", name, value)

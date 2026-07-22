@@ -9,18 +9,16 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
-	"github.com/opensoha/soha/internal/platform/appconfig"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type Service struct {
 	store       domainsettings.Store
-	monitoring  appconfig.Monitoring
 	permissions *appaccess.PermissionResolver
 }
 
-func New(store domainsettings.Store, monitoring appconfig.Monitoring, permissions *appaccess.PermissionResolver) *Service {
-	return &Service{store: store, monitoring: monitoring, permissions: permissions}
+func New(store domainsettings.Store, permissions *appaccess.PermissionResolver) *Service {
+	return &Service{store: store, permissions: permissions}
 }
 
 func (s *Service) GetIdentitySettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.IdentitySettings, error) {
@@ -66,13 +64,6 @@ func (s *Service) UpdateLoginProvidersSettings(ctx context.Context, principal do
 		return domainsettings.IdentitySettings{}, err
 	}
 	return s.identitySettings(ctx)
-}
-
-func (s *Service) GetMonitoringSettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.MonitoringSettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsMonitoringView); err != nil {
-		return domainsettings.MonitoringSettings{}, err
-	}
-	return s.monitoringSettings(ctx)
 }
 
 func (s *Service) GetAISettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.AISettings, error) {
@@ -134,42 +125,6 @@ func (s *Service) UpdateAISkillsRegistry(ctx context.Context, principal domainid
 		return domainsettings.AISettings{}, err
 	}
 	return s.persistAISettings(ctx, principal.UserID, current.WorkbenchModel, skillsToMaps(skills))
-}
-
-func (s *Service) UpdatePrometheusSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsMonitoringManage); err != nil {
-		return domainsettings.MonitoringSettings{}, err
-	}
-	input.BaseURL = strings.TrimSpace(input.BaseURL)
-	input.BearerToken = strings.TrimSpace(input.BearerToken)
-	input.ClusterLabel = strings.TrimSpace(input.ClusterLabel)
-	input.GrafanaBaseURL = strings.TrimSpace(input.GrafanaBaseURL)
-	if input.DefaultRangeMinutes <= 0 {
-		input.DefaultRangeMinutes = 60
-	}
-	if input.StepSeconds <= 0 {
-		input.StepSeconds = 60
-	}
-	if input.Enabled && input.BaseURL == "" {
-		return domainsettings.MonitoringSettings{}, fmt.Errorf("%w: prometheus base url is required", apperrors.ErrInvalidArgument)
-	}
-	value := map[string]any{
-		"enabled":             input.Enabled,
-		"baseUrl":             input.BaseURL,
-		"bearerToken":         input.BearerToken,
-		"defaultRangeMinutes": input.DefaultRangeMinutes,
-		"stepSeconds":         input.StepSeconds,
-		"clusterLabel":        input.ClusterLabel,
-		"grafanaBaseUrl":      input.GrafanaBaseURL,
-	}
-	if err := s.store.Upsert(ctx, domainsettings.MonitoringPrometheusSettingKey, "monitoring", value, principal.UserID); err != nil {
-		return domainsettings.MonitoringSettings{}, err
-	}
-	return s.monitoringSettings(ctx)
-}
-
-func (s *Service) ResolveMonitoringSettings(ctx context.Context) (domainsettings.MonitoringSettings, error) {
-	return s.monitoringSettings(ctx)
 }
 
 func (s *Service) ResolveAISettings(ctx context.Context) (domainsettings.AISettings, error) {
@@ -295,55 +250,6 @@ func (s *Service) identitySettings(ctx context.Context) (domainsettings.Identity
 	}
 	if item.DefaultProviderID == "" && len(item.Providers) > 0 {
 		item.DefaultProviderID = item.Providers[0].ID
-	}
-	return item, nil
-}
-
-func (s *Service) monitoringSettings(ctx context.Context) (domainsettings.MonitoringSettings, error) {
-	item := domainsettings.MonitoringSettings{
-		Prometheus: domainsettings.PrometheusSettings{
-			Enabled:             strings.TrimSpace(s.monitoring.PrometheusURL) != "",
-			BaseURL:             s.monitoring.PrometheusURL,
-			BearerToken:         s.monitoring.PrometheusBearerToken,
-			DefaultRangeMinutes: s.monitoring.PrometheusDefaultRangeMinutes,
-			StepSeconds:         s.monitoring.PrometheusStepSeconds,
-			ClusterLabel:        s.monitoring.PrometheusClusterLabel,
-			GrafanaBaseURL:      s.monitoring.GrafanaBaseURL,
-		},
-	}
-	if item.Prometheus.DefaultRangeMinutes <= 0 {
-		item.Prometheus.DefaultRangeMinutes = 60
-	}
-	if item.Prometheus.StepSeconds <= 0 {
-		item.Prometheus.StepSeconds = 60
-	}
-	if s.store == nil {
-		return item, nil
-	}
-	raw, ok, err := s.store.Get(ctx, domainsettings.MonitoringPrometheusSettingKey)
-	if err != nil || !ok {
-		return item, err
-	}
-	if value, ok := raw["enabled"].(bool); ok {
-		item.Prometheus.Enabled = value
-	}
-	if value, ok := raw["baseUrl"].(string); ok {
-		item.Prometheus.BaseURL = strings.TrimSpace(value)
-	}
-	if value, ok := raw["bearerToken"].(string); ok {
-		item.Prometheus.BearerToken = strings.TrimSpace(value)
-	}
-	if value, ok := intValue(raw["defaultRangeMinutes"]); ok && value > 0 {
-		item.Prometheus.DefaultRangeMinutes = value
-	}
-	if value, ok := intValue(raw["stepSeconds"]); ok && value > 0 {
-		item.Prometheus.StepSeconds = value
-	}
-	if value, ok := raw["clusterLabel"].(string); ok {
-		item.Prometheus.ClusterLabel = strings.TrimSpace(value)
-	}
-	if value, ok := raw["grafanaBaseUrl"].(string); ok {
-		item.Prometheus.GrafanaBaseURL = strings.TrimSpace(value)
 	}
 	return item, nil
 }

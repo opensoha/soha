@@ -219,6 +219,27 @@ func TestExtensionMarketplaceMenuRequiresPluginViewPermission(t *testing.T) {
 	}
 }
 
+func TestRuntimeConfigurationMenuRequiresRuntimeConfigViewPermission(t *testing.T) {
+	item := domainmenu.Record{ID: "settings-runtime-configuration", Path: "/settings/runtime-configuration"}
+	if isVisibleByPermissions(item, nil) {
+		t.Fatalf("%s should require %s", item.ID, appaccess.PermSettingsRuntimeConfigView)
+	}
+	if !isVisibleByPermissions(item, []string{appaccess.PermSettingsRuntimeConfigView}) {
+		t.Fatalf("%s should be visible with runtime config view permission", item.ID)
+	}
+}
+
+func TestMonitoringWorkbenchPermissionDoesNotExposeSettingsCenter(t *testing.T) {
+	settings := domainmenu.Record{ID: "settings", Path: "/settings"}
+	if isVisibleByPermissions(settings, []string{appaccess.PermObserveMonitoringView}) {
+		t.Fatal("monitoring workbench permission must not act as a settings-center permission")
+	}
+	monitoring := domainmenu.Record{ID: "monitoring-workbench", Path: "/monitoring-workbench"}
+	if !isVisibleByPermissions(monitoring, []string{appaccess.PermWorkspaceResourceView, appaccess.PermObserveMonitoringView}) {
+		t.Fatal("monitoring workbench must remain visible with observe permission")
+	}
+}
+
 func TestExtensionCenterVisibleWithPluginViewPermission(t *testing.T) {
 	item := domainmenu.Record{ID: "settings-extensions", Path: "/settings/extensions"}
 	if !isVisibleByPermissions(item, []string{appaccess.PermPluginView}) {

@@ -69,21 +69,6 @@ auth:
     secret: soha-123456789012345678901234567890
     access_ttl: 15m
     refresh_ttl: 168h
-  oidc:
-    enabled: false
-    provider_name: ""
-    issuer: ""
-    client_id: ""
-    client_secret: ""
-    redirect_url: http://localhost:8080/api/v1/auth/oidc/callback
-    frontend_redirect_url: http://localhost:5173/login/callback
-    scopes:
-      - openid
-      - profile
-      - email
-    default_roles:
-      - readonly
-
 gitlab:
   enabled: false
   base_url: https://gitlab.com/api/v4
@@ -96,12 +81,6 @@ monitoring:
   enabled: true
   # Public zero-config default. Override before exposing an installation publicly.
   webhook_token: soha-123456789012345678901234567890
-  prometheus_url: ""
-  prometheus_bearer_token: ""
-  prometheus_default_range_minutes: 60
-  prometheus_step_seconds: 60
-  prometheus_cluster_label: cluster
-  grafana_base_url: ""
 
 swagger:
   enabled: true
@@ -147,6 +126,8 @@ plugins:
     sources: []
 
 modules:
+  home:
+    enabled: true
   delivery:
     enabled: true
   monitoring:
@@ -154,6 +135,7 @@ modules:
   ai:
     enabled: true
     features:
+      assistant.global: true
       knowledge.external_connectors: true
       knowledge.async_ingestion: true
       knowledge.gateway_embedding: true

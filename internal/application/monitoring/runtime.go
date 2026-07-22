@@ -35,31 +35,72 @@ type ruleMatch struct {
 }
 
 func (s *Service) Start(ctx context.Context) {
-	s.startMu.Lock()
-	if s.started {
-		s.startMu.Unlock()
+	s.lifecycleMu.Lock()
+	if s.running {
+		s.lifecycleMu.Unlock()
 		return
 	}
-	s.started = true
+	runCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	s.lifecycleCancel = cancel
+	s.lifecycleDone = done
+	s.running = true
 	interval := s.ruleInterval
 	if interval <= 0 {
 		interval = time.Minute
 	}
-	s.startMu.Unlock()
+	s.lifecycleMu.Unlock()
 
-	go func() {
-		s.evaluateEnabledRules(ctx)
+	go func(runCtx context.Context, runDone chan struct{}) {
+		defer s.finishLifecycle(runDone)
+		s.evaluateEnabledRules(runCtx)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-runCtx.Done():
 				return
 			case <-ticker.C:
-				s.evaluateEnabledRules(ctx)
+				s.evaluateEnabledRules(runCtx)
 			}
 		}
-	}()
+	}(runCtx, done)
+}
+
+func (s *Service) Stop(ctx context.Context) error {
+	s.lifecycleMu.Lock()
+	if !s.running {
+		s.lifecycleMu.Unlock()
+		return nil
+	}
+	cancel := s.lifecycleCancel
+	done := s.lifecycleDone
+	s.lifecycleMu.Unlock()
+
+	cancel()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Service) Running() bool {
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.running
+}
+
+func (s *Service) finishLifecycle(done chan struct{}) {
+	s.lifecycleMu.Lock()
+	if s.lifecycleDone == done {
+		s.lifecycleCancel = nil
+		s.lifecycleDone = nil
+		s.running = false
+	}
+	s.lifecycleMu.Unlock()
+	close(done)
 }
 
 func (s *Service) ListRuleRuns(ctx context.Context, principal domainidentity.Principal, filter domainalert.AlertRuleRunFilter) ([]domainalert.AlertRuleRun, error) {

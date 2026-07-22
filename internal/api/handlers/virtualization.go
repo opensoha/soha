@@ -44,6 +44,7 @@ type VirtualizationVMService interface {
 	ListVMsPage(context.Context, domainidentity.Principal, domainvirtualization.VMFilter) (domainvirtualization.Page[domainvirtualization.VM], error)
 	GetVM(context.Context, domainidentity.Principal, string) (domainvirtualization.VM, error)
 	GetVMDetail(context.Context, domainidentity.Principal, string) (appvirtualization.VMDetail, error)
+	ListVMDevices(context.Context, domainidentity.Principal, string) ([]domainvirtualization.VMDevice, error)
 	CreateVM(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainvirtualization.Task, error)
 	VMAction(context.Context, domainidentity.Principal, string, appvirtualization.VMActionInput) (domainvirtualization.Task, error)
 }
@@ -272,6 +273,15 @@ func (h *VirtualizationHandler) GetVMDetail(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, mapVMDetail(item))
+}
+
+func (h *VirtualizationHandler) ListVMDevices(c *gin.Context) {
+	items, err := h.vms.ListVMDevices(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
 }
 
 func (h *VirtualizationHandler) VMAction(c *gin.Context) {
@@ -587,6 +597,7 @@ func mapConnection(item domainvirtualization.Connection) gin.H {
 		"lastSyncedAt":         item.LastSyncedAt,
 		"createdAt":            item.CreatedAt,
 		"updatedAt":            item.UpdatedAt,
+		"capabilities":         item.Capabilities,
 	}
 }
 
@@ -696,10 +707,12 @@ func mapVM(item domainvirtualization.VM) gin.H {
 		"config":       item.Config,
 		"createdAt":    item.CreatedAt,
 		"updatedAt":    item.UpdatedAt,
+		"capabilities": item.Capabilities,
 		"allowedActions": []string{
 			"start",
 			"stop",
 			"restart",
+			"resize",
 			"shutdown",
 			"delete",
 		},
@@ -1110,14 +1123,14 @@ func proxyPVEVNC(ctx context.Context, clientConn *websocket.Conn, backendURL, ti
 		parsedURL.RawQuery = query.Encode()
 	}
 
-	header := http.Header{}
-	header.Set("Cookie", "PVEAuthCookie="+ticket)
+	header := consoleBackendHeaders(consoleResult)
 
 	dialer, err := backendWebSocketDialer(consoleResult)
 	if err != nil {
 		writeWebsocketProxyError(clientConn, "invalid backend TLS configuration")
 		return
 	}
+	dialer.Subprotocols = []string{"binary"}
 	backendConn, response, err := dialer.DialContext(ctx, parsedURL.String(), header)
 	if response != nil {
 		defer func() { _ = response.Body.Close() }()

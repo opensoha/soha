@@ -2172,7 +2172,7 @@ func defaultAgentCapabilities() []domaincopilot.AgentCapability {
 		agentCapability(bindings, skillBindings, "delivery_failure", "交付失败分析", "delivery", "关联构建、发布、执行任务和运行态事件定位交付失败原因。", []string{"application", "environment", "release"}, []string{"delivery.builds", "delivery.releases", "delivery.execution_tasks", "platform.events"}),
 		agentCapability(bindings, skillBindings, "post_deploy_observation", "发布后观察", "delivery", "围绕发布窗口检查告警、事件、指标与链路变化。", []string{"application", "cluster", "namespace"}, []string{"delivery.releases", "observability.metrics", "observability.traces", "platform.events"}),
 		agentCapability(bindings, skillBindings, "platform_resource_diagnosis", "平台资源诊断", "platform", "针对 Kubernetes 资源、节点、事件和配置漂移生成诊断结论。", []string{"cluster", "namespace", "resource"}, []string{"platform.resources", "platform.events", "observability.metrics"}),
-		agentCapability(bindings, skillBindings, "docker_diagnosis", "Docker 工作台诊断", "docker", "关联 Docker host、Compose 项目、服务和 operation 日志分析故障。", []string{"dockerHost", "composeProject"}, []string{"docker.operations", "docker.services"}),
+		agentCapability(bindings, skillBindings, "docker_diagnosis", "容器运行时诊断", "docker", "关联 Docker host、Compose 项目、服务和 operation 日志分析故障。", []string{"dockerHost", "composeProject"}, []string{"docker.operations", "docker.services"}),
 		agentCapability(bindings, skillBindings, "virtualization_diagnosis", "虚拟化诊断", "virtualization", "关联虚拟机、连接、任务和运行时指标进行故障分析。", []string{"virtualizationConnection", "vm"}, []string{"virtualization.operations", "observability.metrics"}),
 		agentCapability(bindings, skillBindings, "oncall_brief", "OnCall 处置简报", "oncall", "为告警组和值班任务生成可执行处置摘要。", []string{"alert", "oncallRoute"}, []string{"observability.alerts", "oncall.routes", "platform.events"}),
 	}

@@ -26,6 +26,18 @@ func TestAdminRoleContainsDirectoryPermissions(t *testing.T) {
 	}
 }
 
+func TestPermissionCatalogDropsGlobalMonitoringSettingsPermissions(t *testing.T) {
+	permissions := allPermissionKeys()
+	for _, stale := range []string{"settings.monitoring.view", "settings.monitoring.manage"} {
+		if slices.Contains(permissions, stale) {
+			t.Fatalf("permission catalog still contains removed global settings permission %q", stale)
+		}
+	}
+	if !slices.Contains(permissions, PermObserveMonitoringView) {
+		t.Fatalf("permission catalog must retain monitoring workbench permission %q", PermObserveMonitoringView)
+	}
+}
+
 func TestGlobalResourceCreateEntryPermissionDefaultsToAdminAndOps(t *testing.T) {
 	SetRolePermissionMatrix(nil)
 	for _, role := range []string{"admin", "ops"} {

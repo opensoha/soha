@@ -67,6 +67,46 @@ func TestPVEAdapterTestConnectionDegradesOnHTTPError(t *testing.T) {
 	}
 }
 
+func TestPVEAdapterListVMDevices(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api2/json/nodes/pve-a/qemu/101/config" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		writePVEAny(w, map[string]any{
+			"scsi0": "local-lvm:vm-101-disk-0,size=20G",
+			"scsi1": "ceph:vm-101-disk-1,size=64G",
+			"ide2":  "local:iso/debian.iso,media=cdrom",
+			"net0":  "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0",
+		})
+	}))
+	defer server.Close()
+
+	devices, err := NewPVEAdapter(server.Client()).ListVMDevices(
+		context.Background(),
+		Connection{Endpoint: server.URL},
+		VM{ID: "101", Node: "pve-a"},
+	)
+	if err != nil {
+		t.Fatalf("ListVMDevices() error = %v", err)
+	}
+	if len(devices) != 3 {
+		t.Fatalf("devices = %#v, want two disks and one network", devices)
+	}
+	if devices[0].ID != "net0" || devices[0].Network != "vmbr0" || devices[1].ID != "scsi0" || devices[1].Storage != "local-lvm" || devices[1].SizeGiB != 20 || devices[2].ID != "scsi1" || devices[2].Storage != "ceph" {
+		t.Fatalf("devices = %#v", devices)
+	}
+}
+
+func TestNextPVEDeviceIDSkipsOccupiedSlots(t *testing.T) {
+	config := map[string]any{"scsi0": "disk-0", "scsi1": "disk-1", "net0": "network-0"}
+	if got := nextPVEDeviceID(config, "scsi"); got != "scsi2" {
+		t.Fatalf("next scsi id = %q, want scsi2", got)
+	}
+	if got := nextPVEDeviceID(config, "net"); got != "net1" {
+		t.Fatalf("next network id = %q, want net1", got)
+	}
+}
+
 func TestPVEAdapterHonorsInsecureSkipTLSVerify(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api2/json/nodes" {
@@ -950,6 +990,9 @@ func TestPVEAdapterGetConsoleURLAuthenticatesVNCProxyAndPreservesEndpointBasePat
 	}
 	if !strings.Contains(result.BackendURL, "/pve/api2/json/nodes/pve-a/qemu/101/vncwebsocket") || !strings.Contains(result.BackendURL, "port=5902") || !strings.Contains(result.BackendURL, "vncticket=ticket-2") {
 		t.Fatalf("result.BackendURL = %q", result.BackendURL)
+	}
+	if got := ConsoleBackendHeaders(result).Get("Authorization"); got != "PVEAPIToken=root@pam!soha=secret-token" {
+		t.Fatalf("backend Authorization = %q", got)
 	}
 }
 

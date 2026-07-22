@@ -3,10 +3,12 @@ package routes
 import (
 	"github.com/gin-gonic/gin"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
-func registerPublicRoutes(v1 gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
+func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependencies) {
+	_ = cfg
 	v1.GET("/healthz", deps.System.Healthz)
 	v1.GET("/readyz", deps.System.Readyz)
 	v1.GET("/auth/providers", deps.Auth.ListProviders)
@@ -36,29 +38,30 @@ func registerPublicRoutes(v1 gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) 
 		v1.DELETE("/scim/v2/Groups/:resourceID", deps.DirectorySync.SCIMDeleteGroup)
 	}
 
-	if cfg.Modules.Monitoring.Enabled {
-		v1.POST("/integrations/alerts/webhook", deps.Monitoring.IngestWebhook)
-		v1.POST("/integrations/alerts/:integrationID/webhook", deps.Monitoring.IngestIntegrationWebhook)
+	if deps.Monitoring != nil {
+		monitoring := v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "monitoring"))
+		monitoring.POST("/integrations/alerts/webhook", deps.Monitoring.IngestWebhook)
+		monitoring.POST("/integrations/alerts/:integrationID/webhook", deps.Monitoring.IngestIntegrationWebhook)
 	}
-	if cfg.Modules.Delivery.Enabled {
+	if deps.Delivery != nil {
 		v1.GET("/delivery/execution-tasks/:taskID/runner-status", deps.Delivery.GetExecutionTaskRunnerStatus)
 		v1.POST("/delivery/execution-callbacks", deps.Delivery.RecordExecutionCallback)
-		v1.POST("/delivery/execution-tasks/claim", deps.Delivery.ClaimExecutionTask)
+		v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "delivery")).POST("/delivery/execution-tasks/claim", deps.Delivery.ClaimExecutionTask)
 	}
-	if cfg.Modules.Docker.Enabled {
-		v1.POST("/docker/operations/claim", deps.Docker.ClaimOperation)
+	if deps.Docker != nil {
+		v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "docker")).POST("/docker/operations/claim", deps.Docker.ClaimOperation)
 		v1.GET("/docker/operations/:id/runner-status", deps.Docker.GetOperationRunnerStatus)
 		v1.POST("/docker/operation-callbacks", deps.Docker.RecordOperationCallback)
 	}
-	if cfg.Modules.AI.Enabled {
-		v1.POST("/copilot/agent-runs/claim", deps.Copilot.ClaimAgentRun)
+	if deps.Copilot != nil {
+		v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "ai")).POST("/copilot/agent-runs/claim", deps.Copilot.ClaimAgentRun)
 		v1.POST("/copilot/agent-runs/callback", deps.Copilot.RecordAgentRunCallback)
 		v1.POST("/copilot/agent-runs/tool-call", deps.Copilot.RecordAgentToolCall)
-		if deps.AgentProviders != nil {
-			apiHandlers.RegisterRunnerAgentProviderRoutes(v1, deps.AgentProviders)
-		}
 	}
-	if cfg.Modules.AIGateway.Enabled && deps.Platform != nil {
-		v1.POST("/connectors/events", deps.Platform.IngestConnectorEvents)
+	if deps.AgentProviders != nil {
+		apiHandlers.RegisterRunnerAgentProviderRoutes(v1, deps.AgentProviders)
+	}
+	if deps.Platform != nil {
+		v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "aiGateway")).POST("/connectors/events", deps.Platform.IngestConnectorEvents)
 	}
 }

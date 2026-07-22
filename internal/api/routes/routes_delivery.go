@@ -6,9 +6,7 @@ import (
 )
 
 func registerDeliveryRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
-	if !cfg.Modules.Delivery.Enabled {
-		return
-	}
+	_ = cfg
 	registerDeliveryRuntimeRoutes(protected, deps)
 	registerDeliveryCatalogRoutes(protected, deps)
 	registerDeliveryApplicationRoutes(protected, deps)

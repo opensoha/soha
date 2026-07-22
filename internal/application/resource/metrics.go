@@ -69,7 +69,6 @@ type podIdentity struct {
 type metricsSupport struct {
 	*resourceAccess
 	resolver   ConnectionResolver
-	settings   MonitoringSettingsResolver
 	httpClient *http.Client
 }
 
@@ -97,15 +96,7 @@ func (w *Workloads) GetPodMetrics(ctx context.Context, principal domainidentity.
 		RangeMinutes: rangeMinutes,
 		StepSeconds:  stepSeconds,
 	}
-	if s.settings == nil {
-		view.Message = "monitoring settings are unavailable"
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", podName, "metrics", "failure", view.Message)
-		return view, nil
-	}
-	settings, err := s.resolveClusterPrometheusSettings(ctx, connection.Summary.ID)
-	if err != nil {
-		return domainresource.PodMetricsView{}, err
-	}
+	settings := s.resolveClusterPrometheusSettings(ctx, connection.Summary.ID)
 	if rangeMinutes <= 0 {
 		rangeMinutes = settings.DefaultRangeMinutes
 	}
@@ -305,14 +296,7 @@ func (s *metricsSupport) queryResourceMetrics(ctx context.Context, principal dom
 		RangeMinutes: rangeMinutes,
 		StepSeconds:  stepSeconds,
 	}
-	if s.settings == nil {
-		view.Message = "monitoring settings are unavailable"
-		return view, nil
-	}
-	settings, err := s.resolveClusterPrometheusSettings(ctx, clusterID)
-	if err != nil {
-		return view, err
-	}
+	settings := s.resolveClusterPrometheusSettings(ctx, clusterID)
 	if rangeMinutes <= 0 {
 		rangeMinutes = settings.DefaultRangeMinutes
 	}
@@ -484,8 +468,8 @@ func (s *metricsSupport) listPodUsageSummaries(ctx context.Context, clusterID, n
 		return nil
 	}
 
-	settings, err := s.resolveClusterPrometheusSettings(ctx, clusterID)
-	if err != nil || !settings.Enabled || strings.TrimSpace(settings.BaseURL) == "" {
+	settings := s.resolveClusterPrometheusSettings(ctx, clusterID)
+	if !settings.Enabled || strings.TrimSpace(settings.BaseURL) == "" {
 		return nil
 	}
 
@@ -517,29 +501,16 @@ func (s *metricsSupport) listPodUsageSummaries(ctx context.Context, clusterID, n
 	return out
 }
 
-func (s *metricsSupport) resolveClusterPrometheusSettings(ctx context.Context, clusterID string) (domainsettings.PrometheusSettings, error) {
+func (s *metricsSupport) resolveClusterPrometheusSettings(ctx context.Context, clusterID string) domainsettings.PrometheusSettings {
 	settings := domainsettings.PrometheusSettings{
 		DefaultRangeMinutes: 60,
 		StepSeconds:         60,
 	}
-	if s.settings != nil {
-		resolved, err := s.settings.ResolveMonitoringSettings(ctx)
-		if err != nil {
-			return settings, err
-		}
-		settings = resolved.Prometheus
-	}
 	applyPrometheusMetadataOverride(&settings, s.clusterPrometheusMetadata(ctx, clusterID))
-	if settings.DefaultRangeMinutes <= 0 {
-		settings.DefaultRangeMinutes = 60
-	}
-	if settings.StepSeconds <= 0 {
-		settings.StepSeconds = 60
-	}
 	if strings.TrimSpace(settings.BaseURL) != "" {
 		settings.Enabled = true
 	}
-	return settings, nil
+	return settings
 }
 
 func (s *metricsSupport) clusterPrometheusMetadata(ctx context.Context, clusterID string) map[string]any {

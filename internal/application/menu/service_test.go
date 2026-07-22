@@ -37,6 +37,10 @@ type stubRolePermissionReader struct {
 	matrix map[string][]string
 }
 
+type fixedModuleState map[string]bool
+
+func (s fixedModuleState) ModuleEnabled(id string) bool { return s[id] }
+
 type captureRepository struct {
 	stubRepository
 	created domainmenu.Record
@@ -62,6 +66,20 @@ func TestBuildTreePreservesThirdLevelMenus(t *testing.T) {
 	}
 	if items[0].Children[0].Children[0].ID != "virtualization-workbench-vms" {
 		t.Fatalf("nested leaf = %q, want virtualization-workbench-vms", items[0].Children[0].Children[0].ID)
+	}
+}
+
+func TestHomeWorkbenchMenuFollowsRuntimeModuleState(t *testing.T) {
+	service := New(stubRepository{}, appaccess.NewPermissionResolver(nil), nil, nil)
+	menu := domainmenu.Record{ID: "home-workbench", Path: "/portal", Enabled: true}
+
+	service.SetModuleState(fixedModuleState{"home": false})
+	if service.moduleAvailable(menu) {
+		t.Fatal("home menu must be unavailable while home module is disabled")
+	}
+	service.SetModuleState(fixedModuleState{"home": true})
+	if !service.moduleAvailable(menu) {
+		t.Fatal("home menu must be available while home module is enabled")
 	}
 }
 
@@ -131,12 +149,10 @@ func TestListVisibleFallsBackToExplicitBindingsForMappedMenus(t *testing.T) {
 	}
 }
 
-func TestListVisibleIncludesBasicSettingsMenusWithoutAdminRole(t *testing.T) {
+func TestListVisibleDoesNotExposeSettingsWithoutAdminRole(t *testing.T) {
 	service := New(stubRepository{
 		items: []domainmenu.Record{
 			{ID: "settings", Path: "/settings", Enabled: true, RoleIDs: []string{"admin"}},
-			{ID: "account-profile", ParentID: "settings", Path: "/account/profile", Enabled: true, RoleIDs: []string{"readonly"}},
-			{ID: "settings-about", ParentID: "settings", Path: "/settings/about", Enabled: true, RoleIDs: []string{"readonly"}},
 			{ID: "settings-login", ParentID: "settings", Path: "/settings/login", Enabled: true, RoleIDs: []string{"admin"}},
 		},
 	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
@@ -147,12 +163,8 @@ func TestListVisibleIncludesBasicSettingsMenusWithoutAdminRole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListVisible returned error: %v", err)
 	}
-	settings := findMenu(items, "settings")
-	if settings == nil {
-		t.Fatalf("settings menu not found: %#v", items)
-	}
-	if len(settings.Children) != 2 || settings.Children[0].ID != "account-profile" || settings.Children[1].ID != "settings-about" {
-		t.Fatalf("settings children = %#v, want basic settings menus", settings.Children)
+	if settings := findMenu(items, "settings"); settings != nil {
+		t.Fatalf("settings menu must not be visible to readonly users: %#v", items)
 	}
 }
 

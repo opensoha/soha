@@ -63,6 +63,8 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 
 func coreDeliveryMenuRule(id string) (visibilityRule, bool) {
 	switch id {
+	case "home-workbench":
+		return visibilityRule{permissions: []string{appaccess.PermIdentityPortalView}}, true
 	case "dashboard":
 		return visibilityRule{permissions: []string{appaccess.PermOverviewView}}, true
 	case "cluster-resources-nodes":
@@ -299,14 +301,19 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 	case "settings":
 		return visibilityRule{permissions: []string{
 			appaccess.PermSettingsIdentityView,
-			appaccess.PermSettingsMonitoringView,
 			appaccess.PermSettingsAIView,
 			appaccess.PermSettingsBrandingView,
+			appaccess.PermSettingsSystemIntegrationsView,
+			appaccess.PermSettingsRuntimeConfigView,
 		}}, true
 	case "settings-login":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsIdentityView}}, true
 	case "settings-branding":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsBrandingView}}, true
+	case "settings-source-control":
+		return visibilityRule{permissions: []string{appaccess.PermSettingsSystemIntegrationsView}}, true
+	case "settings-runtime-configuration":
+		return visibilityRule{permissions: []string{appaccess.PermSettingsRuntimeConfigView}}, true
 	default:
 		return visibilityRule{}, false
 	}

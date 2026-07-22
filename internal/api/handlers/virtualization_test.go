@@ -330,7 +330,7 @@ func TestProxyPVEVNCDialsBackendWithTicketCookieAndQuery(t *testing.T) {
 	errCh := make(chan error, 1)
 	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if cookie, err := r.Cookie("PVEAuthCookie"); err != nil || cookie.Value != "ticket-1" {
+		if cookie, err := r.Cookie("PVEAuthCookie"); err != nil || cookie.Value != "auth-ticket-1" {
 			errCh <- fmt.Errorf("PVEAuthCookie = %#v err=%v", cookie, err)
 			http.Error(w, "bad cookie", http.StatusUnauthorized)
 			return
@@ -340,7 +340,12 @@ func TestProxyPVEVNCDialsBackendWithTicketCookieAndQuery(t *testing.T) {
 			http.Error(w, "bad query", http.StatusBadRequest)
 			return
 		}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		if r.Header.Get("Sec-WebSocket-Protocol") != "binary" {
+			errCh <- fmt.Errorf("websocket subprotocol = %q", r.Header.Get("Sec-WebSocket-Protocol"))
+			http.Error(w, "bad subprotocol", http.StatusBadRequest)
+			return
+		}
+		conn, err := upgrader.Upgrade(w, r, http.Header{"Sec-WebSocket-Protocol": {"binary"}})
 		if err != nil {
 			errCh <- err
 			return
@@ -367,7 +372,9 @@ func TestProxyPVEVNCDialsBackendWithTicketCookieAndQuery(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		proxyPVEVNC(ctx, clientProxyConn, backend.URL+"/api2/json/nodes/pve-a/qemu/101/vncwebsocket?port=5901", "ticket-1", consoleport.ConsoleURLResult{})
+		proxyPVEVNC(ctx, clientProxyConn, backend.URL+"/api2/json/nodes/pve-a/qemu/101/vncwebsocket?port=5901", "ticket-1", consoleport.ConsoleURLResult{
+			BackendHeaders: map[string][]string{"Cookie": {"PVEAuthCookie=auth-ticket-1"}},
+		})
 	}()
 
 	if err := clientConn.WriteMessage(websocket.BinaryMessage, []byte("hello")); err != nil {

@@ -180,7 +180,6 @@ func newServiceCapabilities(deps Dependencies) *Service {
 	metrics := &metricsSupport{
 		resourceAccess: access,
 		resolver:       deps.Connections,
-		settings:       deps.Settings,
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
 	}
 	genericResources := &GenericResources{

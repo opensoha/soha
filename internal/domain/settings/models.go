@@ -4,7 +4,6 @@ import "context"
 
 const (
 	IdentityLoginProvidersSettingKey = "identity.login_providers"
-	MonitoringPrometheusSettingKey   = "monitoring.prometheus"
 	AISettingsKey                    = "ai.workbench"
 	BrandingSettingKey               = "branding.console"
 )
@@ -56,10 +55,6 @@ type PrometheusSettings struct {
 	StepSeconds         int    `json:"stepSeconds"`
 	ClusterLabel        string `json:"clusterLabel"`
 	GrafanaBaseURL      string `json:"grafanaBaseUrl"`
-}
-
-type MonitoringSettings struct {
-	Prometheus PrometheusSettings `json:"prometheus"`
 }
 
 type AIWorkbenchModelSettings struct {

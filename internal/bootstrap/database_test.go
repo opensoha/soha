@@ -102,6 +102,8 @@ func TestObsoleteMenuCleanupIncludesPersistedLegacyIDs(t *testing.T) {
 		"ai-gateway-overview",
 		"compute-workbench-tasks-all",
 		"identity-sessions",
+		"account-profile",
+		"settings-about",
 	} {
 		if !slices.Contains(cleanupIDs, id) {
 			t.Fatalf("obsolete menu cleanup is missing persisted id %q", id)
@@ -543,18 +545,20 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 		section   string
 		sortOrder int
 	}{
-		"identity-overview":     {section: "", sortOrder: 1},
-		"identity-applications": {section: "provider", sortOrder: 10},
-		"identity-providers":    {section: "provider", sortOrder: 20},
-		"identity-outposts":     {section: "provider", sortOrder: 30},
-		"identity-policies":     {section: "provider", sortOrder: 40},
-		"menus":                 {section: "users", sortOrder: 50},
-		"settings-login":        {section: "users", sortOrder: 60},
-		"announcements":         {section: "operations", sortOrder: 30},
-		"system-online-users":   {section: "operations", sortOrder: 40},
-		"operations":            {section: "operations", sortOrder: 50},
-		"audit":                 {section: "operations", sortOrder: 60},
-		"settings-branding":     {section: "operations", sortOrder: 70},
+		"identity-overview":              {section: "", sortOrder: 1},
+		"identity-applications":          {section: "provider", sortOrder: 10},
+		"identity-providers":             {section: "provider", sortOrder: 20},
+		"identity-outposts":              {section: "provider", sortOrder: 30},
+		"identity-policies":              {section: "provider", sortOrder: 40},
+		"settings-source-control":        {section: "integrations", sortOrder: 10},
+		"menus":                          {section: "users", sortOrder: 50},
+		"settings-login":                 {section: "integrations", sortOrder: 20},
+		"announcements":                  {section: "operations", sortOrder: 30},
+		"system-online-users":            {section: "operations", sortOrder: 40},
+		"operations":                     {section: "operations", sortOrder: 50},
+		"audit":                          {section: "operations", sortOrder: 60},
+		"settings-branding":              {section: "extensions", sortOrder: 10},
+		"settings-runtime-configuration": {section: "operations", sortOrder: 80},
 	}
 
 	for _, item := range items {
@@ -569,6 +573,57 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 	}
 	if len(expected) > 0 {
 		t.Fatalf("default menu seeds missing grouped settings menus: %v", expected)
+	}
+}
+
+func TestRuntimeConfigurationMenuSeedMatchesFrontendRoute(t *testing.T) {
+	for _, item := range defaultMenuSeeds() {
+		if item.ID != "settings-runtime-configuration" {
+			continue
+		}
+		if item.ParentID != "settings" || item.Path != "/settings/runtime-configuration" {
+			t.Fatalf("runtime configuration menu = %#v", item)
+		}
+		return
+	}
+	t.Fatal("default menu seeds missing settings-runtime-configuration")
+}
+
+func TestSourceControlMenuSeedMatchesFrontendRoute(t *testing.T) {
+	for _, item := range defaultMenuSeeds() {
+		if item.ID != "settings-source-control" {
+			continue
+		}
+		if item.ParentID != "settings" || item.Path != "/settings/source-control" {
+			t.Fatalf("source control menu = %#v", item)
+		}
+		return
+	}
+	t.Fatal("default menu seeds missing settings-source-control")
+}
+
+func TestHomeWorkbenchMenuSeedMatchesPortalRoute(t *testing.T) {
+	for _, item := range defaultMenuSeeds() {
+		if item.ID != "home-workbench" {
+			continue
+		}
+		if item.ParentID != "" || item.Path != "/portal" || item.LabelZH != "首页" {
+			t.Fatalf("home workbench menu = %#v", item)
+		}
+		return
+	}
+	t.Fatal("default menu seeds missing home-workbench")
+}
+
+func TestObsoleteMenusCleanLegacyRuntimeConfigurationID(t *testing.T) {
+	if !slices.Contains(obsoleteMenuIDsForCleanup(), "settings-runtime-config") {
+		t.Fatal("legacy runtime configuration menu id must be cleaned during seed replay")
+	}
+}
+
+func TestObsoleteMenusCleanRemovedSystemIntegrationsCatalog(t *testing.T) {
+	if !slices.Contains(obsoleteMenuIDsForCleanup(), "settings-system-integrations") {
+		t.Fatal("removed system integrations catalog menu must be cleaned during seed replay")
 	}
 }
 
@@ -597,35 +652,18 @@ func TestDefaultMenuSeedsUseFullSystemLogLabels(t *testing.T) {
 	}
 }
 
-func TestDefaultMenuSeedsExposeBasicSettingsMenus(t *testing.T) {
+func TestDefaultMenuSeedsKeepAccountUtilitiesOutOfSettings(t *testing.T) {
 	items := defaultMenuSeeds()
-	expected := map[string]int{
-		"account-profile": 10,
-		"settings-about":  20,
-	}
-	expectedRoles := []string{"admin", "ops", "developer", "tester", "readonly", "auditor"}
-
+	removed := map[string]bool{"account-profile": false, "settings-about": false}
 	for _, item := range items {
-		sortOrder, ok := expected[item.ID]
-		if !ok {
-			continue
+		if _, ok := removed[item.ID]; ok {
+			removed[item.ID] = true
 		}
-		if item.ParentID != "settings" {
-			t.Fatalf("basic settings menu %q parent = %q, want settings", item.ID, item.ParentID)
-		}
-		if item.Section != "account" {
-			t.Fatalf("basic settings menu %q section = %q, want account", item.ID, item.Section)
-		}
-		if item.SortOrder != sortOrder {
-			t.Fatalf("basic settings menu %q sort order = %d, want %d", item.ID, item.SortOrder, sortOrder)
-		}
-		if !slices.Equal(item.Roles, expectedRoles) {
-			t.Fatalf("basic settings menu %q roles = %v, want default user roles", item.ID, item.Roles)
-		}
-		delete(expected, item.ID)
 	}
-	if len(expected) > 0 {
-		t.Fatalf("default menu seeds missing basic settings menus: %v", expected)
+	for id, found := range removed {
+		if found {
+			t.Fatalf("account utility %q must not be a settings menu seed", id)
+		}
 	}
 }
 

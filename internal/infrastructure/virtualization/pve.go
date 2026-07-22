@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,65 @@ import (
 type PVEAdapter struct {
 	client        *http.Client
 	snippetWriter pveSnippetWriter
+}
+
+func (a *PVEAdapter) VMCapabilities() []string {
+	return []string{
+		CapabilityResizeCPU, CapabilityResizeMemory, CapabilityAddDisk, CapabilityResizeDisk, CapabilityAddNetwork,
+	}
+}
+
+func (a *PVEAdapter) ListVMDevices(ctx context.Context, connection Connection, vm VM) ([]VMDevice, error) {
+	config, err := a.pveVMConfig(ctx, connection, vm.Node, vm.ID)
+	if err != nil {
+		return nil, err
+	}
+	devices := make([]VMDevice, 0)
+	for id, raw := range config {
+		value := stringFromAny(raw)
+		switch {
+		case isPVEDiskID(id) && pveConfigOption(value, "media") != "cdrom":
+			storage, _ := pveStorageFromVolume(value)
+			devices = append(devices, VMDevice{ID: id, Kind: "disk", Name: id, SizeGiB: pveDiskSizeGiB(value), Storage: storage})
+		case strings.HasPrefix(id, "net"):
+			devices = append(devices, VMDevice{ID: id, Kind: "network", Name: id, Network: pveConfigOption(value, "bridge"), Model: strings.TrimSpace(strings.Split(value, ",")[0])})
+		}
+	}
+	slices.SortFunc(devices, func(left, right VMDevice) int { return strings.Compare(left.ID, right.ID) })
+	return devices, nil
+}
+
+func (a *PVEAdapter) pveVMConfig(ctx context.Context, connection Connection, node, vmid string) (map[string]any, error) {
+	var payload struct {
+		Data map[string]any `json:"data"`
+	}
+	endpoint := fmt.Sprintf("/nodes/%s/qemu/%s/config", url.PathEscape(node), url.PathEscape(vmid))
+	if err := a.do(ctx, connection, http.MethodGet, endpoint, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Data, nil
+}
+
+func isPVEDiskID(id string) bool {
+	return strings.HasPrefix(id, "scsi") || strings.HasPrefix(id, "sata") || strings.HasPrefix(id, "virtio") || strings.HasPrefix(id, "ide")
+}
+func pveConfigOption(value, key string) string {
+	for _, part := range strings.Split(value, ",") {
+		name, option, ok := strings.Cut(part, "=")
+		if ok && strings.TrimSpace(name) == key {
+			return strings.TrimSpace(option)
+		}
+	}
+	return ""
+}
+func nextPVEDeviceID(config map[string]any, prefix string) string {
+	for index := 0; index < 32; index++ {
+		id := fmt.Sprintf("%s%d", prefix, index)
+		if _, exists := config[id]; !exists {
+			return id
+		}
+	}
+	return ""
 }
 
 type pveSnippetWriter interface {
@@ -479,6 +539,25 @@ func addPVEDiskAndNetwork(payload map[string]any, plan pveCreatePlan) {
 	} else if plan.input.Network != "" {
 		payload["net0"] = plan.input.Network
 	}
+	for index, disk := range plan.input.Disks {
+		if !disk.Add {
+			continue
+		}
+		id := firstNonEmpty(disk.ID, disk.Name, fmt.Sprintf("scsi%d", index+1))
+		storage := firstNonEmpty(disk.Storage, plan.storage)
+		if id != "" && storage != "" && disk.SizeGiB > 0 {
+			payload[id] = fmt.Sprintf("%s:%d", storage, disk.SizeGiB)
+		}
+	}
+	for index, network := range plan.input.Networks {
+		if !network.Add {
+			continue
+		}
+		id := firstNonEmpty(network.ID, network.Name, fmt.Sprintf("net%d", index+1))
+		if id != "" && network.Network != "" {
+			payload[id] = fmt.Sprintf("%s,bridge=%s", firstNonEmpty(network.Model, "virtio"), network.Network)
+		}
+	}
 }
 
 func addPVECloudInitPayload(payload map[string]any, plan pveCreatePlan) {
@@ -582,6 +661,76 @@ func (a *PVEAdapter) PowerAction(ctx context.Context, connection Connection, vm 
 		return PowerActionResult{}, err
 	}
 	return PowerActionResult{Accepted: true, Action: action, UPID: upid}, nil
+}
+
+func (a *PVEAdapter) ResizeVM(ctx context.Context, connection Connection, vm VM, input AdapterResizeVMInput) (PowerActionResult, error) {
+	if vm.ID == "" || vm.Node == "" {
+		return PowerActionResult{}, invalidf("vm id and node are required")
+	}
+	payload := map[string]any{}
+	if input.CPU > 0 {
+		payload["cores"] = input.CPU
+	}
+	if input.MemoryMiB > 0 {
+		payload["memory"] = input.MemoryMiB
+	}
+	if len(payload) > 0 {
+		if _, err := a.doTaskAndWait(ctx, connection, vm.Node, http.MethodPut, fmt.Sprintf("/nodes/%s/qemu/%s/config", url.PathEscape(vm.Node), url.PathEscape(vm.ID)), payload); err != nil {
+			return PowerActionResult{}, err
+		}
+	}
+	if input.DiskGiB > 0 {
+		if _, err := a.resizePVEClonedDisk(ctx, connection, vm.Node, vm.ID, "scsi0", fmt.Sprintf("%dG", input.DiskGiB)); err != nil {
+			return PowerActionResult{}, err
+		}
+	}
+	config, configErr := a.pveVMConfig(ctx, connection, vm.Node, vm.ID)
+	if configErr != nil && (len(input.Disks) > 0 || len(input.Networks) > 0) {
+		return PowerActionResult{}, configErr
+	}
+	for _, disk := range input.Disks {
+		diskID := firstNonEmpty(disk.ID, disk.Name)
+		if diskID == "" && disk.Add {
+			diskID = nextPVEDeviceID(config, "scsi")
+		}
+		if diskID == "" {
+			return PowerActionResult{}, invalidf("disk id is required")
+		}
+		if disk.Add {
+			storage := firstNonEmpty(disk.Storage, stringOptionValue(connection.Options, "defaultStorage"))
+			if storage == "" {
+				return PowerActionResult{}, invalidf("storage is required for a new disk")
+			}
+			value := fmt.Sprintf("%s:%d", storage, disk.SizeGiB)
+			if _, err := a.doTaskAndWait(ctx, connection, vm.Node, http.MethodPut, fmt.Sprintf("/nodes/%s/qemu/%s/config", url.PathEscape(vm.Node), url.PathEscape(vm.ID)), map[string]any{diskID: value}); err != nil {
+				return PowerActionResult{}, err
+			}
+			config[diskID] = value
+		} else if _, err := a.resizePVEClonedDisk(ctx, connection, vm.Node, vm.ID, diskID, fmt.Sprintf("%dG", disk.SizeGiB)); err != nil {
+			return PowerActionResult{}, err
+		}
+	}
+	for _, network := range input.Networks {
+		if !network.Add {
+			continue
+		}
+		networkID := firstNonEmpty(network.ID, network.Name)
+		if networkID == "" {
+			networkID = nextPVEDeviceID(config, "net")
+		}
+		if networkID == "" {
+			return PowerActionResult{}, invalidf("network interface id is required")
+		}
+		model := firstNonEmpty(network.Model, "virtio")
+		if network.Network == "" {
+			return PowerActionResult{}, invalidf("network bridge is required")
+		}
+		value := fmt.Sprintf("%s,bridge=%s", model, network.Network)
+		if _, err := a.doTaskAndWait(ctx, connection, vm.Node, http.MethodPut, fmt.Sprintf("/nodes/%s/qemu/%s/config", url.PathEscape(vm.Node), url.PathEscape(vm.ID)), map[string]any{networkID: value}); err != nil {
+			return PowerActionResult{}, err
+		}
+	}
+	return PowerActionResult{Accepted: true, Action: "resize", Message: "virtual machine resources updated"}, nil
 }
 
 func (a *PVEAdapter) deletePVEVM(ctx context.Context, connection Connection, vm VM) (PowerActionResult, error) {
@@ -1459,6 +1608,33 @@ func pveHasReusableAuth(credential map[string]any) bool {
 		stringFromAny(credential["ticket"]) != ""
 }
 
+func (a *PVEAdapter) consoleBackendHeaders(ctx context.Context, connection Connection) (http.Header, error) {
+	headers := http.Header{}
+	tokenID := stringFromAny(connection.Credential["tokenID"])
+	tokenSecret := stringFromAny(connection.Credential["tokenSecret"])
+	if tokenID != "" && tokenSecret != "" {
+		headers.Set("Authorization", "PVEAPIToken="+tokenID+"="+tokenSecret)
+		return headers, nil
+	}
+
+	ticket := stringFromAny(connection.Credential["ticket"])
+	if ticket == "" {
+		username := stringFromAny(connection.Credential["username"])
+		password := stringFromAny(connection.Credential["password"])
+		if username != "" && password != "" {
+			var err error
+			ticket, _, err = a.loginPVE(ctx, connection, username, password)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if ticket != "" {
+		headers.Set("Cookie", (&http.Cookie{Name: "PVEAuthCookie", Value: ticket}).String())
+	}
+	return headers, nil
+}
+
 func (a *PVEAdapter) loginPVE(ctx context.Context, connection Connection, username string, password string) (string, string, error) {
 	base, err := url.Parse(strings.TrimRight(connection.Endpoint, "/"))
 	if err != nil || base.Scheme == "" || base.Host == "" {
@@ -2004,15 +2180,20 @@ func (a *PVEAdapter) GetConsoleURL(ctx context.Context, connection Connection, v
 	query.Set("port", port)
 	query.Set("vncticket", ticketResponse.Data.Ticket)
 	base.RawQuery = query.Encode()
+	backendHeaders, err := a.consoleBackendHeaders(ctx, connection)
+	if err != nil {
+		return ConsoleURLResult{Message: err.Error(), Ready: false, Provider: "pve", Type: "novnc", ProxyMode: "backend-ws-proxy"}, err
+	}
 
 	return ConsoleURLResult{
-		Type:       "novnc",
-		URL:        fmt.Sprintf("/api/v1/virtualization/vms/%s/console/novnc", vm.ID),
-		BackendURL: base.String(),
-		Token:      ticketResponse.Data.Ticket,
-		Ready:      true,
-		Provider:   "pve",
-		ProxyMode:  "backend-ws-proxy",
-		BackendTLS: BackendTLS{InsecureSkipVerify: connection.InsecureSkipTLSVerify},
+		Type:           "novnc",
+		URL:            fmt.Sprintf("/api/v1/virtualization/vms/%s/console/novnc", vm.ID),
+		BackendURL:     base.String(),
+		Token:          ticketResponse.Data.Ticket,
+		Ready:          true,
+		Provider:       "pve",
+		ProxyMode:      "backend-ws-proxy",
+		BackendHeaders: backendHeaders,
+		BackendTLS:     BackendTLS{InsecureSkipVerify: connection.InsecureSkipTLSVerify},
 	}, nil
 }

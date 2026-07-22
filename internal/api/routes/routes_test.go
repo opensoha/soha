@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
@@ -14,12 +16,33 @@ import (
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
+type disabledModuleState struct{}
+
+func (disabledModuleState) ModuleEnabled(string) bool { return false }
+
 func routeMethodPaths(routes []gin.RouteInfo) []string {
 	items := make([]string, 0, len(routes))
 	for _, route := range routes {
 		items = append(items, route.Method+" "+route.Path)
 	}
 	return items
+}
+
+func TestRegisterSettingsRoutesDoesNotExposeGlobalPrometheusSettings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	registerSettingsRoutes(router.Group("/api/v1"), Dependencies{Settings: &apiHandlers.SettingsHandler{}})
+
+	registered := routeMethodPaths(router.Routes())
+	for _, removed := range []string{
+		"GET /api/v1/settings/monitoring",
+		"PUT /api/v1/settings/monitoring/prometheus",
+	} {
+		if slices.Contains(registered, removed) {
+			t.Fatalf("global Prometheus settings route remains registered: %s", removed)
+		}
+	}
 }
 
 func TestRegisterPlatformRoutesKeepsCoreOperationalSurface(t *testing.T) {
@@ -103,14 +126,14 @@ func TestRegisterCopilotRoutesExposesAgentRunCancel(t *testing.T) {
 	}
 }
 
-func TestRegisterComputeRoutesFollowsModuleAvailability(t *testing.T) {
+func TestRegisterComputeRoutesAlwaysRegistersStableSurface(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, test := range []struct {
 		name string
 		cfg  cfgpkg.Config
 		want int
 	}{
-		{name: "disabled", cfg: cfgpkg.Config{}, want: 0},
+		{name: "disabled", cfg: cfgpkg.Config{}, want: 7},
 		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 7},
 		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 7},
 	} {
@@ -511,6 +534,28 @@ func TestRegisterProviderPortalRoutesExposeIdentityProviderWorkbenchAndOIDCProto
 	}
 }
 
+func TestRegisterProtectedRoutesExposeSystemIntegrationAndSourceControl(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerProtectedRoutes(router.Group("/api/v1"), allRoutesEnabledConfig(), routeTestDependencies())
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, expected := range []string{
+		"GET /api/v1/system-integrations",
+		"POST /api/v1/system-integrations",
+		"PATCH /api/v1/system-integrations/:integrationID",
+		"POST /api/v1/system-integrations/:integrationID/test",
+		"GET /api/v1/source-connections",
+		"GET /api/v1/source-connections/:sourceConnectionID/repositories/:repositoryID/files",
+	} {
+		if _, ok := registered[expected]; !ok {
+			t.Fatalf("missing route %s", expected)
+		}
+	}
+}
+
 func TestRegisterAccessRoutesPreservesEndpointContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -786,7 +831,7 @@ func TestRegisterPublicRoutesIncludesConnectorEventSinkWhenAIGatewayEnabled(t *t
 	}
 }
 
-func TestRegisterPublicRoutesOmitsConnectorEventSinkWhenAIGatewayDisabled(t *testing.T) {
+func TestRegisterPublicRoutesKeepsConnectorEventSinkWhenAIGatewayDisabled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()
@@ -799,8 +844,57 @@ func TestRegisterPublicRoutesOmitsConnectorEventSinkWhenAIGatewayDisabled(t *tes
 
 	for _, route := range router.Routes() {
 		if route.Method == "POST" && route.Path == "/api/v1/connectors/events" {
-			t.Fatal("POST /api/v1/connectors/events should be omitted when AI Gateway is disabled")
+			return
 		}
+	}
+	t.Fatal("POST /api/v1/connectors/events should remain registered for runtime gating")
+}
+
+func TestDisabledModulesRejectNewRunnerClaimsButKeepCompletionRoutesReachable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(gin.Recovery())
+	registerPublicRoutes(router.Group("/api/v1"), cfgpkg.Config{}, Dependencies{
+		System:         &apiHandlers.SystemHandler{},
+		Auth:           &apiHandlers.AuthHandler{},
+		Delivery:       &apiHandlers.DeliveryHandler{},
+		Docker:         &apiHandlers.DockerHandler{},
+		Copilot:        &apiHandlers.CopilotHandler{},
+		AgentProviders: &apiHandlers.AgentProviderHandler{},
+		ModuleState:    disabledModuleState{},
+	})
+
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		claim  bool
+	}{
+		{name: "delivery claim", method: http.MethodPost, path: "/api/v1/delivery/execution-tasks/claim", claim: true},
+		{name: "docker claim", method: http.MethodPost, path: "/api/v1/docker/operations/claim", claim: true},
+		{name: "agent run claim", method: http.MethodPost, path: "/api/v1/copilot/agent-runs/claim", claim: true},
+		{name: "delivery callback", method: http.MethodPost, path: "/api/v1/delivery/execution-callbacks"},
+		{name: "delivery runner status", method: http.MethodGet, path: "/api/v1/delivery/execution-tasks/task-1/runner-status"},
+		{name: "docker callback", method: http.MethodPost, path: "/api/v1/docker/operation-callbacks"},
+		{name: "docker runner status", method: http.MethodGet, path: "/api/v1/docker/operations/task-1/runner-status"},
+		{name: "agent run callback", method: http.MethodPost, path: "/api/v1/copilot/agent-runs/callback"},
+		{name: "agent run tool call", method: http.MethodPost, path: "/api/v1/copilot/agent-runs/tool-call"},
+		{name: "agent provider snapshot", method: http.MethodGet, path: "/api/v1/ai/agent-providers/registry-snapshot"},
+		{name: "agent provider acknowledgement", method: http.MethodPost, path: "/api/v1/ai/agent-providers/registry-acks"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(test.method, test.path, strings.NewReader("{}"))
+			request.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(response, request)
+			if test.claim && response.Code != http.StatusNotFound {
+				t.Fatalf("claim status = %d, want %d; body=%s", response.Code, http.StatusNotFound, response.Body.String())
+			}
+			if !test.claim && response.Code == http.StatusNotFound {
+				t.Fatalf("completion route was blocked by disabled module; body=%s", response.Body.String())
+			}
+		})
 	}
 }
 
@@ -827,28 +921,29 @@ func allRoutesEnabledConfig() cfgpkg.Config {
 
 func routeTestDependencies() Dependencies {
 	return Dependencies{
-		System:         &apiHandlers.SystemHandler{},
-		Platform:       &apiHandlers.PlatformHandler{},
-		Announcements:  &apiHandlers.AnnouncementHandler{},
-		Module:         &apiHandlers.ModuleHandler{},
-		Monitoring:     &apiHandlers.MonitoringHandler{},
-		Catalog:        &apiHandlers.CatalogHandler{},
-		Delivery:       &apiHandlers.DeliveryHandler{},
-		Applications:   &apiHandlers.ApplicationHandler{},
-		Builds:         &apiHandlers.BuildHandler{},
-		Workflows:      &apiHandlers.WorkflowHandler{},
-		Registries:     &apiHandlers.RegistryHandler{},
-		Releases:       &apiHandlers.ReleaseHandler{},
-		Copilot:        &apiHandlers.CopilotHandler{},
-		AIGateway:      &apiHandlers.AIGatewayHandler{},
-		Plugins:        &apiHandlers.PluginHandler{},
-		Virtualization: &apiHandlers.VirtualizationHandler{},
-		Docker:         &apiHandlers.DockerHandler{},
-		Access:         &accesshandler.Handler{},
-		ScopeGrants:    &accesshandler.ScopeGrantHandler{},
-		Menu:           &apiHandlers.MenuHandler{},
-		Settings:       &apiHandlers.SettingsHandler{},
-		Auth:           &apiHandlers.AuthHandler{},
-		ProviderPortal: &providerportalhandler.Handler{},
+		System:             &apiHandlers.SystemHandler{},
+		Platform:           &apiHandlers.PlatformHandler{},
+		Announcements:      &apiHandlers.AnnouncementHandler{},
+		Module:             &apiHandlers.ModuleHandler{},
+		Monitoring:         &apiHandlers.MonitoringHandler{},
+		Catalog:            &apiHandlers.CatalogHandler{},
+		Delivery:           &apiHandlers.DeliveryHandler{},
+		Applications:       &apiHandlers.ApplicationHandler{},
+		Builds:             &apiHandlers.BuildHandler{},
+		Workflows:          &apiHandlers.WorkflowHandler{},
+		Registries:         &apiHandlers.RegistryHandler{},
+		Releases:           &apiHandlers.ReleaseHandler{},
+		Copilot:            &apiHandlers.CopilotHandler{},
+		AIGateway:          &apiHandlers.AIGatewayHandler{},
+		Plugins:            &apiHandlers.PluginHandler{},
+		Virtualization:     &apiHandlers.VirtualizationHandler{},
+		Docker:             &apiHandlers.DockerHandler{},
+		Access:             &accesshandler.Handler{},
+		ScopeGrants:        &accesshandler.ScopeGrantHandler{},
+		Menu:               &apiHandlers.MenuHandler{},
+		Settings:           &apiHandlers.SettingsHandler{},
+		SystemIntegrations: &apiHandlers.SystemIntegrationHandler{},
+		Auth:               &apiHandlers.AuthHandler{},
+		ProviderPortal:     &providerportalhandler.Handler{},
 	}
 }

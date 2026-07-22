@@ -30,13 +30,20 @@ type VM = domainvirtualization.AdapterVM
 type PowerAction = domainvirtualization.PowerAction
 
 const (
-	PowerActionStart   = domainvirtualization.PowerActionStart
-	PowerActionStop    = domainvirtualization.PowerActionStop
-	PowerActionRestart = domainvirtualization.PowerActionRestart
-	PowerActionDelete  = domainvirtualization.PowerActionDelete
+	PowerActionStart       = domainvirtualization.PowerActionStart
+	PowerActionStop        = domainvirtualization.PowerActionStop
+	PowerActionRestart     = domainvirtualization.PowerActionRestart
+	PowerActionDelete      = domainvirtualization.PowerActionDelete
+	CapabilityResizeCPU    = domainvirtualization.CapabilityResizeCPU
+	CapabilityResizeMemory = domainvirtualization.CapabilityResizeMemory
+	CapabilityAddDisk      = domainvirtualization.CapabilityAddDisk
+	CapabilityResizeDisk   = domainvirtualization.CapabilityResizeDisk
+	CapabilityAddNetwork   = domainvirtualization.CapabilityAddNetwork
 )
 
 type PowerActionResult = domainvirtualization.PowerActionResult
+type AdapterResizeVMInput = domainvirtualization.AdapterResizeVMInput
+type VMDevice = domainvirtualization.VMDevice
 type AdapterError = domainvirtualization.AdapterError
 type MetricPoint = domainvirtualization.MetricPoint
 type MetricSeries = domainvirtualization.MetricSeries

@@ -24,22 +24,42 @@ type Client struct {
 	enabled bool
 }
 
+type Options struct {
+	BaseURL string
+	Token   string
+	GroupID string
+	PerPage int
+	Timeout time.Duration
+	Enabled bool
+}
+
 func New(cfg cfgpkg.GitLabConfig) *Client {
-	timeout := cfg.Timeout
+	return NewWithOptions(Options{
+		BaseURL: cfg.BaseURL,
+		Token:   cfg.Token,
+		GroupID: cfg.GroupID,
+		PerPage: cfg.PerPage,
+		Timeout: cfg.Timeout,
+		Enabled: cfg.Enabled,
+	})
+}
+
+func NewWithOptions(options Options) *Client {
+	timeout := options.Timeout
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	perPage := cfg.PerPage
+	perPage := options.PerPage
 	if perPage <= 0 {
 		perPage = 50
 	}
 	return &Client{
-		baseURL: strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/"),
-		token:   strings.TrimSpace(cfg.Token),
-		groupID: strings.TrimSpace(cfg.GroupID),
+		baseURL: strings.TrimRight(strings.TrimSpace(options.BaseURL), "/"),
+		token:   strings.TrimSpace(options.Token),
+		groupID: strings.TrimSpace(options.GroupID),
 		perPage: perPage,
 		http:    &http.Client{Timeout: timeout},
-		enabled: cfg.Enabled,
+		enabled: options.Enabled,
 	}
 }
 
@@ -167,28 +187,33 @@ func (c *Client) validateConfigured() error {
 }
 
 func (c *Client) get(ctx context.Context, path string, params url.Values, out any) error {
+	_, err := c.getWithHeaders(ctx, path, params, out)
+	return err
+}
+
+func (c *Client) getWithHeaders(ctx context.Context, path string, params url.Values, out any) (http.Header, error) {
 	target := c.baseURL + path
 	if encoded := params.Encode(); encoded != "" {
 		target += "?" + encoded
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return fmt.Errorf("build gitlab request: %w", err)
+		return nil, fmt.Errorf("build gitlab request: %w", err)
 	}
 	req.Header.Set("PRIVATE-TOKEN", c.token)
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("%w: gitlab request failed with status %d", apperrors.ErrClusterUnready, resp.StatusCode)
+		return nil, fmt.Errorf("%w: gitlab request failed with status %d", apperrors.ErrClusterUnready, resp.StatusCode)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("decode gitlab response: %w", err)
+		return nil, fmt.Errorf("decode gitlab response: %w", err)
 	}
-	return nil
+	return resp.Header.Clone(), nil
 }
 
 type projectResponse struct {
@@ -198,11 +223,16 @@ type projectResponse struct {
 	PathWithNamespace string `json:"path_with_namespace"`
 	DefaultBranch     string `json:"default_branch"`
 	WebURL            string `json:"web_url"`
+	Archived          bool   `json:"archived"`
+	Namespace         struct {
+		FullPath string `json:"full_path"`
+	} `json:"namespace"`
 }
 
 type branchResponse struct {
 	Name      string         `json:"name"`
 	Protected bool           `json:"protected"`
+	Default   bool           `json:"default"`
 	Commit    commitResponse `json:"commit"`
 }
 

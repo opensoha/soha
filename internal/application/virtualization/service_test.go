@@ -888,6 +888,79 @@ func TestGetVMMetricsReturnsAdapterResult(t *testing.T) {
 	}
 }
 
+func TestVMResizeAllowsComputeReductionAndQueuesResourceChanges(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderPVE, Name: "pve", Enabled: true})
+	vm := domainvirtualization.VM{ID: "vm-1", Provider: ProviderPVE, ConnectionID: conn.ID, ExternalID: "101", Name: "vm-1", Config: map[string]any{"cpu": 8, "memoryMiB": 8192, "diskGiB": 40}}
+	repo.vms[vm.ID] = vm
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+
+	task, err := service.VMAction(context.Background(), testPrincipal(), vm.ID, VMActionInput{
+		Action: "resize", CPU: 4, MemoryMiB: 4096, DiskGiB: 40,
+		Disks:    []domainvirtualization.AdapterDiskChange{{ID: "scsi1", Storage: "local-lvm", SizeGiB: 100, Add: true}},
+		Networks: []domainvirtualization.AdapterNetworkChange{{ID: "net1", Network: "vmbr1", Model: "virtio", Add: true}},
+	})
+	if err != nil {
+		t.Fatalf("VMAction() error = %v", err)
+	}
+	if task.Payload["cpu"] != 4 || task.Payload["memoryMiB"] != 4096 {
+		t.Fatalf("resize payload = %#v", task.Payload)
+	}
+	if len(task.Payload["disks"].([]domainvirtualization.AdapterDiskChange)) != 1 || len(task.Payload["networks"].([]domainvirtualization.AdapterNetworkChange)) != 1 {
+		t.Fatalf("resource payload = %#v", task.Payload)
+	}
+}
+
+func TestVMResizeAcceptsIndependentResourceChanges(t *testing.T) {
+	tests := []struct {
+		name  string
+		input VMActionInput
+	}{
+		{name: "cpu only", input: VMActionInput{Action: "resize", CPU: 4}},
+		{name: "memory only", input: VMActionInput{Action: "resize", MemoryMiB: 4096}},
+		{name: "root disk only", input: VMActionInput{Action: "resize", DiskGiB: 80}},
+		{name: "disk device only", input: VMActionInput{Action: "resize", Disks: []domainvirtualization.AdapterDiskChange{{ID: "scsi1", SizeGiB: 100, Add: true}}}},
+		{name: "network device only", input: VMActionInput{Action: "resize", Networks: []domainvirtualization.AdapterNetworkChange{{ID: "net1", Network: "vmbr1", Add: true}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newMemoryRepo()
+			conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderPVE, Name: "pve", Enabled: true})
+			vm := domainvirtualization.VM{ID: "vm-1", Provider: ProviderPVE, ConnectionID: conn.ID, Name: "vm-1", Config: map[string]any{"diskGiB": 40}}
+			repo.vms[vm.ID] = vm
+			service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+			if _, err := service.VMAction(context.Background(), testPrincipal(), vm.ID, test.input); err != nil {
+				t.Fatalf("VMAction() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestVMResizeRejectsMissingOrInvalidChanges(t *testing.T) {
+	tests := []struct {
+		name  string
+		input VMActionInput
+	}{
+		{name: "no changes", input: VMActionInput{Action: "resize"}},
+		{name: "negative cpu", input: VMActionInput{Action: "resize", CPU: -1}},
+		{name: "negative memory", input: VMActionInput{Action: "resize", MemoryMiB: -1}},
+		{name: "negative disk", input: VMActionInput{Action: "resize", DiskGiB: -1}},
+		{name: "invalid device disk", input: VMActionInput{Action: "resize", Disks: []domainvirtualization.AdapterDiskChange{{ID: "scsi1"}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			repo := newMemoryRepo()
+			conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderPVE, Name: "pve", Enabled: true})
+			vm := domainvirtualization.VM{ID: "vm-1", Provider: ProviderPVE, ConnectionID: conn.ID, Name: "vm-1", Config: map[string]any{"diskGiB": 40}}
+			repo.vms[vm.ID] = vm
+			service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+			if _, err := service.VMAction(context.Background(), testPrincipal(), vm.ID, test.input); !errors.Is(err, apperrors.ErrInvalidArgument) {
+				t.Fatalf("VMAction() error = %v, want invalid argument", err)
+			}
+		})
+	}
+}
+
 func TestGetVMMetricsReturnsErrorWhenVMMissing(t *testing.T) {
 	repo := newMemoryRepo()
 	service := newTestService(repo, &captureOperations{}, fakeAdapter{})

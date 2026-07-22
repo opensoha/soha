@@ -71,7 +71,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-07-17-kubernetes-resource-governance-v8"
+const bootstrapSeedVersion = "2026-07-21-account-utilities-v4"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -81,7 +81,7 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 		return err
 	}
 	if storedVersion == bootstrapSeedVersion {
-		return syncDisabledModuleMenus(ctx, store.DB(), cfg.Modules)
+		return cleanupDeprecatedMenus(ctx, store.DB(), obsoleteMenuIDsForCleanup())
 	}
 
 	return store.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -90,7 +90,7 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 			return err
 		}
 		if storedVersion == bootstrapSeedVersion {
-			return syncDisabledModuleMenus(ctx, tx, cfg.Modules)
+			return cleanupDeprecatedMenus(ctx, tx, obsoleteMenuIDsForCleanup())
 		}
 		if err := seedRoles(ctx, tx); err != nil {
 			return err

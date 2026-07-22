@@ -22,7 +22,6 @@ func TestHandlerCapabilityInterfacesStayFocused(t *testing.T) {
 		"PluginLifecycleService":          reflect.TypeOf((*PluginLifecycleService)(nil)).Elem(),
 		"PluginExtensionService":          reflect.TypeOf((*PluginExtensionService)(nil)).Elem(),
 		"IdentitySettingsService":         reflect.TypeOf((*IdentitySettingsService)(nil)).Elem(),
-		"MonitoringSettingsService":       reflect.TypeOf((*MonitoringSettingsService)(nil)).Elem(),
 		"AISettingsService":               reflect.TypeOf((*AISettingsService)(nil)).Elem(),
 		"BrandingSettingsService":         reflect.TypeOf((*BrandingSettingsService)(nil)).Elem(),
 		"IdentityAuthService":             reflect.TypeOf((*IdentityAuthService)(nil)).Elem(),

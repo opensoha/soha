@@ -8,7 +8,6 @@ import (
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
-	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 )
 
 type AuditRecorder interface {
@@ -26,10 +25,6 @@ type CreationOperationStore interface {
 
 type ConnectionResolver interface {
 	GetConnection(context.Context, string) (domaincluster.Connection, error)
-}
-
-type MonitoringSettingsResolver interface {
-	ResolveMonitoringSettings(context.Context) (domainsettings.MonitoringSettings, error)
 }
 
 type RuntimePermissionAuthorizer interface {
@@ -62,7 +57,6 @@ type Dependencies struct {
 	Operations           OperationRecorder
 	CreationOperations   CreationOperationStore
 	CreationBatches      ResourceCreationBatchRepository
-	Settings             MonitoringSettingsResolver
 	PortForwards         PortForwardRepository
 	DirectEvents         DirectEventReader
 	DirectCustom         DirectCustomResource

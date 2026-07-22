@@ -31,37 +31,40 @@ const (
 )
 
 type Dependencies struct {
-	System         *apiHandlers.SystemHandler
-	Platform       *apiHandlers.PlatformHandler
-	Announcements  *apiHandlers.AnnouncementHandler
-	Module         *apiHandlers.ModuleHandler
-	Monitoring     *apiHandlers.MonitoringHandler
-	Catalog        *apiHandlers.CatalogHandler
-	Delivery       *apiHandlers.DeliveryHandler
-	Applications   *apiHandlers.ApplicationHandler
-	Builds         *apiHandlers.BuildHandler
-	Workflows      *apiHandlers.WorkflowHandler
-	Registries     *apiHandlers.RegistryHandler
-	Releases       *apiHandlers.ReleaseHandler
-	Copilot        *apiHandlers.CopilotHandler
-	Knowledge      *apiHandlers.KnowledgeHandler
-	Evaluation     *apiHandlers.EvaluationHandler
-	AIAdvanced     *apiHandlers.AIAdvancedHandler
-	AIProduction   *apiHandlers.AIProductionHandler
-	AgentProviders *apiHandlers.AgentProviderHandler
-	AIGateway      *apiHandlers.AIGatewayHandler
-	Plugins        *apiHandlers.PluginHandler
-	Compute        *apiHandlers.ComputeHandler
-	Virtualization *apiHandlers.VirtualizationHandler
-	Docker         *apiHandlers.DockerHandler
-	Access         *accesshandler.Handler
-	DirectorySync  *directorysynchandler.Handler
-	ScopeGrants    *accesshandler.ScopeGrantHandler
-	Menu           *apiHandlers.MenuHandler
-	Settings       *apiHandlers.SettingsHandler
-	Auth           *apiHandlers.AuthHandler
-	ProviderPortal *providerportalhandler.Handler
-	Authn          apiMiddleware.AccessTokenParser
+	System             *apiHandlers.SystemHandler
+	Platform           *apiHandlers.PlatformHandler
+	Announcements      *apiHandlers.AnnouncementHandler
+	Module             *apiHandlers.ModuleHandler
+	Monitoring         *apiHandlers.MonitoringHandler
+	Catalog            *apiHandlers.CatalogHandler
+	Delivery           *apiHandlers.DeliveryHandler
+	Applications       *apiHandlers.ApplicationHandler
+	Builds             *apiHandlers.BuildHandler
+	Workflows          *apiHandlers.WorkflowHandler
+	Registries         *apiHandlers.RegistryHandler
+	Releases           *apiHandlers.ReleaseHandler
+	Copilot            *apiHandlers.CopilotHandler
+	Knowledge          *apiHandlers.KnowledgeHandler
+	Evaluation         *apiHandlers.EvaluationHandler
+	AIAdvanced         *apiHandlers.AIAdvancedHandler
+	AIProduction       *apiHandlers.AIProductionHandler
+	AgentProviders     *apiHandlers.AgentProviderHandler
+	AIGateway          *apiHandlers.AIGatewayHandler
+	Plugins            *apiHandlers.PluginHandler
+	Compute            *apiHandlers.ComputeHandler
+	Virtualization     *apiHandlers.VirtualizationHandler
+	Docker             *apiHandlers.DockerHandler
+	Access             *accesshandler.Handler
+	DirectorySync      *directorysynchandler.Handler
+	ScopeGrants        *accesshandler.ScopeGrantHandler
+	Menu               *apiHandlers.MenuHandler
+	Settings           *apiHandlers.SettingsHandler
+	RuntimeConfig      *apiHandlers.RuntimeConfigHandler
+	SystemIntegrations *apiHandlers.SystemIntegrationHandler
+	ModuleState        apiMiddleware.ModuleState
+	Auth               *apiHandlers.AuthHandler
+	ProviderPortal     *providerportalhandler.Handler
+	Authn              apiMiddleware.AccessTokenParser
 }
 
 func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server {

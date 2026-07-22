@@ -63,11 +63,8 @@ func (i *Inventory) applyNodeUsageMetrics(ctx context.Context, clusterID string,
 	if item == nil {
 		return
 	}
-	settings, err := i.resolveClusterPrometheusSettings(ctx, clusterID)
+	settings := i.resolveClusterPrometheusSettings(ctx, clusterID)
 	switch {
-	case err != nil:
-		item.MetricsMessage = err.Error()
-		return
 	case !settings.Enabled || strings.TrimSpace(settings.BaseURL) == "":
 		item.MetricsMessage = "prometheus is not configured"
 		return
