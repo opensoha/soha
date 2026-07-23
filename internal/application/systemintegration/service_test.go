@@ -9,6 +9,7 @@ import (
 
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"
 	"github.com/opensoha/soha/internal/platform/keyring"
@@ -32,6 +33,9 @@ type captureSourceAdapter struct {
 	branchLimit  int
 	tagSearch    string
 	tagLimit     int
+	commitSearch string
+	commitPage   int
+	commitLimit  int
 }
 
 func (*captureSourceAdapter) TestConnection(context.Context) error { return nil }
@@ -48,6 +52,10 @@ func (a *captureSourceAdapter) ListRepositoryTags(_ context.Context, _ string, s
 }
 func (*captureSourceAdapter) GetRepositoryFile(context.Context, string, string, string) (sohaapi.SourceFile, error) {
 	return sohaapi.SourceFile{}, nil
+}
+func (a *captureSourceAdapter) ListCommits(_ context.Context, _ string, search string, page, limit int) (domainapp.GitCommitPage, error) {
+	a.commitSearch, a.commitPage, a.commitLimit = search, page, limit
+	return domainapp.GitCommitPage{Page: page, Limit: limit}, nil
 }
 
 type captureSourceFactory struct{ adapter SourceAdapter }
@@ -173,6 +181,12 @@ func TestLegacyReferenceMethodsForwardSearchAndBoundedLimit(t *testing.T) {
 	}
 	if adapter.tagSearch != "stable" || adapter.tagLimit != 50 {
 		t.Fatalf("tag filter = search %q limit %d", adapter.tagSearch, adapter.tagLimit)
+	}
+	if _, err := service.ListCommits(t.Context(), "9", " fix ", 2, 25); err != nil {
+		t.Fatalf("ListCommits() error = %v", err)
+	}
+	if adapter.commitSearch != "fix" || adapter.commitPage != 2 || adapter.commitLimit != 25 {
+		t.Fatalf("commit filter = search %q page %d limit %d", adapter.commitSearch, adapter.commitPage, adapter.commitLimit)
 	}
 }
 

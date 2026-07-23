@@ -97,6 +97,10 @@ func (s *Service) GetSourceFile(ctx context.Context, principal domainidentity.Pr
 }
 
 // Legacy methods preserve the old delivery-facing GitLab routes while callers migrate.
+type legacyCommitLister interface {
+	ListCommits(context.Context, string, string, int, int) (domainapp.GitCommitPage, error)
+}
+
 func (s *Service) ListProjects(ctx context.Context, search string, limit int) ([]domainapp.GitRepository, error) {
 	id, err := s.defaultSourceConnectionID(ctx, domain.ProviderGitLab)
 	if err != nil {
@@ -155,6 +159,22 @@ func (s *Service) ListTags(ctx context.Context, projectID, search string, limit 
 		result = append(result, domainapp.GitReference{Name: item.Name, CommitSHA: item.CommitID})
 	}
 	return result, nil
+}
+
+func (s *Service) ListCommits(ctx context.Context, projectID, search string, page, limit int) (domainapp.GitCommitPage, error) {
+	id, err := s.defaultSourceConnectionID(ctx, domain.ProviderGitLab)
+	if err != nil {
+		return domainapp.GitCommitPage{}, err
+	}
+	_, adapter, err := s.sourceAdapter(ctx, id, true)
+	if err != nil {
+		return domainapp.GitCommitPage{}, err
+	}
+	commits, ok := adapter.(legacyCommitLister)
+	if !ok {
+		return domainapp.GitCommitPage{}, fmt.Errorf("%w: source adapter does not support commit listing", apperrors.ErrInvalidArgument)
+	}
+	return commits.ListCommits(ctx, projectID, strings.TrimSpace(search), page, limit)
 }
 
 func (s *Service) defaultSourceConnectionID(ctx context.Context, providerType string) (string, error) {
