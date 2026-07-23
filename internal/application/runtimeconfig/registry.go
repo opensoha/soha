@@ -78,7 +78,7 @@ func NewRegistry(options RegistryOptions) *Registry {
 		booleanDefinition(KeyModuleDocker, "计算资源", "容器运行时", sohaapi.RuntimeConfigApplyModeHot, options.ModuleDocker),
 		booleanDefinitionWithDescription(KeyModuleAIGateway, "模块", "AI Gateway", "独立网关能力，可脱离 AI 工作台运行；关闭后相关接口与菜单即时不可用", sohaapi.RuntimeConfigApplyModeHot, options.ModuleAIGateway),
 		booleanDefinition(KeyModuleDelivery, "模块", "交付工作台", sohaapi.RuntimeConfigApplyModeHot, options.ModuleDelivery),
-		placeholderModuleDefinition(KeyModuleSecurity, "安全工作台", options.ModuleSecurity),
+		placeholderModuleDefinition(KeyModuleSecurity, "内网工作台", options.ModuleSecurity),
 		placeholderModuleDefinition(KeyModuleCMDB, "CMDB 工作台", options.ModuleCMDB),
 		{
 			Key: KeyMarketplaceURL, Category: "连接", Label: "插件市场地址",

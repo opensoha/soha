@@ -159,7 +159,7 @@ modules:
   docker:
     enabled: true
   security:
-    enabled: false
+    enabled: true
   cmdb:
     enabled: false
 

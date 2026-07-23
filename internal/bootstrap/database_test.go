@@ -135,6 +135,7 @@ func TestSyncDisabledModuleMenusCleansDeprecatedMenus(t *testing.T) {
 	mock.ExpectExec(`DELETE FROM menus WHERE id IN`).WithArgs(deprecatedArgs...).WillReturnResult(sqlmock.NewResult(0, 0))
 
 	modules := cfgpkg.ModulesConfig{
+		Security:       cfgpkg.ModuleToggleConfig{Enabled: true},
 		Delivery:       cfgpkg.ModuleToggleConfig{Enabled: true},
 		Monitoring:     cfgpkg.ModuleToggleConfig{Enabled: true},
 		AI:             cfgpkg.ModuleToggleConfig{Enabled: true},

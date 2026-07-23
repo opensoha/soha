@@ -600,7 +600,7 @@ var configDefaults = []struct {
 	{"modules.ai_gateway.enabled", true},
 	{"modules.virtualization.enabled", true},
 	{"modules.docker.enabled", true},
-	{"modules.security.enabled", false},
+	{"modules.security.enabled", true},
 	{"modules.cmdb.enabled", false},
 	{"assets.web.mode", "embed"},
 	{"assets.web.dir", "internal/staticassets/web/dist"},

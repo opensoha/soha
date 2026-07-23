@@ -62,7 +62,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, a
 }
 
 func (s *Service) Inbox(ctx context.Context, principal domainidentity.Principal, limit int) (domainannouncement.Inbox, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsView); err != nil {
+	if err := s.authorizeInbox(ctx, principal); err != nil {
 		return domainannouncement.Inbox{}, err
 	}
 	if limit <= 0 {
@@ -72,7 +72,7 @@ func (s *Service) Inbox(ctx context.Context, principal domainidentity.Principal,
 }
 
 func (s *Service) MarkRead(ctx context.Context, principal domainidentity.Principal, announcementID string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsView); err != nil {
+	if err := s.authorizeInbox(ctx, principal); err != nil {
 		return err
 	}
 	item, err := s.getAnnouncement(ctx, announcementID)
@@ -319,4 +319,14 @@ func (s *Service) recordWriteLogs(ctx context.Context, principal domainidentity.
 
 func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
 	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
+}
+
+func (s *Service) authorizeInbox(ctx context.Context, principal domainidentity.Principal) error {
+	return appaccess.AuthorizeAnyRuntimePermission(
+		ctx,
+		s.permissions,
+		principal,
+		appaccess.PermSystemAnnouncementsView,
+		appaccess.PermIdentityPortalView,
+	)
 }
