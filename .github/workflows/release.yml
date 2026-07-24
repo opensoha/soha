@@ -9,11 +9,11 @@ on:
       web_ref:
         description: "soha-web release tag to embed"
         required: true
-        default: "v0.1.0"
+        default: "v0.1.3"
       contracts_ref:
         description: "soha-contracts tag or commit to consume as the release module"
         required: true
-        default: "v0.1.0"
+        default: "v0.1.3"
       web_sha256:
         description: "Optional expected sha256 for the soha-web dist tarball; checked against the release checksum asset when provided"
         required: false
@@ -50,7 +50,7 @@ jobs:
         working-directory: soha
         run: |
           test -n "${CONTRACTS_REF}"
-          go mod edit -dropreplace=github.com/opensoha/soha-contracts@v0.1.2
+          go mod edit -dropreplace=github.com/opensoha/soha-contracts@v0.1.3
           go get "github.com/opensoha/soha-contracts@${CONTRACTS_REF}"
           go mod tidy
           go list -m github.com/opensoha/soha-contracts | tee ../soha-contracts-module.txt

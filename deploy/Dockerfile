@@ -8,7 +8,7 @@ RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./soha/
 COPY --from=contracts go.mod go.sum ./soha-contracts/
 RUN for attempt in 1 2 3; do \
-      printf 'go 1.25.0\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n\nreplace github.com/opensoha/soha-contracts v0.1.2 => ./soha-contracts\n' > go.work; \
+      printf 'go 1.25.0\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n\nreplace github.com/opensoha/soha-contracts v0.1.3 => ./soha-contracts\n' > go.work; \
       (cd soha && go mod download) && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
       sleep 2; \

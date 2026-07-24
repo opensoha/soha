@@ -226,6 +226,32 @@ type AuthorizationCode struct {
 	Metadata            map[string]any `json:"metadata,omitempty"`
 }
 
+type OIDCSession struct {
+	ID                string
+	ProviderID        string
+	ClientID          string
+	UserID            string
+	PlatformSessionID string
+	Scopes            []string
+	AuthTime          time.Time
+	ExpiresAt         time.Time
+	LastSeenAt        time.Time
+	RevokedAt         *time.Time
+	CreatedAt         time.Time
+}
+
+type OIDCRefreshToken struct {
+	ID         string
+	SessionID  string
+	FamilyID   string
+	TokenHash  string
+	ParentID   string
+	ExpiresAt  time.Time
+	ConsumedAt *time.Time
+	RevokedAt  *time.Time
+	CreatedAt  time.Time
+}
+
 type DiscoveryDocument struct {
 	Issuer                            string   `json:"issuer"`
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
@@ -234,6 +260,7 @@ type DiscoveryDocument struct {
 	JWKSURI                           string   `json:"jwks_uri"`
 	RevocationEndpoint                string   `json:"revocation_endpoint"`
 	IntrospectionEndpoint             string   `json:"introspection_endpoint"`
+	EndSessionEndpoint                string   `json:"end_session_endpoint"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
 	SubjectTypesSupported             []string `json:"subject_types_supported"`
 	IDTokenSigningAlgValuesSupported  []string `json:"id_token_signing_alg_values_supported"`
@@ -257,6 +284,7 @@ type AuthorizeInput struct {
 	Nonce               string
 	CodeChallenge       string
 	CodeChallengeMethod string
+	PlatformSessionID   string
 }
 
 type AuthorizeResult struct {
@@ -303,15 +331,28 @@ type TokenInput struct {
 	ClientID      string
 	ClientSecret  string
 	CodeVerifier  string
+	RefreshToken  string
 	Authenticated bool
 }
 
 type TokenResponse struct {
-	AccessToken string `json:"access_token"`
-	IDToken     string `json:"id_token"`
-	TokenType   string `json:"token_type"`
-	ExpiresIn   int64  `json:"expires_in"`
-	Scope       string `json:"scope,omitempty"`
+	AccessToken  string `json:"access_token"`
+	IDToken      string `json:"id_token"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int64  `json:"expires_in"`
+	Scope        string `json:"scope,omitempty"`
+}
+
+type EndSessionInput struct {
+	IDTokenHint           string
+	PostLogoutRedirectURI string
+	State                 string
+}
+
+type EndSessionResult struct {
+	RedirectURI string
+	State       string
 }
 
 type ClientAuthInput struct {
@@ -412,6 +453,11 @@ type Repository interface {
 	CreateAuthorizationCode(context.Context, AuthorizationCode) error
 	GetAuthorizationCode(context.Context, string, time.Time) (AuthorizationCode, error)
 	ConsumeAuthorizationCode(context.Context, string, time.Time) (AuthorizationCode, error)
+	CreateOIDCSession(context.Context, OIDCSession, *OIDCRefreshToken) error
+	GetOIDCSession(context.Context, string, time.Time) (OIDCSession, error)
+	RotateOIDCRefreshToken(context.Context, string, OIDCRefreshToken, time.Time) (OIDCSession, error)
+	RevokeOIDCSession(context.Context, string, string, time.Time) error
+	RevokeOIDCSessionByRefreshToken(context.Context, string, string, time.Time) error
 }
 
 type PrincipalLoader interface {

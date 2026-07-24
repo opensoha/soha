@@ -46,7 +46,7 @@ services:
       dockerfile: deploy/Dockerfile
       additional_contexts:
         contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
-    image: ${SOHA_IMAGE:-yshanchui/soha:local}
+    image: ${SOHA_IMAGE:-ghcr.io/opensoha/soha:local}
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,7 +89,7 @@ services:
       dockerfile: deploy/Dockerfile.hermes-agent-runner
       additional_contexts:
         contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
-    image: ${SOHA_HERMES_IMAGE:-yshanchui/soha-hermes-agent:local}
+    image: ${SOHA_HERMES_IMAGE:-ghcr.io/opensoha/soha-hermes-agent:local}
     container_name: ${SOHA_HERMES_CONTAINER_NAME:-soha-hermes-agent-runner}
     restart: unless-stopped
     depends_on:

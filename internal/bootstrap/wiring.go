@@ -1004,6 +1004,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 			Outposts:         core.identityProviderService,
 			OIDCClients:      core.identityProviderService,
 			OIDC:             core.identityProviderService,
+			OIDCLogout:       core.identityProviderService,
 			Proxy:            core.identityProviderService,
 			OutpostRuntime:   core.identityProviderService,
 		}),

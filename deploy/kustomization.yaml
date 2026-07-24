@@ -6,5 +6,5 @@ resources:
 images:
   - name: pgvector/pgvector
     newTag: 0.8.5-pg18-trixie
-  - name: yshanchui/soha
+  - name: ghcr.io/opensoha/soha
     newTag: latest

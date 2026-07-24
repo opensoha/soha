@@ -35,13 +35,14 @@ import (
 )
 
 const (
-	defaultOIDCAccessTokenTTLSeconds = 3600
-	defaultOIDCIDTokenTTLSeconds     = 300
-	authorizationCodeTTL             = 5 * time.Minute
-	proxySessionTTL                  = 12 * time.Hour
-	proxySessionIssuer               = "soha-proxy-provider"
-	proxySessionAudience             = "soha-proxy"
-	proxySessionTokenType            = "proxy_session"
+	defaultOIDCAccessTokenTTLSeconds  = 3600
+	defaultOIDCIDTokenTTLSeconds      = 300
+	defaultOIDCRefreshTokenTTLSeconds = 30 * 24 * 60 * 60
+	authorizationCodeTTL              = 5 * time.Minute
+	proxySessionTTL                   = 12 * time.Hour
+	proxySessionIssuer                = "soha-proxy-provider"
+	proxySessionAudience              = "soha-proxy"
+	proxySessionTokenType             = "proxy_session"
 )
 
 type AuditRecorder interface {
@@ -54,6 +55,8 @@ type UserRepository interface {
 	ListRoles(context.Context, string) ([]string, error)
 	ListTeams(context.Context, string) ([]string, error)
 	ListProjects(context.Context, string) ([]string, error)
+	GetAuthSessionByID(context.Context, string) (domainidentity.Session, error)
+	RevokeSessionByID(context.Context, string) error
 }
 
 type Service struct {
@@ -95,6 +98,7 @@ func (s *Service) Discovery(issuer string) domainprovider.DiscoveryDocument {
 		JWKSURI:               issuer + "/oauth2/jwks",
 		RevocationEndpoint:    issuer + "/oauth2/revoke",
 		IntrospectionEndpoint: issuer + "/oauth2/introspect",
+		EndSessionEndpoint:    issuer + "/oauth2/logout",
 		ResponseTypesSupported: []string{
 			"code",
 		},
@@ -106,6 +110,7 @@ func (s *Service) Discovery(issuer string) domainprovider.DiscoveryDocument {
 		},
 		ScopesSupported: []string{
 			"openid",
+			"offline_access",
 			"profile",
 			"email",
 			"roles",
@@ -131,6 +136,7 @@ func (s *Service) Discovery(issuer string) domainprovider.DiscoveryDocument {
 		},
 		GrantTypesSupported: []string{
 			"authorization_code",
+			"refresh_token",
 		},
 	}
 }
@@ -232,8 +238,9 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 		ExpiresAt:           now.Add(authorizationCodeTTL),
 		CreatedAt:           now,
 		Metadata: map[string]any{
-			"issuer": normalizeIssuer(issuer),
-			"state":  state,
+			"issuer":            normalizeIssuer(issuer),
+			"state":             state,
+			"platformSessionId": strings.TrimSpace(input.PlatformSessionID),
 		},
 	}); err != nil {
 		return domainprovider.AuthorizeResult{}, fmt.Errorf("create authorization code: %w", err)
@@ -250,9 +257,17 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 }
 
 func (s *Service) Token(ctx context.Context, issuer string, input domainprovider.TokenInput) (domainprovider.TokenResponse, error) {
-	if strings.TrimSpace(input.GrantType) != "authorization_code" {
-		return domainprovider.TokenResponse{}, fmt.Errorf("%w: grant_type must be authorization_code", apperrors.ErrInvalidArgument)
+	switch strings.TrimSpace(input.GrantType) {
+	case "authorization_code":
+		return s.tokenAuthorizationCode(ctx, issuer, input)
+	case "refresh_token":
+		return s.tokenRefresh(ctx, issuer, input)
+	default:
+		return domainprovider.TokenResponse{}, fmt.Errorf("%w: unsupported grant_type", apperrors.ErrInvalidArgument)
 	}
+}
+
+func (s *Service) tokenAuthorizationCode(ctx context.Context, issuer string, input domainprovider.TokenInput) (domainprovider.TokenResponse, error) {
 	now := time.Now().UTC()
 	codeHash := hashToken(input.Code)
 	code, err := s.repo.GetAuthorizationCode(ctx, codeHash, now)
@@ -296,41 +311,118 @@ func (s *Service) Token(ctx context.Context, issuer string, input domainprovider
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
 	}
+	issuer = normalizeIssuer(issuer)
+	accessTTL := ttlSeconds(client.AccessTokenTTLSeconds, defaultOIDCAccessTokenTTLSeconds)
+	sessionID := uuid.NewString()
+	sessionExpiry := now.Add(time.Duration(accessTTL) * time.Second)
+	var refreshToken *domainprovider.OIDCRefreshToken
+	refreshTokenValue := ""
+	if containsString(normalizeGrantTypes(client.AllowedGrantTypes), "refresh_token") && containsString(code.Scopes, "offline_access") {
+		refreshTokenValue, err = randomToken(48)
+		if err != nil {
+			return domainprovider.TokenResponse{}, err
+		}
+		refreshTTL := ttlSeconds(client.RefreshTokenTTLSeconds, defaultOIDCRefreshTokenTTLSeconds)
+		sessionExpiry = now.Add(time.Duration(refreshTTL) * time.Second)
+		refreshToken = &domainprovider.OIDCRefreshToken{
+			ID: uuid.NewString(), SessionID: sessionID, FamilyID: uuid.NewString(), TokenHash: hashToken(refreshTokenValue),
+			ExpiresAt: sessionExpiry, CreatedAt: now,
+		}
+	}
+	if err := s.repo.CreateOIDCSession(ctx, domainprovider.OIDCSession{
+		ID: sessionID, ProviderID: provider.ID, ClientID: client.ClientID, UserID: principal.UserID,
+		PlatformSessionID: metadataStringFromMap(code.Metadata, "platformSessionId"), Scopes: code.Scopes,
+		AuthTime: now, ExpiresAt: sessionExpiry, LastSeenAt: now, CreatedAt: now,
+	}, refreshToken); err != nil {
+		return domainprovider.TokenResponse{}, fmt.Errorf("create oidc session: %w", err)
+	}
+	response, err := s.issueOIDCTokenResponse(ctx, issuer, provider, client, principal, sessionID, code.Scopes, code.Nonce, now, now)
+	if err != nil {
+		_ = s.repo.RevokeOIDCSession(ctx, sessionID, client.ClientID, now)
+		return domainprovider.TokenResponse{}, err
+	}
+	response.RefreshToken = refreshTokenValue
+	s.recordAudit(ctx, principal, "oidc.token", "success", provider, client, map[string]any{
+		"scopes": code.Scopes,
+	})
+	return response, nil
+}
+
+func (s *Service) tokenRefresh(ctx context.Context, issuer string, input domainprovider.TokenInput) (domainprovider.TokenResponse, error) {
+	client, err := s.repo.GetOIDCClientByClientID(ctx, strings.TrimSpace(input.ClientID))
+	if err != nil || !clientEnabled(client) {
+		return domainprovider.TokenResponse{}, fmt.Errorf("%w: invalid client credentials", apperrors.ErrUnauthorized)
+	}
+	if !containsString(normalizeGrantTypes(client.AllowedGrantTypes), "refresh_token") {
+		return domainprovider.TokenResponse{}, fmt.Errorf("%w: refresh_token grant is not allowed", apperrors.ErrInvalidArgument)
+	}
+	if err := s.verifyClientSecret(client, input); err != nil {
+		return domainprovider.TokenResponse{}, err
+	}
+	provider, err := s.repo.GetProvider(ctx, client.ProviderID)
+	if err != nil || !providerEnabled(provider) {
+		return domainprovider.TokenResponse{}, fmt.Errorf("%w: oidc provider is disabled", apperrors.ErrUnauthorized)
+	}
+	rawToken := strings.TrimSpace(input.RefreshToken)
+	if rawToken == "" {
+		return domainprovider.TokenResponse{}, fmt.Errorf("%w: refresh_token is required", apperrors.ErrInvalidArgument)
+	}
+	nextValue, err := randomToken(48)
+	if err != nil {
+		return domainprovider.TokenResponse{}, err
+	}
+	now := time.Now().UTC()
+	session, err := s.repo.RotateOIDCRefreshToken(ctx, hashToken(rawToken), domainprovider.OIDCRefreshToken{
+		ID: uuid.NewString(), TokenHash: hashToken(nextValue), CreatedAt: now,
+	}, now)
+	if err != nil {
+		return domainprovider.TokenResponse{}, err
+	}
+	if session.ClientID != client.ClientID || session.ProviderID != provider.ID {
+		_ = s.repo.RevokeOIDCSession(ctx, session.ID, session.ClientID, now)
+		return domainprovider.TokenResponse{}, fmt.Errorf("%w: refresh token client mismatch", apperrors.ErrUnauthorized)
+	}
+	principal, err := s.loadPrincipal(ctx, session.UserID)
+	if err != nil {
+		_ = s.repo.RevokeOIDCSession(ctx, session.ID, session.ClientID, now)
+		return domainprovider.TokenResponse{}, err
+	}
+	response, err := s.issueOIDCTokenResponse(ctx, normalizeIssuer(issuer), provider, client, principal, session.ID, session.Scopes, "", session.AuthTime, now)
+	if err != nil {
+		return domainprovider.TokenResponse{}, err
+	}
+	response.RefreshToken = nextValue
+	s.recordAudit(ctx, principal, "oidc.token.refresh", "success", provider, client, map[string]any{"sessionId": session.ID})
+	return response, nil
+}
+
+func (s *Service) issueOIDCTokenResponse(ctx context.Context, issuer string, provider domainprovider.Provider, client domainprovider.OIDCClient, principal domainidentity.Principal, sessionID string, scopes []string, nonce string, authTime, now time.Time) (domainprovider.TokenResponse, error) {
 	signingKey, privateKey, err := s.ensureSigningKey(ctx, provider.ID)
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
 	}
-	issuer = normalizeIssuer(issuer)
 	accessTTL := ttlSeconds(client.AccessTokenTTLSeconds, defaultOIDCAccessTokenTTLSeconds)
-	idTTL := ttlSeconds(client.IDTokenTTLSeconds, defaultOIDCIDTokenTTLSeconds)
-	accessClaims := newOIDCTokenClaims(domainprovider.TokenTypeAccess, issuer, client.ClientID, principal, now, accessTTL)
-	accessClaims.Scope = strings.Join(code.Scopes, " ")
+	accessClaims := newOIDCTokenClaims(domainprovider.TokenTypeAccess, issuer, client.ClientID, principal, sessionID, authTime, now, accessTTL)
+	accessClaims.Scope = strings.Join(scopes, " ")
 	accessToken, err := signOIDCToken(privateKey, signingKey.KeyID, accessClaims)
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
 	}
-	idClaims := newOIDCTokenClaims(domainprovider.TokenTypeID, issuer, client.ClientID, principal, now, idTTL)
-	idClaims.Nonce = code.Nonce
+	idClaims := newOIDCTokenClaims(domainprovider.TokenTypeID, issuer, client.ClientID, principal, sessionID, authTime, now, ttlSeconds(client.IDTokenTTLSeconds, defaultOIDCIDTokenTTLSeconds))
+	idClaims.Nonce = nonce
 	idToken, err := signOIDCToken(privateKey, signingKey.KeyID, idClaims)
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
 	}
-	s.recordAudit(ctx, principal, "oidc.token", "success", provider, client, map[string]any{
-		"scopes": code.Scopes,
-	})
-	return domainprovider.TokenResponse{
-		AccessToken: accessToken,
-		IDToken:     idToken,
-		TokenType:   "Bearer",
-		ExpiresIn:   int64(accessTTL),
-		Scope:       strings.Join(code.Scopes, " "),
-	}, nil
+	return domainprovider.TokenResponse{AccessToken: accessToken, IDToken: idToken, TokenType: "Bearer", ExpiresIn: int64(accessTTL), Scope: strings.Join(scopes, " ")}, nil
 }
 
-func newOIDCTokenClaims(tokenType, issuer, clientID string, principal domainidentity.Principal, now time.Time, ttl int) oidcTokenClaims {
+func newOIDCTokenClaims(tokenType, issuer, clientID string, principal domainidentity.Principal, sessionID string, authTime, now time.Time, ttl int) oidcTokenClaims {
 	return oidcTokenClaims{
 		TokenType: tokenType,
 		ClientID:  clientID,
+		SessionID: sessionID,
+		AuthTime:  authTime.Unix(),
 		UserName:  principal.UserName,
 		Email:     principal.Email,
 		Roles:     append([]string(nil), principal.Roles...),
@@ -393,13 +485,38 @@ func (s *Service) Revoke(ctx context.Context, issuer, token string, auth domainp
 		return nil
 	}
 	claims, err := s.parseOIDCAccessToken(ctx, issuer, token)
-	if err != nil || claims.ClientID != client.ClientID {
-		return nil
+	if err == nil && claims.ClientID == client.ClientID {
+		return s.repo.RevokeOIDCSession(ctx, claims.SessionID, client.ClientID, time.Now().UTC())
 	}
-	// Access tokens are stateless in the first provider baseline. The endpoint is
-	// still exposed for OAuth2 client compatibility and can attach persisted token
-	// revocation later without changing the protocol surface.
-	return nil
+	return s.repo.RevokeOIDCSessionByRefreshToken(ctx, hashToken(token), client.ClientID, time.Now().UTC())
+}
+
+func (s *Service) EndSession(ctx context.Context, issuer string, input domainprovider.EndSessionInput) (domainprovider.EndSessionResult, error) {
+	claims, err := s.parseOIDCToken(ctx, issuer, input.IDTokenHint, domainprovider.TokenTypeID, true)
+	if err != nil {
+		return domainprovider.EndSessionResult{}, err
+	}
+	client, err := s.repo.GetOIDCClientByClientID(ctx, claims.ClientID)
+	if err != nil {
+		return domainprovider.EndSessionResult{}, err
+	}
+	redirectURI := strings.TrimSpace(input.PostLogoutRedirectURI)
+	if redirectURI != "" && !containsString(client.RedirectURIs, redirectURI) {
+		return domainprovider.EndSessionResult{}, fmt.Errorf("%w: post_logout_redirect_uri is not registered", apperrors.ErrInvalidArgument)
+	}
+	session, err := s.repo.GetOIDCSession(ctx, claims.SessionID, time.Now().UTC())
+	if err != nil {
+		return domainprovider.EndSessionResult{}, err
+	}
+	if err := s.repo.RevokeOIDCSession(ctx, session.ID, client.ClientID, time.Now().UTC()); err != nil {
+		return domainprovider.EndSessionResult{}, err
+	}
+	if session.PlatformSessionID != "" {
+		if err := s.users.RevokeSessionByID(ctx, session.PlatformSessionID); err != nil && !errors.Is(err, apperrors.ErrNotFound) {
+			return domainprovider.EndSessionResult{}, err
+		}
+	}
+	return domainprovider.EndSessionResult{RedirectURI: redirectURI, State: strings.TrimSpace(input.State)}, nil
 }
 
 func (s *Service) UserInfo(ctx context.Context, issuer, bearerToken string) (domainprovider.UserInfoResponse, error) {
@@ -422,14 +539,21 @@ func (s *Service) UserInfo(ctx context.Context, issuer, bearerToken string) (dom
 	}, nil
 }
 
-func (s *Service) IssueProxySession(_ context.Context, principal domainidentity.Principal) (domainprovider.ProxySession, error) {
+func (s *Service) IssueProxySession(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext) (domainprovider.ProxySession, error) {
 	if strings.TrimSpace(principal.UserID) == "" {
 		return domainprovider.ProxySession{}, fmt.Errorf("%w: authentication required", apperrors.ErrUnauthorized)
+	}
+	if accessCtx.SessionID != "" {
+		session, err := s.users.GetAuthSessionByID(ctx, accessCtx.SessionID)
+		if err != nil || session.Status != "active" || session.UserID != principal.UserID || !session.ExpiresAt.After(time.Now().UTC()) {
+			return domainprovider.ProxySession{}, fmt.Errorf("%w: platform session is invalid", apperrors.ErrUnauthorized)
+		}
 	}
 	now := time.Now().UTC()
 	expiresAt := now.Add(proxySessionTTL)
 	claims := proxySessionClaims{
 		TokenType: proxySessionTokenType,
+		SessionID: accessCtx.SessionID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    proxySessionIssuer,
 			Subject:   principal.UserID,
@@ -938,6 +1062,8 @@ func (s *Service) DeleteOIDCClient(ctx context.Context, principal domainidentity
 type oidcTokenClaims struct {
 	TokenType string   `json:"token_type"`
 	ClientID  string   `json:"client_id"`
+	SessionID string   `json:"sid"`
+	AuthTime  int64    `json:"auth_time"`
 	Scope     string   `json:"scope,omitempty"`
 	Nonce     string   `json:"nonce,omitempty"`
 	UserName  string   `json:"name,omitempty"`
@@ -951,6 +1077,7 @@ type oidcTokenClaims struct {
 
 type proxySessionClaims struct {
 	TokenType string `json:"token_type"`
+	SessionID string `json:"sid,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -1433,6 +1560,10 @@ func (s *Service) decryptPrivateKey(ciphertext string) (*ecdsa.PrivateKey, error
 }
 
 func (s *Service) parseOIDCAccessToken(ctx context.Context, issuer, tokenString string) (*oidcTokenClaims, error) {
+	return s.parseOIDCToken(ctx, issuer, tokenString, domainprovider.TokenTypeAccess, true)
+}
+
+func (s *Service) parseOIDCToken(ctx context.Context, issuer, tokenString, tokenType string, requireActiveSession bool) (*oidcTokenClaims, error) {
 	tokenString = normalizeOIDCTokenValue(tokenString)
 	if tokenString == "" {
 		return nil, fmt.Errorf("%w: bearer token is required", apperrors.ErrUnauthorized)
@@ -1464,8 +1595,14 @@ func (s *Service) parseOIDCAccessToken(ctx context.Context, issuer, tokenString 
 	if err != nil || !token.Valid {
 		return nil, fmt.Errorf("%w: invalid token", apperrors.ErrUnauthorized)
 	}
-	if claims.TokenType != domainprovider.TokenTypeAccess {
+	if claims.TokenType != tokenType || strings.TrimSpace(claims.SessionID) == "" {
 		return nil, fmt.Errorf("%w: unexpected token type", apperrors.ErrUnauthorized)
+	}
+	if requireActiveSession {
+		session, err := s.repo.GetOIDCSession(ctx, claims.SessionID, time.Now().UTC())
+		if err != nil || session.ClientID != claims.ClientID || session.UserID != claims.Subject {
+			return nil, fmt.Errorf("%w: oidc session is invalid", apperrors.ErrUnauthorized)
+		}
 	}
 	return claims, nil
 }
@@ -1487,6 +1624,12 @@ func (s *Service) parseProxySession(ctx context.Context, tokenString string) (do
 	}
 	if claims.TokenType != proxySessionTokenType || strings.TrimSpace(claims.Subject) == "" {
 		return domainidentity.Principal{}, fmt.Errorf("%w: invalid proxy session", apperrors.ErrUnauthorized)
+	}
+	if claims.SessionID != "" {
+		session, err := s.users.GetAuthSessionByID(ctx, claims.SessionID)
+		if err != nil || session.Status != "active" || session.UserID != claims.Subject || !session.ExpiresAt.After(time.Now().UTC()) {
+			return domainidentity.Principal{}, fmt.Errorf("%w: platform session is invalid", apperrors.ErrUnauthorized)
+		}
 	}
 	return s.loadPrincipal(ctx, claims.Subject)
 }
@@ -1701,7 +1844,7 @@ func oidcClientFromInput(clientID string, input domainprovider.OIDCClientInput, 
 		RequirePKCE:            input.RequirePKCE,
 		AccessTokenTTLSeconds:  ttlSeconds(input.AccessTokenTTLSeconds, defaultOIDCAccessTokenTTLSeconds),
 		IDTokenTTLSeconds:      ttlSeconds(input.IDTokenTTLSeconds, defaultOIDCIDTokenTTLSeconds),
-		RefreshTokenTTLSeconds: 0,
+		RefreshTokenTTLSeconds: ttlSeconds(input.RefreshTokenTTLSeconds, 0),
 		Status:                 status,
 		CreatedAt:              now,
 		UpdatedAt:              now,
@@ -1750,11 +1893,14 @@ func normalizeGrantTypes(values []string) []string {
 func normalizeOIDCClientGrantTypes(values []string) ([]string, error) {
 	grantTypes := normalizeGrantTypes(values)
 	for _, grantType := range grantTypes {
-		if grantType != "authorization_code" {
-			return nil, fmt.Errorf("%w: only authorization_code grant is supported", apperrors.ErrInvalidArgument)
+		if grantType != "authorization_code" && grantType != "refresh_token" {
+			return nil, fmt.Errorf("%w: unsupported grant type", apperrors.ErrInvalidArgument)
 		}
 	}
-	return []string{"authorization_code"}, nil
+	if !containsString(grantTypes, "authorization_code") {
+		return nil, fmt.Errorf("%w: authorization_code grant is required", apperrors.ErrInvalidArgument)
+	}
+	return grantTypes, nil
 }
 
 func normalizeRedirectURIs(values []string) ([]string, error) {

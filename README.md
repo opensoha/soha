@@ -263,7 +263,7 @@ docker run -d \
   -e SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_MONITORING_WEBHOOK_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY=soha-123456789012345678901234567890 \
-  yshanchui/soha:latest
+  ghcr.io/opensoha/soha:v0.1.3
 ```
 
 The bootstrap password is inserted only when the `opensoha` user's password
@@ -286,8 +286,8 @@ Docker instances and a shared load balancer for normal multi-replica delivery.
 
 Recommended boundaries:
 
-- Docker image: use the public Docker Hub image `yshanchui/soha`; local builds default to the `local` tag.
-- Agent images: use `yshanchui/soha-agent` and `yshanchui/soha-hermes-agent` from the sibling `soha-agent` repository.
+- Docker image: use `ghcr.io/opensoha/soha`; local builds default to the `local` tag.
+- Agent images: use `ghcr.io/opensoha/soha-agent` and `ghcr.io/opensoha/soha-hermes-agent` from the sibling `soha-agent` repository.
 - CLI tool image: use `yshanchui/soha-cli` from the sibling `soha-cli` repository for multi-stage builds and operational containers. It is an image artifact, not a Helm workload.
 - Docker Compose: use for local development and single-node trials, not as the primary production orchestrator.
 - Helm: use as the primary Kubernetes delivery path. `soha-helm` publishes `soha`, `soha-agent`, and `soha-hermes-agent` charts.
@@ -296,10 +296,10 @@ Recommended boundaries:
 Build the image:
 
 ```bash
-make deploy-image IMAGE_TAG=v0.1.0
+make deploy-image IMAGE_TAG=v0.1.3
 
 # When proxy.golang.org is unstable:
-make deploy-image IMAGE_TAG=v0.1.0 GOPROXY=https://goproxy.cn,direct
+make deploy-image IMAGE_TAG=v0.1.3 GOPROXY=https://goproxy.cn,direct
 ```
 
 Install with Helm:

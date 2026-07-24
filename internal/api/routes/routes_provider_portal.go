@@ -66,6 +66,8 @@ func registerProviderProtocolRoutes(public gin.IRoutes, deps Dependencies) {
 	public.GET("/provider/oidc/jwks", deps.ProviderPortal.OIDCJWKS)
 	public.POST("/provider/oidc/introspect", deps.ProviderPortal.OIDCIntrospect)
 	public.POST("/provider/oidc/revoke", deps.ProviderPortal.OIDCRevoke)
+	public.GET("/provider/oidc/logout", deps.ProviderPortal.OIDCEndSession)
+	public.POST("/provider/oidc/logout", deps.ProviderPortal.OIDCEndSession)
 	public.GET("/provider/proxy/auth", deps.ProviderPortal.ProxyAuth)
 	public.POST("/provider/proxy/auth", deps.ProviderPortal.ProxyAuth)
 	public.GET("/provider/proxy/start", deps.ProviderPortal.ProxyStart)
@@ -92,4 +94,6 @@ func registerStandardProviderProtocolRoutes(router *gin.Engine, deps Dependencie
 	router.GET("/oauth2/jwks", deps.ProviderPortal.OIDCJWKS)
 	router.POST("/oauth2/introspect", deps.ProviderPortal.OIDCIntrospect)
 	router.POST("/oauth2/revoke", deps.ProviderPortal.OIDCRevoke)
+	router.GET("/oauth2/logout", deps.ProviderPortal.OIDCEndSession)
+	router.POST("/oauth2/logout", deps.ProviderPortal.OIDCEndSession)
 }

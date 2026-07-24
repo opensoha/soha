@@ -141,7 +141,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: soha
-          image: yshanchui/soha:latest
+          image: ghcr.io/opensoha/soha:latest
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

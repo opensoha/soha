@@ -229,6 +229,16 @@ func TestRuntimeConfigurationMenuRequiresRuntimeConfigViewPermission(t *testing.
 	}
 }
 
+func TestSettingsOverviewVisibleWithManagementPermission(t *testing.T) {
+	item := domainmenu.Record{ID: "settings-overview", Path: "/settings/overview"}
+	if isVisibleByPermissions(item, nil) {
+		t.Fatal("settings overview should require a management permission")
+	}
+	if !isVisibleByPermissions(item, []string{appaccess.PermAccessUsersView}) {
+		t.Fatal("settings overview should be visible with access management permission")
+	}
+}
+
 func TestMonitoringWorkbenchPermissionDoesNotExposeSettingsCenter(t *testing.T) {
 	settings := domainmenu.Record{ID: "settings", Path: "/settings"}
 	if isVisibleByPermissions(settings, []string{appaccess.PermObserveMonitoringView}) {

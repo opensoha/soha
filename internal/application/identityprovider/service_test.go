@@ -94,6 +94,10 @@ func TestServiceOIDCAuthorizationCodeFlow(t *testing.T) {
 		ClientSecret: "secret-1",
 	})
 	expectOIDC(t, err == nil, "Revoke returned error: %v", err)
+	introspection, err = service.Introspect(ctx, "https://soha.example", token.AccessToken, domainprovider.ClientAuthInput{
+		ClientID: "client-1", ClientSecret: "secret-1",
+	})
+	expectOIDC(t, err == nil && !introspection.Active, "revoked access token = %#v, error=%v", introspection, err)
 
 	_, err = service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
 		GrantType:    "authorization_code",
@@ -203,6 +207,86 @@ func TestServiceOIDCIntrospectReturnsInactiveForOtherClientToken(t *testing.T) {
 	}
 	if introspection.Active {
 		t.Fatalf("Introspect = %#v, want inactive for token issued to another client", introspection)
+	}
+}
+
+func TestServiceOIDCRefreshTokenRotatesAndRevokesOnReplay(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.client.AllowedGrantTypes = []string{"authorization_code", "refresh_token"}
+	repo.client.AllowedScopes = append(repo.client.AllowedScopes, "offline_access")
+	repo.client.RefreshTokenTTLSeconds = 3600
+	users := &memoryUsers{}
+	service := New(repo, users, nil, nil, "test-encryption-key-32-bytes-long")
+
+	authorized, err := service.Authorize(ctx, "https://soha.example", users.principal(), domainprovider.AuthorizeInput{
+		ResponseType: "code", ClientID: "client-1", RedirectURI: "https://app.example/callback",
+		Scope: "openid offline_access", CodeChallenge: pkceChallenge("verifier"), CodeChallengeMethod: "S256",
+		PlatformSessionID: "platform-1",
+	})
+	if err != nil {
+		t.Fatalf("Authorize returned error: %v", err)
+	}
+	initial, err := service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
+		GrantType: "authorization_code", Code: authorized.Code, RedirectURI: "https://app.example/callback",
+		ClientID: "client-1", ClientSecret: "secret-1", CodeVerifier: "verifier",
+	})
+	if err != nil || initial.RefreshToken == "" {
+		t.Fatalf("initial Token = %#v, error=%v", initial, err)
+	}
+	rotated, err := service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
+		GrantType: "refresh_token", RefreshToken: initial.RefreshToken, ClientID: "client-1", ClientSecret: "secret-1",
+	})
+	if err != nil || rotated.RefreshToken == "" || rotated.RefreshToken == initial.RefreshToken {
+		t.Fatalf("rotated Token = %#v, error=%v", rotated, err)
+	}
+	if _, err := service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
+		GrantType: "refresh_token", RefreshToken: initial.RefreshToken, ClientID: "client-1", ClientSecret: "secret-1",
+	}); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("replayed refresh error = %v, want unauthorized", err)
+	}
+	introspection, err := service.Introspect(ctx, "https://soha.example", rotated.AccessToken, domainprovider.ClientAuthInput{ClientID: "client-1", ClientSecret: "secret-1"})
+	if err != nil || introspection.Active {
+		t.Fatalf("introspection after replay = %#v, error=%v, want inactive", introspection, err)
+	}
+}
+
+func TestServiceOIDCEndSessionRevokesBoundSessions(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	users := &memoryUsers{}
+	service := New(repo, users, nil, nil, "test-encryption-key-32-bytes-long")
+	authorized, err := service.Authorize(ctx, "https://soha.example", users.principal(), domainprovider.AuthorizeInput{
+		ResponseType: "code", ClientID: "client-1", RedirectURI: "https://app.example/callback", Scope: "openid",
+		CodeChallenge: pkceChallenge("verifier"), CodeChallengeMethod: "S256", PlatformSessionID: "platform-1",
+	})
+	if err != nil {
+		t.Fatalf("Authorize returned error: %v", err)
+	}
+	tokens, err := service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
+		GrantType: "authorization_code", Code: authorized.Code, RedirectURI: "https://app.example/callback",
+		ClientID: "client-1", ClientSecret: "secret-1", CodeVerifier: "verifier",
+	})
+	if err != nil {
+		t.Fatalf("Token returned error: %v", err)
+	}
+	if _, err := service.EndSession(ctx, "https://soha.example", domainprovider.EndSessionInput{
+		IDTokenHint: tokens.IDToken, PostLogoutRedirectURI: "https://unregistered.example/logout",
+	}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("unregistered redirect error = %v, want invalid argument", err)
+	}
+	result, err := service.EndSession(ctx, "https://soha.example", domainprovider.EndSessionInput{
+		IDTokenHint: tokens.IDToken, PostLogoutRedirectURI: "https://app.example/callback", State: "state-1",
+	})
+	if err != nil || result.RedirectURI != "https://app.example/callback" || result.State != "state-1" {
+		t.Fatalf("EndSession = %#v, error=%v", result, err)
+	}
+	if users.revokedSessionID != "platform-1" {
+		t.Fatalf("revoked platform session = %q, want platform-1", users.revokedSessionID)
+	}
+	introspection, err := service.Introspect(ctx, "https://soha.example", tokens.AccessToken, domainprovider.ClientAuthInput{ClientID: "client-1", ClientSecret: "secret-1"})
+	if err != nil || introspection.Active {
+		t.Fatalf("introspection after logout = %#v, error=%v", introspection, err)
 	}
 }
 
@@ -583,7 +667,7 @@ func TestServiceProxyAuthUsesProxySessionToken(t *testing.T) {
 	users := &memoryUsers{}
 	service := New(repo, users, nil, nil, "test-encryption-key-32-bytes-long")
 
-	session, err := service.IssueProxySession(ctx, users.principal())
+	session, err := service.IssueProxySession(ctx, users.principal(), domainidentity.AccessContext{SessionID: "session-1"})
 	if err != nil {
 		t.Fatalf("IssueProxySession returned error: %v", err)
 	}
@@ -834,7 +918,7 @@ func TestServiceOutpostClaimAndHeartbeat(t *testing.T) {
 		t.Fatalf("HeartbeatOutpost = %#v, want degraded 0.1.1", heartbeat.Outpost)
 	}
 
-	session, err := service.IssueProxySession(ctx, (&memoryUsers{}).principal())
+	session, err := service.IssueProxySession(ctx, (&memoryUsers{}).principal(), domainidentity.AccessContext{})
 	if err != nil {
 		t.Fatalf("IssueProxySession returned error: %v", err)
 	}
@@ -1056,7 +1140,7 @@ func TestServiceCreateOIDCClientRejectsUnsupportedGrantType(t *testing.T) {
 		ClientID:          "client-2",
 		RedirectURIs:      []string{"https://app.example/callback"},
 		AllowedScopes:     []string{"openid"},
-		AllowedGrantTypes: []string{"authorization_code", "refresh_token"},
+		AllowedGrantTypes: []string{"authorization_code", "client_credentials"},
 		Status:            domainprovider.OIDCClientStatusEnabled,
 	})
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
@@ -1080,8 +1164,8 @@ func TestServiceCreateOIDCClientNormalizesRefreshTokenTTL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateOIDCClient returned error: %v", err)
 	}
-	if created.Client.RefreshTokenTTLSeconds != 0 {
-		t.Fatalf("refresh token ttl = %d, want 0", created.Client.RefreshTokenTTLSeconds)
+	if created.Client.RefreshTokenTTLSeconds != 86400 {
+		t.Fatalf("refresh token ttl = %d, want 86400", created.Client.RefreshTokenTTLSeconds)
 	}
 	if got, want := created.Client.AllowedGrantTypes, []string{"authorization_code"}; fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("allowed grant types = %#v, want %#v", got, want)
@@ -1101,6 +1185,8 @@ type memoryRepo struct {
 	key            *domainprovider.SigningKey
 	codes          map[string]domainprovider.AuthorizationCode
 	outposts       map[string]domainprovider.Outpost
+	sessions       map[string]domainprovider.OIDCSession
+	refreshTokens  map[string]domainprovider.OIDCRefreshToken
 }
 
 func newMemoryRepo(t *testing.T) *memoryRepo {
@@ -1137,8 +1223,10 @@ func newMemoryRepo(t *testing.T) *memoryRepo {
 			ProviderType: domainportal.ProviderTypeOIDC,
 			Status:       domainportal.ApplicationStatusEnabled,
 		},
-		codes:    map[string]domainprovider.AuthorizationCode{},
-		outposts: map[string]domainprovider.Outpost{},
+		codes:         map[string]domainprovider.AuthorizationCode{},
+		outposts:      map[string]domainprovider.Outpost{},
+		sessions:      map[string]domainprovider.OIDCSession{},
+		refreshTokens: map[string]domainprovider.OIDCRefreshToken{},
 	}
 }
 
@@ -1330,7 +1418,94 @@ func (r *memoryRepo) ConsumeAuthorizationCode(_ context.Context, codeHash string
 	return code, nil
 }
 
-type memoryUsers struct{}
+func (r *memoryRepo) CreateOIDCSession(_ context.Context, session domainprovider.OIDCSession, refresh *domainprovider.OIDCRefreshToken) error {
+	r.sessions[session.ID] = session
+	if refresh != nil {
+		r.refreshTokens[refresh.TokenHash] = *refresh
+	}
+	return nil
+}
+
+func (r *memoryRepo) GetOIDCSession(_ context.Context, sessionID string, now time.Time) (domainprovider.OIDCSession, error) {
+	session, ok := r.sessions[sessionID]
+	if !ok || session.RevokedAt != nil || !session.ExpiresAt.After(now) {
+		return domainprovider.OIDCSession{}, apperrors.ErrUnauthorized
+	}
+	return session, nil
+}
+
+func (r *memoryRepo) RotateOIDCRefreshToken(_ context.Context, tokenHash string, next domainprovider.OIDCRefreshToken, now time.Time) (domainprovider.OIDCSession, error) {
+	current, ok := r.refreshTokens[tokenHash]
+	if !ok {
+		return domainprovider.OIDCSession{}, apperrors.ErrUnauthorized
+	}
+	if current.ConsumedAt != nil {
+		when := now
+		session := r.sessions[current.SessionID]
+		session.RevokedAt = &when
+		r.sessions[current.SessionID] = session
+		for hash, item := range r.refreshTokens {
+			if item.FamilyID == current.FamilyID {
+				item.RevokedAt = &when
+				r.refreshTokens[hash] = item
+			}
+		}
+		return domainprovider.OIDCSession{}, apperrors.ErrUnauthorized
+	}
+	session, err := r.GetOIDCSession(context.Background(), current.SessionID, now)
+	if err != nil || current.RevokedAt != nil || !current.ExpiresAt.After(now) {
+		return domainprovider.OIDCSession{}, apperrors.ErrUnauthorized
+	}
+	when := now
+	current.ConsumedAt = &when
+	r.refreshTokens[tokenHash] = current
+	next.SessionID, next.FamilyID, next.ParentID, next.ExpiresAt = current.SessionID, current.FamilyID, current.ID, current.ExpiresAt
+	r.refreshTokens[next.TokenHash] = next
+	session.LastSeenAt = now
+	r.sessions[session.ID] = session
+	return session, nil
+}
+
+func (r *memoryRepo) RevokeOIDCSession(_ context.Context, sessionID, clientID string, now time.Time) error {
+	session, ok := r.sessions[sessionID]
+	if !ok || session.ClientID != clientID {
+		return nil
+	}
+	session.RevokedAt = &now
+	r.sessions[sessionID] = session
+	for hash, item := range r.refreshTokens {
+		if item.SessionID == sessionID {
+			item.RevokedAt = &now
+			r.refreshTokens[hash] = item
+		}
+	}
+	return nil
+}
+
+func (r *memoryRepo) RevokeOIDCSessionByRefreshToken(_ context.Context, tokenHash, clientID string, now time.Time) error {
+	item, ok := r.refreshTokens[tokenHash]
+	if !ok {
+		return nil
+	}
+	return r.RevokeOIDCSession(context.Background(), item.SessionID, clientID, now)
+}
+
+type memoryUsers struct {
+	revokedSessionID string
+}
+
+func (m *memoryUsers) GetAuthSessionByID(_ context.Context, sessionID string) (domainidentity.Session, error) {
+	status := "active"
+	if sessionID == m.revokedSessionID {
+		status = "revoked"
+	}
+	return domainidentity.Session{ID: sessionID, UserID: "user-1", Status: status, ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
+}
+
+func (m *memoryUsers) RevokeSessionByID(_ context.Context, sessionID string) error {
+	m.revokedSessionID = sessionID
+	return nil
+}
 
 func (m *memoryUsers) principal() domainidentity.Principal {
 	return domainidentity.Principal{

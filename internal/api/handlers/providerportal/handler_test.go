@@ -584,6 +584,7 @@ type stubProviderPortalIdentityProvider struct {
 func newProtocolTestHandler(service *stubProviderPortalIdentityProvider) *Handler {
 	return New(Services{
 		OIDC:           service,
+		OIDCLogout:     service,
 		Proxy:          service,
 		OutpostRuntime: service,
 	})
@@ -622,6 +623,10 @@ func (s *stubProviderPortalIdentityProvider) Revoke(ctx context.Context, issuer,
 	return apperrors.ErrUnsupportedOperation
 }
 
+func (s *stubProviderPortalIdentityProvider) EndSession(context.Context, string, domainprovider.EndSessionInput) (domainprovider.EndSessionResult, error) {
+	return domainprovider.EndSessionResult{}, apperrors.ErrUnsupportedOperation
+}
+
 func (s *stubProviderPortalIdentityProvider) UserInfo(context.Context, string, string) (domainprovider.UserInfoResponse, error) {
 	return domainprovider.UserInfoResponse{}, apperrors.ErrUnsupportedOperation
 }
@@ -644,7 +649,7 @@ func (s *stubProviderPortalIdentityProvider) ReverseProxy(ctx context.Context, p
 	return domainprovider.ReverseProxyResult{}, apperrors.ErrUnsupportedOperation
 }
 
-func (s *stubProviderPortalIdentityProvider) IssueProxySession(ctx context.Context, principal domainidentity.Principal) (domainprovider.ProxySession, error) {
+func (s *stubProviderPortalIdentityProvider) IssueProxySession(ctx context.Context, principal domainidentity.Principal, _ domainidentity.AccessContext) (domainprovider.ProxySession, error) {
 	if s.issueProxySessionFunc != nil {
 		return s.issueProxySessionFunc(ctx, principal)
 	}

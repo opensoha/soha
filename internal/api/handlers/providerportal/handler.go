@@ -61,10 +61,14 @@ type OIDCService interface {
 	UserInfo(context.Context, string, string) (domainprovider.UserInfoResponse, error)
 }
 
+type OIDCLogoutService interface {
+	EndSession(context.Context, string, domainprovider.EndSessionInput) (domainprovider.EndSessionResult, error)
+}
+
 type ProxyService interface {
 	ProxyAuth(context.Context, domainidentity.Principal, domainprovider.ProxyAuthInput) (domainprovider.ProxyAuthResult, error)
 	ProxyCookieDomain(context.Context, domainprovider.ProxyAuthInput) (string, error)
-	IssueProxySession(context.Context, domainidentity.Principal) (domainprovider.ProxySession, error)
+	IssueProxySession(context.Context, domainidentity.Principal, domainidentity.AccessContext) (domainprovider.ProxySession, error)
 	ReverseProxy(context.Context, domainidentity.Principal, domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error)
 }
 
@@ -107,6 +111,7 @@ type Services struct {
 	Outposts         OutpostService
 	OIDCClients      OIDCClientService
 	OIDC             OIDCService
+	OIDCLogout       OIDCLogoutService
 	Proxy            ProxyService
 	OutpostRuntime   OutpostRuntimeService
 }
@@ -150,6 +155,7 @@ type oidcClientHandler struct {
 
 type oidcHandler struct {
 	service OIDCService
+	logout  OIDCLogoutService
 }
 
 type proxyHandler struct {
@@ -173,7 +179,7 @@ func New(services Services) *Handler {
 		providerHandler:       providerHandler{service: services.Providers},
 		outpostHandler:        outpostHandler{service: services.Outposts},
 		oidcClientHandler:     oidcClientHandler{service: services.OIDCClients},
-		oidcHandler:           oidcHandler{service: services.OIDC},
+		oidcHandler:           oidcHandler{service: services.OIDC, logout: services.OIDCLogout},
 		proxyHandler:          proxyHandler{service: services.Proxy},
 		outpostRuntimeHandler: outpostRuntimeHandler{service: services.OutpostRuntime},
 	}
@@ -700,6 +706,7 @@ func (h *oidcHandler) OIDCAuthorize(c *gin.Context) {
 		Nonce:               c.Query("nonce"),
 		CodeChallenge:       c.Query("code_challenge"),
 		CodeChallengeMethod: c.Query("code_challenge_method"),
+		PlatformSessionID:   apiMiddleware.AccessContextFromContext(c).SessionID,
 	})
 	if err != nil {
 		var redirectErr *domainprovider.AuthorizeRedirectError
@@ -737,6 +744,7 @@ func (h *oidcHandler) OIDCToken(c *gin.Context) {
 		ClientID:      clientAuth.ClientID,
 		ClientSecret:  clientAuth.ClientSecret,
 		CodeVerifier:  c.PostForm("code_verifier"),
+		RefreshToken:  c.PostForm("refresh_token"),
 		Authenticated: strings.TrimSpace(clientAuth.ClientSecret) != "",
 	})
 	if err != nil {
@@ -786,6 +794,37 @@ func (h *oidcHandler) OIDCRevoke(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusOK)
+}
+
+func (h *oidcHandler) OIDCEndSession(c *gin.Context) {
+	if h.logout == nil {
+		writeOIDCError(c, http.StatusServiceUnavailable, "server_error", "oidc provider service is not configured")
+		return
+	}
+	result, err := h.logout.EndSession(c.Request.Context(), issuerFromRequest(c), domainprovider.EndSessionInput{
+		IDTokenHint:           firstNonEmpty(c.PostForm("id_token_hint"), c.Query("id_token_hint")),
+		PostLogoutRedirectURI: firstNonEmpty(c.PostForm("post_logout_redirect_uri"), c.Query("post_logout_redirect_uri")),
+		State:                 firstNonEmpty(c.PostForm("state"), c.Query("state")),
+	})
+	if err != nil {
+		writeOIDCError(c, apierrors.StatusCode(err), "invalid_request", err.Error())
+		return
+	}
+	if result.RedirectURI == "" {
+		c.Status(http.StatusOK)
+		return
+	}
+	target, err := url.Parse(result.RedirectURI)
+	if err != nil {
+		writeOIDCError(c, http.StatusBadRequest, "invalid_request", "post_logout_redirect_uri is invalid")
+		return
+	}
+	if result.State != "" {
+		values := target.Query()
+		values.Set("state", result.State)
+		target.RawQuery = values.Encode()
+	}
+	c.Redirect(http.StatusFound, target.String())
 }
 
 func (h *oidcHandler) OIDCJWKS(c *gin.Context) {
@@ -860,7 +899,7 @@ func (h *proxyHandler) ProxyCallback(c *gin.Context) {
 		writeProxyAuthResult(c, result)
 		return
 	}
-	session, err := h.service.IssueProxySession(c.Request.Context(), principal)
+	session, err := h.service.IssueProxySession(c.Request.Context(), principal, apiMiddleware.AccessContextFromContext(c))
 	if err != nil {
 		writeError(c, err)
 		return

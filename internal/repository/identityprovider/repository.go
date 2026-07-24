@@ -527,6 +527,176 @@ func (r *Repository) ConsumeAuthorizationCode(ctx context.Context, codeHash stri
 	return item, nil
 }
 
+func (r *Repository) CreateOIDCSession(ctx context.Context, session domainprovider.OIDCSession, refreshToken *domainprovider.OIDCRefreshToken) error {
+	scopes, err := marshalJSON(session.Scopes)
+	if err != nil {
+		return fmt.Errorf("marshal oidc session scopes: %w", err)
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`
+			INSERT INTO identity_oidc_sessions (
+				id, provider_id, client_id, user_id, platform_session_id, scopes,
+				auth_time, expires_at, last_seen_at, revoked_at, created_at
+			) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?)
+		`, session.ID, session.ProviderID, session.ClientID, session.UserID, nullableString(session.PlatformSessionID), scopes,
+			session.AuthTime, session.ExpiresAt, session.LastSeenAt, session.RevokedAt, session.CreatedAt).Error; err != nil {
+			return err
+		}
+		if refreshToken == nil {
+			return nil
+		}
+		return insertOIDCRefreshToken(tx, *refreshToken)
+	})
+}
+
+func (r *Repository) GetOIDCSession(ctx context.Context, sessionID string, now time.Time) (domainprovider.OIDCSession, error) {
+	return getActiveOIDCSession(r.db.WithContext(ctx), sessionID, now)
+}
+
+func (r *Repository) RotateOIDCRefreshToken(ctx context.Context, tokenHash string, next domainprovider.OIDCRefreshToken, now time.Time) (domainprovider.OIDCSession, error) {
+	var session domainprovider.OIDCSession
+	reused := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		current, err := getOIDCRefreshTokenForUpdate(tx, tokenHash)
+		if err != nil {
+			return err
+		}
+		if current.ConsumedAt != nil {
+			reused = true
+			if err := revokeOIDCRefreshFamily(tx, current.SessionID, current.FamilyID, now); err != nil {
+				return err
+			}
+			return nil
+		}
+		if current.RevokedAt != nil || !current.ExpiresAt.After(now) {
+			return fmt.Errorf("%w: refresh token is invalid or expired", apperrors.ErrUnauthorized)
+		}
+		session, err = getActiveOIDCSession(tx, current.SessionID, now)
+		if err != nil {
+			return err
+		}
+		result := tx.Exec(`
+			UPDATE identity_oidc_refresh_tokens
+			SET consumed_at = ?
+			WHERE id = ? AND consumed_at IS NULL AND revoked_at IS NULL
+		`, now, current.ID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("%w: refresh token was already consumed", apperrors.ErrUnauthorized)
+		}
+		next.SessionID = current.SessionID
+		next.FamilyID = current.FamilyID
+		next.ParentID = current.ID
+		next.ExpiresAt = current.ExpiresAt
+		if err := insertOIDCRefreshToken(tx, next); err != nil {
+			return err
+		}
+		return tx.Exec(`UPDATE identity_oidc_sessions SET last_seen_at = ? WHERE id = ?`, now, current.SessionID).Error
+	})
+	if err != nil {
+		return domainprovider.OIDCSession{}, err
+	}
+	if reused {
+		return domainprovider.OIDCSession{}, fmt.Errorf("%w: refresh token reuse detected", apperrors.ErrUnauthorized)
+	}
+	return session, nil
+}
+
+func (r *Repository) RevokeOIDCSession(ctx context.Context, sessionID, clientID string, now time.Time) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return revokeOIDCSession(tx, strings.TrimSpace(sessionID), strings.TrimSpace(clientID), now)
+	})
+}
+
+func (r *Repository) RevokeOIDCSessionByRefreshToken(ctx context.Context, tokenHash, clientID string, now time.Time) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var sessionID string
+		err := tx.Raw(`
+			SELECT t.session_id
+			FROM identity_oidc_refresh_tokens t
+			JOIN identity_oidc_sessions s ON s.id = t.session_id
+			WHERE t.token_hash = ? AND s.client_id = ?
+			LIMIT 1
+		`, strings.TrimSpace(tokenHash), strings.TrimSpace(clientID)).Row().Scan(&sessionID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		return revokeOIDCSession(tx, sessionID, clientID, now)
+	})
+}
+
+func insertOIDCRefreshToken(tx *gorm.DB, item domainprovider.OIDCRefreshToken) error {
+	return tx.Exec(`
+		INSERT INTO identity_oidc_refresh_tokens (
+			id, session_id, family_id, token_hash, parent_id, expires_at, consumed_at, revoked_at, created_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.SessionID, item.FamilyID, item.TokenHash, nullableString(item.ParentID), item.ExpiresAt,
+		item.ConsumedAt, item.RevokedAt, item.CreatedAt).Error
+}
+
+func getOIDCRefreshTokenForUpdate(tx *gorm.DB, tokenHash string) (domainprovider.OIDCRefreshToken, error) {
+	row := tx.Raw(`
+		SELECT id, session_id, family_id, token_hash, parent_id, expires_at, consumed_at, revoked_at, created_at
+		FROM identity_oidc_refresh_tokens
+		WHERE token_hash = ?
+		LIMIT 1
+		FOR UPDATE
+	`, strings.TrimSpace(tokenHash)).Row()
+	item, err := scanOIDCRefreshToken(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domainprovider.OIDCRefreshToken{}, fmt.Errorf("%w: refresh token is invalid", apperrors.ErrUnauthorized)
+	}
+	return item, err
+}
+
+func getActiveOIDCSession(db *gorm.DB, sessionID string, now time.Time) (domainprovider.OIDCSession, error) {
+	row := db.Raw(`
+		SELECT s.id, s.provider_id, s.client_id, s.user_id, s.platform_session_id, s.scopes,
+		       s.auth_time, s.expires_at, s.last_seen_at, s.revoked_at, s.created_at
+		FROM identity_oidc_sessions s
+		LEFT JOIN sessions ps ON ps.id = s.platform_session_id
+		WHERE s.id = ? AND s.revoked_at IS NULL AND s.expires_at > ?
+		  AND (s.platform_session_id IS NULL OR (ps.status = 'active' AND ps.expires_at > ?))
+		LIMIT 1
+	`, strings.TrimSpace(sessionID), now, now).Row()
+	item, err := scanOIDCSession(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domainprovider.OIDCSession{}, fmt.Errorf("%w: oidc session is invalid or expired", apperrors.ErrUnauthorized)
+	}
+	return item, err
+}
+
+func revokeOIDCSession(tx *gorm.DB, sessionID, clientID string, now time.Time) error {
+	if sessionID == "" || clientID == "" {
+		return nil
+	}
+	if err := tx.Exec(`
+		UPDATE identity_oidc_sessions SET revoked_at = COALESCE(revoked_at, ?)
+		WHERE id = ? AND client_id = ?
+	`, now, sessionID, clientID).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`
+		UPDATE identity_oidc_refresh_tokens SET revoked_at = COALESCE(revoked_at, ?)
+		WHERE session_id = ?
+	`, now, sessionID).Error
+}
+
+func revokeOIDCRefreshFamily(tx *gorm.DB, sessionID, familyID string, now time.Time) error {
+	if err := tx.Exec(`UPDATE identity_oidc_sessions SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?`, now, sessionID).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`
+		UPDATE identity_oidc_refresh_tokens SET revoked_at = COALESCE(revoked_at, ?)
+		WHERE family_id = ?
+	`, now, familyID).Error
+}
+
 type scanner interface {
 	Scan(dest ...any) error
 }
@@ -666,6 +836,51 @@ func scanSigningKey(row scanner) (domainprovider.SigningKey, error) {
 	}
 	if err := unmarshalJSON(publicJWKRaw, &item.PublicJWK, true); err != nil {
 		return domainprovider.SigningKey{}, fmt.Errorf("decode public jwk: %w", err)
+	}
+	return item, nil
+}
+
+func scanOIDCSession(row scanner) (domainprovider.OIDCSession, error) {
+	var item domainprovider.OIDCSession
+	var platformSessionID sql.NullString
+	var scopesRaw []byte
+	var revokedAt sql.NullTime
+	if err := row.Scan(
+		&item.ID, &item.ProviderID, &item.ClientID, &item.UserID, &platformSessionID, &scopesRaw,
+		&item.AuthTime, &item.ExpiresAt, &item.LastSeenAt, &revokedAt, &item.CreatedAt,
+	); err != nil {
+		return domainprovider.OIDCSession{}, err
+	}
+	if platformSessionID.Valid {
+		item.PlatformSessionID = platformSessionID.String
+	}
+	if revokedAt.Valid {
+		item.RevokedAt = &revokedAt.Time
+	}
+	if err := unmarshalJSON(scopesRaw, &item.Scopes, false); err != nil {
+		return domainprovider.OIDCSession{}, fmt.Errorf("decode oidc session scopes: %w", err)
+	}
+	return item, nil
+}
+
+func scanOIDCRefreshToken(row scanner) (domainprovider.OIDCRefreshToken, error) {
+	var item domainprovider.OIDCRefreshToken
+	var parentID sql.NullString
+	var consumedAt, revokedAt sql.NullTime
+	if err := row.Scan(
+		&item.ID, &item.SessionID, &item.FamilyID, &item.TokenHash, &parentID,
+		&item.ExpiresAt, &consumedAt, &revokedAt, &item.CreatedAt,
+	); err != nil {
+		return domainprovider.OIDCRefreshToken{}, err
+	}
+	if parentID.Valid {
+		item.ParentID = parentID.String
+	}
+	if consumedAt.Valid {
+		item.ConsumedAt = &consumedAt.Time
+	}
+	if revokedAt.Valid {
+		item.RevokedAt = &revokedAt.Time
 	}
 	return item, nil
 }

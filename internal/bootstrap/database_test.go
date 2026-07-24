@@ -102,6 +102,7 @@ func TestObsoleteMenuCleanupIncludesPersistedLegacyIDs(t *testing.T) {
 		"ai-gateway-overview",
 		"compute-workbench-tasks-all",
 		"identity-sessions",
+		"access",
 		"account-profile",
 		"settings-about",
 	} {
@@ -547,13 +548,14 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 		sortOrder int
 	}{
 		"identity-overview":              {section: "", sortOrder: 1},
+		"settings-overview":              {section: "", sortOrder: 1},
 		"identity-applications":          {section: "provider", sortOrder: 10},
 		"identity-providers":             {section: "provider", sortOrder: 20},
 		"identity-outposts":              {section: "provider", sortOrder: 30},
 		"identity-policies":              {section: "provider", sortOrder: 40},
 		"settings-source-control":        {section: "integrations", sortOrder: 10},
 		"menus":                          {section: "users", sortOrder: 50},
-		"settings-login":                 {section: "integrations", sortOrder: 20},
+		"settings-login":                 {section: "users", sortOrder: 60},
 		"announcements":                  {section: "operations", sortOrder: 30},
 		"system-online-users":            {section: "operations", sortOrder: 40},
 		"operations":                     {section: "operations", sortOrder: 50},

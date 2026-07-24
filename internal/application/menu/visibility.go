@@ -298,13 +298,18 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermSystemAuditView}}, true
 	case "operations":
 		return visibilityRule{permissions: []string{appaccess.PermSystemOperationsView}}, true
-	case "settings":
+	case "settings", "settings-overview":
 		return visibilityRule{permissions: []string{
+			appaccess.PermAccessUsersView,
+			appaccess.PermAccessRolesView,
+			appaccess.PermAccessGroupsView,
+			appaccess.PermAccessPoliciesView,
 			appaccess.PermSettingsIdentityView,
 			appaccess.PermSettingsAIView,
 			appaccess.PermSettingsBrandingView,
 			appaccess.PermSettingsSystemIntegrationsView,
 			appaccess.PermSettingsRuntimeConfigView,
+			appaccess.PermSystemMenusView,
 		}}, true
 	case "settings-login":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsIdentityView}}, true

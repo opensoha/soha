@@ -71,7 +71,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-07-21-account-utilities-v4"
+const bootstrapSeedVersion = "2026-07-24-settings-overview-v6"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 

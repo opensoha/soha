@@ -148,7 +148,6 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "identity-policies", ParentID: "identity", Path: "/identity/policies", LabelZH: "访问策略", LabelEN: "Policies", IconKey: "shield", Section: "provider", SortOrder: 40, Enabled: true, Roles: []string{"admin"}},
 	{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 227, Enabled: true},
 	{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "operations", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
-	{ID: "access", Path: "/access", LabelZH: "访问控制", LabelEN: "Access Control", IconKey: "shield", Section: "admin", SortOrder: 240, Enabled: true, Roles: []string{"admin"}},
 	{ID: "access-users", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "user", Section: "users", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
 	{ID: "access-roles", Path: "/access/roles", LabelZH: "角色", LabelEN: "Roles", IconKey: "shield", Section: "users", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
 	{ID: "access-teams", Path: "/access/teams", LabelZH: "组织", LabelEN: "Organizations", IconKey: "users", Section: "users", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
@@ -160,7 +159,8 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计日志", LabelEN: "Audit Logs", IconKey: "file-clock", Section: "operations", SortOrder: 60, Enabled: true},
 	{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "delivery-platform", SortOrder: 70, Enabled: true, Roles: []string{"admin", "ops"}},
 	{ID: "settings", Path: "/settings", LabelZH: "设置中心", LabelEN: "Settings Center", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true, Roles: []string{"admin"}},
-	{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登陆设置", LabelEN: "Login Settings", IconKey: "shield", Section: "integrations", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
+	{ID: "settings-overview", ParentID: "settings", Path: "/settings/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true, Roles: []string{"admin"}},
+	{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登陆设置", LabelEN: "Login Settings", IconKey: "shield", Section: "users", SortOrder: 60, Enabled: true, Roles: []string{"admin"}},
 	{ID: "settings-source-control", ParentID: "settings", Path: "/settings/source-control", LabelZH: "代码源", LabelEN: "Source Control", IconKey: "code", Section: "integrations", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
 	{ID: "settings-branding", ParentID: "settings", Path: "/settings/branding", LabelZH: "品牌设置", LabelEN: "Branding Settings", IconKey: "palette", Section: "extensions", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
 	{ID: "settings-runtime-configuration", ParentID: "settings", Path: "/settings/runtime-configuration", LabelZH: "运行时配置", LabelEN: "Runtime Configuration", IconKey: "settings", Section: "operations", SortOrder: 80, Enabled: true, Roles: []string{"admin"}},
@@ -214,6 +214,7 @@ func obsoleteMenuIDsForCleanup() []string {
 		"compute-workbench-tasks-all",
 		"identity-audit",
 		"identity-sessions",
+		"access",
 		"account-profile",
 		"settings-about",
 	}
@@ -439,6 +440,7 @@ func syncAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time)
 		sortOrder int
 	}{
 		{id: "identity-overview", section: "", sortOrder: 1},
+		{id: "settings-overview", section: "", sortOrder: 1},
 		{id: "identity-applications", section: "provider", sortOrder: 10},
 		{id: "identity-providers", section: "provider", sortOrder: 20},
 		{id: "identity-outposts", section: "provider", sortOrder: 30},
@@ -450,7 +452,7 @@ func syncAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time)
 		{id: "access-policies", section: "users", sortOrder: 40},
 		{id: "access-directory-sync", section: "users", sortOrder: 50},
 		{id: "menus", section: "users", sortOrder: 60},
-		{id: "settings-login", section: "integrations", sortOrder: 20},
+		{id: "settings-login", section: "users", sortOrder: 60},
 		{id: "announcements", section: "operations", sortOrder: 30},
 		{id: "system-online-users", section: "operations", sortOrder: 40},
 		{id: "operations", section: "operations", sortOrder: 50},
