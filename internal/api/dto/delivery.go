@@ -45,6 +45,7 @@ type DeliveryBlueprintRequest struct {
 	Name                string                         `json:"name"`
 	Description         string                         `json:"description"`
 	ApplicationDraft    map[string]any                 `json:"applicationDraft"`
+	Services            []map[string]any               `json:"services"`
 	BuildSources        []map[string]any               `json:"buildSources"`
 	EnvironmentBindings []map[string]any               `json:"environmentBindings"`
 	Files               []DeliveryBlueprintFileRequest `json:"files"`

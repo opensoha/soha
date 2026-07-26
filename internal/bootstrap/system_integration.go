@@ -16,10 +16,15 @@ func (gitLabSourceAdapterFactory) Build(item domain.Integration, credentials map
 	config := integrationConfiguration(item)
 	perPage, _ := strconv.Atoi(config["per_page"])
 	timeout, _ := time.ParseDuration(config["timeout"])
+	token := credentials["token"]
+	oauthMode := strings.EqualFold(config["auth_mode"], "oauth")
+	if oauthMode {
+		token = credentials["access_token"]
+	}
 	return gitlabinfra.NewWithOptions(gitlabinfra.Options{
 		// The service applies the enabled gate for normal source operations. Keep
 		// the adapter active so administrators can test a disabled connection.
-		Enabled: true, BaseURL: config["base_url"], Token: credentials["token"],
+		Enabled: true, BaseURL: config["base_url"], Token: token, Bearer: oauthMode,
 		GroupID: config["group_id"], PerPage: perPage, Timeout: timeout,
 	}), nil
 }

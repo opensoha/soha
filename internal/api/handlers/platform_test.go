@@ -475,7 +475,7 @@ func TestPlatformClusterCapabilityMatrixReturnsItems(t *testing.T) {
 func TestPlatformListAuditLogsBindsExpandedFilter(t *testing.T) {
 	audit := &stubPlatformAuditService{}
 	handler := newTestPlatformHandler(nil, nil, audit, nil, nil, nil)
-	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/logs?actorId=user-1&actorName=Operator&clusterId=cluster-a&namespace=prod&resourceKind=Deployment&resourceName=api&action=platform.deployment.restart&result=success&requestID=req-1&requestPath=/api/v1/restart&method=post&sourceIP=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=usageSnapshot.templateId&metadataValue=tpl-1&from=2026-06-12T08:00:00Z&to=2026-06-12T09:00:00Z&limit=25", "", nil)
+	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/logs?actorId=user-1&actorName=Operator&clusterId=cluster-a&namespace=prod&resourceKind=Deployment&resourceName=api&action=platform.deployment.restart&actionPrefixes=identity.,proxy.&result=success&requestID=req-1&requestPath=/api/v1/restart&method=post&sourceIP=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=usageSnapshot.templateId&metadataValue=tpl-1&from=2026-06-12T08:00:00Z&to=2026-06-12T09:00:00Z&limit=25", "", nil)
 
 	handler.ListAuditLogs(ctx)
 
@@ -571,6 +571,9 @@ func assertAuditFilterScope(t *testing.T, filter domainaudit.Filter) {
 	}
 	if filter.ResourceKind != "Deployment" || filter.ResourceName != "api" || filter.Action != "platform.deployment.restart" || filter.Result != "success" {
 		t.Fatalf("audit resource filter = %#v", filter)
+	}
+	if len(filter.ActionPrefixes) != 2 || filter.ActionPrefixes[0] != "identity." || filter.ActionPrefixes[1] != "proxy." {
+		t.Fatalf("audit action prefixes = %#v", filter.ActionPrefixes)
 	}
 	if filter.RequestID != "req-1" || filter.RequestPath != "/api/v1/restart" || filter.RequestMethod != "post" || filter.SourceIP != "127.0.0.1" {
 		t.Fatalf("audit request filter = %#v", filter)

@@ -1,6 +1,11 @@
 package routes
 
-import "github.com/gin-gonic/gin"
+import (
+	"time"
+
+	"github.com/gin-gonic/gin"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+)
 
 func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
 	if deps.ProviderPortal == nil {
@@ -37,6 +42,7 @@ func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.DELETE("/identity/providers/:providerID", deps.ProviderPortal.DeleteIdentityProvider)
 	protected.GET("/identity/providers/:providerID/oidc-clients", deps.ProviderPortal.ListOIDCClients)
 	protected.POST("/identity/providers/:providerID/oidc-clients", deps.ProviderPortal.CreateOIDCClient)
+	protected.POST("/identity/providers/:providerID/signing-keys/rotate", deps.ProviderPortal.RotateSigningKey)
 	protected.PUT("/identity/oidc-clients/:clientID", deps.ProviderPortal.UpdateOIDCClient)
 	protected.PATCH("/identity/oidc-clients/:clientID", deps.ProviderPortal.UpdateOIDCClient)
 	protected.DELETE("/identity/oidc-clients/:clientID", deps.ProviderPortal.DeleteOIDCClient)
@@ -46,6 +52,7 @@ func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/identity/outposts/:outpostID", deps.ProviderPortal.GetOutpost)
 	protected.PUT("/identity/outposts/:outpostID", deps.ProviderPortal.UpdateOutpost)
 	protected.PATCH("/identity/outposts/:outpostID", deps.ProviderPortal.UpdateOutpost)
+	protected.POST("/identity/outposts/:outpostID/token/rotate", deps.ProviderPortal.RotateOutpostToken)
 	protected.DELETE("/identity/outposts/:outpostID", deps.ProviderPortal.DeleteOutpost)
 
 	if deps.Platform != nil {
@@ -58,27 +65,39 @@ func registerProviderProtocolRoutes(public gin.IRoutes, deps Dependencies) {
 		return
 	}
 
+	limits := apiMiddleware.NewBoundedRateLimiter(10_000)
+	oidcClient := func(c *gin.Context) string {
+		if clientID, _, ok := c.Request.BasicAuth(); ok {
+			return clientID
+		}
+		return c.PostForm("client_id")
+	}
+	outpost := func(c *gin.Context) string { return c.Param("outpostID") }
+	provider := func(c *gin.Context) string {
+		return firstRouteValue(c.Param("providerID"), c.Query("provider_id"), c.Query("providerID"))
+	}
+
 	public.GET("/provider/oidc/.well-known/openid-configuration", deps.ProviderPortal.OIDCDiscovery)
 	public.GET("/provider/oidc/authorize", deps.ProviderPortal.OIDCAuthorize)
-	public.POST("/provider/oidc/token", deps.ProviderPortal.OIDCToken)
+	public.POST("/provider/oidc/token", limits.Middleware("oidc-token", 60, time.Minute, oidcClient), deps.ProviderPortal.OIDCToken)
 	public.GET("/provider/oidc/userinfo", deps.ProviderPortal.OIDCUserInfo)
 	public.POST("/provider/oidc/userinfo", deps.ProviderPortal.OIDCUserInfo)
 	public.GET("/provider/oidc/jwks", deps.ProviderPortal.OIDCJWKS)
-	public.POST("/provider/oidc/introspect", deps.ProviderPortal.OIDCIntrospect)
-	public.POST("/provider/oidc/revoke", deps.ProviderPortal.OIDCRevoke)
+	public.POST("/provider/oidc/introspect", limits.Middleware("oidc-introspect", 120, time.Minute, oidcClient), deps.ProviderPortal.OIDCIntrospect)
+	public.POST("/provider/oidc/revoke", limits.Middleware("oidc-revoke", 120, time.Minute, oidcClient), deps.ProviderPortal.OIDCRevoke)
 	public.GET("/provider/oidc/logout", deps.ProviderPortal.OIDCEndSession)
 	public.POST("/provider/oidc/logout", deps.ProviderPortal.OIDCEndSession)
-	public.GET("/provider/proxy/auth", deps.ProviderPortal.ProxyAuth)
-	public.POST("/provider/proxy/auth", deps.ProviderPortal.ProxyAuth)
-	public.GET("/provider/proxy/start", deps.ProviderPortal.ProxyStart)
-	public.GET("/provider/proxy/callback", deps.ProviderPortal.ProxyCallback)
+	public.GET("/provider/proxy/auth", limits.Middleware("proxy-auth", 120, time.Minute, provider), deps.ProviderPortal.ProxyAuth)
+	public.POST("/provider/proxy/auth", limits.Middleware("proxy-auth", 120, time.Minute, provider), deps.ProviderPortal.ProxyAuth)
+	public.GET("/provider/proxy/start", limits.Middleware("proxy-start", 60, time.Minute, provider), deps.ProviderPortal.ProxyStart)
+	public.GET("/provider/proxy/callback", limits.Middleware("proxy-callback", 60, time.Minute, provider), deps.ProviderPortal.ProxyCallback)
 	public.POST("/provider/proxy/logout", deps.ProviderPortal.ProxyLogout)
 	public.Any("/provider/proxy/reverse/:providerID", deps.ProviderPortal.ProxyReverse)
 	public.Any("/provider/proxy/reverse/:providerID/*proxyPath", deps.ProviderPortal.ProxyReverse)
-	public.POST("/provider/outposts/claim", deps.ProviderPortal.ClaimOutpost)
-	public.POST("/provider/outposts/:outpostID/heartbeat", deps.ProviderPortal.HeartbeatOutpost)
-	public.POST("/provider/outposts/:outpostID/check", deps.ProviderPortal.CheckOutpost)
-	public.POST("/provider/outposts/:outpostID/events", deps.ProviderPortal.OutpostEvents)
+	public.POST("/provider/outposts/claim", limits.Middleware("outpost-claim", 30, time.Minute, nil), deps.ProviderPortal.ClaimOutpost)
+	public.POST("/provider/outposts/:outpostID/heartbeat", limits.Middleware("outpost-heartbeat", 300, time.Minute, outpost), deps.ProviderPortal.HeartbeatOutpost)
+	public.POST("/provider/outposts/:outpostID/check", limits.Middleware("outpost-check", 300, time.Minute, outpost), deps.ProviderPortal.CheckOutpost)
+	public.POST("/provider/outposts/:outpostID/events", limits.Middleware("outpost-events", 300, time.Minute, outpost), deps.ProviderPortal.OutpostEvents)
 }
 
 func registerStandardProviderProtocolRoutes(router *gin.Engine, deps Dependencies) {
@@ -86,14 +105,30 @@ func registerStandardProviderProtocolRoutes(router *gin.Engine, deps Dependencie
 		return
 	}
 
+	limits := apiMiddleware.NewBoundedRateLimiter(10_000)
+	oidcClient := func(c *gin.Context) string {
+		if clientID, _, ok := c.Request.BasicAuth(); ok {
+			return clientID
+		}
+		return c.PostForm("client_id")
+	}
 	router.GET("/.well-known/openid-configuration", deps.ProviderPortal.OIDCDiscovery)
 	router.GET("/oauth2/authorize", deps.ProviderPortal.OIDCAuthorize)
-	router.POST("/oauth2/token", deps.ProviderPortal.OIDCToken)
+	router.POST("/oauth2/token", limits.Middleware("oidc-token", 60, time.Minute, oidcClient), deps.ProviderPortal.OIDCToken)
 	router.GET("/oauth2/userinfo", deps.ProviderPortal.OIDCUserInfo)
 	router.POST("/oauth2/userinfo", deps.ProviderPortal.OIDCUserInfo)
 	router.GET("/oauth2/jwks", deps.ProviderPortal.OIDCJWKS)
-	router.POST("/oauth2/introspect", deps.ProviderPortal.OIDCIntrospect)
-	router.POST("/oauth2/revoke", deps.ProviderPortal.OIDCRevoke)
+	router.POST("/oauth2/introspect", limits.Middleware("oidc-introspect", 120, time.Minute, oidcClient), deps.ProviderPortal.OIDCIntrospect)
+	router.POST("/oauth2/revoke", limits.Middleware("oidc-revoke", 120, time.Minute, oidcClient), deps.ProviderPortal.OIDCRevoke)
 	router.GET("/oauth2/logout", deps.ProviderPortal.OIDCEndSession)
 	router.POST("/oauth2/logout", deps.ProviderPortal.OIDCEndSession)
+}
+
+func firstRouteValue(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

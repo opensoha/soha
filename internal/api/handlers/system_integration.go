@@ -9,6 +9,7 @@ import (
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appsystemintegration "github.com/opensoha/soha/internal/application/systemintegration"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"
 )
@@ -22,6 +23,11 @@ type SystemIntegrationService interface {
 	Test(context.Context, domainidentity.Principal, string) (sohaapi.SystemIntegrationTestResult, error)
 }
 
+type SystemIntegrationOAuthService interface {
+	BeginOAuth(context.Context, domainidentity.Principal, string) (sohaapi.SystemIntegrationOAuthAuthorization, error)
+	CompleteOAuth(context.Context, appsystemintegration.OAuthCallbackInput) (string, error)
+}
+
 type SourceConnectionService interface {
 	ListSourceConnections(context.Context, domainidentity.Principal) ([]sohaapi.SourceConnection, error)
 	GetSourceConnection(context.Context, domainidentity.Principal, string) (sohaapi.SourceConnection, error)
@@ -33,14 +39,16 @@ type SourceConnectionService interface {
 
 type SystemIntegrationHandler struct {
 	integrations SystemIntegrationService
+	oauth        SystemIntegrationOAuthService
 	sources      SourceConnectionService
 }
 
 func NewSystemIntegrationHandler(service interface {
 	SystemIntegrationService
+	SystemIntegrationOAuthService
 	SourceConnectionService
 }) *SystemIntegrationHandler {
-	return &SystemIntegrationHandler{integrations: service, sources: service}
+	return &SystemIntegrationHandler{integrations: service, oauth: service, sources: service}
 }
 
 func (h *SystemIntegrationHandler) List(c *gin.Context) {
@@ -126,6 +134,29 @@ func (h *SystemIntegrationHandler) Test(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *SystemIntegrationHandler) BeginOAuth(c *gin.Context) {
+	item, err := h.oauth.BeginOAuth(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("integrationID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *SystemIntegrationHandler) CompleteGitLabOAuth(c *gin.Context) {
+	redirectURL, err := h.oauth.CompleteOAuth(c.Request.Context(), appsystemintegration.OAuthCallbackInput{
+		Code:              c.Query("code"),
+		State:             c.Query("state"),
+		ProviderError:     c.Query("error"),
+		ProviderErrorText: c.Query("error_description"),
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Redirect(http.StatusFound, redirectURL)
 }
 
 func (h *SystemIntegrationHandler) ListSources(c *gin.Context) {

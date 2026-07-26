@@ -15,8 +15,10 @@ const (
 	ProviderStatusEnabled  = "enabled"
 	ProviderStatusDisabled = "disabled"
 
-	OIDCClientStatusEnabled  = "enabled"
-	OIDCClientStatusDisabled = "disabled"
+	OIDCClientStatusEnabled    = "enabled"
+	OIDCClientStatusDisabled   = "disabled"
+	OIDCClientTypePublic       = "public"
+	OIDCClientTypeConfidential = "confidential"
 
 	TokenTypeAccess = "access"
 	TokenTypeID     = "id"
@@ -74,8 +76,10 @@ type OIDCClient struct {
 	ID                     string    `json:"id"`
 	ProviderID             string    `json:"providerId"`
 	ClientID               string    `json:"clientId"`
+	ClientType             string    `json:"clientType"`
 	ClientSecretHash       string    `json:"-"`
 	RedirectURIs           []string  `json:"redirectUris"`
+	PostLogoutRedirectURIs []string  `json:"postLogoutRedirectUris"`
 	AllowedScopes          []string  `json:"allowedScopes"`
 	AllowedGrantTypes      []string  `json:"allowedGrantTypes"`
 	RequirePKCE            bool      `json:"requirePkce"`
@@ -90,8 +94,10 @@ type OIDCClient struct {
 type OIDCClientInput struct {
 	ProviderID             string   `json:"providerId"`
 	ClientID               string   `json:"clientId"`
+	ClientType             string   `json:"clientType"`
 	ClientSecret           string   `json:"clientSecret"`
 	RedirectURIs           []string `json:"redirectUris"`
+	PostLogoutRedirectURIs []string `json:"postLogoutRedirectUris"`
 	AllowedScopes          []string `json:"allowedScopes"`
 	AllowedGrantTypes      []string `json:"allowedGrantTypes"`
 	RequirePKCE            bool     `json:"requirePkce"`
@@ -147,23 +153,28 @@ type OutpostClaimInput struct {
 }
 
 type OutpostClaimResult struct {
-	Outpost   Outpost    `json:"outpost"`
-	Providers []Provider `json:"providers"`
+	Outpost       Outpost    `json:"outpost"`
+	ConfigVersion string     `json:"configVersion"`
+	Providers     []Provider `json:"providers"`
 }
 
 type OutpostHeartbeatInput struct {
-	Token    string         `json:"token"`
-	Status   string         `json:"status"`
-	Version  string         `json:"version"`
-	Metadata map[string]any `json:"metadata"`
+	Token         string         `json:"token"`
+	Status        string         `json:"status"`
+	Version       string         `json:"version"`
+	ConfigVersion string         `json:"configVersion"`
+	Metadata      map[string]any `json:"metadata"`
 }
 
 type OutpostHeartbeatResult struct {
-	Outpost Outpost `json:"outpost"`
+	Outpost       Outpost    `json:"outpost"`
+	ConfigVersion string     `json:"configVersion"`
+	Providers     []Provider `json:"providers,omitempty"`
 }
 
 type OutpostCheckInput struct {
 	Token          string `json:"token"`
+	SourceIP       string `json:"sourceIp"`
 	ProviderID     string `json:"providerId"`
 	OriginalURL    string `json:"originalUrl"`
 	ForwardedHost  string `json:"forwardedHost"`
@@ -262,6 +273,7 @@ type DiscoveryDocument struct {
 	IntrospectionEndpoint             string   `json:"introspection_endpoint"`
 	EndSessionEndpoint                string   `json:"end_session_endpoint"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
+	ResponseModesSupported            []string `json:"response_modes_supported"`
 	SubjectTypesSupported             []string `json:"subject_types_supported"`
 	IDTokenSigningAlgValuesSupported  []string `json:"id_token_signing_alg_values_supported"`
 	ScopesSupported                   []string `json:"scopes_supported"`
@@ -281,6 +293,9 @@ type AuthorizeInput struct {
 	RedirectURI         string
 	Scope               string
 	State               string
+	Prompt              string
+	MaxAge              string
+	ResponseMode        string
 	Nonce               string
 	CodeChallenge       string
 	CodeChallengeMethod string
@@ -288,9 +303,10 @@ type AuthorizeInput struct {
 }
 
 type AuthorizeResult struct {
-	RedirectURI string
-	Code        string
-	State       string
+	RedirectURI  string
+	Code         string
+	State        string
+	ResponseMode string
 }
 
 type AuthorizeRedirectError struct {
@@ -386,16 +402,18 @@ type UserInfoResponse struct {
 }
 
 type ProxyAuthInput struct {
-	ProviderID     string
-	OriginalURL    string
-	ForwardedHost  string
-	ForwardedProto string
-	ForwardedURI   string
-	RequestHost    string
-	RequestPath    string
-	Method         string
-	Redirect       bool
-	SessionToken   string
+	ProviderID       string
+	OriginalURL      string
+	ForwardedHost    string
+	ForwardedProto   string
+	ForwardedURI     string
+	RequestHost      string
+	RequestPath      string
+	Method           string
+	Redirect         bool
+	SessionToken     string
+	SourceIP         string
+	MFAAuthenticated bool
 }
 
 type ProxySession struct {
@@ -449,6 +467,7 @@ type Repository interface {
 	DeleteOIDCClient(context.Context, string) error
 	GetActiveSigningKey(context.Context, string) (SigningKey, error)
 	CreateSigningKey(context.Context, SigningKey) (SigningKey, error)
+	RotateSigningKey(context.Context, string, SigningKey, time.Time) (SigningKey, error)
 	ListActivePublicKeys(context.Context) ([]SigningKey, error)
 	CreateAuthorizationCode(context.Context, AuthorizationCode) error
 	GetAuthorizationCode(context.Context, string, time.Time) (AuthorizationCode, error)

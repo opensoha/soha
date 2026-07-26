@@ -692,6 +692,51 @@ func TestCreateDeliveryDraftDoesNotCreatePlatformObjects(t *testing.T) {
 	}
 }
 
+func TestCreateDeliveryDraftRejectsDuplicateServiceKeysBeforeWrite(t *testing.T) {
+	repo := &draftRepository{}
+	service := New(stubApplicationReader{}, stubCatalogReader{}, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate))
+
+	_, err := service.CreateDeliveryDraft(context.Background(), deliveryActionPrincipal(), domaindelivery.DeliveryDraftInput{
+		ApplicationDraft: domaindelivery.BlueprintApplicationDraft{Name: "Demo", Key: "demo"},
+		Services: []domaindelivery.DeliveryDraftService{
+			{Key: "api", Name: "API"},
+			{Key: "api", Name: "Worker"},
+		},
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("CreateDeliveryDraft error = %v, want invalid argument", err)
+	}
+	if repo.createCount != 0 {
+		t.Fatalf("draft create count = %d, want 0", repo.createCount)
+	}
+}
+
+func TestBootstrapBlueprintCreatesDraftWithoutPlatformObjects(t *testing.T) {
+	appCreateCount := 0
+	repo := &draftRepository{stubRepository: stubRepository{blueprint: domaindelivery.DeliveryBlueprint{
+		ID: "blueprint-1", Key: "demo", Name: "Demo",
+		ApplicationDraft: domaindelivery.BlueprintApplicationDraft{Name: "Demo", Key: "demo"},
+		Services:         []domaindelivery.DeliveryDraftService{{Key: "api", Name: "API"}, {Key: "worker", Name: "Worker"}},
+	}}}
+	service := New(stubApplicationReader{createCount: &appCreateCount}, stubCatalogReader{}, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate))
+
+	result, err := service.BootstrapApplicationFromBlueprint(context.Background(), deliveryActionPrincipal(), "blueprint-1")
+	if err != nil {
+		t.Fatalf("BootstrapApplicationFromBlueprint returned error: %v", err)
+	}
+	if repo.createCount != 1 || repo.createInput == nil || len(repo.createInput.Services) != 2 {
+		t.Fatalf("draft input = %#v, create count = %d", repo.createInput, repo.createCount)
+	}
+	if appCreateCount != 0 {
+		t.Fatalf("application create count = %d, want 0 before confirmation", appCreateCount)
+	}
+	if len(result.Spec.Services) != 2 {
+		t.Fatalf("rendered services = %#v", result.Spec.Services)
+	}
+}
+
 func TestConfirmDeliveryDraftCreatesApplicationServicesAndBindings(t *testing.T) {
 	appCreateCount := 0
 	serviceCreateCount := 0

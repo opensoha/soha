@@ -18,6 +18,7 @@ import (
 type Client struct {
 	baseURL string
 	token   string
+	bearer  bool
 	groupID string
 	perPage int
 	http    *http.Client
@@ -27,6 +28,7 @@ type Client struct {
 type Options struct {
 	BaseURL string
 	Token   string
+	Bearer  bool
 	GroupID string
 	PerPage int
 	Timeout time.Duration
@@ -56,6 +58,7 @@ func NewWithOptions(options Options) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(strings.TrimSpace(options.BaseURL), "/"),
 		token:   strings.TrimSpace(options.Token),
+		bearer:  options.Bearer,
 		groupID: strings.TrimSpace(options.GroupID),
 		perPage: perPage,
 		http:    &http.Client{Timeout: timeout},
@@ -200,7 +203,11 @@ func (c *Client) getWithHeaders(ctx context.Context, path string, params url.Val
 	if err != nil {
 		return nil, fmt.Errorf("build gitlab request: %w", err)
 	}
-	req.Header.Set("PRIVATE-TOKEN", c.token)
+	if c.bearer {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	} else {
+		req.Header.Set("PRIVATE-TOKEN", c.token)
+	}
 	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {

@@ -52,6 +52,7 @@ type Service struct {
 	operations  OperationRecorder
 	keys        keyring.Ring
 	adapters    map[string]SourceAdapterFactory
+	oauth       map[string]OAuthProvider
 	now         func() time.Time
 }
 
@@ -65,13 +66,20 @@ type LegacyGitLabConfig struct {
 }
 
 func New(repo domain.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) *Service {
-	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations, keys: keys, adapters: map[string]SourceAdapterFactory{}, now: time.Now}
+	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations, keys: keys, adapters: map[string]SourceAdapterFactory{}, oauth: map[string]OAuthProvider{}, now: time.Now}
 }
 
 func (s *Service) RegisterSourceAdapter(providerType string, factory SourceAdapterFactory) {
 	providerType = strings.ToLower(strings.TrimSpace(providerType))
 	if providerType != "" && factory != nil {
 		s.adapters[providerType] = factory
+	}
+}
+
+func (s *Service) RegisterOAuthProvider(providerType string, provider OAuthProvider) {
+	providerType = strings.ToLower(strings.TrimSpace(providerType))
+	if providerType != "" && provider != nil {
+		s.oauth[providerType] = provider
 	}
 }
 
@@ -316,6 +324,10 @@ func (s *Service) sourceAdapter(ctx context.Context, id string, requireEnabled b
 	if err != nil {
 		return domain.Integration{}, nil, err
 	}
+	item, credentials, err = s.refreshOAuthCredentials(ctx, item, credentials)
+	if err != nil {
+		return domain.Integration{}, nil, err
+	}
 	adapter, err := factory.Build(item, credentials)
 	if err != nil {
 		return domain.Integration{}, nil, err
@@ -419,12 +431,39 @@ func validateProviderConfiguration(category, providerType string, enabled bool, 
 			return fmt.Errorf("%w: gitlab per_page must be between 1 and 200", apperrors.ErrInvalidArgument)
 		}
 	}
-	if enabled {
-		if _, ok := credentials["token"]; !ok {
-			return fmt.Errorf("%w: gitlab token is required when enabled", apperrors.ErrInvalidArgument)
+	authMode := strings.ToLower(strings.TrimSpace(config["auth_mode"]))
+	if authMode == "" {
+		authMode = gitLabAuthModeToken
+	}
+	switch authMode {
+	case gitLabAuthModeToken:
+		if enabled {
+			if _, ok := credentials["token"]; !ok {
+				return fmt.Errorf("%w: gitlab token is required when enabled", apperrors.ErrInvalidArgument)
+			}
 		}
+	case gitLabAuthModeOAuth:
+		if strings.TrimSpace(config["client_id"]) == "" {
+			return fmt.Errorf("%w: gitlab oauth client_id is required", apperrors.ErrInvalidArgument)
+		}
+		if !validHTTPURL(config["oauth_redirect_uri"]) {
+			return fmt.Errorf("%w: gitlab oauth_redirect_uri must be an HTTP(S) URL", apperrors.ErrInvalidArgument)
+		}
+		if value := strings.TrimSpace(config["oauth_return_uri"]); value != "" && !validHTTPURL(value) {
+			return fmt.Errorf("%w: gitlab oauth_return_uri must be an HTTP(S) URL", apperrors.ErrInvalidArgument)
+		}
+		if _, ok := credentials["client_secret"]; !ok {
+			return fmt.Errorf("%w: gitlab oauth client_secret is required", apperrors.ErrInvalidArgument)
+		}
+	default:
+		return fmt.Errorf("%w: gitlab auth_mode must be access_token or oauth", apperrors.ErrInvalidArgument)
 	}
 	return nil
+}
+
+func validHTTPURL(value string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	return err == nil && parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 
 func configurationMap(fields []sohaapi.SystemIntegrationConfigurationField) map[string]string {

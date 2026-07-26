@@ -509,11 +509,13 @@ func TestRegisterProviderPortalRoutesExposeIdentityProviderWorkbenchAndOIDCProto
 		"PATCH /api/v1/identity/policies/:applicationID",
 		"GET /api/v1/identity/providers/:providerID/oidc-clients",
 		"POST /api/v1/identity/providers/:providerID/oidc-clients",
+		"POST /api/v1/identity/providers/:providerID/signing-keys/rotate",
 		"PATCH /api/v1/identity/oidc-clients/:clientID",
 		"DELETE /api/v1/identity/oidc-clients/:clientID",
 		"GET /api/v1/identity/outposts",
 		"POST /api/v1/identity/outposts",
 		"PATCH /api/v1/identity/outposts/:outpostID",
+		"POST /api/v1/identity/outposts/:outpostID/token/rotate",
 		"DELETE /api/v1/identity/outposts/:outpostID",
 		"GET /api/v1/identity/audit/events",
 		"GET /.well-known/openid-configuration",
@@ -547,6 +549,7 @@ func TestRegisterProtectedRoutesExposeSystemIntegrationAndSourceControl(t *testi
 		"POST /api/v1/system-integrations",
 		"PATCH /api/v1/system-integrations/:integrationID",
 		"POST /api/v1/system-integrations/:integrationID/test",
+		"POST /api/v1/system-integrations/:integrationID/oauth/authorize",
 		"GET /api/v1/source-connections",
 		"GET /api/v1/source-connections/:sourceConnectionID/repositories/:repositoryID/files",
 	} {
@@ -554,6 +557,18 @@ func TestRegisterProtectedRoutesExposeSystemIntegrationAndSourceControl(t *testi
 			t.Fatalf("missing route %s", expected)
 		}
 	}
+}
+
+func TestRegisterPublicRoutesExposesGitLabOAuthCallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerPublicRoutes(router.Group("/api/v1"), cfgpkg.Config{}, routeTestDependencies())
+	for _, route := range router.Routes() {
+		if route.Method == http.MethodGet && route.Path == "/api/v1/system-integrations/oauth/gitlab/callback" {
+			return
+		}
+	}
+	t.Fatal("missing public GitLab OAuth callback route")
 }
 
 func TestRegisterAccessRoutesPreservesEndpointContract(t *testing.T) {

@@ -455,7 +455,7 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (dom
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: authorization changed, refresh required", apperrors.ErrUnauthorized)
 	}
 	principal := principalFromClaims(claims)
-	return principal, domainidentity.AccessContext{TokenID: claims.ID, TokenKind: "session_access", SessionID: claims.SessionID, SubjectType: "user", SubjectID: principal.UserID, ExpiresAt: claims.ExpiresAt.Time}, nil
+	return principal, domainidentity.AccessContext{TokenID: claims.ID, TokenKind: "session_access", SessionID: claims.SessionID, SubjectType: "user", SubjectID: principal.UserID, Metadata: session.Metadata, ExpiresAt: claims.ExpiresAt.Time}, nil
 }
 
 func (s *Service) IssueStreamTicket(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error) {

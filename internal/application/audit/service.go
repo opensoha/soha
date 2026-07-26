@@ -271,6 +271,13 @@ func normalizeAuditFilterWithLimit(filter domainaudit.Filter, maxLimit int) doma
 	filter.ResourceKind = strings.TrimSpace(filter.ResourceKind)
 	filter.ResourceName = strings.TrimSpace(filter.ResourceName)
 	filter.Action = strings.TrimSpace(filter.Action)
+	prefixes := make([]string, 0, len(filter.ActionPrefixes))
+	for _, prefix := range filter.ActionPrefixes {
+		if prefix = strings.TrimSpace(prefix); prefix != "" {
+			prefixes = append(prefixes, prefix)
+		}
+	}
+	filter.ActionPrefixes = prefixes
 	filter.Result = strings.ToLower(strings.TrimSpace(filter.Result))
 	filter.RequestID = strings.TrimSpace(filter.RequestID)
 	filter.RequestPath = strings.TrimSpace(filter.RequestPath)

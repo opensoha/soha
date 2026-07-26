@@ -114,7 +114,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 		{
 			ID:                 "security",
 			Name:               "内网工作台",
-			DefaultPath:        "/identity/overview",
+			DefaultPath:        "/internal-workbench/overview",
 			EnabledConfigKey:   "modules.security.enabled",
 			VisiblePermissions: []string{"identity.applications.view", "identity.providers.view", "identity.outposts.view", "identity.policies.view"},
 			SeedMenus:          []string{"identity", "identity-applications", "identity-providers", "identity-outposts", "identity-policies"},

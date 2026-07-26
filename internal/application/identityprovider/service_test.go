@@ -16,6 +16,7 @@ import (
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
 	domainportal "github.com/opensoha/soha/internal/domain/providerportal"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -161,6 +162,91 @@ func TestServiceOIDCIntrospectRequiresClientAuthentication(t *testing.T) {
 	}
 }
 
+func TestServiceOIDCPublicClientRequiresPKCEAndNoSecret(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.client.ClientType = domainprovider.OIDCClientTypePublic
+	repo.client.ClientSecretHash = ""
+	users := &memoryUsers{}
+	service := New(repo, users, nil, nil, "test-encryption-key-32-bytes-long")
+
+	if _, err := service.Authorize(ctx, "https://soha.example", users.principal(), domainprovider.AuthorizeInput{
+		ResponseType: "code", ClientID: "client-1", RedirectURI: "https://app.example/callback", Scope: "openid",
+	}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("Authorize without PKCE error = %v, want invalid argument", err)
+	}
+	authorized, err := service.Authorize(ctx, "https://soha.example", users.principal(), domainprovider.AuthorizeInput{
+		ResponseType: "code", ClientID: "client-1", RedirectURI: "https://app.example/callback", Scope: "openid",
+		CodeChallenge: pkceChallenge("verifier"), CodeChallengeMethod: "S256",
+	})
+	if err != nil {
+		t.Fatalf("Authorize returned error: %v", err)
+	}
+	tokens, err := service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
+		GrantType: "authorization_code", Code: authorized.Code, RedirectURI: "https://app.example/callback",
+		ClientID: "client-1", CodeVerifier: "verifier",
+	})
+	if err != nil || tokens.AccessToken == "" {
+		t.Fatalf("public client Token = %#v, error=%v", tokens, err)
+	}
+}
+
+func TestServiceOIDCConfidentialClientWithoutSecretHashFailsClosed(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.client.ClientSecretHash = ""
+	users := &memoryUsers{}
+	service := New(repo, users, nil, nil, "test-encryption-key-32-bytes-long")
+	authorized, err := service.Authorize(ctx, "https://soha.example", users.principal(), domainprovider.AuthorizeInput{
+		ResponseType: "code", ClientID: "client-1", RedirectURI: "https://app.example/callback", Scope: "openid",
+		CodeChallenge: pkceChallenge("verifier"), CodeChallengeMethod: "S256",
+	})
+	if err != nil {
+		t.Fatalf("Authorize returned error: %v", err)
+	}
+	if _, err := service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
+		GrantType: "authorization_code", Code: authorized.Code, RedirectURI: "https://app.example/callback",
+		ClientID: "client-1", CodeVerifier: "verifier",
+	}); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("Token error = %v, want unauthorized", err)
+	}
+}
+
+func TestServiceOIDCClaimsFollowGrantedScopes(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	users := &memoryUsers{}
+	service := New(repo, users, nil, nil, "test-encryption-key-32-bytes-long")
+	authorized, err := service.Authorize(ctx, "https://soha.example", users.principal(), domainprovider.AuthorizeInput{
+		ResponseType: "code", ClientID: "client-1", RedirectURI: "https://app.example/callback", Scope: "openid",
+		CodeChallenge: pkceChallenge("verifier"), CodeChallengeMethod: "S256",
+	})
+	if err != nil {
+		t.Fatalf("Authorize returned error: %v", err)
+	}
+	tokens, err := service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
+		GrantType: "authorization_code", Code: authorized.Code, RedirectURI: "https://app.example/callback",
+		ClientID: "client-1", ClientSecret: "secret-1", CodeVerifier: "verifier",
+	})
+	if err != nil {
+		t.Fatalf("Token returned error: %v", err)
+	}
+	claims, err := service.parseOIDCToken(ctx, "https://soha.example", tokens.IDToken, domainprovider.TokenTypeID, true)
+	if err != nil {
+		t.Fatalf("parse ID token: %v", err)
+	}
+	if claims.Email != "" || claims.UserName != "" || len(claims.Roles)+len(claims.Teams)+len(claims.Projects)+len(claims.Tags) != 0 {
+		t.Fatalf("openid-only claims leaked profile data: %#v", claims)
+	}
+	userInfo, err := service.UserInfo(ctx, "https://soha.example", tokens.AccessToken)
+	if err != nil {
+		t.Fatalf("UserInfo returned error: %v", err)
+	}
+	if userInfo.Subject != "user-1" || userInfo.Email != "" || userInfo.Name != "" || len(userInfo.Roles) != 0 {
+		t.Fatalf("openid-only UserInfo leaked profile data: %#v", userInfo)
+	}
+}
+
 func TestServiceOIDCIntrospectReturnsInactiveForOtherClientToken(t *testing.T) {
 	ctx := context.Background()
 	repo := newMemoryRepo(t)
@@ -275,10 +361,15 @@ func TestServiceOIDCEndSessionRevokesBoundSessions(t *testing.T) {
 	}); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("unregistered redirect error = %v, want invalid argument", err)
 	}
+	if _, err := service.EndSession(ctx, "https://soha.example", domainprovider.EndSessionInput{
+		IDTokenHint: tokens.IDToken, PostLogoutRedirectURI: "https://app.example/callback",
+	}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("authorization redirect used for logout error = %v, want invalid argument", err)
+	}
 	result, err := service.EndSession(ctx, "https://soha.example", domainprovider.EndSessionInput{
-		IDTokenHint: tokens.IDToken, PostLogoutRedirectURI: "https://app.example/callback", State: "state-1",
+		IDTokenHint: tokens.IDToken, PostLogoutRedirectURI: "https://app.example/logout", State: "state-1",
 	})
-	if err != nil || result.RedirectURI != "https://app.example/callback" || result.State != "state-1" {
+	if err != nil || result.RedirectURI != "https://app.example/logout" || result.State != "state-1" {
 		t.Fatalf("EndSession = %#v, error=%v", result, err)
 	}
 	if users.revokedSessionID != "platform-1" {
@@ -420,6 +511,44 @@ func TestServiceOIDCAuthorizeRejectsInvalidClientWithoutRedirectError(t *testing
 	}
 }
 
+func TestServiceOIDCAuthorizeValidatesMaxAge(t *testing.T) {
+	baseInput := domainprovider.AuthorizeInput{
+		ResponseType: "code", ClientID: "client-1", RedirectURI: "https://app.example/callback",
+		Scope: "openid", State: "state-1", CodeChallenge: pkceChallenge("verifier"),
+		CodeChallengeMethod: "S256", PlatformSessionID: "session-1",
+	}
+	for _, test := range []struct {
+		name, maxAge, wantCode string
+		lastSeen               time.Time
+		wantErr                error
+	}{
+		{name: "fresh session", maxAge: "300", lastSeen: time.Now().UTC().Add(-time.Minute)},
+		{name: "stale session", maxAge: "30", lastSeen: time.Now().UTC().Add(-time.Minute), wantCode: "login_required", wantErr: apperrors.ErrUnauthorized},
+		{name: "malformed value", maxAge: "soon", wantCode: "invalid_request", wantErr: apperrors.ErrInvalidArgument},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			users := &memoryUsers{sessionLastSeen: test.lastSeen}
+			service := New(newMemoryRepo(t), users, nil, nil, "test-encryption-key-32-bytes-long")
+			input := baseInput
+			input.MaxAge = test.maxAge
+			_, err := service.Authorize(context.Background(), "https://soha.example", users.principal(), input)
+			if test.wantErr == nil {
+				if err != nil {
+					t.Fatalf("Authorize returned error: %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("Authorize error = %v, want %v", err, test.wantErr)
+			}
+			var redirectErr *domainprovider.AuthorizeRedirectError
+			if !errors.As(err, &redirectErr) || redirectErr.Code != test.wantCode {
+				t.Fatalf("Authorize redirect error = %#v, want code %q", redirectErr, test.wantCode)
+			}
+		})
+	}
+}
+
 func TestServiceOIDCAuthorizeReturnsRedirectErrorsAfterRegisteredRedirectURI(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -428,6 +557,36 @@ func TestServiceOIDCAuthorizeReturnsRedirectErrorsAfterRegisteredRedirectURI(t *
 		wantCode   string
 		wantIs     error
 	}{
+		{
+			name: "prompt none without session",
+			input: domainprovider.AuthorizeInput{
+				ResponseType:        "code",
+				ClientID:            "client-1",
+				RedirectURI:         "https://app.example/callback",
+				Scope:               "openid",
+				State:               "state-1",
+				Prompt:              "none",
+				CodeChallenge:       pkceChallenge("verifier"),
+				CodeChallengeMethod: "S256",
+			},
+			wantCode: "login_required",
+			wantIs:   apperrors.ErrUnauthorized,
+		},
+		{
+			name: "prompt login requires reauthentication",
+			input: domainprovider.AuthorizeInput{
+				ResponseType:        "code",
+				ClientID:            "client-1",
+				RedirectURI:         "https://app.example/callback",
+				Scope:               "openid",
+				State:               "state-1",
+				Prompt:              "login",
+				CodeChallenge:       pkceChallenge("verifier"),
+				CodeChallengeMethod: "S256",
+			},
+			wantCode: "login_required",
+			wantIs:   apperrors.ErrUnauthorized,
+		},
 		{
 			name: "unsupported response type",
 			input: domainprovider.AuthorizeInput{
@@ -501,7 +660,11 @@ func TestServiceOIDCAuthorizeReturnsRedirectErrorsAfterRegisteredRedirectURI(t *
 			}
 			service := New(repo, &memoryUsers{}, nil, nil, "test-encryption-key-32-bytes-long")
 
-			_, err := service.Authorize(ctx, "https://soha.example", (&memoryUsers{}).principal(), tt.input)
+			principal := (&memoryUsers{}).principal()
+			if tt.name == "prompt none without session" {
+				principal = domainidentity.Principal{}
+			}
+			_, err := service.Authorize(ctx, "https://soha.example", principal, tt.input)
 			if !errors.Is(err, tt.wantIs) {
 				t.Fatalf("Authorize error = %v, want %v", err, tt.wantIs)
 			}
@@ -519,6 +682,30 @@ func TestServiceOIDCAuthorizeReturnsRedirectErrorsAfterRegisteredRedirectURI(t *
 				t.Fatalf("authorization codes = %d, want 0", len(repo.codes))
 			}
 		})
+	}
+}
+
+func TestServiceRotateSigningKeyRetainsPreviousJWKSKey(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	service := New(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, "test-encryption-key-32-bytes-long")
+	if _, _, err := service.ensureSigningKey(ctx, repo.provider.ID); err != nil {
+		t.Fatalf("ensureSigningKey returned error: %v", err)
+	}
+	firstKid := repo.key.KeyID
+	rotated, err := service.RotateSigningKey(ctx, (&memoryUsers{}).principal(), repo.provider.ID)
+	if err != nil {
+		t.Fatalf("RotateSigningKey returned error: %v", err)
+	}
+	if rotated.KeyID == "" || rotated.KeyID == firstKid {
+		t.Fatalf("rotated key id = %q, previous = %q", rotated.KeyID, firstKid)
+	}
+	jwks, err := service.JWKS(ctx)
+	if err != nil {
+		t.Fatalf("JWKS returned error: %v", err)
+	}
+	if len(jwks.Keys) != 2 {
+		t.Fatalf("JWKS keys = %#v, want retained previous and active keys", jwks.Keys)
 	}
 }
 
@@ -692,6 +879,44 @@ func TestServiceProxyAuthUsesProxySessionToken(t *testing.T) {
 	}
 }
 
+func TestServiceProxySessionUsesKeyringAndAcceptsPreviousKey(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	users := &memoryUsers{}
+	now := time.Now().UTC()
+	oldKey, err := keyring.NewKey("old", "old-secret", now.Add(-time.Hour), nil)
+	if err != nil {
+		t.Fatalf("old key: %v", err)
+	}
+	newKey, err := keyring.NewKey("new", "new-secret", now, nil)
+	if err != nil {
+		t.Fatalf("new key: %v", err)
+	}
+	oldRing, err := keyring.New(oldKey, nil)
+	if err != nil {
+		t.Fatalf("old ring: %v", err)
+	}
+	newRing, err := keyring.New(newKey, []keyring.Key{oldKey})
+	if err != nil {
+		t.Fatalf("new ring: %v", err)
+	}
+	oldService := NewWithEncryptionKeys(repo, users, nil, nil, oldRing)
+	newService := NewWithEncryptionKeys(repo, users, nil, nil, newRing)
+	session, err := oldService.IssueProxySession(ctx, users.principal(), domainidentity.AccessContext{SessionID: "session-1"})
+	if err != nil {
+		t.Fatalf("IssueProxySession returned error: %v", err)
+	}
+	principal, err := newService.parseProxySession(ctx, session.Token)
+	if err != nil || principal.UserID != "user-1" {
+		t.Fatalf("parse previous-key session = %#v, error=%v", principal, err)
+	}
+	otherKey, _ := keyring.NewKey("other", "other-secret", now, nil)
+	otherRing, _ := keyring.New(otherKey, nil)
+	if _, err := NewWithEncryptionKeys(repo, users, nil, nil, otherRing).parseProxySession(ctx, session.Token); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("cross-key session error = %v, want unauthorized", err)
+	}
+}
+
 func TestServiceProxyAuthIgnoresInvalidProxySessionToken(t *testing.T) {
 	ctx := context.Background()
 	repo := newMemoryRepo(t)
@@ -786,6 +1011,24 @@ func TestServiceProxyAuthAllowsSkipAuthPathWithoutPrincipal(t *testing.T) {
 	}
 	if len(result.Headers) != 0 {
 		t.Fatalf("skip auth headers = %#v, want none", result.Headers)
+	}
+}
+
+func TestServiceProxyAuthRejectsSkipPathWhenProviderDisabled(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.provider.Type = domainprovider.ProviderTypeProxy
+	repo.provider.Enabled = false
+	repo.provider.Status = domainprovider.ProviderStatusDisabled
+	repo.provider.Config = map[string]any{"externalHost": "grafana.example.com", "skipAuthPaths": []any{"/healthz"}}
+	repo.app.ProviderType = domainportal.ProviderTypeProxy
+	repo.app.Status = domainportal.ApplicationStatusEnabled
+	service := New(repo, &memoryUsers{}, nil, nil, "test-encryption-key-32-bytes-long")
+	_, err := service.ProxyAuth(ctx, domainidentity.Principal{}, domainprovider.ProxyAuthInput{
+		ProviderID: "provider-1", OriginalURL: "https://grafana.example.com/healthz",
+	})
+	if !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("ProxyAuth error = %v, want unauthorized", err)
 	}
 }
 
@@ -905,17 +1148,31 @@ func TestServiceOutpostClaimAndHeartbeat(t *testing.T) {
 	if len(claim.Providers) != 1 || claim.Providers[0].ID != "provider-1" {
 		t.Fatalf("ClaimOutpost providers = %#v", claim.Providers)
 	}
+	if claim.ConfigVersion == "" {
+		t.Fatal("ClaimOutpost configVersion is empty")
+	}
 
 	heartbeat, err := service.HeartbeatOutpost(ctx, "outpost-1", domainprovider.OutpostHeartbeatInput{
-		Token:   token,
-		Status:  domainprovider.OutpostStatusDegraded,
-		Version: "0.1.1",
+		Token:         token,
+		Status:        domainprovider.OutpostStatusDegraded,
+		Version:       "0.1.1",
+		ConfigVersion: claim.ConfigVersion,
 	})
 	if err != nil {
 		t.Fatalf("HeartbeatOutpost returned error: %v", err)
 	}
 	if heartbeat.Outpost.Status != domainprovider.OutpostStatusDegraded || heartbeat.Outpost.Version != "0.1.1" {
 		t.Fatalf("HeartbeatOutpost = %#v, want degraded 0.1.1", heartbeat.Outpost)
+	}
+	if heartbeat.ConfigVersion != claim.ConfigVersion || len(heartbeat.Providers) != 0 {
+		t.Fatalf("unchanged heartbeat = %#v", heartbeat)
+	}
+	repo.provider.Config["websocketEnabled"] = true
+	changed, err := service.HeartbeatOutpost(ctx, "outpost-1", domainprovider.OutpostHeartbeatInput{
+		Token: token, ConfigVersion: claim.ConfigVersion,
+	})
+	if err != nil || changed.ConfigVersion == claim.ConfigVersion || len(changed.Providers) != 1 {
+		t.Fatalf("changed heartbeat = %#v, error=%v", changed, err)
 	}
 
 	session, err := service.IssueProxySession(ctx, (&memoryUsers{}).principal(), domainidentity.AccessContext{})
@@ -950,6 +1207,27 @@ func TestServiceOutpostClaimAndHeartbeat(t *testing.T) {
 	}
 	if events.Accepted != 1 {
 		t.Fatalf("RecordOutpostEvents accepted = %d, want 1", events.Accepted)
+	}
+}
+
+func TestServiceRotateOutpostTokenInvalidatesPreviousToken(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	oldToken := "outpost-token-1"
+	repo.outposts["outpost-1"] = domainprovider.Outpost{
+		ID: "outpost-1", Name: "Edge", Mode: domainprovider.OutpostModeExternal,
+		TokenHash: hashToken(oldToken), Status: domainprovider.OutpostStatusOffline,
+	}
+	service := New(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, "test-encryption-key-32-bytes-long")
+	rotated, err := service.RotateOutpostToken(ctx, (&memoryUsers{}).principal(), "outpost-1")
+	if err != nil || rotated.Token == "" || rotated.Token == oldToken {
+		t.Fatalf("RotateOutpostToken = %#v, error=%v", rotated, err)
+	}
+	if _, err := service.ClaimOutpost(ctx, domainprovider.OutpostClaimInput{OutpostID: "outpost-1", Token: oldToken}); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("old token claim error = %v, want unauthorized", err)
+	}
+	if _, err := service.ClaimOutpost(ctx, domainprovider.OutpostClaimInput{OutpostID: "outpost-1", Token: rotated.Token}); err != nil {
+		t.Fatalf("new token claim error = %v", err)
 	}
 }
 
@@ -1183,6 +1461,7 @@ type memoryRepo struct {
 	client         domainprovider.OIDCClient
 	app            domainportal.Application
 	key            *domainprovider.SigningKey
+	keys           []domainprovider.SigningKey
 	codes          map[string]domainprovider.AuthorizationCode
 	outposts       map[string]domainprovider.Outpost
 	sessions       map[string]domainprovider.OIDCSession
@@ -1205,17 +1484,19 @@ func newMemoryRepo(t *testing.T) *memoryRepo {
 			Status:        domainprovider.ProviderStatusEnabled,
 		},
 		client: domainprovider.OIDCClient{
-			ID:                    "oidc-client-1",
-			ProviderID:            "provider-1",
-			ClientID:              "client-1",
-			ClientSecretHash:      string(secretHash),
-			RedirectURIs:          []string{"https://app.example/callback"},
-			AllowedScopes:         []string{"openid", "profile", "email", "roles"},
-			AllowedGrantTypes:     []string{"authorization_code"},
-			RequirePKCE:           true,
-			AccessTokenTTLSeconds: defaultOIDCAccessTokenTTLSeconds,
-			IDTokenTTLSeconds:     defaultOIDCIDTokenTTLSeconds,
-			Status:                domainprovider.OIDCClientStatusEnabled,
+			ID:                     "oidc-client-1",
+			ProviderID:             "provider-1",
+			ClientID:               "client-1",
+			ClientType:             domainprovider.OIDCClientTypeConfidential,
+			ClientSecretHash:       string(secretHash),
+			RedirectURIs:           []string{"https://app.example/callback"},
+			PostLogoutRedirectURIs: []string{"https://app.example/logout"},
+			AllowedScopes:          []string{"openid", "profile", "email", "roles"},
+			AllowedGrantTypes:      []string{"authorization_code"},
+			RequirePKCE:            true,
+			AccessTokenTTLSeconds:  defaultOIDCAccessTokenTTLSeconds,
+			IDTokenTTLSeconds:      defaultOIDCIDTokenTTLSeconds,
+			Status:                 domainprovider.OIDCClientStatusEnabled,
 		},
 		app: domainportal.Application{
 			ID:           "app-1",
@@ -1384,14 +1665,24 @@ func (r *memoryRepo) GetActiveSigningKey(context.Context, string) (domainprovide
 
 func (r *memoryRepo) CreateSigningKey(_ context.Context, key domainprovider.SigningKey) (domainprovider.SigningKey, error) {
 	r.key = &key
+	r.keys = append(r.keys, key)
+	return key, nil
+}
+
+func (r *memoryRepo) RotateSigningKey(_ context.Context, _ string, key domainprovider.SigningKey, now time.Time) (domainprovider.SigningKey, error) {
+	for index := range r.keys {
+		if r.keys[index].Active {
+			r.keys[index].Active = false
+			r.keys[index].RotatedAt = &now
+		}
+	}
+	r.key = &key
+	r.keys = append(r.keys, key)
 	return key, nil
 }
 
 func (r *memoryRepo) ListActivePublicKeys(context.Context) ([]domainprovider.SigningKey, error) {
-	if r.key == nil {
-		return nil, nil
-	}
-	return []domainprovider.SigningKey{*r.key}, nil
+	return append([]domainprovider.SigningKey(nil), r.keys...), nil
 }
 
 func (r *memoryRepo) CreateAuthorizationCode(_ context.Context, code domainprovider.AuthorizationCode) error {
@@ -1492,6 +1783,7 @@ func (r *memoryRepo) RevokeOIDCSessionByRefreshToken(_ context.Context, tokenHas
 
 type memoryUsers struct {
 	revokedSessionID string
+	sessionLastSeen  time.Time
 }
 
 func (m *memoryUsers) GetAuthSessionByID(_ context.Context, sessionID string) (domainidentity.Session, error) {
@@ -1499,7 +1791,11 @@ func (m *memoryUsers) GetAuthSessionByID(_ context.Context, sessionID string) (d
 	if sessionID == m.revokedSessionID {
 		status = "revoked"
 	}
-	return domainidentity.Session{ID: sessionID, UserID: "user-1", Status: status, ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
+	lastSeen := m.sessionLastSeen
+	if lastSeen.IsZero() {
+		lastSeen = time.Now().UTC()
+	}
+	return domainidentity.Session{ID: sessionID, UserID: "user-1", Status: status, ExpiresAt: time.Now().UTC().Add(time.Hour), LastSeenAt: lastSeen}, nil
 }
 
 func (m *memoryUsers) RevokeSessionByID(_ context.Context, sessionID string) error {
@@ -1550,6 +1846,8 @@ func identityProviderTestPermissions() *appaccess.PermissionResolver {
 			"admin": {
 				appaccess.PermIdentityProvidersView,
 				appaccess.PermIdentityProvidersManage,
+				appaccess.PermIdentityOutpostsView,
+				appaccess.PermIdentityOutpostsManage,
 			},
 		},
 	})

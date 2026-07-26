@@ -60,6 +60,7 @@ import (
 	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
 	feishudirectory "github.com/opensoha/soha/internal/infrastructure/directoryconnector/feishu"
 	executionbackendinfra "github.com/opensoha/soha/internal/infrastructure/executionbackend"
+	gitlabinfra "github.com/opensoha/soha/internal/infrastructure/gitlab"
 	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
 	knowledgeconnectors "github.com/opensoha/soha/internal/infrastructure/knowledge/connectors"
 	knowledgemodelgateway "github.com/opensoha/soha/internal/infrastructure/knowledge/modelgateway"
@@ -366,6 +367,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	operationService := appoperation.New(repos.operationRepository, permissionResolver)
 	systemIntegrationService := appsystemintegration.New(repos.systemIntegrationRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
 	systemIntegrationService.RegisterSourceAdapter("gitlab", gitLabSourceAdapterFactory{})
+	systemIntegrationService.RegisterOAuthProvider("gitlab", gitlabinfra.NewOAuthProvider())
 	if err := systemIntegrationService.ImportLegacyGitLab(ctx, appsystemintegration.LegacyGitLabConfig{
 		Enabled: cfg.GitLab.Enabled, BaseURL: cfg.GitLab.BaseURL, Token: cfg.GitLab.Token,
 		GroupID: cfg.GitLab.GroupID, PerPage: cfg.GitLab.PerPage, Timeout: cfg.GitLab.Timeout,

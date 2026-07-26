@@ -130,6 +130,14 @@ func (r *Repository) List(ctx context.Context, filter domainaudit.Filter) ([]dom
 		filter.MetadataKey,
 		filter.MetadataValue,
 	}
+	if len(filter.ActionPrefixes) > 0 {
+		placeholders := make([]string, 0, len(filter.ActionPrefixes))
+		for _, prefix := range filter.ActionPrefixes {
+			placeholders = append(placeholders, "action LIKE ?")
+			args = append(args, prefix+"%")
+		}
+		query += "\n\t\t  AND (" + strings.Join(placeholders, " OR ") + ")"
+	}
 	if filter.From != nil {
 		query += "\n\t\t  AND created_at >= ?"
 		args = append(args, *filter.From)

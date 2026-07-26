@@ -474,7 +474,7 @@ func (r *Repository) UpsertExecutionArtifact(ctx context.Context, item domaindel
 
 func (r *Repository) ListDeliveryBlueprints(ctx context.Context) ([]domaindelivery.DeliveryBlueprint, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, blueprint_key, name, description, application_draft, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at
+		SELECT id, blueprint_key, name, description, application_draft, services, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at
 		FROM delivery_blueprints
 		ORDER BY created_at DESC
 	`).Rows()
@@ -496,7 +496,7 @@ func (r *Repository) ListDeliveryBlueprints(ctx context.Context) ([]domaindelive
 
 func (r *Repository) GetDeliveryBlueprint(ctx context.Context, id string) (domaindelivery.DeliveryBlueprint, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, blueprint_key, name, description, application_draft, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at
+		SELECT id, blueprint_key, name, description, application_draft, services, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at
 		FROM delivery_blueprints
 		WHERE id = ?
 		LIMIT 1
@@ -530,6 +530,10 @@ func (r *Repository) saveDeliveryBlueprint(ctx context.Context, item domaindeliv
 	if err != nil {
 		return fmt.Errorf("marshal delivery blueprint application draft: %w", err)
 	}
+	services, err := json.Marshal(item.Services)
+	if err != nil {
+		return fmt.Errorf("marshal delivery blueprint services: %w", err)
+	}
 	buildSources, err := json.Marshal(item.BuildSources)
 	if err != nil {
 		return fmt.Errorf("marshal delivery blueprint build sources: %w", err)
@@ -552,18 +556,18 @@ func (r *Repository) saveDeliveryBlueprint(ctx context.Context, item domaindeliv
 	}
 	if create {
 		if err := r.db.WithContext(ctx).Exec(`
-			INSERT INTO delivery_blueprints (id, blueprint_key, name, description, application_draft, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, item.ID, item.Key, item.Name, nullableString(item.Description), string(applicationDraft), string(buildSources), string(environmentBindings), string(fileTemplates), string(executionHints), string(postCreateActions), item.Enabled, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			INSERT INTO delivery_blueprints (id, blueprint_key, name, description, application_draft, services, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, item.ID, item.Key, item.Name, nullableString(item.Description), string(applicationDraft), string(services), string(buildSources), string(environmentBindings), string(fileTemplates), string(executionHints), string(postCreateActions), item.Enabled, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return fmt.Errorf("create delivery blueprint: %w", err)
 		}
 		return nil
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE delivery_blueprints
-		SET blueprint_key = ?, name = ?, description = ?, application_draft = ?, build_sources = ?, environment_bindings = ?, file_templates = ?, execution_hints = ?, post_create_actions = ?, enabled = ?, updated_at = ?
+		SET blueprint_key = ?, name = ?, description = ?, application_draft = ?, services = ?, build_sources = ?, environment_bindings = ?, file_templates = ?, execution_hints = ?, post_create_actions = ?, enabled = ?, updated_at = ?
 		WHERE id = ?
-	`, item.Key, item.Name, nullableString(item.Description), string(applicationDraft), string(buildSources), string(environmentBindings), string(fileTemplates), string(executionHints), string(postCreateActions), item.Enabled, item.UpdatedAt, item.ID)
+	`, item.Key, item.Name, nullableString(item.Description), string(applicationDraft), string(services), string(buildSources), string(environmentBindings), string(fileTemplates), string(executionHints), string(postCreateActions), item.Enabled, item.UpdatedAt, item.ID)
 	if result.Error != nil {
 		return fmt.Errorf("update delivery blueprint: %w", result.Error)
 	}
@@ -956,16 +960,18 @@ func scanDeliveryBlueprint(rows *sql.Rows) (domaindelivery.DeliveryBlueprint, er
 	var item domaindelivery.DeliveryBlueprint
 	var description sql.NullString
 	var applicationDraft []byte
+	var services []byte
 	var buildSources []byte
 	var environmentBindings []byte
 	var fileTemplates []byte
 	var executionHints []byte
 	var postCreateActions []byte
-	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &applicationDraft, &buildSources, &environmentBindings, &fileTemplates, &executionHints, &postCreateActions, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &applicationDraft, &services, &buildSources, &environmentBindings, &fileTemplates, &executionHints, &postCreateActions, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaindelivery.DeliveryBlueprint{}, fmt.Errorf("scan delivery blueprint: %w", err)
 	}
 	item.Description = description.String
 	_ = json.Unmarshal(applicationDraft, &item.ApplicationDraft)
+	_ = json.Unmarshal(services, &item.Services)
 	_ = json.Unmarshal(buildSources, &item.BuildSources)
 	_ = json.Unmarshal(environmentBindings, &item.EnvironmentBindings)
 	_ = json.Unmarshal(fileTemplates, &item.Files)
@@ -984,12 +990,13 @@ func scanDeliveryBlueprintRow(row *sql.Row) (domaindelivery.DeliveryBlueprint, e
 	var item domaindelivery.DeliveryBlueprint
 	var description sql.NullString
 	var applicationDraft []byte
+	var services []byte
 	var buildSources []byte
 	var environmentBindings []byte
 	var fileTemplates []byte
 	var executionHints []byte
 	var postCreateActions []byte
-	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &applicationDraft, &buildSources, &environmentBindings, &fileTemplates, &executionHints, &postCreateActions, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &applicationDraft, &services, &buildSources, &environmentBindings, &fileTemplates, &executionHints, &postCreateActions, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaindelivery.DeliveryBlueprint{}, ErrNotFound
 		}
@@ -997,6 +1004,7 @@ func scanDeliveryBlueprintRow(row *sql.Row) (domaindelivery.DeliveryBlueprint, e
 	}
 	item.Description = description.String
 	_ = json.Unmarshal(applicationDraft, &item.ApplicationDraft)
+	_ = json.Unmarshal(services, &item.Services)
 	_ = json.Unmarshal(buildSources, &item.BuildSources)
 	_ = json.Unmarshal(environmentBindings, &item.EnvironmentBindings)
 	_ = json.Unmarshal(fileTemplates, &item.Files)
@@ -1199,6 +1207,7 @@ func normalizeDeliveryBlueprintInput(input domaindelivery.DeliveryBlueprintInput
 		Name:                strings.TrimSpace(input.Name),
 		Description:         strings.TrimSpace(input.Description),
 		ApplicationDraft:    draft,
+		Services:            normalizeDeliveryServices(input.Services),
 		BuildSources:        buildSources,
 		EnvironmentBindings: environmentBindings,
 		Files:               files,
@@ -1210,32 +1219,9 @@ func normalizeDeliveryBlueprintInput(input domaindelivery.DeliveryBlueprintInput
 	}
 }
 
-func normalizeDeliveryDraftInput(input domaindelivery.DeliveryDraftInput, createdBy string) domaindelivery.DeliveryDraft {
-	now := time.Now().UTC()
-	id := strings.TrimSpace(input.ID)
-	if id == "" {
-		id = uuid.NewString()
-	}
-	source := strings.TrimSpace(input.Source)
-	switch source {
-	case domaindelivery.DeliveryDraftSourceAI, domaindelivery.DeliveryDraftSourceBlueprint:
-	default:
-		source = domaindelivery.DeliveryDraftSourceManual
-	}
-	blueprintLike := normalizeDeliveryBlueprintInput(domaindelivery.DeliveryBlueprintInput{
-		ID:                  id,
-		Key:                 strings.TrimSpace(input.ApplicationDraft.Key),
-		Name:                strings.TrimSpace(input.ApplicationDraft.Name),
-		ApplicationDraft:    input.ApplicationDraft,
-		BuildSources:        input.BuildSources,
-		EnvironmentBindings: input.EnvironmentBindings,
-		Files:               input.Files,
-		ExecutionHints:      input.ExecutionHints,
-		PostCreateActions:   input.PostCreateActions,
-		Enabled:             true,
-	})
-	services := make([]domaindelivery.DeliveryDraftService, 0, len(input.Services))
-	for _, service := range input.Services {
+func normalizeDeliveryServices(input []domaindelivery.DeliveryDraftService) []domaindelivery.DeliveryDraftService {
+	services := make([]domaindelivery.DeliveryDraftService, 0, len(input))
+	for _, service := range input {
 		kind := service.ServiceKind
 		if kind == "" {
 			kind = domainapp.ServiceKindKubernetesWorkload
@@ -1261,12 +1247,33 @@ func normalizeDeliveryDraftInput(input domaindelivery.DeliveryDraftInput, create
 			Containers:          service.Containers,
 		})
 	}
+	return services
+}
+
+func normalizeDeliveryDraftInput(input domaindelivery.DeliveryDraftInput, createdBy string) domaindelivery.DeliveryDraft {
+	now := time.Now().UTC()
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		id = uuid.NewString()
+	}
+	source := strings.TrimSpace(input.Source)
+	switch source {
+	case domaindelivery.DeliveryDraftSourceAI, domaindelivery.DeliveryDraftSourceBlueprint:
+	default:
+		source = domaindelivery.DeliveryDraftSourceManual
+	}
+	blueprintLike := normalizeDeliveryBlueprintInput(domaindelivery.DeliveryBlueprintInput{
+		ID: id, Key: strings.TrimSpace(input.ApplicationDraft.Key), Name: strings.TrimSpace(input.ApplicationDraft.Name),
+		ApplicationDraft: input.ApplicationDraft, Services: input.Services, BuildSources: input.BuildSources,
+		EnvironmentBindings: input.EnvironmentBindings, Files: input.Files, ExecutionHints: input.ExecutionHints,
+		PostCreateActions: input.PostCreateActions, Enabled: true,
+	})
 	return domaindelivery.DeliveryDraft{
 		ID:                  id,
 		Source:              source,
 		Status:              domaindelivery.DeliveryDraftStatusDraft,
 		ApplicationDraft:    blueprintLike.ApplicationDraft,
-		Services:            services,
+		Services:            blueprintLike.Services,
 		BuildSources:        blueprintLike.BuildSources,
 		EnvironmentBindings: blueprintLike.EnvironmentBindings,
 		Files:               blueprintLike.Files,

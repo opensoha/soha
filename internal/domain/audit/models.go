@@ -34,6 +34,7 @@ type Filter struct {
 	ResourceKind      string
 	ResourceName      string
 	Action            string
+	ActionPrefixes    []string
 	Result            string
 	RequestID         string
 	RequestPath       string

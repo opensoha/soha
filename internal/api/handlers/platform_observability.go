@@ -239,6 +239,7 @@ func parsePlatformAuditFilter(c *gin.Context) (domainaudit.Filter, error) {
 		ResourceKind:      c.Query("resourceKind"),
 		ResourceName:      c.Query("resourceName"),
 		Action:            c.Query("action"),
+		ActionPrefixes:    splitAuditFilterValues(c.Query("actionPrefixes")),
 		Result:            c.Query("result"),
 		RequestID:         firstNonEmpty(c.Query("requestId"), c.Query("requestID")),
 		RequestPath:       c.Query("requestPath"),
@@ -253,6 +254,17 @@ func parsePlatformAuditFilter(c *gin.Context) (domainaudit.Filter, error) {
 		To:                to,
 		Limit:             parseLimit(c.Query("limit"), 50),
 	}, nil
+}
+
+func splitAuditFilterValues(value string) []string {
+	items := strings.Split(value, ",")
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func parsePlatformOperationFilter(c *gin.Context) (domainoperation.Filter, error) {

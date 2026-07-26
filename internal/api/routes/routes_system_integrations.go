@@ -12,6 +12,7 @@ func registerSystemIntegrationRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.PATCH("/system-integrations/:integrationID", deps.SystemIntegrations.Update)
 	protected.DELETE("/system-integrations/:integrationID", deps.SystemIntegrations.Delete)
 	protected.POST("/system-integrations/:integrationID/test", deps.SystemIntegrations.Test)
+	protected.POST("/system-integrations/:integrationID/oauth/authorize", deps.SystemIntegrations.BeginOAuth)
 
 	protected.GET("/source-connections", deps.SystemIntegrations.ListSources)
 	protected.GET("/source-connections/:sourceConnectionID", deps.SystemIntegrations.GetSource)

@@ -57,6 +57,24 @@ func TestClientTestConnection(t *testing.T) {
 	}
 }
 
+func TestClientTestConnectionUsesOAuthBearerToken(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer oauth-token" {
+			t.Fatalf("Authorization = %q", got)
+		}
+		if got := r.Header.Get("PRIVATE-TOKEN"); got != "" {
+			t.Fatalf("PRIVATE-TOKEN = %q", got)
+		}
+		_, _ = fmt.Fprint(w, `{"id":42}`)
+	}))
+	defer server.Close()
+
+	client := NewWithOptions(Options{Enabled: true, BaseURL: server.URL, Token: "oauth-token", Bearer: true})
+	if err := client.TestConnection(context.Background()); err != nil {
+		t.Fatalf("TestConnection() error = %v", err)
+	}
+}
+
 func TestListRepositoriesMapsFieldsAndPagination(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.EscapedPath() != "/groups/platform%2Fteam/projects" {

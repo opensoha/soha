@@ -3,6 +3,8 @@ package systemintegration
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +14,7 @@ import (
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 )
@@ -62,6 +65,23 @@ type captureSourceFactory struct{ adapter SourceAdapter }
 
 func (f captureSourceFactory) Build(domain.Integration, map[string]string) (SourceAdapter, error) {
 	return f.adapter, nil
+}
+
+type captureOAuthProvider struct {
+	exchanged bool
+	refreshed bool
+}
+
+func (*captureOAuthProvider) AuthorizationURL(_ OAuthProviderConfig, state string) (string, error) {
+	return "https://gitlab.example/oauth/authorize?state=" + url.QueryEscape(state), nil
+}
+func (p *captureOAuthProvider) Exchange(context.Context, OAuthProviderConfig, string) (OAuthToken, error) {
+	p.exchanged = true
+	return OAuthToken{AccessToken: "oauth-access", RefreshToken: "oauth-refresh", ExpiresIn: 3600}, nil
+}
+func (p *captureOAuthProvider) Refresh(context.Context, OAuthProviderConfig, string) (OAuthToken, error) {
+	p.refreshed = true
+	return OAuthToken{AccessToken: "oauth-access-refreshed", RefreshToken: "oauth-refresh-next", ExpiresIn: 3600}, nil
 }
 
 func newMemoryIntegrationRepository() *memoryIntegrationRepository {
@@ -156,6 +176,84 @@ func TestImportLegacyGitLabOnlyWhenNoConnectionExists(t *testing.T) {
 		if plain, err := secretcrypto.DecryptStringWithKeyring(testKeyring(t), repo.credentials[id]["token"]); err != nil || plain != "legacy-token" {
 			t.Fatalf("legacy token round trip = %q, %v", plain, err)
 		}
+	}
+}
+
+func TestGitLabOAuthAuthorizationPersistsEncryptedTokensAndRefreshes(t *testing.T) {
+	repo := newMemoryIntegrationRepository()
+	service := testIntegrationService(t, repo)
+	provider := &captureOAuthProvider{}
+	service.RegisterOAuthProvider(domain.ProviderGitLab, provider)
+	now := time.Date(2026, 7, 25, 10, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+
+	item, err := service.Create(t.Context(), adminPrincipal(), sohaapi.SystemIntegrationCreateRequest{
+		Category:     sohaapi.SystemIntegrationCategorySourceControl,
+		ProviderType: domain.ProviderGitLab,
+		Name:         "GitLab OAuth",
+		Enabled:      true,
+		Configuration: []sohaapi.SystemIntegrationConfigurationField{
+			{Key: "base_url", Value: "https://gitlab.example/api/v4"},
+			{Key: "auth_mode", Value: gitLabAuthModeOAuth},
+			{Key: "client_id", Value: "application-id"},
+			{Key: "oauth_redirect_uri", Value: "https://soha.example/api/v1/system-integrations/oauth/gitlab/callback"},
+			{Key: "oauth_return_uri", Value: "https://app.example"},
+		},
+		Credentials: []sohaapi.SystemIntegrationCredentialInput{{Key: "client_secret", Value: "application-secret"}},
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if connections, err := service.ListSourceConnections(t.Context(), adminPrincipal()); err != nil || len(connections) != 0 {
+		t.Fatalf("connection should remain unavailable before OAuth, items=%#v err=%v", connections, err)
+	}
+
+	authorization, err := service.BeginOAuth(t.Context(), adminPrincipal(), item.ID)
+	if err != nil {
+		t.Fatalf("BeginOAuth() error = %v", err)
+	}
+	authorizationURL, _ := url.Parse(authorization.AuthorizationURL)
+	state := authorizationURL.Query().Get("state")
+	if state == "" || strings.Contains(authorization.AuthorizationURL, "application-secret") {
+		t.Fatalf("authorization URL is invalid or leaked a secret: %q", authorization.AuthorizationURL)
+	}
+	tamperedSuffix := "A"
+	if strings.HasSuffix(state, tamperedSuffix) {
+		tamperedSuffix = "B"
+	}
+	if _, err := service.CompleteOAuth(t.Context(), OAuthCallbackInput{Code: "code", State: state[:len(state)-1] + tamperedSuffix}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("tampered OAuth state error = %v", err)
+	}
+	redirectURL, err := service.CompleteOAuth(t.Context(), OAuthCallbackInput{Code: "code", State: state})
+	if err != nil {
+		t.Fatalf("CompleteOAuth() error = %v", err)
+	}
+	if !provider.exchanged || redirectURL != "https://app.example/settings/source-control/"+item.ID+"?oauth=success" {
+		t.Fatalf("oauth completion = exchanged %v redirect %q", provider.exchanged, redirectURL)
+	}
+	for key, want := range map[string]string{"access_token": "oauth-access", "refresh_token": "oauth-refresh"} {
+		stored := repo.credentials[item.ID][key]
+		plain, decryptErr := secretcrypto.DecryptStringWithKeyring(testKeyring(t), stored)
+		if decryptErr != nil || plain != want || !secretcrypto.Encrypted(stored) {
+			t.Fatalf("credential %s = %q, %v", key, plain, decryptErr)
+		}
+	}
+	if connections, err := service.ListSourceConnections(t.Context(), adminPrincipal()); err != nil || len(connections) != 1 {
+		t.Fatalf("connection should be available after OAuth, items=%#v err=%v", connections, err)
+	}
+
+	now = now.Add(2 * time.Hour)
+	updated := repo.items[item.ID]
+	credentials, err := service.decryptCredentials(t.Context(), item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, refreshed, err := service.refreshOAuthCredentials(t.Context(), updated, credentials)
+	if err != nil {
+		t.Fatalf("refreshOAuthCredentials() error = %v", err)
+	}
+	if !provider.refreshed || refreshed["access_token"] != "oauth-access-refreshed" {
+		t.Fatalf("oauth refresh = called %v credentials %#v", provider.refreshed, refreshed)
 	}
 }
 

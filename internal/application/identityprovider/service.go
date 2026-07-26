@@ -9,6 +9,8 @@ import (
 	"crypto/subtle"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"net/url"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -102,6 +105,10 @@ func (s *Service) Discovery(issuer string) domainprovider.DiscoveryDocument {
 		ResponseTypesSupported: []string{
 			"code",
 		},
+		ResponseModesSupported: []string{
+			"query",
+			"form_post",
+		},
 		SubjectTypesSupported: []string{
 			"public",
 		},
@@ -121,6 +128,7 @@ func (s *Service) Discovery(issuer string) domainprovider.DiscoveryDocument {
 		TokenEndpointAuthMethodsSupported: []string{
 			"client_secret_basic",
 			"client_secret_post",
+			"none",
 		},
 		ClaimsSupported: []string{
 			"sub",
@@ -184,9 +192,6 @@ func (s *Service) OIDCLaunchURL(ctx context.Context, application domainportal.Ap
 }
 
 func (s *Service) Authorize(ctx context.Context, issuer string, principal domainidentity.Principal, input domainprovider.AuthorizeInput) (domainprovider.AuthorizeResult, error) {
-	if strings.TrimSpace(principal.UserID) == "" {
-		return domainprovider.AuthorizeResult{}, fmt.Errorf("%w: authentication required", apperrors.ErrUnauthorized)
-	}
 	client, provider, application, err := s.resolveAuthorizeClient(ctx, input.ClientID)
 	if err != nil {
 		return domainprovider.AuthorizeResult{}, err
@@ -196,11 +201,42 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 		return domainprovider.AuthorizeResult{}, fmt.Errorf("%w: redirect_uri is not registered", apperrors.ErrInvalidArgument)
 	}
 	state := strings.TrimSpace(input.State)
+	responseMode := strings.TrimSpace(input.ResponseMode)
+	if responseMode == "" {
+		responseMode = "query"
+	}
+	if responseMode != "query" && responseMode != "form_post" {
+		err := fmt.Errorf("%w: unsupported response_mode", apperrors.ErrInvalidArgument)
+		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "invalid_request", err)
+	}
+	prompt := strings.TrimSpace(input.Prompt)
+	if prompt != "" && prompt != "none" && prompt != "login" {
+		err := fmt.Errorf("%w: unsupported prompt", apperrors.ErrInvalidArgument)
+		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "invalid_request", err)
+	}
+	if strings.TrimSpace(principal.UserID) == "" {
+		if prompt == "none" {
+			err := fmt.Errorf("%w: authentication required", apperrors.ErrUnauthorized)
+			return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "login_required", err)
+		}
+		return domainprovider.AuthorizeResult{}, fmt.Errorf("%w: authentication required", apperrors.ErrUnauthorized)
+	}
+	if prompt == "login" {
+		err := fmt.Errorf("%w: reauthentication required", apperrors.ErrUnauthorized)
+		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "login_required", err)
+	}
+	if err := s.validateAuthenticationAge(ctx, principal, input.PlatformSessionID, input.MaxAge); err != nil {
+		code := "invalid_request"
+		if errors.Is(err, apperrors.ErrUnauthorized) {
+			code = "login_required"
+		}
+		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, code, err)
+	}
 	if strings.TrimSpace(input.ResponseType) != "code" {
 		err := fmt.Errorf("%w: response_type must be code", apperrors.ErrInvalidArgument)
 		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "unsupported_response_type", err)
 	}
-	if err := validateProviderAccess(principal, provider, application); err != nil {
+	if err := s.validateProviderAccess(ctx, principal, provider, application, input.PlatformSessionID); err != nil {
 		s.recordAudit(ctx, principal, "oidc.authorize", "deny", provider, client, map[string]any{"reason": err.Error()})
 		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, authorizeRedirectErrorCode(err), err)
 	}
@@ -250,10 +286,31 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 		"scopes":      scopes,
 	})
 	return domainprovider.AuthorizeResult{
-		RedirectURI: redirectURI,
-		Code:        rawCode,
-		State:       state,
+		RedirectURI:  redirectURI,
+		Code:         rawCode,
+		State:        state,
+		ResponseMode: responseMode,
 	}, nil
+}
+
+func (s *Service) validateAuthenticationAge(ctx context.Context, principal domainidentity.Principal, sessionID, rawMaxAge string) error {
+	rawMaxAge = strings.TrimSpace(rawMaxAge)
+	if rawMaxAge == "" {
+		return nil
+	}
+	maxAge, err := strconv.ParseInt(rawMaxAge, 10, 64)
+	if err != nil || maxAge < 0 {
+		return fmt.Errorf("%w: max_age must be a non-negative integer", apperrors.ErrInvalidArgument)
+	}
+	if s.users == nil || strings.TrimSpace(sessionID) == "" {
+		return fmt.Errorf("%w: reauthentication required", apperrors.ErrUnauthorized)
+	}
+	session, err := s.users.GetAuthSessionByID(ctx, strings.TrimSpace(sessionID))
+	now := time.Now().UTC()
+	if err != nil || session.UserID != principal.UserID || session.Status != "active" || !session.ExpiresAt.After(now) || session.LastSeenAt.IsZero() || now.Unix()-session.LastSeenAt.UTC().Unix() > maxAge {
+		return fmt.Errorf("%w: reauthentication required", apperrors.ErrUnauthorized)
+	}
+	return nil
 }
 
 func (s *Service) Token(ctx context.Context, issuer string, input domainprovider.TokenInput) (domainprovider.TokenResponse, error) {
@@ -403,12 +460,14 @@ func (s *Service) issueOIDCTokenResponse(ctx context.Context, issuer string, pro
 	}
 	accessTTL := ttlSeconds(client.AccessTokenTTLSeconds, defaultOIDCAccessTokenTTLSeconds)
 	accessClaims := newOIDCTokenClaims(domainprovider.TokenTypeAccess, issuer, client.ClientID, principal, sessionID, authTime, now, accessTTL)
+	applyOIDCScopedClaims(&accessClaims, principal, scopes)
 	accessClaims.Scope = strings.Join(scopes, " ")
 	accessToken, err := signOIDCToken(privateKey, signingKey.KeyID, accessClaims)
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
 	}
 	idClaims := newOIDCTokenClaims(domainprovider.TokenTypeID, issuer, client.ClientID, principal, sessionID, authTime, now, ttlSeconds(client.IDTokenTTLSeconds, defaultOIDCIDTokenTTLSeconds))
+	applyOIDCScopedClaims(&idClaims, principal, scopes)
 	idClaims.Nonce = nonce
 	idToken, err := signOIDCToken(privateKey, signingKey.KeyID, idClaims)
 	if err != nil {
@@ -423,16 +482,34 @@ func newOIDCTokenClaims(tokenType, issuer, clientID string, principal domainiden
 		ClientID:  clientID,
 		SessionID: sessionID,
 		AuthTime:  authTime.Unix(),
-		UserName:  principal.UserName,
-		Email:     principal.Email,
-		Roles:     append([]string(nil), principal.Roles...),
-		Teams:     append([]string(nil), principal.Teams...),
-		Projects:  append([]string(nil), principal.Projects...),
-		Tags:      append([]string(nil), principal.Tags...),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: issuer, Subject: principal.UserID, Audience: jwt.ClaimStrings{clientID}, ID: uuid.NewString(),
 			IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(time.Duration(ttl) * time.Second)),
 		},
+	}
+}
+
+func applyOIDCScopedClaims(claims *oidcTokenClaims, principal domainidentity.Principal, scopes []string) {
+	if claims == nil {
+		return
+	}
+	if containsString(scopes, "profile") {
+		claims.UserName = principal.UserName
+	}
+	if containsString(scopes, "email") {
+		claims.Email = principal.Email
+	}
+	if containsString(scopes, "roles") {
+		claims.Roles = append([]string(nil), principal.Roles...)
+	}
+	if containsString(scopes, "teams") {
+		claims.Teams = append([]string(nil), principal.Teams...)
+	}
+	if containsString(scopes, "projects") {
+		claims.Projects = append([]string(nil), principal.Projects...)
+	}
+	if containsString(scopes, "tags") {
+		claims.Tags = append([]string(nil), principal.Tags...)
 	}
 }
 
@@ -501,7 +578,7 @@ func (s *Service) EndSession(ctx context.Context, issuer string, input domainpro
 		return domainprovider.EndSessionResult{}, err
 	}
 	redirectURI := strings.TrimSpace(input.PostLogoutRedirectURI)
-	if redirectURI != "" && !containsString(client.RedirectURIs, redirectURI) {
+	if redirectURI != "" && !containsString(client.PostLogoutRedirectURIs, redirectURI) {
 		return domainprovider.EndSessionResult{}, fmt.Errorf("%w: post_logout_redirect_uri is not registered", apperrors.ErrInvalidArgument)
 	}
 	session, err := s.repo.GetOIDCSession(ctx, claims.SessionID, time.Now().UTC())
@@ -528,15 +605,27 @@ func (s *Service) UserInfo(ctx context.Context, issuer, bearerToken string) (dom
 	if err != nil {
 		return domainprovider.UserInfoResponse{}, err
 	}
-	return domainprovider.UserInfoResponse{
-		Subject:  principal.UserID,
-		Name:     principal.UserName,
-		Email:    principal.Email,
-		Roles:    append([]string(nil), principal.Roles...),
-		Teams:    append([]string(nil), principal.Teams...),
-		Projects: append([]string(nil), principal.Projects...),
-		Tags:     append([]string(nil), principal.Tags...),
-	}, nil
+	out := domainprovider.UserInfoResponse{Subject: principal.UserID}
+	scopes := strings.Fields(claims.Scope)
+	if containsString(scopes, "profile") {
+		out.Name = principal.UserName
+	}
+	if containsString(scopes, "email") {
+		out.Email = principal.Email
+	}
+	if containsString(scopes, "roles") {
+		out.Roles = append([]string(nil), principal.Roles...)
+	}
+	if containsString(scopes, "teams") {
+		out.Teams = append([]string(nil), principal.Teams...)
+	}
+	if containsString(scopes, "projects") {
+		out.Projects = append([]string(nil), principal.Projects...)
+	}
+	if containsString(scopes, "tags") {
+		out.Tags = append([]string(nil), principal.Tags...)
+	}
+	return out, nil
 }
 
 func (s *Service) IssueProxySession(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext) (domainprovider.ProxySession, error) {
@@ -554,6 +643,7 @@ func (s *Service) IssueProxySession(ctx context.Context, principal domainidentit
 	claims := proxySessionClaims{
 		TokenType: proxySessionTokenType,
 		SessionID: accessCtx.SessionID,
+		MFA:       metadataMFA(accessCtx.Metadata),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    proxySessionIssuer,
 			Subject:   principal.UserID,
@@ -588,6 +678,9 @@ func (s *Service) ProxyAuth(ctx context.Context, principal domainidentity.Princi
 		Provider:     provider,
 		Application:  application,
 	}
+	if err := validateProxyProviderRuntime(provider, application); err != nil {
+		return domainprovider.ProxyAuthResult{}, err
+	}
 	if proxyPathSkipped(provider, proxyPath(input)) {
 		result.Decision = domainprovider.ProxyDecisionAllow
 		result.Reason = "skip_auth_path"
@@ -601,8 +694,9 @@ func (s *Service) ProxyAuth(ctx context.Context, principal domainidentity.Princi
 		return result, nil
 	}
 	if strings.TrimSpace(principal.UserID) == "" {
-		if parsedPrincipal, parseErr := s.parseProxySession(ctx, input.SessionToken); parseErr == nil {
+		if parsedPrincipal, mfa, parseErr := s.parseProxySessionAccess(ctx, input.SessionToken); parseErr == nil {
 			principal = parsedPrincipal
+			input.MFAAuthenticated = mfa
 		}
 	}
 	if strings.TrimSpace(principal.UserID) == "" {
@@ -616,7 +710,7 @@ func (s *Service) ProxyAuth(ctx context.Context, principal domainidentity.Princi
 		})
 		return result, nil
 	}
-	if err := validateProxyProviderAccess(principal, provider, application); err != nil {
+	if err := validateProxyProviderAccess(ctx, principal, provider, application, input); err != nil {
 		result.Decision = domainprovider.ProxyDecisionDeny
 		result.Reason = err.Error()
 		s.recordAudit(ctx, principal, "proxy.deny", "denied", provider, domainprovider.OIDCClient{}, map[string]any{
@@ -867,6 +961,30 @@ func (s *Service) DeleteOutpost(ctx context.Context, principal domainidentity.Pr
 	return nil
 }
 
+func (s *Service) RotateOutpostToken(ctx context.Context, principal domainidentity.Principal, outpostID string) (domainprovider.Outpost, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityOutpostsManage); err != nil {
+		return domainprovider.Outpost{}, err
+	}
+	outpost, err := s.repo.GetOutpost(ctx, outpostID)
+	if err != nil {
+		return domainprovider.Outpost{}, err
+	}
+	token, err := randomToken(32)
+	if err != nil {
+		return domainprovider.Outpost{}, err
+	}
+	outpost.TokenHash = hashToken(token)
+	outpost.UpdatedBy = principal.UserID
+	outpost.UpdatedAt = time.Now().UTC()
+	updated, err := s.repo.UpdateOutpost(ctx, outpost)
+	if err != nil {
+		return domainprovider.Outpost{}, err
+	}
+	updated.Token = token
+	s.recordAudit(ctx, principal, "identity.outpost.token.rotate", "success", domainprovider.Provider{ID: updated.ID, Type: "outpost"}, domainprovider.OIDCClient{}, nil)
+	return updated, nil
+}
+
 func (s *Service) ClaimOutpost(ctx context.Context, input domainprovider.OutpostClaimInput) (domainprovider.OutpostClaimResult, error) {
 	outpost, err := s.authenticateOutpost(ctx, input.OutpostID, input.Token)
 	if err != nil {
@@ -895,9 +1013,14 @@ func (s *Service) ClaimOutpost(ctx context.Context, input domainprovider.Outpost
 		"version":       updated.Version,
 		"providerCount": len(providers),
 	})
+	configVersion, err := outpostConfigVersion(providers)
+	if err != nil {
+		return domainprovider.OutpostClaimResult{}, err
+	}
 	return domainprovider.OutpostClaimResult{
-		Outpost:   updated,
-		Providers: providers,
+		Outpost:       updated,
+		ConfigVersion: configVersion,
+		Providers:     providers,
 	}, nil
 }
 
@@ -927,12 +1050,50 @@ func (s *Service) HeartbeatOutpost(ctx context.Context, outpostID string, input 
 	if err != nil {
 		return domainprovider.OutpostHeartbeatResult{}, err
 	}
+	providers, err := s.outpostProxyProviders(ctx, updated.ID)
+	if err != nil {
+		return domainprovider.OutpostHeartbeatResult{}, err
+	}
+	configVersion, err := outpostConfigVersion(providers)
+	if err != nil {
+		return domainprovider.OutpostHeartbeatResult{}, err
+	}
 	s.recordAudit(ctx, domainidentity.Principal{}, "outpost.heartbeat", "success", domainprovider.Provider{ID: updated.ID, Type: "outpost"}, domainprovider.OIDCClient{}, map[string]any{
 		"mode":    updated.Mode,
 		"status":  updated.Status,
 		"version": updated.Version,
 	})
-	return domainprovider.OutpostHeartbeatResult{Outpost: updated}, nil
+	result := domainprovider.OutpostHeartbeatResult{Outpost: updated, ConfigVersion: configVersion}
+	if strings.TrimSpace(input.ConfigVersion) != configVersion {
+		result.Providers = providers
+	}
+	return result, nil
+}
+
+func outpostConfigVersion(providers []domainprovider.Provider) (string, error) {
+	type providerConfig struct {
+		ID            string         `json:"id"`
+		ApplicationID string         `json:"applicationId"`
+		Name          string         `json:"name"`
+		Type          string         `json:"type"`
+		Enabled       bool           `json:"enabled"`
+		Config        map[string]any `json:"config"`
+		Status        string         `json:"status"`
+	}
+	items := make([]providerConfig, 0, len(providers))
+	for _, provider := range providers {
+		items = append(items, providerConfig{
+			ID: provider.ID, ApplicationID: provider.ApplicationID, Name: provider.Name,
+			Type: provider.Type, Enabled: provider.Enabled, Config: provider.Config, Status: provider.Status,
+		})
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
+	payload, err := json.Marshal(items)
+	if err != nil {
+		return "", fmt.Errorf("marshal outpost provider config: %w", err)
+	}
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:16]), nil
 }
 
 func (s *Service) CheckOutpost(ctx context.Context, outpostID string, input domainprovider.OutpostCheckInput) (domainprovider.ProxyAuthResult, error) {
@@ -995,7 +1156,7 @@ func (s *Service) CreateOIDCClient(ctx context.Context, principal domainidentity
 		return domainprovider.OIDCClientCreated{}, err
 	}
 	secret := strings.TrimSpace(input.ClientSecret)
-	if secret == "" {
+	if secret == "" && strings.ToLower(strings.TrimSpace(input.ClientType)) != domainprovider.OIDCClientTypePublic {
 		secret, err = randomToken(32)
 		if err != nil {
 			return domainprovider.OIDCClientCreated{}, err
@@ -1023,6 +1184,10 @@ func (s *Service) UpdateOIDCClient(ctx context.Context, principal domainidentity
 	}
 	if strings.TrimSpace(input.ProviderID) == "" {
 		input.ProviderID = current.ProviderID
+	}
+	if strings.EqualFold(strings.TrimSpace(input.ClientType), domainprovider.OIDCClientTypeConfidential) &&
+		current.ClientType == domainprovider.OIDCClientTypePublic && strings.TrimSpace(input.ClientSecret) == "" {
+		return domainprovider.OIDCClient{}, fmt.Errorf("%w: switching to a confidential client requires a client secret", apperrors.ErrInvalidArgument)
 	}
 	provider, err := s.requireOIDCProvider(ctx, input.ProviderID)
 	if err != nil {
@@ -1078,6 +1243,7 @@ type oidcTokenClaims struct {
 type proxySessionClaims struct {
 	TokenType string `json:"token_type"`
 	SessionID string `json:"sid,omitempty"`
+	MFA       bool   `json:"mfa,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -1236,14 +1402,20 @@ func (s *Service) resolveProxyProvider(ctx context.Context, input domainprovider
 	return bestProvider, bestApplication, nil
 }
 
-func validateProviderAccess(principal domainidentity.Principal, provider domainprovider.Provider, application domainportal.Application) error {
+func (s *Service) validateProviderAccess(ctx context.Context, principal domainidentity.Principal, provider domainprovider.Provider, application domainportal.Application, sessionID string) error {
 	if !providerEnabled(provider) || provider.Type != domainprovider.ProviderTypeOIDC {
 		return fmt.Errorf("%w: oidc provider is disabled", apperrors.ErrUnauthorized)
 	}
 	if application.Status != domainportal.ApplicationStatusEnabled {
 		return fmt.Errorf("%w: application is disabled", apperrors.ErrAccessDenied)
 	}
-	if !domainportal.CanAccessApplication(principal, application) {
+	access := domainportal.AccessPolicyContext{SourceIP: requestctx.FromContext(ctx).SourceIP, Now: time.Now().UTC()}
+	if strings.TrimSpace(sessionID) != "" && s.users != nil {
+		if session, err := s.users.GetAuthSessionByID(ctx, sessionID); err == nil {
+			access.MFAAuthenticated = metadataMFA(session.Metadata)
+		}
+	}
+	if !domainportal.CanAccessApplicationWithContext(principal, application, access) {
 		return fmt.Errorf("%w: application access denied", apperrors.ErrAccessDenied)
 	}
 	return nil
@@ -1277,22 +1449,41 @@ func authorizeRedirectErrorCode(err error) string {
 	}
 }
 
-func validateProxyProviderAccess(principal domainidentity.Principal, provider domainprovider.Provider, application domainportal.Application) error {
+func validateProxyProviderAccess(ctx context.Context, principal domainidentity.Principal, provider domainprovider.Provider, application domainportal.Application, input domainprovider.ProxyAuthInput) error {
+	if err := validateProxyProviderRuntime(provider, application); err != nil {
+		return err
+	}
+	sourceIP := strings.TrimSpace(input.SourceIP)
+	if sourceIP == "" {
+		sourceIP = requestctx.FromContext(ctx).SourceIP
+	}
+	if !domainportal.CanAccessApplicationWithContext(principal, application, domainportal.AccessPolicyContext{
+		SourceIP: sourceIP, MFAAuthenticated: input.MFAAuthenticated, Now: time.Now().UTC(),
+	}) {
+		return fmt.Errorf("%w: application access denied", apperrors.ErrAccessDenied)
+	}
+	return nil
+}
+
+func validateProxyProviderRuntime(provider domainprovider.Provider, application domainportal.Application) error {
 	if !providerEnabled(provider) || provider.Type != domainprovider.ProviderTypeProxy {
 		return fmt.Errorf("%w: proxy provider is disabled", apperrors.ErrUnauthorized)
 	}
 	if application.Status != domainportal.ApplicationStatusEnabled {
 		return fmt.Errorf("%w: application is disabled", apperrors.ErrAccessDenied)
 	}
-	if !domainportal.CanAccessApplication(principal, application) {
-		return fmt.Errorf("%w: application access denied", apperrors.ErrAccessDenied)
-	}
 	return nil
 }
 
 func (s *Service) verifyClientSecret(client domainprovider.OIDCClient, input domainprovider.TokenInput) error {
-	if strings.TrimSpace(client.ClientSecretHash) == "" {
+	if client.ClientType == domainprovider.OIDCClientTypePublic {
+		if !client.RequirePKCE {
+			return fmt.Errorf("%w: public clients must require PKCE", apperrors.ErrUnauthorized)
+		}
 		return nil
+	}
+	if strings.TrimSpace(client.ClientSecretHash) == "" {
+		return fmt.Errorf("%w: confidential client authentication is required", apperrors.ErrUnauthorized)
 	}
 	secret := strings.TrimSpace(input.ClientSecret)
 	if secret == "" {
@@ -1475,6 +1666,7 @@ func proxyAuthInputFromOutpostCheck(input domainprovider.OutpostCheckInput) doma
 		RequestPath:    strings.TrimSpace(input.RequestPath),
 		Method:         strings.TrimSpace(input.Method),
 		SessionToken:   strings.TrimSpace(input.SessionToken),
+		SourceIP:       strings.TrimSpace(input.SourceIP),
 	}
 }
 
@@ -1490,6 +1682,39 @@ func (s *Service) ensureSigningKey(ctx context.Context, providerID string) (doma
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		return domainprovider.SigningKey{}, nil, err
 	}
+	item, privateKey, err := s.generateSigningKey(providerID, time.Now().UTC())
+	if err != nil {
+		return domainprovider.SigningKey{}, nil, err
+	}
+	created, err := s.repo.CreateSigningKey(ctx, item)
+	if err != nil {
+		return domainprovider.SigningKey{}, nil, err
+	}
+	return created, privateKey, nil
+}
+
+func (s *Service) RotateSigningKey(ctx context.Context, principal domainidentity.Principal, providerID string) (domainprovider.SigningKey, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersManage); err != nil {
+		return domainprovider.SigningKey{}, err
+	}
+	provider, err := s.requireOIDCProvider(ctx, providerID)
+	if err != nil {
+		return domainprovider.SigningKey{}, err
+	}
+	now := time.Now().UTC()
+	item, _, err := s.generateSigningKey(provider.ID, now)
+	if err != nil {
+		return domainprovider.SigningKey{}, err
+	}
+	rotated, err := s.repo.RotateSigningKey(ctx, provider.ID, item, now)
+	if err != nil {
+		return domainprovider.SigningKey{}, err
+	}
+	s.recordAudit(ctx, principal, "identity.signing_key.rotate", "success", provider, domainprovider.OIDCClient{}, map[string]any{"kid": rotated.KeyID})
+	return rotated, nil
+}
+
+func (s *Service) generateSigningKey(providerID string, now time.Time) (domainprovider.SigningKey, *ecdsa.PrivateKey, error) {
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return domainprovider.SigningKey{}, nil, fmt.Errorf("generate oidc signing key: %w", err)
@@ -1502,8 +1727,7 @@ func (s *Service) ensureSigningKey(ctx context.Context, providerID string) (doma
 	if err != nil {
 		return domainprovider.SigningKey{}, nil, err
 	}
-	now := time.Now().UTC()
-	created, err := s.repo.CreateSigningKey(ctx, domainprovider.SigningKey{
+	return domainprovider.SigningKey{
 		ID:                  uuid.NewString(),
 		ProviderID:          providerID,
 		KeyID:               kid,
@@ -1512,11 +1736,7 @@ func (s *Service) ensureSigningKey(ctx context.Context, providerID string) (doma
 		PublicJWK:           publicJWK(privateKey.PublicKey, kid),
 		Active:              true,
 		CreatedAt:           now,
-	})
-	if err != nil {
-		return domainprovider.SigningKey{}, nil, err
-	}
-	return created, privateKey, nil
+	}, privateKey, nil
 }
 
 func (s *Service) encryptPrivateKey(privateKey *ecdsa.PrivateKey) (string, error) {
@@ -1608,34 +1828,92 @@ func (s *Service) parseOIDCToken(ctx context.Context, issuer, tokenString, token
 }
 
 func (s *Service) parseProxySession(ctx context.Context, tokenString string) (domainidentity.Principal, error) {
+	principal, _, err := s.parseProxySessionAccess(ctx, tokenString)
+	return principal, err
+}
+
+func (s *Service) parseProxySessionAccess(ctx context.Context, tokenString string) (domainidentity.Principal, bool, error) {
 	tokenString = strings.TrimSpace(tokenString)
 	if tokenString == "" {
-		return domainidentity.Principal{}, fmt.Errorf("%w: proxy session is required", apperrors.ErrUnauthorized)
+		return domainidentity.Principal{}, false, fmt.Errorf("%w: proxy session is required", apperrors.ErrUnauthorized)
 	}
-	claims := &proxySessionClaims{}
-	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
-		if token.Method != jwt.SigningMethodHS256 {
-			return nil, fmt.Errorf("unexpected signing method: %s", token.Method.Alg())
+	var claims *proxySessionClaims
+	for _, signingKey := range s.proxySessionVerificationKeys(time.Now().UTC()) {
+		candidate := &proxySessionClaims{}
+		token, err := jwt.ParseWithClaims(tokenString, candidate, func(token *jwt.Token) (any, error) {
+			if token.Method != jwt.SigningMethodHS256 {
+				return nil, fmt.Errorf("unexpected signing method: %s", token.Method.Alg())
+			}
+			return signingKey, nil
+		}, jwt.WithIssuer(proxySessionIssuer), jwt.WithAudience(proxySessionAudience))
+		if err == nil && token.Valid {
+			claims = candidate
+			break
 		}
-		return s.proxySessionSigningKey(), nil
-	}, jwt.WithIssuer(proxySessionIssuer), jwt.WithAudience(proxySessionAudience))
-	if err != nil || !token.Valid {
-		return domainidentity.Principal{}, fmt.Errorf("%w: invalid proxy session", apperrors.ErrUnauthorized)
+	}
+	if claims == nil {
+		return domainidentity.Principal{}, false, fmt.Errorf("%w: invalid proxy session", apperrors.ErrUnauthorized)
 	}
 	if claims.TokenType != proxySessionTokenType || strings.TrimSpace(claims.Subject) == "" {
-		return domainidentity.Principal{}, fmt.Errorf("%w: invalid proxy session", apperrors.ErrUnauthorized)
+		return domainidentity.Principal{}, false, fmt.Errorf("%w: invalid proxy session", apperrors.ErrUnauthorized)
 	}
 	if claims.SessionID != "" {
 		session, err := s.users.GetAuthSessionByID(ctx, claims.SessionID)
 		if err != nil || session.Status != "active" || session.UserID != claims.Subject || !session.ExpiresAt.After(time.Now().UTC()) {
-			return domainidentity.Principal{}, fmt.Errorf("%w: platform session is invalid", apperrors.ErrUnauthorized)
+			return domainidentity.Principal{}, false, fmt.Errorf("%w: platform session is invalid", apperrors.ErrUnauthorized)
 		}
 	}
-	return s.loadPrincipal(ctx, claims.Subject)
+	principal, err := s.loadPrincipal(ctx, claims.Subject)
+	return principal, claims.MFA, err
+}
+
+func metadataMFA(metadata map[string]any) bool {
+	if value, ok := metadata["mfa"].(bool); ok && value {
+		return true
+	}
+	if value, ok := metadata["mfaAuthenticated"].(bool); ok && value {
+		return true
+	}
+	switch values := metadata["amr"].(type) {
+	case []string:
+		for _, value := range values {
+			if strings.EqualFold(value, "mfa") {
+				return true
+			}
+		}
+	case []any:
+		for _, value := range values {
+			if text, ok := value.(string); ok && strings.EqualFold(text, "mfa") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (s *Service) proxySessionSigningKey() []byte {
-	return []byte("soha-proxy-session:" + strings.TrimSpace(s.encryptionKey))
+	secret := strings.TrimSpace(s.encryptionKeys.Active().Secret())
+	if secret == "" {
+		secret = strings.TrimSpace(s.encryptionKey)
+	}
+	return proxySessionKey(secret)
+}
+
+func (s *Service) proxySessionVerificationKeys(now time.Time) [][]byte {
+	if s.encryptionKeys.Active().ID() == "" {
+		return [][]byte{proxySessionKey(s.encryptionKey)}
+	}
+	keys := s.encryptionKeys.ValidKeys(now)
+	out := make([][]byte, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, proxySessionKey(key.Secret()))
+	}
+	return out
+}
+
+func proxySessionKey(secret string) []byte {
+	sum := sha256.Sum256([]byte("soha-proxy-session:" + strings.TrimSpace(secret)))
+	return sum[:]
 }
 
 func normalizeOIDCTokenValue(value string) string {
@@ -1809,6 +2087,20 @@ func oidcClientFromInput(clientID string, input domainprovider.OIDCClientInput, 
 	if len(redirectURIs) == 0 {
 		return domainprovider.OIDCClient{}, fmt.Errorf("%w: at least one redirect_uri is required", apperrors.ErrInvalidArgument)
 	}
+	postLogoutRedirectURIs, err := normalizeRedirectURIs(input.PostLogoutRedirectURIs)
+	if err != nil {
+		return domainprovider.OIDCClient{}, err
+	}
+	clientType := strings.ToLower(strings.TrimSpace(input.ClientType))
+	if clientType == "" {
+		clientType = domainprovider.OIDCClientTypeConfidential
+	}
+	if clientType != domainprovider.OIDCClientTypePublic && clientType != domainprovider.OIDCClientTypeConfidential {
+		return domainprovider.OIDCClient{}, fmt.Errorf("%w: unsupported oidc client type", apperrors.ErrInvalidArgument)
+	}
+	if clientType == domainprovider.OIDCClientTypePublic && !input.RequirePKCE {
+		return domainprovider.OIDCClient{}, fmt.Errorf("%w: public clients must require PKCE", apperrors.ErrInvalidArgument)
+	}
 	scopes := normalizeAllowedScopes(input.AllowedScopes)
 	grantTypes, err := normalizeOIDCClientGrantTypes(input.AllowedGrantTypes)
 	if err != nil {
@@ -1837,8 +2129,10 @@ func oidcClientFromInput(clientID string, input domainprovider.OIDCClientInput, 
 		ID:                     clientID,
 		ProviderID:             providerID,
 		ClientID:               oidcClientID,
+		ClientType:             clientType,
 		ClientSecretHash:       secretHash,
 		RedirectURIs:           redirectURIs,
+		PostLogoutRedirectURIs: postLogoutRedirectURIs,
 		AllowedScopes:          scopes,
 		AllowedGrantTypes:      grantTypes,
 		RequirePKCE:            input.RequirePKCE,

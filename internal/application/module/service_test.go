@@ -244,6 +244,21 @@ func TestRuntimeListPreservesDisabledSecurityAndCMDB(t *testing.T) {
 	}
 }
 
+func TestListUsesInternalWorkbenchOverviewAsSecurityDefault(t *testing.T) {
+	service := New(cfgpkg.ModulesConfig{Security: cfgpkg.ModuleToggleConfig{Enabled: true}})
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	status, ok := moduleStatusByID(items, "security")
+	if !ok {
+		t.Fatal("security module descriptor missing")
+	}
+	if status.Descriptor.DefaultPath != "/internal-workbench/overview" {
+		t.Fatalf("security default path = %q", status.Descriptor.DefaultPath)
+	}
+}
+
 func moduleStatusByID(items []domainmodule.Status, id string) (domainmodule.Status, bool) {
 	for _, item := range items {
 		if item.Descriptor.ID == id {

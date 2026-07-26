@@ -3,6 +3,7 @@ package providerportal
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
 	"sort"
@@ -19,6 +20,23 @@ import (
 )
 
 var slugCleaner = regexp.MustCompile(`[^a-z0-9-]+`)
+
+type accessPolicyContextKey struct{}
+
+func WithAccessPolicyContext(ctx context.Context, access domainportal.AccessPolicyContext) context.Context {
+	return context.WithValue(ctx, accessPolicyContextKey{}, access)
+}
+
+func accessPolicyContext(ctx context.Context) domainportal.AccessPolicyContext {
+	access, _ := ctx.Value(accessPolicyContextKey{}).(domainportal.AccessPolicyContext)
+	if strings.TrimSpace(access.SourceIP) == "" {
+		access.SourceIP = requestctx.FromContext(ctx).SourceIP
+	}
+	if access.Now.IsZero() {
+		access.Now = time.Now().UTC()
+	}
+	return access
+}
 
 type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
@@ -85,7 +103,7 @@ func (s *Service) ListPortalApplications(ctx context.Context, principal domainid
 	if err != nil {
 		return nil, err
 	}
-	items = filterApplicationsByAccess(principal, items)
+	items = filterApplicationsByAccess(principal, items, accessPolicyContext(ctx))
 	return s.enrichPortalApplications(ctx, principal.UserID, items)
 }
 
@@ -97,7 +115,7 @@ func (s *Service) GetPortalApplication(ctx context.Context, principal domainiden
 	if err != nil {
 		return domainportal.Application{}, err
 	}
-	if item.Status != domainportal.ApplicationStatusEnabled || !item.PortalVisible || !domainportal.CanAccessApplication(principal, item) {
+	if item.Status != domainportal.ApplicationStatusEnabled || !item.PortalVisible || !domainportal.CanAccessApplicationWithContext(principal, item, accessPolicyContext(ctx)) {
 		return domainportal.Application{}, fmt.Errorf("%w: application is not available", apperrors.ErrAccessDenied)
 	}
 	items, err := s.enrichPortalApplications(ctx, principal.UserID, []domainportal.Application{item})
@@ -327,15 +345,25 @@ func (s *Service) UpdatePolicy(ctx context.Context, principal domainidentity.Pri
 	if err != nil {
 		return domainportal.ApplicationPolicy{}, err
 	}
-	if err := s.repo.ReplaceAssignments(ctx, application.ID, assignmentsForApplication(application.ID, assignments)); err != nil {
+	conditions, err := normalizePolicyConditions(input.Conditions)
+	if err != nil {
 		return domainportal.ApplicationPolicy{}, err
 	}
-	application, err = s.repo.GetApplication(ctx, application.ID)
+	now := time.Now().UTC()
+	application.Metadata = cloneMetadata(application.Metadata)
+	application.Metadata["accessPolicy"] = map[string]any{
+		"requireMfa": conditions.RequireMFA, "allowedCidrs": conditions.AllowedCIDRs,
+		"startTimeUtc": conditions.StartTimeUTC, "endTimeUtc": conditions.EndTimeUTC,
+	}
+	application.UpdatedBy = actorID(principal)
+	application.UpdatedAt = now
+	application, err = s.repo.UpdateApplicationWithAssignments(ctx, application, assignmentsForApplication(application.ID, assignments))
 	if err != nil {
 		return domainportal.ApplicationPolicy{}, err
 	}
 	s.recordAudit(ctx, principal, "identity.policy.update", "success", application, "updated identity application access policy", map[string]any{
 		"assignmentCount": len(application.Assignments),
+		"conditionCount":  policyConditionCount(conditions),
 		"providerType":    application.ProviderType,
 	})
 	return policyForApplication(application), nil
@@ -392,6 +420,7 @@ func (s *Service) enrichPortalApplications(ctx context.Context, userID string, i
 		return nil, err
 	}
 	for index := range items {
+		items[index].Assignments = nil
 		items[index].Favorite = favorites[items[index].ID]
 		if launchedAt, ok := lastLaunches[items[index].ID]; ok {
 			value := launchedAt
@@ -509,8 +538,8 @@ func normalizeAssignments(inputs []domainportal.ApplicationAssignmentInput, prin
 		if effect == "" {
 			effect = domainportal.AssignmentEffectAllow
 		}
-		if effect != domainportal.AssignmentEffectAllow {
-			return nil, fmt.Errorf("%w: only allow assignments are supported in this phase", apperrors.ErrInvalidArgument)
+		if effect != domainportal.AssignmentEffectAllow && effect != domainportal.AssignmentEffectDeny {
+			return nil, fmt.Errorf("%w: unsupported assignment effect", apperrors.ErrInvalidArgument)
 		}
 		key := subjectType + ":" + subjectID + ":" + effect
 		if seen[key] {
@@ -527,6 +556,55 @@ func normalizeAssignments(inputs []domainportal.ApplicationAssignmentInput, prin
 		})
 	}
 	return out, nil
+}
+
+func normalizePolicyConditions(input domainportal.ApplicationPolicyConditions) (domainportal.ApplicationPolicyConditions, error) {
+	out := domainportal.ApplicationPolicyConditions{
+		RequireMFA: input.RequireMFA, StartTimeUTC: strings.TrimSpace(input.StartTimeUTC), EndTimeUTC: strings.TrimSpace(input.EndTimeUTC),
+	}
+	seen := map[string]bool{}
+	for _, value := range input.AllowedCIDRs {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(value); err != nil {
+			return domainportal.ApplicationPolicyConditions{}, fmt.Errorf("%w: invalid allowed CIDR", apperrors.ErrInvalidArgument)
+		}
+		seen[value] = true
+		out.AllowedCIDRs = append(out.AllowedCIDRs, value)
+	}
+	if (out.StartTimeUTC == "") != (out.EndTimeUTC == "") {
+		return domainportal.ApplicationPolicyConditions{}, fmt.Errorf("%w: both UTC time window values are required", apperrors.ErrInvalidArgument)
+	}
+	if out.StartTimeUTC != "" {
+		if _, err := time.Parse("15:04", out.StartTimeUTC); err != nil {
+			return domainportal.ApplicationPolicyConditions{}, fmt.Errorf("%w: invalid UTC start time", apperrors.ErrInvalidArgument)
+		}
+		if _, err := time.Parse("15:04", out.EndTimeUTC); err != nil {
+			return domainportal.ApplicationPolicyConditions{}, fmt.Errorf("%w: invalid UTC end time", apperrors.ErrInvalidArgument)
+		}
+	}
+	return out, nil
+}
+
+func cloneMetadata(input map[string]any) map[string]any {
+	out := make(map[string]any, len(input)+1)
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func policyConditionCount(conditions domainportal.ApplicationPolicyConditions) int {
+	count := len(conditions.AllowedCIDRs)
+	if conditions.RequireMFA {
+		count++
+	}
+	if conditions.StartTimeUTC != "" {
+		count++
+	}
+	return count
 }
 
 func assignmentsForApplication(applicationID string, assignments []domainportal.ApplicationAssignment) []domainportal.ApplicationAssignment {
@@ -550,14 +628,15 @@ func policyForApplication(item domainportal.Application) domainportal.Applicatio
 		PortalVisible:   item.PortalVisible,
 		Status:          item.Status,
 		Assignments:     assignments,
+		Conditions:      domainportal.ApplicationPolicyConditionsFromMetadata(item.Metadata),
 		UpdatedAt:       item.UpdatedAt,
 	}
 }
 
-func filterApplicationsByAccess(principal domainidentity.Principal, items []domainportal.Application) []domainportal.Application {
+func filterApplicationsByAccess(principal domainidentity.Principal, items []domainportal.Application, access domainportal.AccessPolicyContext) []domainportal.Application {
 	out := make([]domainportal.Application, 0, len(items))
 	for _, item := range items {
-		if domainportal.CanAccessApplication(principal, item) {
+		if domainportal.CanAccessApplicationWithContext(principal, item, access) {
 			out = append(out, item)
 		}
 	}

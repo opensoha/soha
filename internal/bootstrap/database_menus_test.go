@@ -71,3 +71,18 @@ func TestCleanupDeprecatedMenusDeletesMenuBindingsAndMenus(t *testing.T) {
 		t.Fatalf("unmet sql expectations: %v", err)
 	}
 }
+
+func TestInternalWorkbenchOverviewSeedUsesCanonicalPath(t *testing.T) {
+	paths := map[string]string{}
+	for _, item := range builtinMenuSeeds {
+		if item.ID == "identity" || item.ID == "identity-overview" {
+			paths[item.ID] = item.Path
+		}
+	}
+	if paths["identity"] != "/internal-workbench" {
+		t.Fatalf("internal workbench seed path = %q", paths["identity"])
+	}
+	if paths["identity-overview"] != "/internal-workbench/overview" {
+		t.Fatalf("internal workbench overview seed path = %q", paths["identity-overview"])
+	}
+}

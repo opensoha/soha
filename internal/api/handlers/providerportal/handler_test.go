@@ -90,6 +90,35 @@ func TestProxyAuthInputReadsProxySessionCookie(t *testing.T) {
 	}
 }
 
+func TestOIDCAuthorizeWritesEscapedFormPostResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := newProtocolTestHandler(&stubProviderPortalIdentityProvider{
+		authorizeFunc: func(_ context.Context, _ string, _ domainidentity.Principal, input domainprovider.AuthorizeInput) (domainprovider.AuthorizeResult, error) {
+			if input.ResponseMode != "form_post" {
+				t.Fatalf("response mode = %q", input.ResponseMode)
+			}
+			return domainprovider.AuthorizeResult{
+				RedirectURI: "https://app.example/callback?next=\"x\"", Code: "code-<1>", State: "state-\"1\"", ResponseMode: "form_post",
+			}, nil
+		},
+	})
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "http://soha.example/oauth2/authorize?response_mode=form_post", nil)
+
+	handler.OIDCAuthorize(context)
+
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Header().Get("Content-Type"), "text/html") {
+		t.Fatalf("response = %d %q", recorder.Code, recorder.Header().Get("Content-Type"))
+	}
+	body := recorder.Body.String()
+	for _, want := range []string{`method="post"`, `action="https://app.example/callback?next=&#34;x&#34;"`, `value="code-&lt;1&gt;"`, `value="state-&#34;1&#34;"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("form_post body = %q, want %q", body, want)
+		}
+	}
+}
+
 func TestProxyReverseForwardsAuthorizedRequestWithoutSohaCredentials(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	apierrors "github.com/opensoha/soha/internal/api/errors"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appportal "github.com/opensoha/soha/internal/application/providerportal"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
 	domainportal "github.com/opensoha/soha/internal/domain/providerportal"
@@ -85,6 +87,7 @@ type OutpostService interface {
 	GetOutpost(context.Context, domainidentity.Principal, string) (domainprovider.Outpost, error)
 	CreateOutpost(context.Context, domainidentity.Principal, domainprovider.OutpostInput) (domainprovider.Outpost, error)
 	UpdateOutpost(context.Context, domainidentity.Principal, string, domainprovider.OutpostInput) (domainprovider.Outpost, error)
+	RotateOutpostToken(context.Context, domainidentity.Principal, string) (domainprovider.Outpost, error)
 	DeleteOutpost(context.Context, domainidentity.Principal, string) error
 }
 
@@ -100,6 +103,7 @@ type OIDCClientService interface {
 	CreateOIDCClient(context.Context, domainidentity.Principal, string, domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error)
 	UpdateOIDCClient(context.Context, domainidentity.Principal, string, domainprovider.OIDCClientInput) (domainprovider.OIDCClient, error)
 	DeleteOIDCClient(context.Context, domainidentity.Principal, string) error
+	RotateSigningKey(context.Context, domainidentity.Principal, string) (domainprovider.SigningKey, error)
 }
 
 type Services struct {
@@ -187,7 +191,7 @@ func New(services Services) *Handler {
 
 func (h *portalHandler) PortalBootstrap(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.reader.PortalBootstrap(c.Request.Context(), principal)
+	item, err := h.reader.PortalBootstrap(portalAccessContext(c), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -197,7 +201,7 @@ func (h *portalHandler) PortalBootstrap(c *gin.Context) {
 
 func (h *portalHandler) ListPortalApplications(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.reader.ListPortalApplications(c.Request.Context(), principal)
+	items, err := h.reader.ListPortalApplications(portalAccessContext(c), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -207,7 +211,7 @@ func (h *portalHandler) ListPortalApplications(c *gin.Context) {
 
 func (h *portalHandler) GetPortalApplication(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.reader.GetPortalApplication(c.Request.Context(), principal, c.Param("applicationID"))
+	item, err := h.reader.GetPortalApplication(portalAccessContext(c), principal, c.Param("applicationID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -217,7 +221,7 @@ func (h *portalHandler) GetPortalApplication(c *gin.Context) {
 
 func (h *portalHandler) LaunchPortalApplication(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.interactor.Launch(c.Request.Context(), principal, c.Param("applicationID"))
+	item, err := h.interactor.Launch(portalAccessContext(c), principal, c.Param("applicationID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -227,7 +231,7 @@ func (h *portalHandler) LaunchPortalApplication(c *gin.Context) {
 
 func (h *portalHandler) SetFavorite(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.interactor.SetFavorite(c.Request.Context(), principal, c.Param("applicationID"))
+	item, err := h.interactor.SetFavorite(portalAccessContext(c), principal, c.Param("applicationID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -536,6 +540,20 @@ func (h *outpostHandler) DeleteOutpost(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *outpostHandler) RotateOutpostToken(c *gin.Context) {
+	if h.service == nil {
+		writeError(c, fmt.Errorf("%w: identity provider service is not configured", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.RotateOutpostToken(c.Request.Context(), principal, c.Param("outpostID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *outpostRuntimeHandler) ClaimOutpost(c *gin.Context) {
 	if h.service == nil {
 		writeError(c, fmt.Errorf("%w: identity provider service is not configured", apperrors.ErrUnsupportedOperation))
@@ -679,6 +697,20 @@ func (h *oidcClientHandler) DeleteOIDCClient(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *oidcClientHandler) RotateSigningKey(c *gin.Context) {
+	if h.service == nil {
+		writeError(c, fmt.Errorf("%w: identity provider service is not configured", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.RotateSigningKey(c.Request.Context(), principal, c.Param("providerID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *oidcHandler) OIDCDiscovery(c *gin.Context) {
 	if h.service == nil {
 		writeOIDCError(c, http.StatusServiceUnavailable, "server_error", "oidc provider service is not configured")
@@ -693,16 +725,15 @@ func (h *oidcHandler) OIDCAuthorize(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if strings.TrimSpace(principal.UserID) == "" {
-		c.Redirect(http.StatusFound, "/login?return_to="+url.QueryEscape(c.Request.URL.RequestURI()))
-		return
-	}
 	result, err := h.service.Authorize(c.Request.Context(), issuerFromRequest(c), principal, domainprovider.AuthorizeInput{
 		ResponseType:        c.Query("response_type"),
 		ClientID:            c.Query("client_id"),
 		RedirectURI:         c.Query("redirect_uri"),
 		Scope:               c.Query("scope"),
 		State:               c.Query("state"),
+		Prompt:              c.Query("prompt"),
+		MaxAge:              c.Query("max_age"),
+		ResponseMode:        c.Query("response_mode"),
 		Nonce:               c.Query("nonce"),
 		CodeChallenge:       c.Query("code_challenge"),
 		CodeChallengeMethod: c.Query("code_challenge_method"),
@@ -714,7 +745,15 @@ func (h *oidcHandler) OIDCAuthorize(c *gin.Context) {
 			writeOIDCAuthorizeErrorRedirect(c, redirectErr)
 			return
 		}
+		if errors.Is(err, apperrors.ErrUnauthorized) {
+			c.Redirect(http.StatusFound, "/login?return_to="+url.QueryEscape(c.Request.URL.RequestURI()))
+			return
+		}
 		writeOIDCError(c, apierrors.StatusCode(err), "invalid_request", err.Error())
+		return
+	}
+	if result.ResponseMode == "form_post" {
+		writeOIDCFormPost(c, result)
 		return
 	}
 	target, err := url.Parse(result.RedirectURI)
@@ -729,6 +768,17 @@ func (h *oidcHandler) OIDCAuthorize(c *gin.Context) {
 	}
 	target.RawQuery = values.Encode()
 	c.Redirect(http.StatusFound, target.String())
+}
+
+func writeOIDCFormPost(c *gin.Context, result domainprovider.AuthorizeResult) {
+	state := ""
+	if result.State != "" {
+		state = `<input type="hidden" name="state" value="` + html.EscapeString(result.State) + `">`
+	}
+	body := `<!doctype html><html><body><form method="post" action="` + html.EscapeString(result.RedirectURI) + `">` +
+		`<input type="hidden" name="code" value="` + html.EscapeString(result.Code) + `">` + state +
+		`<noscript><button type="submit">Continue</button></noscript></form><script>document.forms[0].submit()</script></body></html>`
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(body))
 }
 
 func (h *oidcHandler) OIDCToken(c *gin.Context) {
@@ -1080,33 +1130,63 @@ func stripProxyCredentials(request *http.Request) {
 }
 
 func proxyAuthInputFromRequest(c *gin.Context) domainprovider.ProxyAuthInput {
+	accessCtx := apiMiddleware.AccessContextFromContext(c)
 	return domainprovider.ProxyAuthInput{
-		ProviderID:     firstNonEmpty(c.Query("provider_id"), c.Query("providerID")),
-		OriginalURL:    firstNonEmpty(c.GetHeader("X-Original-URL"), c.GetHeader("X-Original-Uri"), c.Query("return_to")),
-		ForwardedHost:  c.GetHeader("X-Forwarded-Host"),
-		ForwardedProto: c.GetHeader("X-Forwarded-Proto"),
-		ForwardedURI:   c.GetHeader("X-Forwarded-Uri"),
-		RequestHost:    c.Request.Host,
-		RequestPath:    c.Request.URL.RequestURI(),
-		Method:         c.Request.Method,
-		Redirect:       proxyRedirectRequested(c),
-		SessionToken:   proxySessionTokenFromRequest(c),
+		ProviderID:       firstNonEmpty(c.Query("provider_id"), c.Query("providerID")),
+		OriginalURL:      firstNonEmpty(c.GetHeader("X-Original-URL"), c.GetHeader("X-Original-Uri"), c.Query("return_to")),
+		ForwardedHost:    c.GetHeader("X-Forwarded-Host"),
+		ForwardedProto:   c.GetHeader("X-Forwarded-Proto"),
+		ForwardedURI:     c.GetHeader("X-Forwarded-Uri"),
+		RequestHost:      c.Request.Host,
+		RequestPath:      c.Request.URL.RequestURI(),
+		Method:           c.Request.Method,
+		Redirect:         proxyRedirectRequested(c),
+		SessionToken:     proxySessionTokenFromRequest(c),
+		SourceIP:         c.ClientIP(),
+		MFAAuthenticated: accessContextMFA(accessCtx),
 	}
 }
 
 func proxyAuthInputForReturnTo(c *gin.Context, target string) domainprovider.ProxyAuthInput {
+	accessCtx := apiMiddleware.AccessContextFromContext(c)
 	return domainprovider.ProxyAuthInput{
-		ProviderID:     firstNonEmpty(c.Query("provider_id"), c.Query("providerID")),
-		OriginalURL:    strings.TrimSpace(target),
-		ForwardedHost:  c.GetHeader("X-Forwarded-Host"),
-		ForwardedProto: c.GetHeader("X-Forwarded-Proto"),
-		ForwardedURI:   c.GetHeader("X-Forwarded-Uri"),
-		RequestHost:    c.Request.Host,
-		RequestPath:    c.Request.URL.RequestURI(),
-		Method:         c.Request.Method,
-		Redirect:       proxyRedirectRequested(c),
-		SessionToken:   proxySessionTokenFromRequest(c),
+		ProviderID:       firstNonEmpty(c.Query("provider_id"), c.Query("providerID")),
+		OriginalURL:      strings.TrimSpace(target),
+		ForwardedHost:    c.GetHeader("X-Forwarded-Host"),
+		ForwardedProto:   c.GetHeader("X-Forwarded-Proto"),
+		ForwardedURI:     c.GetHeader("X-Forwarded-Uri"),
+		RequestHost:      c.Request.Host,
+		RequestPath:      c.Request.URL.RequestURI(),
+		Method:           c.Request.Method,
+		Redirect:         proxyRedirectRequested(c),
+		SessionToken:     proxySessionTokenFromRequest(c),
+		SourceIP:         c.ClientIP(),
+		MFAAuthenticated: accessContextMFA(accessCtx),
 	}
+}
+
+func accessContextMFA(accessCtx domainidentity.AccessContext) bool {
+	if value, ok := accessCtx.Metadata["mfa"].(bool); ok && value {
+		return true
+	}
+	if value, ok := accessCtx.Metadata["mfaAuthenticated"].(bool); ok && value {
+		return true
+	}
+	if values, ok := accessCtx.Metadata["amr"].([]string); ok {
+		for _, value := range values {
+			if strings.EqualFold(value, "mfa") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func portalAccessContext(c *gin.Context) context.Context {
+	return appportal.WithAccessPolicyContext(c.Request.Context(), domainportal.AccessPolicyContext{
+		SourceIP:         c.ClientIP(),
+		MFAAuthenticated: accessContextMFA(apiMiddleware.AccessContextFromContext(c)),
+	})
 }
 
 func fillOutpostCheckInputFromHeaders(c *gin.Context, input *domainprovider.OutpostCheckInput) {
@@ -1114,6 +1194,7 @@ func fillOutpostCheckInputFromHeaders(c *gin.Context, input *domainprovider.Outp
 		return
 	}
 	input.ProviderID = firstNonEmpty(input.ProviderID, c.Query("provider_id"), c.Query("providerID"))
+	input.SourceIP = firstNonEmpty(input.SourceIP, c.ClientIP())
 	input.OriginalURL = firstNonEmpty(input.OriginalURL, c.GetHeader("X-Original-URL"), c.GetHeader("X-Original-Uri"), c.Query("return_to"))
 	input.ForwardedHost = firstNonEmpty(input.ForwardedHost, c.GetHeader("X-Forwarded-Host"))
 	input.ForwardedProto = firstNonEmpty(input.ForwardedProto, c.GetHeader("X-Forwarded-Proto"))

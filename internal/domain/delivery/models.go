@@ -100,6 +100,7 @@ type DeliveryBlueprint struct {
 	Name                string                                `json:"name"`
 	Description         string                                `json:"description,omitempty"`
 	ApplicationDraft    BlueprintApplicationDraft             `json:"applicationDraft"`
+	Services            []DeliveryDraftService                `json:"services,omitempty"`
 	BuildSources        []domainapp.BuildSourceInput          `json:"buildSources,omitempty"`
 	EnvironmentBindings []BlueprintEnvironmentBindingTemplate `json:"environmentBindings,omitempty"`
 	Files               []BlueprintFileTemplate               `json:"files,omitempty"`
@@ -116,6 +117,7 @@ type DeliveryBlueprintInput struct {
 	Name                string                                `json:"name"`
 	Description         string                                `json:"description,omitempty"`
 	ApplicationDraft    BlueprintApplicationDraft             `json:"applicationDraft"`
+	Services            []DeliveryDraftService                `json:"services,omitempty"`
 	BuildSources        []domainapp.BuildSourceInput          `json:"buildSources,omitempty"`
 	EnvironmentBindings []BlueprintEnvironmentBindingTemplate `json:"environmentBindings,omitempty"`
 	Files               []BlueprintFileTemplate               `json:"files,omitempty"`
@@ -191,10 +193,8 @@ type RenderedDeliverySpec struct {
 }
 
 type BlueprintBootstrapResult struct {
-	Application         domainapp.App                          `json:"application"`
-	Services            []domainapp.Service                    `json:"services,omitempty"`
-	EnvironmentBindings []domaincatalog.ApplicationEnvironment `json:"environmentBindings,omitempty"`
-	Spec                RenderedDeliverySpec                   `json:"spec"`
+	Draft DeliveryDraft        `json:"draft"`
+	Spec  RenderedDeliverySpec `json:"spec"`
 }
 
 type DeliveryDraftConfirmResult struct {

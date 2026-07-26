@@ -283,7 +283,7 @@ func (r *Repository) DeleteOutpost(ctx context.Context, outpostID string) error 
 
 func (r *Repository) ListOIDCClients(ctx context.Context, providerID string) ([]domainprovider.OIDCClient, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, provider_id, client_id, client_secret_hash, redirect_uris, allowed_scopes,
+		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, post_logout_redirect_uris, allowed_scopes,
 		       allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 		       refresh_token_ttl_seconds, status, created_at, updated_at
 		FROM identity_oidc_clients
@@ -307,7 +307,7 @@ func (r *Repository) ListOIDCClients(ctx context.Context, providerID string) ([]
 
 func (r *Repository) GetOIDCClient(ctx context.Context, id string) (domainprovider.OIDCClient, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, provider_id, client_id, client_secret_hash, redirect_uris, allowed_scopes,
+		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, post_logout_redirect_uris, allowed_scopes,
 		       allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 		       refresh_token_ttl_seconds, status, created_at, updated_at
 		FROM identity_oidc_clients
@@ -326,7 +326,7 @@ func (r *Repository) GetOIDCClient(ctx context.Context, id string) (domainprovid
 
 func (r *Repository) GetOIDCClientByClientID(ctx context.Context, clientID string) (domainprovider.OIDCClient, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, provider_id, client_id, client_secret_hash, redirect_uris, allowed_scopes,
+		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, post_logout_redirect_uris, allowed_scopes,
 		       allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 		       refresh_token_ttl_seconds, status, created_at, updated_at
 		FROM identity_oidc_clients
@@ -348,6 +348,10 @@ func (r *Repository) CreateOIDCClient(ctx context.Context, item domainprovider.O
 	if err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("marshal redirect uris: %w", err)
 	}
+	postLogoutRedirectURIs, err := marshalJSON(item.PostLogoutRedirectURIs)
+	if err != nil {
+		return domainprovider.OIDCClient{}, fmt.Errorf("marshal post logout redirect uris: %w", err)
+	}
 	scopes, err := marshalJSON(item.AllowedScopes)
 	if err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("marshal allowed scopes: %w", err)
@@ -358,12 +362,12 @@ func (r *Repository) CreateOIDCClient(ctx context.Context, item domainprovider.O
 	}
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO identity_oidc_clients (
-			id, provider_id, client_id, client_secret_hash, redirect_uris, allowed_scopes,
+			id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, post_logout_redirect_uris, allowed_scopes,
 			allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 			refresh_token_ttl_seconds, status, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.ProviderID, item.ClientID, item.ClientSecretHash, redirectURIs, scopes, grantTypes,
+		VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash, redirectURIs, postLogoutRedirectURIs, scopes, grantTypes,
 		item.RequirePKCE, item.AccessTokenTTLSeconds, item.IDTokenTTLSeconds, item.RefreshTokenTTLSeconds,
 		item.Status, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domainprovider.OIDCClient{}, err
@@ -376,6 +380,10 @@ func (r *Repository) UpdateOIDCClient(ctx context.Context, item domainprovider.O
 	if err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("marshal redirect uris: %w", err)
 	}
+	postLogoutRedirectURIs, err := marshalJSON(item.PostLogoutRedirectURIs)
+	if err != nil {
+		return domainprovider.OIDCClient{}, fmt.Errorf("marshal post logout redirect uris: %w", err)
+	}
 	scopes, err := marshalJSON(item.AllowedScopes)
 	if err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("marshal allowed scopes: %w", err)
@@ -386,12 +394,12 @@ func (r *Repository) UpdateOIDCClient(ctx context.Context, item domainprovider.O
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE identity_oidc_clients
-		SET provider_id = ?, client_id = ?, client_secret_hash = ?, redirect_uris = ?::jsonb,
-		    allowed_scopes = ?::jsonb, allowed_grant_types = ?::jsonb, require_pkce = ?,
+		SET provider_id = ?, client_id = ?, client_type = ?, client_secret_hash = ?, redirect_uris = ?::jsonb,
+		    post_logout_redirect_uris = ?::jsonb, allowed_scopes = ?::jsonb, allowed_grant_types = ?::jsonb, require_pkce = ?,
 		    access_token_ttl_seconds = ?, id_token_ttl_seconds = ?, refresh_token_ttl_seconds = ?,
 		    status = ?, updated_at = ?
 		WHERE id = ?
-	`, item.ProviderID, item.ClientID, item.ClientSecretHash, redirectURIs, scopes, grantTypes,
+	`, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash, redirectURIs, postLogoutRedirectURIs, scopes, grantTypes,
 		item.RequirePKCE, item.AccessTokenTTLSeconds, item.IDTokenTTLSeconds, item.RefreshTokenTTLSeconds,
 		item.Status, item.UpdatedAt, item.ID)
 	if result.Error != nil {
@@ -449,11 +457,36 @@ func (r *Repository) CreateSigningKey(ctx context.Context, item domainprovider.S
 	return r.GetActiveSigningKey(ctx, item.ProviderID)
 }
 
+func (r *Repository) RotateSigningKey(ctx context.Context, providerID string, item domainprovider.SigningKey, now time.Time) (domainprovider.SigningKey, error) {
+	publicJWK, err := marshalJSON(item.PublicJWK)
+	if err != nil {
+		return domainprovider.SigningKey{}, fmt.Errorf("marshal public jwk: %w", err)
+	}
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`
+			UPDATE identity_provider_signing_keys
+			SET active = FALSE, rotated_at = COALESCE(rotated_at, ?)
+			WHERE provider_id = ? AND active = TRUE
+		`, now, strings.TrimSpace(providerID)).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`
+			INSERT INTO identity_provider_signing_keys (
+				id, provider_id, key_id, algorithm, encrypted_private_key, public_jwk, active, created_at, rotated_at
+			) VALUES (?, ?, ?, ?, ?, ?::jsonb, TRUE, ?, NULL)
+		`, item.ID, item.ProviderID, item.KeyID, item.Algorithm, item.EncryptedPrivateKey, publicJWK, item.CreatedAt).Error
+	})
+	if err != nil {
+		return domainprovider.SigningKey{}, err
+	}
+	return r.GetActiveSigningKey(ctx, providerID)
+}
+
 func (r *Repository) ListActivePublicKeys(ctx context.Context) ([]domainprovider.SigningKey, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT id, provider_id, key_id, algorithm, encrypted_private_key, public_jwk, active, created_at, rotated_at
 		FROM identity_provider_signing_keys
-		WHERE active = TRUE
+		WHERE active = TRUE OR rotated_at > now() - interval '24 hours'
 		ORDER BY created_at DESC
 	`).Rows()
 	if err != nil {
@@ -774,13 +807,15 @@ func scanOutpost(row scanner) (domainprovider.Outpost, error) {
 
 func scanOIDCClient(row scanner) (domainprovider.OIDCClient, error) {
 	var item domainprovider.OIDCClient
-	var redirectURIsRaw, scopesRaw, grantTypesRaw []byte
+	var redirectURIsRaw, postLogoutRedirectURIsRaw, scopesRaw, grantTypesRaw []byte
 	if err := row.Scan(
 		&item.ID,
 		&item.ProviderID,
 		&item.ClientID,
+		&item.ClientType,
 		&item.ClientSecretHash,
 		&redirectURIsRaw,
+		&postLogoutRedirectURIsRaw,
 		&scopesRaw,
 		&grantTypesRaw,
 		&item.RequirePKCE,
@@ -796,6 +831,9 @@ func scanOIDCClient(row scanner) (domainprovider.OIDCClient, error) {
 	if err := unmarshalJSON(redirectURIsRaw, &item.RedirectURIs, false); err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("decode redirect uris: %w", err)
 	}
+	if err := unmarshalJSON(postLogoutRedirectURIsRaw, &item.PostLogoutRedirectURIs, false); err != nil {
+		return domainprovider.OIDCClient{}, fmt.Errorf("decode post logout redirect uris: %w", err)
+	}
 	if err := unmarshalJSON(scopesRaw, &item.AllowedScopes, false); err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("decode allowed scopes: %w", err)
 	}
@@ -804,6 +842,9 @@ func scanOIDCClient(row scanner) (domainprovider.OIDCClient, error) {
 	}
 	if item.RedirectURIs == nil {
 		item.RedirectURIs = []string{}
+	}
+	if item.PostLogoutRedirectURIs == nil {
+		item.PostLogoutRedirectURIs = []string{}
 	}
 	if item.AllowedScopes == nil {
 		item.AllowedScopes = []string{}

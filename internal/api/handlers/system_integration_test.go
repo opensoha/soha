@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	appsystemintegration "github.com/opensoha/soha/internal/application/systemintegration"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"
 )
@@ -34,6 +35,12 @@ func (*systemIntegrationHandlerStub) Delete(context.Context, domainidentity.Prin
 }
 func (*systemIntegrationHandlerStub) Test(context.Context, domainidentity.Principal, string) (sohaapi.SystemIntegrationTestResult, error) {
 	return sohaapi.SystemIntegrationTestResult{}, nil
+}
+func (*systemIntegrationHandlerStub) BeginOAuth(context.Context, domainidentity.Principal, string) (sohaapi.SystemIntegrationOAuthAuthorization, error) {
+	return sohaapi.SystemIntegrationOAuthAuthorization{}, nil
+}
+func (*systemIntegrationHandlerStub) CompleteOAuth(context.Context, appsystemintegration.OAuthCallbackInput) (string, error) {
+	return "/settings/source-control/gitlab-1?oauth=success", nil
 }
 func (*systemIntegrationHandlerStub) ListSourceConnections(context.Context, domainidentity.Principal) ([]sohaapi.SourceConnection, error) {
 	return nil, nil

@@ -630,6 +630,10 @@ func decodeDeliveryBlueprintRequest(c *gin.Context) (domaindelivery.DeliveryBlue
 	if err := remarshal(req.ApplicationDraft, &draft); err != nil {
 		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid applicationDraft payload")
 	}
+	services := []domaindelivery.DeliveryDraftService{}
+	if err := remarshal(req.Services, &services); err != nil {
+		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid services payload")
+	}
 	buildSources := []domainapp.BuildSourceInput{}
 	if err := remarshal(req.BuildSources, &buildSources); err != nil {
 		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid buildSources payload")
@@ -654,6 +658,7 @@ func decodeDeliveryBlueprintRequest(c *gin.Context) (domaindelivery.DeliveryBlue
 		Name:                req.Name,
 		Description:         req.Description,
 		ApplicationDraft:    draft,
+		Services:            services,
 		BuildSources:        buildSources,
 		EnvironmentBindings: environmentBindings,
 		Files:               files,

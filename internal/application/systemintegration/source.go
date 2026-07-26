@@ -24,7 +24,7 @@ func (s *Service) ListSourceConnections(ctx context.Context, principal domainide
 	result := make([]sohaapi.SourceConnection, 0, len(items))
 	defaultAssigned := false
 	for _, item := range items {
-		if !item.Enabled {
+		if !item.Enabled || !sourceConnectionReady(item) {
 			continue
 		}
 		isDefault := !defaultAssigned
@@ -182,10 +182,28 @@ func (s *Service) defaultSourceConnectionID(ctx context.Context, providerType st
 	if err != nil {
 		return "", err
 	}
-	if len(items) == 0 {
-		return "", fmt.Errorf("%w: source connection is not configured", apperrors.ErrInvalidArgument)
+	for _, item := range items {
+		if sourceConnectionReady(item) {
+			return item.ID, nil
+		}
 	}
-	return items[0].ID, nil
+	return "", fmt.Errorf("%w: source connection is not configured", apperrors.ErrInvalidArgument)
+}
+
+func sourceConnectionReady(item domain.Integration) bool {
+	if item.ProviderType != domain.ProviderGitLab {
+		return true
+	}
+	keys := make(map[string]struct{}, len(item.CredentialKeys))
+	for _, key := range item.CredentialKeys {
+		keys[key] = struct{}{}
+	}
+	if normalizedGitLabAuthMode(configurationMap(item.Configuration)) == gitLabAuthModeOAuth {
+		_, ok := keys["access_token"]
+		return ok
+	}
+	_, ok := keys["token"]
+	return ok
 }
 
 func sourceConnection(item domain.Integration, isDefault bool) sohaapi.SourceConnection {

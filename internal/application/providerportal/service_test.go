@@ -88,6 +88,73 @@ func TestServiceLaunchUsesOIDCResolver(t *testing.T) {
 	}
 }
 
+func TestServicePortalApplicationsRedactAssignments(t *testing.T) {
+	ctx := context.Background()
+	repo := &memoryPortalRepo{
+		applications: map[string]domainportal.Application{
+			"app-1": {
+				ID:            "app-1",
+				Name:          "Grafana",
+				ProviderType:  domainportal.ProviderTypeLink,
+				PortalVisible: true,
+				Status:        domainportal.ApplicationStatusEnabled,
+				Assignments: []domainportal.ApplicationAssignment{{
+					SubjectType: domainportal.AssignmentSubjectRole,
+					SubjectID:   "admin",
+					Effect:      domainportal.AssignmentEffectAllow,
+				}},
+			},
+		},
+	}
+	service := New(repo, nil, nil)
+	principal := domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}}
+
+	items, err := service.ListPortalApplications(ctx, principal)
+	if err != nil {
+		t.Fatalf("ListPortalApplications returned error: %v", err)
+	}
+	item, err := service.GetPortalApplication(ctx, principal, "app-1")
+	if err != nil {
+		t.Fatalf("GetPortalApplication returned error: %v", err)
+	}
+	if len(items) != 1 || len(items[0].Assignments) != 0 || len(item.Assignments) != 0 {
+		t.Fatalf("portal assignments were exposed: list=%#v detail=%#v", items, item)
+	}
+	if len(repo.applications["app-1"].Assignments) != 1 {
+		t.Fatal("portal redaction mutated the stored application")
+	}
+}
+
+func TestServicePortalApplicationsUseAccessPolicyContext(t *testing.T) {
+	repo := &memoryPortalRepo{applications: map[string]domainportal.Application{
+		"app-1": {
+			ID: "app-1", Name: "Grafana", ProviderType: domainportal.ProviderTypeLink,
+			PortalVisible: true, Status: domainportal.ApplicationStatusEnabled,
+			Metadata: map[string]any{"accessPolicy": map[string]any{
+				"requireMfa": true, "allowedCidrs": []string{"10.0.0.0/8"},
+				"startTimeUtc": "22:00", "endTimeUtc": "02:00",
+			}},
+		},
+	}}
+	service := New(repo, nil, nil)
+	principal := domainidentity.Principal{UserID: "user-1"}
+	ctx := WithAccessPolicyContext(context.Background(), domainportal.AccessPolicyContext{
+		SourceIP: "10.1.2.3", MFAAuthenticated: true,
+		Now: time.Date(2026, 7, 25, 23, 0, 0, 0, time.UTC),
+	})
+
+	items, err := service.ListPortalApplications(ctx, principal)
+	if err != nil || len(items) != 1 {
+		t.Fatalf("ListPortalApplications = %#v, %v", items, err)
+	}
+	if _, err := service.GetPortalApplication(ctx, principal, "app-1"); err != nil {
+		t.Fatalf("GetPortalApplication returned error: %v", err)
+	}
+	if items, err := service.ListPortalApplications(context.Background(), principal); err != nil || len(items) != 0 {
+		t.Fatalf("ListPortalApplications without context = %#v, %v", items, err)
+	}
+}
+
 func TestServiceUpdatePolicyReplacesAssignments(t *testing.T) {
 	ctx := context.Background()
 	repo := &memoryPortalRepo{

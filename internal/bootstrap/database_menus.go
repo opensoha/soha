@@ -140,8 +140,8 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 20, Enabled: true, Roles: []string{"admin", "ops"}},
 	{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "activity", Section: "delivery-platform", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops"}},
 	{ID: "application-environments", Path: "/application-environments", LabelZH: "环境绑定", LabelEN: "Environment Bindings", IconKey: "blocks", Section: "delivery-platform", SortOrder: 50, Enabled: true, Roles: []string{"admin", "ops"}},
-	{ID: "identity", Path: "/identity", LabelZH: "内网工作台", LabelEN: "Internal Workbench", IconKey: "shield", Section: "admin", SortOrder: 220, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-overview", ParentID: "identity", Path: "/identity/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true, Roles: []string{"admin"}},
+	{ID: "identity", Path: "/internal-workbench", LabelZH: "内网工作台", LabelEN: "Internal Workbench", IconKey: "shield", Section: "admin", SortOrder: 220, Enabled: true, Roles: []string{"admin"}},
+	{ID: "identity-overview", ParentID: "identity", Path: "/internal-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true, Roles: []string{"admin"}},
 	{ID: "identity-applications", ParentID: "identity", Path: "/identity/applications", LabelZH: "应用目录", LabelEN: "Applications", IconKey: "blocks", Section: "provider", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
 	{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "Provider", LabelEN: "Providers", IconKey: "shield", Section: "provider", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
 	{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "Outpost", LabelEN: "Outposts", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
@@ -295,6 +295,20 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 	if err := syncComputeMenuSeedUpgrades(ctx, db, now); err != nil {
 		return err
 	}
+	if err := db.WithContext(ctx).Exec(`
+		UPDATE menus
+		SET path = ?, updated_at = ?
+		WHERE id = ? AND path = ?
+	`, "/internal-workbench/overview", now, "identity-overview", "/identity/overview").Error; err != nil {
+		return err
+	}
+	if err := db.WithContext(ctx).Exec(`
+		UPDATE menus
+		SET path = ?, updated_at = ?
+		WHERE id = ? AND path = ?
+	`, "/internal-workbench", now, "identity", "/identity").Error; err != nil {
+		return err
+	}
 
 	labelUpdates := []struct {
 		id      string
@@ -303,6 +317,7 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 		labelZH string
 		labelEN string
 	}{
+		{id: "identity", oldZH: "身份", oldEN: "Identity", labelZH: "内网工作台", labelEN: "Internal Workbench"},
 		{id: "operations", oldZH: "操作", oldEN: "Operations", labelZH: "操作日志", labelEN: "Operation Logs"},
 		{id: "audit", oldZH: "审计", oldEN: "Audit", labelZH: "审计日志", labelEN: "Audit Logs"},
 		{id: "access-teams", oldZH: "用户组", oldEN: "User Groups", labelZH: "组织", labelEN: "Organizations"},

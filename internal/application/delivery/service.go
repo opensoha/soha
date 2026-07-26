@@ -628,6 +628,9 @@ func (s *Service) CreateDeliveryBlueprint(ctx context.Context, principal domaini
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaindelivery.DeliveryBlueprint{}, fmt.Errorf("delivery blueprint key and name are required")
 	}
+	if err := validateDeliveryServices(input.Services); err != nil {
+		return domaindelivery.DeliveryBlueprint{}, err
+	}
 	item, err := s.repository.CreateDeliveryBlueprint(ctx, input)
 	if err == nil {
 		usage, usageErr := s.GetDeliveryBlueprintUsage(ctx, principal, item.ID)
@@ -645,6 +648,9 @@ func (s *Service) UpdateDeliveryBlueprint(ctx context.Context, principal domaini
 	}
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaindelivery.DeliveryBlueprint{}, fmt.Errorf("delivery blueprint key and name are required")
+	}
+	if err := validateDeliveryServices(input.Services); err != nil {
+		return domaindelivery.DeliveryBlueprint{}, err
 	}
 	beforeUsage, beforeUsageErr := s.GetDeliveryBlueprintUsage(ctx, principal, strings.TrimSpace(blueprintID))
 	var beforeSnapshot *domaincatalog.TemplateUsageSummary
@@ -693,15 +699,25 @@ func (s *Service) BootstrapApplicationFromBlueprint(ctx context.Context, princip
 		return domaindelivery.BlueprintBootstrapResult{}, err
 	}
 	spec := renderedSpecFromBlueprint(blueprint)
-	app, services, bindings, err := s.applyRenderedDeliverySpec(ctx, principal, spec)
+	if err := validateDeliveryServices(spec.Services); err != nil {
+		return domaindelivery.BlueprintBootstrapResult{}, err
+	}
+	draft, err := s.repository.CreateDeliveryDraft(ctx, domaindelivery.DeliveryDraftInput{
+		Source:              domaindelivery.DeliveryDraftSourceBlueprint,
+		ApplicationDraft:    spec.ApplicationDraft,
+		Services:            spec.Services,
+		BuildSources:        spec.BuildSources,
+		EnvironmentBindings: spec.EnvironmentBindings,
+		Files:               spec.Files,
+		ExecutionHints:      spec.ExecutionHints,
+		PostCreateActions:   spec.PostCreateActions,
+	}, principal.UserID)
 	if err != nil {
 		return domaindelivery.BlueprintBootstrapResult{}, err
 	}
 	return domaindelivery.BlueprintBootstrapResult{
-		Application:         app,
-		Services:            services,
-		EnvironmentBindings: bindings,
-		Spec:                spec,
+		Draft: draft,
+		Spec:  spec,
 	}, nil
 }
 
@@ -711,6 +727,9 @@ func (s *Service) CreateDeliveryDraft(ctx context.Context, principal domainident
 	}
 	if strings.TrimSpace(input.ApplicationDraft.Name) == "" || strings.TrimSpace(input.ApplicationDraft.Key) == "" {
 		return domaindelivery.DeliveryDraft{}, fmt.Errorf("%w: delivery draft application name and key are required", apperrors.ErrInvalidArgument)
+	}
+	if err := validateDeliveryServices(input.Services); err != nil {
+		return domaindelivery.DeliveryDraft{}, err
 	}
 	return s.repository.CreateDeliveryDraft(ctx, input, principal.UserID)
 }
@@ -738,6 +757,9 @@ func (s *Service) ConfirmDeliveryDraft(ctx context.Context, principal domainiden
 	case domaindelivery.DeliveryDraftStatusDraft:
 	default:
 		return domaindelivery.DeliveryDraftConfirmResult{}, fmt.Errorf("%w: delivery draft status %s cannot be confirmed", apperrors.ErrInvalidArgument, draft.Status)
+	}
+	if err := validateDeliveryServices(draft.Services); err != nil {
+		return domaindelivery.DeliveryDraftConfirmResult{}, err
 	}
 	now := time.Now().UTC()
 	draft.Status = domaindelivery.DeliveryDraftStatusConfirming
@@ -2681,6 +2703,7 @@ func derefEnvironment(item *domaincatalog.Environment) domaincatalog.Environment
 func renderedSpecFromBlueprint(blueprint domaindelivery.DeliveryBlueprint) domaindelivery.RenderedDeliverySpec {
 	return domaindelivery.RenderedDeliverySpec{
 		ApplicationDraft:    blueprint.ApplicationDraft,
+		Services:            append([]domaindelivery.DeliveryDraftService(nil), blueprint.Services...),
 		BuildSources:        append([]domainapp.BuildSourceInput(nil), blueprint.BuildSources...),
 		EnvironmentBindings: append([]domaindelivery.BlueprintEnvironmentBindingTemplate(nil), blueprint.EnvironmentBindings...),
 		Files:               append([]domaindelivery.BlueprintFileTemplate(nil), blueprint.Files...),
@@ -2742,6 +2765,9 @@ func (s *Service) upsertApplication(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) applyRenderedDeliverySpec(ctx context.Context, principal domainidentity.Principal, spec domaindelivery.RenderedDeliverySpec) (domainapp.App, []domainapp.Service, []domaincatalog.ApplicationEnvironment, error) {
+	if err := validateDeliveryServices(spec.Services); err != nil {
+		return domainapp.App{}, nil, nil, err
+	}
 	appInput := applicationInputFromDraft(spec.ApplicationDraft, spec.BuildSources)
 	app, err := s.upsertApplication(ctx, principal, appInput)
 	if err != nil {
@@ -2756,6 +2782,34 @@ func (s *Service) applyRenderedDeliverySpec(ctx context.Context, principal domai
 		return domainapp.App{}, nil, nil, err
 	}
 	return app, services, bindings, nil
+}
+
+func validateDeliveryServices(services []domaindelivery.DeliveryDraftService) error {
+	seen := make(map[string]struct{}, len(services))
+	for _, service := range services {
+		key := strings.TrimSpace(service.Key)
+		if key == "" {
+			return fmt.Errorf("%w: delivery service key is required", apperrors.ErrInvalidArgument)
+		}
+		if strings.TrimSpace(service.Name) == "" {
+			return fmt.Errorf("%w: delivery service name is required", apperrors.ErrInvalidArgument)
+		}
+		switch service.ServiceKind {
+		case "", domainapp.ServiceKindKubernetesWorkload, domainapp.ServiceKindHelmRelease, domainapp.ServiceKindExternalService, domainapp.ServiceKindJob:
+		default:
+			return fmt.Errorf("%w: unsupported delivery service kind %s", apperrors.ErrInvalidArgument, service.ServiceKind)
+		}
+		for _, container := range service.Containers {
+			if strings.TrimSpace(container.Name) == "" {
+				return fmt.Errorf("%w: delivery service container name is required", apperrors.ErrInvalidArgument)
+			}
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("%w: duplicate delivery service key %q", apperrors.ErrInvalidArgument, key)
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
 }
 
 func (s *Service) upsertApplicationServices(ctx context.Context, principal domainidentity.Principal, applicationID string, services []domaindelivery.DeliveryDraftService) ([]domainapp.Service, error) {

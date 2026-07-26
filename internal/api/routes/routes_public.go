@@ -21,6 +21,9 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	v1.GET("/auth/login/:providerID/start", deps.Auth.ProviderLogin)
 	v1.GET("/auth/login/:providerID/callback", deps.Auth.ProviderCallback)
 	v1.POST("/auth/oidc/exchange", deps.Auth.OIDCExchange)
+	if deps.SystemIntegrations != nil {
+		v1.GET("/system-integrations/oauth/gitlab/callback", deps.SystemIntegrations.CompleteGitLabOAuth)
+	}
 	registerProviderProtocolRoutes(v1, deps)
 	if deps.DirectorySync != nil {
 		v1.GET("/integrations/directory/:connectionID/events", deps.DirectorySync.VerifyEventEndpoint)

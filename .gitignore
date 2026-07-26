@@ -5,6 +5,7 @@ node_modules/
 dist/
 internal/staticassets/web/dist/
 bin/
+/server
 tmp/
 dist/
 .dev/
