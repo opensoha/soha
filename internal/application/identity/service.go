@@ -136,6 +136,7 @@ type Service struct {
 	audit           AuditRecorder
 	operations      OperationRecorder
 	settings        SettingsReader
+	saml            SAMLLoginRuntime
 	permissions     *appaccess.PermissionResolver
 	gateway         GatewayTokenRepository
 }
@@ -154,6 +155,7 @@ type Dependencies struct {
 	Audit           AuditRecorder
 	Operations      OperationRecorder
 	Settings        SettingsReader
+	SAML            SAMLLoginRuntime
 	Permissions     *appaccess.PermissionResolver
 	Gateway         GatewayTokenRepository
 }
@@ -246,7 +248,7 @@ func New(deps Dependencies) (*Service, error) {
 		authorization: deps.Authorization, roleBindings: deps.RoleBindings, teamBindings: deps.TeamBindings,
 		identities: deps.Identities, sessions: deps.Sessions, sessionAdmin: deps.SessionAdmin,
 		ephemeralTokens: deps.EphemeralTokens, audit: deps.Audit, operations: deps.Operations,
-		settings: deps.Settings, permissions: deps.Permissions, gateway: deps.Gateway,
+		settings: deps.Settings, saml: deps.SAML, permissions: deps.Permissions, gateway: deps.Gateway,
 	}, nil
 }
 
@@ -277,13 +279,10 @@ func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
 	loginProviders, _, err := s.loginProviders(ctx)
 	if err == nil {
 		for _, item := range loginProviders {
-			if !item.Enabled {
+			if !item.Enabled || item.Type == "saml" && s.saml == nil {
 				continue
 			}
 			loginURL := fmt.Sprintf("/auth/login/%s/start", url.PathEscape(item.ID))
-			if item.Type == "saml" {
-				loginURL = ""
-			}
 			providers = append(providers, domainidentity.Provider{
 				ID:       item.ID,
 				Type:     item.Type,
@@ -977,7 +976,7 @@ func (s *Service) beginProviderAuthorization(ctx context.Context, providerID, re
 		oauthConfig := oauth2ConfigFromProvider(provider)
 		return oauthConfig.AuthCodeURL(state), nil
 	case "saml":
-		return "", fmt.Errorf("%w: saml login runtime is not enabled", apperrors.ErrInvalidArgument)
+		return s.beginSAMLLogin(ctx, provider, returnTo, linkUserID)
 	default:
 		return "", fmt.Errorf("%w: unsupported login provider type %s", apperrors.ErrInvalidArgument, provider.Type)
 	}

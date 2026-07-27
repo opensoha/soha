@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
@@ -15,11 +16,19 @@ import (
 type Service struct {
 	store       domainsettings.Store
 	permissions *appaccess.PermissionResolver
+	saml        SAMLMetadataPinner
+}
+
+type SAMLMetadataPinner interface {
+	PinMetadata(context.Context, domainsettings.LoginProviderSettings) (domainsettings.LoginProviderSettings, error)
+	ValidateMetadata(context.Context, sohaapi.SAMLMetadataInput) (sohaapi.SAMLMetadataValidation, string, error)
 }
 
 func New(store domainsettings.Store, permissions *appaccess.PermissionResolver) *Service {
 	return &Service{store: store, permissions: permissions}
 }
+
+func (s *Service) SetSAMLMetadataPinner(pinner SAMLMetadataPinner) { s.saml = pinner }
 
 func (s *Service) GetIdentitySettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.IdentitySettings, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityView); err != nil {
@@ -40,6 +49,16 @@ func (s *Service) UpdateLoginProvidersSettings(ctx context.Context, principal do
 			return domainsettings.IdentitySettings{}, fmt.Errorf("%w: duplicated login provider id %s", apperrors.ErrInvalidArgument, current.ID)
 		}
 		seen[current.ID] = struct{}{}
+		if current.Type == "saml" {
+			if s.saml == nil {
+				return domainsettings.IdentitySettings{}, fmt.Errorf("%w: SAML metadata importer is not configured", apperrors.ErrUnsupportedOperation)
+			}
+			var err error
+			current, err = s.saml.PinMetadata(ctx, current)
+			if err != nil {
+				return domainsettings.IdentitySettings{}, fmt.Errorf("%w: invalid SAML metadata", apperrors.ErrInvalidArgument)
+			}
+		}
 		if err := validateLoginProvider(current); err != nil {
 			return domainsettings.IdentitySettings{}, err
 		}
@@ -242,6 +261,7 @@ func (s *Service) identitySettings(ctx context.Context) (domainsettings.Identity
 					RoleSyncMode:        settingStringValue(record["roleSyncMode"]),
 					OrgSyncMode:         settingStringValue(record["orgSyncMode"]),
 					MetadataURL:         settingStringValue(record["metadataUrl"]),
+					MetadataXML:         settingStringValue(record["metadataXml"]),
 					EntityID:            settingStringValue(record["entityId"]),
 					Certificate:         settingStringValue(record["certificate"]),
 				}, index))
@@ -432,6 +452,7 @@ func loginProvidersToMaps(items []domainsettings.LoginProviderSettings) []map[st
 			"roleSyncMode":        item.RoleSyncMode,
 			"orgSyncMode":         item.OrgSyncMode,
 			"metadataUrl":         item.MetadataURL,
+			"metadataXml":         item.MetadataXML,
 			"entityId":            item.EntityID,
 			"certificate":         item.Certificate,
 		})
@@ -610,8 +631,10 @@ func validateOAuth2LoginProvider(input domainsettings.LoginProviderSettings) err
 
 func validateSAMLLoginProvider(input domainsettings.LoginProviderSettings) error {
 	switch {
-	case input.MetadataURL == "" && input.Certificate == "":
-		return fmt.Errorf("%w: saml metadata url or certificate is required", apperrors.ErrInvalidArgument)
+	case input.MetadataURL == "" && input.MetadataXML == "":
+		return fmt.Errorf("%w: pinned saml metadata is required", apperrors.ErrInvalidArgument)
+	case input.EntityID == "":
+		return fmt.Errorf("%w: saml service provider entity id is required", apperrors.ErrInvalidArgument)
 	case input.RedirectURL == "":
 		return fmt.Errorf("%w: saml acs url is required", apperrors.ErrInvalidArgument)
 	case input.FrontendRedirectURL == "":

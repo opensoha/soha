@@ -28,6 +28,7 @@ func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.PATCH("/identity/applications/:applicationID", deps.ProviderPortal.UpdateIdentityApplication)
 	protected.DELETE("/identity/applications/:applicationID", deps.ProviderPortal.DeleteIdentityApplication)
 	protected.GET("/identity/provider-capabilities", deps.ProviderPortal.ProviderCapabilities)
+	protected.GET("/identity/capabilities", deps.ProviderPortal.IdentityRuntimeCapabilities)
 
 	protected.GET("/identity/policies", deps.ProviderPortal.ListIdentityPolicies)
 	protected.GET("/identity/policies/:applicationID", deps.ProviderPortal.GetIdentityPolicy)
@@ -43,6 +44,7 @@ func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/identity/providers/:providerID/oidc-clients", deps.ProviderPortal.ListOIDCClients)
 	protected.POST("/identity/providers/:providerID/oidc-clients", deps.ProviderPortal.CreateOIDCClient)
 	protected.POST("/identity/providers/:providerID/signing-keys/rotate", deps.ProviderPortal.RotateSigningKey)
+	protected.POST("/identity/saml/certificates/:certificateID/rotate", deps.ProviderPortal.RotateSAMLCertificate)
 	protected.PUT("/identity/oidc-clients/:clientID", deps.ProviderPortal.UpdateOIDCClient)
 	protected.PATCH("/identity/oidc-clients/:clientID", deps.ProviderPortal.UpdateOIDCClient)
 	protected.DELETE("/identity/oidc-clients/:clientID", deps.ProviderPortal.DeleteOIDCClient)
@@ -85,6 +87,9 @@ func registerProviderProtocolRoutes(public gin.IRoutes, deps Dependencies) {
 	public.GET("/provider/oidc/jwks", deps.ProviderPortal.OIDCJWKS)
 	public.POST("/provider/oidc/introspect", limits.Middleware("oidc-introspect", 120, time.Minute, oidcClient), deps.ProviderPortal.OIDCIntrospect)
 	public.POST("/provider/oidc/revoke", limits.Middleware("oidc-revoke", 120, time.Minute, oidcClient), deps.ProviderPortal.OIDCRevoke)
+	public.GET("/saml2/idp/:providerID/metadata", deps.ProviderPortal.SAMLMetadata)
+	public.GET("/saml2/idp/:providerID/sso", limits.Middleware("saml-sso", 60, time.Minute, provider), deps.ProviderPortal.SAMLSSO)
+	public.POST("/saml2/idp/:providerID/sso", limits.Middleware("saml-sso", 60, time.Minute, provider), deps.ProviderPortal.SAMLSSO)
 	public.GET("/provider/oidc/logout", deps.ProviderPortal.OIDCEndSession)
 	public.POST("/provider/oidc/logout", deps.ProviderPortal.OIDCEndSession)
 	public.GET("/provider/proxy/auth", limits.Middleware("proxy-auth", 120, time.Minute, provider), deps.ProviderPortal.ProxyAuth)
@@ -98,6 +103,10 @@ func registerProviderProtocolRoutes(public gin.IRoutes, deps Dependencies) {
 	public.POST("/provider/outposts/:outpostID/heartbeat", limits.Middleware("outpost-heartbeat", 300, time.Minute, outpost), deps.ProviderPortal.HeartbeatOutpost)
 	public.POST("/provider/outposts/:outpostID/check", limits.Middleware("outpost-check", 300, time.Minute, outpost), deps.ProviderPortal.CheckOutpost)
 	public.POST("/provider/outposts/:outpostID/events", limits.Middleware("outpost-events", 300, time.Minute, outpost), deps.ProviderPortal.OutpostEvents)
+	public.POST("/identity/outposts/runtime/claim", limits.Middleware("identity-outpost-claim", 30, time.Minute, nil), deps.ProviderPortal.ClaimIdentityOutpostRuntime)
+	public.POST("/identity/outposts/:outpostID/heartbeat", limits.Middleware("identity-outpost-heartbeat", 300, time.Minute, outpost), deps.ProviderPortal.HeartbeatIdentityOutpostRuntime)
+	public.POST("/identity/outposts/:outpostID/check", limits.Middleware("identity-outpost-check", 300, time.Minute, outpost), deps.ProviderPortal.CheckIdentityOutpostAccess)
+	public.POST("/identity/outposts/:outpostID/events", limits.Middleware("identity-outpost-events", 300, time.Minute, outpost), deps.ProviderPortal.RecordIdentityOutpostRuntimeEvents)
 }
 
 func registerStandardProviderProtocolRoutes(router *gin.Engine, deps Dependencies) {
@@ -122,6 +131,9 @@ func registerStandardProviderProtocolRoutes(router *gin.Engine, deps Dependencie
 	router.POST("/oauth2/revoke", limits.Middleware("oidc-revoke", 120, time.Minute, oidcClient), deps.ProviderPortal.OIDCRevoke)
 	router.GET("/oauth2/logout", deps.ProviderPortal.OIDCEndSession)
 	router.POST("/oauth2/logout", deps.ProviderPortal.OIDCEndSession)
+	router.GET("/saml2/idp/:providerID/metadata", deps.ProviderPortal.SAMLMetadata)
+	router.GET("/saml2/idp/:providerID/sso", limits.Middleware("saml-sso", 60, time.Minute, nil), deps.ProviderPortal.SAMLSSO)
+	router.POST("/saml2/idp/:providerID/sso", limits.Middleware("saml-sso", 60, time.Minute, nil), deps.ProviderPortal.SAMLSSO)
 }
 
 func firstRouteValue(values ...string) string {

@@ -23,6 +23,34 @@ func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
+func (r *Repository) ResolveOutpostRuntimeVersion(ctx context.Context, outpostID, digest string) (int64, error) {
+	outpostID, digest = strings.TrimSpace(outpostID), strings.TrimSpace(digest)
+	if outpostID == "" || digest == "" {
+		return 0, fmt.Errorf("%w: outpost ID and configuration digest are required", apperrors.ErrInvalidArgument)
+	}
+	var version int64
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "identity-outpost-runtime:"+outpostID).Error; err != nil {
+			return err
+		}
+		var currentDigest string
+		err := tx.Raw(`SELECT configuration_digest, configuration_version FROM identity_outpost_runtime_versions WHERE outpost_id = ? FOR UPDATE`, outpostID).Row().Scan(&currentDigest, &version)
+		if errors.Is(err, sql.ErrNoRows) {
+			version = 1
+			return tx.Exec(`INSERT INTO identity_outpost_runtime_versions (outpost_id, configuration_digest, configuration_version, updated_at) VALUES (?, ?, ?, ?)`, outpostID, digest, version, time.Now().UTC()).Error
+		}
+		if err != nil {
+			return err
+		}
+		if currentDigest == digest {
+			return nil
+		}
+		version++
+		return tx.Exec(`UPDATE identity_outpost_runtime_versions SET configuration_digest = ?, configuration_version = ?, updated_at = ? WHERE outpost_id = ?`, digest, version, time.Now().UTC(), outpostID).Error
+	})
+	return version, err
+}
+
 func (r *Repository) ListProviders(ctx context.Context, filter domainprovider.ProviderFilter) ([]domainprovider.Provider, error) {
 	var builder strings.Builder
 	args := make([]any, 0)

@@ -337,12 +337,22 @@ Helm chart sources and Artifact Hub publishing live in `opensoha/soha-helm`.
 Apply the raw Kubernetes baseline:
 
 ```bash
+cd deploy
+kustomize edit set image ghcr.io/opensoha/soha=ghcr.io/opensoha/soha:vX.Y.Z
+cd ..
 kubectl apply -k deploy
 ```
 
 The raw manifest includes the standard `pgsql`/`opensoha` initial credentials
 and the four public system-key defaults in `soha-app-config`. Replace them with
 an overlay or external Secret integration before a public rollout.
+
+Identity Outpost is deployed from the sibling `soha-agent` repository or from
+the `soha-agent` Helm chart with `mode=outpost`. Pin a released agent image that
+supports Identity Outpost protocol `v1`; server and agent SemVer values may
+differ because the protocol version and signed configuration key are the
+compatibility boundary. NGINX Ingress and Traefik ForwardAuth examples live in
+`soha-agent/deploy/kubernetes/outpost/examples`.
 
 ## Documentation
 

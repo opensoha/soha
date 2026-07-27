@@ -54,4 +54,17 @@ func registerProtectedAuthRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/auth/stream-ticket", deps.Auth.IssueStreamTicket)
 	protected.GET("/auth/sessions", deps.Auth.ListSessions)
 	protected.POST("/auth/sessions/:sessionID/revoke", deps.Auth.RevokeSession)
+	if deps.MFA != nil {
+		protected.GET("/identity/mfa/credentials", deps.MFA.ListCredentials)
+		protected.DELETE("/identity/mfa/credentials/:mfaCredentialID", deps.MFA.RevokeCredential)
+		protected.POST("/identity/mfa/totp/enroll", deps.MFA.BeginTOTPEnrollment)
+		protected.POST("/identity/mfa/challenges/:mfaChallengeID/verify", deps.MFA.VerifyChallenge)
+		protected.POST("/identity/mfa/recovery-codes/challenge", deps.MFA.BeginRecoveryChallenge)
+		protected.POST("/identity/mfa/webauthn/enroll", deps.MFA.BeginWebAuthnEnrollment)
+		protected.POST("/identity/mfa/webauthn/authenticate", deps.MFA.BeginWebAuthnAuthentication)
+		protected.POST("/identity/mfa/webauthn/challenges/:mfaChallengeID/verify", deps.MFA.VerifyWebAuthnChallenge)
+		protected.POST("/identity/mfa/recovery-codes/regenerate", deps.MFA.RegenerateRecoveryCodes)
+		protected.POST("/identity/users/:identityUserID/mfa/credentials/:mfaCredentialID/revoke", deps.MFA.AdminRevokeCredential)
+		protected.POST("/identity/users/:identityUserID/mfa/reset", deps.MFA.AdminResetUserMFA)
+	}
 }

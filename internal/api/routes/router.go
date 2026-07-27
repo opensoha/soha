@@ -63,6 +63,7 @@ type Dependencies struct {
 	SystemIntegrations *apiHandlers.SystemIntegrationHandler
 	ModuleState        apiMiddleware.ModuleState
 	Auth               *apiHandlers.AuthHandler
+	MFA                *apiHandlers.MFAHandler
 	ProviderPortal     *providerportalhandler.Handler
 	Authn              apiMiddleware.AccessTokenParser
 }

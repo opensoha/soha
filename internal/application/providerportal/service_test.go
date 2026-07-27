@@ -13,9 +13,28 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
+func TestIdentityRuntimeCapabilitiesReportOnlyInstalledRuntimes(t *testing.T) {
+	capabilities := (&Service{}).IdentityRuntimeCapabilities()
+	if !capabilities.SAMLLoginSource.Available || !capabilities.SAMLApplicationProvider.Available || !capabilities.TOTP.Available || !capabilities.WebAuthn.Available || !capabilities.RecoveryCodes.Available || !capabilities.StepUp.Available || capabilities.Outpost.AgentRuntime.Available || capabilities.Outpost.KubernetesArtifact.Available {
+		t.Fatalf("unavailable runtimes reported as available: %#v", capabilities)
+	}
+	if !capabilities.Outpost.ControlPlane.Available || !capabilities.Outpost.EmbeddedRuntime.Available {
+		t.Fatalf("installed outpost runtimes reported unavailable: %#v", capabilities.Outpost)
+	}
+}
+
+func TestIdentityRuntimeCapabilitiesExposeConfiguredOutpostRuntime(t *testing.T) {
+	service := &Service{}
+	service.SetOutpostRuntimeCapability(true, "")
+	capabilities := service.IdentityRuntimeCapabilities()
+	if !capabilities.Outpost.AgentRuntime.Available || !capabilities.Outpost.KubernetesArtifact.Available || !capabilities.Outpost.ExternalProtocol.Available {
+		t.Fatalf("configured outpost runtimes reported unavailable: %#v", capabilities.Outpost)
+	}
+}
+
 func TestServiceLaunchAllowsProviderApplications(t *testing.T) {
 	ctx := context.Background()
-	for _, providerType := range []string{domainportal.ProviderTypeOIDC, domainportal.ProviderTypeProxy} {
+	for _, providerType := range []string{domainportal.ProviderTypeOIDC, domainportal.ProviderTypeProxy, domainportal.ProviderTypeSAML} {
 		t.Run(providerType, func(t *testing.T) {
 			repo := &memoryPortalRepo{
 				applications: map[string]domainportal.Application{

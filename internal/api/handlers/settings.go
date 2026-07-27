@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
@@ -40,6 +41,7 @@ type SettingsHandler struct {
 	ai          AISettingsService
 	branding    BrandingSettingsService
 	permissions *appaccess.PermissionResolver
+	saml        SAMLLoginSourceService
 }
 
 func NewSettingsHandler(service SettingsService, permissions *appaccess.PermissionResolver) *SettingsHandler {
@@ -47,7 +49,19 @@ func NewSettingsHandler(service SettingsService, permissions *appaccess.Permissi
 }
 
 func NewSettingsHandlerWithServices(identity IdentitySettingsService, ai AISettingsService, branding BrandingSettingsService, permissions *appaccess.PermissionResolver) *SettingsHandler {
-	return &SettingsHandler{identity: identity, ai: ai, branding: branding, permissions: permissions}
+	handler := &SettingsHandler{identity: identity, ai: ai, branding: branding, permissions: permissions}
+	handler.saml, _ = identity.(SAMLLoginSourceService)
+	return handler
+}
+
+type SAMLLoginSourceService interface {
+	ListSAMLLoginSources(context.Context, domainidentity.Principal) ([]sohaapi.SAMLLoginSource, error)
+	GetSAMLLoginSource(context.Context, domainidentity.Principal, string) (sohaapi.SAMLLoginSource, error)
+	CreateSAMLLoginSource(context.Context, domainidentity.Principal, sohaapi.SAMLLoginSourceInput) (sohaapi.SAMLLoginSource, error)
+	UpdateSAMLLoginSource(context.Context, domainidentity.Principal, string, sohaapi.SAMLLoginSourceInput) (sohaapi.SAMLLoginSource, error)
+	DeleteSAMLLoginSource(context.Context, domainidentity.Principal, string) error
+	ValidateSAMLMetadata(context.Context, domainidentity.Principal, sohaapi.SAMLMetadataInput) (sohaapi.SAMLMetadataValidation, error)
+	ImportSAMLLoginSourceMetadata(context.Context, domainidentity.Principal, sohaapi.SAMLMetadataImportRequest) (sohaapi.SAMLLoginSource, error)
 }
 
 func (h *SettingsHandler) GetIdentitySettings(c *gin.Context) {

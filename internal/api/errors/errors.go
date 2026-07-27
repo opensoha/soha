@@ -10,6 +10,7 @@ import (
 var (
 	ErrUnauthorized         = legacy.ErrUnauthorized
 	ErrAccessDenied         = legacy.ErrAccessDenied
+	ErrMFARequired          = legacy.ErrMFARequired
 	ErrConflict             = legacy.ErrConflict
 	ErrNotFound             = legacy.ErrNotFound
 	ErrClusterUnready       = legacy.ErrClusterUnready
@@ -26,6 +27,8 @@ func StatusCode(err error) int {
 	case errors.Is(err, ErrUnauthorized):
 		return http.StatusUnauthorized
 	case errors.Is(err, ErrAccessDenied):
+		return http.StatusForbidden
+	case errors.Is(err, ErrMFARequired):
 		return http.StatusForbidden
 	case errors.Is(err, ErrConflict):
 		return http.StatusConflict
@@ -48,6 +51,8 @@ func Code(err error) string {
 		return "unauthorized"
 	case errors.Is(err, ErrAccessDenied):
 		return "access_denied"
+	case errors.Is(err, ErrMFARequired):
+		return "mfa_required"
 	case errors.Is(err, ErrConflict):
 		return "conflict"
 	case errors.Is(err, ErrNotFound):
@@ -69,6 +74,8 @@ func Message(err error) string {
 		return "authentication required"
 	case errors.Is(err, ErrAccessDenied):
 		return "access denied"
+	case errors.Is(err, ErrMFARequired):
+		return "multi-factor authentication is required"
 	case errors.Is(err, ErrConflict):
 		return "resource conflict"
 	case errors.Is(err, ErrNotFound):

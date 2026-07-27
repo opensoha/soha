@@ -179,6 +179,10 @@ security:
   # re-encrypting those records with the new key before restarting Soha.
   credential_encryption_key: soha-123456789012345678901234567890
   secret_provider: ""
+  # Required for signed agent/Kubernetes Outpost runtime configs. Configure via
+  # SOHA_SECURITY_OUTPOST_SIGNING_KEY_ID and SOHA_SECURITY_OUTPOST_SIGNING_PRIVATE_KEY.
+  outpost_signing_key_id: ""
+  outpost_signing_private_key: ""
 
 bootstrap:
   seed_defaults: true

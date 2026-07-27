@@ -338,6 +338,14 @@ func identityMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		return nonPlatformMutationEntry("IdentityApplication", nonPlatformMutationAction(method, path), appaccess.PermIdentityApplicationsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/identity/policies"):
 		return nonPlatformMutationEntry("IdentityPolicy", nonPlatformMutationAction(method, path), appaccess.PermIdentityPoliciesManage, false), true
+	case strings.HasPrefix(path, "/api/v1/identity/saml"):
+		permission := appaccess.PermSettingsIdentityManage
+		if strings.Contains(path, "/certificates/") {
+			permission = appaccess.PermIdentityProvidersManage
+		}
+		return nonPlatformMutationEntry("SAMLIdentity", nonPlatformMutationAction(method, path), permission, false), true
+	case strings.HasPrefix(path, "/api/v1/identity/users/") && strings.Contains(path, "/mfa/"):
+		return nonPlatformMutationEntry("MFACredential", nonPlatformMutationAction(method, path), appaccess.PermAccessUsersManage, false), true
 	case strings.HasPrefix(path, "/api/v1/identity/outposts"):
 		return nonPlatformMutationEntry("IdentityOutpost", nonPlatformMutationAction(method, path), appaccess.PermIdentityOutpostsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/identity/providers") && strings.Contains(path, "/oidc-clients"):

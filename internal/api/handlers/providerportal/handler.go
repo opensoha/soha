@@ -14,9 +14,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	apierrors "github.com/opensoha/soha/internal/api/errors"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appidentityprovider "github.com/opensoha/soha/internal/application/identityprovider"
 	appportal "github.com/opensoha/soha/internal/application/providerportal"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
@@ -45,6 +47,7 @@ type ApplicationService interface {
 	UpdateApplication(context.Context, domainidentity.Principal, string, domainportal.ApplicationInput) (domainportal.Application, error)
 	DeleteApplication(context.Context, domainidentity.Principal, string) error
 	ProviderCapabilities() []domainportal.ProviderCapability
+	IdentityRuntimeCapabilities() domainportal.IdentityRuntimeCapability
 }
 
 type PolicyService interface {
@@ -65,6 +68,14 @@ type OIDCService interface {
 
 type OIDCLogoutService interface {
 	EndSession(context.Context, string, domainprovider.EndSessionInput) (domainprovider.EndSessionResult, error)
+}
+
+type SAMLService interface {
+	SAMLProviderMetadata(context.Context, string, string) ([]byte, error)
+	PrepareSAMLSSOLogin(context.Context, string, string, appidentityprovider.SAMLRequestInput) (string, error)
+	ResumeSAMLSSO(context.Context, string, string) (appidentityprovider.SAMLRequestInput, error)
+	SAMLSSO(context.Context, string, string, string, domainidentity.Principal, appidentityprovider.SAMLRequestInput) (appidentityprovider.SAMLSSOResult, error)
+	RotateSAMLCertificate(context.Context, domainidentity.Principal, string, sohaapi.SAMLCertificateRotateRequest) (sohaapi.SAMLCertificateRotation, error)
 }
 
 type ProxyService interface {
@@ -98,6 +109,13 @@ type OutpostRuntimeService interface {
 	RecordOutpostEvents(context.Context, string, domainprovider.OutpostEventsInput) (domainprovider.OutpostEventsResult, error)
 }
 
+type OutpostContractRuntimeService interface {
+	ClaimIdentityOutpostRuntime(context.Context, string, sohaapi.IdentityOutpostClaimRequest) (*sohaapi.IdentityOutpostRuntimeConfig, error)
+	HeartbeatIdentityOutpostRuntime(context.Context, string, string, sohaapi.IdentityOutpostHeartbeatRequest) (sohaapi.IdentityOutpostHeartbeat, error)
+	CheckIdentityOutpostAccess(context.Context, string, string, sohaapi.IdentityOutpostAccessCheckRequest) (sohaapi.IdentityOutpostAccessCheck, error)
+	RecordIdentityOutpostRuntimeEvents(context.Context, string, string, sohaapi.IdentityOutpostEventBatchRequest) (sohaapi.OperationStatus, error)
+}
+
 type OIDCClientService interface {
 	ListOIDCClients(context.Context, domainidentity.Principal, string) ([]domainprovider.OIDCClient, error)
 	CreateOIDCClient(context.Context, domainidentity.Principal, string, domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error)
@@ -107,17 +125,19 @@ type OIDCClientService interface {
 }
 
 type Services struct {
-	PortalReader     PortalReader
-	PortalInteractor PortalInteractor
-	Applications     ApplicationService
-	Policies         PolicyService
-	Providers        ProviderService
-	Outposts         OutpostService
-	OIDCClients      OIDCClientService
-	OIDC             OIDCService
-	OIDCLogout       OIDCLogoutService
-	Proxy            ProxyService
-	OutpostRuntime   OutpostRuntimeService
+	PortalReader           PortalReader
+	PortalInteractor       PortalInteractor
+	Applications           ApplicationService
+	Policies               PolicyService
+	Providers              ProviderService
+	Outposts               OutpostService
+	OIDCClients            OIDCClientService
+	OIDC                   OIDCService
+	OIDCLogout             OIDCLogoutService
+	SAML                   SAMLService
+	Proxy                  ProxyService
+	OutpostRuntime         OutpostRuntimeService
+	OutpostContractRuntime OutpostContractRuntimeService
 }
 
 type Handler struct {
@@ -128,8 +148,10 @@ type Handler struct {
 	outpostHandler
 	oidcClientHandler
 	oidcHandler
+	samlHandler
 	proxyHandler
 	outpostRuntimeHandler
+	outpostContractRuntimeHandler
 }
 
 type portalHandler struct {
@@ -162,6 +184,10 @@ type oidcHandler struct {
 	logout  OIDCLogoutService
 }
 
+type samlHandler struct {
+	service SAMLService
+}
+
 type proxyHandler struct {
 	service ProxyService
 }
@@ -169,6 +195,8 @@ type proxyHandler struct {
 type outpostRuntimeHandler struct {
 	service OutpostRuntimeService
 }
+
+type outpostContractRuntimeHandler struct{ service OutpostContractRuntimeService }
 
 const proxySessionCookieName = "soha_proxy_session"
 
@@ -178,14 +206,16 @@ func New(services Services) *Handler {
 			reader:     services.PortalReader,
 			interactor: services.PortalInteractor,
 		},
-		applicationHandler:    applicationHandler{service: services.Applications},
-		policyHandler:         policyHandler{service: services.Policies},
-		providerHandler:       providerHandler{service: services.Providers},
-		outpostHandler:        outpostHandler{service: services.Outposts},
-		oidcClientHandler:     oidcClientHandler{service: services.OIDCClients},
-		oidcHandler:           oidcHandler{service: services.OIDC, logout: services.OIDCLogout},
-		proxyHandler:          proxyHandler{service: services.Proxy},
-		outpostRuntimeHandler: outpostRuntimeHandler{service: services.OutpostRuntime},
+		applicationHandler:            applicationHandler{service: services.Applications},
+		policyHandler:                 policyHandler{service: services.Policies},
+		providerHandler:               providerHandler{service: services.Providers},
+		outpostHandler:                outpostHandler{service: services.Outposts},
+		oidcClientHandler:             oidcClientHandler{service: services.OIDCClients},
+		oidcHandler:                   oidcHandler{service: services.OIDC, logout: services.OIDCLogout},
+		samlHandler:                   samlHandler{service: services.SAML},
+		proxyHandler:                  proxyHandler{service: services.Proxy},
+		outpostRuntimeHandler:         outpostRuntimeHandler{service: services.OutpostRuntime},
+		outpostContractRuntimeHandler: outpostContractRuntimeHandler{service: services.OutpostContractRuntime},
 	}
 }
 
@@ -369,6 +399,10 @@ func (h *policyHandler) UpdateIdentityPolicy(c *gin.Context) {
 
 func (h *applicationHandler) ProviderCapabilities(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, h.service.ProviderCapabilities())
+}
+
+func (h *applicationHandler) IdentityRuntimeCapabilities(c *gin.Context) {
+	apiresponse.Item(c, http.StatusOK, h.service.IdentityRuntimeCapabilities())
 }
 
 func (h *providerHandler) ListIdentityProviders(c *gin.Context) {
@@ -717,6 +751,86 @@ func (h *oidcHandler) OIDCDiscovery(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, h.service.Discovery(issuerFromRequest(c)))
+}
+
+func (h *samlHandler) SAMLMetadata(c *gin.Context) {
+	if h.service == nil {
+		writeError(c, fmt.Errorf("%w: SAML provider service is not configured", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	metadata, err := h.service.SAMLProviderMetadata(c.Request.Context(), issuerFromRequest(c), c.Param("providerID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/samlmetadata+xml; charset=utf-8", metadata)
+}
+
+func (h *samlHandler) SAMLSSO(c *gin.Context) {
+	if h.service == nil {
+		writeError(c, fmt.Errorf("%w: SAML provider service is not configured", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	encoded := c.Query("SAMLRequest")
+	relayState := c.Query("RelayState")
+	if c.Request.Method == http.MethodPost {
+		encoded, relayState = c.PostForm("SAMLRequest"), c.PostForm("RelayState")
+	}
+	input := appidentityprovider.SAMLRequestInput{
+		Method: c.Request.Method, Encoded: encoded, RelayState: relayState,
+		RawQuery: c.Request.URL.RawQuery,
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	resumeToken := c.Query("resume")
+	if principal.UserID == "" {
+		if resumeToken == "" {
+			var err error
+			resumeToken, err = h.service.PrepareSAMLSSOLogin(c.Request.Context(), issuerFromRequest(c), c.Param("providerID"), input)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+		}
+		returnTo := "/saml2/idp/" + url.PathEscape(c.Param("providerID")) + "/sso?resume=" + url.QueryEscape(resumeToken)
+		c.Redirect(http.StatusFound, "/login?return_to="+url.QueryEscape(returnTo))
+		return
+	}
+	if resumeToken != "" {
+		var err error
+		input, err = h.service.ResumeSAMLSSO(c.Request.Context(), c.Param("providerID"), resumeToken)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+	}
+	result, err := h.service.SAMLSSO(
+		portalAccessContext(c), issuerFromRequest(c), c.Param("providerID"),
+		apiMiddleware.AccessContextFromContext(c).SessionID, principal,
+		input,
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "text/html; charset=utf-8", result.HTML)
+}
+
+func (h *samlHandler) RotateSAMLCertificate(c *gin.Context) {
+	if h.service == nil {
+		writeError(c, fmt.Errorf("%w: SAML provider service is not configured", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	var request sohaapi.SAMLCertificateRotateRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid SAML certificate rotation payload")
+		return
+	}
+	item, err := h.service.RotateSAMLCertificate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("certificateID"), request)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *oidcHandler) OIDCAuthorize(c *gin.Context) {

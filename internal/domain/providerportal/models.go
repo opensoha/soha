@@ -13,6 +13,7 @@ const (
 	ProviderTypeLink  = "link"
 	ProviderTypeOIDC  = "oidc"
 	ProviderTypeProxy = "proxy"
+	ProviderTypeSAML  = "saml"
 
 	ApplicationStatusDraft       = "draft"
 	ApplicationStatusEnabled     = "enabled"
@@ -170,6 +171,31 @@ type ProviderCapability struct {
 	Status      string   `json:"status"`
 	Endpoints   []string `json:"endpoints"`
 	Description string   `json:"description,omitempty"`
+}
+
+type RuntimeCapability struct {
+	Available bool   `json:"available"`
+	Status    string `json:"status"`
+	Reason    string `json:"reason,omitempty"`
+	Version   string `json:"version,omitempty"`
+}
+
+type OutpostRuntimeCapability struct {
+	ControlPlane       RuntimeCapability `json:"controlPlane"`
+	EmbeddedRuntime    RuntimeCapability `json:"embeddedRuntime"`
+	AgentRuntime       RuntimeCapability `json:"agentRuntime"`
+	KubernetesArtifact RuntimeCapability `json:"kubernetesArtifact"`
+	ExternalProtocol   RuntimeCapability `json:"externalProtocol"`
+}
+
+type IdentityRuntimeCapability struct {
+	SAMLLoginSource         RuntimeCapability        `json:"samlLoginSource"`
+	SAMLApplicationProvider RuntimeCapability        `json:"samlApplicationProvider"`
+	TOTP                    RuntimeCapability        `json:"totp"`
+	WebAuthn                RuntimeCapability        `json:"webauthn"`
+	RecoveryCodes           RuntimeCapability        `json:"recoveryCodes"`
+	StepUp                  RuntimeCapability        `json:"stepUp"`
+	Outpost                 OutpostRuntimeCapability `json:"outpost"`
 }
 
 type Repository interface {

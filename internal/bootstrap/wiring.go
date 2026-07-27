@@ -37,6 +37,7 @@ import (
 	appknowledgegraph "github.com/opensoha/soha/internal/application/knowledgegraph"
 	appmemory "github.com/opensoha/soha/internal/application/memory"
 	appmenu "github.com/opensoha/soha/internal/application/menu"
+	appmfa "github.com/opensoha/soha/internal/application/mfa"
 	appmodule "github.com/opensoha/soha/internal/application/module"
 	appmonitoring "github.com/opensoha/soha/internal/application/monitoring"
 	appmultiagent "github.com/opensoha/soha/internal/application/multiagent"
@@ -73,7 +74,9 @@ import (
 	ratelimitinfra "github.com/opensoha/soha/internal/infrastructure/ratelimit"
 	releasebackendinfra "github.com/opensoha/soha/internal/infrastructure/releasebackend"
 	resourcebackendinfra "github.com/opensoha/soha/internal/infrastructure/resourcebackend"
+	samlinfra "github.com/opensoha/soha/internal/infrastructure/saml"
 	virtualizationinfra "github.com/opensoha/soha/internal/infrastructure/virtualization"
+	webauthninfra "github.com/opensoha/soha/internal/infrastructure/webauthn"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/runtimeinfo"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
@@ -94,6 +97,7 @@ import (
 	directorysyncrepo "github.com/opensoha/soha/internal/repository/directorysync"
 	dockerrepo "github.com/opensoha/soha/internal/repository/docker"
 	eventrepo "github.com/opensoha/soha/internal/repository/eventstream"
+	identitymfarepo "github.com/opensoha/soha/internal/repository/identitymfa"
 	identityproviderrepo "github.com/opensoha/soha/internal/repository/identityprovider"
 	knowledgerepo "github.com/opensoha/soha/internal/repository/knowledge"
 	knowledgegraphrepo "github.com/opensoha/soha/internal/repository/knowledgegraph"
@@ -155,6 +159,7 @@ type repositories struct {
 	aiGatewayRepository         *aigatewayrepo.Repository
 	pluginRepository            *pluginrepo.Repository
 	identityProviderRepository  *identityproviderrepo.Repository
+	identityMFARepository       *identitymfarepo.Repository
 	knowledgeRepository         *knowledgerepo.Repository
 	agentHarnessRepository      *agentharnessrepo.Repository
 	aiProductionRepository      *aiproductionrepo.Repository
@@ -200,6 +205,7 @@ type coreServices struct {
 	integrationService       *appintegration.Service
 	pluginService            *appplugin.Service
 	identityProviderService  *appidentityprovider.Service
+	identityMFAService       *appmfa.Service
 	providerPortalService    *appproviderportal.Service
 	directorySyncService     *appdirectorysync.Service
 	directorySyncConnectors  *directorysynchandler.Registry
@@ -345,6 +351,7 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		aiGatewayRepository:         aigatewayrepo.New(db),
 		pluginRepository:            pluginrepo.New(db),
 		identityProviderRepository:  identityproviderrepo.New(db),
+		identityMFARepository:       identitymfarepo.New(db),
 		knowledgeRepository:         knowledgerepo.New(db),
 		agentHarnessRepository:      agentharnessrepo.New(db),
 		aiProductionRepository:      aiproductionrepo.New(db),
@@ -396,6 +403,8 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	menuService.SetModuleState(runtimeConfigService)
 	moduleService := appmodule.NewRuntime(runtimeConfigService)
 	settingsService := appsettings.New(repos.settingsRepository, permissionResolver)
+	samlLoginRuntime := samlinfra.NewLoginRuntime()
+	settingsService.SetSAMLMetadataPinner(samlLoginRuntime)
 	directorySyncConnectors := directorysynchandler.NewRegistry(directorysynchandler.TokenResolver(
 		feishudirectory.NewTenantTokenResolver(settingsService, nil, ""),
 	), settingsService, repos.directorySyncRepository)
@@ -408,12 +417,27 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		Sessions: repos.identityRepository, SessionAdmin: repos.identityRepository,
 		EphemeralTokens: repos.identityRepository,
 		Audit:           auditService, Operations: operationService, Settings: settingsService,
+		SAML:        samlLoginRuntime,
 		Permissions: permissionResolver, Gateway: repos.aiGatewayRepository,
 	})
 	if err != nil {
 		infra.cancel()
 		return nil, fmt.Errorf("build identity service: %w", err)
 	}
+	webAuthnAdapter, err := webauthninfra.New(cfg.Security.WebAuthnRPID, "Soha", cfg.Security.WebAuthnOrigins)
+	if err != nil {
+		infra.cancel()
+		return nil, fmt.Errorf("build WebAuthn runtime: %w", err)
+	}
+	identityMFAService, err := appmfa.New(
+		repos.identityMFARepository, repos.identityRepository, webAuthnAdapter,
+		cfg.Security.CredentialEncryptionKeys, auditService,
+	)
+	if err != nil {
+		infra.cancel()
+		return nil, fmt.Errorf("build MFA service: %w", err)
+	}
+	identityMFAService.SetPermissionResolver(permissionResolver)
 	policyEngine := policy.NewEngine()
 	accessService := appaccess.New(policyEngine, repos.policyRepository, repos.scopeGrantRepository, repos.catalogRepository)
 	accessCatalogService := appaccess.NewCatalog(repos.identityRepository, repos.policyRepository, accessService, menuService, permissionResolver)
@@ -448,6 +472,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		settingsService:          settingsService,
 		runtimeConfigService:     runtimeConfigService,
 		identityService:          identityService,
+		identityMFAService:       identityMFAService,
 		policyEngine:             policyEngine,
 		accessService:            accessService,
 		accessCatalogService:     accessCatalogService,
@@ -574,8 +599,19 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 	if err := plugins.Reconcile(infra.lifecycleCtx); err != nil {
 		return nil, err
 	}
-	identityProvider := appidentityprovider.NewWithEncryptionKeys(repos.identityProviderRepository, repos.identityRepository, permissions, audit, cfg.Security.CredentialEncryptionKeys)
+	identityProvider := appidentityprovider.NewWithEncryptionKeysAndSAML(
+		repos.identityProviderRepository, repos.identityRepository, permissions, audit,
+		cfg.Security.CredentialEncryptionKeys, samlinfra.NewProviderRuntime(),
+	)
+	outpostKeyID, outpostSigningKey, err := cfg.Security.OutpostSigningKey()
+	if err != nil {
+		return nil, fmt.Errorf("configure Outpost signing key: %w", err)
+	}
+	if len(outpostSigningKey) > 0 {
+		identityProvider.SetOutpostSigningKey(outpostKeyID, outpostSigningKey)
+	}
 	providerPortal := appproviderportal.New(repos.providerPortalRepository, permissions, audit)
+	providerPortal.SetOutpostRuntimeCapability(len(outpostSigningKey) > 0, "Outpost runtime signing key is not configured")
 	providerPortal.SetOIDCLaunchResolver(identityProvider)
 	providerPortal.SetProfileReader(identity)
 	return &deliveryCoreServices{
@@ -997,18 +1033,21 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		),
 		SystemIntegrations: apiHandlers.NewSystemIntegrationHandler(core.systemIntegrationService),
 		Auth:               newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth),
+		MFA:                apiHandlers.NewMFAHandler(core.identityMFAService),
 		ProviderPortal: providerportalhandler.New(providerportalhandler.Services{
-			PortalReader:     core.providerPortalService,
-			PortalInteractor: core.providerPortalService,
-			Applications:     core.providerPortalService,
-			Policies:         core.providerPortalService,
-			Providers:        core.identityProviderService,
-			Outposts:         core.identityProviderService,
-			OIDCClients:      core.identityProviderService,
-			OIDC:             core.identityProviderService,
-			OIDCLogout:       core.identityProviderService,
-			Proxy:            core.identityProviderService,
-			OutpostRuntime:   core.identityProviderService,
+			PortalReader:           core.providerPortalService,
+			PortalInteractor:       core.providerPortalService,
+			Applications:           core.providerPortalService,
+			Policies:               core.providerPortalService,
+			Providers:              core.identityProviderService,
+			Outposts:               core.identityProviderService,
+			OIDCClients:            core.identityProviderService,
+			OIDC:                   core.identityProviderService,
+			OIDCLogout:             core.identityProviderService,
+			SAML:                   core.identityProviderService,
+			Proxy:                  core.identityProviderService,
+			OutpostRuntime:         core.identityProviderService,
+			OutpostContractRuntime: core.identityProviderService,
 		}),
 		Authn: core.identityService,
 	}

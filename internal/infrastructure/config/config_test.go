@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"strings"
@@ -417,6 +419,45 @@ func TestConfigValidateAllowsEmptyOrSimpleDatabaseAndBootstrapPasswords(t *testi
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidateWebAuthnConfigRequiresExactOriginsInsideRPID(t *testing.T) {
+	valid := SecurityConfig{WebAuthnRPID: "example.com", WebAuthnOrigins: []string{"https://console.example.com"}}
+	if problems := validateWebAuthnConfig(valid); len(problems) != 0 {
+		t.Fatalf("valid WebAuthn config problems = %#v", problems)
+	}
+	for _, config := range []SecurityConfig{
+		{WebAuthnRPID: "example.com", WebAuthnOrigins: []string{"https://*.example.com"}},
+		{WebAuthnRPID: "example.com", WebAuthnOrigins: []string{"https://attacker.example.net"}},
+		{WebAuthnRPID: "https://example.com", WebAuthnOrigins: []string{"https://example.com"}},
+	} {
+		if problems := validateWebAuthnConfig(config); len(problems) == 0 {
+			t.Fatalf("invalid WebAuthn config accepted: %#v", config)
+		}
+	}
+}
+
+func TestOutpostSigningKeyRequiresExplicitValidPair(t *testing.T) {
+	if keyID, key, err := (SecurityConfig{}).OutpostSigningKey(); err != nil || keyID != "" || key != nil {
+		t.Fatalf("empty Outpost signing config = %q/%d, %v", keyID, len(key), err)
+	}
+	seed := make([]byte, ed25519.SeedSize)
+	for index := range seed {
+		seed[index] = byte(index + 1)
+	}
+	config := SecurityConfig{OutpostSigningKeyID: "outpost-key-1", OutpostSigningPrivateKey: base64.StdEncoding.EncodeToString(seed)}
+	keyID, key, err := config.OutpostSigningKey()
+	if err != nil || keyID != "outpost-key-1" || len(key) != ed25519.PrivateKeySize {
+		t.Fatalf("OutpostSigningKey = %q/%d, %v", keyID, len(key), err)
+	}
+	config.OutpostSigningKeyID = ""
+	if _, _, err := config.OutpostSigningKey(); err == nil {
+		t.Fatal("partial Outpost signing config was accepted")
+	}
+	config.OutpostSigningKeyID, config.OutpostSigningPrivateKey = "bad key id", "not-base64"
+	if _, _, err := config.OutpostSigningKey(); err == nil {
+		t.Fatal("invalid Outpost signing config was accepted")
 	}
 }
 

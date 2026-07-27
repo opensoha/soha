@@ -20,6 +20,8 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	v1.GET("/auth/providers/:providerID/login", deps.Auth.ProviderLogin)
 	v1.GET("/auth/login/:providerID/start", deps.Auth.ProviderLogin)
 	v1.GET("/auth/login/:providerID/callback", deps.Auth.ProviderCallback)
+	v1.POST("/auth/login/:providerID/acs", deps.Auth.SAMLACS)
+	v1.GET("/auth/saml/:providerID/metadata", deps.Auth.SAMLMetadata)
 	v1.POST("/auth/oidc/exchange", deps.Auth.OIDCExchange)
 	if deps.SystemIntegrations != nil {
 		v1.GET("/system-integrations/oauth/gitlab/callback", deps.SystemIntegrations.CompleteGitLabOAuth)

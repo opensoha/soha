@@ -1,8 +1,11 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -243,6 +246,10 @@ type SecurityConfig struct {
 	CredentialEncryptionKey  string       `mapstructure:"credential_encryption_key"`
 	CredentialEncryptionKeys keyring.Ring `mapstructure:"-"`
 	SecretProvider           string       `mapstructure:"secret_provider"`
+	WebAuthnRPID             string       `mapstructure:"webauthn_rp_id"`
+	WebAuthnOrigins          []string     `mapstructure:"webauthn_origins"`
+	OutpostSigningKeyID      string       `mapstructure:"outpost_signing_key_id"`
+	OutpostSigningPrivateKey string       `mapstructure:"outpost_signing_private_key"`
 }
 
 type BootstrapConfig struct {
@@ -332,6 +339,8 @@ func (c *Config) expandEnv() {
 		c.Plugins.Marketplace.Sources[i].URL = os.ExpandEnv(c.Plugins.Marketplace.Sources[i].URL)
 	}
 	c.Security.CredentialEncryptionKey = os.ExpandEnv(c.Security.CredentialEncryptionKey)
+	c.Security.OutpostSigningKeyID = os.ExpandEnv(c.Security.OutpostSigningKeyID)
+	c.Security.OutpostSigningPrivateKey = os.ExpandEnv(c.Security.OutpostSigningPrivateKey)
 	for i := range c.Kubernetes.Clusters {
 		c.Kubernetes.Clusters[i].Kubeconfig = os.ExpandEnv(c.Kubernetes.Clusters[i].Kubeconfig)
 		c.Kubernetes.Clusters[i].KubeconfigData = os.ExpandEnv(c.Kubernetes.Clusters[i].KubeconfigData)
@@ -382,7 +391,62 @@ func (c Config) staticProblems() []string {
 	if c.GitLab.Enabled {
 		problems = appendSecretProblem(problems, "gitlab.token", c.GitLab.Token, true, 20)
 	}
+	problems = append(problems, validateWebAuthnConfig(c.Security)...)
+	if _, _, err := c.Security.OutpostSigningKey(); err != nil {
+		problems = append(problems, err.Error())
+	}
 	problems = append(problems, validateSharedConfigProblems(c)...)
+	return problems
+}
+
+func (c SecurityConfig) OutpostSigningKey() (string, ed25519.PrivateKey, error) {
+	keyID := strings.TrimSpace(c.OutpostSigningKeyID)
+	encoded := strings.TrimSpace(c.OutpostSigningPrivateKey)
+	if keyID == "" && encoded == "" {
+		return "", nil, nil
+	}
+	if keyID == "" || encoded == "" {
+		return "", nil, fmt.Errorf("security.outpost_signing_key_id and security.outpost_signing_private_key must be configured together")
+	}
+	if len(keyID) > 128 || strings.ContainsAny(keyID, " \t\r\n") {
+		return "", nil, fmt.Errorf("security.outpost_signing_key_id must be a non-space identifier of at most 128 characters")
+	}
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		raw, err = base64.RawStdEncoding.DecodeString(encoded)
+	}
+	if err != nil || (len(raw) != ed25519.SeedSize && len(raw) != ed25519.PrivateKeySize) {
+		return "", nil, fmt.Errorf("security.outpost_signing_private_key must be base64-encoded Ed25519 seed or private key material")
+	}
+	if len(raw) == ed25519.SeedSize {
+		return keyID, ed25519.NewKeyFromSeed(raw), nil
+	}
+	return keyID, ed25519.PrivateKey(append([]byte(nil), raw...)), nil
+}
+
+func validateWebAuthnConfig(config SecurityConfig) []string {
+	problems := make([]string, 0)
+	rpID := strings.TrimSpace(config.WebAuthnRPID)
+	if rpID == "" && len(config.WebAuthnOrigins) == 0 {
+		return problems
+	}
+	if rpID == "" || strings.ContainsAny(rpID, "*/:") {
+		problems = append(problems, "security.webauthn_rp_id must be a DNS host without scheme, port, or wildcard")
+	}
+	if len(config.WebAuthnOrigins) == 0 {
+		return append(problems, "security.webauthn_origins requires at least one exact origin")
+	}
+	for _, raw := range config.WebAuthnOrigins {
+		origin, err := url.Parse(strings.TrimSpace(raw))
+		if err != nil || (origin.Scheme != "https" && origin.Scheme != "http") || origin.Host == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" || strings.Contains(origin.Host, "*") {
+			problems = append(problems, fmt.Sprintf("security.webauthn_origins contains invalid exact origin %q", raw))
+			continue
+		}
+		host := origin.Hostname()
+		if rpID != "" && host != rpID && !strings.HasSuffix(host, "."+rpID) {
+			problems = append(problems, fmt.Sprintf("security.webauthn_origins origin %q is outside RP ID %q", raw, rpID))
+		}
+	}
 	return problems
 }
 
@@ -611,6 +675,8 @@ var configDefaults = []struct {
 	{"assets.docs.external_url", "https://docs.opensoha.dev/"},
 	{"security.credential_encryption_key", defaultSystemSecret},
 	{"security.secret_provider", ""},
+	{"security.webauthn_rp_id", "localhost"},
+	{"security.webauthn_origins", []string{"http://localhost:5173", "http://localhost:8080"}},
 	{"bootstrap.seed_defaults", true},
 	{"kubernetes.clusters", []map[string]any{}},
 }

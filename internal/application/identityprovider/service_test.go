@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
@@ -115,6 +116,17 @@ func expectOIDC(t *testing.T, condition bool, format string, args ...any) {
 	t.Helper()
 	if !condition {
 		t.Fatalf(format, args...)
+	}
+}
+
+func TestSAMLAttributeMappingsAcceptContractArray(t *testing.T) {
+	mappings := samlAttributeMappings([]any{
+		map[string]any{"source": "email", "target": "email", "required": true},
+		map[string]any{"source": "roles", "target": "role"},
+		"invalid",
+	})
+	if mappings["email"] != "email" || mappings["roles"] != "role" || len(mappings) != 2 {
+		t.Fatalf("unexpected SAML attribute mappings: %#v", mappings)
 	}
 }
 
@@ -1116,6 +1128,137 @@ func TestProviderFromInputValidatesReverseProxyConfiguration(t *testing.T) {
 	}
 }
 
+func TestProviderFromInputValidatesSAMLServiceProvider(t *testing.T) {
+	input := domainprovider.ProviderInput{
+		ApplicationID: "app-1",
+		Name:          "Example SAML",
+		Type:          domainprovider.ProviderTypeSAML,
+		Enabled:       true,
+		Config: map[string]any{
+			"entityId":                     "https://sp.example/saml/metadata",
+			"assertionConsumerServiceUrls": []any{"http://sp.example/saml/acs"},
+		},
+	}
+	_, err := providerFromInput("provider-1", input, domainidentity.Principal{}, time.Now())
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("providerFromInput insecure SAML ACS error = %v, want invalid argument", err)
+	}
+
+	input.Config["assertionConsumerServiceUrls"] = []any{"https://sp.example/saml/acs"}
+	provider, err := providerFromInput("provider-1", input, domainidentity.Principal{}, time.Now())
+	if err != nil {
+		t.Fatalf("providerFromInput valid SAML provider: %v", err)
+	}
+	if provider.Type != domainprovider.ProviderTypeSAML {
+		t.Fatalf("provider type = %q", provider.Type)
+	}
+}
+
+func TestSAMLSSORejectsReplayedAuthnRequest(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.provider.Type = domainprovider.ProviderTypeSAML
+	repo.app.ProviderType = domainportal.ProviderTypeSAML
+	repo.samlSP = domainprovider.SAMLServiceProvider{
+		ProviderID: repo.provider.ID, EntityID: "https://sp.example.test/metadata",
+		AssertionConsumerServiceURLs: []string{"https://sp.example.test/acs"},
+	}
+	now := time.Now().UTC()
+	encryptionKey, err := keyring.NewKey("active", "test-encryption-key-32-bytes-long", now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encryptionKeys, err := keyring.New(encryptionKey, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewWithEncryptionKeys(repo, &memoryUsers{}, nil, nil, encryptionKeys)
+	key, err := service.generateSAMLSigningKey(repo.provider.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.samlKey = key
+	service.saml = fakeSAMLProviderRuntime{}
+	principal := (&memoryUsers{}).principal()
+	input := SAMLRequestInput{Method: http.MethodPost, Encoded: "request"}
+
+	result, err := service.SAMLSSO(ctx, "https://soha.example", repo.provider.ID, "session-1", principal, input)
+	if err != nil || result.ACSURL != "https://sp.example.test/acs" || len(result.HTML) == 0 {
+		t.Fatalf("first SAML SSO = %#v, error=%v", result, err)
+	}
+	if _, err := service.SAMLSSO(ctx, "https://soha.example", repo.provider.ID, "session-1", principal, input); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("replayed SAML SSO error = %v, want unauthorized", err)
+	}
+}
+
+func TestSAMLSSOLoginPreservesPOSTRequest(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.provider.Type = domainprovider.ProviderTypeSAML
+	repo.samlSP = domainprovider.SAMLServiceProvider{
+		ProviderID: repo.provider.ID, EntityID: "https://sp.example.test/metadata",
+		AssertionConsumerServiceURLs: []string{"https://sp.example.test/acs"},
+	}
+	now := time.Now().UTC()
+	encryptionKey, err := keyring.NewKey("active", "test-encryption-key-32-bytes-long", now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encryptionKeys, err := keyring.New(encryptionKey, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewWithEncryptionKeys(repo, &memoryUsers{}, nil, nil, encryptionKeys)
+	repo.samlKey, err = service.generateSAMLSigningKey(repo.provider.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.saml = fakeSAMLProviderRuntime{}
+
+	token, err := service.PrepareSAMLSSOLogin(ctx, "https://soha.example", repo.provider.ID, SAMLRequestInput{
+		Method: http.MethodPost, Encoded: "request", RelayState: "relay",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := service.ResumeSAMLSSO(ctx, repo.provider.ID, token)
+	if err != nil || input.Method != http.MethodPost || input.Encoded != "request" || input.RelayState != "relay" {
+		t.Fatalf("resumed SAML input = %#v, error=%v", input, err)
+	}
+	if _, err := service.ResumeSAMLSSO(ctx, repo.provider.ID, token); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("reused SAML login token error = %v, want unauthorized", err)
+	}
+}
+
+func TestApplicationPolicyAccessReturnsMFARequired(t *testing.T) {
+	application := domainportal.Application{
+		Status:   domainportal.ApplicationStatusEnabled,
+		Metadata: map[string]any{"accessPolicy": map[string]any{"requireMfa": true}},
+	}
+	principal := (&memoryUsers{}).principal()
+	err := applicationPolicyAccessError(principal, application, domainportal.AccessPolicyContext{Now: time.Now().UTC()})
+	if !errors.Is(err, apperrors.ErrMFARequired) {
+		t.Fatalf("policy error = %v, want MFA required", err)
+	}
+	if err := applicationPolicyAccessError(principal, application, domainportal.AccessPolicyContext{MFAAuthenticated: true, Now: time.Now().UTC()}); err != nil {
+		t.Fatalf("policy rejected stepped-up session: %v", err)
+	}
+}
+
+type fakeSAMLProviderRuntime struct{}
+
+func (fakeSAMLProviderRuntime) Metadata(SAMLSigningMaterial) ([]byte, error) {
+	return []byte("<metadata/>"), nil
+}
+
+func (fakeSAMLProviderRuntime) ValidateRequest(_ SAMLSigningMaterial, input SAMLRequestInput) (SAMLValidatedRequest, error) {
+	return SAMLValidatedRequest{ID: "request-1", Issuer: input.ServiceProvider.EntityID, ACSURL: input.ServiceProvider.AssertionConsumerServiceURLs[0], RelayState: input.RelayState}, nil
+}
+
+func (fakeSAMLProviderRuntime) SignResponse(SAMLSigningMaterial, SAMLResponseInput) ([]byte, error) {
+	return []byte("<Response/>"), nil
+}
+
 func TestServiceOutpostClaimAndHeartbeat(t *testing.T) {
 	ctx := context.Background()
 	repo := newMemoryRepo(t)
@@ -1456,16 +1599,22 @@ func pkceChallenge(verifier string) string {
 }
 
 type memoryRepo struct {
-	provider       domainprovider.Provider
-	extraProviders map[string]domainprovider.Provider
-	client         domainprovider.OIDCClient
-	app            domainportal.Application
-	key            *domainprovider.SigningKey
-	keys           []domainprovider.SigningKey
-	codes          map[string]domainprovider.AuthorizationCode
-	outposts       map[string]domainprovider.Outpost
-	sessions       map[string]domainprovider.OIDCSession
-	refreshTokens  map[string]domainprovider.OIDCRefreshToken
+	provider        domainprovider.Provider
+	extraProviders  map[string]domainprovider.Provider
+	client          domainprovider.OIDCClient
+	app             domainportal.Application
+	key             *domainprovider.SigningKey
+	keys            []domainprovider.SigningKey
+	codes           map[string]domainprovider.AuthorizationCode
+	outposts        map[string]domainprovider.Outpost
+	sessions        map[string]domainprovider.OIDCSession
+	refreshTokens   map[string]domainprovider.OIDCRefreshToken
+	samlSP          domainprovider.SAMLServiceProvider
+	samlKey         domainprovider.SAMLSigningKey
+	samlReplay      map[string]struct{}
+	samlPending     map[string]domainprovider.SAMLPendingRequest
+	outpostDigests  map[string]string
+	outpostVersions map[string]int64
 }
 
 func newMemoryRepo(t *testing.T) *memoryRepo {
@@ -1504,11 +1653,135 @@ func newMemoryRepo(t *testing.T) *memoryRepo {
 			ProviderType: domainportal.ProviderTypeOIDC,
 			Status:       domainportal.ApplicationStatusEnabled,
 		},
-		codes:         map[string]domainprovider.AuthorizationCode{},
-		outposts:      map[string]domainprovider.Outpost{},
-		sessions:      map[string]domainprovider.OIDCSession{},
-		refreshTokens: map[string]domainprovider.OIDCRefreshToken{},
+		codes:           map[string]domainprovider.AuthorizationCode{},
+		outposts:        map[string]domainprovider.Outpost{},
+		sessions:        map[string]domainprovider.OIDCSession{},
+		refreshTokens:   map[string]domainprovider.OIDCRefreshToken{},
+		samlReplay:      map[string]struct{}{},
+		samlPending:     map[string]domainprovider.SAMLPendingRequest{},
+		outpostDigests:  map[string]string{},
+		outpostVersions: map[string]int64{},
 	}
+}
+
+func TestRotateSAMLCertificateReplacesActiveKeyAndRetainsOverlap(t *testing.T) {
+	repo := newMemoryRepo(t)
+	repo.provider.Type = domainprovider.ProviderTypeSAML
+	now := time.Now().UTC()
+	activeKey, err := keyring.NewKey("test", "test-encryption-key-32-bytes-long", now.Add(-time.Hour), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, err := keyring.New(activeKey, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewWithEncryptionKeys(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, keys)
+	current, err := service.generateSAMLSigningKey(repo.provider.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.samlKey = current
+
+	rotation, err := service.RotateSAMLCertificate(t.Context(), (&memoryUsers{}).principal(), current.ID, sohaapi.SAMLCertificateRotateRequest{OverlapSeconds: 600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotation.Active.ID == current.ID || rotation.Retiring.ID != current.ID || repo.samlKey.ID != rotation.Active.ID || !repo.samlKey.Active {
+		t.Fatalf("unexpected rotation: result=%#v stored=%#v", rotation, repo.samlKey)
+	}
+	if rotation.OverlapEndsAt.Before(time.Now().UTC().Add(9*time.Minute)) || rotation.Retiring.Status != sohaapi.CertificateSummaryStatusRetiring {
+		t.Fatalf("overlap was not retained: %#v", rotation)
+	}
+}
+
+func (r *memoryRepo) CreateSAMLProvider(_ context.Context, provider domainprovider.Provider, serviceProvider domainprovider.SAMLServiceProvider, key domainprovider.SAMLSigningKey) (domainprovider.Provider, error) {
+	r.provider, r.samlSP, r.samlKey = provider, serviceProvider, key
+	return provider, nil
+}
+
+func (r *memoryRepo) UpsertSAMLServiceProvider(_ context.Context, item domainprovider.SAMLServiceProvider) error {
+	r.samlSP = item
+	return nil
+}
+
+func (r *memoryRepo) UpdateSAMLProvider(_ context.Context, provider domainprovider.Provider, serviceProvider domainprovider.SAMLServiceProvider) (domainprovider.Provider, error) {
+	r.provider, r.samlSP = provider, serviceProvider
+	return provider, nil
+}
+
+func (r *memoryRepo) GetSAMLServiceProvider(_ context.Context, providerID string) (domainprovider.SAMLServiceProvider, error) {
+	if providerID != r.samlSP.ProviderID {
+		return domainprovider.SAMLServiceProvider{}, apperrors.ErrNotFound
+	}
+	return r.samlSP, nil
+}
+
+func (r *memoryRepo) GetActiveSAMLSigningKey(_ context.Context, providerID string) (domainprovider.SAMLSigningKey, error) {
+	if providerID != r.samlKey.ProviderID {
+		return domainprovider.SAMLSigningKey{}, apperrors.ErrNotFound
+	}
+	return r.samlKey, nil
+}
+
+func (r *memoryRepo) GetSAMLSigningKey(_ context.Context, certificateID string) (domainprovider.SAMLSigningKey, error) {
+	if certificateID != r.samlKey.ID {
+		return domainprovider.SAMLSigningKey{}, apperrors.ErrNotFound
+	}
+	return r.samlKey, nil
+}
+
+func (r *memoryRepo) ListSAMLMetadataSigningKeys(_ context.Context, providerID string, now time.Time) ([]domainprovider.SAMLSigningKey, error) {
+	if providerID != r.samlKey.ProviderID || !r.samlKey.NotAfter.After(now) {
+		return nil, nil
+	}
+	return []domainprovider.SAMLSigningKey{r.samlKey}, nil
+}
+
+func (r *memoryRepo) RotateSAMLSigningKey(_ context.Context, certificateID string, next domainprovider.SAMLSigningKey, retireAfter time.Time) (domainprovider.SAMLSigningKey, domainprovider.SAMLSigningKey, error) {
+	if certificateID != r.samlKey.ID || !r.samlKey.Active {
+		return domainprovider.SAMLSigningKey{}, domainprovider.SAMLSigningKey{}, apperrors.ErrConflict
+	}
+	retiring := r.samlKey
+	retiring.Active, retiring.RetireAfter = false, &retireAfter
+	r.samlKey = next
+	return retiring, next, nil
+}
+
+func (r *memoryRepo) ResolveOutpostRuntimeVersion(_ context.Context, outpostID, digest string) (int64, error) {
+	if r.outpostVersions[outpostID] == 0 {
+		r.outpostVersions[outpostID] = 1
+		r.outpostDigests[outpostID] = digest
+		return 1, nil
+	}
+	if r.outpostDigests[outpostID] != digest {
+		r.outpostVersions[outpostID]++
+		r.outpostDigests[outpostID] = digest
+	}
+	return r.outpostVersions[outpostID], nil
+}
+
+func (r *memoryRepo) ConsumeSAMLReplayKey(_ context.Context, providerID, kind, replayKey string, _ time.Time) error {
+	key := providerID + ":" + kind + ":" + replayKey
+	if _, exists := r.samlReplay[key]; exists {
+		return apperrors.ErrConflict
+	}
+	r.samlReplay[key] = struct{}{}
+	return nil
+}
+
+func (r *memoryRepo) CreateSAMLPendingRequest(_ context.Context, item domainprovider.SAMLPendingRequest) error {
+	r.samlPending[item.Token] = item
+	return nil
+}
+
+func (r *memoryRepo) ConsumeSAMLPendingRequest(_ context.Context, token, providerID string, now time.Time) (domainprovider.SAMLPendingRequest, error) {
+	item, ok := r.samlPending[token]
+	if !ok || item.ProviderID != providerID || !item.ExpiresAt.After(now) {
+		return domainprovider.SAMLPendingRequest{}, apperrors.ErrUnauthorized
+	}
+	delete(r.samlPending, token)
+	return item, nil
 }
 
 func (r *memoryRepo) ListProviders(_ context.Context, filter domainprovider.ProviderFilter) ([]domainprovider.Provider, error) {

@@ -51,11 +51,18 @@ type ProfileReader interface {
 }
 
 type Service struct {
-	repo               domainportal.Repository
-	permissions        *appaccess.PermissionResolver
-	audit              AuditRecorder
-	oidcLaunchResolver OIDCLaunchResolver
-	profileReader      ProfileReader
+	repo                    domainportal.Repository
+	permissions             *appaccess.PermissionResolver
+	audit                   AuditRecorder
+	oidcLaunchResolver      OIDCLaunchResolver
+	profileReader           ProfileReader
+	outpostRuntimeAvailable bool
+	outpostRuntimeReason    string
+}
+
+func (s *Service) SetOutpostRuntimeCapability(available bool, reason string) {
+	s.outpostRuntimeAvailable = available
+	s.outpostRuntimeReason = strings.TrimSpace(reason)
 }
 
 func New(repo domainportal.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder) *Service {
@@ -383,6 +390,39 @@ func (s *Service) ProviderCapabilities() []domainportal.ProviderCapability {
 			Endpoints:   []string{"/api/v1/provider/proxy/auth", "/api/v1/provider/proxy/start", "/api/v1/provider/proxy/callback"},
 			Description: "Proxy provider baseline supports embedded forward-auth checks with Soha identity headers.",
 		},
+		{
+			Type:        domainportal.ProviderTypeSAML,
+			Status:      "enabled",
+			Endpoints:   []string{"/saml2/idp/:providerID/metadata", "/saml2/idp/:providerID/sso"},
+			Description: "SAML 2.0 service provider integration supports signed assertions and SP-initiated SSO.",
+		},
+	}
+}
+
+func (s *Service) IdentityRuntimeCapabilities() domainportal.IdentityRuntimeCapability {
+	available := func() domainportal.RuntimeCapability {
+		return domainportal.RuntimeCapability{Available: true, Status: "available"}
+	}
+	outpostRuntime := domainportal.RuntimeCapability{Available: s.outpostRuntimeAvailable, Status: "unavailable", Reason: s.outpostRuntimeReason}
+	if s.outpostRuntimeAvailable {
+		outpostRuntime = available()
+	} else if outpostRuntime.Reason == "" {
+		outpostRuntime.Reason = "Outpost runtime signing key is not configured"
+	}
+	return domainportal.IdentityRuntimeCapability{
+		SAMLLoginSource:         available(),
+		SAMLApplicationProvider: available(),
+		TOTP:                    available(),
+		WebAuthn:                available(),
+		RecoveryCodes:           available(),
+		StepUp:                  available(),
+		Outpost: domainportal.OutpostRuntimeCapability{
+			ControlPlane:       available(),
+			EmbeddedRuntime:    available(),
+			AgentRuntime:       outpostRuntime,
+			KubernetesArtifact: outpostRuntime,
+			ExternalProtocol:   outpostRuntime,
+		},
 	}
 }
 
@@ -499,7 +539,7 @@ func normalizeProviderType(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "":
 		return domainportal.ProviderTypeLink
-	case domainportal.ProviderTypeLink, domainportal.ProviderTypeOIDC, domainportal.ProviderTypeProxy:
+	case domainportal.ProviderTypeLink, domainportal.ProviderTypeOIDC, domainportal.ProviderTypeProxy, domainportal.ProviderTypeSAML:
 		return strings.ToLower(strings.TrimSpace(value))
 	default:
 		return ""

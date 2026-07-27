@@ -328,6 +328,87 @@ func TestListProvidersDoesNotFallbackToConfiguredOIDCWhenSettingsProvidersAreEmp
 	}
 }
 
+func TestListProvidersHidesUnavailableSAMLRuntime(t *testing.T) {
+	service := &Service{settings: loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{
+		"saml-main": {ID: "saml-main", Type: "saml", Name: "SAML", Enabled: true},
+		"oidc-main": {ID: "oidc-main", Type: "oidc", Name: "OIDC", Enabled: true},
+	}}}
+
+	providers := service.ListProviders(context.Background())
+	if len(providers) != 2 || providers[0].Type != "password" || providers[1].Type != "oidc" {
+		t.Fatalf("providers = %#v, want password and oidc only", providers)
+	}
+}
+
+func TestBeginSAMLLoginStoresCorrelatedRequest(t *testing.T) {
+	store := newLoginMappingUserRepo()
+	deps := testDependenciesWithUserStore(store)
+	deps.Settings = loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{
+		"saml-main": {ID: "saml-main", Type: "saml", Name: "SAML", Enabled: true},
+	}}
+	deps.SAML = samlRuntimeStub{request: SAMLAuthnRequest{ID: "request-1", RedirectURL: "https://idp.example.test/sso"}}
+	service, err := New(deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	redirect, err := service.BeginProviderLogin(context.Background(), "saml-main", "/identity/applications")
+	if err != nil || redirect != "https://idp.example.test/sso" {
+		t.Fatalf("BeginProviderLogin() = %q, %v", redirect, err)
+	}
+	for key, token := range store.ephemeral {
+		if strings.HasPrefix(key, samlStateKind+"|") && token.Payload["requestId"] == "request-1" && token.Payload["returnTo"] == "/identity/applications" {
+			return
+		}
+	}
+	t.Fatal("correlated SAML state was not stored")
+}
+
+func TestHandleSAMLResponseRejectsAssertionReplay(t *testing.T) {
+	store := newLoginMappingUserRepo()
+	provider := domainsettings.LoginProviderSettings{ID: "saml-main", Type: "saml", Enabled: true}
+	deps := testDependenciesWithUserStore(store)
+	deps.Settings = loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{"saml-main": provider}}
+	deps.SAML = samlRuntimeStub{assertion: SAMLAssertion{ID: "assertion-1", Subject: "subject-1"}}
+	service, err := New(deps)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.CreateEphemeralToken(context.Background(), userrepo.EphemeralToken{
+		Token: "relay-1", Kind: samlStateKind,
+		Payload:   map[string]any{"providerId": provider.ID, "requestId": "request-1", "returnTo": "/"},
+		ExpiresAt: now.Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CreateEphemeralToken(context.Background(), userrepo.EphemeralToken{
+		Token: "assertion-1", Kind: samlAssertionKind, ExpiresAt: now.Add(time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.HandleSAMLResponse(context.Background(), provider.ID, "response", "relay-1"); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("replayed assertion error = %v, want unauthorized", err)
+	}
+}
+
+type samlRuntimeStub struct {
+	request   SAMLAuthnRequest
+	assertion SAMLAssertion
+}
+
+func (s samlRuntimeStub) Begin(context.Context, domainsettings.LoginProviderSettings, string) (SAMLAuthnRequest, error) {
+	return s.request, nil
+}
+
+func (s samlRuntimeStub) Validate(context.Context, domainsettings.LoginProviderSettings, string, string) (SAMLAssertion, error) {
+	return s.assertion, nil
+}
+
+func (s samlRuntimeStub) Metadata(context.Context, domainsettings.LoginProviderSettings) ([]byte, error) {
+	return []byte("<EntityDescriptor/>"), nil
+}
+
 func TestUpdateCurrentProfileStoresAvatarPreferences(t *testing.T) {
 	ctx := context.Background()
 	repo := newLoginMappingUserRepo()
@@ -1081,7 +1162,11 @@ func (r *loginMappingUserRepo) CreateEphemeralToken(_ context.Context, token use
 	if token.CreatedAt.IsZero() {
 		token.CreatedAt = time.Now().UTC()
 	}
-	r.ephemeral[token.Kind+"|"+token.Token] = token
+	key := token.Kind + "|" + token.Token
+	if _, exists := r.ephemeral[key]; exists {
+		return apperrors.ErrConflict
+	}
+	r.ephemeral[key] = token
 	return nil
 }
 

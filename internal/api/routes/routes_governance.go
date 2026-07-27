@@ -226,6 +226,13 @@ func registerPluginRoutes(protected gin.IRoutes, deps Dependencies) {
 
 func registerSettingsRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/settings/identity", deps.Settings.GetIdentitySettings)
+	protected.GET("/identity/saml/login-sources", deps.Settings.ListSAMLLoginSources)
+	protected.POST("/identity/saml/login-sources", deps.Settings.CreateSAMLLoginSource)
+	protected.GET("/identity/saml/login-sources/:samlLoginSourceID", deps.Settings.GetSAMLLoginSource)
+	protected.PUT("/identity/saml/login-sources/:samlLoginSourceID", deps.Settings.UpdateSAMLLoginSource)
+	protected.DELETE("/identity/saml/login-sources/:samlLoginSourceID", deps.Settings.DeleteSAMLLoginSource)
+	protected.POST("/identity/saml/metadata/validate", deps.Settings.ValidateSAMLMetadata)
+	protected.POST("/identity/saml/login-sources/import", deps.Settings.ImportSAMLLoginSourceMetadata)
 	protected.PUT("/settings/identity/providers", deps.Settings.UpdateLoginProvidersSettings)
 	protected.GET("/settings/ai", deps.Settings.GetAISettings)
 	protected.PUT("/settings/ai/workbench-model", deps.Settings.UpdateAIWorkbenchModelSettings)

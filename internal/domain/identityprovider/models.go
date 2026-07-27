@@ -11,6 +11,7 @@ import (
 const (
 	ProviderTypeOIDC  = "oidc"
 	ProviderTypeProxy = "proxy"
+	ProviderTypeSAML  = "saml"
 
 	ProviderStatusEnabled  = "enabled"
 	ProviderStatusDisabled = "disabled"
@@ -218,6 +219,43 @@ type SigningKey struct {
 	Active              bool           `json:"active"`
 	CreatedAt           time.Time      `json:"createdAt"`
 	RotatedAt           *time.Time     `json:"rotatedAt,omitempty"`
+}
+
+type SAMLServiceProvider struct {
+	ProviderID                   string
+	EntityID                     string
+	AssertionConsumerServiceURLs []string
+	NameIDFormat                 string
+	WantAuthnRequestsSigned      bool
+	WantAssertionsSigned         bool
+	SigningCertificatePEM        string
+	AttributeMappings            map[string]string
+	CreatedAt                    time.Time
+	UpdatedAt                    time.Time
+}
+
+type SAMLSigningKey struct {
+	ID                  string
+	ProviderID          string
+	EncryptedPrivateKey string
+	CertificatePEM      string
+	FingerprintSHA256   string
+	Active              bool
+	NotBefore           time.Time
+	NotAfter            time.Time
+	RetireAfter         *time.Time
+	CreatedAt           time.Time
+}
+
+type SAMLPendingRequest struct {
+	Token      string
+	ProviderID string
+	Method     string
+	Encoded    string
+	RelayState string
+	RawQuery   string
+	ExpiresAt  time.Time
+	CreatedAt  time.Time
 }
 
 type AuthorizationCode struct {

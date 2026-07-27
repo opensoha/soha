@@ -317,11 +317,20 @@ Helm Chart 源码与 Artifact Hub 发布流程在 `opensoha/soha-helm` 仓库维
 应用 raw Kubernetes 基线：
 
 ```bash
+cd deploy
+kustomize edit set image ghcr.io/opensoha/soha=ghcr.io/opensoha/soha:vX.Y.Z
+cd ..
 kubectl apply -k deploy
 ```
 
 raw manifest 的 `soha-app-config` 包含 `pgsql`/`opensoha` 标准初始凭据和四项
 公开 system key 默认值。公网发布前请通过 overlay 或外部 Secret 集成覆盖它们。
+
+Identity Outpost 从 sibling `soha-agent` 仓库部署，也可以使用 `soha-agent`
+Helm Chart 的 `mode=outpost`。必须固定到支持 Identity Outpost `v1` 协议的 Agent
+发布镜像；Server 与 Agent 的 SemVer 可以不同，兼容边界是协议版本与签名配置公钥。
+NGINX Ingress 和 Traefik ForwardAuth 示例位于
+`soha-agent/deploy/kubernetes/outpost/examples`。
 
 ## 文档
 

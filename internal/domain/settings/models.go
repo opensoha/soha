@@ -37,6 +37,7 @@ type LoginProviderSettings struct {
 	RoleSyncMode        string   `json:"roleSyncMode,omitempty"`
 	OrgSyncMode         string   `json:"orgSyncMode,omitempty"`
 	MetadataURL         string   `json:"metadataUrl,omitempty"`
+	MetadataXML         string   `json:"-"`
 	EntityID            string   `json:"entityId,omitempty"`
 	Certificate         string   `json:"certificate,omitempty"`
 }

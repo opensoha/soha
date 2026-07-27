@@ -3,6 +3,7 @@ package identityprovider
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
@@ -63,12 +64,20 @@ type UserRepository interface {
 }
 
 type Service struct {
-	repo           domainprovider.Repository
-	users          UserRepository
-	permissions    *appaccess.PermissionResolver
-	audit          AuditRecorder
-	encryptionKey  string
-	encryptionKeys keyring.Ring
+	repo                domainprovider.Repository
+	users               UserRepository
+	permissions         *appaccess.PermissionResolver
+	audit               AuditRecorder
+	encryptionKey       string
+	encryptionKeys      keyring.Ring
+	saml                SAMLIdentityProviderRuntime
+	outpostSigningKeyID string
+	outpostSigningKey   ed25519.PrivateKey
+}
+
+func (s *Service) SetOutpostSigningKey(keyID string, key ed25519.PrivateKey) {
+	s.outpostSigningKeyID = strings.TrimSpace(keyID)
+	s.outpostSigningKey = append(ed25519.PrivateKey(nil), key...)
 }
 
 func New(repo domainprovider.Repository, users UserRepository, permissions *appaccess.PermissionResolver, audit AuditRecorder, encryptionKey string) *Service {
@@ -712,7 +721,11 @@ func (s *Service) ProxyAuth(ctx context.Context, principal domainidentity.Princi
 	}
 	if err := validateProxyProviderAccess(ctx, principal, provider, application, input); err != nil {
 		result.Decision = domainprovider.ProxyDecisionDeny
-		result.Reason = err.Error()
+		if errors.Is(err, apperrors.ErrMFARequired) {
+			result.Reason = "mfa_required"
+		} else {
+			result.Reason = err.Error()
+		}
 		s.recordAudit(ctx, principal, "proxy.deny", "denied", provider, domainprovider.OIDCClient{}, map[string]any{
 			"applicationId": application.ID,
 			"originalUrl":   originalURL,
@@ -810,7 +823,12 @@ func (s *Service) CreateProvider(ctx context.Context, principal domainidentity.P
 	if err := s.ensureProviderApplicationAvailable(ctx, item.ApplicationID, item.ID); err != nil {
 		return domainprovider.Provider{}, err
 	}
-	created, err := s.repo.CreateProvider(ctx, item)
+	var created domainprovider.Provider
+	if item.Type == domainprovider.ProviderTypeSAML {
+		created, err = s.createSAMLProvider(ctx, item, now)
+	} else {
+		created, err = s.repo.CreateProvider(ctx, item)
+	}
 	if err != nil {
 		return domainprovider.Provider{}, err
 	}
@@ -833,10 +851,18 @@ func (s *Service) UpdateProvider(ctx context.Context, principal domainidentity.P
 	}
 	item.CreatedBy = current.CreatedBy
 	item.CreatedAt = current.CreatedAt
+	if item.Type != current.Type {
+		return domainprovider.Provider{}, fmt.Errorf("%w: provider type cannot be changed", apperrors.ErrInvalidArgument)
+	}
 	if err := s.ensureProviderApplicationAvailable(ctx, item.ApplicationID, item.ID); err != nil {
 		return domainprovider.Provider{}, err
 	}
-	updated, err := s.repo.UpdateProvider(ctx, item)
+	var updated domainprovider.Provider
+	if item.Type == domainprovider.ProviderTypeSAML {
+		updated, err = s.updateSAMLProvider(ctx, item, now)
+	} else {
+		updated, err = s.repo.UpdateProvider(ctx, item)
+	}
 	if err != nil {
 		return domainprovider.Provider{}, err
 	}
@@ -1415,10 +1441,7 @@ func (s *Service) validateProviderAccess(ctx context.Context, principal domainid
 			access.MFAAuthenticated = metadataMFA(session.Metadata)
 		}
 	}
-	if !domainportal.CanAccessApplicationWithContext(principal, application, access) {
-		return fmt.Errorf("%w: application access denied", apperrors.ErrAccessDenied)
-	}
-	return nil
+	return applicationPolicyAccessError(principal, application, access)
 }
 
 func authorizeRedirectError(redirectURI, state, code string, err error) error {
@@ -1440,6 +1463,8 @@ func authorizeRedirectError(redirectURI, state, code string, err error) error {
 
 func authorizeRedirectErrorCode(err error) string {
 	switch {
+	case errors.Is(err, apperrors.ErrMFARequired):
+		return "mfa_required"
 	case errors.Is(err, apperrors.ErrAccessDenied), errors.Is(err, apperrors.ErrUnauthorized):
 		return "access_denied"
 	case errors.Is(err, apperrors.ErrInvalidArgument):
@@ -1457,12 +1482,24 @@ func validateProxyProviderAccess(ctx context.Context, principal domainidentity.P
 	if sourceIP == "" {
 		sourceIP = requestctx.FromContext(ctx).SourceIP
 	}
-	if !domainportal.CanAccessApplicationWithContext(principal, application, domainportal.AccessPolicyContext{
+	return applicationPolicyAccessError(principal, application, domainportal.AccessPolicyContext{
 		SourceIP: sourceIP, MFAAuthenticated: input.MFAAuthenticated, Now: time.Now().UTC(),
-	}) {
-		return fmt.Errorf("%w: application access denied", apperrors.ErrAccessDenied)
+	})
+}
+
+func applicationPolicyAccessError(principal domainidentity.Principal, application domainportal.Application, access domainportal.AccessPolicyContext) error {
+	if domainportal.CanAccessApplicationWithContext(principal, application, access) {
+		return nil
 	}
-	return nil
+	conditions := domainportal.ApplicationPolicyConditionsFromMetadata(application.Metadata)
+	if conditions.RequireMFA && !access.MFAAuthenticated {
+		withMFA := access
+		withMFA.MFAAuthenticated = true
+		if domainportal.CanAccessApplicationWithContext(principal, application, withMFA) {
+			return fmt.Errorf("%w: application policy requires step-up", apperrors.ErrMFARequired)
+		}
+	}
+	return fmt.Errorf("%w: application access denied", apperrors.ErrAccessDenied)
 }
 
 func validateProxyProviderRuntime(provider domainprovider.Provider, application domainportal.Application) error {
@@ -1973,7 +2010,7 @@ func providerFromInput(providerID string, input domainprovider.ProviderInput, pr
 	if providerType == "" {
 		providerType = domainprovider.ProviderTypeOIDC
 	}
-	if providerType != domainprovider.ProviderTypeOIDC && providerType != domainprovider.ProviderTypeProxy {
+	if providerType != domainprovider.ProviderTypeOIDC && providerType != domainprovider.ProviderTypeProxy && providerType != domainprovider.ProviderTypeSAML {
 		return domainprovider.Provider{}, fmt.Errorf("%w: unsupported provider type", apperrors.ErrInvalidArgument)
 	}
 	status := strings.ToLower(strings.TrimSpace(input.Status))
@@ -2004,6 +2041,35 @@ func providerFromInput(providerID string, input domainprovider.ProviderInput, pr
 			}
 		default:
 			return domainprovider.Provider{}, fmt.Errorf("%w: unsupported proxy mode", apperrors.ErrInvalidArgument)
+		}
+	}
+	if providerType == domainprovider.ProviderTypeSAML {
+		entityID := strings.TrimSpace(configString(config, "entityId", "entityID", "entity_id"))
+		if entityID == "" {
+			return domainprovider.Provider{}, fmt.Errorf("%w: saml entity_id is required", apperrors.ErrInvalidArgument)
+		}
+		acs := configStringSlice(config, "assertionConsumerServiceUrls", "acsUrls", "acs_urls")
+		if len(acs) == 0 {
+			return domainprovider.Provider{}, fmt.Errorf("%w: at least one saml assertion consumer service URL is required", apperrors.ErrInvalidArgument)
+		}
+		for _, rawURL := range acs {
+			parsed, err := url.ParseRequestURI(rawURL)
+			if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+				return domainprovider.Provider{}, fmt.Errorf("%w: saml assertion consumer service URLs must use https", apperrors.ErrInvalidArgument)
+			}
+		}
+		certificate := configString(config, "spCertificatePem", "signingCertificatePem", "signing_certificate_pem")
+		if configBoolean(config, "wantAuthnRequestsSigned", "want_authn_requests_signed") && certificate == "" {
+			return domainprovider.Provider{}, fmt.Errorf("%w: saml SP signing certificate is required when signed requests are enforced", apperrors.ErrInvalidArgument)
+		}
+		if certificate != "" {
+			block, _ := pem.Decode([]byte(certificate))
+			if block == nil || block.Type != "CERTIFICATE" {
+				return domainprovider.Provider{}, fmt.Errorf("%w: invalid saml SP signing certificate", apperrors.ErrInvalidArgument)
+			}
+			if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+				return domainprovider.Provider{}, fmt.Errorf("%w: invalid saml SP signing certificate", apperrors.ErrInvalidArgument)
+			}
 		}
 	}
 	secretRefs := input.SecretRefs

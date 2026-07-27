@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type IdentityAuthService interface {
@@ -40,6 +42,11 @@ type IdentityFederationService interface {
 	HandleOIDCCallback(context.Context, string, string) (string, error)
 	HandleProviderCallback(context.Context, string, string, string) (string, error)
 	ConsumeOIDCExchange(context.Context, string) (domainidentity.AuthResult, error)
+}
+
+type IdentitySAMLService interface {
+	HandleSAMLResponse(context.Context, string, string, string) (string, error)
+	SAMLMetadata(context.Context, string) ([]byte, error)
 }
 
 type IdentitySessionService interface {
@@ -131,6 +138,7 @@ type AuthHandler struct {
 	auth                IdentityAuthService
 	profile             IdentityProfileService
 	federation          IdentityFederationService
+	saml                IdentitySAMLService
 	sessions            IdentitySessionService
 	streamTickets       IdentityStreamTicketService
 	access              AuthBootstrapAccessService
@@ -152,6 +160,7 @@ func NewAuthHandlerWithServices(auth IdentityAuthService, profile IdentityProfil
 		auth:                auth,
 		profile:             profile,
 		federation:          federation,
+		saml:                samlService(federation),
 		sessions:            sessions,
 		streamTickets:       streamTickets,
 		access:              access,
@@ -163,6 +172,11 @@ func NewAuthHandlerWithServices(auth IdentityAuthService, profile IdentityProfil
 			},
 		},
 	}
+}
+
+func samlService(federation IdentityFederationService) IdentitySAMLService {
+	service, _ := federation.(IdentitySAMLService)
+	return service
 }
 
 func (h *AuthHandler) setRefreshCookie(c *gin.Context, result domainidentity.AuthResult) {
@@ -507,6 +521,32 @@ func (h *AuthHandler) ProviderCallback(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
+}
+
+func (h *AuthHandler) SAMLACS(c *gin.Context) {
+	if h.saml == nil {
+		writeError(c, fmt.Errorf("%w: saml login runtime is not enabled", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	redirectURL, err := h.saml.HandleSAMLResponse(c.Request.Context(), c.Param("providerID"), c.PostForm("SAMLResponse"), c.PostForm("RelayState"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Redirect(http.StatusSeeOther, redirectURL)
+}
+
+func (h *AuthHandler) SAMLMetadata(c *gin.Context) {
+	if h.saml == nil {
+		writeError(c, fmt.Errorf("%w: saml login runtime is not enabled", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	metadata, err := h.saml.SAMLMetadata(c.Request.Context(), c.Param("providerID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Data(http.StatusOK, "application/samlmetadata+xml; charset=utf-8", metadata)
 }
 
 func (h *AuthHandler) ListSessions(c *gin.Context) {
