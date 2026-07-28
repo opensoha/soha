@@ -1104,6 +1104,20 @@ func (s *Service) Running() bool {
 	return s.running
 }
 
+func (s *Service) SetRuntimeOptions(workerInterval time.Duration, syncConcurrency int) error {
+	if workerInterval <= 0 || syncConcurrency <= 0 {
+		return fmt.Errorf("virtualization runtime options must be positive")
+	}
+	s.workerMu.Lock()
+	defer s.workerMu.Unlock()
+	if s.running {
+		return fmt.Errorf("virtualization workers must be stopped before reconfiguration")
+	}
+	s.workerInterval = workerInterval
+	s.syncConcurrency = syncConcurrency
+	return nil
+}
+
 func (s *Service) Shutdown() {
 	_ = s.Stop(context.Background())
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +47,10 @@ type Repository interface {
 	SetWebhookCredential(context.Context, domain.WebhookCredential) error
 	GetWebhookCredential(context.Context, string) (domain.WebhookCredential, error)
 	EnqueueEvent(context.Context, domain.EventEnvelope) (bool, error)
+	MarkEventReceived(context.Context, string, time.Time) error
+	ListEvents(context.Context, string, string, int) ([]domain.EventEnvelope, error)
+	RetryEvent(context.Context, string, string, time.Time) (domain.EventEnvelope, error)
+	GetRuntimeStatus(context.Context, string) (domain.RuntimeStatus, error)
 	SetSCIMToken(context.Context, string, string, time.Time) error
 	ResolveSCIMConnectionForScope(context.Context, string, string) (string, error)
 	UpsertSCIMOrganization(context.Context, string, domain.Organization) error
@@ -270,7 +275,7 @@ func (h *Handler) UpdateConnection(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, policy := request.models(existing.ID, principal.UserID, h.now().UTC())
-	if err := policy.Validate(); err != nil {
+	if err := policy.ValidateForProvider(item.ProviderType); err != nil {
 		writeError(c, normalizeError(err))
 		return
 	}
@@ -278,6 +283,12 @@ func (h *Handler) UpdateConnection(c *gin.Context) {
 		if err := appdirectorysync.ValidateSchedule(policy.Schedule); err != nil {
 			writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 			return
+		}
+		if policy.FullReconcileSchedule != "" {
+			if err := appdirectorysync.ValidateSchedule(policy.FullReconcileSchedule); err != nil {
+				writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
+				return
+			}
 		}
 	}
 	item.CreatedAt, item.CreatedBy = existing.CreatedAt, existing.CreatedBy
@@ -482,19 +493,22 @@ func (h *Handler) IngestEvent(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid directory event payload")
 		return
 	}
-	providerEventID, eventType, occurredAt, err := h.normalizeEvent(c, connection, credential, body)
+	providerEventID, eventType, occurredAt, payload, err := h.normalizeEvent(c, connection, credential, body)
 	if err != nil {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid directory event")
 		return
 	}
 	if providerEventID == "" {
+		_ = h.repository.MarkEventReceived(c.Request.Context(), connection.ID, h.now().UTC())
 		return
 	}
-	queued, err := h.repository.EnqueueEvent(c.Request.Context(), domain.EventEnvelope{ID: uuid.NewString(), ConnectionID: connection.ID, ProviderEventID: providerEventID, EventType: eventType, OccurredAt: occurredAt, ReceivedAt: h.now().UTC(), Status: "queued"})
+	now := h.now().UTC()
+	queued, err := h.repository.EnqueueEvent(c.Request.Context(), domain.EventEnvelope{ID: uuid.NewString(), ConnectionID: connection.ID, ProviderEventID: providerEventID, EventType: eventType, OccurredAt: occurredAt, ReceivedAt: now, Status: "queued", Payload: payload})
 	if err != nil {
 		writeError(c, err)
 		return
 	}
+	_ = h.repository.MarkEventReceived(c.Request.Context(), connection.ID, now)
 	apiresponse.Item(c, http.StatusAccepted, gin.H{"accepted": true, "duplicate": !queued})
 }
 
@@ -522,49 +536,49 @@ func (h *Handler) VerifyEventEndpoint(c *gin.Context) {
 	c.Data(http.StatusOK, "text/plain; charset=utf-8", plain)
 }
 
-func (h *Handler) normalizeEvent(c *gin.Context, connection domain.Connection, credential domain.WebhookCredential, body []byte) (string, string, time.Time, error) {
+func (h *Handler) normalizeEvent(c *gin.Context, connection domain.Connection, credential domain.WebhookCredential, body []byte) (string, string, time.Time, json.RawMessage, error) {
 	now := h.now().UTC()
 	switch connection.ProviderType {
 	case domain.ProviderFeishu:
 		if credential.EncryptKey != "" {
 			if err := feishudirectory.VerifySignature(c.GetHeader("X-Lark-Request-Timestamp"), c.GetHeader("X-Lark-Request-Nonce"), credential.EncryptKey, body, c.GetHeader("X-Lark-Signature"), now, 5*time.Minute); err != nil {
-				return "", "", time.Time{}, err
+				return "", "", time.Time{}, nil, err
 			}
 		}
 		event, challenge, err := feishudirectory.ParseEvent(body, credential.VerificationToken)
 		if err != nil {
-			return "", "", time.Time{}, err
+			return "", "", time.Time{}, nil, err
 		}
 		if challenge != nil {
 			c.JSON(http.StatusOK, gin.H{"challenge": challenge.Challenge})
-			return "", "", now, nil
+			return "", "", now, nil, nil
 		}
-		return event.ID, event.Type, event.OccurredAt, nil
+		return event.ID, event.Type, event.OccurredAt, event.Object, nil
 	case domain.ProviderWeCom:
 		encrypted, err := wecomdirectory.ParseEncryptedXML(body)
 		if err != nil {
-			return "", "", time.Time{}, err
+			return "", "", time.Time{}, nil, err
 		}
 		signature := firstNonEmptyString(c.Query("msg_signature"), c.GetHeader("X-WeCom-Signature"))
 		timestamp := firstNonEmptyString(c.Query("timestamp"), c.GetHeader("X-WeCom-Timestamp"))
 		nonce := firstNonEmptyString(c.Query("nonce"), c.GetHeader("X-WeCom-Nonce"))
 		if err := wecomdirectory.VerifyEventSignature(credential.VerificationToken, timestamp, nonce, encrypted, signature); err != nil {
-			return "", "", time.Time{}, err
+			return "", "", time.Time{}, nil, err
 		}
 		plain, err := wecomdirectory.DecryptEvent(credential.EncryptKey, encrypted)
 		if err != nil {
-			return "", "", time.Time{}, err
+			return "", "", time.Time{}, nil, err
 		}
 		event, err := wecomdirectory.ParseEvent(plain)
 		if err != nil {
-			return "", "", time.Time{}, err
+			return "", "", time.Time{}, nil, err
 		}
 		eventType := strings.Trim(strings.Join([]string{event.Event, event.ChangeType}, ":"), ":")
-		return digestEventID(encrypted), eventType, time.Unix(event.CreateTime, 0), nil
+		return digestEventID(encrypted), eventType, time.Unix(event.CreateTime, 0), json.RawMessage(`{}`), nil
 	case domain.ProviderDingTalk:
 		timestamp := c.GetHeader("X-DingTalk-Timestamp")
 		if err := dingtalkdirectory.VerifyEventSignature(timestamp, credential.VerificationToken, c.GetHeader("X-DingTalk-Signature"), now, 5*time.Minute); err != nil {
-			return "", "", time.Time{}, err
+			return "", "", time.Time{}, nil, err
 		}
 		var envelope struct {
 			EventID   string `json:"eventId"`
@@ -572,7 +586,7 @@ func (h *Handler) normalizeEvent(c *gin.Context, connection domain.Connection, c
 			Timestamp int64  `json:"timestamp"`
 		}
 		if err := json.Unmarshal(body, &envelope); err != nil {
-			return "", "", time.Time{}, err
+			return "", "", time.Time{}, nil, err
 		}
 		if envelope.EventID == "" {
 			envelope.EventID = digestEventID(string(body))
@@ -581,10 +595,99 @@ func (h *Handler) normalizeEvent(c *gin.Context, connection domain.Connection, c
 		if envelope.Timestamp > 0 {
 			occurred = time.UnixMilli(envelope.Timestamp)
 		}
-		return envelope.EventID, envelope.EventType, occurred, nil
+		return envelope.EventID, envelope.EventType, occurred, json.RawMessage(`{}`), nil
 	default:
-		return "", "", time.Time{}, fmt.Errorf("unsupported event provider")
+		return "", "", time.Time{}, nil, fmt.Errorf("unsupported event provider")
 	}
+}
+
+func (h *Handler) RuntimeStatus(c *gin.Context) {
+	status, err := h.repository.GetRuntimeStatus(c.Request.Context(), c.Param("connectionID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	callbackStatus := "not_configured"
+	if status.WebhookConfigured {
+		callbackStatus = "awaiting_event"
+	}
+	if status.WebhookVerifiedAt != nil {
+		callbackStatus = "verified"
+	}
+	data := gin.H{"connectionId": c.Param("connectionID"), "callbackUrl": "/api/v1/integrations/directory/" + c.Param("connectionID") + "/events", "callbackConfigured": status.WebhookConfigured, "callbackStatus": callbackStatus, "queuedEvents": status.QueuedEvents, "failedEvents": status.FailedEvents, "needsFullReconcile": status.ReconcileRequired}
+	if status.WebhookVerifiedAt != nil {
+		data["callbackVerifiedAt"] = status.WebhookVerifiedAt
+	}
+	if status.LastEventAt != nil {
+		data["lastEventAt"] = status.LastEventAt
+	}
+	if status.ReconcileReason != "" {
+		data["reconcileReason"] = status.ReconcileReason
+	}
+	if status.LastIncrementalRun != nil {
+		data["lastIncrementalRun"] = runSummary(*status.LastIncrementalRun)
+	}
+	if status.LastFullRun != nil {
+		data["lastFullRun"] = runSummary(*status.LastFullRun)
+	}
+	apiresponse.Item(c, http.StatusOK, data)
+}
+
+func (h *Handler) ListEvents(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	status := strings.TrimSpace(c.Query("status"))
+	if limit < 1 || limit > 200 || (status != "" && status != "queued" && status != "processing" && status != "succeeded" && status != "failed") {
+		writeError(c, fmt.Errorf("%w: invalid directory event filter", apperrors.ErrInvalidArgument))
+		return
+	}
+	items, err := h.repository.ListEvents(c.Request.Context(), c.Param("connectionID"), status, limit)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	result := make([]gin.H, 0, len(items))
+	for _, item := range items {
+		result = append(result, eventView(item))
+	}
+	apiresponse.Items(c, http.StatusOK, result)
+}
+
+func (h *Handler) RetryEvent(c *gin.Context) {
+	item, err := h.repository.RetryEvent(c.Request.Context(), c.Param("connectionID"), c.Param("eventID"), h.now().UTC())
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	h.record(c, apiMiddleware.PrincipalFromContext(c), "access.directory.event.retry", "DirectoryEvent", c.Param("eventID"), "queued directory event retry")
+	apiresponse.Item(c, http.StatusOK, eventView(item))
+}
+
+func eventView(item domain.EventEnvelope) gin.H {
+	data := gin.H{"id": item.ID, "providerEventId": item.ProviderEventID, "eventType": item.EventType, "status": item.Status, "attempts": item.Attempts, "occurredAt": item.OccurredAt, "receivedAt": item.ReceivedAt}
+	if item.ErrorSummary != "" {
+		data["errorSummary"] = item.ErrorSummary
+	}
+	if item.ProcessedAt != nil {
+		data["processedAt"] = item.ProcessedAt
+	}
+	if item.NextAttemptAt != nil {
+		data["nextAttemptAt"] = item.NextAttemptAt
+	}
+	return data
+}
+
+func runSummary(run domain.Run) gin.H {
+	data := gin.H{"id": run.ID, "connectionId": run.ConnectionID, "trigger": run.Trigger, "mode": run.Mode, "status": run.Status}
+	if run.StartedAt != nil {
+		data["startedAt"] = run.StartedAt
+	}
+	if run.FinishedAt != nil {
+		data["finishedAt"] = run.FinishedAt
+	}
+	if run.ErrorSummary != "" {
+		data["errorSummary"] = run.ErrorSummary
+	}
+	return data
 }
 
 func digestEventID(value string) string {

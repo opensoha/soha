@@ -41,4 +41,4 @@
 - Are module descriptors, seed menus, frontend route metadata, and permission keys aligned?
 - Does any external runtime action go through a task or operation runner path?
 - Are terminal statuses and related business records backfilled consistently?
-- Were tests and memory updated alongside the contract change?
+- Were tests, public contracts, and public docs updated where the behavior changed?

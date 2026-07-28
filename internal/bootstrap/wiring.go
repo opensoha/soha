@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
@@ -375,29 +376,48 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	systemIntegrationService := appsystemintegration.New(repos.systemIntegrationRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
 	systemIntegrationService.RegisterSourceAdapter("gitlab", gitLabSourceAdapterFactory{})
 	systemIntegrationService.RegisterOAuthProvider("gitlab", gitlabinfra.NewOAuthProvider())
-	if err := systemIntegrationService.ImportLegacyGitLab(ctx, appsystemintegration.LegacyGitLabConfig{
-		Enabled: cfg.GitLab.Enabled, BaseURL: cfg.GitLab.BaseURL, Token: cfg.GitLab.Token,
-		GroupID: cfg.GitLab.GroupID, PerPage: cfg.GitLab.PerPage, Timeout: cfg.GitLab.Timeout,
-	}); err != nil {
-		return nil, fmt.Errorf("import legacy gitlab integration: %w", err)
-	}
 	runtimeConfigService, err := appruntimeconfig.New(ctx, repos.runtimeConfigRepository, appruntimeconfig.NewRegistry(appruntimeconfig.RegistryOptions{
-		AssistantGlobal:      cfg.Modules.AI.FeatureFlags()["assistant.global"],
-		ModuleHome:           cfg.Modules.Home.Enabled,
-		ModuleAI:             cfg.Modules.AI.Enabled,
-		ModuleMonitoring:     cfg.Modules.Monitoring.Enabled,
-		ModuleVirtualization: cfg.Modules.Virtualization.Enabled,
-		ModuleDocker:         cfg.Modules.Docker.Enabled,
-		ModuleAIGateway:      cfg.Modules.AIGateway.Enabled,
-		ModuleDelivery:       cfg.Modules.Delivery.Enabled,
-		ModuleSecurity:       cfg.Modules.Security.Enabled,
-		ModuleCMDB:           cfg.Modules.CMDB.Enabled,
-		MarketplaceURL:       cfg.Plugins.Marketplace.URL,
-		MarketplaceSourceID:  cfg.Plugins.Marketplace.SourceID,
+		AssistantGlobal:               cfg.Modules.AI.FeatureFlags()["assistant.global"],
+		ModuleHome:                    cfg.Modules.Home.Enabled,
+		ModuleAI:                      cfg.Modules.AI.Enabled,
+		ModuleMonitoring:              cfg.Modules.Monitoring.Enabled,
+		ModuleVirtualization:          cfg.Modules.Virtualization.Enabled,
+		ModuleDocker:                  cfg.Modules.Docker.Enabled,
+		ModuleAIGateway:               cfg.Modules.AIGateway.Enabled,
+		ModuleDelivery:                cfg.Modules.Delivery.Enabled,
+		ModuleSecurity:                cfg.Modules.Security.Enabled,
+		ModuleCMDB:                    cfg.Modules.CMDB.Enabled,
+		MarketplaceURL:                cfg.Plugins.Marketplace.URL,
+		MarketplaceSourceID:           cfg.Plugins.Marketplace.SourceID,
+		WorkflowWorkers:               cfg.Runtime.WorkflowWorkers,
+		WorkflowQueueSize:             cfg.Runtime.WorkflowQueueSize,
+		WorkflowNodeParallelism:       cfg.Runtime.WorkflowNodeParallelism,
+		ClusterSyncParallelism:        cfg.Runtime.ClusterSyncParallelism,
+		CopilotInspectionParallelism:  cfg.Runtime.CopilotInspectionParallelism,
+		AlertUpsertBatchSize:          cfg.Runtime.AlertUpsertBatchSize,
+		VirtualizationWorkerInterval:  cfg.Runtime.VirtualizationWorkerInterval,
+		VirtualizationSyncConcurrency: cfg.Runtime.VirtualizationSyncConcurrency,
+		ExecutionJobClusterID:         cfg.Runtime.ExecutionJobClusterID,
+		ExecutionJobNamespace:         cfg.Runtime.ExecutionJobNamespace,
+		ExecutionJobImage:             cfg.Runtime.ExecutionJobImage,
+		ExecutionJobGitImage:          cfg.Runtime.ExecutionJobGitImage,
+		ExecutionJobTTLSeconds:        cfg.Runtime.ExecutionJobTTLSeconds,
+		MCPDefaultTimeout:             cfg.MCP.DefaultTimeout,
+		AIGatewayDefaultTimeout:       cfg.AIGateway.Relay.DefaultTimeout,
+		AIGatewayStreamTimeout:        cfg.AIGateway.Relay.StreamTimeout,
+		AIGatewayFirstByteTimeout:     cfg.AIGateway.Relay.FirstByteTimeout,
+		AIGatewayStreamIdleTimeout:    cfg.AIGateway.Relay.StreamIdleTimeout,
+		AIGatewayHealthCheckEnabled:   cfg.AIGateway.Relay.HealthCheckEnabled,
+		AIGatewayHealthCheckInterval:  cfg.AIGateway.Relay.HealthCheckInterval,
+		AIGatewayMaxRequestBodyMB:     cfg.AIGateway.Relay.MaxRequestBodyMB,
+		AIGatewayIncludeStreamUsage:   cfg.AIGateway.Relay.IncludeUsageForOpenAIStream,
 	}), permissionResolver, auditService)
 	if err != nil {
 		return nil, fmt.Errorf("build runtime config service: %w", err)
 	}
+	cfg = runtimeEffectiveConfig(cfg, runtimeConfigService.Current())
+	repos.alertRepository.SetUpsertBatchSize(cfg.Runtime.AlertUpsertBatchSize)
+	infra.agentRegistry.SetDefaultTimeout(cfg.MCP.DefaultTimeout)
 	announcementService := appannouncement.New(repos.announcementRepository, permissionResolver, auditService, operationService)
 	menuService := appmenu.New(repos.menuRepository, permissionResolver, auditService, operationService)
 	menuService.SetModuleState(runtimeConfigService)
@@ -447,6 +467,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	directoryScheduler := appdirectorysync.NewScheduler(repos.directorySyncRepository, directorySyncService, func(_ context.Context, connection directorysyncdomain.Connection) (appdirectorysync.Connector, error) {
 		return directorySyncConnectors.Connector(connection.ProviderType)
 	})
+	directoryScheduler.SetAuditRecorder(auditService)
 	directoryScheduler.SetInstrumentation(infra.runtimeMetrics)
 	go directoryScheduler.Start(infra.lifecycleCtx)
 
@@ -461,6 +482,40 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		return nil, err
 	}
 	runtimeConfigService.RegisterApplier(marketplaceConfigApplier{base: cfg, plugins: deliveryCore.plugins})
+	runtimeConfigService.RegisterApplier(runtimeValueApplier{handlers: map[string]func(context.Context, appruntimeconfig.Snapshot) error{
+		appruntimeconfig.KeyClusterSyncParallelism: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			platformCore.cluster.SetSyncLimit(next.Int(appruntimeconfig.KeyClusterSyncParallelism, 4))
+			return nil
+		},
+		appruntimeconfig.KeyAlertUpsertBatchSize: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			repos.alertRepository.SetUpsertBatchSize(next.Int(appruntimeconfig.KeyAlertUpsertBatchSize, 100))
+			return nil
+		},
+		appruntimeconfig.KeyMCPDefaultTimeout: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			infra.agentRegistry.SetDefaultTimeout(next.Duration(appruntimeconfig.KeyMCPDefaultTimeout, 10*time.Second))
+			return nil
+		},
+		appruntimeconfig.KeyExecutionJobClusterID: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			applyExecutionJobRuntimeConfig(deliveryCore.execution, next)
+			return nil
+		},
+		appruntimeconfig.KeyExecutionJobNamespace: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			applyExecutionJobRuntimeConfig(deliveryCore.execution, next)
+			return nil
+		},
+		appruntimeconfig.KeyExecutionJobImage: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			applyExecutionJobRuntimeConfig(deliveryCore.execution, next)
+			return nil
+		},
+		appruntimeconfig.KeyExecutionJobGitImage: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			applyExecutionJobRuntimeConfig(deliveryCore.execution, next)
+			return nil
+		},
+		appruntimeconfig.KeyExecutionJobTTLSeconds: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			applyExecutionJobRuntimeConfig(deliveryCore.execution, next)
+			return nil
+		},
+	}})
 
 	return &coreServices{
 		permissionResolver:       permissionResolver,
@@ -666,6 +721,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices) *deliveryServices {
+	cfg = runtimeEffectiveConfig(cfg, core.runtimeConfigService.Current())
 	runtimeResources := core.resourceService.Runtime()
 	workflowService := appworkflow.New(repos.workflowRepository, repos.applicationRepository, core.accessService, core.permissionResolver, repos.catalogRepository, core.buildService, core.releaseService, runtimeResources)
 	workflowService.SetArtifactStore(repos.deliveryRepository)
@@ -824,10 +880,23 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		appruntimeconfig.KeyModuleAI:             copilotService,
 		appruntimeconfig.KeyModuleVirtualization: virtualizationService,
 	}))
+	core.runtimeConfigService.RegisterApplier(runtimeValueApplier{handlers: map[string]func(context.Context, appruntimeconfig.Snapshot) error{
+		appruntimeconfig.KeyWorkflowNodeParallelism: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			workflowService.SetRuntimeOptions(0, 0, next.Int(appruntimeconfig.KeyWorkflowNodeParallelism, 4))
+			return nil
+		},
+		appruntimeconfig.KeyCopilotInspectionParallelism: func(_ context.Context, next appruntimeconfig.Snapshot) error {
+			copilotService.SetInspectionParallelism(next.Int(appruntimeconfig.KeyCopilotInspectionParallelism, 2))
+			return nil
+		},
+		appruntimeconfig.KeyVirtualizationWorkerInterval:  virtualizationRuntimeHandler(lifecycleCtx, virtualizationService),
+		appruntimeconfig.KeyVirtualizationSyncConcurrency: virtualizationRuntimeHandler(lifecycleCtx, virtualizationService),
+	}})
 	return result
 }
 
 func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositories, core *coreServices, delivery *deliveryServices) (*gatewayServices, error) {
+	cfg = runtimeEffectiveConfig(cfg, core.runtimeConfigService.Current())
 	aiGatewayService := appaigateway.NewWithDeps(appaigateway.ServiceDeps{
 		Permissions:     core.permissionResolver,
 		Audit:           core.auditService,

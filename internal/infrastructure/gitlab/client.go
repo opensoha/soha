@@ -11,7 +11,6 @@ import (
 	"time"
 
 	domainapp "github.com/opensoha/soha/internal/domain/application"
-	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -33,17 +32,6 @@ type Options struct {
 	PerPage int
 	Timeout time.Duration
 	Enabled bool
-}
-
-func New(cfg cfgpkg.GitLabConfig) *Client {
-	return NewWithOptions(Options{
-		BaseURL: cfg.BaseURL,
-		Token:   cfg.Token,
-		GroupID: cfg.GroupID,
-		PerPage: cfg.PerPage,
-		Timeout: cfg.Timeout,
-		Enabled: cfg.Enabled,
-	})
 }
 
 func NewWithOptions(options Options) *Client {

@@ -1,6 +1,7 @@
 package directorysync
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,6 +13,7 @@ var (
 	ErrPeopleSyncDisabled = errors.New("directory people sync is disabled")
 	ErrInvalidRunState    = errors.New("invalid directory sync run state")
 	ErrInvalidSnapshot    = errors.New("invalid directory snapshot")
+	ErrReconcileRequired  = errors.New("directory full reconciliation required")
 )
 
 const (
@@ -110,6 +112,16 @@ func (p Policy) Validate() error {
 	return nil
 }
 
+func (p Policy) ValidateForProvider(providerType string) error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	if p.Mode == PolicyScheduledAndRealtime && providerType != ProviderFeishu {
+		return fmt.Errorf("%w: realtime events are only supported for feishu", ErrInvalidPolicy)
+	}
+	return nil
+}
+
 type Organization struct {
 	ID, ConnectionID, ExternalID, ExternalParentID, LocalTeamID, Name, Path, Status, SourceVersion, RawHash string
 	FirstSeenAt, LastSeenAt                                                                                 time.Time
@@ -121,7 +133,7 @@ type Person struct {
 	EmailVerified                                                                                              bool
 	Status, SourceVersion, RawHash                                                                             string
 	FirstSeenAt, LastSeenAt                                                                                    time.Time
-	ArchivedAt                                                                                                 *time.Time
+	ArchivedAt, DepartedAt                                                                                     *time.Time
 }
 
 type Membership struct {
@@ -151,9 +163,26 @@ type ConnectionCredential struct {
 
 type EventEnvelope struct {
 	ID, ConnectionID, ProviderEventID, EventType, Status, ErrorSummary string
+	Payload                                                            json.RawMessage
 	OccurredAt, ReceivedAt                                             time.Time
 	ProcessedAt, ClaimedAt, NextAttemptAt                              *time.Time
 	Attempts                                                           int
+}
+
+type Delta struct {
+	Action       string
+	Organization *Organization
+	Person       *Person
+	Memberships  []Membership
+	OccurredAt   time.Time
+}
+
+type RuntimeStatus struct {
+	WebhookConfigured, ReconcileRequired                          bool
+	WebhookVerifiedAt, LastEventAt, LastIncrementalAt, LastFullAt *time.Time
+	ReconcileReason                                               string
+	QueuedEvents, FailedEvents                                    int
+	LastIncrementalRun, LastFullRun                               *Run
 }
 
 const (

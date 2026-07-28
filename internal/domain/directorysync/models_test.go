@@ -23,6 +23,17 @@ func TestPolicyRejectsDisablingOrganizations(t *testing.T) {
 	}
 }
 
+func TestPolicyRejectsRealtimeModeForUnsupportedProvider(t *testing.T) {
+	p := DefaultPolicy("c1")
+	p.Mode = PolicyScheduledAndRealtime
+	if err := p.ValidateForProvider(ProviderWeCom); !errors.Is(err, ErrInvalidPolicy) {
+		t.Fatalf("ValidateForProvider() error = %v", err)
+	}
+	if err := p.ValidateForProvider(ProviderFeishu); err != nil {
+		t.Fatalf("ValidateForProvider() error = %v", err)
+	}
+}
+
 func TestRunTransitionsAreTerminal(t *testing.T) {
 	if !CanTransitionRun(RunQueued, RunRunning) || !CanTransitionRun(RunRunning, RunSucceeded) {
 		t.Fatal("valid transition rejected")

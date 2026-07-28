@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -75,7 +76,7 @@ type Service struct {
 	authorizer domainaccess.Authorizer
 	audit      AuditRecorder
 	operations OperationRecorder
-	syncLimit  int
+	syncLimit  atomic.Int64
 	logger     *zap.Logger
 	metrics    *runtimeobs.Registry
 }
@@ -96,7 +97,6 @@ func New(registry RuntimeRegistry, runtime RuntimeReader, cache RuntimeCache, ag
 		authorizer: authorizer,
 		audit:      audit,
 		operations: operations,
-		syncLimit:  defaultSyncConcurrency,
 	}, nil
 }
 
@@ -107,7 +107,7 @@ func (s *Service) SetInstrumentation(logger *zap.Logger, metrics *runtimeobs.Reg
 
 func (s *Service) SetSyncLimit(limit int) {
 	if limit > 0 {
-		s.syncLimit = limit
+		s.syncLimit.Store(int64(limit))
 	}
 }
 
@@ -484,7 +484,7 @@ func (s *Service) runSyncJobs(ctx context.Context, total int, run func(jobIndex 
 		return nil
 	}
 
-	workerCount := s.syncLimit
+	workerCount := int(s.syncLimit.Load())
 	if workerCount <= 0 {
 		workerCount = defaultSyncConcurrency
 	}

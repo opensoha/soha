@@ -153,4 +153,65 @@ func TestPrepareProjectionDefaults(t *testing.T) {
 	if !person.FirstSeenAt.Equal(now) || !person.LastSeenAt.Equal(now) {
 		t.Fatalf("person timestamps = %v, %v", person.FirstSeenAt, person.LastSeenAt)
 	}
+	suspended := preparePersonProjection(domain.Person{ExternalID: "person-2", Status: domain.ProjectionSuspended}, "connection-1", now)
+	if suspended.DepartedAt != nil {
+		t.Fatalf("suspended departedAt = %v", suspended.DepartedAt)
+	}
+}
+
+func TestArchivePersonDisablesOnlyDirectoryManagedUserAndRevokesSessions(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := NewDatabaseProjector(db)
+	connection := domain.Connection{ID: "connection-1", ProviderType: domain.ProviderFeishu, LoginProviderID: "provider-1"}
+	policy := domain.DefaultPolicy(connection.ID)
+	person := domain.Person{ExternalID: "ou-1", ProviderSubject: "ou-1", LocalUserID: "user-1", Status: domain.ProjectionArchived}
+
+	mock.ExpectExec("DELETE FROM user_team_bindings").WithArgs("user-1", "directory:connection-1", "provider-1").WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectQuery("SELECT COALESCE.*directoryManagedBy").WithArgs("connection-1", "user-1").WillReturnRows(sqlmock.NewRows([]string{"managed"}).AddRow(true))
+	mock.ExpectExec("UPDATE users SET status='disabled'").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE sessions SET status='revoked'").WithArgs(sqlmock.AnyArg(), "user-1").WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec("UPDATE identity_oidc_refresh_tokens SET revoked_at").WithArgs(sqlmock.AnyArg(), "user-1").WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec("UPDATE identity_oidc_sessions SET revoked_at").WithArgs(sqlmock.AnyArg(), "user-1").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE personal_access_tokens SET revoked_at").WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "user-1").WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := projector.deactivatePerson(db, connection, policy, person, person.ProviderSubject, directorySource(connection), connection.LoginProviderID); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeactivatePersonSuspendsManagedUserWithoutRevokingCredentials(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projector := NewDatabaseProjector(db)
+	connection := domain.Connection{ID: "connection-1", ProviderType: domain.ProviderFeishu, LoginProviderID: "provider-1"}
+	person := domain.Person{ExternalID: "ou-1", ProviderSubject: "ou-1", LocalUserID: "user-1", Status: domain.ProjectionSuspended}
+
+	mock.ExpectExec("DELETE FROM user_team_bindings").WithArgs("user-1", "directory:connection-1", "provider-1").WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectQuery("SELECT COALESCE.*directoryManagedBy").WithArgs("connection-1", "user-1").WillReturnRows(sqlmock.NewRows([]string{"managed"}).AddRow(true))
+	mock.ExpectExec("UPDATE users SET status='disabled'").WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := projector.deactivatePerson(db, connection, domain.DefaultPolicy(connection.ID), person, person.ProviderSubject, directorySource(connection), connection.LoginProviderID); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
 }

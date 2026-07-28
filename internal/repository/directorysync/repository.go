@@ -195,7 +195,7 @@ func (r *Repository) ListOrganizations(ctx context.Context, c string) ([]domain.
 	return out, rows.Err()
 }
 func (r *Repository) ListPeople(ctx context.Context, c string) ([]domain.Person, error) {
-	rows, e := r.db.WithContext(ctx).Raw(`SELECT id,connection_id,external_id,provider_subject,COALESCE(local_user_id,''),username,display_name,email,email_verified,phone,avatar_url,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at FROM directory_people WHERE connection_id=?`, c).Rows()
+	rows, e := r.db.WithContext(ctx).Raw(`SELECT id,connection_id,external_id,provider_subject,COALESCE(local_user_id,''),username,display_name,email,email_verified,phone,avatar_url,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at,departed_at FROM directory_people WHERE connection_id=?`, c).Rows()
 	if e != nil {
 		return nil, e
 	}
@@ -203,7 +203,7 @@ func (r *Repository) ListPeople(ctx context.Context, c string) ([]domain.Person,
 	out := []domain.Person{}
 	for rows.Next() {
 		var x domain.Person
-		if e = rows.Scan(&x.ID, &x.ConnectionID, &x.ExternalID, &x.ProviderSubject, &x.LocalUserID, &x.Username, &x.DisplayName, &x.Email, &x.EmailVerified, &x.Phone, &x.AvatarURL, &x.Status, &x.SourceVersion, &x.RawHash, &x.FirstSeenAt, &x.LastSeenAt, &x.ArchivedAt); e != nil {
+		if e = rows.Scan(&x.ID, &x.ConnectionID, &x.ExternalID, &x.ProviderSubject, &x.LocalUserID, &x.Username, &x.DisplayName, &x.Email, &x.EmailVerified, &x.Phone, &x.AvatarURL, &x.Status, &x.SourceVersion, &x.RawHash, &x.FirstSeenAt, &x.LastSeenAt, &x.ArchivedAt, &x.DepartedAt); e != nil {
 			return nil, e
 		}
 		out = append(out, x)
@@ -299,12 +299,12 @@ func prepareOrganizationProjection(item domain.Organization, connectionID string
 }
 
 func applyPeopleProjections(tx *gorm.DB, batch projectionBatch) error {
-	if err := tx.Exec(`UPDATE directory_people SET status=?, archived_at=?, last_seen_at=? WHERE connection_id=? AND status<>?`, domain.ProjectionArchived, batch.now, batch.now, batch.connectionID, domain.ProjectionArchived).Error; err != nil {
+	if err := tx.Exec(`UPDATE directory_people SET status=?, archived_at=?, departed_at=COALESCE(departed_at,?), last_seen_at=? WHERE connection_id=? AND status<>?`, domain.ProjectionArchived, batch.now, batch.now, batch.now, batch.connectionID, domain.ProjectionArchived).Error; err != nil {
 		return err
 	}
 	for _, person := range batch.people {
 		person = preparePersonProjection(person, batch.connectionID, batch.now)
-		if err := tx.Exec(`INSERT INTO directory_people (id,connection_id,external_id,provider_subject,local_user_id,username,display_name,email,email_verified,phone,avatar_url,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,external_id) DO UPDATE SET provider_subject=EXCLUDED.provider_subject,local_user_id=COALESCE(EXCLUDED.local_user_id,directory_people.local_user_id),username=EXCLUDED.username,display_name=EXCLUDED.display_name,email=EXCLUDED.email,email_verified=EXCLUDED.email_verified,phone=EXCLUDED.phone,avatar_url=EXCLUDED.avatar_url,status=EXCLUDED.status,source_version=EXCLUDED.source_version,raw_hash=EXCLUDED.raw_hash,last_seen_at=EXCLUDED.last_seen_at,archived_at=EXCLUDED.archived_at`, person.ID, person.ConnectionID, person.ExternalID, person.ProviderSubject, nullString(person.LocalUserID), person.Username, person.DisplayName, person.Email, person.EmailVerified, person.Phone, person.AvatarURL, person.Status, person.SourceVersion, person.RawHash, person.FirstSeenAt, person.LastSeenAt, person.ArchivedAt).Error; err != nil {
+		if err := tx.Exec(`INSERT INTO directory_people (id,connection_id,external_id,provider_subject,local_user_id,username,display_name,email,email_verified,phone,avatar_url,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at,departed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,external_id) DO UPDATE SET provider_subject=EXCLUDED.provider_subject,local_user_id=COALESCE(EXCLUDED.local_user_id,directory_people.local_user_id),username=EXCLUDED.username,display_name=EXCLUDED.display_name,email=EXCLUDED.email,email_verified=EXCLUDED.email_verified,phone=EXCLUDED.phone,avatar_url=EXCLUDED.avatar_url,status=EXCLUDED.status,source_version=EXCLUDED.source_version,raw_hash=EXCLUDED.raw_hash,last_seen_at=EXCLUDED.last_seen_at,archived_at=EXCLUDED.archived_at,departed_at=EXCLUDED.departed_at`, person.ID, person.ConnectionID, person.ExternalID, person.ProviderSubject, nullString(person.LocalUserID), person.Username, person.DisplayName, person.Email, person.EmailVerified, person.Phone, person.AvatarURL, person.Status, person.SourceVersion, person.RawHash, person.FirstSeenAt, person.LastSeenAt, person.ArchivedAt, person.DepartedAt).Error; err != nil {
 			return err
 		}
 	}
@@ -326,6 +326,9 @@ func preparePersonProjection(item domain.Person, connectionID string, now time.T
 	}
 	if item.LastSeenAt.IsZero() {
 		item.LastSeenAt = now
+	}
+	if item.Status == domain.ProjectionArchived && item.DepartedAt == nil {
+		item.DepartedAt = &now
 	}
 	return item
 }
@@ -466,7 +469,11 @@ func (r *Repository) GetWebhookCredential(ctx context.Context, connectionID stri
 }
 
 func (r *Repository) EnqueueEvent(ctx context.Context, event domain.EventEnvelope) (bool, error) {
-	result := r.db.WithContext(ctx).Exec(`INSERT INTO directory_event_inbox (id,connection_id,provider_event_id,event_type,occurred_at,received_at,status) VALUES (?,?,?,?,?,?,'queued') ON CONFLICT(connection_id,provider_event_id) DO NOTHING`, event.ID, event.ConnectionID, event.ProviderEventID, event.EventType, event.OccurredAt, event.ReceivedAt)
+	payload := event.Payload
+	if len(payload) == 0 {
+		payload = json.RawMessage(`{}`)
+	}
+	result := r.db.WithContext(ctx).Exec(`INSERT INTO directory_event_inbox (id,connection_id,provider_event_id,event_type,occurred_at,received_at,status,payload) VALUES (?,?,?,?,?,?,'queued',?::jsonb) ON CONFLICT(connection_id,provider_event_id) DO NOTHING`, event.ID, event.ConnectionID, event.ProviderEventID, event.EventType, event.OccurredAt, event.ReceivedAt, string(payload))
 	return result.RowsAffected == 1, result.Error
 }
 
@@ -477,14 +484,14 @@ func (r *Repository) ClaimEvents(ctx context.Context, limit int) ([]domain.Event
 	result := []domain.EventEnvelope{}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now().UTC()
-		rows, err := tx.Raw(`SELECT id,connection_id,provider_event_id,event_type,occurred_at,received_at,status,error_summary,processed_at,attempts,claimed_at,next_attempt_at FROM directory_event_inbox WHERE status='queued' OR (status='failed' AND attempts<3 AND (next_attempt_at IS NULL OR next_attempt_at<=?)) ORDER BY received_at FOR UPDATE SKIP LOCKED LIMIT ?`, now, limit).Rows()
+		rows, err := tx.Raw(`SELECT id,connection_id,provider_event_id,event_type,occurred_at,received_at,status,error_summary,processed_at,attempts,claimed_at,next_attempt_at,payload FROM directory_event_inbox WHERE status='queued' OR (status='failed' AND attempts<3 AND (next_attempt_at IS NULL OR next_attempt_at<=?)) ORDER BY received_at FOR UPDATE SKIP LOCKED LIMIT ?`, now, limit).Rows()
 		if err != nil {
 			return err
 		}
 		defer rows.Close()
 		for rows.Next() {
 			var item domain.EventEnvelope
-			if err := rows.Scan(&item.ID, &item.ConnectionID, &item.ProviderEventID, &item.EventType, &item.OccurredAt, &item.ReceivedAt, &item.Status, &item.ErrorSummary, &item.ProcessedAt, &item.Attempts, &item.ClaimedAt, &item.NextAttemptAt); err != nil {
+			if err := rows.Scan(&item.ID, &item.ConnectionID, &item.ProviderEventID, &item.EventType, &item.OccurredAt, &item.ReceivedAt, &item.Status, &item.ErrorSummary, &item.ProcessedAt, &item.Attempts, &item.ClaimedAt, &item.NextAttemptAt, &item.Payload); err != nil {
 				return err
 			}
 			result = append(result, item)
@@ -511,6 +518,85 @@ func (r *Repository) CompleteEvent(ctx context.Context, id, status, summary stri
 		return fmt.Errorf("%w: directory event is not processing", apperrors.ErrConflict)
 	}
 	return nil
+}
+
+func (r *Repository) MarkEventReceived(ctx context.Context, connectionID string, at time.Time) error {
+	return r.db.WithContext(ctx).Exec(`UPDATE directory_connections SET webhook_verified_at=COALESCE(webhook_verified_at,?),last_event_at=?,updated_at=? WHERE id=?`, at, at, at, connectionID).Error
+}
+
+func (r *Repository) MarkIncrementalApplied(ctx context.Context, connectionID string, at time.Time) error {
+	return r.db.WithContext(ctx).Exec(`UPDATE directory_connections SET last_incremental_at=?,updated_at=? WHERE id=?`, at, at, connectionID).Error
+}
+
+func (r *Repository) MarkFullReconciled(ctx context.Context, connectionID string, at time.Time) error {
+	return r.db.WithContext(ctx).Exec(`UPDATE directory_connections SET last_full_reconcile_at=?,reconcile_required=false,reconcile_reason='',updated_at=? WHERE id=?`, at, at, connectionID).Error
+}
+
+func (r *Repository) MarkReconcileRequired(ctx context.Context, connectionID, reason string, at time.Time) error {
+	return r.db.WithContext(ctx).Exec(`UPDATE directory_connections SET reconcile_required=true,reconcile_reason=?,updated_at=? WHERE id=?`, reason, at, connectionID).Error
+}
+
+func (r *Repository) ListEvents(ctx context.Context, connectionID, status string, limit int) ([]domain.EventEnvelope, error) {
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.db.WithContext(ctx).Raw(`SELECT id,connection_id,provider_event_id,event_type,occurred_at,received_at,status,error_summary,processed_at,attempts,claimed_at,next_attempt_at FROM directory_event_inbox WHERE connection_id=? AND (?='' OR status=?) ORDER BY received_at DESC LIMIT ?`, connectionID, status, status, limit).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := make([]domain.EventEnvelope, 0, limit)
+	for rows.Next() {
+		var item domain.EventEnvelope
+		if err := rows.Scan(&item.ID, &item.ConnectionID, &item.ProviderEventID, &item.EventType, &item.OccurredAt, &item.ReceivedAt, &item.Status, &item.ErrorSummary, &item.ProcessedAt, &item.Attempts, &item.ClaimedAt, &item.NextAttemptAt); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func (r *Repository) RetryEvent(ctx context.Context, connectionID, eventID string, at time.Time) (domain.EventEnvelope, error) {
+	var item domain.EventEnvelope
+	err := r.db.WithContext(ctx).Raw(`UPDATE directory_event_inbox SET status='queued',error_summary='',claimed_at=NULL,next_attempt_at=?,processed_at=NULL WHERE id=? AND connection_id=? AND status='failed' RETURNING id,connection_id,provider_event_id,event_type,occurred_at,received_at,status,error_summary,processed_at,attempts,claimed_at,next_attempt_at`, at, eventID, connectionID).Row().Scan(&item.ID, &item.ConnectionID, &item.ProviderEventID, &item.EventType, &item.OccurredAt, &item.ReceivedAt, &item.Status, &item.ErrorSummary, &item.ProcessedAt, &item.Attempts, &item.ClaimedAt, &item.NextAttemptAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return item, fmt.Errorf("%w: retryable directory event", apperrors.ErrNotFound)
+	}
+	return item, err
+}
+
+func (r *Repository) GetRuntimeStatus(ctx context.Context, connectionID string) (domain.RuntimeStatus, error) {
+	var status domain.RuntimeStatus
+	err := r.db.WithContext(ctx).Raw(`SELECT EXISTS(SELECT 1 FROM directory_webhook_credentials WHERE connection_id=c.id),c.webhook_verified_at,c.last_event_at,c.last_incremental_at,c.last_full_reconcile_at,c.reconcile_required,c.reconcile_reason,(SELECT COUNT(*) FROM directory_event_inbox e WHERE e.connection_id=c.id AND e.status IN ('queued','processing')),(SELECT COUNT(*) FROM directory_event_inbox e WHERE e.connection_id=c.id AND e.status='failed') FROM directory_connections c WHERE c.id=?`, connectionID).Row().Scan(&status.WebhookConfigured, &status.WebhookVerifiedAt, &status.LastEventAt, &status.LastIncrementalAt, &status.LastFullAt, &status.ReconcileRequired, &status.ReconcileReason, &status.QueuedEvents, &status.FailedEvents)
+	if errors.Is(err, sql.ErrNoRows) {
+		return status, fmt.Errorf("%w: directory connection", apperrors.ErrNotFound)
+	}
+	if err != nil {
+		return status, err
+	}
+	for mode, target := range map[string]**domain.Run{"incremental": &status.LastIncrementalRun, "full": &status.LastFullRun} {
+		run, listErr := r.latestRunByMode(ctx, connectionID, mode)
+		if listErr != nil {
+			return status, listErr
+		}
+		if run != nil {
+			*target = run
+		}
+	}
+	return status, nil
+}
+
+func (r *Repository) latestRunByMode(ctx context.Context, connectionID, mode string) (*domain.Run, error) {
+	var id string
+	err := r.db.WithContext(ctx).Raw(`SELECT id FROM directory_sync_runs WHERE connection_id=? AND mode=? ORDER BY created_at DESC LIMIT 1`, connectionID, mode).Row().Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	item, err := r.GetRun(ctx, id)
+	return &item, err
 }
 
 func (r *Repository) RecoverStaleEvents(ctx context.Context, staleBefore, at time.Time) (int64, error) {

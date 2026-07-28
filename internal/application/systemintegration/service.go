@@ -56,15 +56,6 @@ type Service struct {
 	now         func() time.Time
 }
 
-type LegacyGitLabConfig struct {
-	Enabled bool
-	BaseURL string
-	Token   string
-	GroupID string
-	PerPage int
-	Timeout time.Duration
-}
-
 func New(repo domain.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) *Service {
 	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations, keys: keys, adapters: map[string]SourceAdapterFactory{}, oauth: map[string]OAuthProvider{}, now: time.Now}
 }
@@ -81,33 +72,6 @@ func (s *Service) RegisterOAuthProvider(providerType string, provider OAuthProvi
 	if providerType != "" && provider != nil {
 		s.oauth[providerType] = provider
 	}
-}
-
-func (s *Service) ImportLegacyGitLab(ctx context.Context, config LegacyGitLabConfig) error {
-	if strings.TrimSpace(config.Token) == "" || strings.TrimSpace(config.BaseURL) == "" {
-		return nil
-	}
-	items, err := s.repo.List(ctx, domain.Filter{Category: domain.CategorySourceControl, ProviderType: domain.ProviderGitLab})
-	if err != nil || len(items) > 0 {
-		return err
-	}
-	request := sohaapi.SystemIntegrationCreateRequest{
-		Category: sohaapi.SystemIntegrationCategorySourceControl, ProviderType: domain.ProviderGitLab,
-		Name: "GitLab", Description: "Imported from legacy config.yaml", Enabled: config.Enabled,
-		Configuration: []sohaapi.SystemIntegrationConfigurationField{
-			{Key: "base_url", Value: strings.TrimSpace(config.BaseURL)},
-			{Key: "group_id", Value: strings.TrimSpace(config.GroupID)},
-			{Key: "per_page", Value: strconv.Itoa(config.PerPage)},
-			{Key: "timeout", Value: config.Timeout.String()},
-		},
-		Credentials: []sohaapi.SystemIntegrationCredentialInput{{Key: "token", Value: config.Token}},
-	}
-	item, credentials, err := s.normalizeCreate(request, "system")
-	if err != nil {
-		return fmt.Errorf("normalize legacy gitlab integration: %w", err)
-	}
-	_, err = s.repo.Create(ctx, item, credentials)
-	return err
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domain.Filter) ([]sohaapi.SystemIntegration, error) {

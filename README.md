@@ -14,7 +14,7 @@
   <a href="https://ant.design/"><img alt="Ant Design" src="https://img.shields.io/badge/Ant%20Design-6-1677FF?logo=antdesign&logoColor=white"></a>
   <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-client--go-326CE5?logo=kubernetes&logoColor=white"></a>
   <a href="https://www.postgresql.org/"><img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-18.4-4169E1?logo=postgresql&logoColor=white"></a>
-  <a href="https://docs.opensoha.dev/"><img alt="Docs" src="https://img.shields.io/badge/Docs-Docusaurus-3ECC5F?logo=docusaurus&logoColor=white"></a>
+  <a href="https://docs.opensoha.dev/"><img alt="Docs" src="https://img.shields.io/badge/Docs-Nextra-111111?logo=nextdotjs&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -82,7 +82,6 @@ PostgreSQL + Kubernetes clusters
 ### Backend
 
 - `cmd/server`: API server entrypoint
-- future `cmd/**` entries: same-repo subservice entrypoints for specialized workloads such as security ingest or workers
 - `internal/api`: domain route registration files, handlers, middleware, request parsing, response shaping
 - `internal/application`: use-case orchestration, authorization, scope handling, audit, and view models
 - `internal/policy`: RBAC, ABAC, and scope evaluation
@@ -90,7 +89,7 @@ PostgreSQL + Kubernetes clusters
 - `internal/repository`: durable persistence
 - `internal/bootstrap`: dependency graph, migration, seed, and startup lifecycle wiring
 
-See the published docs for the current route, bootstrap, multi-`cmd`, and reserved security-ingest boundary conventions.
+See the published docs for current public architecture and API behavior.
 
 ### Frontend
 
@@ -115,30 +114,30 @@ See the published docs for the current route, bootstrap, multi-`cmd`, and reserv
 
 | Layer | Stack |
 | --- | --- |
-| Backend | Go 1.23, Gin, PostgreSQL, Kubernetes `client-go` |
+| Backend | Go 1.25, Gin, PostgreSQL, Kubernetes `client-go` |
 | Frontend | React 18, TypeScript 5, Vite 6, React Router 6, TanStack Query 5, Zustand 5, Ant Design 6, Tailwind CSS 4 |
-| Docs | Docusaurus 3 |
+| Docs | Next.js 16 and Nextra 4 in the sibling `soha-docs` repository |
 | Packaging | Docker, Docker Compose, raw Kubernetes YAML; Helm charts live in `soha-helm` |
 
 ## Project Layout
 
 ```text
 .
-├── cmd/                 # server, agent, and future same-repo service entrypoints
-├── configs/             # backend and agent configuration
+├── cmd/                 # server entrypoint
+├── configs/             # backend configuration
 ├── internal/            # backend layers and domain modules
 ├── internal/staticassets # staged web artifacts for embedded release builds
 ├── migrations/          # PostgreSQL bootstrap and schema migrations
 ├── deploy/              # Docker, Compose, and raw Kubernetes assets
 ├── Makefile             # minimal local dev/build commands
-└── agents.md            # engineering spec and project memory
+└── .agents/skills/      # repository engineering and deployment rules
 ```
 
 ## Quick Start
 
 ### Requirements
 
-- Go 1.23+
+- Go 1.25+
 - Node.js 20+
 - Docker and Docker Compose
 - PostgreSQL 18.4 with pgvector 0.8.5 when using an external database
@@ -356,7 +355,8 @@ compatibility boundary. NGINX Ingress and Traefik ForwardAuth examples live in
 
 ## Documentation
 
-- [Engineering Spec](./agents.md)
+- [Backend Engineering Rules](./.agents/skills/soha-backend/SKILL.md)
+- [Deployment Rules](./.agents/skills/soha-deploy/SKILL.md)
 - [Published Docs](https://docs.opensoha.dev/)
 - [Docs Source](https://github.com/opensoha/soha-docs)
 
@@ -366,7 +366,6 @@ compatibility boundary. NGINX Ingress and Traefik ForwardAuth examples live in
 - Keep central startup and route files thin. Add domain route files under `internal/api/routes` and concern-specific bootstrap files under `internal/bootstrap` instead of growing one monolithic file.
 - Split oversized Go files by stable behavior domains first. Platform handlers, platform resource services, and AI Gateway are organized into focused same-package files; protect execution-plane state transitions with unit tests.
 - Long-running work is task-backed. Build, release, Docker, Compose, VM control, and provider execution run through durable tasks and callback paths.
-- Future security workbench APIs should keep management, client, and ingest boundaries separate: `/api/v1/security/**`, `/api/client/v1/**`, and `/api/ingest/v1/**`.
 - Frontend work belongs in `github.com/opensoha/soha-web`. Routes, metadata, permissions, backend menus, and tests should stay aligned across the artifact boundary.
 - Platform APIs return Soha DTOs, not raw Kubernetes objects, except YAML or explicit passthrough routes.
 - Module visibility, menu visibility, and backend authorization are separate gates.
@@ -374,7 +373,9 @@ compatibility boundary. NGINX Ingress and Traefik ForwardAuth examples live in
 
 ## Contributing
 
-Issues and pull requests are welcome. For larger changes, read [agents.md](./agents.md) first so backend layering, frontend routing, authorization, scope handling, and documentation updates stay consistent.
+Issues and pull requests are welcome. For larger changes, read the relevant
+[backend](./.agents/skills/soha-backend/SKILL.md) or
+[deployment](./.agents/skills/soha-deploy/SKILL.md) rules first.
 
 Useful validation commands:
 

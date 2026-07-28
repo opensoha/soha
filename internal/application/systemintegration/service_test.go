@@ -159,26 +159,6 @@ func TestCreateEncryptsCredentialsAndNeverReturnsSecret(t *testing.T) {
 	}
 }
 
-func TestImportLegacyGitLabOnlyWhenNoConnectionExists(t *testing.T) {
-	repo := newMemoryIntegrationRepository()
-	service := testIntegrationService(t, repo)
-	legacy := LegacyGitLabConfig{Enabled: true, BaseURL: "https://gitlab.example/api/v4", Token: "legacy-token", PerPage: 50, Timeout: 10 * time.Second}
-	if err := service.ImportLegacyGitLab(t.Context(), legacy); err != nil {
-		t.Fatalf("first import error = %v", err)
-	}
-	if err := service.ImportLegacyGitLab(t.Context(), legacy); err != nil {
-		t.Fatalf("second import error = %v", err)
-	}
-	if repo.creates != 1 {
-		t.Fatalf("create count = %d, want 1", repo.creates)
-	}
-	for id := range repo.items {
-		if plain, err := secretcrypto.DecryptStringWithKeyring(testKeyring(t), repo.credentials[id]["token"]); err != nil || plain != "legacy-token" {
-			t.Fatalf("legacy token round trip = %q, %v", plain, err)
-		}
-	}
-}
-
 func TestGitLabOAuthAuthorizationPersistsEncryptedTokensAndRefreshes(t *testing.T) {
 	repo := newMemoryIntegrationRepository()
 	service := testIntegrationService(t, repo)
@@ -260,8 +240,14 @@ func TestGitLabOAuthAuthorizationPersistsEncryptedTokensAndRefreshes(t *testing.
 func TestLegacyReferenceMethodsForwardSearchAndBoundedLimit(t *testing.T) {
 	repo := newMemoryIntegrationRepository()
 	service := testIntegrationService(t, repo)
-	if err := service.ImportLegacyGitLab(t.Context(), LegacyGitLabConfig{
-		Enabled: true, BaseURL: "https://gitlab.example/api/v4", Token: "legacy-token", PerPage: 50,
+	if _, err := service.Create(t.Context(), adminPrincipal(), sohaapi.SystemIntegrationCreateRequest{
+		Category: sohaapi.SystemIntegrationCategorySourceControl, ProviderType: domain.ProviderGitLab,
+		Name: "GitLab", Enabled: true,
+		Configuration: []sohaapi.SystemIntegrationConfigurationField{
+			{Key: "base_url", Value: "https://gitlab.example/api/v4"},
+			{Key: "per_page", Value: "50"},
+		},
+		Credentials: []sohaapi.SystemIntegrationCredentialInput{{Key: "token", Value: "token"}},
 	}); err != nil {
 		t.Fatal(err)
 	}

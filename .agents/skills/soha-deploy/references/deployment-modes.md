@@ -5,7 +5,7 @@
 - `internal/api/routes/router.go` serves the embedded SPA when the artifact is present.
 - `internal/staticassets` embeds `internal/staticassets/web/dist`.
 
-That means a production-style image can build the frontend and docs first, then compile one Go binary that serves:
+That means a production-style image can build the frontend first, then compile one Go binary that serves:
 
 - `/api/v1/*`
 - `/`

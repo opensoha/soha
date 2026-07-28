@@ -28,6 +28,38 @@ func (s *auditRecorderStub) Record(_ context.Context, entry domainaudit.Entry) e
 	return nil
 }
 
+func TestRetryEventReturnsQueuedEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &repositoryStub{event: domain.EventEnvelope{ID: "event-1", Status: "failed"}}
+	handler := New(repo, &serviceStub{}, factoryStub{})
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "connectionID", Value: "connection-1"}, {Key: "eventID", Value: "event-1"}}
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/access/directory-connections/connection-1/events/event-1/retry", nil)
+
+	handler.RetryEvent(ctx)
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), `"id":"event-1"`) || !strings.Contains(recorder.Body.String(), `"status":"queued"`) {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestUpdateConnectionRejectsRealtimeModeForUnsupportedProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &repositoryStub{connection: domain.Connection{ID: "connection-1", ProviderType: domain.ProviderWeCom}, policy: domain.DefaultPolicy("connection-1")}
+	handler := New(repo, &serviceStub{}, factoryStub{})
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "connectionID", Value: "connection-1"}}
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/api/v1/access/directory-connections/connection-1", strings.NewReader(`{"name":"WeCom","providerType":"wecom","policy":{"syncOrganizations":true,"mode":"scheduled_and_realtime","schedule":"0 * * * *"}}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateConnection(ctx)
+
+	if recorder.Code != http.StatusBadRequest || repo.policy.Mode == domain.PolicyScheduledAndRealtime {
+		t.Fatalf("status=%d body=%s policy=%s", recorder.Code, recorder.Body.String(), repo.policy.Mode)
+	}
+}
+
 type operationRecorderStub struct{ entries []domainoperation.Entry }
 
 func (s *operationRecorderStub) Record(_ context.Context, entry domainoperation.Entry) error {
@@ -85,6 +117,17 @@ func (s *repositoryStub) GetWebhookCredential(context.Context, string) (domain.W
 func (s *repositoryStub) EnqueueEvent(_ context.Context, event domain.EventEnvelope) (bool, error) {
 	s.event = event
 	return true, nil
+}
+func (s *repositoryStub) MarkEventReceived(context.Context, string, time.Time) error { return nil }
+func (s *repositoryStub) ListEvents(context.Context, string, string, int) ([]domain.EventEnvelope, error) {
+	return nil, nil
+}
+func (s *repositoryStub) RetryEvent(context.Context, string, string, time.Time) (domain.EventEnvelope, error) {
+	s.event.Status = "queued"
+	return s.event, nil
+}
+func (s *repositoryStub) GetRuntimeStatus(context.Context, string) (domain.RuntimeStatus, error) {
+	return domain.RuntimeStatus{}, nil
 }
 func (s *repositoryStub) SetSCIMToken(context.Context, string, string, time.Time) error { return nil }
 func (s *repositoryStub) ResolveSCIMConnectionForScope(_ context.Context, _ string, scope string) (string, error) {
@@ -257,14 +300,14 @@ func TestFeishuEventIsVerifiedAndQueued(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Params = gin.Params{{Key: "connectionID", Value: "c-1"}}
-	ctx.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"header":{"event_id":"event-1","event_type":"contact.user.updated_v3","create_time":"1783846400","token":"verify-token"},"event":{"object_id":"ou_1"}}`))
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"header":{"event_id":"event-1","event_type":"contact.user.updated_v3","create_time":"1783846400","token":"verify-token"},"event":{"object":{"open_id":"ou_1"}}}`))
 
 	handler.IngestEvent(ctx)
 
 	if recorder.Code != http.StatusAccepted {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if repo.event.ProviderEventID != "event-1" || repo.event.ConnectionID != "c-1" {
+	if repo.event.ProviderEventID != "event-1" || repo.event.ConnectionID != "c-1" || !strings.Contains(string(repo.event.Payload), "ou_1") {
 		t.Fatalf("event=%#v", repo.event)
 	}
 }

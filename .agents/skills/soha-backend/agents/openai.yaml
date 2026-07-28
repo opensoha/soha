@@ -1,4 +1,4 @@
 interface:
   display_name: "Soha Backend"
-  short_description: "Go API, workbench control-plane, and runner-backed operations"
-  default_prompt: "Use $soha-backend to implement or refactor a soha backend capability."
+  short_description: "Go control plane, APIs, policy, and durable operations"
+  default_prompt: "Use $soha-backend to implement or review an open-source Soha backend change."

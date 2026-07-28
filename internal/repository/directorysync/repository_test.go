@@ -119,7 +119,7 @@ func TestClaimEventsClaimsRetryableEventAtomically(t *testing.T) {
 	repo, mock := newRepositoryMock(t)
 	now := time.Now().UTC()
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT id,connection_id,provider_event_id.*FOR UPDATE SKIP LOCKED`).WithArgs(sqlmock.AnyArg(), 20).WillReturnRows(sqlmock.NewRows([]string{"id", "connection_id", "provider_event_id", "event_type", "occurred_at", "received_at", "status", "error_summary", "processed_at", "attempts", "claimed_at", "next_attempt_at"}).AddRow("e1", "c1", "pe1", "user.updated", now, now, "failed", "temporary", nil, 1, nil, now.Add(-time.Minute)))
+	mock.ExpectQuery(`SELECT id,connection_id,provider_event_id.*FOR UPDATE SKIP LOCKED`).WithArgs(sqlmock.AnyArg(), 20).WillReturnRows(sqlmock.NewRows([]string{"id", "connection_id", "provider_event_id", "event_type", "occurred_at", "received_at", "status", "error_summary", "processed_at", "attempts", "claimed_at", "next_attempt_at", "payload"}).AddRow("e1", "c1", "pe1", "user.updated", now, now, "failed", "temporary", nil, 1, nil, now.Add(-time.Minute), []byte(`{}`)))
 	mock.ExpectExec(`UPDATE directory_event_inbox SET status='processing'`).WithArgs(sqlmock.AnyArg(), "e1").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	items, err := repo.ClaimEvents(context.Background(), 20)

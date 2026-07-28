@@ -18,22 +18,9 @@ logger:
   format: console
 
 runtime:
-  workflow_workers: 4
-  workflow_queue_size: 64
-  workflow_node_parallelism: 4
-  cluster_sync_parallelism: 4
-  copilot_inspection_parallelism: 2
-  alert_upsert_batch_size: 100
   virtualization_startup_sync_enabled: true
-  virtualization_worker_interval: 2s
-  virtualization_sync_concurrency: 1
   # Public zero-config default. Override before exposing an installation publicly.
   execution_runner_token: soha-123456789012345678901234567890
-  execution_job_cluster_id: ""
-  execution_job_namespace: soha-system
-  execution_job_image: alpine:3.20
-  execution_job_git_image: alpine/git:2.47.0
-  execution_job_ttl_seconds: 3600
 
 database:
   driver: postgres
@@ -69,14 +56,6 @@ auth:
     secret: soha-123456789012345678901234567890
     access_ttl: 15m
     refresh_ttl: 168h
-gitlab:
-  enabled: false
-  base_url: https://gitlab.com/api/v4
-  token: ""
-  group_id: ""
-  per_page: 50
-  timeout: 10s
-
 monitoring:
   enabled: true
   # Public zero-config default. Override before exposing an installation publicly.
@@ -88,15 +67,8 @@ swagger:
 
 mcp:
   enabled: true
-  default_timeout: 10s
 
 ai_gateway:
-  # Relay calls have an overall deadline plus bounded first-byte and stream-idle waits.
-  relay:
-    default_timeout: 120s
-    stream_timeout: 300s
-    first_byte_timeout: 30s
-    stream_idle_timeout: 60s
   rate_limit:
     # postgres uses durable fixed-window/GCRA tables. Set to redis for a high-throughput shared limiter.
     backend: postgres

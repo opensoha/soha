@@ -529,7 +529,7 @@ func (s *Service) runDueInspectionTasks(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 
-	parallelism := s.inspectionParallelism
+	parallelism := int(s.inspectionParallelism.Load())
 	if parallelism <= 0 {
 		parallelism = 1
 	}

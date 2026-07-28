@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -20,14 +21,22 @@ import (
 )
 
 type Registry struct {
-	defaultTimeout time.Duration
+	defaultTimeout atomic.Int64
 }
 
 func NewRegistry(defaultTimeout time.Duration) *Registry {
 	if defaultTimeout <= 0 {
 		defaultTimeout = 10 * time.Second
 	}
-	return &Registry{defaultTimeout: defaultTimeout}
+	registry := &Registry{}
+	registry.SetDefaultTimeout(defaultTimeout)
+	return registry
+}
+
+func (r *Registry) SetDefaultTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		r.defaultTimeout.Store(int64(timeout))
+	}
 }
 
 type Client struct {
@@ -152,7 +161,7 @@ func (r *Registry) ClientFor(connection domaincluster.Connection) (*Client, erro
 		baseURL: strings.TrimRight(endpoint, "/"),
 		token:   token,
 		httpClient: &http.Client{
-			Timeout: r.defaultTimeout,
+			Timeout: time.Duration(r.defaultTimeout.Load()),
 		},
 	}, nil
 }

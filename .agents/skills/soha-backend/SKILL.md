@@ -1,18 +1,15 @@
 ---
 name: soha-backend
 description: >-
-  Implement and refactor soha backend capabilities in `cmd/**`,
+  Implement or review open-source Soha backend capabilities in `cmd/**`,
   `internal/**`, and `configs/**` for Go 1.25, Gin, PostgreSQL, Kubernetes
-  `client-go`, and agent-connected clusters. Use when adding or changing HTTP
-  routes, handlers, application services, repositories, policy checks,
-  bootstrap wiring, cluster or resource aggregation, or delivery,
-  observability, AI workbench, virtualization, Docker workbench, and
-  control-plane APIs. Frontend changes belong in the sibling `soha-web`
-  repository. This skill enforces the modular-monolith layers,
-  platform view-model APIs instead of raw provider objects, explicit cluster
-  and namespace scope semantics, permission-key aligned authorization, audit
-  and operation logging for important actions, direct-versus-agent cluster
-  behavior rules, and durable runner-backed operation flows.
+  `client-go`, and agent-connected clusters. Use when changing HTTP routes,
+  handlers, application services, repositories, policy, bootstrap wiring,
+  platform aggregation, durable operations, AI Gateway, Identity, knowledge,
+  evaluation, memory, or other control-plane modules. This skill enforces the
+  modular-monolith dependency direction, contracts-first public behavior,
+  explicit scope and authorization, audit-safe operations, direct-versus-agent
+  capability handling, and the open-source versus Cloud boundary.
 ---
 
 # Soha Backend
@@ -27,9 +24,10 @@ Implement backend changes through the repository's layered Go architecture. Keep
 2. Read `references/go-engineering-standards.md` for every production Go change, then inspect the existing handler, service, port, adapter, and route wiring before editing. Follow the current module rather than creating a parallel path.
 3. Keep authorization, scope semantics, audit, and operation logging aligned with the behavior change.
 4. For Kubernetes-facing work, decide whether the capability should use informer/cache, live query fallback, or agent mode, and make unsupported agent paths explicit.
-5. For delivery, Docker, virtualization, and AI work, identify the durable control-plane object first: release bundle, execution task, Docker operation, virtualization task, AI session, analysis run, or inspection task.
-6. Update tests, config defaults, deployment-facing manifests, menu seeds, permissions, and memory or docs in the same task when contracts or semantics change.
-7. Run focused tests while iterating, then apply the verification tier from `references/go-engineering-standards.md`; architecture, dependency, security, module, or release changes require the full gate.
+5. For external or long-running work, identify the existing durable task, operation, session, run, lease, or callback state machine before adding another execution path.
+6. When public behavior changes, update `../soha-contracts` first, then the affected consumer, docs, permissions, menus, config, and tests.
+7. Use `graphify-out/graph.json` for broad ownership or dependency questions. Refresh it only after structural changes are stable and the worktree contents are understood; use `--force` after deletions and run diagnostics.
+8. Run focused tests while iterating, then apply the verification tier from `references/go-engineering-standards.md`; architecture, dependency, security, module, or release changes require the full gate.
 
 ## Non-Negotiables
 
@@ -48,12 +46,8 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - Keep `internal/api/routes/router.go` thin. It should assemble the Gin engine, global middleware, compatibility paths, static assets, and top-level groups only. Add or change business routes in same-package route files such as `routes_platform.go`, `routes_delivery.go`, `routes_monitoring.go`, `routes_runtime.go`, or `routes_governance.go`.
 - Public, runner, and callback routes belong in `routes_public.go` unless they require user-session authentication. Authenticated routes should be connected from `registerProtectedRoutes`; module-gated domains should keep their `cfg.Modules.*.Enabled` checks inside their domain registration function.
 - Keep `internal/bootstrap/app.go` focused on dependency graph assembly. Put lifecycle methods in `lifecycle.go`, narrow cross-module adapters in dedicated files, and seed concerns in focused files such as `database_menus.go` instead of growing `database.go`.
-- When adding menus or permissions, update the domain seed file, role permission keys, visible-menu behavior, and docs together. Frontend route metadata lives in `soha-web`.
-- Do not implement future internal-security business behavior as part of groundwork refactors. Reserve boundaries without implying runtime parity:
-  - `/api/v1/security/**` for Soha web-admin security management APIs.
-  - `/api/client/v1/**` for future Wails desktop and Flutter mobile client APIs.
-  - `/api/ingest/v1/**` for future device reporting, heartbeats, audit evidence, and telemetry ingest, ideally owned by a future `cmd/security-ingest` entrypoint.
-- FreeRADIUS, Fleet, mihomo, and similar systems are managed or integrated execution-side systems. Soha should own software catalog, device inventory/reporting, policy, audit, and control-plane records, but those external tools should not become runtime cores inside `cmd/server`.
+- When adding menus or permissions, update the domain seed file, role permission keys, visible-menu behavior, and public docs together. Frontend route metadata lives in `soha-web`.
+- Do not create routes, entrypoints, integrations, or abstractions for planned products that do not have a current executable owner.
 
 ## Go Hotspot Refactor Rules
 
@@ -64,7 +58,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - When changing resource behavior, keep the existing family boundaries and run at least `go test ./internal/application/resource ./internal/infrastructure/resourcebackend`. Avoid mixing semantic changes with mechanical file moves unless tests prove the contract is unchanged.
 - AI Gateway is split by behavior domain: `manifest.go`, `tools.go`, `policies.go`, `rate_limit_budget.go`, `redaction.go`, `approval.go`, `tokens.go`, `audit.go`, and `governance.go`; keep `service.go` for wiring, interfaces, and constructor/setter methods.
 - Execution-plane changes must include focused tests around status transitions, callback tokens, late callbacks, retry, cancel, timeout, artifact persistence, and build/release backfill. The execution service started with explicit state-machine coverage; do not let it regress to untested callback behavior.
-- Handler coverage is currently low, so new transport behavior should add handler tests. Pure file moves may rely on package compile plus route-registration comparison, but stream behavior changes need websocket or writer lifecycle tests.
+- New transport behavior requires handler tests. Pure file moves may rely on package compile plus route-registration comparison, but stream behavior changes need websocket or writer lifecycle tests.
 
 ## Platform and Authorization Rules
 
@@ -76,22 +70,15 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - Module status from `modules.*.enabled`, visible menus, and permission keys are separate gates. Disabling a module is not a substitute for service-level authorization.
 - Prefer backend aggregation over frontend joins and namespace fan-out, especially for platform pages.
 
-## Workbench-Specific Rules
+## Execution And Runtime Rules
 
-- Delivery execution must route task claim, callback, cancel, retry, heartbeat, timeout, artifact extraction, and build/deploy record backfill through `internal/application/execution`; delivery handlers must not bypass that orchestration.
-- `ci_agent_runner` tasks are workspace-aware. Preserve `workspace.path`, `workspace.commandDir`, `workspace.checkout`, and `workspace.artifactFiles` semantics when changing build or release payloads.
-- `k8s_job_runner` is only real when `runtime.execution_job_cluster_id` and related execution-job settings are configured. Fall back or surface unsupported behavior instead of implying parity.
-- Docker APIs persist desired state and enqueue operations. Docker Engine and Compose work is claimed through `/api/v1/docker/operations/claim`, observed through `/api/v1/docker/operations/:id/runner-status`, and completed through `/api/v1/docker/operation-callbacks`.
-- Docker quick host provisioning may call virtualization only through the narrow host-provisioner adapter. Keep Docker independent from virtualization data models except for explicit link fields such as `virtualizationConnectionId`.
-- Virtualization operations should stay task-based. KubeVirt and PVE adapter behavior belongs in `internal/infrastructure/virtualization`, while lifecycle orchestration, permissions, logs, and sync state belong in `internal/application/virtualization`.
-- AI workbench data should stay session-first. Global provider and datasource settings remain settings-controlled; session toolsets, evidence budgets, analysis artifacts, and inspection flows belong in the copilot application service.
-- AI Agent Runtime must stay provider-agnostic at the application boundary. Pages, handlers, and business flows should depend on soha `AgentProvider`, `AgentRun`, `AgentCapability`, `AgentToolBinding`, `AgentSkillBinding`, `AnalysisArtifact`, toolset, and analysis profile contracts rather than Hermes, OpenClaw, or any provider SDK/CLI.
-- Hermes is only the first external provider behind the runner claim/callback path. New providers should extend provider catalogs, tool bindings, skill bindings, and runner executors without rewriting AI workbench flows or automation policy semantics.
-- Agent Runtime capabilities should expose logs, metrics, traces, platform events, delivery context, on-call context, Docker context, and virtualization context as soha capability and MCP/tool entries. Skills are platform methodology definitions and may map to Hermes skills, MCP capabilities, prompt templates, or future provider skill systems.
-- Agent Runtime outputs must be normalized into soha `AnalysisArtifact` with evidence, hypotheses, recommendations, graph, tool execution records, and data-source snapshots. Provider-native output should not leak directly into frontend contracts.
-- Continuous AI analysis is scheduled and audited by soha automation policy. Hermes cron or other provider-native schedulers remain optional experiments and must not become the source of truth for dedup, cooldown, budget, permission, or audit behavior.
-- soha owns permissions, menus, audit, budget, data redaction, and operation boundaries for Agent Runtime. Agents are pluggable executors only, and high-risk write actions must still route through the owning module's durable operation or approval flow.
-- On-call and notification flows should resolve active assignments in the backend from alert context and route rules. Do not reimplement route matching only in the frontend.
+- Delivery, Docker, virtualization, and Agent Runtime work must use their existing durable claim, heartbeat, callback, cancel, retry, timeout, and backfill flows.
+- Preserve workspace roots, operation allowlists, callback token rotation, terminal-state idempotency, and stale-callback rejection.
+- Keep provider and runtime adapters in infrastructure packages. Application services own authorization, orchestration, audit, normalized Soha DTOs, and business-record state.
+- Treat optional runners and agent capabilities as supported, degraded, or unsupported from real configuration and capability evidence; never imply parity.
+- Keep Agent Runtime provider-agnostic at the application boundary and normalize provider-native output before it reaches public contracts.
+- High-risk AI or automation writes still pass through the owning module's approval, permission, audit, and durable-operation flow.
+- Resolve shared operational context such as on-call routing and cross-namespace aggregation in the backend rather than duplicating joins in the frontend.
 
 ## Common Pitfalls
 
@@ -111,7 +98,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## Repo-specific reminders
 
-- When changing identity or login flows, update the matching docs in `docs/architecture/**`, `docs/en/api/**`, and `docs/operations/**` in the same task.
+- When changing identity or login flows, update the matching public docs under `../soha-docs/content/{en,zh}/**` when that repository is in scope.
 - Treat legacy `auth.oidc.*` config as a compatibility layer when multi-provider login settings exist; do not silently break old OIDC runtime paths.
 - If a provider type is only configuration-visible and not runtime-complete, make that explicit in API behavior and docs rather than implying parity.
 - When adding a module or workbench, update `internal/application/module/service.go`, route metadata/menu seeds, permission keys, bootstrap defaults, and frontend visibility tests together.
@@ -126,4 +113,4 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - Long-running or external execution is task/operation-backed and callback-safe.
 - Menus, module status, route visibility, and permission keys are aligned when API surface changes affect navigation.
 - Production complexity stays at or below 20, consumer capability interfaces stay small, and dependency boundary tests remain green.
-- Affected packages are tested, the applicable full Go gate passes, and memory or docs are updated when contracts changed.
+- Affected packages are tested, the applicable full Go gate passes, and contracts or public docs are updated when behavior changed.

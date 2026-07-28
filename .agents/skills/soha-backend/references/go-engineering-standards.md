@@ -70,5 +70,5 @@ git diff --check
 - Use table-driven named subtests for behavior matrices. Test observable contracts, failure paths, boundary rejection, cancellation, terminal states, retry, stale callbacks, and typed-nil construction where relevant.
 - Run `go test -race` for all concurrency, cache, stream, runner, lease, and lifecycle changes even when the focused package test passes.
 - Stage the built `soha-web/dist` artifact before the `embedassets` build. For release or image changes, use the real multi-stage Docker build rather than treating an unstaged backend-only build as equivalent.
-- For structural changes, rebuild or update `graphify-out`, confirm there are no import cycles, and compare concrete ownership/dependency paths rather than only God Node degree.
+- For broad structural or dependency changes, query the existing `graphify-out` first. Refresh the generated graph only after source changes are stable and the worktree contents are understood; use `graphify update . --force` after deletions, run graph diagnostics, and compare concrete ownership paths rather than only God Node degree.
 - For image or deployment changes, also follow `$soha-deploy`; a successful Go build alone is not deployment verification.

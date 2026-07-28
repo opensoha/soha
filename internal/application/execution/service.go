@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,18 +24,20 @@ type Repository interface {
 }
 
 type Service struct {
-	repo          Repository
-	builds        BuildRecordRepository
-	releases      ReleaseRecordRepository
-	clusters      ClusterRuntime
-	jobClusterID  string
-	jobNamespace  string
-	jobImage      string
-	jobGitImage   string
-	jobTTLSeconds int
-	runnerToken   string
-	permissions   *appaccess.PermissionResolver
-	workflowSink  WorkflowExecutionTaskSink
+	repo         Repository
+	builds       BuildRecordRepository
+	releases     ReleaseRecordRepository
+	clusters     ClusterRuntime
+	jobConfigMu  sync.RWMutex
+	jobConfig    JobRuntimeOptions
+	runnerToken  string
+	permissions  *appaccess.PermissionResolver
+	workflowSink WorkflowExecutionTaskSink
+}
+
+type JobRuntimeOptions struct {
+	ClusterID, Namespace, Image, GitImage string
+	TTLSeconds                            int
 }
 
 type BuildRecordRepository interface {
@@ -66,19 +69,44 @@ func New(repo Repository, builds BuildRecordRepository, releases ReleaseRecordRe
 	if jobTTLSeconds <= 0 {
 		jobTTLSeconds = 3600
 	}
-	return &Service{
-		repo:          repo,
-		builds:        builds,
-		releases:      releases,
-		clusters:      clusters,
-		jobClusterID:  strings.TrimSpace(jobClusterID),
-		jobNamespace:  strings.TrimSpace(jobNamespace),
-		jobImage:      strings.TrimSpace(jobImage),
-		jobGitImage:   strings.TrimSpace(jobGitImage),
-		jobTTLSeconds: jobTTLSeconds,
-		runnerToken:   strings.TrimSpace(runnerToken),
-		permissions:   permissions,
+	service := &Service{
+		repo:        repo,
+		builds:      builds,
+		releases:    releases,
+		clusters:    clusters,
+		runnerToken: strings.TrimSpace(runnerToken),
+		permissions: permissions,
 	}
+	service.SetJobRuntimeOptions(JobRuntimeOptions{ClusterID: jobClusterID, Namespace: jobNamespace, Image: jobImage, GitImage: jobGitImage, TTLSeconds: jobTTLSeconds})
+	return service
+}
+
+func (s *Service) SetJobRuntimeOptions(options JobRuntimeOptions) {
+	if strings.TrimSpace(options.Namespace) == "" {
+		options.Namespace = "soha-system"
+	}
+	if strings.TrimSpace(options.Image) == "" {
+		options.Image = "alpine:3.20"
+	}
+	if strings.TrimSpace(options.GitImage) == "" {
+		options.GitImage = "alpine/git:2.47.0"
+	}
+	if options.TTLSeconds <= 0 {
+		options.TTLSeconds = 3600
+	}
+	options.ClusterID = strings.TrimSpace(options.ClusterID)
+	options.Namespace = strings.TrimSpace(options.Namespace)
+	options.Image = strings.TrimSpace(options.Image)
+	options.GitImage = strings.TrimSpace(options.GitImage)
+	s.jobConfigMu.Lock()
+	s.jobConfig = options
+	s.jobConfigMu.Unlock()
+}
+
+func (s *Service) jobRuntimeOptions() JobRuntimeOptions {
+	s.jobConfigMu.RLock()
+	defer s.jobConfigMu.RUnlock()
+	return s.jobConfig
 }
 
 func (s *Service) Start(ctx context.Context) {
@@ -882,7 +910,8 @@ func (s *Service) dispatchK8sJobExecution(ctx context.Context, task domaindelive
 	if clusterID == "" {
 		return false, domaindelivery.ExecutionTask{}, nil
 	}
-	namespace := firstNonEmpty(strings.TrimSpace(fmt.Sprint(task.Payload["jobNamespace"])), s.jobNamespace)
+	jobConfig := s.jobRuntimeOptions()
+	namespace := firstNonEmpty(strings.TrimSpace(fmt.Sprint(task.Payload["jobNamespace"])), jobConfig.Namespace)
 	created, err := s.clusters.CreateExecutionJob(ctx, clusterID, ExecutionJobRequest{
 		TaskID:          task.ID,
 		TaskKind:        task.TaskKind,
@@ -890,9 +919,9 @@ func (s *Service) dispatchK8sJobExecution(ctx context.Context, task domaindelive
 		Commands:        commands,
 		Runtime:         valueAsMap(task.Payload["runtime"]),
 		Workspace:       valueAsMap(task.Payload["workspace"]),
-		DefaultImage:    s.jobImage,
-		DefaultGitImage: s.jobGitImage,
-		TTLSeconds:      s.jobTTLSeconds,
+		DefaultImage:    jobConfig.Image,
+		DefaultGitImage: jobConfig.GitImage,
+		TTLSeconds:      jobConfig.TTLSeconds,
 	})
 	if err != nil {
 		return false, domaindelivery.ExecutionTask{}, err
@@ -990,7 +1019,7 @@ func (s *Service) reconcileK8sJobExecution(ctx context.Context, task domaindeliv
 }
 
 func (s *Service) resolveExecutionJobClusterID(task domaindelivery.ExecutionTask) string {
-	if value := strings.TrimSpace(s.jobClusterID); value != "" {
+	if value := s.jobRuntimeOptions().ClusterID; value != "" {
 		return value
 	}
 	if value := strings.TrimSpace(fmt.Sprint(task.Payload["jobClusterId"])); value != "" {

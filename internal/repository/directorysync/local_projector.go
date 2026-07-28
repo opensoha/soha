@@ -49,6 +49,58 @@ func (p *DatabaseProjector) Apply(ctx context.Context, connection domain.Connect
 	})
 }
 
+func (p *DatabaseProjector) ApplyDelta(ctx context.Context, connection domain.Connection, policy domain.Policy, delta domain.Delta) error {
+	return p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if delta.Organization != nil {
+			if err := p.applyOrganizationDelta(tx, connection, *delta.Organization); err != nil {
+				return err
+			}
+		}
+		if delta.Person != nil {
+			if !policy.SyncPeople {
+				return domain.ErrPeopleSyncDisabled
+			}
+			if err := p.applyPeople(tx, connection, policy, []domain.Person{*delta.Person}, delta.Memberships); err != nil {
+				return err
+			}
+		}
+		return applyDeltaProjection(tx, connection.ID, delta, p.now().UTC())
+	})
+}
+
+func (p *DatabaseProjector) applyOrganizationDelta(tx *gorm.DB, connection domain.Connection, organization domain.Organization) error {
+	now := p.now().UTC()
+	teamID := stableID("team", connection.ID, organization.ExternalID)
+	if organization.Status == domain.ProjectionArchived {
+		return tx.Exec(`UPDATE teams SET metadata=(COALESCE(metadata,'{}'::json)::jsonb || '{"directoryStatus":"archived"}'::jsonb)::json,updated_at=? WHERE id=? AND source=?`, now, teamID, directorySource(connection)).Error
+	}
+	parentID := ""
+	if organization.ExternalParentID != "" {
+		parentID = stableID("team", connection.ID, organization.ExternalParentID)
+	}
+	slug := "directory-" + shortHash(connection.ID+"\x00"+organization.ExternalID)
+	var oldPath string
+	if err := tx.Raw(`SELECT COALESCE(org_path, '') FROM teams WHERE id=?`, teamID).Row().Scan(&oldPath); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	path := "/" + slug
+	if parentID != "" {
+		var parentPath string
+		if err := tx.Raw(`SELECT COALESCE(org_path, '') FROM teams WHERE id=?`, parentID).Row().Scan(&parentPath); err != nil {
+			return err
+		}
+		path = strings.TrimRight(parentPath, "/") + "/" + slug
+	}
+	metadata, _ := json.Marshal(map[string]any{"directoryConnectionId": connection.ID, "directoryConnectionName": connection.Name, "directoryProviderType": connection.ProviderType, "directoryStatus": organization.Status, "lastSyncedAt": now})
+	if err := tx.Exec(`INSERT INTO teams (id,parent_id,name,slug,org_path,source,external_id,metadata,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?::json,?,?) ON CONFLICT (id) DO UPDATE SET parent_id=EXCLUDED.parent_id,name=EXCLUDED.name,org_path=EXCLUDED.org_path,source=EXCLUDED.source,external_id=EXCLUDED.external_id,metadata=(COALESCE(teams.metadata,'{}'::json)::jsonb || EXCLUDED.metadata::jsonb)::json,updated_at=EXCLUDED.updated_at`, teamID, projectorNullString(parentID), organization.Name, slug, path, directorySource(connection), organization.ExternalID, string(metadata), now, now).Error; err != nil {
+		return err
+	}
+	if oldPath != "" && oldPath != path {
+		return tx.Exec(`UPDATE teams SET org_path=? || substring(org_path FROM char_length(?)+1),updated_at=? WHERE source=? AND org_path LIKE ? AND id<>?`, path, oldPath, now, directorySource(connection), oldPath+"/%", teamID).Error
+	}
+	return nil
+}
+
 func (p *DatabaseProjector) ApplyOrganizations(ctx context.Context, connection domain.Connection, organizations []domain.Organization, dryRun bool) error {
 	if dryRun {
 		return nil
@@ -136,8 +188,8 @@ func (p *DatabaseProjector) applyPeople(tx *gorm.DB, connection domain.Connectio
 		if subject == "" {
 			subject = strings.TrimSpace(person.ExternalID)
 		}
-		if person.Status == domain.ProjectionArchived {
-			if err := p.archivePerson(tx, connection, policy, *person, subject, source, providerID); err != nil {
+		if person.Status != domain.ProjectionActive {
+			if err := p.deactivatePerson(tx, connection, policy, *person, subject, source, providerID); err != nil {
 				return err
 			}
 			continue
@@ -190,7 +242,7 @@ func (p *DatabaseProjector) applyPeople(tx *gorm.DB, connection domain.Connectio
 
 }
 
-func (p *DatabaseProjector) archivePerson(tx *gorm.DB, connection domain.Connection, policy domain.Policy, person domain.Person, subject, source, providerID string) error {
+func (p *DatabaseProjector) deactivatePerson(tx *gorm.DB, connection domain.Connection, policy domain.Policy, person domain.Person, subject, source, providerID string) error {
 	userID := strings.TrimSpace(person.LocalUserID)
 	if userID == "" {
 		err := tx.Raw(`SELECT user_id FROM user_identities WHERE provider_type=? AND provider_id=? AND provider_user_id=? LIMIT 1`, connection.ProviderType, providerID, subject).Row().Scan(&userID)
@@ -211,12 +263,67 @@ func (p *DatabaseProjector) archivePerson(tx *gorm.DB, connection domain.Connect
 	if err := tx.Raw(`SELECT COALESCE(preferences->>'directoryManagedBy','')=? FROM users WHERE id=?`, connection.ID, userID).Row().Scan(&managed); err != nil || !managed {
 		return err
 	}
-	var alternativeMethods int
-	if err := tx.Raw(`SELECT (SELECT COUNT(*) FROM user_password_credentials WHERE user_id=?) + (SELECT COUNT(*) FROM user_identities WHERE user_id=? AND NOT (provider_type=? AND provider_id=? AND provider_user_id=?))`, userID, userID, connection.ProviderType, providerID, subject).Row().Scan(&alternativeMethods); err != nil {
+	now := p.now().UTC()
+	if person.Status == domain.ProjectionSuspended {
+		lastEventAt := person.LastSeenAt
+		if lastEventAt.IsZero() {
+			lastEventAt = now
+		}
+		preferences, _ := json.Marshal(map[string]any{"directoryStatus": person.Status, "employmentStatus": "suspended", "departedAt": nil, "lastDirectoryEventAt": lastEventAt})
+		return tx.Exec(`UPDATE users SET status='disabled',preferences=COALESCE(preferences,'{}'::jsonb) || ?::jsonb,updated_at=? WHERE id=?`, string(preferences), now, userID).Error
+	}
+	departedAt := now
+	if person.DepartedAt != nil {
+		departedAt = person.DepartedAt.UTC()
+	}
+	preferences, _ := json.Marshal(map[string]any{"directoryStatus": person.Status, "employmentStatus": "departed", "departedAt": departedAt, "lastDirectoryEventAt": departedAt})
+	if err := tx.Exec(`UPDATE users SET status='disabled',preferences=COALESCE(preferences,'{}'::jsonb) || ?::jsonb,updated_at=? WHERE id=?`, string(preferences), now, userID).Error; err != nil {
 		return err
 	}
-	if alternativeMethods == 0 {
-		return tx.Exec(`UPDATE users SET status='disabled',updated_at=? WHERE id=?`, p.now().UTC(), userID).Error
+	if err := tx.Exec(`UPDATE sessions SET status='revoked',updated_at=? WHERE user_id=? AND status='active'`, now, userID).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`UPDATE identity_oidc_refresh_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE session_id IN (SELECT id FROM identity_oidc_sessions WHERE user_id=?)`, now, userID).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`UPDATE identity_oidc_sessions SET revoked_at=COALESCE(revoked_at,?) WHERE user_id=?`, now, userID).Error; err != nil {
+		return err
+	}
+	return tx.Exec(`UPDATE personal_access_tokens SET revoked_at=COALESCE(revoked_at,?),updated_at=? WHERE user_id=?`, now, now, userID).Error
+}
+
+func applyDeltaProjection(tx *gorm.DB, connectionID string, delta domain.Delta, now time.Time) error {
+	if delta.Organization != nil {
+		item := prepareOrganizationProjection(*delta.Organization, connectionID, now)
+		if delta.Action == domain.ChangeArchive {
+			if err := tx.Exec(`UPDATE directory_organizations SET status=?,archived_at=?,last_seen_at=? WHERE connection_id=? AND external_id=?`, domain.ProjectionArchived, item.ArchivedAt, item.LastSeenAt, connectionID, item.ExternalID).Error; err != nil {
+				return err
+			}
+		} else if err := tx.Exec(`INSERT INTO directory_organizations (id,connection_id,external_id,external_parent_id,local_team_id,name,path,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,external_id) DO UPDATE SET external_parent_id=EXCLUDED.external_parent_id,name=EXCLUDED.name,status=EXCLUDED.status,source_version=EXCLUDED.source_version,last_seen_at=EXCLUDED.last_seen_at,archived_at=EXCLUDED.archived_at`, item.ID, item.ConnectionID, item.ExternalID, nullString(item.ExternalParentID), nullString(item.LocalTeamID), item.Name, item.Path, item.Status, item.SourceVersion, item.RawHash, item.FirstSeenAt, item.LastSeenAt, item.ArchivedAt).Error; err != nil {
+			return err
+		}
+	}
+	if delta.Person == nil {
+		return nil
+	}
+	item := preparePersonProjection(*delta.Person, connectionID, now)
+	if delta.Action == domain.ChangeArchive {
+		if err := tx.Exec(`UPDATE directory_people SET status=?,archived_at=?,departed_at=?,last_seen_at=? WHERE connection_id=? AND external_id=?`, domain.ProjectionArchived, item.ArchivedAt, item.DepartedAt, item.LastSeenAt, connectionID, item.ExternalID).Error; err != nil {
+			return err
+		}
+	} else if err := tx.Exec(`INSERT INTO directory_people (id,connection_id,external_id,provider_subject,local_user_id,username,display_name,email,email_verified,phone,avatar_url,status,source_version,raw_hash,first_seen_at,last_seen_at,archived_at,departed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,external_id) DO UPDATE SET provider_subject=EXCLUDED.provider_subject,local_user_id=COALESCE(EXCLUDED.local_user_id,directory_people.local_user_id),username=EXCLUDED.username,display_name=EXCLUDED.display_name,email=EXCLUDED.email,email_verified=EXCLUDED.email_verified,phone=EXCLUDED.phone,avatar_url=EXCLUDED.avatar_url,status=EXCLUDED.status,source_version=EXCLUDED.source_version,last_seen_at=EXCLUDED.last_seen_at,archived_at=EXCLUDED.archived_at,departed_at=EXCLUDED.departed_at`, item.ID, item.ConnectionID, item.ExternalID, item.ProviderSubject, nullString(item.LocalUserID), item.Username, item.DisplayName, item.Email, item.EmailVerified, item.Phone, item.AvatarURL, item.Status, item.SourceVersion, item.RawHash, item.FirstSeenAt, item.LastSeenAt, item.ArchivedAt, item.DepartedAt).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`DELETE FROM directory_memberships WHERE connection_id=? AND external_person_id=?`, connectionID, item.ExternalID).Error; err != nil {
+		return err
+	}
+	for _, membership := range delta.Memberships {
+		if membership.LastSeenAt.IsZero() {
+			membership.LastSeenAt = now
+		}
+		if err := tx.Exec(`INSERT INTO directory_memberships (connection_id,external_person_id,external_organization_id,local_user_id,local_team_id,status,last_seen_at) VALUES (?,?,?,?,?,?,?)`, connectionID, membership.ExternalPersonID, membership.ExternalOrganizationID, nullString(membership.LocalUserID), nullString(membership.LocalTeamID), membership.Status, membership.LastSeenAt).Error; err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -237,7 +344,7 @@ func (p *DatabaseProjector) resolvePerson(tx *gorm.DB, connection domain.Connect
 	var userID string
 	err = tx.Raw(`SELECT user_id FROM user_identities WHERE provider_type=? AND provider_id=? AND provider_user_id=? LIMIT 1`, connection.ProviderType, providerID, subject).Row().Scan(&userID)
 	if err == nil {
-		return userID, false, p.updateManagedProfile(tx, userID, person)
+		return userID, false, p.updateManagedProfile(tx, connection.ID, userID, person)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
@@ -259,7 +366,7 @@ func (p *DatabaseProjector) resolvePerson(tx *gorm.DB, connection domain.Connect
 			return "", false, err
 		}
 		if len(matches) == 1 {
-			return matches[0], false, p.updateManagedProfile(tx, matches[0], person)
+			return matches[0], false, p.updateManagedProfile(tx, connection.ID, matches[0], person)
 		}
 		if len(matches) > 1 {
 			return "", false, nil
@@ -273,16 +380,24 @@ func (p *DatabaseProjector) resolvePerson(tx *gorm.DB, connection domain.Connect
 	if username == "" {
 		username = subject
 	}
-	preferences, _ := json.Marshal(map[string]any{"avatarUrl": person.AvatarURL, "phone": person.Phone, "directoryManagedBy": connection.ID})
+	lastEventAt := person.LastSeenAt
+	if lastEventAt.IsZero() {
+		lastEventAt = p.now().UTC()
+	}
+	preferences, _ := json.Marshal(map[string]any{"avatarUrl": person.AvatarURL, "phone": person.Phone, "directoryManagedBy": connection.ID, "directoryStatus": domain.ProjectionActive, "employmentStatus": "active", "lastDirectoryEventAt": lastEventAt})
 	if err := tx.Exec(`INSERT INTO users (id,username,email,display_name,status,tags,preferences,created_at,updated_at) VALUES (?,?,?,?,?,'[]',?::json,?,?)`, userID, username, strings.ToLower(strings.TrimSpace(person.Email)), person.DisplayName, "active", string(preferences), p.now().UTC(), p.now().UTC()).Error; err != nil {
 		return "", false, fmt.Errorf("create directory user: %w", err)
 	}
 	return userID, false, nil
 }
 
-func (p *DatabaseProjector) updateManagedProfile(tx *gorm.DB, userID string, person domain.Person) error {
-	preferences, _ := json.Marshal(map[string]any{"avatarUrl": person.AvatarURL, "phone": person.Phone})
-	return tx.Exec(`UPDATE users SET display_name=CASE WHEN ?<>'' THEN ? ELSE display_name END,email=CASE WHEN ?<>'' THEN lower(?) ELSE email END,preferences=COALESCE(preferences,'{}'::jsonb) || ?::jsonb,updated_at=? WHERE id=?`, person.DisplayName, person.DisplayName, person.Email, person.Email, string(preferences), p.now().UTC(), userID).Error
+func (p *DatabaseProjector) updateManagedProfile(tx *gorm.DB, connectionID, userID string, person domain.Person) error {
+	lastEventAt := person.LastSeenAt
+	if lastEventAt.IsZero() {
+		lastEventAt = p.now().UTC()
+	}
+	preferences, _ := json.Marshal(map[string]any{"avatarUrl": person.AvatarURL, "phone": person.Phone, "directoryStatus": domain.ProjectionActive, "employmentStatus": "active", "departedAt": nil, "lastDirectoryEventAt": lastEventAt})
+	return tx.Exec(`UPDATE users SET display_name=CASE WHEN ?<>'' THEN ? ELSE display_name END,email=CASE WHEN ?<>'' THEN lower(?) ELSE email END,status=CASE WHEN COALESCE(preferences->>'directoryManagedBy','')=? THEN 'active' ELSE status END,preferences=COALESCE(preferences,'{}'::jsonb) || ?::jsonb,updated_at=? WHERE id=?`, person.DisplayName, person.DisplayName, person.Email, person.Email, connectionID, string(preferences), p.now().UTC(), userID).Error
 }
 
 func directorySource(connection domain.Connection) string { return "directory:" + connection.ID }

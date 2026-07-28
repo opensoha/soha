@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
@@ -15,18 +16,20 @@ import (
 
 type Repository struct {
 	db              *gorm.DB
-	upsertBatchSize int
+	upsertBatchSize atomic.Int64
 }
 
 const alertUpsertBatchSize = 100
 
 func New(db *gorm.DB) *Repository {
-	return &Repository{db: db, upsertBatchSize: alertUpsertBatchSize}
+	repository := &Repository{db: db}
+	repository.upsertBatchSize.Store(alertUpsertBatchSize)
+	return repository
 }
 
 func (r *Repository) SetUpsertBatchSize(size int) {
 	if size > 0 {
-		r.upsertBatchSize = size
+		r.upsertBatchSize.Store(int64(size))
 	}
 }
 
@@ -37,7 +40,7 @@ func (r *Repository) Upsert(ctx context.Context, source string, alerts []domaina
 	now := time.Now().UTC()
 	instances := make([]domainalert.Instance, 0, len(alerts))
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		batchSize := r.upsertBatchSize
+		batchSize := int(r.upsertBatchSize.Load())
 		if batchSize <= 0 {
 			batchSize = alertUpsertBatchSize
 		}

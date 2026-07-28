@@ -11,6 +11,10 @@ import (
 type repositoryStub struct {
 	connection      domain.Connection
 	policy          domain.Policy
+	events          []domain.EventEnvelope
+	completedStatus string
+	incrementalAt   *time.Time
+	reconcileReason string
 	recoveredEvents int
 	recoveredRuns   int
 }
@@ -47,10 +51,22 @@ func (*repositoryStub) GetWebhookCredential(context.Context, string) (domain.Web
 func (*repositoryStub) EnqueueEvent(context.Context, domain.EventEnvelope) (bool, error) {
 	return true, nil
 }
-func (*repositoryStub) ClaimEvents(context.Context, int) ([]domain.EventEnvelope, error) {
-	return nil, nil
+func (r *repositoryStub) ClaimEvents(context.Context, int) ([]domain.EventEnvelope, error) {
+	return r.events, nil
 }
-func (*repositoryStub) CompleteEvent(context.Context, string, string, string, time.Time) error {
+
+func (r *repositoryStub) CompleteEvent(_ context.Context, _ string, status, _ string, _ time.Time) error {
+	r.completedStatus = status
+	return nil
+}
+
+func (r *repositoryStub) MarkIncrementalApplied(_ context.Context, _ string, at time.Time) error {
+	r.incrementalAt = &at
+	return nil
+}
+func (*repositoryStub) MarkFullReconciled(context.Context, string, time.Time) error { return nil }
+func (r *repositoryStub) MarkReconcileRequired(_ context.Context, _ string, reason string, _ time.Time) error {
+	r.reconcileReason = reason
 	return nil
 }
 
@@ -111,12 +127,16 @@ func (*repositoryStub) FindActiveSuppression(context.Context, string, string, st
 }
 func (*repositoryStub) ClearSuppression(context.Context, string, string, time.Time) error { return nil }
 
-type connectorSpy struct{ peopleCalls, membershipCalls int }
+type connectorSpy struct {
+	organizationCalls, peopleCalls, membershipCalls, deltaCalls int
+	deltaErr                                                    error
+}
 
 func (*connectorSpy) Validate(context.Context, domain.Connection) (domain.Capabilities, error) {
 	return domain.Capabilities{}, nil
 }
-func (*connectorSpy) ListOrganizations(context.Context, domain.Connection) ([]domain.Organization, string, error) {
+func (s *connectorSpy) ListOrganizations(context.Context, domain.Connection) ([]domain.Organization, string, error) {
+	s.organizationCalls++
 	return []domain.Organization{{ExternalID: "root"}}, "cursor", nil
 }
 func (s *connectorSpy) ListPeople(context.Context, domain.Connection) ([]domain.Person, error) {
@@ -126,6 +146,23 @@ func (s *connectorSpy) ListPeople(context.Context, domain.Connection) ([]domain.
 func (s *connectorSpy) ListMemberships(context.Context, domain.Connection) ([]domain.Membership, error) {
 	s.membershipCalls++
 	return nil, nil
+}
+func (s *connectorSpy) ResolveDelta(context.Context, domain.Connection, domain.EventEnvelope) (domain.Delta, error) {
+	s.deltaCalls++
+	if s.deltaErr != nil {
+		return domain.Delta{}, s.deltaErr
+	}
+	return domain.Delta{Action: domain.ChangeUpdate, Organization: &domain.Organization{ExternalID: "root", Name: "Root", Status: domain.ProjectionActive}}, nil
+}
+
+type deltaProjectorStub struct{ calls int }
+
+func (*deltaProjectorStub) Apply(context.Context, domain.Connection, domain.Policy, domain.Plan) error {
+	return nil
+}
+func (p *deltaProjectorStub) ApplyDelta(context.Context, domain.Connection, domain.Policy, domain.Delta) error {
+	p.calls++
+	return nil
 }
 
 func TestPullSnapshotDoesNotCallPeopleAPIsWhenDisabled(t *testing.T) {

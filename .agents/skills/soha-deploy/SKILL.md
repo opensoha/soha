@@ -1,16 +1,12 @@
 ---
 name: soha-deploy
 description: >-
-  Prepare soha deployment artifacts across container build, raw Docker,
-  Docker Compose, and raw Kubernetes YAML. Use when packaging local,
-  demo, or small-environment deployments; creating or updating Dockerfiles;
-  wiring backend config through files or environment variables; or changing
-  service exposure, ingress, image tags, and embedded frontend delivery. This
-  skill assumes the current repo can ship as one application container because
-  `cmd/server` serves the embedded SPA when `internal/staticassets/web/dist`
-  is staged, and the canonical deployment assets live under `deploy/`. Use it
-  also to validate system-key overrides, multi-replica configuration, and
-  deployment security warnings.
+  Prepare or review Soha core deployment artifacts for container builds, raw
+  Docker, Docker Compose, and raw Kubernetes YAML under `deploy/**`. Use when
+  changing Dockerfiles, embedded frontend delivery, configuration binding,
+  PostgreSQL wiring, service exposure, ingress, image tags, health checks,
+  multi-replica settings, or deployment security warnings. Helm chart work
+  belongs in the sibling `soha-helm` repository.
 ---
 
 # Soha Deploy
@@ -38,9 +34,7 @@ Use the `deploy/` assets to run soha as a single-project runtime: one applicatio
 - Prefer the embedded single-container runtime unless the user explicitly wants API and web split apart.
 - Keep app config file-driven. The server expects `SOHA_CONFIG_FILE` or the default config path.
 - Treat PostgreSQL as required for this starter deployment set.
-- `pgsql`/`pgsql` and `opensoha`/`opensoha` are the standard initial database and administrator credentials in every Soha deployment form. They may be overridden through environment, mounted config, Kubernetes Secrets, sealed secrets, or an external secret manager, but must not be gated by an application environment label.
-- Keep the JWT, runner, webhook, and credential-encryption settings visible in config. Their zero-configuration default is `soha-123456789012345678901234567890`, and every delivery form may override each value through normal config or environment bindings.
-- Treat the shared default as public bootstrap material, not a production secret. Require a prominent warning to override all four settings before exposing Soha publicly; prefer separate high-entropy values.
+- Preserve the documented bootstrap defaults and normal override paths across all delivery forms. Treat defaults as public material and require clear replacement warnings before public exposure; see `references/security-and-build.md`.
 - Keep every replica on identical system-key values. Do not add a SecretStore, bundle, writer lease, SecretStore PVC, or `secrets` lifecycle CLI dependency to server startup or delivery assets.
 - Migrate every stored credential ciphertext before changing `security.credential_encryption_key`; changing configuration alone makes records encrypted by the previous key unreadable.
 - If the deployment needs direct-cluster access, provide kubeconfig or cluster registration data explicitly. The starter assets do not magically register Kubernetes clusters.

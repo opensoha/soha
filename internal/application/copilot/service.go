@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -233,7 +234,7 @@ type Service struct {
 	permissions           *appaccess.PermissionResolver
 	logger                *zap.Logger
 	metrics               *runtimeobs.Registry
-	inspectionParallelism int
+	inspectionParallelism atomic.Int64
 	mcpRegistry           MCPRegistry
 	agentProvidersMu      sync.RWMutex
 	agentProviders        []domaincopilot.AgentProvider
@@ -310,29 +311,29 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 		}
 	}
 	service := &Service{
-		sessions:              deps.Sessions,
-		messages:              deps.Messages,
-		dataSources:           deps.DataSources,
-		analysisProfiles:      deps.AnalysisProfiles,
-		automationPolicies:    deps.AutomationPolicies,
-		rootCauseRuns:         deps.RootCauseRuns,
-		agentRuns:             deps.AgentRuns,
-		inspectionTasks:       deps.InspectionTasks,
-		inspectionRuns:        deps.InspectionRuns,
-		clusters:              deps.Clusters,
-		alerts:                deps.Alerts,
-		events:                deps.Events,
-		audits:                deps.Audits,
-		apps:                  deps.Applications,
-		builds:                deps.Builds,
-		releases:              deps.Releases,
-		settings:              deps.Settings,
-		permissions:           deps.Permissions,
-		inspectionParallelism: 2,
-		logs:                  unavailableTelemetry{},
-		metricTelemetry:       unavailableTelemetry{},
-		traceTelemetry:        unavailableTelemetry{},
+		sessions:           deps.Sessions,
+		messages:           deps.Messages,
+		dataSources:        deps.DataSources,
+		analysisProfiles:   deps.AnalysisProfiles,
+		automationPolicies: deps.AutomationPolicies,
+		rootCauseRuns:      deps.RootCauseRuns,
+		agentRuns:          deps.AgentRuns,
+		inspectionTasks:    deps.InspectionTasks,
+		inspectionRuns:     deps.InspectionRuns,
+		clusters:           deps.Clusters,
+		alerts:             deps.Alerts,
+		events:             deps.Events,
+		audits:             deps.Audits,
+		apps:               deps.Applications,
+		builds:             deps.Builds,
+		releases:           deps.Releases,
+		settings:           deps.Settings,
+		permissions:        deps.Permissions,
+		logs:               unavailableTelemetry{},
+		metricTelemetry:    unavailableTelemetry{},
+		traceTelemetry:     unavailableTelemetry{},
 	}
+	service.inspectionParallelism.Store(2)
 	for _, option := range options {
 		if option != nil {
 			option(service)
@@ -413,7 +414,7 @@ func (unavailableTelemetry) FindSlowSpans(context.Context, string, string, map[s
 
 func (s *Service) SetInspectionParallelism(parallelism int) {
 	if parallelism > 0 {
-		s.inspectionParallelism = parallelism
+		s.inspectionParallelism.Store(int64(parallelism))
 	}
 }
 

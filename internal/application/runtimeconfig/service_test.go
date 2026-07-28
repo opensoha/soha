@@ -170,6 +170,30 @@ func TestComputeRuntimeDefinitionsUseProductTerminology(t *testing.T) {
 	}
 }
 
+func TestRegistryExposesMigratedOperationalSettings(t *testing.T) {
+	registry := NewRegistry(RegistryOptions{})
+	tests := map[string]sohaapi.RuntimeConfigValueType{
+		KeyWorkflowWorkers:               sohaapi.RuntimeConfigValueTypeInteger,
+		KeyWorkflowNodeParallelism:       sohaapi.RuntimeConfigValueTypeInteger,
+		KeyClusterSyncParallelism:        sohaapi.RuntimeConfigValueTypeInteger,
+		KeyCopilotInspectionParallelism:  sohaapi.RuntimeConfigValueTypeInteger,
+		KeyAlertUpsertBatchSize:          sohaapi.RuntimeConfigValueTypeInteger,
+		KeyVirtualizationWorkerInterval:  sohaapi.RuntimeConfigValueTypeDuration,
+		KeyVirtualizationSyncConcurrency: sohaapi.RuntimeConfigValueTypeInteger,
+		KeyExecutionJobNamespace:         sohaapi.RuntimeConfigValueTypeString,
+		KeyExecutionJobTTLSeconds:        sohaapi.RuntimeConfigValueTypeInteger,
+		KeyMCPDefaultTimeout:             sohaapi.RuntimeConfigValueTypeDuration,
+		KeyAIGatewayDefaultTimeout:       sohaapi.RuntimeConfigValueTypeDuration,
+		KeyAIGatewayMaxRequestBodyMB:     sohaapi.RuntimeConfigValueTypeInteger,
+	}
+	for key, valueType := range tests {
+		definition, ok := registry.Definition(key)
+		if !ok || definition.ValueType != valueType || !definition.Editable {
+			t.Fatalf("definition %q = %#v", key, definition)
+		}
+	}
+}
+
 func TestRegistryDoesNotExposeClusterPrometheusSettings(t *testing.T) {
 	registry := NewRegistry(RegistryOptions{})
 	for _, key := range []string{"monitoring.prometheus.base_url", "monitoring.prometheus.bearer_token"} {

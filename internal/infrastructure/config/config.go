@@ -35,7 +35,6 @@ type Config struct {
 	Runtime    RuntimeConfig    `mapstructure:"runtime"`
 	Database   DatabaseConfig   `mapstructure:"database"`
 	Auth       AuthConfig       `mapstructure:"auth"`
-	GitLab     GitLabConfig     `mapstructure:"gitlab"`
 	Monitoring MonitoringConfig `mapstructure:"monitoring"`
 	Swagger    SwaggerConfig    `mapstructure:"swagger"`
 	MCP        MCPConfig        `mapstructure:"mcp"`
@@ -106,15 +105,6 @@ type DatabaseConfig struct {
 type AuthConfig = appconfig.Auth
 
 type LoginVerificationConfig = appconfig.LoginVerification
-
-type GitLabConfig struct {
-	Enabled bool          `mapstructure:"enabled"`
-	BaseURL string        `mapstructure:"base_url"`
-	Token   string        `mapstructure:"token"`
-	GroupID string        `mapstructure:"group_id"`
-	PerPage int           `mapstructure:"per_page"`
-	Timeout time.Duration `mapstructure:"timeout"`
-}
 
 type DevPrincipalConfig = appconfig.DevPrincipal
 
@@ -325,7 +315,6 @@ func (c *Config) expandEnv() {
 	c.Auth.DevPrincipal.Password = os.ExpandEnv(c.Auth.DevPrincipal.Password)
 	c.Auth.JWT.Secret = os.ExpandEnv(c.Auth.JWT.Secret)
 	c.Auth.OIDC.ClientSecret = os.ExpandEnv(c.Auth.OIDC.ClientSecret)
-	c.GitLab.Token = os.ExpandEnv(c.GitLab.Token)
 	c.Monitoring.WebhookToken = os.ExpandEnv(c.Monitoring.WebhookToken)
 	c.Monitoring.PrometheusBearerToken = os.ExpandEnv(c.Monitoring.PrometheusBearerToken)
 	c.AIGateway.RateLimit.Redis.Password = os.ExpandEnv(c.AIGateway.RateLimit.Redis.Password)
@@ -387,9 +376,6 @@ func (c Config) staticProblems() []string {
 		if strings.TrimSpace(item.value) != item.value {
 			problems = append(problems, fmt.Sprintf("%s must not have leading or trailing whitespace", item.name))
 		}
-	}
-	if c.GitLab.Enabled {
-		problems = appendSecretProblem(problems, "gitlab.token", c.GitLab.Token, true, 20)
 	}
 	problems = append(problems, validateWebAuthnConfig(c.Security)...)
 	if _, _, err := c.Security.OutpostSigningKey(); err != nil {
@@ -612,11 +598,6 @@ var configDefaults = []struct {
 	{"auth.oidc.enabled", false},
 	{"auth.oidc.scopes", []string{"openid", "profile", "email"}},
 	{"auth.oidc.default_roles", []string{"readonly"}},
-	{"gitlab.enabled", false},
-	{"gitlab.base_url", "https://gitlab.com/api/v4"},
-	{"gitlab.group_id", ""},
-	{"gitlab.per_page", 50},
-	{"gitlab.timeout", "10s"},
 	{"monitoring.enabled", true},
 	{"monitoring.webhook_token", defaultSystemSecret},
 	{"monitoring.prometheus_url", ""},

@@ -14,7 +14,7 @@
   <a href="https://ant.design/"><img alt="Ant Design" src="https://img.shields.io/badge/Ant%20Design-6-1677FF?logo=antdesign&logoColor=white"></a>
   <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-client--go-326CE5?logo=kubernetes&logoColor=white"></a>
   <a href="https://www.postgresql.org/"><img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-18.4-4169E1?logo=postgresql&logoColor=white"></a>
-  <a href="https://docs.opensoha.dev/"><img alt="Docs" src="https://img.shields.io/badge/Docs-Docusaurus-3ECC5F?logo=docusaurus&logoColor=white"></a>
+  <a href="https://docs.opensoha.dev/"><img alt="Docs" src="https://img.shields.io/badge/Docs-Nextra-111111?logo=nextdotjs&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -82,7 +82,6 @@ PostgreSQL + Kubernetes 集群
 ### 后端
 
 - `cmd/server`: API 服务入口
-- 未来 `cmd/**` 入口：同仓库内用于安全上报、worker 等专门负载的子服务入口
 - `internal/api`: 领域路由注册文件、处理器、中间件、请求解析与响应封装
 - `internal/application`: 用例编排、授权、作用域处理、审计与视图模型
 - `internal/policy`: RBAC、ABAC 与作用域计算
@@ -90,7 +89,7 @@ PostgreSQL + Kubernetes 集群
 - `internal/repository`: 持久化访问层
 - `internal/bootstrap`: 依赖装配、迁移、初始化与启动生命周期
 
-当前路由、bootstrap、多 `cmd` 入口和预留安全 ingest 边界约定见发布后的文档站。
+当前公共架构和 API 行为以发布文档为准。
 
 ### 前端
 
@@ -115,30 +114,30 @@ PostgreSQL + Kubernetes 集群
 
 | 层级 | 技术 |
 | --- | --- |
-| 后端 | Go 1.23、Gin、PostgreSQL、Kubernetes `client-go` |
+| 后端 | Go 1.25、Gin、PostgreSQL、Kubernetes `client-go` |
 | 前端 | React 18、TypeScript 5、Vite 6、React Router 6、TanStack Query 5、Zustand 5、Ant Design 6、Tailwind CSS 4 |
-| 文档 | Docusaurus 3 |
+| 文档 | sibling `soha-docs` 仓库中的 Next.js 16 与 Nextra 4 |
 | 打包部署 | Docker、Docker Compose、原生 Kubernetes YAML；Helm Chart 在 `soha-helm` 维护 |
 
 ## 目录结构
 
 ```text
 .
-├── cmd/                 # server、agent 与未来同仓库服务入口
-├── configs/             # 后端与 agent 配置
+├── cmd/                 # server 入口
+├── configs/             # 后端配置
 ├── internal/            # 后端分层与领域模块
 ├── internal/staticassets # 用于内嵌 release 构建的 Web artifact
 ├── migrations/          # PostgreSQL 初始化与迁移
 ├── deploy/              # Docker、Compose 与原生 Kubernetes 部署资产
 ├── Makefile             # 最小本地开发、构建命令
-└── agents.md            # 工程规范与项目记忆
+└── .agents/skills/      # 仓库工程与部署规则
 ```
 
 ## 快速开始
 
 ### 环境要求
 
-- Go 1.23+
+- Go 1.25+
 - Node.js 20+
 - Docker 与 Docker Compose
 - 外部数据库使用 PostgreSQL 18.4，并安装 pgvector 0.8.5
@@ -334,7 +333,8 @@ NGINX Ingress 和 Traefik ForwardAuth 示例位于
 
 ## 文档
 
-- [工程规范](./agents.md)
+- [后端工程规则](./.agents/skills/soha-backend/SKILL.md)
+- [部署规则](./.agents/skills/soha-deploy/SKILL.md)
 - [发布文档](https://docs.opensoha.dev/)
 - [文档源码](https://github.com/opensoha/soha-docs)
 
@@ -344,7 +344,6 @@ NGINX Ingress 和 Traefik ForwardAuth 示例位于
 - 保持中心启动和路由文件轻量。新增领域路由放在 `internal/api/routes` 的领域文件中，新增启动职责放在 `internal/bootstrap` 的关注点文件中，避免继续膨胀单个大文件。
 - Go 大文件先按稳定行为域拆分。平台 handler、平台资源 service 和 AI Gateway 已按同包聚焦文件组织，并用单元测试保护执行任务状态流转。
 - 长耗时工作必须任务化。构建、发布、Docker、Compose、虚拟机控制和 provider 执行都通过持久化任务与 callback 路径完成。
-- 未来内网安全工作台 API 需要区分管理面、客户端和 ingest 边界：`/api/v1/security/**`、`/api/client/v1/**` 和 `/api/ingest/v1/**`。
 - 前端实现只进入 `github.com/opensoha/soha-web`。路由、元数据、权限、后端菜单和测试需要跨 artifact 边界保持一致。
 - 平台 API 返回 Soha DTO，不直接返回原始 Kubernetes 对象，YAML 或明确透传接口除外。
 - 模块可见性、菜单可见性和后端授权是不同边界。
@@ -352,7 +351,9 @@ NGINX Ingress 和 Traefik ForwardAuth 示例位于
 
 ## 贡献
 
-欢迎提交 issue 与 pull request。较大改动建议先阅读 [agents.md](./agents.md)，以保持后端分层、前端路由、授权、作用域处理与文档更新一致。
+欢迎提交 issue 与 pull request。较大改动请先阅读相关的
+[后端](./.agents/skills/soha-backend/SKILL.md)或
+[部署](./.agents/skills/soha-deploy/SKILL.md)规则。
 
 常用验证命令：
 

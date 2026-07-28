@@ -2,17 +2,25 @@ package directorysync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domain "github.com/opensoha/soha/internal/domain/directorysync"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 )
 
 type ConnectorResolver func(context.Context, domain.Connection) (Connector, error)
+
+type eventStateRepository interface {
+	MarkIncrementalApplied(context.Context, string, time.Time) error
+	MarkFullReconciled(context.Context, string, time.Time) error
+	MarkReconcileRequired(context.Context, string, string, time.Time) error
+}
 
 type Scheduler struct {
 	repository domain.Repository
@@ -22,9 +30,17 @@ type Scheduler struct {
 	mu         sync.Mutex
 	lastFired  map[string]string
 	metrics    *runtimeobs.Registry
+	audit      interface {
+		Record(context.Context, domainaudit.Entry) error
+	}
 }
 
 func (s *Scheduler) SetInstrumentation(metrics *runtimeobs.Registry) { s.metrics = metrics }
+func (s *Scheduler) SetAuditRecorder(audit interface {
+	Record(context.Context, domainaudit.Entry) error
+}) {
+	s.audit = audit
+}
 
 func NewScheduler(repository domain.Repository, service *Service, resolve ConnectorResolver) *Scheduler {
 	return &Scheduler{repository: repository, service: service, resolve: resolve, interval: 30 * time.Second, lastFired: map[string]string{}}
@@ -62,7 +78,11 @@ func (s *Scheduler) tick(ctx context.Context, now time.Time) {
 			continue
 		}
 		_, policy, err := s.repository.GetConnection(ctx, connection.ID)
-		if err != nil || policy.Mode == domain.PolicyManual || !cronMatches(policy.Schedule, now) {
+		schedule := policy.FullReconcileSchedule
+		if schedule == "" {
+			schedule = policy.Schedule
+		}
+		if err != nil || policy.Mode == domain.PolicyManual || !cronMatches(schedule, now) {
 			continue
 		}
 		s.mu.Lock()
@@ -100,17 +120,33 @@ func (s *Scheduler) processEvents(ctx context.Context, now time.Time) {
 		if err == nil {
 			connector, err = s.resolve(ctx, connection)
 		}
-		var snapshot domain.Snapshot
+		var incremental IncrementalConnector
 		if err == nil {
-			snapshot, _, err = s.service.PullSnapshot(ctx, connection.ID, connector)
+			var ok bool
+			incremental, ok = connector.(IncrementalConnector)
+			if !ok {
+				err = fmt.Errorf("%w: connector does not support incremental events", domain.ErrReconcileRequired)
+			}
+		}
+		var delta domain.Delta
+		if err == nil {
+			delta, err = incremental.ResolveDelta(ctx, connection, event)
 		}
 		if err == nil {
-			_, _, err = s.service.ApplyTriggered(ctx, connection.ID, snapshot, "directory-webhook", "webhook")
+			_, err = s.service.ApplyDelta(ctx, connection.ID, delta, "directory-webhook")
 		}
 		status, summary := "succeeded", ""
 		if err != nil {
 			status, summary = "failed", err.Error()
+			if errors.Is(err, domain.ErrReconcileRequired) {
+				if state, ok := s.repository.(eventStateRepository); ok {
+					_ = state.MarkReconcileRequired(ctx, connection.ID, summary, now.UTC())
+				}
+			}
+		} else if state, ok := s.repository.(eventStateRepository); ok {
+			_ = state.MarkIncrementalApplied(ctx, connection.ID, now.UTC())
 		}
+		s.recordDeparture(ctx, connection, event, delta, err)
 		_ = s.repository.CompleteEvent(ctx, event.ID, status, summary, now.UTC())
 		if s.metrics != nil {
 			outcome := runtimeobs.OutcomeSucceeded
@@ -120,6 +156,13 @@ func (s *Scheduler) processEvents(ctx context.Context, now time.Time) {
 			s.metrics.RecordFinish(runtimeobs.ComponentDirectorySync, event.ID, time.Since(started), 0, 1, outcome, err)
 		}
 	}
+}
+
+func (s *Scheduler) recordDeparture(ctx context.Context, connection domain.Connection, event domain.EventEnvelope, delta domain.Delta, applyErr error) {
+	if applyErr != nil || s.audit == nil || delta.Person == nil || delta.Person.Status != domain.ProjectionArchived {
+		return
+	}
+	_ = s.audit.Record(ctx, domainaudit.Entry{ActorID: "directory-webhook", ActorName: "Directory Sync", ResourceKind: "DirectoryPerson", ResourceName: delta.Person.ExternalID, Action: "access.directory.person.depart", Result: "success", Summary: "disabled directory-managed user after departure event", Metadata: map[string]any{"connectionId": connection.ID, "providerEventId": event.ProviderEventID}})
 }
 
 func (s *Scheduler) run(ctx context.Context, connection domain.Connection) {
@@ -143,6 +186,11 @@ func (s *Scheduler) run(ctx context.Context, connection domain.Connection) {
 		return
 	}
 	_, _, err = s.service.ApplyTriggered(ctx, connection.ID, snapshot, "directory-scheduler", "schedule")
+	if err == nil {
+		if state, ok := s.repository.(eventStateRepository); ok {
+			_ = state.MarkFullReconciled(ctx, connection.ID, time.Now().UTC())
+		}
+	}
 	if s.metrics != nil {
 		outcome := runtimeobs.OutcomeSucceeded
 		if err != nil {

@@ -54,12 +54,17 @@ func (s *Service) CreateConnection(ctx context.Context, connection domain.Connec
 		policy = domain.DefaultPolicy(connection.ID)
 	}
 	policy.ConnectionID = connection.ID
-	if err := policy.Validate(); err != nil {
+	if err := policy.ValidateForProvider(connection.ProviderType); err != nil {
 		return domain.Connection{}, err
 	}
 	if policy.Mode != domain.PolicyManual {
 		if err := ValidateSchedule(policy.Schedule); err != nil {
 			return domain.Connection{}, fmt.Errorf("%w: %v", domain.ErrInvalidPolicy, err)
+		}
+		if policy.FullReconcileSchedule != "" {
+			if err := ValidateSchedule(policy.FullReconcileSchedule); err != nil {
+				return domain.Connection{}, fmt.Errorf("%w: %v", domain.ErrInvalidPolicy, err)
+			}
 		}
 	}
 	now := s.now().UTC()
@@ -88,6 +93,97 @@ func (s *Service) ApplyTriggered(ctx context.Context, connectionID string, snaps
 		trigger = "manual"
 	}
 	return s.apply(ctx, connectionID, snapshot, requestedBy, trigger)
+}
+
+func (s *Service) ApplyDelta(ctx context.Context, connectionID string, delta domain.Delta, requestedBy string) (domain.Run, error) {
+	connection, policy, existingOrgs, existingPeople, err := s.load(ctx, connectionID)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	if delta.Person != nil && !policy.SyncPeople {
+		return domain.Run{}, domain.ErrPeopleSyncDisabled
+	}
+	if delta.Organization != nil && delta.Action == domain.ChangeUpdate {
+		for _, item := range existingOrgs {
+			if item.ExternalID == delta.Organization.ExternalID && item.ExternalParentID != delta.Organization.ExternalParentID {
+				delta.Action = domain.ChangeMove
+				break
+			}
+		}
+	}
+	if staleDelta(delta, existingOrgs, existingPeople) {
+		return domain.Run{ConnectionID: connectionID, Trigger: "webhook", Mode: "incremental", Status: domain.RunSucceeded}, nil
+	}
+	projector, ok := s.projector.(DeltaProjector)
+	if !ok {
+		return domain.Run{}, fmt.Errorf("%w: incremental projector unavailable", domain.ErrReconcileRequired)
+	}
+	now := s.now().UTC()
+	run := domain.Run{ID: uuid.NewString(), ConnectionID: connectionID, Trigger: "webhook", Mode: "incremental", Status: domain.RunQueued, IncludePeople: policy.SyncPeople, RequestedBy: requestedBy, CreatedAt: now}
+	run, err = s.repository.CreateRun(ctx, run)
+	if err != nil {
+		return domain.Run{}, err
+	}
+	if err = s.repository.TransitionRun(ctx, run.ID, domain.RunRunning, domain.RunStats{}, "", ""); err != nil {
+		return run, err
+	}
+	if err = projector.ApplyDelta(ctx, connection, policy, delta); err != nil {
+		return run, s.fail(ctx, run.ID, "delta_apply_failed", err)
+	}
+	stats := statsForDelta(delta)
+	if err = s.repository.TransitionRun(ctx, run.ID, domain.RunSucceeded, stats, "", ""); err != nil {
+		return run, err
+	}
+	run.Status, run.Stats = domain.RunSucceeded, stats
+	return run, nil
+}
+
+func staleDelta(delta domain.Delta, organizations []domain.Organization, people []domain.Person) bool {
+	if delta.OccurredAt.IsZero() {
+		return false
+	}
+	if delta.Organization != nil {
+		for _, item := range organizations {
+			if item.ExternalID == delta.Organization.ExternalID {
+				return item.LastSeenAt.After(delta.OccurredAt)
+			}
+		}
+	}
+	if delta.Person != nil {
+		for _, item := range people {
+			if item.ExternalID == delta.Person.ExternalID {
+				return item.LastSeenAt.After(delta.OccurredAt)
+			}
+		}
+	}
+	return false
+}
+
+func statsForDelta(delta domain.Delta) domain.RunStats {
+	stats := domain.RunStats{MembershipsUpdated: len(delta.Memberships)}
+	if delta.Organization != nil {
+		switch delta.Action {
+		case domain.ChangeCreate:
+			stats.OrganizationsCreated = 1
+		case domain.ChangeMove:
+			stats.OrganizationsMoved = 1
+		case domain.ChangeArchive:
+			stats.OrganizationsArchived = 1
+		default:
+			stats.OrganizationsUpdated = 1
+		}
+	}
+	if delta.Person != nil {
+		switch delta.Action {
+		case domain.ChangeCreate:
+			stats.PeopleCreated = 1
+		case domain.ChangeArchive:
+			stats.PeopleArchived = 1
+		default:
+			stats.PeopleUpdated = 1
+		}
+	}
+	return stats
 }
 
 func (s *Service) apply(ctx context.Context, connectionID string, snapshot domain.Snapshot, requestedBy, trigger string) (domain.Run, domain.Plan, error) {

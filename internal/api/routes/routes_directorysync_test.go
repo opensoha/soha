@@ -21,6 +21,9 @@ func TestRegisterDirectorySyncRoutes(t *testing.T) {
 		"POST /api/v1/access/directory-connections/:connectionID/sync/preview",
 		"POST /api/v1/access/directory-connections/:connectionID/sync",
 		"POST /api/v1/access/directory-connections/:connectionID/runs/:runID/cancel",
+		"GET /api/v1/access/directory-connections/:connectionID/runtime-status",
+		"GET /api/v1/access/directory-connections/:connectionID/events",
+		"POST /api/v1/access/directory-connections/:connectionID/events/:eventID/retry",
 		"GET /api/v1/access/directory-runs/:runID",
 		"GET /api/v1/access/directory-conflicts",
 	} {

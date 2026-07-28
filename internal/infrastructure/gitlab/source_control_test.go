@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
-	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -26,7 +25,7 @@ func TestNewPreservesLegacyConfiguration(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(cfgpkg.GitLabConfig{
+	client := NewWithOptions(Options{
 		Enabled: true,
 		BaseURL: server.URL + "/",
 		Token:   " legacy-token ",

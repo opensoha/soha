@@ -81,6 +81,64 @@ func (c *Client) Validate(ctx context.Context) error {
 	return err
 }
 
+func (c *Client) GetOrganization(ctx context.Context, externalID string) (directoryconnector.Organization, error) {
+	values := url.Values{"department_id_type": {"open_department_id"}}
+	var data struct {
+		Department struct {
+			DepartmentID       string `json:"department_id"`
+			OpenDepartmentID   string `json:"open_department_id"`
+			Name               string `json:"name"`
+			ParentDepartmentID string `json:"parent_department_id"`
+		} `json:"department"`
+	}
+	if err := c.get(ctx, "get organization", "/open-apis/contact/v3/departments/"+url.PathEscape(externalID), values, &data); err != nil {
+		return directoryconnector.Organization{}, err
+	}
+	department := data.Department
+	parent := department.ParentDepartmentID
+	if parent == "0" {
+		parent = ""
+	}
+	return directoryconnector.Organization{ExternalID: firstNonEmpty(department.OpenDepartmentID, department.DepartmentID, externalID), Name: department.Name, ParentExternalID: parent}, nil
+}
+
+func (c *Client) GetPerson(ctx context.Context, externalID string) (directoryconnector.Person, []directoryconnector.Membership, error) {
+	values := url.Values{"user_id_type": {"open_id"}, "department_id_type": {"open_department_id"}}
+	var data struct {
+		User struct {
+			UserID        string   `json:"user_id"`
+			OpenID        string   `json:"open_id"`
+			UnionID       string   `json:"union_id"`
+			Name          string   `json:"name"`
+			Email         string   `json:"email"`
+			Mobile        string   `json:"mobile"`
+			DepartmentIDs []string `json:"department_ids"`
+			Avatar        struct {
+				AvatarOrigin string `json:"avatar_origin"`
+				Avatar640    string `json:"avatar_640"`
+			} `json:"avatar"`
+			Status struct {
+				IsFrozen    bool `json:"is_frozen"`
+				IsResigned  bool `json:"is_resigned"`
+				IsActivated bool `json:"is_activated"`
+			} `json:"status"`
+		} `json:"user"`
+	}
+	if err := c.get(ctx, "get person", "/open-apis/contact/v3/users/"+url.PathEscape(externalID), values, &data); err != nil {
+		return directoryconnector.Person{}, nil, err
+	}
+	u := data.User
+	id := firstNonEmpty(u.OpenID, u.UserID, externalID)
+	person := directoryconnector.Person{ExternalID: id, ProviderSubject: firstNonEmpty(u.OpenID, id), UnionID: u.UnionID, Name: u.Name, Email: u.Email, Mobile: u.Mobile, AvatarURL: firstNonEmpty(u.Avatar.AvatarOrigin, u.Avatar.Avatar640), Active: u.Status.IsActivated && !u.Status.IsFrozen && !u.Status.IsResigned}
+	memberships := make([]directoryconnector.Membership, 0, len(u.DepartmentIDs))
+	for _, departmentID := range u.DepartmentIDs {
+		if departmentID != "" {
+			memberships = append(memberships, directoryconnector.Membership{PersonExternalID: id, OrganizationExternalID: departmentID})
+		}
+	}
+	return person, memberships, nil
+}
+
 func (c *Client) ListOrganizations(ctx context.Context, pageToken string) (directoryconnector.Page[directoryconnector.Organization], error) {
 	values := url.Values{"parent_department_id": {"0"}, "department_id_type": {"open_department_id"}, "fetch_child": {"true"}, "page_size": {strconv.Itoa(c.pageSize)}}
 	setPageToken(values, pageToken)
