@@ -62,6 +62,13 @@ type DeliveryActionExecutor interface {
 	TriggerApplicationDeliveryAction(context.Context, domainidentity.Principal, string, domaindelivery.ApplicationDeliveryActionInput) (domaindelivery.ApplicationDeliveryActionResult, error)
 }
 
+type DeliveryWorkflowService interface {
+	CreateDeliveryDraft(context.Context, domainidentity.Principal, domaindelivery.DeliveryDraftInput) (domaindelivery.DeliveryDraft, error)
+	ConfirmDeliveryDraft(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryDraftConfirmResult, error)
+	CreateDeliveryPlan(context.Context, domainidentity.Principal, domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error)
+	ConfirmDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlanConfirmResult, error)
+}
+
 type ReleaseBundleReader interface {
 	ListReleaseBundles(context.Context, domainidentity.Principal, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error)
 	GetReleaseBundle(context.Context, domainidentity.Principal, string) (domaindelivery.ReleaseBundle, error)
@@ -77,6 +84,7 @@ type ExecutionTaskReader interface {
 type DeliveryService interface {
 	DeliveryApplicationReader
 	DeliveryActionExecutor
+	DeliveryWorkflowService
 	ReleaseBundleReader
 	ExecutionTaskReader
 }

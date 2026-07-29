@@ -780,9 +780,13 @@ func (s *fakeApplicationService) ListServices(_ context.Context, _ domainidentit
 }
 
 type fakeDeliveryService struct {
-	triggered       bool
-	lastActionInput domaindelivery.ApplicationDeliveryActionInput
-	workflowRunID   string
+	triggered          bool
+	lastActionInput    domaindelivery.ApplicationDeliveryActionInput
+	lastDraftInput     domaindelivery.DeliveryDraftInput
+	lastConfirmedDraft string
+	lastPlanInput      domaindelivery.DeliveryPlanInput
+	lastConfirmedPlan  string
+	workflowRunID      string
 }
 
 type fakeOnCallResolver struct {
@@ -808,6 +812,50 @@ func (r *fakeOnCallResolver) ResolveOnCall(_ context.Context, _ domainidentity.P
 		return nil, r.routeErr
 	}
 	return r.route, nil
+}
+
+func (s *fakeDeliveryService) CreateDeliveryDraft(_ context.Context, _ domainidentity.Principal, input domaindelivery.DeliveryDraftInput) (domaindelivery.DeliveryDraft, error) {
+	s.lastDraftInput = input
+	return domaindelivery.DeliveryDraft{
+		ID:               firstNonEmpty(input.ID, "draft-1"),
+		Source:           firstNonEmpty(input.Source, domaindelivery.DeliveryDraftSourceAI),
+		Status:           domaindelivery.DeliveryDraftStatusDraft,
+		ApplicationDraft: input.ApplicationDraft,
+		Services:         input.Services,
+	}, nil
+}
+
+func (s *fakeDeliveryService) ConfirmDeliveryDraft(_ context.Context, _ domainidentity.Principal, draftID string) (domaindelivery.DeliveryDraftConfirmResult, error) {
+	s.lastConfirmedDraft = draftID
+	return domaindelivery.DeliveryDraftConfirmResult{
+		Draft:       domaindelivery.DeliveryDraft{ID: draftID, Status: domaindelivery.DeliveryDraftStatusConfirmed},
+		Application: domainapp.App{ID: "app-1"},
+		Services:    []domainapp.Service{{ID: "service-1", ApplicationID: "app-1"}},
+	}, nil
+}
+
+func (s *fakeDeliveryService) CreateDeliveryPlan(_ context.Context, _ domainidentity.Principal, input domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error) {
+	s.lastPlanInput = input
+	return domaindelivery.DeliveryPlan{
+		ID:                       firstNonEmpty(input.ID, "plan-1"),
+		Source:                   firstNonEmpty(input.Source, domaindelivery.DeliveryPlanSourceAI),
+		Status:                   domaindelivery.DeliveryPlanStatusDraft,
+		ApplicationID:            input.ApplicationID,
+		ApplicationEnvironmentID: input.ApplicationEnvironmentID,
+		Action:                   input.Action,
+	}, nil
+}
+
+func (s *fakeDeliveryService) ConfirmDeliveryPlan(_ context.Context, _ domainidentity.Principal, planID string) (domaindelivery.DeliveryPlanConfirmResult, error) {
+	s.lastConfirmedPlan = planID
+	return domaindelivery.DeliveryPlanConfirmResult{
+		Plan: domaindelivery.DeliveryPlan{
+			ID:                       planID,
+			Status:                   domaindelivery.DeliveryPlanStatusConfirmed,
+			ApplicationID:            "app-1",
+			ApplicationEnvironmentID: "binding-1",
+		},
+	}, nil
 }
 
 func (s *fakeDeliveryService) GetApplicationDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationDetail, error) {
@@ -1316,11 +1364,15 @@ func TestCapabilitiesDeliveryDeveloperSkillIncludesDeliveryContextTools(t *testi
 	}
 	for _, want := range []string{
 		"delivery.applications.create",
+		"delivery.drafts.create",
+		"delivery.drafts.confirm",
 		"delivery.application_environments.list",
 		"delivery.release_targets.list",
 		"delivery.release_bundles.list",
 		"delivery.execution_tasks.list",
 		"delivery.execution_logs.list",
+		"delivery.plans.create",
+		"delivery.plans.confirm",
 		"delivery.release_context.diff",
 		"delivery.rollback.context",
 		"delivery.actions.trigger",
@@ -1349,12 +1401,14 @@ func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
 	}{
 		{tool: "delivery.applications.list"},
 		{tool: "delivery.applications.detail", required: []string{"applicationId"}},
-		{tool: "delivery.applications.create", required: []string{"name", "key"}},
+		{tool: "delivery.applications.create", required: []string{"name", "key", "group", "language", "enabled"}},
+		{tool: "delivery.drafts.create", required: []string{"applicationDraft"}},
+		{tool: "delivery.drafts.confirm", required: []string{"draftId"}},
 		{tool: "delivery.application_environments.list"},
 		{tool: "delivery.application_services.list", required: []string{"applicationId"}},
 		{tool: "delivery.build_sources.list", required: []string{"applicationId"}},
 		{tool: "delivery.release_targets.list"},
-		{tool: "delivery.actions.trigger", required: []string{"applicationId", "action"}},
+		{tool: "delivery.actions.trigger", required: []string{"applicationId", "applicationEnvironmentId", "action"}},
 		{tool: "delivery.release_bundles.list"},
 		{tool: "delivery.execution_tasks.list"},
 		{tool: "delivery.execution_logs.list", required: []string{"taskId"}},
@@ -1367,6 +1421,8 @@ func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
 		{tool: "delivery.spec.render", required: []string{"applicationDraft"}},
 		{tool: "delivery.application.bootstrap"},
 		{tool: "delivery.release.plan", required: []string{"applicationId", "applicationEnvironmentId", "action"}},
+		{tool: "delivery.plans.create", required: []string{"applicationId", "applicationEnvironmentId", "action"}},
+		{tool: "delivery.plans.confirm", required: []string{"planId"}},
 		{tool: "delivery.release_context.diff", required: []string{"applicationId"}},
 		{tool: "delivery.rollback.context", required: []string{"applicationId"}},
 		{tool: "k8s.pods.list", required: []string{"clusterId"}},
@@ -4024,6 +4080,84 @@ func TestInvokeToolRoutesDeliveryListThroughApplicationService(t *testing.T) {
 	}
 	if entry.ResourceScope["applicationId"] != "app-1" || entry.RiskLevel != domainaigateway.RiskLevelRead {
 		t.Fatalf("expected resource scope and risk level in audit log, got %#v", entry)
+	}
+}
+
+func TestInvokeDeliveryWorkflowToolsUseDeliveryService(t *testing.T) {
+	delivery := &fakeDeliveryService{}
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{}), nil, &memoryGatewayRepository{})
+	service.SetDeliveryServices(&fakeApplicationService{}, delivery)
+	principal := testPrincipal("developer")
+
+	_, related, err := service.invokeDeliveryWorkflowTool(context.Background(), principal, "delivery.drafts.create", map[string]any{
+		"source": "ai",
+		"applicationDraft": map[string]any{
+			"name": "Checkout", "key": "checkout", "group": "commerce", "language": "go", "enabled": true,
+		},
+		"services": []any{map[string]any{"key": "api", "name": "Checkout API", "serviceKind": "kubernetes_workload", "enabled": true}},
+	})
+	if err != nil {
+		t.Fatalf("create draft tool returned error: %v", err)
+	}
+	if delivery.lastDraftInput.ApplicationDraft.Key != "checkout" || len(delivery.lastDraftInput.Services) != 1 || related["draftId"] != "draft-1" {
+		t.Fatalf("unexpected delivery draft routing: input=%#v related=%#v", delivery.lastDraftInput, related)
+	}
+
+	_, related, err = service.invokeDeliveryWorkflowTool(context.Background(), principal, "delivery.drafts.confirm", map[string]any{"draftId": "draft-1"})
+	if err != nil {
+		t.Fatalf("confirm draft tool returned error: %v", err)
+	}
+	if delivery.lastConfirmedDraft != "draft-1" || related["applicationId"] != "app-1" || related["serviceCount"] != 1 {
+		t.Fatalf("unexpected delivery draft confirmation: delivery=%#v related=%#v", delivery, related)
+	}
+
+	_, related, err = service.invokeDeliveryWorkflowTool(context.Background(), principal, "delivery.plans.create", map[string]any{
+		"source": "ai", "applicationId": "app-1", "applicationEnvironmentId": "binding-1", "action": "deploy", "targetIds": []any{"target-1"},
+	})
+	if err != nil {
+		t.Fatalf("create plan tool returned error: %v", err)
+	}
+	if delivery.lastPlanInput.Action != domaindelivery.ApplicationDeliveryActionDeploy || len(delivery.lastPlanInput.TargetIDs) != 1 || related["planId"] != "plan-1" {
+		t.Fatalf("unexpected delivery plan routing: input=%#v related=%#v", delivery.lastPlanInput, related)
+	}
+
+	_, related, err = service.invokeDeliveryWorkflowTool(context.Background(), principal, "delivery.plans.confirm", map[string]any{"planId": "plan-1"})
+	if err != nil {
+		t.Fatalf("confirm plan tool returned error: %v", err)
+	}
+	if delivery.lastConfirmedPlan != "plan-1" || related["planStatus"] != domaindelivery.DeliveryPlanStatusConfirmed {
+		t.Fatalf("unexpected delivery plan confirmation: delivery=%#v related=%#v", delivery, related)
+	}
+}
+
+func TestDeliveryWorkflowToolApprovalBoundaries(t *testing.T) {
+	for _, item := range []struct {
+		name             string
+		requiresApproval bool
+		risk             domainaigateway.RiskLevel
+	}{
+		{name: "delivery.drafts.create", risk: domainaigateway.RiskLevelMutate},
+		{name: "delivery.drafts.confirm", requiresApproval: true, risk: domainaigateway.RiskLevelMutate},
+		{name: "delivery.plans.create", risk: domainaigateway.RiskLevelMutate},
+		{name: "delivery.plans.confirm", requiresApproval: true, risk: domainaigateway.RiskLevelExecute},
+	} {
+		tool, ok := toolByName(item.name)
+		if !ok {
+			t.Fatalf("missing workflow tool %s", item.name)
+		}
+		if tool.RequiresApproval != item.requiresApproval || tool.RiskLevel != item.risk {
+			t.Fatalf("unexpected workflow tool boundary for %s: %#v", item.name, tool)
+		}
+	}
+	confirm, _ := toolByName("delivery.plans.confirm")
+	for _, permission := range []string{
+		appaccess.PermDeliveryBuildsTrigger,
+		appaccess.PermDeliveryReleasesTrigger,
+		appaccess.PermDeliveryWorkflowsTrigger,
+	} {
+		if !slices.Contains(confirm.PermissionKeys, permission) {
+			t.Fatalf("delivery.plans.confirm is missing execution permission %s", permission)
+		}
 	}
 }
 

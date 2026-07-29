@@ -47,15 +47,16 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		MCPAdapterID:     "delivery.v1",
 		MCPToolName:      "delivery.applications.create",
 		RequiresApproval: false,
-		InputSchema: gatewayObjectSchema([]string{"name", "key"}, map[string]any{
+		InputSchema: gatewayObjectSchema([]string{"name", "key", "group", "language", "enabled"}, map[string]any{
 			"id":                  gatewayStringSchema("Optional caller-provided application id."),
 			"name":                gatewayStringSchema("Application display name."),
 			"key":                 gatewayStringSchema("Stable application key."),
-			"group":               gatewayStringSchema("Optional application group."),
+			"group":               gatewayStringSchema("Application group."),
 			"businessLineId":      gatewayStringSchema("Business line id."),
 			"language":            gatewayStringSchema("Primary language or runtime."),
 			"description":         gatewayStringSchema("Application description."),
 			"ownerTeam":           gatewayStringSchema("Owning team."),
+			"repositoryIds":       gatewayStringArraySchema("Repository ids linked to the application."),
 			"repositoryProvider":  gatewayStringSchema("Repository provider key."),
 			"repositoryProjectId": gatewayStringSchema("Repository project id."),
 			"repositoryPath":      gatewayStringSchema("Repository path."),
@@ -136,7 +137,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		MCPAdapterID:     "delivery.v1",
 		MCPToolName:      "delivery.actions.trigger",
 		RequiresApproval: true,
-		InputSchema: gatewayObjectSchema([]string{"applicationId", "action"}, map[string]any{
+		InputSchema: gatewayObjectSchema([]string{"applicationId", "applicationEnvironmentId", "action"}, map[string]any{
 			"applicationId":            gatewayStringSchema("Delivery application id."),
 			"applicationEnvironmentId": gatewayStringSchema("Target application environment binding id."),
 			"action": map[string]any{
@@ -144,11 +145,17 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 				"description": "Delivery action to trigger.",
 				"enum":        []any{"build", "deploy", "build_deploy", "workflow", "verify", "rollback"},
 			},
+			"targetId":        gatewayStringSchema("Optional release target id."),
+			"targetIds":       gatewayStringArraySchema("Optional release target ids."),
 			"buildSourceId":   gatewayStringSchema("Optional build source id for build-oriented actions."),
-			"workflowId":      gatewayStringSchema("Optional workflow template id for workflow actions."),
 			"releaseBundleId": gatewayStringSchema("Release bundle id, required for rollback and often used for deploy."),
-			"reason":          gatewayStringSchema("Human-readable reason for audit and approval context."),
+			"refType":         gatewayStringSchema("Source ref type, such as branch, tag, or commit."),
+			"refName":         gatewayStringSchema("Source branch, tag, or commit."),
+			"imageTag":        gatewayStringSchema("Optional image tag."),
+			"releaseName":     gatewayStringSchema("Optional release name."),
+			"containerName":   gatewayStringSchema("Optional target container."),
 			"variables":       gatewayFreeformObjectSchema("Workflow or action variables."),
+			"buildArgs":       gatewayFreeformObjectSchema("Credential-free build arguments."),
 		}),
 	},
 	{
@@ -298,6 +305,36 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema(nil, gatewayDeliveryApplicationBootstrapProperties()),
 	},
 	{
+		Name:             "delivery.drafts.create",
+		Title:            "Create Delivery Draft",
+		Description:      "Persist a DeliveryDraft-compatible application and service specification for explicit confirmation.",
+		Domain:           "delivery",
+		Action:           "create",
+		RiskLevel:        domainaigateway.RiskLevelMutate,
+		PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsUpdate},
+		RequiredScopes:   []string{"businessLine", "application"},
+		MCPAdapterID:     "delivery.v1",
+		MCPToolName:      "delivery.drafts.create",
+		RequiresApproval: false,
+		InputSchema:      gatewayObjectSchema([]string{"applicationDraft"}, gatewayDeliveryDraftCreateProperties()),
+	},
+	{
+		Name:             "delivery.drafts.confirm",
+		Title:            "Confirm Delivery Draft",
+		Description:      "Confirm a DeliveryDraft and apply its application, services, build sources, and environment bindings.",
+		Domain:           "delivery",
+		Action:           "confirm",
+		RiskLevel:        domainaigateway.RiskLevelMutate,
+		PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsUpdate},
+		RequiredScopes:   []string{"businessLine", "application"},
+		MCPAdapterID:     "delivery.v1",
+		MCPToolName:      "delivery.drafts.confirm",
+		RequiresApproval: true,
+		InputSchema: gatewayObjectSchema([]string{"draftId"}, map[string]any{
+			"draftId": gatewayStringSchema("Delivery draft id to confirm."),
+		}),
+	},
+	{
 		Name:           "delivery.release.plan",
 		Title:          "Plan Delivery Release",
 		Description:    "Build a DeliveryPlan-compatible release plan from user intent and delivery context without triggering execution.",
@@ -309,6 +346,36 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		MCPAdapterID:   "delivery.v1",
 		MCPToolName:    "delivery.release.plan",
 		InputSchema:    gatewayObjectSchema([]string{"applicationId", "applicationEnvironmentId", "action"}, gatewayDeliveryReleasePlanProperties()),
+	},
+	{
+		Name:             "delivery.plans.create",
+		Title:            "Create Delivery Plan",
+		Description:      "Persist a validated DeliveryPlan for an application environment without triggering execution.",
+		Domain:           "delivery",
+		Action:           "create",
+		RiskLevel:        domainaigateway.RiskLevelMutate,
+		PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryApplicationEnvView},
+		RequiredScopes:   []string{"application", "environment"},
+		MCPAdapterID:     "delivery.v1",
+		MCPToolName:      "delivery.plans.create",
+		RequiresApproval: false,
+		InputSchema:      gatewayObjectSchema([]string{"applicationId", "applicationEnvironmentId", "action"}, gatewayDeliveryPlanCreateProperties()),
+	},
+	{
+		Name:             "delivery.plans.confirm",
+		Title:            "Confirm Delivery Plan",
+		Description:      "Confirm a DeliveryPlan and enter the delivery service approval and execution state machine.",
+		Domain:           "delivery",
+		Action:           "execute",
+		RiskLevel:        domainaigateway.RiskLevelExecute,
+		PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryBuildsTrigger, appaccess.PermDeliveryReleasesTrigger, appaccess.PermDeliveryWorkflowsTrigger},
+		RequiredScopes:   []string{"application", "environment"},
+		MCPAdapterID:     "delivery.v1",
+		MCPToolName:      "delivery.plans.confirm",
+		RequiresApproval: true,
+		InputSchema: gatewayObjectSchema([]string{"planId"}, map[string]any{
+			"planId": gatewayStringSchema("Delivery plan id to confirm."),
+		}),
 	},
 	{
 		Name:           "delivery.release_context.diff",
@@ -912,6 +979,10 @@ func gatewayArraySchema(description string) map[string]any {
 	return map[string]any{"type": "array", "description": description}
 }
 
+func gatewayStringArraySchema(description string) map[string]any {
+	return map[string]any{"type": "array", "description": description, "items": map[string]any{"type": "string"}}
+}
+
 func gatewayFreeformObjectSchema(description string) map[string]any {
 	return map[string]any{"type": "object", "description": description, "additionalProperties": true}
 }
@@ -1212,6 +1283,17 @@ func gatewayDeliveryApplicationBootstrapProperties() map[string]any {
 	return props
 }
 
+func gatewayDeliveryDraftCreateProperties() map[string]any {
+	props := gatewayDeliverySpecRenderProperties()
+	props["id"] = gatewayStringSchema("Optional caller-provided delivery draft id.")
+	props["source"] = map[string]any{
+		"type":        "string",
+		"description": "Delivery draft source.",
+		"enum":        []any{"manual", "ai", "blueprint"},
+	}
+	return props
+}
+
 func gatewayDeliveryReleasePlanProperties() map[string]any {
 	return map[string]any{
 		"source":                   gatewayStringSchema("Plan source, normally manual or ai."),
@@ -1234,6 +1316,32 @@ func gatewayDeliveryReleasePlanProperties() map[string]any {
 	}
 }
 
+func gatewayDeliveryPlanCreateProperties() map[string]any {
+	return map[string]any{
+		"id":                       gatewayStringSchema("Optional caller-provided delivery plan id."),
+		"source":                   gatewayStringSchema("Plan source, normally manual or ai."),
+		"applicationId":            gatewayStringSchema("Delivery application id."),
+		"applicationEnvironmentId": gatewayStringSchema("Application environment binding id."),
+		"action": map[string]any{
+			"type":        "string",
+			"description": "Delivery action.",
+			"enum":        []any{"build", "deploy", "build_deploy", "workflow", "verify", "rollback"},
+		},
+		"targetId":        gatewayStringSchema("Optional release target id."),
+		"targetIds":       gatewayStringArraySchema("Optional release target ids."),
+		"buildSourceId":   gatewayStringSchema("Optional build source id."),
+		"releaseBundleId": gatewayStringSchema("Release bundle id for deploy or rollback."),
+		"refType":         gatewayStringSchema("Source ref type, such as branch, tag, or commit."),
+		"refName":         gatewayStringSchema("Source branch, tag, or commit."),
+		"imageTag":        gatewayStringSchema("Optional image tag."),
+		"releaseName":     gatewayStringSchema("Optional release name."),
+		"containerName":   gatewayStringSchema("Optional target container."),
+		"reason":          gatewayStringSchema("Human-readable release reason."),
+		"variables":       gatewayFreeformObjectSchema("Credential-free workflow variables."),
+		"buildArgs":       gatewayFreeformObjectSchema("Credential-free build arguments."),
+	}
+}
+
 func gatewayClusterNamespaceProperties(namespaceDescription string) map[string]any {
 	return map[string]any{
 		"clusterId": gatewayStringSchema("Cluster id."),
@@ -1248,7 +1356,7 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Name:           "Delivery Developer",
 			Category:       "delivery",
 			Description:    "Application onboarding, delivery context review, and self-service build/deploy/rollback workflow for AI coding tools.",
-			CapabilityRefs: []string{"delivery.applications.list", "delivery.applications.detail", "delivery.applications.create", "delivery.onboarding.analyze_repo", "delivery.standards.dockerfile.generate", "delivery.standards.dockerfile.validate", "delivery.standards.helm.generate", "delivery.standards.k8s.validate", "delivery.spec.render", "delivery.application.bootstrap", "delivery.application_environments.list", "delivery.application_services.list", "delivery.build_sources.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release.plan", "delivery.release_context.diff", "delivery.rollback.context", "delivery.actions.trigger"},
+			CapabilityRefs: []string{"delivery.applications.list", "delivery.applications.detail", "delivery.applications.create", "delivery.onboarding.analyze_repo", "delivery.standards.dockerfile.generate", "delivery.standards.dockerfile.validate", "delivery.standards.helm.generate", "delivery.standards.k8s.validate", "delivery.spec.render", "delivery.application.bootstrap", "delivery.drafts.create", "delivery.drafts.confirm", "delivery.application_environments.list", "delivery.application_services.list", "delivery.build_sources.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release.plan", "delivery.plans.create", "delivery.plans.confirm", "delivery.release_context.diff", "delivery.rollback.context", "delivery.actions.trigger"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
 			RequiredScopes: []string{"businessLine", "application", "environment"},
 		},

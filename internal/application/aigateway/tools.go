@@ -257,6 +257,11 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		return nil, nil, fmt.Errorf("%w: delivery gateway services are not configured", apperrors.ErrInvalidArgument)
 	}
 	switch tool.Name {
+	case "delivery.drafts.create",
+		"delivery.drafts.confirm",
+		"delivery.plans.create",
+		"delivery.plans.confirm":
+		return s.invokeDeliveryWorkflowTool(ctx, principal, tool.Name, input)
 	case "delivery.applications.list",
 		"delivery.applications.detail",
 		"delivery.applications.create",
@@ -276,6 +281,41 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		return s.invokeDeliveryContextTool(ctx, principal, tool.Name, input)
 	default:
 		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
+	}
+}
+
+func (s *Service) invokeDeliveryWorkflowTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
+	case "delivery.drafts.create":
+		var req domaindelivery.DeliveryDraftInput
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		item, err := s.delivery.CreateDeliveryDraft(ctx, principal, req)
+		return item, map[string]any{"draftId": item.ID, "applicationId": item.ApplicationDraft.ID}, err
+	case "delivery.drafts.confirm":
+		draftID := stringInput(input, "draftId")
+		if draftID == "" {
+			return nil, nil, fmt.Errorf("%w: draftId is required", apperrors.ErrInvalidArgument)
+		}
+		item, err := s.delivery.ConfirmDeliveryDraft(ctx, principal, draftID)
+		return item, map[string]any{"draftId": draftID, "applicationId": item.Application.ID, "serviceCount": len(item.Services)}, err
+	case "delivery.plans.create":
+		var req domaindelivery.DeliveryPlanInput
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		item, err := s.delivery.CreateDeliveryPlan(ctx, principal, req)
+		return item, map[string]any{"planId": item.ID, "applicationId": item.ApplicationID, "applicationEnvironmentId": item.ApplicationEnvironmentID}, err
+	case "delivery.plans.confirm":
+		planID := stringInput(input, "planId")
+		if planID == "" {
+			return nil, nil, fmt.Errorf("%w: planId is required", apperrors.ErrInvalidArgument)
+		}
+		item, err := s.delivery.ConfirmDeliveryPlan(ctx, principal, planID)
+		return item, map[string]any{"planId": planID, "applicationId": item.Plan.ApplicationID, "applicationEnvironmentId": item.Plan.ApplicationEnvironmentID, "planStatus": item.Plan.Status}, err
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
 	}
 }
 
