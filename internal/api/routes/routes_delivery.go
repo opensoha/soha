@@ -14,6 +14,13 @@ func registerDeliveryRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depen
 }
 
 func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.GET("/delivery/manifest-packages", deps.Manifests.List)
+	protected.POST("/delivery/manifest-packages", deps.Manifests.Create)
+	protected.GET("/delivery/manifest-packages/:manifestPackageID", deps.Manifests.Get)
+	protected.PUT("/delivery/manifest-packages/:manifestPackageID", deps.Manifests.Update)
+	protected.DELETE("/delivery/manifest-packages/:manifestPackageID", deps.Manifests.Delete)
+	protected.POST("/delivery/manifest-packages/:manifestPackageID/publish", deps.Manifests.Publish)
+	protected.GET("/delivery/manifest-packages/:manifestPackageID/revisions", deps.Manifests.ListRevisions)
 	protected.GET("/application-environments", deps.Catalog.ListApplicationEnvironments)
 	protected.GET("/application-environments/:applicationEnvironmentID", deps.Catalog.GetApplicationEnvironment)
 	protected.GET("/application-environments/:applicationEnvironmentID/detail", deps.Delivery.GetApplicationEnvironmentDetail)

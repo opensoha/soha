@@ -35,6 +35,7 @@ import (
 	appintegration "github.com/opensoha/soha/internal/application/integration"
 	appknowledge "github.com/opensoha/soha/internal/application/knowledge"
 	appknowledgegraph "github.com/opensoha/soha/internal/application/knowledgegraph"
+	appmanifest "github.com/opensoha/soha/internal/application/manifest"
 	appmemory "github.com/opensoha/soha/internal/application/memory"
 	appmenu "github.com/opensoha/soha/internal/application/menu"
 	appmfa "github.com/opensoha/soha/internal/application/mfa"
@@ -101,6 +102,7 @@ import (
 	identityproviderrepo "github.com/opensoha/soha/internal/repository/identityprovider"
 	knowledgerepo "github.com/opensoha/soha/internal/repository/knowledge"
 	knowledgegraphrepo "github.com/opensoha/soha/internal/repository/knowledgegraph"
+	manifestrepo "github.com/opensoha/soha/internal/repository/manifest"
 	memoryrepo "github.com/opensoha/soha/internal/repository/memory"
 	menurepo "github.com/opensoha/soha/internal/repository/menu"
 	multiagentrepo "github.com/opensoha/soha/internal/repository/multiagent"
@@ -146,6 +148,7 @@ type repositories struct {
 	catalogRepository           *catalogrepo.Repository
 	workflowRepository          *workflowrepo.Repository
 	deliveryRepository          *deliveryrepo.Repository
+	manifestRepository          *manifestrepo.Repository
 	registryRepository          *registryrepo.Repository
 	releaseRepository           *releaserepo.Repository
 	copilotRepository           *copilotrepo.Repository
@@ -338,6 +341,7 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		catalogRepository:           catalogrepo.New(db),
 		workflowRepository:          workflowrepo.New(db),
 		deliveryRepository:          deliveryrepo.New(db),
+		manifestRepository:          manifestrepo.New(db),
 		registryRepository:          registryrepo.New(db),
 		releaseRepository:           releaserepo.New(db),
 		copilotRepository:           copilotrepo.New(db),
@@ -982,6 +986,16 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 			core.catalogService, core.catalogService, core.catalogService,
 		),
 		Delivery: newDeliveryHandler(delivery.deliveryService, cfg.Runtime.ExecutionRunnerKeys),
+		Manifests: apiHandlers.NewManifestHandler(appmanifest.New(
+			repos.manifestRepository,
+			core.applicationService,
+			core.catalogService,
+			repos.clusterRepository,
+			core.accessService,
+			core.permissionResolver,
+			core.auditService,
+			core.operationService,
+		)),
 		Applications: apiHandlers.NewApplicationHandlerWithServices(
 			core.applicationService, core.applicationService, core.applicationService,
 		),

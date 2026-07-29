@@ -101,6 +101,7 @@ type (
 	NodeResourceSummaryView = contractsresource.NodeResourceSummaryView
 	NodeTaintView           = contractsresource.NodeTaintView
 	NodeUpdateInput         = contractsresource.NodeUpdateInput
+	NodeDrainInput          = contractsresource.NodeDrainInput
 	ClusterEventView        = contractsresource.ClusterEventView
 
 	PersistentVolumeClaimView       = contractsresource.PersistentVolumeClaimView

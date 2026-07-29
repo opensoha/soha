@@ -426,6 +426,8 @@ type DirectInventory interface {
 	ListNodes(context.Context, string) ([]domainresource.NodeView, string, error)
 	GetNodeDetail(context.Context, string, string) (domainresource.NodeDetailView, error)
 	UpdateNode(context.Context, string, string, domainresource.NodeUpdateInput) (domainresource.NodeDetailView, error)
+	SetNodeUnschedulable(context.Context, string, string, bool) error
+	DrainNode(context.Context, string, string, domainresource.NodeDrainInput) error
 	GetNodeYAML(context.Context, string, string) (domainresource.ResourceYAMLView, error)
 	DeleteNode(context.Context, string, string) error
 }
