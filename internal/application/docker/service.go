@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -481,6 +483,13 @@ func (s *Service) prepareContainerStart(ctx context.Context, principal domainide
 }
 
 func (s *Service) normalizeContainerStart(ctx context.Context, principal domainidentity.Principal, input domaindocker.ContainerStartInput, host domaindocker.Host) (containerStartPlan, error) {
+	input.SourceKind = normalizedContainerSourceKind(input.SourceKind)
+	if input.SourceKind == "git_dockerfile" {
+		input.GitBuild = normalizeContainerGitBuild(input.GitBuild)
+		if strings.TrimSpace(input.ImagePullPolicy) == "" {
+			input.ImagePullPolicy = "never"
+		}
+	}
 	architecture, err := normalizeArchitecture(input.Architecture)
 	if err != nil {
 		return containerStartPlan{}, err
@@ -537,39 +546,52 @@ func (s *Service) prepareContainerPorts(ctx context.Context, input domaindocker.
 
 func buildContainerStartProject(plan containerStartPlan) domaindocker.ProjectInput {
 	primary := plan.ports[0]
+	sourceKind := containerProjectSourceKind(plan.input)
+	config := map[string]any{
+		"sourceKind": sourceKind, "serviceName": plan.serviceName, "image": plan.input.Image, "architecture": plan.architecture,
+		"platform": dockerPlatformForArchitecture(plan.architecture), "ports": containerPortMaps(plan.ports), "volumes": containerVolumeMaps(plan.volumes),
+		"environmentVariables": containerEnvironmentVariableMaps(plan.envVars), "resources": containerResourceMap(plan.resources),
+		"containerPort": primary.ContainerPort, "hostPort": primary.HostPort, "protocol": primary.Protocol, "domainName": primary.DomainName,
+		"domainScheme": primary.DomainScheme, "domainTlsEnabled": primary.DomainTLSEnabled,
+	}
+	if gitBuild := containerGitBuildMap(plan.input.GitBuild); gitBuild != nil {
+		config["gitBuild"] = gitBuild
+	}
 	return domaindocker.ProjectInput{
 		HostID: plan.input.HostID, Name: plan.input.Name, Slug: plan.serviceName,
 		Description: "Single container: " + strings.TrimSpace(plan.input.Image), Environment: plan.input.Environment,
-		Owner: plan.input.Owner, Team: plan.input.Team, SourceKind: "single_container", ComposeContent: plan.compose,
+		Owner: plan.input.Owner, Team: plan.input.Team, SourceKind: sourceKind, ComposeContent: plan.compose,
 		EnvContent: plan.input.EnvContent, Status: "defined", DesiredState: "running", TTLSeconds: plan.input.TTLSeconds, Labels: plan.input.Labels,
-		Config: mergeMap(plan.input.Config, map[string]any{
-			"sourceKind": "single_container", "serviceName": plan.serviceName, "image": plan.input.Image, "architecture": plan.architecture,
-			"platform": dockerPlatformForArchitecture(plan.architecture), "ports": containerPortMaps(plan.ports), "volumes": containerVolumeMaps(plan.volumes),
-			"environmentVariables": containerEnvironmentVariableMaps(plan.envVars), "resources": containerResourceMap(plan.resources),
-			"containerPort": primary.ContainerPort, "hostPort": primary.HostPort, "protocol": primary.Protocol, "domainName": primary.DomainName,
-			"domainScheme": primary.DomainScheme, "domainTlsEnabled": primary.DomainTLSEnabled,
-		}),
+		Config: mergeMap(plan.input.Config, config),
 	}
 }
 
 func buildContainerStartService(plan containerStartPlan) domaindocker.ServiceInput {
 	primary := plan.ports[0]
-	return domaindocker.ServiceInput{HostID: plan.input.HostID, Name: plan.serviceName, Image: plan.input.Image, Status: "defined", Config: map[string]any{
-		"sourceKind": "single_container", "architecture": plan.architecture, "platform": dockerPlatformForArchitecture(plan.architecture),
+	config := map[string]any{
+		"sourceKind": containerProjectSourceKind(plan.input), "architecture": plan.architecture, "platform": dockerPlatformForArchitecture(plan.architecture),
 		"containerPort": primary.ContainerPort, "hostPort": primary.HostPort, "protocol": primary.Protocol, "domainName": primary.DomainName,
 		"ports": containerPortMaps(plan.ports), "volumes": containerVolumeMaps(plan.volumes), "resources": containerResourceMap(plan.resources),
-	}}
+	}
+	if gitBuild := containerGitBuildMap(plan.input.GitBuild); gitBuild != nil {
+		config["gitBuild"] = gitBuild
+	}
+	return domaindocker.ServiceInput{HostID: plan.input.HostID, Name: plan.serviceName, Image: plan.input.Image, Status: "defined", Config: config}
 }
 
 func buildContainerStartOperationPayload(plan containerStartPlan, project domaindocker.ProjectInput, service domaindocker.ServiceInput) map[string]any {
 	primary := plan.ports[0]
-	return map[string]any{
-		"action": "deploy", "sourceKind": "single_container", "projectSlug": project.Slug, "serviceName": service.Name,
+	payload := map[string]any{
+		"action": "deploy", "sourceKind": containerProjectSourceKind(plan.input), "projectSlug": project.Slug, "serviceName": service.Name,
 		"composeContent": project.ComposeContent, "envContent": project.EnvContent, "image": plan.input.Image, "architecture": plan.architecture,
 		"platform": dockerPlatformForArchitecture(plan.architecture), "ports": containerPortMaps(plan.ports), "volumes": containerVolumeMaps(plan.volumes),
 		"resources": containerResourceMap(plan.resources), "portMappingId": plan.portInputs[0].ID, "portMappings": plan.portSummaries,
 		"accessUrl": plan.portInputs[0].AccessURL, "domainName": primary.DomainName,
 	}
+	if gitBuild := containerGitBuildMap(plan.input.GitBuild); gitBuild != nil {
+		payload["gitBuild"] = gitBuild
+	}
+	return payload
 }
 
 func (s *Service) ListServices(ctx context.Context, principal domainidentity.Principal, filter domaindocker.ServiceFilter) (domaindocker.Page[domaindocker.Service], error) {
@@ -1449,6 +1471,17 @@ func validateContainerStartInput(input domaindocker.ContainerStartInput) error {
 	if strings.TrimSpace(input.Image) == "" {
 		return fmt.Errorf("%w: image is required", apperrors.ErrInvalidArgument)
 	}
+	sourceKind := normalizedContainerSourceKind(input.SourceKind)
+	if sourceKind == "" {
+		return fmt.Errorf("%w: sourceKind is invalid", apperrors.ErrInvalidArgument)
+	}
+	if sourceKind == "git_dockerfile" {
+		if err := validateContainerGitBuild(input.GitBuild); err != nil {
+			return err
+		}
+	} else if input.GitBuild != nil {
+		return fmt.Errorf("%w: gitBuild requires sourceKind git_dockerfile", apperrors.ErrInvalidArgument)
+	}
 	ports, err := normalizeContainerPorts(input)
 	if err != nil {
 		return err
@@ -1477,6 +1510,80 @@ func validateContainerStartInput(input domaindocker.ContainerStartInput) error {
 		return fmt.Errorf("%w: resource limits cannot be negative", apperrors.ErrInvalidArgument)
 	}
 	return nil
+}
+
+func normalizedContainerSourceKind(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "image", "single_container":
+		return "image"
+	case "git_dockerfile":
+		return "git_dockerfile"
+	default:
+		return ""
+	}
+}
+
+func normalizeContainerGitBuild(input *domaindocker.ContainerGitBuildInput) *domaindocker.ContainerGitBuildInput {
+	if input == nil {
+		return nil
+	}
+	next := *input
+	next.RepositoryURL = strings.TrimSpace(next.RepositoryURL)
+	next.Ref = firstNonEmpty(strings.TrimSpace(next.Ref), "main")
+	next.DockerfilePath = firstNonEmpty(strings.TrimSpace(next.DockerfilePath), "Dockerfile")
+	next.ContextDir = firstNonEmpty(strings.TrimSpace(next.ContextDir), ".")
+	return &next
+}
+
+func validateContainerGitBuild(input *domaindocker.ContainerGitBuildInput) error {
+	input = normalizeContainerGitBuild(input)
+	if input == nil || input.RepositoryURL == "" {
+		return fmt.Errorf("%w: gitBuild.repositoryUrl is required", apperrors.ErrInvalidArgument)
+	}
+	repositoryURL, err := url.Parse(input.RepositoryURL)
+	if err != nil || repositoryURL.Host == "" || !slices.Contains([]string{"http", "https", "ssh"}, strings.ToLower(repositoryURL.Scheme)) {
+		return fmt.Errorf("%w: gitBuild.repositoryUrl must use http, https, or ssh", apperrors.ErrInvalidArgument)
+	}
+	if repositoryURL.User != nil && (repositoryURL.Scheme != "ssh" || repositoryURL.User.Username() != "git") {
+		return fmt.Errorf("%w: gitBuild.repositoryUrl must not contain credentials", apperrors.ErrInvalidArgument)
+	}
+	if repositoryURL.User != nil {
+		if _, hasPassword := repositoryURL.User.Password(); hasPassword {
+			return fmt.Errorf("%w: gitBuild.repositoryUrl must not contain credentials", apperrors.ErrInvalidArgument)
+		}
+	}
+	if strings.HasPrefix(input.Ref, "-") || strings.ContainsAny(input.Ref, "\r\n") {
+		return fmt.Errorf("%w: gitBuild.ref is invalid", apperrors.ErrInvalidArgument)
+	}
+	for name, value := range map[string]string{"dockerfilePath": input.DockerfilePath, "contextDir": input.ContextDir} {
+		cleaned := path.Clean(strings.ReplaceAll(value, "\\", "/"))
+		if path.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+			return fmt.Errorf("%w: gitBuild.%s must stay inside the repository", apperrors.ErrInvalidArgument, name)
+		}
+	}
+	return nil
+}
+
+func containerProjectSourceKind(input domaindocker.ContainerStartInput) string {
+	if normalizedContainerSourceKind(input.SourceKind) == "git_dockerfile" {
+		return "git_dockerfile"
+	}
+	return "single_container"
+}
+
+func containerGitBuildMap(input *domaindocker.ContainerGitBuildInput) map[string]any {
+	input = normalizeContainerGitBuild(input)
+	if input == nil {
+		return nil
+	}
+	return map[string]any{
+		"repositoryUrl":  input.RepositoryURL,
+		"ref":            input.Ref,
+		"dockerfilePath": input.DockerfilePath,
+		"contextDir":     input.ContextDir,
+		"pull":           input.Pull,
+		"noCache":        input.NoCache,
+	}
 }
 
 func normalizePortMappingInput(input domaindocker.PortMappingInput) domaindocker.PortMappingInput {
@@ -1510,6 +1617,8 @@ func singleContainerComposeContent(serviceName string, input domaindocker.Contai
 	}
 	if value := normalizedImagePullPolicy(input.ImagePullPolicy); value != "" {
 		service["pull_policy"] = value
+	} else if normalizedContainerSourceKind(input.SourceKind) == "git_dockerfile" {
+		service["pull_policy"] = "never"
 	}
 	if strings.TrimSpace(input.EnvContent) != "" {
 		service["env_file"] = []string{".env"}

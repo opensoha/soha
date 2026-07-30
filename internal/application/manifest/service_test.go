@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
@@ -28,8 +29,19 @@ func (testRoleReader) ListRolePermissions(context.Context) (map[string][]string,
 	}, nil
 }
 
+type testIntentRoleReader struct{}
+
+func (testIntentRoleReader) ListRolePermissions(context.Context) (map[string][]string, error) {
+	return map[string][]string{
+		"ai-only": {appaccess.PermObserveAIChatUse},
+	}, nil
+}
+
+type testDeclarativeRepository struct{ DeclarativeRepository }
+
 type testRepository struct {
 	item      domainmanifest.Package
+	source    domainmanifest.Source
 	revision  domainmanifest.Revision
 	revisions []domainmanifest.Revision
 	filter    domainmanifest.Filter
@@ -41,6 +53,9 @@ func (r *testRepository) List(_ context.Context, filter domainmanifest.Filter) (
 }
 func (r *testRepository) Get(_ context.Context, _ string) (domainmanifest.Package, error) {
 	return r.item, nil
+}
+func (r *testRepository) GetSource(_ context.Context, _ string) (domainmanifest.Source, error) {
+	return r.source, nil
 }
 func (r *testRepository) Create(_ context.Context, item domainmanifest.Package) (domainmanifest.Package, error) {
 	r.item = item
@@ -151,6 +166,25 @@ func TestCreateRejectsEscapingFilePath(t *testing.T) {
 	}
 }
 
+func TestUpdateRejectsFileChangesForGitSynchronizedPackage(t *testing.T) {
+	repository := &testRepository{
+		item: domainmanifest.Package{
+			ID: "manifest-1", Name: "Payments", ApplicationID: "payments", Renderer: domainmanifest.RendererRaw,
+			Status: domainmanifest.StatusDraft,
+			Files:  []domainmanifest.File{{Path: "deployment.yaml", Content: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: original\n"}},
+		},
+		source: domainmanifest.Source{Mode: domainmanifest.SourceModeGitSynced},
+	}
+	service := newTestService(repository, testAuthorizer{})
+	_, err := service.Update(context.Background(), testPrincipal(), repository.item.ID, domainmanifest.Input{
+		Name: "Payments", ApplicationID: "payments", Renderer: domainmanifest.RendererRaw,
+		Files: []domainmanifest.File{{Path: "deployment.yaml", Content: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: changed\n"}},
+	})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("Update() error = %v, want conflict", err)
+	}
+}
+
 func TestCreateRejectsApplicationScopeDenial(t *testing.T) {
 	service := newTestService(&testRepository{}, testAuthorizer{deny: true})
 	_, err := service.Create(context.Background(), testPrincipal(), domainmanifest.Input{
@@ -185,5 +219,118 @@ func TestPublishRejectsInvalidYAML(t *testing.T) {
 	_, err := service.Publish(context.Background(), testPrincipal(), repository.item.ID, "invalid")
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("Publish() error = %v, want invalid argument", err)
+	}
+}
+
+func TestNormalizeGitSourceCleansRepositoryRelativePath(t *testing.T) {
+	input, err := normalizeSourceInput(domainmanifest.SourceInput{
+		Mode: domainmanifest.SourceModeGitSynced, RepositoryID: " repo-1 ",
+		RefType: domainmanifest.SourceRefBranch, RefValue: " main ", Path: "deploy/../manifests",
+		IncludePatterns: []string{" *.yaml ", "*.yaml"}, SyncPolicy: domainmanifest.SyncPolicyManual,
+		ExpectedGeneration: 2,
+	})
+	if err != nil {
+		t.Fatalf("normalizeSourceInput() error = %v", err)
+	}
+	if input.RepositoryID != "repo-1" || input.RefValue != "main" || input.Path != "manifests" {
+		t.Fatalf("normalizeSourceInput() = %#v, want normalized Git fields", input)
+	}
+	if len(input.IncludePatterns) != 1 || input.IncludePatterns[0] != "*.yaml" {
+		t.Fatalf("include patterns = %#v, want normalized unique pattern", input.IncludePatterns)
+	}
+}
+
+func TestNormalizeGitSourceAllowsRepositoryRoot(t *testing.T) {
+	input, err := normalizeSourceInput(domainmanifest.SourceInput{
+		Mode: domainmanifest.SourceModeGitSynced, RepositoryID: "repo-1",
+		RefType: domainmanifest.SourceRefCommit, RefValue: "abc123", Path: ".",
+		SyncPolicy: domainmanifest.SyncPolicyWebhook, ExpectedGeneration: 1,
+	})
+	if err != nil || input.Path != "." {
+		t.Fatalf("normalizeSourceInput() = %#v, %v, want repository root", input, err)
+	}
+}
+
+func TestRepairDriftWaitsForExplicitApproval(t *testing.T) {
+	status := applyObservedDriftState(domainmanifest.DeploymentStatus{}, domainmanifest.DriftPolicyRepair, 3, "task-1", time.Now().UTC())
+	if status.Phase != domainmanifest.DeploymentPhaseWaitingApproval {
+		t.Fatalf("phase = %q, want waiting approval", status.Phase)
+	}
+	if len(status.Conditions) != 1 || status.Conditions[0].Reason != "RepairApprovalRequired" {
+		t.Fatalf("conditions = %#v, want repair approval condition", status.Conditions)
+	}
+}
+
+func TestReportDriftDoesNotRequestRepairApproval(t *testing.T) {
+	status := applyObservedDriftState(domainmanifest.DeploymentStatus{}, domainmanifest.DriftPolicyReport, 3, "task-1", time.Now().UTC())
+	if status.Phase != domainmanifest.DeploymentPhaseDrifted {
+		t.Fatalf("phase = %q, want drifted", status.Phase)
+	}
+}
+
+func TestInventoryHealthyRequiresAtLeastOneHealthyResource(t *testing.T) {
+	if inventoryHealthy(nil) {
+		t.Fatal("inventoryHealthy(nil) = true, want false")
+	}
+	if inventoryHealthy([]domainmanifest.ResourceInventory{{Health: "progressing"}}) {
+		t.Fatal("progressing inventory reported healthy")
+	}
+	if !inventoryHealthy([]domainmanifest.ResourceInventory{{Health: "healthy"}, {Health: "healthy"}}) {
+		t.Fatal("healthy inventory reported unhealthy")
+	}
+}
+
+func TestPublicTaskErrorDoesNotExposeProviderDetails(t *testing.T) {
+	secret := "token=super-secret kubeconfig=/private/config"
+	if got := publicTaskError(map[string]any{"error": secret}); got != "manifest task failed" {
+		t.Fatalf("publicTaskError() = %q, want generic public error", got)
+	}
+}
+
+func TestDecideDeliveryIntentRequiresApplicationUpdatePermissionForEveryDecision(t *testing.T) {
+	base := New(
+		&testRepository{}, testApplications{}, testEnvironments{}, testClusters{}, testAuthorizer{},
+		appaccess.NewPermissionResolver(testIntentRoleReader{}), nil, nil,
+	)
+	service := NewDeclarative(base, testDeclarativeRepository{})
+	principal := domainidentity.Principal{UserID: "ai-user", Roles: []string{"ai-only"}}
+	for _, decision := range []string{domainmanifest.IntentStatusAccepted, domainmanifest.IntentStatusRejected} {
+		t.Run(decision, func(t *testing.T) {
+			_, err := service.DecideDeliveryIntent(context.Background(), principal, "intent-1", decision, domainmanifest.DeliveryIntentDecisionInput{})
+			if !errors.Is(err, apperrors.ErrAccessDenied) {
+				t.Fatalf("DecideDeliveryIntent() error = %v, want application update access denied", err)
+			}
+		})
+	}
+}
+
+func TestNormalizeGitSourceRejectsPathEscapeAfterCleaning(t *testing.T) {
+	_, err := normalizeSourceInput(domainmanifest.SourceInput{
+		Mode: domainmanifest.SourceModeGitSynced, RepositoryID: "repo-1",
+		RefType: domainmanifest.SourceRefBranch, RefValue: "main", Path: "deploy/../../secret",
+		SyncPolicy: domainmanifest.SyncPolicyManual, ExpectedGeneration: 1,
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("normalizeSourceInput() error = %v, want invalid argument", err)
+	}
+}
+
+func TestNormalizeBindingRequiresExplicitPolicies(t *testing.T) {
+	_, err := normalizeBindingInput(domainmanifest.BindingInput{
+		ApplicationEnvironmentID: "payments-dev", ClusterID: "dev-1", Namespace: "payments",
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("normalizeBindingInput() error = %v, want invalid argument", err)
+	}
+
+	item, err := normalizeBindingInput(domainmanifest.BindingInput{
+		ApplicationEnvironmentID: "payments-dev", ClusterID: "dev-1", Namespace: "payments",
+		DriftPolicy: domainmanifest.DriftPolicyReport, DeletionPolicy: domainmanifest.DeletionPolicyOrphan,
+	})
+	if err != nil {
+		t.Fatalf("normalizeBindingInput() error = %v", err)
+	}
+	if item.Overlay == nil {
+		t.Fatal("normalizeBindingInput() overlay = nil, want empty object")
 	}
 }

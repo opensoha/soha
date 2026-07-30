@@ -157,6 +157,13 @@ func TestCreateEncryptsCredentialsAndNeverReturnsSecret(t *testing.T) {
 	if len(item.CredentialKeys) != 1 || item.CredentialKeys[0] != "token" {
 		t.Fatalf("credential keys = %#v", item.CredentialKeys)
 	}
+	resolved, err := service.ResolveSourceCredentials(t.Context(), item.ID)
+	if err != nil {
+		t.Fatalf("ResolveSourceCredentials() error = %v", err)
+	}
+	if resolved["token"] != "raw-secret-token" {
+		t.Fatalf("resolved credential = %q, want decrypted token", resolved["token"])
+	}
 }
 
 func TestGitLabOAuthAuthorizationPersistsEncryptedTokensAndRefreshes(t *testing.T) {

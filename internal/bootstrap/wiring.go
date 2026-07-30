@@ -69,6 +69,7 @@ import (
 	knowledgemodelgateway "github.com/opensoha/soha/internal/infrastructure/knowledge/modelgateway"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	loggerinfra "github.com/opensoha/soha/internal/infrastructure/logger"
+	manifestruntimeinfra "github.com/opensoha/soha/internal/infrastructure/manifestruntime"
 	mcpinfra "github.com/opensoha/soha/internal/infrastructure/mcp"
 	mcplogsinfra "github.com/opensoha/soha/internal/infrastructure/mcp/logs"
 	mcpmetricsinfra "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
@@ -1034,6 +1035,27 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices, delivery *deliveryServices, gateway *gatewayServices, platform *apiHandlers.PlatformHandler) apiRoutes.Dependencies {
 	directorySyncHandler := directorysynchandler.New(repos.directorySyncRepository, core.directorySyncService, core.directorySyncConnectors)
 	directorySyncHandler.SetRecorders(core.auditService, core.operationService)
+	manifestService := appmanifest.New(
+		repos.manifestRepository,
+		core.applicationService,
+		core.catalogService,
+		repos.clusterRepository,
+		core.accessService,
+		core.permissionResolver,
+		core.auditService,
+		core.operationService,
+	)
+	manifestDeclarativeService := appmanifest.NewDeclarative(manifestService, repos.manifestRepository, appmanifest.DeclarativeRuntimeDependencies{
+		Renderer: manifestruntimeinfra.NewRenderer(),
+		Direct:   manifestruntimeinfra.NewDirect(infra.clusterManager),
+		Git:      manifestruntimeinfra.NewGit(repos.applicationRepository, core.systemIntegrationService),
+		Tasks:    core.executionService,
+		Sources:  repos.applicationRepository,
+	})
+	core.executionService.AddExecutionTaskSink(manifestDeclarativeService)
+	if cfg.Modules.Delivery.Enabled {
+		manifestDeclarativeService.Start(infra.lifecycleCtx)
+	}
 	return apiRoutes.Dependencies{
 		System:        apiHandlers.NewSystemHandler(infra.databaseStore, infra.runtimeMetrics),
 		Platform:      platform,
@@ -1054,17 +1076,12 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Catalog: apiHandlers.NewCatalogHandlerWithServices(
 			core.catalogService, core.catalogService, core.catalogService,
 		),
-		Delivery: newDeliveryHandler(delivery.deliveryService, cfg.Runtime.ExecutionRunnerKeys),
-		Manifests: apiHandlers.NewManifestHandler(appmanifest.New(
-			repos.manifestRepository,
-			core.applicationService,
-			core.catalogService,
-			repos.clusterRepository,
-			core.accessService,
-			core.permissionResolver,
-			core.auditService,
-			core.operationService,
-		)),
+		Delivery:            newDeliveryHandler(delivery.deliveryService, cfg.Runtime.ExecutionRunnerKeys),
+		Manifests:           apiHandlers.NewManifestHandler(manifestService),
+		ManifestSources:     apiHandlers.NewManifestSourceHandler(manifestDeclarativeService),
+		ManifestBindings:    apiHandlers.NewManifestBindingHandler(manifestDeclarativeService),
+		ManifestDeployments: apiHandlers.NewManifestDeploymentHandler(manifestDeclarativeService),
+		ManifestIntents:     apiHandlers.NewManifestIntentHandler(manifestDeclarativeService),
 		Applications: apiHandlers.NewApplicationHandlerWithServices(
 			core.applicationService, core.applicationService, core.applicationService,
 		),

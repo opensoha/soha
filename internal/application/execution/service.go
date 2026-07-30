@@ -24,15 +24,17 @@ type Repository interface {
 }
 
 type Service struct {
-	repo         Repository
-	builds       BuildRecordRepository
-	releases     ReleaseRecordRepository
-	clusters     ClusterRuntime
-	jobConfigMu  sync.RWMutex
-	jobConfig    JobRuntimeOptions
-	runnerToken  string
-	permissions  *appaccess.PermissionResolver
-	workflowSink WorkflowExecutionTaskSink
+	repo          Repository
+	builds        BuildRecordRepository
+	releases      ReleaseRecordRepository
+	clusters      ClusterRuntime
+	jobConfigMu   sync.RWMutex
+	jobConfig     JobRuntimeOptions
+	runnerToken   string
+	permissions   *appaccess.PermissionResolver
+	workflowSink  WorkflowExecutionTaskSink
+	resultSinksMu sync.RWMutex
+	resultSinks   []ExecutionTaskSink
 }
 
 type JobRuntimeOptions struct {
@@ -51,6 +53,10 @@ type ReleaseRecordRepository interface {
 }
 
 type WorkflowExecutionTaskSink interface {
+	RecordExecutionTaskResult(context.Context, domaindelivery.ExecutionTask) error
+}
+
+type ExecutionTaskSink interface {
 	RecordExecutionTaskResult(context.Context, domaindelivery.ExecutionTask) error
 }
 
@@ -121,6 +127,20 @@ func (s *Service) SetWorkflowExecutionTaskSink(sink WorkflowExecutionTaskSink) {
 		return
 	}
 	s.workflowSink = sink
+}
+
+func (s *Service) AddExecutionTaskSink(sink ExecutionTaskSink) {
+	if s == nil || sink == nil {
+		return
+	}
+	s.resultSinksMu.Lock()
+	defer s.resultSinksMu.Unlock()
+	s.resultSinks = append(s.resultSinks, sink)
+}
+
+func (s *Service) GetExecutionTaskInternal(ctx context.Context, taskID string) (domaindelivery.ExecutionTask, error) {
+	task, err := s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
 type BuildPlan struct {
@@ -260,7 +280,25 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 	if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if err := s.notifyExecutionTaskSinks(ctx, updated); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
 	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func (s *Service) notifyExecutionTaskSinks(ctx context.Context, task domaindelivery.ExecutionTask) error {
+	s.resultSinksMu.RLock()
+	sinks := append([]ExecutionTaskSink(nil), s.resultSinks...)
+	s.resultSinksMu.RUnlock()
+	for _, sink := range sinks {
+		if sink == nil {
+			continue
+		}
+		if err := sink.RecordExecutionTaskResult(ctx, task); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error) {
@@ -516,38 +554,9 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 		return domaindelivery.ExecutionTask{}, err
 	}
 	if isStrictTerminalTaskStatus(task.Status) {
-		now := time.Now().UTC()
-		_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
-			ID:              uuid.NewString(),
-			ExecutionTaskID: task.ID,
-			LogLevel:        "warn",
-			Message:         fmt.Sprintf("ignored late callback for terminal task status %s", task.Status),
-			Metadata: map[string]any{
-				"callbackStatus": strings.TrimSpace(input.Status),
-			},
-			CreatedAt: now,
-		})
-		if err := s.notifyWorkflowExecutionTaskResult(ctx, task); err != nil {
-			return domaindelivery.ExecutionTask{}, err
-		}
-		return domaindelivery.WithOperationState(task, time.Now().UTC()), nil
+		return s.recordLateExecutionCallback(ctx, task, input.Status)
 	}
-	if logs, ok := input.Payload["logs"].([]any); ok {
-		for _, item := range logs {
-			message := strings.TrimSpace(fmt.Sprint(item))
-			if message == "" {
-				continue
-			}
-			_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
-				ID:              uuid.NewString(),
-				ExecutionTaskID: task.ID,
-				LogLevel:        "info",
-				Message:         message,
-				Metadata:        map[string]any{},
-				CreatedAt:       time.Now().UTC(),
-			})
-		}
-	}
+	s.recordExecutionCallbackLogs(ctx, task.ID, input.Payload)
 	now := time.Now().UTC()
 	if strings.TrimSpace(task.Status) == "queued" || strings.TrimSpace(task.Status) == "dispatching" {
 		task.StartedAt = &now
@@ -581,7 +590,48 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 	if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if err := s.notifyExecutionTaskSinks(ctx, updated); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
 	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func (s *Service) recordLateExecutionCallback(ctx context.Context, task domaindelivery.ExecutionTask, callbackStatus string) (domaindelivery.ExecutionTask, error) {
+	now := time.Now().UTC()
+	_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
+		ID:              uuid.NewString(),
+		ExecutionTaskID: task.ID,
+		LogLevel:        "warn",
+		Message:         fmt.Sprintf("ignored late callback for terminal task status %s", task.Status),
+		Metadata: map[string]any{
+			"callbackStatus": strings.TrimSpace(callbackStatus),
+		},
+		CreatedAt: now,
+	})
+	if err := s.notifyWorkflowExecutionTaskResult(ctx, task); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	if err := s.notifyExecutionTaskSinks(ctx, task); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	return domaindelivery.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func (s *Service) recordExecutionCallbackLogs(ctx context.Context, taskID string, payload map[string]any) {
+	logs, ok := payload["logs"].([]any)
+	if !ok {
+		return
+	}
+	for _, item := range logs {
+		message := strings.TrimSpace(fmt.Sprint(item))
+		if message == "" {
+			continue
+		}
+		_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
+			ID: uuid.NewString(), ExecutionTaskID: taskID, LogLevel: "info", Message: message,
+			Metadata: map[string]any{}, CreatedAt: time.Now().UTC(),
+		})
+	}
 }
 
 func (s *Service) monitorLoop(ctx context.Context) {
@@ -718,7 +768,10 @@ func (s *Service) markTaskTimedOut(ctx context.Context, task domaindelivery.Exec
 	case "release":
 		_ = s.syncReleaseRecord(ctx, updated)
 	}
-	return s.notifyWorkflowExecutionTaskResult(ctx, updated)
+	if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
+		return err
+	}
+	return s.notifyExecutionTaskSinks(ctx, updated)
 }
 
 func (s *Service) stopRemoteRuntimeTask(ctx context.Context, taskID string, result map[string]any, reason string) error {

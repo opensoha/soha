@@ -111,7 +111,12 @@ func (r *Repository) Create(ctx context.Context, item domainmanifest.Package) (d
 	if err != nil {
 		return domainmanifest.Package{}, err
 	}
-	err = r.db.WithContext(ctx).Exec(`INSERT INTO manifest_packages (id, name, description, application_id, business_line_id, renderer, status, current_revision, files, bindings, created_by, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`, item.ID, item.Name, item.Description, item.ApplicationID, item.BusinessLineID, item.Renderer, item.Status, item.CurrentRevision, files, bindings, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).Error
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`INSERT INTO manifest_packages (id, name, description, application_id, business_line_id, renderer, status, current_revision, files, bindings, created_by, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`, item.ID, item.Name, item.Description, item.ApplicationID, item.BusinessLineID, item.Renderer, item.Status, item.CurrentRevision, files, bindings, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			return err
+		}
+		return syncLegacyBindingRelations(tx, item.ID, item.Bindings, item.UpdatedAt)
+	})
 	if err != nil {
 		return domainmanifest.Package{}, fmt.Errorf("create manifest package: %w", err)
 	}
@@ -123,12 +128,18 @@ func (r *Repository) Update(ctx context.Context, id string, item domainmanifest.
 	if err != nil {
 		return domainmanifest.Package{}, err
 	}
-	result := r.db.WithContext(ctx).Exec(`UPDATE manifest_packages SET name=?, description=?, application_id=?, business_line_id=?, renderer=?, status=?, files=?::jsonb, bindings=?::jsonb, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL`, item.Name, item.Description, item.ApplicationID, item.BusinessLineID, item.Renderer, item.Status, files, bindings, item.UpdatedBy, item.UpdatedAt, id)
-	if result.Error != nil {
-		return domainmanifest.Package{}, result.Error
-	}
-	if result.RowsAffected == 0 {
-		return domainmanifest.Package{}, apperrors.ErrNotFound
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Exec(`UPDATE manifest_packages SET name=?, description=?, application_id=?, business_line_id=?, renderer=?, status=?, files=?::jsonb, bindings=?::jsonb, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL`, item.Name, item.Description, item.ApplicationID, item.BusinessLineID, item.Renderer, item.Status, files, bindings, item.UpdatedBy, item.UpdatedAt, id)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return apperrors.ErrNotFound
+		}
+		return syncLegacyBindingRelations(tx, id, item.Bindings, item.UpdatedAt)
+	})
+	if err != nil {
+		return domainmanifest.Package{}, fmt.Errorf("update manifest package: %w", err)
 	}
 	return r.Get(ctx, id)
 }

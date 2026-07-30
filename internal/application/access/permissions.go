@@ -54,6 +54,11 @@ const (
 	PermDeliveryReleasesTrigger           = "delivery.releases.trigger"
 	PermDeliveryRegistriesView            = "delivery.registries.view"
 	PermDeliveryRegistriesManage          = "delivery.registries.manage"
+	PermDeliveryManifestSourcesManage     = "delivery.manifest-sources.manage"
+	PermDeliveryManifestDeploymentsManage = "delivery.manifest-deployments.manage"
+	PermDeliveryManifestDriftRepair       = "delivery.manifest-drift.repair"
+	PermDeliveryManifestDriftAdopt        = "delivery.manifest-drift.adopt"
+	PermDeliveryManifestFieldsForce       = "delivery.manifest-fields.force"
 	PermObserveMonitoringView             = "observe.monitoring.view"
 	PermObserveAlertsView                 = "observe.alerts.view"
 	PermObserveAlertsAcknowledge          = "observe.alerts.ack"
@@ -235,6 +240,11 @@ var allPermissionKeySet = []string{
 	PermDeliveryReleasesTrigger,
 	PermDeliveryRegistriesView,
 	PermDeliveryRegistriesManage,
+	PermDeliveryManifestSourcesManage,
+	PermDeliveryManifestDeploymentsManage,
+	PermDeliveryManifestDriftRepair,
+	PermDeliveryManifestDriftAdopt,
+	PermDeliveryManifestFieldsForce,
 	PermObserveMonitoringView,
 	PermObserveAlertsView,
 	PermObserveAlertsAcknowledge,
@@ -407,6 +417,10 @@ var opsRolePermissionKeys = []string{
 	PermDeliveryReleasesTrigger,
 	PermDeliveryRegistriesView,
 	PermDeliveryRegistriesManage,
+	PermDeliveryManifestSourcesManage,
+	PermDeliveryManifestDeploymentsManage,
+	PermDeliveryManifestDriftRepair,
+	PermDeliveryManifestDriftAdopt,
 	PermObserveMonitoringView,
 	PermObserveAlertsView,
 	PermObserveAlertsAcknowledge,
@@ -547,6 +561,8 @@ var developerRolePermissionKeys = []string{
 	PermDeliveryWorkflowsTrigger,
 	PermDeliveryReleasesView,
 	PermDeliveryReleasesTrigger,
+	PermDeliveryManifestSourcesManage,
+	PermDeliveryManifestDeploymentsManage,
 	PermDockerOverviewView,
 	PermDockerHostsView,
 	PermDockerProjectsView,

@@ -273,16 +273,35 @@ func (s *Service) encryptCredentialInputs(inputs []sohaapi.SystemIntegrationCred
 }
 
 func (s *Service) sourceAdapter(ctx context.Context, id string, requireEnabled bool) (domain.Integration, SourceAdapter, error) {
+	item, credentials, err := s.sourceCredentials(ctx, id, requireEnabled)
+	if err != nil {
+		return domain.Integration{}, nil, err
+	}
+	factory := s.adapters[item.ProviderType]
+	if factory == nil {
+		return domain.Integration{}, nil, fmt.Errorf("%w: source provider is unsupported", apperrors.ErrInvalidArgument)
+	}
+	adapter, err := factory.Build(item, credentials)
+	if err != nil {
+		return domain.Integration{}, nil, err
+	}
+	return item, adapter, nil
+}
+
+// ResolveSourceCredentials is the internal execution-time boundary for source
+// credentials. Callers must not persist the returned plaintext values.
+func (s *Service) ResolveSourceCredentials(ctx context.Context, id string) (map[string]string, error) {
+	_, credentials, err := s.sourceCredentials(ctx, strings.TrimSpace(id), true)
+	return credentials, err
+}
+
+func (s *Service) sourceCredentials(ctx context.Context, id string, requireEnabled bool) (domain.Integration, map[string]string, error) {
 	item, err := s.repo.Get(ctx, id)
 	if err != nil {
 		return domain.Integration{}, nil, err
 	}
 	if item.Category != domain.CategorySourceControl || (requireEnabled && !item.Enabled) {
 		return domain.Integration{}, nil, fmt.Errorf("%w: source connection is unavailable", apperrors.ErrAccessDenied)
-	}
-	factory := s.adapters[item.ProviderType]
-	if factory == nil {
-		return domain.Integration{}, nil, fmt.Errorf("%w: source provider is unsupported", apperrors.ErrInvalidArgument)
 	}
 	credentials, err := s.decryptCredentials(ctx, item.ID)
 	if err != nil {
@@ -292,11 +311,7 @@ func (s *Service) sourceAdapter(ctx context.Context, id string, requireEnabled b
 	if err != nil {
 		return domain.Integration{}, nil, err
 	}
-	adapter, err := factory.Build(item, credentials)
-	if err != nil {
-		return domain.Integration{}, nil, err
-	}
-	return item, adapter, nil
+	return item, credentials, nil
 }
 
 func (s *Service) decryptCredentials(ctx context.Context, id string) (map[string]string, error) {

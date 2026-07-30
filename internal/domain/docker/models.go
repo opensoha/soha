@@ -625,10 +625,21 @@ type ContainerResourceInput struct {
 	MemoryReservationBytes int64   `json:"memoryReservationBytes,omitempty"`
 }
 
+type ContainerGitBuildInput struct {
+	RepositoryURL  string `json:"repositoryUrl"`
+	Ref            string `json:"ref,omitempty"`
+	DockerfilePath string `json:"dockerfilePath,omitempty"`
+	ContextDir     string `json:"contextDir,omitempty"`
+	Pull           bool   `json:"pull,omitempty"`
+	NoCache        bool   `json:"noCache,omitempty"`
+}
+
 type ContainerStartInput struct {
 	HostID               string                              `json:"hostId"`
 	Name                 string                              `json:"name"`
 	Image                string                              `json:"image"`
+	SourceKind           string                              `json:"sourceKind,omitempty"`
+	GitBuild             *ContainerGitBuildInput             `json:"gitBuild,omitempty"`
 	Architecture         string                              `json:"architecture,omitempty"`
 	ImagePullPolicy      string                              `json:"imagePullPolicy,omitempty"`
 	ContainerPort        int                                 `json:"containerPort"`

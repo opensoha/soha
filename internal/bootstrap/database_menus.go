@@ -29,7 +29,6 @@ var defaultComputeRoles = []string{"admin", "ops", "developer", "readonly"}
 var builtinMenuSeeds = []menuSeed{
 	{ID: "home-workbench", Path: "/portal", LabelZH: "首页", LabelEN: "Home", IconKey: "home", SortOrder: 1, Enabled: true, Roles: defaultUserRoles},
 	{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", SortOrder: 10, Enabled: true},
-	{ID: "platform-manifests", Path: "/manifests", LabelZH: "应用清单", LabelEN: "Application Manifests", IconKey: "code", SortOrder: 15, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
 	{ID: "cluster-resources-nodes", Path: "/cluster-resources/nodes", LabelZH: "节点", LabelEN: "Nodes", IconKey: "server", SortOrder: 20, Enabled: true},
 	{ID: "extensions", Path: "/extensions", LabelZH: "CRD", LabelEN: "CRD", IconKey: "puzzle", SortOrder: 90, Enabled: true},
 	{ID: "helm", Path: "/helm", LabelZH: "Helm", LabelEN: "Helm", IconKey: "puzzle", SortOrder: 80, Enabled: true},
@@ -82,6 +81,7 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "storage-pv", ParentID: "storage", Path: "/storage/persistentvolumes", LabelZH: "PV", LabelEN: "PV", IconKey: "waves", SortOrder: 52, Enabled: true},
 	{ID: "storage-classes", ParentID: "storage", Path: "/storage/storageclasses", LabelZH: "StorageClasses", LabelEN: "StorageClasses", IconKey: "waves", SortOrder: 53, Enabled: true},
 	{ID: "clusters", Path: "/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", SortOrder: 99, Enabled: true},
+	{ID: "platform-manifests", Path: "/manifests", LabelZH: "应用清单", LabelEN: "Application Manifests", IconKey: "code", SortOrder: 100, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
 	{ID: "monitoring-workbench", Path: "/monitoring-workbench", LabelZH: "监控工作台", LabelEN: "Monitoring Workbench", IconKey: "gauge", Section: "ops", SortOrder: 60, Enabled: true},
 	{ID: "monitoring-workbench-overview", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 61, Enabled: true},
 	{ID: "monitoring-workbench-integrations", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/integrations", LabelZH: "告警集成", LabelEN: "Alert Integrations", IconKey: "link", Section: "ops", SortOrder: 62, Enabled: true},
@@ -291,6 +291,9 @@ func cleanupDeprecatedMenus(ctx context.Context, db *gorm.DB, deprecatedIDs []st
 
 func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 	now := time.Now().UTC()
+	if err := syncPlatformMenuSeedUpgrades(ctx, db, now); err != nil {
+		return err
+	}
 	if err := syncAccessMenuSeedUpgrades(ctx, db, now); err != nil {
 		return err
 	}
@@ -378,6 +381,14 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 		return err
 	}
 	return syncGatewayMenuSeedUpgrades(ctx, db, now)
+}
+
+func syncPlatformMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time) error {
+	return db.WithContext(ctx).Exec(`
+		UPDATE menus
+		SET sort_order = ?, updated_at = ?
+		WHERE id = ? AND sort_order = ?
+	`, 100, now, "platform-manifests", 15).Error
 }
 
 func syncAIWorkbenchMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time) error {

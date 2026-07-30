@@ -14,6 +14,15 @@ import (
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 )
 
+type executionTaskSinkSpy struct {
+	tasks []domaindelivery.ExecutionTask
+}
+
+func (s *executionTaskSinkSpy) RecordExecutionTaskResult(_ context.Context, task domaindelivery.ExecutionTask) error {
+	s.tasks = append(s.tasks, task)
+	return nil
+}
+
 func TestTaskHeartbeatExpiredUsesHeartbeatStartedAndCreatedAt(t *testing.T) {
 	now := time.Date(2026, 6, 4, 10, 30, 0, 0, time.UTC)
 	startedAt := now.Add(-4 * time.Minute)
@@ -151,6 +160,8 @@ func TestRecordCallbackIgnoresLateTerminalCallback(t *testing.T) {
 		UpdatedAt:     now,
 	}
 	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+	sink := &executionTaskSinkSpy{}
+	service.AddExecutionTaskSink(sink)
 
 	updated, err := service.RecordCallback(context.Background(), domaindelivery.ExecutionCallbackInput{
 		CallbackToken: " callback-token ",
@@ -171,6 +182,9 @@ func TestRecordCallbackIgnoresLateTerminalCallback(t *testing.T) {
 	}
 	if !repo.hasLogContaining("ignored late callback") {
 		t.Fatalf("late callback warning log was not recorded")
+	}
+	if len(sink.tasks) != 1 || sink.tasks[0].Status != "canceled" {
+		t.Fatalf("terminal callback sink tasks = %#v, want canceled task replay", sink.tasks)
 	}
 }
 

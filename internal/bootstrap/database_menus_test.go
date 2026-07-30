@@ -72,6 +72,32 @@ func TestCleanupDeprecatedMenusDeletesMenuBindingsAndMenus(t *testing.T) {
 	}
 }
 
+func TestSyncPlatformMenuSeedUpgradesMovesUntouchedApplicationManifests(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("new sqlmock: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm postgres mock: %v", err)
+	}
+
+	now := time.Now().UTC()
+	mock.ExpectExec(`UPDATE menus`).
+		WithArgs(100, now, "platform-manifests", 15).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := syncPlatformMenuSeedUpgrades(context.Background(), db, now); err != nil {
+		t.Fatalf("syncPlatformMenuSeedUpgrades returned error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
 func TestInternalWorkbenchOverviewSeedUsesCanonicalPath(t *testing.T) {
 	paths := map[string]string{}
 	for _, item := range builtinMenuSeeds {

@@ -124,6 +124,18 @@ func (r deliveryMutationRule) matches(method, path string) bool {
 }
 
 var deliveryMutationRules = []deliveryMutationRule{
+	{method: "POST", prefix: "/api/v1/delivery/manifest-deployments/", suffix: "/repair", resourceKind: "ManifestDeployment", action: "repair", permission: appaccess.PermDeliveryManifestDriftRepair, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/manifest-deployments/", suffix: "/adopt", resourceKind: "ManifestDeployment", action: "adopt", permission: appaccess.PermDeliveryManifestDriftAdopt, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/manifest-deployments/", resourceKind: "ManifestDeployment", action: "trigger", permission: appaccess.PermDeliveryManifestDeploymentsManage, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/manifest-delivery-intents/", resourceKind: "ManifestDeliveryIntent", action: "update", permission: appaccess.PermDeliveryApplicationsUpdate, scopeRequired: true},
+	{method: "PUT", prefix: "/api/v1/delivery/manifest-packages/", suffix: "/source", resourceKind: "ManifestSource", permission: appaccess.PermDeliveryManifestSourcesManage, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/manifest-packages/", suffix: "/sync", resourceKind: "ManifestSource", action: "sync", permission: appaccess.PermDeliveryManifestSourcesManage, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/manifest-sources/", suffix: "/webhook", resourceKind: "ManifestSource", action: "sync", permission: appaccess.PermDeliveryManifestSourcesManage, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/manifest-packages/", suffix: "/preflight", resourceKind: "ManifestDeployment", action: "preflight", permission: appaccess.PermDeliveryManifestDeploymentsManage, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/manifest-packages/", suffix: "/render", resourceKind: "ManifestPackage", action: "view", permission: appaccess.PermDeliveryApplicationsView, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/manifest-packages/", suffix: "/delivery-intents", resourceKind: "ManifestDeliveryIntent", action: "create", permission: appaccess.PermDeliveryApplicationsUpdate, scopeRequired: true},
+	{prefix: "/api/v1/delivery/manifest-bindings", resourceKind: "ManifestBinding", permission: appaccess.PermDeliveryManifestDeploymentsManage, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/manifest-packages/", suffix: "/bindings", resourceKind: "ManifestBinding", permission: appaccess.PermDeliveryManifestDeploymentsManage, scopeRequired: true},
 	{method: "POST", prefix: "/api/v1/delivery/manifest-packages/", suffix: "/publish", resourceKind: "ManifestPackage", action: "publish", permission: appaccess.PermDeliveryReleasesTrigger, scopeRequired: true},
 	{method: "DELETE", prefix: "/api/v1/delivery/manifest-packages/", resourceKind: "ManifestPackage", permission: appaccess.PermDeliveryApplicationsDelete, scopeRequired: true},
 	{prefix: "/api/v1/delivery/manifest-packages", resourceKind: "ManifestPackage", permission: appaccess.PermDeliveryApplicationsUpdate, scopeRequired: true},

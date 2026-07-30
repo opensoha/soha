@@ -250,6 +250,68 @@ func TestStartContainerCreatesSingleContainerProjectAndDomainMapping(t *testing.
 	}
 }
 
+func TestStartContainerQueuesGitDockerfileBuildOnRuntimeHost(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online", Architecture: "amd64", IPAddress: "10.0.0.10"}
+	service := New(repo, dockerTestPermissions(), nil)
+
+	operation, err := service.StartContainer(context.Background(), dockerTestPrincipal(), domaindocker.ContainerStartInput{
+		HostID:     "host-1",
+		Name:       "Git Preview API",
+		Image:      "preview-api:git-main",
+		SourceKind: "git_dockerfile",
+		GitBuild: &domaindocker.ContainerGitBuildInput{
+			RepositoryURL:  "https://github.com/opensoha/example.git",
+			Ref:            "feature/runtime",
+			DockerfilePath: "deploy/Dockerfile",
+			ContextDir:     ".",
+			Pull:           true,
+		},
+		ContainerPort: 8080,
+		HostPort:      18080,
+	})
+	if err != nil {
+		t.Fatalf("StartContainer() error = %v", err)
+	}
+	if operation.OperationKind != OperationKindContainerStart || operation.Payload["sourceKind"] != "git_dockerfile" {
+		t.Fatalf("operation = %#v, want git_dockerfile container_start", operation)
+	}
+	gitBuild, ok := operation.Payload["gitBuild"].(map[string]any)
+	if !ok || gitBuild["repositoryUrl"] != "https://github.com/opensoha/example.git" || gitBuild["dockerfilePath"] != "deploy/Dockerfile" || gitBuild["ref"] != "feature/runtime" {
+		t.Fatalf("operation gitBuild = %#v", operation.Payload["gitBuild"])
+	}
+	var project domaindocker.Project
+	for _, item := range repo.projects {
+		project = item
+	}
+	if project.SourceKind != "git_dockerfile" || !strings.Contains(project.ComposeContent, "pull_policy: never") {
+		t.Fatalf("project = %#v compose=%s, want git source with local-only image pull policy", project, project.ComposeContent)
+	}
+}
+
+func TestValidateContainerStartGitBuildRejectsUnsafeSources(t *testing.T) {
+	tests := []struct {
+		name     string
+		gitBuild *domaindocker.ContainerGitBuildInput
+	}{
+		{name: "credentials in https URL", gitBuild: &domaindocker.ContainerGitBuildInput{RepositoryURL: "https://token@github.com/opensoha/example.git"}},
+		{name: "dockerfile escapes repository", gitBuild: &domaindocker.ContainerGitBuildInput{RepositoryURL: "https://github.com/opensoha/example.git", DockerfilePath: "../Dockerfile"}},
+		{name: "context escapes repository", gitBuild: &domaindocker.ContainerGitBuildInput{RepositoryURL: "https://github.com/opensoha/example.git", ContextDir: "../../workspace"}},
+		{name: "ref becomes option", gitBuild: &domaindocker.ContainerGitBuildInput{RepositoryURL: "https://github.com/opensoha/example.git", Ref: "--upload-pack=evil"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateContainerStartInput(domaindocker.ContainerStartInput{
+				HostID: "host-1", Name: "preview", Image: "preview:git", SourceKind: "git_dockerfile", GitBuild: tt.gitBuild,
+				ContainerPort: 8080, HostPort: 18080,
+			})
+			if err == nil {
+				t.Fatalf("validateContainerStartInput() error = nil, want unsafe source rejection")
+			}
+		})
+	}
+}
+
 func TestStartContainerCreatesStructuredDockerAppCompose(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online", Architecture: "amd64", IPAddress: "10.0.0.10"}

@@ -124,6 +124,18 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	return created, nil
 }
 
+func manifestFilesEqual(left, right []domainmanifest.File) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, packageID string, input domainmanifest.Input) (domainmanifest.Package, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
 		return domainmanifest.Package{}, err
@@ -138,6 +150,14 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	item, err := normalizeInput(input)
 	if err != nil {
 		return domainmanifest.Package{}, err
+	}
+	if sourceReader, ok := s.repository.(interface {
+		GetSource(context.Context, string) (domainmanifest.Source, error)
+	}); ok {
+		source, sourceErr := sourceReader.GetSource(ctx, existing.ID)
+		if sourceErr == nil && source.Mode == domainmanifest.SourceModeGitSynced && !manifestFilesEqual(existing.Files, item.Files) {
+			return domainmanifest.Package{}, fmt.Errorf("%w: Git-synchronized manifest files are read-only", apperrors.ErrConflict)
+		}
 	}
 	app, err := s.authorizeInput(ctx, principal, domainaccess.ActionUpdate, item)
 	if err != nil {

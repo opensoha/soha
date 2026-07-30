@@ -32,6 +32,23 @@ func TestDefaultMenuSeedsValidate(t *testing.T) {
 	}
 }
 
+func TestDefaultMenuSeedsPlaceApplicationManifestsAfterClusters(t *testing.T) {
+	items := defaultMenuSeeds()
+	byID := make(map[string]menuSeed, len(items))
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+
+	clusters, hasClusters := byID["clusters"]
+	manifests, hasManifests := byID["platform-manifests"]
+	if !hasClusters || !hasManifests {
+		t.Fatalf("platform menu seeds missing clusters or platform-manifests")
+	}
+	if manifests.SortOrder != clusters.SortOrder+1 {
+		t.Fatalf("platform-manifests sort order = %d, want directly after clusters at %d", manifests.SortOrder, clusters.SortOrder)
+	}
+}
+
 func appdockerHostProvisionInput(connectionID string) appdocker.HostProvisionInput {
 	return appdocker.HostProvisionInput{
 		ConnectionID:     connectionID,
