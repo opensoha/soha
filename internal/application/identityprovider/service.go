@@ -254,15 +254,8 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "invalid_scope", err)
 	}
 	codeChallengeMethod := normalizeCodeChallengeMethod(input.CodeChallengeMethod)
-	if client.RequirePKCE {
-		if strings.TrimSpace(input.CodeChallenge) == "" {
-			err := fmt.Errorf("%w: code_challenge is required", apperrors.ErrInvalidArgument)
-			return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "invalid_request", err)
-		}
-		if codeChallengeMethod != "S256" {
-			err := fmt.Errorf("%w: only S256 PKCE is supported", apperrors.ErrInvalidArgument)
-			return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "invalid_request", err)
-		}
+	if err := validateAuthorizePKCE(client, input.CodeChallenge, codeChallengeMethod); err != nil {
+		return domainprovider.AuthorizeResult{}, authorizeRedirectError(redirectURI, state, "invalid_request", err)
 	}
 	rawCode, err := randomToken(32)
 	if err != nil {
@@ -300,6 +293,19 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 		State:        state,
 		ResponseMode: responseMode,
 	}, nil
+}
+
+func validateAuthorizePKCE(client domainprovider.OIDCClient, codeChallenge, codeChallengeMethod string) error {
+	if !client.RequirePKCE {
+		return nil
+	}
+	if strings.TrimSpace(codeChallenge) == "" {
+		return fmt.Errorf("%w: code_challenge is required", apperrors.ErrInvalidArgument)
+	}
+	if codeChallengeMethod != "S256" {
+		return fmt.Errorf("%w: only S256 PKCE is supported", apperrors.ErrInvalidArgument)
+	}
+	return nil
 }
 
 func (s *Service) validateAuthenticationAge(ctx context.Context, principal domainidentity.Principal, sessionID, rawMaxAge string) error {
@@ -2032,44 +2038,13 @@ func providerFromInput(providerID string, input domainprovider.ProviderInput, pr
 		config = map[string]any{}
 	}
 	if providerType == domainprovider.ProviderTypeProxy {
-		mode := strings.ToLower(configString(config, "mode"))
-		switch mode {
-		case "", domainprovider.ProxyModeForwardAuth:
-		case domainprovider.ProxyModeReverseProxy:
-			if _, err := validateReverseProxyUpstream(configString(config, "upstreamUrl", "upstreamURL", "upstream_url")); err != nil {
-				return domainprovider.Provider{}, err
-			}
-		default:
-			return domainprovider.Provider{}, fmt.Errorf("%w: unsupported proxy mode", apperrors.ErrInvalidArgument)
+		if err := validateProxyProviderConfig(config); err != nil {
+			return domainprovider.Provider{}, err
 		}
 	}
 	if providerType == domainprovider.ProviderTypeSAML {
-		entityID := strings.TrimSpace(configString(config, "entityId", "entityID", "entity_id"))
-		if entityID == "" {
-			return domainprovider.Provider{}, fmt.Errorf("%w: saml entity_id is required", apperrors.ErrInvalidArgument)
-		}
-		acs := configStringSlice(config, "assertionConsumerServiceUrls", "acsUrls", "acs_urls")
-		if len(acs) == 0 {
-			return domainprovider.Provider{}, fmt.Errorf("%w: at least one saml assertion consumer service URL is required", apperrors.ErrInvalidArgument)
-		}
-		for _, rawURL := range acs {
-			parsed, err := url.ParseRequestURI(rawURL)
-			if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-				return domainprovider.Provider{}, fmt.Errorf("%w: saml assertion consumer service URLs must use https", apperrors.ErrInvalidArgument)
-			}
-		}
-		certificate := configString(config, "spCertificatePem", "signingCertificatePem", "signing_certificate_pem")
-		if configBoolean(config, "wantAuthnRequestsSigned", "want_authn_requests_signed") && certificate == "" {
-			return domainprovider.Provider{}, fmt.Errorf("%w: saml SP signing certificate is required when signed requests are enforced", apperrors.ErrInvalidArgument)
-		}
-		if certificate != "" {
-			block, _ := pem.Decode([]byte(certificate))
-			if block == nil || block.Type != "CERTIFICATE" {
-				return domainprovider.Provider{}, fmt.Errorf("%w: invalid saml SP signing certificate", apperrors.ErrInvalidArgument)
-			}
-			if _, err := x509.ParseCertificate(block.Bytes); err != nil {
-				return domainprovider.Provider{}, fmt.Errorf("%w: invalid saml SP signing certificate", apperrors.ErrInvalidArgument)
-			}
+		if err := validateSAMLProviderConfig(config); err != nil {
+			return domainprovider.Provider{}, err
 		}
 	}
 	secretRefs := input.SecretRefs
@@ -2090,6 +2065,49 @@ func providerFromInput(providerID string, input domainprovider.ProviderInput, pr
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}, nil
+}
+
+func validateProxyProviderConfig(config map[string]any) error {
+	switch strings.ToLower(configString(config, "mode")) {
+	case "", domainprovider.ProxyModeForwardAuth:
+		return nil
+	case domainprovider.ProxyModeReverseProxy:
+		_, err := validateReverseProxyUpstream(configString(config, "upstreamUrl", "upstreamURL", "upstream_url"))
+		return err
+	default:
+		return fmt.Errorf("%w: unsupported proxy mode", apperrors.ErrInvalidArgument)
+	}
+}
+
+func validateSAMLProviderConfig(config map[string]any) error {
+	if strings.TrimSpace(configString(config, "entityId", "entityID", "entity_id")) == "" {
+		return fmt.Errorf("%w: saml entity_id is required", apperrors.ErrInvalidArgument)
+	}
+	acs := configStringSlice(config, "assertionConsumerServiceUrls", "acsUrls", "acs_urls")
+	if len(acs) == 0 {
+		return fmt.Errorf("%w: at least one saml assertion consumer service URL is required", apperrors.ErrInvalidArgument)
+	}
+	for _, rawURL := range acs {
+		parsed, err := url.ParseRequestURI(rawURL)
+		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+			return fmt.Errorf("%w: saml assertion consumer service URLs must use https", apperrors.ErrInvalidArgument)
+		}
+	}
+	certificate := configString(config, "spCertificatePem", "signingCertificatePem", "signing_certificate_pem")
+	if configBoolean(config, "wantAuthnRequestsSigned", "want_authn_requests_signed") && certificate == "" {
+		return fmt.Errorf("%w: saml SP signing certificate is required when signed requests are enforced", apperrors.ErrInvalidArgument)
+	}
+	if certificate == "" {
+		return nil
+	}
+	block, _ := pem.Decode([]byte(certificate))
+	if block == nil || block.Type != "CERTIFICATE" {
+		return fmt.Errorf("%w: invalid saml SP signing certificate", apperrors.ErrInvalidArgument)
+	}
+	if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+		return fmt.Errorf("%w: invalid saml SP signing certificate", apperrors.ErrInvalidArgument)
+	}
+	return nil
 }
 
 func outpostFromInput(outpostID string, input domainprovider.OutpostInput, principal domainidentity.Principal, now time.Time) (domainprovider.Outpost, error) {

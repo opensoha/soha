@@ -114,7 +114,7 @@ PostgreSQL + Kubernetes 集群
 
 | 层级 | 技术 |
 | --- | --- |
-| 后端 | Go 1.25、Gin、PostgreSQL、Kubernetes `client-go` |
+| 后端 | Go 1.26.5、Gin、PostgreSQL、Kubernetes `client-go` |
 | 前端 | React 18、TypeScript 5、Vite 6、React Router 6、TanStack Query 5、Zustand 5、Ant Design 6、Tailwind CSS 4 |
 | 文档 | sibling `soha-docs` 仓库中的 Next.js 16 与 Nextra 4 |
 | 打包部署 | Docker、Docker Compose、原生 Kubernetes YAML；Helm Chart 在 `soha-helm` 维护 |
@@ -137,7 +137,7 @@ PostgreSQL + Kubernetes 集群
 
 ### 环境要求
 
-- Go 1.25+
+- Go 1.26.5+
 - Node.js 20+
 - Docker 与 Docker Compose
 - 外部数据库使用 PostgreSQL 18.4，并安装 pgvector 0.8.5

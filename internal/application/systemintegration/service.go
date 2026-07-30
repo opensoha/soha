@@ -395,12 +395,12 @@ func validateProviderConfiguration(category, providerType string, enabled bool, 
 			return fmt.Errorf("%w: gitlab per_page must be between 1 and 200", apperrors.ErrInvalidArgument)
 		}
 	}
-	authMode := strings.ToLower(strings.TrimSpace(config["auth_mode"]))
-	if authMode == "" {
-		authMode = gitLabAuthModeToken
-	}
-	switch authMode {
-	case gitLabAuthModeToken:
+	return validateGitLabAuthentication(config, enabled, credentials)
+}
+
+func validateGitLabAuthentication(config map[string]string, enabled bool, credentials map[string]struct{}) error {
+	switch strings.ToLower(strings.TrimSpace(config["auth_mode"])) {
+	case "", gitLabAuthModeToken:
 		if enabled {
 			if _, ok := credentials["token"]; !ok {
 				return fmt.Errorf("%w: gitlab token is required when enabled", apperrors.ErrInvalidArgument)

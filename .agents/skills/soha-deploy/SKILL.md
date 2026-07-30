@@ -61,6 +61,16 @@ Use the `deploy/` assets to run soha as a single-project runtime: one applicatio
 - `references/deployment-modes.md`: when to choose compose, raw YAML, or Helm, plus the embedded-runtime rationale.
 - `references/runtime-checklist.md`: rollout checklist, image-build expectations, and smoke-test prompts.
 
+## CI Gate
+
+Deployment, Dockerfile, dependency, or release changes require the full `soha-backend` gate plus the production-context image build:
+
+```bash
+docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
+```
+
+The image must contain the built `soha-web` artifact and the `embedassets` server. A missing local Docker daemon is not a pass; use the successful GitHub Actions Docker job as the required evidence.
+
 ## Done Criteria
 
 - The selected deployment asset matches the intended environment.

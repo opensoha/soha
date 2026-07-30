@@ -72,7 +72,9 @@ lint: ## Run the configured Go quality and security linters.
 	golangci-lint run ./...
 
 complexity-check: ## Reject production functions with cyclomatic complexity above 20.
-	@output="$$(GOWORK=off go run github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0 -over 20 internal 2>/dev/null | awk '!/_test\.go/' | grep -Ev '(\*PVEAdapter\)\.ResizeVM|validateSourceRepositoryInput|disabledModuleMenuIDs|filterSeedMenusByModules|\(\*Service\)\.executeVMAction|\(\*Service\)\.executeApplicationDeliveryAction')"; \
+	@output="$$(GOWORK=off go run github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0 -over 20 internal 2>/dev/null)"; status=$$?; \
+		{ test $$status -eq 0 || test -n "$$output"; } || exit $$status; \
+		output="$$(printf '%s\n' "$$output" | awk '!/_test\.go/ && $$0 !~ /\(\*PVEAdapter\)\.ResizeVM|validateSourceRepositoryInput|disabledModuleMenuIDs|filterSeedMenusByModules|\(\*Service\)\.executeVMAction|\(\*Service\)\.executeApplicationDeliveryAction/')"; \
 		test -z "$$output" || { printf '%s\n' "$$output"; exit 1; }
 
 complexity-report: ## Report complexity, duplication, function length, and maintainability findings.

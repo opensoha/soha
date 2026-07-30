@@ -544,7 +544,7 @@ func (r *Repository) ListEvents(ctx context.Context, connectionID, status string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make([]domain.EventEnvelope, 0, limit)
 	for rows.Next() {
 		var item domain.EventEnvelope

@@ -114,7 +114,7 @@ See the published docs for current public architecture and API behavior.
 
 | Layer | Stack |
 | --- | --- |
-| Backend | Go 1.25, Gin, PostgreSQL, Kubernetes `client-go` |
+| Backend | Go 1.26.5, Gin, PostgreSQL, Kubernetes `client-go` |
 | Frontend | React 18, TypeScript 5, Vite 6, React Router 6, TanStack Query 5, Zustand 5, Ant Design 6, Tailwind CSS 4 |
 | Docs | Next.js 16 and Nextra 4 in the sibling `soha-docs` repository |
 | Packaging | Docker, Docker Compose, raw Kubernetes YAML; Helm charts live in `soha-helm` |
@@ -137,7 +137,7 @@ See the published docs for current public architecture and API behavior.
 
 ### Requirements
 
-- Go 1.25+
+- Go 1.26.5+
 - Node.js 20+
 - Docker and Docker Compose
 - PostgreSQL 18.4 with pgvector 0.8.5 when using an external database

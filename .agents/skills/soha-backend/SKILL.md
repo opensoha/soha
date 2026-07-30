@@ -2,7 +2,7 @@
 name: soha-backend
 description: >-
   Implement or review open-source Soha backend capabilities in `cmd/**`,
-  `internal/**`, and `configs/**` for Go 1.25, Gin, PostgreSQL, Kubernetes
+  `internal/**`, and `configs/**` for Go 1.26.5, Gin, PostgreSQL, Kubernetes
   `client-go`, and agent-connected clusters. Use when changing HTTP routes,
   handlers, application services, repositories, policy, bootstrap wiring,
   platform aggregation, durable operations, AI Gateway, Identity, knowledge,
@@ -104,6 +104,26 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - When adding a module or workbench, update `internal/application/module/service.go`, route metadata/menu seeds, permission keys, bootstrap defaults, and frontend visibility tests together.
 - When adding a migration after the consolidated baseline, add an incremental file under `migrations/postgres/` and keep bootstrap tests aligned; do not recreate removed root-level legacy migration mirrors.
 - Keep generated frontend artifacts out of hand-written source changes unless the task explicitly asks to publish built output.
+
+## CI Gate
+
+Use Go `1.26.5` and run the release-sensitive gate with the root workspace disabled:
+
+```bash
+GOWORK=off go mod tidy
+git diff --exit-code -- go.mod go.sum
+GOWORK=off go mod verify
+GOWORK=off go test ./...
+GOWORK=off go test -race ./...
+GOWORK=off go vet ./...
+make complexity-check
+GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
+GOWORK=off CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
+docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test .
+git diff --check
+```
+
+CI also runs `golangci-lint v2.9.0` with only-new-issues semantics on pull requests and builds the sibling `soha-web` artifact before the embed and image checks. Dependency, Dockerfile, workflow, or release changes require this full gate; a missing local Docker daemon must be covered by a successful GitHub Actions Docker job.
 
 ## Done Criteria
 
