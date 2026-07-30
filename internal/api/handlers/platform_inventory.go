@@ -222,6 +222,34 @@ func (h *nodeResourceHandler) UpdateNode(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
+func (h *nodeResourceHandler) SetNodeSchedulability(c *gin.Context) {
+	var req dto.NodeSchedulabilityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid node schedulability payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.editor.SetNodeUnschedulable(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"), req.Unschedulable); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+func (h *nodeResourceHandler) DrainNode(c *gin.Context) {
+	var req dto.NodeDrainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid node drain payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.editor.DrainNode(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName"), domainresource.NodeDrainInput{
+		Force: req.Force, DeleteEmptyDirData: req.DeleteEmptyDirData, TimeoutSeconds: req.TimeoutSeconds,
+	}); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
 func (h *nodeResourceHandler) DeleteNode(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.editor.DeleteNode(c.Request.Context(), principal, c.Param("clusterID"), c.Param("nodeName")); err != nil {

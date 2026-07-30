@@ -29,6 +29,7 @@ var defaultComputeRoles = []string{"admin", "ops", "developer", "readonly"}
 var builtinMenuSeeds = []menuSeed{
 	{ID: "home-workbench", Path: "/portal", LabelZH: "首页", LabelEN: "Home", IconKey: "home", SortOrder: 1, Enabled: true, Roles: defaultUserRoles},
 	{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", SortOrder: 10, Enabled: true},
+	{ID: "platform-manifests", Path: "/manifests", LabelZH: "应用清单", LabelEN: "Application Manifests", IconKey: "code", SortOrder: 15, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
 	{ID: "cluster-resources-nodes", Path: "/cluster-resources/nodes", LabelZH: "节点", LabelEN: "Nodes", IconKey: "server", SortOrder: 20, Enabled: true},
 	{ID: "extensions", Path: "/extensions", LabelZH: "CRD", LabelEN: "CRD", IconKey: "puzzle", SortOrder: 90, Enabled: true},
 	{ID: "helm", Path: "/helm", LabelZH: "Helm", LabelEN: "Helm", IconKey: "puzzle", SortOrder: 80, Enabled: true},
@@ -129,6 +130,7 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "compute-workbench-tasks-operations", ParentID: "compute-workbench", Path: "/compute/tasks/operations", LabelZH: "任务中心", LabelEN: "Task Center", IconKey: "history", Section: "management", SortOrder: 85, Enabled: true, Roles: defaultComputeRoles},
 	{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "delivery", SortOrder: 10, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
 	{ID: "delivery-onboarding", Path: "/delivery/onboarding", LabelZH: "应用接入", LabelEN: "Application Onboarding", IconKey: "code", Section: "delivery", SortOrder: 20, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+	{ID: "delivery-manifest-library", Path: "/delivery/manifests", LabelZH: "应用清单库", LabelEN: "Manifest Library", IconKey: "code", Section: "delivery", SortOrder: 25, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
 	{ID: "release-board", Path: "/release-board", LabelZH: "构建发布", LabelEN: "Build & Release", IconKey: "activity", Section: "delivery", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 	{ID: "delivery-testing", Path: "/delivery/testing", LabelZH: "测试验证", LabelEN: "Testing & Verification", IconKey: "shield", Section: "delivery", SortOrder: 40, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
 	{ID: "delivery-analysis", Path: "/delivery/analysis", LabelZH: "问题分析", LabelEN: "Issue Analysis", IconKey: "activity", Section: "delivery", SortOrder: 50, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
@@ -602,6 +604,7 @@ func isDeliveryMenuSeed(item menuSeed) bool {
 		strings.HasPrefix(item.Path, "/application-environments") ||
 		strings.HasPrefix(item.Path, "/build-templates") ||
 		strings.HasPrefix(item.Path, "/delivery/onboarding") ||
+		strings.HasPrefix(item.Path, "/delivery/manifests") ||
 		strings.HasPrefix(item.Path, "/delivery/testing") ||
 		strings.HasPrefix(item.Path, "/delivery/analysis") ||
 		strings.HasPrefix(item.Path, "/delivery/blueprints") ||

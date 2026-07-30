@@ -50,6 +50,16 @@ type NodeUpdateRequest struct {
 	Taints []NodeTaintRequest `json:"taints"`
 }
 
+type NodeSchedulabilityRequest struct {
+	Unschedulable bool `json:"unschedulable"`
+}
+
+type NodeDrainRequest struct {
+	Force              bool  `json:"force"`
+	DeleteEmptyDirData bool  `json:"deleteEmptyDirData"`
+	TimeoutSeconds     int64 `json:"timeoutSeconds"`
+}
+
 type RestartDeploymentRequest struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`

@@ -272,6 +272,8 @@ type NodeReader interface {
 type NodeEditor interface {
 	ApplyNodeYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
 	UpdateNode(context.Context, domainidentity.Principal, string, string, domainresource.NodeUpdateInput) (domainresource.NodeDetailView, error)
+	SetNodeUnschedulable(context.Context, domainidentity.Principal, string, string, bool) error
+	DrainNode(context.Context, domainidentity.Principal, string, string, domainresource.NodeDrainInput) error
 	DeleteNode(context.Context, domainidentity.Principal, string, string) error
 }
 

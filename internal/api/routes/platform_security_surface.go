@@ -89,7 +89,7 @@ var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatform
 
 func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	for _, rule := range deliveryMutationRules {
-		if !rule.matches(path) {
+		if !rule.matches(method, path) {
 			continue
 		}
 		action := rule.action
@@ -106,6 +106,7 @@ func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 }
 
 type deliveryMutationRule struct {
+	method                string
 	prefix                string
 	contains              string
 	suffix                string
@@ -116,13 +117,16 @@ type deliveryMutationRule struct {
 	applicationPermission bool
 }
 
-func (r deliveryMutationRule) matches(path string) bool {
-	return strings.HasPrefix(path, r.prefix) &&
+func (r deliveryMutationRule) matches(method, path string) bool {
+	return (r.method == "" || r.method == method) && strings.HasPrefix(path, r.prefix) &&
 		(r.contains == "" || strings.Contains(path, r.contains)) &&
 		(r.suffix == "" || strings.HasSuffix(path, r.suffix))
 }
 
 var deliveryMutationRules = []deliveryMutationRule{
+	{method: "POST", prefix: "/api/v1/delivery/manifest-packages/", suffix: "/publish", resourceKind: "ManifestPackage", action: "publish", permission: appaccess.PermDeliveryReleasesTrigger, scopeRequired: true},
+	{method: "DELETE", prefix: "/api/v1/delivery/manifest-packages/", resourceKind: "ManifestPackage", permission: appaccess.PermDeliveryApplicationsDelete, scopeRequired: true},
+	{prefix: "/api/v1/delivery/manifest-packages", resourceKind: "ManifestPackage", permission: appaccess.PermDeliveryApplicationsUpdate, scopeRequired: true},
 	{prefix: "/api/v1/repositories", resourceKind: "Repository", permission: appaccess.PermDeliveryRegistriesManage},
 	{prefix: "/api/v1/applications/", contains: "/services", resourceKind: "ApplicationService", permission: appaccess.PermDeliveryApplicationServicesManage, scopeRequired: true},
 	{prefix: "/api/v1/applications", resourceKind: "Application", scopeRequired: true, applicationPermission: true},

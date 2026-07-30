@@ -696,20 +696,21 @@ func TestDefaultMenuSeedsPlaceApplicationCenterFirstInDelivery(t *testing.T) {
 func TestDefaultMenuSeedsGroupDeliveryWorkbenchByUserTask(t *testing.T) {
 	items := defaultMenuSeeds()
 	expected := map[string]string{
-		"builds":                   "delivery",
-		"delivery-onboarding":      "delivery",
-		"release-board":            "delivery",
-		"delivery-testing":         "delivery",
-		"delivery-analysis":        "delivery",
-		"release-bundles":          "delivery-records",
-		"execution-tasks":          "delivery-records",
-		"workflows":                "delivery-records",
-		"releases":                 "delivery-records",
-		"delivery-blueprints":      "delivery-platform",
-		"build-templates":          "delivery-platform",
-		"workflow-templates":       "delivery-platform",
-		"application-environments": "delivery-platform",
-		"registries":               "delivery-platform",
+		"builds":                    "delivery",
+		"delivery-manifest-library": "delivery",
+		"delivery-onboarding":       "delivery",
+		"release-board":             "delivery",
+		"delivery-testing":          "delivery",
+		"delivery-analysis":         "delivery",
+		"release-bundles":           "delivery-records",
+		"execution-tasks":           "delivery-records",
+		"workflows":                 "delivery-records",
+		"releases":                  "delivery-records",
+		"delivery-blueprints":       "delivery-platform",
+		"build-templates":           "delivery-platform",
+		"workflow-templates":        "delivery-platform",
+		"application-environments":  "delivery-platform",
+		"registries":                "delivery-platform",
 	}
 	for _, item := range items {
 		section, ok := expected[item.ID]

@@ -188,6 +188,61 @@ func (i *Inventory) UpdateNode(ctx context.Context, principal domainidentity.Pri
 	return item, nil
 }
 
+func (i *Inventory) SetNodeUnschedulable(ctx context.Context, principal domainidentity.Principal, clusterID, nodeName string, unschedulable bool) error {
+	connection, _, err := i.authorize(ctx, principal, clusterID, "", "Node", domainaccess.ActionUpdate)
+	if err != nil {
+		return err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return unsupportedAgentOperation("node schedulability changes are not supported for agent-connected clusters yet")
+	}
+	direct, err := i.directInventory()
+	if err != nil {
+		return err
+	}
+	if err := direct.SetNodeUnschedulable(ctx, clusterID, nodeName, unschedulable); err != nil {
+		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "failure", err.Error())
+		return err
+	}
+	action, summary := "uncordon", "restored node scheduling"
+	if unschedulable {
+		action, summary = "cordon", "disabled node scheduling"
+	}
+	_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "success", summary)
+	i.recordOperation(ctx, principal, "platform.node."+action, clusterID, "", "Node", nodeName, summary, nil)
+	return nil
+}
+
+func (i *Inventory) DrainNode(ctx context.Context, principal domainidentity.Principal, clusterID, nodeName string, input domainresource.NodeDrainInput) error {
+	connection, _, err := i.authorize(ctx, principal, clusterID, "", "Node", domainaccess.ActionUpdate)
+	if err != nil {
+		return err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return unsupportedAgentOperation("node drain is not supported for agent-connected clusters yet")
+	}
+	if input.TimeoutSeconds == 0 {
+		input.TimeoutSeconds = 300
+	}
+	if input.TimeoutSeconds < 30 || input.TimeoutSeconds > 1800 {
+		return fmt.Errorf("%w: drain timeoutSeconds must be between 30 and 1800", apperrors.ErrInvalidArgument)
+	}
+	direct, err := i.directInventory()
+	if err != nil {
+		return err
+	}
+	if err := direct.DrainNode(ctx, clusterID, nodeName, input); err != nil {
+		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "failure", err.Error())
+		return err
+	}
+	summary := "cordoned node and submitted pod eviction requests"
+	_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "success", summary)
+	i.recordOperation(ctx, principal, "platform.node.drain", clusterID, "", "Node", nodeName, summary, map[string]any{
+		"force": input.Force, "deleteEmptyDirData": input.DeleteEmptyDirData, "timeoutSeconds": input.TimeoutSeconds,
+	})
+	return nil
+}
+
 func (i *Inventory) GetNodeYAML(ctx context.Context, principal domainidentity.Principal, clusterID, name string) (domainresource.ResourceYAMLView, error) {
 	connection, _, err := i.authorize(ctx, principal, clusterID, "", "Node", domainaccess.ActionView)
 	if err != nil {

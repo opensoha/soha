@@ -30,6 +30,8 @@ func registerPlatformClusterRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/clusters/:clusterID/infrastructure/nodes/:nodeName/yaml", deps.Platform.GetNodeYAML)
 	protected.PUT("/clusters/:clusterID/infrastructure/nodes/:nodeName/yaml", deps.Platform.ApplyNodeYAML)
 	protected.PUT("/clusters/:clusterID/infrastructure/nodes/:nodeName", deps.Platform.UpdateNode)
+	protected.PUT("/clusters/:clusterID/infrastructure/nodes/:nodeName/schedulability", deps.Platform.SetNodeSchedulability)
+	protected.POST("/clusters/:clusterID/infrastructure/nodes/:nodeName/drain", deps.Platform.DrainNode)
 	protected.DELETE("/clusters/:clusterID/infrastructure/nodes/:nodeName", deps.Platform.DeleteNode)
 
 }

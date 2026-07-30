@@ -2,7 +2,9 @@ package resourcebackend
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"math"
 	"sort"
 	"strings"
@@ -13,6 +15,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/kubectl/pkg/drain"
 	"sigs.k8s.io/yaml"
 )
 
@@ -154,6 +158,60 @@ func (d *Direct) UpdateNode(ctx context.Context, clusterID, name string, input d
 	return buildNodeDetail(*updated, pods), nil
 }
 
+func (d *Direct) SetNodeUnschedulable(ctx context.Context, clusterID, name string, unschedulable bool) error {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	return setNodeUnschedulable(ctx, bundle.Typed, name, unschedulable)
+}
+
+func setNodeUnschedulable(ctx context.Context, client kubernetes.Interface, name string, unschedulable bool) error {
+	queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	item, err := client.CoreV1().Nodes().Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	helper := &drain.Helper{Ctx: queryCtx, Client: client, Out: io.Discard, ErrOut: io.Discard}
+	return drain.RunCordonOrUncordon(helper, item, unschedulable)
+}
+
+func (d *Direct) DrainNode(ctx context.Context, clusterID, name string, input domainresource.NodeDrainInput) error {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	return drainNode(ctx, bundle.Typed, name, input)
+}
+
+func drainNode(ctx context.Context, client kubernetes.Interface, name string, input domainresource.NodeDrainInput) error {
+	timeout := time.Duration(input.TimeoutSeconds) * time.Second
+	drainCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	item, err := client.CoreV1().Nodes().Get(drainCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	helper := &drain.Helper{
+		Ctx: drainCtx, Client: client, Force: input.Force,
+		GracePeriodSeconds: -1, IgnoreAllDaemonSets: true,
+		DeleteEmptyDirData: input.DeleteEmptyDirData, Timeout: timeout,
+		Out: io.Discard, ErrOut: io.Discard,
+	}
+	if err := drain.RunCordonOrUncordon(helper, item, true); err != nil {
+		return err
+	}
+	pods, errs := helper.GetPodsForDeletion(name)
+	if len(errs) > 0 {
+		return fmt.Errorf("select pods for node drain: %w", errors.Join(errs...))
+	}
+	if err := helper.DeleteOrEvictPods(pods.Pods()); err != nil {
+		return fmt.Errorf("drain node pods: %w", err)
+	}
+	return nil
+}
+
 func (d *Direct) GetNodeYAML(ctx context.Context, clusterID, name string) (domainresource.ResourceYAMLView, error) {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
@@ -283,7 +341,7 @@ func buildNodeDetail(node corev1.Node, pods []corev1.Pod) domainresource.NodeDet
 	aggregate := buildNodeAggregates(nodePods, true)[node.Name]
 	view := buildNodeView(node, aggregate)
 	return domainresource.NodeDetailView{
-		Name: view.Name, Status: view.Status, Roles: view.Roles, Version: view.Version, InternalIP: view.InternalIP,
+		Name: view.Name, Status: view.Status, Unschedulable: view.Unschedulable, Roles: view.Roles, Version: view.Version, InternalIP: view.InternalIP,
 		PodCount: view.PodCount, AgeSeconds: view.AgeSeconds, Labels: cloneMap(node.Labels), Annotations: cloneMap(node.Annotations),
 		Taints: mapNodeTaints(node.Spec.Taints), Conditions: mapNodeConditions(node), Resources: view.Resources, Pods: aggregate.pods,
 	}
@@ -292,7 +350,7 @@ func buildNodeDetail(node corev1.Node, pods []corev1.Pod) domainresource.NodeDet
 func buildNodeView(node corev1.Node, aggregate nodeAggregate) domainresource.NodeView {
 	capacity, allocatable := resourceTotalsFromList(node.Status.Capacity), resourceTotalsFromList(node.Status.Allocatable)
 	return domainresource.NodeView{
-		Name: node.Name, Status: nodeStatus(node), Roles: nodeRoles(node), Version: node.Status.NodeInfo.KubeletVersion,
+		Name: node.Name, Status: nodeStatus(node), Unschedulable: node.Spec.Unschedulable, Roles: nodeRoles(node), Version: node.Status.NodeInfo.KubeletVersion,
 		InternalIP: nodeInternalIP(node), PodCount: aggregate.podCount, AgeSeconds: secondsSince(node.CreationTimestamp.Time),
 		Resources: domainresource.NodeResourceSummaryView{
 			Capacity: formatTotals(capacity), Allocatable: formatTotals(allocatable), Requests: formatTotals(aggregate.requests), Limits: formatTotals(aggregate.limits),

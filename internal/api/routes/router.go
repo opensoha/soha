@@ -38,6 +38,7 @@ type Dependencies struct {
 	Monitoring         *apiHandlers.MonitoringHandler
 	Catalog            *apiHandlers.CatalogHandler
 	Delivery           *apiHandlers.DeliveryHandler
+	Manifests          *apiHandlers.ManifestHandler
 	Applications       *apiHandlers.ApplicationHandler
 	Builds             *apiHandlers.BuildHandler
 	Workflows          *apiHandlers.WorkflowHandler
