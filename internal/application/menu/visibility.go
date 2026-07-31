@@ -253,8 +253,6 @@ func computeMenuRule(id string) (visibilityRule, bool) {
 		}}, true
 	case "compute-workbench-overview":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOverviewView, appaccess.PermDockerOverviewView}}, true
-	case "compute-workbench-access":
-		return visibilityRule{permissions: []string{appaccess.PermVirtualizationClustersView, appaccess.PermDockerHostsView}}, true
 	case "compute-workbench-tasks-operations":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView, appaccess.PermVirtualizationSyncManage, appaccess.PermDockerOperationsView}}, true
 	default:

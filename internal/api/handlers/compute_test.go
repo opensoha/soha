@@ -14,7 +14,9 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-type computeHandlerFake struct{ filter appcompute.TaskFilter }
+type computeHandlerFake struct {
+	filter appcompute.TaskFilter
+}
 
 func (*computeHandlerFake) Overview(context.Context, domainidentity.Principal) (sohaapi.ComputeOverview, error) {
 	return sohaapi.ComputeOverview{}, nil

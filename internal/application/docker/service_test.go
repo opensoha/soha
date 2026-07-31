@@ -111,6 +111,66 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	assertCompletedDockerOperation(t, repo, operation.ID, updated)
 }
 
+func TestDeployProjectRedeployRestoresSingleContainerSourcePayload(t *testing.T) {
+	tests := []struct {
+		name       string
+		sourceKind string
+		config     map[string]any
+	}{
+		{
+			name:       "existing image",
+			sourceKind: "single_container",
+			config: map[string]any{
+				"image":    "nginx:alpine",
+				"platform": "linux/amd64",
+			},
+		},
+		{
+			name:       "git dockerfile",
+			sourceKind: "git_dockerfile",
+			config: map[string]any{
+				"image":    "preview-api:git-main",
+				"platform": "linux/amd64",
+				"gitBuild": map[string]any{
+					"repositoryUrl": "https://github.com/opensoha/example.git",
+					"ref":           "main",
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newMemoryDockerRepo()
+			repo.projects["project-1"] = domaindocker.Project{
+				ID:             "project-1",
+				HostID:         "host-1",
+				Name:           "preview-api",
+				Slug:           "preview-api",
+				SourceKind:     tc.sourceKind,
+				ComposeContent: "services:\n  api:\n    image: preview-api:latest\n",
+				Config:         tc.config,
+			}
+			service := New(repo, dockerTestPermissions(), nil)
+
+			operation, err := service.DeployProject(context.Background(), dockerTestPrincipal(), "project-1", "redeploy")
+			if err != nil {
+				t.Fatalf("DeployProject() error = %v", err)
+			}
+			if got := operation.Payload["sourceKind"]; got != tc.sourceKind {
+				t.Fatalf("sourceKind = %v, want %s", got, tc.sourceKind)
+			}
+			for _, key := range []string{"image", "platform"} {
+				if operation.Payload[key] != tc.config[key] {
+					t.Fatalf("%s = %v, want %v", key, operation.Payload[key], tc.config[key])
+				}
+			}
+			if tc.sourceKind == "git_dockerfile" && operation.Payload["gitBuild"] == nil {
+				t.Fatal("gitBuild payload is missing")
+			}
+		})
+	}
+}
+
 func assertCompletedDockerOperation(t *testing.T, repo *memoryDockerRepo, operationID string, updated domaindocker.Operation) {
 	t.Helper()
 	if updated.Status != OperationStatusCompleted || updated.FinishedAt == nil {

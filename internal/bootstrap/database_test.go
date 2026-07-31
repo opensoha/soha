@@ -118,6 +118,7 @@ func TestObsoleteMenuCleanupIncludesPersistedLegacyIDs(t *testing.T) {
 		"extensions-marketplace",
 		"ai-gateway-overview",
 		"compute-workbench-tasks-all",
+		"compute-workbench-access",
 		"identity-sessions",
 		"access",
 		"account-profile",
@@ -348,14 +349,13 @@ func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T
 	expected := map[string]string{
 		"compute-workbench":                  "/compute",
 		"compute-workbench-overview":         "/compute/overview",
-		"compute-workbench-access":           "/compute/access",
 		"virtualization-workbench-clusters":  "/compute/virtualization/clusters",
 		"docker-workbench-hosts":             "/compute/runtimes/hosts",
 		"compute-workbench-tasks-sync":       "/compute/tasks/sync",
 		"compute-workbench-tasks-build":      "/compute/tasks/build",
 		"compute-workbench-tasks-operations": "/compute/tasks/operations",
 	}
-	for _, id := range []string{"compute-workbench-tasks", "compute-workbench-tasks-all"} {
+	for _, id := range []string{"compute-workbench-tasks", "compute-workbench-tasks-all", "compute-workbench-access"} {
 		if !slices.Contains(obsoleteMenuIDsForCleanup(), id) {
 			t.Fatalf("obsolete compute menu id %s must remain in database cleanup", id)
 		}
@@ -368,11 +368,7 @@ func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T
 			t.Fatalf("missing compute menu %s at %s", id, path)
 		}
 	}
-	for _, id := range []string{
-		"compute-workbench-tasks-sync",
-		"compute-workbench-tasks-build",
-		"compute-workbench-tasks-operations",
-	} {
+	for _, id := range []string{"compute-workbench-tasks-sync", "compute-workbench-tasks-build"} {
 		if !slices.ContainsFunc(items, func(item menuSeed) bool {
 			return item.ID == id && item.ParentID == "compute-workbench" && item.Section == "management"
 		}) {
@@ -385,9 +381,9 @@ func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T
 		}
 	}
 	if !slices.ContainsFunc(items, func(item menuSeed) bool {
-		return item.ID == "compute-workbench-tasks-operations" && item.Enabled && item.LabelZH == "任务中心" && item.LabelEN == "Task Center"
+		return item.ID == "compute-workbench-tasks-operations" && item.Enabled && item.LabelZH == "任务中心" && item.LabelEN == "Task Center" && item.ParentID == "compute-workbench" && item.Section == "ops" && item.SortOrder == 82
 	}) {
-		t.Fatal("canonical compute task menu must be enabled and labeled Task Center")
+		t.Fatal("canonical compute task menu must be enabled directly after Overview")
 	}
 	filtered := filterSeedMenusByModules(items, cfgpkg.ModulesConfig{})
 	for _, item := range filtered {

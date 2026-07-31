@@ -396,17 +396,31 @@ func (s *Service) DeployProject(ctx context.Context, principal domainidentity.Pr
 	if !slices.Contains([]string{"deploy", "redeploy", "start", "stop", "restart", "down", "pull", "build", "destroy"}, normalizedAction) {
 		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported compose action %s", apperrors.ErrInvalidArgument, normalizedAction)
 	}
-	task, err := s.enqueueOperation(ctx, principal, OperationKindProjectDeploy, project.HostID, project.ID, "", map[string]any{
-		"action":         normalizedAction,
-		"composeContent": project.ComposeContent,
-		"envContent":     project.EnvContent,
-		"projectSlug":    project.Slug,
-	})
+	task, err := s.enqueueOperation(ctx, principal, OperationKindProjectDeploy, project.HostID, project.ID, "", buildProjectDeployPayload(project, normalizedAction))
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
 	s.recordOperation(ctx, principal, "docker.project.deploy.enqueue", project.ID, project.Name, "success", "enqueued docker compose action", map[string]any{"operationId": task.ID, "action": normalizedAction})
 	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func buildProjectDeployPayload(project domaindocker.Project, action string) map[string]any {
+	payload := map[string]any{
+		"action":         action,
+		"composeContent": project.ComposeContent,
+		"envContent":     project.EnvContent,
+		"projectSlug":    project.Slug,
+	}
+	if action != "redeploy" || !slices.Contains([]string{"single_container", "git_dockerfile"}, project.SourceKind) {
+		return payload
+	}
+	payload["sourceKind"] = project.SourceKind
+	for _, key := range []string{"image", "architecture", "platform", "gitBuild"} {
+		if value, ok := project.Config[key]; ok {
+			payload[key] = value
+		}
+	}
+	return payload
 }
 
 func (s *Service) StartContainer(ctx context.Context, principal domainidentity.Principal, input domaindocker.ContainerStartInput) (domaindocker.Operation, error) {
