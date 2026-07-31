@@ -98,6 +98,12 @@ type PodStreamService interface {
 	StreamPodTerminal(context.Context, domainidentity.Principal, string, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue) error
 }
 
+type ClusterLogService interface {
+	QueryClusterLogs(context.Context, domainidentity.Principal, string, domainresource.LogQuery) (domainresource.LogPage, error)
+	IssueClusterLogStreamTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, string, domainresource.LogQuery) (domainidentity.StreamTicket, error)
+	StreamClusterLogsFromTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, string, func(domainresource.LogStreamEvent) error) error
+}
+
 type ResourceCreator interface {
 	CreateResourceFromYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 }
@@ -299,6 +305,7 @@ type ResourceServices struct {
 	PodEditor              PodResourceEditor
 	PodDiagnostics         PodDiagnostics
 	PodStreams             PodStreamService
+	Logs                   ClusterLogService
 	DeploymentReader       DeploymentReader
 	DeploymentEditor       DeploymentEditor
 	StatefulSetReader      StatefulSetReader

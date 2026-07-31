@@ -86,6 +86,16 @@ type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
 
+type LogRuntime interface {
+	QueryClusterLogs(context.Context, domainidentity.Principal, string, domainresource.LogQuery) (domainresource.LogPage, error)
+	AuthorizeClusterLogs(context.Context, domainidentity.Principal, string, domainresource.LogQuery, bool) error
+	StreamClusterLogs(context.Context, domainidentity.Principal, string, domainresource.LogQuery, func(domainresource.LogStreamEvent) error) error
+}
+
+type LogStreamTicketIssuer interface {
+	IssueStreamTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error)
+}
+
 type OperationRecorder interface {
 	Record(context.Context, domainoperation.Entry) error
 }
@@ -103,6 +113,8 @@ type Service struct {
 	audit        AuditRecorder
 	operations   OperationRecorder
 	governance   *deliverygovernance.Service
+	logs         LogRuntime
+	logTickets   LogStreamTicketIssuer
 }
 
 func uniqueStrings(values []string) []string {
@@ -142,6 +154,11 @@ func (s *Service) SetRecorders(audit AuditRecorder, operations OperationRecorder
 
 func (s *Service) SetGovernance(service *deliverygovernance.Service) {
 	s.governance = service
+}
+
+func (s *Service) SetLogRuntime(logs LogRuntime, tickets LogStreamTicketIssuer) {
+	s.logs = logs
+	s.logTickets = tickets
 }
 
 func (s *Service) GetApplicationDetail(ctx context.Context, principal domainidentity.Principal, applicationID string) (domaindelivery.ApplicationDetail, error) {

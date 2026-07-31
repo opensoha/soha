@@ -60,6 +60,9 @@ const (
 	PermDeliveryManifestDriftAdopt        = "delivery.manifest-drift.adopt"
 	PermDeliveryManifestFieldsForce       = "delivery.manifest-fields.force"
 	PermObserveMonitoringView             = "observe.monitoring.view"
+	PermObserveLogDataSourcesView         = "observe.log-data-sources.view"
+	PermObserveLogDataSourcesManage       = "observe.log-data-sources.manage"
+	PermObserveLogCollectionManage        = "observe.log-collection.manage"
 	PermObserveAlertsView                 = "observe.alerts.view"
 	PermObserveAlertsAcknowledge          = "observe.alerts.ack"
 	PermObserveAlertsAssign               = "observe.alerts.assign"
@@ -246,6 +249,9 @@ var allPermissionKeySet = []string{
 	PermDeliveryManifestDriftAdopt,
 	PermDeliveryManifestFieldsForce,
 	PermObserveMonitoringView,
+	PermObserveLogDataSourcesView,
+	PermObserveLogDataSourcesManage,
+	PermObserveLogCollectionManage,
 	PermObserveAlertsView,
 	PermObserveAlertsAcknowledge,
 	PermObserveAlertsAssign,
@@ -422,6 +428,8 @@ var opsRolePermissionKeys = []string{
 	PermDeliveryManifestDriftRepair,
 	PermDeliveryManifestDriftAdopt,
 	PermObserveMonitoringView,
+	PermObserveLogDataSourcesView,
+	PermObserveLogDataSourcesManage,
 	PermObserveAlertsView,
 	PermObserveAlertsAcknowledge,
 	PermObserveAlertsAssign,

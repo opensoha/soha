@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -254,6 +255,16 @@ func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container stri
 	return payload.Data, nil
 }
 
+func (c *Client) QueryPodLogs(ctx context.Context, query domainresource.LogQuery) (domainresource.LogPage, error) {
+	var payload struct {
+		Data domainresource.LogPage `json:"data"`
+	}
+	if err := c.request(ctx, http.MethodPost, "/api/v1/platform/logs/query", query, &payload); err != nil {
+		return domainresource.LogPage{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) GetPodYAML(ctx context.Context, namespace, name string) (domainresource.ResourceYAMLView, error) {
 	var payload struct {
 		Data domainresource.ResourceYAMLView `json:"data"`
@@ -278,23 +289,40 @@ func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container s
 		values.Set("sinceSeconds", fmt.Sprintf("%d", sinceSeconds))
 	}
 	path := fmt.Sprintf("/api/v1/platform/workloads/pods/%s/logs/stream?%s", url.PathEscape(name), values.Encode())
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	stream, err := c.openStream(ctx, http.MethodGet, path, nil)
 	if err != nil {
-		return fmt.Errorf("build agent stream request: %w", err)
+		return err
 	}
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("execute agent stream request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("agent stream request failed with status %d", resp.StatusCode)
-	}
-	if _, err := io.Copy(stdout, resp.Body); err != nil {
+	defer func() { _ = stream.Close() }()
+	if _, err := io.Copy(stdout, stream); err != nil {
 		return fmt.Errorf("copy agent stream response: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) StreamPodLogEvents(ctx context.Context, query domainresource.LogQuery, emit func(domainresource.LogStreamEvent) error) error {
+	if emit == nil {
+		return fmt.Errorf("event writer is required")
+	}
+	stream, err := c.openStream(ctx, http.MethodPost, "/api/v1/platform/logs/stream", query)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stream.Close() }()
+
+	scanner := bufio.NewScanner(stream)
+	scanner.Buffer(make([]byte, 64*1024), 512*1024)
+	for scanner.Scan() {
+		var event domainresource.LogStreamEvent
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			return fmt.Errorf("decode agent log stream event: %w", err)
+		}
+		if err := emit(event); err != nil {
+			return err
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read agent log stream: %w", err)
 	}
 	return nil
 }
@@ -1755,6 +1783,38 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		return fmt.Errorf("decode agent response: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) openStream(ctx context.Context, method, path string, body any) (io.ReadCloser, error) {
+	var payload []byte
+	if body != nil {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal agent stream request: %w", err)
+		}
+		payload = encoded
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("build agent stream request: %w", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	streamClient := *c.httpClient
+	streamClient.Timeout = 0
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("execute agent stream request: %w", err)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("agent stream request failed with status %d", resp.StatusCode)
+	}
+	return resp.Body, nil
 }
 
 func (c *Client) websocketEndpoint(path string) (string, error) {

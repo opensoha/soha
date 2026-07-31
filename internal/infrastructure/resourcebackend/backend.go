@@ -38,6 +38,7 @@ func (*Cache) CacheUnavailable(err error) bool {
 func NewAgentClients(registry *agentinfra.Registry) appresource.AgentClients {
 	return appresource.AgentClients{
 		Workloads:        agentFactory[appresource.WorkloadAgent](registry),
+		Logs:             agentFactory[appresource.LogAgent](registry),
 		Configuration:    agentFactory[appresource.ConfigurationAgent](registry),
 		Network:          agentFactory[appresource.NetworkAgent](registry),
 		Storage:          agentFactory[appresource.StorageAgent](registry),
@@ -86,6 +87,7 @@ func agentFactory[T any](registry *agentinfra.Registry) appresource.AgentClientF
 var (
 	_ appresource.ClusterMetadataProvider = (*Clusters)(nil)
 	_ appresource.WorkloadAgent           = (*agentinfra.Client)(nil)
+	_ appresource.LogAgent                = (*agentinfra.Client)(nil)
 	_ appresource.ConfigurationAgent      = (*agentinfra.Client)(nil)
 	_ appresource.NetworkAgent            = (*agentinfra.Client)(nil)
 	_ appresource.StorageAgent            = (*agentinfra.Client)(nil)

@@ -105,6 +105,52 @@ func TestClientStreamPodLogsCopiesAgentStream(t *testing.T) {
 	}
 }
 
+func TestClientQueriesAndStreamsAggregatePodLogs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("method = %s, want POST", r.Method)
+		}
+		var query domainresource.LogQuery
+		if err := json.NewDecoder(r.Body).Decode(&query); err != nil || query.Selector == nil || query.Selector.Namespace != "platform" {
+			t.Fatalf("query = %#v error=%v", query, err)
+		}
+		switch r.URL.Path {
+		case "/api/v1/platform/logs/query":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": domainresource.LogPage{Entries: []domainresource.LogEntry{{Message: "snapshot"}}}})
+		case "/api/v1/platform/logs/stream":
+			time.Sleep(25 * time.Millisecond)
+			encoder := json.NewEncoder(w)
+			_ = encoder.Encode(domainresource.LogStreamEvent{Type: "status", Status: &domainresource.LogStreamStatus{State: "live"}})
+			_ = encoder.Encode(domainresource.LogStreamEvent{Type: "end", Status: &domainresource.LogStreamStatus{State: "ended"}})
+		default:
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewRegistry(10 * time.Millisecond).ClientFor(domaincluster.Connection{
+		Summary: domaincluster.Summary{ID: "cluster-a"}, Metadata: map[string]any{"endpoint": server.URL},
+	})
+	if err != nil {
+		t.Fatalf("ClientFor() error = %v", err)
+	}
+	query := domainresource.LogQuery{Selector: &domainresource.LogSourceSelector{Namespace: "platform"}}
+	page, err := client.QueryPodLogs(context.Background(), query)
+	if err != nil || len(page.Entries) != 1 || page.Entries[0].Message != "snapshot" {
+		t.Fatalf("QueryPodLogs() page=%#v error=%v", page, err)
+	}
+	var events []domainresource.LogStreamEvent
+	if err := client.StreamPodLogEvents(context.Background(), query, func(event domainresource.LogStreamEvent) error {
+		events = append(events, event)
+		return nil
+	}); err != nil {
+		t.Fatalf("StreamPodLogEvents() error = %v", err)
+	}
+	if len(events) != 2 || events[0].Type != "status" || events[1].Type != "end" {
+		t.Fatalf("events = %#v", events)
+	}
+}
+
 func TestClientStreamPodTerminalBridgesWebSocketMessages(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
 	server := httptest.NewServer(terminalTestHandler(t, upgrader))

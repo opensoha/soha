@@ -33,6 +33,7 @@ type RuntimePermissionAuthorizer interface {
 
 type Service struct {
 	workloads        *Workloads
+	logs             *Logs
 	configuration    *Configuration
 	network          *Network
 	storage          *Storage
@@ -51,6 +52,7 @@ type Dependencies struct {
 	Clusters             ClusterMetadataProvider
 	Agents               AgentClients
 	Connections          ConnectionResolver
+	StreamTickets        LogStreamTicketIssuer
 	Authorizer           domainaccess.Authorizer
 	Permissions          RuntimePermissionAuthorizer
 	Audit                AuditRecorder
@@ -66,6 +68,8 @@ type Dependencies struct {
 	DirectGateway        DirectGatewayReader
 	DirectHelm           DirectHelm
 	DirectInventory      DirectInventory
+	DirectLogs           DirectLogs
+	DurableLogs          DurableLogs
 	DirectNetwork        DirectNetworkReader
 	DirectPods           DirectPods
 	DirectRBAC           DirectRBACReader

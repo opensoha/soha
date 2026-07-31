@@ -33,6 +33,18 @@ func TestListIncludesEnabledHomeWorkbench(t *testing.T) {
 	}
 }
 
+func TestListIncludesMonitoringLogMenus(t *testing.T) {
+	service := New(cfgpkg.ModulesConfig{Monitoring: cfgpkg.ModuleToggleConfig{Enabled: true}})
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	status, ok := moduleStatusByID(items, "monitoring")
+	if !ok || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-logs") || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-log-data-sources") {
+		t.Fatalf("monitoring log seed menus missing: %#v", status)
+	}
+}
+
 func TestListIncludesVirtualizationDescriptor(t *testing.T) {
 	service := New(cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}})
 

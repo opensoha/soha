@@ -7,10 +7,22 @@ import (
 
 func registerMonitoringRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
 	_ = cfg
+	registerObservabilityRoutes(protected, deps)
 	registerAlertRoutes(protected, deps)
 	registerNotificationRoutes(protected, deps)
 	registerOnCallRoutes(protected, deps)
 	registerAlertDeliveryRoutes(protected, deps)
+}
+
+func registerObservabilityRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.GET("/clusters/:clusterID/observability/logging", deps.Observability.GetLogCollection)
+	protected.POST("/clusters/:clusterID/observability/logging/preflight", deps.Observability.PreflightLogCollection)
+	protected.POST("/clusters/:clusterID/observability/logging/enable", deps.Observability.EnableLogCollection)
+	protected.POST("/clusters/:clusterID/observability/logging/disable", deps.Observability.DisableLogCollection)
+	protected.GET("/observability/data-sources", deps.Observability.ListDataSources)
+	protected.POST("/observability/data-sources", deps.Observability.CreateDataSource)
+	protected.PUT("/observability/data-sources/:dataSourceID", deps.Observability.UpdateDataSource)
+	protected.POST("/observability/data-sources/:dataSourceID/validate", deps.Observability.ValidateDataSource)
 }
 
 func registerAlertRoutes(protected gin.IRoutes, deps Dependencies) {

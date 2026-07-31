@@ -14,6 +14,7 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
@@ -50,6 +51,14 @@ type Repository = domaindocker.Repository
 
 type OperationRecorder interface {
 	Record(context.Context, domainoperation.Entry) error
+}
+
+type AuditRecorder interface {
+	Record(context.Context, domainaudit.Entry) error
+}
+
+type LogStreamTicketIssuer interface {
+	IssueStreamTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error)
 }
 
 type HostProvisionInput struct {
@@ -107,10 +116,20 @@ func WithRuntimeBearerToken(token string) Option {
 	}
 }
 
+func WithAudit(audit AuditRecorder) Option {
+	return func(s *Service) { s.audit = audit }
+}
+
+func WithLogStreamTickets(tickets LogStreamTicketIssuer) Option {
+	return func(s *Service) { s.logStreamTickets = tickets }
+}
+
 type Service struct {
 	repo               Repository
 	permissions        *appaccess.PermissionResolver
 	operations         OperationRecorder
+	audit              AuditRecorder
+	logStreamTickets   LogStreamTicketIssuer
 	hostProvisioner    HostProvisioner
 	runtimeBearerToken string
 }

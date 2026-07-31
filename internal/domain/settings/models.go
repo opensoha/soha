@@ -6,6 +6,7 @@ const (
 	IdentityLoginProvidersSettingKey = "identity.login_providers"
 	AISettingsKey                    = "ai.workbench"
 	BrandingSettingKey               = "branding.console"
+	LogCollectionSettingKeyPrefix    = "observability.log_collection."
 )
 
 type LoginProviderSettings struct {

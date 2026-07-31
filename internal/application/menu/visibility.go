@@ -118,9 +118,12 @@ func observabilityAIMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermObserveOncallView,
 			appaccess.PermObserveHealingView,
 			appaccess.PermObserveEventsView,
+			appaccess.PermObserveLogDataSourcesView,
 		}}, true
-	case "monitoring-workbench-overview":
+	case "monitoring-workbench-overview", "monitoring-workbench-logs":
 		return visibilityRule{permissions: []string{appaccess.PermObserveMonitoringView}}, true
+	case "monitoring-workbench-log-data-sources":
+		return visibilityRule{permissions: []string{appaccess.PermObserveLogDataSourcesView}}, true
 	case "monitoring-workbench-alerts":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAlertsView}}, true
 	case "monitoring-workbench-rules":

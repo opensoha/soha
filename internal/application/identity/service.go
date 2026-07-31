@@ -34,7 +34,17 @@ import (
 	"golang.org/x/oauth2"
 )
 
-var usernameSanitizer = regexp.MustCompile(`[^a-z0-9._-]+`)
+var (
+	usernameSanitizer = regexp.MustCompile(`[^a-z0-9._-]+`)
+	streamTicketPaths = []*regexp.Regexp{
+		regexp.MustCompile(`^/api/v1/clusters/[^/]+/logs/stream$`),
+		regexp.MustCompile(`^/api/v1/clusters/[^/]+/workloads/pods/[^/]+/(logs/stream|terminal)$`),
+		regexp.MustCompile(`^/api/v1/virtualization/operations/[^/]+/stream$`),
+		regexp.MustCompile(`^/api/v1/virtualization/vms/[^/]+/console/(vnc|novnc)$`),
+		regexp.MustCompile(`^/api/v1/docker/projects/[^/]+/(runtime/logs/stream|logs/stream|runtime/terminal)$`),
+		regexp.MustCompile(`^/api/v1/delivery/applications/[^/]+/environments/[^/]+/logs/stream$`),
+	}
+)
 
 const (
 	avatarURLPreferenceKey = "avatarUrl"
@@ -182,9 +192,10 @@ type oidcExchangePayload struct {
 }
 
 type streamTicketPayload struct {
-	UserID    string `json:"userId"`
-	SessionID string `json:"sessionId"`
-	Path      string `json:"path"`
+	UserID    string         `json:"userId"`
+	SessionID string         `json:"sessionId"`
+	Path      string         `json:"path"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
 }
 
 type genericProfile struct {
@@ -491,6 +502,7 @@ func (s *Service) IssueStreamTicket(ctx context.Context, principal domainidentit
 			"userId":    principal.UserID,
 			"sessionId": accessCtx.SessionID,
 			"path":      path,
+			"metadata":  req.Metadata,
 		},
 		ExpiresAt: expiresAt,
 	}); err != nil {
@@ -548,6 +560,7 @@ func (s *Service) ParseStreamTicket(ctx context.Context, ticket, requestPath str
 		SessionID:   payload.SessionID,
 		SubjectType: "user",
 		SubjectID:   principal.UserID,
+		Metadata:    payload.Metadata,
 		ExpiresAt:   token.ExpiresAt,
 	}, nil
 }
@@ -2536,24 +2549,12 @@ func normalizeStreamTicketPath(value string) string {
 
 func isAllowedStreamTicketPath(path string) bool {
 	path = normalizeStreamTicketPath(path)
-	switch {
-	case strings.Contains(path, "/clusters/") && strings.Contains(path, "/workloads/pods/") && strings.HasSuffix(path, "/logs/stream"):
-		return true
-	case strings.Contains(path, "/clusters/") && strings.Contains(path, "/workloads/pods/") && strings.HasSuffix(path, "/terminal"):
-		return true
-	case strings.Contains(path, "/virtualization/operations/") && strings.HasSuffix(path, "/stream"):
-		return true
-	case strings.Contains(path, "/virtualization/vms/") && strings.HasSuffix(path, "/console/vnc"):
-		return true
-	case strings.Contains(path, "/virtualization/vms/") && strings.HasSuffix(path, "/console/novnc"):
-		return true
-	case strings.Contains(path, "/docker/projects/") && strings.HasSuffix(path, "/runtime/logs/stream"):
-		return true
-	case strings.Contains(path, "/docker/projects/") && strings.HasSuffix(path, "/runtime/terminal"):
-		return true
-	default:
-		return false
+	for _, pattern := range streamTicketPaths {
+		if pattern.MatchString(path) {
+			return true
+		}
 	}
+	return false
 }
 
 const (

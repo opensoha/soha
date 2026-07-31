@@ -4,40 +4,12 @@ import (
 	"time"
 
 	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
+	domainobservability "github.com/opensoha/soha/internal/domain/observability"
 )
 
-type DataSource struct {
-	ID                string         `json:"id"`
-	Name              string         `json:"name"`
-	SourceKind        string         `json:"sourceKind"`
-	BackendType       string         `json:"backendType"`
-	Enabled           bool           `json:"enabled"`
-	CredentialRef     string         `json:"credentialRef,omitempty"`
-	Scope             map[string]any `json:"scope,omitempty"`
-	QueryBudget       map[string]any `json:"queryBudget,omitempty"`
-	RedactionPolicy   map[string]any `json:"redactionPolicy,omitempty"`
-	MCPAdapter        string         `json:"mcpAdapter"`
-	Config            map[string]any `json:"config,omitempty"`
-	ValidationStatus  string         `json:"validationStatus,omitempty"`
-	ValidationMessage string         `json:"validationMessage,omitempty"`
-	LastValidatedAt   *time.Time     `json:"lastValidatedAt,omitempty"`
-	CreatedAt         time.Time      `json:"createdAt"`
-	UpdatedAt         time.Time      `json:"updatedAt"`
-}
+type DataSource = domainobservability.DataSource
 
-type DataSourceInput struct {
-	ID              string         `json:"id"`
-	Name            string         `json:"name"`
-	SourceKind      string         `json:"sourceKind"`
-	BackendType     string         `json:"backendType"`
-	Enabled         bool           `json:"enabled"`
-	CredentialRef   string         `json:"credentialRef,omitempty"`
-	Scope           map[string]any `json:"scope,omitempty"`
-	QueryBudget     map[string]any `json:"queryBudget,omitempty"`
-	RedactionPolicy map[string]any `json:"redactionPolicy,omitempty"`
-	MCPAdapter      string         `json:"mcpAdapter"`
-	Config          map[string]any `json:"config,omitempty"`
-}
+type DataSourceInput = domainobservability.DataSourceInput
 
 type AnalysisProfile struct {
 	ID                      string         `json:"id"`

@@ -2,6 +2,7 @@ package logs
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -120,5 +121,69 @@ func TestClickHouseDriverCorrelate(t *testing.T) {
 	}
 	if result.Records[0].Workload != "checkout-api" {
 		t.Fatalf("workload = %q, want checkout-api", result.Records[0].Workload)
+	}
+}
+
+func TestESSearchScopesCredentialsAndPaginates(t *testing.T) {
+	var body map[string]any
+	driver := esDriver{http: testHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("Authorization") != "Bearer token-1" {
+			t.Fatalf("authorization = %q", req.Header.Get("Authorization"))
+		}
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		return newJSONResponse(http.StatusOK, `{"hits":{"hits":[`+
+			`{"_source":{"@timestamp":"2026-01-01T00:00:02Z","message":"second","pod":"api-0","container":"api"}},`+
+			`{"_source":{"@timestamp":"2026-01-01T00:00:01Z","message":"first","pod":"api-0","container":"api"}}]}}`), nil
+	})}
+
+	result, err := driver.Search(context.Background(), "ds-1", map[string]any{
+		"endpoint": "https://logs.example", "index": "app-logs", "bearerToken": "token-1",
+	}, SearchQuery{Scope: Scope{ClusterID: "cluster-a", Namespace: "team-a", Pod: "api-0", Container: "api"}, Limit: 1})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	payload, _ := json.Marshal(body)
+	for _, expected := range []string{"cluster-a", "team-a", "api-0", "container"} {
+		if !strings.Contains(string(payload), expected) {
+			t.Fatalf("search body = %s, missing %q", payload, expected)
+		}
+	}
+	if len(result.Records) != 1 || result.NextPageToken == "" || !result.Truncated {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestLokiSearchUsesTenantScopeAndPaginates(t *testing.T) {
+	driver := lokiDriver{http: testHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if req.Header.Get("X-Scope-OrgID") != "tenant-a" {
+			t.Fatalf("tenant header = %q", req.Header.Get("X-Scope-OrgID"))
+		}
+		query := req.URL.Query().Get("query")
+		for _, expected := range []string{`cluster="cluster-a"`, `namespace="team-a"`, `pod="api-0"`, `container="api"`} {
+			if !strings.Contains(query, expected) {
+				t.Fatalf("query = %s, missing %s", query, expected)
+			}
+		}
+		return newJSONResponse(http.StatusOK, `{"status":"success","data":{"result":[{"stream":{"cluster":"cluster-a","namespace":"team-a","pod":"api-0","container":"api"},"values":[["1735689602000000000","second"],["1735689601000000000","first"]]}]}}`), nil
+	})}
+	result, err := driver.Search(context.Background(), "ds-2", map[string]any{
+		"endpoint": "https://logs.example", "tenantId": "tenant-a",
+		"labelKeys": map[string]any{"cluster": "cluster", "namespace": "namespace", "pod": "pod", "container": "container"},
+	}, SearchQuery{Scope: Scope{ClusterID: "cluster-a", Namespace: "team-a", Pod: "api-0", Container: "api"}, Limit: 1})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(result.Records) != 1 || result.NextPageToken == "" || !result.Truncated {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestClickHouseRejectsInjectedIdentifiers(t *testing.T) {
+	driver := clickHouseDriver{}
+	err := driver.ValidateConfig(map[string]any{"endpoint": "https://logs.example", "table": "logs; DROP TABLE users"})
+	if err == nil || !strings.Contains(err.Error(), "valid identifier") {
+		t.Fatalf("ValidateConfig() error = %v", err)
 	}
 }

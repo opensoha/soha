@@ -17,7 +17,7 @@ type platformMutationSecuritySurfaceEntry struct {
 func platformMutationSecuritySurface(method, path string) (platformMutationSecuritySurfaceEntry, bool) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = strings.TrimSpace(path)
-	if !isMutationMethod(method) || isPlatformReadOnlyPOST(method, path) || !strings.HasPrefix(path, "/api/v1/clusters") {
+	if !isMutationMethod(method) || isReadOnlyPOST(method, path) || !strings.HasPrefix(path, "/api/v1/clusters") {
 		return platformMutationSecuritySurfaceEntry{}, false
 	}
 
@@ -35,8 +35,16 @@ func platformMutationSecuritySurface(method, path string) (platformMutationSecur
 	}, true
 }
 
+func isReadOnlyPOST(method, path string) bool {
+	return method == "POST" && (strings.HasSuffix(path, "/resource-creation/scope-decision") ||
+		strings.HasSuffix(path, "/resource-creation/preflight") ||
+		strings.HasSuffix(path, "/observability/logging/preflight") ||
+		strings.HasSuffix(path, "/logs/query") ||
+		strings.HasSuffix(path, "/logs/stream-ticket"))
+}
+
 func isPlatformReadOnlyPOST(method, path string) bool {
-	return method == "POST" && (strings.HasSuffix(path, "/resource-creation/scope-decision") || strings.HasSuffix(path, "/resource-creation/preflight"))
+	return isReadOnlyPOST(method, path)
 }
 
 func isMutationMethod(method string) bool {
@@ -60,7 +68,7 @@ type nonPlatformMutationSecuritySurfaceEntry struct {
 func nonPlatformMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = strings.TrimSpace(path)
-	if !isMutationMethod(method) || strings.HasPrefix(path, "/api/v1/clusters") || strings.HasPrefix(path, "/api/v1/auth/") {
+	if !isMutationMethod(method) || isReadOnlyPOST(method, path) || strings.HasPrefix(path, "/api/v1/clusters") || strings.HasPrefix(path, "/api/v1/auth/") {
 		return nonPlatformMutationSecuritySurfaceEntry{}, false
 	}
 
@@ -164,6 +172,8 @@ var deliveryMutationRules = []deliveryMutationRule{
 
 func monitoringMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	switch {
+	case strings.HasPrefix(path, "/api/v1/observability/data-sources"):
+		return nonPlatformMutationEntry("ObservabilityDataSource", nonPlatformMutationAction(method, path), appaccess.PermObserveLogDataSourcesManage, false), true
 	case strings.HasPrefix(path, "/api/v1/alerts/"):
 		return nonPlatformMutationEntry("Alert", monitoringAlertAction(path), monitoringAlertPermission(path), false), true
 	case strings.HasPrefix(path, "/api/v1/alert-events/") && strings.HasSuffix(path, "/heal"):
@@ -498,6 +508,10 @@ func platformMutationAction(method, path string) string {
 		return "delete"
 	case strings.Contains(path, "/helm/charts/install"):
 		return "create"
+	case strings.HasSuffix(path, "/observability/logging/enable"):
+		return "enable"
+	case strings.HasSuffix(path, "/observability/logging/disable"):
+		return "disable"
 	case strings.Contains(path, "/helm/releases") && strings.Contains(path, "/values"):
 		return "update"
 	}
@@ -546,6 +560,8 @@ func platformMutationCapabilityKey(path string) string {
 	case strings.Contains(path, "/extensions/crds/"):
 		return "custom.resources"
 	case strings.Contains(path, "/helm/"):
+		return "helm.releases"
+	case strings.Contains(path, "/observability/logging"):
 		return "helm.releases"
 	default:
 		return "cluster.inventory"
@@ -608,4 +624,5 @@ var platformMutationResourceKinds = []struct {
 	{pathSegment: "/storage/storageclasses", kind: "StorageClass"},
 	{pathSegment: "/extensions/crds/", kind: "CustomResource"},
 	{pathSegment: "/helm/", kind: "HelmRelease"},
+	{pathSegment: "/observability/logging", kind: "LogCollection"},
 }

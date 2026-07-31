@@ -25,6 +25,7 @@ import (
 
 type stubPlatformResourceService struct {
 	*appresource.Workloads
+	*appresource.Logs
 	*appresource.Configuration
 	*appresource.Network
 	*appresource.Storage
@@ -65,17 +66,39 @@ type stubPlatformResourceService struct {
 	crdCreateNamespace             string
 	crdCreateContent               string
 	helmInstallInput               domainresource.HelmChartInstallInput
+	logQueryCalled                 bool
+	logQueryClusterID              string
+	logQuery                       domainresource.LogQuery
+	logTicketCalled                bool
+	logTicketAccess                domainidentity.AccessContext
 }
 
 func newStubPlatformResourceService() *stubPlatformResourceService {
 	service := appresource.New(appresource.Dependencies{})
 	return &stubPlatformResourceService{
-		Workloads: service.Workloads(), Configuration: service.Configuration(),
+		Workloads: service.Workloads(), Logs: service.Logs(), Configuration: service.Configuration(),
 		Network: service.Network(), Storage: service.Storage(), RBAC: service.RBAC(),
 		CustomResources: service.CustomResources(), Helm: service.Helm(), Inventory: service.Inventory(),
 		GenericResources: service.GenericResources(), PortForwards: service.PortForwards(), Events: service.Events(),
 		ResourceCreation: service.ResourceCreation(),
 	}
+}
+
+func (s *stubPlatformResourceService) QueryClusterLogs(_ context.Context, _ domainidentity.Principal, clusterID string, query domainresource.LogQuery) (domainresource.LogPage, error) {
+	s.logQueryCalled = true
+	s.logQueryClusterID = clusterID
+	s.logQuery = query
+	return domainresource.LogPage{Entries: []domainresource.LogEntry{}, ScopeRestricted: false}, nil
+}
+
+func (s *stubPlatformResourceService) IssueClusterLogStreamTicket(_ context.Context, _ domainidentity.Principal, accessCtx domainidentity.AccessContext, _ string, _ domainresource.LogQuery) (domainidentity.StreamTicket, error) {
+	s.logTicketCalled = true
+	s.logTicketAccess = accessCtx
+	return domainidentity.StreamTicket{Ticket: "log-ticket", ExpiresAt: time.Now().UTC().Add(time.Minute)}, nil
+}
+
+func (s *stubPlatformResourceService) StreamClusterLogsFromTicket(_ context.Context, _ domainidentity.Principal, _ domainidentity.AccessContext, _ string, emit func(domainresource.LogStreamEvent) error) error {
+	return emit(domainresource.LogStreamEvent{Type: "end", Status: &domainresource.LogStreamStatus{State: "ended"}})
 }
 
 func newTestPlatformHandler(
@@ -122,7 +145,7 @@ func newTestPlatformHandler(
 
 func completeResourceServices(resources *stubPlatformResourceService) ResourceServices {
 	return ResourceServices{
-		PodReader: resources, PodEditor: resources, PodDiagnostics: resources, PodStreams: resources,
+		PodReader: resources, PodEditor: resources, PodDiagnostics: resources, PodStreams: resources, Logs: resources,
 		DeploymentReader: resources, DeploymentEditor: resources,
 		StatefulSetReader: resources, StatefulSetEditor: resources,
 		DaemonSetReader: resources, DaemonSetEditor: resources,
@@ -670,6 +693,41 @@ func TestPlatformGetPodLogsBindsDefaultsAndQuery(t *testing.T) {
 	}
 	if resources.podLogsContainer != "api" || resources.podLogsTailLines != 50 || resources.podLogsSince != 300 || !resources.podLogsPrevious {
 		t.Fatalf("log args = container:%q tail:%d since:%d previous:%v", resources.podLogsContainer, resources.podLogsTailLines, resources.podLogsSince, resources.podLogsPrevious)
+	}
+}
+
+func TestPlatformQueryClusterLogsBindsPayload(t *testing.T) {
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
+	body := `{"sourceMode":"runtime","selector":{"namespace":"team-a","podNames":["api-0"]},"tail":50,"text":"error"}`
+	ctx, recorder := newPlatformTestContext(http.MethodPost, "/api/v1/clusters/cluster-a/logs/query", body, gin.Params{{Key: "clusterID", Value: "cluster-a"}})
+
+	handler.QueryClusterLogs(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if !resources.logQueryCalled || resources.logQueryClusterID != "cluster-a" {
+		t.Fatalf("query called=%v cluster=%q", resources.logQueryCalled, resources.logQueryClusterID)
+	}
+	if resources.logQuery.SourceMode != "runtime" || resources.logQuery.Tail != 50 || resources.logQuery.Text != "error" || resources.logQuery.Selector == nil || resources.logQuery.Selector.Namespace != "team-a" || len(resources.logQuery.Selector.PodNames) != 1 {
+		t.Fatalf("query = %#v", resources.logQuery)
+	}
+}
+
+func TestPlatformIssueClusterLogStreamTicketPassesAccessContext(t *testing.T) {
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
+	ctx, recorder := newPlatformTestContext(http.MethodPost, "/api/v1/clusters/cluster-a/logs/stream-ticket", `{"selector":{"namespace":"team-a"}}`, gin.Params{{Key: "clusterID", Value: "cluster-a"}})
+	ctx.Set("access_context", domainidentity.AccessContext{TokenKind: "session", SubjectID: "u-1"})
+
+	handler.IssueClusterLogStreamTicket(ctx)
+
+	if recorder.Code != http.StatusOK || !resources.logTicketCalled {
+		t.Fatalf("status=%d called=%v body=%s", recorder.Code, resources.logTicketCalled, recorder.Body.String())
+	}
+	if resources.logTicketAccess.TokenKind != "session" || resources.logTicketAccess.SubjectID != "u-1" || !strings.Contains(recorder.Body.String(), "log-ticket") {
+		t.Fatalf("access=%#v body=%s", resources.logTicketAccess, recorder.Body.String())
 	}
 }
 

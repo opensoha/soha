@@ -11,6 +11,7 @@ import (
 
 type Scope = telemetry.LogScope
 type SearchQuery = telemetry.LogSearchQuery
+type SearchResult = telemetry.LogSearchResult
 type HistogramQuery = telemetry.LogHistogramQuery
 type ContextWindowQuery = telemetry.LogContextWindowQuery
 type CorrelationQuery = telemetry.LogCorrelationQuery
@@ -21,6 +22,7 @@ type CorrelationResult = telemetry.LogCorrelationResult
 type Driver interface {
 	BackendType() string
 	ValidateConfig(config map[string]any) error
+	Search(ctx context.Context, sourceID string, config map[string]any, query SearchQuery) (SearchResult, error)
 	Correlate(ctx context.Context, sourceID string, config map[string]any, query CorrelationQuery) (CorrelationResult, error)
 }
 
@@ -40,7 +42,11 @@ func NewRegistry() *Registry {
 func (r *Registry) Get(backendType string) (Driver, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	driver, ok := r.drivers[strings.TrimSpace(backendType)]
+	backendType = strings.ToLower(strings.TrimSpace(backendType))
+	if backendType == "elasticsearch" {
+		backendType = "es"
+	}
+	driver, ok := r.drivers[backendType]
 	return driver, ok
 }
 
@@ -58,6 +64,14 @@ func (r *Registry) Correlate(ctx context.Context, backendType, sourceID string, 
 		return CorrelationResult{}, fmt.Errorf("unsupported log backend %s", backendType)
 	}
 	return driver.Correlate(ctx, sourceID, config, query)
+}
+
+func (r *Registry) Search(ctx context.Context, backendType, sourceID string, config map[string]any, query SearchQuery) (SearchResult, error) {
+	driver, ok := r.Get(backendType)
+	if !ok {
+		return SearchResult{}, fmt.Errorf("unsupported log backend %s", backendType)
+	}
+	return driver.Search(ctx, sourceID, config, query)
 }
 
 var defaultRegistry = NewRegistry()

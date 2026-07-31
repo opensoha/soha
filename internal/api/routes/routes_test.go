@@ -59,6 +59,9 @@ func TestRegisterPlatformRoutesKeepsCoreOperationalSurface(t *testing.T) {
 
 	for _, route := range []string{
 		"GET /api/v1/clusters/capabilities",
+		"POST /api/v1/clusters/:clusterID/logs/query",
+		"POST /api/v1/clusters/:clusterID/logs/stream-ticket",
+		"GET /api/v1/clusters/:clusterID/logs/stream",
 		"GET /api/v1/clusters/:clusterID/workloads/pods",
 		"PUT /api/v1/clusters/:clusterID/workloads/pods/:podName/yaml",
 		"POST /api/v1/clusters/:clusterID/workloads/deployments/restart",
@@ -443,7 +446,7 @@ func TestNonPlatformMutatingRoutesHaveSecuritySurface(t *testing.T) {
 
 	checked := 0
 	for _, route := range router.Routes() {
-		if !isMutationMethod(route.Method) || hasPlatformClusterPrefix(route.Path) || hasProtectedAuthPrefix(route.Path) {
+		if !isMutationMethod(route.Method) || isReadOnlyPOST(route.Method, route.Path) || hasPlatformClusterPrefix(route.Path) || hasProtectedAuthPrefix(route.Path) {
 			continue
 		}
 		checked++

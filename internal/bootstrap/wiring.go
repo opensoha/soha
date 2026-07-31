@@ -43,6 +43,7 @@ import (
 	appmodule "github.com/opensoha/soha/internal/application/module"
 	appmonitoring "github.com/opensoha/soha/internal/application/monitoring"
 	appmultiagent "github.com/opensoha/soha/internal/application/multiagent"
+	appobservability "github.com/opensoha/soha/internal/application/observability"
 	appoperation "github.com/opensoha/soha/internal/application/operation"
 	appplugin "github.com/opensoha/soha/internal/application/plugin"
 	appproviderportal "github.com/opensoha/soha/internal/application/providerportal"
@@ -200,6 +201,7 @@ type coreServices struct {
 	resourceService          *appresource.Service
 	eventService             *appevent.Service
 	monitoringService        *appmonitoring.Service
+	observabilityService     *appobservability.Service
 	applicationService       *appregistry.Service
 	executionService         *appexecution.Service
 	buildService             *appbuild.Service
@@ -476,7 +478,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	directoryScheduler.SetInstrumentation(infra.runtimeMetrics)
 	go directoryScheduler.Start(infra.lifecycleCtx)
 
-	platformCore, err := newPlatformCoreServices(ctx, cfg, infra, repos, permissionResolver, auditService, operationService, accessService)
+	platformCore, err := newPlatformCoreServices(ctx, cfg, infra, repos, permissionResolver, auditService, operationService, accessService, identityService)
 	if err != nil {
 		infra.cancel()
 		return nil, err
@@ -543,6 +545,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		resourceService:          platformCore.resources,
 		eventService:             platformCore.events,
 		monitoringService:        platformCore.monitoring,
+		observabilityService:     platformCore.observability,
 		applicationService:       deliveryCore.applications,
 		executionService:         deliveryCore.execution,
 		buildService:             deliveryCore.builds,
@@ -561,13 +564,14 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 }
 
 type platformCoreServices struct {
-	cluster    *appcluster.Service
-	resources  *appresource.Service
-	events     *appevent.Service
-	monitoring *appmonitoring.Service
+	cluster       *appcluster.Service
+	resources     *appresource.Service
+	events        *appevent.Service
+	monitoring    *appmonitoring.Service
+	observability *appobservability.Service
 }
 
-func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service) (*platformCoreServices, error) {
+func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, streamTickets appresource.LogStreamTicketIssuer) (*platformCoreServices, error) {
 	clusterService, err := appcluster.New(
 		infra.clusterManager, infra.clusterManager, infra.informers,
 		func(connection domaincluster.Connection) (appcluster.AgentSummaryClient, error) {
@@ -584,12 +588,26 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 
 	resourceClusters := resourcebackendinfra.NewClusters(infra.clusterManager)
 	resourceDirect := resourcebackendinfra.NewDirect(resourceClusters, resourcebackendinfra.NewCache(infra.informers))
+	observabilityService, err := appobservability.New(appobservability.Dependencies{
+		DataSources: repos.copilotRepository,
+		Permissions: permissions,
+		Logs:        mcplogsinfra.DefaultRegistry(),
+		Audit:       audit,
+		Keys:        cfg.Security.CredentialEncryptionKeys,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("build observability service: %w", err)
+	}
 	resourceService := appresource.New(appresource.Dependencies{
 		Clusters: resourceClusters, Agents: resourcebackendinfra.NewAgentClients(infra.agentRegistry), Connections: repos.clusterRepository,
+		StreamTickets: streamTickets, DurableLogs: observabilityService,
 		Authorizer: access, Permissions: permissions, Audit: audit, Operations: operations, CreationOperations: operations, CreationBatches: repos.resourceCreationRepository, PortForwards: repos.portForwardRepository,
 		DirectCustom: resourceDirect, DirectConfiguration: resourceDirect, DirectEvents: resourceDirect, DirectGeneric: resourceDirect, DirectResourceCreate: resourceDirect,
-		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectNetwork: resourceDirect,
+		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectLogs: resourceDirect, DirectNetwork: resourceDirect,
 		DirectPods: resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
+	})
+	observabilityService.ConfigureCollection(appobservability.CollectionDependencies{
+		Settings: repos.settingsRepository, Connections: repos.clusterRepository, Helm: resourceService.Helm(), Access: access,
 	})
 	if err := resourceService.PortForwards().RestorePortForwards(ctx); err != nil {
 		infra.logger.Warn("restore port forwards failed", zap.Error(err))
@@ -608,7 +626,7 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 	}
 	audit.SetAlertSink(monitoringService)
 	operations.SetAlertSink(monitoringService)
-	return &platformCoreServices{cluster: clusterService, resources: resourceService, events: eventService, monitoring: monitoringService}, nil
+	return &platformCoreServices{cluster: clusterService, resources: resourceService, events: eventService, monitoring: monitoringService, observability: observabilityService}, nil
 }
 
 type deliveryCoreServices struct {
@@ -826,6 +844,8 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		core.operationService,
 		appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}),
 		appdocker.WithRuntimeBearerToken(cfg.Runtime.ExecutionRunnerToken),
+		appdocker.WithAudit(core.auditService),
+		appdocker.WithLogStreamTickets(core.identityService),
 	)
 	computeService := appcompute.New(repos.virtualizationRepository, repos.dockerRepository, core.permissionResolver, appcompute.Options{
 		VirtualizationEnabled: cfg.Modules.Virtualization.Enabled,
@@ -838,6 +858,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 
 	deliveryService := appdelivery.New(core.applicationService, core.catalogService, core.buildService, workflowService, core.releaseService, repos.deliveryRepository, core.executionService, runtimeResources, core.permissionResolver)
 	deliveryService.SetRecorders(core.auditService, core.operationService)
+	deliveryService.SetLogRuntime(core.resourceService.Logs(), core.identityService)
 	if governanceService, governanceErr := appdeliverygovernance.New(repos.deliveryRepository, core.auditService); governanceErr == nil {
 		deliveryService.SetGovernance(governanceService)
 	}
@@ -1012,7 +1033,7 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 	helm := service.Helm()
 	inventory := service.Inventory()
 	return apiHandlers.ResourceServices{
-		PodReader: workloads, PodEditor: workloads, PodDiagnostics: workloads, PodStreams: workloads,
+		PodReader: workloads, PodEditor: workloads, PodDiagnostics: workloads, PodStreams: workloads, Logs: service.Logs(),
 		DeploymentReader: workloads, DeploymentEditor: workloads,
 		StatefulSetReader: workloads, StatefulSetEditor: workloads,
 		DaemonSetReader: workloads, DaemonSetEditor: workloads,
@@ -1073,6 +1094,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 			OnCallEscalations: core.monitoringService, OnCallAssignments: core.monitoringService,
 			OnCallRuntime: core.monitoringService,
 		}),
+		Observability: apiHandlers.NewObservabilityHandler(core.observabilityService),
 		Catalog: apiHandlers.NewCatalogHandlerWithServices(
 			core.catalogService, core.catalogService, core.catalogService,
 		),
@@ -1156,7 +1178,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 func newDeliveryHandler(service *appdelivery.Service, keys keyring.Ring) *apiHandlers.DeliveryHandler {
 	return apiHandlers.NewDeliveryHandlerWithServices(apiHandlers.DeliveryServices{
 		Applications: service, Releases: service, Executions: service, Runtime: service,
-		Blueprints: service, Drafts: service, Actions: service, Runner: service,
+		Blueprints: service, Drafts: service, Actions: service, Runner: service, Logs: service,
 	}, keys)
 }
 

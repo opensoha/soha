@@ -21,6 +21,12 @@ func TestDefaultCapabilityMatrixDocumentsAgentGaps(t *testing.T) {
 	expectCapability(t, podLogs.Agent.Status == CapabilityStatusAvailable, "agent pod logs status = %q", podLogs.Agent.Status)
 	expectCapability(t, podLogs.RiskLevel == CapabilityRiskRead, "pod logs risk = %q", podLogs.RiskLevel)
 	expectCapability(t, !podLogs.RequiresApproval, "pod logs should not require approval")
+	for _, key := range []string{"logs.runtime.snapshot", "logs.runtime.stream", "logs.runtime.aggregate"} {
+		entry := byKey[key]
+		expectCapability(t, entry.Direct.Status == CapabilityStatusAvailable, "%s direct status = %q", key, entry.Direct.Status)
+		expectCapability(t, entry.Agent.Status == CapabilityStatusAvailable, "%s agent status = %q", key, entry.Agent.Status)
+		expectCapability(t, entry.RiskLevel == CapabilityRiskRead, "%s risk = %q", key, entry.RiskLevel)
+	}
 	expectCapability(t, byKey["pod.exec"].Agent.Status == CapabilityStatusAvailable, "agent pod exec is unavailable")
 	expectCapability(t, byKey["port.forward"].Agent.Status == CapabilityStatusAvailable, "agent port forward is unavailable")
 

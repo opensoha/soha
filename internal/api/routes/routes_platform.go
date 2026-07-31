@@ -7,10 +7,17 @@ func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/clusters/:clusterID/resource-creation/preflight", deps.Platform.PreflightResourceCreation)
 	protected.POST("/clusters/:clusterID/resource-creation/execute", deps.Platform.ExecuteResourceCreation)
 	registerPlatformClusterRoutes(protected, deps)
+	registerPlatformLogRoutes(protected, deps)
 	registerPlatformWorkloadRoutes(protected, deps)
 	registerPlatformConfigurationRoutes(protected, deps)
 	registerPlatformNetworkStorageRoutes(protected, deps)
 	registerPlatformExtensionRoutes(protected, deps)
+}
+
+func registerPlatformLogRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.POST("/clusters/:clusterID/logs/query", deps.Platform.QueryClusterLogs)
+	protected.POST("/clusters/:clusterID/logs/stream-ticket", deps.Platform.IssueClusterLogStreamTicket)
+	protected.GET("/clusters/:clusterID/logs/stream", deps.Platform.StreamClusterLogs)
 }
 
 func registerPlatformClusterRoutes(protected gin.IRoutes, deps Dependencies) {

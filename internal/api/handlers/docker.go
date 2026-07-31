@@ -16,6 +16,7 @@ import (
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 )
@@ -42,6 +43,9 @@ type DockerProjectService interface {
 type DockerProjectRuntimeService interface {
 	GetProjectLogs(context.Context, domainidentity.Principal, string, string, int) (domaindocker.ProjectRuntimeLogs, error)
 	StreamProjectLogs(context.Context, domainidentity.Principal, string, string, int, io.Writer) error
+	QueryProjectLogs(context.Context, domainidentity.Principal, string, domainresource.LogQuery) (domainresource.LogPage, error)
+	IssueProjectLogStreamTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, string, domainresource.LogQuery) (domainidentity.StreamTicket, error)
+	StreamProjectLogEventsFromTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, string, func(domainresource.LogStreamEvent) error) error
 	StreamProjectTerminal(context.Context, domainidentity.Principal, string, string, string, io.Reader, io.Writer, io.Writer) error
 }
 
@@ -319,6 +323,64 @@ func (h *DockerHandler) GetProjectLogs(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DockerHandler) QueryProjectLogs(c *gin.Context) {
+	var query domainresource.LogQuery
+	if err := c.ShouldBindJSON(&query); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid log query")
+		return
+	}
+	page, err := h.projectRuntime.QueryProjectLogs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), query)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, page)
+}
+
+func (h *DockerHandler) IssueProjectLogStreamTicket(c *gin.Context) {
+	var query domainresource.LogQuery
+	if err := c.ShouldBindJSON(&query); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid log query")
+		return
+	}
+	ticket, err := h.projectRuntime.IssueProjectLogStreamTicket(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), apiMiddleware.AccessContextFromContext(c), c.Param("id"), query)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, ticket)
+}
+
+func (h *DockerHandler) StreamProjectLogEvents(c *gin.Context) {
+	session, err := newWebSocketStreamSession(c)
+	if err != nil {
+		return
+	}
+	defer session.Close()
+	session.SetPongWait(podLogPongWait)
+	session.StartPing(podLogPingInterval)
+
+	streamDone := make(chan error, 1)
+	go func() {
+		streamDone <- h.projectRuntime.StreamProjectLogEventsFromTicket(
+			session.Context(), apiMiddleware.PrincipalFromContext(c), apiMiddleware.AccessContextFromContext(c), c.Param("id"),
+			func(event domainresource.LogStreamEvent) error { return session.WriteJSON(event) },
+		)
+	}()
+	readDone := session.ReadMessages(func(message terminalMessage) bool { return message.Type != "close" }, nil)
+	select {
+	case streamErr := <-streamDone:
+		if streamErr != nil {
+			_ = session.WriteJSON(domainresource.LogStreamEvent{Type: "source_error", Status: &domainresource.LogStreamStatus{State: "degraded", Message: "log stream unavailable"}})
+			_ = session.WriteJSON(domainresource.LogStreamEvent{Type: "end", Status: &domainresource.LogStreamStatus{State: "ended"}})
+		}
+		session.Cancel()
+	case <-readDone:
+		session.Cancel()
+		<-streamDone
+	}
 }
 
 func (h *DockerHandler) StreamProjectLogs(c *gin.Context) {

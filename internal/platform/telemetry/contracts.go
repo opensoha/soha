@@ -7,14 +7,29 @@ type LogScope struct {
 	Namespace string
 	Service   string
 	Workload  string
+	Pod       string
+	Container string
 }
 
 type LogSearchQuery struct {
-	Scope    LogScope
-	TimeFrom time.Time
-	TimeTo   time.Time
-	Query    string
-	Limit    int
+	Scope      LogScope
+	TimeFrom   time.Time
+	TimeTo     time.Time
+	Query      string
+	Terms      []string
+	Severities []string
+	Limit      int
+	Direction  string
+	PageToken  string
+}
+
+type LogSearchResult struct {
+	SourceID      string
+	Records       []LogRecord
+	NextPageToken string
+	Truncated     bool
+	QueryCost     map[string]any
+	ErrorKind     string
 }
 
 type LogHistogramQuery struct {
@@ -50,6 +65,8 @@ type LogRecord struct {
 	Workload   string
 	Namespace  string
 	ClusterID  string
+	Pod        string
+	Container  string
 	Attributes map[string]any
 }
 

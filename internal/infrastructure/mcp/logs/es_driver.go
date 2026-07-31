@@ -28,10 +28,9 @@ func (esDriver) ValidateConfig(config map[string]any) error {
 	if config == nil {
 		return fmt.Errorf("es config is required")
 	}
-	endpoint, _ := config["endpoint"].(string)
 	index, _ := config["index"].(string)
-	if strings.TrimSpace(endpoint) == "" {
-		return fmt.Errorf("es endpoint is required")
+	if err := validateHTTPConfig(config, "es"); err != nil {
+		return err
 	}
 	if strings.TrimSpace(index) == "" {
 		return fmt.Errorf("es index is required")
@@ -40,8 +39,20 @@ func (esDriver) ValidateConfig(config map[string]any) error {
 }
 
 func (d esDriver) Correlate(ctx context.Context, sourceID string, config map[string]any, query CorrelationQuery) (CorrelationResult, error) {
-	if err := d.ValidateConfig(config); err != nil {
+	result, err := d.Search(ctx, sourceID, config, searchQueryFromCorrelation(query))
+	if err != nil {
 		return CorrelationResult{}, err
+	}
+	return correlationResultFromSearch(sourceID, query, result), nil
+}
+
+func (d esDriver) Search(ctx context.Context, sourceID string, config map[string]any, query SearchQuery) (SearchResult, error) {
+	if err := d.ValidateConfig(config); err != nil {
+		return SearchResult{}, err
+	}
+	query, cursor, err := normalizeSearchQuery(query)
+	if err != nil {
+		return SearchResult{}, err
 	}
 	endpoint, _ := config["endpoint"].(string)
 	index, _ := config["index"].(string)
@@ -52,32 +63,28 @@ func (d esDriver) Correlate(ctx context.Context, sourceID string, config map[str
 	workloadField := stringConfig(config, "workloadField", "workload")
 	namespaceField := stringConfig(config, "namespaceField", "namespace")
 	clusterField := stringConfig(config, "clusterField", "cluster")
-	limit := intConfig(config, "correlationLimit", query.Limit)
-	if limit <= 0 {
-		limit = 20
-	}
+	podField := stringConfig(config, "podField", "pod")
+	containerField := stringConfig(config, "containerField", "container")
 
 	searchURL := strings.TrimRight(strings.TrimSpace(endpoint), "/") + "/" + url.PathEscape(strings.TrimSpace(index)) + "/_search"
-	body := buildESCorrelationBody(query, timestampField, messageField, clusterField, namespaceField, serviceField, workloadField, limit)
+	body := buildESSearchBody(query, cursor, timestampField, messageField, clusterField, namespaceField, serviceField, workloadField, podField, containerField, providerFetchLimit(query, cursor))
 	payload, err := json.Marshal(body)
 	if err != nil {
-		return CorrelationResult{}, fmt.Errorf("marshal es correlation body: %w", err)
+		return SearchResult{}, fmt.Errorf("marshal es search body: %w", err)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, searchURL, bytes.NewReader(payload))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, searchURL, bytes.NewReader(payload))
 	if err != nil {
-		return CorrelationResult{}, err
+		return SearchResult{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if bearerToken := stringConfig(config, "bearerToken", ""); bearerToken != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
-	}
+	applyProviderHeaders(req, config)
 	resp, err := d.http.Do(req)
 	if err != nil {
-		return CorrelationResult{}, err
+		return SearchResult{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
-		return CorrelationResult{}, fmt.Errorf("es correlate failed with status %d", resp.StatusCode)
+		return SearchResult{}, fmt.Errorf("es search failed with status %d", resp.StatusCode)
 	}
 	var payloadResp struct {
 		Hits struct {
@@ -87,54 +94,58 @@ func (d esDriver) Correlate(ctx context.Context, sourceID string, config map[str
 		} `json:"hits"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payloadResp); err != nil {
-		return CorrelationResult{ErrorKind: "decode_failed"}, fmt.Errorf("decode es correlate response: %w", err)
+		return SearchResult{ErrorKind: "decode_failed"}, fmt.Errorf("decode es search response: %w", err)
 	}
 	records := make([]Record, 0, len(payloadResp.Hits.Hits))
 	for _, item := range payloadResp.Hits.Hits {
 		record := Record{
 			Timestamp:  timeValue(item.Source, timestampField),
-			Severity:   nestedString(item.Source, severityField),
+			Severity:   normalizeLogSeverity(nestedString(item.Source, severityField)),
 			Message:    nestedString(item.Source, messageField),
 			Service:    nestedString(item.Source, serviceField),
 			Workload:   nestedString(item.Source, workloadField),
 			Namespace:  nestedString(item.Source, namespaceField),
 			ClusterID:  nestedString(item.Source, clusterField),
+			Pod:        nestedString(item.Source, podField),
+			Container:  nestedString(item.Source, containerField),
 			Attributes: item.Source,
+		}
+		if record.Severity == "" || record.Severity == "info" {
+			record.Severity = severityFromMessage(record.Message)
 		}
 		records = append(records, record)
 	}
-	signatures := summarizeSignatures(records)
-	summary := "no correlated logs found"
-	if len(records) > 0 {
-		summary = fmt.Sprintf("%d correlated logs found", len(records))
-	}
-	return CorrelationResult{
-		SourceID:   sourceID,
-		Summary:    summary,
-		Records:    records,
-		Signatures: signatures,
-		Truncated:  len(records) >= limit,
+	records = filterSeverities(records, query.Severities)
+	records, nextPageToken, truncated := paginateRecords(records, query, cursor)
+	return SearchResult{
+		SourceID:      sourceID,
+		Records:       records,
+		NextPageToken: nextPageToken,
+		Truncated:     truncated,
 		QueryCost: map[string]any{
 			"backendType": "es",
-			"limit":       limit,
+			"limit":       query.Limit,
 			"recordCount": len(records),
-		},
-		SampleWindow: map[string]any{
-			"timeFrom": query.TimeFrom.Format(time.RFC3339),
-			"timeTo":   query.TimeTo.Format(time.RFC3339),
 		},
 	}, nil
 }
 
-func buildESCorrelationBody(query CorrelationQuery, timestampField, messageField, clusterField, namespaceField, serviceField, workloadField string, limit int) map[string]any {
+func buildESSearchBody(query SearchQuery, cursor timestampCursor, timestampField, messageField, clusterField, namespaceField, serviceField, workloadField, podField, containerField string, limit int) map[string]any {
 	filters := make([]map[string]any, 0)
-	if !query.TimeFrom.IsZero() || !query.TimeTo.IsZero() {
+	if !query.TimeFrom.IsZero() || !query.TimeTo.IsZero() || !cursor.Timestamp.IsZero() {
 		rangeBody := map[string]any{}
 		if !query.TimeFrom.IsZero() {
 			rangeBody["gte"] = query.TimeFrom.Format(time.RFC3339)
 		}
 		if !query.TimeTo.IsZero() {
 			rangeBody["lte"] = query.TimeTo.Format(time.RFC3339)
+		}
+		if !cursor.Timestamp.IsZero() {
+			if query.Direction == "forward" {
+				rangeBody["gte"] = cursor.Timestamp.Format(time.RFC3339Nano)
+			} else {
+				rangeBody["lte"] = cursor.Timestamp.Format(time.RFC3339Nano)
+			}
 		}
 		filters = append(filters, map[string]any{"range": map[string]any{timestampField: rangeBody}})
 	}
@@ -143,6 +154,8 @@ func buildESCorrelationBody(query CorrelationQuery, timestampField, messageField
 		namespaceField: query.Scope.Namespace,
 		serviceField:   query.Scope.Service,
 		workloadField:  query.Scope.Workload,
+		podField:       query.Scope.Pod,
+		containerField: query.Scope.Container,
 	} {
 		if strings.TrimSpace(field) == "" || strings.TrimSpace(value) == "" {
 			continue
@@ -150,7 +163,7 @@ func buildESCorrelationBody(query CorrelationQuery, timestampField, messageField
 		filters = append(filters, map[string]any{"term": map[string]any{field: value}})
 	}
 	should := make([]map[string]any, 0)
-	for _, term := range correlationTerms(query) {
+	for _, term := range query.Terms {
 		should = append(should, map[string]any{
 			"simple_query_string": map[string]any{
 				"query":  term,
@@ -165,9 +178,13 @@ func buildESCorrelationBody(query CorrelationQuery, timestampField, messageField
 		boolQuery["should"] = should
 		boolQuery["minimum_should_match"] = 1
 	}
+	order := "desc"
+	if query.Direction == "forward" {
+		order = "asc"
+	}
 	return map[string]any{
 		"size": limit,
-		"sort": []map[string]any{{timestampField: map[string]any{"order": "desc"}}},
+		"sort": []map[string]any{{timestampField: map[string]any{"order": order}}},
 		"query": map[string]any{
 			"bool": boolQuery,
 		},

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -40,10 +39,9 @@ func (lokiDriver) ValidateConfig(config map[string]any) error {
 	if config == nil {
 		return fmt.Errorf("loki config is required")
 	}
-	endpoint, _ := config["endpoint"].(string)
 	labelKeys, _ := config["labelKeys"].(map[string]any)
-	if strings.TrimSpace(endpoint) == "" {
-		return fmt.Errorf("loki endpoint is required")
+	if err := validateHTTPConfig(config, "loki"); err != nil {
+		return err
 	}
 	if labelKeys == nil {
 		return fmt.Errorf("loki labelKeys config is required")
@@ -52,74 +50,79 @@ func (lokiDriver) ValidateConfig(config map[string]any) error {
 }
 
 func (d lokiDriver) Correlate(ctx context.Context, sourceID string, config map[string]any, query CorrelationQuery) (CorrelationResult, error) {
-	if err := d.ValidateConfig(config); err != nil {
-		return CorrelationResult{}, err
-	}
-	endpoint, _ := config["endpoint"].(string)
-	limit := intConfig(config, "correlationLimit", query.Limit)
-	if limit <= 0 {
-		limit = 20
-	}
-	labelKeys := mapConfig(config["labelKeys"])
-	queryURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(endpoint), "/") + "/loki/api/v1/query_range")
+	result, err := d.Search(ctx, sourceID, config, searchQueryFromCorrelation(query))
 	if err != nil {
 		return CorrelationResult{}, err
 	}
+	return correlationResultFromSearch(sourceID, query, result), nil
+}
+
+func (d lokiDriver) Search(ctx context.Context, sourceID string, config map[string]any, query SearchQuery) (SearchResult, error) {
+	if err := d.ValidateConfig(config); err != nil {
+		return SearchResult{}, err
+	}
+	query, cursor, err := normalizeSearchQuery(query)
+	if err != nil {
+		return SearchResult{}, err
+	}
+	endpoint, _ := config["endpoint"].(string)
+	labelKeys := mapConfig(config["labelKeys"])
+	queryURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(endpoint), "/") + "/loki/api/v1/query_range")
+	if err != nil {
+		return SearchResult{}, err
+	}
 	params := queryURL.Query()
-	params.Set("query", buildLokiCorrelationQuery(query, labelKeys))
+	params.Set("query", buildLokiSearchQuery(query, labelKeys))
 	if !query.TimeFrom.IsZero() {
 		params.Set("start", strconv.FormatInt(query.TimeFrom.UnixNano(), 10))
 	}
 	if !query.TimeTo.IsZero() {
 		params.Set("end", strconv.FormatInt(query.TimeTo.UnixNano(), 10))
 	}
-	params.Set("limit", strconv.Itoa(limit))
+	if !cursor.Timestamp.IsZero() {
+		if query.Direction == "forward" {
+			params.Set("start", strconv.FormatInt(cursor.Timestamp.UnixNano(), 10))
+		} else {
+			params.Set("end", strconv.FormatInt(cursor.Timestamp.UnixNano(), 10))
+		}
+	}
+	params.Set("direction", query.Direction)
+	params.Set("limit", strconv.Itoa(providerFetchLimit(query, cursor)))
 	queryURL.RawQuery = params.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, queryURL.String(), nil)
 	if err != nil {
-		return CorrelationResult{}, err
+		return SearchResult{}, err
 	}
-	if bearerToken := stringConfig(config, "bearerToken", ""); bearerToken != "" {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
-	}
+	applyProviderHeaders(req, config)
 	resp, err := d.http.Do(req)
 	if err != nil {
-		return CorrelationResult{}, err
+		return SearchResult{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
-		return CorrelationResult{}, fmt.Errorf("loki correlate failed with status %d", resp.StatusCode)
+		return SearchResult{}, fmt.Errorf("loki search failed with status %d", resp.StatusCode)
 	}
 	var payload lokiQueryRangePayload
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return CorrelationResult{ErrorKind: "decode_failed"}, fmt.Errorf("decode loki correlate response: %w", err)
+		return SearchResult{ErrorKind: "decode_failed"}, fmt.Errorf("decode loki search response: %w", err)
 	}
-	records := lokiRecords(payload.Data.Result, labelKeys, limit)
-	signatures := summarizeSignatures(records)
-	summary := "no correlated logs found"
-	if len(records) > 0 {
-		summary = fmt.Sprintf("%d correlated logs found", len(records))
-	}
-	return CorrelationResult{
-		SourceID:   sourceID,
-		Summary:    summary,
-		Records:    records,
-		Signatures: signatures,
-		Truncated:  len(records) >= limit,
+	records := filterSeverities(lokiRecords(payload.Data.Result, labelKeys), query.Severities)
+	records, nextPageToken, truncated := paginateRecords(records, query, cursor)
+	return SearchResult{
+		SourceID:      sourceID,
+		Records:       records,
+		NextPageToken: nextPageToken,
+		Truncated:     truncated,
 		QueryCost: map[string]any{
 			"backendType": "loki",
-			"limit":       limit,
+			"limit":       query.Limit,
 			"recordCount": len(records),
-		},
-		SampleWindow: map[string]any{
-			"timeFrom": query.TimeFrom.Format(time.RFC3339),
-			"timeTo":   query.TimeTo.Format(time.RFC3339),
 		},
 	}, nil
 }
 
-func lokiRecords(streams []lokiStreamResult, labelKeys map[string]string, limit int) []Record {
+func lokiRecords(streams []lokiStreamResult, labelKeys map[string]string) []Record {
 	records := make([]Record, 0)
 	for _, stream := range streams {
 		for _, value := range stream.Values {
@@ -135,6 +138,8 @@ func lokiRecords(streams []lokiStreamResult, labelKeys map[string]string, limit 
 				Workload:  stream.Stream[labelKey(labelKeys, "workload")],
 				Namespace: stream.Stream[labelKey(labelKeys, "namespace")],
 				ClusterID: stream.Stream[labelKey(labelKeys, "cluster")],
+				Pod:       stream.Stream[labelKey(labelKeys, "pod")],
+				Container: stream.Stream[labelKey(labelKeys, "container")],
 				Attributes: map[string]any{
 					"labels": stream.Stream,
 				},
@@ -145,22 +150,18 @@ func lokiRecords(streams []lokiStreamResult, labelKeys map[string]string, limit 
 			records = append(records, record)
 		}
 	}
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].Timestamp.After(records[j].Timestamp)
-	})
-	if len(records) > limit {
-		records = records[:limit]
-	}
 	return records
 }
 
-func buildLokiCorrelationQuery(query CorrelationQuery, labelKeys map[string]string) string {
+func buildLokiSearchQuery(query SearchQuery, labelKeys map[string]string) string {
 	labels := make([]string, 0)
 	for logicalKey, value := range map[string]string{
 		"cluster":   query.Scope.ClusterID,
 		"namespace": query.Scope.Namespace,
 		"service":   query.Scope.Service,
 		"workload":  query.Scope.Workload,
+		"pod":       query.Scope.Pod,
+		"container": query.Scope.Container,
 	} {
 		value = strings.TrimSpace(value)
 		if value == "" {
@@ -172,7 +173,7 @@ func buildLokiCorrelationQuery(query CorrelationQuery, labelKeys map[string]stri
 	if len(labels) > 0 {
 		expr = "{" + strings.Join(labels, ",") + "}"
 	}
-	for _, term := range correlationTerms(query) {
+	for _, term := range query.Terms {
 		expr += fmt.Sprintf(` |= "%s"`, escapeLogQL(term))
 	}
 	return expr

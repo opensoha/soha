@@ -248,6 +248,10 @@ func TestMonitoringWorkbenchPermissionDoesNotExposeSettingsCenter(t *testing.T) 
 	if !isVisibleByPermissions(monitoring, []string{appaccess.PermWorkspaceResourceView, appaccess.PermObserveMonitoringView}) {
 		t.Fatal("monitoring workbench must remain visible with observe permission")
 	}
+	logs := domainmenu.Record{ID: "monitoring-workbench-logs", Path: "/monitoring-workbench/logs"}
+	if !isVisibleByPermissions(logs, []string{appaccess.PermWorkspaceResourceView, appaccess.PermObserveMonitoringView}) {
+		t.Fatal("logs menu must use the monitoring view permission")
+	}
 }
 
 func TestExtensionCenterVisibleWithPluginViewPermission(t *testing.T) {

@@ -130,7 +130,8 @@ type AuthResult struct {
 }
 
 type StreamTicketRequest struct {
-	Path string `json:"path"`
+	Path     string         `json:"path"`
+	Metadata map[string]any `json:"-"`
 }
 
 type StreamTicket struct {

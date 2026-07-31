@@ -727,8 +727,10 @@ func TestStreamTicketIsSingleUseAndPathBound(t *testing.T) {
 	}
 	service := newTestServiceWithUserStore(repo)
 
-	path := "/api/v1/clusters/cluster-a/workloads/pods/pod-a/logs/stream"
-	ticket, err := service.IssueStreamTicket(ctx, domainidentity.Principal{UserID: "u1"}, domainidentity.AccessContext{TokenKind: "session_access", SessionID: "s1"}, domainidentity.StreamTicketRequest{Path: path})
+	path := "/api/v1/clusters/cluster-a/logs/stream"
+	ticket, err := service.IssueStreamTicket(ctx, domainidentity.Principal{UserID: "u1"}, domainidentity.AccessContext{TokenKind: "session_access", SessionID: "s1"}, domainidentity.StreamTicketRequest{
+		Path: path, Metadata: map[string]any{"clusterId": "cluster-a", "queryHash": "sha256:test"},
+	})
 	if err != nil {
 		t.Fatalf("IssueStreamTicket returned error: %v", err)
 	}
@@ -746,12 +748,15 @@ func TestStreamTicketIsSingleUseAndPathBound(t *testing.T) {
 	if accessCtx.TokenKind != "stream_ticket" || accessCtx.SessionID != "s1" {
 		t.Fatalf("unexpected stream access context: %#v", accessCtx)
 	}
+	if accessCtx.Metadata["clusterId"] != "cluster-a" || accessCtx.Metadata["queryHash"] != "sha256:test" {
+		t.Fatalf("stream ticket metadata = %#v", accessCtx.Metadata)
+	}
 	if _, _, err := service.ParseStreamTicket(ctx, ticket.Ticket, path); err == nil {
 		t.Fatal("second ParseStreamTicket error = nil, want single-use rejection")
 	}
 }
 
-func TestStreamTicketAllowsDockerRuntimeStreams(t *testing.T) {
+func TestStreamTicketAllowsRuntimeStreams(t *testing.T) {
 	ctx := context.Background()
 	repo := newLoginMappingUserRepo()
 	repo.usersByID["u1"] = userrepo.User{
@@ -773,7 +778,9 @@ func TestStreamTicketAllowsDockerRuntimeStreams(t *testing.T) {
 
 	for _, path := range []string{
 		"/api/v1/docker/projects/project-1/runtime/logs/stream",
+		"/api/v1/docker/projects/project-1/logs/stream",
 		"/api/v1/docker/projects/project-1/runtime/terminal",
+		"/api/v1/delivery/applications/app-1/environments/binding-1/logs/stream",
 	} {
 		ticket, err := service.IssueStreamTicket(ctx, domainidentity.Principal{UserID: "u1"}, domainidentity.AccessContext{TokenKind: "session_access", SessionID: "s1"}, domainidentity.StreamTicketRequest{Path: path})
 		if err != nil {
@@ -783,6 +790,14 @@ func TestStreamTicketAllowsDockerRuntimeStreams(t *testing.T) {
 			t.Fatalf("ParseStreamTicket(%q) returned error: %v", path, err)
 		} else if accessCtx.TokenKind != "stream_ticket" {
 			t.Fatalf("unexpected stream access context: %#v", accessCtx)
+		}
+	}
+	for _, path := range []string{
+		"/untrusted/clusters/cluster-a/logs/stream",
+		"/api/v1/delivery/applications/app-1/logs/stream",
+	} {
+		if _, err := service.IssueStreamTicket(ctx, domainidentity.Principal{UserID: "u1"}, domainidentity.AccessContext{TokenKind: "session_access", SessionID: "s1"}, domainidentity.StreamTicketRequest{Path: path}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+			t.Fatalf("IssueStreamTicket(%q) error = %v, want invalid argument", path, err)
 		}
 	}
 }

@@ -406,6 +406,21 @@ func TestComputeWorkbenchSeedsBindDefaultResourceRoles(t *testing.T) {
 	}
 }
 
+func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
+	want := map[string]string{
+		"monitoring-workbench-logs":             "/monitoring-workbench/logs",
+		"monitoring-workbench-log-data-sources": "/monitoring-workbench/log-data-sources",
+	}
+	for _, item := range defaultMenuSeeds() {
+		if path, ok := want[item.ID]; ok && item.ParentID == "monitoring-workbench" && item.Path == path && item.Enabled {
+			delete(want, item.ID)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("monitoring log menu seeds are missing: %v", want)
+	}
+}
+
 func TestDockerHostProvisionerUsesPrivilegedVirtualizationBridge(t *testing.T) {
 	virtualization := &captureDockerProvisionVirtualization{}
 	provisioner := dockerHostProvisioner{virtualization: virtualization}

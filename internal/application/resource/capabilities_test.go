@@ -117,6 +117,7 @@ func TestRootServiceExportsOnlyCapabilityAccessors(t *testing.T) {
 		"GenericResources",
 		"Helm",
 		"Inventory",
+		"Logs",
 		"Network",
 		"PortForwards",
 		"RBAC",

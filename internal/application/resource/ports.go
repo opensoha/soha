@@ -6,6 +6,7 @@ import (
 	"net"
 
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
@@ -29,6 +30,24 @@ type PodInteractiveAgent interface {
 type PodAgent interface {
 	PodReaderAgent
 	PodInteractiveAgent
+}
+
+type LogAgent interface {
+	QueryPodLogs(context.Context, domainresource.LogQuery) (domainresource.LogPage, error)
+	StreamPodLogEvents(context.Context, domainresource.LogQuery, func(domainresource.LogStreamEvent) error) error
+}
+
+type DirectLogs interface {
+	QueryPodLogs(context.Context, string, domainresource.LogQuery) (domainresource.LogPage, error)
+	StreamPodLogEvents(context.Context, string, domainresource.LogQuery, func(domainresource.LogStreamEvent) error) error
+}
+
+type DurableLogs interface {
+	QueryDurableLogs(context.Context, domainidentity.Principal, string, domainresource.LogQuery) (domainresource.LogPage, error)
+}
+
+type LogStreamTicketIssuer interface {
+	IssueStreamTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error)
 }
 
 type DirectPodReader interface {
@@ -532,6 +551,7 @@ type AgentClientFactory[T any] func(domaincluster.Connection) (T, error)
 // capabilities instead of exposing the infrastructure client's full API.
 type AgentClients struct {
 	Workloads        AgentClientFactory[WorkloadAgent]
+	Logs             AgentClientFactory[LogAgent]
 	Configuration    AgentClientFactory[ConfigurationAgent]
 	Network          AgentClientFactory[NetworkAgent]
 	Storage          AgentClientFactory[StorageAgent]

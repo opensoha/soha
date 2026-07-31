@@ -36,6 +36,7 @@ type Dependencies struct {
 	Announcements       *apiHandlers.AnnouncementHandler
 	Module              *apiHandlers.ModuleHandler
 	Monitoring          *apiHandlers.MonitoringHandler
+	Observability       *apiHandlers.ObservabilityHandler
 	Catalog             *apiHandlers.CatalogHandler
 	Delivery            *apiHandlers.DeliveryHandler
 	Manifests           *apiHandlers.ManifestHandler

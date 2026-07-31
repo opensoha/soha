@@ -59,6 +59,7 @@ type dockerRuntimeRequest struct {
 	Config         map[string]any `json:"config,omitempty"`
 	ServiceName    string         `json:"serviceName,omitempty"`
 	TailLines      int            `json:"tailLines,omitempty"`
+	SinceSeconds   int64          `json:"sinceSeconds,omitempty"`
 	Target         string         `json:"target,omitempty"`
 	Path           string         `json:"path,omitempty"`
 	Limit          int            `json:"limit,omitempty"`
@@ -77,6 +78,10 @@ type dockerRuntimeMessage struct {
 }
 
 func (s *Service) GetProjectLogs(ctx context.Context, principal domainidentity.Principal, projectID, serviceName string, tailLines int) (domaindocker.ProjectRuntimeLogs, error) {
+	return s.getProjectLogs(ctx, principal, projectID, serviceName, tailLines, 0)
+}
+
+func (s *Service) getProjectLogs(ctx context.Context, principal domainidentity.Principal, projectID, serviceName string, tailLines int, sinceSeconds int64) (domaindocker.ProjectRuntimeLogs, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
 		return domaindocker.ProjectRuntimeLogs{}, err
 	}
@@ -86,10 +91,15 @@ func (s *Service) GetProjectLogs(ctx context.Context, principal domainidentity.P
 	}
 	req := target.runtimeRequest()
 	req.TailLines = normalizeRuntimeTailLines(tailLines)
+	req.SinceSeconds = sinceSeconds
 	return postDockerRuntime[domaindocker.ProjectRuntimeLogs](ctx, target.Endpoint, s.runtimeBearerToken, "/docker/runtime/logs", req)
 }
 
 func (s *Service) StreamProjectLogs(ctx context.Context, principal domainidentity.Principal, projectID, serviceName string, tailLines int, stdout io.Writer) error {
+	return s.streamProjectLogs(ctx, principal, projectID, serviceName, tailLines, 0, stdout)
+}
+
+func (s *Service) streamProjectLogs(ctx context.Context, principal domainidentity.Principal, projectID, serviceName string, tailLines int, sinceSeconds int64, stdout io.Writer) error {
 	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
 		return err
 	}
@@ -99,6 +109,7 @@ func (s *Service) StreamProjectLogs(ctx context.Context, principal domainidentit
 	}
 	req := target.runtimeRequest()
 	req.TailLines = normalizeRuntimeTailLines(tailLines)
+	req.SinceSeconds = sinceSeconds
 	body, _ := json.Marshal(req)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, dockerRuntimeURL(target.Endpoint, "/docker/runtime/logs/stream"), bytes.NewReader(body))
 	if err != nil {

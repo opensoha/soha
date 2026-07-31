@@ -30,6 +30,15 @@ type Workloads struct {
 	yaml          resourceYAMLApplier
 }
 
+// Logs owns normalized runtime log query and stream orchestration.
+type Logs struct {
+	*resourceAccess
+	agent   AgentClientFactory[LogAgent]
+	direct  DirectLogs
+	durable DurableLogs
+	tickets LogStreamTicketIssuer
+}
+
 type Configuration struct {
 	*resourceAccess
 	agent    AgentClientFactory[ConfigurationAgent]
@@ -116,6 +125,11 @@ func (s *Service) Workloads() *Workloads {
 	return s.workloads
 }
 
+// Logs returns the cluster log capability.
+func (s *Service) Logs() *Logs {
+	return s.logs
+}
+
 // Configuration returns the configuration capability.
 func (s *Service) Configuration() *Configuration {
 	return s.configuration
@@ -199,6 +213,9 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		configuration: deps.Agents.Configuration, directPods: deps.DirectPods, direct: deps.DirectWorkloads,
 		directConfig: deps.DirectConfiguration, network: deps.DirectNetwork, yaml: genericResources,
 	}
+	logs := &Logs{
+		resourceAccess: access, agent: deps.Agents.Logs, direct: deps.DirectLogs, durable: deps.DurableLogs, tickets: deps.StreamTickets,
+	}
 	network := &Network{
 		resourceAccess: access, metricsSupport: metrics,
 		agent: deps.Agents.Network, directReader: deps.DirectNetwork, gatewayReader: deps.DirectGateway,
@@ -210,6 +227,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 	}
 	service := &Service{
 		workloads:        workloads,
+		logs:             logs,
 		configuration:    &Configuration{resourceAccess: access, agent: deps.Agents.Configuration, direct: deps.DirectConfiguration, generic: deps.DirectGeneric, creation: creation},
 		network:          network,
 		storage:          &Storage{resourceAccess: access, agent: deps.Agents.Storage, direct: deps.DirectStorage},

@@ -8,11 +8,89 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
+
+func TestQueryProjectLogsNormalizesTimestampAndFilters(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req dockerRuntimeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode runtime request: %v", err)
+		}
+		if req.SinceSeconds != 90 || req.TailLines != 50 {
+			t.Fatalf("runtime request = %#v, want since=90 tail=50", req)
+		}
+		_, _ = w.Write([]byte(`{"data":{"projectId":"project-1","serviceName":"web","tailLines":50,"content":"web-1 | 2026-07-31T10:00:00Z ready\nweb-1 | 2026-07-31T10:00:01Z ERROR failed\n","source":"agent_docker_cli"}}`))
+	}))
+	defer server.Close()
+
+	service := newDockerRuntimeProxyTestService(server.URL)
+	page, err := service.QueryProjectLogs(context.Background(), dockerRuntimeProxyPrincipal(), "project-1", domainresource.LogQuery{
+		Selector: &domainresource.LogSourceSelector{DockerService: "web"}, Tail: 50, Limit: 10, Text: "error",
+		Direction: sohaapi.LogDirectionForward, RuntimeOptions: &domainresource.LogRuntimeOptions{SinceSeconds: 90},
+	})
+	if err != nil {
+		t.Fatalf("QueryProjectLogs() error = %v", err)
+	}
+	if len(page.Entries) != 1 || page.Entries[0].Message != "ERROR failed" || !page.Entries[0].Timestamp.Equal(time.Date(2026, 7, 31, 10, 0, 1, 0, time.UTC)) {
+		t.Fatalf("entries = %#v, want filtered timestamped error", page.Entries)
+	}
+	if page.Entries[0].Source.DockerProjectID != "project-1" || page.Entries[0].Source.DockerService != "web" {
+		t.Fatalf("source = %#v, want docker project/service", page.Entries[0].Source)
+	}
+}
+
+type recordingDockerTicketIssuer struct {
+	request domainidentity.StreamTicketRequest
+}
+
+func (r *recordingDockerTicketIssuer) IssueStreamTicket(_ context.Context, _ domainidentity.Principal, _ domainidentity.AccessContext, request domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error) {
+	r.request = request
+	return domainidentity.StreamTicket{Ticket: "ticket", ExpiresAt: time.Now().UTC().Add(time.Minute)}, nil
+}
+
+func TestIssueProjectLogStreamTicketBindsResolvedService(t *testing.T) {
+	issuer := &recordingDockerTicketIssuer{}
+	service := newDockerRuntimeProxyTestService("http://127.0.0.1:1")
+	service.logStreamTickets = issuer
+	_, err := service.IssueProjectLogStreamTicket(context.Background(), dockerRuntimeProxyPrincipal(), domainidentity.AccessContext{TokenKind: "session_access"}, "project-1", domainresource.LogQuery{Selector: &domainresource.LogSourceSelector{DockerService: "web"}})
+	if err != nil {
+		t.Fatalf("IssueProjectLogStreamTicket() error = %v", err)
+	}
+	if issuer.request.Path != "/api/v1/docker/projects/project-1/logs/stream" {
+		t.Fatalf("path = %q", issuer.request.Path)
+	}
+	query, err := dockerLogQueryFromTicket(domainidentity.AccessContext{TokenKind: "stream_ticket", Metadata: issuer.request.Metadata}, "project-1")
+	if err != nil || query.Selector == nil || query.Selector.DockerService != "web" {
+		t.Fatalf("bound query = %#v error = %v", query, err)
+	}
+}
+
+func TestStreamProjectLogEventsPreflightsTargetBeforeStatus(t *testing.T) {
+	service := newDockerRuntimeProxyTestService("http://127.0.0.1:1")
+	query := domainresource.LogQuery{Selector: &domainresource.LogSourceSelector{DockerService: "web"}}
+	accessCtx := domainidentity.AccessContext{
+		TokenKind: "stream_ticket",
+		Metadata: map[string]any{
+			dockerLogProjectMetadataKey: "missing-project",
+			dockerLogQueryMetadataKey:   query,
+		},
+	}
+	emitted := 0
+	err := service.StreamProjectLogEventsFromTicket(context.Background(), dockerRuntimeProxyPrincipal(), accessCtx, "missing-project", func(domainresource.LogStreamEvent) error {
+		emitted++
+		return nil
+	})
+	if err == nil || emitted != 0 {
+		t.Fatalf("StreamProjectLogEventsFromTicket() error=%v emitted=%d, want preflight failure before status", err, emitted)
+	}
+}
 
 func TestStreamProjectLogsProxiesToDockerAgentRuntime(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

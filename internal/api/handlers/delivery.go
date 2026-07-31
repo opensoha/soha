@@ -15,6 +15,7 @@ import (
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 )
@@ -49,6 +50,12 @@ type DeliveryRuntimeService interface {
 	GetReleaseRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.RuntimeObjectDetail, error)
 	GetReleaseBundleRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.RuntimeObjectDetail, error)
 	GetExecutionTaskRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.RuntimeObjectDetail, error)
+}
+
+type DeliveryApplicationLogService interface {
+	QueryApplicationEnvironmentLogs(context.Context, domainidentity.Principal, string, string, domainresource.LogQuery) (domainresource.LogPage, error)
+	IssueApplicationEnvironmentLogStreamTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, string, string, domainresource.LogQuery) (domainidentity.StreamTicket, error)
+	StreamApplicationEnvironmentLogsFromTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, string, string, func(domainresource.LogStreamEvent) error) error
 }
 
 type DeliveryBlueprintService interface {
@@ -86,6 +93,7 @@ type DeliveryService interface {
 	DeliveryReleaseService
 	DeliveryExecutionQueryService
 	DeliveryRuntimeService
+	DeliveryApplicationLogService
 	DeliveryBlueprintService
 	DeliveryDraftPlanService
 	DeliveryExecutionActionService
@@ -101,6 +109,7 @@ type DeliveryServices struct {
 	Drafts       DeliveryDraftPlanService
 	Actions      DeliveryExecutionActionService
 	Runner       DeliveryRunnerService
+	Logs         DeliveryApplicationLogService
 }
 
 type DeliveryHandler struct {
@@ -112,6 +121,7 @@ type DeliveryHandler struct {
 	drafts       DeliveryDraftPlanService
 	actions      DeliveryExecutionActionService
 	runner       DeliveryRunnerService
+	logs         DeliveryApplicationLogService
 	runnerKeys   keyring.Ring
 }
 
@@ -122,7 +132,7 @@ func NewDeliveryHandler(service DeliveryService, runnerToken string) *DeliveryHa
 func NewDeliveryHandlerWithRunnerKeys(service DeliveryService, keys keyring.Ring) *DeliveryHandler {
 	return NewDeliveryHandlerWithServices(DeliveryServices{
 		Applications: service, Releases: service, Executions: service, Runtime: service,
-		Blueprints: service, Drafts: service, Actions: service, Runner: service,
+		Blueprints: service, Drafts: service, Actions: service, Runner: service, Logs: service,
 	}, keys)
 }
 
@@ -130,7 +140,7 @@ func NewDeliveryHandlerWithServices(services DeliveryServices, keys keyring.Ring
 	return &DeliveryHandler{
 		applications: services.Applications, releases: services.Releases, executions: services.Executions,
 		runtime: services.Runtime, blueprints: services.Blueprints, drafts: services.Drafts,
-		actions: services.Actions, runner: services.Runner, runnerKeys: keys,
+		actions: services.Actions, runner: services.Runner, logs: services.Logs, runnerKeys: keys,
 	}
 }
 

@@ -264,6 +264,15 @@ func (s *websocketStreamSession) WriteMessage(message terminalMessage) error {
 	return writeTerminalMessage(s.conn, &s.writeMu, message)
 }
 
+func (s *websocketStreamSession) WriteJSON(message any) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := s.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
+	return s.conn.WriteJSON(message)
+}
+
 func (s *websocketStreamSession) WriteControl(messageType int, data []byte) error {
 	return writeControlMessage(s.conn, &s.writeMu, messageType, data)
 }

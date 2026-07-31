@@ -135,6 +135,7 @@ type genericResourceHandler struct{ service GenericResourceService }
 type clusterEventResourceHandler struct{ service ClusterEventService }
 type portForwardResourceHandler struct{ service PortForwardService }
 type podStreamResourceHandler struct{ service PodStreamService }
+type clusterLogResourceHandler struct{ service ClusterLogService }
 
 type PlatformHandler struct {
 	*podResourceHandler
@@ -165,6 +166,7 @@ type PlatformHandler struct {
 	*clusterEventResourceHandler
 	*portForwardResourceHandler
 	*podStreamResourceHandler
+	*clusterLogResourceHandler
 	*resourceCreationHandler
 
 	audit       AuditService
@@ -265,6 +267,7 @@ func NewPlatformHandlerWithResources(deps PlatformDependencies) (*PlatformHandle
 		clusterEventResourceHandler: &clusterEventResourceHandler{service: resources.Events},
 		portForwardResourceHandler:  &portForwardResourceHandler{service: resources.PortForwards},
 		podStreamResourceHandler:    &podStreamResourceHandler{service: resources.PodStreams},
+		clusterLogResourceHandler:   &clusterLogResourceHandler{service: resources.Logs},
 		resourceCreationHandler:     &resourceCreationHandler{service: resources.ResourceCreation},
 		audit:                       deps.Audit,
 		events:                      deps.Events,
@@ -279,6 +282,7 @@ func validatePlatformDependencies(deps PlatformDependencies) error {
 		"operations": deps.Operations, "integration": deps.Integration,
 		"pod reader": deps.Resources.PodReader, "pod editor": deps.Resources.PodEditor,
 		"pod diagnostics": deps.Resources.PodDiagnostics, "pod streams": deps.Resources.PodStreams,
+		"cluster logs":      deps.Resources.Logs,
 		"deployment reader": deps.Resources.DeploymentReader, "deployment editor": deps.Resources.DeploymentEditor,
 		"statefulset reader": deps.Resources.StatefulSetReader, "statefulset editor": deps.Resources.StatefulSetEditor,
 		"daemonset reader": deps.Resources.DaemonSetReader, "daemonset editor": deps.Resources.DaemonSetEditor,
