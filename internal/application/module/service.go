@@ -104,7 +104,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 		},
 		{
 			ID:                 "monitoring",
-			Name:               "监控工作台",
+			Name:               "可观测性工作台",
 			DefaultPath:        "/monitoring-workbench",
 			EnabledConfigKey:   "modules.monitoring.enabled",
 			Dependencies:       []string{"ai"},

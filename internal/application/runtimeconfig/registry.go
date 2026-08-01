@@ -118,7 +118,7 @@ func NewRegistry(options RegistryOptions) *Registry {
 		booleanDefinitionWithDescription(KeyModuleHome, "模块", "首页", "门户首页与工作台入口；关闭后从工作台列表和导航中隐藏", sohaapi.RuntimeConfigApplyModeHot, options.ModuleHome),
 		booleanDefinitionWithDescription(KeyAssistantGlobal, "模块", "全局 AI 助手", "AI 工作台内的全局入口；仅在 AI 工作台开启时可用", sohaapi.RuntimeConfigApplyModeHot, options.AssistantGlobal),
 		booleanDefinitionWithDescription(KeyModuleAI, "模块", "AI 工作台", "启停 AI 工作台运行服务；关闭时全局 AI 助手必须同时关闭", sohaapi.RuntimeConfigApplyModeLifecycle, options.ModuleAI),
-		booleanDefinition(KeyModuleMonitoring, "模块", "监控工作台", sohaapi.RuntimeConfigApplyModeLifecycle, options.ModuleMonitoring),
+		booleanDefinition(KeyModuleMonitoring, "模块", "可观测性工作台", sohaapi.RuntimeConfigApplyModeLifecycle, options.ModuleMonitoring),
 		booleanDefinition(KeyModuleVirtualization, "计算资源", "虚拟化资源", sohaapi.RuntimeConfigApplyModeLifecycle, options.ModuleVirtualization),
 		booleanDefinition(KeyModuleDocker, "计算资源", "容器运行时", sohaapi.RuntimeConfigApplyModeHot, options.ModuleDocker),
 		booleanDefinitionWithDescription(KeyModuleAIGateway, "模块", "AI Gateway", "独立网关能力，可脱离 AI 工作台运行；关闭后相关接口与菜单即时不可用", sohaapi.RuntimeConfigApplyModeHot, options.ModuleAIGateway),

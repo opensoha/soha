@@ -407,17 +407,33 @@ func TestComputeWorkbenchSeedsBindDefaultResourceRoles(t *testing.T) {
 }
 
 func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
-	want := map[string]string{
-		"monitoring-workbench-logs":             "/monitoring-workbench/logs",
-		"monitoring-workbench-log-data-sources": "/monitoring-workbench/log-data-sources",
+	want := map[string]struct {
+		path    string
+		section string
+	}{
+		"monitoring-workbench-overview":         {path: "/monitoring-workbench/overview"},
+		"monitoring-workbench-logs":             {path: "/monitoring-workbench/logs", section: "logging"},
+		"monitoring-workbench-log-data-sources": {path: "/monitoring-workbench/log-data-sources", section: "logging"},
+		"monitoring-workbench-integrations":     {path: "/monitoring-workbench/integrations", section: "alerting"},
+		"monitoring-workbench-rules":            {path: "/monitoring-workbench/rules", section: "alerting"},
+		"monitoring-workbench-alerts":           {path: "/monitoring-workbench/alerts", section: "alerting"},
+		"monitoring-workbench-notifications":    {path: "/monitoring-workbench/notifications", section: "alerting"},
+		"monitoring-workbench-healing":          {path: "/monitoring-workbench/healing", section: "alerting"},
+		"monitoring-workbench-oncall":           {path: "/monitoring-workbench/oncall", section: "alerting"},
+		"monitoring-workbench-events":           {path: "/monitoring-workbench/events", section: "alerting"},
 	}
 	for _, item := range defaultMenuSeeds() {
-		if path, ok := want[item.ID]; ok && item.ParentID == "monitoring-workbench" && item.Path == path && item.Enabled {
+		if expected, ok := want[item.ID]; ok && item.ParentID == "monitoring-workbench" && item.Path == expected.path && item.Section == expected.section && item.Enabled {
 			delete(want, item.ID)
 		}
 	}
 	if len(want) != 0 {
 		t.Fatalf("monitoring log menu seeds are missing: %v", want)
+	}
+	if !slices.ContainsFunc(defaultMenuSeeds(), func(item menuSeed) bool {
+		return item.ID == "monitoring-workbench" && item.LabelZH == "可观测性工作台" && item.LabelEN == "Observability Workbench"
+	}) {
+		t.Fatal("observability workbench seed label is missing")
 	}
 }
 

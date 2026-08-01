@@ -43,6 +43,9 @@ func TestListIncludesMonitoringLogMenus(t *testing.T) {
 	if !ok || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-logs") || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-log-data-sources") {
 		t.Fatalf("monitoring log seed menus missing: %#v", status)
 	}
+	if status.Descriptor.Name != "可观测性工作台" {
+		t.Fatalf("monitoring module name = %q", status.Descriptor.Name)
+	}
 }
 
 func TestListIncludesVirtualizationDescriptor(t *testing.T) {

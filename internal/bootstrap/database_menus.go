@@ -82,17 +82,17 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "storage-classes", ParentID: "storage", Path: "/storage/storageclasses", LabelZH: "StorageClasses", LabelEN: "StorageClasses", IconKey: "waves", SortOrder: 53, Enabled: true},
 	{ID: "clusters", Path: "/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", SortOrder: 99, Enabled: true},
 	{ID: "platform-manifests", Path: "/manifests", LabelZH: "应用清单", LabelEN: "Application Manifests", IconKey: "code", SortOrder: 100, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
-	{ID: "monitoring-workbench", Path: "/monitoring-workbench", LabelZH: "监控工作台", LabelEN: "Monitoring Workbench", IconKey: "gauge", Section: "ops", SortOrder: 60, Enabled: true},
-	{ID: "monitoring-workbench-overview", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 61, Enabled: true},
-	{ID: "monitoring-workbench-logs", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/logs", LabelZH: "日志", LabelEN: "Logs", IconKey: "history", Section: "ops", SortOrder: 62, Enabled: true},
-	{ID: "monitoring-workbench-log-data-sources", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/log-data-sources", LabelZH: "日志数据源", LabelEN: "Log Data Sources", IconKey: "server", Section: "ops", SortOrder: 63, Enabled: true},
-	{ID: "monitoring-workbench-integrations", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/integrations", LabelZH: "告警集成", LabelEN: "Alert Integrations", IconKey: "link", Section: "ops", SortOrder: 64, Enabled: true},
-	{ID: "monitoring-workbench-rules", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/rules", LabelZH: "告警规则", LabelEN: "Alert Rules", IconKey: "siren", Section: "ops", SortOrder: 65, Enabled: true},
-	{ID: "monitoring-workbench-alerts", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/alerts", LabelZH: "活跃告警", LabelEN: "Active Alerts", IconKey: "siren", Section: "ops", SortOrder: 66, Enabled: true},
-	{ID: "monitoring-workbench-notifications", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/notifications", LabelZH: "通知策略", LabelEN: "Notification Policies", IconKey: "bell", Section: "ops", SortOrder: 67, Enabled: true},
-	{ID: "monitoring-workbench-healing", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/healing", LabelZH: "自愈中心", LabelEN: "Healing Center", IconKey: "activity", Section: "ops", SortOrder: 68, Enabled: true},
-	{ID: "monitoring-workbench-oncall", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/oncall", LabelZH: "值班协同", LabelEN: "On-Call Coordination", IconKey: "users", Section: "ops", SortOrder: 69, Enabled: true},
-	{ID: "monitoring-workbench-events", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/events", LabelZH: "事件流", LabelEN: "Events", IconKey: "bell", Section: "ops", SortOrder: 70, Enabled: true},
+	{ID: "monitoring-workbench", Path: "/monitoring-workbench", LabelZH: "可观测性工作台", LabelEN: "Observability Workbench", IconKey: "gauge", Section: "ops", SortOrder: 60, Enabled: true},
+	{ID: "monitoring-workbench-overview", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 61, Enabled: true},
+	{ID: "monitoring-workbench-logs", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/logs", LabelZH: "日志", LabelEN: "Logs", IconKey: "history", Section: "logging", SortOrder: 62, Enabled: true},
+	{ID: "monitoring-workbench-log-data-sources", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/log-data-sources", LabelZH: "日志数据源", LabelEN: "Log Data Sources", IconKey: "server", Section: "logging", SortOrder: 63, Enabled: true},
+	{ID: "monitoring-workbench-integrations", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/integrations", LabelZH: "告警集成", LabelEN: "Alert Integrations", IconKey: "link", Section: "alerting", SortOrder: 64, Enabled: true},
+	{ID: "monitoring-workbench-rules", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/rules", LabelZH: "告警规则", LabelEN: "Alert Rules", IconKey: "siren", Section: "alerting", SortOrder: 65, Enabled: true},
+	{ID: "monitoring-workbench-alerts", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/alerts", LabelZH: "活跃告警", LabelEN: "Active Alerts", IconKey: "siren", Section: "alerting", SortOrder: 66, Enabled: true},
+	{ID: "monitoring-workbench-notifications", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/notifications", LabelZH: "通知策略", LabelEN: "Notification Policies", IconKey: "bell", Section: "alerting", SortOrder: 67, Enabled: true},
+	{ID: "monitoring-workbench-healing", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/healing", LabelZH: "自愈中心", LabelEN: "Healing Center", IconKey: "activity", Section: "alerting", SortOrder: 68, Enabled: true},
+	{ID: "monitoring-workbench-oncall", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/oncall", LabelZH: "值班协同", LabelEN: "On-Call Coordination", IconKey: "users", Section: "alerting", SortOrder: 69, Enabled: true},
+	{ID: "monitoring-workbench-events", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/events", LabelZH: "事件流", LabelEN: "Events", IconKey: "bell", Section: "alerting", SortOrder: 70, Enabled: true},
 	{ID: "ai-workbench", Path: "/ai-workbench", LabelZH: "AI工作台", LabelEN: "AI Workbench", IconKey: "bot", Section: "ops", SortOrder: 15, Enabled: true},
 	{ID: "ai-workbench-overview", ParentID: "ai-workbench", Path: "/ai-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true},
 	{ID: "ai-workbench-chat", ParentID: "ai-workbench", Path: "/ai-workbench/chat", LabelZH: "对话与分析", LabelEN: "Chat & Analysis", IconKey: "bot", Section: "ai-interaction", SortOrder: 10, Enabled: true},
@@ -302,6 +302,9 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 	if err := syncComputeMenuSeedUpgrades(ctx, db, now); err != nil {
 		return err
 	}
+	if err := syncMonitoringMenuSeedUpgrades(ctx, db, now); err != nil {
+		return err
+	}
 	if err := db.WithContext(ctx).Exec(`
 		UPDATE menus
 		SET path = ?, updated_at = ?
@@ -391,6 +394,25 @@ func syncPlatformMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Tim
 		SET sort_order = ?, updated_at = ?
 		WHERE id = ? AND sort_order = ?
 	`, 100, now, "platform-manifests", 15).Error
+}
+
+func syncMonitoringMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time) error {
+	for _, item := range defaultMenuSeeds() {
+		if !isMonitoringMenuSeed(item) {
+			continue
+		}
+		if err := db.WithContext(ctx).Exec(`
+			UPDATE menus
+			SET label_zh = CASE WHEN label_zh = '监控工作台' THEN ? ELSE label_zh END,
+				label_en = CASE WHEN label_en = 'Monitoring Workbench' THEN ? ELSE label_en END,
+				section = ?,
+				updated_at = ?
+			WHERE id = ? AND path = ? AND section IN ('', 'ops', 'logging', 'alerting')
+		`, item.LabelZH, item.LabelEN, item.Section, now, item.ID, item.Path).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func syncAIWorkbenchMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time) error {
