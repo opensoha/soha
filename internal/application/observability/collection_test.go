@@ -48,21 +48,43 @@ type recordingCollectionHelm struct {
 	installs int
 	updates  int
 	deletes  int
+	values   []string
 }
 
-func (h *recordingCollectionHelm) InstallHelmChart(context.Context, domainidentity.Principal, string, domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, error) {
+func (h *recordingCollectionHelm) InstallHelmChart(_ context.Context, _ domainidentity.Principal, _ string, input domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, error) {
 	h.installs++
+	h.values = append(h.values, input.ValuesYAML)
 	return domainresource.HelmChartInstallResult{}, nil
 }
 
-func (h *recordingCollectionHelm) UpdateHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error) {
+func (h *recordingCollectionHelm) UpdateHelmReleaseValues(_ context.Context, _ domainidentity.Principal, _, _, _, values string) (domainresource.HelmValuesView, error) {
 	h.updates++
+	h.values = append(h.values, values)
 	return domainresource.HelmValuesView{}, nil
 }
 
 func (h *recordingCollectionHelm) DeleteHelmRelease(context.Context, domainidentity.Principal, string, string, string) error {
 	h.deletes++
 	return nil
+}
+
+type recordingCollectionPortForwards struct {
+	sessions      []domainresource.PortForwardSessionView
+	registrations int
+}
+
+func (p *recordingCollectionPortForwards) ListPortForwards(context.Context, domainidentity.Principal, string) ([]domainresource.PortForwardSessionView, error) {
+	return append([]domainresource.PortForwardSessionView(nil), p.sessions...), nil
+}
+
+func (p *recordingCollectionPortForwards) RegisterPortForward(_ context.Context, principal domainidentity.Principal, clusterID string, input domainresource.PortForwardRegisterInput) (domainresource.PortForwardSessionView, error) {
+	p.registrations++
+	view := domainresource.PortForwardSessionView{
+		SessionID: "managed-loki", ClusterID: clusterID, Namespace: input.Namespace, TargetKind: input.TargetKind,
+		TargetName: input.TargetName, LocalPort: input.LocalPort, RemotePort: input.RemotePort, Status: "active", CreatedBy: principal.UserID,
+	}
+	p.sessions = append(p.sessions, view)
+	return view, nil
 }
 
 func newCollectionTestService(t *testing.T, now time.Time, authorizer domainaccess.Authorizer, helm CollectionHelm) (*Service, domainidentity.Principal) {
@@ -93,7 +115,7 @@ func newCollectionTestService(t *testing.T, now time.Time, authorizer domainacce
 		Connections: staticCollectionConnection{connection: domaincluster.Connection{Summary: domaincluster.Summary{
 			ID: "cluster-a", Region: "cn-east", Environment: "prod", Labels: map[string]string{"team": "platform"},
 		}}},
-		Helm: helm, Access: authorizer,
+		Helm: helm, PortForwards: &recordingCollectionPortForwards{}, Access: authorizer,
 	})
 	return service, domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}}
 }
@@ -108,7 +130,7 @@ func starterCollectionInput(namespaces ...string) sohaapi.LogCollectionPreflight
 func TestCollectionPreflightEnforcesPodLogScopeAndDeclaresNoKubernetesRBAC(t *testing.T) {
 	now := time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC)
 	authorizer := collectionAuthorizer(func(request domainaccess.Request) domainaccess.Decision {
-		allowed := request.Resource.Kind == "HelmRelease" || request.Namespace.Namespace == "team-a"
+		allowed := request.Resource.Kind == "HelmRelease" || request.Resource.Kind == "PortForward" || request.Namespace.Namespace == "team-a"
 		return domainaccess.Decision{Allowed: allowed, Reason: "test policy"}
 	})
 	service, principal := newCollectionTestService(t, now, authorizer, &recordingCollectionHelm{})
@@ -171,6 +193,14 @@ func TestCollectionLifecycleResumesReleaseAndPreservesHistory(t *testing.T) {
 	if err != nil || state.Status != sohaapi.LogCollectionStatusHealthy || helm.installs != 1 {
 		t.Fatalf("enable state=%#v installs=%d error=%v", state, helm.installs, err)
 	}
+	forwards := service.collection.PortForwards.(*recordingCollectionPortForwards)
+	if forwards.registrations != 1 || !strings.Contains(helm.values[0], managedLokiEndpoint("soha-observability")) {
+		t.Fatalf("managed Loki forward=%#v values=%q", forwards.sessions, helm.values[0])
+	}
+	dataSource, err := service.dataSources.GetDataSource(context.Background(), state.DataSourceID)
+	if err != nil || !strings.HasPrefix(dataSource.Config["endpoint"].(string), "http://127.0.0.1:") {
+		t.Fatalf("managed Loki data source=%#v error=%v", dataSource, err)
+	}
 	state, err = service.DisableLogCollection(context.Background(), principal, "cluster-a", sohaapi.LogCollectionDisableInput{Action: sohaapi.LogCollectionDisableActionStop})
 	if err != nil || state.Status != sohaapi.LogCollectionStatusDisabled || !state.HistoryPreserved || helm.updates != 1 {
 		t.Fatalf("stop state=%#v updates=%d error=%v", state, helm.updates, err)
@@ -183,6 +213,9 @@ func TestCollectionLifecycleResumesReleaseAndPreservesHistory(t *testing.T) {
 	state, err = service.EnableLogCollection(context.Background(), principal, "cluster-a", sohaapi.LogCollectionEnableInput{PlanToken: preflight.PlanToken})
 	if err != nil || state.Status != sohaapi.LogCollectionStatusHealthy || helm.installs != 1 || helm.updates != 2 {
 		t.Fatalf("resume state=%#v installs=%d updates=%d error=%v", state, helm.installs, helm.updates, err)
+	}
+	if forwards.registrations != 1 {
+		t.Fatalf("managed Loki tunnel registrations=%d, want 1", forwards.registrations)
 	}
 	state, err = service.DisableLogCollection(context.Background(), principal, "cluster-a", sohaapi.LogCollectionDisableInput{Action: sohaapi.LogCollectionDisableActionUninstall})
 	if err != nil || state.Mode != sohaapi.LogCollectionModeRuntimeOnly || !state.HistoryPreserved || helm.deletes != 1 {

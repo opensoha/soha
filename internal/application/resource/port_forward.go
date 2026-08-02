@@ -193,7 +193,11 @@ func (p *PortForwards) ListPortForwards(ctx context.Context, principal domainide
 	portForwardRegistryMu.Lock()
 	for _, session := range portForwardRegistry {
 		if session.view.ClusterID == clusterID {
-			seen[session.view.SessionID] = session.view
+			view := session.view
+			if session.direct != nil && session.direct.LastError() != "" {
+				view.Status = "error"
+			}
+			seen[view.SessionID] = view
 		}
 	}
 	portForwardRegistryMu.Unlock()

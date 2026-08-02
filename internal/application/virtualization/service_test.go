@@ -732,6 +732,7 @@ func TestCreateVMUsesFlavorAndImageSelection(t *testing.T) {
 		ExternalID:   "default/ubuntu",
 		Name:         "ubuntu",
 		Status:       "active",
+		Config:       map[string]any{"sourceRef": "provider/ubuntu"},
 	}
 	repo.images[image.ID] = image
 	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
@@ -741,6 +742,7 @@ func TestCreateVMUsesFlavorAndImageSelection(t *testing.T) {
 		Name:             "vm-a",
 		FlavorID:         flavor.ID,
 		BootImageID:      image.ID,
+		SourceID:         image.ID,
 		StartAfterCreate: true,
 	})
 	if err != nil {
@@ -749,8 +751,8 @@ func TestCreateVMUsesFlavorAndImageSelection(t *testing.T) {
 	if task.Payload["flavorId"] != flavor.ID || task.Payload["imageId"] != image.ID {
 		t.Fatalf("task payload missing flavor/image: %#v", task.Payload)
 	}
-	if task.Payload["sourceId"] != image.ExternalID {
-		t.Fatalf("task payload sourceId = %#v, want %q", task.Payload["sourceId"], image.ExternalID)
+	if task.Payload["sourceId"] != image.Config["sourceRef"] {
+		t.Fatalf("task payload sourceId = %#v, want provider source ref %q", task.Payload["sourceId"], image.Config["sourceRef"])
 	}
 	if task.Payload["cpu"] != flavor.CPUCores || task.Payload["memoryMiB"] != flavor.MemoryMB || task.Payload["diskGiB"] != flavor.DiskGB {
 		t.Fatalf("task payload did not inherit flavor resources: %#v", task.Payload)

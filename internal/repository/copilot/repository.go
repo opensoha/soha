@@ -274,11 +274,11 @@ func (r *Repository) CreateDataSource(ctx context.Context, item domaincopilot.Da
 	}
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO ai_data_sources (
-			id, name, source_kind, backend_type, enabled, credential_ref, scope, query_budget, redaction_policy, mcp_adapter, config,
+			id, name, source_type, source_kind, backend_type, enabled, credential_ref, scope, query_budget, redaction_policy, mcp_adapter, config,
 			validation_status, validation_message, last_validated_at, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.Name, item.SourceKind, item.BackendType, item.Enabled, nullableString(item.CredentialRef), string(scope), string(queryBudget), string(redactionPolicy), item.MCPAdapter, string(config), nil, nil, nil, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.Name, item.BackendType, item.SourceKind, item.BackendType, item.Enabled, nullableString(item.CredentialRef), string(scope), string(queryBudget), string(redactionPolicy), item.MCPAdapter, string(config), nil, nil, nil, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domaincopilot.DataSource{}, fmt.Errorf("create data source: %w", err)
 	}
 	return item, nil
@@ -303,10 +303,10 @@ func (r *Repository) UpdateDataSource(ctx context.Context, dataSourceID string, 
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE ai_data_sources
-		SET name = ?, source_kind = ?, backend_type = ?, enabled = ?, credential_ref = ?, scope = ?, query_budget = ?, redaction_policy = ?, mcp_adapter = ?, config = ?,
+		SET name = ?, source_type = ?, source_kind = ?, backend_type = ?, enabled = ?, credential_ref = ?, scope = ?, query_budget = ?, redaction_policy = ?, mcp_adapter = ?, config = ?,
 			validation_status = NULL, validation_message = NULL, last_validated_at = NULL, updated_at = ?
 		WHERE id = ?
-	`, input.Name, input.SourceKind, input.BackendType, input.Enabled, nullableString(input.CredentialRef), string(scope), string(queryBudget), string(redactionPolicy), input.MCPAdapter, string(config), time.Now().UTC(), dataSourceID)
+	`, input.Name, input.BackendType, input.SourceKind, input.BackendType, input.Enabled, nullableString(input.CredentialRef), string(scope), string(queryBudget), string(redactionPolicy), input.MCPAdapter, string(config), time.Now().UTC(), dataSourceID)
 	if result.Error != nil {
 		return domaincopilot.DataSource{}, fmt.Errorf("update data source: %w", result.Error)
 	}

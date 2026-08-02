@@ -607,7 +607,7 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 		DirectPods: resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
 	})
 	observabilityService.ConfigureCollection(appobservability.CollectionDependencies{
-		Settings: repos.settingsRepository, Connections: repos.clusterRepository, Helm: resourceService.Helm(), Access: access,
+		Settings: repos.settingsRepository, Connections: repos.clusterRepository, Helm: resourceService.Helm(), PortForwards: resourceService.PortForwards(), Access: access,
 	})
 	if err := resourceService.PortForwards().RestorePortForwards(ctx); err != nil {
 		infra.logger.Warn("restore port forwards failed", zap.Error(err))

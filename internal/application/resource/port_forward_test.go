@@ -253,6 +253,11 @@ func TestDirectPortForwardDelegatesTransportToInfrastructurePort(t *testing.T) {
 	if starter.view.SessionID == "" || starter.view.TargetKind != "Service" || starter.view.CreatedBy != "user-1" {
 		t.Fatalf("StartPortForward() view = %#v", starter.view)
 	}
+	starter.session.lastErr = "transport closed"
+	items, err := service.PortForwards().ListPortForwards(context.Background(), principal, "direct-port-cluster")
+	if err != nil || len(items) != 1 || items[0].Status != "error" {
+		t.Fatalf("ListPortForwards() items = %#v, error = %v", items, err)
+	}
 	if err := service.PortForwards().StopPortForward(context.Background(), principal, "direct-port-cluster", created.SessionID); err != nil {
 		t.Fatalf("StopPortForward() error = %v", err)
 	}
@@ -351,14 +356,15 @@ func (s *recordingDirectPortForwardStarter) StartPortForward(_ context.Context, 
 
 type recordingDirectPortForwardSession struct {
 	stopped bool
+	lastErr string
 }
 
 func (s *recordingDirectPortForwardSession) Stop() {
 	s.stopped = true
 }
 
-func (*recordingDirectPortForwardSession) LastError() string {
-	return ""
+func (s *recordingDirectPortForwardSession) LastError() string {
+	return s.lastErr
 }
 
 func (f failingPortForwardRepository) List(context.Context) ([]portforwardrepo.Record, error) {

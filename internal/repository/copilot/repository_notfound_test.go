@@ -31,6 +31,26 @@ func TestRepositoryGetDataSourceWrapsErrNotFound(t *testing.T) {
 	}
 }
 
+func TestRepositoryCreateDataSourceWritesLegacySourceType(t *testing.T) {
+	repo, mock := newAgentRunRepository(t)
+	now := time.Date(2026, 8, 1, 14, 0, 0, 0, time.UTC)
+
+	mock.ExpectExec(`(?s)INSERT INTO ai_data_sources \(\s*id, name, source_type, source_kind, backend_type, enabled, credential_ref, scope, query_budget, redaction_policy, mcp_adapter, config,\s*validation_status, validation_message, last_validated_at, created_at, updated_at\s*\)\s*VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, \$11, \$12, \$13, \$14, \$15, \$16, \$17\)`).
+		WithArgs("ds-1", "Managed Loki", "loki", "logs", "loki", true, nil, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), "logs.v1", sqlmock.AnyArg(), nil, nil, nil, now, now).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+
+	_, err := repo.CreateDataSource(context.Background(), domaincopilot.DataSource{
+		ID: "ds-1", Name: "Managed Loki", SourceKind: "logs", BackendType: "loki", Enabled: true,
+		MCPAdapter: "logs.v1", CreatedAt: now, UpdatedAt: now,
+	})
+	if err != nil {
+		t.Fatalf("CreateDataSource() error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestRepositoryUpdateAgentRunCallbackWrapsErrNotFound(t *testing.T) {
 	repo, mock := newAgentRunRepository(t)
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)

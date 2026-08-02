@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"regexp"
 	"slices"
 	"sort"
@@ -53,11 +54,17 @@ type CollectionHelm interface {
 	DeleteHelmRelease(context.Context, domainidentity.Principal, string, string, string) error
 }
 
+type CollectionPortForwards interface {
+	ListPortForwards(context.Context, domainidentity.Principal, string) ([]domainresource.PortForwardSessionView, error)
+	RegisterPortForward(context.Context, domainidentity.Principal, string, domainresource.PortForwardRegisterInput) (domainresource.PortForwardSessionView, error)
+}
+
 type CollectionDependencies struct {
-	Settings    CollectionSettingsStore
-	Connections CollectionConnectionResolver
-	Helm        CollectionHelm
-	Access      domainaccess.Authorizer
+	Settings     CollectionSettingsStore
+	Connections  CollectionConnectionResolver
+	Helm         CollectionHelm
+	PortForwards CollectionPortForwards
+	Access       domainaccess.Authorizer
 }
 
 type collectionPlan struct {
@@ -73,6 +80,8 @@ type collectionPlan struct {
 	StorageClassName     string                       `json:"storageClassName,omitempty"`
 	StorageSize          string                       `json:"storageSize"`
 	NamespaceAllowlist   []string                     `json:"namespaceAllowlist,omitempty"`
+	QueryEndpoint        string                       `json:"queryEndpoint,omitempty"`
+	PortForwardSessionID string                       `json:"portForwardSessionId,omitempty"`
 	ExpiresAt            time.Time                    `json:"expiresAt"`
 }
 
@@ -215,7 +224,13 @@ func (s *Service) finalizeCollectionEnable(ctx context.Context, principal domain
 	record.State.Collector = componentHealth(sohaapi.LogCollectionHealthStatusHealthy, "collector release is ready")
 	var validationErr error
 	if plan.Profile == sohaapi.LogCollectionProfileStarter {
-		record.State.DataSourceID, validationErr = s.ensureManagedLokiDataSource(ctx, clusterID, plan)
+		var queryPlan = plan
+		queryPlan.DestinationEndpoint, queryPlan.PortForwardSessionID, validationErr = s.ensureManagedLokiQueryEndpoint(ctx, principal, clusterID, plan.Namespace)
+		if validationErr == nil {
+			record.Plan.QueryEndpoint = queryPlan.DestinationEndpoint
+			record.Plan.PortForwardSessionID = queryPlan.PortForwardSessionID
+			record.State.DataSourceID, validationErr = s.ensureManagedLokiDataSource(ctx, clusterID, queryPlan)
+		}
 	}
 	if validationErr == nil && record.State.DataSourceID != "" {
 		var validated sohaapi.ObservabilityDataSource
@@ -360,6 +375,13 @@ func (s *Service) validateCollectionPlanAccess(ctx context.Context, principal do
 	if plan.Namespace != "" {
 		if err := s.authorizeCollectionScope(ctx, principal, connection, plan.Namespace, "HelmRelease", domainaccess.ActionCreate); err != nil {
 			blockers = append(blockers, "No permission to install a Helm release in the selected namespace.")
+		}
+		if plan.Profile == sohaapi.LogCollectionProfileStarter {
+			for _, action := range []domainaccess.Action{domainaccess.ActionList, domainaccess.ActionUpdate} {
+				if err := s.authorizeCollectionScope(ctx, principal, connection, plan.Namespace, "PortForward", action); err != nil {
+					blockers = append(blockers, "No permission to manage the Loki query tunnel in the selected namespace.")
+				}
+			}
 		}
 	}
 	return blockers
@@ -555,6 +577,38 @@ func (s *Service) ensureManagedLokiDataSource(ctx context.Context, clusterID str
 	}
 	_, err := s.dataSources.CreateDataSource(ctx, item)
 	return item.ID, err
+}
+
+func (s *Service) ensureManagedLokiQueryEndpoint(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (string, string, error) {
+	if s.collection.PortForwards == nil {
+		return "", "", fmt.Errorf("%w: managed Loki query tunnel is unavailable", apperrors.ErrClusterUnready)
+	}
+	targetName := logCollectionReleaseName + "-loki"
+	sessions, err := s.collection.PortForwards.ListPortForwards(ctx, principal, clusterID)
+	if err != nil {
+		return "", "", err
+	}
+	for _, session := range sessions {
+		if session.Namespace == namespace && strings.EqualFold(session.TargetKind, "Service") && session.TargetName == targetName && session.RemotePort == 3100 && session.LocalPort > 0 && session.Status == "active" {
+			return fmt.Sprintf("http://127.0.0.1:%d", session.LocalPort), session.SessionID, nil
+		}
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", "", fmt.Errorf("allocate managed Loki query port: %w", err)
+	}
+	localPort := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		return "", "", fmt.Errorf("release managed Loki query port: %w", err)
+	}
+	// ponytail: the existing port-forward API takes a port, so registration detects the narrow bind race.
+	session, err := s.collection.PortForwards.RegisterPortForward(ctx, principal, clusterID, domainresource.PortForwardRegisterInput{
+		Namespace: namespace, TargetKind: "Service", TargetName: targetName, LocalPort: localPort, RemotePort: 3100,
+	})
+	if err != nil {
+		return "", "", err
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d", session.LocalPort), session.SessionID, nil
 }
 
 func renderCollectionValues(plan collectionPlan, collectorEnabled bool) (string, error) {

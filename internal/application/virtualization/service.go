@@ -661,7 +661,7 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 			"bootImageId":      input.BootImageID,
 			"imageId":          imageID,
 			"sourceMode":       firstNonEmpty(input.SourceMode, sourceModeForProvider(connection.Provider, input.TemplateID, image)),
-			"sourceId":         firstNonEmpty(strings.TrimSpace(input.SourceID), sourceRef),
+			"sourceId":         firstNonEmpty(sourceRef, strings.TrimSpace(input.SourceID)),
 			"diskGiB":          input.DiskGiB,
 			"network":          input.Network,
 			"cloudInit":        input.CloudInit,
