@@ -412,9 +412,14 @@ func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
 		section string
 	}{
 		"monitoring-workbench-overview":         {path: "/monitoring-workbench/overview"},
-		"monitoring-workbench-logs":             {path: "/monitoring-workbench/logs", section: "logging"},
-		"monitoring-workbench-log-data-sources": {path: "/monitoring-workbench/log-data-sources", section: "logging"},
-		"monitoring-workbench-integrations":     {path: "/monitoring-workbench/integrations", section: "alerting"},
+		"monitoring-workbench-services":         {path: "/monitoring-workbench/services", section: "observe-signals"},
+		"monitoring-workbench-metrics":          {path: "/monitoring-workbench/metrics", section: "observe-signals"},
+		"monitoring-workbench-traces":           {path: "/monitoring-workbench/traces", section: "observe-signals"},
+		"monitoring-workbench-logs":             {path: "/monitoring-workbench/logs", section: "observe-signals"},
+		"monitoring-workbench-providers":        {path: "/monitoring-workbench/providers", section: "observe-data"},
+		"monitoring-workbench-log-data-sources": {path: "/monitoring-workbench/log-data-sources", section: "observe-data"},
+		"monitoring-workbench-integrations":     {path: "/monitoring-workbench/integrations", section: "observe-data"},
+		"monitoring-workbench-alerting":         {path: "/monitoring-workbench/alerting", section: "alerting"},
 		"monitoring-workbench-rules":            {path: "/monitoring-workbench/rules", section: "alerting"},
 		"monitoring-workbench-alerts":           {path: "/monitoring-workbench/alerts", section: "alerting"},
 		"monitoring-workbench-notifications":    {path: "/monitoring-workbench/notifications", section: "alerting"},

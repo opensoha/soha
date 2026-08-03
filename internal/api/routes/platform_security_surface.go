@@ -91,6 +91,7 @@ var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatform
 	accessMutationSecuritySurface,
 	aiGatewayMutationSecuritySurface,
 	pluginMutationSecuritySurface,
+	secretMutationSecuritySurface,
 	identityMutationSecuritySurface,
 	settingsMutationSecuritySurface,
 }
@@ -172,6 +173,8 @@ var deliveryMutationRules = []deliveryMutationRule{
 
 func monitoringMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	switch {
+	case path == "/api/v1/observability/metrics/query" || path == "/api/v1/observability/traces/query":
+		return nonPlatformMutationEntry("ObservabilitySignal", "query", appaccess.PermObserveMonitoringView, false), true
 	case strings.HasPrefix(path, "/api/v1/observability/data-sources"):
 		return nonPlatformMutationEntry("ObservabilityDataSource", nonPlatformMutationAction(method, path), appaccess.PermObserveLogDataSourcesManage, false), true
 	case strings.HasPrefix(path, "/api/v1/alerts/"):
@@ -205,6 +208,9 @@ func monitoringMutationSecuritySurface(method, path string) (nonPlatformMutation
 }
 
 func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if strings.HasPrefix(path, "/api/v1/docker/") {
+		return dockerRuntimeMutationSecuritySurface(method, path)
+	}
 	switch {
 	case strings.HasPrefix(path, "/api/v1/compute/tasks/"):
 		// The facade delegates the domain-specific manage permission, audit, and
@@ -212,6 +218,8 @@ func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 		return nonPlatformMutationEntry("ComputeTask", nonPlatformMutationAction(method, path), appaccess.PermWorkspaceResourceView, false), true
 	case strings.HasPrefix(path, "/api/v1/virtualization/clusters"):
 		return nonPlatformMutationEntry("VirtualizationCluster", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationClustersManage, false), true
+	case path == "/api/v1/virtualization/vms/plan":
+		return nonPlatformMutationEntry("VirtualMachinePlan", "plan", appaccess.PermVirtualizationVMsView, false), true
 	case strings.HasPrefix(path, "/api/v1/virtualization/vms"):
 		return nonPlatformMutationEntry("VirtualMachine", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationVMsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/virtualization/images"):
@@ -222,8 +230,18 @@ func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 		return nonPlatformMutationEntry("VirtualizationOperation", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationOperationsManage, false), true
 	case path == "/api/v1/virtualization/sync":
 		return nonPlatformMutationEntry("VirtualizationSync", "sync", appaccess.PermVirtualizationSyncManage, false), true
+	}
+	return nonPlatformMutationSecuritySurfaceEntry{}, false
+}
+
+func dockerRuntimeMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	switch {
+	case path == "/api/v1/docker/hosts/quick-create/plan":
+		return nonPlatformMutationEntry("DockerHostPlan", "plan", appaccess.PermDockerHostsView, false), true
 	case strings.HasPrefix(path, "/api/v1/docker/hosts"):
 		return nonPlatformMutationEntry("DockerHost", nonPlatformMutationAction(method, path), appaccess.PermDockerHostsManage, false), true
+	case strings.HasPrefix(path, "/api/v1/docker/projects") && strings.HasSuffix(path, "/deploy/plan"):
+		return nonPlatformMutationEntry("DockerProjectPlan", "plan", appaccess.PermDockerProjectsView, false), true
 	case strings.HasPrefix(path, "/api/v1/docker/projects") && strings.HasSuffix(path, "/deploy"):
 		return nonPlatformMutationEntry("DockerProject", "deploy", appaccess.PermDockerProjectsDeploy, false), true
 	case strings.HasPrefix(path, "/api/v1/docker/projects"):
@@ -350,6 +368,13 @@ func pluginMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 		return nonPlatformMutationEntry("PluginConfig", "update", appaccess.PermPluginConfigureSecrets, false), true
 	case strings.HasPrefix(path, "/api/v1/plugins/"):
 		return nonPlatformMutationEntry("Plugin", nonPlatformMutationAction(method, path), appaccess.PermPluginManage, false), true
+	}
+	return nonPlatformMutationSecuritySurfaceEntry{}, false
+}
+
+func secretMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if strings.HasPrefix(path, "/api/v1/secrets") {
+		return nonPlatformMutationEntry("Secret", nonPlatformMutationAction(method, path), appaccess.PermSecretManage, true), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }

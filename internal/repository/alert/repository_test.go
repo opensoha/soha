@@ -92,6 +92,37 @@ func TestRepositoryUpsertWritesAlertEvents(t *testing.T) {
 	}
 }
 
+func TestRepositoryListAndSummaryExcludeGovernanceEvents(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sql mock: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB, PreferSimpleProtocol: true}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm: %v", err)
+	}
+
+	mock.ExpectQuery(`(?s)FROM alert_events\s+WHERE COALESCE\(source_type, ''\) <> 'governance'\s+ORDER BY`).
+		WithArgs(50).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`(?s)FROM alert_events\s+WHERE COALESCE\(source_type, ''\) <> 'governance'`).
+		WillReturnRows(sqlmock.NewRows([]string{"total_count", "firing_count", "resolved_count", "critical_count", "warning_count", "info_count", "last_received_at"}).AddRow(0, 0, 0, 0, 0, 0, nil))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM notification_channels WHERE enabled = TRUE`).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+
+	repo := New(db)
+	if _, err := repo.List(context.Background(), domainalert.Filter{}); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if _, err := repo.Summary(context.Background()); err != nil {
+		t.Fatalf("Summary() error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
 func TestRepositoryAcknowledgePreservesAlertStatus(t *testing.T) {
 	sqlDB, mock, err := sqlmock.New()
 	if err != nil {

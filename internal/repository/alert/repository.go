@@ -166,7 +166,7 @@ func (r *Repository) List(ctx context.Context, filter domainalert.Filter) ([]dom
 		limit = 50
 	}
 	args := []any{}
-	conditions := []string{}
+	conditions := []string{"COALESCE(source_type, '') <> 'governance'"}
 	if strings.TrimSpace(filter.Status) != "" {
 		conditions = append(conditions, "status = ?")
 		args = append(args, strings.ToLower(strings.TrimSpace(filter.Status)))
@@ -260,6 +260,7 @@ func (r *Repository) Summary(ctx context.Context) (domainalert.Summary, error) {
 			COALESCE(SUM(CASE WHEN status = 'firing' AND severity = 'info' THEN 1 ELSE 0 END), 0) AS info_count,
 			MAX(last_seen_at) AS last_received_at
 		FROM alert_events
+		WHERE COALESCE(source_type, '') <> 'governance'
 	`).Row()
 
 	var summary domainalert.Summary

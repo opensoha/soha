@@ -2,12 +2,10 @@ package operation
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
-	domaingovernance "github.com/opensoha/soha/internal/domain/governance"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 )
 
@@ -17,18 +15,6 @@ type captureOperationRepository struct {
 	retentionDays int
 	items         []domainoperation.Entry
 	created       domainoperation.Entry
-}
-
-type captureOperationAlertSink struct {
-	input  domaingovernance.AlertInput
-	called bool
-	err    error
-}
-
-func (s *captureOperationAlertSink) RecordGovernanceAlert(_ context.Context, input domaingovernance.AlertInput) error {
-	s.called = true
-	s.input = input
-	return s.err
 }
 
 func (r *captureOperationRepository) Create(_ context.Context, entry domainoperation.Entry) error {
@@ -73,60 +59,6 @@ func TestRecordRedactsOperationSensitiveFields(t *testing.T) {
 	nested := mustOperationValue[map[string]any](t, repo.created.Metadata["nested"])
 	if nested["password"] != "[REDACTED]" {
 		t.Fatalf("nested metadata was not redacted: %#v", nested)
-	}
-}
-
-func TestRecordOperationFailureCreatesGovernanceAlert(t *testing.T) {
-	repo := &captureOperationRepository{}
-	alerts := &captureOperationAlertSink{}
-	service := New(repo, nil)
-	service.SetAlertSink(alerts)
-
-	if err := service.Record(context.Background(), domainoperation.Entry{
-		ID:            "op-1",
-		ActorID:       "user-1",
-		ActorName:     "Operator",
-		OperationType: "platform.pod.delete",
-		TargetScope:   map[string]any{"clusterId": "cluster-a", "namespace": "prod", "resourceKind": "Pod", "resourceName": "api-0"},
-		Result:        "failure",
-		Summary:       "delete denied token=raw-token",
-		RequestID:     "req-1",
-		RequestPath:   "/api/v1/pods/api-0",
-		RequestMethod: "DELETE",
-		SourceIP:      "127.0.0.1",
-		Metadata:      map[string]any{"approvalRequestId": "approval-1"},
-	}); err != nil {
-		t.Fatalf("Record returned error: %v", err)
-	}
-	if !alerts.called {
-		t.Fatal("expected governance alert")
-	}
-	if alerts.input.Source != "operation" || alerts.input.EventID != "op-1" || alerts.input.OperationType != "platform.pod.delete" || alerts.input.ClusterID != "cluster-a" {
-		t.Fatalf("unexpected alert input: %#v", alerts.input)
-	}
-	if alerts.input.Annotations["approvalRequestId"] != "approval-1" {
-		t.Fatalf("approval annotation missing: %#v", alerts.input.Annotations)
-	}
-	if strings.Contains(alerts.input.Summary, "raw-token") {
-		t.Fatalf("alert summary was not redacted: %q", alerts.input.Summary)
-	}
-}
-
-func TestRecordOperationIgnoresGovernanceAlertSinkError(t *testing.T) {
-	repo := &captureOperationRepository{}
-	service := New(repo, nil)
-	service.SetAlertSink(&captureOperationAlertSink{err: errors.New("sink unavailable")})
-
-	if err := service.Record(context.Background(), domainoperation.Entry{
-		ID:            "op-1",
-		OperationType: "platform.pod.delete",
-		Result:        "failure",
-		Summary:       "delete denied",
-	}); err != nil {
-		t.Fatalf("Record returned error: %v", err)
-	}
-	if repo.created.ID != "op-1" {
-		t.Fatalf("operation record was not persisted: %#v", repo.created)
 	}
 }
 

@@ -63,6 +63,9 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 		v1.POST("/copilot/agent-runs/callback", deps.Copilot.RecordAgentRunCallback)
 		v1.POST("/copilot/agent-runs/tool-call", deps.Copilot.RecordAgentToolCall)
 	}
+	if deps.Secrets != nil {
+		v1.POST("/runner/secret-leases/:secretLeaseID/redeem", deps.Secrets.RedeemLease)
+	}
 	if deps.AgentProviders != nil {
 		apiHandlers.RegisterRunnerAgentProviderRoutes(v1, deps.AgentProviders)
 	}

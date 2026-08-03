@@ -440,6 +440,35 @@ func TestRequiredSecretsKeepPluginPendingUntilConfigured(t *testing.T) {
 	}
 }
 
+func TestObservabilityProviderManifestValidationAndRegistration(t *testing.T) {
+	manifest := domainplugin.PluginManifest{
+		ID: "community.logs", Name: "Community Logs", Version: "0.1.0", Publisher: "community", Type: "observability-provider",
+		Runtime: &domainplugin.PluginRuntimeSpec{Mode: "external-http", Endpoint: "https://logs.example", ActionPath: "/v1/actions/{action}"},
+		ExtensionPoints: &domainplugin.PluginExtensionPoints{Observability: &sohaapi.PluginObservabilityExtensions{Providers: []sohaapi.PluginObservabilityProvider{{
+			ProviderKey: "community-logs", DisplayName: "Community Logs", ProtocolVersion: "v1",
+			Signals: []sohaapi.PluginObservabilityProviderSignals{sohaapi.Logs}, Capabilities: []string{"logs.query"},
+			ActionRefs: map[string]string{"logs.query": "logs.query"},
+		}}}},
+	}
+	if err := validateManifest(manifest); err != nil {
+		t.Fatalf("validateManifest() error = %v", err)
+	}
+	records := extensionRecordsFromManifest(domainplugin.InstalledPlugin{ID: manifest.ID, Name: manifest.Name, Version: manifest.Version, Manifest: manifest, Status: statusEnabled}, true)
+	if len(records) != 1 || records[0].Point != "observability.providers" || records[0].ID != "community-logs" {
+		t.Fatalf("observability records = %#v", records)
+	}
+
+	manifest.ExtensionPoints.Observability.Providers[0].ActionRefs = nil
+	if err := validateManifest(manifest); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("validateManifest() error = %v, want invalid argument", err)
+	}
+	manifest.ExtensionPoints.Observability.Providers[0].ActionRefs = map[string]string{"logs.query": "logs.query"}
+	manifest.ExtensionPoints.Observability.Providers[0].Signals = []sohaapi.PluginObservabilityProviderSignals{sohaapi.Metrics}
+	if err := validateManifest(manifest); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("validateManifest() signal error = %v, want invalid argument", err)
+	}
+}
+
 func TestConfigureSecretRefsRequiresDedicatedPermission(t *testing.T) {
 	repo := newMemoryPluginRepo()
 	now := time.Now().UTC()

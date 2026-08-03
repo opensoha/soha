@@ -52,6 +52,7 @@ import (
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	appruntimeconfig "github.com/opensoha/soha/internal/application/runtimeconfig"
 	appscopegrant "github.com/opensoha/soha/internal/application/scopegrant"
+	appsecret "github.com/opensoha/soha/internal/application/secret"
 	appsettings "github.com/opensoha/soha/internal/application/settings"
 	appsystemintegration "github.com/opensoha/soha/internal/application/systemintegration"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
@@ -75,6 +76,7 @@ import (
 	mcplogsinfra "github.com/opensoha/soha/internal/infrastructure/mcp/logs"
 	mcpmetricsinfra "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
 	mcptracesinfra "github.com/opensoha/soha/internal/infrastructure/mcp/traces"
+	observabilityproviderinfra "github.com/opensoha/soha/internal/infrastructure/observabilityprovider"
 	ratelimitinfra "github.com/opensoha/soha/internal/infrastructure/ratelimit"
 	releasebackendinfra "github.com/opensoha/soha/internal/infrastructure/releasebackend"
 	resourcebackendinfra "github.com/opensoha/soha/internal/infrastructure/resourcebackend"
@@ -119,6 +121,7 @@ import (
 	resourcecreationrepo "github.com/opensoha/soha/internal/repository/resourcecreation"
 	runtimeconfigrepo "github.com/opensoha/soha/internal/repository/runtimeconfig"
 	scopegrantrepo "github.com/opensoha/soha/internal/repository/scopegrant"
+	secretrepo "github.com/opensoha/soha/internal/repository/secret"
 	settingsrepo "github.com/opensoha/soha/internal/repository/settings"
 	systemintegrationrepo "github.com/opensoha/soha/internal/repository/systemintegration"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
@@ -179,6 +182,7 @@ type repositories struct {
 	directorySyncRepository     *directorysyncrepo.Repository
 	runtimeConfigRepository     *runtimeconfigrepo.Repository
 	systemIntegrationRepository *systemintegrationrepo.Repository
+	secretRepository            *secretrepo.Repository
 }
 
 type coreServices struct {
@@ -197,6 +201,7 @@ type coreServices struct {
 	accessManagementService  *appaccess.ManagementService
 	accessConsoleService     *appaccess.ConsoleService
 	systemIntegrationService *appsystemintegration.Service
+	secretService            *appsecret.Service
 	clusterService           *appcluster.Service
 	resourceService          *appresource.Service
 	eventService             *appevent.Service
@@ -373,6 +378,7 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		directorySyncRepository:     directorysyncrepo.New(db, cfg.Security.CredentialEncryptionKeys),
 		runtimeConfigRepository:     runtimeconfigrepo.New(db),
 		systemIntegrationRepository: systemintegrationrepo.New(db),
+		secretRepository:            secretrepo.New(db),
 	}
 }
 
@@ -380,6 +386,10 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	permissionResolver := appaccess.NewPermissionResolver(repos.policyRepository)
 	auditService := appaudit.New(repos.auditRepository, permissionResolver)
 	operationService := appoperation.New(repos.operationRepository, permissionResolver)
+	secretService, err := appsecret.New(repos.secretRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
+	if err != nil {
+		return nil, fmt.Errorf("build secret service: %w", err)
+	}
 	systemIntegrationService := appsystemintegration.New(repos.systemIntegrationRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
 	systemIntegrationService.RegisterSourceAdapter("gitlab", gitLabSourceAdapterFactory{})
 	systemIntegrationService.RegisterOAuthProvider("gitlab", gitlabinfra.NewOAuthProvider())
@@ -484,7 +494,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		return nil, err
 	}
 
-	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, systemIntegrationService, identityService)
+	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, systemIntegrationService, identityService, secretService)
 	if err != nil {
 		return nil, err
 	}
@@ -541,6 +551,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		accessManagementService:  accessManagementService,
 		accessConsoleService:     accessConsoleService,
 		systemIntegrationService: systemIntegrationService,
+		secretService:            secretService,
 		clusterService:           platformCore.cluster,
 		resourceService:          platformCore.resources,
 		eventService:             platformCore.events,
@@ -589,11 +600,13 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 	resourceClusters := resourcebackendinfra.NewClusters(infra.clusterManager)
 	resourceDirect := resourcebackendinfra.NewDirect(resourceClusters, resourcebackendinfra.NewCache(infra.informers))
 	observabilityService, err := appobservability.New(appobservability.Dependencies{
-		DataSources: repos.copilotRepository,
-		Permissions: permissions,
-		Logs:        mcplogsinfra.DefaultRegistry(),
-		Audit:       audit,
-		Keys:        cfg.Security.CredentialEncryptionKeys,
+		DataSources:  repos.copilotRepository,
+		Permissions:  permissions,
+		Logs:         mcplogsinfra.DefaultRegistry(),
+		ExternalLogs: observabilityproviderinfra.NewLogClient(),
+		Plugins:      repos.pluginRepository,
+		Audit:        audit,
+		Keys:         cfg.Security.CredentialEncryptionKeys,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("build observability service: %w", err)
@@ -624,8 +637,6 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 	if err != nil {
 		return nil, fmt.Errorf("build monitoring service: %w", err)
 	}
-	audit.SetAlertSink(monitoringService)
-	operations.SetAlertSink(monitoringService)
 	return &platformCoreServices{cluster: clusterService, resources: resourceService, events: eventService, monitoring: monitoringService, observability: observabilityService}, nil
 }
 
@@ -644,7 +655,7 @@ type deliveryCoreServices struct {
 	providerPortal   *appproviderportal.Service
 }
 
-func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, sources appregistry.GitLabClient, identity *appidentity.Service) (*deliveryCoreServices, error) {
+func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, sources appregistry.GitLabClient, identity *appidentity.Service, secretService *appsecret.Service) (*deliveryCoreServices, error) {
 	applications := appregistry.New(repos.applicationRepository, sources, access, audit, operations)
 	applications.SetPermissionResolver(permissions)
 	executionService := appexecution.New(
@@ -652,6 +663,7 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 		cfg.Runtime.ExecutionJobClusterID, cfg.Runtime.ExecutionJobNamespace, cfg.Runtime.ExecutionJobImage, cfg.Runtime.ExecutionJobGitImage,
 		cfg.Runtime.ExecutionJobTTLSeconds, cfg.Runtime.ExecutionRunnerToken, permissions,
 	)
+	executionService.SetSecretLeaseService(secretService)
 	if cfg.Modules.Delivery.Enabled {
 		executionService.Start(infra.lifecycleCtx)
 	}
@@ -773,6 +785,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	copilotService.SetMCPRegistry(infra.mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
 	copilotService.SetInstrumentation(infra.logger, infra.runtimeMetrics)
+	copilotService.SetSecretLeaseService(core.secretService)
 	agentProviderService, err := appagentharness.NewProviderControlPlane(
 		appagentharness.NewProviderReconciler(core.pluginExtensions),
 		core.permissionResolver,
@@ -936,6 +949,7 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 		RateLimits:      repos.aiGatewayRepository,
 		Approvals:       repos.aiGatewayRepository,
 		LLMRelay:        repos.aiGatewayRepository,
+		Secrets:         core.secretService,
 		RelayConfig: appaigateway.LLMRelayConfig{
 			Enabled:                     cfg.AIGateway.Relay.Enabled,
 			DefaultTimeout:              cfg.AIGateway.Relay.DefaultTimeout,
@@ -962,8 +976,10 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 		aiGatewayService.SetRateLimitBackend(redisRateLimitBackend)
 	}
 	aiGatewayService.SetDeliveryServices(core.applicationService, delivery.deliveryService)
+	aiGatewayService.SetOperationsServices(delivery.virtualizationService, delivery.dockerService)
 	aiGatewayService.SetCatalogService(core.catalogService)
 	aiGatewayService.SetResourceService(core.resourceService.Runtime())
+	aiGatewayService.SetResourceCreationService(core.resourceService.ResourceCreation())
 	aiGatewayService.SetAnalysisArtifactRecorder(delivery.copilotService)
 	aiGatewayService.AddCapabilityProviders(appaigateway.NewKnowledgeCapabilityProvider(delivery.knowledgeService))
 	aiGatewayService.SetOperationRecorder(core.operationService)
@@ -1094,7 +1110,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 			OnCallEscalations: core.monitoringService, OnCallAssignments: core.monitoringService,
 			OnCallRuntime: core.monitoringService,
 		}),
-		Observability: apiHandlers.NewObservabilityHandler(core.observabilityService),
+		Observability: apiHandlers.NewObservabilityHandler(core.observabilityService, core.monitoringService),
 		Catalog: apiHandlers.NewCatalogHandlerWithServices(
 			core.catalogService, core.catalogService, core.catalogService,
 		),
@@ -1154,6 +1170,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 			runtimeinfo.NewCollector(infra.runtimeMetrics),
 		),
 		SystemIntegrations: apiHandlers.NewSystemIntegrationHandler(core.systemIntegrationService),
+		Secrets:            apiHandlers.NewSecretHandlerWithRunnerKeys(core.secretService, cfg.Runtime.ExecutionRunnerKeys),
 		Auth:               newAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth),
 		MFA:                apiHandlers.NewMFAHandler(core.identityMFAService),
 		ProviderPortal: providerportalhandler.New(providerportalhandler.Services{
@@ -1185,7 +1202,7 @@ func newDeliveryHandler(service *appdelivery.Service, keys keyring.Ring) *apiHan
 func newVirtualizationHandler(service *appvirtualization.Service) *apiHandlers.VirtualizationHandler {
 	return apiHandlers.NewVirtualizationHandlerWithServices(apiHandlers.VirtualizationServices{
 		Connections: service, Sync: service, VMs: service,
-		Images: service, Flavors: service, Operations: service, Runtime: service,
+		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: service,
 	})
 }
 
@@ -1193,7 +1210,7 @@ func newDockerHandler(service *appdocker.Service, keys keyring.Ring) *apiHandler
 	return apiHandlers.NewDockerHandlerWithServices(apiHandlers.DockerServices{
 		Hosts: service, Projects: service, ProjectRuntime: service,
 		ProjectStorage: service, Services: service, PortMappings: service, Templates: service,
-		Operations: service, RunnerOperations: service,
+		Operations: service, RunnerOperations: service, Planning: service,
 	}, keys)
 }
 

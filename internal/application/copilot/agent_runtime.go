@@ -66,6 +66,15 @@ func (s *Service) ClaimAgentRun(ctx context.Context, input domaincopilot.AgentRu
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
+	if len(run.SecretRefs) > 0 {
+		if s.secretLeases == nil {
+			return domaincopilot.AgentRun{}, fmt.Errorf("%w: secret lease service is not configured", aperrors.ErrInvalidArgument)
+		}
+		run.SecretLease, err = s.secretLeases.IssueLease(ctx, run.SecretPrincipal, run.SecretRefs, run.SecretTarget, "agent_run", run.ID, strings.TrimSpace(input.AgentID))
+		if err != nil {
+			return domaincopilot.AgentRun{}, err
+		}
+	}
 	return domaincopilot.WithOperationState(run, time.Now().UTC()), nil
 }
 
@@ -96,6 +105,9 @@ func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilo
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
+	if agentRunStatusTerminal(updated.Status) && s.secretLeases != nil {
+		_ = s.secretLeases.RevokeSubjectLeases(ctx, "agent_run", updated.ID)
+	}
 	if agentRunCallbackShouldPersistMessage(updated) {
 		if len(updated.AnalysisArtifacts) == 0 {
 			updated.AnalysisArtifacts = []domaincopilot.AnalysisArtifact{s.synthesizeAgentArtifact(updated)}
@@ -123,6 +135,9 @@ func (s *Service) CancelAgentRun(ctx context.Context, principal domainidentity.P
 		RequestedBy: firstNonEmpty(principal.UserID, principal.UserName, "unknown"),
 		Reason:      "canceled by user",
 	})
+	if err == nil && s.secretLeases != nil {
+		_ = s.secretLeases.RevokeSubjectLeases(ctx, "agent_run", canceled.ID)
+	}
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}

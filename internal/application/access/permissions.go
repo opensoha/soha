@@ -117,6 +117,9 @@ const (
 	PermPluginInstall                     = "plugin.install"
 	PermPluginManage                      = "plugin.manage"
 	PermPluginConfigureSecrets            = "plugin.configure_secrets"
+	PermSecretView                        = "secret.view"
+	PermSecretManage                      = "secret.manage"
+	PermSecretUse                         = "secret.use"
 	PermIdentityPortalView                = "identity.portal.view"
 	PermIdentityApplicationsView          = "identity.applications.view"
 	PermIdentityApplicationsManage        = "identity.applications.manage"
@@ -306,6 +309,9 @@ var allPermissionKeySet = []string{
 	PermPluginInstall,
 	PermPluginManage,
 	PermPluginConfigureSecrets,
+	PermSecretView,
+	PermSecretManage,
+	PermSecretUse,
 	PermIdentityPortalView,
 	PermIdentityApplicationsView,
 	PermIdentityApplicationsManage,
@@ -470,6 +476,9 @@ var opsRolePermissionKeys = []string{
 	PermPluginInstall,
 	PermPluginManage,
 	PermPluginConfigureSecrets,
+	PermSecretView,
+	PermSecretManage,
+	PermSecretUse,
 	PermIdentityPortalView,
 	PermIdentityAuditView,
 	PermVirtualizationOverviewView,
@@ -554,6 +563,8 @@ var developerRolePermissionKeys = []string{
 	PermAIGatewayInvoke,
 	PermAIGatewayRelayView,
 	PermAIGatewayRelayInvoke,
+	PermSecretView,
+	PermSecretUse,
 	PermPluginView,
 	PermIdentityPortalView,
 	PermDeliveryApplicationsView,
@@ -626,6 +637,7 @@ var readonlyRolePermissionKeys = []string{
 	PermAIAgentProvidersView,
 	PermAIGatewayView,
 	PermAIGatewayRelayView,
+	PermSecretView,
 	PermPluginView,
 	PermIdentityPortalView,
 	PermDockerOverviewView,

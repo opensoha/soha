@@ -22,6 +22,7 @@ import (
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 )
 
@@ -47,6 +48,10 @@ type VirtualizationVMService interface {
 	ListVMDevices(context.Context, domainidentity.Principal, string) ([]domainvirtualization.VMDevice, error)
 	CreateVM(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainvirtualization.Task, error)
 	VMAction(context.Context, domainidentity.Principal, string, appvirtualization.VMActionInput) (domainvirtualization.Task, error)
+}
+
+type VirtualizationPlanningService interface {
+	PlanVMCreate(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainoperation.Plan, error)
 }
 
 type VirtualizationImageService interface {
@@ -97,6 +102,7 @@ type VirtualizationServices struct {
 	Flavors     VirtualizationFlavorService
 	Operations  VirtualizationOperationService
 	Runtime     VirtualizationRuntimeService
+	Planning    VirtualizationPlanningService
 }
 
 type VirtualizationHandler struct {
@@ -107,12 +113,14 @@ type VirtualizationHandler struct {
 	flavors     VirtualizationFlavorService
 	operations  VirtualizationOperationService
 	runtime     VirtualizationRuntimeService
+	planning    VirtualizationPlanningService
 }
 
 func NewVirtualizationHandler(service VirtualizationService) *VirtualizationHandler {
+	planning, _ := any(service).(VirtualizationPlanningService)
 	return NewVirtualizationHandlerWithServices(VirtualizationServices{
 		Connections: service, Sync: service, VMs: service,
-		Images: service, Flavors: service, Operations: service, Runtime: service,
+		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: planning,
 	})
 }
 
@@ -121,6 +129,7 @@ func NewVirtualizationHandlerWithServices(services VirtualizationServices) *Virt
 		connections: services.Connections, sync: services.Sync,
 		vms: services.VMs, images: services.Images, flavors: services.Flavors,
 		operations: services.Operations, runtime: services.Runtime,
+		planning: services.Planning,
 	}
 }
 
@@ -249,12 +258,35 @@ func (h *VirtualizationHandler) CreateVM(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtual machine payload")
 		return
 	}
+	key, ok := requiredIdempotencyKey(c)
+	if !ok {
+		return
+	}
+	req.IdempotencyKey = key
 	task, err := h.vms.CreateVM(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusAccepted, mapOperation(task))
+}
+
+func (h *VirtualizationHandler) PlanVMCreate(c *gin.Context) {
+	if h.planning == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "unavailable", "virtualization planning is unavailable")
+		return
+	}
+	var req appvirtualization.CreateVMInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtual machine payload")
+		return
+	}
+	plan, err := h.planning.PlanVMCreate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, plan)
 }
 
 func (h *VirtualizationHandler) GetVM(c *gin.Context) {
@@ -290,6 +322,7 @@ func (h *VirtualizationHandler) VMAction(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid virtual machine action payload")
 		return
 	}
+	req.IdempotencyKey = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	task, err := h.vms.VMAction(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)

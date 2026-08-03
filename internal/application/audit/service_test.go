@@ -2,13 +2,11 @@ package audit
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
-	domaingovernance "github.com/opensoha/soha/internal/domain/governance"
 )
 
 type captureAuditRepository struct {
@@ -17,18 +15,6 @@ type captureAuditRepository struct {
 	retentionDays int
 	items         []domainaudit.Entry
 	created       domainaudit.Entry
-}
-
-type captureAuditAlertSink struct {
-	input  domaingovernance.AlertInput
-	called bool
-	err    error
-}
-
-func (s *captureAuditAlertSink) RecordGovernanceAlert(_ context.Context, input domaingovernance.AlertInput) error {
-	s.called = true
-	s.input = input
-	return s.err
 }
 
 func (r *captureAuditRepository) Create(_ context.Context, entry domainaudit.Entry) error {
@@ -69,59 +55,6 @@ func TestRecordRedactsAuditSensitiveFields(t *testing.T) {
 	nested := mustAuditValue[map[string]any](t, repo.created.Metadata["nested"])
 	if strings.Contains(mustAuditValue[string](t, nested["note"]), "raw-bearer") {
 		t.Fatalf("nested metadata text was not redacted: %#v", nested)
-	}
-}
-
-func TestRecordAuditFailureCreatesGovernanceAlert(t *testing.T) {
-	repo := &captureAuditRepository{}
-	alerts := &captureAuditAlertSink{}
-	service := New(repo, nil)
-	service.SetAlertSink(alerts)
-
-	if err := service.Record(context.Background(), domainaudit.Entry{
-		ID:            "audit-1",
-		ActorID:       "user-1",
-		ActorName:     "Operator",
-		ClusterID:     "cluster-a",
-		Namespace:     "prod",
-		ResourceKind:  "Pod",
-		ResourceName:  "api-0",
-		Action:        "delete",
-		Result:        "failure",
-		Summary:       "delete denied token=raw-token",
-		RequestID:     "req-1",
-		RequestPath:   "/api/v1/pods/api-0",
-		RequestMethod: "DELETE",
-		SourceIP:      "127.0.0.1",
-	}); err != nil {
-		t.Fatalf("Record returned error: %v", err)
-	}
-	if !alerts.called {
-		t.Fatal("expected governance alert")
-	}
-	if alerts.input.Source != "audit" || alerts.input.EventID != "audit-1" || alerts.input.Action != "delete" || alerts.input.ClusterID != "cluster-a" {
-		t.Fatalf("unexpected alert input: %#v", alerts.input)
-	}
-	if strings.Contains(alerts.input.Summary, "raw-token") {
-		t.Fatalf("alert summary was not redacted: %q", alerts.input.Summary)
-	}
-}
-
-func TestRecordAuditIgnoresGovernanceAlertSinkError(t *testing.T) {
-	repo := &captureAuditRepository{}
-	service := New(repo, nil)
-	service.SetAlertSink(&captureAuditAlertSink{err: errors.New("sink unavailable")})
-
-	if err := service.Record(context.Background(), domainaudit.Entry{
-		ID:      "audit-1",
-		Action:  "delete",
-		Result:  "failure",
-		Summary: "delete denied",
-	}); err != nil {
-		t.Fatalf("Record returned error: %v", err)
-	}
-	if repo.created.ID != "audit-1" {
-		t.Fatalf("audit record was not persisted: %#v", repo.created)
 	}
 }
 

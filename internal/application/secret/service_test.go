@@ -1,0 +1,223 @@
+package secret
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
+	"github.com/opensoha/soha/internal/platform/secretcrypto"
+)
+
+type testRoleReader map[string][]string
+
+func (r testRoleReader) ListRolePermissions(context.Context) (map[string][]string, error) {
+	return r, nil
+}
+
+type memoryRepository struct {
+	items    map[string]domainsecret.Secret
+	versions map[string]map[int]domainsecret.Version
+	leases   map[string]domainsecret.Lease
+}
+
+func newMemoryRepository() *memoryRepository {
+	return &memoryRepository{items: map[string]domainsecret.Secret{}, versions: map[string]map[int]domainsecret.Version{}, leases: map[string]domainsecret.Lease{}}
+}
+
+func (r *memoryRepository) List(_ context.Context, _ domainsecret.Filter) ([]domainsecret.Secret, error) {
+	items := make([]domainsecret.Secret, 0, len(r.items))
+	for _, item := range r.items {
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (r *memoryRepository) Get(_ context.Context, id string) (domainsecret.Secret, error) {
+	item, ok := r.items[id]
+	if !ok {
+		return domainsecret.Secret{}, apperrors.ErrNotFound
+	}
+	return item, nil
+}
+
+func (r *memoryRepository) Create(_ context.Context, item domainsecret.Secret, version domainsecret.Version) (domainsecret.Secret, error) {
+	r.items[item.ID] = item
+	r.versions[item.ID] = map[int]domainsecret.Version{version.Version: version}
+	return item, nil
+}
+
+func (r *memoryRepository) Update(_ context.Context, item domainsecret.Secret) (domainsecret.Secret, error) {
+	r.items[item.ID] = item
+	return item, nil
+}
+
+func (r *memoryRepository) ListVersions(_ context.Context, id string) ([]domainsecret.Version, error) {
+	items := make([]domainsecret.Version, 0, len(r.versions[id]))
+	for _, item := range r.versions[id] {
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (r *memoryRepository) GetVersion(_ context.Context, id string, version int) (domainsecret.Version, error) {
+	item, ok := r.versions[id][version]
+	if !ok {
+		return domainsecret.Version{}, apperrors.ErrNotFound
+	}
+	return item, nil
+}
+
+func (r *memoryRepository) Rotate(_ context.Context, id string, version domainsecret.Version) (domainsecret.Version, error) {
+	item := r.items[id]
+	version.Version = item.CurrentVersion + 1
+	r.versions[id][version.Version] = version
+	item.CurrentVersion = version.Version
+	r.items[id] = item
+	return version, nil
+}
+
+func (r *memoryRepository) RevokeVersion(_ context.Context, id string, version int, at time.Time) (domainsecret.Version, error) {
+	item := r.versions[id][version]
+	item.Status = domainsecret.VersionRevoked
+	item.RevokedAt = &at
+	r.versions[id][version] = item
+	return item, nil
+}
+
+func (r *memoryRepository) CreateLease(_ context.Context, lease domainsecret.Lease) error {
+	r.leases[lease.ID] = lease
+	return nil
+}
+
+func (r *memoryRepository) RedeemLease(_ context.Context, id, tokenHash, agentID string, at time.Time) (domainsecret.Lease, error) {
+	lease, ok := r.leases[id]
+	if !ok || lease.TokenHash != tokenHash || lease.AgentID != agentID || lease.RedeemedAt != nil || lease.RevokedAt != nil || !lease.ExpiresAt.After(at) {
+		return domainsecret.Lease{}, apperrors.ErrNotFound
+	}
+	lease.RedeemedAt = &at
+	r.leases[id] = lease
+	return lease, nil
+}
+
+func (r *memoryRepository) RevokeSubjectLeases(_ context.Context, subjectType, subjectID string, at time.Time) error {
+	for id, lease := range r.leases {
+		if lease.SubjectType == subjectType && lease.SubjectID == subjectID && lease.RedeemedAt == nil && lease.RevokedAt == nil {
+			lease.RevokedAt = &at
+			r.leases[id] = lease
+		}
+	}
+	return nil
+}
+
+type captureAudit struct{ entries []domainaudit.Entry }
+
+func (a *captureAudit) Record(_ context.Context, entry domainaudit.Entry) error {
+	a.entries = append(a.entries, entry)
+	return nil
+}
+
+type discardOperations struct{}
+
+func (discardOperations) Record(context.Context, domainoperation.Entry) error { return nil }
+
+func TestSecretLifecycleEncryptsPinsAndFailsClosed(t *testing.T) {
+	repo := newMemoryRepository()
+	audit := &captureAudit{}
+	service, err := New(repo, appaccess.NewPermissionResolver(testRoleReader{
+		"admin":     {appaccess.PermSecretView, appaccess.PermSecretManage, appaccess.PermSecretUse},
+		"developer": {appaccess.PermSecretView, appaccess.PermSecretUse},
+	}), audit, discardOperations{}, testSecretKeyring(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.now = func() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) }
+	admin := domainidentity.Principal{UserID: "admin", UserName: "Admin", Roles: []string{"admin"}}
+	created, err := service.Create(context.Background(), admin, sohaapi.SecretCreateRequest{
+		Name: "registry-token", Value: "plaintext-must-not-leak", ScopeType: sohaapi.SecretScopeType(domainsecret.ScopeProject), ScopeID: "demo",
+		Bindings: []sohaapi.SecretBinding{{TargetType: sohaapi.SecretBindingTargetType("capability"), TargetRef: "docker.project.deploy"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := repo.versions[created.ID][1]
+	if !secretcrypto.Encrypted(stored.Ciphertext) || stored.Ciphertext == "plaintext-must-not-leak" {
+		t.Fatalf("stored ciphertext is not encrypted: %q", stored.Ciphertext)
+	}
+	encoded, _ := json.Marshal(created)
+	if string(encoded) == "" || strings.Contains(string(encoded), "plaintext-must-not-leak") {
+		t.Fatalf("metadata leaked plaintext: %s", encoded)
+	}
+
+	developer := domainidentity.Principal{UserID: "dev", Roles: []string{"developer"}, Projects: []string{"demo"}}
+	pinned, err := service.PinReferences(context.Background(), developer, map[string]string{
+		"REGISTRY_TOKEN": "soha://secrets/" + created.ID,
+	}, domainsecret.Target{Type: "capability", Ref: "docker.project.deploy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pinned) != 1 || pinned[0].Version != 1 {
+		t.Fatalf("pinned refs = %#v", pinned)
+	}
+	values, err := service.ResolvePinnedReferences(context.Background(), developer, pinned, domainsecret.Target{Type: "capability", Ref: "docker.project.deploy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values["REGISTRY_TOKEN"] != "plaintext-must-not-leak" {
+		t.Fatalf("resolved value = %q", values["REGISTRY_TOKEN"])
+	}
+	grant, err := service.IssueLease(context.Background(), developer, pinned, domainsecret.Target{Type: "capability", Ref: "docker.project.deploy"}, "execution_task", "task-1", "agent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedLease := repo.leases[grant.ID]
+	if storedLease.TokenHash == "" || storedLease.TokenHash == grant.Token {
+		t.Fatal("lease token was not stored as a one-way hash")
+	}
+	if _, err := service.RedeemLease(context.Background(), grant.ID, grant.Token, "agent-2"); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("wrong agent error = %v, want fail-closed not found", err)
+	}
+	redemption, err := service.RedeemLease(context.Background(), grant.ID, grant.Token, "agent-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if redemption.Values["REGISTRY_TOKEN"] != "plaintext-must-not-leak" {
+		t.Fatalf("redeemed value = %q", redemption.Values["REGISTRY_TOKEN"])
+	}
+	if _, err := service.RedeemLease(context.Background(), grant.ID, grant.Token, "agent-1"); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("second redemption error = %v, want one-time fail-closed not found", err)
+	}
+	_, err = service.ResolvePinnedReferences(context.Background(), developer, pinned, domainsecret.Target{Type: "capability", Ref: "virtualization.vm.create"})
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("wrong target error = %v, want fail-closed not found", err)
+	}
+	for _, entry := range audit.entries {
+		payload, _ := json.Marshal(entry)
+		if strings.Contains(string(payload), "plaintext-must-not-leak") {
+			t.Fatalf("audit leaked plaintext: %s", payload)
+		}
+	}
+}
+
+func testSecretKeyring(t *testing.T) keyring.Ring {
+	t.Helper()
+	key, err := keyring.NewKey("test-v1", "stable-test-secret-key-32-bytes", time.Now().UTC(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ring, err := keyring.New(key, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ring
+}

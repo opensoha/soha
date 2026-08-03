@@ -38,7 +38,7 @@ func (d skyWalkingDriver) FindSlowSpans(ctx context.Context, sourceID string, co
 		return Result{}, err
 	}
 	service := skyWalkingService(config, query)
-	if service == "" {
+	if service == "" && query.TraceID == "" {
 		return Result{}, fmt.Errorf("skywalking serviceName or query scope service is required")
 	}
 	query = normalizeSlowSpanQuery(query)
@@ -142,22 +142,28 @@ func newSkyWalkingRequest(
 }
 
 func skyWalkingGraphQLPayload(service string, query Query) map[string]any {
+	condition := map[string]any{
+		"queryDuration": map[string]any{
+			"start": query.TimeFrom.UnixMilli(),
+			"end":   query.TimeTo.UnixMilli(),
+			"step":  "MINUTE",
+		},
+		"traceState": "ALL", "minTraceDuration": query.MinDuration.Milliseconds(),
+		"maxTraceDuration": query.TimeTo.Sub(query.TimeFrom).Milliseconds(),
+		"paging": map[string]any{
+			"pageNum": 1, "pageSize": query.Limit, "needTotal": false,
+		},
+	}
+	if service != "" {
+		condition["serviceName"] = service
+	}
+	if query.TraceID != "" {
+		condition["traceId"] = query.TraceID
+	}
 	return map[string]any{
 		"query": skyWalkingBasicTracesQuery,
 		"variables": map[string]any{
-			"condition": map[string]any{
-				"serviceName": service,
-				"queryDuration": map[string]any{
-					"start": query.TimeFrom.UnixMilli(),
-					"end":   query.TimeTo.UnixMilli(),
-					"step":  "MINUTE",
-				},
-				"traceState": "ALL", "minTraceDuration": query.MinDuration.Milliseconds(),
-				"maxTraceDuration": query.TimeTo.Sub(query.TimeFrom).Milliseconds(),
-				"paging": map[string]any{
-					"pageNum": 1, "pageSize": query.Limit, "needTotal": false,
-				},
-			},
+			"condition": condition,
 		},
 	}
 }
@@ -204,7 +210,7 @@ func skyWalkingSpan(
 	return Span{
 		TraceID: traceID, SpanID: fmt.Sprintf("skywalking-%d", index+1),
 		Operation: operation, Service: service, DurationMS: float64(item.Duration),
-		StartTime: startTime, Tags: map[string]any{"traceIds": item.TraceIDs}, Error: item.IsError,
+		StartTime: startTime, Tags: map[string]string{"traceIds": strings.Join(item.TraceIDs, ",")}, Error: item.IsError,
 	}
 }
 

@@ -65,9 +65,11 @@ func (d esDriver) Search(ctx context.Context, sourceID string, config map[string
 	clusterField := stringConfig(config, "clusterField", "cluster")
 	podField := stringConfig(config, "podField", "pod")
 	containerField := stringConfig(config, "containerField", "container")
+	traceIDField := stringConfig(config, "traceIdField", "trace.id")
+	spanIDField := stringConfig(config, "spanIdField", "span.id")
 
 	searchURL := strings.TrimRight(strings.TrimSpace(endpoint), "/") + "/" + url.PathEscape(strings.TrimSpace(index)) + "/_search"
-	body := buildESSearchBody(query, cursor, timestampField, messageField, clusterField, namespaceField, serviceField, workloadField, podField, containerField, providerFetchLimit(query, cursor))
+	body := buildESSearchBody(query, cursor, timestampField, messageField, clusterField, namespaceField, serviceField, workloadField, podField, containerField, traceIDField, spanIDField, providerFetchLimit(query, cursor))
 	payload, err := json.Marshal(body)
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("marshal es search body: %w", err)
@@ -108,6 +110,8 @@ func (d esDriver) Search(ctx context.Context, sourceID string, config map[string
 			ClusterID:  nestedString(item.Source, clusterField),
 			Pod:        nestedString(item.Source, podField),
 			Container:  nestedString(item.Source, containerField),
+			TraceID:    nestedString(item.Source, traceIDField),
+			SpanID:     nestedString(item.Source, spanIDField),
 			Attributes: item.Source,
 		}
 		if record.Severity == "" || record.Severity == "info" {
@@ -130,8 +134,18 @@ func (d esDriver) Search(ctx context.Context, sourceID string, config map[string
 	}, nil
 }
 
-func buildESSearchBody(query SearchQuery, cursor timestampCursor, timestampField, messageField, clusterField, namespaceField, serviceField, workloadField, podField, containerField string, limit int) map[string]any {
+func buildESSearchBody(query SearchQuery, cursor timestampCursor, timestampField, messageField, clusterField, namespaceField, serviceField, workloadField, podField, containerField, traceIDField, spanIDField string, limit int) map[string]any {
 	filters := make([]map[string]any, 0)
+	pods := scopePodValues(query.Scope)
+	pod := ""
+	if len(pods) == 1 {
+		pod = pods[0]
+	}
+	containers := scopeContainerValues(query.Scope)
+	container := ""
+	if len(containers) == 1 {
+		container = containers[0]
+	}
 	if !query.TimeFrom.IsZero() || !query.TimeTo.IsZero() || !cursor.Timestamp.IsZero() {
 		rangeBody := map[string]any{}
 		if !query.TimeFrom.IsZero() {
@@ -154,13 +168,21 @@ func buildESSearchBody(query SearchQuery, cursor timestampCursor, timestampField
 		namespaceField: query.Scope.Namespace,
 		serviceField:   query.Scope.Service,
 		workloadField:  query.Scope.Workload,
-		podField:       query.Scope.Pod,
-		containerField: query.Scope.Container,
+		podField:       pod,
+		containerField: container,
+		traceIDField:   query.TraceID,
+		spanIDField:    query.SpanID,
 	} {
 		if strings.TrimSpace(field) == "" || strings.TrimSpace(value) == "" {
 			continue
 		}
 		filters = append(filters, map[string]any{"term": map[string]any{field: value}})
+	}
+	if len(pods) > 1 && strings.TrimSpace(podField) != "" {
+		filters = append(filters, map[string]any{"terms": map[string]any{podField: pods}})
+	}
+	if len(containers) > 1 && strings.TrimSpace(containerField) != "" {
+		filters = append(filters, map[string]any{"terms": map[string]any{containerField: containers}})
 	}
 	should := make([]map[string]any, 0)
 	for _, term := range query.Terms {

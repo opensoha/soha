@@ -79,6 +79,7 @@ func (r *recordingLogRegistry) Search(_ context.Context, _, _ string, config map
 		Records: []telemetry.LogRecord{{
 			Timestamp: time.Date(2026, 7, 31, 8, 0, 0, 0, time.UTC), Message: "ready", Severity: "info",
 			ClusterID: "cluster-a", Namespace: "team-a", Pod: "api-0", Container: "api",
+			TraceID: "trace-1", SpanID: "span-1",
 			Attributes: map[string]any{"safe": "value", "token": "secret"},
 		}},
 		NextPageToken: "provider-page", Truncated: true,
@@ -122,18 +123,21 @@ func TestDataSourceCredentialsStayEncryptedAndCursorIsPrincipalBound(t *testing.
 	if !secretcrypto.Encrypted(stored.CredentialRef) || stored.CredentialRef == "top-secret" {
 		t.Fatalf("credential reference is not encrypted: %q", stored.CredentialRef)
 	}
-	if len(created.CredentialKeys) != 1 || created.CredentialKeys[0] != sohaapi.ObservabilityDataSourceCredentialKeysBearerToken {
+	if len(created.CredentialKeys) != 1 || created.CredentialKeys[0] != "bearer_token" {
 		t.Fatalf("credential keys = %#v", created.CredentialKeys)
 	}
 
-	selector := domainresource.LogSourceSelector{Namespace: "team-a", PodNames: []string{"api-0"}, Containers: []string{"api"}}
-	query := domainresource.LogQuery{Selector: &selector, SourceMode: sohaapi.LogSourceModeDurable, Limit: 1}
+	selector := domainresource.LogSourceSelector{Namespace: "team-a", PodNames: []string{"api-0", "api-1"}, Containers: []string{"api", "sidecar"}}
+	query := domainresource.LogQuery{Selector: &selector, SourceMode: sohaapi.LogSourceModeDurable, Limit: 1, TraceID: "trace-1", SpanID: "span-1"}
 	page, err := service.QueryDurableLogs(context.Background(), principal, "cluster-a", query)
 	if err != nil {
 		t.Fatalf("QueryDurableLogs() error = %v", err)
 	}
-	if logs.config["bearerToken"] != "top-secret" || logs.query.Scope.Pod != "api-0" || page.NextCursor == "" {
+	if logs.config["bearerToken"] != "top-secret" || len(logs.query.Scope.Pods) != 2 || len(logs.query.Scope.Containers) != 2 || logs.query.TraceID != "trace-1" || logs.query.SpanID != "span-1" || page.NextCursor == "" {
 		t.Fatalf("provider config/query/page = %#v %#v %#v", logs.config, logs.query, page)
+	}
+	if page.Entries[0].TraceID != "trace-1" || page.Entries[0].SpanID != "span-1" {
+		t.Fatalf("correlation IDs = %#v", page.Entries[0])
 	}
 	if _, exists := page.Entries[0].Attributes["token"]; exists || page.Entries[0].Attributes["safe"] != "value" {
 		t.Fatalf("redacted attributes = %#v", page.Entries[0].Attributes)
@@ -161,5 +165,31 @@ func TestDataSourceMutationRequiresManagePermission(t *testing.T) {
 	_, err = service.CreateDataSource(context.Background(), domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}, sohaapi.ObservabilityDataSourceInput{})
 	if !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("CreateDataSource() error = %v, want access denied", err)
+	}
+}
+
+func TestDurableLogQueryRequiresViewPermission(t *testing.T) {
+	service, err := New(Dependencies{
+		DataSources: &memoryDataSources{items: map[string]domainobservability.DataSource{}},
+		Permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"reader": {}}),
+		Logs:        &recordingLogRegistry{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	selector := domainresource.LogSourceSelector{Namespace: "team-a"}
+	_, err = service.QueryDurableLogs(context.Background(), domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}, "cluster-a", domainresource.LogQuery{Selector: &selector})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("QueryDurableLogs() error = %v, want access denied", err)
+	}
+}
+
+func TestDurableLogQueryRequiresSelector(t *testing.T) {
+	service := &Service{
+		permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"reader": {appaccess.PermObserveLogDataSourcesView}}),
+	}
+	_, err := service.QueryDurableLogs(context.Background(), domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}, "cluster-a", domainresource.LogQuery{})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("QueryDurableLogs() error = %v, want invalid argument", err)
 	}
 }

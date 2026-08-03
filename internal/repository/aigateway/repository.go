@@ -800,7 +800,7 @@ func (r *Repository) ApplyRateLimitState(ctx context.Context, item domainaigatew
 }
 
 func (r *Repository) CreateApprovalRequest(ctx context.Context, item domainaigateway.ApprovalRequest) (domainaigateway.ApprovalRequest, error) {
-	actorRoles, actorTeams, resourceScope, toolInput, relatedIDs, output, err := marshalApprovalRequestJSON(item.ActorRoles, item.ActorTeams, item.ResourceScope, item.ToolInput, item.RelatedIDs, item.Output)
+	actorRoles, actorTeams, resourceScope, toolInput, secretRefs, relatedIDs, output, err := marshalApprovalRequestJSON(item.ActorRoles, item.ActorTeams, item.ResourceScope, item.ToolInput, item.SecretRefs, item.RelatedIDs, item.Output)
 	if err != nil {
 		return domainaigateway.ApprovalRequest{}, err
 	}
@@ -814,12 +814,12 @@ func (r *Repository) CreateApprovalRequest(ctx context.Context, item domainaigat
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO ai_gateway_approval_requests (
 			id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_name, actor_roles, actor_teams,
-			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, related_ids, output,
+			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, secret_refs, related_ids, output,
 			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, item.ID, item.Status, item.Strategy, nullableString(item.PolicyID), nullableString(item.ApprovalPolicyRef), item.ActorType, item.ActorID, nullableString(item.ActorName), actorRoles, actorTeams,
-		nullableString(item.AIClientID), nullableString(item.AIClientName), nullableString(item.SkillID), item.ToolName, string(item.RiskLevel), item.RequiresApproval, resourceScope, toolInput, relatedIDs, output,
+		nullableString(item.AIClientID), nullableString(item.AIClientName), nullableString(item.SkillID), item.ToolName, string(item.RiskLevel), item.RequiresApproval, resourceScope, toolInput, secretRefs, relatedIDs, output,
 		item.Summary, nullableString(item.RequestID), nullableString(item.SourceIP), nullableString(item.DecidedBy), nullableString(item.DecidedByName), item.DecidedAt, nullableString(item.DecisionComment), item.ExpiresAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domainaigateway.ApprovalRequest{}, err
 	}
@@ -829,7 +829,7 @@ func (r *Repository) CreateApprovalRequest(ctx context.Context, item domainaigat
 func (r *Repository) GetApprovalRequest(ctx context.Context, requestID string) (domainaigateway.ApprovalRequest, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_name, actor_roles, actor_teams,
-			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, related_ids, output,
+			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, secret_refs, related_ids, output,
 			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
 		FROM ai_gateway_approval_requests
 		WHERE id = ?
@@ -841,7 +841,7 @@ func (r *Repository) GetApprovalRequest(ctx context.Context, requestID string) (
 func (r *Repository) ListApprovalRequests(ctx context.Context, filter domainaigateway.ApprovalRequestFilter) ([]domainaigateway.ApprovalRequest, error) {
 	query := `
 		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_name, actor_roles, actor_teams,
-			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, related_ids, output,
+			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, secret_refs, related_ids, output,
 			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
 		FROM ai_gateway_approval_requests
 		WHERE 1 = 1
@@ -1137,7 +1137,7 @@ func scanApprovalRequestScanner(scanner interface {
 	var item domainaigateway.ApprovalRequest
 	var policyID, approvalPolicyRef, actorName, aiClientID, aiClientName, skillID, requestID, sourceIP, decidedBy, decidedByName, decisionComment sql.NullString
 	var decidedAt, expiresAt sql.NullTime
-	var actorRoles, actorTeams, resourceScope, toolInput, relatedIDs, output []byte
+	var actorRoles, actorTeams, resourceScope, toolInput, secretRefs, relatedIDs, output []byte
 	var riskLevel string
 	if err := scanner.Scan(
 		&item.ID,
@@ -1158,6 +1158,7 @@ func scanApprovalRequestScanner(scanner interface {
 		&item.RequiresApproval,
 		&resourceScope,
 		&toolInput,
+		&secretRefs,
 		&relatedIDs,
 		&output,
 		&item.Summary,
@@ -1191,6 +1192,7 @@ func scanApprovalRequestScanner(scanner interface {
 	unmarshalJSON(actorTeams, &item.ActorTeams)
 	unmarshalJSON(resourceScope, &item.ResourceScope)
 	unmarshalJSON(toolInput, &item.ToolInput)
+	unmarshalJSON(secretRefs, &item.SecretRefs)
 	unmarshalJSON(relatedIDs, &item.RelatedIDs)
 	unmarshalJSON(output, &item.Output)
 	if item.ActorRoles == nil {
@@ -1204,6 +1206,9 @@ func scanApprovalRequestScanner(scanner interface {
 	}
 	if item.ToolInput == nil {
 		item.ToolInput = map[string]any{}
+	}
+	if item.SecretRefs == nil {
+		item.SecretRefs = map[string]string{}
 	}
 	if item.RelatedIDs == nil {
 		item.RelatedIDs = map[string]any{}
@@ -1640,32 +1645,39 @@ func marshalAuditLogJSON(resourceScope, metadata map[string]any) (string, string
 	return string(resourceScopeRaw), string(metadataRaw), nil
 }
 
-func marshalApprovalRequestJSON(actorRoles, actorTeams []string, resourceScope, toolInput, relatedIDs map[string]any, output any) (string, string, string, string, string, string, error) {
+func marshalApprovalRequestJSON(actorRoles, actorTeams []string, resourceScope, toolInput map[string]any, secretRefs map[string]string, relatedIDs map[string]any, output any) (string, string, string, string, string, string, string, error) {
 	actorRolesRaw, err := json.Marshal(emptyStringSlice(actorRoles))
 	if err != nil {
-		return "", "", "", "", "", "", fmt.Errorf("marshal actor roles: %w", err)
+		return "", "", "", "", "", "", "", fmt.Errorf("marshal actor roles: %w", err)
 	}
 	actorTeamsRaw, err := json.Marshal(emptyStringSlice(actorTeams))
 	if err != nil {
-		return "", "", "", "", "", "", fmt.Errorf("marshal actor teams: %w", err)
+		return "", "", "", "", "", "", "", fmt.Errorf("marshal actor teams: %w", err)
 	}
 	resourceScopeRaw, err := json.Marshal(emptyMap(resourceScope))
 	if err != nil {
-		return "", "", "", "", "", "", fmt.Errorf("marshal resource scope: %w", err)
+		return "", "", "", "", "", "", "", fmt.Errorf("marshal resource scope: %w", err)
 	}
 	toolInputRaw, err := json.Marshal(emptyMap(toolInput))
 	if err != nil {
-		return "", "", "", "", "", "", fmt.Errorf("marshal tool input: %w", err)
+		return "", "", "", "", "", "", "", fmt.Errorf("marshal tool input: %w", err)
+	}
+	if secretRefs == nil {
+		secretRefs = map[string]string{}
+	}
+	secretRefsRaw, err := json.Marshal(secretRefs)
+	if err != nil {
+		return "", "", "", "", "", "", "", fmt.Errorf("marshal secret refs: %w", err)
 	}
 	relatedIDsRaw, err := json.Marshal(emptyMap(relatedIDs))
 	if err != nil {
-		return "", "", "", "", "", "", fmt.Errorf("marshal related ids: %w", err)
+		return "", "", "", "", "", "", "", fmt.Errorf("marshal related ids: %w", err)
 	}
 	outputRaw, err := json.Marshal(emptyAnyMap(output))
 	if err != nil {
-		return "", "", "", "", "", "", fmt.Errorf("marshal output: %w", err)
+		return "", "", "", "", "", "", "", fmt.Errorf("marshal output: %w", err)
 	}
-	return string(actorRolesRaw), string(actorTeamsRaw), string(resourceScopeRaw), string(toolInputRaw), string(relatedIDsRaw), string(outputRaw), nil
+	return string(actorRolesRaw), string(actorTeamsRaw), string(resourceScopeRaw), string(toolInputRaw), string(secretRefsRaw), string(relatedIDsRaw), string(outputRaw), nil
 }
 
 func marshalApprovalRequestUpdateJSON(relatedIDs map[string]any, output any) (string, string, error) {

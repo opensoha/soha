@@ -9,6 +9,8 @@ import (
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 )
 
 type PersonalAccessTokenRepository interface {
@@ -160,8 +162,14 @@ type ServiceDeps struct {
 	RateLimits      RateLimitRepository
 	Approvals       ApprovalRepository
 	LLMRelay        LLMRelayRepository
+	Secrets         SecretReferenceResolver
 
 	RateLimitBackend RateLimitBackend
 	RelayConfig      LLMRelayConfig
 	HTTPClient       *http.Client
+}
+
+type SecretReferenceResolver interface {
+	PinReferences(context.Context, domainidentity.Principal, map[string]string, domainsecret.Target) ([]domainsecret.Reference, error)
+	ResolvePinnedReferences(context.Context, domainidentity.Principal, []domainsecret.Reference, domainsecret.Target) (map[string]string, error)
 }

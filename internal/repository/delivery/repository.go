@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
@@ -122,7 +123,7 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 	}
 	query := `
 		SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
-		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
+		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
 	`
 	args := []any{}
@@ -172,7 +173,7 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 func (r *Repository) GetExecutionTask(ctx context.Context, id string) (domaindelivery.ExecutionTask, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
-		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
+		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
 		WHERE id = ?
 		LIMIT 1
@@ -183,7 +184,7 @@ func (r *Repository) GetExecutionTask(ctx context.Context, id string) (domaindel
 func (r *Repository) GetExecutionTaskByCallbackToken(ctx context.Context, token string) (domaindelivery.ExecutionTask, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
-		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
+		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
 		WHERE callback_token = ?
 		LIMIT 1
@@ -200,7 +201,7 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		rows, queryErr := tx.Raw(`
 			SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
-			       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
+			       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 			FROM execution_tasks
 			WHERE status = 'queued' AND provider_kind IN ?
 			ORDER BY created_at ASC
@@ -261,6 +262,23 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 }
 
 func (r *Repository) CreateExecutionTask(ctx context.Context, item domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
+	if execution, ok := domainsecret.ExecutionContextFrom(ctx); ok {
+		item.SecretRefs = execution.References
+		item.SecretPrincipal = execution.Principal
+		item.SecretTarget = execution.Target
+	}
+	secretRefs, err := json.Marshal(item.SecretRefs)
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task secret refs: %w", err)
+	}
+	secretPrincipal, err := json.Marshal(item.SecretPrincipal)
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task secret principal: %w", err)
+	}
+	secretTarget, err := json.Marshal(item.SecretTarget)
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task secret target: %w", err)
+	}
 	payload, err := json.Marshal(item.Payload)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task payload: %w", err)
@@ -270,9 +288,9 @@ func (r *Repository) CreateExecutionTask(ctx context.Context, item domaindeliver
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task result: %w", err)
 	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO execution_tasks (id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key, max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, nullableString(item.ReleaseBundleID), item.ApplicationID, nullableString(item.ApplicationEnvironmentID), item.TaskKind, item.ProviderKind, item.TargetKind, item.Status, nullableString(item.QueueKey), nullableString(item.LockKey), item.MaxRetries, item.AttemptCount, item.TimeoutSeconds, nullableString(item.CallbackToken), nullableString(item.ClaimedByAgentID), nullableString(item.RuntimeEndpoint), nullableString(item.RuntimeClusterID), nullableString(item.StopTransport), string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.LastRuntimeSeenAt, item.FinishedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		INSERT INTO execution_tasks (id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key, max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, nullableString(item.ReleaseBundleID), item.ApplicationID, nullableString(item.ApplicationEnvironmentID), item.TaskKind, item.ProviderKind, item.TargetKind, item.Status, nullableString(item.QueueKey), nullableString(item.LockKey), item.MaxRetries, item.AttemptCount, item.TimeoutSeconds, nullableString(item.CallbackToken), nullableString(item.ClaimedByAgentID), nullableString(item.RuntimeEndpoint), nullableString(item.RuntimeClusterID), nullableString(item.StopTransport), string(secretRefs), string(secretPrincipal), string(secretTarget), string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.LastRuntimeSeenAt, item.FinishedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("create execution task: %w", err)
 	}
 	return item, nil
@@ -793,13 +811,13 @@ func scanExecutionTask(rows *sql.Rows) (domaindelivery.ExecutionTask, error) {
 	var runtimeEndpoint sql.NullString
 	var runtimeClusterID sql.NullString
 	var stopTransport sql.NullString
-	var payload []byte
+	var secretRefs, secretPrincipal, secretTarget, payload []byte
 	var result []byte
 	var startedAt sql.NullTime
 	var lastHeartbeatAt sql.NullTime
 	var lastRuntimeSeenAt sql.NullTime
 	var finishedAt sql.NullTime
-	if err := rows.Scan(&item.ID, &releaseBundleID, &item.ApplicationID, &applicationEnvironmentID, &item.TaskKind, &item.ProviderKind, &item.TargetKind, &item.Status, &queueKey, &lockKey, &item.MaxRetries, &item.AttemptCount, &item.TimeoutSeconds, &callbackToken, &claimedByAgentID, &runtimeEndpoint, &runtimeClusterID, &stopTransport, &payload, &result, &startedAt, &lastHeartbeatAt, &lastRuntimeSeenAt, &finishedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := rows.Scan(&item.ID, &releaseBundleID, &item.ApplicationID, &applicationEnvironmentID, &item.TaskKind, &item.ProviderKind, &item.TargetKind, &item.Status, &queueKey, &lockKey, &item.MaxRetries, &item.AttemptCount, &item.TimeoutSeconds, &callbackToken, &claimedByAgentID, &runtimeEndpoint, &runtimeClusterID, &stopTransport, &secretRefs, &secretPrincipal, &secretTarget, &payload, &result, &startedAt, &lastHeartbeatAt, &lastRuntimeSeenAt, &finishedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("scan execution task: %w", err)
 	}
 	item.ReleaseBundleID = releaseBundleID.String
@@ -811,6 +829,9 @@ func scanExecutionTask(rows *sql.Rows) (domaindelivery.ExecutionTask, error) {
 	item.RuntimeEndpoint = runtimeEndpoint.String
 	item.RuntimeClusterID = runtimeClusterID.String
 	item.StopTransport = stopTransport.String
+	_ = json.Unmarshal(secretRefs, &item.SecretRefs)
+	_ = json.Unmarshal(secretPrincipal, &item.SecretPrincipal)
+	_ = json.Unmarshal(secretTarget, &item.SecretTarget)
 	_ = json.Unmarshal(payload, &item.Payload)
 	_ = json.Unmarshal(result, &item.Result)
 	if item.Payload == nil {
@@ -850,13 +871,13 @@ func scanExecutionTaskRow(row *sql.Row) (domaindelivery.ExecutionTask, error) {
 	var runtimeEndpoint sql.NullString
 	var runtimeClusterID sql.NullString
 	var stopTransport sql.NullString
-	var payload []byte
+	var secretRefs, secretPrincipal, secretTarget, payload []byte
 	var result []byte
 	var startedAt sql.NullTime
 	var lastHeartbeatAt sql.NullTime
 	var lastRuntimeSeenAt sql.NullTime
 	var finishedAt sql.NullTime
-	if err := row.Scan(&item.ID, &releaseBundleID, &item.ApplicationID, &applicationEnvironmentID, &item.TaskKind, &item.ProviderKind, &item.TargetKind, &item.Status, &queueKey, &lockKey, &item.MaxRetries, &item.AttemptCount, &item.TimeoutSeconds, &callbackToken, &claimedByAgentID, &runtimeEndpoint, &runtimeClusterID, &stopTransport, &payload, &result, &startedAt, &lastHeartbeatAt, &lastRuntimeSeenAt, &finishedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &releaseBundleID, &item.ApplicationID, &applicationEnvironmentID, &item.TaskKind, &item.ProviderKind, &item.TargetKind, &item.Status, &queueKey, &lockKey, &item.MaxRetries, &item.AttemptCount, &item.TimeoutSeconds, &callbackToken, &claimedByAgentID, &runtimeEndpoint, &runtimeClusterID, &stopTransport, &secretRefs, &secretPrincipal, &secretTarget, &payload, &result, &startedAt, &lastHeartbeatAt, &lastRuntimeSeenAt, &finishedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaindelivery.ExecutionTask{}, ErrNotFound
 		}
@@ -871,6 +892,9 @@ func scanExecutionTaskRow(row *sql.Row) (domaindelivery.ExecutionTask, error) {
 	item.RuntimeEndpoint = runtimeEndpoint.String
 	item.RuntimeClusterID = runtimeClusterID.String
 	item.StopTransport = stopTransport.String
+	_ = json.Unmarshal(secretRefs, &item.SecretRefs)
+	_ = json.Unmarshal(secretPrincipal, &item.SecretPrincipal)
+	_ = json.Unmarshal(secretTarget, &item.SecretTarget)
 	_ = json.Unmarshal(payload, &item.Payload)
 	_ = json.Unmarshal(result, &item.Result)
 	if item.Payload == nil {

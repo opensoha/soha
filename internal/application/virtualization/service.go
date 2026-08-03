@@ -18,6 +18,7 @@ import (
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/idempotency"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
@@ -130,6 +131,7 @@ type CreateVMInput struct {
 	ProviderExtraJSON map[string]any
 	Disks             []domainvirtualization.AdapterDiskChange    `json:"disks,omitempty"`
 	Networks          []domainvirtualization.AdapterNetworkChange `json:"networks,omitempty"`
+	IdempotencyKey    string                                      `json:"-"`
 }
 
 type DeleteConnectionOptions struct {
@@ -137,13 +139,14 @@ type DeleteConnectionOptions struct {
 }
 
 type VMActionInput struct {
-	Action    string                                      `json:"action"`
-	Config    map[string]any                              `json:"config,omitempty"`
-	CPU       int                                         `json:"cpu,omitempty"`
-	MemoryMiB int                                         `json:"memoryMiB,omitempty"`
-	DiskGiB   int                                         `json:"diskGiB,omitempty"`
-	Disks     []domainvirtualization.AdapterDiskChange    `json:"disks,omitempty"`
-	Networks  []domainvirtualization.AdapterNetworkChange `json:"networks,omitempty"`
+	Action         string                                      `json:"action"`
+	Config         map[string]any                              `json:"config,omitempty"`
+	CPU            int                                         `json:"cpu,omitempty"`
+	MemoryMiB      int                                         `json:"memoryMiB,omitempty"`
+	DiskGiB        int                                         `json:"diskGiB,omitempty"`
+	Disks          []domainvirtualization.AdapterDiskChange    `json:"disks,omitempty"`
+	Networks       []domainvirtualization.AdapterNetworkChange `json:"networks,omitempty"`
+	IdempotencyKey string                                      `json:"-"`
 }
 
 type ImageInput struct {
@@ -594,30 +597,114 @@ func (s *Service) ListVMDevices(ctx context.Context, principal domainidentity.Pr
 	return provider.ListVMDevices(ctx, adapterConnection, domainvirtualization.AdapterVM{ID: firstNonEmpty(vm.ExternalID, vm.ID), Name: vm.Name, Namespace: vm.Namespace, Node: vm.NodeName, Status: vm.Status})
 }
 
+type preparedVMCreate struct {
+	input      CreateVMInput
+	connection domainvirtualization.Connection
+	image      domainvirtualization.Image
+	imageID    string
+	sourceRef  string
+}
+
+func (s *Service) PlanVMCreate(ctx context.Context, principal domainidentity.Principal, input CreateVMInput) (domainoperation.Plan, error) {
+	for _, permission := range []string{appaccess.PermVirtualizationVMsView, appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationImagesView} {
+		if err := s.authorize(ctx, principal, permission); err != nil {
+			return domainoperation.Plan{}, err
+		}
+	}
+	prepared, err := s.prepareVMCreate(ctx, input)
+	if err != nil {
+		return domainoperation.Plan{}, err
+	}
+	_, inputHash, err := idempotency.Derive("virtualization.vm.create.plan", "", "plan", prepared.input)
+	if err != nil {
+		return domainoperation.Plan{}, fmt.Errorf("hash virtual machine create plan: %w", err)
+	}
+	warnings := []string{}
+	if prepared.input.CPU == 0 || prepared.input.MemoryMiB == 0 || prepared.input.DiskGiB == 0 {
+		warnings = append(warnings, "provider defaults will be used for unspecified compute resources")
+	}
+	changes := []domainoperation.PlanChange{{
+		Action: "create", Resource: "virtualization.vm",
+		Summary: fmt.Sprintf("create %s on %s", prepared.input.Name, prepared.connection.ID),
+	}}
+	if strings.TrimSpace(prepared.input.CloudInit) != "" {
+		changes = append(changes, domainoperation.PlanChange{
+			Action: "configure", Resource: "virtualization.vm.cloud-init",
+			Summary: "apply redacted cloud-init bootstrap content", SensitiveValuesRedacted: true,
+		})
+	}
+	return domainoperation.Plan{
+		Capability: "virtualization.vms.create.trigger", Target: prepared.connection.ID + "/" + prepared.input.Name,
+		Ready: true, RiskLevel: "execute", RequiresApproval: true, InputHash: inputHash,
+		Changes: changes, Warnings: warnings,
+	}, nil
+}
+
 func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Principal, input CreateVMInput) (domainvirtualization.Task, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsManage); err != nil {
 		return domainvirtualization.Task{}, err
 	}
+	prepared, err := s.prepareVMCreate(ctx, input)
+	if err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	input = prepared.input
+	connection, imageID, image, sourceRef := prepared.connection, prepared.imageID, prepared.image, prepared.sourceRef
+	payload := map[string]any{
+		"name":             input.Name,
+		"architecture":     input.Architecture,
+		"namespace":        input.Namespace,
+		"node":             input.Node,
+		"flavorId":         input.FlavorID,
+		"cpu":              input.CPU,
+		"memoryMiB":        input.MemoryMiB,
+		"bootImageId":      input.BootImageID,
+		"imageId":          imageID,
+		"sourceMode":       firstNonEmpty(input.SourceMode, sourceModeForProvider(connection.Provider, input.TemplateID, image)),
+		"sourceId":         firstNonEmpty(sourceRef, strings.TrimSpace(input.SourceID)),
+		"diskGiB":          input.DiskGiB,
+		"network":          input.Network,
+		"cloudInit":        input.CloudInit,
+		"startAfterCreate": input.StartAfterCreate,
+		"templateId":       input.TemplateID,
+		"providerParams":   input.ProviderParams,
+		"providerExtra":    input.ProviderExtraJSON,
+		"disks":            input.Disks,
+		"networks":         input.Networks,
+	}
+	task, err := s.createTaskIdempotently(ctx, "virtualization.vm.create", principal, input.IdempotencyKey, input, domainvirtualization.Task{
+		Provider: connection.Provider, ConnectionID: connection.ID, TaskKind: TaskKindVMCreate,
+		Status: TaskStatusQueued, RequestedBy: principal.UserID, MaxRetries: defaultTaskMaxRetries,
+		TimeoutSeconds: defaultTaskTimeoutSeconds, Payload: payload,
+	})
+	if err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	s.recordOperation(ctx, principal, "virtualization.vm.create.enqueue", connection.ID, input.Name, "success", "enqueued virtual machine creation", map[string]any{"taskId": task.ID})
+	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func (s *Service) prepareVMCreate(ctx context.Context, input CreateVMInput) (preparedVMCreate, error) {
 	connection, err := s.connections.GetConnection(ctx, strings.TrimSpace(input.ConnectionID))
 	if err != nil {
-		return domainvirtualization.Task{}, mapNotFound(err)
+		return preparedVMCreate{}, mapNotFound(err)
 	}
 	if strings.TrimSpace(input.Name) == "" {
-		return domainvirtualization.Task{}, fmt.Errorf("%w: vm name is required", apperrors.ErrInvalidArgument)
+		return preparedVMCreate{}, fmt.Errorf("%w: vm name is required", apperrors.ErrInvalidArgument)
 	}
 	architecture, err := normalizeArchitecture(input.Architecture)
 	if err != nil {
-		return domainvirtualization.Task{}, err
+		return preparedVMCreate{}, err
 	}
 	input.Architecture = architecture
 	flavor := domainvirtualization.Flavor{}
 	if strings.TrimSpace(input.FlavorID) != "" {
 		flavor, err = s.flavors.GetFlavor(ctx, strings.TrimSpace(input.FlavorID))
 		if err != nil {
-			return domainvirtualization.Task{}, mapNotFound(err)
+			return preparedVMCreate{}, mapNotFound(err)
 		}
 		if flavor.ConnectionID != "" && flavor.ConnectionID != connection.ID {
-			return domainvirtualization.Task{}, fmt.Errorf("%w: flavor does not belong to connection", apperrors.ErrInvalidArgument)
+			return preparedVMCreate{}, fmt.Errorf("%w: flavor does not belong to connection", apperrors.ErrInvalidArgument)
 		}
 		if input.CPU == 0 {
 			input.CPU = flavor.CPUCores
@@ -634,50 +721,15 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 	if strings.TrimSpace(imageID) != "" {
 		image, err = s.images.GetImage(ctx, strings.TrimSpace(imageID))
 		if err != nil {
-			return domainvirtualization.Task{}, mapNotFound(err)
+			return preparedVMCreate{}, mapNotFound(err)
 		}
 		if image.ConnectionID != connection.ID {
-			return domainvirtualization.Task{}, fmt.Errorf("%w: image does not belong to connection", apperrors.ErrInvalidArgument)
+			return preparedVMCreate{}, fmt.Errorf("%w: image does not belong to connection", apperrors.ErrInvalidArgument)
 		}
 		input.BootImageID = image.ID
 	}
 	sourceRef := firstNonEmpty(stringValue(image.Config, "sourceRef"), image.ExternalID, imageID)
-	task, err := s.tasks.CreateTask(ctx, domainvirtualization.Task{
-		Provider:       connection.Provider,
-		ConnectionID:   connection.ID,
-		TaskKind:       TaskKindVMCreate,
-		Status:         TaskStatusQueued,
-		RequestedBy:    principal.UserID,
-		MaxRetries:     defaultTaskMaxRetries,
-		TimeoutSeconds: defaultTaskTimeoutSeconds,
-		Payload: map[string]any{
-			"name":             input.Name,
-			"architecture":     input.Architecture,
-			"namespace":        input.Namespace,
-			"node":             input.Node,
-			"flavorId":         input.FlavorID,
-			"cpu":              input.CPU,
-			"memoryMiB":        input.MemoryMiB,
-			"bootImageId":      input.BootImageID,
-			"imageId":          imageID,
-			"sourceMode":       firstNonEmpty(input.SourceMode, sourceModeForProvider(connection.Provider, input.TemplateID, image)),
-			"sourceId":         firstNonEmpty(sourceRef, strings.TrimSpace(input.SourceID)),
-			"diskGiB":          input.DiskGiB,
-			"network":          input.Network,
-			"cloudInit":        input.CloudInit,
-			"startAfterCreate": input.StartAfterCreate,
-			"templateId":       input.TemplateID,
-			"providerParams":   input.ProviderParams,
-			"providerExtra":    input.ProviderExtraJSON,
-			"disks":            input.Disks,
-			"networks":         input.Networks,
-		},
-	})
-	if err != nil {
-		return domainvirtualization.Task{}, err
-	}
-	s.recordOperation(ctx, principal, "virtualization.vm.create.enqueue", connection.ID, input.Name, "success", "enqueued virtual machine creation", map[string]any{"taskId": task.ID})
-	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
+	return preparedVMCreate{input: input, connection: connection, image: image, imageID: imageID, sourceRef: sourceRef}, nil
 }
 
 func (s *Service) VMAction(ctx context.Context, principal domainidentity.Principal, id string, input VMActionInput) (domainvirtualization.Task, error) {
@@ -709,7 +761,7 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 			}
 		}
 	}
-	task, err := s.tasks.CreateTask(ctx, domainvirtualization.Task{
+	task, err := s.createTaskIdempotently(ctx, "virtualization.vm.action:"+vm.ID, principal, input.IdempotencyKey, input, domainvirtualization.Task{
 		Provider:       vm.Provider,
 		ConnectionID:   vm.ConnectionID,
 		VMID:           vm.ID,
@@ -730,6 +782,37 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 	}
 	s.recordOperation(ctx, principal, "virtualization.vm.action.enqueue", vm.ID, vm.Name, "success", "enqueued virtual machine action", map[string]any{"taskId": task.ID, "action": string(action)})
 	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func (s *Service) createTaskIdempotently(ctx context.Context, scope string, principal domainidentity.Principal, key string, input any, task domainvirtualization.Task) (domainvirtualization.Task, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return s.tasks.CreateTask(ctx, task)
+	}
+	if len(key) < 8 || len(key) > 128 {
+		return domainvirtualization.Task{}, fmt.Errorf("%w: Idempotency-Key must contain 8 to 128 characters", apperrors.ErrInvalidArgument)
+	}
+	id, inputHash, err := idempotency.Derive(scope, firstNonEmpty(principal.UserID, principal.UserName), key, input)
+	if err != nil {
+		return domainvirtualization.Task{}, fmt.Errorf("derive virtualization task identity: %w", err)
+	}
+	if task.Payload == nil {
+		task.Payload = map[string]any{}
+	}
+	task.ID = id
+	task.Payload[idempotency.PayloadHashKey] = inputHash
+	created, err := s.tasks.CreateTask(ctx, task)
+	if err == nil {
+		return created, nil
+	}
+	existing, getErr := s.tasks.GetTask(ctx, id)
+	if getErr != nil {
+		return domainvirtualization.Task{}, err
+	}
+	if !idempotency.Matches(existing.Payload, inputHash) {
+		return domainvirtualization.Task{}, fmt.Errorf("%w: Idempotency-Key is already bound to different input", apperrors.ErrConflict)
+	}
+	return existing, nil
 }
 
 func (s *Service) ListImages(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.ImageFilter) ([]domainvirtualization.Image, error) {

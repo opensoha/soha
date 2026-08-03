@@ -968,8 +968,12 @@ func operationFromInput(input domaindocker.OperationInput) domaindocker.Operatio
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = 1800
 	}
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		id = uuid.NewString()
+	}
 	return domaindocker.Operation{
-		ID:             uuid.NewString(),
+		ID:             id,
 		HostID:         strings.TrimSpace(input.HostID),
 		ProjectID:      strings.TrimSpace(input.ProjectID),
 		ServiceID:      strings.TrimSpace(input.ServiceID),

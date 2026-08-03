@@ -11,6 +11,7 @@ import (
 	"time"
 
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
@@ -743,6 +744,11 @@ func (r *Repository) GetAgentRun(ctx context.Context, createdBy, runID string) (
 }
 
 func (r *Repository) CreateAgentRun(ctx context.Context, run domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
+	if execution, ok := domainsecret.ExecutionContextFrom(ctx); ok {
+		run.SecretRefs = execution.References
+		run.SecretPrincipal = execution.Principal
+		run.SecretTarget = execution.Target
+	}
 	skillIDs, err := json.Marshal(run.SkillIDs)
 	if err != nil {
 		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run skills: %w", err)
@@ -779,12 +785,24 @@ func (r *Repository) CreateAgentRun(ctx context.Context, run domaincopilot.Agent
 	if err != nil {
 		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run artifacts: %w", err)
 	}
+	secretRefs, err := json.Marshal(run.SecretRefs)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run secret refs: %w", err)
+	}
+	secretPrincipal, err := json.Marshal(run.SecretPrincipal)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run secret principal: %w", err)
+	}
+	secretTarget, err := json.Marshal(run.SecretTarget)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run secret target: %w", err)
+	}
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO ai_agent_runs (
 			id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,
-			tool_executions, analysis_artifacts, callback_token, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,
+			tool_executions, analysis_artifacts, callback_token, secret_refs, secret_principal, secret_target, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,
 			queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		run.ID,
 		run.ProviderID,
@@ -804,6 +822,9 @@ func (r *Repository) CreateAgentRun(ctx context.Context, run domaincopilot.Agent
 		string(toolExecutions),
 		string(analysisArtifacts),
 		run.CallbackToken,
+		string(secretRefs),
+		string(secretPrincipal),
+		string(secretTarget),
 		nullableString(run.ClaimedByAgentID),
 		nullableString(run.ExternalRunID),
 		nullableString(run.ErrorMessage),
@@ -1590,7 +1611,7 @@ func scanRootCauseRunRow(row *sql.Row, runID string) (domaincopilot.RootCauseRun
 func agentRunSelect() string {
 	return `
 		SELECT id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,
-			tool_executions, analysis_artifacts, callback_token, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,
+			tool_executions, analysis_artifacts, callback_token, secret_refs, secret_principal, secret_target, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,
 			queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at
 		FROM ai_agent_runs
 	`
@@ -1609,6 +1630,9 @@ func scanAgentRun(rows *sql.Rows) (domaincopilot.AgentRun, error) {
 	var output []byte
 	var toolExecutions []byte
 	var analysisArtifacts []byte
+	var secretRefs []byte
+	var secretPrincipal []byte
+	var secretTarget []byte
 	var claimedByAgentID sql.NullString
 	var externalRunID sql.NullString
 	var errorMessage sql.NullString
@@ -1634,6 +1658,9 @@ func scanAgentRun(rows *sql.Rows) (domaincopilot.AgentRun, error) {
 		&toolExecutions,
 		&analysisArtifacts,
 		&item.CallbackToken,
+		&secretRefs,
+		&secretPrincipal,
+		&secretTarget,
 		&claimedByAgentID,
 		&externalRunID,
 		&errorMessage,
@@ -1647,7 +1674,7 @@ func scanAgentRun(rows *sql.Rows) (domaincopilot.AgentRun, error) {
 	); err != nil {
 		return domaincopilot.AgentRun{}, fmt.Errorf("scan ai agent run: %w", err)
 	}
-	decodeAgentRunFields(&item, skillIDs, sessionID, rootCauseRunID, scope, toolset, toolBindings, skillBindings, input, output, toolExecutions, analysisArtifacts, claimedByAgentID, externalRunID, errorMessage, startedAt, lastHeartbeatAt, completedAt)
+	decodeAgentRunFields(&item, skillIDs, sessionID, rootCauseRunID, scope, toolset, toolBindings, skillBindings, input, output, toolExecutions, analysisArtifacts, secretRefs, secretPrincipal, secretTarget, claimedByAgentID, externalRunID, errorMessage, startedAt, lastHeartbeatAt, completedAt)
 	return item, nil
 }
 
@@ -1664,6 +1691,9 @@ func scanAgentRunRow(row *sql.Row, runID string) (domaincopilot.AgentRun, error)
 	var output []byte
 	var toolExecutions []byte
 	var analysisArtifacts []byte
+	var secretRefs []byte
+	var secretPrincipal []byte
+	var secretTarget []byte
 	var claimedByAgentID sql.NullString
 	var externalRunID sql.NullString
 	var errorMessage sql.NullString
@@ -1689,6 +1719,9 @@ func scanAgentRunRow(row *sql.Row, runID string) (domaincopilot.AgentRun, error)
 		&toolExecutions,
 		&analysisArtifacts,
 		&item.CallbackToken,
+		&secretRefs,
+		&secretPrincipal,
+		&secretTarget,
 		&claimedByAgentID,
 		&externalRunID,
 		&errorMessage,
@@ -1705,14 +1738,17 @@ func scanAgentRunRow(row *sql.Row, runID string) (domaincopilot.AgentRun, error)
 		}
 		return domaincopilot.AgentRun{}, fmt.Errorf("scan ai agent run row: %w", err)
 	}
-	decodeAgentRunFields(&item, skillIDs, sessionID, rootCauseRunID, scope, toolset, toolBindings, skillBindings, input, output, toolExecutions, analysisArtifacts, claimedByAgentID, externalRunID, errorMessage, startedAt, lastHeartbeatAt, completedAt)
+	decodeAgentRunFields(&item, skillIDs, sessionID, rootCauseRunID, scope, toolset, toolBindings, skillBindings, input, output, toolExecutions, analysisArtifacts, secretRefs, secretPrincipal, secretTarget, claimedByAgentID, externalRunID, errorMessage, startedAt, lastHeartbeatAt, completedAt)
 	return item, nil
 }
 
-func decodeAgentRunFields(item *domaincopilot.AgentRun, skillIDs []byte, sessionID sql.NullString, rootCauseRunID sql.NullString, scope []byte, toolset []byte, toolBindings []byte, skillBindings []byte, input []byte, output []byte, toolExecutions []byte, analysisArtifacts []byte, claimedByAgentID sql.NullString, externalRunID sql.NullString, errorMessage sql.NullString, startedAt sql.NullTime, lastHeartbeatAt sql.NullTime, completedAt sql.NullTime) {
+func decodeAgentRunFields(item *domaincopilot.AgentRun, skillIDs []byte, sessionID sql.NullString, rootCauseRunID sql.NullString, scope []byte, toolset []byte, toolBindings []byte, skillBindings []byte, input []byte, output []byte, toolExecutions []byte, analysisArtifacts []byte, secretRefs []byte, secretPrincipal []byte, secretTarget []byte, claimedByAgentID sql.NullString, externalRunID sql.NullString, errorMessage sql.NullString, startedAt sql.NullTime, lastHeartbeatAt sql.NullTime, completedAt sql.NullTime) {
 	if len(skillIDs) > 0 {
 		_ = json.Unmarshal(skillIDs, &item.SkillIDs)
 	}
+	_ = json.Unmarshal(secretRefs, &item.SecretRefs)
+	_ = json.Unmarshal(secretPrincipal, &item.SecretPrincipal)
+	_ = json.Unmarshal(secretTarget, &item.SecretTarget)
 	if sessionID.Valid {
 		item.SessionID = sessionID.String
 	}

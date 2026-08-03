@@ -16,6 +16,7 @@ import (
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -32,9 +33,15 @@ type Service struct {
 	jobConfig     JobRuntimeOptions
 	runnerToken   string
 	permissions   *appaccess.PermissionResolver
+	secretLeases  SecretLeaseService
 	workflowSink  WorkflowExecutionTaskSink
 	resultSinksMu sync.RWMutex
 	resultSinks   []ExecutionTaskSink
+}
+
+type SecretLeaseService interface {
+	IssueLease(context.Context, domainidentity.Principal, []domainsecret.Reference, domainsecret.Target, string, string, string) (*domainsecret.LeaseGrant, error)
+	RevokeSubjectLeases(context.Context, string, string) error
 }
 
 type JobRuntimeOptions struct {
@@ -109,6 +116,10 @@ func (s *Service) SetJobRuntimeOptions(options JobRuntimeOptions) {
 	s.jobConfigMu.Unlock()
 }
 
+func (s *Service) SetSecretLeaseService(service SecretLeaseService) {
+	s.secretLeases = service
+}
+
 func (s *Service) jobRuntimeOptions() JobRuntimeOptions {
 	s.jobConfigMu.RLock()
 	defer s.jobConfigMu.RUnlock()
@@ -171,6 +182,12 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: agentID is required", apperrors.ErrInvalidArgument)
 	}
 	task, err := s.repo.ClaimExecutionTask(ctx, providerKinds, strings.TrimSpace(agentID), strings.TrimSpace(runtimeEndpoint))
+	if err == nil && len(task.SecretRefs) > 0 {
+		if s.secretLeases == nil {
+			return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: secret lease service is not configured", apperrors.ErrInvalidArgument)
+		}
+		task.SecretLease, err = s.secretLeases.IssueLease(ctx, task.SecretPrincipal, task.SecretRefs, task.SecretTarget, "execution_task", task.ID, strings.TrimSpace(agentID))
+	}
 	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
@@ -253,6 +270,9 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if s.secretLeases != nil {
+		_ = s.secretLeases.RevokeSubjectLeases(ctx, "execution_task", updated.ID)
+	}
 	_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
 		ID:              uuid.NewString(),
 		ExecutionTaskID: updated.ID,
@@ -334,6 +354,9 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	updated, err := s.repo.UpdateExecutionTask(ctx, task)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
+	}
+	if isStrictTerminalTaskStatus(updated.Status) && s.secretLeases != nil {
+		_ = s.secretLeases.RevokeSubjectLeases(ctx, "execution_task", updated.ID)
 	}
 	_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
 		ID:              uuid.NewString(),

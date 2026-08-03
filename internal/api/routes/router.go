@@ -67,6 +67,7 @@ type Dependencies struct {
 	Settings            *apiHandlers.SettingsHandler
 	RuntimeConfig       *apiHandlers.RuntimeConfigHandler
 	SystemIntegrations  *apiHandlers.SystemIntegrationHandler
+	Secrets             *apiHandlers.SecretHandler
 	ModuleState         apiMiddleware.ModuleState
 	Auth                *apiHandlers.AuthHandler
 	MFA                 *apiHandlers.MFAHandler

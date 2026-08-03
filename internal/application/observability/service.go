@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -40,25 +41,34 @@ type LogRegistry interface {
 	Search(context.Context, string, string, map[string]any, telemetry.LogSearchQuery) (telemetry.LogSearchResult, error)
 }
 
+type ExternalLogProvider interface {
+	ValidateConfig(ProviderRuntime, map[string]any) error
+	Search(context.Context, ProviderRuntime, string, map[string]any, telemetry.LogSearchQuery) (telemetry.LogSearchResult, error)
+}
+
 type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
 
 type Dependencies struct {
-	DataSources DataSourceStore
-	Permissions *appaccess.PermissionResolver
-	Logs        LogRegistry
-	Audit       AuditRecorder
-	Keys        keyring.Ring
+	DataSources  DataSourceStore
+	Permissions  *appaccess.PermissionResolver
+	Logs         LogRegistry
+	ExternalLogs ExternalLogProvider
+	Plugins      PluginProviderStore
+	Audit        AuditRecorder
+	Keys         keyring.Ring
 }
 
 type Service struct {
-	dataSources DataSourceStore
-	permissions *appaccess.PermissionResolver
-	logs        LogRegistry
-	audit       AuditRecorder
-	keys        keyring.Ring
-	now         func() time.Time
+	dataSources  DataSourceStore
+	permissions  *appaccess.PermissionResolver
+	logs         LogRegistry
+	externalLogs ExternalLogProvider
+	plugins      PluginProviderStore
+	audit        AuditRecorder
+	keys         keyring.Ring
+	now          func() time.Time
 	// ponytail: one collection lock keeps confirmation single-use in-process; split by cluster if installs need concurrency.
 	collectionMu sync.Mutex
 	collection   CollectionDependencies
@@ -68,7 +78,10 @@ func New(deps Dependencies) (*Service, error) {
 	if deps.DataSources == nil || deps.Permissions == nil || deps.Logs == nil {
 		return nil, fmt.Errorf("observability data sources, permissions, and log registry are required")
 	}
-	return &Service{dataSources: deps.DataSources, permissions: deps.Permissions, logs: deps.Logs, audit: deps.Audit, keys: deps.Keys, now: time.Now}, nil
+	return &Service{
+		dataSources: deps.DataSources, permissions: deps.Permissions, logs: deps.Logs, externalLogs: deps.ExternalLogs,
+		plugins: deps.Plugins, audit: deps.Audit, keys: deps.Keys, now: time.Now,
+	}, nil
 }
 
 func (s *Service) ListDataSources(ctx context.Context, principal domainidentity.Principal) ([]sohaapi.ObservabilityDataSource, error) {
@@ -93,7 +106,7 @@ func (s *Service) CreateDataSource(ctx context.Context, principal domainidentity
 	if err := s.authorize(ctx, principal, appaccess.PermObserveLogDataSourcesManage); err != nil {
 		return sohaapi.ObservabilityDataSource{}, err
 	}
-	item, err := s.normalizeInput(input, "")
+	item, err := s.normalizeInput(ctx, input, "")
 	if err != nil {
 		return sohaapi.ObservabilityDataSource{}, err
 	}
@@ -129,7 +142,7 @@ func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity
 	if current.SourceKind != dataSourceKindLogs {
 		return sohaapi.ObservabilityDataSource{}, fmt.Errorf("%w: log data source not found", apperrors.ErrNotFound)
 	}
-	item, err := s.normalizeInput(input, current.ID)
+	item, err := s.normalizeInput(ctx, input, current.ID)
 	if err != nil {
 		return sohaapi.ObservabilityDataSource{}, err
 	}
@@ -169,14 +182,34 @@ func (s *Service) ValidateDataSource(ctx context.Context, principal domainidenti
 	}
 	checkedAt := s.now().UTC()
 	config, configErr := s.runtimeConfig(item)
-	if configErr == nil {
+	provider, providerFound, providerErr := s.resolveProvider(ctx, item.BackendType)
+	if configErr == nil && providerErr != nil {
+		configErr = providerErr
+	}
+	if configErr == nil && (!providerFound || !supportsLogQuery(provider)) {
+		configErr = fmt.Errorf("provider not found")
+	}
+	if configErr == nil && provider.definition.BuiltIn {
 		configErr = s.logs.Validate(item.BackendType, config)
+	} else if configErr == nil {
+		runtime, ok := provider.runtimeFor(logsQueryCapability)
+		if !ok || s.externalLogs == nil {
+			configErr = fmt.Errorf("provider log query runtime is unavailable")
+		} else {
+			configErr = s.externalLogs.ValidateConfig(runtime, config)
+		}
 	}
 	if configErr == nil {
 		queryCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		_, configErr = s.logs.Search(queryCtx, item.BackendType, item.ID, config, telemetry.LogSearchQuery{
+		search := telemetry.LogSearchQuery{
 			Scope: scopeForValidation(item.Scope), TimeFrom: checkedAt.Add(-5 * time.Minute), TimeTo: checkedAt, Limit: 1, Direction: "backward",
-		})
+		}
+		if provider.definition.BuiltIn {
+			_, configErr = s.logs.Search(queryCtx, item.BackendType, item.ID, config, search)
+		} else {
+			runtime, _ := provider.runtimeFor(logsQueryCapability)
+			_, configErr = s.externalLogs.Search(queryCtx, runtime, item.ID, config, search)
+		}
 		cancel()
 	}
 	status, message := "success", ""
@@ -191,17 +224,36 @@ func (s *Service) ValidateDataSource(ctx context.Context, principal domainidenti
 	return s.publicDataSource(updated), nil
 }
 
-func (s *Service) normalizeInput(input sohaapi.ObservabilityDataSourceInput, id string) (domainobservability.DataSourceInput, error) {
+func (s *Service) normalizeInput(ctx context.Context, input sohaapi.ObservabilityDataSourceInput, id string) (domainobservability.DataSourceInput, error) {
 	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return domainobservability.DataSourceInput{}, fmt.Errorf("%w: data source name is required", apperrors.ErrInvalidArgument)
 	}
 	backend := strings.ToLower(strings.TrimSpace(string(input.BackendType)))
-	if backend != "loki" && backend != "elasticsearch" && backend != "clickhouse" {
-		return domainobservability.DataSourceInput{}, fmt.Errorf("%w: unsupported log backend", apperrors.ErrInvalidArgument)
+	if backend == string(sohaapi.ObservabilityDataSourceBackendTypeProvider) {
+		backend = strings.ToLower(strings.TrimSpace(input.ProviderKey))
+	}
+	provider, ok, err := s.resolveProvider(ctx, backend)
+	if err != nil {
+		return domainobservability.DataSourceInput{}, err
+	}
+	if !ok || !supportsLogQuery(provider) {
+		return domainobservability.DataSourceInput{}, fmt.Errorf("%w: unsupported log provider", apperrors.ErrInvalidArgument)
 	}
 	config := dataSourceConfigMap(input.Config)
-	if err := s.logs.Validate(backend, config); err != nil {
+	for _, field := range input.Config.Configuration {
+		if len(field.Key) > 128 || !providerConfigKeyPattern.MatchString(strings.TrimSpace(field.Key)) || strings.TrimSpace(field.Value) == "" {
+			return domainobservability.DataSourceInput{}, fmt.Errorf("%w: invalid provider configuration", apperrors.ErrInvalidArgument)
+		}
+	}
+	if provider.definition.BuiltIn {
+		err = s.logs.Validate(backend, config)
+	} else if runtime, available := provider.runtimeFor(logsQueryCapability); !available || s.externalLogs == nil {
+		err = fmt.Errorf("provider log query runtime is unavailable")
+	} else {
+		err = s.externalLogs.ValidateConfig(runtime, config)
+	}
+	if err != nil {
 		return domainobservability.DataSourceInput{}, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err)
 	}
 	if id == "" {
@@ -233,13 +285,18 @@ func (s *Service) publicDataSource(item domainobservability.DataSource) sohaapi.
 	case "error":
 		status = sohaapi.ObservabilityDataSourceValidationStatusFailed
 	}
-	backendType := item.BackendType
-	if backendType == "es" {
+	backendType, providerKey := item.BackendType, ""
+	switch backendType {
+	case "es":
 		backendType = "elasticsearch"
+	case "loki", "elasticsearch", "clickhouse":
+	default:
+		providerKey, backendType = item.BackendType, string(sohaapi.ObservabilityDataSourceBackendTypeProvider)
 	}
 	return sohaapi.ObservabilityDataSource{
 		ID: item.ID, Name: item.Name, BackendType: sohaapi.ObservabilityDataSourceBackendType(backendType), Enabled: item.Enabled,
-		Scope: apiScope(item.Scope), QueryBudget: apiBudget(item.QueryBudget), RedactionPolicy: apiRedaction(item.RedactionPolicy),
+		ProviderKey: providerKey,
+		Scope:       apiScope(item.Scope), QueryBudget: apiBudget(item.QueryBudget), RedactionPolicy: apiRedaction(item.RedactionPolicy),
 		Config: apiConfig(item.Config), CredentialKeys: credentialKeys, ValidationStatus: status,
 		ValidationMessage: item.ValidationMessage, LastValidatedAt: item.LastValidatedAt, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
 	}
@@ -257,6 +314,7 @@ func (s *Service) runtimeConfig(item domainobservability.DataSource) (map[string
 	if err != nil {
 		return nil, err
 	}
+	config["credentials"] = credentials
 	for key, value := range credentials {
 		switch key {
 		case "bearer_token":
@@ -298,18 +356,24 @@ func (s *Service) decryptCredentials(reference string) (map[string]string, error
 	return credentials, nil
 }
 
+var providerConfigKeyPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
+
 func normalizeCredentialChanges(current map[string]string, inputs []sohaapi.SystemIntegrationCredentialInput, clear []sohaapi.ObservabilityDataSourceInputClearCredentialKeys) (map[string]string, error) {
 	result := make(map[string]string, len(current)+len(inputs))
 	for key, value := range current {
 		result[key] = value
 	}
-	for _, key := range clear {
-		delete(result, string(key))
+	for _, value := range clear {
+		key := strings.ToLower(strings.TrimSpace(string(value)))
+		if len(key) > 128 || !providerConfigKeyPattern.MatchString(key) {
+			return nil, fmt.Errorf("%w: invalid data-source credential key", apperrors.ErrInvalidArgument)
+		}
+		delete(result, key)
 	}
 	seen := map[string]struct{}{}
 	for _, input := range inputs {
 		key, value := strings.ToLower(strings.TrimSpace(input.Key)), strings.TrimSpace(input.Value)
-		if key != "bearer_token" && key != "username" && key != "password" || value == "" {
+		if len(key) > 128 || !providerConfigKeyPattern.MatchString(key) || value == "" {
 			return nil, fmt.Errorf("%w: invalid data-source credential", apperrors.ErrInvalidArgument)
 		}
 		if _, exists := seen[key]; exists {

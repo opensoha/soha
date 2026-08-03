@@ -1601,11 +1601,20 @@ func approvalRequestInvocationInput(request domainaigateway.ApprovalRequest) dom
 	return domainaigateway.ToolInvocationRequest{
 		ToolName:     request.ToolName,
 		Input:        request.ToolInput,
+		SecretRefs:   cloneSecretRefs(request.SecretRefs),
 		AIClientID:   request.AIClientID,
 		AIClientName: request.AIClientName,
 		SkillID:      request.SkillID,
 		RequestID:    request.RequestID,
 	}
+}
+
+func cloneSecretRefs(refs map[string]string) map[string]string {
+	copy := make(map[string]string, len(refs))
+	for alias, ref := range refs {
+		copy[alias] = ref
+	}
+	return copy
 }
 func mergeAnyMaps(left, right map[string]any) map[string]any {
 	out := make(map[string]any, len(left)+len(right))

@@ -34,6 +34,7 @@ type LogTelemetry interface {
 }
 
 type MetricTelemetry interface {
+	RangeQuery(context.Context, string, string, map[string]any, telemetry.MetricRangeQuery) ([]telemetry.MetricSeries, map[string]any, error)
 	Analyze(context.Context, string, string, map[string]any, telemetry.MetricRangeQuery) (telemetry.MetricAnomalySummary, error)
 }
 
@@ -241,6 +242,10 @@ func (unavailableTelemetry) Correlate(context.Context, string, string, map[strin
 
 func (unavailableTelemetry) Analyze(context.Context, string, string, map[string]any, telemetry.MetricRangeQuery) (telemetry.MetricAnomalySummary, error) {
 	return telemetry.MetricAnomalySummary{}, errors.New("metric telemetry backend is not configured")
+}
+
+func (unavailableTelemetry) RangeQuery(context.Context, string, string, map[string]any, telemetry.MetricRangeQuery) ([]telemetry.MetricSeries, map[string]any, error) {
+	return nil, nil, errors.New("metric telemetry backend is not configured")
 }
 
 func (unavailableTelemetry) FindSlowSpans(context.Context, string, string, map[string]any, telemetry.TraceQuery) (telemetry.TraceResult, error) {

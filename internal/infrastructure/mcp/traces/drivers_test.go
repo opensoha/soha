@@ -80,6 +80,20 @@ func TestJaegerDriverFindSlowSpansBuildsQueryAndMapsHotspots(t *testing.T) {
 	}
 }
 
+func TestJaegerDriverQueriesExactTrace(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/traces/trace-1" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer server.Close()
+	driver := jaegerDriver{http: server.Client()}
+	if _, err := driver.FindSlowSpans(context.Background(), "source", map[string]any{"endpoint": server.URL}, Query{TraceID: "trace-1"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSkyWalkingDriverFindSlowSpansBuildsPayloadAndMapsTrace(t *testing.T) {
 	from := time.Date(2026, 7, 11, 1, 0, 0, 0, time.UTC)
 	to := from.Add(time.Hour)
@@ -98,6 +112,9 @@ func TestSkyWalkingDriverFindSlowSpansBuildsPayloadAndMapsTrace(t *testing.T) {
 		condition := traceTestMap(t, variables["condition"], "condition")
 		if condition["serviceName"] != "payments" || condition["traceState"] != "ALL" {
 			t.Errorf("condition = %#v", condition)
+		}
+		if condition["traceId"] != "trace-sky" {
+			t.Errorf("trace condition = %#v", condition)
 		}
 		paging := traceTestMap(t, condition["paging"], "paging")
 		if paging["pageSize"] != float64(3) {
@@ -120,7 +137,7 @@ func TestSkyWalkingDriverFindSlowSpansBuildsPayloadAndMapsTrace(t *testing.T) {
 		"endpoint": server.URL + "/", "bearerToken": "sky-token",
 	}, Query{
 		Scope: Scope{Workload: "payments"}, TimeFrom: from, TimeTo: to,
-		MinDuration: time.Second, Limit: 3,
+		TraceID: "trace-sky", MinDuration: time.Second, Limit: 3,
 	})
 	if err != nil {
 		t.Fatalf("FindSlowSpans() error = %v", err)

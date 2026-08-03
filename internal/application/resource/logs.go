@@ -220,7 +220,7 @@ func normalizeClusterLogQuery(query domainresource.LogQuery) (domainresource.Log
 	}
 	selector := *query.Selector
 	selector.Namespace = strings.TrimSpace(selector.Namespace)
-	if selector.Namespace == "" {
+	if selector.Namespace == "" && query.SourceMode != sohaapi.LogSourceModeDurable {
 		return query, fmt.Errorf("%w: namespace is required", apperrors.ErrInvalidArgument)
 	}
 	var err error

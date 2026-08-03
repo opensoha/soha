@@ -26,22 +26,42 @@ func (p *stubAccessTokenParser) ParseAccessToken(_ context.Context, token string
 	return domainidentity.Principal{UserID: "user-1", UserName: "Ada"}, domainidentity.AccessContext{TokenKind: "personal_access_token"}, nil
 }
 
-func TestAllowsExternalBearerTokenIncludesConnectorEvents(t *testing.T) {
+func TestAllowsExternalBearerToken(t *testing.T) {
 	t.Parallel()
 
-	if !allowsExternalBearerToken("/api/v1/connectors/events") {
-		t.Fatal("connectors event sink should allow handler-level bearer fallback")
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{path: "/api/v1/integrations/alerts/webhook", want: true},
+		{path: "/api/v1/delivery/execution-callbacks", want: true},
+		{path: "/api/v1/delivery/execution-tasks/claim", want: true},
+		{path: "/api/v1/delivery/execution-tasks/task-1/runner-status", want: true},
+		{path: "/api/v1/docker/operations/claim", want: true},
+		{path: "/api/v1/docker/operations/task-1/runner-status", want: true},
+		{path: "/api/v1/docker/operation-callbacks", want: true},
+		{path: "/api/v1/copilot/agent-runs/claim", want: true},
+		{path: "/api/v1/copilot/agent-runs/callback", want: true},
+		{path: "/api/v1/copilot/agent-runs/tool-call", want: true},
+		{path: "/api/v1/runner/secret-leases/lease-1/redeem", want: true},
+		{path: "/api/v1/ai/agent-providers/registry-snapshot", want: true},
+		{path: "/api/v1/ai/agent-providers/registry-acks", want: true},
+		{path: "/api/v1/connectors/events", want: true},
+		{path: "/api/v1/provider/outposts/claim", want: true},
+		{path: "/api/v1/provider/outposts/outpost-1/heartbeat", want: true},
+		{path: "/oauth2/userinfo", want: true},
+		{path: "/api/v1/provider/oidc/userinfo", want: true},
+		{path: "/api/v1/runner/secret-leases/lease-1", want: false},
+		{path: "/api/v1/runner/secret-leases/lease-1/redeem/extra", want: false},
+		{path: "/api/v1/auth/me", want: false},
 	}
-}
-
-func TestAllowsExternalBearerTokenIncludesProviderOutposts(t *testing.T) {
-	t.Parallel()
-
-	if !allowsExternalBearerToken("/api/v1/provider/outposts/claim") {
-		t.Fatal("outpost claim should allow handler-level bearer fallback")
-	}
-	if !allowsExternalBearerToken("/api/v1/provider/outposts/outpost-1/heartbeat") {
-		t.Fatal("outpost heartbeat should allow handler-level bearer fallback")
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			t.Parallel()
+			if got := allowsExternalBearerToken(test.path); got != test.want {
+				t.Fatalf("allowsExternalBearerToken(%q) = %t, want %t", test.path, got, test.want)
+			}
+		})
 	}
 }
 

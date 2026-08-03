@@ -113,12 +113,13 @@ type ManifestRequest struct {
 }
 
 type ToolInvocationRequest struct {
-	ToolName     string         `json:"toolName"`
-	Input        map[string]any `json:"input,omitempty"`
-	AIClientID   string         `json:"aiClientId,omitempty"`
-	AIClientName string         `json:"aiClientName,omitempty"`
-	SkillID      string         `json:"skillId,omitempty"`
-	RequestID    string         `json:"requestId,omitempty"`
+	ToolName     string            `json:"toolName"`
+	Input        map[string]any    `json:"input,omitempty"`
+	SecretRefs   map[string]string `json:"secretRefs,omitempty"`
+	AIClientID   string            `json:"aiClientId,omitempty"`
+	AIClientName string            `json:"aiClientName,omitempty"`
+	SkillID      string            `json:"skillId,omitempty"`
+	RequestID    string            `json:"requestId,omitempty"`
 }
 
 type ToolInvocationResult struct {
@@ -279,37 +280,38 @@ type AuditLogFilter struct {
 }
 
 type ApprovalRequest struct {
-	ID                string         `json:"id"`
-	Status            string         `json:"status"`
-	Strategy          string         `json:"strategy"`
-	PolicyID          string         `json:"policyId,omitempty"`
-	ApprovalPolicyRef string         `json:"approvalPolicyRef,omitempty"`
-	ActorType         string         `json:"actorType"`
-	ActorID           string         `json:"actorId"`
-	ActorName         string         `json:"actorName,omitempty"`
-	ActorRoles        []string       `json:"actorRoles,omitempty"`
-	ActorTeams        []string       `json:"actorTeams,omitempty"`
-	AIClientID        string         `json:"aiClientId,omitempty"`
-	AIClientName      string         `json:"aiClientName,omitempty"`
-	SkillID           string         `json:"skillId,omitempty"`
-	ToolName          string         `json:"toolName"`
-	RiskLevel         RiskLevel      `json:"riskLevel"`
-	RequiresApproval  bool           `json:"requiresApproval"`
-	ResourceScope     map[string]any `json:"resourceScope,omitempty"`
-	ToolInput         map[string]any `json:"toolInput,omitempty"`
-	RelatedIDs        map[string]any `json:"relatedIds,omitempty"`
-	ApprovalTrace     *ApprovalTrace `json:"approvalTrace,omitempty"`
-	Output            any            `json:"output,omitempty"`
-	Summary           string         `json:"summary"`
-	RequestID         string         `json:"requestId,omitempty"`
-	SourceIP          string         `json:"sourceIp,omitempty"`
-	DecidedBy         string         `json:"decidedBy,omitempty"`
-	DecidedByName     string         `json:"decidedByName,omitempty"`
-	DecidedAt         *time.Time     `json:"decidedAt,omitempty"`
-	DecisionComment   string         `json:"decisionComment,omitempty"`
-	ExpiresAt         *time.Time     `json:"expiresAt,omitempty"`
-	CreatedAt         time.Time      `json:"createdAt"`
-	UpdatedAt         time.Time      `json:"updatedAt"`
+	ID                string            `json:"id"`
+	Status            string            `json:"status"`
+	Strategy          string            `json:"strategy"`
+	PolicyID          string            `json:"policyId,omitempty"`
+	ApprovalPolicyRef string            `json:"approvalPolicyRef,omitempty"`
+	ActorType         string            `json:"actorType"`
+	ActorID           string            `json:"actorId"`
+	ActorName         string            `json:"actorName,omitempty"`
+	ActorRoles        []string          `json:"actorRoles,omitempty"`
+	ActorTeams        []string          `json:"actorTeams,omitempty"`
+	AIClientID        string            `json:"aiClientId,omitempty"`
+	AIClientName      string            `json:"aiClientName,omitempty"`
+	SkillID           string            `json:"skillId,omitempty"`
+	ToolName          string            `json:"toolName"`
+	RiskLevel         RiskLevel         `json:"riskLevel"`
+	RequiresApproval  bool              `json:"requiresApproval"`
+	ResourceScope     map[string]any    `json:"resourceScope,omitempty"`
+	ToolInput         map[string]any    `json:"toolInput,omitempty"`
+	SecretRefs        map[string]string `json:"secretRefs,omitempty"`
+	RelatedIDs        map[string]any    `json:"relatedIds,omitempty"`
+	ApprovalTrace     *ApprovalTrace    `json:"approvalTrace,omitempty"`
+	Output            any               `json:"output,omitempty"`
+	Summary           string            `json:"summary"`
+	RequestID         string            `json:"requestId,omitempty"`
+	SourceIP          string            `json:"sourceIp,omitempty"`
+	DecidedBy         string            `json:"decidedBy,omitempty"`
+	DecidedByName     string            `json:"decidedByName,omitempty"`
+	DecidedAt         *time.Time        `json:"decidedAt,omitempty"`
+	DecisionComment   string            `json:"decisionComment,omitempty"`
+	ExpiresAt         *time.Time        `json:"expiresAt,omitempty"`
+	CreatedAt         time.Time         `json:"createdAt"`
+	UpdatedAt         time.Time         `json:"updatedAt"`
 }
 
 type ApprovalRequestFilter struct {

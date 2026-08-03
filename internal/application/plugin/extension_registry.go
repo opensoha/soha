@@ -130,6 +130,16 @@ func extensionRecordsFromManifest(item domainplugin.InstalledPlugin, configured 
 		add("metrics", "metrics.panels", points.Metrics.Panels)
 		add("metrics", "metrics.enrichers", points.Metrics.Enrichers)
 	}
+	if points.Observability != nil {
+		for _, provider := range points.Observability.Providers {
+			records = append(records, domainplugin.ExtensionRecord{
+				ID: provider.ProviderKey, PluginID: item.ID, PluginName: item.Name, PluginVersion: item.Version,
+				Point: "observability.providers", Scope: "observability", Label: provider.DisplayName, Description: provider.Description,
+				RuntimeMode: runtimeMode, Status: item.Status, Configured: configured,
+				Metadata: map[string]any{"providerKey": provider.ProviderKey, "protocolVersion": provider.ProtocolVersion, "signals": provider.Signals, "capabilities": provider.Capabilities},
+			})
+		}
+	}
 	if points.Alerts != nil {
 		add("alerts", "alert.notificationChannels", points.Alerts.NotificationChannels)
 		add("alerts", "alert.receivers", points.Alerts.Receivers)

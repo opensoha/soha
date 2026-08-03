@@ -16,6 +16,7 @@ import (
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
@@ -36,7 +37,7 @@ type DockerProjectService interface {
 	CreateProject(context.Context, domainidentity.Principal, domaindocker.ProjectInput) (domaindocker.Project, error)
 	UpdateProject(context.Context, domainidentity.Principal, string, domaindocker.ProjectInput) (domaindocker.Project, error)
 	DeleteProject(context.Context, domainidentity.Principal, string) error
-	DeployProject(context.Context, domainidentity.Principal, string, string) (domaindocker.Operation, error)
+	DeployProject(context.Context, domainidentity.Principal, string, domaindocker.ProjectDeployInput) (domaindocker.Operation, error)
 	StartContainer(context.Context, domainidentity.Principal, domaindocker.ContainerStartInput) (domaindocker.Operation, error)
 }
 
@@ -57,7 +58,12 @@ type DockerProjectStorageService interface {
 
 type DockerServiceRuntimeService interface {
 	ListServices(context.Context, domainidentity.Principal, domaindocker.ServiceFilter) (domaindocker.Page[domaindocker.Service], error)
-	ServiceAction(context.Context, domainidentity.Principal, string, string) (domaindocker.Operation, error)
+	ServiceAction(context.Context, domainidentity.Principal, string, domaindocker.ServiceActionInput) (domaindocker.Operation, error)
+}
+
+type DockerPlanningService interface {
+	PlanQuickCreateHost(context.Context, domainidentity.Principal, domaindocker.QuickCreateHostInput) (domainoperation.Plan, error)
+	PlanProjectDeploy(context.Context, domainidentity.Principal, string, domaindocker.ProjectDeployInput) (domainoperation.Plan, error)
 }
 
 type DockerPortMappingService interface {
@@ -110,6 +116,7 @@ type DockerServices struct {
 	Templates        DockerTemplateService
 	Operations       DockerOperationService
 	RunnerOperations DockerRunnerOperationService
+	Planning         DockerPlanningService
 }
 
 type DockerHandler struct {
@@ -122,6 +129,7 @@ type DockerHandler struct {
 	templates        DockerTemplateService
 	operations       DockerOperationService
 	runnerOperations DockerRunnerOperationService
+	planning         DockerPlanningService
 	runnerKeys       keyring.Ring
 }
 
@@ -134,10 +142,11 @@ func NewDockerHandler(service DockerService, runnerToken ...string) *DockerHandl
 }
 
 func NewDockerHandlerWithRunnerKeys(service DockerService, keys keyring.Ring) *DockerHandler {
+	planning, _ := any(service).(DockerPlanningService)
 	return NewDockerHandlerWithServices(DockerServices{
 		Hosts: service, Projects: service, ProjectRuntime: service,
 		ProjectStorage: service, Services: service, PortMappings: service, Templates: service,
-		Operations: service, RunnerOperations: service,
+		Operations: service, RunnerOperations: service, Planning: planning,
 	}, keys)
 }
 
@@ -146,7 +155,7 @@ func NewDockerHandlerWithServices(services DockerServices, keys keyring.Ring) *D
 		hosts: services.Hosts, projects: services.Projects,
 		projectRuntime: services.ProjectRuntime, projectStorage: services.ProjectStorage,
 		services: services.Services, portMappings: services.PortMappings, templates: services.Templates,
-		operations: services.Operations, runnerOperations: services.RunnerOperations, runnerKeys: keys,
+		operations: services.Operations, runnerOperations: services.RunnerOperations, planning: services.Planning, runnerKeys: keys,
 	}
 }
 
@@ -218,12 +227,35 @@ func (h *DockerHandler) QuickCreateHost(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker host provisioning payload")
 		return
 	}
+	key, ok := requiredIdempotencyKey(c)
+	if !ok {
+		return
+	}
+	req.IdempotencyKey = key
 	item, err := h.hosts.QuickCreateHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusAccepted, item)
+}
+
+func (h *DockerHandler) PlanQuickCreateHost(c *gin.Context) {
+	if h.planning == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "unavailable", "Docker planning is unavailable")
+		return
+	}
+	var req domaindocker.QuickCreateHostInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker host provisioning payload")
+		return
+	}
+	plan, err := h.planning.PlanQuickCreateHost(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, plan)
 }
 
 func (h *DockerHandler) ListProjects(c *gin.Context) {
@@ -290,16 +322,34 @@ func (h *DockerHandler) DeleteProject(c *gin.Context) {
 }
 
 func (h *DockerHandler) DeployProject(c *gin.Context) {
-	var req struct {
-		Action string `json:"action"`
-	}
+	var req domaindocker.ProjectDeployInput
 	_ = c.ShouldBindJSON(&req)
-	item, err := h.projects.DeployProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req.Action)
+	key, ok := requiredIdempotencyKey(c)
+	if !ok {
+		return
+	}
+	req.IdempotencyKey = key
+	item, err := h.projects.DeployProject(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusAccepted, item)
+}
+
+func (h *DockerHandler) PlanProjectDeploy(c *gin.Context) {
+	if h.planning == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "unavailable", "Docker planning is unavailable")
+		return
+	}
+	var req domaindocker.ProjectDeployInput
+	_ = c.ShouldBindJSON(&req)
+	plan, err := h.planning.PlanProjectDeploy(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, plan)
 }
 
 func (h *DockerHandler) StartContainer(c *gin.Context) {
@@ -579,14 +629,13 @@ func (h *DockerHandler) ListServices(c *gin.Context) {
 }
 
 func (h *DockerHandler) ServiceAction(c *gin.Context) {
-	var req struct {
-		Action string `json:"action"`
-	}
+	var req domaindocker.ServiceActionInput
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker service action payload")
 		return
 	}
-	item, err := h.services.ServiceAction(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req.Action)
+	req.IdempotencyKey = strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	item, err := h.services.ServiceAction(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), req)
 	if err != nil {
 		writeError(c, err)
 		return

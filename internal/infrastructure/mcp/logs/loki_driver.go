@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -140,6 +141,8 @@ func lokiRecords(streams []lokiStreamResult, labelKeys map[string]string) []Reco
 				ClusterID: stream.Stream[labelKey(labelKeys, "cluster")],
 				Pod:       stream.Stream[labelKey(labelKeys, "pod")],
 				Container: stream.Stream[labelKey(labelKeys, "container")],
+				TraceID:   stream.Stream[labelKey(labelKeys, "traceId")],
+				SpanID:    stream.Stream[labelKey(labelKeys, "spanId")],
 				Attributes: map[string]any{
 					"labels": stream.Stream,
 				},
@@ -155,19 +158,45 @@ func lokiRecords(streams []lokiStreamResult, labelKeys map[string]string) []Reco
 
 func buildLokiSearchQuery(query SearchQuery, labelKeys map[string]string) string {
 	labels := make([]string, 0)
+	pods := scopePodValues(query.Scope)
+	pod := ""
+	if len(pods) == 1 {
+		pod = pods[0]
+	}
+	containers := scopeContainerValues(query.Scope)
+	container := ""
+	if len(containers) == 1 {
+		container = containers[0]
+	}
 	for logicalKey, value := range map[string]string{
 		"cluster":   query.Scope.ClusterID,
 		"namespace": query.Scope.Namespace,
 		"service":   query.Scope.Service,
 		"workload":  query.Scope.Workload,
-		"pod":       query.Scope.Pod,
-		"container": query.Scope.Container,
+		"pod":       pod,
+		"container": container,
+		"traceId":   query.TraceID,
+		"spanId":    query.SpanID,
 	} {
 		value = strings.TrimSpace(value)
 		if value == "" {
 			continue
 		}
 		labels = append(labels, fmt.Sprintf(`%s="%s"`, labelKey(labelKeys, logicalKey), escapeLogQL(value)))
+	}
+	if len(pods) > 1 {
+		patterns := make([]string, 0, len(pods))
+		for _, value := range pods {
+			patterns = append(patterns, regexp.QuoteMeta(value))
+		}
+		labels = append(labels, fmt.Sprintf(`%s=~"%s"`, labelKey(labelKeys, "pod"), escapeLogQL(strings.Join(patterns, "|"))))
+	}
+	if len(containers) > 1 {
+		patterns := make([]string, 0, len(containers))
+		for _, value := range containers {
+			patterns = append(patterns, regexp.QuoteMeta(value))
+		}
+		labels = append(labels, fmt.Sprintf(`%s=~"%s"`, labelKey(labelKeys, "container"), escapeLogQL(strings.Join(patterns, "|"))))
 	}
 	expr := "{}"
 	if len(labels) > 0 {
@@ -183,11 +212,17 @@ func labelKey(labelKeys map[string]string, logicalKey string) string {
 	if value := strings.TrimSpace(labelKeys[logicalKey]); value != "" {
 		return value
 	}
+	if logicalKey == "traceId" {
+		return "trace_id"
+	}
+	if logicalKey == "spanId" {
+		return "span_id"
+	}
 	return logicalKey
 }
 
 func escapeLogQL(value string) string {
-	return strings.ReplaceAll(value, `"`, `\"`)
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(value)
 }
 
 func mapConfig(value any) map[string]string {

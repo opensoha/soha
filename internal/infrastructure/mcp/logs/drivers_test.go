@@ -187,3 +187,34 @@ func TestClickHouseRejectsInjectedIdentifiers(t *testing.T) {
 		t.Fatalf("ValidateConfig() error = %v", err)
 	}
 }
+
+func TestSearchBuildersSupportMultipleScopesAndExactCorrelation(t *testing.T) {
+	query := SearchQuery{
+		Scope:   Scope{Pods: []string{"api-1", "api-2"}, Containers: []string{"api", "side.car"}},
+		TraceID: "trace-1", SpanID: "span-1",
+	}
+
+	loki := buildLokiSearchQuery(query, nil)
+	for _, expected := range []string{`pod=~"api-1|api-2"`, `container=~"api|side\\.car"`, `trace_id="trace-1"`, `span_id="span-1"`} {
+		if !strings.Contains(loki, expected) {
+			t.Fatalf("loki query = %s", loki)
+		}
+	}
+
+	es, err := json.Marshal(buildESSearchBody(query, timestampCursor{}, "@timestamp", "message", "cluster", "namespace", "service", "workload", "pod", "container", "trace.id", "span.id", 100))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"terms":{"pod":["api-1","api-2"]}`, `"trace.id":"trace-1"`, `"span.id":"span-1"`} {
+		if !strings.Contains(string(es), expected) {
+			t.Fatalf("es query = %s", es)
+		}
+	}
+
+	clickhouse := buildClickHouseSearchSQL("logs", "timestamp", "message", "severity", "service", "workload", "namespace", "cluster", "pod", "container", "trace_id", "span_id", query, timestampCursor{}, 100)
+	for _, expected := range []string{"pod IN ('api-1', 'api-2')", "container IN ('api', 'side.car')", "trace_id = 'trace-1'", "span_id = 'span-1'"} {
+		if !strings.Contains(clickhouse, expected) {
+			t.Fatalf("clickhouse query = %s", clickhouse)
+		}
+	}
+}

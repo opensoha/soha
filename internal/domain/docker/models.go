@@ -69,6 +69,16 @@ type HostInput struct {
 	Config                     map[string]any `json:"config,omitempty"`
 }
 
+type ProjectDeployInput struct {
+	Action         string `json:"action,omitempty"`
+	IdempotencyKey string `json:"-"`
+}
+
+type ServiceActionInput struct {
+	Action         string `json:"action"`
+	IdempotencyKey string `json:"-"`
+}
+
 type HostFilter struct {
 	Status       string
 	Search       string
@@ -504,6 +514,7 @@ func firstNonEmptyOperationResultString(result map[string]any, keys ...string) s
 }
 
 type OperationInput struct {
+	ID             string         `json:"id,omitempty"`
 	HostID         string         `json:"hostId,omitempty"`
 	ProjectID      string         `json:"projectId,omitempty"`
 	ServiceID      string         `json:"serviceId,omitempty"`
@@ -591,6 +602,7 @@ type QuickCreateHostInput struct {
 	TTLSeconds                 int            `json:"ttlSeconds,omitempty"`
 	Labels                     map[string]any `json:"labels,omitempty"`
 	Config                     map[string]any `json:"config,omitempty"`
+	IdempotencyKey             string         `json:"-"`
 }
 
 type ContainerPortInput struct {

@@ -5,6 +5,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 )
 
 const (
@@ -109,6 +112,10 @@ type AgentRun struct {
 	AnalysisArtifacts  []AnalysisArtifact         `json:"analysisArtifacts,omitempty"`
 	OperationState     *OperationState            `json:"operationState,omitempty" gorm:"-"`
 	CallbackToken      string                     `json:"callbackToken,omitempty"`
+	SecretLease        *domainsecret.LeaseGrant   `json:"secretLease,omitempty" gorm:"-"`
+	SecretRefs         []domainsecret.Reference   `json:"-" gorm:"-"`
+	SecretPrincipal    domainidentity.Principal   `json:"-" gorm:"-"`
+	SecretTarget       domainsecret.Target        `json:"-" gorm:"-"`
 	ClaimedByAgentID   string                     `json:"claimedByAgentId,omitempty"`
 	ExternalRunID      string                     `json:"externalRunId,omitempty"`
 	ErrorMessage       string                     `json:"errorMessage,omitempty"`

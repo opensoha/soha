@@ -3,33 +3,37 @@ package telemetry
 import "time"
 
 type LogScope struct {
-	ClusterID string
-	Namespace string
-	Service   string
-	Workload  string
-	Pod       string
-	Container string
+	ClusterID  string   `json:"clusterId,omitempty"`
+	Namespace  string   `json:"namespace,omitempty"`
+	Service    string   `json:"service,omitempty"`
+	Workload   string   `json:"workload,omitempty"`
+	Pod        string   `json:"pod,omitempty"`
+	Pods       []string `json:"pods,omitempty"`
+	Container  string   `json:"container,omitempty"`
+	Containers []string `json:"containers,omitempty"`
 }
 
 type LogSearchQuery struct {
-	Scope      LogScope
-	TimeFrom   time.Time
-	TimeTo     time.Time
-	Query      string
-	Terms      []string
-	Severities []string
-	Limit      int
-	Direction  string
-	PageToken  string
+	Scope      LogScope  `json:"scope"`
+	TimeFrom   time.Time `json:"timeFrom"`
+	TimeTo     time.Time `json:"timeTo"`
+	Query      string    `json:"query,omitempty"`
+	TraceID    string    `json:"traceId,omitempty"`
+	SpanID     string    `json:"spanId,omitempty"`
+	Terms      []string  `json:"terms,omitempty"`
+	Severities []string  `json:"severities,omitempty"`
+	Limit      int       `json:"limit"`
+	Direction  string    `json:"direction"`
+	PageToken  string    `json:"pageToken,omitempty"`
 }
 
 type LogSearchResult struct {
-	SourceID      string
-	Records       []LogRecord
-	NextPageToken string
-	Truncated     bool
-	QueryCost     map[string]any
-	ErrorKind     string
+	SourceID      string         `json:"sourceId"`
+	Records       []LogRecord    `json:"records"`
+	NextPageToken string         `json:"nextPageToken,omitempty"`
+	Truncated     bool           `json:"truncated"`
+	QueryCost     map[string]any `json:"queryCost,omitempty"`
+	ErrorKind     string         `json:"errorKind,omitempty"`
 }
 
 type LogHistogramQuery struct {
@@ -54,20 +58,24 @@ type LogCorrelationQuery struct {
 	TimeFrom time.Time
 	TimeTo   time.Time
 	Query    string
+	TraceID  string
+	SpanID   string
 	Limit    int
 }
 
 type LogRecord struct {
-	Timestamp  time.Time
-	Severity   string
-	Message    string
-	Service    string
-	Workload   string
-	Namespace  string
-	ClusterID  string
-	Pod        string
-	Container  string
-	Attributes map[string]any
+	Timestamp  time.Time      `json:"timestamp"`
+	Severity   string         `json:"severity,omitempty"`
+	Message    string         `json:"message"`
+	Service    string         `json:"service,omitempty"`
+	Workload   string         `json:"workload,omitempty"`
+	Namespace  string         `json:"namespace,omitempty"`
+	ClusterID  string         `json:"clusterId,omitempty"`
+	Pod        string         `json:"pod,omitempty"`
+	Container  string         `json:"container,omitempty"`
+	TraceID    string         `json:"traceId,omitempty"`
+	SpanID     string         `json:"spanId,omitempty"`
+	Attributes map[string]any `json:"attributes,omitempty"`
 }
 
 type LogSignature struct {
@@ -135,6 +143,7 @@ type TraceScope struct {
 
 type TraceQuery struct {
 	Scope       TraceScope
+	TraceID     string
 	TimeFrom    time.Time
 	TimeTo      time.Time
 	MinDuration time.Duration
@@ -142,15 +151,15 @@ type TraceQuery struct {
 }
 
 type TraceSpan struct {
-	TraceID      string         `json:"traceId"`
-	SpanID       string         `json:"spanId"`
-	ParentSpanID string         `json:"parentSpanId,omitempty"`
-	Operation    string         `json:"operation"`
-	Service      string         `json:"service"`
-	DurationMS   float64        `json:"durationMs"`
-	StartTime    time.Time      `json:"startTime"`
-	Tags         map[string]any `json:"tags,omitempty"`
-	Error        bool           `json:"error"`
+	TraceID      string            `json:"traceId"`
+	SpanID       string            `json:"spanId"`
+	ParentSpanID string            `json:"parentSpanId,omitempty"`
+	Operation    string            `json:"operation"`
+	Service      string            `json:"service"`
+	DurationMS   float64           `json:"durationMs"`
+	StartTime    time.Time         `json:"startTime"`
+	Tags         map[string]string `json:"tags,omitempty"`
+	Error        bool              `json:"error"`
 }
 
 type TraceResult struct {

@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
@@ -19,6 +20,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/idempotency"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"sigs.k8s.io/yaml"
 )
@@ -208,38 +210,81 @@ func (s *Service) DeleteHost(ctx context.Context, principal domainidentity.Princ
 	return nil
 }
 
+func (s *Service) PlanQuickCreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.QuickCreateHostInput) (domainoperation.Plan, error) {
+	for _, permission := range []string{appaccess.PermDockerHostsView, appaccess.PermVirtualizationVMsView} {
+		if err := s.authorize(ctx, principal, permission); err != nil {
+			return domainoperation.Plan{}, err
+		}
+	}
+	input, architecture, err := s.prepareQuickCreateHost(input)
+	if err != nil {
+		return domainoperation.Plan{}, err
+	}
+	_, inputHash, err := idempotency.Derive("docker.host.quick_create.plan", "", "plan", input)
+	if err != nil {
+		return domainoperation.Plan{}, fmt.Errorf("hash Docker host quick-create plan: %w", err)
+	}
+	changes := []domainoperation.PlanChange{{
+		Action: "create", Resource: "docker.host", Summary: "create Docker host " + input.Name,
+	}}
+	if strings.TrimSpace(input.VirtualizationConnectionID) != "" {
+		changes = append(changes, domainoperation.PlanChange{
+			Action: "create", Resource: "virtualization.vm", Summary: "provision host VM on " + input.VirtualizationConnectionID,
+			SensitiveValuesRedacted: strings.TrimSpace(s.quickCreateCloudInitRaw(input)) != "",
+		})
+	}
+	warnings := []string{}
+	if architecture == "" {
+		warnings = append(warnings, "host architecture will be detected by the runtime")
+	}
+	return domainoperation.Plan{
+		Capability: "docker.hosts.quick_create.trigger", Target: input.Name, Ready: true,
+		RiskLevel: "execute", RequiresApproval: true, InputHash: inputHash, Changes: changes, Warnings: warnings,
+	}, nil
+}
+
 func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.QuickCreateHostInput) (domaindocker.Operation, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermDockerHostsManage); err != nil {
 		return domaindocker.Operation{}, err
 	}
-	if strings.TrimSpace(input.Name) == "" {
-		return domaindocker.Operation{}, fmt.Errorf("%w: docker host name is required", apperrors.ErrInvalidArgument)
-	}
-	architecture, err := normalizeArchitecture(input.Architecture)
+	input, architecture, err := s.prepareQuickCreateHost(input)
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
-	if s.hostProvisioner != nil && strings.TrimSpace(input.VirtualizationConnectionID) != "" && strings.TrimSpace(s.quickCreateCloudInitRaw(input)) == "" {
-		return domaindocker.Operation{}, fmt.Errorf("%w: docker quick-create requires cloudInit or config.providerParams.controlPlaneBaseURL with a runner token", apperrors.ErrInvalidArgument)
+	claim, err := operationClaimFor("docker.host.quick_create", principal, input.IdempotencyKey, input)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if existing, found, err := s.findClaimedOperation(ctx, claim); err != nil || found {
+		return existing, err
+	}
+	hostID := ""
+	if claim.id != "" {
+		hostID, _, err = idempotency.Derive("docker.host.quick_create.host", firstNonEmpty(principal.UserID, principal.UserName), input.IdempotencyKey, input)
+		if err != nil {
+			return domaindocker.Operation{}, fmt.Errorf("derive Docker host identity: %w", err)
+		}
 	}
 	hostConfig := mergeMap(input.Config, map[string]any{})
+	if claim.inputHash != "" {
+		hostConfig[idempotency.PayloadHashKey] = claim.inputHash
+	}
 	host, err := s.repo.CreateHost(ctx, domaindocker.HostInput{
-		Name:                       input.Name,
-		Status:                     "provisioning",
-		Environment:                input.Environment,
-		Owner:                      firstNonEmpty(input.Owner, principal.UserName, principal.UserID),
-		Team:                       input.Team,
-		VirtualizationConnectionID: input.VirtualizationConnectionID,
-		Architecture:               architecture,
-		CPUCoreCount:               input.CPUCoreCount,
-		MemoryBytes:                input.MemoryBytes,
-		DiskBytes:                  input.DiskBytes,
-		AvailablePortStart:         input.AvailablePortStart,
-		AvailablePortEnd:           input.AvailablePortEnd,
-		Labels:                     input.Labels,
-		Config:                     hostConfig,
+		ID:   hostID,
+		Name: input.Name, Status: "provisioning", Environment: input.Environment,
+		Owner: firstNonEmpty(input.Owner, principal.UserName, principal.UserID), Team: input.Team,
+		VirtualizationConnectionID: input.VirtualizationConnectionID, Architecture: architecture,
+		CPUCoreCount: input.CPUCoreCount, MemoryBytes: input.MemoryBytes, DiskBytes: input.DiskBytes,
+		AvailablePortStart: input.AvailablePortStart, AvailablePortEnd: input.AvailablePortEnd,
+		Labels: input.Labels, Config: hostConfig,
 	})
 	if err != nil {
+		if claim.id != "" {
+			if existing, found, lookupErr := s.findClaimedOperation(ctx, claim); found || lookupErr != nil {
+				return existing, lookupErr
+			}
+			return domaindocker.Operation{}, fmt.Errorf("%w: Docker host provisioning request is already in progress", apperrors.ErrConflict)
+		}
 		return domaindocker.Operation{}, err
 	}
 	cloudInit := s.quickCreateCloudInit(input, host.ID)
@@ -252,23 +297,18 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 		host = s.attachQuickCreateTask(ctx, host, hostConfig, *vmTask)
 	}
 	payload := map[string]any{
-		"hostId":                     host.ID,
-		"hostName":                   host.Name,
+		"hostId": host.ID, "hostName": host.Name,
 		"virtualizationConnectionId": strings.TrimSpace(input.VirtualizationConnectionID),
-		"vmTemplateId":               strings.TrimSpace(input.VMTemplateID),
-		"flavorId":                   strings.TrimSpace(input.FlavorID),
-		"imageId":                    strings.TrimSpace(input.ImageID),
-		"architecture":               architecture,
-		"network":                    strings.TrimSpace(input.Network),
-		"cloudInitConfigured":        cloudInit != "",
-		"ttlSeconds":                 input.TTLSeconds,
+		"vmTemplateId":               strings.TrimSpace(input.VMTemplateID), "flavorId": strings.TrimSpace(input.FlavorID),
+		"imageId": strings.TrimSpace(input.ImageID), "architecture": architecture,
+		"network": strings.TrimSpace(input.Network), "cloudInitConfigured": cloudInit != "", "ttlSeconds": input.TTLSeconds,
 	}
 	if vmTask != nil {
 		payload["virtualizationTaskId"] = vmTask.ID
 		payload["virtualizationTaskStatus"] = vmTask.Status
 		payload["virtualizationProvider"] = vmTask.Provider
 	}
-	task, err := s.enqueueOperation(ctx, principal, OperationKindHostProvision, host.ID, "", "", payload)
+	task, err := s.enqueueClaimedOperation(ctx, principal, OperationKindHostProvision, host.ID, "", "", payload, claim)
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -277,6 +317,24 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 	}
 	s.recordOperation(ctx, principal, "docker.host.provision.enqueue", host.ID, host.Name, "success", "enqueued docker host provisioning", map[string]any{"operationId": task.ID})
 	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func (s *Service) prepareQuickCreateHost(input domaindocker.QuickCreateHostInput) (domaindocker.QuickCreateHostInput, string, error) {
+	if strings.TrimSpace(input.Name) == "" {
+		return input, "", fmt.Errorf("%w: docker host name is required", apperrors.ErrInvalidArgument)
+	}
+	architecture, err := normalizeArchitecture(input.Architecture)
+	if err != nil {
+		return input, "", err
+	}
+	if s.hostProvisioner != nil && strings.TrimSpace(input.VirtualizationConnectionID) != "" && strings.TrimSpace(s.quickCreateCloudInitRaw(input)) == "" {
+		return input, "", fmt.Errorf("%w: docker quick-create requires cloudInit or config.providerParams.controlPlaneBaseURL with a runner token", apperrors.ErrInvalidArgument)
+	}
+	if input.AvailablePortStart < 0 || input.AvailablePortEnd < 0 || input.AvailablePortStart > 65535 || input.AvailablePortEnd > 65535 || (input.AvailablePortStart > 0 && input.AvailablePortEnd > 0 && input.AvailablePortStart > input.AvailablePortEnd) {
+		return input, "", fmt.Errorf("%w: invalid available port range", apperrors.ErrInvalidArgument)
+	}
+	input.Architecture = architecture
+	return input, architecture, nil
 }
 
 func (s *Service) provisionQuickCreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.QuickCreateHostInput, host domaindocker.Host, architecture, cloudInit string) (*HostProvisionTask, error) {
@@ -400,27 +458,56 @@ func (s *Service) DeleteProject(ctx context.Context, principal domainidentity.Pr
 	return nil
 }
 
-func (s *Service) DeployProject(ctx context.Context, principal domainidentity.Principal, id string, action string) (domaindocker.Operation, error) {
+func (s *Service) PlanProjectDeploy(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ProjectDeployInput) (domainoperation.Plan, error) {
+	for _, permission := range []string{appaccess.PermDockerProjectsView, appaccess.PermDockerTemplatesView} {
+		if err := s.authorize(ctx, principal, permission); err != nil {
+			return domainoperation.Plan{}, err
+		}
+	}
+	project, action, err := s.prepareProjectDeploy(ctx, id, input.Action)
+	if err != nil {
+		return domainoperation.Plan{}, err
+	}
+	_, inputHash, err := idempotency.Derive("docker.project.deploy.plan:"+project.ID, "", "plan", input)
+	if err != nil {
+		return domainoperation.Plan{}, fmt.Errorf("hash Docker project deploy plan: %w", err)
+	}
+	return domainoperation.Plan{
+		Capability: "docker.projects.deploy.trigger", Target: project.ID, Ready: true,
+		RiskLevel: "execute", RequiresApproval: true, InputHash: inputHash,
+		Changes: []domainoperation.PlanChange{{Action: action, Resource: "docker.compose.project", Summary: action + " project " + project.Name, SensitiveValuesRedacted: strings.TrimSpace(project.EnvContent) != ""}},
+	}, nil
+}
+
+func (s *Service) DeployProject(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ProjectDeployInput) (domaindocker.Operation, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermDockerProjectsDeploy); err != nil {
 		return domaindocker.Operation{}, err
 	}
-	project, err := s.repo.GetProject(ctx, id)
+	project, normalizedAction, err := s.prepareProjectDeploy(ctx, id, input.Action)
 	if err != nil {
 		return domaindocker.Operation{}, err
+	}
+	task, err := s.enqueueIdempotentOperation(ctx, "docker.project.deploy:"+project.ID, principal, input.IdempotencyKey, input, OperationKindProjectDeploy, project.HostID, project.ID, "", buildProjectDeployPayload(project, normalizedAction))
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	s.recordOperation(ctx, principal, "docker.project.deploy.enqueue", project.ID, project.Name, "success", "enqueued docker compose action", map[string]any{"operationId": task.ID, "action": normalizedAction})
+	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func (s *Service) prepareProjectDeploy(ctx context.Context, id, action string) (domaindocker.Project, string, error) {
+	project, err := s.repo.GetProject(ctx, id)
+	if err != nil {
+		return domaindocker.Project{}, "", err
 	}
 	normalizedAction := strings.TrimSpace(action)
 	if normalizedAction == "" {
 		normalizedAction = "deploy"
 	}
 	if !slices.Contains([]string{"deploy", "redeploy", "start", "stop", "restart", "down", "pull", "build", "destroy"}, normalizedAction) {
-		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported compose action %s", apperrors.ErrInvalidArgument, normalizedAction)
+		return domaindocker.Project{}, "", fmt.Errorf("%w: unsupported compose action %s", apperrors.ErrInvalidArgument, normalizedAction)
 	}
-	task, err := s.enqueueOperation(ctx, principal, OperationKindProjectDeploy, project.HostID, project.ID, "", buildProjectDeployPayload(project, normalizedAction))
-	if err != nil {
-		return domaindocker.Operation{}, err
-	}
-	s.recordOperation(ctx, principal, "docker.project.deploy.enqueue", project.ID, project.Name, "success", "enqueued docker compose action", map[string]any{"operationId": task.ID, "action": normalizedAction})
-	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
+	return project, normalizedAction, nil
 }
 
 func buildProjectDeployPayload(project domaindocker.Project, action string) map[string]any {
@@ -642,7 +729,7 @@ func (s *Service) ListServices(ctx context.Context, principal domainidentity.Pri
 	return pageOf(items, total, filter.Page, filter.PageSize), nil
 }
 
-func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Principal, id string, action string) (domaindocker.Operation, error) {
+func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ServiceActionInput) (domaindocker.Operation, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesManage); err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -650,7 +737,7 @@ func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Pr
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
-	normalizedAction := strings.TrimSpace(action)
+	normalizedAction := strings.TrimSpace(input.Action)
 	if !slices.Contains([]string{"restart", "start", "stop", "logs"}, normalizedAction) {
 		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported service action %s", apperrors.ErrInvalidArgument, normalizedAction)
 	}
@@ -660,7 +747,7 @@ func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Pr
 		payload["envContent"] = project.EnvContent
 		payload["projectSlug"] = project.Slug
 	}
-	task, err := s.enqueueOperation(ctx, principal, OperationKindServiceAction, service.HostID, service.ProjectID, service.ID, payload)
+	task, err := s.enqueueIdempotentOperation(ctx, "docker.service.action:"+service.ID, principal, input.IdempotencyKey, input, OperationKindServiceAction, service.HostID, service.ProjectID, service.ID, payload)
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -974,7 +1061,63 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 }
 
 func (s *Service) enqueueOperation(ctx context.Context, principal domainidentity.Principal, kind, hostID, projectID, serviceID string, payload map[string]any) (domaindocker.Operation, error) {
+	return s.enqueueClaimedOperation(ctx, principal, kind, hostID, projectID, serviceID, payload, operationClaim{})
+}
+
+type operationClaim struct {
+	id        string
+	inputHash string
+}
+
+func operationClaimFor(scope string, principal domainidentity.Principal, key string, input any) (operationClaim, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return operationClaim{}, nil
+	}
+	if len(key) < 8 || len(key) > 128 {
+		return operationClaim{}, fmt.Errorf("%w: Idempotency-Key must contain 8 to 128 characters", apperrors.ErrInvalidArgument)
+	}
+	id, inputHash, err := idempotency.Derive(scope, firstNonEmpty(principal.UserID, principal.UserName), key, input)
+	if err != nil {
+		return operationClaim{}, fmt.Errorf("derive Docker operation identity: %w", err)
+	}
+	return operationClaim{id: id, inputHash: inputHash}, nil
+}
+
+func (s *Service) findClaimedOperation(ctx context.Context, claim operationClaim) (domaindocker.Operation, bool, error) {
+	if claim.id == "" {
+		return domaindocker.Operation{}, false, nil
+	}
+	item, err := s.repo.GetOperation(ctx, claim.id)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return domaindocker.Operation{}, false, nil
+	}
+	if err != nil {
+		return domaindocker.Operation{}, false, err
+	}
+	if !idempotency.Matches(item.Payload, claim.inputHash) {
+		return domaindocker.Operation{}, false, fmt.Errorf("%w: Idempotency-Key is already bound to different input", apperrors.ErrConflict)
+	}
+	return domaindocker.WithOperationState(item, time.Now().UTC()), true, nil
+}
+
+func (s *Service) enqueueIdempotentOperation(ctx context.Context, scope string, principal domainidentity.Principal, key string, input any, kind, hostID, projectID, serviceID string, payload map[string]any) (domaindocker.Operation, error) {
+	claim, err := operationClaimFor(scope, principal, key, input)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if existing, found, err := s.findClaimedOperation(ctx, claim); err != nil || found {
+		return existing, err
+	}
+	return s.enqueueClaimedOperation(ctx, principal, kind, hostID, projectID, serviceID, payload, claim)
+}
+
+func (s *Service) enqueueClaimedOperation(ctx context.Context, principal domainidentity.Principal, kind, hostID, projectID, serviceID string, payload map[string]any, claim operationClaim) (domaindocker.Operation, error) {
+	if claim.inputHash != "" {
+		payload = mergeMap(payload, map[string]any{idempotency.PayloadHashKey: claim.inputHash})
+	}
 	task, err := s.repo.CreateOperation(ctx, domaindocker.OperationInput{
+		ID:             claim.id,
 		HostID:         hostID,
 		ProjectID:      projectID,
 		ServiceID:      serviceID,
@@ -986,6 +1129,9 @@ func (s *Service) enqueueOperation(ctx context.Context, principal domainidentity
 		Payload:        payload,
 	})
 	if err != nil {
+		if existing, found, lookupErr := s.findClaimedOperation(ctx, claim); found || lookupErr != nil {
+			return existing, lookupErr
+		}
 		return domaindocker.Operation{}, err
 	}
 	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{

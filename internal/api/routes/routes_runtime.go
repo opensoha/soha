@@ -27,6 +27,7 @@ func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps
 	protected.POST("/virtualization/clusters/:id/test", deps.Virtualization.TestConnection)
 	protected.POST("/virtualization/clusters/:id/sync", deps.Virtualization.SyncConnection)
 	protected.GET("/virtualization/vms", deps.Virtualization.ListVMs)
+	protected.POST("/virtualization/vms/plan", deps.Virtualization.PlanVMCreate)
 	protected.POST("/virtualization/vms", deps.Virtualization.CreateVM)
 	protected.GET("/virtualization/vms/:id/detail", deps.Virtualization.GetVMDetail)
 	protected.GET("/virtualization/vms/:id/devices", deps.Virtualization.ListVMDevices)
@@ -59,6 +60,7 @@ func registerDockerRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depende
 
 	protected.GET("/docker/hosts", deps.Docker.ListHosts)
 	protected.POST("/docker/hosts", deps.Docker.CreateHost)
+	protected.POST("/docker/hosts/quick-create/plan", deps.Docker.PlanQuickCreateHost)
 	protected.POST("/docker/hosts/quick-create", deps.Docker.QuickCreateHost)
 	protected.GET("/docker/hosts/:id", deps.Docker.GetHost)
 	protected.PUT("/docker/hosts/:id", deps.Docker.UpdateHost)
@@ -68,6 +70,7 @@ func registerDockerRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depende
 	protected.GET("/docker/projects/:id", deps.Docker.GetProject)
 	protected.PUT("/docker/projects/:id", deps.Docker.UpdateProject)
 	protected.DELETE("/docker/projects/:id", deps.Docker.DeleteProject)
+	protected.POST("/docker/projects/:id/deploy/plan", deps.Docker.PlanProjectDeploy)
 	protected.POST("/docker/projects/:id/deploy", deps.Docker.DeployProject)
 	protected.POST("/docker/projects/:id/logs/query", deps.Docker.QueryProjectLogs)
 	protected.POST("/docker/projects/:id/logs/stream-ticket", deps.Docker.IssueProjectLogStreamTicket)

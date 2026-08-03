@@ -237,6 +237,28 @@ func TestDefaultRolePermissionsPlugins(t *testing.T) {
 	}
 }
 
+func TestDefaultRolePermissionsSecrets(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+	for _, permission := range []string{PermSecretView, PermSecretManage, PermSecretUse} {
+		for _, role := range []string{"admin", "ops"} {
+			if !HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should include %s", role, permission)
+			}
+		}
+	}
+	for _, permission := range []string{PermSecretView, PermSecretUse} {
+		if !HasPermission([]string{"developer"}, permission) {
+			t.Fatalf("developer role should include %s", permission)
+		}
+	}
+	if HasPermission([]string{"developer"}, PermSecretManage) {
+		t.Fatalf("developer role should not include %s", PermSecretManage)
+	}
+	if !HasPermission([]string{"readonly"}, PermSecretView) || HasPermission([]string{"readonly"}, PermSecretUse) {
+		t.Fatalf("readonly secret permissions are invalid")
+	}
+}
+
 func TestDefaultRolePermissionsVirtualizationViewGrants(t *testing.T) {
 	SetRolePermissionMatrix(nil)
 

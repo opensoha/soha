@@ -8,6 +8,7 @@ import (
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
@@ -15,9 +16,11 @@ import (
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 )
 
 const manifestVersion = "v1alpha1"
@@ -156,6 +159,25 @@ type OnCallResolver interface {
 	ResolveOnCall(context.Context, domainidentity.Principal, domainalert.OnCallResolveInput) (map[string]any, error)
 }
 
+type VirtualizationOperationsService interface {
+	PlanVMCreate(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainoperation.Plan, error)
+	CreateVM(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainvirtualization.Task, error)
+	VMAction(context.Context, domainidentity.Principal, string, appvirtualization.VMActionInput) (domainvirtualization.Task, error)
+}
+
+type DockerOperationsService interface {
+	PlanQuickCreateHost(context.Context, domainidentity.Principal, domaindocker.QuickCreateHostInput) (domainoperation.Plan, error)
+	QuickCreateHost(context.Context, domainidentity.Principal, domaindocker.QuickCreateHostInput) (domaindocker.Operation, error)
+	PlanProjectDeploy(context.Context, domainidentity.Principal, string, domaindocker.ProjectDeployInput) (domainoperation.Plan, error)
+	DeployProject(context.Context, domainidentity.Principal, string, domaindocker.ProjectDeployInput) (domaindocker.Operation, error)
+	ServiceAction(context.Context, domainidentity.Principal, string, domaindocker.ServiceActionInput) (domaindocker.Operation, error)
+}
+
+type KubernetesResourceCreationService interface {
+	PreflightCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreatePreflight, error)
+	ExecuteCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, error)
+}
+
 type Service struct {
 	permissions *appaccess.PermissionResolver
 	audit       AuditRecorder
@@ -171,6 +193,7 @@ type Service struct {
 	approvals       ApprovalRepository
 	rateLimitRepo   RateLimitRepository
 	llmRelayRepo    LLMRelayRepository
+	secrets         SecretReferenceResolver
 
 	rateLimits         RateLimitBackend
 	relayConfig        LLMRelayConfig
@@ -186,8 +209,11 @@ type Service struct {
 	delivery           DeliveryService
 	catalog            CatalogService
 	resources          ResourceService
+	resourceCreation   KubernetesResourceCreationService
 	copilot            AnalysisArtifactRecorder
 	oncall             OnCallResolver
+	virtualization     VirtualizationOperationsService
+	docker             DockerOperationsService
 	registry           *capabilityRegistry
 }
 
@@ -208,6 +234,7 @@ func NewWithDeps(deps ServiceDeps) *Service {
 		approvals:        deps.Approvals,
 		rateLimitRepo:    deps.RateLimits,
 		llmRelayRepo:     deps.LLMRelay,
+		secrets:          deps.Secrets,
 		rateLimits:       deps.RateLimitBackend,
 		relayConfig:      relayConfig,
 		httpClient:       httpClient,
@@ -244,6 +271,10 @@ func (s *Service) SetResourceService(resources ResourceService) {
 	s.resources = resources
 }
 
+func (s *Service) SetResourceCreationService(resources KubernetesResourceCreationService) {
+	s.resourceCreation = resources
+}
+
 func (s *Service) SetAnalysisArtifactRecorder(copilot AnalysisArtifactRecorder) {
 	s.copilot = copilot
 }
@@ -258,6 +289,11 @@ func (s *Service) SetRateLimitBackend(rateLimits RateLimitBackend) {
 
 func (s *Service) SetOnCallResolver(oncall OnCallResolver) {
 	s.oncall = oncall
+}
+
+func (s *Service) SetOperationsServices(virtualization VirtualizationOperationsService, docker DockerOperationsService) {
+	s.virtualization = virtualization
+	s.docker = docker
 }
 
 func (s *Service) personalTokenRepository() PersonalAccessTokenRepository {

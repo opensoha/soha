@@ -86,10 +86,26 @@ func searchQueryFromCorrelation(query CorrelationQuery) SearchQuery {
 		Scope:     query.Scope,
 		TimeFrom:  query.TimeFrom,
 		TimeTo:    query.TimeTo,
+		TraceID:   query.TraceID,
+		SpanID:    query.SpanID,
 		Terms:     correlationTerms(query),
 		Limit:     query.Limit,
 		Direction: "backward",
 	}
+}
+
+func scopePodValues(scope Scope) []string {
+	if pods := uniqueStrings(scope.Pods); len(pods) > 0 {
+		return pods
+	}
+	return uniqueStrings([]string{scope.Pod})
+}
+
+func scopeContainerValues(scope Scope) []string {
+	if containers := uniqueStrings(scope.Containers); len(containers) > 0 {
+		return containers
+	}
+	return uniqueStrings([]string{scope.Container})
 }
 
 func correlationResultFromSearch(sourceID string, query CorrelationQuery, result SearchResult) CorrelationResult {

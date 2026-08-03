@@ -21,6 +21,24 @@ type Entry struct {
 	CreatedAt     time.Time      `json:"createdAt"`
 }
 
+type Plan struct {
+	Capability       string       `json:"capability"`
+	Target           string       `json:"target"`
+	Ready            bool         `json:"ready"`
+	RiskLevel        string       `json:"riskLevel"`
+	RequiresApproval bool         `json:"requiresApproval"`
+	InputHash        string       `json:"inputHash,omitempty"`
+	Changes          []PlanChange `json:"changes"`
+	Warnings         []string     `json:"warnings"`
+}
+
+type PlanChange struct {
+	Action                  string `json:"action"`
+	Resource                string `json:"resource"`
+	Summary                 string `json:"summary"`
+	SensitiveValuesRedacted bool   `json:"sensitiveValuesRedacted,omitempty"`
+}
+
 type Filter struct {
 	OperationType     string
 	ActorID           string

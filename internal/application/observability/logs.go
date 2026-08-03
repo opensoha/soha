@@ -13,6 +13,7 @@ import (
 	"time"
 
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainobservability "github.com/opensoha/soha/internal/domain/observability"
@@ -33,7 +34,14 @@ type durableCursor struct {
 }
 
 func (s *Service) QueryDurableLogs(ctx context.Context, principal domainidentity.Principal, clusterID string, query domainresource.LogQuery) (domainresource.LogPage, error) {
-	item, err := s.selectDataSource(ctx, clusterID, query.Selector.Namespace)
+	if err := s.authorize(ctx, principal, appaccess.PermObserveLogDataSourcesView); err != nil {
+		return domainresource.LogPage{}, err
+	}
+	selector := query.Selector
+	if selector == nil {
+		return domainresource.LogPage{}, fmt.Errorf("%w: log selector is required", apperrors.ErrInvalidArgument)
+	}
+	item, err := s.selectDataSource(ctx, clusterID, selector.Namespace)
 	if err != nil {
 		return domainresource.LogPage{}, err
 	}
@@ -43,23 +51,37 @@ func (s *Service) QueryDurableLogs(ctx context.Context, principal domainidentity
 		return domainresource.LogPage{}, err
 	}
 	queryHash := durableQueryHash(clusterID, query)
-	if query.Cursor != "" {
-		cursor, cursorErr := s.verifyCursor(query.Cursor)
-		if cursorErr != nil || cursor.DataSourceID != item.ID || cursor.PrincipalID != principal.UserID || cursor.ClusterID != clusterID || cursor.Namespace != query.Selector.Namespace || cursor.QueryHash != queryHash {
-			return domainresource.LogPage{}, fmt.Errorf("%w: invalid or expired log cursor", apperrors.ErrInvalidArgument)
-		}
-		search.PageToken = cursor.Provider
+	search.PageToken, err = s.resolveCursor(query.Cursor, durableCursor{
+		DataSourceID: item.ID,
+		PrincipalID:  principal.UserID,
+		ClusterID:    clusterID,
+		Namespace:    selector.Namespace,
+		QueryHash:    queryHash,
+	})
+	if err != nil {
+		return domainresource.LogPage{}, err
 	}
 	config, err := s.runtimeConfig(item)
 	if err != nil {
 		return domainresource.LogPage{}, fmt.Errorf("%w: data-source credentials are unavailable", apperrors.ErrClusterUnready)
 	}
+	provider, found, err := s.resolveProvider(ctx, item.BackendType)
+	if err != nil || !found || !supportsLogQuery(provider) {
+		return domainresource.LogPage{}, fmt.Errorf("%w: durable log provider is unavailable", apperrors.ErrClusterUnready)
+	}
 	queryCtx, cancel := context.WithTimeout(ctx, time.Duration(budget.TimeoutSeconds)*time.Second)
 	startedAt := s.now()
-	result, err := s.logs.Search(queryCtx, item.BackendType, item.ID, config, search)
+	var result telemetry.LogSearchResult
+	if provider.definition.BuiltIn {
+		result, err = s.logs.Search(queryCtx, item.BackendType, item.ID, config, search)
+	} else if runtime, available := provider.runtimeFor(logsQueryCapability); available && s.externalLogs != nil {
+		result, err = s.externalLogs.Search(queryCtx, runtime, item.ID, config, search)
+	} else {
+		err = fmt.Errorf("provider log query runtime is unavailable")
+	}
 	cancel()
 	if err != nil {
-		s.recordLogQuery(ctx, principal, item, clusterID, query.Selector.Namespace, 0, false, "failure", s.now().Sub(startedAt))
+		s.recordLogQuery(ctx, principal, item, clusterID, selector.Namespace, 0, false, "failure", s.now().Sub(startedAt))
 		return domainresource.LogPage{}, fmt.Errorf("%w: durable log backend query failed", apperrors.ErrClusterUnready)
 	}
 	entries := make([]domainresource.LogEntry, 0, len(result.Records))
@@ -69,19 +91,30 @@ func (s *Service) QueryDurableLogs(ctx context.Context, principal domainidentity
 	nextCursor := ""
 	if result.NextPageToken != "" {
 		nextCursor, err = s.signCursor(durableCursor{
-			DataSourceID: item.ID, PrincipalID: principal.UserID, ClusterID: clusterID, Namespace: query.Selector.Namespace,
+			DataSourceID: item.ID, PrincipalID: principal.UserID, ClusterID: clusterID, Namespace: selector.Namespace,
 			QueryHash: queryHash, Provider: result.NextPageToken, ExpiresAt: s.now().UTC().Add(15 * time.Minute).Unix(),
 		})
 		if err != nil {
 			return domainresource.LogPage{}, fmt.Errorf("%w: durable log cursor signing is unavailable", apperrors.ErrClusterUnready)
 		}
 	}
-	s.recordLogQuery(ctx, principal, item, clusterID, query.Selector.Namespace, len(entries), result.Truncated, "success", s.now().Sub(startedAt))
+	s.recordLogQuery(ctx, principal, item, clusterID, selector.Namespace, len(entries), result.Truncated, "success", s.now().Sub(startedAt))
 	return domainresource.LogPage{
 		Entries: entries, NextCursor: nextCursor, Partial: false, Truncated: result.Truncated, ScopeRestricted: false,
 		Coverage:      &domainresource.LogCoverage{ResolvedSources: 1, SuccessfulSources: 1, FailedSources: 0},
 		RetentionHint: "持久化范围由数据源保留策略决定。",
 	}, nil
+}
+
+func (s *Service) resolveCursor(value string, expected durableCursor) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	cursor, err := s.verifyCursor(value)
+	if err != nil || cursor.DataSourceID != expected.DataSourceID || cursor.PrincipalID != expected.PrincipalID || cursor.ClusterID != expected.ClusterID || cursor.Namespace != expected.Namespace || cursor.QueryHash != expected.QueryHash {
+		return "", fmt.Errorf("%w: invalid or expired log cursor", apperrors.ErrInvalidArgument)
+	}
+	return cursor.Provider, nil
 }
 
 func (s *Service) selectDataSource(ctx context.Context, clusterID, namespace string) (domainobservability.DataSource, error) {
@@ -124,20 +157,24 @@ func durableSearchQuery(query domainresource.LogQuery, clusterID string, budget 
 	if selector == nil {
 		return telemetry.LogSearchQuery{}, fmt.Errorf("%w: log selector is required", apperrors.ErrInvalidArgument)
 	}
-	if len(selector.PodNames) > 1 || len(selector.Containers) > 1 {
-		return telemetry.LogSearchQuery{}, fmt.Errorf("%w: durable logs support one pod and one container per query", apperrors.ErrInvalidArgument)
-	}
 	if strings.TrimSpace(selector.LabelSelector) != "" {
 		return telemetry.LogSearchQuery{}, fmt.Errorf("%w: durable logs do not support Kubernetes label selectors", apperrors.ErrInvalidArgument)
 	}
 	scope := telemetry.LogScope{ClusterID: clusterID, Namespace: selector.Namespace, Workload: selector.WorkloadName}
 	if len(selector.PodNames) == 1 {
 		scope.Pod = selector.PodNames[0]
+	} else if len(selector.PodNames) > 1 {
+		scope.Pods = append([]string(nil), selector.PodNames...)
 	}
 	if len(selector.Containers) == 1 {
 		scope.Container = selector.Containers[0]
+	} else if len(selector.Containers) > 1 {
+		scope.Containers = append([]string(nil), selector.Containers...)
 	}
-	return telemetry.LogSearchQuery{Scope: scope, TimeFrom: from, TimeTo: to, Query: query.Text, Severities: query.Severities, Limit: limit, Direction: direction}, nil
+	return telemetry.LogSearchQuery{
+		Scope: scope, TimeFrom: from, TimeTo: to, Query: query.Text, TraceID: query.TraceID, SpanID: query.SpanID,
+		Severities: query.Severities, Limit: limit, Direction: direction,
+	}, nil
 }
 
 func durableLogEntry(record telemetry.LogRecord, query domainresource.LogQuery, redaction map[string]any) domainresource.LogEntry {
@@ -150,8 +187,8 @@ func durableLogEntry(record telemetry.LogRecord, query domainresource.LogQuery, 
 			WorkloadKind: query.Selector.WorkloadKind, WorkloadName: firstNonEmpty(record.Workload, query.Selector.WorkloadName),
 			PodName: record.Pod, ContainerName: record.Container,
 		},
-		TraceID: firstNonEmpty(attributes["traceId"], attributes["trace_id"]),
-		SpanID:  firstNonEmpty(attributes["spanId"], attributes["span_id"]),
+		TraceID: firstNonEmpty(record.TraceID, attributes["traceId"], attributes["trace_id"]),
+		SpanID:  firstNonEmpty(record.SpanID, attributes["spanId"], attributes["span_id"]),
 	}
 }
 

@@ -205,40 +205,42 @@ func allowsProtocolAccessCookie(path string) bool {
 	}
 }
 
+var externalBearerTokenSuffixes = [...]string{
+	"/integrations/alerts/webhook",
+	"/delivery/execution-callbacks",
+	"/delivery/execution-tasks/claim",
+	"/docker/operations/claim",
+	"/docker/operation-callbacks",
+	"/copilot/agent-runs/claim",
+	"/copilot/agent-runs/callback",
+	"/copilot/agent-runs/tool-call",
+	"/ai/agent-providers/registry-snapshot",
+	"/ai/agent-providers/registry-acks",
+	"/connectors/events",
+}
+
+var externalBearerTokenNestedSuffixes = [...]struct {
+	segment string
+	suffix  string
+}{
+	{segment: "/delivery/execution-tasks/", suffix: "/runner-status"},
+	{segment: "/docker/operations/", suffix: "/runner-status"},
+	{segment: "/runner/secret-leases/", suffix: "/redeem"},
+}
+
 func allowsExternalBearerToken(path string) bool {
 	path = strings.TrimSpace(path)
-	switch {
-	case strings.HasSuffix(path, "/integrations/alerts/webhook"):
-		return true
-	case strings.HasSuffix(path, "/delivery/execution-callbacks"):
-		return true
-	case strings.HasSuffix(path, "/delivery/execution-tasks/claim"):
-		return true
-	case strings.Contains(path, "/delivery/execution-tasks/") && strings.HasSuffix(path, "/runner-status"):
-		return true
-	case strings.HasSuffix(path, "/docker/operations/claim"):
-		return true
-	case strings.Contains(path, "/docker/operations/") && strings.HasSuffix(path, "/runner-status"):
-		return true
-	case strings.HasSuffix(path, "/docker/operation-callbacks"):
-		return true
-	case strings.HasSuffix(path, "/copilot/agent-runs/claim"):
-		return true
-	case strings.HasSuffix(path, "/copilot/agent-runs/callback"):
-		return true
-	case strings.HasSuffix(path, "/copilot/agent-runs/tool-call"):
-		return true
-	case strings.HasSuffix(path, "/ai/agent-providers/registry-snapshot"):
-		return true
-	case strings.HasSuffix(path, "/ai/agent-providers/registry-acks"):
-		return true
-	case strings.HasSuffix(path, "/connectors/events"):
-		return true
-	case strings.HasPrefix(path, "/api/v1/provider/outposts"):
-		return true
-	case path == "/oauth2/userinfo" || path == "/api/v1/provider/oidc/userinfo":
-		return true
-	default:
-		return false
+	for _, suffix := range externalBearerTokenSuffixes {
+		if strings.HasSuffix(path, suffix) {
+			return true
+		}
 	}
+	for _, match := range externalBearerTokenNestedSuffixes {
+		if strings.Contains(path, match.segment) && strings.HasSuffix(path, match.suffix) {
+			return true
+		}
+	}
+	return strings.HasPrefix(path, "/api/v1/provider/outposts") ||
+		path == "/oauth2/userinfo" ||
+		path == "/api/v1/provider/oidc/userinfo"
 }

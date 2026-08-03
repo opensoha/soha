@@ -139,6 +139,16 @@ func TestQueryDurableClusterLogsAuthorizesBeforeProvider(t *testing.T) {
 		t.Fatalf("authorization request = %#v", authorizer.request)
 	}
 
+	allNamespaces := domainresource.LogSourceSelector{}
+	durable.called = false
+	page, err = service.Logs().QueryClusterLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "cluster-a", domainresource.LogQuery{Selector: &allNamespaces, SourceMode: sohaapi.LogSourceModeDurable})
+	if err != nil || !durable.called || len(page.Entries) != 1 {
+		t.Fatalf("all-namespace durable query error=%v providerCalled=%t page=%#v", err, durable.called, page)
+	}
+	if authorizer.request.Namespace.Namespace != "" || durable.query.Selector.Namespace != "" {
+		t.Fatalf("all-namespace query authorization=%#v query=%#v", authorizer.request, durable.query)
+	}
+
 	authorizer.allowed = false
 	durable.called = false
 	_, err = service.Logs().QueryClusterLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "cluster-a", domainresource.LogQuery{Selector: &selector, SourceMode: sohaapi.LogSourceModeDurable})

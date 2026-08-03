@@ -116,6 +116,7 @@ func (s *Service) createToolApprovalRequest(ctx context.Context, principal domai
 		RequiresApproval:  true,
 		ResourceScope:     gatewayAuditScope(input.Input, nil),
 		ToolInput:         sanitizeGatewayMap(input.Input),
+		SecretRefs:        cloneSecretRefs(input.SecretRefs),
 		RelatedIDs:        relatedIDs,
 		Output:            map[string]any{},
 		Summary:           summary,
@@ -403,7 +404,7 @@ func (s *Service) approveApprovalRequest(ctx context.Context, principal domainid
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
 	request.ToolInput = gatewayApprovalReplayInput(request)
-	output, relatedIDs, err := s.invokeGatewayTool(ctx, replayPrincipal, tool, request.ToolInput)
+	output, relatedIDs, err := s.invokeGatewayTool(ctx, replayPrincipal, tool, request.ToolInput, request.SecretRefs)
 	if err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}

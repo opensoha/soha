@@ -27,6 +27,7 @@ import (
 	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	aperrors "github.com/opensoha/soha/internal/platform/apperrors"
@@ -242,10 +243,16 @@ type Service struct {
 	metricTelemetry       MetricTelemetry
 	traceTelemetry        TraceTelemetry
 	contextBuilder        WorkbenchContextBuilder
+	secretLeases          SecretLeaseService
 	lifecycleMu           sync.Mutex
 	lifecycleCancel       context.CancelFunc
 	lifecycleDone         chan struct{}
 	running               bool
+}
+
+type SecretLeaseService interface {
+	IssueLease(context.Context, domainidentity.Principal, []domainsecret.Reference, domainsecret.Target, string, string, string) (*domainsecret.LeaseGrant, error)
+	RevokeSubjectLeases(context.Context, string, string) error
 }
 
 type MCPRegistry interface {
@@ -367,6 +374,10 @@ func isNilDependency(dependency any) bool {
 func (s *Service) SetInstrumentation(logger *zap.Logger, metrics *runtimeobs.Registry) {
 	s.logger = logger
 	s.metrics = metrics
+}
+
+func (s *Service) SetSecretLeaseService(service SecretLeaseService) {
+	s.secretLeases = service
 }
 
 func (s *Service) SetContextBuilder(builder WorkbenchContextBuilder) {

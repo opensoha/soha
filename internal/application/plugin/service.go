@@ -40,6 +40,7 @@ var supportedPluginTypes = []string{
 	"diagnostic",
 	"resource-extension",
 	"metric-extension",
+	"observability-provider",
 	"notification-channel",
 	"identity-template",
 	"ui-extension",
@@ -560,6 +561,9 @@ func validateManifest(manifest domainplugin.PluginManifest) error {
 	if err := validateRuntime(manifest.Runtime); err != nil {
 		return err
 	}
+	if err := validateObservabilityProviders(manifest); err != nil {
+		return err
+	}
 	if err := validateExtensionPointIDs(manifest); err != nil {
 		return err
 	}
@@ -639,6 +643,38 @@ func validateRuntime(runtime *domainplugin.PluginRuntimeSpec) error {
 	default:
 		return fmt.Errorf("%w: unsupported plugin runtime mode %q", apperrors.ErrInvalidArgument, runtime.Mode)
 	}
+}
+
+func validateObservabilityProviders(manifest domainplugin.PluginManifest) error {
+	if manifest.ExtensionPoints == nil || manifest.ExtensionPoints.Observability == nil || len(manifest.ExtensionPoints.Observability.Providers) == 0 {
+		return nil
+	}
+	if manifest.Runtime == nil || manifest.Runtime.Mode != "external-http" && manifest.Runtime.Mode != "managed-container" {
+		return fmt.Errorf("%w: observability providers require an executable runtime", apperrors.ErrInvalidArgument)
+	}
+	if strings.TrimSpace(manifest.Runtime.Endpoint) == "" || strings.TrimSpace(manifest.Runtime.ActionPath) == "" {
+		return fmt.Errorf("%w: observability provider endpoint and actionPath are required", apperrors.ErrInvalidArgument)
+	}
+	seen := map[string]struct{}{}
+	for _, provider := range manifest.ExtensionPoints.Observability.Providers {
+		key := strings.ToLower(strings.TrimSpace(provider.ProviderKey))
+		if key == "" || strings.TrimSpace(provider.DisplayName) == "" || provider.ProtocolVersion != "v1" || len(provider.Signals) == 0 || len(provider.Capabilities) == 0 {
+			return fmt.Errorf("%w: incomplete observability provider contribution", apperrors.ErrInvalidArgument)
+		}
+		if _, exists := seen[key]; exists {
+			return fmt.Errorf("%w: duplicate observability provider key %q", apperrors.ErrInvalidArgument, key)
+		}
+		seen[key] = struct{}{}
+		for _, capability := range provider.Capabilities {
+			if strings.TrimSpace(provider.ActionRefs[capability]) == "" {
+				return fmt.Errorf("%w: observability capability %q requires an actionRef", apperrors.ErrInvalidArgument, capability)
+			}
+			if capability == "logs.query" && !slices.Contains(provider.Signals, "logs") {
+				return fmt.Errorf("%w: logs.query requires the logs signal", apperrors.ErrInvalidArgument)
+			}
+		}
+	}
+	return nil
 }
 
 func validateExtensionPointIDs(manifest domainplugin.PluginManifest) error {

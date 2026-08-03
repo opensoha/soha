@@ -341,6 +341,9 @@ func expectGetAgentRun(mock sqlmock.Sqlmock, run domaincopilot.AgentRun) {
 		"tool_executions",
 		"analysis_artifacts",
 		"callback_token",
+		"secret_refs",
+		"secret_principal",
+		"secret_target",
 		"claimed_by_agent_id",
 		"external_run_id",
 		"error_message",
@@ -370,6 +373,9 @@ func expectGetAgentRun(mock sqlmock.Sqlmock, run domaincopilot.AgentRun) {
 		`[]`,
 		`[]`,
 		run.CallbackToken,
+		`[]`,
+		`{}`,
+		`{}`,
 		nullableSQLString(run.ClaimedByAgentID),
 		nullableSQLString(run.ExternalRunID),
 		nullableSQLString(run.ErrorMessage),
@@ -381,7 +387,7 @@ func expectGetAgentRun(mock sqlmock.Sqlmock, run domaincopilot.AgentRun) {
 		run.CreatedAt,
 		run.UpdatedAt,
 	)
-	mock.ExpectQuery(`(?s)SELECT id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,\s+tool_executions, analysis_artifacts, callback_token, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,\s+queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at\s+FROM ai_agent_runs\s+WHERE id = \$1 LIMIT 1`).
+	mock.ExpectQuery(`(?s)SELECT id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,\s+tool_executions, analysis_artifacts, callback_token, secret_refs, secret_principal, secret_target, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,\s+queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at\s+FROM ai_agent_runs\s+WHERE id = \$1 LIMIT 1`).
 		WithArgs(run.ID).
 		WillReturnRows(rows)
 }

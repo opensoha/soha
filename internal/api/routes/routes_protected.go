@@ -41,6 +41,7 @@ func registerProtectedRoutes(protected *gin.RouterGroup, cfg cfgpkg.Config, deps
 	registerPluginRoutes(protected, deps)
 	registerSettingsRoutes(protected, deps)
 	registerSystemIntegrationRoutes(protected, deps)
+	registerSecretRoutes(protected, deps)
 }
 
 func registerProtectedAuthRoutes(protected gin.IRoutes, deps Dependencies) {

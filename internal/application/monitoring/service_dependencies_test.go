@@ -94,6 +94,12 @@ func (s *monitoringTelemetryStub) Analyze(ctx context.Context, _ string, _ strin
 	return telemetry.MetricAnomalySummary{Summary: "metrics"}, errMonitoringTelemetry
 }
 
+func (s *monitoringTelemetryStub) RangeQuery(ctx context.Context, _ string, _ string, _ map[string]any, query telemetry.MetricRangeQuery) ([]telemetry.MetricSeries, map[string]any, error) {
+	s.context = ctx
+	s.query = query
+	return nil, nil, errMonitoringTelemetry
+}
+
 func (s *monitoringTelemetryStub) FindSlowSpans(ctx context.Context, _ string, _ string, _ map[string]any, query telemetry.TraceQuery) (telemetry.TraceResult, error) {
 	s.context = ctx
 	s.query = query

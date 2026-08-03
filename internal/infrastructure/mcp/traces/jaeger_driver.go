@@ -107,11 +107,19 @@ type jaegerTag struct {
 
 func newJaegerRequest(ctx context.Context, config map[string]any, query Query) (*http.Request, error) {
 	endpoint := stringValue(config["endpoint"], "")
-	queryURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(endpoint), "/") + "/api/traces")
+	path := "/api/traces"
+	if query.TraceID != "" {
+		path += "/" + url.PathEscape(query.TraceID)
+	}
+	queryURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(endpoint), "/") + path)
 	if err != nil {
 		return nil, err
 	}
 	params := queryURL.Query()
+	if query.TraceID != "" {
+		queryURL.RawQuery = params.Encode()
+		return newJaegerHTTPRequest(ctx, config, queryURL.String())
+	}
 	if service := strings.TrimSpace(stringValue(config["serviceName"], query.Scope.Service)); service != "" {
 		params.Set("service", service)
 	}
@@ -123,7 +131,11 @@ func newJaegerRequest(ctx context.Context, config map[string]any, query Query) (
 	params.Set("limit", strconv.Itoa(query.Limit))
 	params.Set("minDuration", formatJaegerDuration(query.MinDuration))
 	queryURL.RawQuery = params.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, queryURL.String(), nil)
+	return newJaegerHTTPRequest(ctx, config, queryURL.String())
+}
+
+func newJaegerHTTPRequest(ctx context.Context, config map[string]any, queryURL string) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, queryURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -173,11 +185,11 @@ func jaegerTraceSpan(trace jaegerTrace, span jaegerSpan) Span {
 	}
 }
 
-func jaegerTags(tags []jaegerTag) (map[string]any, bool) {
-	values := make(map[string]any, len(tags))
+func jaegerTags(tags []jaegerTag) (map[string]string, bool) {
+	values := make(map[string]string, len(tags))
 	errorFlag := false
 	for _, tag := range tags {
-		values[tag.Key] = tag.Value
+		values[tag.Key] = fmt.Sprint(tag.Value)
 		if current, ok := tag.Value.(bool); tag.Key == "error" && ok && current {
 			errorFlag = true
 		}

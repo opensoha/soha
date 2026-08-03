@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
-	domaingovernance "github.com/opensoha/soha/internal/domain/governance"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	"github.com/opensoha/soha/internal/platform/redaction"
@@ -19,22 +18,13 @@ import (
 
 const defaultRetentionDays = 90
 
-type AlertSink interface {
-	RecordGovernanceAlert(context.Context, domaingovernance.AlertInput) error
-}
-
 type Service struct {
 	repo        domainoperation.Repository
 	permissions *appaccess.PermissionResolver
-	alerts      AlertSink
 }
 
 func New(repo domainoperation.Repository, permissions *appaccess.PermissionResolver) *Service {
 	return &Service{repo: repo, permissions: permissions}
-}
-
-func (s *Service) SetAlertSink(alerts AlertSink) {
-	s.alerts = alerts
 }
 
 func (s *Service) Record(ctx context.Context, entry domainoperation.Entry) error {
@@ -53,11 +43,7 @@ func (s *Service) Record(ctx context.Context, entry domainoperation.Entry) error
 	entry.Summary = redaction.Text(entry.Summary)
 	entry.TargetScope = redaction.Map(entry.TargetScope)
 	entry.Metadata = redaction.Map(entry.Metadata)
-	if err := s.repo.Create(ctx, entry); err != nil {
-		return err
-	}
-	s.recordOperationAlert(ctx, entry)
-	return nil
+	return s.repo.Create(ctx, entry)
 }
 
 func (s *Service) List(ctx context.Context, filter domainoperation.Filter) ([]domainoperation.Entry, error) {
@@ -172,103 +158,6 @@ func sanitizeOperationEntry(item domainoperation.Entry) domainoperation.Entry {
 		item.Metadata = map[string]any{}
 	}
 	return item
-}
-
-func (s *Service) recordOperationAlert(ctx context.Context, entry domainoperation.Entry) {
-	if s.alerts == nil || !shouldAlertOperation(entry) {
-		return
-	}
-	_ = s.alerts.RecordGovernanceAlert(ctx, domaingovernance.AlertInput{
-		Source:        "operation",
-		EventID:       entry.ID,
-		ActorID:       entry.ActorID,
-		ActorName:     entry.ActorName,
-		OperationType: entry.OperationType,
-		Result:        entry.Result,
-		Summary:       entry.Summary,
-		ClusterID:     stringFromMap(entry.TargetScope, "clusterId", "clusterID", "cluster"),
-		Namespace:     stringFromMap(entry.TargetScope, "namespace"),
-		ResourceKind:  stringFromMap(entry.TargetScope, "resourceKind", "kind"),
-		ResourceName:  stringFromMap(entry.TargetScope, "resourceName", "name"),
-		RequestPath:   entry.RequestPath,
-		RequestMethod: entry.RequestMethod,
-		RequestID:     entry.RequestID,
-		SourceIP:      entry.SourceIP,
-		Severity:      operationAlertSeverity(entry),
-		Labels: map[string]string{
-			"governanceSource": "operation",
-			"result":           normalizedResult(entry.Result),
-		},
-		Annotations: operationAlertAnnotations(entry),
-		CreatedAt:   entry.CreatedAt,
-	})
-}
-
-func shouldAlertOperation(entry domainoperation.Entry) bool {
-	result := normalizedResult(entry.Result)
-	if result == "failure" || result == "denied" || result == "error" {
-		return true
-	}
-	operationType := strings.ToLower(strings.TrimSpace(entry.OperationType))
-	if strings.Contains(operationType, "delete") || strings.Contains(operationType, "exec") || strings.Contains(operationType, "credential") || strings.Contains(operationType, "token") {
-		return true
-	}
-	return false
-}
-
-func operationAlertSeverity(entry domainoperation.Entry) string {
-	result := normalizedResult(entry.Result)
-	switch result {
-	case "failure", "denied", "error":
-		return "warning"
-	}
-	operationType := strings.ToLower(strings.TrimSpace(entry.OperationType))
-	if strings.Contains(operationType, "delete") || strings.Contains(operationType, "exec") {
-		return "critical"
-	}
-	return "warning"
-}
-
-func operationAlertAnnotations(entry domainoperation.Entry) map[string]string {
-	annotations := map[string]string{
-		"operationId":   entry.ID,
-		"operationType": entry.OperationType,
-		"actorId":       entry.ActorID,
-		"actorName":     entry.ActorName,
-		"requestId":     entry.RequestID,
-		"requestPath":   entry.RequestPath,
-		"requestMethod": entry.RequestMethod,
-		"sourceIp":      entry.SourceIP,
-	}
-	if approvalRequestID := stringFromMap(entry.Metadata, "approvalRequestId", "approvalID", "approvalId"); approvalRequestID != "" {
-		annotations["approvalRequestId"] = approvalRequestID
-	}
-	return compactStringMap(annotations)
-}
-
-func stringFromMap(values map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value, ok := values[key]; ok {
-			if text := strings.TrimSpace(fmt.Sprint(value)); text != "" && text != "<nil>" {
-				return text
-			}
-		}
-	}
-	return ""
-}
-
-func normalizedResult(result string) string {
-	return strings.ToLower(strings.TrimSpace(result))
-}
-
-func compactStringMap(values map[string]string) map[string]string {
-	out := make(map[string]string, len(values))
-	for key, value := range values {
-		if strings.TrimSpace(value) != "" {
-			out[key] = value
-		}
-	}
-	return out
 }
 
 func normalizeOperationFilter(filter domainoperation.Filter) domainoperation.Filter {

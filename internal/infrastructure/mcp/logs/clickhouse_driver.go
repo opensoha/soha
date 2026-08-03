@@ -36,7 +36,7 @@ func (clickHouseDriver) ValidateConfig(config map[string]any) error {
 	if strings.TrimSpace(table) == "" {
 		return fmt.Errorf("clickhouse table is required")
 	}
-	for _, key := range []string{"table", "timestampField", "messageField", "severityField", "serviceField", "workloadField", "namespaceField", "clusterField", "podField", "containerField"} {
+	for _, key := range []string{"table", "timestampField", "messageField", "severityField", "serviceField", "workloadField", "namespaceField", "clusterField", "podField", "containerField", "traceIdField", "spanIdField"} {
 		if value := stringConfig(config, key, ""); value != "" && !clickHouseIdentifierPattern.MatchString(value) {
 			return fmt.Errorf("clickhouse %s is not a valid identifier", key)
 		}
@@ -71,8 +71,10 @@ func (d clickHouseDriver) Search(ctx context.Context, sourceID string, config ma
 	clusterField := stringConfig(config, "clusterField", "cluster")
 	podField := stringConfig(config, "podField", "pod")
 	containerField := stringConfig(config, "containerField", "container")
+	traceIDField := stringConfig(config, "traceIdField", "trace_id")
+	spanIDField := stringConfig(config, "spanIdField", "span_id")
 
-	sql := buildClickHouseSearchSQL(strings.TrimSpace(table), timestampField, messageField, severityField, serviceField, workloadField, namespaceField, clusterField, podField, containerField, query, cursor, providerFetchLimit(query, cursor))
+	sql := buildClickHouseSearchSQL(strings.TrimSpace(table), timestampField, messageField, severityField, serviceField, workloadField, namespaceField, clusterField, podField, containerField, traceIDField, spanIDField, query, cursor, providerFetchLimit(query, cursor))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(strings.TrimSpace(endpoint), "/"), strings.NewReader(sql))
 	if err != nil {
 		return SearchResult{}, err
@@ -123,8 +125,18 @@ func (d clickHouseDriver) Search(ctx context.Context, sourceID string, config ma
 	}, nil
 }
 
-func buildClickHouseSearchSQL(table, timestampField, messageField, severityField, serviceField, workloadField, namespaceField, clusterField, podField, containerField string, query SearchQuery, cursor timestampCursor, limit int) string {
+func buildClickHouseSearchSQL(table, timestampField, messageField, severityField, serviceField, workloadField, namespaceField, clusterField, podField, containerField, traceIDField, spanIDField string, query SearchQuery, cursor timestampCursor, limit int) string {
 	conditions := make([]string, 0)
+	pods := scopePodValues(query.Scope)
+	pod := ""
+	if len(pods) == 1 {
+		pod = pods[0]
+	}
+	containers := scopeContainerValues(query.Scope)
+	container := ""
+	if len(containers) == 1 {
+		container = containers[0]
+	}
 	if !query.TimeFrom.IsZero() {
 		conditions = append(conditions, fmt.Sprintf("%s >= parseDateTimeBestEffort('%s')", timestampField, quoteLiteral(query.TimeFrom.Format(time.RFC3339))))
 	}
@@ -143,13 +155,29 @@ func buildClickHouseSearchSQL(table, timestampField, messageField, severityField
 		namespaceField: query.Scope.Namespace,
 		serviceField:   query.Scope.Service,
 		workloadField:  query.Scope.Workload,
-		podField:       query.Scope.Pod,
-		containerField: query.Scope.Container,
+		podField:       pod,
+		containerField: container,
+		traceIDField:   query.TraceID,
+		spanIDField:    query.SpanID,
 	} {
 		if strings.TrimSpace(field) == "" || strings.TrimSpace(value) == "" {
 			continue
 		}
 		conditions = append(conditions, fmt.Sprintf("%s = '%s'", field, quoteLiteral(value)))
+	}
+	if len(pods) > 1 && strings.TrimSpace(podField) != "" {
+		values := make([]string, 0, len(pods))
+		for _, value := range pods {
+			values = append(values, "'"+quoteLiteral(value)+"'")
+		}
+		conditions = append(conditions, fmt.Sprintf("%s IN (%s)", podField, strings.Join(values, ", ")))
+	}
+	if len(containers) > 1 && strings.TrimSpace(containerField) != "" {
+		values := make([]string, 0, len(containers))
+		for _, value := range containers {
+			values = append(values, "'"+quoteLiteral(value)+"'")
+		}
+		conditions = append(conditions, fmt.Sprintf("%s IN (%s)", containerField, strings.Join(values, ", ")))
 	}
 	terms := query.Terms
 	if len(terms) > 0 {
@@ -177,13 +205,15 @@ SELECT
     %s AS namespace,
     %s AS cluster,
     %s AS pod,
-    %s AS container
+    %s AS container,
+    %s AS trace_id,
+    %s AS span_id
 FROM %s
 WHERE %s
 ORDER BY %s %s
 LIMIT %d
 FORMAT JSONEachRow
-`, timestampField, severityField, messageField, serviceField, workloadField, namespaceField, clusterField, podField, containerField, table, where, timestampField, direction, limit)
+`, timestampField, severityField, messageField, serviceField, workloadField, namespaceField, clusterField, podField, containerField, traceIDField, spanIDField, table, where, timestampField, direction, limit)
 }
 
 func quoteLiteral(value string) string {
@@ -205,6 +235,8 @@ func parseClickHouseJSONEachRow(line string) Record {
 		ClusterID: nestedString(payload, "cluster"),
 		Pod:       nestedString(payload, "pod"),
 		Container: nestedString(payload, "container"),
+		TraceID:   nestedString(payload, "trace_id"),
+		SpanID:    nestedString(payload, "span_id"),
 		Attributes: map[string]any{
 			"row": payload,
 		},

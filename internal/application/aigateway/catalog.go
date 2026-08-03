@@ -841,8 +841,80 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 	},
 }
 
+var operationsToolCatalog = []domainaigateway.ToolCapability{
+	{
+		Name: "k8s.resources.create.preflight", Title: "Preflight Kubernetes Resources", Description: "Validate, authorize, and dry-run Kubernetes manifests without creating resources.",
+		Domain: "k8s", Action: "preflight", RiskLevel: domainaigateway.RiskLevelAnalyze,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView}, RequiredScopes: []string{"cluster", "namespace"},
+		MCPAdapterID: "k8s.v1", MCPToolName: "k8s.resources.create.preflight", InputSchema: gatewayObjectSchema([]string{"clusterId", "source", "content"}, gatewayKubernetesResourceCreateProperties()),
+	},
+	{
+		Name: "k8s.resources.create.trigger", Title: "Create Kubernetes Resources", Description: "Create validated Kubernetes manifests through the durable resource creation batch.",
+		Domain: "k8s", Action: "execute", RiskLevel: domainaigateway.RiskLevelHigh, RequiresApproval: true,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreate}, RequiredScopes: []string{"cluster", "namespace"},
+		MCPAdapterID: "k8s.v1", MCPToolName: "k8s.resources.create.trigger", InputSchema: gatewayObjectSchema([]string{"clusterId", "source", "content", "idempotencyKey"}, gatewayKubernetesResourceCreateProperties()),
+	},
+	{
+		Name: "virtualization.vms.create.plan", Title: "Plan Virtual Machine Create", Description: "Validate and summarize a virtual machine create request without side effects.",
+		Domain: "virtualization", Action: "plan", RiskLevel: domainaigateway.RiskLevelAnalyze,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermVirtualizationVMsView, appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationImagesView},
+		RequiredScopes: []string{"virtualizationConnection", "vm"}, MCPAdapterID: "virtualization.v1", MCPToolName: "virtualization.vms.create.plan",
+		InputSchema: gatewayObjectSchema([]string{"connectionId", "name"}, gatewayVMCreateProperties()),
+	},
+	{
+		Name: "virtualization.vms.create.trigger", Title: "Trigger Virtual Machine Create", Description: "Create a virtual machine through the durable virtualization task queue.",
+		Domain: "virtualization", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermVirtualizationVMsManage}, RequiredScopes: []string{"virtualizationConnection", "vm"},
+		MCPAdapterID: "virtualization.v1", MCPToolName: "virtualization.vms.create.trigger",
+		InputSchema: gatewayObjectSchema([]string{"connectionId", "name", "idempotencyKey"}, gatewayVMCreateProperties()),
+	},
+	{
+		Name: "virtualization.vms.action.trigger", Title: "Trigger Virtual Machine Action", Description: "Run a typed action on a virtual machine through the durable task queue.",
+		Domain: "virtualization", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermVirtualizationVMsManage}, RequiredScopes: []string{"virtualizationConnection", "vm"},
+		MCPAdapterID: "virtualization.v1", MCPToolName: "virtualization.vms.action.trigger",
+		InputSchema: gatewayObjectSchema([]string{"vmId", "action", "idempotencyKey"}, map[string]any{
+			"vmId": gatewayStringSchema("Virtual machine id."), "action": gatewayStringSchema("Typed virtual machine action."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
+			"cpu": gatewayIntegerSchema("Optional resize CPU count."), "memoryMiB": gatewayIntegerSchema("Optional resize memory in MiB."), "diskGiB": gatewayIntegerSchema("Optional resize disk size in GiB."),
+		}),
+	},
+	{
+		Name: "docker.hosts.quick_create.plan", Title: "Plan Docker Host Quick Create", Description: "Validate and summarize Docker host provisioning without side effects.",
+		Domain: "docker", Action: "plan", RiskLevel: domainaigateway.RiskLevelAnalyze,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerHostsView, appaccess.PermVirtualizationVMsView}, RequiredScopes: []string{"virtualizationConnection", "dockerHost"},
+		MCPAdapterID: "docker.v1", MCPToolName: "docker.hosts.quick_create.plan", InputSchema: gatewayObjectSchema([]string{"name"}, gatewayDockerQuickCreateProperties()),
+	},
+	{
+		Name: "docker.hosts.quick_create.trigger", Title: "Trigger Docker Host Quick Create", Description: "Provision a Docker host through the durable Docker operation queue.",
+		Domain: "docker", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerHostsManage, appaccess.PermVirtualizationVMsManage}, RequiredScopes: []string{"virtualizationConnection", "dockerHost"},
+		MCPAdapterID: "docker.v1", MCPToolName: "docker.hosts.quick_create.trigger", InputSchema: gatewayObjectSchema([]string{"name", "idempotencyKey"}, gatewayDockerQuickCreateProperties()),
+	},
+	{
+		Name: "docker.projects.deploy.plan", Title: "Plan Docker Project Deploy", Description: "Validate and summarize a Docker Compose project action without side effects.",
+		Domain: "docker", Action: "plan", RiskLevel: domainaigateway.RiskLevelAnalyze,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerProjectsView, appaccess.PermDockerTemplatesView}, RequiredScopes: []string{"dockerHost", "dockerProject"},
+		MCPAdapterID: "docker.v1", MCPToolName: "docker.projects.deploy.plan", InputSchema: gatewayObjectSchema([]string{"projectId"}, gatewayDockerProjectDeployProperties()),
+	},
+	{
+		Name: "docker.projects.deploy.trigger", Title: "Trigger Docker Project Deploy", Description: "Run a Docker Compose project action through the durable operation queue.",
+		Domain: "docker", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerProjectsDeploy}, RequiredScopes: []string{"dockerHost", "dockerProject"},
+		MCPAdapterID: "docker.v1", MCPToolName: "docker.projects.deploy.trigger", InputSchema: gatewayObjectSchema([]string{"projectId", "idempotencyKey"}, gatewayDockerProjectDeployProperties()),
+	},
+	{
+		Name: "docker.services.action.trigger", Title: "Trigger Docker Service Action", Description: "Run a typed Docker service action through the durable operation queue.",
+		Domain: "docker", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerServicesManage}, RequiredScopes: []string{"dockerHost", "dockerService"},
+		MCPAdapterID: "docker.v1", MCPToolName: "docker.services.action.trigger", InputSchema: gatewayObjectSchema([]string{"serviceId", "action", "idempotencyKey"}, map[string]any{
+			"serviceId": gatewayStringSchema("Docker service id."), "action": gatewayStringSchema("Typed Docker service action."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
+		}),
+	},
+}
+
 func defaultTools() []domainaigateway.ToolCapability {
-	return append([]domainaigateway.ToolCapability(nil), defaultToolCatalog...)
+	tools := append([]domainaigateway.ToolCapability(nil), defaultToolCatalog...)
+	return append(tools, operationsToolCatalog...)
 }
 
 func defaultResources() []domainaigateway.ResourceCapability {
@@ -947,6 +1019,15 @@ func gatewayKubernetesPromptArgumentProperties() map[string]any {
 	return out
 }
 
+func gatewayKubernetesResourceCreateProperties() map[string]any {
+	return map[string]any{
+		"clusterId": gatewayStringSchema("Cluster id."), "source": gatewayStringSchema("Creation source: list, form, or global_yaml."),
+		"content": gatewayStringSchema("Bounded YAML or JSON manifest content."), "defaultNamespace": gatewayStringSchema("Default namespace."),
+		"resourceGroup": gatewayStringSchema("Optional resource authorization group."), "expectedApiVersion": gatewayStringSchema("Optional expected API version."),
+		"expectedKind": gatewayStringSchema("Optional expected resource kind."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
+	}
+}
+
 func gatewayObjectSchema(required []string, properties map[string]any) map[string]any {
 	out := map[string]any{
 		"type":                 "object",
@@ -961,6 +1042,29 @@ func gatewayObjectSchema(required []string, properties map[string]any) map[strin
 		out["required"] = items
 	}
 	return out
+}
+
+func gatewayVMCreateProperties() map[string]any {
+	return map[string]any{
+		"connectionId": gatewayStringSchema("Virtualization connection id."), "name": gatewayStringSchema("Virtual machine name."),
+		"architecture": gatewayStringSchema("CPU architecture."), "imageId": gatewayStringSchema("Image id."), "flavorId": gatewayStringSchema("Flavor id."),
+		"cpu": gatewayIntegerSchema("CPU count."), "memoryMiB": gatewayIntegerSchema("Memory in MiB."), "diskGiB": gatewayIntegerSchema("Disk size in GiB."),
+		"network": gatewayStringSchema("Provider network."), "cloudInit": gatewayStringSchema("Sensitive cloud-init content."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
+	}
+}
+
+func gatewayDockerQuickCreateProperties() map[string]any {
+	return map[string]any{
+		"name": gatewayStringSchema("Docker host name."), "virtualizationConnectionId": gatewayStringSchema("Optional virtualization connection id."),
+		"vmTemplateId": gatewayStringSchema("Optional VM template id."), "flavorId": gatewayStringSchema("Optional flavor id."), "imageId": gatewayStringSchema("Optional image id."),
+		"architecture": gatewayStringSchema("CPU architecture."), "cloudInit": gatewayStringSchema("Sensitive cloud-init content."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
+	}
+}
+
+func gatewayDockerProjectDeployProperties() map[string]any {
+	return map[string]any{
+		"projectId": gatewayStringSchema("Docker project id."), "action": gatewayStringSchema("Compose action; defaults to deploy."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
+	}
 }
 
 func gatewayStringSchema(description string) map[string]any {
@@ -1377,6 +1481,33 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			CapabilityRefs: []string{"k8s.pods.list", "k8s.pods.logs", "k8s.pods.describe", "k8s.deployments.list", "k8s.deployments.rollout_status", "k8s.deployments.events", "k8s.services.list", "k8s.services.backends", "k8s.routes.context", "k8s.storage.context", "k8s.nodes.detail", "k8s.events.list"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView},
 			RequiredScopes: []string{"cluster", "namespace"},
+		},
+		{
+			ID:             "k8s-resource-provisioner",
+			Name:           "K8s Resource Provisioner",
+			Category:       "platform",
+			Description:    "Approval-bound Kubernetes manifest preflight and creation for scoped demo environments.",
+			CapabilityRefs: []string{"k8s.resources.create.preflight", "k8s.resources.create.trigger"},
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreate},
+			RequiredScopes: []string{"cluster", "namespace"},
+		},
+		{
+			ID:             "docker-runtime-operator",
+			Name:           "Docker Runtime Operator",
+			Category:       "platform",
+			Description:    "Approval-bound Docker host, Compose project, and service operations.",
+			CapabilityRefs: []string{"docker.hosts.quick_create.plan", "docker.hosts.quick_create.trigger", "docker.projects.deploy.plan", "docker.projects.deploy.trigger", "docker.services.action.trigger"},
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke},
+			RequiredScopes: []string{"virtualizationConnection", "dockerHost", "dockerProject", "dockerService"},
+		},
+		{
+			ID:             "virtualization-operator",
+			Name:           "Virtualization Operator",
+			Category:       "platform",
+			Description:    "Approval-bound virtual machine planning, creation, and typed lifecycle operations.",
+			CapabilityRefs: []string{"virtualization.vms.create.plan", "virtualization.vms.create.trigger", "virtualization.vms.action.trigger"},
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke},
+			RequiredScopes: []string{"virtualizationConnection", "vm"},
 		},
 		{
 			ID:             "security-change",

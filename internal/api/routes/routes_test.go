@@ -734,6 +734,7 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 		{name: "gateway llm relay embeddings invoke", method: "POST", path: "/api/v1/ai-gateway/llm/openai/v1/embeddings", resourceKind: "AIGatewayLLMRelayInvocation", action: "invoke", permission: appaccess.PermAIGatewayRelayInvoke, scoped: true},
 		{name: "gateway llm relay manage", method: "POST", path: "/api/v1/ai-gateway/relay/upstreams", resourceKind: "AIGatewayLLMRelay", action: "create", permission: appaccess.PermAIGatewayRelayManage},
 		{name: "gateway llm relay cache purge", method: "POST", path: "/api/v1/ai-gateway/relay/cache/purge", resourceKind: "AIGatewayLLMRelay", action: "create", permission: appaccess.PermAIGatewayRelayManage},
+		{name: "secret rotate", method: "POST", path: "/api/v1/secrets/:secretID/versions", resourceKind: "Secret", action: "create", permission: appaccess.PermSecretManage, scoped: true},
 		{name: "docker project deploy", method: "POST", path: "/api/v1/docker/projects/:id/deploy", resourceKind: "DockerProject", action: "deploy", permission: appaccess.PermDockerProjectsDeploy},
 		{name: "access scope grant update", method: "PUT", path: "/api/v1/access/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "update", permission: appaccess.PermAccessScopeGrantsManage},
 		{name: "identity policy update", method: "PATCH", path: "/api/v1/identity/policies/:applicationID", resourceKind: "IdentityPolicy", action: "update", permission: appaccess.PermIdentityPoliciesManage},

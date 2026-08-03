@@ -183,6 +183,7 @@ CREATE TABLE public.ai_gateway_approval_requests (
     requires_approval boolean DEFAULT true NOT NULL,
     resource_scope json DEFAULT '{}'::json NOT NULL,
     tool_input json DEFAULT '{}'::json NOT NULL,
+    secret_refs json DEFAULT '{}'::json NOT NULL,
     related_ids json DEFAULT '{}'::json NOT NULL,
     output json DEFAULT '{}'::json NOT NULL,
     summary text NOT NULL,
@@ -1603,6 +1604,42 @@ CREATE TABLE public.scope_grants (
 
 
 -- Name: service_account_tokens; Type: TABLE; Schema: public; Owner: -
+
+-- Name: secret_versions; Type: TABLE; Schema: public; Owner: -
+
+CREATE TABLE public.secret_versions (
+    secret_id text NOT NULL,
+    version integer NOT NULL CHECK (version > 0),
+    ciphertext text NOT NULL,
+    status text NOT NULL CHECK (status IN ('active', 'revoked')),
+    created_by text NOT NULL,
+    created_at timestamp without time zone NOT NULL,
+    revoked_at timestamp without time zone,
+    PRIMARY KEY (secret_id, version)
+);
+
+
+-- Name: secrets; Type: TABLE; Schema: public; Owner: -
+
+CREATE TABLE public.secrets (
+    id text PRIMARY KEY,
+    name text NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    scope_type text NOT NULL CHECK (scope_type IN ('workspace', 'project', 'environment')),
+    scope_id text NOT NULL,
+    status text NOT NULL CHECK (status IN ('active', 'disabled')),
+    current_version integer NOT NULL CHECK (current_version > 0),
+    bindings jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_by text NOT NULL,
+    created_at timestamp without time zone NOT NULL,
+    updated_at timestamp without time zone NOT NULL,
+    UNIQUE (scope_type, scope_id, name)
+);
+
+
+CREATE INDEX idx_secret_versions_status ON public.secret_versions USING btree (secret_id, status, version DESC);
+CREATE INDEX idx_secrets_scope ON public.secrets USING btree (scope_type, scope_id, status, updated_at DESC);
+
 
 CREATE TABLE public.service_account_tokens (
     id text NOT NULL,
@@ -3908,6 +3945,12 @@ ALTER TABLE ONLY public.release_targets
 
 ALTER TABLE ONLY public.service_account_tokens
     ADD CONSTRAINT service_account_tokens_service_account_id_fkey FOREIGN KEY (service_account_id) REFERENCES public.service_accounts(id) ON DELETE CASCADE;
+
+
+-- Name: secret_versions secret_versions_secret_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+
+ALTER TABLE ONLY public.secret_versions
+    ADD CONSTRAINT secret_versions_secret_id_fkey FOREIGN KEY (secret_id) REFERENCES public.secrets(id) ON DELETE CASCADE;
 
 
 -- Name: service_accounts service_accounts_owner_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -

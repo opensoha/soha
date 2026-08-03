@@ -78,7 +78,7 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online"}
 	repo.projects["project-1"] = domaindocker.Project{ID: "project-1", HostID: "host-1", Name: "demo", Slug: "demo", Status: "draft"}
 	service := New(repo, dockerTestPermissions(), nil)
-	operation, err := service.DeployProject(context.Background(), dockerTestPrincipal(), "project-1", "deploy")
+	operation, err := service.DeployProject(context.Background(), dockerTestPrincipal(), "project-1", domaindocker.ProjectDeployInput{Action: "deploy"})
 	if err != nil {
 		t.Fatalf("DeployProject() error = %v", err)
 	}
@@ -152,7 +152,7 @@ func TestDeployProjectRedeployRestoresSingleContainerSourcePayload(t *testing.T)
 			}
 			service := New(repo, dockerTestPermissions(), nil)
 
-			operation, err := service.DeployProject(context.Background(), dockerTestPrincipal(), "project-1", "redeploy")
+			operation, err := service.DeployProject(context.Background(), dockerTestPrincipal(), "project-1", domaindocker.ProjectDeployInput{Action: "redeploy"})
 			if err != nil {
 				t.Fatalf("DeployProject() error = %v", err)
 			}
@@ -502,7 +502,7 @@ func TestServiceActionRejectsUnsupportedExec(t *testing.T) {
 	repo.services["service-1"] = domaindocker.Service{ID: "service-1", ProjectID: "project-1", HostID: "host-1", Name: "api"}
 	service := New(repo, dockerTestPermissions(), nil)
 
-	_, err := service.ServiceAction(context.Background(), dockerTestPrincipal(), "service-1", "exec")
+	_, err := service.ServiceAction(context.Background(), dockerTestPrincipal(), "service-1", domaindocker.ServiceActionInput{Action: "exec"})
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("ServiceAction(exec) error = %v, want ErrInvalidArgument", err)
 	}

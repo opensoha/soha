@@ -10,13 +10,16 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -57,11 +60,15 @@ func (s *Service) InvokeTool(ctx context.Context, principal domainidentity.Princ
 		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", err.Error(), nil, redactionSummary)
 		return domainaigateway.ToolInvocationResult{}, err
 	}
+	if err := s.pinToolSecretRefs(ctx, principal, tool, &input); err != nil {
+		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", err.Error(), nil, redactionSummary)
+		return domainaigateway.ToolInvocationResult{}, err
+	}
 	if decision.shouldHoldExecution() {
 		return s.holdToolInvocation(ctx, principal, input, tool, decision, redactionSummary)
 	}
 
-	output, relatedIDs, err := s.invokeGatewayTool(ctx, principal, tool, input.Input)
+	output, relatedIDs, err := s.invokeGatewayTool(ctx, principal, tool, input.Input, input.SecretRefs)
 	if err != nil {
 		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "failure", err.Error(), relatedIDs, redactionSummary)
 		return domainaigateway.ToolInvocationResult{}, err
@@ -220,12 +227,32 @@ func (s *Service) GetPrompt(ctx context.Context, principal domainidentity.Princi
 		},
 	}, nil
 }
-func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error) {
+func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any, secretRefs map[string]string) (any, map[string]any, error) {
+	if len(secretRefs) > 0 {
+		if s.secrets == nil {
+			return nil, nil, fmt.Errorf("%w: secret resolver is not configured", apperrors.ErrInvalidArgument)
+		}
+		target := domainsecret.Target{Type: "capability", Ref: tool.Name}
+		pinned, err := s.secrets.PinReferences(ctx, principal, secretRefs, target)
+		if err != nil {
+			return nil, nil, err
+		}
+		values, err := s.secrets.ResolvePinnedReferences(ctx, principal, pinned, target)
+		if err != nil {
+			return nil, nil, err
+		}
+		ctx = domainsecret.WithValues(ctx, values)
+		ctx = domainsecret.WithExecutionContext(ctx, domainsecret.ExecutionContext{References: pinned, Principal: principal, Target: target})
+	}
 	switch {
 	case strings.HasPrefix(tool.Name, "delivery."):
 		return s.invokeDeliveryTool(ctx, principal, tool, input)
 	case strings.HasPrefix(tool.Name, "k8s."):
 		return s.invokeKubernetesTool(ctx, principal, tool, input)
+	case strings.HasPrefix(tool.Name, "virtualization."):
+		return s.invokeVirtualizationTool(ctx, principal, tool.Name, input)
+	case strings.HasPrefix(tool.Name, "docker."):
+		return s.invokeDockerTool(ctx, principal, tool.Name, input)
 	case tool.Name == "diagnosis.release_failure.analyze":
 		return s.invokeReleaseFailureDiagnosis(ctx, principal, input)
 	case strings.HasPrefix(tool.Name, "gateway."):
@@ -237,6 +264,150 @@ func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentit
 		}
 		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
 	}
+}
+
+func (s *Service) pinToolSecretRefs(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input *domainaigateway.ToolInvocationRequest) error {
+	if len(input.SecretRefs) == 0 {
+		return nil
+	}
+	if s.secrets == nil {
+		return fmt.Errorf("%w: secret resolver is not configured", apperrors.ErrInvalidArgument)
+	}
+	pinned, err := s.secrets.PinReferences(ctx, principal, input.SecretRefs, domainsecret.Target{Type: "capability", Ref: tool.Name})
+	if err != nil {
+		return err
+	}
+	input.SecretRefs = make(map[string]string, len(pinned))
+	for _, ref := range pinned {
+		input.SecretRefs[ref.Alias] = ref.URI
+	}
+	return nil
+}
+
+func (s *Service) invokeVirtualizationTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	if s.virtualization == nil {
+		return nil, nil, fmt.Errorf("%w: virtualization gateway service is not configured", apperrors.ErrInvalidArgument)
+	}
+	switch toolName {
+	case "virtualization.vms.create.plan":
+		var req appvirtualization.CreateVMInput
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		plan, err := s.virtualization.PlanVMCreate(ctx, principal, req)
+		return plan, map[string]any{"target": plan.Target, "inputHash": plan.InputHash}, err
+	case "virtualization.vms.create.trigger":
+		var req struct {
+			appvirtualization.CreateVMInput
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		if err := requireGatewayIdempotencyKey(req.IdempotencyKey); err != nil {
+			return nil, nil, err
+		}
+		req.CreateVMInput.IdempotencyKey = req.IdempotencyKey
+		item, err := s.virtualization.CreateVM(ctx, principal, req.CreateVMInput)
+		return item, map[string]any{"taskId": item.ID, "connectionId": item.ConnectionID}, err
+	case "virtualization.vms.action.trigger":
+		var req struct {
+			appvirtualization.VMActionInput
+			VMID           string `json:"vmId"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		if strings.TrimSpace(req.VMID) == "" {
+			return nil, nil, fmt.Errorf("%w: vmId is required", apperrors.ErrInvalidArgument)
+		}
+		if err := requireGatewayIdempotencyKey(req.IdempotencyKey); err != nil {
+			return nil, nil, err
+		}
+		req.VMActionInput.IdempotencyKey = req.IdempotencyKey
+		item, err := s.virtualization.VMAction(ctx, principal, req.VMID, req.VMActionInput)
+		return item, map[string]any{"taskId": item.ID, "vmId": req.VMID}, err
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func (s *Service) invokeDockerTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	if s.docker == nil {
+		return nil, nil, fmt.Errorf("%w: Docker gateway service is not configured", apperrors.ErrInvalidArgument)
+	}
+	switch toolName {
+	case "docker.hosts.quick_create.plan":
+		var req domaindocker.QuickCreateHostInput
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		plan, err := s.docker.PlanQuickCreateHost(ctx, principal, req)
+		return plan, map[string]any{"target": plan.Target, "inputHash": plan.InputHash}, err
+	case "docker.hosts.quick_create.trigger":
+		var req struct {
+			domaindocker.QuickCreateHostInput
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		if err := requireGatewayIdempotencyKey(req.IdempotencyKey); err != nil {
+			return nil, nil, err
+		}
+		req.QuickCreateHostInput.IdempotencyKey = req.IdempotencyKey
+		item, err := s.docker.QuickCreateHost(ctx, principal, req.QuickCreateHostInput)
+		return item, map[string]any{"operationId": item.ID, "dockerHostId": item.HostID}, err
+	case "docker.projects.deploy.plan", "docker.projects.deploy.trigger":
+		var req struct {
+			ProjectID      string `json:"projectId"`
+			Action         string `json:"action"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		if strings.TrimSpace(req.ProjectID) == "" {
+			return nil, nil, fmt.Errorf("%w: projectId is required", apperrors.ErrInvalidArgument)
+		}
+		deploy := domaindocker.ProjectDeployInput{Action: req.Action, IdempotencyKey: req.IdempotencyKey}
+		if toolName == "docker.projects.deploy.plan" {
+			plan, err := s.docker.PlanProjectDeploy(ctx, principal, req.ProjectID, deploy)
+			return plan, map[string]any{"projectId": req.ProjectID, "inputHash": plan.InputHash}, err
+		}
+		if err := requireGatewayIdempotencyKey(req.IdempotencyKey); err != nil {
+			return nil, nil, err
+		}
+		item, err := s.docker.DeployProject(ctx, principal, req.ProjectID, deploy)
+		return item, map[string]any{"operationId": item.ID, "projectId": req.ProjectID}, err
+	case "docker.services.action.trigger":
+		var req struct {
+			ServiceID      string `json:"serviceId"`
+			Action         string `json:"action"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		if strings.TrimSpace(req.ServiceID) == "" {
+			return nil, nil, fmt.Errorf("%w: serviceId is required", apperrors.ErrInvalidArgument)
+		}
+		if err := requireGatewayIdempotencyKey(req.IdempotencyKey); err != nil {
+			return nil, nil, err
+		}
+		item, err := s.docker.ServiceAction(ctx, principal, req.ServiceID, domaindocker.ServiceActionInput{Action: req.Action, IdempotencyKey: req.IdempotencyKey})
+		return item, map[string]any{"operationId": item.ID, "serviceId": req.ServiceID}, err
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
+	}
+}
+
+func requireGatewayIdempotencyKey(key string) error {
+	if strings.TrimSpace(key) == "" {
+		return fmt.Errorf("%w: idempotencyKey is required", apperrors.ErrInvalidArgument)
+	}
+	return nil
 }
 func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error) {
 	if !strings.HasPrefix(tool.Name, "delivery.") {
@@ -588,6 +759,9 @@ type kubernetesToolRequest struct {
 }
 
 func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error) {
+	if tool.Name == "k8s.resources.create.preflight" || tool.Name == "k8s.resources.create.trigger" {
+		return s.invokeKubernetesResourceCreationTool(ctx, principal, tool.Name, input)
+	}
 	if s.resources == nil {
 		return nil, nil, fmt.Errorf("%w: Kubernetes resource gateway service is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -613,6 +787,34 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 	default:
 		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
 	}
+}
+
+func (s *Service) invokeKubernetesResourceCreationTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	if s.resourceCreation == nil {
+		return nil, nil, fmt.Errorf("%w: Kubernetes resource creation service is not configured", apperrors.ErrInvalidArgument)
+	}
+	var req struct {
+		ClusterID      string `json:"clusterId"`
+		IdempotencyKey string `json:"idempotencyKey"`
+		domainresource.ResourceCreateRequest
+	}
+	if err := mapInput(input, &req); err != nil {
+		return nil, nil, err
+	}
+	req.ClusterID = strings.TrimSpace(req.ClusterID)
+	if req.ClusterID == "" {
+		return nil, nil, fmt.Errorf("%w: clusterId is required", apperrors.ErrInvalidArgument)
+	}
+	if toolName == "k8s.resources.create.preflight" {
+		item, err := s.resourceCreation.PreflightCreate(ctx, principal, req.ClusterID, req.ResourceCreateRequest)
+		return item, map[string]any{"clusterId": req.ClusterID, "contentHash": item.ContentHash}, err
+	}
+	if err := requireGatewayIdempotencyKey(req.IdempotencyKey); err != nil {
+		return nil, nil, err
+	}
+	req.ResourceCreateRequest.RequestID = req.IdempotencyKey
+	item, err := s.resourceCreation.ExecuteCreate(ctx, principal, req.ClusterID, req.ResourceCreateRequest)
+	return item, map[string]any{"clusterId": req.ClusterID, "operationId": item.OperationID, "contentHash": item.ContentHash}, err
 }
 
 func (s *Service) invokeKubernetesPodTool(ctx context.Context, principal domainidentity.Principal, toolName string, req kubernetesToolRequest, related map[string]any) (any, map[string]any, error) {
