@@ -28,6 +28,13 @@ const (
 	VersionRevoked VersionStatus = "revoked"
 )
 
+type SourceType string
+
+const (
+	SourceLocal    SourceType = "local"
+	SourceVaultKV2 SourceType = "vault_kv2"
+)
+
 type Binding struct {
 	TargetType string `json:"targetType"`
 	TargetRef  string `json:"targetRef"`
@@ -50,11 +57,35 @@ type Secret struct {
 type Version struct {
 	SecretID   string
 	Version    int
+	SourceType SourceType
 	Ciphertext string
+	VaultKV2   *VaultKV2Reference
 	Status     VersionStatus
 	CreatedBy  string
 	CreatedAt  time.Time
 	RevokedAt  *time.Time
+}
+
+type VaultKV2Reference struct {
+	Mount   string `json:"mount"`
+	Path    string `json:"path"`
+	Key     string `json:"key"`
+	Version int    `json:"version"`
+}
+
+type CreateInput struct {
+	Name        string
+	Description string
+	Value       *string
+	VaultKV2    *VaultKV2Reference
+	ScopeType   ScopeType
+	ScopeID     string
+	Bindings    []Binding
+}
+
+type RotateInput struct {
+	Value    *string
+	VaultKV2 *VaultKV2Reference
 }
 
 type Filter struct {

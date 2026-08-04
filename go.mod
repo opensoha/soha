@@ -15,7 +15,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/opensoha/soha-contracts v0.1.3
+	github.com/opensoha/soha-contracts v0.1.5
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/russellhaering/goxmldsig v1.6.0
 	github.com/spf13/viper v1.20.1
@@ -35,8 +35,6 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.21.1
 	sigs.k8s.io/yaml v1.6.0
 )
-
-replace github.com/opensoha/soha-contracts v0.1.3 => ../soha-contracts
 
 require (
 	dario.cat/mergo v1.0.1 // indirect

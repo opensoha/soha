@@ -34,6 +34,7 @@ const secretLeaseTTL = 5 * time.Minute
 var (
 	secretAliasPattern = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 	secretRefPattern   = regexp.MustCompile(`^soha://secrets/([A-Za-z0-9._-]+)(?:/versions/([1-9][0-9]*))?$`)
+	vaultPathPattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$`)
 )
 
 type Repository interface {
@@ -58,23 +59,28 @@ type OperationRecorder interface {
 	Record(context.Context, domainoperation.Entry) error
 }
 
+type VaultKV2Reader interface {
+	Read(context.Context, domainsecret.VaultKV2Reference) (string, error)
+}
+
 type Service struct {
 	repo        Repository
 	permissions *appaccess.PermissionResolver
 	audit       AuditRecorder
 	operations  OperationRecorder
 	keys        keyring.Ring
+	vault       VaultKV2Reader
 	now         func() time.Time
 }
 
-func New(repo Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) (*Service, error) {
+func New(repo Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring, vault VaultKV2Reader) (*Service, error) {
 	if repo == nil || permissions == nil || audit == nil || operations == nil {
 		return nil, fmt.Errorf("%w: secret service dependencies are required", apperrors.ErrInvalidArgument)
 	}
 	if keys.Active().ID() == "" {
 		return nil, fmt.Errorf("%w: secret encryption key is required", apperrors.ErrInvalidArgument)
 	}
-	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations, keys: keys, now: time.Now}, nil
+	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations, keys: keys, vault: vault, now: time.Now}, nil
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainsecret.Filter) ([]sohaapi.SecretMetadata, error) {
@@ -113,30 +119,24 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, i
 	return publicSecret(item), nil
 }
 
-func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, request sohaapi.SecretCreateRequest) (sohaapi.SecretMetadata, error) {
+func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, request domainsecret.CreateInput) (sohaapi.SecretMetadata, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretManage); err != nil {
 		return sohaapi.SecretMetadata{}, err
 	}
 	name := strings.TrimSpace(request.Name)
 	description := strings.TrimSpace(request.Description)
-	scopeType := domainsecret.ScopeType(request.ScopeType)
+	scopeType := request.ScopeType
 	scopeID := strings.TrimSpace(request.ScopeID)
 	if name == "" || len(name) > 128 || len(description) > 1024 || !validScope(scopeType, scopeID) {
 		return sohaapi.SecretMetadata{}, fmt.Errorf("%w: invalid secret metadata", apperrors.ErrInvalidArgument)
 	}
-	if request.Value == "" || len(request.Value) > maxSecretValueBytes {
-		return sohaapi.SecretMetadata{}, fmt.Errorf("%w: secret value is required and must not exceed 1 MiB", apperrors.ErrInvalidArgument)
-	}
-	bindings, err := normalizeBindingsFromAPI(request.Bindings)
+	bindings, err := normalizeBindings(request.Bindings)
 	if err != nil {
 		return sohaapi.SecretMetadata{}, err
 	}
-	ciphertext, err := secretcrypto.EncryptStringWithKeyring(s.keys, request.Value)
+	version, err := s.buildVersion(request.Value, request.VaultKV2)
 	if err != nil {
-		return sohaapi.SecretMetadata{}, fmt.Errorf("encrypt secret value: %w", err)
-	}
-	if !secretcrypto.Encrypted(ciphertext) {
-		return sohaapi.SecretMetadata{}, errorsInvalidCiphertext()
+		return sohaapi.SecretMetadata{}, err
 	}
 	now := s.now().UTC()
 	item := domainsecret.Secret{
@@ -144,10 +144,9 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 		Status: domainsecret.StatusActive, CurrentVersion: 1, Bindings: bindings, CreatedBy: principal.UserID,
 		CreatedAt: now, UpdatedAt: now,
 	}
-	created, err := s.repo.Create(ctx, item, domainsecret.Version{
-		SecretID: item.ID, Version: 1, Ciphertext: ciphertext, Status: domainsecret.VersionActive,
-		CreatedBy: principal.UserID, CreatedAt: now,
-	})
+	version.SecretID, version.Version, version.Status = item.ID, 1, domainsecret.VersionActive
+	version.CreatedBy, version.CreatedAt = principal.UserID, now
+	created, err := s.repo.Create(ctx, item, version)
 	if err != nil {
 		return sohaapi.SecretMetadata{}, err
 	}
@@ -217,7 +216,7 @@ func (s *Service) ListVersions(ctx context.Context, principal domainidentity.Pri
 	return result, nil
 }
 
-func (s *Service) Rotate(ctx context.Context, principal domainidentity.Principal, id string, request sohaapi.SecretRotateRequest) (sohaapi.SecretVersionMetadata, error) {
+func (s *Service) Rotate(ctx context.Context, principal domainidentity.Principal, id string, request domainsecret.RotateInput) (sohaapi.SecretVersionMetadata, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretManage); err != nil {
 		return sohaapi.SecretVersionMetadata{}, err
 	}
@@ -228,20 +227,13 @@ func (s *Service) Rotate(ctx context.Context, principal domainidentity.Principal
 	if item.Status != domainsecret.StatusActive {
 		return sohaapi.SecretVersionMetadata{}, fmt.Errorf("%w: disabled secret cannot be rotated", apperrors.ErrConflict)
 	}
-	if request.Value == "" || len(request.Value) > maxSecretValueBytes {
-		return sohaapi.SecretVersionMetadata{}, fmt.Errorf("%w: secret value is required and must not exceed 1 MiB", apperrors.ErrInvalidArgument)
-	}
-	ciphertext, err := secretcrypto.EncryptStringWithKeyring(s.keys, request.Value)
+	version, err := s.buildVersion(request.Value, request.VaultKV2)
 	if err != nil {
-		return sohaapi.SecretVersionMetadata{}, fmt.Errorf("encrypt secret value: %w", err)
+		return sohaapi.SecretVersionMetadata{}, err
 	}
-	if !secretcrypto.Encrypted(ciphertext) {
-		return sohaapi.SecretVersionMetadata{}, errorsInvalidCiphertext()
-	}
-	version, err := s.repo.Rotate(ctx, item.ID, domainsecret.Version{
-		SecretID: item.ID, Ciphertext: ciphertext, Status: domainsecret.VersionActive,
-		CreatedBy: principal.UserID, CreatedAt: s.now().UTC(),
-	})
+	version.SecretID, version.Status = item.ID, domainsecret.VersionActive
+	version.CreatedBy, version.CreatedAt = principal.UserID, s.now().UTC()
+	version, err = s.repo.Rotate(ctx, item.ID, version)
 	if err != nil {
 		return sohaapi.SecretVersionMetadata{}, err
 	}
@@ -313,12 +305,10 @@ func (s *Service) ResolvePinnedReferences(ctx context.Context, principal domaini
 			s.recordUse(ctx, principal, target, "failure", len(refs))
 			return nil, err
 		}
-		if !secretcrypto.Encrypted(version.Ciphertext) {
-			return nil, errorsInvalidCiphertext()
-		}
-		value, err := secretcrypto.DecryptStringWithKeyring(s.keys, version.Ciphertext)
+		value, err := s.resolveVersionValue(ctx, version)
 		if err != nil {
-			return nil, fmt.Errorf("decrypt secret reference: %w", err)
+			s.recordUse(ctx, principal, target, "failure", len(refs))
+			return nil, err
 		}
 		values[ref.Alias] = value
 	}
@@ -477,14 +467,6 @@ func parseReferences(refs map[string]string) ([]domainsecret.Reference, error) {
 	return result, nil
 }
 
-func normalizeBindingsFromAPI(items []sohaapi.SecretBinding) ([]domainsecret.Binding, error) {
-	bindings := make([]domainsecret.Binding, 0, len(items))
-	for _, item := range items {
-		bindings = append(bindings, domainsecret.Binding{TargetType: string(item.TargetType), TargetRef: item.TargetRef})
-	}
-	return normalizeBindings(bindings)
-}
-
 func normalizeBindings(items []domainsecret.Binding) ([]domainsecret.Binding, error) {
 	if len(items) > 100 {
 		return nil, fmt.Errorf("%w: secret bindings must not exceed 100", apperrors.ErrInvalidArgument)
@@ -511,6 +493,67 @@ func normalizeBindings(items []domainsecret.Binding) ([]domainsecret.Binding, er
 		return result[i].TargetType < result[j].TargetType
 	})
 	return result, nil
+}
+
+func (s *Service) buildVersion(value *string, vault *domainsecret.VaultKV2Reference) (domainsecret.Version, error) {
+	if (value == nil) == (vault == nil) {
+		return domainsecret.Version{}, fmt.Errorf("%w: exactly one secret value source is required", apperrors.ErrInvalidArgument)
+	}
+	if value != nil {
+		if *value == "" || len(*value) > maxSecretValueBytes {
+			return domainsecret.Version{}, fmt.Errorf("%w: secret value is required and must not exceed 1 MiB", apperrors.ErrInvalidArgument)
+		}
+		ciphertext, err := secretcrypto.EncryptStringWithKeyring(s.keys, *value)
+		if err != nil {
+			return domainsecret.Version{}, fmt.Errorf("encrypt secret value: %w", err)
+		}
+		if !secretcrypto.Encrypted(ciphertext) {
+			return domainsecret.Version{}, errorsInvalidCiphertext()
+		}
+		return domainsecret.Version{SourceType: domainsecret.SourceLocal, Ciphertext: ciphertext}, nil
+	}
+	if s.vault == nil {
+		return domainsecret.Version{}, fmt.Errorf("%w: Vault KV v2 secret provider is not configured", apperrors.ErrInvalidArgument)
+	}
+	reference, err := normalizeVaultReference(*vault)
+	if err != nil {
+		return domainsecret.Version{}, err
+	}
+	return domainsecret.Version{SourceType: domainsecret.SourceVaultKV2, VaultKV2: &reference}, nil
+}
+
+func (s *Service) resolveVersionValue(ctx context.Context, version domainsecret.Version) (string, error) {
+	switch version.SourceType {
+	case "", domainsecret.SourceLocal:
+		if !secretcrypto.Encrypted(version.Ciphertext) {
+			return "", errorsInvalidCiphertext()
+		}
+		value, err := secretcrypto.DecryptStringWithKeyring(s.keys, version.Ciphertext)
+		if err != nil {
+			return "", fmt.Errorf("decrypt secret reference: %w", err)
+		}
+		return value, nil
+	case domainsecret.SourceVaultKV2:
+		if s.vault == nil || version.VaultKV2 == nil {
+			return "", unavailableReference()
+		}
+		value, err := s.vault.Read(ctx, *version.VaultKV2)
+		if err != nil || value == "" || len(value) > maxSecretValueBytes {
+			return "", unavailableReference()
+		}
+		return value, nil
+	default:
+		return "", unavailableReference()
+	}
+}
+
+func normalizeVaultReference(reference domainsecret.VaultKV2Reference) (domainsecret.VaultKV2Reference, error) {
+	if len(reference.Mount) > 256 || len(reference.Path) > 1024 || len(reference.Key) > 256 ||
+		!vaultPathPattern.MatchString(reference.Mount) || !vaultPathPattern.MatchString(reference.Path) ||
+		strings.TrimSpace(reference.Key) == "" || strings.ContainsAny(reference.Key, "\x00\r\n") || reference.Version < 1 {
+		return domainsecret.VaultKV2Reference{}, fmt.Errorf("%w: invalid Vault KV v2 reference", apperrors.ErrInvalidArgument)
+	}
+	return reference, nil
 }
 
 func validScope(scopeType domainsecret.ScopeType, scopeID string) bool {

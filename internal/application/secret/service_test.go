@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -131,21 +130,33 @@ type discardOperations struct{}
 
 func (discardOperations) Record(context.Context, domainoperation.Entry) error { return nil }
 
+type vaultReaderStub struct {
+	value      string
+	err        error
+	references []domainsecret.VaultKV2Reference
+}
+
+func (r *vaultReaderStub) Read(_ context.Context, reference domainsecret.VaultKV2Reference) (string, error) {
+	r.references = append(r.references, reference)
+	return r.value, r.err
+}
+
 func TestSecretLifecycleEncryptsPinsAndFailsClosed(t *testing.T) {
 	repo := newMemoryRepository()
 	audit := &captureAudit{}
 	service, err := New(repo, appaccess.NewPermissionResolver(testRoleReader{
 		"admin":     {appaccess.PermSecretView, appaccess.PermSecretManage, appaccess.PermSecretUse},
 		"developer": {appaccess.PermSecretView, appaccess.PermSecretUse},
-	}), audit, discardOperations{}, testSecretKeyring(t))
+	}), audit, discardOperations{}, testSecretKeyring(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	service.now = func() time.Time { return time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC) }
 	admin := domainidentity.Principal{UserID: "admin", UserName: "Admin", Roles: []string{"admin"}}
-	created, err := service.Create(context.Background(), admin, sohaapi.SecretCreateRequest{
-		Name: "registry-token", Value: "plaintext-must-not-leak", ScopeType: sohaapi.SecretScopeType(domainsecret.ScopeProject), ScopeID: "demo",
-		Bindings: []sohaapi.SecretBinding{{TargetType: sohaapi.SecretBindingTargetType("capability"), TargetRef: "docker.project.deploy"}},
+	value := "plaintext-must-not-leak"
+	created, err := service.Create(context.Background(), admin, domainsecret.CreateInput{
+		Name: "registry-token", Value: &value, ScopeType: domainsecret.ScopeProject, ScopeID: "demo",
+		Bindings: []domainsecret.Binding{{TargetType: "capability", TargetRef: "docker.project.deploy"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -206,6 +217,46 @@ func TestSecretLifecycleEncryptsPinsAndFailsClosed(t *testing.T) {
 		if strings.Contains(string(payload), "plaintext-must-not-leak") {
 			t.Fatalf("audit leaked plaintext: %s", payload)
 		}
+	}
+}
+
+func TestVaultKV2SecretResolvesThroughExistingAuthorizationBoundary(t *testing.T) {
+	repo := newMemoryRepository()
+	audit := &captureAudit{}
+	reader := &vaultReaderStub{value: "external-value"}
+	service, err := New(repo, appaccess.NewPermissionResolver(testRoleReader{
+		"admin":     {appaccess.PermSecretView, appaccess.PermSecretManage, appaccess.PermSecretUse},
+		"developer": {appaccess.PermSecretUse},
+	}), audit, discardOperations{}, testSecretKeyring(t), reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := domainidentity.Principal{UserID: "admin", Roles: []string{"admin"}}
+	reference := &domainsecret.VaultKV2Reference{Mount: "team/kv", Path: "demo/app", Key: " token ", Version: 7}
+	created, err := service.Create(context.Background(), admin, domainsecret.CreateInput{
+		Name: "vault-token", VaultKV2: reference, ScopeType: domainsecret.ScopeProject, ScopeID: "demo",
+		Bindings: []domainsecret.Binding{{TargetType: "capability", TargetRef: "docker.project.deploy"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := repo.versions[created.ID][1]
+	if stored.SourceType != domainsecret.SourceVaultKV2 || stored.Ciphertext != "" || stored.VaultKV2 == nil || *stored.VaultKV2 != *reference {
+		t.Fatalf("stored Vault version = %#v", stored)
+	}
+	developer := domainidentity.Principal{UserID: "dev", Roles: []string{"developer"}, Projects: []string{"demo"}}
+	target := domainsecret.Target{Type: "capability", Ref: "docker.project.deploy"}
+	pinned, err := service.PinReferences(context.Background(), developer, map[string]string{"TOKEN": "soha://secrets/" + created.ID}, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := service.ResolvePinnedReferences(context.Background(), developer, pinned, target)
+	if err != nil || values["TOKEN"] != "external-value" || len(reader.references) != 1 || reader.references[0] != *reference {
+		t.Fatalf("resolved values=%#v refs=%#v err=%v", values, reader.references, err)
+	}
+	reader.err = errors.New("provider body contains external-value")
+	if _, err := service.ResolvePinnedReferences(context.Background(), developer, pinned, target); !errors.Is(err, apperrors.ErrNotFound) || strings.Contains(err.Error(), "external-value") {
+		t.Fatalf("provider failure = %v, want redacted unavailable error", err)
 	}
 }
 

@@ -233,13 +233,22 @@ type DocsAssetsConfig struct {
 }
 
 type SecurityConfig struct {
-	CredentialEncryptionKey  string       `mapstructure:"credential_encryption_key"`
-	CredentialEncryptionKeys keyring.Ring `mapstructure:"-"`
-	SecretProvider           string       `mapstructure:"secret_provider"`
-	WebAuthnRPID             string       `mapstructure:"webauthn_rp_id"`
-	WebAuthnOrigins          []string     `mapstructure:"webauthn_origins"`
-	OutpostSigningKeyID      string       `mapstructure:"outpost_signing_key_id"`
-	OutpostSigningPrivateKey string       `mapstructure:"outpost_signing_private_key"`
+	CredentialEncryptionKey  string         `mapstructure:"credential_encryption_key"`
+	CredentialEncryptionKeys keyring.Ring   `mapstructure:"-"`
+	SecretProvider           string         `mapstructure:"secret_provider"`
+	VaultKV2                 VaultKV2Config `mapstructure:"vault_kv2"`
+	WebAuthnRPID             string         `mapstructure:"webauthn_rp_id"`
+	WebAuthnOrigins          []string       `mapstructure:"webauthn_origins"`
+	OutpostSigningKeyID      string         `mapstructure:"outpost_signing_key_id"`
+	OutpostSigningPrivateKey string         `mapstructure:"outpost_signing_private_key"`
+}
+
+type VaultKV2Config struct {
+	Address          string        `mapstructure:"address"`
+	Token            string        `mapstructure:"token"`
+	Namespace        string        `mapstructure:"namespace"`
+	Timeout          time.Duration `mapstructure:"timeout"`
+	MaxResponseBytes int64         `mapstructure:"max_response_bytes"`
 }
 
 type BootstrapConfig struct {
@@ -328,6 +337,9 @@ func (c *Config) expandEnv() {
 		c.Plugins.Marketplace.Sources[i].URL = os.ExpandEnv(c.Plugins.Marketplace.Sources[i].URL)
 	}
 	c.Security.CredentialEncryptionKey = os.ExpandEnv(c.Security.CredentialEncryptionKey)
+	c.Security.VaultKV2.Address = os.ExpandEnv(c.Security.VaultKV2.Address)
+	c.Security.VaultKV2.Token = os.ExpandEnv(c.Security.VaultKV2.Token)
+	c.Security.VaultKV2.Namespace = os.ExpandEnv(c.Security.VaultKV2.Namespace)
 	c.Security.OutpostSigningKeyID = os.ExpandEnv(c.Security.OutpostSigningKeyID)
 	c.Security.OutpostSigningPrivateKey = os.ExpandEnv(c.Security.OutpostSigningPrivateKey)
 	for i := range c.Kubernetes.Clusters {
@@ -378,11 +390,64 @@ func (c Config) staticProblems() []string {
 		}
 	}
 	problems = append(problems, validateWebAuthnConfig(c.Security)...)
+	problems = append(problems, validateSecretProvider(c.Security)...)
 	if _, _, err := c.Security.OutpostSigningKey(); err != nil {
 		problems = append(problems, err.Error())
 	}
 	problems = append(problems, validateSharedConfigProblems(c)...)
 	return problems
+}
+
+func validateSecretProvider(config SecurityConfig) []string {
+	provider := strings.TrimSpace(config.SecretProvider)
+	vault := config.VaultKV2
+	if provider != config.SecretProvider {
+		return []string{"security.secret_provider must not contain surrounding whitespace"}
+	}
+	if provider == "" {
+		if strings.TrimSpace(vault.Address) != "" || strings.TrimSpace(vault.Token) != "" || strings.TrimSpace(vault.Namespace) != "" {
+			return []string{"security.secret_provider must be vault_kv2 when security.vault_kv2 is configured"}
+		}
+		return nil
+	}
+	if provider != "vault_kv2" {
+		return []string{"security.secret_provider must be empty or vault_kv2"}
+	}
+	problems := make([]string, 0)
+	if err := validateVaultAddress(vault.Address); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if strings.TrimSpace(vault.Token) == "" || strings.TrimSpace(vault.Token) != vault.Token || strings.ContainsAny(vault.Token, " \t\r\n") {
+		problems = append(problems, "security.vault_kv2.token must be a non-space token without surrounding whitespace")
+	}
+	if namespace := strings.TrimSpace(vault.Namespace); namespace != vault.Namespace || len(namespace) > 256 || strings.ContainsAny(namespace, "\r\n") {
+		problems = append(problems, "security.vault_kv2.namespace must not contain surrounding whitespace or line breaks and must not exceed 256 characters")
+	}
+	if vault.Timeout <= 0 || vault.Timeout > 30*time.Second {
+		problems = append(problems, "security.vault_kv2.timeout must be between 1ns and 30s")
+	}
+	if vault.MaxResponseBytes < 1024 || vault.MaxResponseBytes > 4<<20 {
+		problems = append(problems, "security.vault_kv2.max_response_bytes must be between 1024 and 4194304")
+	}
+	return problems
+}
+
+func validateVaultAddress(raw string) error {
+	if strings.TrimSpace(raw) != raw {
+		return fmt.Errorf("security.vault_kv2.address must not contain surrounding whitespace")
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+		return fmt.Errorf("security.vault_kv2.address must be an absolute Vault server URL without credentials, path, query, or fragment")
+	}
+	if parsed.Scheme == "https" {
+		return nil
+	}
+	ip := net.ParseIP(parsed.Hostname())
+	if parsed.Scheme == "http" && (strings.EqualFold(parsed.Hostname(), "localhost") || ip != nil && ip.IsLoopback()) {
+		return nil
+	}
+	return fmt.Errorf("security.vault_kv2.address must use HTTPS; HTTP is allowed only for loopback development")
 }
 
 func (c SecurityConfig) OutpostSigningKey() (string, ed25519.PrivateKey, error) {
@@ -656,6 +721,11 @@ var configDefaults = []struct {
 	{"assets.docs.external_url", "https://docs.opensoha.dev/"},
 	{"security.credential_encryption_key", defaultSystemSecret},
 	{"security.secret_provider", ""},
+	{"security.vault_kv2.address", ""},
+	{"security.vault_kv2.token", ""},
+	{"security.vault_kv2.namespace", ""},
+	{"security.vault_kv2.timeout", 10 * time.Second},
+	{"security.vault_kv2.max_response_bytes", int64(2 << 20)},
 	{"security.webauthn_rp_id", "localhost"},
 	{"security.webauthn_origins", []string{"http://localhost:5173", "http://localhost:8080"}},
 	{"bootstrap.seed_defaults", true},

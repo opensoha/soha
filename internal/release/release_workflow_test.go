@@ -15,7 +15,6 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 		"contracts_ref:",
 		"CONTRACTS_REF: ${{ inputs.contracts_ref || github.ref_name }}",
 		"WEB_SHA256: ${{ inputs.web_sha256 }}",
-		"go mod edit -dropreplace=github.com/opensoha/soha-contracts@v0.1.3",
 		"go get \"github.com/opensoha/soha-contracts@${CONTRACTS_REF}\"",
 		"go list -m github.com/opensoha/soha-contracts",
 		"go list -m -f '{{.Dir}}' github.com/opensoha/soha-contracts",
@@ -49,6 +48,7 @@ func TestReleaseWorkflowDoesNotUseSiblingContractsCheckout(t *testing.T) {
 		"../soha-contracts/",
 		"go.work <<'EOF'",
 		"replace github.com/opensoha/soha-contracts v0.0.0 =>",
+		"go mod edit -dropreplace=github.com/opensoha/soha-contracts",
 	}
 	for _, value := range disallowed {
 		if strings.Contains(workflow, value) {

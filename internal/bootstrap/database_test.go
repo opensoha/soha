@@ -603,6 +603,7 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 		"identity-outposts":              {section: "provider", sortOrder: 30},
 		"identity-policies":              {section: "provider", sortOrder: 40},
 		"settings-source-control":        {section: "integrations", sortOrder: 10},
+		"settings-secrets":               {section: "integrations", sortOrder: 20},
 		"menus":                          {section: "users", sortOrder: 50},
 		"settings-login":                 {section: "users", sortOrder: 60},
 		"announcements":                  {section: "operations", sortOrder: 30},

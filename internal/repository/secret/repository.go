@@ -66,9 +66,9 @@ func (r *Repository) Create(ctx context.Context, item domainsecret.Secret, versi
 			return conflictError(err, "secret name already exists in this scope")
 		}
 		return tx.Exec(`
-			INSERT INTO secret_versions (secret_id, version, ciphertext, status, created_by, created_at, revoked_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, version.SecretID, version.Version, version.Ciphertext, version.Status, version.CreatedBy, version.CreatedAt, version.RevokedAt).Error
+			INSERT INTO secret_versions (secret_id, version, source_type, ciphertext, vault_mount, vault_path, vault_key, vault_version, status, created_by, created_at, revoked_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, version.SecretID, version.Version, versionSource(version), nullableCiphertext(version), vaultMount(version), vaultPath(version), vaultKey(version), vaultVersion(version), version.Status, version.CreatedBy, version.CreatedAt, version.RevokedAt).Error
 	})
 	if err != nil {
 		return domainsecret.Secret{}, err
@@ -97,7 +97,7 @@ func (r *Repository) Update(ctx context.Context, item domainsecret.Secret) (doma
 
 func (r *Repository) ListVersions(ctx context.Context, secretID string) ([]domainsecret.Version, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT secret_id, version, ciphertext, status, created_by, created_at, revoked_at
+		SELECT secret_id, version, source_type, COALESCE(ciphertext, ''), COALESCE(vault_mount, ''), COALESCE(vault_path, ''), COALESCE(vault_key, ''), COALESCE(vault_version, 0), status, created_by, created_at, revoked_at
 		FROM secret_versions WHERE secret_id = ? ORDER BY version DESC
 	`, secretID).Rows()
 	if err != nil {
@@ -131,9 +131,9 @@ func (r *Repository) Rotate(ctx context.Context, secretID string, version domain
 		}
 		version.Version = current + 1
 		if err := tx.Exec(`
-			INSERT INTO secret_versions (secret_id, version, ciphertext, status, created_by, created_at, revoked_at)
-			VALUES (?, ?, ?, ?, ?, ?, NULL)
-		`, secretID, version.Version, version.Ciphertext, version.Status, version.CreatedBy, version.CreatedAt).Error; err != nil {
+			INSERT INTO secret_versions (secret_id, version, source_type, ciphertext, vault_mount, vault_path, vault_key, vault_version, status, created_by, created_at, revoked_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+		`, secretID, version.Version, versionSource(version), nullableCiphertext(version), vaultMount(version), vaultPath(version), vaultKey(version), vaultVersion(version), version.Status, version.CreatedBy, version.CreatedAt).Error; err != nil {
 			return err
 		}
 		return tx.Exec(`UPDATE secrets SET current_version = ?, updated_at = ? WHERE id = ?`, version.Version, version.CreatedAt, secretID).Error
@@ -237,7 +237,7 @@ func scanSecret(scanner rowScanner) (domainsecret.Secret, error) {
 
 func getVersion(db *gorm.DB, secretID string, version int) (domainsecret.Version, error) {
 	item, err := scanVersion(db.Raw(`
-		SELECT secret_id, version, ciphertext, status, created_by, created_at, revoked_at
+		SELECT secret_id, version, source_type, COALESCE(ciphertext, ''), COALESCE(vault_mount, ''), COALESCE(vault_path, ''), COALESCE(vault_key, ''), COALESCE(vault_version, 0), status, created_by, created_at, revoked_at
 		FROM secret_versions WHERE secret_id = ? AND version = ?
 	`, secretID, version).Row())
 	if err != nil {
@@ -248,10 +248,60 @@ func getVersion(db *gorm.DB, secretID string, version int) (domainsecret.Version
 
 func scanVersion(scanner rowScanner) (domainsecret.Version, error) {
 	var item domainsecret.Version
-	if err := scanner.Scan(&item.SecretID, &item.Version, &item.Ciphertext, &item.Status, &item.CreatedBy, &item.CreatedAt, &item.RevokedAt); err != nil {
+	var vault domainsecret.VaultKV2Reference
+	if err := scanner.Scan(
+		&item.SecretID, &item.Version, &item.SourceType, &item.Ciphertext,
+		&vault.Mount, &vault.Path, &vault.Key, &vault.Version,
+		&item.Status, &item.CreatedBy, &item.CreatedAt, &item.RevokedAt,
+	); err != nil {
 		return domainsecret.Version{}, err
 	}
+	if item.SourceType == domainsecret.SourceVaultKV2 {
+		item.VaultKV2 = &vault
+	}
 	return item, nil
+}
+
+func versionSource(version domainsecret.Version) domainsecret.SourceType {
+	if version.SourceType == "" {
+		return domainsecret.SourceLocal
+	}
+	return version.SourceType
+}
+
+func nullableCiphertext(version domainsecret.Version) any {
+	if versionSource(version) == domainsecret.SourceLocal {
+		return version.Ciphertext
+	}
+	return nil
+}
+
+func vaultMount(version domainsecret.Version) any {
+	if version.VaultKV2 != nil {
+		return version.VaultKV2.Mount
+	}
+	return nil
+}
+
+func vaultPath(version domainsecret.Version) any {
+	if version.VaultKV2 != nil {
+		return version.VaultKV2.Path
+	}
+	return nil
+}
+
+func vaultKey(version domainsecret.Version) any {
+	if version.VaultKV2 != nil {
+		return version.VaultKV2.Key
+	}
+	return nil
+}
+
+func vaultVersion(version domainsecret.Version) any {
+	if version.VaultKV2 != nil {
+		return version.VaultKV2.Version
+	}
+	return nil
 }
 
 func scanLease(scanner rowScanner) (domainsecret.Lease, error) {

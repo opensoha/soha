@@ -422,6 +422,23 @@ func TestConfigValidateAllowsEmptyOrSimpleDatabaseAndBootstrapPasswords(t *testi
 	}
 }
 
+func TestConfigValidateVaultKV2Provider(t *testing.T) {
+	cfg := validSecureConfig()
+	cfg.Security.SecretProvider = "vault_kv2"
+	cfg.Security.VaultKV2 = VaultKV2Config{
+		Address: "https://vault.example.com", Token: "vault-token", Namespace: "tenant-a",
+		Timeout: 5 * time.Second, MaxResponseBytes: 2 << 20,
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+
+	cfg.Security.VaultKV2.Address = "http://vault.internal:8200"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "must use HTTPS") {
+		t.Fatalf("Validate() error = %v, want non-loopback HTTP rejection", err)
+	}
+}
+
 func TestValidateWebAuthnConfigRequiresExactOriginsInsideRPID(t *testing.T) {
 	valid := SecurityConfig{WebAuthnRPID: "example.com", WebAuthnOrigins: []string{"https://console.example.com"}}
 	if problems := validateWebAuthnConfig(valid); len(problems) != 0 {

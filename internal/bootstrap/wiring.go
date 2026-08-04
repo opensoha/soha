@@ -81,6 +81,7 @@ import (
 	releasebackendinfra "github.com/opensoha/soha/internal/infrastructure/releasebackend"
 	resourcebackendinfra "github.com/opensoha/soha/internal/infrastructure/resourcebackend"
 	samlinfra "github.com/opensoha/soha/internal/infrastructure/saml"
+	vaultsecretinfra "github.com/opensoha/soha/internal/infrastructure/vaultsecret"
 	virtualizationinfra "github.com/opensoha/soha/internal/infrastructure/virtualization"
 	webauthninfra "github.com/opensoha/soha/internal/infrastructure/webauthn"
 	"github.com/opensoha/soha/internal/platform/keyring"
@@ -386,7 +387,11 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	permissionResolver := appaccess.NewPermissionResolver(repos.policyRepository)
 	auditService := appaudit.New(repos.auditRepository, permissionResolver)
 	operationService := appoperation.New(repos.operationRepository, permissionResolver)
-	secretService, err := appsecret.New(repos.secretRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
+	vaultReader, err := newVaultKV2Reader(cfg.Security)
+	if err != nil {
+		return nil, err
+	}
+	secretService, err := appsecret.New(repos.secretRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys, vaultReader)
 	if err != nil {
 		return nil, fmt.Errorf("build secret service: %w", err)
 	}
@@ -572,6 +577,20 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		directorySyncService:     directorySyncService,
 		directorySyncConnectors:  directorySyncConnectors,
 	}, nil
+}
+
+func newVaultKV2Reader(config cfgpkg.SecurityConfig) (appsecret.VaultKV2Reader, error) {
+	if config.SecretProvider != "vault_kv2" {
+		return nil, nil
+	}
+	client, err := vaultsecretinfra.New(
+		config.VaultKV2.Address, config.VaultKV2.Token, config.VaultKV2.Namespace,
+		config.VaultKV2.Timeout, config.VaultKV2.MaxResponseBytes,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build Vault KV v2 secret client: %w", err)
+	}
+	return client, nil
 }
 
 type platformCoreServices struct {

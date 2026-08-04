@@ -18,14 +18,14 @@ import (
 type SecretManagementService interface {
 	List(context.Context, domainidentity.Principal, domainsecret.Filter) ([]sohaapi.SecretMetadata, error)
 	Get(context.Context, domainidentity.Principal, string) (sohaapi.SecretMetadata, error)
-	Create(context.Context, domainidentity.Principal, sohaapi.SecretCreateRequest) (sohaapi.SecretMetadata, error)
+	Create(context.Context, domainidentity.Principal, domainsecret.CreateInput) (sohaapi.SecretMetadata, error)
 	Update(context.Context, domainidentity.Principal, string, domainsecret.UpdateInput) (sohaapi.SecretMetadata, error)
 	Disable(context.Context, domainidentity.Principal, string) (sohaapi.SecretMetadata, error)
 }
 
 type SecretVersionService interface {
 	ListVersions(context.Context, domainidentity.Principal, string) ([]sohaapi.SecretVersionMetadata, error)
-	Rotate(context.Context, domainidentity.Principal, string, sohaapi.SecretRotateRequest) (sohaapi.SecretVersionMetadata, error)
+	Rotate(context.Context, domainidentity.Principal, string, domainsecret.RotateInput) (sohaapi.SecretVersionMetadata, error)
 	RevokeVersion(context.Context, domainidentity.Principal, string, int) (sohaapi.SecretVersionMetadata, error)
 }
 
@@ -77,17 +77,34 @@ func (h *SecretHandler) Get(c *gin.Context) {
 }
 
 func (h *SecretHandler) Create(c *gin.Context) {
-	var request sohaapi.SecretCreateRequest
+	var request secretCreateRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid secret payload")
 		return
 	}
-	item, err := h.management.Create(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), request)
+	item, err := h.management.Create(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), request.input())
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+type secretCreateRequest struct {
+	Name        string                          `json:"name"`
+	Description string                          `json:"description"`
+	Value       *string                         `json:"value"`
+	VaultKV2    *domainsecret.VaultKV2Reference `json:"vaultKv2"`
+	ScopeType   domainsecret.ScopeType          `json:"scopeType"`
+	ScopeID     string                          `json:"scopeId"`
+	Bindings    []sohaapi.SecretBinding         `json:"bindings"`
+}
+
+func (r secretCreateRequest) input() domainsecret.CreateInput {
+	return domainsecret.CreateInput{
+		Name: r.Name, Description: r.Description, Value: r.Value, VaultKV2: r.VaultKV2,
+		ScopeType: r.ScopeType, ScopeID: r.ScopeID, Bindings: secretBindings(r.Bindings),
+	}
 }
 
 type secretUpdateRequest struct {
@@ -142,7 +159,7 @@ func (h *SecretHandler) ListVersions(c *gin.Context) {
 }
 
 func (h *SecretHandler) Rotate(c *gin.Context) {
-	var request sohaapi.SecretRotateRequest
+	var request domainsecret.RotateInput
 	if err := c.ShouldBindJSON(&request); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid secret rotation payload")
 		return
@@ -153,6 +170,14 @@ func (h *SecretHandler) Rotate(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func secretBindings(items []sohaapi.SecretBinding) []domainsecret.Binding {
+	bindings := make([]domainsecret.Binding, 0, len(items))
+	for _, binding := range items {
+		bindings = append(bindings, domainsecret.Binding{TargetType: string(binding.TargetType), TargetRef: binding.TargetRef})
+	}
+	return bindings
 }
 
 func (h *SecretHandler) RevokeVersion(c *gin.Context) {

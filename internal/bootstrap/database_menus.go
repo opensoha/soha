@@ -170,6 +170,7 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "settings-overview", ParentID: "settings", Path: "/settings/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true, Roles: []string{"admin"}},
 	{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登陆设置", LabelEN: "Login Settings", IconKey: "shield", Section: "users", SortOrder: 60, Enabled: true, Roles: []string{"admin"}},
 	{ID: "settings-source-control", ParentID: "settings", Path: "/settings/source-control", LabelZH: "代码源", LabelEN: "Source Control", IconKey: "code", Section: "integrations", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
+	{ID: "settings-secrets", ParentID: "settings", Path: "/settings/secrets", LabelZH: "Secret Store", LabelEN: "Secret Store", IconKey: "key", Section: "integrations", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
 	{ID: "settings-branding", ParentID: "settings", Path: "/settings/branding", LabelZH: "品牌设置", LabelEN: "Branding Settings", IconKey: "palette", Section: "extensions", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
 	{ID: "settings-runtime-configuration", ParentID: "settings", Path: "/settings/runtime-configuration", LabelZH: "运行时配置", LabelEN: "Runtime Configuration", IconKey: "settings", Section: "operations", SortOrder: 80, Enabled: true, Roles: []string{"admin"}},
 }
@@ -502,6 +503,7 @@ func syncAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time)
 		{id: "identity-providers", section: "provider", sortOrder: 20},
 		{id: "identity-outposts", section: "provider", sortOrder: 30},
 		{id: "settings-source-control", section: "integrations", sortOrder: 10},
+		{id: "settings-secrets", section: "integrations", sortOrder: 20},
 		{id: "identity-policies", section: "provider", sortOrder: 40},
 		{id: "access-users", section: "users", sortOrder: 10},
 		{id: "access-roles", section: "users", sortOrder: 20},
