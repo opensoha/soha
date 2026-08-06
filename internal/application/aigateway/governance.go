@@ -15,7 +15,7 @@ import (
 )
 
 func (s *Service) GovernanceStatus(ctx context.Context, principal domainidentity.Principal, input domainaigateway.GovernanceStatusRequest) (domainaigateway.GovernanceStatus, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayView); err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
 	if !s.governanceRepositoriesConfigured() {

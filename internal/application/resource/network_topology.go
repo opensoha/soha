@@ -8,11 +8,15 @@ import (
 	"sync"
 	"time"
 
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
 func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (domainresource.NetworkTopologyView, error) {
+	if _, _, err := n.authorizeResourceGroup(ctx, principal, clusterID, namespace, "network", "NetworkTopology", domainaccess.ActionView); err != nil {
+		return domainresource.NetworkTopologyView{}, err
+	}
 	view := domainresource.NetworkTopologyView{
 		ClusterID:   clusterID,
 		Namespace:   namespace,
@@ -49,46 +53,56 @@ func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidenti
 		}()
 	}
 
-	run(func() error {
-		items, err := n.ListServices(ctx, principal, clusterID, namespace)
-		mu.Lock()
-		services = items
-		mu.Unlock()
-		recordWarning("services", err)
-		return err
-	})
-	run(func() error {
-		items, err := n.ListIngresses(ctx, principal, clusterID, namespace)
-		mu.Lock()
-		ingresses = items
-		mu.Unlock()
-		recordWarning("ingresses", err)
-		return err
-	})
-	run(func() error {
-		items, err := n.ListHTTPRoutes(ctx, principal, clusterID, namespace)
-		mu.Lock()
-		httpRoutes = items
-		mu.Unlock()
-		recordWarning("httpRoutes", err)
-		return err
-	})
-	run(func() error {
-		items, err := n.ListGateways(ctx, principal, clusterID, namespace)
-		mu.Lock()
-		gateways = items
-		mu.Unlock()
-		recordWarning("gateways", err)
-		return err
-	})
-	run(func() error {
-		items, err := n.pods.ListPods(ctx, principal, clusterID, namespace)
-		mu.Lock()
-		pods = items
-		mu.Unlock()
-		recordWarning("pods", err)
-		return err
-	})
+	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "Service") {
+		run(func() error {
+			items, err := n.ListServices(ctx, principal, clusterID, namespace)
+			mu.Lock()
+			services = items
+			mu.Unlock()
+			recordWarning("services", err)
+			return err
+		})
+	}
+	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "Ingress") {
+		run(func() error {
+			items, err := n.ListIngresses(ctx, principal, clusterID, namespace)
+			mu.Lock()
+			ingresses = items
+			mu.Unlock()
+			recordWarning("ingresses", err)
+			return err
+		})
+	}
+	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "HTTPRoute") {
+		run(func() error {
+			items, err := n.ListHTTPRoutes(ctx, principal, clusterID, namespace)
+			mu.Lock()
+			httpRoutes = items
+			mu.Unlock()
+			recordWarning("httpRoutes", err)
+			return err
+		})
+	}
+	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "Gateway") {
+		run(func() error {
+			items, err := n.ListGateways(ctx, principal, clusterID, namespace)
+			mu.Lock()
+			gateways = items
+			mu.Unlock()
+			recordWarning("gateways", err)
+			return err
+		})
+	}
+	if n.canViewRelatedKind(ctx, principal, clusterID, namespace, "Pod") {
+		run(func() error {
+			items, err := n.pods.ListPods(ctx, principal, clusterID, namespace)
+			mu.Lock()
+			pods = items
+			mu.Unlock()
+			recordWarning("pods", err)
+			return err
+		})
+	}
 
 	wg.Wait()
 	if firstErr != nil && len(services) == 0 && len(ingresses) == 0 && len(httpRoutes) == 0 && len(gateways) == 0 && len(pods) == 0 {

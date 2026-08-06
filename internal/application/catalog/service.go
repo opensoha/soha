@@ -112,7 +112,7 @@ func (s *Service) GetApplicationEnvironment(ctx context.Context, principal domai
 }
 
 func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationEnvManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "create")); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	if strings.TrimSpace(input.ApplicationID) == "" || strings.TrimSpace(input.EnvironmentID) == "" {
@@ -129,7 +129,7 @@ func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal do
 }
 
 func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationEnvManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update")); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	if strings.TrimSpace(input.ApplicationID) == "" || strings.TrimSpace(input.EnvironmentID) == "" {
@@ -153,7 +153,7 @@ func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal do
 }
 
 func (s *Service) DeleteApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationEnvManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "delete")); err != nil {
 		return err
 	}
 	item, err := s.repo.GetApplicationEnvironment(ctx, id)
@@ -185,7 +185,7 @@ func (s *Service) GetBuildTemplateUsage(ctx context.Context, principal domainide
 }
 
 func (s *Service) CreateBuildTemplate(ctx context.Context, principal domainidentity.Principal, input domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBuildTemplatesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryBuildTemplatesManage, "create")); err != nil {
 		return domaincatalog.BuildTemplate{}, err
 	}
 	input = normalizeBuildTemplateInput(input)
@@ -203,7 +203,7 @@ func (s *Service) CreateBuildTemplate(ctx context.Context, principal domainident
 }
 
 func (s *Service) UpdateBuildTemplate(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBuildTemplatesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryBuildTemplatesManage, "update")); err != nil {
 		return domaincatalog.BuildTemplate{}, err
 	}
 	input = normalizeBuildTemplateInput(input)
@@ -222,7 +222,7 @@ func (s *Service) UpdateBuildTemplate(ctx context.Context, principal domainident
 }
 
 func (s *Service) DeleteBuildTemplate(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBuildTemplatesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryBuildTemplatesManage, "delete")); err != nil {
 		return err
 	}
 	if err := normalizeRepoError(s.repo.DeleteBuildTemplate(ctx, id)); err != nil {
@@ -247,7 +247,7 @@ func (s *Service) GetWorkflowTemplateUsage(ctx context.Context, principal domain
 }
 
 func (s *Service) CreateWorkflowTemplate(ctx context.Context, principal domainidentity.Principal, input domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryWorkflowTemplatesManage, "create")); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
 	}
 	input = normalizeWorkflowTemplateInput(input)
@@ -265,7 +265,7 @@ func (s *Service) CreateWorkflowTemplate(ctx context.Context, principal domainid
 }
 
 func (s *Service) UpdateWorkflowTemplate(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryWorkflowTemplatesManage, "update")); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
 	}
 	input = normalizeWorkflowTemplateInput(input)
@@ -284,7 +284,7 @@ func (s *Service) UpdateWorkflowTemplate(ctx context.Context, principal domainid
 }
 
 func (s *Service) DeleteWorkflowTemplate(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryWorkflowTemplatesManage, "delete")); err != nil {
 		return err
 	}
 	if err := normalizeRepoError(s.repo.DeleteWorkflowTemplate(ctx, id)); err != nil {

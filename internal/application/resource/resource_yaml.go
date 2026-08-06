@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -58,6 +59,11 @@ func (g *GenericResources) GetResourceYAML(ctx context.Context, principal domain
 	connection, _, err := g.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionView)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
+	}
+	if strings.EqualFold(strings.TrimSpace(kind), "Secret") {
+		if err := g.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformConfigurationSecretDataView); err != nil {
+			return domainresource.ResourceYAMLView{}, err
+		}
 	}
 	var item domainresource.ResourceYAMLView
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {

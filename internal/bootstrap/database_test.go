@@ -319,6 +319,7 @@ func TestDefaultMenuSeedsIncludeVirtualizationWorkbench(t *testing.T) {
 		"virtualization-workbench-vms",
 		"virtualization-workbench-clusters",
 		"virtualization-workbench-images",
+		"virtualization-workbench-storage",
 		"virtualization-workbench-flavors",
 		"virtualization-workbench-operations",
 		"virtualization-workbench-sync",
@@ -350,6 +351,7 @@ func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T
 		"compute-workbench":                  "/compute",
 		"compute-workbench-overview":         "/compute/overview",
 		"virtualization-workbench-clusters":  "/compute/virtualization/clusters",
+		"virtualization-workbench-storage":   "/compute/virtualization/storage",
 		"docker-workbench-hosts":             "/compute/runtimes/hosts",
 		"compute-workbench-tasks-sync":       "/compute/tasks/sync",
 		"compute-workbench-tasks-build":      "/compute/tasks/build",
@@ -395,7 +397,13 @@ func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T
 
 func TestComputeWorkbenchSeedsBindDefaultResourceRoles(t *testing.T) {
 	for _, item := range defaultMenuSeeds() {
-		if !isComputeMenuSeed(item) && !isVirtualizationMenuSeed(item) && !isDockerMenuSeed(item) {
+		if isVirtualizationMenuSeed(item) {
+			if len(item.Roles) != 0 {
+				t.Fatalf("virtualization menu %s must rely on permissions, got roles %v", item.ID, item.Roles)
+			}
+			continue
+		}
+		if !isComputeMenuSeed(item) && !isDockerMenuSeed(item) {
 			continue
 		}
 		for _, role := range defaultComputeRoles {

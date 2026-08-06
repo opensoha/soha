@@ -9,7 +9,9 @@ import (
 type platformMutationSecuritySurfaceEntry struct {
 	ResourceKind      string
 	Action            string
+	PermissionKey     string
 	CapabilityKey     string
+	DynamicPermission bool
 	AuditRequired     bool
 	OperationRequired bool
 }
@@ -26,10 +28,18 @@ func platformMutationSecuritySurface(method, path string) (platformMutationSecur
 		return platformMutationSecuritySurfaceEntry{}, false
 	}
 
+	action := platformMutationAction(method, path)
+	dynamicPermission := strings.Contains(path, "/resource-creation/")
+	permissionKey := appaccess.PermPlatformResourceCreate
+	if !dynamicPermission {
+		permissionKey = appaccess.PlatformActionPermission(platformMutationResourceGroup(path), resourceKind, action)
+	}
 	return platformMutationSecuritySurfaceEntry{
 		ResourceKind:      resourceKind,
-		Action:            platformMutationAction(method, path),
+		Action:            action,
+		PermissionKey:     permissionKey,
 		CapabilityKey:     platformMutationCapabilityKey(path),
+		DynamicPermission: dynamicPermission,
 		AuditRequired:     true,
 		OperationRequired: true,
 	}, true
@@ -60,6 +70,7 @@ type nonPlatformMutationSecuritySurfaceEntry struct {
 	ResourceKind      string
 	Action            string
 	PermissionKey     string
+	DynamicPermission bool
 	ScopeRequired     bool
 	AuditRequired     bool
 	OperationRequired bool
@@ -220,8 +231,14 @@ func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 		return nonPlatformMutationEntry("VirtualizationCluster", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationClustersManage, false), true
 	case path == "/api/v1/virtualization/vms/plan":
 		return nonPlatformMutationEntry("VirtualMachinePlan", "plan", appaccess.PermVirtualizationVMsView, false), true
+	case path == "/api/v1/virtualization/vms":
+		return nonPlatformMutationEntry("VirtualMachine", "create", appaccess.PermVirtualizationVMsCreate, false), true
+	case strings.HasSuffix(path, "/power"):
+		return nonPlatformMutationEntry("VirtualMachine", "power", appaccess.PermVirtualizationVMsPower, false), true
 	case strings.HasPrefix(path, "/api/v1/virtualization/vms"):
-		return nonPlatformMutationEntry("VirtualMachine", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationVMsManage, false), true
+		entry := nonPlatformMutationEntry("VirtualMachine", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationVMsManage, false)
+		entry.DynamicPermission = true
+		return entry, true
 	case strings.HasPrefix(path, "/api/v1/virtualization/images"):
 		return nonPlatformMutationEntry("VirtualizationImage", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationImagesManage, false), true
 	case strings.HasPrefix(path, "/api/v1/virtualization/flavors"):
@@ -249,7 +266,9 @@ func dockerRuntimeMutationSecuritySurface(method, path string) (nonPlatformMutat
 	case strings.HasPrefix(path, "/api/v1/docker/containers/start"):
 		return nonPlatformMutationEntry("DockerContainer", "start", appaccess.PermDockerServicesManage, false), true
 	case strings.HasPrefix(path, "/api/v1/docker/services/"):
-		return nonPlatformMutationEntry("DockerService", nonPlatformMutationAction(method, path), appaccess.PermDockerServicesManage, false), true
+		entry := nonPlatformMutationEntry("DockerService", nonPlatformMutationAction(method, path), appaccess.PermDockerServicesManage, false)
+		entry.DynamicPermission = strings.HasSuffix(path, "/actions")
+		return entry, true
 	case strings.HasPrefix(path, "/api/v1/docker/ports"):
 		return nonPlatformMutationEntry("DockerPortMapping", nonPlatformMutationAction(method, path), appaccess.PermDockerPortsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/docker/templates"):
@@ -307,9 +326,9 @@ func systemMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 func accessMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	switch {
 	case strings.HasPrefix(path, "/api/v1/access/identity-links") || strings.HasPrefix(path, "/api/v1/access/identity-link-suppressions"):
-		return nonPlatformMutationEntry("IdentityLink", nonPlatformMutationAction(method, path), appaccess.PermAccessIdentityLinkManage, false), true
+		return nonPlatformMutationEntry("IdentityLink", "unlink", appaccess.ManagedActionPermission(appaccess.PermAccessIdentityLinkManage, "unlink"), false), true
 	case strings.HasPrefix(path, "/api/v1/access/directory-conflicts"):
-		return nonPlatformMutationEntry("DirectoryConflict", nonPlatformMutationAction(method, path), appaccess.PermAccessDirectoryPeopleManage, false), true
+		return nonPlatformMutationEntry("DirectoryConflict", "resolve", appaccess.ManagedActionPermission(appaccess.PermAccessDirectoryPeopleManage, "resolve"), false), true
 	case strings.HasPrefix(path, "/api/v1/access/directory-connections") && (strings.Contains(path, "/sync") || strings.HasSuffix(path, "/validate") || strings.Contains(path, "/runs/")):
 		return nonPlatformMutationEntry("DirectorySyncRun", nonPlatformMutationAction(method, path), appaccess.PermAccessDirectorySync, false), true
 	case strings.HasPrefix(path, "/api/v1/access/directory-connections"):
@@ -341,21 +360,21 @@ func aiGatewayMutationSecuritySurface(method, path string) (nonPlatformMutationS
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/prompts/get"):
 		return nonPlatformMutationEntry("AIGatewayPrompt", "get", appaccess.PermAIGatewayInvoke, true), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/approval-requests/"):
-		return nonPlatformMutationEntry("AIGatewayApprovalRequest", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayInvoke, true), true
+		return nonPlatformMutationEntry("AIGatewayApprovalRequest", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayApprovalsManage, true), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/personal-access-tokens"):
-		return nonPlatformMutationEntry("AIGatewayPersonalAccessToken", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayManage, false), true
+		return nonPlatformMutationEntry("AIGatewayPersonalAccessToken", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayTokensManage, false), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/service-accounts"):
-		return nonPlatformMutationEntry("AIGatewayServiceAccount", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayManage, false), true
+		return nonPlatformMutationEntry("AIGatewayServiceAccount", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayTokensManage, false), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/service-account-tokens"):
-		return nonPlatformMutationEntry("AIGatewayServiceAccountToken", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayManage, false), true
+		return nonPlatformMutationEntry("AIGatewayServiceAccountToken", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayTokensManage, false), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/ai-clients"):
-		return nonPlatformMutationEntry("AIGatewayAIClient", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayManage, false), true
+		return nonPlatformMutationEntry("AIGatewayAIClient", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayClientsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/tool-grants"):
-		return nonPlatformMutationEntry("AIGatewayToolGrant", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayManage, false), true
+		return nonPlatformMutationEntry("AIGatewayToolGrant", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayGrantsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/access-policies"):
-		return nonPlatformMutationEntry("AIGatewayAccessPolicy", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayManage, false), true
+		return nonPlatformMutationEntry("AIGatewayAccessPolicy", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayPoliciesManage, false), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/skill-bindings"):
-		return nonPlatformMutationEntry("AIGatewaySkillBinding", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayManage, false), true
+		return nonPlatformMutationEntry("AIGatewaySkillBinding", nonPlatformMutationAction(method, path), appaccess.PermAIGatewaySkillsManage, false), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }
@@ -365,7 +384,13 @@ func pluginMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 	case strings.HasPrefix(path, "/api/v1/plugins/install"):
 		return nonPlatformMutationEntry("Plugin", "install", appaccess.PermPluginInstall, false), true
 	case strings.HasPrefix(path, "/api/v1/plugins/") && strings.HasSuffix(path, "/config"):
-		return nonPlatformMutationEntry("PluginConfig", "update", appaccess.PermPluginConfigureSecrets, false), true
+		return nonPlatformMutationEntry("PluginConfig", "update", appaccess.PermPluginConfigure, false), true
+	case strings.HasPrefix(path, "/api/v1/plugins/") && (strings.HasSuffix(path, "/enable") || strings.HasSuffix(path, "/disable")):
+		return nonPlatformMutationEntry("Plugin", "lifecycle", appaccess.PermPluginLifecycle, false), true
+	case strings.HasPrefix(path, "/api/v1/plugins/") && strings.HasSuffix(path, "/upgrade"):
+		return nonPlatformMutationEntry("Plugin", "upgrade", appaccess.PermPluginUpgrade, false), true
+	case method == "DELETE" && strings.HasPrefix(path, "/api/v1/plugins/"):
+		return nonPlatformMutationEntry("Plugin", "remove", appaccess.PermPluginRemove, false), true
 	case strings.HasPrefix(path, "/api/v1/plugins/"):
 		return nonPlatformMutationEntry("Plugin", nonPlatformMutationAction(method, path), appaccess.PermPluginManage, false), true
 	}
@@ -373,8 +398,15 @@ func pluginMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 }
 
 func secretMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
-	if strings.HasPrefix(path, "/api/v1/secrets") {
-		return nonPlatformMutationEntry("Secret", nonPlatformMutationAction(method, path), appaccess.PermSecretManage, true), true
+	switch {
+	case method == "POST" && strings.HasSuffix(path, "/revoke"):
+		return nonPlatformMutationEntry("SecretVersion", "revoke", appaccess.PermSecretRevoke, true), true
+	case method == "POST" && strings.Contains(path, "/versions"):
+		return nonPlatformMutationEntry("SecretVersion", "rotate", appaccess.PermSecretRotate, true), true
+	case method == "POST" && path == "/api/v1/secrets":
+		return nonPlatformMutationEntry("Secret", "create", appaccess.PermSecretCreate, true), true
+	case (method == "PATCH" || method == "DELETE") && strings.HasPrefix(path, "/api/v1/secrets/"):
+		return nonPlatformMutationEntry("Secret", "update", appaccess.PermSecretUpdate, true), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }
@@ -426,6 +458,11 @@ func settingsMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 }
 
 func nonPlatformMutationEntry(resourceKind, action, permissionKey string, scopeRequired bool) nonPlatformMutationSecuritySurfaceEntry {
+	if strings.HasSuffix(permissionKey, ".manage") {
+		if exact := appaccess.ManagedActionPermission(permissionKey, action); appaccess.IsActiveAssignablePermission(exact) {
+			permissionKey = exact
+		}
+	}
 	return nonPlatformMutationSecuritySurfaceEntry{
 		ResourceKind:  resourceKind,
 		Action:        action,
@@ -525,6 +562,10 @@ func platformMutationAction(method, path string) string {
 		return "rollback"
 	case strings.Contains(path, "/scale"):
 		return "scale"
+	case strings.HasSuffix(path, "/drain"):
+		return "drain"
+	case strings.HasSuffix(path, "/suspend"):
+		return "suspend"
 	case strings.Contains(path, "/yaml"):
 		return "update"
 	case strings.Contains(path, "/port-forwards") && method == "POST":
@@ -551,6 +592,15 @@ func platformMutationAction(method, path string) string {
 	default:
 		return strings.ToLower(method)
 	}
+}
+
+func platformMutationResourceGroup(path string) string {
+	for _, group := range []string{"workloads", "configuration", "network", "storage", "access-control", "extensions", "helm", "observability"} {
+		if strings.Contains(path, "/"+group+"/") {
+			return group
+		}
+	}
+	return "inventory"
 }
 
 func platformMutationCapabilityKey(path string) string {
@@ -596,6 +646,9 @@ func platformMutationCapabilityKey(path string) string {
 func platformMutationResourceKind(path string) string {
 	if path == "/api/v1/clusters" || strings.Contains(path, "/clusters/:clusterID") && !strings.Contains(path, "/clusters/:clusterID/") {
 		return "Cluster"
+	}
+	if strings.Contains(path, "/extensions/crds/") && !strings.Contains(path, "/resources/") {
+		return "CRD"
 	}
 	for _, resource := range platformMutationResourceKinds {
 		if strings.Contains(path, resource.pathSegment) {

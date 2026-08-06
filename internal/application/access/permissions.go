@@ -5,6 +5,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode"
+)
+
+const (
+	PermPlatformConfigurationSecretDataView = "platform.configuration.secret-data.view"
+	PermPlatformHelmValuesView              = "platform.helm.values.view"
 )
 
 const (
@@ -14,16 +20,27 @@ const (
 	PermPlatformNodesView                 = "platform.nodes.view"
 	PermPlatformNamespacesView            = "platform.namespaces.view"
 	PermPlatformWorkloadsView             = "platform.workloads.view"
+	PermPlatformWorkloadsOverviewView     = "platform.workloads.overview.view"
 	PermPlatformConfigurationView         = "platform.configuration.view"
 	PermPlatformNetworkView               = "platform.network.view"
+	PermPlatformNetworkTopologyView       = "platform.network.topology.view"
 	PermPlatformStorageView               = "platform.storage.view"
 	PermPlatformExtensionsView            = "platform.extensions.view"
 	PermPlatformHelmView                  = "platform.helm.view"
 	PermPlatformClustersView              = "platform.clusters.view"
 	PermPlatformResourceCreate            = "platform.resource.create"
+	PermPlatformDeploymentCreate          = "platform.deployment.create"
+	PermPlatformDeploymentDelete          = "platform.deployment.delete"
 	PermPlatformDeploymentRestart         = "platform.deployment.restart"
 	PermPlatformDeploymentScale           = "platform.deployment.scale"
 	PermPlatformDeploymentRollback        = "platform.deployment.rollback"
+	PermPlatformDeploymentUpdate          = "platform.deployment.update"
+	PermPlatformDeploymentView            = "platform.deployment.view"
+	PermPlatformPodsDelete                = "platform.pods.delete"
+	PermPlatformPodsExec                  = "platform.pods.exec"
+	PermPlatformPodsLogs                  = "platform.pods.logs"
+	PermPlatformPodsView                  = "platform.pods.view"
+	PermPlatformAccessControlView         = "platform.access-control.view"
 	PermPlatformRBACManage                = "platform.rbac.manage"
 	PermPlatformRBACEscalate              = "platform.rbac.escalate"
 	PermPlatformRBACBind                  = "platform.rbac.bind"
@@ -110,16 +127,30 @@ const (
 	PermAIGatewayView                     = "ai.gateway.view"
 	PermAIGatewayInvoke                   = "ai.gateway.invoke"
 	PermAIGatewayManage                   = "ai.gateway.manage"
+	PermAIGatewayApprovalsManage          = "ai.gateway.approvals.manage"
+	PermAIGatewayClientsManage            = "ai.gateway.clients.manage"
+	PermAIGatewayGrantsManage             = "ai.gateway.grants.manage"
+	PermAIGatewayPoliciesManage           = "ai.gateway.policies.manage"
+	PermAIGatewaySkillsManage             = "ai.gateway.skills.manage"
+	PermAIGatewayTokensManage             = "ai.gateway.tokens.manage"
 	PermAIGatewayRelayView                = "ai.gateway.relay.view"
 	PermAIGatewayRelayInvoke              = "ai.gateway.relay.invoke"
 	PermAIGatewayRelayManage              = "ai.gateway.relay.manage"
 	PermPluginView                        = "plugin.view"
 	PermPluginInstall                     = "plugin.install"
 	PermPluginManage                      = "plugin.manage"
+	PermPluginConfigure                   = "plugin.configure"
 	PermPluginConfigureSecrets            = "plugin.configure_secrets"
+	PermPluginLifecycle                   = "plugin.lifecycle"
+	PermPluginRemove                      = "plugin.remove"
+	PermPluginUpgrade                     = "plugin.upgrade"
 	PermSecretView                        = "secret.view"
 	PermSecretManage                      = "secret.manage"
 	PermSecretUse                         = "secret.use"
+	PermSecretCreate                      = "secret.create"
+	PermSecretRevoke                      = "secret.revoke"
+	PermSecretRotate                      = "secret.rotate"
+	PermSecretUpdate                      = "secret.update"
 	PermIdentityPortalView                = "identity.portal.view"
 	PermIdentityApplicationsView          = "identity.applications.view"
 	PermIdentityApplicationsManage        = "identity.applications.manage"
@@ -133,10 +164,15 @@ const (
 	PermVirtualizationOverviewView        = "virtualization.overview.view"
 	PermVirtualizationVMsView             = "virtualization.vms.view"
 	PermVirtualizationVMsManage           = "virtualization.vms.manage"
+	PermVirtualizationVMsCreate           = "virtualization.vms.create"
+	PermVirtualizationVMsPower            = "virtualization.vms.power"
+	PermVirtualizationVMsResize           = "virtualization.vms.resize"
+	PermVirtualizationVMsDelete           = "virtualization.vms.delete"
 	PermVirtualizationClustersView        = "virtualization.clusters.view"
 	PermVirtualizationClustersManage      = "virtualization.clusters.manage"
 	PermVirtualizationImagesView          = "virtualization.images.view"
 	PermVirtualizationImagesManage        = "virtualization.images.manage"
+	PermVirtualizationStorageView         = "virtualization.storage.view"
 	PermVirtualizationFlavorsView         = "virtualization.flavors.view"
 	PermVirtualizationFlavorsManage       = "virtualization.flavors.manage"
 	PermVirtualizationOperationsView      = "virtualization.operations.view"
@@ -206,16 +242,28 @@ var allPermissionKeySet = []string{
 	PermPlatformNodesView,
 	PermPlatformNamespacesView,
 	PermPlatformWorkloadsView,
+	PermPlatformWorkloadsOverviewView,
 	PermPlatformConfigurationView,
+	PermPlatformConfigurationSecretDataView,
 	PermPlatformNetworkView,
+	PermPlatformNetworkTopologyView,
 	PermPlatformStorageView,
 	PermPlatformExtensionsView,
 	PermPlatformHelmView,
+	PermPlatformHelmValuesView,
 	PermPlatformClustersView,
 	PermPlatformResourceCreate,
+	PermPlatformDeploymentCreate,
+	PermPlatformDeploymentDelete,
 	PermPlatformDeploymentRestart,
 	PermPlatformDeploymentScale,
 	PermPlatformDeploymentRollback,
+	PermPlatformDeploymentUpdate,
+	PermPlatformDeploymentView,
+	PermPlatformPodsDelete,
+	PermPlatformPodsExec,
+	PermPlatformPodsLogs,
+	PermPlatformPodsView,
 	PermPlatformRBACManage,
 	PermPlatformRBACEscalate,
 	PermPlatformRBACBind,
@@ -302,16 +350,30 @@ var allPermissionKeySet = []string{
 	PermAIGatewayView,
 	PermAIGatewayInvoke,
 	PermAIGatewayManage,
+	PermAIGatewayApprovalsManage,
+	PermAIGatewayClientsManage,
+	PermAIGatewayGrantsManage,
+	PermAIGatewayPoliciesManage,
+	PermAIGatewaySkillsManage,
+	PermAIGatewayTokensManage,
 	PermAIGatewayRelayView,
 	PermAIGatewayRelayInvoke,
 	PermAIGatewayRelayManage,
 	PermPluginView,
 	PermPluginInstall,
 	PermPluginManage,
+	PermPluginConfigure,
 	PermPluginConfigureSecrets,
+	PermPluginLifecycle,
+	PermPluginRemove,
+	PermPluginUpgrade,
 	PermSecretView,
 	PermSecretManage,
 	PermSecretUse,
+	PermSecretCreate,
+	PermSecretRevoke,
+	PermSecretRotate,
+	PermSecretUpdate,
 	PermIdentityPortalView,
 	PermIdentityApplicationsView,
 	PermIdentityApplicationsManage,
@@ -325,10 +387,15 @@ var allPermissionKeySet = []string{
 	PermVirtualizationOverviewView,
 	PermVirtualizationVMsView,
 	PermVirtualizationVMsManage,
+	PermVirtualizationVMsCreate,
+	PermVirtualizationVMsPower,
+	PermVirtualizationVMsResize,
+	PermVirtualizationVMsDelete,
 	PermVirtualizationClustersView,
 	PermVirtualizationClustersManage,
 	PermVirtualizationImagesView,
 	PermVirtualizationImagesManage,
+	PermVirtualizationStorageView,
 	PermVirtualizationFlavorsView,
 	PermVirtualizationFlavorsManage,
 	PermVirtualizationOperationsView,
@@ -387,7 +454,78 @@ var allPermissionKeySet = []string{
 }
 
 func allPermissionKeys() []string {
-	return append([]string(nil), allPermissionKeySet...)
+	keys := append([]string(nil), allPermissionKeySet...)
+	if catalog, err := loadPermissionCatalog(); err == nil {
+		for _, permission := range catalog.Permissions {
+			keys = append(keys, permission.Key)
+		}
+	}
+	return normalizePermissionKeys(keys)
+}
+
+func ManagedActionPermission(managePermissionKey, action string) string {
+	managePermissionKey = strings.TrimSpace(managePermissionKey)
+	action = strings.TrimSpace(action)
+	if !strings.HasSuffix(managePermissionKey, ".manage") || action == "" {
+		panic("managed action permission requires a .manage key and non-empty action")
+	}
+	return strings.TrimSuffix(managePermissionKey, ".manage") + "." + action
+}
+
+func PlatformActionPermission(resourceGroup, kind, action string) string {
+	resourceGroup = strings.TrimSpace(resourceGroup)
+	kind = strings.TrimSpace(kind)
+	action = strings.TrimSpace(action)
+	if kind == "" || action == "" {
+		panic("platform action permission requires non-empty kind and action")
+	}
+
+	var resource string
+	switch strings.ToLower(kind) {
+	case "deployment":
+		resource = "deployment"
+	case "pod":
+		resource = "pods"
+	case "cluster":
+		resource = "clusters"
+	case "namespace":
+		resource = "namespaces"
+	case "node":
+		resource = "nodes"
+	case "helmrelease":
+		resource = "helm.releases"
+	case "logcollection":
+		resource = "observability.logging"
+	case "crd", "customresourcedefinition":
+		resource = "extensions.crds"
+	default:
+		if resourceGroup == "extensions" {
+			resource = "extensions.custom-resources"
+		} else {
+			resource = resourceGroup + "." + pluralPermissionResource(kind)
+		}
+	}
+	return "platform." + strings.Trim(resource, ".") + "." + action
+}
+
+func pluralPermissionResource(kind string) string {
+	runes := []rune(strings.TrimSpace(kind))
+	var name strings.Builder
+	for index, current := range runes {
+		if index > 0 && unicode.IsUpper(current) && (unicode.IsLower(runes[index-1]) || unicode.IsDigit(runes[index-1])) {
+			name.WriteByte('-')
+		}
+		name.WriteRune(unicode.ToLower(current))
+	}
+	value := name.String()
+	switch {
+	case strings.HasSuffix(value, "y") && len(value) > 1 && !strings.ContainsRune("aeiou", rune(value[len(value)-2])):
+		return strings.TrimSuffix(value, "y") + "ies"
+	case strings.HasSuffix(value, "s"), strings.HasSuffix(value, "x"), strings.HasSuffix(value, "z"), strings.HasSuffix(value, "ch"), strings.HasSuffix(value, "sh"):
+		return value + "es"
+	default:
+		return value + "s"
+	}
 }
 
 var opsRolePermissionKeys = []string{
@@ -398,15 +536,22 @@ var opsRolePermissionKeys = []string{
 	PermPlatformNamespacesView,
 	PermPlatformWorkloadsView,
 	PermPlatformConfigurationView,
+	PermPlatformConfigurationSecretDataView,
 	PermPlatformNetworkView,
 	PermPlatformStorageView,
 	PermPlatformExtensionsView,
 	PermPlatformHelmView,
+	PermPlatformHelmValuesView,
 	PermPlatformClustersView,
 	PermPlatformResourceCreate,
+	PermPlatformDeploymentCreate,
 	PermPlatformDeploymentRestart,
 	PermPlatformDeploymentScale,
 	PermPlatformDeploymentRollback,
+	PermPlatformDeploymentUpdate,
+	PermPlatformDeploymentView,
+	PermPlatformPodsLogs,
+	PermPlatformPodsView,
 	PermDeliveryApplicationsView,
 	PermDeliveryApplicationsCreate,
 	PermDeliveryApplicationsUpdate,
@@ -484,9 +629,14 @@ var opsRolePermissionKeys = []string{
 	PermVirtualizationOverviewView,
 	PermVirtualizationVMsView,
 	PermVirtualizationVMsManage,
+	PermVirtualizationVMsCreate,
+	PermVirtualizationVMsPower,
+	PermVirtualizationVMsResize,
+	PermVirtualizationVMsDelete,
 	PermVirtualizationClustersView,
 	PermVirtualizationImagesView,
 	PermVirtualizationImagesManage,
+	PermVirtualizationStorageView,
 	PermVirtualizationFlavorsView,
 	PermVirtualizationOperationsView,
 	PermVirtualizationSyncView,
@@ -544,6 +694,9 @@ var developerRolePermissionKeys = []string{
 	PermPlatformHelmView,
 	PermPlatformDeploymentRestart,
 	PermPlatformDeploymentScale,
+	PermPlatformDeploymentView,
+	PermPlatformPodsLogs,
+	PermPlatformPodsView,
 	PermObserveMonitoringView,
 	PermObserveAlertsView,
 	PermObserveAlertsAcknowledge,
@@ -617,6 +770,9 @@ var readonlyRolePermissionKeys = []string{
 	PermPlatformExtensionsView,
 	PermPlatformHelmView,
 	PermPlatformClustersView,
+	PermPlatformDeploymentView,
+	PermPlatformPodsLogs,
+	PermPlatformPodsView,
 	PermDeliveryApplicationsView,
 	PermDeliveryApplicationServicesView,
 	PermDeliveryApplicationEnvView,

@@ -107,7 +107,7 @@ func (s *Service) GetLogCollection(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) PreflightLogCollection(ctx context.Context, principal domainidentity.Principal, clusterID string, input sohaapi.LogCollectionPreflightInput) (sohaapi.LogCollectionPlan, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveLogCollectionManage); err != nil {
+	if err := s.authorize(ctx, principal, "platform.observability.logging.enable"); err != nil {
 		return sohaapi.LogCollectionPlan{}, err
 	}
 	clusterID, connection, err := s.collectionConnection(ctx, clusterID)
@@ -128,7 +128,7 @@ func (s *Service) PreflightLogCollection(ctx context.Context, principal domainid
 }
 
 func (s *Service) EnableLogCollection(ctx context.Context, principal domainidentity.Principal, clusterID string, input sohaapi.LogCollectionEnableInput) (sohaapi.LogCollectionState, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveLogCollectionManage); err != nil {
+	if err := s.authorize(ctx, principal, "platform.observability.logging.enable"); err != nil {
 		return sohaapi.LogCollectionState{}, err
 	}
 	s.collectionMu.Lock()
@@ -253,7 +253,7 @@ func (s *Service) finalizeCollectionEnable(ctx context.Context, principal domain
 }
 
 func (s *Service) DisableLogCollection(ctx context.Context, principal domainidentity.Principal, clusterID string, input sohaapi.LogCollectionDisableInput) (sohaapi.LogCollectionState, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveLogCollectionManage); err != nil {
+	if err := s.authorize(ctx, principal, "platform.observability.logging.disable"); err != nil {
 		return sohaapi.LogCollectionState{}, err
 	}
 	if input.Action != sohaapi.LogCollectionDisableActionStop && input.Action != sohaapi.LogCollectionDisableActionUninstall {

@@ -145,7 +145,7 @@ func TestSecretLifecycleEncryptsPinsAndFailsClosed(t *testing.T) {
 	repo := newMemoryRepository()
 	audit := &captureAudit{}
 	service, err := New(repo, appaccess.NewPermissionResolver(testRoleReader{
-		"admin":     {appaccess.PermSecretView, appaccess.PermSecretManage, appaccess.PermSecretUse},
+		"admin":     {appaccess.PermSecretView, appaccess.PermSecretCreate, appaccess.PermSecretUpdate, appaccess.PermSecretRotate, appaccess.PermSecretRevoke, appaccess.PermSecretUse},
 		"developer": {appaccess.PermSecretView, appaccess.PermSecretUse},
 	}), audit, discardOperations{}, testSecretKeyring(t), nil)
 	if err != nil {
@@ -225,7 +225,7 @@ func TestVaultKV2SecretResolvesThroughExistingAuthorizationBoundary(t *testing.T
 	audit := &captureAudit{}
 	reader := &vaultReaderStub{value: "external-value"}
 	service, err := New(repo, appaccess.NewPermissionResolver(testRoleReader{
-		"admin":     {appaccess.PermSecretView, appaccess.PermSecretManage, appaccess.PermSecretUse},
+		"admin":     {appaccess.PermSecretView, appaccess.PermSecretCreate, appaccess.PermSecretUpdate, appaccess.PermSecretRotate, appaccess.PermSecretRevoke, appaccess.PermSecretUse},
 		"developer": {appaccess.PermSecretUse},
 	}), audit, discardOperations{}, testSecretKeyring(t), reader)
 	if err != nil {

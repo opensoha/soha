@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -35,7 +36,7 @@ func (w *Workloads) GetReplicationControllerDetail(ctx context.Context, principa
 				return w.direct.GetReplicationControllerDetail(ctx, clusterID, namespace, name)
 			})
 		},
-		finalize: func(item *domainresource.ReplicationControllerDetailView, decision domainaccess.Decision) {
+		finalize: func(item *domainresource.ReplicationControllerDetailView, decision domainaccess.Decision, _ domaincluster.Connection) {
 			item.AllowedActions = stringifyActions(decision.AllowedActions)
 		},
 	})

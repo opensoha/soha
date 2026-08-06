@@ -60,7 +60,7 @@ type oauthState struct {
 }
 
 func (s *Service) BeginOAuth(ctx context.Context, principal domainidentity.Principal, id string) (sohaapi.SystemIntegrationOAuthAuthorization, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsSystemIntegrationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "update")); err != nil {
 		return sohaapi.SystemIntegrationOAuthAuthorization{}, err
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(id))

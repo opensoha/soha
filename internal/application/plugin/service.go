@@ -230,7 +230,7 @@ func (s *Service) Install(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) Enable(ctx context.Context, principal domainidentity.Principal, pluginID string) (domainplugin.InstalledPlugin, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginLifecycle); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
 	item, err := s.repo.GetInstalled(ctx, pluginID)
@@ -268,7 +268,7 @@ func (s *Service) Enable(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Disable(ctx context.Context, principal domainidentity.Principal, pluginID string) (domainplugin.InstalledPlugin, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginLifecycle); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
 	item, err := s.repo.GetInstalled(ctx, pluginID)
@@ -290,7 +290,7 @@ func (s *Service) Disable(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principal, pluginID string, input domainplugin.PluginInstallRequest) (domainplugin.InstalledPlugin, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginUpgrade); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
 	current, err := s.repo.GetInstalled(ctx, pluginID)
@@ -348,7 +348,7 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) Configure(ctx context.Context, principal domainidentity.Principal, pluginID string, input domainplugin.PluginConfigRequest) (domainplugin.InstalledPlugin, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginConfigure); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
 	if len(input.SecretRefs) > 0 {
@@ -409,7 +409,7 @@ func (s *Service) Configure(ctx context.Context, principal domainidentity.Princi
 }
 
 func (s *Service) Remove(ctx context.Context, principal domainidentity.Principal, pluginID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginRemove); err != nil {
 		return err
 	}
 	item, err := s.repo.GetInstalled(ctx, pluginID)

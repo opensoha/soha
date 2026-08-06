@@ -19,6 +19,7 @@ const (
 	ActionRestart  Action = "restart"
 	ActionRollback Action = "rollback"
 	ActionScale    Action = "scale"
+	ActionSuspend  Action = "suspend"
 	ActionTrigger  Action = "trigger"
 	ActionLogs     Action = "logs"
 	ActionExec     Action = "exec"
@@ -75,15 +76,24 @@ type ContextAttributes struct {
 }
 
 type Request struct {
-	Principal identity.Principal
-	Action    Action
-	Subject   SubjectAttributes
-	Cluster   ClusterAttributes
-	Namespace NamespaceAttributes
-	Resource  ResourceAttributes
-	Delivery  DeliveryAttributes
-	Context   ContextAttributes
+	Principal     identity.Principal
+	PermissionKey string
+	Action        Action
+	Subject       SubjectAttributes
+	Cluster       ClusterAttributes
+	Namespace     NamespaceAttributes
+	Resource      ResourceAttributes
+	Delivery      DeliveryAttributes
+	Context       ContextAttributes
 }
+
+type DecisionStatus string
+
+const (
+	DecisionAllow            DecisionStatus = "allow"
+	DecisionDeny             DecisionStatus = "deny"
+	DecisionApprovalRequired DecisionStatus = "approval_required"
+)
 
 type ResourceScope struct {
 	Clusters                   []string `json:"clusters,omitempty"`
@@ -98,7 +108,12 @@ type ResourceScope struct {
 
 type Decision struct {
 	Allowed        bool           `json:"allowed"`
+	Status         DecisionStatus `json:"status"`
+	PermissionKey  string         `json:"permissionKey,omitempty"`
+	Action         Action         `json:"action,omitempty"`
 	Reason         string         `json:"reason"`
+	ReasonCode     string         `json:"reasonCode,omitempty"`
+	PolicyVersion  string         `json:"policyVersion,omitempty"`
 	AllowedActions []Action       `json:"allowedActions,omitempty"`
 	ResourceScope  *ResourceScope `json:"resourceScope,omitempty"`
 }

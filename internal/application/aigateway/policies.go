@@ -387,7 +387,7 @@ func activeItemsForPrincipal[T any](principal domainidentity.Principal, aiClient
 	return out, nil
 }
 func (s *Service) ListAIClients(ctx context.Context, principal domainidentity.Principal) ([]domainaigateway.AIClient, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, "ai.gateway.clients.view"); err != nil {
 		return nil, err
 	}
 	repo := s.clientRepository()
@@ -397,7 +397,7 @@ func (s *Service) ListAIClients(ctx context.Context, principal domainidentity.Pr
 	return repo.ListAIClients(ctx)
 }
 func (s *Service) CreateAIClient(ctx context.Context, principal domainidentity.Principal, input domainaigateway.AIClientInput) (domainaigateway.AIClient, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayClientsManage, "create")); err != nil {
 		return domainaigateway.AIClient{}, err
 	}
 	repo := s.clientRepository()
@@ -431,7 +431,7 @@ func (s *Service) CreateAIClient(ctx context.Context, principal domainidentity.P
 	return created, nil
 }
 func (s *Service) UpdateAIClient(ctx context.Context, principal domainidentity.Principal, clientID string, input domainaigateway.AIClientInput) (domainaigateway.AIClient, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayClientsManage, "update")); err != nil {
 		return domainaigateway.AIClient{}, err
 	}
 	repo := s.clientRepository()
@@ -465,7 +465,7 @@ func (s *Service) UpdateAIClient(ctx context.Context, principal domainidentity.P
 	return updated, nil
 }
 func (s *Service) ListToolGrants(ctx context.Context, principal domainidentity.Principal, filter domainaigateway.ToolGrantFilter) ([]domainaigateway.ToolGrant, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, "ai.gateway.grants.view"); err != nil {
 		return nil, err
 	}
 	repo := s.toolGrantRepository()
@@ -479,7 +479,7 @@ func (s *Service) ListToolGrants(ctx context.Context, principal domainidentity.P
 	return repo.ListToolGrants(ctx, filter)
 }
 func (s *Service) CreateToolGrant(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolGrantInput) (domainaigateway.ToolGrant, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayGrantsManage, "create")); err != nil {
 		return domainaigateway.ToolGrant{}, err
 	}
 	repo := s.toolGrantRepository()
@@ -506,7 +506,7 @@ func (s *Service) CreateToolGrant(ctx context.Context, principal domainidentity.
 	return created, nil
 }
 func (s *Service) DeleteToolGrant(ctx context.Context, principal domainidentity.Principal, grantID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayGrantsManage, "delete")); err != nil {
 		return err
 	}
 	repo := s.toolGrantRepository()
@@ -524,7 +524,7 @@ func (s *Service) DeleteToolGrant(ctx context.Context, principal domainidentity.
 	return nil
 }
 func (s *Service) ListAccessPolicies(ctx context.Context, principal domainidentity.Principal, filter domainaigateway.AccessPolicyFilter) ([]domainaigateway.AccessPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, "ai.gateway.policies.view"); err != nil {
 		return nil, err
 	}
 	repo := s.accessPolicyRepository()
@@ -541,7 +541,7 @@ func (s *Service) ListAccessPolicies(ctx context.Context, principal domainidenti
 	return repo.ListAccessPolicies(ctx, filter)
 }
 func (s *Service) CreateAccessPolicy(ctx context.Context, principal domainidentity.Principal, input domainaigateway.AccessPolicyInput) (domainaigateway.AccessPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayPoliciesManage, "create")); err != nil {
 		return domainaigateway.AccessPolicy{}, err
 	}
 	repo := s.accessPolicyRepository()
@@ -569,7 +569,7 @@ func (s *Service) CreateAccessPolicy(ctx context.Context, principal domainidenti
 	return created, nil
 }
 func (s *Service) UpdateAccessPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domainaigateway.AccessPolicyInput) (domainaigateway.AccessPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayPoliciesManage, "update")); err != nil {
 		return domainaigateway.AccessPolicy{}, err
 	}
 	repo := s.accessPolicyRepository()
@@ -597,7 +597,7 @@ func (s *Service) UpdateAccessPolicy(ctx context.Context, principal domainidenti
 	return updated, nil
 }
 func (s *Service) DeleteAccessPolicy(ctx context.Context, principal domainidentity.Principal, policyID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayPoliciesManage, "delete")); err != nil {
 		return err
 	}
 	repo := s.accessPolicyRepository()
@@ -615,7 +615,7 @@ func (s *Service) DeleteAccessPolicy(ctx context.Context, principal domainidenti
 	return nil
 }
 func (s *Service) ListSkillBindings(ctx context.Context, principal domainidentity.Principal, filter domainaigateway.SkillBindingFilter) ([]domainaigateway.SkillBinding, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, "ai.gateway.skills.view"); err != nil {
 		return nil, err
 	}
 	repo := s.skillBindingRepository()
@@ -629,7 +629,7 @@ func (s *Service) ListSkillBindings(ctx context.Context, principal domainidentit
 	return repo.ListSkillBindings(ctx, filter)
 }
 func (s *Service) CreateSkillBinding(ctx context.Context, principal domainidentity.Principal, input domainaigateway.SkillBindingInput) (domainaigateway.SkillBinding, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "create")); err != nil {
 		return domainaigateway.SkillBinding{}, err
 	}
 	repo := s.skillBindingRepository()
@@ -655,7 +655,7 @@ func (s *Service) CreateSkillBinding(ctx context.Context, principal domainidenti
 	return created, nil
 }
 func (s *Service) UpdateSkillBinding(ctx context.Context, principal domainidentity.Principal, bindingID string, input domainaigateway.SkillBindingInput) (domainaigateway.SkillBinding, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "update")); err != nil {
 		return domainaigateway.SkillBinding{}, err
 	}
 	repo := s.skillBindingRepository()
@@ -681,7 +681,7 @@ func (s *Service) UpdateSkillBinding(ctx context.Context, principal domainidenti
 	return updated, nil
 }
 func (s *Service) DeleteSkillBinding(ctx context.Context, principal domainidentity.Principal, bindingID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "delete")); err != nil {
 		return err
 	}
 	repo := s.skillBindingRepository()

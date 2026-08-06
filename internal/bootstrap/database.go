@@ -71,7 +71,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-08-04-secret-store-vault-kv2"
+const bootstrapSeedVersion = "2026-08-05-exact-platform-page-permissions"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -453,7 +453,11 @@ func seedRoles(ctx context.Context, db *gorm.DB) error {
 		if err != nil {
 			return fmt.Errorf("marshal capabilities for role %s: %w", name, err)
 		}
-		permissionKeys, err := json.Marshal(accessapp.PermissionKeysForRoles([]string{name}))
+		canonicalPermissionKeys, err := accessapp.CanonicalAssignablePermissionKeys(accessapp.PermissionKeysForRoles([]string{name}))
+		if err != nil {
+			return fmt.Errorf("canonicalize permission keys for role %s: %w", name, err)
+		}
+		permissionKeys, err := json.Marshal(canonicalPermissionKeys)
 		if err != nil {
 			return fmt.Errorf("marshal permission keys for role %s: %w", name, err)
 		}

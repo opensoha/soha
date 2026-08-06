@@ -259,6 +259,27 @@ func TestFetchOAuth2ProfileUsesConfiguredProfileFields(t *testing.T) {
 	}
 }
 
+func TestFetchOAuth2ProfileFallsBackToFeishuOpenID(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"open_id": "ou_1", "name": "Ada"},
+		})
+	}))
+	defer server.Close()
+
+	profile, err := (&Service{}).fetchOAuth2Profile(context.Background(), domainsettings.LoginProviderSettings{
+		ID: "feishu-main", Type: "feishu", UserInfoURL: server.URL, UserIDField: "sub",
+	}, &oauth2.Token{AccessToken: "access-token"})
+	if err != nil {
+		t.Fatalf("fetchOAuth2Profile() error = %v", err)
+	}
+	if profile.ID != "ou_1" {
+		t.Fatalf("profile ID = %q, want Feishu open_id", profile.ID)
+	}
+}
+
 func TestFetchOAuth2ProfileEnrichesFeishuDepartmentsWhenOrganizationSyncEnabled(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

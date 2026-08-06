@@ -422,7 +422,7 @@ func TestPlatformMutatingRoutesHaveSecuritySurface(t *testing.T) {
 		if !ok {
 			t.Fatalf("missing platform mutation security surface for %s %s", route.Method, route.Path)
 		}
-		if entry.ResourceKind == "" || entry.Action == "" || entry.CapabilityKey == "" {
+		if entry.ResourceKind == "" || entry.Action == "" || entry.PermissionKey == "" || entry.CapabilityKey == "" {
 			t.Fatalf("incomplete security surface for %s %s: %#v", route.Method, route.Path, entry)
 		}
 		if !entry.AuditRequired || !entry.OperationRequired {
@@ -430,6 +430,9 @@ func TestPlatformMutatingRoutesHaveSecuritySurface(t *testing.T) {
 		}
 		if _, ok := capabilityKeys[entry.CapabilityKey]; !ok {
 			t.Fatalf("unknown capability key for %s %s: %#v", route.Method, route.Path, entry)
+		}
+		if !entry.DynamicPermission && !appaccess.IsActiveAssignablePermission(entry.PermissionKey) {
+			t.Fatalf("platform mutation route must use an active exact permission for %s %s: %#v", route.Method, route.Path, entry)
 		}
 	}
 	if checked == 0 {
@@ -460,8 +463,8 @@ func TestNonPlatformMutatingRoutesHaveSecuritySurface(t *testing.T) {
 		if !entry.AuditRequired || !entry.OperationRequired {
 			t.Fatalf("mutation route must require audit and operation records for %s %s: %#v", route.Method, route.Path, entry)
 		}
-		if !appaccess.HasPermission([]string{"admin"}, entry.PermissionKey) {
-			t.Fatalf("unknown permission key for %s %s: %#v", route.Method, route.Path, entry)
+		if !entry.DynamicPermission && !appaccess.IsActiveAssignablePermission(entry.PermissionKey) {
+			t.Fatalf("mutation route must use an active exact permission for %s %s: %#v", route.Method, route.Path, entry)
 		}
 	}
 	if checked == 0 {
@@ -729,16 +732,16 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 	}{
 		{name: "application create", method: "POST", path: "/api/v1/applications", resourceKind: "Application", action: "create", permission: appaccess.PermDeliveryApplicationsCreate, scoped: true},
 		{name: "workflow trigger", method: "POST", path: "/api/v1/workflows/trigger", resourceKind: "Workflow", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scoped: true},
-		{name: "gateway approval approve", method: "POST", path: "/api/v1/ai-gateway/approval-requests/:requestID/approve", resourceKind: "AIGatewayApprovalRequest", action: "approve", permission: appaccess.PermAIGatewayInvoke, scoped: true},
+		{name: "gateway approval approve", method: "POST", path: "/api/v1/ai-gateway/approval-requests/:requestID/approve", resourceKind: "AIGatewayApprovalRequest", action: "approve", permission: "ai.gateway.approvals.approve", scoped: true},
 		{name: "gateway llm relay invoke", method: "POST", path: "/api/v1/ai-gateway/llm/openai/v1/chat/completions", resourceKind: "AIGatewayLLMRelayInvocation", action: "invoke", permission: appaccess.PermAIGatewayRelayInvoke, scoped: true},
 		{name: "gateway llm relay embeddings invoke", method: "POST", path: "/api/v1/ai-gateway/llm/openai/v1/embeddings", resourceKind: "AIGatewayLLMRelayInvocation", action: "invoke", permission: appaccess.PermAIGatewayRelayInvoke, scoped: true},
-		{name: "gateway llm relay manage", method: "POST", path: "/api/v1/ai-gateway/relay/upstreams", resourceKind: "AIGatewayLLMRelay", action: "create", permission: appaccess.PermAIGatewayRelayManage},
-		{name: "gateway llm relay cache purge", method: "POST", path: "/api/v1/ai-gateway/relay/cache/purge", resourceKind: "AIGatewayLLMRelay", action: "create", permission: appaccess.PermAIGatewayRelayManage},
-		{name: "secret rotate", method: "POST", path: "/api/v1/secrets/:secretID/versions", resourceKind: "Secret", action: "create", permission: appaccess.PermSecretManage, scoped: true},
+		{name: "gateway llm relay manage", method: "POST", path: "/api/v1/ai-gateway/relay/upstreams", resourceKind: "AIGatewayLLMRelay", action: "create", permission: "ai.gateway.relay.create"},
+		{name: "gateway llm relay cache purge", method: "POST", path: "/api/v1/ai-gateway/relay/cache/purge", resourceKind: "AIGatewayLLMRelay", action: "create", permission: "ai.gateway.relay.create"},
+		{name: "secret rotate", method: "POST", path: "/api/v1/secrets/:secretID/versions", resourceKind: "SecretVersion", action: "rotate", permission: appaccess.PermSecretRotate, scoped: true},
 		{name: "docker project deploy", method: "POST", path: "/api/v1/docker/projects/:id/deploy", resourceKind: "DockerProject", action: "deploy", permission: appaccess.PermDockerProjectsDeploy},
-		{name: "access scope grant update", method: "PUT", path: "/api/v1/access/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "update", permission: appaccess.PermAccessScopeGrantsManage},
-		{name: "identity policy update", method: "PATCH", path: "/api/v1/identity/policies/:applicationID", resourceKind: "IdentityPolicy", action: "update", permission: appaccess.PermIdentityPoliciesManage},
-		{name: "identity outpost update", method: "PATCH", path: "/api/v1/identity/outposts/:outpostID", resourceKind: "IdentityOutpost", action: "update", permission: appaccess.PermIdentityOutpostsManage},
+		{name: "access scope grant update", method: "PUT", path: "/api/v1/access/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "update", permission: "access.scope-grants.update"},
+		{name: "identity policy update", method: "PATCH", path: "/api/v1/identity/policies/:applicationID", resourceKind: "IdentityPolicy", action: "update", permission: "identity.policies.update"},
+		{name: "identity outpost update", method: "PATCH", path: "/api/v1/identity/outposts/:outpostID", resourceKind: "IdentityOutpost", action: "update", permission: "identity.outposts.update"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry, ok := nonPlatformMutationSecuritySurface(tc.method, tc.path)
@@ -762,21 +765,21 @@ func TestDeliveryMutationSecuritySurfaceRules(t *testing.T) {
 		permission   string
 		scoped       bool
 	}{
-		{name: "application service precedes application", method: "POST", path: "/api/v1/applications/:applicationID/services", resourceKind: "ApplicationService", action: "create", permission: appaccess.PermDeliveryApplicationServicesManage, scoped: true},
+		{name: "application service precedes application", method: "POST", path: "/api/v1/applications/:applicationID/services", resourceKind: "ApplicationService", action: "create", permission: "delivery.application-services.create", scoped: true},
 		{name: "application delete permission", method: "DELETE", path: "/api/v1/applications/:applicationID", resourceKind: "Application", action: "delete", permission: appaccess.PermDeliveryApplicationsDelete, scoped: true},
-		{name: "environment update", method: "PATCH", path: "/api/v1/application-environments/:environmentID", resourceKind: "ApplicationEnvironment", action: "update", permission: appaccess.PermDeliveryApplicationEnvManage, scoped: true},
-		{name: "build template", method: "POST", path: "/api/v1/build-templates", resourceKind: "BuildTemplate", action: "create", permission: appaccess.PermDeliveryBuildTemplatesManage, scoped: true},
-		{name: "workflow template", method: "PUT", path: "/api/v1/workflow-templates/:templateID", resourceKind: "WorkflowTemplate", action: "update", permission: appaccess.PermDeliveryWorkflowTemplatesManage, scoped: true},
+		{name: "environment update", method: "PATCH", path: "/api/v1/application-environments/:environmentID", resourceKind: "ApplicationEnvironment", action: "update", permission: "delivery.application-environments.update", scoped: true},
+		{name: "build template", method: "POST", path: "/api/v1/build-templates", resourceKind: "BuildTemplate", action: "create", permission: "delivery.build-templates.create", scoped: true},
+		{name: "workflow template", method: "PUT", path: "/api/v1/workflow-templates/:templateID", resourceKind: "WorkflowTemplate", action: "update", permission: "delivery.workflow-templates.update", scoped: true},
 		{name: "build trigger", method: "POST", path: "/api/v1/builds/trigger", resourceKind: "Build", action: "trigger", permission: appaccess.PermDeliveryBuildsTrigger, scoped: true},
 		{name: "workflow approve", method: "POST", path: "/api/v1/workflows/:workflowID/approve", resourceKind: "WorkflowApproval", action: "approve", permission: appaccess.PermDeliveryWorkflowsTrigger, scoped: true},
-		{name: "registry is global", method: "POST", path: "/api/v1/registries", resourceKind: "RegistryConnection", action: "create", permission: appaccess.PermDeliveryRegistriesManage},
+		{name: "registry is global", method: "POST", path: "/api/v1/registries", resourceKind: "RegistryConnection", action: "create", permission: "delivery.registries.create"},
 		{name: "release trigger", method: "POST", path: "/api/v1/releases/trigger", resourceKind: "Release", action: "trigger", permission: appaccess.PermDeliveryReleasesTrigger, scoped: true},
-		{name: "execution task retry", method: "POST", path: "/api/v1/delivery/execution-tasks/:taskID/retry", resourceKind: "ExecutionTask", action: "retry", permission: appaccess.PermDeliveryExecutionTasksManage, scoped: true},
+		{name: "execution task retry", method: "POST", path: "/api/v1/delivery/execution-tasks/:taskID/retry", resourceKind: "ExecutionTask", action: "retry", permission: "delivery.execution-tasks.retry", scoped: true},
 		{name: "manifest update", method: "PUT", path: "/api/v1/delivery/manifest-packages/:manifestPackageID", resourceKind: "ManifestPackage", action: "update", permission: appaccess.PermDeliveryApplicationsUpdate, scoped: true},
-		{name: "manifest source update", method: "PUT", path: "/api/v1/delivery/manifest-packages/:manifestPackageID/source", resourceKind: "ManifestSource", action: "update", permission: appaccess.PermDeliveryManifestSourcesManage, scoped: true},
-		{name: "manifest binding create", method: "POST", path: "/api/v1/delivery/manifest-packages/:manifestPackageID/bindings", resourceKind: "ManifestBinding", action: "create", permission: appaccess.PermDeliveryManifestDeploymentsManage, scoped: true},
-		{name: "manifest binding update", method: "PUT", path: "/api/v1/delivery/manifest-bindings/:manifestBindingID", resourceKind: "ManifestBinding", action: "update", permission: appaccess.PermDeliveryManifestDeploymentsManage, scoped: true},
-		{name: "manifest binding delete", method: "DELETE", path: "/api/v1/delivery/manifest-bindings/:manifestBindingID", resourceKind: "ManifestBinding", action: "delete", permission: appaccess.PermDeliveryManifestDeploymentsManage, scoped: true},
+		{name: "manifest source update", method: "PUT", path: "/api/v1/delivery/manifest-packages/:manifestPackageID/source", resourceKind: "ManifestSource", action: "update", permission: "delivery.manifest-sources.update", scoped: true},
+		{name: "manifest binding create", method: "POST", path: "/api/v1/delivery/manifest-packages/:manifestPackageID/bindings", resourceKind: "ManifestBinding", action: "create", permission: "delivery.manifest-deployments.create", scoped: true},
+		{name: "manifest binding update", method: "PUT", path: "/api/v1/delivery/manifest-bindings/:manifestBindingID", resourceKind: "ManifestBinding", action: "update", permission: "delivery.manifest-deployments.update", scoped: true},
+		{name: "manifest binding delete", method: "DELETE", path: "/api/v1/delivery/manifest-bindings/:manifestBindingID", resourceKind: "ManifestBinding", action: "delete", permission: "delivery.manifest-deployments.delete", scoped: true},
 		{name: "manifest publish", method: "POST", path: "/api/v1/delivery/manifest-packages/:manifestPackageID/publish", resourceKind: "ManifestPackage", action: "publish", permission: appaccess.PermDeliveryReleasesTrigger, scoped: true},
 		{name: "manifest delete", method: "DELETE", path: "/api/v1/delivery/manifest-packages/:manifestPackageID", resourceKind: "ManifestPackage", action: "delete", permission: appaccess.PermDeliveryApplicationsDelete, scoped: true},
 		{name: "blueprint render precedes blueprint", method: "POST", path: "/api/v1/delivery/blueprints/:blueprintID/render-spec", resourceKind: "DeliveryBlueprint", action: "render", permission: appaccess.PermDeliveryApplicationsCreate, scoped: true},

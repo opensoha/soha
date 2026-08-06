@@ -19,7 +19,7 @@ import (
 )
 
 func (s *Service) ListAuditLogs(ctx context.Context, principal domainidentity.Principal, filter domainaigateway.AuditLogFilter) ([]domainaigateway.AuditLog, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayView); err != nil {
 		return nil, err
 	}
 	repo := s.auditLogRepository()

@@ -410,9 +410,21 @@ func (s *Service) virtualizationAccessSources(ctx context.Context, keys []string
 		return nil, err
 	}
 	items := make([]sohaapi.ComputeAccessSource, 0, len(connections))
-	manage := has(keys, appaccess.PermVirtualizationClustersManage)
+	actions := []string{}
+	if has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "test")) {
+		actions = append(actions, "test")
+	}
+	if has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "sync")) {
+		actions = append(actions, "sync")
+	}
+	if has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "update")) {
+		actions = append(actions, "edit")
+	}
+	if has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "delete")) {
+		actions = append(actions, "delete")
+	}
 	for _, connection := range connections {
-		items = append(items, connectionAccessSource(connection, manage))
+		items = append(items, connectionAccessSource(connection, actions))
 	}
 	return items, nil
 }
@@ -428,10 +440,16 @@ func (s *Service) runtimeAccessSources(ctx context.Context, keys []string, filte
 		return nil, err
 	}
 	items := make([]sohaapi.ComputeAccessSource, 0, len(hosts)*2)
-	manage := has(keys, appaccess.PermDockerHostsManage)
+	actions := []string{}
+	if has(keys, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "update")) {
+		actions = append(actions, "edit")
+	}
+	if has(keys, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "delete")) {
+		actions = append(actions, "delete")
+	}
 	for _, host := range hosts {
 		if wantsRuntime {
-			items = append(items, runtimeAccessSource(host, manage))
+			items = append(items, runtimeAccessSource(host, actions))
 		}
 		if wantsAgent && strings.TrimSpace(host.AgentID) != "" {
 			items = append(items, agentAccessSource(host))
@@ -461,9 +479,11 @@ func (s *Service) ListTasks(ctx context.Context, principal domainidentity.Princi
 		if readErr != nil {
 			return sohaapi.ComputeTaskListEnvelope{}, readErr
 		}
+		canCancel := has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "cancel"))
+		canRetry := has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "retry"))
 		for _, task := range tasks {
 			if virtualizationTaskVisible(keys, task.TaskKind) {
-				items = appendIfTaskMatches(items, virtualizationTaskView(task, has(keys, appaccess.PermVirtualizationOperationsManage)), filter)
+				items = appendIfTaskMatches(items, virtualizationTaskView(task, canCancel, canRetry), filter)
 			}
 		}
 	}
@@ -472,8 +492,10 @@ func (s *Service) ListTasks(ctx context.Context, principal domainidentity.Princi
 		if readErr != nil {
 			return sohaapi.ComputeTaskListEnvelope{}, readErr
 		}
+		canCancel := has(keys, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "cancel"))
+		canRetry := has(keys, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "retry"))
 		for _, task := range tasks {
-			items = appendIfTaskMatches(items, runtimeTaskView(task, has(keys, appaccess.PermDockerOperationsManage)), filter)
+			items = appendIfTaskMatches(items, runtimeTaskView(task, canCancel, canRetry), filter)
 		}
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -506,7 +528,11 @@ func (s *Service) GetTask(ctx context.Context, principal domainidentity.Principa
 		if !virtualizationTaskVisible(keys, item.TaskKind) {
 			return sohaapi.ComputeTaskView{}, fmt.Errorf("%w: compute task is not visible", apperrors.ErrAccessDenied)
 		}
-		return virtualizationTaskView(item, has(keys, appaccess.PermVirtualizationOperationsManage)), nil
+		return virtualizationTaskView(
+			item,
+			has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "cancel")),
+			has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "retry")),
+		), nil
 	case string(sohaapi.ComputeTaskDomainContainerRuntime):
 		if !s.runtimeAvailable() || s.runtimeTasks == nil {
 			return sohaapi.ComputeTaskView{}, unavailableTaskDomain(domain)
@@ -519,7 +545,11 @@ func (s *Service) GetTask(ctx context.Context, principal domainidentity.Principa
 		if err != nil {
 			return sohaapi.ComputeTaskView{}, err
 		}
-		return runtimeTaskView(item, has(keys, appaccess.PermDockerOperationsManage)), nil
+		return runtimeTaskView(
+			item,
+			has(keys, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "cancel")),
+			has(keys, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "retry")),
+		), nil
 	default:
 		return sohaapi.ComputeTaskView{}, invalidTaskDomain(domain)
 	}
@@ -580,7 +610,15 @@ func (s *Service) mutateTask(ctx context.Context, principal domainidentity.Princ
 		if err != nil {
 			return sohaapi.ComputeTaskView{}, err
 		}
-		return virtualizationTaskView(item, true), nil
+		keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+		if err != nil {
+			return sohaapi.ComputeTaskView{}, err
+		}
+		return virtualizationTaskView(
+			item,
+			has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "cancel")),
+			has(keys, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "retry")),
+		), nil
 	case string(sohaapi.ComputeTaskDomainContainerRuntime):
 		if !s.runtimeAvailable() || s.runtimeTasks == nil {
 			return sohaapi.ComputeTaskView{}, unavailableTaskDomain(domain)
@@ -595,7 +633,15 @@ func (s *Service) mutateTask(ctx context.Context, principal domainidentity.Princ
 		if err != nil {
 			return sohaapi.ComputeTaskView{}, err
 		}
-		return runtimeTaskView(item, true), nil
+		keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+		if err != nil {
+			return sohaapi.ComputeTaskView{}, err
+		}
+		return runtimeTaskView(
+			item,
+			has(keys, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "cancel")),
+			has(keys, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "retry")),
+		), nil
 	default:
 		return sohaapi.ComputeTaskView{}, invalidTaskDomain(domain)
 	}
@@ -644,19 +690,11 @@ func taskLogPayload(payload map[string]any) (string, error) {
 	return string(raw), nil
 }
 
-func connectionAccessSource(item domainvirtualization.Connection, manage bool) sohaapi.ComputeAccessSource {
-	actions := []string{}
-	if manage {
-		actions = []string{"test", "sync", "edit", "delete"}
-	}
+func connectionAccessSource(item domainvirtualization.Connection, actions []string) sohaapi.ComputeAccessSource {
 	return sohaapi.ComputeAccessSource{ID: item.ID, SourceType: sohaapi.ComputeAccessSourceTypeVirtualizationConnection, Resource: connectionRef(item), Status: connectionHealth(item), ProviderKey: item.Provider, ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, AccessMode: sohaapi.ComputeAccessModeDirect, AvailableActions: actions, LastObservedAt: item.LastSyncedAt, RelatedResources: []sohaapi.ComputeResourceRef{}}
 }
 
-func runtimeAccessSource(host domaindocker.Host, manage bool) sohaapi.ComputeAccessSource {
-	actions := []string{}
-	if manage {
-		actions = []string{"edit", "delete"}
-	}
+func runtimeAccessSource(host domaindocker.Host, actions []string) sohaapi.ComputeAccessSource {
 	return sohaapi.ComputeAccessSource{ID: host.ID, SourceType: sohaapi.ComputeAccessSourceTypeRuntimeHost, Resource: runtimeHostRef(host), Status: runtimeHostStatus(host), ProviderKey: "docker", ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, AccessMode: runtimeAccessMode(host), AvailableActions: actions, LastObservedAt: host.LastHeartbeatAt, RelatedResources: relatedHostResources(host)}
 }
 
@@ -664,7 +702,7 @@ func agentAccessSource(host domaindocker.Host) sohaapi.ComputeAccessSource {
 	return sohaapi.ComputeAccessSource{ID: host.AgentID, SourceType: sohaapi.ComputeAccessSourceTypeAgentHost, Resource: agentHostRef(host), Status: runtimeHostStatus(host), ProviderKey: "docker", ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, AccessMode: sohaapi.ComputeAccessModeAgentProxy, AvailableActions: []string{}, LastObservedAt: host.LastHeartbeatAt, RelatedResources: []sohaapi.ComputeResourceRef{runtimeHostRef(host)}}
 }
 
-func virtualizationTaskView(item domainvirtualization.Task, manage bool) sohaapi.ComputeTaskView {
+func virtualizationTaskView(item domainvirtualization.Task, canCancel, canRetry bool) sohaapi.ComputeTaskView {
 	status := normalizeTaskStatus(item.Status)
 	state := domainvirtualization.BuildOperationState(item, time.Now().UTC())
 	resources := []sohaapi.ComputeResourceRef{}
@@ -674,11 +712,11 @@ func virtualizationTaskView(item domainvirtualization.Task, manage bool) sohaapi
 	if item.VMID != "" {
 		resources = append(resources, virtualizationResourceRef(sohaapi.ComputeResourceKindVM, item.VMID, item.VMID, item.Provider, item.ConnectionID))
 	}
-	cancelable, retryable := state.Cancelable && manage, state.Retryable && manage
+	cancelable, retryable := state.Cancelable && canCancel, state.Retryable && canRetry
 	return sohaapi.ComputeTaskView{ID: item.ID, Domain: sohaapi.ComputeTaskDomainVirtualization, SourceType: "virtualization_task", SourceID: item.ID, ProviderKey: item.Provider, ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, Kind: item.TaskKind, Category: taskCategory(item.TaskKind), NormalizedStatus: status, RawStatus: item.Status, Resources: resources, RequestedBy: item.RequestedBy, Worker: item.ClaimedByWorkerID, AttemptCount: item.AttemptCount, Cancelable: cancelable, Retryable: retryable, AvailableActions: taskActions(cancelable, retryable), ErrorCode: state.FailureReason, CreatedAt: item.CreatedAt, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, Summary: state.FailureMessage}
 }
 
-func runtimeTaskView(item domaindocker.Operation, manage bool) sohaapi.ComputeTaskView {
+func runtimeTaskView(item domaindocker.Operation, canCancel, canRetry bool) sohaapi.ComputeTaskView {
 	status := normalizeTaskStatus(item.Status)
 	state := domaindocker.BuildOperationState(item, time.Now().UTC())
 	resources := []sohaapi.ComputeResourceRef{}
@@ -691,7 +729,7 @@ func runtimeTaskView(item domaindocker.Operation, manage bool) sohaapi.ComputeTa
 	if item.ServiceID != "" {
 		resources = append(resources, runtimeResourceRef(sohaapi.ComputeResourceKindService, item.ServiceID, item.ServiceID))
 	}
-	cancelable, retryable := state.Cancelable && manage, state.Retryable && manage
+	cancelable, retryable := state.Cancelable && canCancel, state.Retryable && canRetry
 	return sohaapi.ComputeTaskView{ID: item.ID, Domain: sohaapi.ComputeTaskDomainContainerRuntime, SourceType: "docker_operation", SourceID: item.ID, ProviderKey: "docker", ProviderSource: sohaapi.ComputeProviderSourceBuiltin, ProviderGeneration: generation, Kind: item.OperationKind, Category: taskCategory(item.OperationKind), NormalizedStatus: status, RawStatus: item.Status, Resources: resources, RequestedBy: item.RequestedBy, Worker: item.ClaimedByWorkerID, AttemptCount: item.AttemptCount, Cancelable: cancelable, Retryable: retryable, AvailableActions: taskActions(cancelable, retryable), ErrorCode: state.FailureReason, CreatedAt: item.CreatedAt, StartedAt: item.StartedAt, FinishedAt: item.FinishedAt, Summary: state.FailureMessage}
 }
 
@@ -1001,7 +1039,7 @@ func hasAny(keys []string, wanted ...string) bool {
 	return false
 }
 func virtualizationDomainVisible(keys []string) bool {
-	return hasAny(keys, appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationVMsView, appaccess.PermVirtualizationClustersView, appaccess.PermVirtualizationImagesView, appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView, appaccess.PermVirtualizationSyncManage)
+	return hasAny(keys, appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationVMsView, appaccess.PermVirtualizationClustersView, appaccess.PermVirtualizationImagesView, appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView)
 }
 func runtimeDomainVisible(keys []string) bool {
 	return hasAny(keys, appaccess.PermDockerOverviewView, appaccess.PermDockerHostsView, appaccess.PermDockerProjectsView, appaccess.PermDockerServicesView, appaccess.PermDockerPortsView, appaccess.PermDockerTemplatesView, appaccess.PermDockerOperationsView)

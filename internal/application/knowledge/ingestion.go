@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) SyncSource(ctx context.Context, principal domainidentity.Principal, baseID, sourceID string) (domainknowledge.SyncRun, error) {
-	if err := s.authorize(ctx, principal, PermKnowledgeManage); err != nil {
+	if err := s.authorize(ctx, principal, PermKnowledgeIngestionOperate); err != nil {
 		return domainknowledge.SyncRun{}, err
 	}
 	if s.loader == nil {

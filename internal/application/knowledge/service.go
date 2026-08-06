@@ -99,7 +99,7 @@ func (s *Service) GetBase(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) CreateBase(ctx context.Context, principal domainidentity.Principal, input domainknowledge.BaseInput) (domainknowledge.KnowledgeBase, error) {
-	if err := s.authorize(ctx, principal, PermKnowledgeManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(PermKnowledgeManage, "create")); err != nil {
 		return domainknowledge.KnowledgeBase{}, err
 	}
 	item, err := normalizeBaseInput(input, principal, s.now())
@@ -112,7 +112,7 @@ func (s *Service) CreateBase(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) UpdateBase(ctx context.Context, principal domainidentity.Principal, baseID string, input domainknowledge.BaseInput) (domainknowledge.KnowledgeBase, error) {
-	if err := s.authorize(ctx, principal, PermKnowledgeManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(PermKnowledgeManage, "update")); err != nil {
 		return domainknowledge.KnowledgeBase{}, err
 	}
 	current, err := s.repo.GetBase(ctx, principalScope(principal), strings.TrimSpace(baseID))
@@ -131,7 +131,7 @@ func (s *Service) UpdateBase(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) DeleteBase(ctx context.Context, principal domainidentity.Principal, baseID string) error {
-	if err := s.authorize(ctx, principal, PermKnowledgeManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(PermKnowledgeManage, "delete")); err != nil {
 		return err
 	}
 	item, err := s.repo.GetBase(ctx, principalScope(principal), strings.TrimSpace(baseID))
@@ -151,7 +151,7 @@ func (s *Service) ListSources(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) CreateSource(ctx context.Context, principal domainidentity.Principal, baseID string, input domainknowledge.SourceInput) (domainknowledge.Source, error) {
-	if err := s.authorize(ctx, principal, PermKnowledgeManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(PermKnowledgeManage, "update")); err != nil {
 		return domainknowledge.Source{}, err
 	}
 	if _, err := s.repo.GetBase(ctx, principalScope(principal), strings.TrimSpace(baseID)); err != nil {

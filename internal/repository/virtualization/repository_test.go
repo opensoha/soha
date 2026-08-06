@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -33,6 +34,35 @@ func TestVMExtraClausesAllowsExplicitDeletedStatus(t *testing.T) {
 	}
 	if len(args) != 0 {
 		t.Fatalf("args = %#v, want none", args)
+	}
+}
+
+func TestImageExtraClausesGroupsCatalogAndStorageKinds(t *testing.T) {
+	tests := []struct {
+		name     string
+		category string
+		wantArgs []any
+	}{
+		{name: "catalog", category: "catalog", wantArgs: []any{"iso", "template", "lxc_template", "datasource", "pvc"}},
+		{name: "storage", category: "storage", wantArgs: []any{"storage", "storage_content", "image", "images", "rootdir", "datavolume", "persistentvolumeclaim"}},
+		{name: "all", category: "", wantArgs: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clauses, args := imageExtraClauses(domainvirtualization.ImageFilter{Category: tt.category})
+			if !slices.Equal(args, tt.wantArgs) {
+				t.Fatalf("args = %#v, want %#v", args, tt.wantArgs)
+			}
+			if tt.category == "" {
+				if len(clauses) != 0 {
+					t.Fatalf("clauses = %#v, want none", clauses)
+				}
+				return
+			}
+			if len(clauses) != 1 || !strings.Contains(clauses[0], "config->>'sourceKind'") {
+				t.Fatalf("clauses = %#v, want sourceKind JSON filter", clauses)
+			}
+		})
 	}
 }
 

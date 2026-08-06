@@ -136,7 +136,7 @@ func (s *Service) streamProjectLogs(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) StreamProjectTerminal(ctx context.Context, principal domainidentity.Principal, projectID, serviceName, shell string, stdin io.Reader, stdout, stderr io.Writer) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "terminal")); err != nil {
 		return err
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, serviceName)

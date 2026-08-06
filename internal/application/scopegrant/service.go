@@ -44,7 +44,7 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal) 
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainscopegrant.Input) (domainscopegrant.Record, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermAccessScopeGrantsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAccessScopeGrantsManage, "create")); err != nil {
 		return domainscopegrant.Record{}, err
 	}
 	if err := validateInput(input); err != nil {
@@ -58,7 +58,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, id string, input domainscopegrant.Input) (domainscopegrant.Record, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermAccessScopeGrantsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAccessScopeGrantsManage, "update")); err != nil {
 		return domainscopegrant.Record{}, err
 	}
 	if err := validateInput(input); err != nil {
@@ -72,7 +72,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermAccessScopeGrantsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAccessScopeGrantsManage, "delete")); err != nil {
 		return err
 	}
 	if err := normalizeRepoError(s.repo.Delete(ctx, id)); err != nil {

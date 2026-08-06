@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 )
 
@@ -75,6 +76,17 @@ func TestIdentitySettingsKeepsDeletedLoginProvidersDeleted(t *testing.T) {
 	}
 	if item.DefaultProviderID != "" {
 		t.Fatalf("defaultProviderID = %q, want empty", item.DefaultProviderID)
+	}
+}
+
+func TestBrandingSettingsAreReadableWithoutManagementPermission(t *testing.T) {
+	service := &Service{
+		store:       &captureSettingsStore{},
+		permissions: appaccess.NewPermissionResolver(nil),
+	}
+
+	if _, err := service.GetBrandingSettings(context.Background(), domainidentity.Principal{UserID: "readonly"}); err != nil {
+		t.Fatalf("GetBrandingSettings returned error: %v", err)
 	}
 }
 

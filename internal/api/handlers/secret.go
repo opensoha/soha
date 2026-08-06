@@ -195,7 +195,7 @@ func (h *SecretHandler) RevokeVersion(c *gin.Context) {
 }
 
 func (h *SecretHandler) RedeemLease(c *gin.Context) {
-	if !authorizeExternalRunnerKeys(c, h.runnerKeys, appaccess.PermDeliveryExecutionTasksManage, appaccess.PermAIGatewayInvoke, appaccess.PermObserveAIChatUse) {
+	if !authorizeExternalRunnerKeys(c, h.runnerKeys, appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "claim"), appaccess.PermAIGatewayInvoke, appaccess.PermObserveAIChatUse) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid runner token")
 		return
 	}

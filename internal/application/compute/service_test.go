@@ -398,7 +398,14 @@ func TestListTasksFiltersExactReferencedResource(t *testing.T) {
 }
 
 func TestTaskFacadeRoutesDetailLogsCancelAndRetry(t *testing.T) {
-	service, virt, runtime := newTestService(appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationOperationsManage, appaccess.PermDockerOperationsView, appaccess.PermDockerOperationsManage)
+	service, virt, runtime := newTestService(
+		appaccess.PermVirtualizationOperationsView,
+		appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "cancel"),
+		appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "retry"),
+		appaccess.PermDockerOperationsView,
+		appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "cancel"),
+		appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "retry"),
+	)
 	now := time.Now().UTC()
 	virt.tasks = []domainvirtualization.Task{{ID: "virt-1", TaskKind: "vm_action", Status: "running", CreatedAt: now}}
 	virt.logs = []domainvirtualization.TaskLog{{ID: "v-log", TaskID: "virt-1", LogLevel: "info", Message: "started", Payload: map[string]any{"step": 1}, CreatedAt: now}}
@@ -421,5 +428,21 @@ func TestTaskFacadeRoutesDetailLogsCancelAndRetry(t *testing.T) {
 	}
 	if _, err := service.GetTask(context.Background(), testPrincipal(), "bogus", "task"); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("invalid domain error = %v", err)
+	}
+}
+
+func TestTaskActionsUseIndependentPermissions(t *testing.T) {
+	service, virt, _ := newTestService(
+		appaccess.PermVirtualizationOperationsView,
+		appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "cancel"),
+	)
+	virt.tasks = []domainvirtualization.Task{{ID: "virt-1", TaskKind: "vm_action", Status: "running", CreatedAt: time.Now().UTC()}}
+
+	result, err := service.ListTasks(context.Background(), testPrincipal(), TaskFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || !result.Items[0].Cancelable || result.Items[0].Retryable {
+		t.Fatalf("task permissions = %#v, want cancel only", result.Items)
 	}
 }

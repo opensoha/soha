@@ -80,7 +80,6 @@ func TestListIncludesVirtualizationDescriptor(t *testing.T) {
 		"virtualization.flavors.view",
 		"virtualization.operations.view",
 		"virtualization.sync.view",
-		"virtualization.sync.manage",
 	} {
 		if !slices.Contains(status.Descriptor.VisiblePermissions, permission) {
 			t.Fatalf("virtualization visible permissions = %v, missing %s", status.Descriptor.VisiblePermissions, permission)
@@ -91,6 +90,7 @@ func TestListIncludesVirtualizationDescriptor(t *testing.T) {
 		"virtualization-workbench-vms",
 		"virtualization-workbench-clusters",
 		"virtualization-workbench-images",
+		"virtualization-workbench-storage",
 		"virtualization-workbench-flavors",
 		"virtualization-workbench-operations",
 		"virtualization-workbench-sync",
@@ -116,7 +116,7 @@ func TestListIncludesUnifiedComputeDescriptor(t *testing.T) {
 			t.Fatalf("compute permissions missing %s: %v", permission, status.Descriptor.VisiblePermissions)
 		}
 	}
-	for _, menuID := range []string{"compute-workbench-tasks-operations"} {
+	for _, menuID := range []string{"virtualization-workbench-storage", "compute-workbench-tasks-operations"} {
 		if !slices.Contains(status.Descriptor.SeedMenus, menuID) {
 			t.Fatalf("compute seed menus missing %s: %v", menuID, status.Descriptor.SeedMenus)
 		}
@@ -210,7 +210,7 @@ func TestListIncludesAIGatewayDescriptor(t *testing.T) {
 	if len(status.Descriptor.Dependencies) != 0 {
 		t.Fatalf("AI Gateway should be independently toggleable, dependencies = %v", status.Descriptor.Dependencies)
 	}
-	for _, permission := range []string{"ai.gateway.view", "ai.gateway.invoke", "ai.gateway.manage"} {
+	for _, permission := range []string{"ai.gateway.view", "ai.gateway.invoke", "ai.gateway.clients.view", "ai.gateway.tokens.view", "ai.gateway.approvals.view"} {
 		if !slices.Contains(status.Descriptor.VisiblePermissions, permission) {
 			t.Fatalf("AI Gateway visible permissions = %v, missing %s", status.Descriptor.VisiblePermissions, permission)
 		}

@@ -302,7 +302,7 @@ func (s *Service) decorateConnections(items []domainvirtualization.Connection) [
 }
 
 func (s *Service) CreateConnection(ctx context.Context, principal domainidentity.Principal, input ConnectionInput) (domainvirtualization.Connection, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "create")); err != nil {
 		return domainvirtualization.Connection{}, err
 	}
 	repoInput, err := s.connectionInput(input, nil)
@@ -318,7 +318,7 @@ func (s *Service) CreateConnection(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) UpdateConnection(ctx context.Context, principal domainidentity.Principal, id string, input ConnectionInput) (domainvirtualization.Connection, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "update")); err != nil {
 		return domainvirtualization.Connection{}, err
 	}
 	current, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
@@ -338,7 +338,7 @@ func (s *Service) UpdateConnection(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) GetConnectionDeleteDependencies(ctx context.Context, principal domainidentity.Principal, id string) (domainvirtualization.ConnectionDeleteDependencies, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "delete")); err != nil {
 		return domainvirtualization.ConnectionDeleteDependencies{}, err
 	}
 	current, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
@@ -354,7 +354,7 @@ func (s *Service) GetConnectionDeleteDependencies(ctx context.Context, principal
 }
 
 func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity.Principal, id string, opts DeleteConnectionOptions) error {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "delete")); err != nil {
 		return err
 	}
 	current, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
@@ -395,7 +395,7 @@ func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) TestConnection(ctx context.Context, principal domainidentity.Principal, id string) (domainvirtualization.Task, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "test")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	connection, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
@@ -465,7 +465,7 @@ func (s *Service) TestConnection(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.Principal, id string) (domainvirtualization.Task, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationSyncManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationSyncManage, "sync")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	connection, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
@@ -481,7 +481,7 @@ func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) SyncAll(ctx context.Context, principal domainidentity.Principal) (domainvirtualization.Task, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationSyncManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationSyncManage, "sync")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	tasks, err := s.enqueueStartupSync(ctx, principal, map[string]any{"source": "manual_global"})
@@ -500,7 +500,10 @@ func (s *Service) ListVMs(ctx context.Context, principal domainidentity.Principa
 		return nil, err
 	}
 	items, err := s.vms.ListVMs(ctx, filter)
-	return s.decorateVMs(items), err
+	if err != nil {
+		return nil, err
+	}
+	return s.decorateVMs(ctx, principal, items)
 }
 
 func (s *Service) ListVMsPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.VMFilter) (domainvirtualization.Page[domainvirtualization.VM], error) {
@@ -516,7 +519,11 @@ func (s *Service) ListVMsPage(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.VM]{}, err
 	}
-	return pageOf(s.decorateVMs(items), total, filter.Page, filter.PageSize), nil
+	items, err = s.decorateVMs(ctx, principal, items)
+	if err != nil {
+		return domainvirtualization.Page[domainvirtualization.VM]{}, err
+	}
+	return pageOf(items, total, filter.Page, filter.PageSize), nil
 }
 
 func (s *Service) GetVM(ctx context.Context, principal domainidentity.Principal, id string) (domainvirtualization.VM, error) {
@@ -524,21 +531,54 @@ func (s *Service) GetVM(ctx context.Context, principal domainidentity.Principal,
 		return domainvirtualization.VM{}, err
 	}
 	item, err := s.vms.GetVM(ctx, strings.TrimSpace(id))
-	return s.decorateVM(item), mapNotFound(err)
+	if err != nil {
+		return domainvirtualization.VM{}, mapNotFound(err)
+	}
+	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return domainvirtualization.VM{}, err
+	}
+	return s.decorateVM(item, permissionKeys), nil
 }
 
-func (s *Service) decorateVM(vm domainvirtualization.VM) domainvirtualization.VM {
+func (s *Service) decorateVM(vm domainvirtualization.VM, permissionKeys []string) domainvirtualization.VM {
 	if provider, ok := s.adapters[normalizeProvider(vm.Provider)].(domainvirtualization.VMCapabilityProvider); ok {
 		vm.Capabilities = provider.VMCapabilities()
 	}
+	vm.AllowedActions = vmAllowedActions(vm, permissionKeys)
 	return vm
 }
 
-func (s *Service) decorateVMs(items []domainvirtualization.VM) []domainvirtualization.VM {
-	for index := range items {
-		items[index] = s.decorateVM(items[index])
+func (s *Service) decorateVMs(ctx context.Context, principal domainidentity.Principal, items []domainvirtualization.VM) ([]domainvirtualization.VM, error) {
+	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return nil, err
 	}
-	return items
+	for index := range items {
+		items[index] = s.decorateVM(items[index], permissionKeys)
+	}
+	return items, nil
+}
+
+func vmAllowedActions(vm domainvirtualization.VM, permissionKeys []string) []string {
+	actions := make([]string, 0, 6)
+	if slices.Contains(permissionKeys, appaccess.PermVirtualizationVMsPower) {
+		switch strings.ToLower(firstNonEmpty(vm.PowerState, vm.Status)) {
+		case "running", "started", "on":
+			actions = append(actions, "stop", "restart", "shutdown")
+		case "stopped", "halted", "off":
+			actions = append(actions, "start")
+		default:
+			actions = append(actions, "start", "stop", "restart", "shutdown")
+		}
+	}
+	if slices.Contains(permissionKeys, appaccess.PermVirtualizationVMsResize) && len(vm.Capabilities) > 0 {
+		actions = append(actions, "resize")
+	}
+	if slices.Contains(permissionKeys, appaccess.PermVirtualizationVMsDelete) {
+		actions = append(actions, "delete")
+	}
+	return actions
 }
 
 func (s *Service) GetVMDetail(ctx context.Context, principal domainidentity.Principal, id string) (VMDetail, error) {
@@ -641,7 +681,7 @@ func (s *Service) PlanVMCreate(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Principal, input CreateVMInput) (domainvirtualization.Task, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsCreate); err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	prepared, err := s.prepareVMCreate(ctx, input)
@@ -733,16 +773,16 @@ func (s *Service) prepareVMCreate(ctx context.Context, input CreateVMInput) (pre
 }
 
 func (s *Service) VMAction(ctx context.Context, principal domainidentity.Principal, id string, input VMActionInput) (domainvirtualization.Task, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsManage); err != nil {
+	action, err := normalizeAction(input.Action)
+	if err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	if err := s.authorize(ctx, principal, vmActionPermission(action)); err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	vm, err := s.vms.GetVM(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
-	}
-	action, err := normalizeAction(input.Action)
-	if err != nil {
-		return domainvirtualization.Task{}, err
 	}
 	if action == "resize" {
 		currentDisk := payloadInt(vm.Config, "diskGiB")
@@ -784,6 +824,17 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 }
 
+func vmActionPermission(action domainvirtualization.PowerAction) string {
+	switch action {
+	case domainvirtualization.PowerActionDelete:
+		return appaccess.PermVirtualizationVMsDelete
+	case "resize":
+		return appaccess.PermVirtualizationVMsResize
+	default:
+		return appaccess.PermVirtualizationVMsPower
+	}
+}
+
 func (s *Service) createTaskIdempotently(ctx context.Context, scope string, principal domainidentity.Principal, key string, input any, task domainvirtualization.Task) (domainvirtualization.Task, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -816,14 +867,14 @@ func (s *Service) createTaskIdempotently(ctx context.Context, scope string, prin
 }
 
 func (s *Service) ListImages(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.ImageFilter) ([]domainvirtualization.Image, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationImagesView); err != nil {
+	if err := s.authorize(ctx, principal, imageListPermission(filter.Category)); err != nil {
 		return nil, err
 	}
 	return s.images.ListImages(ctx, filter)
 }
 
 func (s *Service) ListImagesPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.ImageFilter) (domainvirtualization.Page[domainvirtualization.Image], error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationImagesView); err != nil {
+	if err := s.authorize(ctx, principal, imageListPermission(filter.Category)); err != nil {
 		return domainvirtualization.Page[domainvirtualization.Image]{}, err
 	}
 	filter.Page, filter.PageSize = normalizedPageRequest(filter.Page, filter.PageSize, filter.Limit)
@@ -838,8 +889,15 @@ func (s *Service) ListImagesPage(ctx context.Context, principal domainidentity.P
 	return pageOf(items, total, filter.Page, filter.PageSize), nil
 }
 
+func imageListPermission(category string) string {
+	if strings.EqualFold(strings.TrimSpace(category), "storage") {
+		return appaccess.PermVirtualizationStorageView
+	}
+	return appaccess.PermVirtualizationImagesView
+}
+
 func (s *Service) CreateImage(ctx context.Context, principal domainidentity.Principal, input ImageInput) (domainvirtualization.Image, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationImagesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationImagesManage, "create")); err != nil {
 		return domainvirtualization.Image{}, err
 	}
 	item, err := s.imageFromInput(ctx, input, "")
@@ -855,7 +913,7 @@ func (s *Service) CreateImage(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) UpdateImage(ctx context.Context, principal domainidentity.Principal, id string, input ImageInput) (domainvirtualization.Image, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationImagesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationImagesManage, "update")); err != nil {
 		return domainvirtualization.Image{}, err
 	}
 	item, err := s.imageFromInput(ctx, input, strings.TrimSpace(id))
@@ -871,7 +929,7 @@ func (s *Service) UpdateImage(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) DeleteImage(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationImagesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationImagesManage, "delete")); err != nil {
 		return err
 	}
 	current, err := s.images.GetImage(ctx, strings.TrimSpace(id))
@@ -910,7 +968,7 @@ func (s *Service) ListFlavorsPage(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) CreateFlavor(ctx context.Context, principal domainidentity.Principal, input FlavorInput) (domainvirtualization.Flavor, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationFlavorsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationFlavorsManage, "create")); err != nil {
 		return domainvirtualization.Flavor{}, err
 	}
 	item, err := s.flavors.UpsertFlavor(ctx, flavorFromInput(input, ""))
@@ -922,7 +980,7 @@ func (s *Service) CreateFlavor(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) UpdateFlavor(ctx context.Context, principal domainidentity.Principal, id string, input FlavorInput) (domainvirtualization.Flavor, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationFlavorsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationFlavorsManage, "update")); err != nil {
 		return domainvirtualization.Flavor{}, err
 	}
 	item, err := s.flavors.UpsertFlavor(ctx, flavorFromInput(input, strings.TrimSpace(id)))
@@ -934,7 +992,7 @@ func (s *Service) UpdateFlavor(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) DeleteFlavor(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationFlavorsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationFlavorsManage, "delete")); err != nil {
 		return err
 	}
 	current, err := s.flavors.GetFlavor(ctx, strings.TrimSpace(id))
@@ -994,7 +1052,7 @@ func (s *Service) ListOperationLogs(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationOperationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "cancel")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	task, err := s.tasks.GetTask(ctx, strings.TrimSpace(taskID))
@@ -1022,7 +1080,7 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationOperationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "retry")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	task, err := s.tasks.GetTask(ctx, strings.TrimSpace(taskID))

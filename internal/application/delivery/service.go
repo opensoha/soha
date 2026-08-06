@@ -425,7 +425,7 @@ func (s *Service) ListReleaseBoard(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) ListTargetCandidates(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, search string) ([]domaindelivery.TargetCandidate, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationEnvManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
 		return nil, err
 	}
 	items, err := s.targets.ListDeployments(ctx, principal, strings.TrimSpace(clusterID), strings.TrimSpace(namespace))
@@ -2101,7 +2101,7 @@ func (s *Service) GetExecutionTaskForRunner(ctx context.Context, taskID string) 
 }
 
 func (s *Service) CancelExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string, input domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "cancel")); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
 	if s.execution == nil {
@@ -2111,7 +2111,7 @@ func (s *Service) CancelExecutionTask(ctx context.Context, principal domainident
 }
 
 func (s *Service) RetryExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string, input domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "retry")); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
 	if s.execution == nil {
@@ -2363,8 +2363,8 @@ func (s *Service) runtimeObjectPermissions(ctx context.Context, principal domain
 		CanViewArtifacts:  s.hasRuntimePermission(ctx, principal, appaccess.PermDeliveryExecutionTasksView),
 		CanViewAudit:      s.hasRuntimePermission(ctx, principal, appaccess.PermSystemAuditView),
 		CanViewOperations: s.hasRuntimePermission(ctx, principal, appaccess.PermSystemOperationsView),
-		CanRetry:          kind == "execution_task" && s.hasRuntimePermission(ctx, principal, appaccess.PermDeliveryExecutionTasksManage),
-		CanCancel:         kind == "execution_task" && s.hasRuntimePermission(ctx, principal, appaccess.PermDeliveryExecutionTasksManage),
+		CanRetry:          kind == "execution_task" && s.hasRuntimePermission(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "retry")),
+		CanCancel:         kind == "execution_task" && s.hasRuntimePermission(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "cancel")),
 	}
 }
 

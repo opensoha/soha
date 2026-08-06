@@ -74,7 +74,7 @@ func (s *Service) DeleteSAMLLoginSource(ctx context.Context, principal domainide
 }
 
 func (s *Service) ValidateSAMLMetadata(ctx context.Context, principal domainidentity.Principal, input sohaapi.SAMLMetadataInput) (sohaapi.SAMLMetadataValidation, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsIdentityManage, "validate")); err != nil {
 		return sohaapi.SAMLMetadataValidation{}, err
 	}
 	if s.saml == nil {
@@ -85,7 +85,7 @@ func (s *Service) ValidateSAMLMetadata(ctx context.Context, principal domainiden
 }
 
 func (s *Service) ImportSAMLLoginSourceMetadata(ctx context.Context, principal domainidentity.Principal, request sohaapi.SAMLMetadataImportRequest) (sohaapi.SAMLLoginSource, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsIdentityManage, "create")); err != nil {
 		return sohaapi.SAMLLoginSource{}, err
 	}
 	if s.saml == nil {

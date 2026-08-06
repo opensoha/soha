@@ -52,6 +52,31 @@ func RuntimePermissionKeys(ctx context.Context, resolver *PermissionResolver, pr
 }
 
 func (r *PermissionResolver) PermissionKeys(ctx context.Context, principal domainidentity.Principal) ([]string, error) {
+	keys, err := r.rolePermissionKeys(ctx, principal.Roles)
+	if err != nil {
+		return nil, err
+	}
+	keys, err = expandLegacyPermissionKeys(keys)
+	if err != nil {
+		return nil, err
+	}
+	if len(principal.PermissionKeys) == 0 {
+		return keys, nil
+	}
+	allowedCaps, err := expandLegacyPermissionKeys(principal.PermissionKeys)
+	if err != nil {
+		return nil, err
+	}
+	capped := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if slices.Contains(allowedCaps, key) {
+			capped = append(capped, key)
+		}
+	}
+	return normalizePermissionKeys(capped), nil
+}
+
+func (r *PermissionResolver) rolePermissionKeys(ctx context.Context, roles []string) ([]string, error) {
 	if r == nil || r.roles == nil {
 		return nil, runtimeResolverUnavailable("")
 	}
@@ -60,29 +85,39 @@ func (r *PermissionResolver) PermissionKeys(ctx context.Context, principal domai
 		return nil, fmt.Errorf("load role permissions: %w", err)
 	}
 	if len(matrix) == 0 {
-		return PermissionKeysForRoles(principal.Roles), nil
+		return PermissionKeysForRoles(roles), nil
 	}
 	SetRolePermissionMatrix(matrix)
 	keys := make([]string, 0)
-	for _, roleID := range principal.Roles {
+	for _, roleID := range roles {
 		for _, permissionKey := range matrix[strings.TrimSpace(roleID)] {
 			if !slices.Contains(keys, permissionKey) {
 				keys = append(keys, permissionKey)
 			}
 		}
 	}
-	keys = normalizePermissionKeys(keys)
-	if len(principal.PermissionKeys) == 0 {
-		return keys, nil
+	return normalizePermissionKeys(keys), nil
+}
+
+func (r *PermissionResolver) RolePermissionMatrix(ctx context.Context) (map[string][]string, error) {
+	if r == nil || r.roles == nil {
+		return nil, runtimeResolverUnavailable("")
 	}
-	capped := make([]string, 0, len(keys))
-	allowedCaps := normalizePermissionKeys(principal.PermissionKeys)
-	for _, key := range keys {
-		if slices.Contains(allowedCaps, key) {
-			capped = append(capped, key)
+	matrix, err := r.roles.ListRolePermissions(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load role permissions: %w", err)
+	}
+	if len(matrix) == 0 {
+		matrix = defaultRolePermissions()
+	}
+	result := make(map[string][]string, len(matrix))
+	for roleID, permissionKeys := range matrix {
+		result[roleID], err = expandLegacyPermissionKeys(permissionKeys)
+		if err != nil {
+			return nil, err
 		}
 	}
-	return normalizePermissionKeys(capped), nil
+	return result, nil
 }
 
 func (r *PermissionResolver) HasPermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) (bool, error) {

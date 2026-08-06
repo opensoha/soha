@@ -240,7 +240,7 @@ func (s *Service) GetApplication(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) CreateApplication(ctx context.Context, principal domainidentity.Principal, input domainportal.ApplicationInput) (domainportal.Application, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityApplicationsManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityApplicationsManage, "create")); err != nil {
 		return domainportal.Application{}, err
 	}
 	now := time.Now().UTC()
@@ -268,7 +268,7 @@ func (s *Service) CreateApplication(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) UpdateApplication(ctx context.Context, principal domainidentity.Principal, applicationID string, input domainportal.ApplicationInput) (domainportal.Application, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityApplicationsManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityApplicationsManage, "update")); err != nil {
 		return domainportal.Application{}, err
 	}
 	current, err := s.repo.GetApplication(ctx, applicationID)
@@ -300,7 +300,7 @@ func (s *Service) UpdateApplication(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) DeleteApplication(ctx context.Context, principal domainidentity.Principal, applicationID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityApplicationsManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityApplicationsManage, "delete")); err != nil {
 		return err
 	}
 	item, err := s.repo.GetApplication(ctx, applicationID)
@@ -341,7 +341,7 @@ func (s *Service) GetPolicy(ctx context.Context, principal domainidentity.Princi
 }
 
 func (s *Service) UpdatePolicy(ctx context.Context, principal domainidentity.Principal, applicationID string, input domainportal.ApplicationPolicyInput) (domainportal.ApplicationPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityPoliciesManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityPoliciesManage, "update")); err != nil {
 		return domainportal.ApplicationPolicy{}, err
 	}
 	application, err := s.repo.GetApplication(ctx, applicationID)

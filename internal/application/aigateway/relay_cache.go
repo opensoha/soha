@@ -84,7 +84,7 @@ func (s *Service) llmRelayResponseCacheEnabled(ctx context.Context, req domainai
 }
 
 func (s *Service) PurgeLLMRelayCache(ctx context.Context, principal domainidentity.Principal, req domainaigateway.LLMRelayCachePurgeRequest) (domainaigateway.LLMRelayCachePurgeResult, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "delete")); err != nil {
 		return domainaigateway.LLMRelayCachePurgeResult{}, err
 	}
 	repo := s.llmRelayRepository()

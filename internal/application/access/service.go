@@ -30,6 +30,7 @@ type Service struct {
 	repo         Repository
 	grants       ScopeGrantReader
 	catalog      EnvironmentReader
+	permissions  *PermissionResolver
 }
 
 func New(policyEngine domainaccess.PolicyEngine, repo Repository, grants ScopeGrantReader, catalog EnvironmentReader) *Service {
@@ -37,6 +38,31 @@ func New(policyEngine domainaccess.PolicyEngine, repo Repository, grants ScopeGr
 }
 
 func (s *Service) Authorize(ctx context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+	var (
+		decision domainaccess.Decision
+		err      error
+	)
+	if strings.TrimSpace(request.PermissionKey) != "" {
+		if definition, found, lookupErr := permissionDefinition(request.PermissionKey); lookupErr != nil {
+			return domainaccess.Decision{}, lookupErr
+		} else if found && request.Action == "" {
+			request.Action = domainaccess.Action(definition.Action)
+		}
+		decision, err = s.authorizePermission(ctx, request)
+	} else {
+		decision, err = s.authorizeLegacyAction(ctx, request)
+	}
+	if err != nil {
+		return domainaccess.Decision{}, err
+	}
+	return finalizeDecision(request, decision), nil
+}
+
+func (s *Service) SetPermissionResolver(permissions *PermissionResolver) {
+	s.permissions = permissions
+}
+
+func (s *Service) authorizeLegacyAction(ctx context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
 	roleMatrix, err := s.loadRoleMatrix(ctx)
 	if err != nil {
 		return domainaccess.Decision{}, err
@@ -80,6 +106,110 @@ func (s *Service) Authorize(ctx context.Context, request domainaccess.Request) (
 		decision.Reason = fmt.Sprintf("action %s filtered out by ABAC policy", request.Action)
 	}
 	return s.applyScopeGrantConstraint(ctx, request, decision, roleMatrix)
+}
+
+func (s *Service) authorizePermission(ctx context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+	definition, found, err := permissionDefinition(request.PermissionKey)
+	if err != nil {
+		return domainaccess.Decision{}, err
+	}
+	if !found {
+		return domainaccess.Decision{Reason: "permission key is not present in the canonical catalog", ReasonCode: "unknown_permission"}, nil
+	}
+	if request.Action == "" {
+		request.Action = domainaccess.Action(definition.Action)
+	}
+	if s.permissions == nil {
+		return domainaccess.Decision{Reason: "runtime permission resolver unavailable", ReasonCode: "permission_resolver_unavailable"}, nil
+	}
+	allowed, err := s.permissions.HasPermission(ctx, request.Principal, request.PermissionKey)
+	if err != nil {
+		return domainaccess.Decision{}, err
+	}
+	if !allowed {
+		return s.authorizeMissingPermission(ctx, request, definition.LegacyCapabilities)
+	}
+	if string(definition.ApprovalPolicy) == "required" && request.Context.ApprovalState != "approved" {
+		return domainaccess.Decision{
+			Status:     domainaccess.DecisionApprovalRequired,
+			Reason:     "permission requires an approved request",
+			ReasonCode: "approval_required",
+		}, nil
+	}
+
+	return s.authorizePermissionScope(ctx, request)
+}
+
+func (s *Service) authorizeMissingPermission(ctx context.Context, request domainaccess.Request, legacyCapabilities []string) (domainaccess.Decision, error) {
+	if len(request.Principal.PermissionKeys) == 0 && slices.Contains(legacyCapabilities, string(request.Action)) {
+		legacyDecision, err := s.authorizeLegacyAction(ctx, request)
+		if err != nil {
+			return domainaccess.Decision{}, err
+		}
+		if legacyDecision.Allowed {
+			legacyDecision.ReasonCode = "legacy_capability_allowed"
+			return legacyDecision, nil
+		}
+	}
+	return domainaccess.Decision{Reason: fmt.Sprintf("missing permission %s", request.PermissionKey), ReasonCode: "missing_permission"}, nil
+}
+
+func (s *Service) authorizePermissionScope(ctx context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+	policies, err := s.loadPolicies(ctx)
+	if err != nil {
+		return domainaccess.Decision{}, err
+	}
+	decision, err := s.policyEngine.Evaluate(ctx, request, policies)
+	if err != nil {
+		return domainaccess.Decision{}, err
+	}
+	if !decision.Allowed && decision.Reason != "" {
+		decision.ReasonCode = "abac_denied"
+		return decision, nil
+	}
+	if decision.Reason == "" && isClusterlessDeliveryRequest(request) {
+		decision = domainaccess.Decision{Allowed: true, Reason: "delivery permission matched without cluster-scoped ABAC policy"}
+	}
+	if decision.Reason == "" {
+		return domainaccess.Decision{Reason: "no ABAC policy matched request scope", ReasonCode: "abac_no_match"}, nil
+	}
+
+	decision.Allowed = true
+	decision.AllowedActions = []domainaccess.Action{request.Action}
+	rolePermissions, err := s.permissions.RolePermissionMatrix(ctx)
+	if err != nil {
+		return domainaccess.Decision{}, err
+	}
+	roleMatrix := make(map[string][]domainaccess.Action, len(rolePermissions))
+	for roleID, permissionKeys := range rolePermissions {
+		if slices.Contains(permissionKeys, request.PermissionKey) {
+			roleMatrix[roleID] = []domainaccess.Action{request.Action}
+		}
+	}
+	return s.applyScopeGrantConstraint(ctx, request, decision, roleMatrix)
+}
+
+func finalizeDecision(request domainaccess.Request, decision domainaccess.Decision) domainaccess.Decision {
+	decision.PermissionKey = strings.TrimSpace(request.PermissionKey)
+	decision.Action = request.Action
+	if decision.Status == "" {
+		if decision.Allowed {
+			decision.Status = domainaccess.DecisionAllow
+		} else {
+			decision.Status = domainaccess.DecisionDeny
+		}
+	}
+	if decision.ReasonCode == "" {
+		if decision.Allowed {
+			decision.ReasonCode = "allowed"
+		} else {
+			decision.ReasonCode = "denied"
+		}
+	}
+	if catalog, err := loadPermissionCatalog(); err == nil {
+		decision.PolicyVersion = catalog.ContentHash
+	}
+	return decision
 }
 
 func (s *Service) loadPolicies(ctx context.Context) ([]domainaccess.Policy, error) {
@@ -559,7 +689,7 @@ func unionActions(left []domainaccess.Action, right []domainaccess.Action) []dom
 }
 
 func allActions() []domainaccess.Action {
-	return []domainaccess.Action{
+	actions := []domainaccess.Action{
 		domainaccess.ActionView,
 		domainaccess.ActionList,
 		domainaccess.ActionWatch,
@@ -573,4 +703,13 @@ func allActions() []domainaccess.Action {
 		domainaccess.ActionLogs,
 		domainaccess.ActionExec,
 	}
+	if catalog, err := loadPermissionCatalog(); err == nil {
+		for _, definition := range catalog.Permissions {
+			action := domainaccess.Action(definition.Action)
+			if action != "" && !slices.Contains(actions, action) {
+				actions = append(actions, action)
+			}
+		}
+	}
+	return actions
 }

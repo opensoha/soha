@@ -119,7 +119,7 @@ func (s *Service) ListDataSources(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) CreateDataSource(ctx context.Context, principal domainidentity.Principal, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.DataSource{}, err
 	}
 	item, err := s.normalizeDataSourceInput(input)
@@ -145,7 +145,7 @@ func (s *Service) CreateDataSource(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity.Principal, dataSourceID string, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.DataSource{}, err
 	}
 	input.ID = strings.TrimSpace(dataSourceID)
@@ -157,7 +157,7 @@ func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) ValidateDataSource(ctx context.Context, principal domainidentity.Principal, dataSourceID string) (domaincopilot.DataSource, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.DataSource{}, err
 	}
 	item, err := s.dataSources.GetDataSource(ctx, strings.TrimSpace(dataSourceID))
@@ -196,7 +196,7 @@ func (s *Service) ListAnalysisProfiles(ctx context.Context, principal domainiden
 }
 
 func (s *Service) CreateAnalysisProfile(ctx context.Context, principal domainidentity.Principal, input domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.AnalysisProfile{}, err
 	}
 	item, err := normalizeAnalysisProfileInput(input)
@@ -222,7 +222,7 @@ func (s *Service) CreateAnalysisProfile(ctx context.Context, principal domainide
 }
 
 func (s *Service) UpdateAnalysisProfile(ctx context.Context, principal domainidentity.Principal, profileID string, input domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.AnalysisProfile{}, err
 	}
 	input.ID = strings.TrimSpace(profileID)
@@ -241,7 +241,7 @@ func (s *Service) ListAutomationPolicies(ctx context.Context, principal domainid
 }
 
 func (s *Service) CreateAutomationPolicy(ctx context.Context, principal domainidentity.Principal, input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.AutomationPolicy{}, err
 	}
 	item, err := normalizeAutomationPolicyInput(input)
@@ -268,7 +268,7 @@ func (s *Service) CreateAutomationPolicy(ctx context.Context, principal domainid
 }
 
 func (s *Service) UpdateAutomationPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.AutomationPolicy{}, err
 	}
 	input.ID = strings.TrimSpace(policyID)
@@ -280,7 +280,7 @@ func (s *Service) UpdateAutomationPolicy(ctx context.Context, principal domainid
 }
 
 func (s *Service) DeleteAutomationPolicy(ctx context.Context, principal domainidentity.Principal, policyID string) error {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return err
 	}
 	return s.automationPolicies.DeleteAutomationPolicy(ctx, strings.TrimSpace(policyID))

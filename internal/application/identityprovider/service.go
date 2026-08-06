@@ -818,7 +818,7 @@ func (s *Service) GetProvider(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) CreateProvider(ctx context.Context, principal domainidentity.Principal, input domainprovider.ProviderInput) (domainprovider.Provider, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "create")); err != nil {
 		return domainprovider.Provider{}, err
 	}
 	now := time.Now().UTC()
@@ -843,7 +843,7 @@ func (s *Service) CreateProvider(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) UpdateProvider(ctx context.Context, principal domainidentity.Principal, providerID string, input domainprovider.ProviderInput) (domainprovider.Provider, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "update")); err != nil {
 		return domainprovider.Provider{}, err
 	}
 	current, err := s.repo.GetProvider(ctx, providerID)
@@ -877,7 +877,7 @@ func (s *Service) UpdateProvider(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) DeleteProvider(ctx context.Context, principal domainidentity.Principal, providerID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "delete")); err != nil {
 		return err
 	}
 	item, err := s.repo.GetProvider(ctx, providerID)
@@ -923,7 +923,7 @@ func (s *Service) GetOutpost(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) CreateOutpost(ctx context.Context, principal domainidentity.Principal, input domainprovider.OutpostInput) (domainprovider.Outpost, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityOutpostsManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityOutpostsManage, "create")); err != nil {
 		return domainprovider.Outpost{}, err
 	}
 	now := time.Now().UTC()
@@ -949,7 +949,7 @@ func (s *Service) CreateOutpost(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) UpdateOutpost(ctx context.Context, principal domainidentity.Principal, outpostID string, input domainprovider.OutpostInput) (domainprovider.Outpost, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityOutpostsManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityOutpostsManage, "update")); err != nil {
 		return domainprovider.Outpost{}, err
 	}
 	current, err := s.repo.GetOutpost(ctx, outpostID)
@@ -977,7 +977,7 @@ func (s *Service) UpdateOutpost(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) DeleteOutpost(ctx context.Context, principal domainidentity.Principal, outpostID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityOutpostsManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityOutpostsManage, "delete")); err != nil {
 		return err
 	}
 	item, err := s.repo.GetOutpost(ctx, outpostID)
@@ -994,7 +994,7 @@ func (s *Service) DeleteOutpost(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) RotateOutpostToken(ctx context.Context, principal domainidentity.Principal, outpostID string) (domainprovider.Outpost, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityOutpostsManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityOutpostsManage, "rotate")); err != nil {
 		return domainprovider.Outpost{}, err
 	}
 	outpost, err := s.repo.GetOutpost(ctx, outpostID)
@@ -1179,7 +1179,7 @@ func (s *Service) ListOIDCClients(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) CreateOIDCClient(ctx context.Context, principal domainidentity.Principal, providerID string, input domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "create")); err != nil {
 		return domainprovider.OIDCClientCreated{}, err
 	}
 	input.ProviderID = providerID
@@ -1207,7 +1207,7 @@ func (s *Service) CreateOIDCClient(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) UpdateOIDCClient(ctx context.Context, principal domainidentity.Principal, clientID string, input domainprovider.OIDCClientInput) (domainprovider.OIDCClient, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "update")); err != nil {
 		return domainprovider.OIDCClient{}, err
 	}
 	current, err := s.repo.GetOIDCClient(ctx, clientID)
@@ -1242,7 +1242,7 @@ func (s *Service) UpdateOIDCClient(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) DeleteOIDCClient(ctx context.Context, principal domainidentity.Principal, clientID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "delete")); err != nil {
 		return err
 	}
 	item, err := s.repo.GetOIDCClient(ctx, clientID)
@@ -1737,7 +1737,7 @@ func (s *Service) ensureSigningKey(ctx context.Context, providerID string) (doma
 }
 
 func (s *Service) RotateSigningKey(ctx context.Context, principal domainidentity.Principal, providerID string) (domainprovider.SigningKey, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "rotate")); err != nil {
 		return domainprovider.SigningKey{}, err
 	}
 	provider, err := s.requireOIDCProvider(ctx, providerID)

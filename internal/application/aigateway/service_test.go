@@ -2462,7 +2462,7 @@ func TestCreatePersonalAccessTokenAllowsRelayDebugMetadataForManager(t *testing.
 			"admin": {
 				appaccess.PermAIGatewayInvoke,
 				appaccess.PermAIGatewayRelayInvoke,
-				appaccess.PermAIGatewayRelayManage,
+				appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test"),
 			},
 		},
 	}), nil, &memoryGatewayRepository{})
@@ -2471,7 +2471,7 @@ func TestCreatePersonalAccessTokenAllowsRelayDebugMetadataForManager(t *testing.
 	principal.PermissionKeys = []string{
 		appaccess.PermAIGatewayInvoke,
 		appaccess.PermAIGatewayRelayInvoke,
-		appaccess.PermAIGatewayRelayManage,
+		appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test"),
 	}
 	created, err := service.CreatePersonalAccessToken(context.Background(), principal, domainaigateway.PersonalAccessTokenInput{
 		Name:           "relay-debug",
@@ -3661,7 +3661,7 @@ func TestGatewayGovernanceStatusRuntimeTool(t *testing.T) {
 	repo := governanceHealthyControlRepo()
 	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"admin": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			"admin": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
 		},
 	}), nil, repo)
 	principal := testPrincipal("admin")
@@ -3674,7 +3674,7 @@ func TestGatewayGovernanceStatusRuntimeTool(t *testing.T) {
 		return item.Name == "gateway.governance.status" &&
 			item.RiskLevel == domainaigateway.RiskLevelRead &&
 			slices.Contains(item.PermissionKeys, appaccess.PermAIGatewayInvoke) &&
-			slices.Contains(item.PermissionKeys, appaccess.PermAIGatewayManage)
+			slices.Contains(item.PermissionKeys, appaccess.PermAIGatewayView)
 	}) {
 		t.Fatalf("expected gateway.governance.status runtime tool in manifest, got %#v", manifest.Tools)
 	}
@@ -3708,7 +3708,12 @@ func TestGatewayGovernanceListRuntimeTools(t *testing.T) {
 			"admin": {
 				appaccess.PermAIGatewayView,
 				appaccess.PermAIGatewayInvoke,
-				appaccess.PermAIGatewayManage,
+				appaccess.PermAIGatewayApprovalsManage,
+				appaccess.PermAIGatewayClientsManage,
+				appaccess.PermAIGatewayGrantsManage,
+				appaccess.PermAIGatewayPoliciesManage,
+				appaccess.PermAIGatewaySkillsManage,
+				appaccess.PermAIGatewayTokensManage,
 			},
 		},
 	}), &captureAuditRecorder{}, repo)
@@ -3942,7 +3947,7 @@ func TestGatewayApprovalRelayCallAndCacheRuntimeTools(t *testing.T) {
 			"admin": {
 				appaccess.PermAIGatewayView,
 				appaccess.PermAIGatewayInvoke,
-				appaccess.PermAIGatewayManage,
+				appaccess.PermAIGatewayApprovalsManage,
 				appaccess.PermAIGatewayRelayView,
 				appaccess.PermAIGatewayRelayManage,
 			},
@@ -8038,7 +8043,7 @@ func TestInvokeReleaseFailureDiagnosisQueuesExternalAgentRuntime(t *testing.T) {
 	}
 }
 
-func TestListAuditLogsRequiresManageAndFilters(t *testing.T) {
+func TestListAuditLogsRequiresViewAndFilters(t *testing.T) {
 	now := time.Now().UTC()
 	repo := &memoryGatewayRepository{
 		auditLogs: []domainaigateway.AuditLog{
@@ -8071,8 +8076,8 @@ func TestListAuditLogsRequiresManageAndFilters(t *testing.T) {
 	}
 	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"admin":     {appaccess.PermAIGatewayManage},
-			"developer": {appaccess.PermAIGatewayView},
+			"admin":     {appaccess.PermAIGatewayView},
+			"developer": {appaccess.PermAIGatewayInvoke},
 		},
 	}), nil, repo)
 
@@ -8089,7 +8094,7 @@ func TestListAuditLogsRequiresManageAndFilters(t *testing.T) {
 	}
 
 	if _, err := service.ListAuditLogs(context.Background(), testPrincipal("developer"), domainaigateway.AuditLogFilter{}); err == nil {
-		t.Fatalf("expected ai.gateway.manage to be required")
+		t.Fatalf("expected ai.gateway.view to be required")
 	}
 }
 

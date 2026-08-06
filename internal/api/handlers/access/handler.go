@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
@@ -26,6 +27,8 @@ type UserService interface {
 
 type CatalogService interface {
 	ListRoles(context.Context, domainidentity.Principal) ([]domainaccess.RoleRecord, error)
+	GetRole(context.Context, domainidentity.Principal, string) (domainaccess.RoleRecord, error)
+	PermissionCatalog(context.Context, domainidentity.Principal) (sohaapi.PermissionCatalog, error)
 	ListTeams(context.Context, domainidentity.Principal) ([]domainaccess.TeamRecord, error)
 	ListPolicies(context.Context, domainidentity.Principal) ([]domainaccess.Policy, error)
 	PermissionSnapshot(context.Context, domainidentity.Principal) (domainaccess.PermissionSnapshot, error)
@@ -169,6 +172,26 @@ func (h *catalogHandler) ListRoles(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *catalogHandler) GetRole(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetRole(c.Request.Context(), principal, c.Param("roleID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *catalogHandler) PermissionCatalog(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.PermissionCatalog(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *catalogHandler) ListTeams(c *gin.Context) {

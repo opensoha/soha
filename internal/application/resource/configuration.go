@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -85,6 +86,9 @@ func (c *Configuration) UpdateConfigMapData(ctx context.Context, principal domai
 func (c *Configuration) GetSecretDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.SecretDetailView, error) {
 	connection, _, err := c.authorize(ctx, principal, clusterID, namespace, "Secret", domainaccess.ActionView)
 	if err != nil {
+		return domainresource.SecretDetailView{}, err
+	}
+	if err := c.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformConfigurationSecretDataView); err != nil {
 		return domainresource.SecretDetailView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {

@@ -163,7 +163,7 @@ func shouldShowMenu(item domainmenu.Record, roleIDs []string, permissionKeys []s
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainmenu.Input) (domainmenu.Record, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemMenusManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSystemMenusManage, "create")); err != nil {
 		return domainmenu.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -178,7 +178,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, menuID string, input domainmenu.Input) (domainmenu.Record, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemMenusManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSystemMenusManage, "update")); err != nil {
 		return domainmenu.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -198,7 +198,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, menuID string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemMenusManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSystemMenusManage, "delete")); err != nil {
 		return err
 	}
 	if strings.TrimSpace(menuID) == "" {

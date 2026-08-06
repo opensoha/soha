@@ -38,7 +38,7 @@ func (s *Service) GetIdentitySettings(ctx context.Context, principal domainident
 }
 
 func (s *Service) UpdateLoginProvidersSettings(ctx context.Context, principal domainidentity.Principal, providers []domainsettings.LoginProviderSettings, defaultProviderID string, localPasswordEnabled bool) (domainsettings.IdentitySettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsIdentityManage, "update")); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
 	normalized := make([]domainsettings.LoginProviderSettings, 0, len(providers))
@@ -93,14 +93,11 @@ func (s *Service) GetAISettings(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) GetBrandingSettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.BrandingSettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsBrandingView); err != nil {
-		return domainsettings.BrandingSettings{}, err
-	}
 	return s.brandingSettings(ctx)
 }
 
 func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.BrandingSettings) (domainsettings.BrandingSettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsBrandingManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsBrandingManage, "update")); err != nil {
 		return domainsettings.BrandingSettings{}, err
 	}
 	input.AppTitle = strings.TrimSpace(input.AppTitle)
@@ -124,7 +121,7 @@ func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainid
 }
 
 func (s *Service) UpdateAIWorkbenchModelSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.AIWorkbenchModelSettings) (domainsettings.AISettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domainsettings.AISettings{}, err
 	}
 	current, err := s.aiSettings(ctx)
@@ -136,7 +133,7 @@ func (s *Service) UpdateAIWorkbenchModelSettings(ctx context.Context, principal 
 }
 
 func (s *Service) UpdateAISkillsRegistry(ctx context.Context, principal domainidentity.Principal, skills []domainsettings.AISkillSettings) (domainsettings.AISettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domainsettings.AISettings{}, err
 	}
 	current, err := s.aiSettings(ctx)

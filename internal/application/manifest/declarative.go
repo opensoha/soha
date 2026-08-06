@@ -101,7 +101,7 @@ func (s *DeclarativeService) GetSource(ctx context.Context, principal domainiden
 }
 
 func (s *DeclarativeService) UpdateSource(ctx context.Context, principal domainidentity.Principal, packageID string, input domainmanifest.SourceInput) (domainmanifest.Source, error) {
-	if err := s.base.authorize(ctx, principal, appaccess.PermDeliveryManifestSourcesManage); err != nil {
+	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestSourcesManage, "update")); err != nil {
 		return domainmanifest.Source{}, err
 	}
 	item, err := s.base.get(ctx, packageID)
@@ -140,7 +140,7 @@ func (s *DeclarativeService) ListBindings(ctx context.Context, principal domaini
 }
 
 func (s *DeclarativeService) CreateBinding(ctx context.Context, principal domainidentity.Principal, packageID string, input domainmanifest.BindingInput) (domainmanifest.EnvironmentBinding, error) {
-	if err := s.base.authorize(ctx, principal, appaccess.PermDeliveryManifestDeploymentsManage); err != nil {
+	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "create")); err != nil {
 		return domainmanifest.EnvironmentBinding{}, err
 	}
 	item, app, err := s.bindingPackage(ctx, principal, packageID, domainaccess.ActionUpdate)
@@ -169,7 +169,7 @@ func (s *DeclarativeService) CreateBinding(ctx context.Context, principal domain
 }
 
 func (s *DeclarativeService) UpdateBinding(ctx context.Context, principal domainidentity.Principal, bindingID string, input domainmanifest.BindingUpdateInput) (domainmanifest.EnvironmentBinding, error) {
-	if err := s.base.authorize(ctx, principal, appaccess.PermDeliveryManifestDeploymentsManage); err != nil {
+	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "update")); err != nil {
 		return domainmanifest.EnvironmentBinding{}, err
 	}
 	existing, err := s.repository.GetBinding(ctx, strings.TrimSpace(bindingID))
@@ -204,7 +204,7 @@ func (s *DeclarativeService) UpdateBinding(ctx context.Context, principal domain
 }
 
 func (s *DeclarativeService) DeleteBinding(ctx context.Context, principal domainidentity.Principal, bindingID string) error {
-	if err := s.base.authorize(ctx, principal, appaccess.PermDeliveryManifestDeploymentsManage); err != nil {
+	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "delete")); err != nil {
 		return err
 	}
 	existing, err := s.repository.GetBinding(ctx, strings.TrimSpace(bindingID))

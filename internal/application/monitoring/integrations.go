@@ -52,7 +52,7 @@ func (s *Service) GetAlertIntegration(ctx context.Context, principal domainident
 }
 
 func (s *Service) CreateAlertIntegration(ctx context.Context, principal domainidentity.Principal, input domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertIntegrationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAlertIntegrationsManage, "create")); err != nil {
 		return domainalert.AlertIntegration{}, err
 	}
 	if s.integrations == nil {
@@ -69,7 +69,7 @@ func (s *Service) CreateAlertIntegration(ctx context.Context, principal domainid
 }
 
 func (s *Service) UpdateAlertIntegration(ctx context.Context, principal domainidentity.Principal, integrationID string, input domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertIntegrationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAlertIntegrationsManage, "update")); err != nil {
 		return domainalert.AlertIntegration{}, err
 	}
 	if s.integrations == nil {
@@ -92,7 +92,7 @@ func (s *Service) UpdateAlertIntegration(ctx context.Context, principal domainid
 }
 
 func (s *Service) TestAlertIntegration(ctx context.Context, principal domainidentity.Principal, input domainalert.AlertIntegrationTestInput) (domainalert.AlertIntegrationTestResult, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertIntegrationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAlertIntegrationsManage, "test")); err != nil {
 		return domainalert.AlertIntegrationTestResult{}, err
 	}
 	integration := domainalert.AlertIntegration{

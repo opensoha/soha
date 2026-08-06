@@ -25,6 +25,10 @@ func (w *Workloads) ListPods(ctx context.Context, principal domainidentity.Princ
 		return nil, err
 	}
 	populateAllowedActionsPods(items, decision)
+	allowedActions := s.allowedActionsForResource(ctx, principal, connection, namespace, "Pod", domainaccess.ActionList)
+	for index := range items {
+		items[index].AllowedActions = narrowAllowedActions(items[index].AllowedActions, allowedActions)
+	}
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed pods via %s in namespace %s", source, displayNamespace(namespace)))
 	return items, nil
 }
@@ -47,7 +51,7 @@ func (w *Workloads) GetWorkloadOverview(ctx context.Context, principal domainide
 
 func (w *Workloads) GetPodDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.PodDetailView, error) {
 	s := w
-	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionView)
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionView)
 	if err != nil {
 		return domainresource.PodDetailView{}, err
 	}
@@ -60,7 +64,7 @@ func (w *Workloads) GetPodDetail(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domainresource.PodDetailView{}, route.RuntimeError(err)
 	}
-	item.AllowedActions = stringifyActions(decision.AllowedActions)
+	item.AllowedActions = narrowAllowedActions(item.AllowedActions, s.allowedActionsForResource(ctx, principal, connection, namespace, "Pod", domainaccess.ActionView))
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionView), "success", fmt.Sprintf("viewed pod detail via %s in namespace %s", route.Source(), displayNamespace(namespace)))
 	return item, nil
 }

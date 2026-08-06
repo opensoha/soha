@@ -46,6 +46,8 @@ func registerAccessUserRoleRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.DELETE("/access/users/:userID", deps.Access.DeleteUser)
 	protected.POST("/access/users/:userID/revoke-sessions", deps.Access.RevokeUserSessions)
 	protected.GET("/access/roles", deps.Access.ListRoles)
+	protected.GET("/access/roles/:roleID", deps.Access.GetRole)
+	protected.GET("/access/permissions", deps.Access.PermissionCatalog)
 	protected.POST("/access/roles", deps.Access.CreateRole)
 	protected.PUT("/access/roles/:roleID", deps.Access.UpdateRole)
 	protected.DELETE("/access/roles/:roleID", deps.Access.DeleteRole)

@@ -68,7 +68,7 @@ func (s *Service) ListLLMUpstreams(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) CreateLLMUpstream(ctx context.Context, principal domainidentity.Principal, input domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "create")); err != nil {
 		return domainaigateway.LLMUpstream{}, err
 	}
 	repo := s.llmRelayRepository()
@@ -92,7 +92,7 @@ func (s *Service) CreateLLMUpstream(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) UpdateLLMUpstream(ctx context.Context, principal domainidentity.Principal, upstreamID string, input domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "update")); err != nil {
 		return domainaigateway.LLMUpstream{}, err
 	}
 	repo := s.llmRelayRepository()
@@ -130,7 +130,7 @@ func (s *Service) UpdateLLMUpstream(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) TestLLMUpstream(ctx context.Context, principal domainidentity.Principal, upstreamID string) (domainaigateway.LLMUpstreamTestResult, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test")); err != nil {
 		return domainaigateway.LLMUpstreamTestResult{}, err
 	}
 	repo := s.llmRelayRepository()
@@ -175,7 +175,7 @@ func (s *Service) ListLLMModelRoutes(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) CreateLLMModelRoute(ctx context.Context, principal domainidentity.Principal, input domainaigateway.LLMModelRouteInput) (domainaigateway.LLMModelRoute, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "create")); err != nil {
 		return domainaigateway.LLMModelRoute{}, err
 	}
 	repo := s.llmRelayRepository()
@@ -199,7 +199,7 @@ func (s *Service) CreateLLMModelRoute(ctx context.Context, principal domainident
 }
 
 func (s *Service) UpdateLLMModelRoute(ctx context.Context, principal domainidentity.Principal, routeID string, input domainaigateway.LLMModelRouteInput) (domainaigateway.LLMModelRoute, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "update")); err != nil {
 		return domainaigateway.LLMModelRoute{}, err
 	}
 	repo := s.llmRelayRepository()
@@ -223,7 +223,7 @@ func (s *Service) UpdateLLMModelRoute(ctx context.Context, principal domainident
 }
 
 func (s *Service) DeleteLLMModelRoute(ctx context.Context, principal domainidentity.Principal, routeID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "delete")); err != nil {
 		return err
 	}
 	repo := s.llmRelayRepository()
@@ -244,7 +244,7 @@ func (s *Service) DeleteLLMModelRoute(ctx context.Context, principal domainident
 }
 
 func (s *Service) ListLLMCallLogs(ctx context.Context, principal domainidentity.Principal, filter domainaigateway.LLMCallLogFilter) ([]domainaigateway.LLMCallLog, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayView); err != nil {
 		return nil, err
 	}
 	return s.listLLMCallLogs(ctx, filter)
@@ -791,11 +791,11 @@ func (s *Service) authorizeRelayExplicitUpstream(ctx context.Context, principal 
 	if upstreamID == "" {
 		return nil
 	}
-	hasManage, err := s.hasRuntimePermission(ctx, principal, appaccess.PermAIGatewayRelayManage)
+	hasTest, err := s.hasRuntimePermission(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test"))
 	if err != nil {
 		return err
 	}
-	if hasManage {
+	if hasTest {
 		return nil
 	}
 	if relayExplicitUpstreamAllowedByToken(accessCtx.Metadata, upstreamID) {
@@ -808,11 +808,11 @@ func (s *Service) authorizeRelayRouteTrace(ctx context.Context, principal domain
 	if !relayRouteTraceRequested(req) {
 		return nil
 	}
-	hasManage, err := s.hasRuntimePermission(ctx, principal, appaccess.PermAIGatewayRelayManage)
+	hasTest, err := s.hasRuntimePermission(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test"))
 	if err != nil {
 		return err
 	}
-	if hasManage || relayDebugHeadersAllowedByToken(accessCtx.Metadata) {
+	if hasTest || relayDebugHeadersAllowedByToken(accessCtx.Metadata) {
 		return nil
 	}
 	return fmt.Errorf("%w: relay route trace headers are not allowed", apperrors.ErrAccessDenied)

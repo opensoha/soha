@@ -42,14 +42,6 @@ func (s *ResourceCreation) PreflightCreate(ctx context.Context, principal domain
 	if s == nil {
 		return domainresource.ResourceCreatePreflight{}, fmt.Errorf("%w: resource creation service is not configured", apperrors.ErrClusterUnready)
 	}
-	if request.Source == domainresource.ResourceCreateSourceGlobal {
-		if s.permissions == nil {
-			return domainresource.ResourceCreatePreflight{}, fmt.Errorf("%w: global resource creation permission resolver is unavailable", apperrors.ErrAccessDenied)
-		}
-		if err := s.permissions.Authorize(ctx, principal, "platform.resource.create"); err != nil {
-			return domainresource.ResourceCreatePreflight{}, fmt.Errorf("%w: global resource creation permission is required", apperrors.ErrAccessDenied)
-		}
-	}
 	_, manifests, err := s.resolveCreateManifests(ctx, clusterID, request.Content)
 	if err != nil {
 		return domainresource.ResourceCreatePreflight{}, err

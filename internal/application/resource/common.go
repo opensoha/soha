@@ -3,9 +3,11 @@ package resource
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
@@ -141,7 +143,7 @@ func (s *resourceAccess) decide(ctx context.Context, principal domainidentity.Pr
 	if err != nil {
 		return domaincluster.Connection{}, domainaccess.Decision{}, err
 	}
-	request := s.resourceAccessRequest(ctx, principal, connection, namespace, kind, action)
+	request := s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroup, kind, action)
 	if strings.TrimSpace(resourceGroup) != "" {
 		request.Resource.Group = strings.TrimSpace(resourceGroup)
 	}
@@ -176,10 +178,11 @@ func shouldResolveNamespaceLabels(decision domainaccess.Decision, namespace stri
 	reason := strings.ToLower(decision.Reason)
 	return strings.Contains(reason, "namespace") || strings.Contains(reason, "scope grant")
 }
-func (s *resourceAccess) resourceAccessRequest(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind string, action domainaccess.Action) domainaccess.Request {
+func (s *resourceAccess) resourceAccessRequest(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, resourceGroup, kind string, action domainaccess.Action) domainaccess.Request {
 	return domainaccess.Request{
-		Principal: principal,
-		Action:    action,
+		Principal:     principal,
+		Action:        action,
+		PermissionKey: resourcePermissionKey(resourceGroup, kind, action),
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,
@@ -205,11 +208,132 @@ func (s *resourceAccess) allowedActionsForResource(ctx context.Context, principa
 	if s == nil || s.authorizer == nil {
 		return nil
 	}
-	decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, kind, action))
+	candidates := resourceActionCandidates(resourceGroupForKind(kind), kind)
+	if len(candidates) > 0 {
+		allowed := make([]string, 0, len(candidates))
+		for _, candidate := range candidates {
+			decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroupForKind(kind), kind, candidate))
+			if err == nil && decision.Allowed {
+				allowed = append(allowed, string(candidate))
+			}
+		}
+		return allowed
+	}
+	decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroupForKind(kind), kind, action))
 	if err != nil || !decision.Allowed {
 		return nil
 	}
 	return stringifyActions(decision.AllowedActions)
+}
+
+func resourcePermissionKey(resourceGroup, kind string, action domainaccess.Action) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "pod":
+		if key := podPermissionKey(action); key != "" {
+			return key
+		}
+	case "deployment":
+		if key := deploymentPermissionKey(action); key != "" {
+			return key
+		}
+	case "event":
+		if isResourceReadAction(action) {
+			return appaccess.PermPlatformWorkloadsOverviewView
+		}
+	case "networktopology":
+		if isResourceReadAction(action) {
+			return appaccess.PermPlatformNetworkTopologyView
+		}
+	}
+	if isResourceReadAction(action) {
+		switch strings.TrimSpace(resourceGroup) {
+		case "workloads", "configuration", "network", "storage", "access-control":
+			return appaccess.PlatformActionPermission(resourceGroup, kind, string(domainaccess.ActionView))
+		case "extensions":
+			if strings.EqualFold(kind, "HelmRelease") {
+				return appaccess.PermPlatformHelmView
+			}
+			return appaccess.PermPlatformExtensionsView
+		case "inventory":
+			switch strings.ToLower(strings.TrimSpace(kind)) {
+			case "namespace":
+				return appaccess.PermPlatformNamespacesView
+			case "node":
+				return appaccess.PermPlatformNodesView
+			case "cluster":
+				return appaccess.PermPlatformClustersView
+			}
+		}
+	}
+	return appaccess.PlatformActionPermission(resourceGroup, kind, string(action))
+}
+
+func podPermissionKey(action domainaccess.Action) string {
+	switch action {
+	case domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch:
+		return appaccess.PermPlatformPodsView
+	case domainaccess.ActionLogs:
+		return appaccess.PermPlatformPodsLogs
+	case domainaccess.ActionExec:
+		return appaccess.PermPlatformPodsExec
+	case domainaccess.ActionDelete:
+		return appaccess.PermPlatformPodsDelete
+	default:
+		return ""
+	}
+}
+
+func deploymentPermissionKey(action domainaccess.Action) string {
+	switch action {
+	case domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch:
+		return appaccess.PermPlatformDeploymentView
+	case domainaccess.ActionCreate:
+		return appaccess.PermPlatformDeploymentCreate
+	case domainaccess.ActionUpdate:
+		return appaccess.PermPlatformDeploymentUpdate
+	case domainaccess.ActionDelete:
+		return appaccess.PermPlatformDeploymentDelete
+	case domainaccess.ActionRestart:
+		return appaccess.PermPlatformDeploymentRestart
+	case domainaccess.ActionScale:
+		return appaccess.PermPlatformDeploymentScale
+	case domainaccess.ActionRollback:
+		return appaccess.PermPlatformDeploymentRollback
+	default:
+		return ""
+	}
+}
+
+func isResourceReadAction(action domainaccess.Action) bool {
+	return action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch
+}
+
+func resourceActionCandidates(resourceGroup, kind string) []domainaccess.Action {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "pod":
+		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionLogs, domainaccess.ActionExec, domainaccess.ActionDelete}
+	case "deployment":
+		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDelete, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionRollback}
+	}
+	switch strings.TrimSpace(resourceGroup) {
+	case "workloads", "configuration", "network", "storage", "access-control":
+		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDelete, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionSuspend}
+	default:
+		return nil
+	}
+}
+
+func narrowAllowedActions(existing, allowed []string) []string {
+	if len(existing) == 0 {
+		return append([]string(nil), allowed...)
+	}
+	result := make([]string, 0, len(existing))
+	for _, action := range existing {
+		if slices.Contains(allowed, action) {
+			result = append(result, action)
+		}
+	}
+	return result
 }
 func (s *resourceAccess) recordAudit(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, action, result, summary string) error {
 	meta := requestctx.FromContext(ctx)
@@ -259,7 +383,7 @@ func (s *resourceAccess) recordOperation(ctx context.Context, principal domainid
 		metadata,
 	))
 }
-func (s *resourceAccess) authorizeDeploymentPermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+func (s *resourceAccess) authorizeRuntimePermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
 	if s.permissions == nil {
 		return fmt.Errorf("%w: runtime permission resolver unavailable for %s", apperrors.ErrAccessDenied, strings.TrimSpace(permissionKey))
 	}
@@ -343,7 +467,7 @@ func resourceGroupForKind(kind string) string {
 		return "workloads"
 	case "configmap", "secret", "horizontalpodautoscaler", "poddisruptionbudget", "priorityclass", "runtimeclass", "resourcequota", "limitrange", "lease", "mutatingwebhookconfiguration", "validatingwebhookconfiguration":
 		return "configuration"
-	case "service", "ingress", "endpointslice", "networkpolicy", "gatewayclass", "gateway", "httproute", "grpcroute", "backendtlspolicy", "referencegrant", "ingressclass":
+	case "service", "ingress", "endpointslice", "networkpolicy", "gatewayclass", "gateway", "httproute", "grpcroute", "backendtlspolicy", "referencegrant", "ingressclass", "portforward":
 		return "network"
 	case "persistentvolumeclaim", "persistentvolume", "storageclass":
 		return "storage"

@@ -58,7 +58,7 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainregistry.Input) (domainregistry.Connection, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryRegistriesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryRegistriesManage, "create")); err != nil {
 		return domainregistry.Connection{}, err
 	}
 	item, err := normalizeInput(input)
@@ -80,7 +80,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, id string, input domainregistry.Input) (domainregistry.Connection, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryRegistriesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryRegistriesManage, "update")); err != nil {
 		return domainregistry.Connection{}, err
 	}
 	item, err := normalizeInput(input)
@@ -102,7 +102,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryRegistriesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryRegistriesManage, "delete")); err != nil {
 		return err
 	}
 	if strings.TrimSpace(id) == "" {

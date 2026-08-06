@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -222,6 +223,9 @@ func (h *Helm) GetHelmReleaseValues(ctx context.Context, principal domainidentit
 	s := h
 	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "HelmRelease", domainaccess.ActionView)
 	if err != nil {
+		return domainresource.HelmValuesView{}, err
+	}
+	if err := s.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformHelmValuesView); err != nil {
 		return domainresource.HelmValuesView{}, err
 	}
 

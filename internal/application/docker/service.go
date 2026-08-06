@@ -169,7 +169,7 @@ func (s *Service) GetHost(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) CreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.HostInput) (domaindocker.Host, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerHostsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "create")); err != nil {
 		return domaindocker.Host{}, err
 	}
 	if err := validateHostInput(input); err != nil {
@@ -184,7 +184,7 @@ func (s *Service) CreateHost(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) UpdateHost(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.HostInput) (domaindocker.Host, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerHostsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "update")); err != nil {
 		return domaindocker.Host{}, err
 	}
 	if err := validateHostInput(input); err != nil {
@@ -199,7 +199,7 @@ func (s *Service) UpdateHost(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) DeleteHost(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerHostsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "delete")); err != nil {
 		return err
 	}
 	current, _ := s.repo.GetHost(ctx, id)
@@ -244,7 +244,7 @@ func (s *Service) PlanQuickCreateHost(ctx context.Context, principal domainident
 }
 
 func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.QuickCreateHostInput) (domaindocker.Operation, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerHostsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "create")); err != nil {
 		return domaindocker.Operation{}, err
 	}
 	input, architecture, err := s.prepareQuickCreateHost(input)
@@ -408,7 +408,7 @@ func (s *Service) GetProject(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Principal, input domaindocker.ProjectInput) (domaindocker.Project, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerProjectsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "create")); err != nil {
 		return domaindocker.Project{}, err
 	}
 	if err := validateProjectInput(input); err != nil {
@@ -429,7 +429,7 @@ func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) UpdateProject(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ProjectInput) (domaindocker.Project, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerProjectsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "update")); err != nil {
 		return domaindocker.Project{}, err
 	}
 	if err := validateProjectInput(input); err != nil {
@@ -447,7 +447,7 @@ func (s *Service) UpdateProject(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) DeleteProject(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerProjectsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "delete")); err != nil {
 		return err
 	}
 	current, _ := s.repo.GetProject(ctx, id)
@@ -530,13 +530,7 @@ func buildProjectDeployPayload(project domaindocker.Project, action string) map[
 }
 
 func (s *Service) StartContainer(ctx context.Context, principal domainidentity.Principal, input domaindocker.ContainerStartInput) (domaindocker.Operation, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerProjectsManage); err != nil {
-		return domaindocker.Operation{}, err
-	}
-	if err := s.authorize(ctx, principal, appaccess.PermDockerProjectsDeploy); err != nil {
-		return domaindocker.Operation{}, err
-	}
-	if err := s.authorize(ctx, principal, appaccess.PermDockerPortsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "start")); err != nil {
 		return domaindocker.Operation{}, err
 	}
 	if err := validateContainerStartInput(input); err != nil {
@@ -730,16 +724,16 @@ func (s *Service) ListServices(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ServiceActionInput) (domaindocker.Operation, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesManage); err != nil {
+	normalizedAction := strings.TrimSpace(input.Action)
+	if !slices.Contains([]string{"restart", "start", "stop", "logs"}, normalizedAction) {
+		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported service action %s", apperrors.ErrInvalidArgument, normalizedAction)
+	}
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, normalizedAction)); err != nil {
 		return domaindocker.Operation{}, err
 	}
 	service, err := s.repo.GetService(ctx, id)
 	if err != nil {
 		return domaindocker.Operation{}, err
-	}
-	normalizedAction := strings.TrimSpace(input.Action)
-	if !slices.Contains([]string{"restart", "start", "stop", "logs"}, normalizedAction) {
-		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported service action %s", apperrors.ErrInvalidArgument, normalizedAction)
 	}
 	payload := map[string]any{"action": normalizedAction, "serviceName": service.Name}
 	if project, projectErr := s.repo.GetProject(ctx, service.ProjectID); projectErr == nil {
@@ -771,7 +765,7 @@ func (s *Service) ListPortMappings(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) CreatePortMapping(ctx context.Context, principal domainidentity.Principal, input domaindocker.PortMappingInput) (domaindocker.PortMapping, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerPortsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerPortsManage, "create")); err != nil {
 		return domaindocker.PortMapping{}, err
 	}
 	input = normalizePortMappingInput(input)
@@ -793,7 +787,7 @@ func (s *Service) CreatePortMapping(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) UpdatePortMapping(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.PortMappingInput) (domaindocker.PortMapping, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerPortsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerPortsManage, "update")); err != nil {
 		return domaindocker.PortMapping{}, err
 	}
 	input = normalizePortMappingInput(input)
@@ -809,7 +803,7 @@ func (s *Service) UpdatePortMapping(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) DeletePortMapping(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerPortsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerPortsManage, "delete")); err != nil {
 		return err
 	}
 	current, _ := s.repo.GetPortMapping(ctx, id)
@@ -836,7 +830,7 @@ func (s *Service) ListTemplates(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) CreateTemplate(ctx context.Context, principal domainidentity.Principal, input domaindocker.TemplateInput) (domaindocker.Template, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerTemplatesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerTemplatesManage, "create")); err != nil {
 		return domaindocker.Template{}, err
 	}
 	if strings.TrimSpace(input.Name) == "" {
@@ -851,7 +845,7 @@ func (s *Service) CreateTemplate(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) UpdateTemplate(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.TemplateInput) (domaindocker.Template, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerTemplatesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerTemplatesManage, "update")); err != nil {
 		return domaindocker.Template{}, err
 	}
 	if strings.TrimSpace(input.Name) == "" {
@@ -866,7 +860,7 @@ func (s *Service) UpdateTemplate(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) DeleteTemplate(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerTemplatesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerTemplatesManage, "delete")); err != nil {
 		return err
 	}
 	current, _ := s.repo.GetTemplate(ctx, id)
@@ -914,7 +908,7 @@ func (s *Service) ListOperationLogs(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.Principal, id string) (domaindocker.Operation, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerOperationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "cancel")); err != nil {
 		return domaindocker.Operation{}, err
 	}
 	item, err := s.repo.GetOperation(ctx, id)
@@ -939,7 +933,7 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, id string) (domaindocker.Operation, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerOperationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "retry")); err != nil {
 		return domaindocker.Operation{}, err
 	}
 	item, err := s.repo.GetOperation(ctx, id)

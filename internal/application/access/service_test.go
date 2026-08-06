@@ -38,6 +38,81 @@ func TestPermissionCatalogDropsGlobalMonitoringSettingsPermissions(t *testing.T)
 	}
 }
 
+func TestCanonicalPermissionCatalogMatchesBackendKeys(t *testing.T) {
+	catalog, err := loadPermissionCatalog()
+	if err != nil {
+		t.Fatalf("loadPermissionCatalog returned error: %v", err)
+	}
+	keys := allPermissionKeys()
+	if len(catalog.Permissions) != len(keys) {
+		t.Fatalf("catalog permissions = %d, backend keys = %d", len(catalog.Permissions), len(keys))
+	}
+	for _, definition := range catalog.Permissions {
+		if !slices.Contains(keys, definition.Key) {
+			t.Fatalf("canonical permission %q missing from backend keys", definition.Key)
+		}
+	}
+}
+
+func TestExactPermissionAllowsVMCreateAndResizeButDeniesDelete(t *testing.T) {
+	service := New(policy.NewEngine(), nil, nil, nil)
+	service.SetPermissionResolver(NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{
+		"admin": {PermVirtualizationVMsCreate, PermVirtualizationVMsResize},
+	}}))
+	principal := domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}}
+	request := domainaccess.Request{
+		Principal: principal,
+		Subject:   domainaccess.SubjectAttributes{UserID: principal.UserID, Roles: principal.Roles},
+		Resource:  domainaccess.ResourceAttributes{Kind: "VirtualMachine", Name: "vm-1"},
+	}
+
+	for _, permissionKey := range []string{PermVirtualizationVMsCreate, PermVirtualizationVMsResize} {
+		request.PermissionKey = permissionKey
+		decision, err := service.Authorize(context.Background(), request)
+		if err != nil {
+			t.Fatalf("Authorize(%s) returned error: %v", permissionKey, err)
+		}
+		if !decision.Allowed || decision.Status != domainaccess.DecisionAllow {
+			t.Fatalf("Authorize(%s) = %#v, want allow", permissionKey, decision)
+		}
+	}
+
+	request.PermissionKey = PermVirtualizationVMsDelete
+	decision, err := service.Authorize(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Authorize(delete) returned error: %v", err)
+	}
+	if decision.Allowed || decision.Status != domainaccess.DecisionDeny || decision.ReasonCode != "missing_permission" {
+		t.Fatalf("Authorize(delete) = %#v, want missing-permission deny", decision)
+	}
+}
+
+func TestLegacyManagePermissionExpandsOnlyToReplacementActions(t *testing.T) {
+	resolver := NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{
+		"custom": {PermVirtualizationVMsManage},
+	}})
+	principal := domainidentity.Principal{Roles: []string{"custom"}}
+	for _, permissionKey := range []string{
+		PermVirtualizationVMsCreate,
+		PermVirtualizationVMsPower,
+		PermVirtualizationVMsResize,
+		PermVirtualizationVMsDelete,
+	} {
+		allowed, err := resolver.HasPermission(context.Background(), principal, permissionKey)
+		if err != nil || !allowed {
+			t.Fatalf("legacy alias did not allow %s: allowed=%v err=%v", permissionKey, allowed, err)
+		}
+	}
+	principal = domainidentity.Principal{Roles: []string{"custom"}, PermissionKeys: []string{PermVirtualizationVMsResize}}
+	allowed, err := resolver.HasPermission(context.Background(), principal, PermVirtualizationVMsDelete)
+	if err != nil {
+		t.Fatalf("HasPermission returned error: %v", err)
+	}
+	if allowed {
+		t.Fatal("token permission cap leaked VM delete from legacy manage")
+	}
+}
+
 func TestGlobalResourceCreateEntryPermissionDefaultsToAdminAndOps(t *testing.T) {
 	SetRolePermissionMatrix(nil)
 	for _, role := range []string{"admin", "ops"} {

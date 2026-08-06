@@ -110,16 +110,22 @@ func assertGatewayGovernanceListToolManifest(t *testing.T, service *Service, pri
 	if err != nil {
 		t.Fatalf("Capabilities returned error: %v", err)
 	}
-	toolNames := []string{
-		"gateway.clients.list", "gateway.tokens.list", "gateway.service_accounts.list", "gateway.tool_grants.list",
-		"gateway.access_policies.list", "gateway.skill_bindings.list", "gateway.approvals.list", "gateway.audit_logs.list",
+	expectedTools := map[string]string{
+		"gateway.clients.list":          appaccess.ManagedActionPermission(appaccess.PermAIGatewayClientsManage, "view"),
+		"gateway.tokens.list":           appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "view"),
+		"gateway.service_accounts.list": appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "view"),
+		"gateway.tool_grants.list":      appaccess.ManagedActionPermission(appaccess.PermAIGatewayGrantsManage, "view"),
+		"gateway.access_policies.list":  appaccess.ManagedActionPermission(appaccess.PermAIGatewayPoliciesManage, "view"),
+		"gateway.skill_bindings.list":   appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "view"),
+		"gateway.approvals.list":        appaccess.ManagedActionPermission(appaccess.PermAIGatewayApprovalsManage, "view"),
+		"gateway.audit_logs.list":       appaccess.PermAIGatewayView,
 	}
-	for _, toolName := range toolNames {
+	for toolName, permission := range expectedTools {
 		tool, ok := toolByNameFrom(toolName, manifest.Tools)
 		if !ok {
 			t.Fatalf("expected %s in manifest", toolName)
 		}
-		if tool.RiskLevel != domainaigateway.RiskLevelRead || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayManage) {
+		if tool.RiskLevel != domainaigateway.RiskLevelRead || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) || !slices.Contains(tool.PermissionKeys, permission) {
 			t.Fatalf("unexpected manifest posture for %s: %#v", toolName, tool)
 		}
 	}
@@ -280,16 +286,16 @@ func assertApprovalRelayRuntimeToolManifest(t *testing.T, service *Service) {
 		permission string
 		approval   bool
 	}{
-		{name: "gateway.approvals.decide", risk: domainaigateway.RiskLevelExecute, permission: appaccess.PermAIGatewayManage},
+		{name: "gateway.approvals.decide", risk: domainaigateway.RiskLevelExecute},
 		{name: "gateway.relay.model_calls.list", risk: domainaigateway.RiskLevelRead, permission: appaccess.PermAIGatewayRelayView},
-		{name: "gateway.relay.cache.purge", risk: domainaigateway.RiskLevelExecute, permission: appaccess.PermAIGatewayRelayManage, approval: true},
+		{name: "gateway.relay.cache.purge", risk: domainaigateway.RiskLevelExecute, permission: appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "delete"), approval: true},
 	}
 	for _, expected := range expectedTools {
 		tool, ok := toolByNameFrom(expected.name, manifest.Tools)
 		if !ok {
 			t.Fatalf("expected %s in manifest", expected.name)
 		}
-		if tool.RiskLevel != expected.risk || tool.RequiresApproval != expected.approval || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) || !slices.Contains(tool.PermissionKeys, expected.permission) {
+		if tool.RiskLevel != expected.risk || tool.RequiresApproval != expected.approval || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) || (expected.permission != "" && !slices.Contains(tool.PermissionKeys, expected.permission)) {
 			t.Fatalf("unexpected manifest posture for %s: %#v", expected.name, tool)
 		}
 	}
@@ -316,8 +322,11 @@ func assertRelayModelCallsRuntimeTool(t *testing.T, service *Service) {
 	if call.RouteTrace["Authorization"] != "[REDACTED]" || call.Metadata["apiKey"] != "[REDACTED]" || strings.Contains(call.ErrorMessage, "secret") {
 		t.Fatalf("expected relay call metadata to be redacted, got %#v", call)
 	}
-	if _, err := service.ListLLMCallLogs(context.Background(), viewer, domainaigateway.LLMCallLogFilter{PublicModel: "gpt-4.1"}); err == nil {
-		t.Fatalf("expected raw relay call log API to require relay manage permission")
+	if _, err := service.ListLLMCallLogs(context.Background(), viewer, domainaigateway.LLMCallLogFilter{PublicModel: "gpt-4.1"}); err != nil {
+		t.Fatalf("expected relay viewer to list raw call logs: %v", err)
+	}
+	if _, err := service.ListLLMCallLogs(context.Background(), testPrincipal("readonly"), domainaigateway.LLMCallLogFilter{PublicModel: "gpt-4.1"}); err == nil {
+		t.Fatalf("expected raw relay call log API to require relay view permission")
 	}
 }
 

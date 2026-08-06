@@ -16,7 +16,7 @@ import (
 )
 
 func (s *DeclarativeService) Sync(ctx context.Context, principal domainidentity.Principal, packageID string, input domainmanifest.SyncInput, idempotencyKey string) (domainmanifest.SyncRun, domaindelivery.ExecutionTask, error) {
-	if err := s.base.authorize(ctx, principal, appaccess.PermDeliveryManifestSourcesManage); err != nil {
+	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestSourcesManage, "sync")); err != nil {
 		return domainmanifest.SyncRun{}, domaindelivery.ExecutionTask{}, err
 	}
 	item, err := s.base.Get(ctx, principal, strings.TrimSpace(packageID))
@@ -31,7 +31,7 @@ func (s *DeclarativeService) Sync(ctx context.Context, principal domainidentity.
 }
 
 func (s *DeclarativeService) SyncWebhook(ctx context.Context, principal domainidentity.Principal, sourceID string, input domainmanifest.SyncWebhookInput) (domainmanifest.SyncRun, domaindelivery.ExecutionTask, error) {
-	if err := s.base.authorize(ctx, principal, appaccess.PermDeliveryManifestSourcesManage); err != nil {
+	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestSourcesManage, "sync")); err != nil {
 		return domainmanifest.SyncRun{}, domaindelivery.ExecutionTask{}, err
 	}
 	source, err := s.repository.GetSourceByID(ctx, strings.TrimSpace(sourceID))

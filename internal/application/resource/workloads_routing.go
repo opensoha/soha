@@ -18,6 +18,7 @@ type workloadListSpec[T any] struct {
 	direct      func() ([]T, string, error)
 	namespaceOf func(T) string
 	populate    func([]T, domainaccess.Decision)
+	narrow      func([]T, []string)
 }
 
 func listWorkloadResources[T any](ctx context.Context, w *Workloads, principal domainidentity.Principal, clusterID, namespace string, spec workloadListSpec[T]) ([]T, error) {
@@ -31,6 +32,9 @@ func listWorkloadResources[T any](ctx context.Context, w *Workloads, principal d
 	}
 	items = filterScopedNamespaceItems(items, decision, spec.namespaceOf)
 	spec.populate(items, decision)
+	if spec.narrow != nil {
+		spec.narrow(items, w.allowedActionsForResource(ctx, principal, connection, namespace, spec.kind, domainaccess.ActionList))
+	}
 	_ = w.recordAudit(ctx, principal, connection.Summary.ID, namespace, spec.kind, "", string(domainaccess.ActionList), "success",
 		fmt.Sprintf("%s via %s in namespace %s", spec.auditText, source, displayNamespace(namespace)))
 	return items, nil
@@ -41,7 +45,7 @@ type workloadGetSpec[T any] struct {
 	auditText string
 	agent     func(WorkloadAgent) (T, error)
 	direct    func() (T, string, error)
-	finalize  func(*T, domainaccess.Decision)
+	finalize  func(*T, domainaccess.Decision, domaincluster.Connection)
 }
 
 func getWorkloadResource[T any](ctx context.Context, w *Workloads, principal domainidentity.Principal, clusterID, namespace, name string, spec workloadGetSpec[T]) (T, error) {
@@ -56,7 +60,7 @@ func getWorkloadResource[T any](ctx context.Context, w *Workloads, principal dom
 	}
 	filterWorkloadDetailRelations(ctx, w.resourceAccess, principal, clusterID, namespace, &item)
 	if spec.finalize != nil {
-		spec.finalize(&item, decision)
+		spec.finalize(&item, decision, connection)
 	}
 	_ = w.recordAudit(ctx, principal, connection.Summary.ID, namespace, spec.kind, name, string(domainaccess.ActionView), "success",
 		fmt.Sprintf("%s via %s in namespace %s", spec.auditText, source, displayNamespace(namespace)))
@@ -149,7 +153,6 @@ func liveWorkload[T any](load func() (T, error)) (T, string, error) {
 }
 
 type workloadMutationSpec struct {
-	permission       string
 	kind             string
 	action           domainaccess.Action
 	agent            func(WorkloadAgent) error
@@ -161,9 +164,6 @@ type workloadMutationSpec struct {
 }
 
 func performWorkloadMutation(ctx context.Context, w *Workloads, principal domainidentity.Principal, clusterID, namespace, name string, spec workloadMutationSpec) error {
-	if err := w.authorizeDeploymentPermission(ctx, principal, spec.permission); err != nil {
-		return err
-	}
 	connection, _, err := w.authorize(ctx, principal, clusterID, namespace, spec.kind, spec.action)
 	if err != nil {
 		return err

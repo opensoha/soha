@@ -5,7 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
@@ -50,7 +49,7 @@ func TestPerformWorkloadMutationPreservesAuditAndOperationBehavior(t *testing.T)
 	w := workloadRoutingTestService(audit, operations)
 	directCalls := 0
 	err := performWorkloadMutation(context.Background(), w, domainidentity.Principal{UserID: "user-1"}, "direct-cluster", "team-a", "api", workloadMutationSpec{
-		permission: appaccess.PermPlatformDeploymentRestart, kind: "Deployment", action: domainaccess.ActionRestart,
+		kind: "Deployment", action: domainaccess.ActionRestart,
 		agent: func(WorkloadAgent) error {
 			t.Fatal("agent route called for direct connection")
 			return nil
@@ -74,7 +73,7 @@ func TestPerformWorkloadMutationPreservesAuditAndOperationBehavior(t *testing.T)
 
 	directErr := errors.New("direct restart failed")
 	err = performWorkloadMutation(context.Background(), w, domainidentity.Principal{UserID: "user-1"}, "direct-cluster", "team-a", "api", workloadMutationSpec{
-		permission: appaccess.PermPlatformDeploymentRestart, kind: "Deployment", action: domainaccess.ActionRestart,
+		kind: "Deployment", action: domainaccess.ActionRestart,
 		agent: func(WorkloadAgent) error { return nil }, direct: func() error { return directErr },
 		successMessage:   func(source string) string { return "restarted deployment via " + source },
 		auditErrorPrefix: "record restart deployment audit", operation: "platform.deployment.restart",
@@ -84,6 +83,26 @@ func TestPerformWorkloadMutationPreservesAuditAndOperationBehavior(t *testing.T)
 	}
 	if len(audit.entries) != 2 || audit.entries[1].Result != "failure" || len(operations.entries) != 1 {
 		t.Fatalf("audit=%#v operations=%#v", audit.entries, operations.entries)
+	}
+}
+
+func TestPerformWorkloadMutationUsesOnlyExactResourceAuthorization(t *testing.T) {
+	t.Parallel()
+
+	w := workloadRoutingTestService(&workloadAuditRecorder{}, nil)
+	w.permissions = denyWorkloadPermission{}
+	err := performWorkloadMutation(context.Background(), w, domainidentity.Principal{UserID: "user-1"}, "direct-cluster", "team-a", "api", workloadMutationSpec{
+		kind:   "StatefulSet",
+		action: domainaccess.ActionRestart,
+		agent:  func(WorkloadAgent) error { return nil },
+		direct: func() error { return nil },
+		successMessage: func(source string) string {
+			return "restarted statefulset via " + source
+		},
+		auditErrorPrefix: "record restart statefulset audit",
+	})
+	if err != nil {
+		t.Fatalf("performWorkloadMutation() error = %v", err)
 	}
 }
 
@@ -101,6 +120,12 @@ type allowWorkloadPermission struct{}
 
 func (allowWorkloadPermission) Authorize(context.Context, domainidentity.Principal, string) error {
 	return nil
+}
+
+type denyWorkloadPermission struct{}
+
+func (denyWorkloadPermission) Authorize(context.Context, domainidentity.Principal, string) error {
+	return errors.New("unexpected runtime permission check")
 }
 
 type workloadAuditRecorder struct{ entries []domainaudit.Entry }

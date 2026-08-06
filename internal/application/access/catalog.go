@@ -2,11 +2,14 @@ package access
 
 import (
 	"context"
+	"fmt"
 	"slices"
 
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmenu "github.com/opensoha/soha/internal/domain/menu"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type UserReader interface {
@@ -47,6 +50,26 @@ func (s *CatalogService) ListRoles(ctx context.Context, principal domainidentity
 		return nil, err
 	}
 	return s.policies.ListRoles(ctx)
+}
+
+func (s *CatalogService) GetRole(ctx context.Context, principal domainidentity.Principal, roleID string) (domainaccess.RoleRecord, error) {
+	items, err := s.ListRoles(ctx, principal)
+	if err != nil {
+		return domainaccess.RoleRecord{}, err
+	}
+	for _, item := range items {
+		if item.ID == roleID {
+			return item, nil
+		}
+	}
+	return domainaccess.RoleRecord{}, fmt.Errorf("%w: role %s", apperrors.ErrNotFound, roleID)
+}
+
+func (s *CatalogService) PermissionCatalog(ctx context.Context, principal domainidentity.Principal) (sohaapi.PermissionCatalog, error) {
+	if err := s.authorizePermission(ctx, principal, PermAccessRolesView); err != nil {
+		return sohaapi.PermissionCatalog{}, err
+	}
+	return loadPermissionCatalog()
 }
 
 func (s *CatalogService) ListTeams(ctx context.Context, principal domainidentity.Principal) ([]domainaccess.TeamRecord, error) {

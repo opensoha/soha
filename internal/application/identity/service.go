@@ -671,7 +671,7 @@ func (s *Service) ListActiveSessions(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentity.Principal, sessionID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemOnlineUsersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermSystemOnlineUsersManage, "revoke")); err != nil {
 		return err
 	}
 	session, err := s.sessionAdmin.GetSessionByID(ctx, strings.TrimSpace(sessionID))
@@ -2174,6 +2174,8 @@ func (s *Service) fetchOAuth2Profile(ctx context.Context, provider domainsetting
 	if id == "" {
 		if provider.Type == "feishu" {
 			id = firstNonEmpty(
+				nestedString(raw, "open_id"),
+				nestedString(raw, "union_id"),
 				nestedString(map[string]any{"open_id": oauthToken.Extra("open_id")}, "open_id"),
 				nestedString(map[string]any{"union_id": oauthToken.Extra("union_id")}, "union_id"),
 			)

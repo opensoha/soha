@@ -103,7 +103,7 @@ func (s *Service) ListDataSources(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) CreateDataSource(ctx context.Context, principal domainidentity.Principal, input sohaapi.ObservabilityDataSourceInput) (sohaapi.ObservabilityDataSource, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveLogDataSourcesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveLogDataSourcesManage, "create")); err != nil {
 		return sohaapi.ObservabilityDataSource{}, err
 	}
 	item, err := s.normalizeInput(ctx, input, "")
@@ -132,7 +132,7 @@ func (s *Service) CreateDataSource(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity.Principal, dataSourceID string, input sohaapi.ObservabilityDataSourceInput) (sohaapi.ObservabilityDataSource, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveLogDataSourcesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveLogDataSourcesManage, "update")); err != nil {
 		return sohaapi.ObservabilityDataSource{}, err
 	}
 	current, err := s.dataSources.GetDataSource(ctx, strings.TrimSpace(dataSourceID))
@@ -170,7 +170,7 @@ func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) ValidateDataSource(ctx context.Context, principal domainidentity.Principal, dataSourceID string) (sohaapi.ObservabilityDataSource, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveLogDataSourcesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveLogDataSourcesManage, "validate")); err != nil {
 		return sohaapi.ObservabilityDataSource{}, err
 	}
 	item, err := s.dataSources.GetDataSource(ctx, strings.TrimSpace(dataSourceID))

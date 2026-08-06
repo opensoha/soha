@@ -85,25 +85,26 @@ type ConnectionDeleteDependencySample struct {
 }
 
 type VM struct {
-	ID           string         `json:"id"`
-	Provider     string         `json:"provider"`
-	ConnectionID string         `json:"connectionId"`
-	ExternalID   string         `json:"externalId"`
-	Name         string         `json:"name"`
-	Namespace    string         `json:"namespace,omitempty"`
-	Status       string         `json:"status"`
-	PowerState   string         `json:"powerState,omitempty"`
-	NodeName     string         `json:"nodeName,omitempty"`
-	ImageID      string         `json:"imageId,omitempty"`
-	FlavorID     string         `json:"flavorId,omitempty"`
-	IPAddresses  []string       `json:"ipAddresses,omitempty"`
-	Labels       map[string]any `json:"labels,omitempty"`
-	Config       map[string]any `json:"config,omitempty"`
-	Raw          map[string]any `json:"raw,omitempty"`
-	Capabilities []string       `json:"capabilities,omitempty" gorm:"-"`
-	LastSeenAt   *time.Time     `json:"lastSeenAt,omitempty"`
-	CreatedAt    time.Time      `json:"createdAt"`
-	UpdatedAt    time.Time      `json:"updatedAt"`
+	ID             string         `json:"id"`
+	Provider       string         `json:"provider"`
+	ConnectionID   string         `json:"connectionId"`
+	ExternalID     string         `json:"externalId"`
+	Name           string         `json:"name"`
+	Namespace      string         `json:"namespace,omitempty"`
+	Status         string         `json:"status"`
+	PowerState     string         `json:"powerState,omitempty"`
+	NodeName       string         `json:"nodeName,omitempty"`
+	ImageID        string         `json:"imageId,omitempty"`
+	FlavorID       string         `json:"flavorId,omitempty"`
+	IPAddresses    []string       `json:"ipAddresses,omitempty"`
+	Labels         map[string]any `json:"labels,omitempty"`
+	Config         map[string]any `json:"config,omitempty"`
+	Raw            map[string]any `json:"raw,omitempty"`
+	Capabilities   []string       `json:"capabilities,omitempty" gorm:"-"`
+	AllowedActions []string       `json:"allowedActions,omitempty" gorm:"-"`
+	LastSeenAt     *time.Time     `json:"lastSeenAt,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
 type VMFilter struct {
@@ -137,6 +138,7 @@ type Image struct {
 type ImageFilter struct {
 	Provider     string
 	ConnectionID string
+	Category     string
 	Status       string
 	Search       string
 	Page         int

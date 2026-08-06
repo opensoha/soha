@@ -17,7 +17,7 @@ import (
 )
 
 func (s *Service) RunLLMRelayHealthChecks(ctx context.Context, principal domainidentity.Principal) (domainaigateway.LLMRelayHealthCheckRun, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test")); err != nil {
 		return domainaigateway.LLMRelayHealthCheckRun{}, err
 	}
 	return s.runLLMRelayHealthChecks(ctx, principal)

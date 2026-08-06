@@ -55,21 +55,25 @@ func ClassifyHighRiskResource(group, resource, kind string) HighRiskClassificati
 	}
 	switch group + "/" + resource {
 	case "rbac.authorization.k8s.io/roles":
-		return highRisk(ResourceRiskAccessEscalation, true, appaccess.PermPlatformRBACManage, appaccess.PermPlatformRBACEscalate)
+		return highRisk(ResourceRiskAccessEscalation, true, appaccess.PlatformActionPermission("access-control", "Role", "create"), appaccess.PermPlatformRBACEscalate)
 	case "rbac.authorization.k8s.io/clusterroles":
-		return highRisk(ResourceRiskAccessEscalation, false, appaccess.PermPlatformRBACManage, appaccess.PermPlatformRBACEscalate)
+		return highRisk(ResourceRiskAccessEscalation, false, appaccess.PlatformActionPermission("access-control", "ClusterRole", "create"), appaccess.PermPlatformRBACEscalate)
 	case "rbac.authorization.k8s.io/rolebindings":
-		return highRisk(ResourceRiskAccessEscalation, true, appaccess.PermPlatformRBACManage, appaccess.PermPlatformRBACBind)
+		return highRisk(ResourceRiskAccessEscalation, true, appaccess.PlatformActionPermission("access-control", "RoleBinding", "create"), appaccess.PermPlatformRBACBind)
 	case "rbac.authorization.k8s.io/clusterrolebindings":
-		return highRisk(ResourceRiskAccessEscalation, false, appaccess.PermPlatformRBACManage, appaccess.PermPlatformRBACBind)
+		return highRisk(ResourceRiskAccessEscalation, false, appaccess.PlatformActionPermission("access-control", "ClusterRoleBinding", "create"), appaccess.PermPlatformRBACBind)
 	case "/namespaces":
-		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PermPlatformNamespacesManage)
+		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PlatformActionPermission("", "Namespace", "create"))
 	case "apiextensions.k8s.io/customresourcedefinitions":
-		return highRisk(ResourceRiskExtensionDefinition, false, appaccess.PermPlatformCRDsManage)
-	case "admissionregistration.k8s.io/mutatingwebhookconfigurations", "admissionregistration.k8s.io/validatingwebhookconfigurations":
-		return highRisk(ResourceRiskAdmissionControl, false, appaccess.PermPlatformAdmissionManage)
-	case "storage.k8s.io/storageclasses", "scheduling.k8s.io/priorityclasses":
-		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PermPlatformClusterResourcesManage)
+		return highRisk(ResourceRiskExtensionDefinition, false, appaccess.PlatformActionPermission("extensions", "CustomResourceDefinition", "create"))
+	case "admissionregistration.k8s.io/mutatingwebhookconfigurations":
+		return highRisk(ResourceRiskAdmissionControl, false, appaccess.PlatformActionPermission("configuration", "MutatingWebhookConfiguration", "create"))
+	case "admissionregistration.k8s.io/validatingwebhookconfigurations":
+		return highRisk(ResourceRiskAdmissionControl, false, appaccess.PlatformActionPermission("configuration", "ValidatingWebhookConfiguration", "create"))
+	case "storage.k8s.io/storageclasses":
+		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PlatformActionPermission("storage", "StorageClass", "create"))
+	case "scheduling.k8s.io/priorityclasses":
+		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PlatformActionPermission("configuration", "PriorityClass", "create"))
 	default:
 		return HighRiskClassification{Risk: ResourceRiskNone}
 	}
@@ -78,21 +82,25 @@ func ClassifyHighRiskResource(group, resource, kind string) HighRiskClassificati
 func classifyHighRiskKind(kind string) HighRiskClassification {
 	switch normalizeResourceKind(kind) {
 	case "role":
-		return highRisk(ResourceRiskAccessEscalation, true, appaccess.PermPlatformRBACManage, appaccess.PermPlatformRBACEscalate)
+		return highRisk(ResourceRiskAccessEscalation, true, appaccess.PlatformActionPermission("access-control", "Role", "create"), appaccess.PermPlatformRBACEscalate)
 	case "clusterrole":
-		return highRisk(ResourceRiskAccessEscalation, false, appaccess.PermPlatformRBACManage, appaccess.PermPlatformRBACEscalate)
+		return highRisk(ResourceRiskAccessEscalation, false, appaccess.PlatformActionPermission("access-control", "ClusterRole", "create"), appaccess.PermPlatformRBACEscalate)
 	case "rolebinding":
-		return highRisk(ResourceRiskAccessEscalation, true, appaccess.PermPlatformRBACManage, appaccess.PermPlatformRBACBind)
+		return highRisk(ResourceRiskAccessEscalation, true, appaccess.PlatformActionPermission("access-control", "RoleBinding", "create"), appaccess.PermPlatformRBACBind)
 	case "clusterrolebinding":
-		return highRisk(ResourceRiskAccessEscalation, false, appaccess.PermPlatformRBACManage, appaccess.PermPlatformRBACBind)
+		return highRisk(ResourceRiskAccessEscalation, false, appaccess.PlatformActionPermission("access-control", "ClusterRoleBinding", "create"), appaccess.PermPlatformRBACBind)
 	case "namespace":
-		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PermPlatformNamespacesManage)
+		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PlatformActionPermission("", "Namespace", "create"))
 	case "customresourcedefinition":
-		return highRisk(ResourceRiskExtensionDefinition, false, appaccess.PermPlatformCRDsManage)
-	case "mutatingwebhookconfiguration", "validatingwebhookconfiguration":
-		return highRisk(ResourceRiskAdmissionControl, false, appaccess.PermPlatformAdmissionManage)
-	case "storageclass", "priorityclass":
-		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PermPlatformClusterResourcesManage)
+		return highRisk(ResourceRiskExtensionDefinition, false, appaccess.PlatformActionPermission("extensions", "CustomResourceDefinition", "create"))
+	case "mutatingwebhookconfiguration":
+		return highRisk(ResourceRiskAdmissionControl, false, appaccess.PlatformActionPermission("configuration", "MutatingWebhookConfiguration", "create"))
+	case "validatingwebhookconfiguration":
+		return highRisk(ResourceRiskAdmissionControl, false, appaccess.PlatformActionPermission("configuration", "ValidatingWebhookConfiguration", "create"))
+	case "storageclass":
+		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PlatformActionPermission("storage", "StorageClass", "create"))
+	case "priorityclass":
+		return highRisk(ResourceRiskClusterInfrastructure, false, appaccess.PlatformActionPermission("configuration", "PriorityClass", "create"))
 	default:
 		return HighRiskClassification{Risk: ResourceRiskNone}
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	appaieval "github.com/opensoha/soha/internal/application/aieval"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -70,7 +71,7 @@ func (h *EvaluationHandler) listDatasets(c *gin.Context) {
 }
 
 func (h *EvaluationHandler) createDataset(c *gin.Context) {
-	if !h.requireExecute(c) {
+	if !h.requirePermission(c, appaccess.ManagedActionPermission(appaccess.PermAIEvaluationsManage, "create")) {
 		return
 	}
 	var dataset appaieval.Dataset
@@ -151,7 +152,7 @@ func (h *EvaluationHandler) getRun(c *gin.Context) {
 }
 
 func (h *EvaluationHandler) completeRun(c *gin.Context) {
-	if !h.requireExecute(c) {
+	if !h.requirePermission(c, appaccess.ManagedActionPermission(appaccess.PermAIEvaluationsManage, "complete")) {
 		return
 	}
 	var input struct {
@@ -182,16 +183,17 @@ func (h *EvaluationHandler) listRunResults(c *gin.Context) {
 }
 
 func (h *EvaluationHandler) requireRead(c *gin.Context) bool {
-	principal := apiMiddleware.PrincipalFromContext(c)
-	return h.authorize(c, func() error {
-		return h.auth.AuthorizeAny(c.Request.Context(), principal, "ai.evaluations.view", "ai.evaluations.manage")
-	})
+	return h.requirePermission(c, appaccess.PermAIEvaluationsView)
 }
 
 func (h *EvaluationHandler) requireExecute(c *gin.Context) bool {
+	return h.requirePermission(c, appaccess.PermAIEvaluationsExecute)
+}
+
+func (h *EvaluationHandler) requirePermission(c *gin.Context, permission string) bool {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	return h.authorize(c, func() error {
-		return h.auth.Authorize(c.Request.Context(), principal, "ai.evaluations.manage")
+		return h.auth.Authorize(c.Request.Context(), principal, permission)
 	})
 }
 

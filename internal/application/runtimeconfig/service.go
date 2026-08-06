@@ -92,14 +92,14 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal) (
 }
 
 func (s *Service) Validate(ctx context.Context, principal domainidentity.Principal, request sohaapi.RuntimeConfigChangeRequest) (sohaapi.RuntimeConfigValidationResult, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsRuntimeConfigManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsRuntimeConfigManage, "validate")); err != nil {
 		return sohaapi.RuntimeConfigValidationResult{}, err
 	}
 	return s.validate(request), nil
 }
 
 func (s *Service) Apply(ctx context.Context, principal domainidentity.Principal, request sohaapi.RuntimeConfigChangeRequest) (sohaapi.RuntimeConfigApplyResult, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsRuntimeConfigManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsRuntimeConfigManage, "apply")); err != nil {
 		return sohaapi.RuntimeConfigApplyResult{}, err
 	}
 	s.applyMu.Lock()
@@ -127,7 +127,7 @@ func (s *Service) History(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) Rollback(ctx context.Context, principal domainidentity.Principal, request sohaapi.RuntimeConfigRollbackRequest) (sohaapi.RuntimeConfigApplyResult, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsRuntimeConfigManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsRuntimeConfigManage, "rollback")); err != nil {
 		return sohaapi.RuntimeConfigApplyResult{}, err
 	}
 	s.applyMu.Lock()

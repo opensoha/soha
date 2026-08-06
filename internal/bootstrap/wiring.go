@@ -482,6 +482,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	identityMFAService.SetPermissionResolver(permissionResolver)
 	policyEngine := policy.NewEngine()
 	accessService := appaccess.New(policyEngine, repos.policyRepository, repos.scopeGrantRepository, repos.catalogRepository)
+	accessService.SetPermissionResolver(permissionResolver)
 	accessCatalogService := appaccess.NewCatalog(repos.identityRepository, repos.policyRepository, accessService, menuService, permissionResolver)
 	accessManagementService := appaccess.NewManagement(repos.identityRepository, repos.policyRepository, permissionResolver, auditService, operationService)
 	accessConsoleService := appaccess.NewConsole(accessCatalogService, accessManagementService)

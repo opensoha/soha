@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
@@ -38,6 +39,14 @@ func (s *ConsoleService) RevokeUserSessions(ctx context.Context, principal domai
 
 func (s *ConsoleService) ListRoles(ctx context.Context, principal domainidentity.Principal) ([]domainaccess.RoleRecord, error) {
 	return s.catalog.ListRoles(ctx, principal)
+}
+
+func (s *ConsoleService) GetRole(ctx context.Context, principal domainidentity.Principal, roleID string) (domainaccess.RoleRecord, error) {
+	return s.catalog.GetRole(ctx, principal, roleID)
+}
+
+func (s *ConsoleService) PermissionCatalog(ctx context.Context, principal domainidentity.Principal) (sohaapi.PermissionCatalog, error) {
+	return s.catalog.PermissionCatalog(ctx, principal)
 }
 
 func (s *ConsoleService) ListTeams(ctx context.Context, principal domainidentity.Principal) ([]domainaccess.TeamRecord, error) {

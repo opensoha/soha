@@ -101,7 +101,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, i
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, request sohaapi.SystemIntegrationCreateRequest) (sohaapi.SystemIntegration, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsSystemIntegrationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "create")); err != nil {
 		return sohaapi.SystemIntegration{}, err
 	}
 	item, credentials, err := s.normalizeCreate(request, principal.UserID)
@@ -117,7 +117,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, id string, input domain.UpdateInput) (sohaapi.SystemIntegration, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsSystemIntegrationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "update")); err != nil {
 		return sohaapi.SystemIntegration{}, err
 	}
 	current, err := s.repo.Get(ctx, strings.TrimSpace(id))
@@ -137,7 +137,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsSystemIntegrationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "delete")); err != nil {
 		return err
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(id))
@@ -152,7 +152,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Test(ctx context.Context, principal domainidentity.Principal, id string) (sohaapi.SystemIntegrationTestResult, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsSystemIntegrationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "test")); err != nil {
 		return sohaapi.SystemIntegrationTestResult{}, err
 	}
 	item, adapter, err := s.sourceAdapter(ctx, strings.TrimSpace(id), false)

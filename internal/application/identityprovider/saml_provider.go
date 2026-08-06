@@ -36,7 +36,7 @@ type samlProviderRepository interface {
 }
 
 func (s *Service) RotateSAMLCertificate(ctx context.Context, principal domainidentity.Principal, certificateID string, request sohaapi.SAMLCertificateRotateRequest) (sohaapi.SAMLCertificateRotation, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "rotate")); err != nil {
 		return sohaapi.SAMLCertificateRotation{}, err
 	}
 	if request.OverlapSeconds < 0 || request.OverlapSeconds > int((30*24*time.Hour)/time.Second) {

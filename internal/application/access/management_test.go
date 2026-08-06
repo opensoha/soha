@@ -117,11 +117,30 @@ func TestManagementCreateRolePersistsNormalizedPermissionKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRole returned error: %v", err)
 	}
-	if len(policies.lastRoleInput.PermissionKeys) != 2 {
-		t.Fatalf("PermissionKeys = %v, want deduplicated keys", policies.lastRoleInput.PermissionKeys)
+	if len(policies.lastRoleInput.PermissionKeys) != 4 {
+		t.Fatalf("PermissionKeys = %v, want active exact keys", policies.lastRoleInput.PermissionKeys)
 	}
-	if !HasPermission([]string{item.ID}, PermAccessScopeGrantsManage) {
+	for _, key := range policies.lastRoleInput.PermissionKeys {
+		if !IsActiveAssignablePermission(key) {
+			t.Fatalf("persisted non-assignable permission key %q", key)
+		}
+	}
+	if !HasPermission([]string{item.ID}, ManagedActionPermission(PermAccessScopeGrantsManage, "create")) {
 		t.Fatalf("runtime permission matrix not updated for created role")
+	}
+}
+
+func TestManagementCreateRoleRejectsUnknownPermissionKey(t *testing.T) {
+	service := NewManagement(stubUserManager{}, &capturePolicyManager{}, NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{"delegated": {PermAccessRolesManage}},
+	}), nil, nil)
+
+	_, err := service.CreateRole(context.Background(), domainidentity.Principal{Roles: []string{"delegated"}}, domainaccess.RoleInput{
+		Name:           "Custom Role",
+		PermissionKeys: []string{"unknown.resource.action"},
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("CreateRole error = %v, want invalid argument", err)
 	}
 }
 
@@ -190,6 +209,36 @@ func TestManagementCreateUserRejectsNonUUIDID(t *testing.T) {
 	if users.lastCreateUserInput.ID != "" {
 		t.Fatalf("CreateUser reached repository with ID %q", users.lastCreateUserInput.ID)
 	}
+}
+
+func TestManagementUserWritesRequireBindingPermissions(t *testing.T) {
+	principal := domainidentity.Principal{Roles: []string{"delegated"}}
+	validInput := domainaccess.UserInput{
+		Username: "opensoha",
+		Email:    "opensoha@soha.local",
+	}
+
+	t.Run("create with roles", func(t *testing.T) {
+		service := NewManagement(stubUserManager{}, &capturePolicyManager{}, NewPermissionResolver(stubRolePermissionReader{
+			matrix: map[string][]string{"delegated": {ManagedActionPermission(PermAccessUsersManage, "create")}},
+		}), nil, nil)
+		input := validInput
+		input.RoleIDs = []string{"readonly"}
+		if _, err := service.CreateUser(context.Background(), principal, input); err == nil {
+			t.Fatal("CreateUser error = nil, want replace-roles permission denial")
+		}
+	})
+
+	t.Run("update with teams", func(t *testing.T) {
+		service := NewManagement(stubUserManager{}, &capturePolicyManager{}, NewPermissionResolver(stubRolePermissionReader{
+			matrix: map[string][]string{"delegated": {ManagedActionPermission(PermAccessUsersManage, "update")}},
+		}), nil, nil)
+		input := validInput
+		input.TeamIDs = []string{"platform"}
+		if _, err := service.UpdateUser(context.Background(), principal, "user-1", input); err == nil {
+			t.Fatal("UpdateUser error = nil, want replace-teams permission denial")
+		}
+	})
 }
 
 func TestNormalizeWriteErrorPreservesNotFound(t *testing.T) {

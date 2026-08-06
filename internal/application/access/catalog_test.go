@@ -2,6 +2,7 @@ package access
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
@@ -52,8 +53,15 @@ func TestPermissionSnapshotUsesPersistedRolePermissionKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PermissionSnapshot returned error: %v", err)
 	}
-	if len(snapshot.PermissionKeys) != 2 {
-		t.Fatalf("PermissionKeys = %v, want 2 entries", snapshot.PermissionKeys)
+	for _, permissionKey := range []string{
+		PermAccessUsersView,
+		"access.scope-grants.create",
+		"access.scope-grants.update",
+		"access.scope-grants.delete",
+	} {
+		if !slices.Contains(snapshot.PermissionKeys, permissionKey) {
+			t.Fatalf("PermissionKeys = %v, want effective permission %q", snapshot.PermissionKeys, permissionKey)
+		}
 	}
 	if !HasPermission([]string{"custom-role"}, PermAccessScopeGrantsManage) {
 		t.Fatalf("HasPermission should use runtime role permission matrix for custom roles")
@@ -74,6 +82,22 @@ func TestCatalogListUsersRequiresAccessUsersViewPermission(t *testing.T) {
 	_, err := catalog.ListUsers(context.Background(), domainidentity.Principal{Roles: []string{"custom-role"}})
 	if err == nil {
 		t.Fatalf("ListUsers error = nil, want access denied")
+	}
+}
+
+func TestCatalogReturnsPermissionCatalogAndRoleDetail(t *testing.T) {
+	catalog := NewCatalog(nil, stubPolicyCatalogReader{roles: []domainaccess.RoleRecord{{ID: "role-1", Name: "Role 1"}}}, nil, nil, NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{"reader": {PermAccessRolesView}},
+	}))
+	principal := domainidentity.Principal{Roles: []string{"reader"}}
+
+	permissions, err := catalog.PermissionCatalog(context.Background(), principal)
+	if err != nil || len(permissions.Permissions) == 0 {
+		t.Fatalf("PermissionCatalog = %#v, err=%v", permissions, err)
+	}
+	role, err := catalog.GetRole(context.Background(), principal, "role-1")
+	if err != nil || role.ID != "role-1" {
+		t.Fatalf("GetRole = %#v, err=%v", role, err)
 	}
 }
 
@@ -256,6 +280,25 @@ func TestDefaultRolePermissionsSecrets(t *testing.T) {
 	}
 	if !HasPermission([]string{"readonly"}, PermSecretView) || HasPermission([]string{"readonly"}, PermSecretUse) {
 		t.Fatalf("readonly secret permissions are invalid")
+	}
+}
+
+func TestDefaultRolePermissionsSensitivePlatformReads(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+	for _, permission := range []string{
+		PermPlatformConfigurationSecretDataView,
+		PermPlatformHelmValuesView,
+	} {
+		for _, role := range []string{"admin", "ops"} {
+			if !HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should include %s", role, permission)
+			}
+		}
+		for _, role := range []string{"developer", "tester", "readonly", "auditor"} {
+			if HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should not include %s", role, permission)
+			}
+		}
 	}
 }
 

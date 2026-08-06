@@ -213,7 +213,7 @@ func (s *Service) createAIClientRegistrationApprovalRequest(ctx context.Context,
 	return created, nil
 }
 func (s *Service) ListApprovalRequests(ctx context.Context, principal domainidentity.Principal, filter domainaigateway.ApprovalRequestFilter) ([]domainaigateway.ApprovalRequest, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, "ai.gateway.approvals.view"); err != nil {
 		return nil, err
 	}
 	repo := s.approvalRepository()
@@ -258,7 +258,7 @@ func (s *Service) ListApprovalRequests(ctx context.Context, principal domainiden
 	return enrichApprovalRequests(items), nil
 }
 func (s *Service) GetApprovalTimeline(ctx context.Context, principal domainidentity.Principal, requestID string) (domainaigateway.ApprovalTimeline, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, "ai.gateway.approvals.view"); err != nil {
 		return domainaigateway.ApprovalTimeline{}, err
 	}
 	repo := s.approvalRepository()
@@ -301,7 +301,7 @@ func (s *Service) CancelApprovalRequest(ctx context.Context, principal domainide
 	return s.resolveApprovalRequest(ctx, principal, requestID, "cancel", input)
 }
 func (s *Service) resolveApprovalRequest(ctx context.Context, principal domainidentity.Principal, requestID, action string, input domainaigateway.ApprovalDecisionInput) (domainaigateway.ApprovalDecisionResult, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayApprovalsManage, action)); err != nil {
 		return domainaigateway.ApprovalDecisionResult{}, err
 	}
 	repo := s.approvalRepository()

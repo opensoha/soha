@@ -41,7 +41,7 @@ func (s *Service) ListPersonalAccessTokens(ctx context.Context, principal domain
 	scope := strings.ToLower(strings.TrimSpace(req.Scope))
 	userID := strings.TrimSpace(req.UserID)
 	if scope == "all" || userID != "" {
-		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, "ai.gateway.tokens.view"); err != nil {
 			return nil, err
 		}
 		items, err := repo.ListAllPersonalAccessTokens(ctx)
@@ -124,7 +124,7 @@ func (s *Service) RevokePersonalAccessToken(ctx context.Context, principal domai
 	if tokenID == "" {
 		return fmt.Errorf("%w: token ID is required", apperrors.ErrInvalidArgument)
 	}
-	hasManage, err := s.hasRuntimePermission(ctx, principal, appaccess.PermAIGatewayManage)
+	hasManage, err := s.hasRuntimePermission(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "revoke"))
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func (s *Service) RotatePersonalAccessToken(ctx context.Context, principal domai
 	return domainaigateway.CreatedPersonalAccessToken{Token: created, Value: value}, nil
 }
 func (s *Service) ListServiceAccounts(ctx context.Context, principal domainidentity.Principal) ([]domainaigateway.ServiceAccount, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, "ai.gateway.tokens.view"); err != nil {
 		return nil, err
 	}
 	repo := s.serviceAccountRepository()
@@ -245,7 +245,7 @@ func (s *Service) ListServiceAccounts(ctx context.Context, principal domainident
 	return repo.ListServiceAccounts(ctx)
 }
 func (s *Service) CreateServiceAccount(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ServiceAccountInput) (domainaigateway.ServiceAccount, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "create")); err != nil {
 		return domainaigateway.ServiceAccount{}, err
 	}
 	repo := s.serviceAccountRepository()
@@ -287,7 +287,7 @@ func (s *Service) CreateServiceAccount(ctx context.Context, principal domainiden
 	return created, nil
 }
 func (s *Service) ListServiceAccountTokens(ctx context.Context, principal domainidentity.Principal) ([]domainaigateway.ServiceAccountToken, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, "ai.gateway.tokens.view"); err != nil {
 		return nil, err
 	}
 	repo := s.serviceAccountRepository()
@@ -297,7 +297,7 @@ func (s *Service) ListServiceAccountTokens(ctx context.Context, principal domain
 	return repo.ListAllServiceAccountTokens(ctx)
 }
 func (s *Service) CreateServiceAccountToken(ctx context.Context, principal domainidentity.Principal, serviceAccountID string, input domainaigateway.ServiceAccountTokenInput) (domainaigateway.CreatedServiceAccountToken, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "create")); err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
 	repo := s.serviceAccountRepository()
@@ -356,7 +356,7 @@ func (s *Service) CreateServiceAccountToken(ctx context.Context, principal domai
 	return domainaigateway.CreatedServiceAccountToken{Token: created, Value: value}, nil
 }
 func (s *Service) RevokeServiceAccountToken(ctx context.Context, principal domainidentity.Principal, tokenID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "revoke")); err != nil {
 		return err
 	}
 	repo := s.serviceAccountRepository()
@@ -370,7 +370,7 @@ func (s *Service) RevokeServiceAccountToken(ctx context.Context, principal domai
 	return nil
 }
 func (s *Service) RotateServiceAccountToken(ctx context.Context, principal domainidentity.Principal, tokenID string, input domainaigateway.TokenRotationInput) (domainaigateway.CreatedServiceAccountToken, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "rotate")); err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
 	repo := s.serviceAccountRepository()
@@ -543,12 +543,13 @@ func (s *Service) ensureRelayDebugTokenMetadataAllowed(ctx context.Context, prin
 	if !relayTokenMetadataHasDebugGrant(metadata) {
 		return nil
 	}
-	hasManage, err := s.hasRuntimePermission(ctx, principal, appaccess.PermAIGatewayRelayManage)
+	relayTest := appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test")
+	hasTest, err := s.hasRuntimePermission(ctx, principal, relayTest)
 	if err != nil {
 		return err
 	}
-	if !hasManage {
-		return fmt.Errorf("%w: relay debug token metadata requires %s", apperrors.ErrAccessDenied, appaccess.PermAIGatewayRelayManage)
+	if !hasTest {
+		return fmt.Errorf("%w: relay debug token metadata requires %s", apperrors.ErrAccessDenied, relayTest)
 	}
 	return nil
 }

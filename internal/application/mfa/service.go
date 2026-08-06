@@ -109,7 +109,7 @@ func (s *Service) RevokeCredential(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) AdminRevokeCredential(ctx context.Context, principal domainidentity.Principal, userID, credentialID string) (sohaapi.OperationStatus, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAccessUsersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAccessUsersManage, "update")); err != nil {
 		return sohaapi.OperationStatus{}, err
 	}
 	if err := s.repository.RevokeCredential(ctx, strings.TrimSpace(userID), strings.TrimSpace(credentialID), s.now().UTC()); err != nil {
@@ -120,7 +120,7 @@ func (s *Service) AdminRevokeCredential(ctx context.Context, principal domainide
 }
 
 func (s *Service) AdminResetUserMFA(ctx context.Context, principal domainidentity.Principal, userID string, request sohaapi.MFAAdminResetRequest) (sohaapi.MFAAdminResetResult, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAccessUsersManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAccessUsersManage, "update")); err != nil {
 		return sohaapi.MFAAdminResetResult{}, err
 	}
 	userID = strings.TrimSpace(userID)

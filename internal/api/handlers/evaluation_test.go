@@ -100,7 +100,7 @@ func TestEvaluationHandlerUsesDedicatedPermissions(t *testing.T) {
 	writeContext.Request.Header.Set("Content-Type", "application/json")
 	handler.createDataset(writeContext)
 
-	if len(keys) != 3 || keys[0] != "ai.evaluations.view" || keys[1] != "ai.evaluations.manage" || keys[2] != "ai.evaluations.manage" {
+	if len(keys) != 2 || keys[0] != "ai.evaluations.view" || keys[1] != "ai.evaluations.create" {
 		t.Fatalf("authorization keys = %v", keys)
 	}
 }

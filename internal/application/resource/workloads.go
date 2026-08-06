@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -24,6 +23,11 @@ func (w *Workloads) ListDeployments(ctx context.Context, principal domainidentit
 			return w.direct.ListDeployments(ctx, clusterID, namespace)
 		},
 		namespaceOf: func(item domainresource.DeploymentView) string { return item.Namespace }, populate: populateAllowedActionsDeployments,
+		narrow: func(items []domainresource.DeploymentView, allowed []string) {
+			for index := range items {
+				items[index].AllowedActions = narrowAllowedActions(items[index].AllowedActions, allowed)
+			}
+		},
 	})
 }
 
@@ -38,8 +42,8 @@ func (w *Workloads) GetDeploymentDetail(ctx context.Context, principal domainide
 				return w.direct.GetDeploymentDetail(ctx, clusterID, namespace, name)
 			})
 		},
-		finalize: func(item *domainresource.DeploymentDetailView, decision domainaccess.Decision) {
-			item.AllowedActions = stringifyActions(decision.AllowedActions)
+		finalize: func(item *domainresource.DeploymentDetailView, _ domainaccess.Decision, connection domaincluster.Connection) {
+			item.AllowedActions = narrowAllowedActions(item.AllowedActions, w.allowedActionsForResource(ctx, principal, connection, namespace, "Deployment", domainaccess.ActionView))
 		},
 	})
 }
@@ -73,7 +77,7 @@ func (w *Workloads) GetStatefulSetDetail(ctx context.Context, principal domainid
 				return w.direct.GetStatefulSetDetail(ctx, clusterID, namespace, name)
 			})
 		},
-		finalize: func(item *domainresource.StatefulSetDetailView, decision domainaccess.Decision) {
+		finalize: func(item *domainresource.StatefulSetDetailView, decision domainaccess.Decision, _ domaincluster.Connection) {
 			item.AllowedActions = stringifyActions(decision.AllowedActions)
 		},
 	})
@@ -108,7 +112,7 @@ func (w *Workloads) GetDaemonSetDetail(ctx context.Context, principal domainiden
 				return w.direct.GetDaemonSetDetail(ctx, clusterID, namespace, name)
 			})
 		},
-		finalize: func(item *domainresource.DaemonSetDetailView, decision domainaccess.Decision) {
+		finalize: func(item *domainresource.DaemonSetDetailView, decision domainaccess.Decision, _ domaincluster.Connection) {
 			item.AllowedActions = stringifyActions(decision.AllowedActions)
 		},
 	})
@@ -143,7 +147,7 @@ func (w *Workloads) GetJobDetail(ctx context.Context, principal domainidentity.P
 				return w.direct.GetJobDetail(ctx, clusterID, namespace, name)
 			})
 		},
-		finalize: func(item *domainresource.JobDetailView, decision domainaccess.Decision) {
+		finalize: func(item *domainresource.JobDetailView, decision domainaccess.Decision, _ domaincluster.Connection) {
 			item.AllowedActions = stringifyActions(decision.AllowedActions)
 		},
 	})
@@ -178,7 +182,7 @@ func (w *Workloads) GetCronJobDetail(ctx context.Context, principal domainidenti
 				return w.direct.GetCronJobDetail(ctx, clusterID, namespace, name)
 			})
 		},
-		finalize: func(item *domainresource.CronJobDetailView, decision domainaccess.Decision) {
+		finalize: func(item *domainresource.CronJobDetailView, decision domainaccess.Decision, _ domaincluster.Connection) {
 			item.AllowedActions = stringifyActions(decision.AllowedActions)
 		},
 	})
@@ -203,7 +207,7 @@ func (w *Workloads) ApplyCronJobYAML(ctx context.Context, principal domainidenti
 }
 
 func (w *Workloads) SetCronJobSuspend(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, suspend bool) (domainresource.CronJobDetailView, error) {
-	connection, decision, err := w.authorize(ctx, principal, clusterID, namespace, "CronJob", domainaccess.ActionUpdate)
+	connection, decision, err := w.authorize(ctx, principal, clusterID, namespace, "CronJob", domainaccess.ActionSuspend)
 	if err != nil {
 		return domainresource.CronJobDetailView{}, err
 	}
@@ -212,11 +216,11 @@ func (w *Workloads) SetCronJobSuspend(ctx context.Context, principal domainident
 	}
 	item, err := w.direct.SetCronJobSuspend(ctx, clusterID, namespace, name, suspend)
 	if err != nil {
-		_ = w.recordAudit(ctx, principal, connection.Summary.ID, namespace, "CronJob", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+		_ = w.recordAudit(ctx, principal, connection.Summary.ID, namespace, "CronJob", name, string(domainaccess.ActionSuspend), "failure", err.Error())
 		return domainresource.CronJobDetailView{}, err
 	}
 	item.AllowedActions = stringifyActions(decision.AllowedActions)
-	_ = w.recordAudit(ctx, principal, connection.Summary.ID, namespace, "CronJob", name, string(domainaccess.ActionUpdate), "success", fmt.Sprintf("set cronjob suspend=%t", suspend))
+	_ = w.recordAudit(ctx, principal, connection.Summary.ID, namespace, "CronJob", name, string(domainaccess.ActionSuspend), "success", fmt.Sprintf("set cronjob suspend=%t", suspend))
 	return item, nil
 }
 
@@ -249,9 +253,6 @@ func (w *Workloads) ListDeploymentRolloutHistory(ctx context.Context, principal 
 }
 
 func (w *Workloads) RollbackDeployment(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, revision string) (domainresource.DeploymentRollbackView, error) {
-	if err := w.authorizeDeploymentPermission(ctx, principal, appaccess.PermPlatformDeploymentRollback); err != nil {
-		return domainresource.DeploymentRollbackView{}, err
-	}
 	connection, _, err := w.authorize(ctx, principal, clusterID, namespace, "Deployment", domainaccess.ActionRollback)
 	if err != nil {
 		return domainresource.DeploymentRollbackView{}, err
@@ -364,7 +365,7 @@ func (w *Workloads) GetReplicaSetDetail(ctx context.Context, principal domainide
 				return w.direct.GetReplicaSetDetail(ctx, clusterID, namespace, name)
 			})
 		},
-		finalize: func(item *domainresource.ReplicaSetDetailView, decision domainaccess.Decision) {
+		finalize: func(item *domainresource.ReplicaSetDetailView, decision domainaccess.Decision, _ domaincluster.Connection) {
 			item.AllowedActions = stringifyActions(decision.AllowedActions)
 		},
 	})
@@ -396,7 +397,7 @@ func (w *Workloads) GetHorizontalPodAutoscalerDetail(ctx context.Context, princi
 				return w.direct.GetHorizontalPodAutoscalerDetail(ctx, clusterID, namespace, name)
 			})
 		},
-		finalize: func(item *domainresource.HorizontalPodAutoscalerDetailView, decision domainaccess.Decision) {
+		finalize: func(item *domainresource.HorizontalPodAutoscalerDetailView, decision domainaccess.Decision, _ domaincluster.Connection) {
 			item.AllowedActions = stringifyActions(decision.AllowedActions)
 		},
 	})
@@ -428,7 +429,7 @@ func (w *Workloads) GetPodDisruptionBudgetDetail(ctx context.Context, principal 
 				return w.direct.GetPodDisruptionBudgetDetail(ctx, clusterID, namespace, name)
 			})
 		},
-		finalize: func(item *domainresource.PodDisruptionBudgetDetailView, decision domainaccess.Decision) {
+		finalize: func(item *domainresource.PodDisruptionBudgetDetailView, decision domainaccess.Decision, _ domaincluster.Connection) {
 			item.AllowedActions = stringifyActions(decision.AllowedActions)
 		},
 	})
@@ -455,7 +456,7 @@ func (w *Workloads) redactPDBRelations(ctx context.Context, principal domainiden
 
 func (w *Workloads) RestartDeployment(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
 	return performWorkloadMutation(ctx, w, principal, clusterID, namespace, name, workloadMutationSpec{
-		permission: appaccess.PermPlatformDeploymentRestart, kind: "Deployment", action: domainaccess.ActionRestart,
+		kind: "Deployment", action: domainaccess.ActionRestart,
 		agent:            func(client WorkloadAgent) error { return client.RestartDeployment(ctx, namespace, name) },
 		direct:           func() error { return w.direct.RestartDeployment(ctx, clusterID, namespace, name) },
 		successMessage:   func(source string) string { return fmt.Sprintf("restarted deployment via %s", source) },
@@ -465,7 +466,7 @@ func (w *Workloads) RestartDeployment(ctx context.Context, principal domainident
 
 func (w *Workloads) ScaleDeployment(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, replicas int32) error {
 	return performWorkloadMutation(ctx, w, principal, clusterID, namespace, name, workloadMutationSpec{
-		permission: appaccess.PermPlatformDeploymentScale, kind: "Deployment", action: domainaccess.ActionScale,
+		kind: "Deployment", action: domainaccess.ActionScale,
 		agent:            func(client WorkloadAgent) error { return client.ScaleDeployment(ctx, namespace, name, replicas) },
 		direct:           func() error { return w.direct.ScaleDeployment(ctx, clusterID, namespace, name, replicas) },
 		successMessage:   func(source string) string { return fmt.Sprintf("scaled deployment to %d via %s", replicas, source) },
@@ -475,7 +476,7 @@ func (w *Workloads) ScaleDeployment(ctx context.Context, principal domainidentit
 
 func (w *Workloads) RestartStatefulSet(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
 	return performWorkloadMutation(ctx, w, principal, clusterID, namespace, name, workloadMutationSpec{
-		permission: appaccess.PermPlatformDeploymentRestart, kind: "StatefulSet", action: domainaccess.ActionRestart,
+		kind: "StatefulSet", action: domainaccess.ActionRestart,
 		agent:            func(client WorkloadAgent) error { return client.RestartStatefulSet(ctx, namespace, name) },
 		direct:           func() error { return w.direct.RestartStatefulSet(ctx, clusterID, namespace, name) },
 		successMessage:   func(source string) string { return fmt.Sprintf("restarted statefulset via %s", source) },
@@ -485,7 +486,7 @@ func (w *Workloads) RestartStatefulSet(ctx context.Context, principal domainiden
 
 func (w *Workloads) ScaleStatefulSet(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, replicas int32) error {
 	return performWorkloadMutation(ctx, w, principal, clusterID, namespace, name, workloadMutationSpec{
-		permission: appaccess.PermPlatformDeploymentScale, kind: "StatefulSet", action: domainaccess.ActionScale,
+		kind: "StatefulSet", action: domainaccess.ActionScale,
 		agent:            func(client WorkloadAgent) error { return client.ScaleStatefulSet(ctx, namespace, name, replicas) },
 		direct:           func() error { return w.direct.ScaleStatefulSet(ctx, clusterID, namespace, name, replicas) },
 		successMessage:   func(source string) string { return fmt.Sprintf("scaled statefulset to %d via %s", replicas, source) },
@@ -495,7 +496,7 @@ func (w *Workloads) ScaleStatefulSet(ctx context.Context, principal domainidenti
 
 func (w *Workloads) RestartDaemonSet(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
 	return performWorkloadMutation(ctx, w, principal, clusterID, namespace, name, workloadMutationSpec{
-		permission: appaccess.PermPlatformDeploymentRestart, kind: "DaemonSet", action: domainaccess.ActionRestart,
+		kind: "DaemonSet", action: domainaccess.ActionRestart,
 		agent:            func(client WorkloadAgent) error { return client.RestartDaemonSet(ctx, namespace, name) },
 		direct:           func() error { return w.direct.RestartDaemonSet(ctx, clusterID, namespace, name) },
 		successMessage:   func(source string) string { return fmt.Sprintf("restarted daemonset via %s", source) },

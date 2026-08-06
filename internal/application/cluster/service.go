@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
@@ -833,9 +834,14 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	if s.authorizer == nil {
 		return nil
 	}
+	permissionKey := appaccess.PlatformActionPermission("inventory", "Cluster", string(action))
+	if action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch {
+		permissionKey = appaccess.PermPlatformClustersView
+	}
 	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
-		Principal: principal,
-		Action:    action,
+		Principal:     principal,
+		Action:        action,
+		PermissionKey: permissionKey,
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,

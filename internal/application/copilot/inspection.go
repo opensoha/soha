@@ -146,7 +146,7 @@ func (s *Service) ListInspectionTasks(ctx context.Context, principal domainident
 }
 
 func (s *Service) CreateInspectionTask(ctx context.Context, principal domainidentity.Principal, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAIInspectionManage, "create")); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
 	title := strings.TrimSpace(input.Title)
@@ -175,7 +175,7 @@ func (s *Service) CreateInspectionTask(ctx context.Context, principal domainiden
 }
 
 func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID string, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAIInspectionManage, "update")); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
 	task, err := s.inspectionTasks.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
@@ -204,7 +204,7 @@ func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainiden
 }
 
 func (s *Service) DeleteInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID string) error {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAIInspectionManage, "delete")); err != nil {
 		return err
 	}
 	return s.inspectionTasks.DeleteInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
@@ -483,7 +483,7 @@ func buildInspectionReviewGraph(scope domaincopilot.SessionScope, run domaincopi
 }
 
 func (s *Service) CreateInspectionTaskFromSession(ctx context.Context, principal domainidentity.Principal, sessionID string, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAIInspectionManage, "create")); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {

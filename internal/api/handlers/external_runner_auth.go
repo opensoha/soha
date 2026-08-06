@@ -15,11 +15,11 @@ func authorizeDeliveryRunner(c *gin.Context, staticToken string) bool {
 }
 
 func authorizeDeliveryRunnerKeys(c *gin.Context, keys keyring.Ring) bool {
-	return authorizeExternalRunnerKeys(c, keys, appaccess.PermDeliveryExecutionTasksManage)
+	return authorizeExternalRunnerKeys(c, keys, appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "claim"))
 }
 
 func authorizeDockerRunnerKeys(c *gin.Context, keys keyring.Ring) bool {
-	return authorizeExternalRunnerKeys(c, keys, appaccess.PermDockerOperationsManage)
+	return authorizeExternalRunnerKeys(c, keys, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "claim"))
 }
 
 func authorizeAIAgentRunnerKeys(c *gin.Context, keys keyring.Ring) bool {

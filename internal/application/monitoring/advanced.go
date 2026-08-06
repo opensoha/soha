@@ -42,7 +42,7 @@ func (s *Service) GetRule(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) CreateRule(ctx context.Context, principal domainidentity.Principal, input domainalert.AlertRuleInput) (domainalert.AlertRule, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertRulesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAlertRulesManage, "create")); err != nil {
 		return domainalert.AlertRule{}, err
 	}
 	if s.rules == nil {
@@ -55,7 +55,7 @@ func (s *Service) CreateRule(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) UpdateRule(ctx context.Context, principal domainidentity.Principal, ruleID string, input domainalert.AlertRuleInput) (domainalert.AlertRule, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertRulesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAlertRulesManage, "update")); err != nil {
 		return domainalert.AlertRule{}, err
 	}
 	if s.rules == nil {
@@ -120,7 +120,7 @@ func (s *Service) AcknowledgeEvent(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) ResolveEvent(ctx context.Context, principal domainidentity.Principal, eventID string) (domainalert.AlertEvent, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAlertsManage, "update")); err != nil {
 		return domainalert.AlertEvent{}, err
 	}
 	item, err := s.alertEvents.GetEvent(ctx, strings.TrimSpace(eventID))
@@ -135,7 +135,7 @@ func (s *Service) ResolveEvent(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) HealEvent(ctx context.Context, principal domainidentity.Principal, eventID string, policyID string) (domainalert.HealingRun, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "heal")); err != nil {
 		return domainalert.HealingRun{}, err
 	}
 	event, err := s.alertEvents.GetEvent(ctx, strings.TrimSpace(eventID))
@@ -188,7 +188,7 @@ func (s *Service) GetHealingRun(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) ApproveHealingRun(ctx context.Context, principal domainidentity.Principal, runID, comment string) (domainalert.HealingRun, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "approve")); err != nil {
 		return domainalert.HealingRun{}, err
 	}
 	run, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
@@ -258,7 +258,7 @@ func (s *Service) ApproveHealingRun(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) RejectHealingRun(ctx context.Context, principal domainidentity.Principal, runID, comment string) (domainalert.HealingRun, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "reject")); err != nil {
 		return domainalert.HealingRun{}, err
 	}
 	run, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
@@ -278,7 +278,7 @@ func (s *Service) RejectHealingRun(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) RetryHealingRun(ctx context.Context, principal domainidentity.Principal, runID string) (domainalert.HealingRun, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "retry")); err != nil {
 		return domainalert.HealingRun{}, err
 	}
 	run, err := s.healingRuns.GetHealingRun(ctx, strings.TrimSpace(runID))
@@ -325,7 +325,7 @@ func (s *Service) ListNotificationPolicies(ctx context.Context, principal domain
 }
 
 func (s *Service) CreateNotificationPolicy(ctx context.Context, principal domainidentity.Principal, input domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "create")); err != nil {
 		return domainalert.NotificationPolicy{}, err
 	}
 	if err := validateNotificationPolicyInput(input); err != nil {
@@ -335,7 +335,7 @@ func (s *Service) CreateNotificationPolicy(ctx context.Context, principal domain
 }
 
 func (s *Service) UpdateNotificationPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "update")); err != nil {
 		return domainalert.NotificationPolicy{}, err
 	}
 	if err := validateNotificationPolicyInput(input); err != nil {
@@ -352,7 +352,7 @@ func (s *Service) ListNotificationTemplates(ctx context.Context, principal domai
 }
 
 func (s *Service) CreateNotificationTemplate(ctx context.Context, principal domainidentity.Principal, input domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "create")); err != nil {
 		return domainalert.NotificationTemplate{}, err
 	}
 	if err := validateNotificationTemplateInput(input); err != nil {
@@ -362,7 +362,7 @@ func (s *Service) CreateNotificationTemplate(ctx context.Context, principal doma
 }
 
 func (s *Service) UpdateNotificationTemplate(ctx context.Context, principal domainidentity.Principal, templateID string, input domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "update")); err != nil {
 		return domainalert.NotificationTemplate{}, err
 	}
 	if err := validateNotificationTemplateInput(input); err != nil {
@@ -379,7 +379,7 @@ func (s *Service) ListHealingPolicies(ctx context.Context, principal domainident
 }
 
 func (s *Service) CreateHealingPolicy(ctx context.Context, principal domainidentity.Principal, input domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "create")); err != nil {
 		return domainalert.HealingPolicy{}, err
 	}
 	if err := validateHealingPolicyInput(input); err != nil {
@@ -389,7 +389,7 @@ func (s *Service) CreateHealingPolicy(ctx context.Context, principal domainident
 }
 
 func (s *Service) UpdateHealingPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveHealingManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveHealingManage, "update")); err != nil {
 		return domainalert.HealingPolicy{}, err
 	}
 	if err := validateHealingPolicyInput(input); err != nil {
@@ -420,14 +420,14 @@ func (s *Service) ListOnCallSchedules(ctx context.Context, principal domainident
 }
 
 func (s *Service) CreateOnCallSchedule(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveOncallManage, "create")); err != nil {
 		return domainalert.OnCallSchedule{}, err
 	}
 	return s.onCallSchedules.CreateOnCallSchedule(ctx, input)
 }
 
 func (s *Service) UpdateOnCallSchedule(ctx context.Context, principal domainidentity.Principal, scheduleID string, input domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveOncallManage, "update")); err != nil {
 		return domainalert.OnCallSchedule{}, err
 	}
 	return s.onCallSchedules.UpdateOnCallSchedule(ctx, scheduleID, input)
@@ -441,14 +441,14 @@ func (s *Service) ListOnCallRotations(ctx context.Context, principal domainident
 }
 
 func (s *Service) CreateOnCallRotation(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveOncallManage, "create")); err != nil {
 		return domainalert.OnCallRotation{}, err
 	}
 	return s.onCallRotations.CreateOnCallRotation(ctx, input)
 }
 
 func (s *Service) UpdateOnCallRotation(ctx context.Context, principal domainidentity.Principal, rotationID string, input domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveOncallManage, "update")); err != nil {
 		return domainalert.OnCallRotation{}, err
 	}
 	return s.onCallRotations.UpdateOnCallRotation(ctx, rotationID, input)
@@ -462,14 +462,14 @@ func (s *Service) ListOnCallEscalationPolicies(ctx context.Context, principal do
 }
 
 func (s *Service) CreateOnCallEscalationPolicy(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveOncallManage, "create")); err != nil {
 		return domainalert.OnCallEscalationPolicy{}, err
 	}
 	return s.onCallEscalations.CreateOnCallEscalationPolicy(ctx, input)
 }
 
 func (s *Service) UpdateOnCallEscalationPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveOncallManage, "update")); err != nil {
 		return domainalert.OnCallEscalationPolicy{}, err
 	}
 	return s.onCallEscalations.UpdateOnCallEscalationPolicy(ctx, policyID, input)
@@ -483,7 +483,7 @@ func (s *Service) ListOnCallAssignmentRules(ctx context.Context, principal domai
 }
 
 func (s *Service) CreateOnCallAssignmentRule(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveOncallManage, "create")); err != nil {
 		return domainalert.OnCallAssignmentRule{}, err
 	}
 	if err := validateOnCallAssignmentRuleInput(input); err != nil {
@@ -493,7 +493,7 @@ func (s *Service) CreateOnCallAssignmentRule(ctx context.Context, principal doma
 }
 
 func (s *Service) UpdateOnCallAssignmentRule(ctx context.Context, principal domainidentity.Principal, ruleID string, input domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveOncallManage, "update")); err != nil {
 		return domainalert.OnCallAssignmentRule{}, err
 	}
 	if err := validateOnCallAssignmentRuleInput(input); err != nil {

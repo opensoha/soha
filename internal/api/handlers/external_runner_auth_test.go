@@ -68,7 +68,7 @@ func TestAuthorizeExternalRunnerAcceptsServiceAccountTokenPermission(t *testing.
 	ctx.Set("principal", domainidentity.Principal{
 		UserID:         "service_account:runner-1",
 		UserName:       "runner-1",
-		PermissionKeys: []string{appaccess.PermDeliveryExecutionTasksManage},
+		PermissionKeys: []string{appaccess.ManagedActionPermission(appaccess.PermDeliveryExecutionTasksManage, "claim")},
 	})
 	ctx.Set("access_context", domainidentity.AccessContext{
 		TokenKind:   "service_account_token",

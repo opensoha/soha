@@ -4560,7 +4560,7 @@ func TestRelayLLMHTTPAllowsManagerExplicitUpstreamAndRouteTrace(t *testing.T) {
 	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
 	service := newRelayRuntimeTestService(repo, first.Client())
 	principal := relayTestPrincipal()
-	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke, appaccess.PermAIGatewayRelayManage}
+	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test")}
 	recorder := httptest.NewRecorder()
 
 	err := service.RelayLLMHTTP(context.Background(), principal, relayTestAccessContext(nil), LLMRelayHTTPRequest{
@@ -5465,7 +5465,10 @@ func relayTestViewPrincipal() domainidentity.Principal {
 
 func relayTestManagePrincipal() domainidentity.Principal {
 	principal := testPrincipal("developer")
-	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayManage}
+	principal.PermissionKeys = []string{
+		appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "delete"),
+		appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test"),
+	}
 	return principal
 }
 

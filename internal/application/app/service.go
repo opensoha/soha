@@ -188,7 +188,7 @@ func (s *Service) GetService(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) CreateService(ctx context.Context, principal domainidentity.Principal, applicationID string, input domainapp.ServiceInput) (domainapp.Service, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, "create")); err != nil {
 		return domainapp.Service{}, err
 	}
 	app, err := s.repo.Get(ctx, strings.TrimSpace(applicationID))
@@ -211,7 +211,7 @@ func (s *Service) CreateService(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) UpdateService(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string, input domainapp.ServiceInput) (domainapp.Service, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, "update")); err != nil {
 		return domainapp.Service{}, err
 	}
 	app, err := s.repo.Get(ctx, strings.TrimSpace(applicationID))
@@ -234,7 +234,7 @@ func (s *Service) UpdateService(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) DeleteService(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, "delete")); err != nil {
 		return err
 	}
 	app, err := s.repo.Get(ctx, strings.TrimSpace(applicationID))

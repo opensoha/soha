@@ -120,7 +120,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, i
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, request domainsecret.CreateInput) (sohaapi.SecretMetadata, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretCreate); err != nil {
 		return sohaapi.SecretMetadata{}, err
 	}
 	name := strings.TrimSpace(request.Name)
@@ -159,7 +159,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) update(ctx context.Context, principal domainidentity.Principal, id string, input domainsecret.UpdateInput, action string) (sohaapi.SecretMetadata, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretUpdate); err != nil {
 		return sohaapi.SecretMetadata{}, err
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(id))
@@ -217,7 +217,7 @@ func (s *Service) ListVersions(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) Rotate(ctx context.Context, principal domainidentity.Principal, id string, request domainsecret.RotateInput) (sohaapi.SecretVersionMetadata, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretRotate); err != nil {
 		return sohaapi.SecretVersionMetadata{}, err
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(id))
@@ -243,7 +243,7 @@ func (s *Service) Rotate(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) RevokeVersion(ctx context.Context, principal domainidentity.Principal, id string, version int) (sohaapi.SecretVersionMetadata, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSecretRevoke); err != nil {
 		return sohaapi.SecretVersionMetadata{}, err
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(id))
@@ -420,12 +420,14 @@ func (s *Service) authorizedSecret(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) scopeAllowed(ctx context.Context, principal domainidentity.Principal, item domainsecret.Secret) (bool, error) {
-	manage, err := s.permissions.HasPermission(ctx, principal, appaccess.PermSecretManage)
-	if err != nil {
-		return false, err
-	}
-	if manage {
-		return true, nil
+	for _, permission := range []string{appaccess.PermSecretUpdate, appaccess.PermSecretRevoke, appaccess.PermSecretRotate} {
+		allowed, err := s.permissions.HasPermission(ctx, principal, permission)
+		if err != nil {
+			return false, err
+		}
+		if allowed {
+			return true, nil
+		}
 	}
 	switch item.ScopeType {
 	case domainsecret.ScopeWorkspace:

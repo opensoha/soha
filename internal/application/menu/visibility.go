@@ -152,42 +152,53 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermObserveAIView,
 			appaccess.PermObserveAIChatUse,
 			appaccess.PermAIKnowledgeView,
-			appaccess.PermAIKnowledgeManage,
 			appaccess.PermAIContextInspect,
 			appaccess.PermAIEvaluationsView,
-			appaccess.PermAIEvaluationsManage,
 			appaccess.PermAIAgentProvidersView,
-			appaccess.PermAIAgentProvidersManage,
 			appaccess.PermSettingsAIView,
 			appaccess.PermAIGatewayView,
 			appaccess.PermAIGatewayInvoke,
-			appaccess.PermAIGatewayManage,
 			appaccess.PermAIGatewayRelayView,
 			appaccess.PermAIGatewayRelayInvoke,
-			appaccess.PermAIGatewayRelayManage,
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewayApprovalsManage, "view"),
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewayClientsManage, "view"),
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewayGrantsManage, "view"),
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewayPoliciesManage, "view"),
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "view"),
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "view"),
 		}}, true
 	case "ai-workbench-chat", "ai-workbench-investigation":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
 	case "ai-workbench-agent-providers":
-		return visibilityRule{permissions: []string{appaccess.PermAIAgentProvidersView, appaccess.PermAIAgentProvidersManage}}, true
+		return visibilityRule{permissions: []string{appaccess.PermAIAgentProvidersView}}, true
 	case "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-tool-settings", "ai-workbench-operations", "ai-workbench-tools":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
 	case "ai-workbench-knowledge":
-		return visibilityRule{permissions: []string{appaccess.PermAIKnowledgeView, appaccess.PermAIKnowledgeManage}}, true
+		return visibilityRule{permissions: []string{appaccess.PermAIKnowledgeView}}, true
 	case "ai-workbench-context":
 		return visibilityRule{permissions: []string{appaccess.PermAIContextInspect}}, true
 	case "ai-workbench-evaluations":
-		return visibilityRule{permissions: []string{appaccess.PermAIEvaluationsView, appaccess.PermAIEvaluationsManage}}, true
+		return visibilityRule{permissions: []string{appaccess.PermAIEvaluationsView}}, true
 	case "ai-workbench-model-settings":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
 	case "ai-gateway-tokens":
-		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage}}, true
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayInvoke, appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "view")}}, true
 	case "ai-gateway-manifest":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true
 	case "ai-gateway-relay":
-		return visibilityRule{permissions: []string{appaccess.PermAIGatewayRelayView, appaccess.PermAIGatewayRelayInvoke, appaccess.PermAIGatewayRelayManage}}, true
-	case "ai-gateway-clients", "ai-gateway-governance", "ai-gateway-call-logs":
-		return visibilityRule{permissions: []string{appaccess.PermAIGatewayManage}}, true
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayRelayView, appaccess.PermAIGatewayRelayInvoke}}, true
+	case "ai-gateway-clients":
+		return visibilityRule{permissions: []string{appaccess.ManagedActionPermission(appaccess.PermAIGatewayClientsManage, "view")}}, true
+	case "ai-gateway-governance":
+		return visibilityRule{permissions: []string{
+			appaccess.PermAIGatewayView,
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewayApprovalsManage, "view"),
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewayGrantsManage, "view"),
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewayPoliciesManage, "view"),
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "view"),
+		}}, true
+	case "ai-gateway-call-logs":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true
 	default:
 		return visibilityRule{}, false
 	}
@@ -207,20 +218,19 @@ func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermVirtualizationFlavorsView,
 			appaccess.PermVirtualizationOperationsView,
 			appaccess.PermVirtualizationSyncView,
-			appaccess.PermVirtualizationSyncManage,
 		}}, true
 	case "virtualization-workbench-vms":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationVMsView}}, true
 	case "virtualization-workbench-clusters":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationClustersView}}, true
-	case "virtualization-workbench-images":
+	case "virtualization-workbench-images", "virtualization-workbench-storage":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationImagesView}}, true
 	case "virtualization-workbench-flavors":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationFlavorsView}}, true
 	case "virtualization-workbench-operations":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView}}, true
 	case "virtualization-workbench-sync":
-		return visibilityRule{permissions: []string{appaccess.PermVirtualizationSyncView, appaccess.PermVirtualizationSyncManage}}, true
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationSyncView}}, true
 	case "access":
 		return visibilityRule{permissions: []string{
 			appaccess.PermAccessUsersView,
@@ -249,7 +259,7 @@ func computeMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationVMsView,
 			appaccess.PermVirtualizationClustersView, appaccess.PermVirtualizationImagesView,
 			appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationOperationsView,
-			appaccess.PermVirtualizationSyncView, appaccess.PermVirtualizationSyncManage,
+			appaccess.PermVirtualizationSyncView,
 			appaccess.PermDockerOverviewView, appaccess.PermDockerHostsView, appaccess.PermDockerProjectsView,
 			appaccess.PermDockerServicesView, appaccess.PermDockerPortsView, appaccess.PermDockerTemplatesView,
 			appaccess.PermDockerOperationsView,
@@ -257,7 +267,7 @@ func computeMenuRule(id string) (visibilityRule, bool) {
 	case "compute-workbench-overview":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOverviewView, appaccess.PermDockerOverviewView}}, true
 	case "compute-workbench-tasks-operations":
-		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView, appaccess.PermVirtualizationSyncManage, appaccess.PermDockerOperationsView}}, true
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView, appaccess.PermDockerOperationsView}}, true
 	default:
 		return visibilityRule{}, false
 	}
@@ -311,6 +321,7 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermSettingsSystemIntegrationsView,
 			appaccess.PermSettingsRuntimeConfigView,
 			appaccess.PermSystemMenusView,
+			appaccess.PermSecretView,
 		}}, true
 	case "settings-login":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsIdentityView}}, true
@@ -318,6 +329,8 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermSettingsBrandingView}}, true
 	case "settings-source-control":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsSystemIntegrationsView}}, true
+	case "settings-secrets":
+		return visibilityRule{permissions: []string{appaccess.PermSecretView}}, true
 	case "settings-runtime-configuration":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsRuntimeConfigView}}, true
 	default:
@@ -325,21 +338,91 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 	}
 }
 
+var platformResourceMenus = map[string]struct {
+	group string
+	kind  string
+}{
+	"workloads-deployments":                         {group: "workloads", kind: "Deployment"},
+	"workloads-pods":                                {group: "workloads", kind: "Pod"},
+	"workloads-statefulsets":                        {group: "workloads", kind: "StatefulSet"},
+	"workloads-daemonsets":                          {group: "workloads", kind: "DaemonSet"},
+	"workloads-jobs":                                {group: "workloads", kind: "Job"},
+	"workloads-cronjobs":                            {group: "workloads", kind: "CronJob"},
+	"workloads-replicasets":                         {group: "workloads", kind: "ReplicaSet"},
+	"workloads-replicationcontrollers":              {group: "workloads", kind: "ReplicationController"},
+	"configuration-configmaps":                      {group: "configuration", kind: "ConfigMap"},
+	"configuration-secrets":                         {group: "configuration", kind: "Secret"},
+	"configuration-resourcequotas":                  {group: "configuration", kind: "ResourceQuota"},
+	"configuration-limitranges":                     {group: "configuration", kind: "LimitRange"},
+	"configuration-hpas":                            {group: "configuration", kind: "HorizontalPodAutoscaler"},
+	"configuration-poddisruptionbudgets":            {group: "configuration", kind: "PodDisruptionBudget"},
+	"configuration-priorityclasses":                 {group: "configuration", kind: "PriorityClass"},
+	"configuration-runtimeclasses":                  {group: "configuration", kind: "RuntimeClass"},
+	"configuration-leases":                          {group: "configuration", kind: "Lease"},
+	"configuration-mutatingwebhookconfigurations":   {group: "configuration", kind: "MutatingWebhookConfiguration"},
+	"configuration-validatingwebhookconfigurations": {group: "configuration", kind: "ValidatingWebhookConfiguration"},
+	"network-services":                              {group: "network", kind: "Service"},
+	"network-ingresses":                             {group: "network", kind: "Ingress"},
+	"network-gateway-api-gatewayclasses":            {group: "network", kind: "GatewayClass"},
+	"network-gateway-api-gateways":                  {group: "network", kind: "Gateway"},
+	"network-gateway-api-httproutes":                {group: "network", kind: "HTTPRoute"},
+	"network-gateway-api-backendtlspolicies":        {group: "network", kind: "BackendTLSPolicy"},
+	"network-gateway-api-grpcroutes":                {group: "network", kind: "GRPCRoute"},
+	"network-gateway-api-referencegrants":           {group: "network", kind: "ReferenceGrant"},
+	"network-endpointslices":                        {group: "network", kind: "EndpointSlice"},
+	"network-ingressclasses":                        {group: "network", kind: "IngressClass"},
+	"network-networkpolicies":                       {group: "network", kind: "NetworkPolicy"},
+	"network-port-forward":                          {group: "network", kind: "PortForward"},
+	"storage-pvc":                                   {group: "storage", kind: "PersistentVolumeClaim"},
+	"storage-pv":                                    {group: "storage", kind: "PersistentVolume"},
+	"storage-classes":                               {group: "storage", kind: "StorageClass"},
+	"platform-access-control-serviceaccounts":       {group: "access-control", kind: "ServiceAccount"},
+	"platform-access-control-clusterroles":          {group: "access-control", kind: "ClusterRole"},
+	"platform-access-control-roles":                 {group: "access-control", kind: "Role"},
+	"platform-access-control-clusterrolebindings":   {group: "access-control", kind: "ClusterRoleBinding"},
+	"platform-access-control-rolebindings":          {group: "access-control", kind: "RoleBinding"},
+}
+
 func platformFamilyMenuRule(id string) (visibilityRule, bool) {
+	if resource, ok := platformResourceMenus[id]; ok {
+		return visibilityRule{permissions: []string{appaccess.PlatformActionPermission(resource.group, resource.kind, "view")}}, true
+	}
 	switch {
 	case id == "helm" || strings.HasPrefix(id, "helm-"):
 		return visibilityRule{permissions: []string{appaccess.PermPlatformHelmView}}, true
-	case id == "workloads" || strings.HasPrefix(id, "workloads-"):
-		return visibilityRule{permissions: []string{appaccess.PermPlatformWorkloadsView}}, true
-	case id == "configuration" || strings.HasPrefix(id, "configuration-"):
-		return visibilityRule{permissions: []string{appaccess.PermPlatformConfigurationView}}, true
-	case id == "network" || strings.HasPrefix(id, "network-"):
-		return visibilityRule{permissions: []string{appaccess.PermPlatformNetworkView}}, true
-	case id == "storage" || strings.HasPrefix(id, "storage-"):
-		return visibilityRule{permissions: []string{appaccess.PermPlatformStorageView}}, true
+	case id == "workloads-overview":
+		return visibilityRule{permissions: []string{appaccess.PermPlatformWorkloadsOverviewView}}, true
+	case id == "workloads":
+		return visibilityRule{permissions: platformResourceViewPermissions("workloads")}, true
+	case id == "configuration":
+		return visibilityRule{permissions: platformResourceViewPermissions("configuration")}, true
+	case id == "network-topology":
+		return visibilityRule{permissions: []string{appaccess.PermPlatformNetworkTopologyView}}, true
+	case id == "network":
+		return visibilityRule{permissions: platformResourceViewPermissions("network")}, true
+	case id == "storage":
+		return visibilityRule{permissions: platformResourceViewPermissions("storage")}, true
+	case id == "platform-access-control":
+		return visibilityRule{permissions: platformResourceViewPermissions("access-control")}, true
 	default:
 		return visibilityRule{}, false
 	}
+}
+
+func platformResourceViewPermissions(group string) []string {
+	permissions := make([]string, 0)
+	for _, resource := range platformResourceMenus {
+		if resource.group == group {
+			permissions = append(permissions, appaccess.PlatformActionPermission(resource.group, resource.kind, "view"))
+		}
+	}
+	if group == "workloads" {
+		permissions = append(permissions, appaccess.PermPlatformWorkloadsOverviewView)
+	}
+	if group == "network" {
+		permissions = append(permissions, appaccess.PermPlatformNetworkTopologyView)
+	}
+	return permissions
 }
 
 func isVisibleByPermissions(item domainmenu.Record, permissionKeys []string) bool {

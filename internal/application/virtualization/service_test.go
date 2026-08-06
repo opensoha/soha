@@ -759,6 +759,38 @@ func TestCreateVMUsesFlavorAndImageSelection(t *testing.T) {
 	}
 }
 
+func TestVMExactPermissionsAllowCreateAndResizeButDenyDelete(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
+	vm := domainvirtualization.VM{ID: "vm-1", Provider: ProviderKubeVirt, ConnectionID: conn.ID, ExternalID: "vm-1", Name: "vm-1", Status: "running"}
+	repo.vms[vm.ID] = vm
+	permissions := appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{
+		"admin": {
+			appaccess.PermVirtualizationVMsView,
+			appaccess.PermVirtualizationVMsCreate,
+			appaccess.PermVirtualizationVMsResize,
+		},
+	}})
+	service := MustNew(testDependencies(repo), map[string]Adapter{ProviderKubeVirt: capabilityAdapter{fakeAdapter{}}}, permissions, nil, Options{})
+
+	if _, err := service.CreateVM(context.Background(), testPrincipal(), CreateVMInput{ConnectionID: conn.ID, Name: "vm-new"}); err != nil {
+		t.Fatalf("CreateVM() error = %v", err)
+	}
+	if _, err := service.VMAction(context.Background(), testPrincipal(), vm.ID, VMActionInput{Action: "resize", CPU: 2}); err != nil {
+		t.Fatalf("VMAction(resize) error = %v", err)
+	}
+	if _, err := service.VMAction(context.Background(), testPrincipal(), vm.ID, VMActionInput{Action: "delete"}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("VMAction(delete) error = %v, want access denied", err)
+	}
+	item, err := service.GetVM(context.Background(), testPrincipal(), vm.ID)
+	if err != nil {
+		t.Fatalf("GetVM() error = %v", err)
+	}
+	if !slices.Contains(item.AllowedActions, "resize") || slices.Contains(item.AllowedActions, "delete") {
+		t.Fatalf("AllowedActions = %v, want resize without delete", item.AllowedActions)
+	}
+}
+
 func TestImageManagementAndVMDetail(t *testing.T) {
 	repo := newMemoryRepo()
 	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
@@ -1031,6 +1063,24 @@ func TestGetConsoleURLRequiresDedicatedPermission(t *testing.T) {
 	}
 }
 
+func TestListImagesUsesStoragePermissionForStorageCategory(t *testing.T) {
+	repo := newMemoryRepo()
+	service := MustNew(testDependencies(repo), nil, appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{
+		"image-viewer":   {appaccess.PermVirtualizationImagesView},
+		"storage-viewer": {appaccess.PermVirtualizationStorageView},
+	}}), nil, Options{})
+
+	_, err := service.ListImages(context.Background(), domainidentity.Principal{Roles: []string{"image-viewer"}}, domainvirtualization.ImageFilter{Category: "storage"})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("ListImages() error = %v, want access denied", err)
+	}
+
+	_, err = service.ListImagesPage(context.Background(), domainidentity.Principal{Roles: []string{"storage-viewer"}}, domainvirtualization.ImageFilter{Category: "storage"})
+	if err != nil {
+		t.Fatalf("ListImagesPage() error = %v, want nil", err)
+	}
+}
+
 func newTestService(repo *memoryRepo, ops *captureOperations, adapter Adapter) *Service {
 	return MustNew(testDependencies(repo), map[string]Adapter{
 		ProviderKubeVirt: adapter,
@@ -1062,6 +1112,7 @@ func testPermissions() *appaccess.PermissionResolver {
 			appaccess.PermVirtualizationVMsManage,
 			appaccess.PermVirtualizationImagesView,
 			appaccess.PermVirtualizationImagesManage,
+			appaccess.PermVirtualizationStorageView,
 			appaccess.PermVirtualizationFlavorsView,
 			appaccess.PermVirtualizationFlavorsManage,
 			appaccess.PermVirtualizationOperationsView,
@@ -1112,6 +1163,10 @@ type fakeAdapter struct {
 	metricsResult infravirtualization.VMMetricsResult
 	consoleResult infravirtualization.ConsoleURLResult
 }
+
+type capabilityAdapter struct{ fakeAdapter }
+
+func (capabilityAdapter) VMCapabilities() []string { return []string{"resize_cpu"} }
 
 func (a fakeAdapter) TestConnection(context.Context, infravirtualization.Connection) (infravirtualization.ConnectionTestResult, error) {
 	return infravirtualization.ConnectionTestResult{Healthy: true, Status: "healthy"}, nil

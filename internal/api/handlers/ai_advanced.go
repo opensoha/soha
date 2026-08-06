@@ -221,7 +221,7 @@ func (h *AIAdvancedHandler) putReplay(c *gin.Context) {
 	apiresponse.Item(c, http.StatusAccepted, plan)
 }
 func (h *AIAdvancedHandler) listGatePolicies(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIEvaluationsView, appaccess.PermAIEvaluationsGatesManage) {
+	if !h.allowed(c, appaccess.PermAIEvaluationsView) {
 		return
 	}
 	items, err := h.evaluation.ListGatePolicies(c)
@@ -263,7 +263,7 @@ func (h *AIAdvancedHandler) resolveGatePolicy(ctx context.Context, id string) (a
 	return selected, nil
 }
 func (h *AIAdvancedHandler) putGatePolicy(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIEvaluationsGatesManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIEvaluationsGatesManage, "update")) {
 		return
 	}
 	var input struct {
@@ -288,14 +288,14 @@ func (h *AIAdvancedHandler) putGatePolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, policy)
 }
 func (h *AIAdvancedHandler) listGateDecisions(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIEvaluationsView, appaccess.PermAIEvaluationsGatesManage) {
+	if !h.allowed(c, appaccess.PermAIEvaluationsView) {
 		return
 	}
 	items, err := h.evaluation.ListGateDecisions(c)
 	writeAdvancedItems(c, items, err)
 }
 func (h *AIAdvancedHandler) evaluateGate(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIEvaluationsGatesManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIEvaluationsGatesManage, "evaluate")) {
 		return
 	}
 	var input struct {
@@ -369,14 +369,14 @@ func (h *AIAdvancedHandler) putFeedback(c *gin.Context) {
 }
 
 func (h *AIAdvancedHandler) listMemoryPolicies(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIMemoryView, appaccess.PermAIMemoryManage) {
+	if !h.allowed(c, appaccess.PermAIMemoryView) {
 		return
 	}
 	items, err := h.memory.ListPolicies(c)
 	writeAdvancedItems(c, items, err)
 }
 func (h *AIAdvancedHandler) putMemoryPolicy(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIMemoryManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIMemoryManage, "update")) {
 		return
 	}
 	var input struct {
@@ -406,7 +406,7 @@ func (h *AIAdvancedHandler) putMemoryPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, policy)
 }
 func (h *AIAdvancedHandler) listMemory(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIMemoryView, appaccess.PermAIMemoryManage) {
+	if !h.allowed(c, appaccess.PermAIMemoryView) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -417,14 +417,14 @@ func (h *AIAdvancedHandler) listMemory(c *gin.Context) {
 	if ownerID == "" {
 		ownerID = principal.UserID
 	}
-	if ownerType == "user" && ownerID != principal.UserID && !h.allowed(c, appaccess.PermAIMemoryManage) {
+	if ownerType == "user" && ownerID != principal.UserID && !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIMemoryManage, "update")) {
 		return
 	}
 	items, err := h.memory.ListRecords(c, ownerType, ownerID)
 	writeAdvancedItems(c, items, err)
 }
 func (h *AIAdvancedHandler) putMemory(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIMemoryManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIMemoryManage, "update")) {
 		return
 	}
 	var input struct {
@@ -450,7 +450,7 @@ func (h *AIAdvancedHandler) putMemory(c *gin.Context) {
 	writeAdvancedItem(c, http.StatusCreated, item, err)
 }
 func (h *AIAdvancedHandler) deleteMemory(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIMemoryManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIMemoryManage, "update")) {
 		return
 	}
 	item, err := h.memory.GetRecord(c, c.Param("memoryID"))
@@ -471,7 +471,7 @@ func (h *AIAdvancedHandler) deleteMemory(c *gin.Context) {
 }
 
 func (h *AIAdvancedHandler) listGraphRevisions(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIKnowledgeView, appaccess.PermAIKnowledgeGraphManage) {
+	if !h.allowed(c, appaccess.PermAIKnowledgeView) {
 		return
 	}
 	if !h.requireKnowledgeBaseAccess(c, c.Param("baseID")) {
@@ -481,7 +481,7 @@ func (h *AIAdvancedHandler) listGraphRevisions(c *gin.Context) {
 	writeAdvancedItems(c, items, err)
 }
 func (h *AIAdvancedHandler) putGraphRevision(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIKnowledgeGraphManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIKnowledgeGraphManage, "update")) {
 		return
 	}
 	var input appknowledgegraph.Revision
@@ -500,7 +500,7 @@ func (h *AIAdvancedHandler) putGraphRevision(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, input)
 }
 func (h *AIAdvancedHandler) publishGraphRevision(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIKnowledgeGraphManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIKnowledgeGraphManage, "update")) {
 		return
 	}
 	revision, err := h.graph.GetRevision(c, c.Param("revisionID"))

@@ -363,6 +363,8 @@ func (r *Repository) ListImages(ctx context.Context, filter domainvirtualization
 	if err != nil {
 		return nil, err
 	}
+	extraClauses, extraArgs := imageExtraClauses(filter)
+	query, args = injectExtraClauses(query, args, extraClauses, extraArgs)
 	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization images: %w", err)
@@ -386,6 +388,9 @@ func (r *Repository) GetImage(ctx context.Context, id string) (domainvirtualizat
 
 func (r *Repository) CountImages(ctx context.Context, filter domainvirtualization.ImageFilter) (int, error) {
 	clauses, args := assetClauses(filter.Provider, filter.ConnectionID, filter.Status, filter.Search, []string{"name", "external_id", "os_type", "architecture"})
+	extraClauses, extraArgs := imageExtraClauses(filter)
+	clauses = append(clauses, extraClauses...)
+	args = append(args, extraArgs...)
 	return r.count(ctx, "virtualization_images", clauses, args)
 }
 
@@ -1206,6 +1211,25 @@ func vmExtraClauses(filter domainvirtualization.VMFilter) ([]string, []any) {
 		args = append(args, "deleted")
 	}
 	return clauses, args
+}
+
+func imageExtraClauses(filter domainvirtualization.ImageFilter) ([]string, []any) {
+	var sourceKinds []string
+	switch strings.ToLower(strings.TrimSpace(filter.Category)) {
+	case "catalog":
+		sourceKinds = []string{"iso", "template", "lxc_template", "datasource", "pvc"}
+	case "storage":
+		sourceKinds = []string{"storage", "storage_content", "image", "images", "rootdir", "datavolume", "persistentvolumeclaim"}
+	default:
+		return nil, nil
+	}
+	// ponytail: JSONB scan avoids a migration; add an expression index when inventory size makes this measurable.
+	clause := fmt.Sprintf("LOWER(COALESCE(NULLIF(config->>'sourceKind', ''), NULLIF(config->>'assetKind', ''), NULLIF(config->>'source', ''), '')) IN (%s)", placeholders(len(sourceKinds)))
+	args := make([]any, len(sourceKinds))
+	for index, kind := range sourceKinds {
+		args[index] = kind
+	}
+	return []string{clause}, args
 }
 
 func taskClauses(filter domainvirtualization.TaskFilter) ([]string, []any) {

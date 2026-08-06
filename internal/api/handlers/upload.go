@@ -46,7 +46,7 @@ type readSeeker interface {
 // UploadBrandingAsset handles branding image upload and returns a data URL for settings storage.
 func (h *SettingsHandler) UploadBrandingAsset(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := appaccess.AuthorizeRuntimePermission(c.Request.Context(), h.permissions, principal, appaccess.PermSettingsBrandingManage); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(c.Request.Context(), h.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsBrandingManage, "update")); err != nil {
 		apiresponse.Error(c, http.StatusForbidden, "access_denied", "missing branding manage permission")
 		return
 	}

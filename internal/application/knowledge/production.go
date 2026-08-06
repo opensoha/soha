@@ -39,7 +39,7 @@ func (s *Service) validateConnectorInput(
 	principal domainidentity.Principal,
 	input domainknowledge.ConnectorInput,
 ) (domainknowledge.ConnectorValidationResult, error) {
-	if err := s.authorize(ctx, principal, PermKnowledgeConnectorsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(PermKnowledgeConnectorsManage, "validate")); err != nil {
 		return domainknowledge.ConnectorValidationResult{}, err
 	}
 	if s.connectorValidator == nil {
@@ -53,7 +53,7 @@ func (s *Service) ValidateConnector(
 	principal domainidentity.Principal,
 	connectorID string,
 ) (domainknowledge.ConnectorValidationResult, error) {
-	if err := s.authorize(ctx, principal, PermKnowledgeConnectorsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(PermKnowledgeConnectorsManage, "validate")); err != nil {
 		return domainknowledge.ConnectorValidationResult{}, err
 	}
 	if s.productionRepo == nil || s.connectorValidator == nil {

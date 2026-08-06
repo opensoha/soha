@@ -86,7 +86,7 @@ func (s *Service) MarkRead(ctx context.Context, principal domainidentity.Princip
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainannouncement.Input) (domainannouncement.Record, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSystemAnnouncementsManage, "create")); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -112,7 +112,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, announcementID string, input domainannouncement.Input) (domainannouncement.Record, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSystemAnnouncementsManage, "update")); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	existing, err := s.getAnnouncement(ctx, announcementID)
@@ -142,7 +142,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Publish(ctx context.Context, principal domainidentity.Principal, announcementID string) (domainannouncement.Record, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSystemAnnouncementsManage, "publish")); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	announcementID = strings.TrimSpace(announcementID)
@@ -161,7 +161,7 @@ func (s *Service) Publish(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) Withdraw(ctx context.Context, principal domainidentity.Principal, announcementID string) (domainannouncement.Record, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSystemAnnouncementsManage, "withdraw")); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	announcementID = strings.TrimSpace(announcementID)
@@ -180,7 +180,7 @@ func (s *Service) Withdraw(ctx context.Context, principal domainidentity.Princip
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, announcementID string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSystemAnnouncementsManage, "delete")); err != nil {
 		return err
 	}
 	item, err := s.getAnnouncement(ctx, announcementID)

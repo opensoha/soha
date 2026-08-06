@@ -353,7 +353,7 @@ func (s *Service) ListChannels(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) CreateChannel(ctx context.Context, principal domainidentity.Principal, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "create")); err != nil {
 		return domainalert.NotificationChannel{}, err
 	}
 	if s.channels == nil {
@@ -366,7 +366,7 @@ func (s *Service) CreateChannel(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) UpdateChannel(ctx context.Context, principal domainidentity.Principal, channelID string, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "update")); err != nil {
 		return domainalert.NotificationChannel{}, err
 	}
 	if s.channels == nil {
@@ -405,7 +405,7 @@ func (s *Service) ListSilences(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) CreateSilence(ctx context.Context, principal domainidentity.Principal, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "create")); err != nil {
 		return domainalert.AlertSilence{}, err
 	}
 	if s.silences == nil {
@@ -418,7 +418,7 @@ func (s *Service) CreateSilence(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) UpdateSilence(ctx context.Context, principal domainidentity.Principal, silenceID string, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "update")); err != nil {
 		return domainalert.AlertSilence{}, err
 	}
 	if s.silences == nil {
@@ -462,7 +462,7 @@ func (s *Service) ListDeliveryLogs(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) CreateRoute(ctx context.Context, principal domainidentity.Principal, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "create")); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
 	if s.notificationPolicies == nil {
@@ -479,7 +479,7 @@ func (s *Service) CreateRoute(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Principal, routeID string, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveNotificationsManage, "update")); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
 	if s.notificationPolicies == nil {

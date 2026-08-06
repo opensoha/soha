@@ -55,7 +55,7 @@ func (s *DeclarativeService) Render(ctx context.Context, principal domainidentit
 }
 
 func (s *DeclarativeService) Preflight(ctx context.Context, principal domainidentity.Principal, packageID string, input domainmanifest.PreflightInput) (domaindelivery.ExecutionTask, error) {
-	if err := s.base.authorize(ctx, principal, appaccess.PermDeliveryManifestDeploymentsManage); err != nil {
+	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "preflight")); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
 	if input.ForceConflicts {
@@ -85,7 +85,7 @@ func (s *DeclarativeService) Preflight(ctx context.Context, principal domainiden
 }
 
 func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal domainidentity.Principal, bindingID string, input domainmanifest.DesiredRevisionInput) (DeploymentActionResult, error) {
-	if err := s.base.authorize(ctx, principal, appaccess.PermDeliveryManifestDeploymentsManage); err != nil {
+	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "trigger")); err != nil {
 		return DeploymentActionResult{}, err
 	}
 	binding, err := s.repository.GetBinding(ctx, strings.TrimSpace(bindingID))
@@ -130,7 +130,7 @@ func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal d
 }
 
 func (s *DeclarativeService) Reconcile(ctx context.Context, principal domainidentity.Principal, deploymentID, action string, input domainmanifest.ActionInput) (DeploymentActionResult, error) {
-	permission := appaccess.PermDeliveryManifestDeploymentsManage
+	permission := appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "trigger")
 	if action == domainmanifest.TaskActionRepair {
 		permission = appaccess.PermDeliveryManifestDriftRepair
 	} else if action == domainmanifest.TaskActionAdopt {
@@ -159,7 +159,7 @@ func (s *DeclarativeService) Reconcile(ctx context.Context, principal domainiden
 }
 
 func (s *DeclarativeService) Rollback(ctx context.Context, principal domainidentity.Principal, deploymentID string, input domainmanifest.RollbackInput) (DeploymentActionResult, error) {
-	if err := s.base.authorize(ctx, principal, appaccess.PermDeliveryManifestDeploymentsManage); err != nil {
+	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "trigger")); err != nil {
 		return DeploymentActionResult{}, err
 	}
 	current, err := s.repository.GetDeployment(ctx, strings.TrimSpace(deploymentID))

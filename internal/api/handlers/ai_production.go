@@ -75,14 +75,14 @@ func (h *AIProductionHandler) allowed(c *gin.Context, permissions ...string) boo
 	return false
 }
 func (h *AIProductionHandler) listRollouts(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIAgentFleetView, appaccess.PermAIAgentFleetManage) {
+	if !h.allowed(c, appaccess.PermAIAgentFleetView) {
 		return
 	}
 	items, err := h.service.ListRollouts(c)
 	writeProductionItems(c, items, err)
 }
 func (h *AIProductionHandler) createRollout(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIAgentFleetManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIAgentFleetManage, "create")) {
 		return
 	}
 	var input struct {
@@ -104,7 +104,7 @@ func (h *AIProductionHandler) createRollout(c *gin.Context) {
 	writeProductionItem(c, http.StatusAccepted, item, err)
 }
 func (h *AIProductionHandler) transitionRollout(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIAgentFleetManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIAgentFleetManage, "update")) {
 		return
 	}
 	action := c.Param("action")
@@ -116,14 +116,14 @@ func (h *AIProductionHandler) transitionRollout(c *gin.Context) {
 	writeProductionItem(c, http.StatusOK, item, err)
 }
 func (h *AIProductionHandler) listConformance(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIAgentFleetView, appaccess.PermAIAgentFleetManage) {
+	if !h.allowed(c, appaccess.PermAIAgentFleetView) {
 		return
 	}
 	items, err := h.service.ListConformanceRuns(c)
 	writeProductionItems(c, items, err)
 }
 func (h *AIProductionHandler) createConformance(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIAgentFleetManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIAgentFleetManage, "create")) {
 		return
 	}
 	var input appaiproduction.ConformanceRun
@@ -135,14 +135,14 @@ func (h *AIProductionHandler) createConformance(c *gin.Context) {
 	writeProductionItem(c, http.StatusAccepted, item, err)
 }
 func (h *AIProductionHandler) listEnvironmentTemplates(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIEnvironmentsView, appaccess.PermAIEnvironmentsManage) {
+	if !h.allowed(c, appaccess.PermAIEnvironmentsView) {
 		return
 	}
 	items, err := h.service.ListEnvironmentTemplates(c)
 	writeProductionItems(c, items, err)
 }
 func (h *AIProductionHandler) putEnvironmentTemplate(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIEnvironmentsManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIEnvironmentsManage, "create")) {
 		return
 	}
 	var input appaiproduction.EnvironmentTemplate
@@ -154,35 +154,35 @@ func (h *AIProductionHandler) putEnvironmentTemplate(c *gin.Context) {
 	writeProductionItem(c, http.StatusCreated, item, err)
 }
 func (h *AIProductionHandler) listEnvironmentLeases(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIEnvironmentsView, appaccess.PermAIEnvironmentsManage) {
+	if !h.allowed(c, appaccess.PermAIEnvironmentsView) {
 		return
 	}
 	items, err := h.service.ListEnvironmentLeases(c)
 	writeProductionItems(c, items, err)
 }
 func (h *AIProductionHandler) releaseEnvironmentLease(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIEnvironmentsManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIEnvironmentsManage, "delete")) {
 		return
 	}
 	item, err := h.service.ReleaseEnvironmentLease(c, c.Param("leaseID"))
 	writeProductionItem(c, http.StatusOK, item, err)
 }
 func (h *AIProductionHandler) gcEnvironments(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIEnvironmentsManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIEnvironmentsManage, "delete")) {
 		return
 	}
 	item, err := h.service.GCEnvironmentLeases(c)
 	writeProductionItem(c, http.StatusAccepted, item, err)
 }
 func (h *AIProductionHandler) listOperations(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIOperationsView, appaccess.PermAIOperationsManage) {
+	if !h.allowed(c, appaccess.PermAIOperationsView) {
 		return
 	}
 	items, err := h.service.ListOperations(c)
 	writeProductionItems(c, items, err)
 }
 func (h *AIProductionHandler) startOperation(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIOperationsManage) {
+	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIOperationsManage, "create")) {
 		return
 	}
 	var input appaiproduction.Operation
@@ -194,7 +194,7 @@ func (h *AIProductionHandler) startOperation(c *gin.Context) {
 	writeProductionItem(c, http.StatusAccepted, item, err)
 }
 func (h *AIProductionHandler) listRunbookEvidence(c *gin.Context) {
-	if !h.allowed(c, appaccess.PermAIOperationsView, appaccess.PermAIOperationsManage) {
+	if !h.allowed(c, appaccess.PermAIOperationsView) {
 		return
 	}
 	items, err := h.service.ListRunbookEvidence(c)
