@@ -23,6 +23,13 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	v1.POST("/auth/login/:providerID/acs", deps.Auth.SAMLACS)
 	v1.GET("/auth/saml/:providerID/metadata", deps.Auth.SAMLMetadata)
 	v1.POST("/auth/oidc/exchange", deps.Auth.OIDCExchange)
+	if deps.AgentConnections != nil {
+		v1.GET("/kubernetes/agent-installations/:installTicket/manifest.yaml", deps.AgentConnections.DownloadManifest)
+		v1.GET("/agent-sessions/connect", deps.AgentConnections.Connect)
+	} else {
+		v1.GET("/kubernetes/agent-installations/:installTicket/manifest.yaml", agentConnectionUnavailable)
+		v1.GET("/agent-sessions/connect", agentConnectionUnavailable)
+	}
 	if deps.SystemIntegrations != nil {
 		v1.GET("/system-integrations/oauth/gitlab/callback", deps.SystemIntegrations.CompleteGitLabOAuth)
 	}

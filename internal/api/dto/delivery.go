@@ -11,6 +11,7 @@ type ApplicationDeliveryActionRequest struct {
 	ImageTag                 string         `json:"imageTag"`
 	ReleaseName              string         `json:"releaseName"`
 	ContainerName            string         `json:"containerName"`
+	ValuesContent            string         `json:"valuesContent"`
 	Variables                map[string]any `json:"variables"`
 	BuildArgs                map[string]any `json:"buildArgs"`
 }

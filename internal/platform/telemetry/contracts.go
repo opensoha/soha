@@ -104,11 +104,13 @@ type MetricScope struct {
 }
 
 type MetricRangeQuery struct {
-	Scope     MetricScope
-	MetricKey string
-	TimeFrom  time.Time
-	TimeTo    time.Time
-	Step      time.Duration
+	Scope      MetricScope
+	MetricKey  string
+	Expression string
+	Legend     string
+	TimeFrom   time.Time
+	TimeTo     time.Time
+	Step       time.Duration
 }
 
 type MetricPoint struct {

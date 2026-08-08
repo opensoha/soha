@@ -111,6 +111,82 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	assertCompletedDockerOperation(t, repo, operation.ID, updated)
 }
 
+func TestRunnerCallbackRequiresClaimedOperation(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	service := New(repo, dockerTestPermissions(), nil)
+	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{
+		OperationKind: OperationKindProjectDeploy,
+		Status:        OperationStatusQueued,
+	})
+	if err != nil {
+		t.Fatalf("CreateOperation() error = %v", err)
+	}
+
+	_, err = service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
+		OperationID: operation.ID,
+		WorkerID:    "worker-1",
+		Status:      OperationStatusCompleted,
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("RecordOperationCallback() error = %v, want access denied", err)
+	}
+}
+
+func TestDefaultRunnerClaimIncludesHostProvision(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	service := New(repo, dockerTestPermissions(), nil)
+	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{
+		HostID:        "host-1",
+		OperationKind: OperationKindHostProvision,
+		Status:        OperationStatusQueued,
+	})
+	if err != nil {
+		t.Fatalf("CreateOperation() error = %v", err)
+	}
+
+	claimed, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{WorkerID: "worker-1"})
+	if err != nil {
+		t.Fatalf("ClaimOperation() error = %v", err)
+	}
+	if claimed.ID != operation.ID {
+		t.Fatalf("claimed operation = %q, want %q", claimed.ID, operation.ID)
+	}
+}
+
+func TestRunnerCallbackRejectsInvalidRuntimeEndpoint(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "docker-host", Status: "online", Endpoint: "http://10.0.0.9:18080"}
+	service := New(repo, dockerTestPermissions(), nil)
+	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{
+		HostID:        "host-1",
+		OperationKind: OperationKindHostSync,
+		Status:        OperationStatusQueued,
+	})
+	if err != nil {
+		t.Fatalf("CreateOperation() error = %v", err)
+	}
+	claimed, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{WorkerID: "worker-1"})
+	if err != nil {
+		t.Fatalf("ClaimOperation() error = %v", err)
+	}
+
+	_, err = service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
+		OperationID: claimed.ID,
+		WorkerID:    "worker-1",
+		Status:      OperationStatusCompleted,
+		Payload:     map[string]any{"endpoint": "file:///etc/passwd"},
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("RecordOperationCallback() error = %v, want invalid argument", err)
+	}
+	if got := repo.operations[operation.ID].Status; got != OperationStatusRunning {
+		t.Fatalf("operation status = %q, want running", got)
+	}
+	if got := repo.hosts["host-1"].Endpoint; got != "http://10.0.0.9:18080" {
+		t.Fatalf("host endpoint = %q, want unchanged", got)
+	}
+}
+
 func TestDeployProjectRedeployRestoresSingleContainerSourcePayload(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -561,6 +637,27 @@ func TestQuickCreateHostEnqueuesVirtualizationVMWhenConnectionProvided(t *testin
 	}
 }
 
+func TestQuickCreateHostReturnsOperationUpdateConflict(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.failUpdateOperation = apperrors.ErrConflict
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(&captureHostProvisioner{}))
+
+	_, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
+		Name:                       "docker-dev-1",
+		Architecture:               "amd64",
+		VirtualizationConnectionID: "pve-1",
+		CloudInit:                  dockerQuickCreateTestCloudInit,
+	})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("QuickCreateHost() error = %v, want conflict", err)
+	}
+	for _, logEntry := range repo.logs["operation-1"] {
+		if logEntry.Message == "virtualization VM creation task enqueued" {
+			t.Fatalf("operation success log written after conflict: %#v", logEntry)
+		}
+	}
+}
+
 func TestQuickCreateHostBuildsDefaultDockerReadyCloudInit(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	provisioner := &captureHostProvisioner{}
@@ -997,6 +1094,7 @@ type memoryDockerRepo struct {
 	operations          map[string]domaindocker.Operation
 	logs                map[string][]domaindocker.OperationLog
 	failCreateOperation error
+	failUpdateOperation error
 }
 
 func newMemoryDockerRepo() *memoryDockerRepo {
@@ -1429,6 +1527,9 @@ func (r *memoryDockerRepo) CreateOperation(_ context.Context, input domaindocker
 }
 
 func (r *memoryDockerRepo) UpdateOperation(_ context.Context, item domaindocker.Operation) (domaindocker.Operation, error) {
+	if r.failUpdateOperation != nil {
+		return domaindocker.Operation{}, r.failUpdateOperation
+	}
 	r.operations[item.ID] = item
 	return item, nil
 }

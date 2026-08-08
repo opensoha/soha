@@ -40,6 +40,7 @@ type Config struct {
 	MCP        MCPConfig        `mapstructure:"mcp"`
 	AIGateway  AIGatewayConfig  `mapstructure:"ai_gateway"`
 	Plugins    PluginsConfig    `mapstructure:"plugins"`
+	Software   SoftwareConfig   `mapstructure:"software"`
 	Modules    ModulesConfig    `mapstructure:"modules"`
 	Assets     AssetsConfig     `mapstructure:"assets"`
 	Security   SecurityConfig   `mapstructure:"security"`
@@ -53,6 +54,7 @@ type AppConfig struct {
 
 type HTTPConfig struct {
 	Addr               string        `mapstructure:"addr"`
+	AccessURL          string        `mapstructure:"access_url"`
 	ReadTimeout        time.Duration `mapstructure:"read_timeout"`
 	WriteTimeout       time.Duration `mapstructure:"write_timeout"`
 	IdleTimeout        time.Duration `mapstructure:"idle_timeout"`
@@ -185,6 +187,10 @@ type PluginMarketplaceConfig struct {
 type PluginMarketplaceSource struct {
 	ID  string `mapstructure:"id"`
 	URL string `mapstructure:"url"`
+}
+
+type SoftwareConfig struct {
+	StorageDir string `mapstructure:"storage_dir"`
 }
 
 func (c AIGatewayConfig) ConnectorRuntimeConfigs() []AIGatewayConnectorRuntimeConfig {
@@ -612,6 +618,7 @@ var configDefaults = []struct {
 }{
 	{"app.name", "soha"},
 	{"http.addr", ":8080"},
+	{"http.access_url", ""},
 	{"http.read_timeout", "15s"},
 	{"http.write_timeout", "15s"},
 	{"http.idle_timeout", "120s"},
@@ -703,6 +710,7 @@ var configDefaults = []struct {
 	{"plugins.marketplace.url", DefaultMarketplaceURL},
 	{"plugins.marketplace.source_id", DefaultMarketplaceSourceID},
 	{"plugins.marketplace.sources", []map[string]any{}},
+	{"software.storage_dir", "data/software"},
 	{"modules.home.enabled", true},
 	{"modules.delivery.enabled", true},
 	{"modules.monitoring.enabled", true},

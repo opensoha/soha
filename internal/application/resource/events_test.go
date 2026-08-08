@@ -82,6 +82,25 @@ func TestListClusterEventsDisablesBackendLimitForMultiNamespaceScope(t *testing.
 	assertNewestScopedEvent(t, items)
 }
 
+func TestListClusterEventsCapsBackendLimit(t *testing.T) {
+	t.Parallel()
+
+	direct := &stubDirectEventReader{source: "live", items: scopedEventFixture()}
+	service := New(Dependencies{
+		Connections: stubConnectionResolver{connection: domaincluster.Connection{Summary: domaincluster.Summary{
+			ID: "direct-cluster", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig,
+		}}},
+		Authorizer: allowAllResourceAuthorizer{}, Audit: discardAuditRecorder{}, DirectEvents: direct,
+	})
+	_, err := service.Events().ListClusterEvents(context.Background(), domainidentity.Principal{UserID: "user-1"}, "direct-cluster", "team-a", 1_000_000)
+	if err != nil {
+		t.Fatalf("ListClusterEvents() error = %v", err)
+	}
+	if direct.limit != 1_000 {
+		t.Fatalf("backend limit = %d, want 1000", direct.limit)
+	}
+}
+
 func scopedEventFixture() []domainresource.ClusterEventView {
 	return []domainresource.ClusterEventView{
 		{Name: "hidden-newest", Namespace: "team-b", LastTimestamp: "2026-07-18T12:00:00Z"},

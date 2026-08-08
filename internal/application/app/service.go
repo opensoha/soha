@@ -423,12 +423,6 @@ func validateInput(input domainapp.UpsertInput) error {
 	if strings.TrimSpace(input.Key) == "" {
 		return fmt.Errorf("%w: application key is required", apperrors.ErrInvalidArgument)
 	}
-	if strings.TrimSpace(input.Group) == "" {
-		return fmt.Errorf("%w: application group is required", apperrors.ErrInvalidArgument)
-	}
-	if strings.TrimSpace(input.Language) == "" {
-		return fmt.Errorf("%w: application language is required", apperrors.ErrInvalidArgument)
-	}
 	return nil
 }
 

@@ -392,7 +392,10 @@ func TestKubeVirtAdapterSyncAssetsUsesOwnerUIDForVMInstance(t *testing.T) {
 					},
 				},
 			},
-			"status": map[string]any{"phase": "Running"},
+			"status": map[string]any{
+				"phase":      "Running",
+				"interfaces": []any{map[string]any{"name": "default", "ipAddress": "10.244.0.18"}},
+			},
 		},
 	})
 	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Dynamic: client}})
@@ -402,13 +405,59 @@ func TestKubeVirtAdapterSyncAssetsUsesOwnerUIDForVMInstance(t *testing.T) {
 		t.Fatalf("SyncAssets() error = %v", err)
 	}
 	var vmUIDs []string
+	var vmiIP string
 	for _, asset := range result.Assets {
 		if asset.Type == "virtualmachine" || asset.Type == "virtualmachineinstance" {
 			vmUIDs = append(vmUIDs, asset.Metadata["uid"])
 		}
+		if asset.Type == "virtualmachineinstance" {
+			vmiIP = asset.Metadata["ipAddress"]
+		}
 	}
 	if len(vmUIDs) != 2 || vmUIDs[0] != "vm-uid" || vmUIDs[1] != "vm-uid" {
 		t.Fatalf("vm uids = %#v, want both assets keyed by VM uid", vmUIDs)
+	}
+	if vmiIP != "10.244.0.18" {
+		t.Fatalf("vmi ip = %q, want 10.244.0.18", vmiIP)
+	}
+}
+
+func TestKubeVirtVMAssetIncludesRuntimeSummary(t *testing.T) {
+	item := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "kubevirt.io/v1",
+		"kind":       "VirtualMachine",
+		"metadata":   map[string]any{"name": "demo", "namespace": "apps", "uid": "vm-uid"},
+		"spec": map[string]any{
+			"template": map[string]any{"spec": map[string]any{
+				"hostname": "demo", "subdomain": "apps.svc.cluster.local", "dnsPolicy": "ClusterFirst",
+				"dnsConfig": map[string]any{"nameservers": []any{"10.96.0.10"}, "searches": []any{"apps.svc.cluster.local"}},
+				"domain": map[string]any{
+					"devices": map[string]any{
+						"disks":      []any{map[string]any{"name": "rootdisk"}, map[string]any{"name": "cloudinitdisk"}},
+						"interfaces": []any{map[string]any{"name": "default"}},
+					},
+				},
+				"volumes": []any{map[string]any{"name": "cloudinitdisk", "cloudInitNoCloud": map[string]any{"userData": "secret user data"}}},
+			}},
+			"dataVolumeTemplates": []any{map[string]any{
+				"metadata": map[string]any{"name": "demo-rootdisk"},
+				"spec": map[string]any{"storage": map[string]any{
+					"storageClassName": "fast", "resources": map[string]any{"requests": map[string]any{"storage": "24Gi"}},
+				}},
+			}},
+		},
+	}}
+
+	asset := assetFromUnstructured("virtualmachine", item)
+	metadata := asset.Metadata
+	if metadata["hostname"] != "demo" || metadata["fqdn"] != "demo.apps.svc.cluster.local" ||
+		metadata["dnsServers"] != "10.96.0.10" || metadata["diskCount"] != "1" ||
+		metadata["disk"] != "24Gi" || metadata["network"] != "default" ||
+		metadata["cloudInitConfigured"] != "true" || metadata["cloudInitUserDataConfigured"] != "true" {
+		t.Fatalf("VM runtime metadata = %#v", metadata)
+	}
+	if strings.Contains(strings.Join([]string{metadata["cloudInitSource"], metadata["cloudInitUserDataConfigured"]}, " "), "secret user data") {
+		t.Fatalf("VM metadata leaked cloud-init user data: %#v", metadata)
 	}
 }
 

@@ -12,7 +12,9 @@ import (
 
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestListNamespaceNamesPreservesInputOrderAndLimitsConcurrency(t *testing.T) {
@@ -85,7 +87,11 @@ func TestListAcrossNamespacesWithFallbackPrefersNamespaceAll(t *testing.T) {
 func TestListAcrossNamespacesWithFallbackUsesNamespaceFanout(t *testing.T) {
 	t.Parallel()
 
-	allErr := errors.New("namespace-all unsupported")
+	allErr := apierrors.NewForbidden(
+		schema.GroupResource{Resource: "pods"},
+		"",
+		errors.New("namespace-all list denied"),
+	)
 	items, err := listAcrossNamespacesWithFallback(context.Background(), &k8sinfra.Bundle{}, time.Second, func(context.Context) ([]domainresource.NamespaceView, error) {
 		return []domainresource.NamespaceView{{Name: "ns-a"}, {Name: "ns-b"}}, nil
 	}, func(_ context.Context, _ *k8sinfra.Bundle, namespace string) ([]string, error) {
@@ -105,7 +111,11 @@ func TestListAcrossNamespacesWithFallbackUsesNamespaceFanout(t *testing.T) {
 func TestListAcrossNamespacesWithFallbackReturnsNamespaceAllErrorWhenDiscoveryFails(t *testing.T) {
 	t.Parallel()
 
-	allErr := errors.New("namespace-all failed")
+	allErr := apierrors.NewForbidden(
+		schema.GroupResource{Resource: "pods"},
+		"",
+		errors.New("namespace-all list denied"),
+	)
 	_, err := listAcrossNamespacesWithFallback(context.Background(), &k8sinfra.Bundle{}, time.Second, func(context.Context) ([]domainresource.NamespaceView, error) {
 		return nil, errors.New("namespace discovery failed")
 	}, func(_ context.Context, _ *k8sinfra.Bundle, namespace string) ([]string, error) {
@@ -116,6 +126,37 @@ func TestListAcrossNamespacesWithFallbackReturnsNamespaceAllErrorWhenDiscoveryFa
 	})
 	if !errors.Is(err, allErr) {
 		t.Fatalf("err = %v, want %v", err, allErr)
+	}
+}
+
+func TestListAcrossNamespacesWithFallbackDoesNotFanOutForTransientErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, allErr := range []error{
+		context.DeadlineExceeded,
+		apierrors.NewTooManyRequests("busy", 1),
+		apierrors.NewInternalError(errors.New("api server unavailable")),
+	} {
+		allErr := allErr
+		t.Run(allErr.Error(), func(t *testing.T) {
+			t.Parallel()
+			discoveryCalled := false
+			_, err := listAcrossNamespacesWithFallback(context.Background(), &k8sinfra.Bundle{}, time.Second, func(context.Context) ([]domainresource.NamespaceView, error) {
+				discoveryCalled = true
+				return []domainresource.NamespaceView{{Name: "ns-a"}}, nil
+			}, func(_ context.Context, _ *k8sinfra.Bundle, namespace string) ([]string, error) {
+				if namespace != metav1.NamespaceAll {
+					t.Fatalf("unexpected namespace fan-out: %q", namespace)
+				}
+				return nil, allErr
+			})
+			if !errors.Is(err, allErr) {
+				t.Fatalf("err = %v, want %v", err, allErr)
+			}
+			if discoveryCalled {
+				t.Fatal("namespace discovery was called after a non-forbidden error")
+			}
+		})
 	}
 }
 

@@ -70,6 +70,7 @@ func (h *ReleaseHandler) TriggerRelease(c *gin.Context) {
 		ReleaseName:              req.ReleaseName,
 		ActionKind:               req.ActionKind,
 		WorkflowRunID:            req.WorkflowRunID,
+		ValuesContent:            req.ValuesContent,
 	})
 	if err != nil {
 		writeError(c, err)

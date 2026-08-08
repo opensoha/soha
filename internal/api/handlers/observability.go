@@ -10,7 +10,9 @@ import (
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	appmonitoring "github.com/opensoha/soha/internal/application/monitoring"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainobservability "github.com/opensoha/soha/internal/domain/observability"
 	"github.com/opensoha/soha/internal/platform/telemetry"
 )
 
@@ -34,10 +36,37 @@ type ObservabilitySignalQueries interface {
 	QueryTraces(context.Context, domainidentity.Principal, string, telemetry.TraceQuery) (appmonitoring.TraceQueryResult, error)
 }
 
+type ObservabilityDashboards interface {
+	ListDashboards(context.Context, domainidentity.Principal) ([]domainobservability.Dashboard, error)
+	ListMetricDataSources(context.Context, domainidentity.Principal) ([]domaincopilot.DataSource, error)
+	GetDashboard(context.Context, domainidentity.Principal, string) (domainobservability.Dashboard, error)
+	ImportGrafanaDashboard(context.Context, domainidentity.Principal, string, string) (domainobservability.DashboardImportResult, error)
+	DeleteDashboard(context.Context, domainidentity.Principal, string) error
+	QueryDashboardPanel(context.Context, domainidentity.Principal, string, string, time.Time, time.Time, time.Duration) (appmonitoring.MetricQueryResult, error)
+}
+
+func (h *ObservabilityHandler) ListMetricDataSources(c *gin.Context) {
+	if h.dashboards == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "service_unavailable", "dashboard service is unavailable")
+		return
+	}
+	items, err := h.dashboards.ListMetricDataSources(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	result := make([]sohaapi.ObservabilityMetricDataSource, 0, len(items))
+	for _, item := range items {
+		result = append(result, sohaapi.ObservabilityMetricDataSource{ID: item.ID, Name: item.Name})
+	}
+	apiresponse.Items(c, http.StatusOK, result)
+}
+
 type ObservabilityHandler struct {
 	dataSources ObservabilityDataSources
 	collection  ObservabilityLogCollection
 	signals     ObservabilitySignalQueries
+	dashboards  ObservabilityDashboards
 }
 
 func NewObservabilityHandler(dataSources ObservabilityDataSources, signals ...ObservabilitySignalQueries) *ObservabilityHandler {
@@ -45,6 +74,7 @@ func NewObservabilityHandler(dataSources ObservabilityDataSources, signals ...Ob
 	handler := &ObservabilityHandler{dataSources: dataSources, collection: collection}
 	if len(signals) > 0 {
 		handler.signals = signals[0]
+		handler.dashboards, _ = signals[0].(ObservabilityDashboards)
 	}
 	return handler
 }
@@ -134,6 +164,10 @@ func (h *ObservabilityHandler) QueryMetrics(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	writeObservabilityMetricResult(c, result)
+}
+
+func writeObservabilityMetricResult(c *gin.Context, result appmonitoring.MetricQueryResult) {
 	series := make([]sohaapi.ObservabilityMetricSeries, 0, len(result.Series))
 	for _, item := range result.Series {
 		points := make([]sohaapi.ObservabilityMetricPoint, 0, len(item.Points))
@@ -149,6 +183,115 @@ func (h *ObservabilityHandler) QueryMetrics(c *gin.Context) {
 		BackendType:  sohaapi.ObservabilityMetricQueryResultBackendType(result.BackendType),
 		Series:       series,
 	})
+}
+
+func (h *ObservabilityHandler) ListDashboards(c *gin.Context) {
+	if h.dashboards == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "service_unavailable", "dashboard service is unavailable")
+		return
+	}
+	items, err := h.dashboards.ListDashboards(c.Request.Context(), apiMiddleware.PrincipalFromContext(c))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	result := make([]sohaapi.ObservabilityDashboard, 0, len(items))
+	for _, item := range items {
+		result = append(result, publicObservabilityDashboard(item))
+	}
+	apiresponse.Items(c, http.StatusOK, result)
+}
+
+func (h *ObservabilityHandler) GetDashboard(c *gin.Context) {
+	if h.dashboards == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "service_unavailable", "dashboard service is unavailable")
+		return
+	}
+	item, err := h.dashboards.GetDashboard(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("dashboardID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, publicObservabilityDashboard(item))
+}
+
+func (h *ObservabilityHandler) ImportGrafanaDashboard(c *gin.Context) {
+	if h.dashboards == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "service_unavailable", "dashboard service is unavailable")
+		return
+	}
+	var input sohaapi.ObservabilityGrafanaDashboardImportInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Grafana dashboard import payload")
+		return
+	}
+	result, err := h.dashboards.ImportGrafanaDashboard(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), input.JSON, input.DataSourceID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	warnings := make([]sohaapi.ObservabilityDashboardImportWarning, 0, len(result.Warnings))
+	for _, warning := range result.Warnings {
+		warnings = append(warnings, sohaapi.ObservabilityDashboardImportWarning{
+			Code: sohaapi.ObservabilityDashboardImportWarningCode(warning.Code), Message: warning.Message, PanelID: warning.PanelID,
+		})
+	}
+	apiresponse.Item(c, http.StatusCreated, sohaapi.ObservabilityDashboardImportResult{
+		Dashboard: publicObservabilityDashboard(result.Dashboard), Warnings: warnings,
+		ImportedPanelCount: result.ImportedPanelCount, SkippedPanelCount: result.SkippedPanelCount,
+	})
+}
+
+func (h *ObservabilityHandler) DeleteDashboard(c *gin.Context) {
+	if h.dashboards == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "service_unavailable", "dashboard service is unavailable")
+		return
+	}
+	if err := h.dashboards.DeleteDashboard(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("dashboardID")); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, sohaapi.OperationStatus{Status: "deleted"})
+}
+
+func (h *ObservabilityHandler) QueryDashboardPanel(c *gin.Context) {
+	if h.dashboards == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "service_unavailable", "dashboard service is unavailable")
+		return
+	}
+	var input sohaapi.ObservabilityDashboardPanelQueryInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid dashboard panel query payload")
+		return
+	}
+	result, err := h.dashboards.QueryDashboardPanel(
+		c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("dashboardID"), c.Param("panelID"),
+		input.TimeFrom, input.TimeTo, time.Duration(input.StepSeconds)*time.Second,
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	writeObservabilityMetricResult(c, result)
+}
+
+func publicObservabilityDashboard(item domainobservability.Dashboard) sohaapi.ObservabilityDashboard {
+	panels := make([]sohaapi.ObservabilityDashboardPanel, 0, len(item.Panels))
+	for _, panel := range item.Panels {
+		targets := make([]sohaapi.ObservabilityDashboardTarget, 0, len(panel.Targets))
+		for _, target := range panel.Targets {
+			targets = append(targets, sohaapi.ObservabilityDashboardTarget{RefID: target.RefID, Expression: target.Expression, Legend: target.Legend})
+		}
+		panels = append(panels, sohaapi.ObservabilityDashboardPanel{
+			ID: panel.ID, Title: panel.Title, Type: sohaapi.ObservabilityDashboardPanelType(panel.Type), Queryable: panel.Queryable,
+			Layout:  sohaapi.ObservabilityDashboardPanelLayout{X: panel.Layout.X, Y: panel.Layout.Y, W: panel.Layout.W, H: panel.Layout.H},
+			Targets: targets, Markdown: panel.Markdown,
+		})
+	}
+	return sohaapi.ObservabilityDashboard{
+		ID: item.ID, Name: item.Name, Source: sohaapi.ObservabilityDashboardSource(item.Source), SourceSchemaVersion: item.SourceSchemaVersion,
+		DataSourceID: item.DataSourceID, Tags: item.Tags, Panels: panels, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+	}
 }
 
 func (h *ObservabilityHandler) QueryTraces(c *gin.Context) {

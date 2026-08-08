@@ -17,15 +17,6 @@ type resourceListRequest struct {
 	summary   func(string) string
 }
 
-type directDetailRequest struct {
-	clusterID   string
-	namespace   string
-	kind        string
-	name        string
-	unsupported string
-	summary     string
-}
-
 type resourceDetailRequest struct {
 	clusterID string
 	namespace string
@@ -46,28 +37,6 @@ func getModeResource[T any](ctx context.Context, access *resourceAccess, princip
 	}
 	setActions(&item, stringifyActions(decision.AllowedActions))
 	_ = access.recordAudit(ctx, principal, connection.Summary.ID, request.namespace, request.kind, request.name, string(domainaccess.ActionView), "success", request.summary(source))
-	return item, nil
-}
-
-func getDirectDetail[T any, D any](ctx context.Context, access *resourceAccess, principal domainidentity.Principal, request directDetailRequest, directFactory func() (D, error), load func(D) (T, error), setActions func(*T, []string)) (T, error) {
-	var zero T
-	connection, decision, err := access.authorize(ctx, principal, request.clusterID, request.namespace, request.kind, domainaccess.ActionView)
-	if err != nil {
-		return zero, err
-	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return zero, unsupportedAgentOperation(request.unsupported)
-	}
-	direct, err := directFactory()
-	if err != nil {
-		return zero, err
-	}
-	item, err := load(direct)
-	if err != nil {
-		return zero, err
-	}
-	setActions(&item, stringifyActions(decision.AllowedActions))
-	_ = access.recordAudit(ctx, principal, connection.Summary.ID, request.namespace, request.kind, request.name, string(domainaccess.ActionView), "success", request.summary)
 	return item, nil
 }
 

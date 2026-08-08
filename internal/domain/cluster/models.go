@@ -131,6 +131,13 @@ type Connection struct {
 	Metadata       map[string]any `json:"metadata,omitempty"`
 }
 
+type AgentInstallation struct {
+	ClusterID   string    `json:"clusterId"`
+	ManifestURL string    `json:"manifestUrl"`
+	Command     string    `json:"command"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
 type RegisterInput struct {
 	ID                     string            `json:"id"`
 	Name                   string            `json:"name"`

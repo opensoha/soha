@@ -172,13 +172,11 @@ func scrubConnections(items []domainregistry.Connection) []domainregistry.Connec
 
 func scrubConnection(item domainregistry.Connection) domainregistry.Connection {
 	secret := strings.TrimSpace(item.Secret)
-	secretConfigured := secret != ""
 	item.Secret = ""
-	if item.Metadata == nil {
-		item.Metadata = map[string]any{}
+	item.Metadata = map[string]any{
+		"secretConfigured": secret != "",
+		"secretStorage":    string(secretcrypto.SecretStorageLabel(secret)),
 	}
-	item.Metadata["secretConfigured"] = secretConfigured
-	item.Metadata["secretStorage"] = string(secretcrypto.SecretStorageLabel(secret))
 	return item
 }
 

@@ -82,6 +82,25 @@ type TargetReader interface {
 	ListIngresses(context.Context, domainidentity.Principal, string, string) ([]domainresource.IngressView, error)
 }
 
+type KubernetesImportTargetReader interface {
+	ListDeployments(context.Context, domainidentity.Principal, string, string) ([]domainresource.DeploymentView, error)
+	GetDeploymentDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentDetailView, error)
+	ListStatefulSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.StatefulSetView, error)
+	ListDaemonSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.DaemonSetView, error)
+	ListServices(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceView, error)
+	ListIngresses(context.Context, domainidentity.Principal, string, string) ([]domainresource.IngressView, error)
+	ListHorizontalPodAutoscalers(context.Context, domainidentity.Principal, string, string) ([]domainresource.HorizontalPodAutoscalerView, error)
+}
+
+type HelmImportTargetReader interface {
+	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
+}
+
+type KubernetesImportRepository interface {
+	ImportKubernetesServices(context.Context, domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error)
+	ImportHelmReleases(context.Context, domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error)
+}
+
 type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
@@ -101,20 +120,23 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	applications ApplicationReader
-	catalog      CatalogReader
-	builds       BuildReader
-	workflows    WorkflowReader
-	releases     ReleaseReader
-	repository   domaindelivery.Repository
-	execution    ExecutionController
-	targets      TargetReader
-	permissions  *appaccess.PermissionResolver
-	audit        AuditRecorder
-	operations   OperationRecorder
-	governance   *deliverygovernance.Service
-	logs         LogRuntime
-	logTickets   LogStreamTicketIssuer
+	applications      ApplicationReader
+	catalog           CatalogReader
+	builds            BuildReader
+	workflows         WorkflowReader
+	releases          ReleaseReader
+	repository        domaindelivery.Repository
+	importRepository  KubernetesImportRepository
+	execution         ExecutionController
+	targets           TargetReader
+	importTargets     KubernetesImportTargetReader
+	helmImportTargets HelmImportTargetReader
+	permissions       *appaccess.PermissionResolver
+	audit             AuditRecorder
+	operations        OperationRecorder
+	governance        *deliverygovernance.Service
+	logs              LogRuntime
+	logTickets        LogStreamTicketIssuer
 }
 
 func uniqueStrings(values []string) []string {
@@ -134,7 +156,7 @@ func uniqueStrings(values []string) []string {
 }
 
 func New(applications ApplicationReader, catalog CatalogReader, builds BuildReader, workflows WorkflowReader, releases ReleaseReader, repository domaindelivery.Repository, execution ExecutionController, targets TargetReader, permissions *appaccess.PermissionResolver) *Service {
-	return &Service{
+	service := &Service{
 		applications: applications,
 		catalog:      catalog,
 		builds:       builds,
@@ -145,6 +167,10 @@ func New(applications ApplicationReader, catalog CatalogReader, builds BuildRead
 		targets:      targets,
 		permissions:  permissions,
 	}
+	service.importTargets, _ = targets.(KubernetesImportTargetReader)
+	service.helmImportTargets, _ = targets.(HelmImportTargetReader)
+	service.importRepository, _ = repository.(KubernetesImportRepository)
+	return service
 }
 
 func (s *Service) SetRecorders(audit AuditRecorder, operations OperationRecorder) {
@@ -422,39 +448,6 @@ func (s *Service) ListReleaseBoard(ctx context.Context, principal domainidentity
 		})
 	}
 	return items, nil
-}
-
-func (s *Service) ListTargetCandidates(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, search string) ([]domaindelivery.TargetCandidate, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
-		return nil, err
-	}
-	items, err := s.targets.ListDeployments(ctx, principal, strings.TrimSpace(clusterID), strings.TrimSpace(namespace))
-	if err != nil {
-		return nil, err
-	}
-	matched := make([]domaindelivery.TargetCandidate, 0)
-	for _, item := range items {
-		if !matchesSearch(item, search) {
-			continue
-		}
-		detail, detailErr := s.targets.GetDeploymentDetail(ctx, principal, strings.TrimSpace(clusterID), item.Namespace, item.Name)
-		if detailErr != nil {
-			continue
-		}
-		containers := make([]string, 0, len(detail.Containers))
-		for _, container := range detail.Containers {
-			containers = append(containers, container.Name)
-		}
-		matched = append(matched, domaindelivery.TargetCandidate{
-			ClusterID:    strings.TrimSpace(clusterID),
-			Namespace:    item.Namespace,
-			WorkloadKind: "Deployment",
-			WorkloadName: item.Name,
-			Containers:   containers,
-			Labels:       item.Labels,
-		})
-	}
-	return matched, nil
 }
 
 func (s *Service) ListReleaseBundles(ctx context.Context, principal domainidentity.Principal, filter domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
@@ -1212,7 +1205,7 @@ func (s *Service) triggerApplicationBuild(ctx context.Context, principal domaini
 
 func (s *Service) triggerApplicationRelease(ctx context.Context, principal domainidentity.Principal, app domainapp.App, binding domaincatalog.ApplicationEnvironment, target domaincatalog.ReleaseTarget, input domaindelivery.ApplicationDeliveryActionInput) (domainrelease.Record, error) {
 	_, buildSource, _, _, imageTag := resolveDeliveryBuildDefaults(app, binding, input)
-	if imageTag == "" {
+	if target.TargetKind != "helm_release" && imageTag == "" {
 		return domainrelease.Record{}, fmt.Errorf("%w: imageTag or defaultTag is required", apperrors.ErrInvalidArgument)
 	}
 	return s.releases.Trigger(ctx, principal, domainrelease.TriggerInput{
@@ -1227,6 +1220,7 @@ func (s *Service) triggerApplicationRelease(ctx context.Context, principal domai
 		Image:                    resolveDeliveryImageRef(app, buildSource, imageTag),
 		ReleaseName:              firstNonEmpty(input.ReleaseName, imageTag, binding.ID),
 		ActionKind:               actionKindForBinding(binding, domaincatalog.Environment{}),
+		ValuesContent:            input.ValuesContent,
 	})
 }
 

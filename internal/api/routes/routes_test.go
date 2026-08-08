@@ -965,6 +965,7 @@ func routeTestDependencies() Dependencies {
 		Copilot:            &apiHandlers.CopilotHandler{},
 		AIGateway:          &apiHandlers.AIGatewayHandler{},
 		Plugins:            &apiHandlers.PluginHandler{},
+		Software:           &apiHandlers.SoftwareHandler{},
 		Virtualization:     &apiHandlers.VirtualizationHandler{},
 		Docker:             &apiHandlers.DockerHandler{},
 		Access:             &accesshandler.Handler{},

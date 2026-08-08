@@ -61,6 +61,10 @@ func (s *Service) Current() Snapshot {
 	return s.snapshot.Load()
 }
 
+func (s *Service) AccessURL() string {
+	return strings.TrimRight(strings.TrimSpace(s.Current().String(KeyAccessURL, "")), "/")
+}
+
 func (s *Service) ModuleEnabled(id string) bool {
 	return s.Current().ModuleEnabled(id)
 }

@@ -12,8 +12,11 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
+const clusterEventMaxItems = 1_000
+
 func (e *Events) ListClusterEvents(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string, limit int) ([]domainresource.ClusterEventView, error) {
 	s := e
+	limit = min(limit, clusterEventMaxItems)
 	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "Event", domainaccess.ActionList)
 	if err != nil {
 		return nil, err

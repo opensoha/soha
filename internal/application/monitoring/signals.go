@@ -137,7 +137,7 @@ func (s *Service) selectSignalDataSource(ctx context.Context, dataSourceID strin
 		if err != nil {
 			return domaincopilot.DataSource{}, err
 		}
-		if source.Enabled && supportsSignalBackend(source.BackendType, backends) {
+		if signalDataSourceReady(source, backends) {
 			return source, nil
 		}
 		return domaincopilot.DataSource{}, fmt.Errorf("%w: telemetry data source not found", apperrors.ErrNotFound)
@@ -148,11 +148,22 @@ func (s *Service) selectSignalDataSource(ctx context.Context, dataSourceID strin
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].ID < items[j].ID })
 	for _, source := range items {
-		if source.Enabled && supportsSignalBackend(source.BackendType, backends) {
+		if signalDataSourceReady(source, backends) {
 			return source, nil
 		}
 	}
 	return domaincopilot.DataSource{}, fmt.Errorf("%w: no enabled telemetry data source", apperrors.ErrNotFound)
+}
+
+func signalDataSourceReady(source domaincopilot.DataSource, allowed map[string]struct{}) bool {
+	if !source.Enabled || !supportsSignalBackend(source.BackendType, allowed) {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(source.BackendType), "prometheus") {
+		endpoint, _ := source.Config["endpoint"].(string)
+		return strings.TrimSpace(endpoint) != ""
+	}
+	return true
 }
 
 func supportsSignalBackend(backend string, allowed map[string]struct{}) bool {

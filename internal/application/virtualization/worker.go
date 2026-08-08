@@ -324,6 +324,7 @@ func (s *Service) executeVMAction(ctx context.Context, task domainvirtualization
 	vm.PowerState = powerStateAfterAction(action, vm.PowerState)
 	if action == domainvirtualization.PowerActionDelete {
 		vm.Status = "deleted"
+		vm.PowerState = "deleted"
 	} else if vm.Status == "" {
 		vm.Status = "active"
 	}
@@ -535,6 +536,12 @@ func vmFromAsset(connection domainvirtualization.Connection, asset domainvirtual
 	if memoryMiB := metadataMemoryMiB(asset.Metadata, "memory"); memoryMiB > 0 {
 		config["memoryMiB"] = memoryMiB
 	}
+	if diskGiB := metadataStorageGiB(asset.Metadata, "disk"); diskGiB > 0 {
+		config["diskGiB"] = diskGiB
+	}
+	if diskGiB := metadataInt(asset.Metadata, "diskGiB"); diskGiB > 0 {
+		config["diskGiB"] = diskGiB
+	}
 	ipAddresses := uniqueNonEmptyStrings(commaSeparatedValues(asset.Metadata["ipAddresses"]))
 	if ipAddress := strings.TrimSpace(asset.Metadata["ipAddress"]); ipAddress != "" {
 		ipAddresses = uniqueNonEmptyStrings(append([]string{ipAddress}, ipAddresses...))
@@ -625,6 +632,19 @@ func metadataMemoryMiB(values map[string]string, key string) int {
 		return 0
 	}
 	return int(quantity.Value() / (1024 * 1024))
+}
+
+func metadataStorageGiB(values map[string]string, key string) int {
+	raw := strings.TrimSpace(values[key])
+	if raw == "" {
+		return 0
+	}
+	quantity, err := resource.ParseQuantity(raw)
+	if err != nil || quantity.Value() <= 0 {
+		return 0
+	}
+	const gib = int64(1024 * 1024 * 1024)
+	return int((quantity.Value() + gib - 1) / gib)
 }
 
 func memoryString(memoryMiB int) string {

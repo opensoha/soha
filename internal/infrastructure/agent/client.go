@@ -17,21 +17,99 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/hashicorp/yamux"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
 type Registry struct {
 	defaultTimeout atomic.Int64
+	sessionsMu     sync.RWMutex
+	sessions       map[string]*yamux.Session
 }
 
 func NewRegistry(defaultTimeout time.Duration) *Registry {
 	if defaultTimeout <= 0 {
 		defaultTimeout = 10 * time.Second
 	}
-	registry := &Registry{}
+	registry := &Registry{sessions: make(map[string]*yamux.Session)}
 	registry.SetDefaultTimeout(defaultTimeout)
 	return registry
+}
+
+func (r *Registry) Attach(ctx context.Context, clusterID string, connection net.Conn) error {
+	clusterID = strings.TrimSpace(clusterID)
+	if clusterID == "" || connection == nil {
+		return fmt.Errorf("cluster id and reverse connection are required")
+	}
+	config := yamux.DefaultConfig()
+	config.KeepAliveInterval = 15 * time.Second
+	config.StreamOpenTimeout = 10 * time.Second
+	config.LogOutput = io.Discard
+	session, err := yamux.Server(connection, config)
+	if err != nil {
+		return fmt.Errorf("create agent reverse session: %w", err)
+	}
+
+	r.sessionsMu.Lock()
+	previous := r.sessions[clusterID]
+	r.sessions[clusterID] = session
+	r.sessionsMu.Unlock()
+	if previous != nil {
+		_ = previous.Close()
+	}
+
+	defer func() {
+		r.sessionsMu.Lock()
+		if r.sessions[clusterID] == session {
+			delete(r.sessions, clusterID)
+		}
+		r.sessionsMu.Unlock()
+		_ = session.Close()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-session.CloseChan():
+		return nil
+	}
+}
+
+func (r *Registry) Connected(clusterID string) bool {
+	r.sessionsMu.RLock()
+	session := r.sessions[strings.TrimSpace(clusterID)]
+	r.sessionsMu.RUnlock()
+	return session != nil && !session.IsClosed()
+}
+
+func (r *Registry) Open(ctx context.Context, clusterID string) (net.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.sessionsMu.RLock()
+	session := r.sessions[strings.TrimSpace(clusterID)]
+	r.sessionsMu.RUnlock()
+	if session == nil || session.IsClosed() {
+		return nil, fmt.Errorf("agent reverse session is not connected for cluster %s", clusterID)
+	}
+	stream, err := session.OpenStream()
+	if err != nil {
+		return nil, fmt.Errorf("open agent reverse stream: %w", err)
+	}
+	return stream, nil
+}
+
+func (r *Registry) Close() error {
+	r.sessionsMu.Lock()
+	sessions := r.sessions
+	r.sessions = make(map[string]*yamux.Session)
+	r.sessionsMu.Unlock()
+	var combined error
+	for _, session := range sessions {
+		combined = errors.Join(combined, session.Close())
+	}
+	return combined
 }
 
 func (r *Registry) SetDefaultTimeout(timeout time.Duration) {
@@ -44,6 +122,7 @@ type Client struct {
 	baseURL    string
 	token      string
 	httpClient *http.Client
+	wsDialer   *websocket.Dialer
 }
 
 const maxAgentJSONResponseBytes = 16 << 20
@@ -154,16 +233,39 @@ type cancelRuntimeTaskRequest struct {
 
 func (r *Registry) ClientFor(connection domaincluster.Connection) (*Client, error) {
 	endpoint, _ := connection.Metadata["endpoint"].(string)
+	token, _ := connection.Metadata["token"].(string)
+	transportMode, _ := connection.Metadata["transport"].(string)
+	if strings.TrimSpace(transportMode) == "reverse_session" {
+		dialContext := func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return r.Open(ctx, connection.Summary.ID)
+		}
+		transport := &http.Transport{
+			Proxy:                 nil,
+			DialContext:           dialContext,
+			MaxIdleConnsPerHost:   8,
+			IdleConnTimeout:       90 * time.Second,
+			ResponseHeaderTimeout: time.Duration(r.defaultTimeout.Load()),
+		}
+		wsDialer := *websocket.DefaultDialer
+		wsDialer.NetDialContext = dialContext
+		return &Client{
+			baseURL:    "http://soha-agent.internal",
+			token:      token,
+			httpClient: &http.Client{Transport: transport, Timeout: time.Duration(r.defaultTimeout.Load())},
+			wsDialer:   &wsDialer,
+		}, nil
+	}
 	if strings.TrimSpace(endpoint) == "" {
 		return nil, fmt.Errorf("agent endpoint is missing for cluster %s", connection.Summary.ID)
 	}
-	token, _ := connection.Metadata["token"].(string)
+	wsDialer := *websocket.DefaultDialer
 	return &Client{
 		baseURL: strings.TrimRight(endpoint, "/"),
 		token:   token,
 		httpClient: &http.Client{
 			Timeout: time.Duration(r.defaultTimeout.Load()),
 		},
+		wsDialer: &wsDialer,
 	}, nil
 }
 
@@ -361,7 +463,7 @@ func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, contain
 	if c.token != "" {
 		headers.Set("Authorization", "Bearer "+c.token)
 	}
-	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, endpoint, headers)
+	conn, resp, err := c.wsDialer.DialContext(ctx, endpoint, headers)
 	if err != nil {
 		if resp != nil {
 			if resp.Body != nil {
@@ -1607,7 +1709,7 @@ func (c *Client) StreamPortForward(ctx context.Context, sessionID string, local 
 	if c.token != "" {
 		headers.Set("Authorization", "Bearer "+c.token)
 	}
-	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, endpoint, headers)
+	conn, resp, err := c.wsDialer.DialContext(ctx, endpoint, headers)
 	if resp != nil {
 		defer func() { _ = resp.Body.Close() }()
 	}

@@ -13,4 +13,5 @@ type TriggerReleaseRequest struct {
 	ReleaseName              string `json:"releaseName"`
 	ActionKind               string `json:"actionKind"`
 	WorkflowRunID            string `json:"workflowRunId"`
+	ValuesContent            string `json:"valuesContent"`
 }

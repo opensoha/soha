@@ -13,6 +13,8 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
+const podLogMaxTailLines = int64(clusterLogMaxEntries)
+
 func (w *Workloads) ListPods(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.PodView, error) {
 	s := w
 	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionList)
@@ -94,6 +96,7 @@ func (w *Workloads) DeletePod(ctx context.Context, principal domainidentity.Prin
 
 func (w *Workloads) GetPodLogs(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
 	s := w
+	tailLines = min(tailLines, podLogMaxTailLines)
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionLogs)
 	if err != nil {
 		return domainresource.PodLogsView{}, err
@@ -113,6 +116,7 @@ func (w *Workloads) GetPodLogs(ctx context.Context, principal domainidentity.Pri
 
 func (w *Workloads) StreamPodLogs(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer) error {
 	s := w
+	tailLines = min(tailLines, podLogMaxTailLines)
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionLogs)
 	if err != nil {
 		return err

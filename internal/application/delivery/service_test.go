@@ -274,7 +274,18 @@ func (s stubReleaseReader) Trigger(_ context.Context, _ domainidentity.Principal
 }
 
 type stubTargetReader struct {
-	deployments map[string][]domainresource.DeploymentView
+	deployments       map[string][]domainresource.DeploymentView
+	deploymentDetails map[string]domainresource.DeploymentDetailView
+	statefulSets      map[string][]domainresource.StatefulSetView
+	daemonSets        map[string][]domainresource.DaemonSetView
+	services          map[string][]domainresource.ServiceView
+	ingresses         map[string][]domainresource.IngressView
+	hpas              map[string][]domainresource.HorizontalPodAutoscalerView
+	helmReleases      map[string][]domainresource.HelmReleaseView
+}
+
+func (s stubTargetReader) ListHelmReleases(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.HelmReleaseView, error) {
+	return s.helmReleases[clusterID+"/"+namespace], nil
 }
 
 func (s stubTargetReader) ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error) {
@@ -285,16 +296,28 @@ func (s stubTargetReader) ListDeployments(_ context.Context, _ domainidentity.Pr
 	return s.deployments[clusterID+"/"+namespace], nil
 }
 
-func (s stubTargetReader) GetDeploymentDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentDetailView, error) {
-	return domainresource.DeploymentDetailView{}, nil
+func (s stubTargetReader) GetDeploymentDetail(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name string) (domainresource.DeploymentDetailView, error) {
+	return s.deploymentDetails[clusterID+"/"+namespace+"/"+name], nil
 }
 
-func (s stubTargetReader) ListServices(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceView, error) {
-	return nil, nil
+func (s stubTargetReader) ListServices(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.ServiceView, error) {
+	return s.services[clusterID+"/"+namespace], nil
 }
 
-func (s stubTargetReader) ListIngresses(context.Context, domainidentity.Principal, string, string) ([]domainresource.IngressView, error) {
-	return nil, nil
+func (s stubTargetReader) ListIngresses(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.IngressView, error) {
+	return s.ingresses[clusterID+"/"+namespace], nil
+}
+
+func (s stubTargetReader) ListStatefulSets(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.StatefulSetView, error) {
+	return s.statefulSets[clusterID+"/"+namespace], nil
+}
+
+func (s stubTargetReader) ListDaemonSets(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.DaemonSetView, error) {
+	return s.daemonSets[clusterID+"/"+namespace], nil
+}
+
+func (s stubTargetReader) ListHorizontalPodAutoscalers(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.HorizontalPodAutoscalerView, error) {
+	return s.hpas[clusterID+"/"+namespace], nil
 }
 
 type stubDeliveryRolePermissionReader struct {
@@ -316,9 +339,35 @@ func deliveryActionPrincipal() domainidentity.Principal {
 }
 
 type stubRepository struct {
-	blueprint domaindelivery.DeliveryBlueprint
-	bundles   []domaindelivery.ReleaseBundle
-	tasks     []domaindelivery.ExecutionTask
+	blueprint           domaindelivery.DeliveryBlueprint
+	bundles             []domaindelivery.ReleaseBundle
+	tasks               []domaindelivery.ExecutionTask
+	importInput         *domaindelivery.KubernetesServiceImportInput
+	importResult        domaindelivery.KubernetesServiceImportResult
+	importCallCount     *int
+	helmImportInput     *domaindelivery.HelmReleaseImportInput
+	helmImportResult    domaindelivery.HelmReleaseImportResult
+	helmImportCallCount *int
+}
+
+func (s stubRepository) ImportKubernetesServices(_ context.Context, input domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error) {
+	if s.importInput != nil {
+		*s.importInput = input
+	}
+	if s.importCallCount != nil {
+		*s.importCallCount = *s.importCallCount + 1
+	}
+	return s.importResult, nil
+}
+
+func (s stubRepository) ImportHelmReleases(_ context.Context, input domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error) {
+	if s.helmImportInput != nil {
+		*s.helmImportInput = input
+	}
+	if s.helmImportCallCount != nil {
+		*s.helmImportCallCount = *s.helmImportCallCount + 1
+	}
+	return s.helmImportResult, nil
 }
 
 func (s stubRepository) ListReleaseBundles(context.Context, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {

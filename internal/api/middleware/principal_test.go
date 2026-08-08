@@ -33,6 +33,7 @@ func TestAllowsExternalBearerToken(t *testing.T) {
 		path string
 		want bool
 	}{
+		{path: "/api/v1/agent-sessions/connect", want: true},
 		{path: "/api/v1/integrations/alerts/webhook", want: true},
 		{path: "/api/v1/delivery/execution-callbacks", want: true},
 		{path: "/api/v1/delivery/execution-tasks/claim", want: true},

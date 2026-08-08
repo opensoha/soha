@@ -18,6 +18,7 @@ const (
 )
 
 type RegistryOptions struct {
+	AccessURL                     string
 	AssistantGlobal               bool
 	ModuleHome                    bool
 	ModuleAI                      bool
@@ -55,6 +56,7 @@ type RegistryOptions struct {
 }
 
 const (
+	KeyAccessURL                     = "system.access_url"
 	KeyAssistantGlobal               = "modules.ai.features.assistant.global"
 	KeyModuleHome                    = "modules.home.enabled"
 	KeyModuleAI                      = "modules.ai.enabled"
@@ -115,6 +117,13 @@ func NewRegistry(options RegistryOptions) *Registry {
 	marketplaceURL := firstValue(options.MarketplaceURL, DefaultMarketplaceURL)
 	marketplaceSourceID := firstValue(options.MarketplaceSourceID, DefaultMarketplaceSourceID)
 	definitions := []Definition{
+		{
+			Key: KeyAccessURL, Category: "系统", Label: "访问地址",
+			Description: "Soha 对外访问地址，用于生成 Agent 安装清单和建立 Agent 会话",
+			ValueType:   sohaapi.RuntimeConfigValueTypeURL, ApplyMode: sohaapi.RuntimeConfigApplyModeHot,
+			DefaultValue: "", BaselineValue: strings.TrimRight(strings.TrimSpace(options.AccessURL), "/"),
+			EnvironmentVariable: "SOHA_HTTP_ACCESS_URL", Editable: true, Validate: validateHTTPURL,
+		},
 		booleanDefinitionWithDescription(KeyModuleHome, "模块", "首页", "门户首页与工作台入口；关闭后从工作台列表和导航中隐藏", sohaapi.RuntimeConfigApplyModeHot, options.ModuleHome),
 		booleanDefinitionWithDescription(KeyAssistantGlobal, "模块", "全局 AI 助手", "AI 工作台内的全局入口；仅在 AI 工作台开启时可用", sohaapi.RuntimeConfigApplyModeHot, options.AssistantGlobal),
 		booleanDefinitionWithDescription(KeyModuleAI, "模块", "AI 工作台", "启停 AI 工作台运行服务；关闭时全局 AI 助手必须同时关闭", sohaapi.RuntimeConfigApplyModeLifecycle, options.ModuleAI),

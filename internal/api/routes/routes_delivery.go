@@ -47,6 +47,8 @@ func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/application-environments/:applicationEnvironmentID", deps.Catalog.GetApplicationEnvironment)
 	protected.GET("/application-environments/:applicationEnvironmentID/detail", deps.Delivery.GetApplicationEnvironmentDetail)
 	protected.GET("/application-environments/target-candidates", deps.Delivery.ListTargetCandidates)
+	protected.POST("/application-environments/imports", deps.Delivery.ImportKubernetesServices)
+	protected.POST("/application-environments/helm-release-imports", deps.Delivery.ImportHelmReleases)
 	protected.GET("/delivery/artifacts", deps.Delivery.ListArtifacts)
 	protected.GET("/delivery/runtime/builds/:buildID", deps.Delivery.GetBuildRuntimeDetail)
 	protected.GET("/delivery/runtime/workflows/:workflowRunID", deps.Delivery.GetWorkflowRuntimeDetail)

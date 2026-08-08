@@ -550,8 +550,101 @@ func addVMAssetMetadata(metadata map[string]string, item *unstructured.Unstructu
 	if memory := nestedString(item.Object, "spec", "template", "spec", "domain", "resources", "requests", "memory"); memory != "" {
 		metadata["memory"] = memory
 	}
+	addKubeVirtVMRuntimeMetadata(metadata, item)
 	addVMBootSourceMetadata(metadata, item)
 	addVMDataVolumeTemplateMetadata(metadata, item)
+}
+
+func addKubeVirtVMRuntimeMetadata(metadata map[string]string, item *unstructured.Unstructured) {
+	templateSpec, ok, _ := unstructured.NestedMap(item.Object, "spec", "template", "spec")
+	if !ok {
+		return
+	}
+	hostname := nestedString(templateSpec, "hostname")
+	subdomain := nestedString(templateSpec, "subdomain")
+	if hostname != "" {
+		metadata["hostname"] = hostname
+	}
+	if subdomain != "" {
+		metadata["searchDomains"] = subdomain
+		if hostname != "" {
+			metadata["fqdn"] = hostname + "." + subdomain
+		}
+	}
+	if dnsPolicy := nestedString(templateSpec, "dnsPolicy"); dnsPolicy != "" {
+		metadata["dnsPolicy"] = dnsPolicy
+	}
+	if nameservers := nestedStringList(templateSpec, "dnsConfig", "nameservers"); len(nameservers) > 0 {
+		metadata["dnsServers"] = strings.Join(nameservers, ",")
+	}
+	if searches := nestedStringList(templateSpec, "dnsConfig", "searches"); len(searches) > 0 {
+		metadata["searchDomains"] = strings.Join(searches, ",")
+	}
+
+	disks, _, _ := unstructured.NestedSlice(templateSpec, "domain", "devices", "disks")
+	diskCount := 0
+	for _, raw := range disks {
+		disk, ok := raw.(map[string]any)
+		if !ok || strings.Contains(strings.ToLower(stringFromAny(disk["name"])), "cloudinit") {
+			continue
+		}
+		diskCount++
+	}
+	if diskCount > 0 {
+		metadata["diskCount"] = strconv.Itoa(diskCount)
+	}
+
+	interfaces, _, _ := unstructured.NestedSlice(templateSpec, "domain", "devices", "interfaces")
+	networks := make([]string, 0, len(interfaces))
+	for _, raw := range interfaces {
+		if iface, ok := raw.(map[string]any); ok {
+			networks = append(networks, stringFromAny(iface["name"]))
+		}
+	}
+	networks = uniqueStrings(networks)
+	if len(networks) > 0 {
+		metadata["network"] = networks[0]
+		metadata["networks"] = strings.Join(networks, ",")
+		metadata["networkInterfaceCount"] = strconv.Itoa(len(networks))
+	}
+
+	cloudInitSource, userDataConfigured := kubeVirtCloudInitSummary(templateSpec)
+	metadata["cloudInitConfigured"] = strconv.FormatBool(cloudInitSource != "")
+	metadata["cloudInitUserDataConfigured"] = strconv.FormatBool(userDataConfigured)
+	if cloudInitSource != "" {
+		metadata["cloudInitSource"] = cloudInitSource
+	}
+}
+
+func nestedStringList(object map[string]any, fields ...string) []string {
+	values, ok, _ := unstructured.NestedStringSlice(object, fields...)
+	if !ok {
+		return nil
+	}
+	return uniqueStrings(values)
+}
+
+func kubeVirtCloudInitSummary(templateSpec map[string]any) (string, bool) {
+	volumes, ok, _ := unstructured.NestedSlice(templateSpec, "volumes")
+	if !ok {
+		return "", false
+	}
+	for _, raw := range volumes {
+		volume, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, source := range []string{"cloudInitNoCloud", "cloudInitConfigDrive"} {
+			cloudInit, ok := volume[source].(map[string]any)
+			if !ok {
+				continue
+			}
+			configured := stringFromAny(cloudInit["userData"]) != "" ||
+				stringFromAny(cloudInit["userDataBase64"]) != "" || cloudInit["userDataSecretRef"] != nil
+			return source, configured
+		}
+	}
+	return "", false
 }
 
 func addVMBootSourceMetadata(metadata map[string]string, item *unstructured.Unstructured) {
@@ -771,6 +864,9 @@ func addVMDataVolumeTemplateMetadata(metadata map[string]string, item *unstructu
 	}
 	if storageClass := nestedString(template, "spec", "storage", "storageClassName"); storageClass != "" {
 		metadata["storageClass"] = storageClass
+	}
+	if storage := nestedString(template, "spec", "storage", "resources", "requests", "storage"); storage != "" {
+		metadata["disk"] = storage
 	}
 	if sourceName := nestedString(template, "spec", "sourceRef", "name"); sourceName != "" {
 		metadata["dataSourceName"] = sourceName

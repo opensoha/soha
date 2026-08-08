@@ -561,6 +561,9 @@ func (s *Service) decorateVMs(ctx context.Context, principal domainidentity.Prin
 }
 
 func vmAllowedActions(vm domainvirtualization.VM, permissionKeys []string) []string {
+	if strings.EqualFold(strings.TrimSpace(vm.Status), "deleted") {
+		return nil
+	}
 	actions := make([]string, 0, 6)
 	if slices.Contains(permissionKeys, appaccess.PermVirtualizationVMsPower) {
 		switch strings.ToLower(firstNonEmpty(vm.PowerState, vm.Status)) {
@@ -783,6 +786,9 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 	vm, err := s.vms.GetVM(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
+	}
+	if strings.EqualFold(strings.TrimSpace(vm.Status), "deleted") {
+		return domainvirtualization.Task{}, fmt.Errorf("%w: virtual machine is deleted", apperrors.ErrInvalidArgument)
 	}
 	if action == "resize" {
 		currentDisk := payloadInt(vm.Config, "diskGiB")

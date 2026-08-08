@@ -1,6 +1,11 @@
 package routes
 
-import "github.com/gin-gonic/gin"
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+)
 
 func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/clusters/:clusterID/resource-creation/scope-decision", deps.Platform.DecideResourceCreationScope)
@@ -27,6 +32,11 @@ func registerPlatformClusterRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.PUT("/clusters/:clusterID", deps.Platform.UpdateCluster)
 	protected.DELETE("/clusters/:clusterID", deps.Platform.DeleteCluster)
 	protected.GET("/clusters/:clusterID/detail", deps.Platform.DescribeCluster)
+	if deps.AgentConnections != nil {
+		protected.POST("/clusters/:clusterID/agent-installation", deps.AgentConnections.CreateInstallation)
+	} else {
+		protected.POST("/clusters/:clusterID/agent-installation", agentConnectionUnavailable)
+	}
 	protected.GET("/clusters/:clusterID/namespaces", deps.Platform.ListNamespaces)
 	protected.POST("/clusters/:clusterID/namespaces", deps.Platform.CreateNamespace)
 	protected.PUT("/clusters/:clusterID/namespaces/:namespaceName", deps.Platform.UpdateNamespace)
@@ -41,6 +51,10 @@ func registerPlatformClusterRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/clusters/:clusterID/infrastructure/nodes/:nodeName/drain", deps.Platform.DrainNode)
 	protected.DELETE("/clusters/:clusterID/infrastructure/nodes/:nodeName", deps.Platform.DeleteNode)
 
+}
+
+func agentConnectionUnavailable(c *gin.Context) {
+	apiresponse.Error(c, http.StatusServiceUnavailable, "service_unavailable", "Agent connection service is unavailable")
 }
 
 func registerPlatformWorkloadRoutes(protected gin.IRoutes, deps Dependencies) {

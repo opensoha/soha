@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opensoha/soha/internal/api/dto"
@@ -30,9 +31,14 @@ type DeliveryApplicationService interface {
 
 type DeliveryReleaseService interface {
 	ListReleaseBoard(context.Context, domainidentity.Principal) ([]domaindelivery.ReleaseBoardEntry, error)
-	ListTargetCandidates(context.Context, domainidentity.Principal, string, string, string) ([]domaindelivery.TargetCandidate, error)
 	ListReleaseBundles(context.Context, domainidentity.Principal, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error)
 	GetReleaseBundle(context.Context, domainidentity.Principal, string) (domaindelivery.ReleaseBundle, error)
+}
+
+type DeliveryKubernetesImportService interface {
+	ListKubernetesImportCandidates(context.Context, domainidentity.Principal, domaindelivery.KubernetesImportCandidateFilter) (domaindelivery.KubernetesImportCandidatePage, error)
+	ImportKubernetesServices(context.Context, domainidentity.Principal, domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error)
+	ImportHelmReleases(context.Context, domainidentity.Principal, domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error)
 }
 
 type DeliveryExecutionQueryService interface {
@@ -91,6 +97,7 @@ type DeliveryRunnerService interface {
 type DeliveryService interface {
 	DeliveryApplicationService
 	DeliveryReleaseService
+	DeliveryKubernetesImportService
 	DeliveryExecutionQueryService
 	DeliveryRuntimeService
 	DeliveryApplicationLogService
@@ -103,6 +110,7 @@ type DeliveryService interface {
 type DeliveryServices struct {
 	Applications DeliveryApplicationService
 	Releases     DeliveryReleaseService
+	Imports      DeliveryKubernetesImportService
 	Executions   DeliveryExecutionQueryService
 	Runtime      DeliveryRuntimeService
 	Blueprints   DeliveryBlueprintService
@@ -115,6 +123,7 @@ type DeliveryServices struct {
 type DeliveryHandler struct {
 	applications DeliveryApplicationService
 	releases     DeliveryReleaseService
+	imports      DeliveryKubernetesImportService
 	executions   DeliveryExecutionQueryService
 	runtime      DeliveryRuntimeService
 	blueprints   DeliveryBlueprintService
@@ -132,14 +141,14 @@ func NewDeliveryHandler(service DeliveryService, runnerToken string) *DeliveryHa
 func NewDeliveryHandlerWithRunnerKeys(service DeliveryService, keys keyring.Ring) *DeliveryHandler {
 	return NewDeliveryHandlerWithServices(DeliveryServices{
 		Applications: service, Releases: service, Executions: service, Runtime: service,
-		Blueprints: service, Drafts: service, Actions: service, Runner: service, Logs: service,
+		Imports: service, Blueprints: service, Drafts: service, Actions: service, Runner: service, Logs: service,
 	}, keys)
 }
 
 func NewDeliveryHandlerWithServices(services DeliveryServices, keys keyring.Ring) *DeliveryHandler {
 	return &DeliveryHandler{
 		applications: services.Applications, releases: services.Releases, executions: services.Executions,
-		runtime: services.Runtime, blueprints: services.Blueprints, drafts: services.Drafts,
+		imports: services.Imports, runtime: services.Runtime, blueprints: services.Blueprints, drafts: services.Drafts,
 		actions: services.Actions, runner: services.Runner, logs: services.Logs, runnerKeys: keys,
 	}
 }
@@ -208,6 +217,7 @@ func (h *DeliveryHandler) TriggerApplicationDeliveryAction(c *gin.Context) {
 		ImageTag:                 req.ImageTag,
 		ReleaseName:              req.ReleaseName,
 		ContainerName:            req.ContainerName,
+		ValuesContent:            req.ValuesContent,
 		Variables:                req.Variables,
 		BuildArgs:                req.BuildArgs,
 	})
@@ -229,13 +239,54 @@ func (h *DeliveryHandler) ListReleaseBoard(c *gin.Context) {
 }
 
 func (h *DeliveryHandler) ListTargetCandidates(c *gin.Context) {
+	limit := 0
+	if raw := c.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "limit must be an integer")
+			return
+		}
+		limit = parsed
+	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.releases.ListTargetCandidates(c.Request.Context(), principal, c.Query("clusterId"), c.Query("namespace"), c.Query("search"))
+	page, err := h.imports.ListKubernetesImportCandidates(c.Request.Context(), principal, domaindelivery.KubernetesImportCandidateFilter{
+		ClusterID: c.Query("clusterId"), Namespace: c.Query("namespace"), Search: c.Query("search"), Limit: limit,
+	})
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Items(c, http.StatusOK, items)
+	apiresponse.JSON(c, http.StatusOK, page)
+}
+
+func (h *DeliveryHandler) ImportKubernetesServices(c *gin.Context) {
+	var request domaindelivery.KubernetesServiceImportInput
+	if err := c.ShouldBindJSON(&request); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Kubernetes service import payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.imports.ImportKubernetesServices(c.Request.Context(), principal, request)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DeliveryHandler) ImportHelmReleases(c *gin.Context) {
+	var request domaindelivery.HelmReleaseImportInput
+	if err := c.ShouldBindJSON(&request); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Helm release import payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.imports.ImportHelmReleases(c.Request.Context(), principal, request)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *DeliveryHandler) ListReleaseBundles(c *gin.Context) {

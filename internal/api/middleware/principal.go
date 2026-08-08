@@ -206,6 +206,7 @@ func allowsProtocolAccessCookie(path string) bool {
 }
 
 var externalBearerTokenSuffixes = [...]string{
+	"/agent-sessions/connect",
 	"/integrations/alerts/webhook",
 	"/delivery/execution-callbacks",
 	"/delivery/execution-tasks/claim",

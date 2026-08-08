@@ -116,6 +116,7 @@ type Runtime struct {
 	*Workloads
 	*Network
 	*Storage
+	*Helm
 	*Inventory
 	*Events
 }
@@ -242,7 +243,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 	}
 	service.runtime = &Runtime{
 		Workloads: workloads, Network: network, Storage: service.storage,
-		Inventory: inventory, Events: service.events,
+		Helm: service.helm, Inventory: inventory, Events: service.events,
 	}
 	return service
 }

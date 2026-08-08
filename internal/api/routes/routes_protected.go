@@ -39,6 +39,7 @@ func registerProtectedRoutes(protected *gin.RouterGroup, cfg cfgpkg.Config, deps
 	registerProviderPortalRoutes(protected, deps)
 	registerAIGatewayRoutes(protected.Group("", apiMiddleware.RequireModule(deps.ModuleState, "aiGateway")), deps)
 	registerPluginRoutes(protected, deps)
+	registerSoftwareRoutes(protected, deps)
 	registerSettingsRoutes(protected, deps)
 	registerSystemIntegrationRoutes(protected, deps)
 	registerSecretRoutes(protected, deps)

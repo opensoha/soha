@@ -4,7 +4,15 @@ import (
 	"context"
 
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domainobservability "github.com/opensoha/soha/internal/domain/observability"
 )
+
+type DashboardRepository interface {
+	ListDashboards(context.Context) ([]domainobservability.Dashboard, error)
+	GetDashboard(context.Context, string) (domainobservability.Dashboard, error)
+	CreateDashboard(context.Context, domainobservability.Dashboard) (domainobservability.Dashboard, error)
+	DeleteDashboard(context.Context, string) error
+}
 
 type AlertReader interface {
 	List(context.Context, domainalert.Filter) ([]domainalert.Instance, error)

@@ -19,7 +19,7 @@ func TestAgentStreamPodLogsDelegatesToAgent(t *testing.T) {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
 		query := r.URL.Query()
-		if query.Get("namespace") != "platform" || query.Get("container") != "app" || query.Get("tailLines") != "10" || query.Get("sinceSeconds") != "5" {
+		if query.Get("namespace") != "platform" || query.Get("container") != "app" || query.Get("tailLines") != "5000" || query.Get("sinceSeconds") != "5" {
 			t.Fatalf("query = %s, want namespace/container/tail/since", r.URL.RawQuery)
 		}
 		_, _ = w.Write([]byte("line 1\nline 2\n"))
@@ -33,12 +33,35 @@ func TestAgentStreamPodLogsDelegatesToAgent(t *testing.T) {
 		Audit:       noopResourceAuditRecorder{},
 	})
 	var out bytes.Buffer
-	err := service.Workloads().StreamPodLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", 10, 5, &out)
+	err := service.Workloads().StreamPodLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", 1_000_000, 5, &out)
 	if err != nil {
 		t.Fatalf("StreamPodLogs() error = %v", err)
 	}
 	if out.String() != "line 1\nline 2\n" {
 		t.Fatalf("output = %q, want streamed logs", out.String())
+	}
+}
+
+func TestAgentGetPodLogsCapsTailLines(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/platform/workloads/pods/api-0/logs" {
+			t.Fatalf("unexpected request %s", r.URL.String())
+		}
+		if got := r.URL.Query().Get("tailLines"); got != "5000" {
+			t.Fatalf("tailLines = %q, want 5000", got)
+		}
+		_, _ = w.Write([]byte(`{"data":{"content":"line"}}`))
+	}))
+	defer server.Close()
+
+	service := New(Dependencies{
+		Agents:      testAgentClients(agentinfra.NewRegistry(0)),
+		Connections: stubConnectionResolver{connection: agentConnection(server.URL)},
+		Authorizer:  allowAllResourceAuthorizer{},
+		Audit:       noopResourceAuditRecorder{},
+	})
+	if _, err := service.Workloads().GetPodLogs(context.Background(), domainidentity.Principal{UserID: "user-1"}, "agent-cluster", "platform", "api-0", "app", 1_000_000, 0, false); err != nil {
+		t.Fatalf("GetPodLogs() error = %v", err)
 	}
 }
 

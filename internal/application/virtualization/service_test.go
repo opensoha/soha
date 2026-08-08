@@ -39,7 +39,9 @@ func TestWorkerAssetSyncUpdatesTaskAndRecordsOperation(t *testing.T) {
 		syncResult: infravirtualization.AssetSyncResult{
 			Health: infravirtualization.AssetHealth{Status: "healthy"},
 			Assets: []infravirtualization.Asset{
-				{Type: "virtualmachine", Name: "vm-a", Namespace: "default", Status: "running", Metadata: map[string]string{"uid": "vm-a"}},
+				{Type: "virtualmachine", Name: "vm-a", Namespace: "default", Status: "running", Metadata: map[string]string{
+					"uid": "vm-a", "disk": "24Gi", "hostname": "vm-a", "ipAddress": "10.244.0.18",
+				}},
 				{Type: "datasource", Name: "ubuntu", Status: "ready", Metadata: map[string]string{"uid": "img-a"}},
 			},
 		},
@@ -56,6 +58,11 @@ func TestWorkerAssetSyncUpdatesTaskAndRecordsOperation(t *testing.T) {
 	}
 	if len(repo.vms) != 1 || len(repo.images) != 1 {
 		t.Fatalf("synced assets vms=%d images=%d, want 1 and 1", len(repo.vms), len(repo.images))
+	}
+	for _, vm := range repo.vms {
+		if vm.Config["diskGiB"] != 24 || vm.Config["hostname"] != "vm-a" || len(vm.IPAddresses) != 1 || vm.IPAddresses[0] != "10.244.0.18" {
+			t.Fatalf("synced VM = %#v", vm)
+		}
 	}
 	if !ops.has("virtualization.worker.asset_sync") {
 		t.Fatalf("operation log missing worker asset sync entry: %#v", ops.entries)
@@ -123,6 +130,9 @@ func TestWorkerVMDeleteMarksLinkedDockerHostUnavailable(t *testing.T) {
 	}
 	if updatedVM.Status != "deleted" {
 		t.Fatalf("vm status = %q, want deleted", updatedVM.Status)
+	}
+	if updatedVM.PowerState != "deleted" {
+		t.Fatalf("vm power state = %q, want deleted", updatedVM.PowerState)
 	}
 	host := repo.dockerHosts["host-1"]
 	if host.Status != "unavailable" || host.Endpoint != "" || host.AgentID != "" || host.IPAddress != "" || host.VMID != "" || host.VMName != "" {
@@ -788,6 +798,40 @@ func TestVMExactPermissionsAllowCreateAndResizeButDenyDelete(t *testing.T) {
 	}
 	if !slices.Contains(item.AllowedActions, "resize") || slices.Contains(item.AllowedActions, "delete") {
 		t.Fatalf("AllowedActions = %v, want resize without delete", item.AllowedActions)
+	}
+}
+
+func TestDeletedVMHasNoAllowedActionsAndRejectsMutations(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderPVE, Name: "pve", Enabled: true})
+	vm := domainvirtualization.VM{
+		ID:           "vm-1",
+		Provider:     ProviderPVE,
+		ConnectionID: conn.ID,
+		Name:         "deleted-vm",
+		Status:       "deleted",
+		PowerState:   "deleted",
+		Config:       map[string]any{"diskGiB": 40},
+	}
+	repo.vms[vm.ID] = vm
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+
+	item, err := service.GetVM(context.Background(), testPrincipal(), vm.ID)
+	if err != nil {
+		t.Fatalf("GetVM() error = %v", err)
+	}
+	if len(item.AllowedActions) != 0 {
+		t.Fatalf("AllowedActions = %v, want none", item.AllowedActions)
+	}
+
+	for _, input := range []VMActionInput{
+		{Action: "start"},
+		{Action: "resize", CPU: 2},
+		{Action: "delete"},
+	} {
+		if _, err := service.VMAction(context.Background(), testPrincipal(), vm.ID, input); !errors.Is(err, apperrors.ErrInvalidArgument) {
+			t.Fatalf("VMAction(%s) error = %v, want invalid argument", input.Action, err)
+		}
 	}
 }
 

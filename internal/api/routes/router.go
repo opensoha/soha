@@ -33,6 +33,7 @@ const (
 type Dependencies struct {
 	System              *apiHandlers.SystemHandler
 	Platform            *apiHandlers.PlatformHandler
+	AgentConnections    *apiHandlers.AgentConnectionHandler
 	Announcements       *apiHandlers.AnnouncementHandler
 	Module              *apiHandlers.ModuleHandler
 	Monitoring          *apiHandlers.MonitoringHandler
@@ -57,6 +58,7 @@ type Dependencies struct {
 	AgentProviders      *apiHandlers.AgentProviderHandler
 	AIGateway           *apiHandlers.AIGatewayHandler
 	Plugins             *apiHandlers.PluginHandler
+	Software            *apiHandlers.SoftwareHandler
 	Compute             *apiHandlers.ComputeHandler
 	Virtualization      *apiHandlers.VirtualizationHandler
 	Docker              *apiHandlers.DockerHandler

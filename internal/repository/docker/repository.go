@@ -576,6 +576,7 @@ func (r *Repository) CreateOperation(ctx context.Context, input domaindocker.Ope
 }
 
 func (r *Repository) UpdateOperation(ctx context.Context, item domaindocker.Operation) (domaindocker.Operation, error) {
+	expectedUpdatedAt := item.UpdatedAt
 	payload, err := marshalJSON(item.Payload)
 	if err != nil {
 		return domaindocker.Operation{}, fmt.Errorf("marshal docker operation payload: %w", err)
@@ -590,16 +591,16 @@ func (r *Repository) UpdateOperation(ctx context.Context, item domaindocker.Oper
 		SET host_id = ?, project_id = ?, service_id = ?, operation_kind = ?, status = ?, requested_by = ?,
 			claimed_by_worker_id = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
 			payload = ?::jsonb, result = ?::jsonb, started_at = ?, last_heartbeat_at = ?, finished_at = ?, updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND updated_at = ?
 	`, nullableString(item.HostID), nullableString(item.ProjectID), nullableString(item.ServiceID), item.OperationKind, item.Status,
 		nullableString(item.RequestedBy), nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries,
 		item.TimeoutSeconds, string(payload), string(resultPayload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt,
-		item.UpdatedAt, item.ID)
+		item.UpdatedAt, item.ID, expectedUpdatedAt)
 	if result.Error != nil {
 		return domaindocker.Operation{}, fmt.Errorf("update docker operation: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaindocker.Operation{}, ErrNotFound
+		return domaindocker.Operation{}, fmt.Errorf("%w: docker operation changed", apperrors.ErrConflict)
 	}
 	return item, nil
 }
@@ -643,6 +644,9 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 		item, scanErr := scanOperation(rows)
 		if scanErr != nil {
 			return scanErr
+		}
+		if closeErr := rows.Close(); closeErr != nil {
+			return fmt.Errorf("close claimed docker operation rows: %w", closeErr)
 		}
 		item.Status = "running"
 		item.ClaimedByWorkerID = workerID

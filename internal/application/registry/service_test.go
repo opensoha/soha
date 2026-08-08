@@ -58,6 +58,7 @@ func TestCreateEncryptsRegistrySecretAndScrubsResponse(t *testing.T) {
 		RegistryType: "docker",
 		Endpoint:     "https://registry-1.docker.io",
 		Secret:       "raw-registry-token",
+		Metadata:     map[string]any{"internal": "must-not-be-returned"},
 	})
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
@@ -67,6 +68,9 @@ func TestCreateEncryptsRegistrySecretAndScrubsResponse(t *testing.T) {
 	}
 	if item.Secret != "" || item.Metadata["secretConfigured"] != true || item.Metadata["secretStorage"] != "encrypted" {
 		t.Fatalf("response was not scrubbed: %#v", item)
+	}
+	if _, ok := item.Metadata["internal"]; ok {
+		t.Fatalf("response leaked internal metadata: %#v", item.Metadata)
 	}
 }
 

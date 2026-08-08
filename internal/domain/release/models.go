@@ -30,6 +30,7 @@ type TriggerInput struct {
 	ReleaseName              string `json:"releaseName,omitempty"`
 	ActionKind               string `json:"actionKind,omitempty"`
 	WorkflowRunID            string `json:"workflowRunId,omitempty"`
+	ValuesContent            string `json:"valuesContent,omitempty"`
 }
 
 type Filter struct {

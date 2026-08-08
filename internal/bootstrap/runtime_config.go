@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
@@ -97,6 +98,7 @@ func (a runtimeValueApplier) Apply(ctx context.Context, _, next appruntimeconfig
 }
 
 func runtimeEffectiveConfig(cfg cfgpkg.Config, snapshot appruntimeconfig.Snapshot) cfgpkg.Config {
+	cfg.HTTP.AccessURL = strings.TrimRight(strings.TrimSpace(snapshot.String(appruntimeconfig.KeyAccessURL, cfg.HTTP.AccessURL)), "/")
 	cfg.Runtime.WorkflowWorkers = snapshot.Int(appruntimeconfig.KeyWorkflowWorkers, cfg.Runtime.WorkflowWorkers)
 	cfg.Runtime.WorkflowQueueSize = snapshot.Int(appruntimeconfig.KeyWorkflowQueueSize, cfg.Runtime.WorkflowQueueSize)
 	cfg.Runtime.WorkflowNodeParallelism = snapshot.Int(appruntimeconfig.KeyWorkflowNodeParallelism, cfg.Runtime.WorkflowNodeParallelism)

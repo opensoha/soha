@@ -348,14 +348,17 @@ func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
 func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T) {
 	items := defaultMenuSeeds()
 	expected := map[string]string{
-		"compute-workbench":                  "/compute",
-		"compute-workbench-overview":         "/compute/overview",
-		"virtualization-workbench-clusters":  "/compute/virtualization/clusters",
-		"virtualization-workbench-storage":   "/compute/virtualization/storage",
-		"docker-workbench-hosts":             "/compute/runtimes/hosts",
-		"compute-workbench-tasks-sync":       "/compute/tasks/sync",
-		"compute-workbench-tasks-build":      "/compute/tasks/build",
-		"compute-workbench-tasks-operations": "/compute/tasks/operations",
+		"compute-workbench":                   "/compute",
+		"compute-workbench-overview":          "/compute/overview",
+		"virtualization-workbench-clusters":   "/compute/virtualization/clusters",
+		"virtualization-workbench-storage":    "/compute/virtualization/storage",
+		"virtualization-workbench-operations": "/compute/tasks/operations?domain=virtualization",
+		"virtualization-workbench-sync":       "/compute/tasks/sync?domain=virtualization",
+		"docker-workbench-hosts":              "/compute/runtimes/hosts",
+		"docker-workbench-operations":         "/compute/tasks/operations?domain=container_runtime",
+		"compute-workbench-tasks-sync":        "/compute/tasks/sync",
+		"compute-workbench-tasks-build":       "/compute/tasks/build",
+		"compute-workbench-tasks-operations":  "/compute/tasks/operations",
 	}
 	for _, id := range []string{"compute-workbench-tasks", "compute-workbench-tasks-all", "compute-workbench-access"} {
 		if !slices.Contains(obsoleteMenuIDsForCleanup(), id) {
@@ -422,6 +425,7 @@ func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
 		"monitoring-workbench-overview":         {path: "/monitoring-workbench/overview"},
 		"monitoring-workbench-services":         {path: "/monitoring-workbench/services", section: "observe-signals"},
 		"monitoring-workbench-metrics":          {path: "/monitoring-workbench/metrics", section: "observe-signals"},
+		"monitoring-workbench-dashboards":       {path: "/monitoring-workbench/dashboards", section: "dashboards"},
 		"monitoring-workbench-traces":           {path: "/monitoring-workbench/traces", section: "observe-signals"},
 		"monitoring-workbench-logs":             {path: "/monitoring-workbench/logs", section: "observe-signals"},
 		"monitoring-workbench-providers":        {path: "/monitoring-workbench/providers", section: "observe-data"},
@@ -605,6 +609,8 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 		sortOrder int
 	}{
 		"identity-overview":              {section: "", sortOrder: 1},
+		"identity-software":              {section: "software", sortOrder: 5},
+		"identity-software-storage":      {section: "software", sortOrder: 10},
 		"settings-overview":              {section: "", sortOrder: 1},
 		"identity-applications":          {section: "provider", sortOrder: 10},
 		"identity-providers":             {section: "provider", sortOrder: 20},

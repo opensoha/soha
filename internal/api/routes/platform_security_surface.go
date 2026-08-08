@@ -50,7 +50,8 @@ func isReadOnlyPOST(method, path string) bool {
 		strings.HasSuffix(path, "/resource-creation/preflight") ||
 		strings.HasSuffix(path, "/observability/logging/preflight") ||
 		strings.HasSuffix(path, "/logs/query") ||
-		strings.HasSuffix(path, "/logs/stream-ticket"))
+		strings.HasSuffix(path, "/logs/stream-ticket") ||
+		(strings.Contains(path, "/observability/dashboards/") && strings.HasSuffix(path, "/query")))
 }
 
 func isPlatformReadOnlyPOST(method, path string) bool {
@@ -105,6 +106,18 @@ var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatform
 	secretMutationSecuritySurface,
 	identityMutationSecuritySurface,
 	settingsMutationSecuritySurface,
+	softwareMutationSecuritySurface,
+}
+
+func softwareMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if !strings.HasPrefix(path, "/api/v1/software/packages") {
+		return nonPlatformMutationSecuritySurfaceEntry{}, false
+	}
+	permission := appaccess.PermSoftwarePackageCreate
+	if method == "DELETE" {
+		permission = appaccess.PermSoftwarePackageDelete
+	}
+	return nonPlatformMutationEntry("SoftwarePackage", nonPlatformMutationAction(method, path), permission, false), true
 }
 
 func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
@@ -186,6 +199,12 @@ func monitoringMutationSecuritySurface(method, path string) (nonPlatformMutation
 	switch {
 	case path == "/api/v1/observability/metrics/query" || path == "/api/v1/observability/traces/query":
 		return nonPlatformMutationEntry("ObservabilitySignal", "query", appaccess.PermObserveMonitoringView, false), true
+	case strings.HasPrefix(path, "/api/v1/observability/dashboards"):
+		action := "create"
+		if method == "DELETE" {
+			action = "delete"
+		}
+		return nonPlatformMutationEntry("ObservabilityDashboard", action, appaccess.ManagedActionPermission(appaccess.PermObserveDashboardsManage, action), false), true
 	case strings.HasPrefix(path, "/api/v1/observability/data-sources"):
 		return nonPlatformMutationEntry("ObservabilityDataSource", nonPlatformMutationAction(method, path), appaccess.PermObserveLogDataSourcesManage, false), true
 	case strings.HasPrefix(path, "/api/v1/alerts/"):
@@ -554,6 +573,8 @@ func nonPlatformMutationAction(method, path string) string {
 
 func platformMutationAction(method, path string) string {
 	switch {
+	case strings.HasSuffix(path, "/agent-installation"):
+		return "update"
 	case strings.Contains(path, "/exec"):
 		return "exec"
 	case strings.Contains(path, "/restart"):
@@ -644,6 +665,9 @@ func platformMutationCapabilityKey(path string) string {
 }
 
 func platformMutationResourceKind(path string) string {
+	if strings.HasSuffix(path, "/agent-installation") {
+		return "Cluster"
+	}
 	if path == "/api/v1/clusters" || strings.Contains(path, "/clusters/:clusterID") && !strings.Contains(path, "/clusters/:clusterID/") {
 		return "Cluster"
 	}

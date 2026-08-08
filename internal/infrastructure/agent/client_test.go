@@ -13,9 +13,66 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/hashicorp/yamux"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
+
+type yamuxListener struct{ session *yamux.Session }
+
+func (l yamuxListener) Accept() (net.Conn, error) { return l.session.Accept() }
+func (l yamuxListener) Close() error              { return l.session.Close() }
+func (l yamuxListener) Addr() net.Addr            { return testAddr("yamux") }
+
+type testAddr string
+
+func (a testAddr) Network() string { return string(a) }
+func (a testAddr) String() string  { return string(a) }
+
+func TestReverseSessionCarriesAgentHTTPRequests(t *testing.T) {
+	registry := NewRegistry(time.Second)
+	coreConn, agentConn := net.Pipe()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	attachErr := make(chan error, 1)
+	go func() { attachErr <- registry.Attach(ctx, "cluster-a", coreConn) }()
+
+	config := yamux.DefaultConfig()
+	config.LogOutput = io.Discard
+	agentSession, err := yamux.Client(agentConn, config)
+	if err != nil {
+		t.Fatalf("yamux.Client() error = %v", err)
+	}
+	defer func() { _ = agentSession.Close() }()
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/platform/summary" || r.Header.Get("Authorization") != "Bearer agent-token" {
+			t.Errorf("unexpected tunneled request %s auth=%q", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": domaincluster.Summary{ID: "cluster-a", Name: "Reverse Agent"}})
+	})}
+	go func() { _ = server.Serve(yamuxListener{session: agentSession}) }()
+
+	client, err := registry.ClientFor(domaincluster.Connection{
+		Summary:  domaincluster.Summary{ID: "cluster-a"},
+		Metadata: map[string]any{"transport": "reverse_session", "token": "agent-token"},
+	})
+	if err != nil {
+		t.Fatalf("ClientFor() error = %v", err)
+	}
+	summary, err := client.GetSummary(context.Background())
+	if err != nil {
+		t.Fatalf("GetSummary() error = %v", err)
+	}
+	if summary.Name != "Reverse Agent" {
+		t.Fatalf("summary name = %q", summary.Name)
+	}
+	cancel()
+	select {
+	case <-attachErr:
+	case <-time.After(time.Second):
+		t.Fatal("reverse session did not close")
+	}
+}
 
 func TestClientResourceYAMLMethodsUseAgentPlatformEndpoints(t *testing.T) {
 	var seen []string

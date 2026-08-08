@@ -60,7 +60,7 @@ func TestQueryMetricsRequiresPermissionAndUsesEnabledPrometheusSource(t *testing
 	service := &Service{
 		dataSources: stubSignalDataSources{items: []domaincopilot.DataSource{
 			{ID: "disabled", BackendType: "prometheus", Enabled: false},
-			{ID: "metrics", BackendType: "prometheus", Enabled: true},
+			{ID: "metrics", BackendType: "prometheus", Enabled: true, Config: map[string]any{"endpoint": "http://prometheus:9090"}},
 		}},
 		permissions: monitoringCompatPermissions(appaccess.PermObserveMonitoringView),
 		metrics:     metricBackend,

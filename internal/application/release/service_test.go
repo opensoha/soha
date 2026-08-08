@@ -2,16 +2,20 @@ package release
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	apprepo "github.com/opensoha/soha/internal/repository/application"
 	clusterrepo "github.com/opensoha/soha/internal/repository/cluster"
@@ -21,6 +25,7 @@ type stubReleaseRepository struct {
 	items       []domainrelease.Record
 	deletedIDs  []string
 	createCalls int
+	created     domainrelease.Record
 }
 
 func (r *stubReleaseRepository) List(context.Context, domainrelease.Filter) ([]domainrelease.Record, error) {
@@ -36,9 +41,29 @@ func (r *stubReleaseRepository) Get(_ context.Context, id string) (domainrelease
 	return domainrelease.Record{}, apperrors.ErrNotFound
 }
 
-func (r *stubReleaseRepository) Create(context.Context, domainrelease.Record) (domainrelease.Record, error) {
+func (r *stubReleaseRepository) Create(_ context.Context, record domainrelease.Record) (domainrelease.Record, error) {
 	r.createCalls++
-	return domainrelease.Record{}, nil
+	r.created = record
+	return record, nil
+}
+
+type stubReleaseBindings struct {
+	binding domaincatalog.ApplicationEnvironment
+}
+
+func (s stubReleaseBindings) GetApplicationEnvironment(context.Context, string) (domaincatalog.ApplicationEnvironment, error) {
+	return s.binding, nil
+}
+
+type stubHelmReleaseRuntime struct {
+	content string
+	calls   int
+}
+
+func (s *stubHelmReleaseRuntime) UpdateHelmReleaseValues(_ context.Context, _ domainidentity.Principal, _, namespace, name, content string) (domainresource.HelmValuesView, error) {
+	s.calls++
+	s.content = content
+	return domainresource.HelmValuesView{Name: name, Namespace: namespace, Revision: "8"}, nil
 }
 
 func (r *stubReleaseRepository) DeleteByIDs(_ context.Context, ids []string) error {
@@ -218,5 +243,54 @@ func TestTriggerFailsClosedWithoutRuntimeResolver(t *testing.T) {
 	}
 	if repo.createCalls != 0 {
 		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	}
+}
+
+func TestTriggerManagedHelmReleaseUpdatesValuesWithoutPersistingContent(t *testing.T) {
+	t.Parallel()
+	repo := &stubReleaseRepository{}
+	helm := &stubHelmReleaseRuntime{}
+	service := &Service{
+		repo: repo,
+		apps: &stubReleaseApps{},
+		bindings: stubReleaseBindings{binding: domaincatalog.ApplicationEnvironment{Targets: []domaincatalog.ReleaseTarget{{
+			ID: "target-helm", ClusterID: "cluster-ok", Namespace: "payments", TargetKind: "helm_release", ExecutorKind: "helm_sdk",
+			WorkloadKind: "HelmRelease", WorkloadName: "payments", Enabled: true,
+		}}}},
+		resolver:    &stubReleaseResolver{},
+		permissions: releasePermissions("developer", appaccess.PermDeliveryReleasesTrigger),
+		helm:        helm,
+	}
+	values := "replicaCount: 3\nimage:\n  tag: 2026.08\n"
+	record, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, domainrelease.TriggerInput{
+		ApplicationID: "app-ok", ApplicationEnvironmentID: "binding-1", ClusterID: "cluster-ok", Namespace: "payments",
+		DeploymentName: "payments", ReleaseName: "payments-2026.08", ValuesContent: values,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if helm.calls != 1 || helm.content != values {
+		t.Fatalf("Helm update calls = %d, content = %q", helm.calls, helm.content)
+	}
+	if record.Status != "deployed" || record.Metadata["helmRevision"] != "8" || record.Metadata["targetKind"] != "helm_release" {
+		t.Fatalf("record = %#v", record)
+	}
+	payload, _ := json.Marshal(record.Metadata)
+	if strings.Contains(string(payload), "replicaCount") {
+		t.Fatalf("release metadata persisted Helm values: %s", payload)
+	}
+}
+
+func TestResolveTargetRejectsObserveOnlyTarget(t *testing.T) {
+	t.Parallel()
+	service := &Service{bindings: stubReleaseBindings{binding: domaincatalog.ApplicationEnvironment{Targets: []domaincatalog.ReleaseTarget{{
+		ID: "target-observe", ClusterID: "cluster-ok", Namespace: "payments", TargetKind: "helm_release", ExecutorKind: "observe_only",
+		WorkloadKind: "HelmRelease", WorkloadName: "payments", Enabled: false,
+	}}}}}
+	_, err := service.resolveTarget(context.Background(), domainrelease.TriggerInput{
+		ApplicationEnvironmentID: "binding-1", ClusterID: "cluster-ok", Namespace: "payments", DeploymentName: "payments",
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("resolveTarget() error = %v, want ErrInvalidArgument", err)
 	}
 }

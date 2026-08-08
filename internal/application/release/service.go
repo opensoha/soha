@@ -21,6 +21,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
@@ -72,6 +73,10 @@ type AgentDeploymentClient interface {
 
 type AgentClientFactory func(domaincluster.Connection) (AgentDeploymentClient, error)
 
+type HelmReleaseRuntime interface {
+	UpdateHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error)
+}
+
 type Service struct {
 	repo        ReleaseRepository
 	apps        ApplicationReader
@@ -85,14 +90,15 @@ type Service struct {
 	operations  OperationRecorder
 	direct      DirectRuntime
 	agents      AgentClientFactory
+	helm        HelmReleaseRuntime
 }
 
 type releasePruner interface {
 	DeleteByIDs(context.Context, []string) error
 }
 
-func New(repo ReleaseRepository, apps ApplicationReader, bindings BindingReader, resolver ConnectionResolver, execution ExecutionPlane, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, events EventWriter, audit AuditRecorder, operations OperationRecorder, direct DirectRuntime, agents AgentClientFactory) *Service {
-	return &Service{repo: repo, apps: apps, bindings: bindings, resolver: resolver, execution: execution, authorizer: authorizer, permissions: permissions, events: events, audit: audit, operations: operations, direct: direct, agents: agents}
+func New(repo ReleaseRepository, apps ApplicationReader, bindings BindingReader, resolver ConnectionResolver, execution ExecutionPlane, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, events EventWriter, audit AuditRecorder, operations OperationRecorder, direct DirectRuntime, agents AgentClientFactory, helm HelmReleaseRuntime) *Service {
+	return &Service{repo: repo, apps: apps, bindings: bindings, resolver: resolver, execution: execution, authorizer: authorizer, permissions: permissions, events: events, audit: audit, operations: operations, direct: direct, agents: agents, helm: helm}
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainrelease.Filter) ([]domainrelease.Record, error) {
@@ -178,14 +184,17 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	app := prepared.app
 	target := prepared.target
 	connection := prepared.connection
+	targetKind := resolveReleaseTargetKind(target)
+	providerKind := resolveReleaseProviderKind(target)
+	if targetKind == "helm_release" && providerKind == "helm_sdk" {
+		return s.applyAndPersistHelmRelease(ctx, principal, app, connection, target, input)
+	}
 
 	resolvedImage, err := resolveImage(app, input)
 	if err != nil {
 		return domainrelease.Record{}, err
 	}
 	bundleID := strings.TrimSpace(input.ReleaseBundleID)
-	providerKind := resolveReleaseProviderKind(target)
-	targetKind := resolveReleaseTargetKind(target)
 	bundleID, taskID := s.startReleaseExecution(ctx, app, input, target, resolvedImage, bundleID, providerKind, targetKind)
 	if !shouldApplyReleaseDirectly(target) {
 		return s.createQueuedRelease(ctx, principal, app, connection, target, input, resolvedImage, bundleID, taskID, providerKind, targetKind)
@@ -446,6 +455,69 @@ func (s *Service) applyDeploymentImage(ctx context.Context, connection domainclu
 		}
 		return s.direct.UpdateDeploymentImage(ctx, connection.Summary.ID, namespace, name, containerName, image)
 	}
+}
+
+func (s *Service) applyAndPersistHelmRelease(ctx context.Context, principal domainidentity.Principal, app domainapp.App, connection domaincluster.Connection, target domaincatalog.ReleaseTarget, input domainrelease.TriggerInput) (domainrelease.Record, error) {
+	valuesContent := strings.TrimSpace(input.ValuesContent)
+	if valuesContent == "" {
+		return domainrelease.Record{}, fmt.Errorf("%w: valuesContent is required for Helm releases", apperrors.ErrInvalidArgument)
+	}
+	if len(valuesContent) > 1<<20 {
+		return domainrelease.Record{}, fmt.Errorf("%w: valuesContent exceeds 1 MiB", apperrors.ErrInvalidArgument)
+	}
+	if s.helm == nil {
+		return domainrelease.Record{}, fmt.Errorf("%w: Helm release runtime is not configured", apperrors.ErrClusterUnready)
+	}
+	values, applyErr := s.helm.UpdateHelmReleaseValues(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, input.ValuesContent)
+	now := time.Now().UTC()
+	status := "deployed"
+	if applyErr != nil {
+		status = "failed"
+	}
+	record := domainrelease.Record{
+		ID:             fmt.Sprintf("release:%s:%d", input.ApplicationID, now.UnixNano()),
+		ApplicationID:  input.ApplicationID,
+		ClusterID:      connection.Summary.ID,
+		Namespace:      input.Namespace,
+		DeploymentName: strings.TrimSpace(input.DeploymentName),
+		Status:         status,
+		Metadata: map[string]any{
+			"applicationName":          app.Name,
+			"applicationEnvironmentId": strings.TrimSpace(input.ApplicationEnvironmentID),
+			"targetKind":               "helm_release",
+			"executorKind":             "helm_sdk",
+			"releaseName":              fallbackReleaseName(input.ReleaseName, input.DeploymentName),
+			"helmRevision":             values.Revision,
+		},
+		CreatedAt: now,
+	}
+	if target.Metadata != nil {
+		record.Metadata["chart"] = target.Metadata["chart"]
+		record.Metadata["appVersion"] = target.Metadata["appVersion"]
+	}
+	if status == "deployed" {
+		record.DeployedAt = &now
+	} else {
+		record.Metadata["error"] = applyErr.Error()
+	}
+	record, err := s.repo.Create(ctx, record)
+	if err != nil {
+		return domainrelease.Record{}, err
+	}
+	if applyErr != nil {
+		_ = s.recordAudit(ctx, principal, record.ClusterID, record.Namespace, record.DeploymentName, string(domainaccess.ActionTrigger), "failure", applyErr.Error(), map[string]any{"targetKind": "helm_release"})
+		return domainrelease.Record{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, applyErr)
+	}
+	if s.events != nil {
+		_ = s.events.Create(ctx, domainevent.Envelope{
+			ID: "event:" + record.ID, Source: "release", Category: "release", Severity: "info",
+			ClusterID: record.ClusterID, Namespace: record.Namespace,
+			Summary: fmt.Sprintf("Released %s Helm release to %s/%s", app.Name, record.ClusterID, record.Namespace),
+			Payload: map[string]any{"releaseId": record.ID, "applicationId": record.ApplicationID, "helmReleaseName": record.DeploymentName, "helmRevision": values.Revision},
+		})
+	}
+	_ = s.recordAudit(ctx, principal, record.ClusterID, record.Namespace, record.DeploymentName, string(domainaccess.ActionTrigger), "success", "triggered Helm release", map[string]any{"helmRevision": values.Revision})
+	return record, nil
 }
 
 func resolveImage(app domainapp.App, input domainrelease.TriggerInput) (string, error) {
@@ -738,8 +810,10 @@ func (s *Service) resolveTarget(ctx context.Context, input domainrelease.Trigger
 			return target, nil
 		}
 	}
-	if len(binding.Targets) > 0 {
-		return binding.Targets[0], nil
+	for _, target := range binding.Targets {
+		if target.Enabled {
+			return target, nil
+		}
 	}
 	return domaincatalog.ReleaseTarget{}, fmt.Errorf("%w: no enabled target is configured for application environment", apperrors.ErrInvalidArgument)
 }

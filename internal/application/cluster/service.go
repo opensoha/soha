@@ -68,6 +68,10 @@ type AgentSummaryClient interface {
 
 type AgentSummaryClientFactory func(domaincluster.Connection) (AgentSummaryClient, error)
 
+type AccessURLResolver interface {
+	AccessURL() string
+}
+
 type Service struct {
 	registry   RuntimeRegistry
 	manager    RuntimeReader
@@ -80,6 +84,11 @@ type Service struct {
 	syncLimit  atomic.Int64
 	logger     *zap.Logger
 	metrics    *runtimeobs.Registry
+	accessURL  AccessURLResolver
+}
+
+func (s *Service) SetAccessURLResolver(resolver AccessURLResolver) {
+	s.accessURL = resolver
 }
 
 func New(registry RuntimeRegistry, runtime RuntimeReader, cache RuntimeCache, agents AgentSummaryClientFactory, repo Repository, authorizer domainaccess.Authorizer, audit AuditRecorder, operations OperationRecorder) (*Service, error) {
@@ -270,8 +279,13 @@ func (s *Service) Describe(ctx context.Context, principal domainidentity.Princip
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		detail.Diagnostics.Transport = "remote-agent-http"
-		detail.Diagnostics.SyncStrategy = "agent_summary_and_remote_pull"
+		if metadataString(connection.Metadata, "transport") == agentReverseSessionTransport {
+			detail.Diagnostics.Transport = "agent-reverse-session"
+			detail.Diagnostics.SyncStrategy = "agent_session_and_remote_pull"
+		} else {
+			detail.Diagnostics.Transport = "remote-agent-http"
+			detail.Diagnostics.SyncStrategy = "agent_summary_and_remote_pull"
+		}
 		detail.Diagnostics.CacheStatus = "disabled"
 		detail.Diagnostics.CacheReady = false
 		if endpoint, _ := connection.Metadata["endpoint"].(string); strings.TrimSpace(endpoint) != "" {
@@ -742,15 +756,28 @@ func (s *Service) buildConnection(input domaincluster.RegisterInput) (domainclus
 		}
 		return connection, cfg, nil
 	case domaincluster.ConnectionModeAgent:
-		if strings.TrimSpace(input.AgentEndpoint) == "" {
-			return domaincluster.Connection{}, nil, fmt.Errorf("%w: agentEndpoint is required for agent connection mode", apperrors.ErrInvalidArgument)
+		endpoint := strings.TrimSpace(input.AgentEndpoint)
+		token := strings.TrimSpace(input.AgentToken)
+		transport := "http"
+		sourceRef := endpoint
+		if endpoint == "" {
+			transport = agentReverseSessionTransport
+			sourceRef = agentReverseSessionTransport
+			if token == "" {
+				generatedToken, generateErr := newAgentSecret()
+				if generateErr != nil {
+					return domaincluster.Connection{}, nil, generateErr
+				}
+				token = generatedToken
+			}
 		}
 		connection.CredentialType = "bearer"
 		connection.SourceType = "agent"
-		connection.SourceRef = strings.TrimSpace(input.AgentEndpoint)
+		connection.SourceRef = sourceRef
 		connection.Metadata = map[string]any{
-			"endpoint":                 strings.TrimSpace(input.AgentEndpoint),
-			"token":                    strings.TrimSpace(input.AgentToken),
+			"transport":                transport,
+			"endpoint":                 endpoint,
+			"token":                    token,
 			"prometheus_url":           strings.TrimSpace(input.PrometheusBaseURL),
 			"prometheus_bearer_token":  strings.TrimSpace(input.PrometheusBearerToken),
 			"prometheus_cluster_label": strings.TrimSpace(input.PrometheusClusterLabel),

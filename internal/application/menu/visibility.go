@@ -120,7 +120,7 @@ func observabilityAIMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermObserveEventsView,
 			appaccess.PermObserveLogDataSourcesView,
 		}}, true
-	case "monitoring-workbench-overview", "monitoring-workbench-services", "monitoring-workbench-metrics", "monitoring-workbench-traces", "monitoring-workbench-logs", "monitoring-workbench-providers", "monitoring-workbench-alerting":
+	case "monitoring-workbench-overview", "monitoring-workbench-services", "monitoring-workbench-metrics", "monitoring-workbench-dashboards", "monitoring-workbench-traces", "monitoring-workbench-logs", "monitoring-workbench-providers", "monitoring-workbench-alerting":
 		return visibilityRule{permissions: []string{appaccess.PermObserveMonitoringView}}, true
 	case "monitoring-workbench-log-data-sources":
 		return visibilityRule{permissions: []string{appaccess.PermObserveLogDataSourcesView}}, true
@@ -215,6 +215,7 @@ func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermVirtualizationVMsView,
 			appaccess.PermVirtualizationClustersView,
 			appaccess.PermVirtualizationImagesView,
+			appaccess.PermVirtualizationStorageView,
 			appaccess.PermVirtualizationFlavorsView,
 			appaccess.PermVirtualizationOperationsView,
 			appaccess.PermVirtualizationSyncView,
@@ -223,8 +224,10 @@ func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationVMsView}}, true
 	case "virtualization-workbench-clusters":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationClustersView}}, true
-	case "virtualization-workbench-images", "virtualization-workbench-storage":
+	case "virtualization-workbench-images":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationImagesView}}, true
+	case "virtualization-workbench-storage":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationStorageView}}, true
 	case "virtualization-workbench-flavors":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationFlavorsView}}, true
 	case "virtualization-workbench-operations":
@@ -258,6 +261,7 @@ func computeMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{
 			appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationVMsView,
 			appaccess.PermVirtualizationClustersView, appaccess.PermVirtualizationImagesView,
+			appaccess.PermVirtualizationStorageView,
 			appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationOperationsView,
 			appaccess.PermVirtualizationSyncView,
 			appaccess.PermDockerOverviewView, appaccess.PermDockerHostsView, appaccess.PermDockerProjectsView,
@@ -285,12 +289,15 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 		}}, true
 	case "identity", "identity-overview":
 		return visibilityRule{permissions: []string{
+			appaccess.PermSoftwarePackageView,
 			appaccess.PermIdentityApplicationsView,
 			appaccess.PermIdentityProvidersView,
 			appaccess.PermIdentityOutpostsView,
 			appaccess.PermIdentityPoliciesView,
 			appaccess.PermIdentityAuditView,
 		}}, true
+	case "identity-software", "identity-software-storage":
+		return visibilityRule{permissions: []string{appaccess.PermSoftwarePackageView}}, true
 	case "identity-applications":
 		return visibilityRule{permissions: []string{appaccess.PermIdentityApplicationsView}}, true
 	case "identity-providers":

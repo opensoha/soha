@@ -32,6 +32,340 @@ func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
+func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error) {
+	result := domaindelivery.KubernetesServiceImportResult{OwnershipMode: input.OwnershipMode}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// ponytail: namespace-scoped serialization; narrow to per-resource locks if import throughput demands it.
+		lockKey := "soha:kubernetes-import:" + input.ClusterID + ":" + input.Namespace
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, lockKey).Error; err != nil {
+			return fmt.Errorf("lock Kubernetes service import: %w", err)
+		}
+
+		application, err := importApplication(tx, input.ApplicationKey, input.ApplicationName, "kubernetes", input.OwnershipMode)
+		if err != nil {
+			return err
+		}
+		environment, err := importEnvironment(tx, input.EnvironmentKey, input.EnvironmentName)
+		if err != nil {
+			return err
+		}
+		bindingID, bindingCreated, err := importApplicationEnvironment(tx, application.ID, environment.ID, input.OwnershipMode)
+		if err != nil {
+			return err
+		}
+		result.Application = application
+		result.Environment = environment
+		result.ApplicationEnvironmentID = bindingID
+		result.ApplicationEnvironmentCreated = bindingCreated
+		result.Services = make([]domaindelivery.KubernetesImportedService, 0, len(input.Workloads))
+		result.Targets = make([]domaindelivery.KubernetesImportedTarget, 0, len(input.Workloads))
+		for _, workload := range input.Workloads {
+			service, err := importApplicationService(tx, application.ID, input, workload)
+			if err != nil {
+				return err
+			}
+			target, err := importReleaseTarget(tx, bindingID, service, input, workload)
+			if err != nil {
+				return err
+			}
+			result.Services = append(result.Services, service)
+			result.Targets = append(result.Targets, target)
+		}
+		return nil
+	})
+	if err != nil {
+		return domaindelivery.KubernetesServiceImportResult{}, err
+	}
+	return result, nil
+}
+
+func (r *Repository) ImportHelmReleases(ctx context.Context, input domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error) {
+	result := domaindelivery.HelmReleaseImportResult{OwnershipMode: input.OwnershipMode}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// ponytail: namespace-scoped serialization; narrow to per-release locks if import throughput demands it.
+		lockKey := "soha:helm-import:" + input.ClusterID + ":" + input.Namespace
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, lockKey).Error; err != nil {
+			return fmt.Errorf("lock Helm release import: %w", err)
+		}
+		application, err := importApplication(tx, input.ApplicationKey, input.ApplicationName, "helm", input.OwnershipMode)
+		if err != nil {
+			return err
+		}
+		environment, err := importEnvironment(tx, input.EnvironmentKey, input.EnvironmentName)
+		if err != nil {
+			return err
+		}
+		bindingID, bindingCreated, err := importApplicationEnvironment(tx, application.ID, environment.ID, input.OwnershipMode)
+		if err != nil {
+			return err
+		}
+		result.Application = application
+		result.Environment = environment
+		result.ApplicationEnvironmentID = bindingID
+		result.ApplicationEnvironmentCreated = bindingCreated
+		result.Services = make([]domaindelivery.HelmImportedService, 0, len(input.Releases))
+		result.Targets = make([]domaindelivery.HelmImportedTarget, 0, len(input.Releases))
+		for _, release := range input.Releases {
+			service, err := importHelmApplicationService(tx, application.ID, input, release)
+			if err != nil {
+				return err
+			}
+			target, err := importHelmReleaseTarget(tx, bindingID, service, input, release)
+			if err != nil {
+				return err
+			}
+			result.Services = append(result.Services, service)
+			result.Targets = append(result.Targets, target)
+		}
+		return nil
+	})
+	if err != nil {
+		return domaindelivery.HelmReleaseImportResult{}, err
+	}
+	return result, nil
+}
+
+func importApplication(tx *gorm.DB, applicationKey, applicationName, source, ownershipMode string) (domaindelivery.KubernetesImportEntityRef, error) {
+	id := uuid.NewString()
+	now := time.Now().UTC()
+	metadata, _ := json.Marshal(map[string]any{"importSource": source, "ownershipMode": ownershipMode})
+	insert := tx.Exec(`
+		INSERT INTO applications (id, name, app_key, app_group, language, enabled, metadata, created_at, updated_at)
+		VALUES (?, ?, ?, 'imported', ?, true, ?, ?, ?)
+		ON CONFLICT (app_key) DO NOTHING
+	`, id, applicationName, applicationKey, source, string(metadata), now, now)
+	if insert.Error != nil {
+		return domaindelivery.KubernetesImportEntityRef{}, fmt.Errorf("import application: %w", insert.Error)
+	}
+	item := domaindelivery.KubernetesImportEntityRef{Created: insert.RowsAffected == 1}
+	if err := tx.Raw(`SELECT id, app_key, name FROM applications WHERE app_key = ? LIMIT 1`, applicationKey).Row().Scan(&item.ID, &item.Key, &item.Name); err != nil {
+		return domaindelivery.KubernetesImportEntityRef{}, fmt.Errorf("read imported application: %w", err)
+	}
+	return item, nil
+}
+
+func importEnvironment(tx *gorm.DB, environmentKey, environmentName string) (domaindelivery.KubernetesImportEntityRef, error) {
+	id := uuid.NewString()
+	now := time.Now().UTC()
+	insert := tx.Exec(`
+		INSERT INTO delivery_environments (id, environment_key, name, stage_level, sort_order, is_production, requires_approval, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, 0, 0, false, false, true, ?, ?)
+		ON CONFLICT (environment_key) DO NOTHING
+	`, id, environmentKey, environmentName, now, now)
+	if insert.Error != nil {
+		return domaindelivery.KubernetesImportEntityRef{}, fmt.Errorf("import delivery environment: %w", insert.Error)
+	}
+	item := domaindelivery.KubernetesImportEntityRef{Created: insert.RowsAffected == 1}
+	if err := tx.Raw(`SELECT id, environment_key, name FROM delivery_environments WHERE environment_key = ? LIMIT 1`, environmentKey).Row().Scan(&item.ID, &item.Key, &item.Name); err != nil {
+		return domaindelivery.KubernetesImportEntityRef{}, fmt.Errorf("read imported delivery environment: %w", err)
+	}
+	return item, nil
+}
+
+func importApplicationEnvironment(tx *gorm.DB, applicationID, environmentID, ownershipMode string) (string, bool, error) {
+	id := uuid.NewString()
+	now := time.Now().UTC()
+	actionKind := "deploy"
+	if ownershipMode == "observe_only" {
+		actionKind = "observe_only"
+	}
+	releasePolicy, _ := json.Marshal(map[string]any{"actionKind": actionKind, "requiresApproval": false, "autoRollback": false})
+	insert := tx.Exec(`
+		INSERT INTO application_environments (id, application_id, environment_id, build_policy, release_policy, resource_selector, created_at, updated_at)
+		VALUES (?, ?, ?, '{}', ?, '{}', ?, ?)
+		ON CONFLICT (application_id, environment_id) DO NOTHING
+	`, id, applicationID, environmentID, string(releasePolicy), now, now)
+	if insert.Error != nil {
+		return "", false, fmt.Errorf("import application environment: %w", insert.Error)
+	}
+	if err := tx.Raw(`SELECT id FROM application_environments WHERE application_id = ? AND environment_id = ? LIMIT 1`, applicationID, environmentID).Row().Scan(&id); err != nil {
+		return "", false, fmt.Errorf("read imported application environment: %w", err)
+	}
+	return id, insert.RowsAffected == 1, nil
+}
+
+func importApplicationService(tx *gorm.DB, applicationID string, input domaindelivery.KubernetesServiceImportInput, workload domaindelivery.KubernetesWorkloadImportInput) (domaindelivery.KubernetesImportedService, error) {
+	serviceKey := "k8s-" + strings.ToLower(workload.WorkloadKind) + "-" + workload.WorkloadName
+	expected := kubernetesImportMetadata(input, workload)
+	metadata, _ := json.Marshal(expected)
+	id := uuid.NewString()
+	now := time.Now().UTC()
+	insert := tx.Exec(`
+		INSERT INTO application_services (id, application_id, service_key, service_name, service_kind, enabled, metadata, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'kubernetes_workload', true, ?, ?, ?)
+		ON CONFLICT (application_id, service_key) DO NOTHING
+	`, id, applicationID, serviceKey, workload.WorkloadName, string(metadata), now, now)
+	if insert.Error != nil {
+		return domaindelivery.KubernetesImportedService{}, fmt.Errorf("import application service %s: %w", serviceKey, insert.Error)
+	}
+	var rawMetadata []byte
+	item := domaindelivery.KubernetesImportedService{WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName, Created: insert.RowsAffected == 1}
+	if err := tx.Raw(`SELECT id, service_key, service_name, metadata FROM application_services WHERE application_id = ? AND service_key = ? LIMIT 1`, applicationID, serviceKey).Row().Scan(&item.ID, &item.Key, &item.Name, &rawMetadata); err != nil {
+		return domaindelivery.KubernetesImportedService{}, fmt.Errorf("read imported application service %s: %w", serviceKey, err)
+	}
+	if !item.Created && !matchesImportMetadata(rawMetadata, expected, "ownershipMode") {
+		return domaindelivery.KubernetesImportedService{}, fmt.Errorf("%w: application service %s is already owned by another source", apperrors.ErrConflict, serviceKey)
+	}
+	if !item.Created {
+		if err := tx.Exec(`UPDATE application_services SET metadata = ?, updated_at = ? WHERE id = ?`, string(metadata), now, item.ID).Error; err != nil {
+			return domaindelivery.KubernetesImportedService{}, fmt.Errorf("update imported application service %s: %w", serviceKey, err)
+		}
+	}
+	return item, nil
+}
+
+func importReleaseTarget(tx *gorm.DB, bindingID string, service domaindelivery.KubernetesImportedService, input domaindelivery.KubernetesServiceImportInput, workload domaindelivery.KubernetesWorkloadImportInput) (domaindelivery.KubernetesImportedTarget, error) {
+	expected := kubernetesImportMetadata(input, workload)
+	expected["serviceId"] = service.ID
+	expected["serviceKey"] = service.Key
+	var item domaindelivery.KubernetesImportedTarget
+	var existingBindingID string
+	var rawMetadata []byte
+	err := tx.Raw(`
+		SELECT id, application_environment_id, workload_kind, workload_name, metadata
+		FROM release_targets
+		WHERE cluster_id = ? AND namespace = ? AND workload_kind = ? AND workload_name = ?
+		ORDER BY created_at ASC
+		LIMIT 1
+	`, input.ClusterID, input.Namespace, workload.WorkloadKind, workload.WorkloadName).Row().Scan(&item.ID, &existingBindingID, &item.WorkloadKind, &item.WorkloadName, &rawMetadata)
+	if err == nil {
+		if existingBindingID != bindingID || !matchesImportMetadata(rawMetadata, expected, "ownershipMode") {
+			return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("%w: release target %s/%s is already owned by another source", apperrors.ErrConflict, workload.WorkloadKind, workload.WorkloadName)
+		}
+		executorKind, enabled := importTargetExecution(input.OwnershipMode, "k8s_job_runner")
+		metadata, _ := json.Marshal(expected)
+		if updateErr := tx.Exec(`UPDATE release_targets SET executor_kind = ?, metadata = ?, enabled = ?, updated_at = ? WHERE id = ?`, executorKind, string(metadata), enabled, time.Now().UTC(), item.ID).Error; updateErr != nil {
+			return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("update imported release target %s/%s: %w", workload.WorkloadKind, workload.WorkloadName, updateErr)
+		}
+		return item, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("read imported release target: %w", err)
+	}
+	metadata, _ := json.Marshal(expected)
+	item = domaindelivery.KubernetesImportedTarget{ID: uuid.NewString(), WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName, Created: true}
+	now := time.Now().UTC()
+	executorKind, enabled := importTargetExecution(input.OwnershipMode, "k8s_job_runner")
+	if err := tx.Exec(`
+		INSERT INTO release_targets (id, application_environment_id, cluster_id, namespace, target_kind, executor_kind, workload_kind, workload_name, metadata, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'k8s_workload', ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, bindingID, input.ClusterID, input.Namespace, executorKind, workload.WorkloadKind, workload.WorkloadName, string(metadata), enabled, now, now).Error; err != nil {
+		return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("import release target %s/%s: %w", workload.WorkloadKind, workload.WorkloadName, err)
+	}
+	return item, nil
+}
+
+func kubernetesImportMetadata(input domaindelivery.KubernetesServiceImportInput, workload domaindelivery.KubernetesWorkloadImportInput) map[string]string {
+	return map[string]string{
+		"importSource": "kubernetes", "ownershipMode": input.OwnershipMode, "clusterId": input.ClusterID,
+		"namespace": input.Namespace, "workloadKind": workload.WorkloadKind, "workloadName": workload.WorkloadName,
+	}
+}
+
+func importHelmApplicationService(tx *gorm.DB, applicationID string, input domaindelivery.HelmReleaseImportInput, release domaindelivery.HelmReleaseImportItem) (domaindelivery.HelmImportedService, error) {
+	serviceKey := "helm-" + release.ReleaseName
+	expected := helmImportMetadata(input, release)
+	metadata, _ := json.Marshal(expected)
+	id := uuid.NewString()
+	now := time.Now().UTC()
+	insert := tx.Exec(`
+		INSERT INTO application_services (id, application_id, service_key, service_name, service_kind, enabled, metadata, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'helm_release', true, ?, ?, ?)
+		ON CONFLICT (application_id, service_key) DO NOTHING
+	`, id, applicationID, serviceKey, release.ReleaseName, string(metadata), now, now)
+	if insert.Error != nil {
+		return domaindelivery.HelmImportedService{}, fmt.Errorf("import Helm application service %s: %w", serviceKey, insert.Error)
+	}
+	var rawMetadata []byte
+	item := domaindelivery.HelmImportedService{ReleaseName: release.ReleaseName, Created: insert.RowsAffected == 1}
+	if err := tx.Raw(`SELECT id, service_key, service_name, metadata FROM application_services WHERE application_id = ? AND service_key = ? LIMIT 1`, applicationID, serviceKey).Row().Scan(&item.ID, &item.Key, &item.Name, &rawMetadata); err != nil {
+		return domaindelivery.HelmImportedService{}, fmt.Errorf("read imported Helm application service %s: %w", serviceKey, err)
+	}
+	if !item.Created && !matchesImportMetadata(rawMetadata, expected, "ownershipMode", "revision", "status", "chart", "appVersion", "storageDriver") {
+		return domaindelivery.HelmImportedService{}, fmt.Errorf("%w: application service %s is already owned by another source", apperrors.ErrConflict, serviceKey)
+	}
+	if !item.Created {
+		if err := tx.Exec(`UPDATE application_services SET metadata = ?, updated_at = ? WHERE id = ?`, string(metadata), now, item.ID).Error; err != nil {
+			return domaindelivery.HelmImportedService{}, fmt.Errorf("update imported Helm application service %s: %w", serviceKey, err)
+		}
+	}
+	return item, nil
+}
+
+func importHelmReleaseTarget(tx *gorm.DB, bindingID string, service domaindelivery.HelmImportedService, input domaindelivery.HelmReleaseImportInput, release domaindelivery.HelmReleaseImportItem) (domaindelivery.HelmImportedTarget, error) {
+	expected := helmImportMetadata(input, release)
+	expected["serviceId"] = service.ID
+	expected["serviceKey"] = service.Key
+	var item domaindelivery.HelmImportedTarget
+	var existingBindingID string
+	var rawMetadata []byte
+	err := tx.Raw(`
+		SELECT id, application_environment_id, workload_name, metadata
+		FROM release_targets
+		WHERE cluster_id = ? AND namespace = ? AND workload_kind = 'HelmRelease' AND workload_name = ?
+		ORDER BY created_at ASC
+		LIMIT 1
+	`, input.ClusterID, input.Namespace, release.ReleaseName).Row().Scan(&item.ID, &existingBindingID, &item.ReleaseName, &rawMetadata)
+	executorKind, enabled := importTargetExecution(input.OwnershipMode, "helm_sdk")
+	metadata, _ := json.Marshal(expected)
+	if err == nil {
+		if existingBindingID != bindingID || !matchesImportMetadata(rawMetadata, expected, "ownershipMode", "revision", "status", "chart", "appVersion", "storageDriver") {
+			return domaindelivery.HelmImportedTarget{}, fmt.Errorf("%w: Helm release target %s is already owned by another source", apperrors.ErrConflict, release.ReleaseName)
+		}
+		if updateErr := tx.Exec(`UPDATE release_targets SET executor_kind = ?, metadata = ?, enabled = ?, updated_at = ? WHERE id = ?`, executorKind, string(metadata), enabled, time.Now().UTC(), item.ID).Error; updateErr != nil {
+			return domaindelivery.HelmImportedTarget{}, fmt.Errorf("update imported Helm release target %s: %w", release.ReleaseName, updateErr)
+		}
+		return item, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return domaindelivery.HelmImportedTarget{}, fmt.Errorf("read imported Helm release target: %w", err)
+	}
+	item = domaindelivery.HelmImportedTarget{ID: uuid.NewString(), ReleaseName: release.ReleaseName, Created: true}
+	now := time.Now().UTC()
+	if err := tx.Exec(`
+		INSERT INTO release_targets (id, application_environment_id, cluster_id, namespace, target_kind, executor_kind, workload_kind, workload_name, metadata, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, 'helm_release', ?, 'HelmRelease', ?, ?, ?, ?, ?)
+	`, item.ID, bindingID, input.ClusterID, input.Namespace, executorKind, release.ReleaseName, string(metadata), enabled, now, now).Error; err != nil {
+		return domaindelivery.HelmImportedTarget{}, fmt.Errorf("import Helm release target %s: %w", release.ReleaseName, err)
+	}
+	return item, nil
+}
+
+func helmImportMetadata(input domaindelivery.HelmReleaseImportInput, release domaindelivery.HelmReleaseImportItem) map[string]string {
+	return map[string]string{
+		"importSource": "helm", "ownershipMode": input.OwnershipMode, "clusterId": input.ClusterID,
+		"namespace": input.Namespace, "releaseName": release.ReleaseName, "revision": release.Revision,
+		"status": release.Status, "chart": release.Chart, "appVersion": release.AppVersion, "storageDriver": release.StorageDriver,
+	}
+}
+
+func matchesImportMetadata(raw []byte, expected map[string]string, ignoredKeys ...string) bool {
+	var actual map[string]any
+	if json.Unmarshal(raw, &actual) != nil {
+		return false
+	}
+	ignored := make(map[string]struct{}, len(ignoredKeys))
+	for _, key := range ignoredKeys {
+		ignored[key] = struct{}{}
+	}
+	for key, value := range expected {
+		if _, ok := ignored[key]; ok {
+			continue
+		}
+		if actual[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func importTargetExecution(ownershipMode, managedExecutor string) (string, bool) {
+	if ownershipMode == "managed" {
+		return managedExecutor, true
+	}
+	return "observe_only", false
+}
+
 func (r *Repository) ListReleaseBundles(ctx context.Context, filter domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
 	limit := filter.Limit
 	if limit <= 0 {

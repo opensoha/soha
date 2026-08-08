@@ -132,6 +132,23 @@ func TestCreateApplicationUsesCreateActionForScopeAuthorization(t *testing.T) {
 	}
 }
 
+func TestCreateApplicationAllowsBoundaryOnlyInput(t *testing.T) {
+	repo := &captureAppRepository{}
+	service := New(repo, nil, &captureAppAuthorizer{allowed: true}, nil, nil)
+
+	item, err := service.Create(context.Background(), domainidentity.Principal{UserID: "user-1"}, domainapp.UpsertInput{
+		Name:    "Payments",
+		Key:     "payments",
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if item.ID == "" || item.Group != "" || item.Language != "" {
+		t.Fatalf("created application = %#v, want boundary-only application", item)
+	}
+}
+
 func TestUpdateApplicationUsesUpdateActionForScopeAuthorization(t *testing.T) {
 	repo := &captureAppRepository{items: map[string]domainapp.App{
 		"app-1": {ID: "app-1", Name: "Payments", Key: "payments", Group: "core, retail", BusinessLineID: "retail", Language: "go"},

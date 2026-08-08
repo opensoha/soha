@@ -77,6 +77,7 @@ const (
 	PermDeliveryManifestDriftAdopt        = "delivery.manifest-drift.adopt"
 	PermDeliveryManifestFieldsForce       = "delivery.manifest-fields.force"
 	PermObserveMonitoringView             = "observe.monitoring.view"
+	PermObserveDashboardsManage           = "observe.dashboards.manage"
 	PermObserveLogDataSourcesView         = "observe.log-data-sources.view"
 	PermObserveLogDataSourcesManage       = "observe.log-data-sources.manage"
 	PermObserveLogCollectionManage        = "observe.log-collection.manage"
@@ -228,6 +229,9 @@ const (
 	PermSettingsRuntimeConfigManage       = "settings.runtime-config.manage"
 	PermSettingsSystemIntegrationsView    = "settings.system-integrations.view"
 	PermSettingsSystemIntegrationsManage  = "settings.system-integrations.manage"
+	PermSoftwarePackageCreate             = "software.package.create"
+	PermSoftwarePackageDelete             = "software.package.delete"
+	PermSoftwarePackageView               = "software.package.view"
 )
 
 var (
@@ -300,6 +304,7 @@ var allPermissionKeySet = []string{
 	PermDeliveryManifestDriftAdopt,
 	PermDeliveryManifestFieldsForce,
 	PermObserveMonitoringView,
+	PermObserveDashboardsManage,
 	PermObserveLogDataSourcesView,
 	PermObserveLogDataSourcesManage,
 	PermObserveLogCollectionManage,
@@ -451,6 +456,9 @@ var allPermissionKeySet = []string{
 	PermSettingsRuntimeConfigManage,
 	PermSettingsSystemIntegrationsView,
 	PermSettingsSystemIntegrationsManage,
+	PermSoftwarePackageCreate,
+	PermSoftwarePackageDelete,
+	PermSoftwarePackageView,
 }
 
 func allPermissionKeys() []string {
@@ -529,6 +537,7 @@ func pluralPermissionResource(kind string) string {
 }
 
 var opsRolePermissionKeys = []string{
+	PermSoftwarePackageView,
 	PermWorkspaceApplicationView,
 	PermWorkspaceResourceView,
 	PermOverviewView,
@@ -681,6 +690,7 @@ var opsRolePermissionKeys = []string{
 	PermSettingsRuntimeConfigView,
 }
 var developerRolePermissionKeys = []string{
+	PermSoftwarePackageView,
 	PermWorkspaceApplicationView,
 	PermWorkspaceResourceView,
 	PermOverviewView,
@@ -748,6 +758,7 @@ var developerRolePermissionKeys = []string{
 	PermDockerOperationsView,
 }
 var testerRolePermissionKeys = []string{
+	PermSoftwarePackageView,
 	PermWorkspaceApplicationView,
 	PermOverviewView,
 	PermDeliveryApplicationsView,
@@ -758,6 +769,7 @@ var testerRolePermissionKeys = []string{
 	PermIdentityPortalView,
 }
 var readonlyRolePermissionKeys = []string{
+	PermSoftwarePackageView,
 	PermWorkspaceApplicationView,
 	PermWorkspaceResourceView,
 	PermOverviewView,
@@ -805,6 +817,7 @@ var readonlyRolePermissionKeys = []string{
 	PermDockerOperationsView,
 }
 var auditorRolePermissionKeys = []string{
+	PermSoftwarePackageView,
 	PermWorkspaceResourceView,
 	PermOverviewView,
 	PermObserveMonitoringView,

@@ -68,6 +68,8 @@ type Service struct {
 	httpClient            *http.Client
 	automation            AlertAutomationHandler
 	dataSources           DataSourceRepository
+	dashboards            DashboardRepository
+	audit                 AuditRecorder
 	workflow              WorkflowExecutor
 	ruleInterval          time.Duration
 	logs                  LogTelemetry
@@ -99,6 +101,8 @@ type Dependencies struct {
 	Integrations          AlertIntegrationRepository
 	Events                EventWriter
 	DataSources           DataSourceRepository
+	Dashboards            DashboardRepository
+	Audit                 AuditRecorder
 	Permissions           *appaccess.PermissionResolver
 	Enabled               bool
 	WebhookKeys           keyring.Ring
@@ -171,6 +175,8 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 		integrations:          deps.Integrations,
 		events:                deps.Events,
 		dataSources:           deps.DataSources,
+		dashboards:            deps.Dashboards,
+		audit:                 deps.Audit,
 		permissions:           deps.Permissions,
 		enabled:               deps.Enabled,
 		webhookKeys:           deps.WebhookKeys,

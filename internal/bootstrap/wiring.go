@@ -54,6 +54,7 @@ import (
 	appscopegrant "github.com/opensoha/soha/internal/application/scopegrant"
 	appsecret "github.com/opensoha/soha/internal/application/secret"
 	appsettings "github.com/opensoha/soha/internal/application/settings"
+	appsoftware "github.com/opensoha/soha/internal/application/software"
 	appsystemintegration "github.com/opensoha/soha/internal/application/systemintegration"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	appworkflow "github.com/opensoha/soha/internal/application/workflow"
@@ -81,6 +82,8 @@ import (
 	releasebackendinfra "github.com/opensoha/soha/internal/infrastructure/releasebackend"
 	resourcebackendinfra "github.com/opensoha/soha/internal/infrastructure/resourcebackend"
 	samlinfra "github.com/opensoha/soha/internal/infrastructure/saml"
+	softwarefetchinfra "github.com/opensoha/soha/internal/infrastructure/softwarefetch"
+	softwarestoreinfra "github.com/opensoha/soha/internal/infrastructure/softwarestore"
 	vaultsecretinfra "github.com/opensoha/soha/internal/infrastructure/vaultsecret"
 	virtualizationinfra "github.com/opensoha/soha/internal/infrastructure/virtualization"
 	webauthninfra "github.com/opensoha/soha/internal/infrastructure/webauthn"
@@ -100,6 +103,7 @@ import (
 	catalogrepo "github.com/opensoha/soha/internal/repository/catalog"
 	clusterrepo "github.com/opensoha/soha/internal/repository/cluster"
 	copilotrepo "github.com/opensoha/soha/internal/repository/copilot"
+	dashboardrepo "github.com/opensoha/soha/internal/repository/dashboard"
 	deliveryrepo "github.com/opensoha/soha/internal/repository/delivery"
 	directorysyncrepo "github.com/opensoha/soha/internal/repository/directorysync"
 	dockerrepo "github.com/opensoha/soha/internal/repository/docker"
@@ -132,15 +136,17 @@ import (
 )
 
 type infrastructure struct {
-	logger         *zap.Logger
-	databaseStore  *dbinfra.Store
-	clusterManager *k8sinfra.Manager
-	informers      *informerinfra.Service
-	agentRegistry  *agentinfra.Registry
-	mcpRegistry    *mcpinfra.Registry
-	runtimeMetrics *runtimeobs.Registry
-	lifecycleCtx   context.Context
-	cancel         context.CancelFunc
+	logger          *zap.Logger
+	databaseStore   *dbinfra.Store
+	clusterManager  *k8sinfra.Manager
+	informers       *informerinfra.Service
+	agentRegistry   *agentinfra.Registry
+	mcpRegistry     *mcpinfra.Registry
+	runtimeMetrics  *runtimeobs.Registry
+	softwareFetcher *softwarefetchinfra.Fetcher
+	softwareStore   *softwarestoreinfra.Store
+	lifecycleCtx    context.Context
+	cancel          context.CancelFunc
 }
 
 type repositories struct {
@@ -159,6 +165,7 @@ type repositories struct {
 	registryRepository          *registryrepo.Repository
 	releaseRepository           *releaserepo.Repository
 	copilotRepository           *copilotrepo.Repository
+	dashboardRepository         *dashboardrepo.Repository
 	identityRepository          *userrepo.Repository
 	settingsRepository          *settingsrepo.Repository
 	scopeGrantRepository        *scopegrantrepo.Repository
@@ -217,6 +224,7 @@ type coreServices struct {
 	releaseService           *apprelease.Service
 	integrationService       *appintegration.Service
 	pluginService            *appplugin.Service
+	softwareService          *appsoftware.Service
 	identityProviderService  *appidentityprovider.Service
 	identityMFAService       *appmfa.Service
 	providerPortalService    *appproviderportal.Service
@@ -284,6 +292,12 @@ func newInfrastructure(ctx context.Context, cfg *cfgpkg.Config) (*infrastructure
 		cancel()
 		return nil, fmt.Errorf("build logger: %w", err)
 	}
+	softwareStore, err := softwarestoreinfra.New(cfg.Software.StorageDir)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("build software package storage: %w", err)
+	}
+	softwareFetcher := softwarefetchinfra.New(appsoftware.MaxPackageBytes)
 
 	databaseStore, err := dbinfra.New(cfg.Database)
 	if err != nil {
@@ -323,16 +337,27 @@ func newInfrastructure(ctx context.Context, cfg *cfgpkg.Config) (*infrastructure
 	}
 
 	return &infrastructure{
-		logger:         logger,
-		databaseStore:  databaseStore,
-		clusterManager: clusterManager,
-		informers:      informers,
-		agentRegistry:  agentinfra.NewRegistry(cfg.MCP.DefaultTimeout),
-		mcpRegistry:    mcpinfra.NewRegistry(cfg.MCP.DefaultTimeout),
-		runtimeMetrics: runtimeobs.NewRegistry(),
-		lifecycleCtx:   lifecycleCtx,
-		cancel:         cancel,
+		logger:          logger,
+		databaseStore:   databaseStore,
+		clusterManager:  clusterManager,
+		informers:       informers,
+		agentRegistry:   newLifecycleAgentRegistry(lifecycleCtx, cfg.MCP.DefaultTimeout),
+		mcpRegistry:     mcpinfra.NewRegistry(cfg.MCP.DefaultTimeout),
+		runtimeMetrics:  runtimeobs.NewRegistry(),
+		softwareFetcher: softwareFetcher,
+		softwareStore:   softwareStore,
+		lifecycleCtx:    lifecycleCtx,
+		cancel:          cancel,
 	}, nil
+}
+
+func newLifecycleAgentRegistry(ctx context.Context, timeout time.Duration) *agentinfra.Registry {
+	registry := agentinfra.NewRegistry(timeout)
+	go func() {
+		<-ctx.Done()
+		_ = registry.Close()
+	}()
+	return registry
 }
 
 func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositories {
@@ -355,6 +380,7 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		registryRepository:          registryrepo.New(db),
 		releaseRepository:           releaserepo.New(db),
 		copilotRepository:           copilotrepo.New(db),
+		dashboardRepository:         dashboardrepo.New(db),
 		identityRepository:          userrepo.New(db),
 		settingsRepository:          settingsrepo.New(db),
 		scopeGrantRepository:        scopegrantrepo.New(db),
@@ -387,6 +413,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	permissionResolver := appaccess.NewPermissionResolver(repos.policyRepository)
 	auditService := appaudit.New(repos.auditRepository, permissionResolver)
 	operationService := appoperation.New(repos.operationRepository, permissionResolver)
+	softwareService := appsoftware.New(infra.softwareStore, infra.softwareFetcher, permissionResolver, auditService, operationService)
 	vaultReader, err := newVaultKV2Reader(cfg.Security)
 	if err != nil {
 		return nil, err
@@ -399,6 +426,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	systemIntegrationService.RegisterSourceAdapter("gitlab", gitLabSourceAdapterFactory{})
 	systemIntegrationService.RegisterOAuthProvider("gitlab", gitlabinfra.NewOAuthProvider())
 	runtimeConfigService, err := appruntimeconfig.New(ctx, repos.runtimeConfigRepository, appruntimeconfig.NewRegistry(appruntimeconfig.RegistryOptions{
+		AccessURL:                     cfg.HTTP.AccessURL,
 		AssistantGlobal:               cfg.Modules.AI.FeatureFlags()["assistant.global"],
 		ModuleHome:                    cfg.Modules.Home.Enabled,
 		ModuleAI:                      cfg.Modules.AI.Enabled,
@@ -494,13 +522,13 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	directoryScheduler.SetInstrumentation(infra.runtimeMetrics)
 	go directoryScheduler.Start(infra.lifecycleCtx)
 
-	platformCore, err := newPlatformCoreServices(ctx, cfg, infra, repos, permissionResolver, auditService, operationService, accessService, identityService)
+	platformCore, err := newPlatformCoreServices(ctx, cfg, infra, repos, permissionResolver, auditService, operationService, accessService, identityService, runtimeConfigService)
 	if err != nil {
 		infra.cancel()
 		return nil, err
 	}
 
-	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, systemIntegrationService, identityService, secretService)
+	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, systemIntegrationService, identityService, secretService, platformCore.resources.Helm())
 	if err != nil {
 		return nil, err
 	}
@@ -572,6 +600,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		releaseService:           deliveryCore.releases,
 		integrationService:       deliveryCore.integration,
 		pluginService:            deliveryCore.plugins,
+		softwareService:          softwareService,
 		pluginExtensions:         deliveryCore.pluginExtensions,
 		identityProviderService:  deliveryCore.identityProvider,
 		providerPortalService:    deliveryCore.providerPortal,
@@ -602,7 +631,7 @@ type platformCoreServices struct {
 	observability *appobservability.Service
 }
 
-func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, streamTickets appresource.LogStreamTicketIssuer) (*platformCoreServices, error) {
+func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, streamTickets appresource.LogStreamTicketIssuer, accessURL appcluster.AccessURLResolver) (*platformCoreServices, error) {
 	clusterService, err := appcluster.New(
 		infra.clusterManager, infra.clusterManager, infra.informers,
 		func(connection domaincluster.Connection) (appcluster.AgentSummaryClient, error) {
@@ -613,6 +642,7 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 	if err != nil {
 		return nil, fmt.Errorf("build cluster service: %w", err)
 	}
+	clusterService.SetAccessURLResolver(accessURL)
 	clusterService.SetSyncLimit(cfg.Runtime.ClusterSyncParallelism)
 	clusterService.SetInstrumentation(infra.logger, infra.runtimeMetrics)
 	clusterService.Start(infra.lifecycleCtx)
@@ -651,7 +681,8 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 		DeliveryLogs: repos.alertRepository, Rules: repos.alertRepository, RuleRuns: repos.alertRepository, AlertEvents: repos.alertRepository,
 		NotificationPolicies: repos.alertRepository, NotificationTemplates: repos.alertRepository, HealingPolicies: repos.alertRepository, HealingRuns: repos.alertRepository,
 		OnCallSchedules: repos.alertRepository, OnCallRotations: repos.alertRepository, OnCallEscalations: repos.alertRepository, OnCallAssignments: repos.alertRepository,
-		Integrations: repos.alertRepository, Events: repos.eventRepository, DataSources: repos.copilotRepository, Permissions: permissions,
+		Integrations: repos.alertRepository, Events: repos.eventRepository, DataSources: repos.copilotRepository,
+		Dashboards: repos.dashboardRepository, Audit: audit, Permissions: permissions,
 		Enabled: cfg.Monitoring.Enabled, WebhookKeys: cfg.Monitoring.WebhookKeys,
 	}, appmonitoring.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), mcptracesinfra.DefaultRegistry()))
 	if err != nil {
@@ -675,7 +706,7 @@ type deliveryCoreServices struct {
 	providerPortal   *appproviderportal.Service
 }
 
-func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, sources appregistry.GitLabClient, identity *appidentity.Service, secretService *appsecret.Service) (*deliveryCoreServices, error) {
+func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *repositories, permissions *appaccess.PermissionResolver, audit *appaudit.Service, operations *appoperation.Service, access *appaccess.Service, sources appregistry.GitLabClient, identity *appidentity.Service, secretService *appsecret.Service, helm apprelease.HelmReleaseRuntime) (*deliveryCoreServices, error) {
 	applications := appregistry.New(repos.applicationRepository, sources, access, audit, operations)
 	applications.SetPermissionResolver(permissions)
 	executionService := appexecution.New(
@@ -693,6 +724,7 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 		func(connection domaincluster.Connection) (apprelease.AgentDeploymentClient, error) {
 			return infra.agentRegistry.ClientFor(connection)
 		},
+		helm,
 	)
 	marketplaceProvider, err := newMarketplaceProvider(cfg)
 	if err != nil {
@@ -1114,12 +1146,13 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		manifestDeclarativeService.Start(infra.lifecycleCtx)
 	}
 	return apiRoutes.Dependencies{
-		System:        apiHandlers.NewSystemHandler(infra.databaseStore, infra.runtimeMetrics),
-		Platform:      platform,
-		Announcements: apiHandlers.NewAnnouncementHandlerWithServices(core.announcementService, core.announcementService),
-		Menu:          apiHandlers.NewMenuHandler(core.menuService),
-		Module:        apiHandlers.NewModuleHandler(core.moduleService),
-		ModuleState:   core.runtimeConfigService,
+		System:           apiHandlers.NewSystemHandler(infra.databaseStore, infra.runtimeMetrics),
+		Platform:         platform,
+		AgentConnections: apiHandlers.NewAgentConnectionHandler(core.clusterService, infra.agentRegistry),
+		Announcements:    apiHandlers.NewAnnouncementHandlerWithServices(core.announcementService, core.announcementService),
+		Menu:             apiHandlers.NewMenuHandler(core.menuService),
+		Module:           apiHandlers.NewModuleHandler(core.moduleService),
+		ModuleState:      core.runtimeConfigService,
 		Monitoring: apiHandlers.NewMonitoringHandler(apiHandlers.MonitoringDependencies{
 			Alerts: core.monitoringService, Channels: core.monitoringService, Routes: core.monitoringService,
 			Silences: core.monitoringService, DeliveryLogs: core.monitoringService, Webhooks: core.monitoringService,
@@ -1175,6 +1208,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Plugins: apiHandlers.NewPluginHandlerWithServices(
 			core.pluginService, core.pluginService, core.pluginService, core.pluginService,
 		),
+		Software:       apiHandlers.NewSoftwareHandler(core.softwareService),
 		Compute:        apiHandlers.NewComputeHandler(delivery.computeService),
 		Virtualization: newVirtualizationHandler(delivery.virtualizationService),
 		Docker:         newDockerHandler(delivery.dockerService, cfg.Runtime.ExecutionRunnerKeys),
@@ -1215,7 +1249,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 func newDeliveryHandler(service *appdelivery.Service, keys keyring.Ring) *apiHandlers.DeliveryHandler {
 	return apiHandlers.NewDeliveryHandlerWithServices(apiHandlers.DeliveryServices{
 		Applications: service, Releases: service, Executions: service, Runtime: service,
-		Blueprints: service, Drafts: service, Actions: service, Runner: service, Logs: service,
+		Imports: service, Blueprints: service, Drafts: service, Actions: service, Runner: service, Logs: service,
 	}, keys)
 }
 

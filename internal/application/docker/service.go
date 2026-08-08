@@ -313,7 +313,10 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 		return domaindocker.Operation{}, err
 	}
 	if vmTask != nil {
-		task = s.markQuickCreateOperationRunning(ctx, task, *vmTask)
+		task, err = s.markQuickCreateOperationRunning(ctx, task, *vmTask)
+		if err != nil {
+			return domaindocker.Operation{}, err
+		}
 	}
 	s.recordOperation(ctx, principal, "docker.host.provision.enqueue", host.ID, host.Name, "success", "enqueued docker host provisioning", map[string]any{"operationId": task.ID})
 	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
@@ -372,17 +375,18 @@ func (s *Service) attachQuickCreateTask(ctx context.Context, host domaindocker.H
 	return updated
 }
 
-func (s *Service) markQuickCreateOperationRunning(ctx context.Context, operation domaindocker.Operation, task HostProvisionTask) domaindocker.Operation {
+func (s *Service) markQuickCreateOperationRunning(ctx context.Context, operation domaindocker.Operation, task HostProvisionTask) (domaindocker.Operation, error) {
 	now := time.Now().UTC()
 	operation.Status = OperationStatusRunning
 	operation.StartedAt = &now
 	operation.LastHeartbeatAt = &now
 	operation.Result = mergeMap(operation.Result, map[string]any{"virtualizationTaskId": task.ID, "virtualizationTaskStatus": task.Status, "message": "virtualization VM creation task enqueued"})
-	if updated, err := s.repo.UpdateOperation(ctx, operation); err == nil {
-		operation = updated
+	updated, err := s.repo.UpdateOperation(ctx, operation)
+	if err != nil {
+		return domaindocker.Operation{}, err
 	}
-	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: operation.ID, LogLevel: "info", Message: "virtualization VM creation task enqueued", Payload: map[string]any{"virtualizationTaskId": task.ID, "provider": task.Provider}})
-	return operation
+	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "info", Message: "virtualization VM creation task enqueued", Payload: map[string]any{"virtualizationTaskId": task.ID, "provider": task.Provider}})
+	return updated, nil
 }
 
 func (s *Service) ListProjects(ctx context.Context, principal domainidentity.Principal, filter domaindocker.ProjectFilter) (domaindocker.Page[domaindocker.Project], error) {
@@ -968,7 +972,7 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 	}
 	kinds := input.OperationKinds
 	if len(kinds) == 0 {
-		kinds = []string{OperationKindContainerStart, OperationKindProjectDeploy, OperationKindServiceAction, OperationKindPortReserve, OperationKindHostSync}
+		kinds = []string{OperationKindHostProvision, OperationKindContainerStart, OperationKindProjectDeploy, OperationKindServiceAction, OperationKindPortReserve, OperationKindHostSync}
 	}
 	item, err := s.repo.ClaimOperation(ctx, workerID, input.AgentID, input.HostIDs, kinds, time.Now().UTC())
 	if err != nil {
@@ -1015,7 +1019,11 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	if workerID == "" {
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker worker id is required", apperrors.ErrInvalidArgument)
 	}
-	if strings.TrimSpace(item.ClaimedByWorkerID) != "" && strings.TrimSpace(item.ClaimedByWorkerID) != workerID {
+	claimedBy := strings.TrimSpace(item.ClaimedByWorkerID)
+	if claimedBy == "" {
+		return domaindocker.Operation{}, fmt.Errorf("%w: docker operation must be claimed before callback", apperrors.ErrAccessDenied)
+	}
+	if claimedBy != workerID {
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker operation is claimed by another worker", apperrors.ErrAccessDenied)
 	}
 	status := strings.TrimSpace(input.Status)
@@ -1024,6 +1032,9 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	}
 	if !validCallbackStatus(status) {
 		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported docker callback status %s", apperrors.ErrInvalidArgument, status)
+	}
+	if err := validateRuntimeEndpoint(stringValue(input.Payload, "endpoint")); err != nil {
+		return domaindocker.Operation{}, err
 	}
 	if operationTerminal(item.Status) {
 		return domaindocker.WithOperationState(item, time.Now().UTC()), nil
@@ -1052,6 +1063,18 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	}
 	s.applyCallbackRuntimeState(ctx, updated, status, input.Payload)
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func validateRuntimeEndpoint(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("%w: invalid docker runtime endpoint", apperrors.ErrInvalidArgument)
+	}
+	return nil
 }
 
 func (s *Service) enqueueOperation(ctx context.Context, principal domainidentity.Principal, kind, hostID, projectID, serviceID string, payload map[string]any) (domaindocker.Operation, error) {
@@ -1410,9 +1433,11 @@ func (s *Service) reconcileHostProvisionOperation(ctx context.Context, reader Ho
 			"message":            "virtualization VM created; waiting for docker agent registration",
 			"hostProvisionStage": "vm_created",
 		})
-		if updated, err := s.repo.UpdateOperation(ctx, item); err == nil {
-			item = updated
+		updated, err := s.repo.UpdateOperation(ctx, item)
+		if err != nil {
+			return
 		}
+		item = updated
 		s.touchProvisionedDockerHost(ctx, item, task, HostStatusWaitingAgent)
 		if !alreadyVMCreated {
 			_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
@@ -1431,9 +1456,11 @@ func (s *Service) reconcileHostProvisionOperation(ctx context.Context, reader Ho
 			"message":            firstNonEmpty(stringValue(task.Result, "error"), stringValue(task.Result, "message"), "virtualization VM provision failed"),
 			"hostProvisionStage": "vm_failed",
 		})
-		if updated, err := s.repo.UpdateOperation(ctx, item); err == nil {
-			item = updated
+		updated, err := s.repo.UpdateOperation(ctx, item)
+		if err != nil {
+			return
 		}
+		item = updated
 		s.touchProvisionedDockerHost(ctx, item, task, "degraded")
 		_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
 			ID:          uuid.NewString(),

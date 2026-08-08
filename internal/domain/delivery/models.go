@@ -494,6 +494,7 @@ type ApplicationDeliveryActionInput struct {
 	ImageTag                 string                        `json:"imageTag,omitempty"`
 	ReleaseName              string                        `json:"releaseName,omitempty"`
 	ContainerName            string                        `json:"containerName,omitempty"`
+	ValuesContent            string                        `json:"valuesContent,omitempty"`
 	Variables                map[string]any                `json:"variables,omitempty"`
 	BuildArgs                map[string]any                `json:"buildArgs,omitempty"`
 	ApprovalGranted          bool                          `json:"-"`
@@ -801,11 +802,124 @@ type Repository interface {
 	UpdateDeliveryPlan(context.Context, DeliveryPlan) (DeliveryPlan, error)
 }
 
-type TargetCandidate struct {
-	ClusterID    string            `json:"clusterId"`
-	Namespace    string            `json:"namespace"`
-	WorkloadKind string            `json:"workloadKind"`
-	WorkloadName string            `json:"workloadName"`
-	Containers   []string          `json:"containers,omitempty"`
-	Labels       map[string]string `json:"labels,omitempty"`
+type KubernetesRelatedResource struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+type KubernetesImportCandidate struct {
+	ClusterID        string                      `json:"clusterId"`
+	Namespace        string                      `json:"namespace"`
+	WorkloadKind     string                      `json:"workloadKind"`
+	WorkloadName     string                      `json:"workloadName"`
+	DesiredReplicas  int                         `json:"desiredReplicas"`
+	ReadyReplicas    int                         `json:"readyReplicas"`
+	Containers       []string                    `json:"containers,omitempty"`
+	Labels           map[string]string           `json:"labels,omitempty"`
+	RelatedResources []KubernetesRelatedResource `json:"relatedResources"`
+}
+
+type KubernetesImportCandidateFilter struct {
+	ClusterID string
+	Namespace string
+	Search    string
+	Limit     int
+}
+
+type KubernetesImportCandidatePage struct {
+	Items     []KubernetesImportCandidate `json:"items"`
+	Truncated bool                        `json:"truncated"`
+}
+
+type KubernetesWorkloadImportInput struct {
+	WorkloadKind string `json:"workloadKind"`
+	WorkloadName string `json:"workloadName"`
+}
+
+type KubernetesServiceImportInput struct {
+	ClusterID       string                          `json:"clusterId"`
+	Namespace       string                          `json:"namespace"`
+	ApplicationKey  string                          `json:"applicationKey"`
+	ApplicationName string                          `json:"applicationName"`
+	EnvironmentKey  string                          `json:"environmentKey"`
+	EnvironmentName string                          `json:"environmentName"`
+	OwnershipMode   string                          `json:"ownershipMode"`
+	Workloads       []KubernetesWorkloadImportInput `json:"workloads"`
+}
+
+type KubernetesImportEntityRef struct {
+	ID      string `json:"id"`
+	Key     string `json:"key"`
+	Name    string `json:"name"`
+	Created bool   `json:"created"`
+}
+
+type KubernetesImportedService struct {
+	ID           string `json:"id"`
+	Key          string `json:"key"`
+	Name         string `json:"name"`
+	WorkloadKind string `json:"workloadKind"`
+	WorkloadName string `json:"workloadName"`
+	Created      bool   `json:"created"`
+}
+
+type KubernetesImportedTarget struct {
+	ID           string `json:"id"`
+	WorkloadKind string `json:"workloadKind"`
+	WorkloadName string `json:"workloadName"`
+	Created      bool   `json:"created"`
+}
+
+type KubernetesServiceImportResult struct {
+	Application                   KubernetesImportEntityRef   `json:"application"`
+	Environment                   KubernetesImportEntityRef   `json:"environment"`
+	ApplicationEnvironmentID      string                      `json:"applicationEnvironmentId"`
+	ApplicationEnvironmentCreated bool                        `json:"applicationEnvironmentCreated"`
+	OwnershipMode                 string                      `json:"ownershipMode"`
+	Services                      []KubernetesImportedService `json:"services"`
+	Targets                       []KubernetesImportedTarget  `json:"targets"`
+}
+
+type HelmReleaseImportItem struct {
+	ReleaseName   string `json:"releaseName"`
+	Revision      string `json:"-"`
+	Status        string `json:"-"`
+	Chart         string `json:"-"`
+	AppVersion    string `json:"-"`
+	StorageDriver string `json:"-"`
+}
+
+type HelmReleaseImportInput struct {
+	ClusterID       string                  `json:"clusterId"`
+	Namespace       string                  `json:"namespace"`
+	ApplicationKey  string                  `json:"applicationKey"`
+	ApplicationName string                  `json:"applicationName"`
+	EnvironmentKey  string                  `json:"environmentKey"`
+	EnvironmentName string                  `json:"environmentName"`
+	OwnershipMode   string                  `json:"ownershipMode"`
+	Releases        []HelmReleaseImportItem `json:"releases"`
+}
+
+type HelmImportedService struct {
+	ID          string `json:"id"`
+	Key         string `json:"key"`
+	Name        string `json:"name"`
+	ReleaseName string `json:"releaseName"`
+	Created     bool   `json:"created"`
+}
+
+type HelmImportedTarget struct {
+	ID          string `json:"id"`
+	ReleaseName string `json:"releaseName"`
+	Created     bool   `json:"created"`
+}
+
+type HelmReleaseImportResult struct {
+	Application                   KubernetesImportEntityRef `json:"application"`
+	Environment                   KubernetesImportEntityRef `json:"environment"`
+	ApplicationEnvironmentID      string                    `json:"applicationEnvironmentId"`
+	ApplicationEnvironmentCreated bool                      `json:"applicationEnvironmentCreated"`
+	OwnershipMode                 string                    `json:"ownershipMode"`
+	Services                      []HelmImportedService     `json:"services"`
+	Targets                       []HelmImportedTarget      `json:"targets"`
 }

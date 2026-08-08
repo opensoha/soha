@@ -94,8 +94,11 @@ func TestVirtualizationMenusRequireWorkspaceResourcePermission(t *testing.T) {
 		t.Fatalf("virtualization menu should be visible when workspace and page permissions are both present")
 	}
 	storage := domainmenu.Record{ID: "virtualization-workbench-storage", Path: "/compute/virtualization/storage"}
-	if !isVisibleByPermissions(storage, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationImagesView}) {
-		t.Fatalf("virtualization storage menu should use the image view permission")
+	if isVisibleByPermissions(storage, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationImagesView}) {
+		t.Fatalf("virtualization storage menu must not borrow the image view permission")
+	}
+	if !isVisibleByPermissions(storage, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationStorageView}) {
+		t.Fatalf("virtualization storage menu should use the storage view permission")
 	}
 }
 
@@ -104,6 +107,9 @@ func TestVirtualizationRootMenuVisibleWithAnyVirtualizationPermission(t *testing
 
 	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationSyncView}) {
 		t.Fatalf("virtualization root menu should be visible with any virtualization view permission")
+	}
+	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationStorageView}) {
+		t.Fatalf("virtualization root menu should be visible with storage view permission")
 	}
 }
 
@@ -122,6 +128,7 @@ func TestComputeRootVisibleWithAnyChildReadPermission(t *testing.T) {
 	item := domainmenu.Record{ID: "compute-workbench", Path: "/compute"}
 	for _, permission := range []string{
 		appaccess.PermVirtualizationImagesView,
+		appaccess.PermVirtualizationStorageView,
 		appaccess.PermVirtualizationFlavorsView,
 		appaccess.PermVirtualizationSyncView,
 		appaccess.PermDockerTemplatesView,
@@ -311,5 +318,17 @@ func TestSystemMenusDoNotRequireWorkspacePermission(t *testing.T) {
 
 	if !isVisibleByPermissions(item, []string{appaccess.PermSystemMenusView}) {
 		t.Fatalf("system menu should remain visible without workspace permissions")
+	}
+}
+
+func TestSoftwareMenusRequirePackageViewPermission(t *testing.T) {
+	for _, id := range []string{"identity-software", "identity-software-storage"} {
+		item := domainmenu.Record{ID: id, Path: "/internal-workbench/software"}
+		if isVisibleByPermissions(item, nil) {
+			t.Fatalf("%s should require %s", id, appaccess.PermSoftwarePackageView)
+		}
+		if !isVisibleByPermissions(item, []string{appaccess.PermSoftwarePackageView}) {
+			t.Fatalf("%s should be visible with software package view permission", id)
+		}
 	}
 }

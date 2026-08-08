@@ -207,10 +207,111 @@ func (a *PVEAdapter) pveQEMUAssets(
 	assets := make([]Asset, 0, len(qemu.Data))
 	for _, vm := range qemu.Data {
 		if asset, ok := pveQEMUAsset(nodeName, vm, syncTypes); ok {
+			if asset.Type == "qemu" {
+				asset = a.enrichPVESyncedQEMUAsset(ctx, connection, asset)
+			}
 			assets = append(assets, asset)
 		}
 	}
 	return assets, nil
+}
+
+func (a *PVEAdapter) enrichPVESyncedQEMUAsset(ctx context.Context, connection Connection, asset Asset) Asset {
+	vmid := asset.Metadata["vmid"]
+	config, err := a.pveVMConfig(ctx, connection, asset.Node, vmid)
+	if err == nil {
+		addPVEVMConfigMetadata(asset.Metadata, asset.Name, config)
+	}
+	ips := pveStaticIPs(config)
+	if strings.EqualFold(asset.Status, "running") {
+		ips = append(ips, a.fetchPVEGuestAgentIPs(ctx, connection, asset.Node, vmid)...)
+	}
+	ips = uniqueNonEmptyStrings(ips)
+	if len(ips) > 0 {
+		asset.Metadata["ipAddress"] = ips[0]
+		asset.Metadata["ipAddresses"] = strings.Join(ips, ",")
+	}
+	return asset
+}
+
+func addPVEVMConfigMetadata(metadata map[string]string, fallbackName string, config map[string]any) {
+	metadata["hostname"] = firstNonEmpty(stringFromAny(config["name"]), fallbackName)
+	copyPVEConfigMetadata(metadata, config, "bios", "firmware")
+	copyPVEConfigMetadata(metadata, config, "machine", "machine")
+	copyPVEConfigMetadata(metadata, config, "ostype", "osType")
+	copyPVEConfigMetadata(metadata, config, "ciuser", "cloudInitUser")
+	metadata["dnsServers"] = strings.Join(splitPVEList(stringFromAny(config["nameserver"])), ",")
+	metadata["searchDomains"] = strings.Join(splitPVEList(stringFromAny(config["searchdomain"])), ",")
+	metadata["guestAgentEnabled"] = strconv.FormatBool(pveGuestAgentEnabled(config["agent"]))
+
+	diskCount, diskGiB := 0, 0
+	networks := make([]string, 0)
+	cloudInitConfigured := false
+	for id, raw := range config {
+		value := stringFromAny(raw)
+		switch {
+		case isPVEDiskID(id) && pveConfigOption(value, "media") != "cdrom":
+			diskCount++
+			diskGiB += pveDiskSizeGiB(value)
+		case strings.HasPrefix(id, "net"):
+			networks = append(networks, pveConfigOption(value, "bridge"))
+		case strings.HasPrefix(id, "ipconfig"):
+			cloudInitConfigured = true
+			if metadata["gateway"] == "" {
+				metadata["gateway"] = firstNonEmpty(pveConfigOption(value, "gw"), pveConfigOption(value, "gw6"))
+			}
+		}
+	}
+	if diskCount > 0 {
+		metadata["diskCount"] = strconv.Itoa(diskCount)
+		metadata["diskGiB"] = strconv.Itoa(diskGiB)
+	}
+	networks = uniqueNonEmptyStrings(networks)
+	if len(networks) > 0 {
+		metadata["network"] = networks[0]
+		metadata["networks"] = strings.Join(networks, ",")
+		metadata["networkInterfaceCount"] = strconv.Itoa(len(networks))
+	}
+	for _, key := range []string{"cicustom", "ciuser", "cipassword", "sshkeys", "nameserver", "searchdomain"} {
+		cloudInitConfigured = cloudInitConfigured || strings.TrimSpace(stringFromAny(config[key])) != ""
+	}
+	metadata["cloudInitConfigured"] = strconv.FormatBool(cloudInitConfigured)
+	metadata["sshKeysConfigured"] = strconv.FormatBool(strings.TrimSpace(stringFromAny(config["sshkeys"])) != "")
+}
+
+func copyPVEConfigMetadata(metadata map[string]string, config map[string]any, source, target string) {
+	if value := strings.TrimSpace(stringFromAny(config[source])); value != "" {
+		metadata[target] = value
+	}
+}
+
+func splitPVEList(value string) []string {
+	return uniqueNonEmptyStrings(strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ';' || r == ' ' }))
+}
+
+func pveGuestAgentEnabled(value any) bool {
+	raw := strings.ToLower(strings.TrimSpace(stringFromAny(value)))
+	enabled, _, _ := strings.Cut(raw, ",")
+	return enabled == "1" || enabled == "true" || strings.Contains(raw, "enabled=1")
+}
+
+func pveStaticIPs(config map[string]any) []string {
+	ips := make([]string, 0)
+	for key, raw := range config {
+		if !strings.HasPrefix(key, "ipconfig") {
+			continue
+		}
+		for _, option := range []string{"ip", "ip6"} {
+			value := pveConfigOption(stringFromAny(raw), option)
+			if address, _, ok := strings.Cut(value, "/"); ok {
+				value = address
+			}
+			if usableIPAddress(value) {
+				ips = append(ips, value)
+			}
+		}
+	}
+	return uniqueNonEmptyStrings(ips)
 }
 
 func pveQEMUAsset(nodeName string, vm map[string]any, syncTypes map[string]bool) (Asset, bool) {
@@ -2052,10 +2153,15 @@ func usableIPv4Address(value string) bool {
 	if ip == nil || ip.To4() == nil {
 		return false
 	}
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified() {
-		return false
-	}
-	return true
+	return usableIP(ip)
+}
+
+func usableIPAddress(value string) bool {
+	return usableIP(net.ParseIP(strings.TrimSpace(value)))
+}
+
+func usableIP(ip net.IP) bool {
+	return ip != nil && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified()
 }
 
 func uniqueNonEmptyStrings(items []string) []string {

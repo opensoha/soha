@@ -9,6 +9,7 @@ import (
 
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -52,6 +53,9 @@ func listAcrossNamespacesWithFallback[T any](ctx context.Context, bundle *k8sinf
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	if !apierrors.IsForbidden(allErr) {
+		return nil, allErr
 	}
 	namespaces, err := namespaceNames(ctx)
 	if err != nil {

@@ -142,6 +142,14 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 			writePVEData(w, []map[string]any{{"iface": "vmbr0", "type": "bridge", "active": 1}})
 		case "/api2/json/nodes/pve-a/qemu":
 			writePVEData(w, []map[string]any{{"vmid": 101, "name": "vm-a", "status": "running"}})
+		case "/api2/json/nodes/pve-a/qemu/101/config":
+			writePVEAny(w, map[string]any{
+				"name": "vm-a", "agent": "1,fstrim_cloned_disks=1", "ciuser": "soha", "nameserver": "10.0.0.2 1.1.1.1",
+				"searchdomain": "lab.example", "ipconfig0": "ip=dhcp,gw=10.0.0.1",
+				"scsi0": "local-lvm:vm-101-disk-0,size=32G", "net0": "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0",
+			})
+		case "/api2/json/nodes/pve-a/qemu/101/agent/network-get-interfaces":
+			writePVEAny(w, []map[string]any{{"name": "eth0", "ip-addresses": []map[string]any{{"ip-address": "10.0.0.21"}}}})
 		case "/api2/json/nodes/pve-a/storage":
 			writePVEData(w, []map[string]any{{"storage": "local", "type": "dir"}})
 		case "/api2/json/nodes/pve-a/storage/local/content":
@@ -169,6 +177,19 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 	if result.Health.Status != "healthy" || len(result.Assets) != 6 {
 		t.Fatalf("result = %#v", result)
 	}
+	var syncedVM Asset
+	for _, asset := range result.Assets {
+		if asset.Type == "qemu" {
+			syncedVM = asset
+			break
+		}
+	}
+	if syncedVM.Metadata["ipAddress"] != "10.0.0.21" || syncedVM.Metadata["diskGiB"] != "32" ||
+		syncedVM.Metadata["network"] != "vmbr0" || syncedVM.Metadata["dnsServers"] != "10.0.0.2,1.1.1.1" ||
+		syncedVM.Metadata["searchDomains"] != "lab.example" || syncedVM.Metadata["cloudInitConfigured"] != "true" ||
+		syncedVM.Metadata["guestAgentEnabled"] != "true" {
+		t.Fatalf("synced VM metadata = %#v", syncedVM.Metadata)
+	}
 	for _, header := range authHeaders {
 		if header != "PVEAPIToken=root@pam!soha=secret-token" {
 			t.Fatalf("Authorization header = %q", header)
@@ -178,6 +199,8 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 		"GET /api2/json/nodes",
 		"GET /api2/json/nodes/pve-a/network",
 		"GET /api2/json/nodes/pve-a/qemu",
+		"GET /api2/json/nodes/pve-a/qemu/101/config",
+		"GET /api2/json/nodes/pve-a/qemu/101/agent/network-get-interfaces",
 		"GET /api2/json/nodes/pve-a/storage",
 		"GET /api2/json/nodes/pve-a/storage/local/content",
 	}
@@ -252,6 +275,10 @@ func TestPVEAdapterSyncAssetsScansAllStoragesAndQEMUTemplates(t *testing.T) {
 				{"vmid": 101, "name": "vm-a", "status": "running", "cpus": 2, "maxmem": 4294967296},
 				{"vmid": 9000, "name": "ubuntu-template", "template": 1, "status": "stopped"},
 			})
+		case "/api2/json/nodes/pve-a/qemu/101/config":
+			writePVEAny(w, map[string]any{"name": "vm-a", "scsi0": "local-lvm:vm-101-disk-0,size=32G", "net0": "virtio,bridge=vmbr0"})
+		case "/api2/json/nodes/pve-a/qemu/101/agent/network-get-interfaces":
+			writePVEAny(w, []map[string]any{})
 		case "/api2/json/nodes/pve-a/storage":
 			writePVEData(w, []map[string]any{
 				{"storage": "local", "type": "dir", "content": "iso,vztmpl"},
@@ -324,6 +351,10 @@ func TestPVEAdapterSyncAssetsHonorsResourceTypeSwitch(t *testing.T) {
 			writePVEData(w, []map[string]any{{"node": "pve-a", "status": "online"}})
 		case "/api2/json/nodes/pve-a/qemu":
 			writePVEData(w, []map[string]any{{"vmid": 101, "name": "vm-a", "status": "running"}})
+		case "/api2/json/nodes/pve-a/qemu/101/config":
+			writePVEAny(w, map[string]any{"name": "vm-a"})
+		case "/api2/json/nodes/pve-a/qemu/101/agent/network-get-interfaces":
+			writePVEAny(w, []map[string]any{})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -341,7 +372,7 @@ func TestPVEAdapterSyncAssetsHonorsResourceTypeSwitch(t *testing.T) {
 	if len(result.Assets) != 1 || result.Assets[0].Type != "qemu" || result.Assets[0].Name != "vm-a" {
 		t.Fatalf("assets = %#v, want only qemu vm", result.Assets)
 	}
-	if strings.Contains(strings.Join(seen, ","), "/storage") || strings.Contains(strings.Join(seen, ","), "/network") {
+	if strings.Contains(strings.Join(seen, ","), "/nodes/pve-a/storage") || strings.Contains(strings.Join(seen, ","), "/nodes/pve-a/network") {
 		t.Fatalf("sync resource switch was ignored, seen paths = %#v", seen)
 	}
 }

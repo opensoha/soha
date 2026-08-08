@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -51,6 +52,9 @@ func (d prometheusDriver) RangeQuery(ctx context.Context, sourceID string, confi
 	if query.TimeFrom.IsZero() {
 		query.TimeFrom = query.TimeTo.Add(-60 * time.Minute)
 	}
+	if strings.TrimSpace(query.Expression) != "" {
+		return d.queryExpression(ctx, sourceID, endpoint, stringValue(config["bearerToken"], ""), query)
+	}
 
 	definitions := metricDefinitions(query.Scope, clusterLabel)
 	var selected []metricDefinition
@@ -82,6 +86,28 @@ func (d prometheusDriver) RangeQuery(ctx context.Context, sourceID string, confi
 		"sourceId":    sourceID,
 		"queryCount":  len(selected),
 	}, nil
+}
+
+func (d prometheusDriver) queryExpression(ctx context.Context, sourceID, endpoint, bearerToken string, query RangeQuery) ([]Series, map[string]any, error) {
+	results, err := d.queryRangeResults(ctx, endpoint, bearerToken, strings.TrimSpace(query.Expression), query.TimeFrom, query.TimeTo, query.Step)
+	if err != nil {
+		return nil, nil, err
+	}
+	baseKey := strings.TrimSpace(query.MetricKey)
+	if baseKey == "" {
+		baseKey = "A"
+	}
+	series := make([]Series, 0, len(results))
+	for index, result := range results {
+		key := baseKey
+		if len(results) > 1 {
+			key = fmt.Sprintf("%s:%d", baseKey, index+1)
+		}
+		series = append(series, Series{
+			Key: key, Label: metricSeriesLabel(query.Legend, result.Labels, key), Points: result.Points, Latest: result.Latest,
+		})
+	}
+	return series, map[string]any{"backendType": "prometheus", "sourceId": sourceID, "queryCount": 1}, nil
 }
 
 type metricDefinition struct {
@@ -118,9 +144,29 @@ func metricDefinitions(scope Scope, clusterLabel string) []metricDefinition {
 }
 
 func (d prometheusDriver) queryRangeSeries(ctx context.Context, endpoint, bearerToken, query string, timeFrom, timeTo time.Time, step time.Duration) ([]Point, float64, error) {
-	queryURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(endpoint), "/") + "/api/v1/query_range")
+	results, err := d.queryRangeResults(ctx, endpoint, bearerToken, query, timeFrom, timeTo, step)
 	if err != nil {
 		return nil, 0, err
+	}
+	points := make([]Point, 0)
+	latest := 0.0
+	for _, result := range results {
+		points = append(points, result.Points...)
+		latest = result.Latest
+	}
+	return points, latest, nil
+}
+
+type prometheusRangeResult struct {
+	Labels map[string]string
+	Points []Point
+	Latest float64
+}
+
+func (d prometheusDriver) queryRangeResults(ctx context.Context, endpoint, bearerToken, query string, timeFrom, timeTo time.Time, step time.Duration) ([]prometheusRangeResult, error) {
+	queryURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(endpoint), "/") + "/api/v1/query_range")
+	if err != nil {
+		return nil, err
 	}
 	params := queryURL.Query()
 	params.Set("query", query)
@@ -131,7 +177,7 @@ func (d prometheusDriver) queryRangeSeries(ctx context.Context, endpoint, bearer
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, queryURL.String(), nil)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if strings.TrimSpace(bearerToken) != "" {
 		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
@@ -139,30 +185,32 @@ func (d prometheusDriver) queryRangeSeries(ctx context.Context, endpoint, bearer
 
 	resp, err := d.http.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
-		return nil, 0, fmt.Errorf("prometheus query_range failed with status %d", resp.StatusCode)
+		return nil, fmt.Errorf("prometheus query_range failed with status %d", resp.StatusCode)
 	}
 	var payload struct {
 		Status string `json:"status"`
 		Data   struct {
 			Result []struct {
-				Values [][]any `json:"values"`
+				Metric map[string]string `json:"metric"`
+				Values [][]any           `json:"values"`
 			} `json:"result"`
 		} `json:"data"`
 		Error string `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	if payload.Error != "" {
-		return nil, 0, errors.New(payload.Error)
+		return nil, errors.New(payload.Error)
 	}
-	points := make([]Point, 0)
-	latest := 0.0
+	results := make([]prometheusRangeResult, 0, len(payload.Data.Result))
 	for _, result := range payload.Data.Result {
+		points := make([]Point, 0, len(result.Values))
+		latest := 0.0
 		for _, value := range result.Values {
 			if len(value) < 2 {
 				continue
@@ -181,8 +229,41 @@ func (d prometheusDriver) queryRangeSeries(ctx context.Context, endpoint, bearer
 			})
 			latest = number
 		}
+		results = append(results, prometheusRangeResult{Labels: result.Metric, Points: points, Latest: latest})
 	}
-	return points, latest, nil
+	return results, nil
+}
+
+func metricSeriesLabel(template string, labels map[string]string, fallback string) string {
+	label := strings.TrimSpace(template)
+	if label != "" {
+		for key, value := range labels {
+			label = strings.ReplaceAll(label, "{{"+key+"}}", value)
+			label = strings.ReplaceAll(label, "{{ "+key+" }}", value)
+		}
+		if label != "" {
+			return label
+		}
+	}
+	name := strings.TrimSpace(labels["__name__"])
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
+		if key != "__name__" {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%s", key, labels[key]))
+	}
+	if name == "" {
+		name = fallback
+	}
+	if len(parts) == 0 {
+		return name
+	}
+	return fmt.Sprintf("%s{%s}", name, strings.Join(parts, ","))
 }
 
 func asFloat(value any) (float64, bool) {

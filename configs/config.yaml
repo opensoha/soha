@@ -3,6 +3,7 @@ app:
 
 http:
   addr: :8080
+  access_url: ""
   base_path: /api/v1
   read_timeout: 15s
   write_timeout: 15s
@@ -96,6 +97,9 @@ plugins:
     url: http://127.0.0.1:8081/marketplace/index.json
     source_id: opensoha-local
     sources: []
+
+software:
+  storage_dir: data/software
 
 modules:
   home:
