@@ -20,6 +20,11 @@ type PluginInstallRequest = sohaapi.PluginInstallRequest
 type PluginConfigRequest = sohaapi.PluginConfigRequest
 type PluginPermissionRequest = sohaapi.PluginPermissionRequest
 type MarketplaceCatalog = sohaapi.MarketplaceCatalog
+type PluginPackageDescriptor = sohaapi.PluginPackageDescriptor
+type PluginArtifactRecord = sohaapi.PluginArtifactRecord
+type CompanionActivationRequest = sohaapi.CompanionActivationRequest
+type CompanionRollbackRequest = sohaapi.CompanionRollbackRequest
+type CompanionPackManifest = sohaapi.CompanionPackManifest
 
 type MarketplaceFilter struct {
 	Query          string

@@ -176,6 +176,30 @@ type AIGatewayConnectorEventSinkConfig struct {
 
 type PluginsConfig struct {
 	Marketplace PluginMarketplaceConfig `mapstructure:"marketplace"`
+	Companion   PluginCompanionConfig   `mapstructure:"companion"`
+}
+
+type PluginCompanionConfig struct {
+	StorageDir        string            `mapstructure:"storage_dir"`
+	MaxPackageBytes   int64             `mapstructure:"max_package_bytes"`
+	AllowLive2D       bool              `mapstructure:"allow_live2d"`
+	RequireSignature  bool              `mapstructure:"require_signature"`
+	TrustedPublicKeys map[string]string `mapstructure:"trusted_public_keys"`
+}
+
+func (c PluginCompanionConfig) TrustedKeys() (map[string]ed25519.PublicKey, error) {
+	keys := make(map[string]ed25519.PublicKey, len(c.TrustedPublicKeys))
+	for keyID, encoded := range c.TrustedPublicKeys {
+		raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+		if err != nil {
+			raw, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(encoded))
+		}
+		if err != nil || len(raw) != ed25519.PublicKeySize {
+			return nil, fmt.Errorf("plugins.companion.trusted_public_keys.%s must be a base64-encoded Ed25519 public key", keyID)
+		}
+		keys[keyID] = ed25519.PublicKey(append([]byte(nil), raw...))
+	}
+	return keys, nil
 }
 
 type PluginMarketplaceConfig struct {
@@ -342,6 +366,10 @@ func (c *Config) expandEnv() {
 	for i := range c.Plugins.Marketplace.Sources {
 		c.Plugins.Marketplace.Sources[i].URL = os.ExpandEnv(c.Plugins.Marketplace.Sources[i].URL)
 	}
+	c.Plugins.Companion.StorageDir = os.ExpandEnv(c.Plugins.Companion.StorageDir)
+	for keyID, encoded := range c.Plugins.Companion.TrustedPublicKeys {
+		c.Plugins.Companion.TrustedPublicKeys[keyID] = os.ExpandEnv(encoded)
+	}
 	c.Security.CredentialEncryptionKey = os.ExpandEnv(c.Security.CredentialEncryptionKey)
 	c.Security.VaultKV2.Address = os.ExpandEnv(c.Security.VaultKV2.Address)
 	c.Security.VaultKV2.Token = os.ExpandEnv(c.Security.VaultKV2.Token)
@@ -397,10 +425,41 @@ func (c Config) staticProblems() []string {
 	}
 	problems = append(problems, validateWebAuthnConfig(c.Security)...)
 	problems = append(problems, validateSecretProvider(c.Security)...)
+	problems = append(problems, validateCompanionConfig(c.Plugins.Companion)...)
 	if _, _, err := c.Security.OutpostSigningKey(); err != nil {
 		problems = append(problems, err.Error())
 	}
 	problems = append(problems, validateSharedConfigProblems(c)...)
+	return problems
+}
+
+func validateCompanionConfig(config PluginCompanionConfig) []string {
+	if config.StorageDir == "" && config.MaxPackageBytes == 0 && !config.AllowLive2D && !config.RequireSignature && len(config.TrustedPublicKeys) == 0 {
+		return nil
+	}
+	problems := []string{}
+	if value := strings.TrimSpace(config.StorageDir); value == "" || value != config.StorageDir || strings.ContainsRune(value, '\x00') {
+		problems = append(problems, "plugins.companion.storage_dir must be a non-empty path without surrounding whitespace")
+	}
+	if config.MaxPackageBytes < 1<<20 || config.MaxPackageBytes > 256<<20 {
+		problems = append(problems, "plugins.companion.max_package_bytes must be between 1048576 and 268435456")
+	}
+	for keyID, encoded := range config.TrustedPublicKeys {
+		if strings.TrimSpace(keyID) == "" || strings.TrimSpace(keyID) != keyID || len(keyID) > 128 || strings.ContainsAny(keyID, " \t\r\n") {
+			problems = append(problems, "plugins.companion.trusted_public_keys contains an invalid key id")
+			continue
+		}
+		raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
+		if err != nil {
+			raw, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(encoded))
+		}
+		if err != nil || len(raw) != ed25519.PublicKeySize {
+			problems = append(problems, fmt.Sprintf("plugins.companion.trusted_public_keys.%s must be a base64-encoded Ed25519 public key", keyID))
+		}
+	}
+	if config.RequireSignature && len(config.TrustedPublicKeys) == 0 {
+		problems = append(problems, "plugins.companion.require_signature requires at least one trusted public key")
+	}
 	return problems
 }
 
@@ -711,6 +770,11 @@ var configDefaults = []struct {
 	{"plugins.marketplace.source_id", DefaultMarketplaceSourceID},
 	{"plugins.marketplace.sources", []map[string]any{}},
 	{"software.storage_dir", "data/software"},
+	{"plugins.companion.storage_dir", ".data/companion"},
+	{"plugins.companion.max_package_bytes", 268435456},
+	{"plugins.companion.allow_live2d", false},
+	{"plugins.companion.require_signature", false},
+	{"plugins.companion.trusted_public_keys", map[string]string{}},
 	{"modules.home.enabled", true},
 	{"modules.delivery.enabled", true},
 	{"modules.monitoring.enabled", true},

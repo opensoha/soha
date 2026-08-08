@@ -99,6 +99,7 @@ var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatform
 	monitoringMutationSecuritySurface,
 	runtimeMutationSecuritySurface,
 	copilotMutationSecuritySurface,
+	companionMutationSecuritySurface,
 	systemMutationSecuritySurface,
 	accessMutationSecuritySurface,
 	aiGatewayMutationSecuritySurface,
@@ -118,6 +119,16 @@ func softwareMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		permission = appaccess.PermSoftwarePackageDelete
 	}
 	return nonPlatformMutationEntry("SoftwarePackage", nonPlatformMutationAction(method, path), permission, false), true
+}
+
+func companionMutationSecuritySurface(_ string, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if strings.HasPrefix(path, "/api/v1/companion/interactions") {
+		return nonPlatformMutationEntry("CompanionProfile", "interact", appaccess.PermObserveAIChatUse, false), true
+	}
+	if strings.HasPrefix(path, "/api/v1/companion/profile/reset") {
+		return nonPlatformMutationEntry("CompanionProfile", "reset", appaccess.PermObserveAIChatUse, false), true
+	}
+	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }
 
 func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
@@ -405,6 +416,8 @@ func pluginMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 	case strings.HasPrefix(path, "/api/v1/plugins/") && strings.HasSuffix(path, "/config"):
 		return nonPlatformMutationEntry("PluginConfig", "update", appaccess.PermPluginConfigure, false), true
 	case strings.HasPrefix(path, "/api/v1/plugins/") && (strings.HasSuffix(path, "/enable") || strings.HasSuffix(path, "/disable")):
+		return nonPlatformMutationEntry("Plugin", "lifecycle", appaccess.PermPluginLifecycle, false), true
+	case strings.HasPrefix(path, "/api/v1/plugins/") && (strings.HasSuffix(path, "/activate") || strings.HasSuffix(path, "/rollback")):
 		return nonPlatformMutationEntry("Plugin", "lifecycle", appaccess.PermPluginLifecycle, false), true
 	case strings.HasPrefix(path, "/api/v1/plugins/") && strings.HasSuffix(path, "/upgrade"):
 		return nonPlatformMutationEntry("Plugin", "upgrade", appaccess.PermPluginUpgrade, false), true

@@ -66,6 +66,7 @@ type ResolvedManifest struct {
 	Source          string
 	SourceID        string
 	MarketplaceURL  string
+	Package         *domainplugin.PluginPackageDescriptor
 }
 
 type MarketplaceSource struct {
@@ -277,6 +278,7 @@ func (p *RemoteMarketplaceProvider) FetchManifest(ctx context.Context, ref domai
 		Source:          firstNonEmpty(item.Source, "marketplace:"+item.ID),
 		SourceID:        firstNonEmpty(item.SourceID, p.sourceID),
 		MarketplaceURL:  firstNonEmpty(item.SourceURL, p.catalogURL),
+		Package:         version.Package,
 	}, nil
 }
 

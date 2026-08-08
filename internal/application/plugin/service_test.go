@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,8 +25,114 @@ func (s stubRolePermissions) ListRolePermissions(context.Context) (map[string][]
 	return s, nil
 }
 
+func TestRollbackCompanionSwitchesVersionAndAudits(t *testing.T) {
+	repo := newMemoryPluginRepo()
+	pack := domainplugin.CompanionPackManifest{
+		Renderer: "svg", EntryAsset: "orbit.svg",
+		Assets: []sohaapi.CompanionAsset{{
+			Path: "orbit.svg", Kind: "entry", ContentType: "image/svg+xml", SizeBytes: 32,
+			Sha256: "sha256:" + strings.Repeat("1", 64),
+		}},
+	}
+	repo.items["opensoha.orbit"] = domainplugin.InstalledPlugin{
+		ID: "opensoha.orbit", Name: "Orbit", Version: "2.0.0", Publisher: "opensoha",
+		Type: "companion-pack", Status: statusEnabled,
+		Manifest: domainplugin.PluginManifest{
+			ID: "opensoha.orbit", Name: "Orbit", Version: "2.0.0", Publisher: "opensoha",
+			Type: "companion-pack", CompanionPack: &pack,
+		},
+	}
+	lifecycle := &companionLifecycleStub{activeVersion: "2.0.0", pack: pack}
+	audit := &capturePluginAuditRecorder{}
+	service := NewWithOptions(repo, appaccess.NewPermissionResolver(stubRolePermissions{
+		"operator": {appaccess.PermPluginLifecycle},
+	}), audit, WithCompanionArtifacts(lifecycle))
+
+	item, err := service.RollbackCompanion(context.Background(), domainidentity.Principal{
+		UserID: "operator-1", Roles: []string{"operator"},
+	}, "opensoha.orbit", "rollback-0001", domainplugin.CompanionRollbackRequest{Version: "1.0.0"})
+	if err != nil {
+		t.Fatalf("RollbackCompanion() error = %v", err)
+	}
+	if item.ActiveVersion != "1.0.0" || item.Version != "1.0.0" || lifecycle.activeVersion != "1.0.0" {
+		t.Fatalf("rollback result = %#v, lifecycle version = %q", item, lifecycle.activeVersion)
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Summary != "rolled back companion pack" {
+		t.Fatalf("rollback audit = %#v", audit.entries)
+	}
+}
+
+func TestRemoveCompanionRetiresArtifacts(t *testing.T) {
+	repo := newMemoryPluginRepo()
+	repo.items["opensoha.orbit"] = domainplugin.InstalledPlugin{
+		ID: "opensoha.orbit", Name: "Orbit", Version: "1.0.0", Publisher: "opensoha",
+		Type: "companion-pack", Status: statusEnabled,
+	}
+	lifecycle := &companionLifecycleStub{}
+	service := NewWithOptions(repo, appaccess.NewPermissionResolver(stubRolePermissions{
+		"operator": {appaccess.PermPluginRemove},
+	}), nil, WithCompanionArtifacts(lifecycle))
+
+	err := service.Remove(context.Background(), domainidentity.Principal{
+		UserID: "operator-1", Roles: []string{"operator"},
+	}, "opensoha.orbit")
+	if err != nil {
+		t.Fatalf("Remove() error = %v", err)
+	}
+	if lifecycle.removed != "opensoha.orbit" {
+		t.Fatalf("retired plugin = %q, want opensoha.orbit", lifecycle.removed)
+	}
+	if _, ok := repo.items["opensoha.orbit"]; ok {
+		t.Fatal("removed companion remains installed")
+	}
+}
+
 type memoryPluginRepo struct {
 	items map[string]domainplugin.InstalledPlugin
+}
+
+type companionLifecycleStub struct {
+	activeVersion string
+	removed       string
+	pack          domainplugin.CompanionPackManifest
+}
+
+func (s *companionLifecycleStub) Install(context.Context, domainplugin.PluginManifest, domainplugin.PluginPackageDescriptor) (domainplugin.PluginArtifactRecord, error) {
+	return domainplugin.PluginArtifactRecord{}, nil
+}
+
+func (s *companionLifecycleStub) Activate(_ context.Context, _ string, version string) (domainplugin.PluginArtifactRecord, error) {
+	s.activeVersion = version
+	return companionArtifactRecord(version, true), nil
+}
+
+func (s *companionLifecycleStub) Rollback(_ context.Context, _ string, version string) (domainplugin.PluginArtifactRecord, error) {
+	s.activeVersion = version
+	return companionArtifactRecord(version, true), nil
+}
+
+func (s *companionLifecycleStub) Remove(_ context.Context, pluginID string) error {
+	s.removed = pluginID
+	return nil
+}
+
+func (s *companionLifecycleStub) OpenAsset(context.Context, string, string) (io.ReadCloser, string, string, error) {
+	return nil, "", "", apperrors.ErrNotFound
+}
+
+func (s *companionLifecycleStub) Records(context.Context, string) ([]domainplugin.PluginArtifactRecord, error) {
+	return []domainplugin.PluginArtifactRecord{companionArtifactRecord(s.activeVersion, true)}, nil
+}
+
+func (s *companionLifecycleStub) ActivePack(context.Context, string) (domainplugin.CompanionPackManifest, error) {
+	return s.pack, nil
+}
+
+func companionArtifactRecord(version string, active bool) domainplugin.PluginArtifactRecord {
+	return domainplugin.PluginArtifactRecord{
+		Version: version, Sha256: "sha256:" + strings.Repeat("1", 64), SizeBytes: 32,
+		ChecksumStatus: "verified", SignatureStatus: "verified", ProvenanceStatus: "verified", Active: active,
+	}
 }
 
 func newMemoryPluginRepo() *memoryPluginRepo {

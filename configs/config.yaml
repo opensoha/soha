@@ -97,6 +97,15 @@ plugins:
     url: http://127.0.0.1:8081/marketplace/index.json
     source_id: opensoha-local
     sources: []
+  companion:
+    storage_dir: .data/companion
+    max_package_bytes: 268435456
+    # Enable only after the deployment has cleared the Cubism SDK and model licenses.
+    allow_live2d: false
+    # Production marketplaces should require Ed25519 signatures and configure
+    # trusted_public_keys as key-id: base64-public-key entries.
+    require_signature: false
+    trusted_public_keys: {}
 
 software:
   storage_dir: data/software

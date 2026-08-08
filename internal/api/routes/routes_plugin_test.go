@@ -30,6 +30,9 @@ func TestRegisterPluginRoutesPreservesExtensionCenterAPI(t *testing.T) {
 		"POST /api/v1/plugins/:pluginID/disable",
 		"POST /api/v1/plugins/:pluginID/upgrade",
 		"PUT /api/v1/plugins/:pluginID/config",
+		"POST /api/v1/plugins/:pluginID/activate",
+		"POST /api/v1/plugins/:pluginID/rollback",
+		"GET /api/v1/plugins/:pluginID/assets/*assetPath",
 		"GET /api/v1/extensions/runtime",
 		"GET /api/v1/extensions/resource",
 		"GET /api/v1/extensions/metrics",
@@ -41,6 +44,27 @@ func TestRegisterPluginRoutesPreservesExtensionCenterAPI(t *testing.T) {
 	} {
 		if _, ok := registered[route]; !ok {
 			t.Fatalf("missing extension center API route %s", route)
+		}
+	}
+}
+
+func TestCompanionRoutesAreRegistered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerCompanionRoutes(router.Group("/api/v1"), Dependencies{
+		Companion: apiHandlers.NewCompanionHandler(nil),
+	})
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, route := range []string{
+		"GET /api/v1/companion/profile",
+		"POST /api/v1/companion/interactions",
+		"POST /api/v1/companion/profile/reset",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing companion API route %s", route)
 		}
 	}
 }

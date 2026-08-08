@@ -215,6 +215,9 @@ func registerPluginRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/plugins/:pluginID/disable", deps.Plugins.Disable)
 	protected.POST("/plugins/:pluginID/upgrade", deps.Plugins.Upgrade)
 	protected.PUT("/plugins/:pluginID/config", deps.Plugins.Configure)
+	protected.POST("/plugins/:pluginID/activate", deps.Plugins.ActivateCompanion)
+	protected.POST("/plugins/:pluginID/rollback", deps.Plugins.RollbackCompanion)
+	protected.GET("/plugins/:pluginID/assets/*assetPath", deps.Plugins.GetCompanionAsset)
 
 	protected.GET("/extensions/runtime", deps.Plugins.ListRuntimeExtensions)
 	protected.GET("/extensions/resource", deps.Plugins.ListResourceExtensions)

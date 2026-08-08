@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
@@ -37,6 +38,15 @@ type PluginExtensionService interface {
 	ListExtensions(context.Context, domainidentity.Principal, string) ([]domainplugin.ExtensionRecord, error)
 }
 
+type PluginCompanionLifecycleService interface {
+	ActivateCompanion(context.Context, domainidentity.Principal, string, string, domainplugin.CompanionActivationRequest) (domainplugin.InstalledPlugin, error)
+	RollbackCompanion(context.Context, domainidentity.Principal, string, string, domainplugin.CompanionRollbackRequest) (domainplugin.InstalledPlugin, error)
+}
+
+type PluginAssetService interface {
+	OpenCompanionAsset(context.Context, domainidentity.Principal, string, string) (io.ReadCloser, string, string, error)
+}
+
 type PluginService interface {
 	PluginMarketplaceService
 	PluginInventoryService
@@ -49,6 +59,8 @@ type PluginHandler struct {
 	inventory   PluginInventoryService
 	lifecycle   PluginLifecycleService
 	extensions  PluginExtensionService
+	companions  PluginCompanionLifecycleService
+	assets      PluginAssetService
 }
 
 func NewPluginHandler(service PluginService) *PluginHandler {
@@ -56,7 +68,10 @@ func NewPluginHandler(service PluginService) *PluginHandler {
 }
 
 func NewPluginHandlerWithServices(marketplace PluginMarketplaceService, inventory PluginInventoryService, lifecycle PluginLifecycleService, extensions PluginExtensionService) *PluginHandler {
-	return &PluginHandler{marketplace: marketplace, inventory: inventory, lifecycle: lifecycle, extensions: extensions}
+	handler := &PluginHandler{marketplace: marketplace, inventory: inventory, lifecycle: lifecycle, extensions: extensions}
+	handler.companions, _ = lifecycle.(PluginCompanionLifecycleService)
+	handler.assets, _ = inventory.(PluginAssetService)
+	return handler
 }
 
 func (h *PluginHandler) ListMarketplace(c *gin.Context) {
@@ -193,6 +208,71 @@ func (h *PluginHandler) Remove(c *gin.Context) {
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *PluginHandler) ActivateCompanion(c *gin.Context) {
+	if h.companions == nil {
+		apiresponse.Error(c, http.StatusNotImplemented, "unsupported_operation", "companion lifecycle is unavailable")
+		return
+	}
+	var req domainplugin.CompanionActivationRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid companion activation payload")
+		return
+	}
+	item, err := h.companions.ActivateCompanion(
+		c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("pluginID"), c.GetHeader("Idempotency-Key"), req,
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PluginHandler) RollbackCompanion(c *gin.Context) {
+	if h.companions == nil {
+		apiresponse.Error(c, http.StatusNotImplemented, "unsupported_operation", "companion lifecycle is unavailable")
+		return
+	}
+	var req domainplugin.CompanionRollbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid companion rollback payload")
+		return
+	}
+	item, err := h.companions.RollbackCompanion(
+		c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("pluginID"), c.GetHeader("Idempotency-Key"), req,
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PluginHandler) GetCompanionAsset(c *gin.Context) {
+	if h.assets == nil {
+		apiresponse.Error(c, http.StatusNotImplemented, "unsupported_operation", "companion assets are unavailable")
+		return
+	}
+	assetPath := strings.TrimPrefix(c.Param("assetPath"), "/")
+	reader, contentType, etag, err := h.assets.OpenCompanionAsset(
+		c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("pluginID"), assetPath,
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	defer func() { _ = reader.Close() }()
+	c.Header("Cache-Control", "private, max-age=31536000, immutable")
+	c.Header("ETag", `"`+etag+`"`)
+	c.Header("X-Content-Type-Options", "nosniff")
+	if contentType == "image/svg+xml" {
+		c.Header("Content-Security-Policy", "sandbox; default-src 'none'; style-src 'unsafe-inline'")
+	}
+	c.Header("Content-Type", contentType)
+	c.Status(http.StatusOK)
+	_, _ = io.Copy(c.Writer, reader)
 }
 
 func (h *PluginHandler) ListRuntimeExtensions(c *gin.Context) {

@@ -59,6 +59,7 @@ type Dependencies struct {
 	AIGateway           *apiHandlers.AIGatewayHandler
 	Plugins             *apiHandlers.PluginHandler
 	Software            *apiHandlers.SoftwareHandler
+	Companion           *apiHandlers.CompanionHandler
 	Compute             *apiHandlers.ComputeHandler
 	Virtualization      *apiHandlers.VirtualizationHandler
 	Docker              *apiHandlers.DockerHandler

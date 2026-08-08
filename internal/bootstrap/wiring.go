@@ -23,6 +23,7 @@ import (
 	appbuild "github.com/opensoha/soha/internal/application/build"
 	appcatalog "github.com/opensoha/soha/internal/application/catalog"
 	appcluster "github.com/opensoha/soha/internal/application/cluster"
+	appcompanion "github.com/opensoha/soha/internal/application/companion"
 	appcompute "github.com/opensoha/soha/internal/application/compute"
 	appcopilot "github.com/opensoha/soha/internal/application/copilot"
 	appdelivery "github.com/opensoha/soha/internal/application/delivery"
@@ -62,6 +63,7 @@ import (
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	directorysyncdomain "github.com/opensoha/soha/internal/domain/directorysync"
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
+	companionartifactinfra "github.com/opensoha/soha/internal/infrastructure/companionartifact"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
 	feishudirectory "github.com/opensoha/soha/internal/infrastructure/directoryconnector/feishu"
@@ -102,6 +104,7 @@ import (
 	buildrepo "github.com/opensoha/soha/internal/repository/build"
 	catalogrepo "github.com/opensoha/soha/internal/repository/catalog"
 	clusterrepo "github.com/opensoha/soha/internal/repository/cluster"
+	companionrepo "github.com/opensoha/soha/internal/repository/companion"
 	copilotrepo "github.com/opensoha/soha/internal/repository/copilot"
 	dashboardrepo "github.com/opensoha/soha/internal/repository/dashboard"
 	deliveryrepo "github.com/opensoha/soha/internal/repository/delivery"
@@ -175,6 +178,7 @@ type repositories struct {
 	dockerRepository            *dockerrepo.Repository
 	aiGatewayRepository         *aigatewayrepo.Repository
 	pluginRepository            *pluginrepo.Repository
+	companionRepository         *companionrepo.Repository
 	identityProviderRepository  *identityproviderrepo.Repository
 	identityMFARepository       *identitymfarepo.Repository
 	knowledgeRepository         *knowledgerepo.Repository
@@ -225,6 +229,7 @@ type coreServices struct {
 	integrationService       *appintegration.Service
 	pluginService            *appplugin.Service
 	softwareService          *appsoftware.Service
+	companionService         *appcompanion.Service
 	identityProviderService  *appidentityprovider.Service
 	identityMFAService       *appmfa.Service
 	providerPortalService    *appproviderportal.Service
@@ -390,6 +395,7 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		dockerRepository:            dockerrepo.New(db),
 		aiGatewayRepository:         aigatewayrepo.New(db),
 		pluginRepository:            pluginrepo.New(db),
+		companionRepository:         companionrepo.New(db),
 		identityProviderRepository:  identityproviderrepo.New(db),
 		identityMFARepository:       identitymfarepo.New(db),
 		knowledgeRepository:         knowledgerepo.New(db),
@@ -532,6 +538,10 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	if err != nil {
 		return nil, err
 	}
+	companionService, err := appcompanion.New(repos.companionRepository, repos.pluginRepository, permissionResolver, auditService)
+	if err != nil {
+		return nil, fmt.Errorf("build companion service: %w", err)
+	}
 	runtimeConfigService.RegisterApplier(marketplaceConfigApplier{base: cfg, plugins: deliveryCore.plugins})
 	runtimeConfigService.RegisterApplier(runtimeValueApplier{handlers: map[string]func(context.Context, appruntimeconfig.Snapshot) error{
 		appruntimeconfig.KeyClusterSyncParallelism: func(_ context.Context, next appruntimeconfig.Snapshot) error {
@@ -601,6 +611,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		integrationService:       deliveryCore.integration,
 		pluginService:            deliveryCore.plugins,
 		softwareService:          softwareService,
+		companionService:         companionService,
 		pluginExtensions:         deliveryCore.pluginExtensions,
 		identityProviderService:  deliveryCore.identityProvider,
 		providerPortalService:    deliveryCore.providerPortal,
@@ -731,12 +742,33 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 		return nil, err
 	}
 	pluginExtensions := appplugin.NewExtensionRegistry()
+	companionStore, err := companionartifactinfra.NewStore(cfg.Plugins.Companion.StorageDir, cfg.Plugins.Companion.MaxPackageBytes)
+	if err != nil {
+		return nil, fmt.Errorf("build companion artifact store: %w", err)
+	}
+	trustedCompanionKeys, err := cfg.Plugins.Companion.TrustedKeys()
+	if err != nil {
+		return nil, fmt.Errorf("load companion trust keys: %w", err)
+	}
+	companionArtifacts, err := appcompanion.NewArtifactService(
+		repos.companionRepository,
+		companionartifactinfra.NewFetcher(),
+		companionStore,
+		appcompanion.ArtifactOptions{
+			MaxPackageBytes: cfg.Plugins.Companion.MaxPackageBytes, AllowLive2D: cfg.Plugins.Companion.AllowLive2D,
+			RequireSignature: cfg.Plugins.Companion.RequireSignature, TrustedPublicKeys: trustedCompanionKeys,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("build companion artifact service: %w", err)
+	}
 	plugins := appplugin.NewWithOptions(
 		repos.pluginRepository,
 		permissions,
 		audit,
 		appplugin.WithMarketplaceProvider(marketplaceProvider),
 		appplugin.WithExtensionRegistry(pluginExtensions),
+		appplugin.WithCompanionArtifacts(companionArtifacts),
 	)
 	if err := plugins.Reconcile(infra.lifecycleCtx); err != nil {
 		return nil, err
@@ -1209,6 +1241,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 			core.pluginService, core.pluginService, core.pluginService, core.pluginService,
 		),
 		Software:       apiHandlers.NewSoftwareHandler(core.softwareService),
+		Companion:      apiHandlers.NewCompanionHandler(core.companionService),
 		Compute:        apiHandlers.NewComputeHandler(delivery.computeService),
 		Virtualization: newVirtualizationHandler(delivery.virtualizationService),
 		Docker:         newDockerHandler(delivery.dockerService, cfg.Runtime.ExecutionRunnerKeys),

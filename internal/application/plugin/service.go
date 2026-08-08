@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"sync"
@@ -44,10 +45,21 @@ var supportedPluginTypes = []string{
 	"notification-channel",
 	"identity-template",
 	"ui-extension",
+	"companion-pack",
 }
 
 type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
+}
+
+type CompanionArtifactLifecycle interface {
+	Install(context.Context, domainplugin.PluginManifest, domainplugin.PluginPackageDescriptor) (domainplugin.PluginArtifactRecord, error)
+	Activate(context.Context, string, string) (domainplugin.PluginArtifactRecord, error)
+	Rollback(context.Context, string, string) (domainplugin.PluginArtifactRecord, error)
+	Remove(context.Context, string) error
+	OpenAsset(context.Context, string, string) (io.ReadCloser, string, string, error)
+	Records(context.Context, string) ([]domainplugin.PluginArtifactRecord, error)
+	ActivePack(context.Context, string) (domainplugin.CompanionPackManifest, error)
 }
 
 type Service struct {
@@ -57,6 +69,7 @@ type Service struct {
 	marketplaceMu sync.RWMutex
 	marketplace   MarketplaceProvider
 	extensions    *ExtensionRegistry
+	companions    CompanionArtifactLifecycle
 	adHocProvider func(string) (MarketplaceProvider, error)
 }
 
@@ -98,6 +111,12 @@ func WithExtensionRegistry(registry *ExtensionRegistry) Option {
 		if registry != nil {
 			s.extensions = registry
 		}
+	}
+}
+
+func WithCompanionArtifacts(lifecycle CompanionArtifactLifecycle) Option {
+	return func(s *Service) {
+		s.companions = lifecycle
 	}
 }
 
@@ -151,14 +170,30 @@ func (s *Service) ListInstalled(ctx context.Context, principal domainidentity.Pr
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListInstalled(ctx)
+	items, err := s.repo.ListInstalled(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for index := range items {
+		if err := s.hydrateCompanionArtifacts(ctx, &items[index]); err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func (s *Service) GetInstalled(ctx context.Context, principal domainidentity.Principal, pluginID string) (domainplugin.InstalledPlugin, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginView); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	return s.repo.GetInstalled(ctx, pluginID)
+	item, err := s.repo.GetInstalled(ctx, pluginID)
+	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if err := s.hydrateCompanionArtifacts(ctx, &item); err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	return item, nil
 }
 
 func (s *Service) GetManifest(ctx context.Context, principal domainidentity.Principal, pluginID string) (domainplugin.PluginManifest, error) {
@@ -185,6 +220,33 @@ func (s *Service) Install(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	var artifactRecords []domainplugin.PluginArtifactRecord
+	activeVersion := ""
+	if manifest.Type == "companion-pack" {
+		if s.companions == nil {
+			return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
+		}
+		descriptor := input.Package
+		if descriptor == nil {
+			descriptor = resolved.Package
+		}
+		if descriptor == nil {
+			return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion package descriptor is required", apperrors.ErrInvalidArgument)
+		}
+		if _, err := s.companions.Install(ctx, manifest, *descriptor); err != nil {
+			return domainplugin.InstalledPlugin{}, err
+		}
+		if input.Enable {
+			if _, err := s.companions.Activate(ctx, manifest.ID, manifest.Version); err != nil {
+				return domainplugin.InstalledPlugin{}, err
+			}
+		}
+		artifactRecords, err = s.companions.Records(ctx, manifest.ID)
+		if err != nil {
+			return domainplugin.InstalledPlugin{}, err
+		}
+		activeVersion = activeArtifactVersion(artifactRecords)
+	}
 	now := time.Now().UTC()
 	status := statusDisabled
 	var enabledAt *time.Time
@@ -206,6 +268,8 @@ func (s *Service) Install(ctx context.Context, principal domainidentity.Principa
 		Manifest:             manifest,
 		ChecksumStatus:       checksumStatus,
 		SignatureStatus:      firstNonEmpty(resolved.SignatureStatus, integrityStatus(manifest)),
+		ActiveVersion:        activeVersion,
+		Artifacts:            artifactRecords,
 		RequestedPermissions: manifest.Permissions,
 		ConfiguredSecretRefs: map[string]string{},
 		InstalledBy:          firstNonEmpty(principal.UserID, principal.UserName, "system"),
@@ -311,9 +375,32 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 	if err := validateManifest(manifest); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
+	if (current.Type == "companion-pack" || manifest.Type == "companion-pack") && current.Type != manifest.Type {
+		return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion plugin type cannot change during upgrade", apperrors.ErrInvalidArgument)
+	}
 	checksum, checksumStatus, err := checksumEvidence(manifest, input.ExpectedChecksum, resolved)
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
+	}
+	if manifest.Type == "companion-pack" {
+		if s.companions == nil {
+			return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
+		}
+		descriptor := input.Package
+		if descriptor == nil {
+			descriptor = resolved.Package
+		}
+		if descriptor == nil {
+			return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion package descriptor is required", apperrors.ErrInvalidArgument)
+		}
+		if _, err := s.companions.Install(ctx, manifest, *descriptor); err != nil {
+			return domainplugin.InstalledPlugin{}, err
+		}
+		if current.Status == statusEnabled {
+			if _, err := s.companions.Activate(ctx, manifest.ID, manifest.Version); err != nil {
+				return domainplugin.InstalledPlugin{}, err
+			}
+		}
 	}
 	current.Name = manifest.Name
 	current.Version = manifest.Version
@@ -340,6 +427,9 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 	}
 	item, err := s.repo.UpsertInstalled(ctx, current)
 	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if err := s.hydrateCompanionArtifacts(ctx, &item); err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
 	s.reconcileItem(item)
@@ -419,8 +509,136 @@ func (s *Service) Remove(ctx context.Context, principal domainidentity.Principal
 	if err := s.repo.DeleteInstalled(ctx, pluginID); err != nil {
 		return err
 	}
+	if item.Type == "companion-pack" && s.companions != nil {
+		if err := s.companions.Remove(ctx, pluginID); err != nil {
+			return err
+		}
+	}
 	s.extensions.UnregisterPlugin(pluginID)
 	s.recordAudit(ctx, principal, "remove", item, "removed plugin")
+	return nil
+}
+
+func (s *Service) ActivateCompanion(ctx context.Context, principal domainidentity.Principal, pluginID, idempotencyKey string, input domainplugin.CompanionActivationRequest) (domainplugin.InstalledPlugin, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginLifecycle); err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if err := validateIdempotencyKey(idempotencyKey); err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	item, err := s.repo.GetInstalled(ctx, pluginID)
+	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if item.Type != "companion-pack" || s.companions == nil {
+		return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	active, err := s.companions.Activate(ctx, pluginID, input.Version)
+	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	return s.publishActiveCompanion(ctx, principal, item, active, "activate")
+}
+
+func (s *Service) RollbackCompanion(ctx context.Context, principal domainidentity.Principal, pluginID, idempotencyKey string, input domainplugin.CompanionRollbackRequest) (domainplugin.InstalledPlugin, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginLifecycle); err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if err := validateIdempotencyKey(idempotencyKey); err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if strings.TrimSpace(input.Version) == "" {
+		return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: rollback version is required", apperrors.ErrInvalidArgument)
+	}
+	item, err := s.repo.GetInstalled(ctx, pluginID)
+	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if item.Type != "companion-pack" || s.companions == nil {
+		return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	active, err := s.companions.Rollback(ctx, pluginID, input.Version)
+	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	return s.publishActiveCompanion(ctx, principal, item, active, "rollback")
+}
+
+func (s *Service) OpenCompanionAsset(ctx context.Context, principal domainidentity.Principal, pluginID, assetPath string) (io.ReadCloser, string, string, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPluginView); err != nil {
+		return nil, "", "", err
+	}
+	item, err := s.repo.GetInstalled(ctx, pluginID)
+	if err != nil {
+		return nil, "", "", err
+	}
+	if item.Type != "companion-pack" || item.Status != statusEnabled || s.companions == nil {
+		return nil, "", "", fmt.Errorf("%w: active companion pack not found", apperrors.ErrNotFound)
+	}
+	return s.companions.OpenAsset(ctx, pluginID, assetPath)
+}
+
+func (s *Service) publishActiveCompanion(ctx context.Context, principal domainidentity.Principal, item domainplugin.InstalledPlugin, active domainplugin.PluginArtifactRecord, action string) (domainplugin.InstalledPlugin, error) {
+	pack, err := s.companions.ActivePack(ctx, item.ID)
+	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	now := time.Now().UTC()
+	item.Version = active.Version
+	item.Manifest.Version = active.Version
+	item.Manifest.CompanionPack = &pack
+	item.Status = statusEnabled
+	item.EnabledAt = &now
+	item.DisabledAt = nil
+	item.ChecksumStatus = string(active.ChecksumStatus)
+	item.SignatureStatus = string(active.SignatureStatus)
+	item.UpdatedAt = now
+	item, err = s.repo.UpsertInstalled(ctx, item)
+	if err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	if err := s.hydrateCompanionArtifacts(ctx, &item); err != nil {
+		return domainplugin.InstalledPlugin{}, err
+	}
+	s.reconcileItem(item)
+	summary := "activated companion pack"
+	if action == "rollback" {
+		summary = "rolled back companion pack"
+	}
+	s.recordAudit(ctx, principal, action, item, summary)
+	return item, nil
+}
+
+func (s *Service) hydrateCompanionArtifacts(ctx context.Context, item *domainplugin.InstalledPlugin) error {
+	if item == nil || item.Type != "companion-pack" {
+		return nil
+	}
+	if s.companions == nil {
+		return fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	records, err := s.companions.Records(ctx, item.ID)
+	if err != nil {
+		return err
+	}
+	item.Artifacts = records
+	item.ActiveVersion = activeArtifactVersion(records)
+	return nil
+}
+
+func activeArtifactVersion(records []domainplugin.PluginArtifactRecord) string {
+	for _, record := range records {
+		if record.Active {
+			return record.Version
+		}
+	}
+	return ""
+}
+
+func validateIdempotencyKey(value string) error {
+	value = strings.TrimSpace(value)
+	if len(value) < 8 || len(value) > 128 {
+		return fmt.Errorf("%w: Idempotency-Key must contain 8 to 128 characters", apperrors.ErrInvalidArgument)
+	}
 	return nil
 }
 
@@ -461,6 +679,7 @@ func (s *Service) resolveInstallManifest(ctx context.Context, input domainplugin
 			Source:          firstNonEmpty(input.Source, "direct-manifest"),
 			SourceID:        input.SourceID,
 			MarketplaceURL:  input.MarketplaceURL,
+			Package:         input.Package,
 		}, nil
 	}
 	pluginID := strings.TrimSpace(input.PluginID)
@@ -554,6 +773,16 @@ func validateManifest(manifest domainplugin.PluginManifest) error {
 	}
 	if !slices.Contains(supportedPluginTypes, strings.TrimSpace(manifest.Type)) {
 		return fmt.Errorf("%w: unsupported plugin type %q", apperrors.ErrInvalidArgument, manifest.Type)
+	}
+	if manifest.Type == "companion-pack" {
+		if manifest.CompanionPack == nil {
+			return fmt.Errorf("%w: companionPack is required for companion-pack plugins", apperrors.ErrInvalidArgument)
+		}
+		if manifest.Runtime != nil && manifest.Runtime.Mode != "manifest-only" {
+			return fmt.Errorf("%w: companion packs must use manifest-only runtime", apperrors.ErrInvalidArgument)
+		}
+	} else if manifest.CompanionPack != nil {
+		return fmt.Errorf("%w: companionPack is only valid for companion-pack plugins", apperrors.ErrInvalidArgument)
 	}
 	if err := validateCompatibility(manifest.Compatibility); err != nil {
 		return err
