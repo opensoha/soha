@@ -52,6 +52,14 @@ func TestReverseSessionCarriesAgentHTTPRequests(t *testing.T) {
 	})}
 	go func() { _ = server.Serve(yamuxListener{session: agentSession}) }()
 
+	deadline := time.Now().Add(time.Second)
+	for !registry.Connected("cluster-a") && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if !registry.Connected("cluster-a") {
+		t.Fatal("reverse session did not connect")
+	}
+
 	client, err := registry.ClientFor(domaincluster.Connection{
 		Summary:  domaincluster.Summary{ID: "cluster-a"},
 		Metadata: map[string]any{"transport": "reverse_session", "token": "agent-token"},
