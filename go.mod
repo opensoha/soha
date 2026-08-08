@@ -14,8 +14,9 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
+	github.com/hashicorp/yamux v0.1.2
 	github.com/jackc/pgx/v5 v5.9.2
-	github.com/opensoha/soha-contracts v0.1.6
+	github.com/opensoha/soha-contracts v0.1.7
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/russellhaering/goxmldsig v1.6.0
 	github.com/spf13/viper v1.20.1
@@ -93,7 +94,6 @@ require (
 	github.com/google/go-tpm v0.9.8 // indirect
 	github.com/gosuri/uitable v0.0.4 // indirect
 	github.com/gregjones/httpcache v0.0.0-20190611155906-901d90724c79 // indirect
-	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/huandu/xstrings v1.5.0 // indirect
 	github.com/ianlancetaylor/demangle v0.0.0-20240805132620-81f5be970eca // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

@@ -559,11 +559,20 @@ func nonPlatformMutationAction(method, path string) string {
 			return marker
 		}
 	}
+	return mutationActionForMethod(method, true)
+}
+
+func mutationActionForMethod(method string, patchAsUpdate bool) string {
 	switch method {
 	case "POST":
 		return "create"
-	case "PUT", "PATCH":
+	case "PUT":
 		return "update"
+	case "PATCH":
+		if patchAsUpdate {
+			return "update"
+		}
+		return "patch"
 	case "DELETE":
 		return "delete"
 	default:
@@ -572,6 +581,16 @@ func nonPlatformMutationAction(method, path string) string {
 }
 
 func platformMutationAction(method, path string) string {
+	if strings.Contains(path, "/port-forwards") {
+		return mutationActionForMethod(method, false)
+	}
+	if action := platformPathMutationAction(path); action != "" {
+		return action
+	}
+	return mutationActionForMethod(method, false)
+}
+
+func platformPathMutationAction(path string) string {
 	switch {
 	case strings.HasSuffix(path, "/agent-installation"):
 		return "update"
@@ -589,10 +608,6 @@ func platformMutationAction(method, path string) string {
 		return "suspend"
 	case strings.Contains(path, "/yaml"):
 		return "update"
-	case strings.Contains(path, "/port-forwards") && method == "POST":
-		return "create"
-	case strings.Contains(path, "/port-forwards") && method == "DELETE":
-		return "delete"
 	case strings.Contains(path, "/helm/charts/install"):
 		return "create"
 	case strings.HasSuffix(path, "/observability/logging/enable"):
@@ -601,17 +616,8 @@ func platformMutationAction(method, path string) string {
 		return "disable"
 	case strings.Contains(path, "/helm/releases") && strings.Contains(path, "/values"):
 		return "update"
-	}
-
-	switch method {
-	case "POST":
-		return "create"
-	case "PUT":
-		return "update"
-	case "DELETE":
-		return "delete"
 	default:
-		return strings.ToLower(method)
+		return ""
 	}
 }
 
