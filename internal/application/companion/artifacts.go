@@ -218,46 +218,82 @@ func (s *ArtifactService) verifyProvenance(ctx context.Context, descriptor domai
 		}
 		return "not_provided", nil
 	}
-	reader, err := s.fetcher.Fetch(ctx, descriptor.ProvenanceURL, maxProvenanceBytes)
+	statement, err := s.readProvenanceStatement(ctx, descriptor.ProvenanceURL)
 	if err != nil {
 		return "invalid", err
+	}
+	if err := validateProvenanceSubject(statement, descriptor.Sha256); err != nil {
+		return "invalid", err
+	}
+	if err := validateProvenanceSource(statement.SourceURI); err != nil {
+		return "invalid", err
+	}
+	if err := validateProvenanceBuildTime(statement.BuiltAt, s.now()); err != nil {
+		return "invalid", err
+	}
+	if err := verifyProvenanceSignature(statement, s.options.TrustedPublicKeys); err != nil {
+		return "invalid", err
+	}
+	return "verified", nil
+}
+
+func (s *ArtifactService) readProvenanceStatement(ctx context.Context, provenanceURL string) (provenanceStatement, error) {
+	reader, err := s.fetcher.Fetch(ctx, provenanceURL, maxProvenanceBytes)
+	if err != nil {
+		return provenanceStatement{}, err
 	}
 	raw, readErr := io.ReadAll(io.LimitReader(reader, maxProvenanceBytes+1))
 	closeErr := reader.Close()
 	if readErr != nil || int64(len(raw)) > maxProvenanceBytes {
-		return "invalid", fmt.Errorf("%w: invalid companion provenance document", apperrors.ErrInvalidArgument)
+		return provenanceStatement{}, fmt.Errorf("%w: invalid companion provenance document", apperrors.ErrInvalidArgument)
 	}
 	if closeErr != nil {
-		return "invalid", fmt.Errorf("close companion provenance response: %w", closeErr)
+		return provenanceStatement{}, fmt.Errorf("close companion provenance response: %w", closeErr)
 	}
 	var statement provenanceStatement
 	if err := json.Unmarshal(raw, &statement); err != nil {
-		return "invalid", fmt.Errorf("%w: decode companion provenance", apperrors.ErrInvalidArgument)
+		return provenanceStatement{}, fmt.Errorf("%w: decode companion provenance", apperrors.ErrInvalidArgument)
 	}
-	if statement.SubjectSHA256 != descriptor.Sha256 || statement.BuilderID == "" || statement.SourceURI == "" || statement.SourceCommit == "" || statement.BuiltAt == "" {
-		return "invalid", fmt.Errorf("%w: incomplete companion provenance", apperrors.ErrInvalidArgument)
+	return statement, nil
+}
+
+func validateProvenanceSubject(statement provenanceStatement, packageSHA256 string) error {
+	if statement.SubjectSHA256 != packageSHA256 || statement.BuilderID == "" || statement.SourceURI == "" || statement.SourceCommit == "" || statement.BuiltAt == "" {
+		return fmt.Errorf("%w: incomplete companion provenance", apperrors.ErrInvalidArgument)
 	}
-	sourceURI, err := url.Parse(statement.SourceURI)
+	return nil
+}
+
+func validateProvenanceSource(rawSourceURI string) error {
+	sourceURI, err := url.Parse(rawSourceURI)
 	if err != nil || sourceURI.Scheme != "https" || sourceURI.Host == "" || sourceURI.User != nil || sourceURI.Fragment != "" {
-		return "invalid", fmt.Errorf("%w: companion provenance source must be credential-free HTTPS", apperrors.ErrInvalidArgument)
+		return fmt.Errorf("%w: companion provenance source must be credential-free HTTPS", apperrors.ErrInvalidArgument)
 	}
-	builtAt, err := time.Parse(time.RFC3339, statement.BuiltAt)
-	if err != nil || builtAt.After(s.now().Add(5*time.Minute)) {
-		return "invalid", fmt.Errorf("%w: invalid companion provenance build time", apperrors.ErrInvalidArgument)
+	return nil
+}
+
+func validateProvenanceBuildTime(rawBuiltAt string, now time.Time) error {
+	builtAt, err := time.Parse(time.RFC3339, rawBuiltAt)
+	if err != nil || builtAt.After(now.Add(5*time.Minute)) {
+		return fmt.Errorf("%w: invalid companion provenance build time", apperrors.ErrInvalidArgument)
 	}
-	key, ok := s.options.TrustedPublicKeys[statement.SigningKeyID]
+	return nil
+}
+
+func verifyProvenanceSignature(statement provenanceStatement, trusted map[string]ed25519.PublicKey) error {
+	key, ok := trusted[statement.SigningKeyID]
 	if !ok {
-		return "invalid", fmt.Errorf("%w: untrusted companion provenance key", apperrors.ErrInvalidArgument)
+		return fmt.Errorf("%w: untrusted companion provenance key", apperrors.ErrInvalidArgument)
 	}
 	signature, err := decodeSignature(statement.Signature)
 	if err != nil {
-		return "invalid", err
+		return err
 	}
 	payload := strings.Join([]string{statement.SubjectSHA256, statement.BuilderID, statement.SourceURI, statement.SourceCommit, statement.BuiltAt}, "\n")
 	if !ed25519.Verify(key, []byte(payload), signature) {
-		return "invalid", fmt.Errorf("%w: invalid companion provenance signature", apperrors.ErrInvalidArgument)
+		return fmt.Errorf("%w: invalid companion provenance signature", apperrors.ErrInvalidArgument)
 	}
-	return "verified", nil
+	return nil
 }
 
 func verifyPackageSignature(descriptor domainplugin.PluginPackageDescriptor, trusted map[string]ed25519.PublicKey, required bool) (string, error) {

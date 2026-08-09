@@ -445,15 +445,11 @@ func validateCompanionConfig(config PluginCompanionConfig) []string {
 		problems = append(problems, "plugins.companion.max_package_bytes must be between 1048576 and 268435456")
 	}
 	for keyID, encoded := range config.TrustedPublicKeys {
-		if strings.TrimSpace(keyID) == "" || strings.TrimSpace(keyID) != keyID || len(keyID) > 128 || strings.ContainsAny(keyID, " \t\r\n") {
+		if !validCompanionKeyID(keyID) {
 			problems = append(problems, "plugins.companion.trusted_public_keys contains an invalid key id")
 			continue
 		}
-		raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(encoded))
-		if err != nil {
-			raw, err = base64.RawStdEncoding.DecodeString(strings.TrimSpace(encoded))
-		}
-		if err != nil || len(raw) != ed25519.PublicKeySize {
+		if !validCompanionPublicKey(encoded) {
 			problems = append(problems, fmt.Sprintf("plugins.companion.trusted_public_keys.%s must be a base64-encoded Ed25519 public key", keyID))
 		}
 	}
@@ -461,6 +457,20 @@ func validateCompanionConfig(config PluginCompanionConfig) []string {
 		problems = append(problems, "plugins.companion.require_signature requires at least one trusted public key")
 	}
 	return problems
+}
+
+func validCompanionKeyID(keyID string) bool {
+	trimmed := strings.TrimSpace(keyID)
+	return trimmed != "" && trimmed == keyID && len(keyID) <= 128 && !strings.ContainsAny(keyID, " \t\r\n")
+}
+
+func validCompanionPublicKey(encoded string) bool {
+	value := strings.TrimSpace(encoded)
+	raw, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		raw, err = base64.RawStdEncoding.DecodeString(value)
+	}
+	return err == nil && len(raw) == ed25519.PublicKeySize
 }
 
 func validateSecretProvider(config SecurityConfig) []string {

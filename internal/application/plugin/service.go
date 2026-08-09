@@ -382,25 +382,8 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainplugin.InstalledPlugin{}, err
 	}
-	if manifest.Type == "companion-pack" {
-		if s.companions == nil {
-			return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
-		}
-		descriptor := input.Package
-		if descriptor == nil {
-			descriptor = resolved.Package
-		}
-		if descriptor == nil {
-			return domainplugin.InstalledPlugin{}, fmt.Errorf("%w: companion package descriptor is required", apperrors.ErrInvalidArgument)
-		}
-		if _, err := s.companions.Install(ctx, manifest, *descriptor); err != nil {
-			return domainplugin.InstalledPlugin{}, err
-		}
-		if current.Status == statusEnabled {
-			if _, err := s.companions.Activate(ctx, manifest.ID, manifest.Version); err != nil {
-				return domainplugin.InstalledPlugin{}, err
-			}
-		}
+	if err := s.upgradeCompanionArtifact(ctx, current, manifest, input, resolved); err != nil {
+		return domainplugin.InstalledPlugin{}, err
 	}
 	current.Name = manifest.Name
 	current.Version = manifest.Version
@@ -435,6 +418,30 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 	s.reconcileItem(item)
 	s.recordAudit(ctx, principal, "upgrade", item, "upgraded plugin manifest snapshot")
 	return item, nil
+}
+
+func (s *Service) upgradeCompanionArtifact(ctx context.Context, current domainplugin.InstalledPlugin, manifest domainplugin.PluginManifest, input domainplugin.PluginInstallRequest, resolved ResolvedManifest) error {
+	if manifest.Type != "companion-pack" {
+		return nil
+	}
+	if s.companions == nil {
+		return fmt.Errorf("%w: companion artifact runtime is unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	descriptor := input.Package
+	if descriptor == nil {
+		descriptor = resolved.Package
+	}
+	if descriptor == nil {
+		return fmt.Errorf("%w: companion package descriptor is required", apperrors.ErrInvalidArgument)
+	}
+	if _, err := s.companions.Install(ctx, manifest, *descriptor); err != nil {
+		return err
+	}
+	if current.Status != statusEnabled {
+		return nil
+	}
+	_, err := s.companions.Activate(ctx, manifest.ID, manifest.Version)
+	return err
 }
 
 func (s *Service) Configure(ctx context.Context, principal domainidentity.Principal, pluginID string, input domainplugin.PluginConfigRequest) (domainplugin.InstalledPlugin, error) {
