@@ -141,6 +141,13 @@ func (s *resourceAccess) authorizeResourceGroup(ctx context.Context, principal d
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, "", string(action), "deny", decision.Reason)
 		return domaincluster.Connection{}, domainaccess.Decision{}, fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
 	}
+	if isResourceReadAction(action) {
+		actions := s.allowedActionsForResourceGroup(ctx, principal, connection, namespace, resourceGroup, kind, action)
+		decision.AllowedActions = make([]domainaccess.Action, 0, len(actions))
+		for _, allowedAction := range actions {
+			decision.AllowedActions = append(decision.AllowedActions, domainaccess.Action(allowedAction))
+		}
+	}
 	return connection, decision, nil
 }
 
@@ -203,7 +210,7 @@ func (s *resourceAccess) resourceAccessRequest(ctx context.Context, principal do
 			Labels:      connection.Summary.Labels,
 		},
 		Namespace: domainaccess.NamespaceAttributes{Namespace: namespace},
-		Resource:  domainaccess.ResourceAttributes{Group: resourceGroupForKind(kind), Kind: kind},
+		Resource:  domainaccess.ResourceAttributes{Group: strings.TrimSpace(resourceGroup), Kind: kind},
 		Context: domainaccess.ContextAttributes{
 			Source:     requestctx.FromContext(ctx).Source,
 			OccurredAt: time.Now().UTC(),
@@ -211,21 +218,25 @@ func (s *resourceAccess) resourceAccessRequest(ctx context.Context, principal do
 	}
 }
 func (s *resourceAccess) allowedActionsForResource(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind string, action domainaccess.Action) []string {
+	return s.allowedActionsForResourceGroup(ctx, principal, connection, namespace, resourceGroupForKind(kind), kind, action)
+}
+
+func (s *resourceAccess) allowedActionsForResourceGroup(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, resourceGroup, kind string, action domainaccess.Action) []string {
 	if s == nil || s.authorizer == nil {
 		return nil
 	}
-	candidates := resourceActionCandidates(resourceGroupForKind(kind), kind)
+	candidates := resourceActionCandidates(resourceGroup, kind)
 	if len(candidates) > 0 {
 		allowed := make([]string, 0, len(candidates))
 		for _, candidate := range candidates {
-			decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroupForKind(kind), kind, candidate))
+			decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroup, kind, candidate))
 			if err == nil && decision.Allowed {
 				allowed = append(allowed, string(candidate))
 			}
 		}
 		return allowed
 	}
-	decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroupForKind(kind), kind, action))
+	decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroup, kind, action))
 	if err != nil || !decision.Allowed {
 		return nil
 	}
@@ -320,9 +331,13 @@ func resourceActionCandidates(resourceGroup, kind string) []domainaccess.Action 
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionLogs, domainaccess.ActionExec, domainaccess.ActionDelete}
 	case "deployment":
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDelete, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionRollback}
+	case "namespace", "node":
+		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDelete}
+	case "helmrelease":
+		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionCreate, domainaccess.ActionUpdate, domainaccess.ActionDelete}
 	}
 	switch strings.TrimSpace(resourceGroup) {
-	case "workloads", "configuration", "network", "storage", "access-control":
+	case "workloads", "configuration", "network", "storage", "access-control", "extensions":
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDelete, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionSuspend}
 	default:
 		return nil

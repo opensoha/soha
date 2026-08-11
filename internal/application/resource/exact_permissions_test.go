@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
@@ -64,6 +65,46 @@ func TestKubernetesResourceReadsUseExactPermissionKeys(t *testing.T) {
 		t.Run(tt.kind, func(t *testing.T) {
 			if got := resourcePermissionKey(tt.group, tt.kind, domainaccess.ActionView); got != tt.want {
 				t.Fatalf("resourcePermissionKey(%q, %q, view) = %q, want %q", tt.group, tt.kind, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestKubernetesReadAuthorizationPopulatesRowActions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		resourceGroup string
+		kind          string
+		permissions   []string
+		wantActions   []string
+	}{
+		{"workload", "workloads", "StatefulSet", []string{"platform.workloads.stateful-sets.view", "platform.workloads.stateful-sets.restart", "platform.workloads.stateful-sets.delete"}, []string{"view", "delete", "restart"}},
+		{"configuration", "configuration", "ConfigMap", []string{"platform.configuration.config-maps.view", "platform.configuration.config-maps.delete"}, []string{"view", "delete"}},
+		{"network", "network", "Service", []string{"platform.network.services.view", "platform.network.services.delete"}, []string{"view", "delete"}},
+		{"storage", "storage", "PersistentVolumeClaim", []string{"platform.storage.persistent-volume-claims.view", "platform.storage.persistent-volume-claims.delete"}, []string{"view", "delete"}},
+		{"rbac", "access-control", "Role", []string{"platform.access-control.roles.view", "platform.access-control.roles.delete"}, []string{"view", "delete"}},
+		{"node", "inventory", "Node", []string{"platform.nodes.view", "platform.nodes.update", "platform.nodes.delete"}, []string{"view", "update", "delete"}},
+		{"custom resource", "extensions", "Addon", []string{"platform.extensions.view", "platform.extensions.custom-resources.delete"}, []string{"view", "delete"}},
+		{"helm release", "extensions", "HelmRelease", []string{"platform.helm.view", "platform.helm.releases.update", "platform.helm.releases.delete"}, []string{"view", "update", "delete"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			permissions := exactPermissionAuthorizer{}
+			for _, permission := range tt.permissions {
+				permissions[permission] = true
+			}
+			access := &resourceAccess{
+				resolver:   stubConnectionResolver{connection: domaincluster.Connection{Summary: domaincluster.Summary{ID: "cluster-a"}}},
+				authorizer: permissions,
+			}
+			_, decision, err := access.authorizeResourceGroup(context.Background(), domainidentity.Principal{}, "cluster-a", "team-a", tt.resourceGroup, tt.kind, domainaccess.ActionList)
+			if err != nil {
+				t.Fatalf("authorizeResourceGroup() error = %v", err)
+			}
+			if got := stringifyActions(decision.AllowedActions); !slices.Equal(got, tt.wantActions) {
+				t.Fatalf("allowed actions = %#v, want %#v", got, tt.wantActions)
 			}
 		})
 	}
