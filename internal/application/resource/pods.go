@@ -26,7 +26,6 @@ func (w *Workloads) ListPods(ctx context.Context, principal domainidentity.Princ
 	if err != nil {
 		return nil, err
 	}
-	populateAllowedActionsPods(items, decision)
 	allowedActions := s.allowedActionsForResource(ctx, principal, connection, namespace, "Pod", domainaccess.ActionList)
 	for index := range items {
 		items[index].AllowedActions = narrowAllowedActions(items[index].AllowedActions, allowedActions)

@@ -3,13 +3,41 @@ package resource
 import (
 	"context"
 	"io"
+	"slices"
 	"testing"
 
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
+
+type requestActionAuthorizer struct{}
+
+func (requestActionAuthorizer) Authorize(_ context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+	return domainaccess.Decision{Allowed: true, AllowedActions: []domainaccess.Action{request.Action}}, nil
+}
+
+func TestListPodsUsesAuthorizedActionsWhenProviderOmitsThem(t *testing.T) {
+	connection := domaincluster.Connection{Summary: domaincluster.Summary{
+		ID: "direct-cluster", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig,
+	}}
+	service := New(Dependencies{
+		Connections: stubConnectionResolver{connection: connection},
+		Authorizer:  requestActionAuthorizer{},
+		Audit:       discardAuditRecorder{},
+		DirectPods:  &stubDirectPods{items: []domainresource.PodView{{Name: "api-0", Namespace: "platform"}}},
+	})
+
+	items, err := service.Workloads().ListPods(context.Background(), domainidentity.Principal{UserID: "user-1"}, "direct-cluster", "platform")
+	if err != nil {
+		t.Fatalf("ListPods() error = %v", err)
+	}
+	if len(items) != 1 || !slices.Contains(items[0].AllowedActions, "delete") {
+		t.Fatalf("ListPods() allowed actions = %#v, want delete", items)
+	}
+}
 
 func TestDirectCapabilitiesDelegateToTechnologyFreePorts(t *testing.T) {
 	t.Parallel()

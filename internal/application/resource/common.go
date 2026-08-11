@@ -218,9 +218,7 @@ func (s *resourceAccess) allowedActionsForResource(ctx context.Context, principa
 	if len(candidates) > 0 {
 		allowed := make([]string, 0, len(candidates))
 		for _, candidate := range candidates {
-			request := s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroupForKind(kind), kind, candidate)
-			decision, err := s.authorizer.Authorize(ctx, request)
-			fmt.Printf("allowed-actions-debug kind=%s action=%s permission=%s allowed=%t reason=%q err=%v roles=%v\n", kind, candidate, request.PermissionKey, decision.Allowed, decision.Reason, err, principal.Roles)
+			decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroupForKind(kind), kind, candidate))
 			if err == nil && decision.Allowed {
 				allowed = append(allowed, string(candidate))
 			}

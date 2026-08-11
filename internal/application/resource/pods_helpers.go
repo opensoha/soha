@@ -235,11 +235,3 @@ func (s *Workloads) listPodViews(ctx context.Context, clusterID, namespace strin
 	})
 	return items, source, nil
 }
-
-func populateAllowedActionsPods(items []domainresource.PodView, decision domainaccess.Decision) {
-	for i := range items {
-		if len(items[i].AllowedActions) == 0 {
-			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
-		}
-	}
-}
