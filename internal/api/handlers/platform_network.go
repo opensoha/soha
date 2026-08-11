@@ -40,8 +40,7 @@ func (h *networkOverviewResourceHandler) GetNetworkTopology(c *gin.Context) {
 func (h *networkOverviewResourceHandler) GetServiceMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
-	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
+	rangeMinutes, stepSeconds := parseMetricsWindow(c)
 	item, err := h.service.GetServiceMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("serviceName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)

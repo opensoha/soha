@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -74,6 +75,32 @@ func TestRunnerClaimResponses(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestDockerRunnerClaimReturnsTokenWithoutExposingItOnOperationJSON(t *testing.T) {
+	const token = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
+	item := domaindocker.Operation{ID: "operation-1", CallbackToken: token}
+	handler := NewDockerHandlerWithServices(
+		DockerServices{RunnerOperations: &stubDockerRunnerOperationService{item: item}}, legacyRunnerKeyring("runner-token"),
+	).ClaimOperation
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/claim", strings.NewReader(`{"workerId":"worker-1","operationKinds":["host_sync"],"callbackTokenSupported":true}`))
+	ctx.Request.Header.Set("Authorization", "Bearer runner-token")
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	handler(ctx)
+
+	if recorder.Code != http.StatusAccepted || !strings.Contains(recorder.Body.String(), `"callbackToken":"`+token+`"`) {
+		t.Fatalf("claim response = %d %s, want callback token", recorder.Code, recorder.Body.String())
+	}
+	raw, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal operation: %v", err)
+	}
+	if strings.Contains(string(raw), "callbackToken") || strings.Contains(string(raw), token) {
+		t.Fatalf("operation JSON exposed callback token: %s", raw)
 	}
 }
 

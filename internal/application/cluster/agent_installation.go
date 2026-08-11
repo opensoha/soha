@@ -221,16 +221,21 @@ func renderAgentManifest(connection domaincluster.Connection, accessURL string) 
 	}
 
 	readRules := []map[string]any{
-		{"apiGroups": []string{""}, "resources": []string{"configmaps", "endpoints", "events", "limitranges", "namespaces", "nodes", "persistentvolumeclaims", "persistentvolumes", "pods", "pods/log", "resourcequotas", "secrets", "services"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{""}, "resources": []string{"configmaps", "endpoints", "events", "limitranges", "namespaces", "nodes", "persistentvolumeclaims", "persistentvolumes", "pods", "pods/log", "resourcequotas", "secrets", "serviceaccounts", "services"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "deployments/scale", "replicasets", "statefulsets", "statefulsets/scale"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"batch"}, "resources": []string{"cronjobs", "jobs"}, "verbs": []string{"get", "list", "watch"}},
-		{"apiGroups": []string{"networking.k8s.io"}, "resources": []string{"ingresses", "networkpolicies"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{"networking.k8s.io"}, "resources": []string{"ingressclasses", "ingresses", "networkpolicies"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{"discovery.k8s.io"}, "resources": []string{"endpointslices"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"autoscaling"}, "resources": []string{"horizontalpodautoscalers"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"policy"}, "resources": []string{"poddisruptionbudgets"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{"admissionregistration.k8s.io"}, "resources": []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{"node.k8s.io"}, "resources": []string{"runtimeclasses"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"rbac.authorization.k8s.io"}, "resources": []string{"clusterrolebindings", "clusterroles", "rolebindings", "roles"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{"scheduling.k8s.io"}, "resources": []string{"priorityclasses"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{"storage.k8s.io"}, "resources": []string{"storageclasses"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"apiextensions.k8s.io"}, "resources": []string{"customresourcedefinitions"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"coordination.k8s.io"}, "resources": []string{"leases"}, "verbs": []string{"get", "list", "watch"}},
-		{"apiGroups": []string{"gateway.networking.k8s.io"}, "resources": []string{"gateways", "grpcroutes", "httproutes", "referencegrants", "tcproutes", "tlsroutes", "udproutes"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{"gateway.networking.k8s.io"}, "resources": []string{"backendtlspolicies", "gatewayclasses", "gateways", "grpcroutes", "httproutes", "referencegrants", "tcproutes", "tlsroutes", "udproutes"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"metrics.k8s.io"}, "resources": []string{"nodes", "pods"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "deployments/scale", "statefulsets", "statefulsets/scale"}, "verbs": []string{"update", "patch"}},
 	}

@@ -959,19 +959,24 @@ func (s *fakeCatalogService) ListWorkflowTemplates(context.Context, domainidenti
 }
 
 type fakeResourceService struct {
-	listedPods    bool
-	readLogs      bool
-	listedEvents  bool
-	tailLines     int64
-	eventLimit    int
-	clusterID     string
-	namespace     string
-	podName       string
-	deployments   []domainresource.DeploymentView
-	services      []domainresource.ServiceView
-	pods          []domainresource.PodView
-	ingresses     []domainresource.IngressView
-	clusterEvents []domainresource.ClusterEventView
+	listedPods       bool
+	readLogs         bool
+	listedEvents     bool
+	tailLines        int64
+	eventLimit       int
+	clusterID        string
+	namespace        string
+	podName          string
+	deployments      []domainresource.DeploymentView
+	services         []domainresource.ServiceView
+	pods             []domainresource.PodView
+	ingresses        []domainresource.IngressView
+	clusterEvents    []domainresource.ClusterEventView
+	namespaces       []domainresource.NamespaceView
+	workloadOverview domainresource.WorkloadOverviewView
+	configMaps       []domainresource.ConfigMapView
+	secrets          []domainresource.SecretView
+	helmReleases     []domainresource.HelmReleaseView
 }
 
 type fakeAnalysisArtifactRecorder struct {
@@ -1023,6 +1028,35 @@ func (s *fakeResourceService) ListPods(_ context.Context, _ domainidentity.Princ
 		return s.pods, nil
 	}
 	return []domainresource.PodView{{Name: "api-7d9f", Namespace: namespace, Phase: "CrashLoopBackOff", Restarts: 4}}, nil
+}
+
+func (s *fakeResourceService) ListNamespaces(_ context.Context, _ domainidentity.Principal, clusterID string) ([]domainresource.NamespaceView, error) {
+	s.clusterID = clusterID
+	return s.namespaces, nil
+}
+
+func (s *fakeResourceService) GetWorkloadOverview(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) (domainresource.WorkloadOverviewView, error) {
+	s.clusterID = clusterID
+	s.namespace = namespace
+	return s.workloadOverview, nil
+}
+
+func (s *fakeResourceService) ListConfigMaps(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.ConfigMapView, error) {
+	s.clusterID = clusterID
+	s.namespace = namespace
+	return s.configMaps, nil
+}
+
+func (s *fakeResourceService) ListSecrets(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.SecretView, error) {
+	s.clusterID = clusterID
+	s.namespace = namespace
+	return s.secrets, nil
+}
+
+func (s *fakeResourceService) ListHelmReleases(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.HelmReleaseView, error) {
+	s.clusterID = clusterID
+	s.namespace = namespace
+	return s.helmReleases, nil
 }
 
 func (s *fakeResourceService) GetPodDetail(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name string) (domainresource.PodDetailView, error) {
@@ -1425,6 +1459,11 @@ func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
 		{tool: "delivery.plans.confirm", required: []string{"planId"}},
 		{tool: "delivery.release_context.diff", required: []string{"applicationId"}},
 		{tool: "delivery.rollback.context", required: []string{"applicationId"}},
+		{tool: "k8s.namespaces.list", required: []string{"clusterId"}},
+		{tool: "k8s.workloads.overview", required: []string{"clusterId"}},
+		{tool: "k8s.configmaps.list", required: []string{"clusterId"}},
+		{tool: "k8s.secrets.metadata", required: []string{"clusterId"}},
+		{tool: "k8s.helm.releases.list", required: []string{"clusterId"}},
 		{tool: "k8s.pods.list", required: []string{"clusterId"}},
 		{tool: "k8s.pods.logs", required: []string{"clusterId", "namespace", "podName"}},
 		{tool: "k8s.pods.describe", required: []string{"clusterId", "namespace", "podName"}},
@@ -2195,7 +2234,7 @@ func TestGetPromptCombinesSkillContextAndAudit(t *testing.T) {
 
 	result, err := service.GetPrompt(context.Background(), testPrincipal("developer"), domainaigateway.PromptGetRequest{
 		Name:      "soha.k8s.diagnose_workload",
-		Arguments: map[string]any{"clusterId": "cluster-a", "namespace": "prod", "token": "secret"},
+		Arguments: map[string]any{"clusterId": "cluster-a", "namespace": "prod", "token": "sensitive-token-value"},
 		SkillID:   "k8s-sre",
 	})
 	if err != nil {
@@ -2208,7 +2247,7 @@ func TestGetPromptCombinesSkillContextAndAudit(t *testing.T) {
 	if !strings.Contains(content, "K8s SRE") || !strings.Contains(content, "cluster-a") || !strings.Contains(content, "k8s.deployments.rollout_status") {
 		t.Fatalf("prompt did not combine skill and context: %s", content)
 	}
-	if strings.Contains(content, "secret") {
+	if strings.Contains(content, "sensitive-token-value") {
 		t.Fatalf("prompt leaked sensitive arguments: %s", content)
 	}
 	if len(audit.entries) != 1 || audit.entries[0].ResourceKind != "AIGatewayPrompt" || audit.entries[0].Result != "success" {
@@ -7924,6 +7963,55 @@ func TestInvokeKubernetesP1DiagnosticsUseResourceService(t *testing.T) {
 	assertKubernetesWorkloadDiagnostics(t, service, principal)
 	assertKubernetesNetworkDiagnostics(t, service, principal)
 	assertKubernetesInfrastructureDiagnostics(t, service, principal)
+}
+
+func TestInvokeKubernetesWorkbenchReadToolsUseResourceService(t *testing.T) {
+	resources := &fakeResourceService{
+		namespaces:       []domainresource.NamespaceView{{Name: "prod", Status: "Active"}},
+		workloadOverview: domainresource.WorkloadOverviewView{ClusterID: "cluster-a", Namespace: "prod", TotalPods: 3},
+		configMaps:       []domainresource.ConfigMapView{{Name: "app-config", Namespace: "prod", DataEntries: 2}},
+		secrets:          []domainresource.SecretView{{Name: "app-secret", Namespace: "prod", Type: "Opaque", DataEntries: 2}},
+		helmReleases:     []domainresource.HelmReleaseView{{Name: "app", Namespace: "prod", Status: "deployed"}},
+	}
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"sre": {
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermWorkspaceResourceView,
+				appaccess.PermPlatformNamespacesView,
+				appaccess.PermPlatformWorkloadsView,
+				appaccess.PermPlatformConfigurationView,
+				appaccess.PermPlatformHelmView,
+			},
+		},
+	}), nil)
+	service.SetResourceService(resources)
+	principal := testPrincipal("sre")
+
+	for _, toolName := range []string{"k8s.namespaces.list", "k8s.workloads.overview", "k8s.configmaps.list", "k8s.secrets.metadata", "k8s.helm.releases.list"} {
+		result, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
+			ToolName: toolName,
+			Input:    map[string]any{"clusterId": "cluster-a", "namespace": "prod"},
+		})
+		if err != nil {
+			t.Fatalf("InvokeTool(%s) returned error: %v", toolName, err)
+		}
+		if result.RelatedIDs["clusterId"] != "cluster-a" {
+			t.Fatalf("InvokeTool(%s) lost cluster scope: %#v", toolName, result.RelatedIDs)
+		}
+	}
+
+	result, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
+		ToolName: "k8s.secrets.metadata",
+		Input:    map[string]any{"clusterId": "cluster-a", "namespace": "prod"},
+	})
+	if err != nil {
+		t.Fatalf("InvokeTool(k8s.secrets.metadata) returned error: %v", err)
+	}
+	items, ok := result.Output.([]domainresource.SecretView)
+	if !ok || len(items) != 1 || items[0].Name != "app-secret" || items[0].DataEntries != 2 {
+		t.Fatalf("expected Secret metadata only, got %#v", result.Output)
+	}
 }
 
 func TestInvokeKubernetesListRequiresResourceService(t *testing.T) {

@@ -4,7 +4,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -24,7 +24,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/clusterrolebindings",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -39,7 +39,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/clusterrolebindings/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -54,7 +54,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/clusterroles",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -69,7 +69,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/clusterroles/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -84,7 +84,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/rolebindings",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -99,7 +99,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/rolebindings/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -114,7 +114,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/roles",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -129,7 +129,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/roles/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -144,7 +144,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/serviceaccounts",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -159,7 +159,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/serviceaccounts/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -179,7 +179,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/configmaps",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -199,12 +199,12 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/configmaps/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/configmaps/:name/references",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -219,7 +219,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/hpas",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -229,7 +229,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/hpas/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -244,7 +244,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/leases",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -264,7 +264,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/limitranges",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -274,7 +274,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/limitranges/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -289,7 +289,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/mutatingwebhookconfigurations",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -299,7 +299,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/mutatingwebhookconfigurations/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -314,7 +314,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/poddisruptionbudgets",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -324,7 +324,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/poddisruptionbudgets/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -339,7 +339,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/priorityclasses",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -359,7 +359,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/resourcequotas",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -369,7 +369,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/resourcequotas/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -384,7 +384,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/runtimeclasses",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -404,7 +404,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/secrets",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -429,7 +429,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/secrets/:name/references",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -444,7 +444,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/validatingwebhookconfigurations",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -454,7 +454,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/validatingwebhookconfigurations/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -469,22 +469,22 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/events",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/extensions/crds",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/extensions/crds/:crdName/resources",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -509,12 +509,12 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/helm/charts",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/helm/charts/:repositoryName/:chartName",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -529,7 +529,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/helm/releases",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -539,12 +539,12 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/helm/releases/:releaseName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/helm/releases/:releaseName/history",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -559,7 +559,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/infrastructure/nodes",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -574,7 +574,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/infrastructure/nodes/:nodeName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -604,7 +604,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/logs/stream",
-      "classification": "internal"
+      "classification": "stream-only"
     },
     {
       "method": "POST",
@@ -614,7 +614,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/namespaces",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -634,17 +634,17 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/backendtlspolicies",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/backendtlspolicies/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/endpointslices",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -654,7 +654,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/endpointslices/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -669,7 +669,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/gatewayclasses",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -679,7 +679,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/gatewayclasses/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -694,7 +694,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/gateways",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -704,7 +704,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/gateways/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -719,27 +719,27 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/grpcroutes",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/grpcroutes/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/httproutes",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/httproutes/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/ingressclasses",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -749,7 +749,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/ingressclasses/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -764,7 +764,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/ingresses",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -774,7 +774,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/ingresses/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -789,7 +789,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/networkpolicies",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -799,7 +799,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/networkpolicies/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -829,17 +829,17 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/referencegrants",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/referencegrants/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/services",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -849,12 +849,12 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/services/:serviceName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/services/:serviceName/metrics",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -869,7 +869,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/network/topology",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -909,7 +909,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/storage/persistentvolumeclaims",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -924,7 +924,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/storage/persistentvolumeclaims/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -939,7 +939,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/storage/persistentvolumes",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -954,7 +954,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/storage/persistentvolumes/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -969,7 +969,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/storage/storageclasses",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -984,7 +984,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/storage/storageclasses/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -999,7 +999,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/cronjobs",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -1009,7 +1009,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/cronjobs/:cronJobName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -1019,7 +1019,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/cronjobs/:cronJobName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
@@ -1029,7 +1029,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/daemonsets",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -1039,17 +1039,17 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/daemonsets/:daemonSetName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/daemonsets/:daemonSetName/metrics",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/daemonsets/:daemonSetName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
@@ -1064,7 +1064,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/deployments",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -1074,27 +1074,27 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/deployments/:deploymentName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/deployments/:deploymentName/metrics",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/deployments/:deploymentName/rollout-status",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/deployments/:deploymentName/rollouts",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/deployments/:deploymentName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
@@ -1119,7 +1119,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/jobs",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -1129,12 +1129,12 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/jobs/:jobName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/jobs/:jobName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
@@ -1144,12 +1144,12 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/overview",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -1159,7 +1159,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -1169,27 +1169,27 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/logs",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/logs/stream",
-      "classification": "internal"
+      "classification": "stream-only"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/metrics",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/terminal",
-      "classification": "internal"
+      "classification": "stream-only"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
@@ -1199,7 +1199,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/replicasets",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -1209,12 +1209,12 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/replicasets/:replicaSetName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/replicasets/:replicaSetName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
@@ -1224,17 +1224,17 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/replicationcontrollers",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/replicationcontrollers/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/replicationcontrollers/:name/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
@@ -1244,7 +1244,7 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/statefulsets",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
@@ -1254,17 +1254,17 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/statefulsets/:statefulSetName/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/statefulsets/:statefulSetName/metrics",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/workloads/statefulsets/:statefulSetName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",

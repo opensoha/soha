@@ -833,7 +833,10 @@ func (h *DockerHandler) ClaimOperation(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusAccepted, item)
+	apiresponse.Item(c, http.StatusAccepted, struct {
+		domaindocker.Operation
+		CallbackToken string `json:"callbackToken,omitempty"`
+	}{Operation: item, CallbackToken: item.CallbackToken})
 }
 
 func (h *DockerHandler) GetOperationRunnerStatus(c *gin.Context) {

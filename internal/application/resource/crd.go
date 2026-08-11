@@ -14,7 +14,7 @@ import (
 )
 
 func (c *CustomResources) ListCRDs(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.CRDView, error) {
-	connection, decision, err := c.authorize(ctx, principal, clusterID, "", "CRD", domainaccess.ActionList)
+	connection, decision, err := c.authorize(ctx, principal, clusterID, "", "CustomResourceDefinition", domainaccess.ActionList)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func (c *CustomResources) ListCRDResources(ctx context.Context, principal domain
 		return nil, err
 	}
 	authNamespace := normalizeCustomResourceNamespace(namespace, definition.Namespaced)
-	_, decision, err := c.authorize(ctx, principal, clusterID, authNamespace, definition.Kind, domainaccess.ActionList)
+	_, decision, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, authNamespace, definition.Kind, domainaccess.ActionList)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +68,7 @@ func (c *CustomResources) CreateCRDResourceFromYAML(ctx context.Context, princip
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if _, _, err := c.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionCreate); err != nil {
+	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionCreate); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
 	created, source, err := c.createCustomResource(ctx, connection, definition, effectiveNamespace, content)
@@ -98,7 +98,7 @@ func (c *CustomResources) GetCRDResourceYAML(ctx context.Context, principal doma
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if _, _, err := c.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionView); err != nil {
+	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionView); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
 	item, source, err := c.getCustomResourceYAML(ctx, connection, definition, effectiveNamespace, name)
@@ -126,7 +126,7 @@ func (c *CustomResources) ApplyCRDResourceYAML(ctx context.Context, principal do
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if _, _, err := c.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionUpdate); err != nil {
+	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionUpdate); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
 	updated, source, err := c.applyCustomResourceYAML(ctx, connection, definition, effectiveNamespace, name, content)
@@ -156,7 +156,7 @@ func (c *CustomResources) DeleteCRDResource(ctx context.Context, principal domai
 	if err != nil {
 		return err
 	}
-	if _, _, err := c.authorize(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionDelete); err != nil {
+	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionDelete); err != nil {
 		return err
 	}
 	source, err := c.deleteCustomResource(ctx, connection, definition, effectiveNamespace, name)
@@ -430,6 +430,10 @@ func normalizeCustomResourceNamespace(namespace string, namespaced bool) string 
 }
 
 func (c *CustomResources) authorizeCRDDefinitionAccess(ctx context.Context, principal domainidentity.Principal, clusterID string, action domainaccess.Action) (domaincluster.Connection, error) {
-	connection, _, err := c.authorize(ctx, principal, clusterID, "", "CRD", action)
+	connection, _, err := c.authorize(ctx, principal, clusterID, "", "CustomResourceDefinition", action)
 	return connection, err
+}
+
+func (c *CustomResources) authorizeCustomResourceAccess(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
+	return c.authorizeResourceGroup(ctx, principal, clusterID, namespace, "extensions", kind, action)
 }

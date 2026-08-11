@@ -58,6 +58,11 @@ func TestPlatformRouteSurfaceMatchesReviewedSnapshot(t *testing.T) {
 func currentPlatformRouteSurface(t *testing.T) []platformRouteSurfaceEntry {
 	t.Helper()
 	publicRoutes := publicOpenAPIPlatformRoutes(t)
+	streamRoutes := map[string]struct{}{
+		"GET /api/v1/clusters/:param/logs/stream":                       {},
+		"GET /api/v1/clusters/:param/workloads/pods/:param/logs/stream": {},
+		"GET /api/v1/clusters/:param/workloads/pods/:param/terminal":    {},
+	}
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -72,6 +77,9 @@ func currentPlatformRouteSurface(t *testing.T) []platformRouteSurfaceEntry {
 		if _, ok := publicRoutes[key]; ok {
 			classification = "public"
 			delete(publicRoutes, key)
+		} else if _, ok := streamRoutes[key]; ok {
+			classification = "stream-only"
+			delete(streamRoutes, key)
 		}
 		entries = append(entries, platformRouteSurfaceEntry{
 			Method:         route.Method,
@@ -86,6 +94,14 @@ func currentPlatformRouteSurface(t *testing.T) []platformRouteSurfaceEntry {
 		}
 		sort.Strings(missing)
 		t.Fatalf("public platform OpenAPI operations have no live route: %s", strings.Join(missing, ", "))
+	}
+	if len(streamRoutes) > 0 {
+		missing := make([]string, 0, len(streamRoutes))
+		for route := range streamRoutes {
+			missing = append(missing, route)
+		}
+		sort.Strings(missing)
+		t.Fatalf("reviewed platform stream routes have no live route: %s", strings.Join(missing, ", "))
 	}
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Path == entries[j].Path {
@@ -121,6 +137,9 @@ func publicOpenAPIPlatformRoutes(t *testing.T) map[string]struct{} {
 			"GET": pathItem.Get, "POST": pathItem.Post, "PUT": pathItem.Put, "PATCH": pathItem.Patch, "DELETE": pathItem.Delete,
 		} {
 			if operation != nil {
+				if strings.TrimSpace(operation.OperationID) == "" {
+					t.Fatalf("public platform OpenAPI operation has no operationId: %s %s", method, path)
+				}
 				routes[method+" "+normalizeRoutePattern(basePath+path)] = struct{}{}
 			}
 		}

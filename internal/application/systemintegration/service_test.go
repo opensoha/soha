@@ -12,12 +12,26 @@ import (
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
+
+type failingIntegrationAudit struct{ err error }
+
+func (r failingIntegrationAudit) Record(context.Context, domainaudit.Entry) error { return r.err }
+
+type failingIntegrationOperations struct{ err error }
+
+func (r failingIntegrationOperations) Record(context.Context, domainoperation.Entry) error {
+	return r.err
+}
 
 type integrationRoleReader map[string][]string
 
@@ -86,6 +100,21 @@ func (p *captureOAuthProvider) Refresh(context.Context, OAuthProviderConfig, str
 
 func newMemoryIntegrationRepository() *memoryIntegrationRepository {
 	return &memoryIntegrationRepository{items: map[string]domain.Integration{}, credentials: map[string]map[string]string{}}
+}
+
+func TestRecorderFailuresAreObservable(t *testing.T) {
+	service := &Service{
+		audit:      failingIntegrationAudit{err: errors.New("audit unavailable")},
+		operations: failingIntegrationOperations{err: errors.New("operations unavailable")},
+		now:        time.Now,
+	}
+	core, logs := observer.New(zap.WarnLevel)
+	service.SetInstrumentation(zap.New(core))
+
+	service.recordMutation(context.Background(), domainidentity.Principal{UserID: "admin"}, "settings.system_integrations.update", domain.Integration{ID: "integration-1", ProviderType: "gitlab", Category: "source-control"}, "updated system integration")
+	if logs.FilterMessage("system integration evidence record failed").Len() != 2 {
+		t.Fatalf("warning logs = %d, want 2", logs.Len())
+	}
 }
 
 func (r *memoryIntegrationRepository) List(_ context.Context, filter domain.Filter) ([]domain.Integration, error) {

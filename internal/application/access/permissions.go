@@ -517,6 +517,14 @@ func PlatformActionPermission(resourceGroup, kind, action string) string {
 }
 
 func pluralPermissionResource(kind string) string {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "httproute":
+		return "http-routes"
+	case "grpcroute":
+		return "grpc-routes"
+	case "backendtlspolicy":
+		return "backend-tls-policies"
+	}
 	runes := []rune(strings.TrimSpace(kind))
 	var name strings.Builder
 	for index, current := range runes {

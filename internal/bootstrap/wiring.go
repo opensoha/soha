@@ -429,6 +429,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		return nil, fmt.Errorf("build secret service: %w", err)
 	}
 	systemIntegrationService := appsystemintegration.New(repos.systemIntegrationRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
+	systemIntegrationService.SetInstrumentation(infra.logger)
 	systemIntegrationService.RegisterSourceAdapter("gitlab", gitLabSourceAdapterFactory{})
 	systemIntegrationService.RegisterOAuthProvider("gitlab", gitlabinfra.NewOAuthProvider())
 	runtimeConfigService, err := appruntimeconfig.New(ctx, repos.runtimeConfigRepository, appruntimeconfig.NewRegistry(appruntimeconfig.RegistryOptions{
@@ -471,6 +472,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	if err != nil {
 		return nil, fmt.Errorf("build runtime config service: %w", err)
 	}
+	runtimeConfigService.SetInstrumentation(infra.logger)
 	cfg = runtimeEffectiveConfig(cfg, runtimeConfigService.Current())
 	repos.alertRepository.SetUpsertBatchSize(cfg.Runtime.AlertUpsertBatchSize)
 	infra.agentRegistry.SetDefaultTimeout(cfg.MCP.DefaultTimeout)
@@ -478,7 +480,8 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	menuService := appmenu.New(repos.menuRepository, permissionResolver, auditService, operationService)
 	menuService.SetModuleState(runtimeConfigService)
 	moduleService := appmodule.NewRuntime(runtimeConfigService)
-	settingsService := appsettings.New(repos.settingsRepository, permissionResolver)
+	settingsService := appsettings.New(repos.settingsRepository, permissionResolver, auditService, operationService)
+	settingsService.SetInstrumentation(infra.logger)
 	samlLoginRuntime := samlinfra.NewLoginRuntime()
 	settingsService.SetSAMLMetadataPinner(samlLoginRuntime)
 	directorySyncConnectors := directorysynchandler.NewRegistry(directorysynchandler.TokenResolver(
@@ -928,6 +931,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 			StartupSyncEnabled:       cfg.Runtime.VirtualizationStartupSync,
 			WorkerInterval:           cfg.Runtime.VirtualizationWorkerInterval,
 			SyncConcurrency:          cfg.Runtime.VirtualizationSyncConcurrency,
+			Audit:                    core.auditService,
 		},
 	)
 	virtualizationService.SetInstrumentation(infra.runtimeMetrics)
@@ -950,6 +954,8 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		ModuleState:           core.runtimeConfigService,
 		VirtualizationTasks:   virtualizationService,
 		RuntimeTasks:          dockerService,
+		VirtualizationControl: computeVirtualizationController{service: virtualizationService},
+		RuntimeControl:        dockerService,
 	})
 	copilotService.SetAgentRuntimeReaders(core.executionService, runtimeResources, dockerService, virtualizationService, core.monitoringService)
 

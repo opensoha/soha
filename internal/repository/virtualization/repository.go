@@ -536,12 +536,17 @@ func (r *Repository) UpdateTask(ctx context.Context, item domainvirtualization.T
 	if err != nil {
 		return domainvirtualization.Task{}, fmt.Errorf("marshal virtualization task result: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	query := `
 		UPDATE virtualization_tasks
 		SET status = ?, claimed_by_worker_id = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
 		    result = ?, payload = ?, started_at = ?, last_heartbeat_at = ?, finished_at = ?, updated_at = ?
-		WHERE id = ?
-	`, item.Status, nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries, item.TimeoutSeconds, string(resultPayload), string(payload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt, item.UpdatedAt, item.ID)
+		WHERE id = ?`
+	args := []any{item.Status, nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries, item.TimeoutSeconds, string(resultPayload), string(payload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt, item.UpdatedAt, item.ID}
+	if strings.TrimSpace(item.ClaimedByWorkerID) != "" {
+		query += ` AND claimed_by_worker_id = ? AND attempt_count = ? AND status = 'running'`
+		args = append(args, strings.TrimSpace(item.ClaimedByWorkerID), item.AttemptCount)
+	}
+	result := r.db.WithContext(ctx).Exec(query, args...)
 	if result.Error != nil {
 		return domainvirtualization.Task{}, fmt.Errorf("update virtualization task: %w", result.Error)
 	}
@@ -549,6 +554,25 @@ func (r *Repository) UpdateTask(ctx context.Context, item domainvirtualization.T
 		return domainvirtualization.Task{}, ErrNotFound
 	}
 	return r.GetTask(ctx, item.ID)
+}
+
+func (r *Repository) UpdateTaskResult(ctx context.Context, id string, taskResult map[string]any) error {
+	resultPayload, err := marshalJSON(taskResult)
+	if err != nil {
+		return fmt.Errorf("marshal virtualization task result: %w", err)
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE virtualization_tasks
+		SET result = ?, updated_at = ?
+		WHERE id = ?
+	`, string(resultPayload), time.Now().UTC(), strings.TrimSpace(id))
+	if result.Error != nil {
+		return fmt.Errorf("update virtualization task result: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *Repository) ClaimTask(ctx context.Context, workerID string, now time.Time) (domainvirtualization.Task, error) {

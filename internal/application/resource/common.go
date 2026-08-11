@@ -103,6 +103,12 @@ func unsupportedAgentOperation(message string) error {
 	return fmt.Errorf("%w: %s", apperrors.ErrUnsupportedOperation, message)
 }
 
+func (s *resourceAccess) unsupportedMutation(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind, name string, action domainaccess.Action, message string) error {
+	err := unsupportedAgentOperation(message)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(action), "failure", err.Error())
+	return err
+}
+
 func (s *resourceAccess) loadConnection(ctx context.Context, clusterID string) (domaincluster.Connection, error) {
 	if s.resolver != nil {
 		connection, err := s.resolver.GetConnection(ctx, clusterID)
@@ -212,7 +218,9 @@ func (s *resourceAccess) allowedActionsForResource(ctx context.Context, principa
 	if len(candidates) > 0 {
 		allowed := make([]string, 0, len(candidates))
 		for _, candidate := range candidates {
-			decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroupForKind(kind), kind, candidate))
+			request := s.resourceAccessRequest(ctx, principal, connection, namespace, resourceGroupForKind(kind), kind, candidate)
+			decision, err := s.authorizer.Authorize(ctx, request)
+			fmt.Printf("allowed-actions-debug kind=%s action=%s permission=%s allowed=%t reason=%q err=%v roles=%v\n", kind, candidate, request.PermissionKey, decision.Allowed, decision.Reason, err, principal.Roles)
 			if err == nil && decision.Allowed {
 				allowed = append(allowed, string(candidate))
 			}

@@ -51,10 +51,14 @@ func TestKubernetesResourceReadsUseExactPermissionKeys(t *testing.T) {
 		{"network", "Ingress", "platform.network.ingresses.view"},
 		{"network", "PortForward", "platform.network.port-forwards.view"},
 		{"network", "NetworkTopology", "platform.network.topology.view"},
+		{"network", "HTTPRoute", "platform.network.http-routes.view"},
+		{"network", "GRPCRoute", "platform.network.grpc-routes.view"},
+		{"network", "BackendTLSPolicy", "platform.network.backend-tls-policies.view"},
 		{"storage", "PersistentVolumeClaim", "platform.storage.persistent-volume-claims.view"},
 		{"storage", "PersistentVolume", "platform.storage.persistent-volumes.view"},
 		{"access-control", "ServiceAccount", "platform.access-control.service-accounts.view"},
 		{"access-control", "Role", "platform.access-control.roles.view"},
+		{"extensions", "CustomResourceDefinition", "platform.extensions.view"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.kind, func(t *testing.T) {
@@ -62,5 +66,19 @@ func TestKubernetesResourceReadsUseExactPermissionKeys(t *testing.T) {
 				t.Fatalf("resourcePermissionKey(%q, %q, view) = %q, want %q", tt.group, tt.kind, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestCustomResourcesUseExtensionsPermissionGroup(t *testing.T) {
+	t.Parallel()
+
+	customResources := &CustomResources{resourceAccess: &resourceAccess{
+		resolver: stubConnectionResolver{connection: domaincluster.Connection{Summary: domaincluster.Summary{ID: "cluster-a"}}},
+		authorizer: exactPermissionAuthorizer{
+			appaccess.PermPlatformExtensionsView: true,
+		},
+	}}
+	if _, _, err := customResources.authorizeCustomResourceAccess(context.Background(), domainidentity.Principal{}, "cluster-a", "team-a", "Addon", domainaccess.ActionList); err != nil {
+		t.Fatalf("authorizeCustomResourceAccess() error = %v", err)
 	}
 }

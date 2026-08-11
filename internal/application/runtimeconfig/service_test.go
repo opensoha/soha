@@ -14,6 +14,8 @@ import (
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainruntimeconfig "github.com/opensoha/soha/internal/domain/runtimeconfig"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type memoryStore struct {
@@ -21,6 +23,7 @@ type memoryStore struct {
 	state        domainruntimeconfig.State
 	revisions    []domainruntimeconfig.Revision
 	applications map[string]domainruntimeconfig.Application
+	updateErr    error
 }
 
 func (s *memoryStore) LoadState(context.Context) (domainruntimeconfig.State, error) {
@@ -47,6 +50,9 @@ func (s *memoryStore) Commit(_ context.Context, input domainruntimeconfig.Commit
 func (s *memoryStore) UpdateApplication(_ context.Context, item domainruntimeconfig.Application) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.updateErr != nil {
+		return s.updateErr
+	}
 	s.applications[item.ID] = item
 	for i := range s.revisions {
 		if s.revisions[i].ID == item.RevisionID {
@@ -101,11 +107,14 @@ func (runtimePermissions) ListRolePermissions(context.Context) (map[string][]str
 	return map[string][]string{"admin": {appaccess.PermSettingsRuntimeConfigView, appaccess.PermSettingsRuntimeConfigManage}}, nil
 }
 
-type captureAudit struct{ entries []domainaudit.Entry }
+type captureAudit struct {
+	entries []domainaudit.Entry
+	err     error
+}
 
 func (a *captureAudit) Record(_ context.Context, entry domainaudit.Entry) error {
 	a.entries = append(a.entries, entry)
-	return nil
+	return a.err
 }
 
 type captureApplier struct {
@@ -303,7 +312,8 @@ func TestApplyUsesCASAndAuditContainsNoValues(t *testing.T) {
 
 func TestRollbackCreatesNewRevision(t *testing.T) {
 	store := &memoryStore{state: domainruntimeconfig.State{Overrides: map[string]any{}}}
-	service := newTestService(t, store, &captureAudit{})
+	audit := &captureAudit{}
+	service := newTestService(t, store, audit)
 	first, err := service.Apply(context.Background(), adminPrincipal(), sohaapi.RuntimeConfigChangeRequest{ExpectedVersion: 0, Changes: []sohaapi.RuntimeConfigChange{{Key: KeyAssistantGlobal, Value: true}}})
 	if err != nil {
 		t.Fatal(err)
@@ -318,6 +328,35 @@ func TestRollbackCreatesNewRevision(t *testing.T) {
 	}
 	if rolledBack.Revision.Version != 3 || rolledBack.Revision.RollbackOfRevisionID != first.Revision.ID || !service.FeatureEnabled("ai", "assistant.global") {
 		t.Fatalf("unexpected rollback: %#v", rolledBack)
+	}
+	if len(audit.entries) != 3 || audit.entries[2].Action != "settings.runtime_config.rollback" || audit.entries[2].Summary != "runtime configuration revision rolled back" || audit.entries[2].Metadata["targetVersion"] != int64(1) {
+		t.Fatalf("unexpected rollback audit entry: %#v", audit.entries)
+	}
+}
+
+func TestAuditRecorderFailureIsObservableWithoutFailingCommittedApply(t *testing.T) {
+	store := &memoryStore{state: domainruntimeconfig.State{Overrides: map[string]any{}}}
+	service := newTestService(t, store, &captureAudit{err: errors.New("audit unavailable")})
+	core, logs := observer.New(zap.WarnLevel)
+	service.SetInstrumentation(zap.New(core))
+
+	_, err := service.Apply(context.Background(), adminPrincipal(), sohaapi.RuntimeConfigChangeRequest{ExpectedVersion: 0, Changes: []sohaapi.RuntimeConfigChange{{Key: KeyAssistantGlobal, Value: true}}})
+	if err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if logs.FilterMessage("runtime config audit record failed").Len() != 1 {
+		t.Fatalf("warning logs = %d, want 1", logs.Len())
+	}
+}
+
+func TestApplicationPersistenceFailureIsJoinedWithApplyFailure(t *testing.T) {
+	store := &memoryStore{state: domainruntimeconfig.State{Overrides: map[string]any{}}, updateErr: errors.New("update failed")}
+	service := newTestService(t, store, &captureAudit{})
+	service.RegisterApplier(failingApplier{key: KeyAssistantGlobal})
+
+	_, err := service.Apply(context.Background(), adminPrincipal(), sohaapi.RuntimeConfigChangeRequest{ExpectedVersion: 0, Changes: []sohaapi.RuntimeConfigChange{{Key: KeyAssistantGlobal, Value: true}}})
+	if err == nil || !strings.Contains(err.Error(), "apply failed") || !strings.Contains(err.Error(), "update failed") {
+		t.Fatalf("Apply error = %v, want joined apply and persistence errors", err)
 	}
 }
 

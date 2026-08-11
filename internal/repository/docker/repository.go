@@ -563,11 +563,11 @@ func (r *Repository) CreateOperation(ctx context.Context, input domaindocker.Ope
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO docker_operations (
 			id, host_id, project_id, service_id, operation_kind, status, requested_by, claimed_by_worker_id,
-			attempt_count, max_retries, timeout_seconds, payload, result, started_at, last_heartbeat_at,
+			callback_token, attempt_count, max_retries, timeout_seconds, payload, result, started_at, last_heartbeat_at,
 			finished_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)
 	`, item.ID, nullableString(item.HostID), nullableString(item.ProjectID), nullableString(item.ServiceID), item.OperationKind,
-		item.Status, nullableString(item.RequestedBy), nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries,
+		item.Status, nullableString(item.RequestedBy), nullableString(item.ClaimedByWorkerID), nullableString(item.CallbackToken), item.AttemptCount, item.MaxRetries,
 		item.TimeoutSeconds, string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt,
 		item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domaindocker.Operation{}, fmt.Errorf("create docker operation: %w", err)
@@ -589,11 +589,11 @@ func (r *Repository) UpdateOperation(ctx context.Context, item domaindocker.Oper
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE docker_operations
 		SET host_id = ?, project_id = ?, service_id = ?, operation_kind = ?, status = ?, requested_by = ?,
-			claimed_by_worker_id = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
+			claimed_by_worker_id = ?, callback_token = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
 			payload = ?::jsonb, result = ?::jsonb, started_at = ?, last_heartbeat_at = ?, finished_at = ?, updated_at = ?
 		WHERE id = ? AND updated_at = ?
 	`, nullableString(item.HostID), nullableString(item.ProjectID), nullableString(item.ServiceID), item.OperationKind, item.Status,
-		nullableString(item.RequestedBy), nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries,
+		nullableString(item.RequestedBy), nullableString(item.ClaimedByWorkerID), nullableString(item.CallbackToken), item.AttemptCount, item.MaxRetries,
 		item.TimeoutSeconds, string(payload), string(resultPayload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt,
 		item.UpdatedAt, item.ID, expectedUpdatedAt)
 	if result.Error != nil {
@@ -605,7 +605,7 @@ func (r *Repository) UpdateOperation(ctx context.Context, item domaindocker.Oper
 	return item, nil
 }
 
-func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentID string, hostIDs []string, operationKinds []string, now time.Time) (domaindocker.Operation, error) {
+func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentID string, hostIDs []string, operationKinds []string, callbackToken string, now time.Time) (domaindocker.Operation, error) {
 	workerID = strings.TrimSpace(workerID)
 	if workerID == "" {
 		return domaindocker.Operation{}, ErrNotFound
@@ -650,6 +650,7 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 		}
 		item.Status = "running"
 		item.ClaimedByWorkerID = workerID
+		item.CallbackToken = strings.TrimSpace(callbackToken)
 		item.AttemptCount++
 		item.StartedAt = &now
 		item.LastHeartbeatAt = &now
@@ -670,10 +671,10 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 		}
 		update := tx.Exec(`
 			UPDATE docker_operations
-			SET status = ?, claimed_by_worker_id = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
+			SET status = ?, claimed_by_worker_id = ?, callback_token = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
 				payload = ?::jsonb, result = ?::jsonb, started_at = ?, last_heartbeat_at = ?, finished_at = ?, updated_at = ?
 			WHERE id = ? AND `+claimableOperationClause()+`
-		`, item.Status, nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries, item.TimeoutSeconds,
+		`, item.Status, nullableString(item.ClaimedByWorkerID), nullableString(item.CallbackToken), item.AttemptCount, item.MaxRetries, item.TimeoutSeconds,
 			string(payload), string(resultPayload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt, item.UpdatedAt, item.ID)
 		if update.Error != nil {
 			return fmt.Errorf("claim docker operation update: %w", update.Error)
@@ -1117,7 +1118,7 @@ func scanOperation(rows scanner) (domaindocker.Operation, error) {
 	var item domaindocker.Operation
 	var payload, result []byte
 	if err := rows.Scan(&item.ID, &item.HostID, &item.ProjectID, &item.ServiceID, &item.OperationKind, &item.Status,
-		&item.RequestedBy, &item.ClaimedByWorkerID, &item.AttemptCount, &item.MaxRetries, &item.TimeoutSeconds,
+		&item.RequestedBy, &item.ClaimedByWorkerID, &item.CallbackToken, &item.AttemptCount, &item.MaxRetries, &item.TimeoutSeconds,
 		&payload, &result, &item.StartedAt, &item.LastHeartbeatAt, &item.FinishedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaindocker.Operation{}, fmt.Errorf("scan docker operation: %w", err)
 	}
@@ -1176,7 +1177,7 @@ func templateSelect() string {
 }
 
 func operationSelect() string {
-	return `SELECT id, COALESCE(host_id, ''), COALESCE(project_id, ''), COALESCE(service_id, ''), operation_kind, status, COALESCE(requested_by, ''), COALESCE(claimed_by_worker_id, ''), attempt_count, max_retries, timeout_seconds, payload, result, started_at, last_heartbeat_at, finished_at, created_at, updated_at FROM docker_operations`
+	return `SELECT id, COALESCE(host_id, ''), COALESCE(project_id, ''), COALESCE(service_id, ''), operation_kind, status, COALESCE(requested_by, ''), COALESCE(claimed_by_worker_id, ''), COALESCE(callback_token, ''), attempt_count, max_retries, timeout_seconds, payload, result, started_at, last_heartbeat_at, finished_at, created_at, updated_at FROM docker_operations`
 }
 
 func claimableOperationClause() string {

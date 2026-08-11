@@ -22,6 +22,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
+	"go.uber.org/zap"
 )
 
 var keyPattern = regexp.MustCompile(`^[a-z][a-z0-9._-]*$`)
@@ -54,11 +55,14 @@ type Service struct {
 	adapters    map[string]SourceAdapterFactory
 	oauth       map[string]OAuthProvider
 	now         func() time.Time
+	logger      *zap.Logger
 }
 
 func New(repo domain.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) *Service {
 	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations, keys: keys, adapters: map[string]SourceAdapterFactory{}, oauth: map[string]OAuthProvider{}, now: time.Now}
 }
+
+func (s *Service) SetInstrumentation(logger *zap.Logger) { s.logger = logger }
 
 func (s *Service) RegisterSourceAdapter(providerType string, factory SourceAdapterFactory) {
 	providerType = strings.ToLower(strings.TrimSpace(providerType))
@@ -337,10 +341,23 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 func (s *Service) recordMutation(ctx context.Context, principal domainidentity.Principal, operationType string, item domain.Integration, summary string) {
 	metadata := requestctx.FromContext(ctx)
 	if s.audit != nil {
-		_ = s.audit.Record(ctx, domainaudit.Entry{ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams, ResourceKind: "SystemIntegration", ResourceName: item.ID, Action: operationType, Result: "success", Summary: summary, RequestPath: metadata.Path, RequestMethod: metadata.Method, RequestID: metadata.RequestID, SourceIP: metadata.SourceIP, CreatedAt: s.now().UTC()})
+		if err := s.audit.Record(ctx, domainaudit.Entry{ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams, ResourceKind: "SystemIntegration", ResourceName: item.ID, Action: operationType, Result: "success", Summary: summary, RequestPath: metadata.Path, RequestMethod: metadata.Method, RequestID: metadata.RequestID, SourceIP: metadata.SourceIP, CreatedAt: s.now().UTC()}); err != nil {
+			s.logRecordFailure(ctx, "audit", operationType, item.ID, err)
+		}
 	}
 	if s.operations != nil {
-		_ = s.operations.Record(ctx, operationentry.New(ctx, principal, operationType, map[string]any{"resourceKind": "SystemIntegration", "resourceName": item.ID}, "success", summary, map[string]any{"providerType": item.ProviderType, "category": item.Category}))
+		if err := s.operations.Record(ctx, operationentry.New(ctx, principal, operationType, map[string]any{"resourceKind": "SystemIntegration", "resourceName": item.ID}, "success", summary, map[string]any{"providerType": item.ProviderType, "category": item.Category})); err != nil {
+			s.logRecordFailure(ctx, "operation", operationType, item.ID, err)
+		}
+	}
+}
+
+func (s *Service) logRecordFailure(ctx context.Context, recorder, operationType, resourceName string, err error) {
+	if s.logger != nil {
+		s.logger.Warn("system integration evidence record failed", append(requestctx.LoggerFields(requestctx.FromContext(ctx)),
+			zap.String("recorder", recorder), zap.String("operation_type", operationType),
+			zap.String("resource_kind", "SystemIntegration"), zap.String("resource_name", resourceName), zap.Error(err),
+		)...)
 	}
 }
 

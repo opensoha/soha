@@ -67,10 +67,11 @@ func (c *Configuration) UpdateConfigMapData(ctx context.Context, principal domai
 		return domainresource.ConfigMapDetailView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.ConfigMapDetailView{}, unsupportedAgentOperation("configmap data update is not supported for agent-connected clusters yet")
+		return domainresource.ConfigMapDetailView{}, c.unsupportedMutation(ctx, principal, connection, namespace, "ConfigMap", name, domainaccess.ActionUpdate, "configmap data update is not supported for agent-connected clusters yet")
 	}
 	direct, err := c.directConfiguration()
 	if err != nil {
+		_ = c.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return domainresource.ConfigMapDetailView{}, err
 	}
 	item, err := direct.UpdateConfigMapData(ctx, clusterID, namespace, name, data, binaryData)
@@ -112,10 +113,11 @@ func (c *Configuration) UpdateSecretData(ctx context.Context, principal domainid
 		return domainresource.SecretDetailView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.SecretDetailView{}, unsupportedAgentOperation("secret data update is not supported for agent-connected clusters yet")
+		return domainresource.SecretDetailView{}, c.unsupportedMutation(ctx, principal, connection, namespace, "Secret", name, domainaccess.ActionUpdate, "secret data update is not supported for agent-connected clusters yet")
 	}
 	direct, err := c.directConfiguration()
 	if err != nil {
+		_ = c.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return domainresource.SecretDetailView{}, err
 	}
 	item, err := direct.UpdateSecretData(ctx, clusterID, namespace, name, data)

@@ -1027,6 +1027,7 @@ CREATE TABLE public.docker_operations (
     status text DEFAULT 'queued'::text NOT NULL,
     requested_by text,
     claimed_by_worker_id text,
+    callback_token text,
     attempt_count integer DEFAULT 0 NOT NULL,
     max_retries integer DEFAULT 1 NOT NULL,
     timeout_seconds integer DEFAULT 1800 NOT NULL,

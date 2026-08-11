@@ -122,3 +122,52 @@ func TestRepositoryGetConnectionNormalizesMissingRow(t *testing.T) {
 		t.Fatalf("unmet SQL expectations: %v", err)
 	}
 }
+
+func TestUpdateTaskFencesClaimedWorkerAttempt(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New() error = %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open() error = %v", err)
+	}
+	repo := New(db)
+	mock.ExpectExec(`(?s)UPDATE virtualization_tasks.*WHERE id = \$12 AND claimed_by_worker_id = \$13 AND attempt_count = \$14 AND status = 'running'`).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	_, err = repo.UpdateTask(context.Background(), domainvirtualization.Task{
+		ID: "task-1", Status: "completed", ClaimedByWorkerID: "worker-1", AttemptCount: 2,
+	})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateTask() error = %v, want ErrNotFound for stale attempt", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestUpdateTaskResultPreservesTaskState(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New() error = %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open() error = %v", err)
+	}
+	repo := New(db)
+	mock.ExpectExec(`(?s)UPDATE virtualization_tasks\s+SET result = \$1, updated_at = \$2\s+WHERE id = \$3`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "task-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err = repo.UpdateTaskResult(context.Background(), "task-1", map[string]any{"connectionDeletedAt": "now"})
+	if err != nil {
+		t.Fatalf("UpdateTaskResult() error = %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}

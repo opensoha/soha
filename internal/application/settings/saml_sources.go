@@ -78,9 +78,16 @@ func (s *Service) ValidateSAMLMetadata(ctx context.Context, principal domainiden
 		return sohaapi.SAMLMetadataValidation{}, err
 	}
 	if s.saml == nil {
-		return sohaapi.SAMLMetadataValidation{}, fmt.Errorf("%w: SAML metadata importer is not configured", apperrors.ErrUnsupportedOperation)
+		err := fmt.Errorf("%w: SAML metadata importer is not configured", apperrors.ErrUnsupportedOperation)
+		s.recordMutation(ctx, principal, "settings.identity.saml.validate", "SAMLMetadata", "samlMetadata", "failure", "failed to validate SAML metadata")
+		return sohaapi.SAMLMetadataValidation{}, err
 	}
 	result, _, err := s.saml.ValidateMetadata(ctx, input)
+	if err != nil {
+		s.recordMutation(ctx, principal, "settings.identity.saml.validate", "SAMLMetadata", "samlMetadata", "failure", "failed to validate SAML metadata")
+		return result, err
+	}
+	s.recordMutation(ctx, principal, "settings.identity.saml.validate", "SAMLMetadata", "samlMetadata", "success", "validated SAML metadata")
 	return result, err
 }
 

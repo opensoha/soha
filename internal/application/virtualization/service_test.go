@@ -3,6 +3,7 @@ package virtualization
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
@@ -66,6 +68,25 @@ func TestWorkerAssetSyncUpdatesTaskAndRecordsOperation(t *testing.T) {
 	}
 	if !ops.has("virtualization.worker.asset_sync") {
 		t.Fatalf("operation log missing worker asset sync entry: %#v", ops.entries)
+	}
+}
+
+func TestMutationEvidenceRecordsAuditAndDeniedOperation(t *testing.T) {
+	repo := newMemoryRepo()
+	operations := &captureOperations{}
+	audit := &captureAudit{}
+	service := MustNew(testDependencies(repo), nil, appaccess.NewPermissionResolver(testRoleReader{}), operations, Options{Audit: audit})
+
+	service.recordOperation(context.Background(), testPrincipal(), "virtualization.test", "vm-1", "vm-1", "success", "test success", nil)
+	deniedPrincipal := domainidentity.Principal{UserID: "viewer", Roles: []string{"viewer"}}
+	if _, err := service.CreateVM(context.Background(), deniedPrincipal, CreateVMInput{ConnectionID: "conn-1", Name: "vm-1"}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("CreateVM() error = %v, want access denied", err)
+	}
+	if len(operations.entries) != 2 || operations.entries[0].Result != "success" || operations.entries[1].Result != "deny" {
+		t.Fatalf("operation evidence = %#v", operations.entries)
+	}
+	if len(audit.entries) != 2 || audit.entries[0].Result != "success" || audit.entries[1].Result != "deny" || audit.entries[1].Metadata["errorCode"] != "access_denied" {
+		t.Fatalf("audit evidence = %#v", audit.entries)
 	}
 }
 
@@ -299,6 +320,25 @@ func TestCreatePVECredentialRequiresEncryptionKey(t *testing.T) {
 	}
 }
 
+func TestConnectionHealthIdempotencySkipsRepeatedProviderCall(t *testing.T) {
+	repo := newMemoryRepo()
+	repo.connections["connection-1"] = domainvirtualization.Connection{ID: "connection-1", Provider: ProviderPVE, Name: "PVE", Enabled: true}
+	adapter := &countingAdapter{}
+	service := newTestService(repo, &captureOperations{}, adapter)
+
+	first, err := service.TestConnectionIdempotent(context.Background(), testPrincipal(), "connection-1", "connection-health-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.TestConnectionIdempotent(context.Background(), testPrincipal(), "connection-1", "connection-health-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID != second.ID || adapter.testCalls != 1 {
+		t.Fatalf("tasks = %q/%q, provider calls = %d", first.ID, second.ID, adapter.testCalls)
+	}
+}
+
 func TestCreateKubeVirtConnectionEncryptsPrometheusTokenAndSanitizesConfig(t *testing.T) {
 	repo := newMemoryRepo()
 	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
@@ -510,13 +550,15 @@ func TestDeleteConnectionForceSnapshotsHistoricalTasks(t *testing.T) {
 		Raw:          map[string]any{"vmid": "101"},
 	}
 	repo.tasks["task-1"] = domainvirtualization.Task{
-		ID:           "task-1",
-		Provider:     ProviderPVE,
-		ConnectionID: conn.ID,
-		VMID:         "vm-1",
-		TaskKind:     TaskKindVMCreate,
-		Status:       TaskStatusSucceeded,
-		Result:       map[string]any{"existing": "kept"},
+		ID:                "task-1",
+		Provider:          ProviderPVE,
+		ConnectionID:      conn.ID,
+		VMID:              "vm-1",
+		TaskKind:          TaskKindVMCreate,
+		Status:            TaskStatusSucceeded,
+		ClaimedByWorkerID: "worker-1",
+		AttemptCount:      1,
+		Result:            map[string]any{"existing": "kept"},
 	}
 	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
 
@@ -544,6 +586,8 @@ func assertDeletedConnectionSnapshots(t *testing.T, repo *memoryRepo, connection
 	expectVirtualization(t, vmSnapshot["nodeName"] == "pve-a", "vm snapshot = %#v", vmSnapshot)
 	expectVirtualization(t, task.Result["existing"] == "kept", "task result metadata = %#v", task.Result)
 	expectVirtualization(t, task.Result["connectionDeletedBy"] == testPrincipal().UserID, "task result metadata = %#v", task.Result)
+	expectVirtualization(t, task.ClaimedByWorkerID == "worker-1", "task worker changed: %#v", task)
+	expectVirtualization(t, task.AttemptCount == 1, "task attempt changed: %#v", task)
 	host := repo.dockerHosts["host-1"]
 	expectVirtualization(t, host.Status == "unavailable", "docker host after connection delete = %#v", host)
 	expectVirtualization(t, host.Endpoint == "", "docker host endpoint remains: %#v", host)
@@ -769,6 +813,45 @@ func TestCreateVMUsesFlavorAndImageSelection(t *testing.T) {
 	}
 }
 
+func TestPlanVMCreateRejectsKubeVirtDataSourceWithoutDiskSize(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{
+		Provider: ProviderKubeVirt,
+		Name:     "kv",
+		Enabled:  true,
+	})
+	image := domainvirtualization.Image{
+		ID:           "image-1",
+		Provider:     ProviderKubeVirt,
+		ConnectionID: conn.ID,
+		ExternalID:   "cirros-ds",
+		Name:         "cirros",
+		Status:       "active",
+		Config:       map[string]any{"sourceKind": "datasource", "sourceRef": "cirros-ds"},
+	}
+	repo.images[image.ID] = image
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+
+	_, err := service.PlanVMCreate(context.Background(), testPrincipal(), CreateVMInput{
+		ConnectionID: conn.ID,
+		Name:         "vm-a",
+		BootImageID:  image.ID,
+		SourceMode:   "datasource_clone",
+		CPU:          1,
+		MemoryMiB:    512,
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) || !strings.Contains(err.Error(), "diskGiB") {
+		t.Fatalf("PlanVMCreate() error = %v, want diskGiB invalid argument", err)
+	}
+}
+
+func TestSourceModeForPVEOrdinaryVM(t *testing.T) {
+	image := domainvirtualization.Image{Config: map[string]any{"sourceKind": "qemu"}}
+	if got := sourceModeForProvider(ProviderPVE, "", image); got != "vm_clone" {
+		t.Fatalf("sourceModeForProvider() = %q, want vm_clone", got)
+	}
+}
+
 func TestVMExactPermissionsAllowCreateAndResizeButDenyDelete(t *testing.T) {
 	repo := newMemoryRepo()
 	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
@@ -783,7 +866,7 @@ func TestVMExactPermissionsAllowCreateAndResizeButDenyDelete(t *testing.T) {
 	}})
 	service := MustNew(testDependencies(repo), map[string]Adapter{ProviderKubeVirt: capabilityAdapter{fakeAdapter{}}}, permissions, nil, Options{})
 
-	if _, err := service.CreateVM(context.Background(), testPrincipal(), CreateVMInput{ConnectionID: conn.ID, Name: "vm-new"}); err != nil {
+	if _, err := service.CreateVM(context.Background(), testPrincipal(), CreateVMInput{ConnectionID: conn.ID, Name: "vm-new", SourceMode: "containerdisk"}); err != nil {
 		t.Fatalf("CreateVM() error = %v", err)
 	}
 	if _, err := service.VMAction(context.Background(), testPrincipal(), vm.ID, VMActionInput{Action: "resize", CPU: 2}); err != nil {
@@ -1185,6 +1268,10 @@ type captureOperations struct {
 	entries []domainoperation.Entry
 }
 
+type captureAudit struct {
+	entries []domainaudit.Entry
+}
+
 type canceledCredentialProvider struct{}
 
 func (canceledCredentialProvider) ResolveVirtualizationCredential(ctx context.Context, _ domainvirtualization.Connection) (map[string]any, error) {
@@ -1192,6 +1279,11 @@ func (canceledCredentialProvider) ResolveVirtualizationCredential(ctx context.Co
 }
 
 func (c *captureOperations) Record(_ context.Context, entry domainoperation.Entry) error {
+	c.entries = append(c.entries, entry)
+	return nil
+}
+
+func (c *captureAudit) Record(_ context.Context, entry domainaudit.Entry) error {
 	c.entries = append(c.entries, entry)
 	return nil
 }
@@ -1206,6 +1298,16 @@ type fakeAdapter struct {
 	syncResult    infravirtualization.AssetSyncResult
 	metricsResult infravirtualization.VMMetricsResult
 	consoleResult infravirtualization.ConsoleURLResult
+}
+
+type countingAdapter struct {
+	fakeAdapter
+	testCalls int
+}
+
+func (a *countingAdapter) TestConnection(context.Context, infravirtualization.Connection) (infravirtualization.ConnectionTestResult, error) {
+	a.testCalls++
+	return infravirtualization.ConnectionTestResult{Healthy: true, Status: "healthy"}, nil
 }
 
 type capabilityAdapter struct{ fakeAdapter }
@@ -1638,6 +1740,19 @@ func (r *memoryRepo) UpdateTask(_ context.Context, item domainvirtualization.Tas
 	return item, nil
 }
 
+func (r *memoryRepo) UpdateTaskResult(_ context.Context, id string, result map[string]any) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	item, ok := r.tasks[id]
+	if !ok {
+		return errMemoryNotFound
+	}
+	item.Result = result
+	item.UpdatedAt = time.Now()
+	r.tasks[id] = item
+	return nil
+}
+
 func (r *memoryRepo) ClaimTask(_ context.Context, workerID string, now time.Time) (domainvirtualization.Task, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1817,7 +1932,7 @@ func (r *memoryRepo) ListTaskLogs(_ context.Context, taskID string, _ int) ([]do
 	return append([]domainvirtualization.TaskLog{}, r.logs[taskID]...), nil
 }
 
-var errMemoryNotFound = testingError("not found")
+var errMemoryNotFound = fmt.Errorf("%w: not found", apperrors.ErrNotFound)
 
 type testingError string
 

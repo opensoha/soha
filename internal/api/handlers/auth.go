@@ -71,7 +71,7 @@ type AuthBootstrapAccessService interface {
 }
 
 type AuthBootstrapSettingsService interface {
-	GetBrandingSettings(context.Context, domainidentity.Principal) (domainsettings.BrandingSettings, error)
+	ResolveBrandingSettings(context.Context) (domainsettings.BrandingSettings, error)
 }
 
 type authBootstrapResponse struct {
@@ -429,7 +429,7 @@ func (h *AuthHandler) Bootstrap(c *gin.Context) {
 
 	branding := domainsettings.BrandingSettings{}
 	if h.settings != nil {
-		branding, err = h.settings.GetBrandingSettings(c.Request.Context(), current)
+		branding, err = h.settings.ResolveBrandingSettings(c.Request.Context())
 		if err != nil {
 			writeError(c, err)
 			return

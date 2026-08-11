@@ -136,14 +136,14 @@ func TestRegisterComputeRoutesAlwaysRegistersStableSurface(t *testing.T) {
 		cfg  cfgpkg.Config
 		want int
 	}{
-		{name: "disabled", cfg: cfgpkg.Config{}, want: 7},
-		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 7},
-		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 7},
+		{name: "disabled", cfg: cfgpkg.Config{}, want: 16},
+		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 16},
+		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 16},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			router := gin.New()
 			group := router.Group("/api/v1")
-			registerComputeRoutes(group, test.cfg, Dependencies{Compute: &apiHandlers.ComputeHandler{}})
+			registerComputeRoutes(group, Dependencies{Compute: &apiHandlers.ComputeHandler{}})
 			count := 0
 			for _, route := range router.Routes() {
 				if strings.HasPrefix(route.Path, "/api/v1/compute") {
@@ -156,6 +156,15 @@ func TestRegisterComputeRoutesAlwaysRegistersStableSurface(t *testing.T) {
 			if test.want > 0 {
 				registered := routeMethodPaths(router.Routes())
 				for _, route := range []string{
+					"GET /api/v1/compute/capabilities",
+					"GET /api/v1/compute/providers",
+					"GET /api/v1/compute/provider-instances",
+					"GET /api/v1/compute/provider-instances/:domain/:providerKey/:instanceRef",
+					"POST /api/v1/compute/provider-instances/:domain/:providerKey/:instanceRef/health-checks",
+					"POST /api/v1/compute/provider-instances/:domain/:providerKey/:instanceRef/discoveries",
+					"GET /api/v1/compute/resources/:domain/:kind/:id",
+					"GET /api/v1/compute/resources/:domain/:kind/:id/relations",
+					"POST /api/v1/compute/resources/:domain/:kind/:id/actions/:action",
 					"GET /api/v1/compute/tasks/:domain/:id",
 					"GET /api/v1/compute/tasks/:domain/:id/logs",
 					"POST /api/v1/compute/tasks/:domain/:id/cancel",

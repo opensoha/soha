@@ -78,6 +78,29 @@ func TestGetAISettingsDoesNotSerializeLegacyProviderFields(t *testing.T) {
 	}
 }
 
+func TestGetIdentitySettingsDoesNotSerializeProviderSecrets(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/identity", nil)
+	handler := NewSettingsHandler(stubSettingsService{identity: domainsettings.IdentitySettings{
+		Providers: []domainsettings.LoginProviderSettings{{
+			ID: "oauth-main", Name: "OAuth", Type: "oauth2", ClientSecret: "stored-secret", Certificate: "stored-certificate",
+		}},
+	}}, nil)
+
+	handler.GetIdentitySettings(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	body := recorder.Body.String()
+	for _, forbidden := range []string{"clientSecret", "stored-secret", "certificate", "stored-certificate"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("GET /settings/identity leaked %q: %s", forbidden, body)
+		}
+	}
+}
+
 func TestUpdateLoginProvidersPreservesLocalPasswordSettingWhenOmitted(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)

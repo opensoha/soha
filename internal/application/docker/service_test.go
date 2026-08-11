@@ -10,6 +10,7 @@ import (
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
@@ -17,6 +18,25 @@ import (
 )
 
 const dockerQuickCreateTestCloudInit = "#cloud-config\npackages:\n  - docker.io"
+
+func TestMutationEvidenceRecordsAuditAndDeniedOperation(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	operations := &captureDockerOperations{}
+	audit := &captureDockerAudit{}
+	service := New(repo, dockerTestPermissions(), operations, WithAudit(audit))
+
+	service.recordOperation(context.Background(), dockerTestPrincipal(), "docker.test", "host-1", "host-1", "success", "test success", nil)
+	deniedPrincipal := domainidentity.Principal{UserID: "viewer", Roles: []string{"viewer"}}
+	if _, err := service.CreateHost(context.Background(), deniedPrincipal, domaindocker.HostInput{Name: "host-1"}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("CreateHost() error = %v, want access denied", err)
+	}
+	if len(operations.entries) != 2 || operations.entries[0].Result != "success" || operations.entries[1].Result != "deny" {
+		t.Fatalf("operation evidence = %#v", operations.entries)
+	}
+	if len(audit.entries) != 2 || audit.entries[0].Result != "success" || audit.entries[1].Result != "deny" || audit.entries[1].Metadata["errorCode"] != "access_denied" {
+		t.Fatalf("audit evidence = %#v", audit.entries)
+	}
+}
 
 func TestCreateProjectUpsertsServicesFromCompose(t *testing.T) {
 	repo := newMemoryDockerRepo()
@@ -109,6 +129,69 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 		t.Fatalf("RecordOperationCallback() error = %v", err)
 	}
 	assertCompletedDockerOperation(t, repo, operation.ID, updated)
+}
+
+func TestRunnerRetryRotatesCallbackTokenAndRejectsStaleAttempt(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	service := New(repo, dockerTestPermissions(), nil)
+	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{OperationKind: OperationKindHostSync, Status: OperationStatusQueued})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{WorkerID: "worker-1", CallbackTokenSupported: true})
+	if err != nil || len(first.CallbackToken) < 32 {
+		t.Fatalf("first claim = %#v, err = %v", first, err)
+	}
+	if _, err := service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{OperationID: operation.ID, WorkerID: "worker-1", CallbackToken: first.CallbackToken, Status: OperationStatusFailed}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.RetryOperation(context.Background(), dockerTestPrincipal(), operation.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{WorkerID: "worker-1", CallbackTokenSupported: true})
+	if err != nil || second.CallbackToken == "" || second.CallbackToken == first.CallbackToken {
+		t.Fatalf("second claim = %#v, first token reused = %t, err = %v", second, second.CallbackToken == first.CallbackToken, err)
+	}
+	_, err = service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{OperationID: operation.ID, WorkerID: "worker-1", CallbackToken: first.CallbackToken, Status: OperationStatusCompleted})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("stale callback error = %v, want access denied", err)
+	}
+	if repo.operations[operation.ID].Status != OperationStatusRunning {
+		t.Fatalf("stale callback changed status to %q", repo.operations[operation.ID].Status)
+	}
+	if _, err := service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{OperationID: operation.ID, WorkerID: "worker-1", CallbackToken: second.CallbackToken, Status: OperationStatusCompleted}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRetryOperationCountsAttemptsOnClaimAndEnforcesLimit(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	service := New(repo, dockerTestPermissions(), nil)
+	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{OperationKind: OperationKindHostSync, Status: OperationStatusQueued})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{WorkerID: "worker-1"})
+	if err != nil || first.AttemptCount != 1 {
+		t.Fatalf("first claim = %#v, err = %v", first, err)
+	}
+	first.Status = OperationStatusFailed
+	repo.operations[operation.ID] = first
+
+	retried, err := service.RetryOperation(context.Background(), dockerTestPrincipal(), operation.ID)
+	if err != nil || retried.AttemptCount != 1 || retried.MaxRetries != defaultOperationMaxRetries {
+		t.Fatalf("first retry = %#v, err = %v", retried, err)
+	}
+	second, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{WorkerID: "worker-1"})
+	if err != nil || second.AttemptCount != 2 {
+		t.Fatalf("second claim = %#v, err = %v", second, err)
+	}
+	second.Status = OperationStatusFailed
+	repo.operations[operation.ID] = second
+
+	if _, err := service.RetryOperation(context.Background(), dockerTestPrincipal(), operation.ID); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("retry past limit error = %v, want invalid argument", err)
+	}
 }
 
 func TestRunnerCallbackRequiresClaimedOperation(t *testing.T) {
@@ -337,6 +420,40 @@ func TestRunnerCallbackDoesNotWriteNilRuntimeFields(t *testing.T) {
 	}
 	if host.AgentID != "agent-1" {
 		t.Fatalf("host agentId = %q, want existing agent-1", host.AgentID)
+	}
+}
+
+func TestUpdateHostPreservesAgentDiscoveredRuntimeFields(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{
+		ID:                         "host-1",
+		Name:                       "docker-host",
+		Status:                     "online",
+		Endpoint:                   "http://10.0.0.9:18080",
+		AgentID:                    "agent-1",
+		AgentVersion:               "0.1.0",
+		DockerVersion:              "26.1.0",
+		ComposeVersion:             "v2.27.0",
+		Architecture:               "amd64",
+		VirtualizationConnectionID: "pve-1",
+		VMID:                       "vm-1",
+		VMName:                     "docker-vm",
+		IPAddress:                  "10.0.0.9",
+	}
+	service := New(repo, dockerTestPermissions(), nil)
+
+	updated, err := service.UpdateHost(context.Background(), dockerTestPrincipal(), "host-1", domaindocker.HostInput{
+		Name:     "docker-host-renamed",
+		Endpoint: "http://10.0.0.10:18080",
+	})
+	if err != nil {
+		t.Fatalf("UpdateHost() error = %v", err)
+	}
+	if updated.Name != "docker-host-renamed" || updated.Endpoint != "http://10.0.0.10:18080" {
+		t.Fatalf("updated management fields = %#v", updated)
+	}
+	if updated.Status != "online" || updated.AgentID != "agent-1" || updated.DockerVersion != "26.1.0" || updated.ComposeVersion != "v2.27.0" || updated.Architecture != "amd64" || updated.VirtualizationConnectionID != "pve-1" || updated.VMID != "vm-1" || updated.VMName != "docker-vm" || updated.IPAddress != "10.0.0.9" {
+		t.Fatalf("updated runtime fields = %#v", updated)
 	}
 }
 
@@ -1028,7 +1145,16 @@ type captureDockerOperations struct {
 	entries []domainoperation.Entry
 }
 
+type captureDockerAudit struct {
+	entries []domainaudit.Entry
+}
+
 func (c *captureDockerOperations) Record(_ context.Context, entry domainoperation.Entry) error {
+	c.entries = append(c.entries, entry)
+	return nil
+}
+
+func (c *captureDockerAudit) Record(_ context.Context, entry domainaudit.Entry) error {
 	c.entries = append(c.entries, entry)
 	return nil
 }
@@ -1534,7 +1660,7 @@ func (r *memoryDockerRepo) UpdateOperation(_ context.Context, item domaindocker.
 	return item, nil
 }
 
-func (r *memoryDockerRepo) ClaimOperation(_ context.Context, workerID string, agentID string, hostIDs []string, operationKinds []string, now time.Time) (domaindocker.Operation, error) {
+func (r *memoryDockerRepo) ClaimOperation(_ context.Context, workerID string, agentID string, hostIDs []string, operationKinds []string, callbackToken string, now time.Time) (domaindocker.Operation, error) {
 	for id, item := range r.operations {
 		if !containsOrEmpty(hostIDs, item.HostID) || !containsOrEmpty(operationKinds, item.OperationKind) {
 			continue
@@ -1544,6 +1670,7 @@ func (r *memoryDockerRepo) ClaimOperation(_ context.Context, workerID string, ag
 		}
 		item.Status = OperationStatusRunning
 		item.ClaimedByWorkerID = workerID
+		item.CallbackToken = callbackToken
 		item.AttemptCount++
 		item.StartedAt = &now
 		item.LastHeartbeatAt = &now

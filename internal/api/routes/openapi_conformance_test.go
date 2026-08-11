@@ -10,7 +10,9 @@ import (
 )
 
 type openAPIRouteOperation struct {
-	Capability json.RawMessage `json:"x-soha-capability"`
+	OperationID          string          `json:"operationId"`
+	Capability           json.RawMessage `json:"x-soha-capability"`
+	ImplementationStatus string          `json:"x-soha-implementation-status"`
 }
 
 type openAPIRoutePathItem struct {
@@ -21,7 +23,7 @@ type openAPIRoutePathItem struct {
 	Delete *openAPIRouteOperation `json:"delete"`
 }
 
-func TestOpenAPICapabilityOperationsHaveLiveRoutes(t *testing.T) {
+func TestOpenAPIExposedOperationsHaveLiveRoutes(t *testing.T) {
 	var document struct {
 		Servers []struct {
 			URL string `json:"url"`
@@ -48,18 +50,22 @@ func TestOpenAPICapabilityOperationsHaveLiveRoutes(t *testing.T) {
 		for method, operation := range map[string]*openAPIRouteOperation{
 			"GET": pathItem.Get, "POST": pathItem.Post, "PUT": pathItem.Put, "PATCH": pathItem.Patch, "DELETE": pathItem.Delete,
 		} {
-			if operation == nil || len(operation.Capability) == 0 {
+			if operation == nil {
+				continue
+			}
+			exposed := len(operation.Capability) > 0 || strings.HasPrefix(path, "/compute/") || (operation.ImplementationStatus == "implemented" && strings.HasPrefix(path, "/virtualization/"))
+			if !exposed {
 				continue
 			}
 			checked++
 			want := method + " " + normalizeRoutePattern(strings.TrimSuffix(document.Servers[0].URL, "/")+path)
 			if _, ok := liveRoutes[want]; !ok {
-				t.Errorf("OpenAPI capability operation has no live route: %s", want)
+				t.Errorf("OpenAPI exposed operation has no live route: %s", want)
 			}
 		}
 	}
 	if checked == 0 {
-		t.Fatal("OpenAPI has no x-soha-capability operations")
+		t.Fatal("OpenAPI has no exposed operations")
 	}
 }
 

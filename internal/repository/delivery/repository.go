@@ -533,7 +533,7 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 
 	var task domaindelivery.ExecutionTask
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		rows, queryErr := tx.Raw(`
+		row := tx.Raw(`
 			SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 			       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 			FROM execution_tasks
@@ -541,17 +541,10 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 			ORDER BY created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
-		`, providerKinds).Rows()
-		if queryErr != nil {
-			return fmt.Errorf("claim execution task query: %w", queryErr)
-		}
-		defer func() { _ = rows.Close() }()
-		if !rows.Next() {
-			return ErrNotFound
-		}
-		item, scanErr := scanExecutionTask(rows)
+		`, providerKinds).Row()
+		item, scanErr := scanExecutionTaskRow(row)
 		if scanErr != nil {
-			return scanErr
+			return fmt.Errorf("claim execution task query: %w", scanErr)
 		}
 		now := time.Now().UTC()
 		item.Status = "dispatching"

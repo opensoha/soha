@@ -17,6 +17,8 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainruntimeconfig "github.com/opensoha/soha/internal/domain/runtimeconfig"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/requestctx"
+	"go.uber.org/zap"
 )
 
 const defaultPollInterval = 3 * time.Second
@@ -26,6 +28,7 @@ type Service struct {
 	registry    *Registry
 	permissions *appaccess.PermissionResolver
 	audit       AuditRecorder
+	logger      *zap.Logger
 	snapshot    snapshotPointer
 	desired     snapshotPointer
 	applyMu     sync.Mutex
@@ -56,6 +59,8 @@ func (s *Service) RegisterApplier(applier Applier) {
 	s.appliers = append(s.appliers, applier)
 	s.appliersMu.Unlock()
 }
+
+func (s *Service) SetInstrumentation(logger *zap.Logger) { s.logger = logger }
 
 func (s *Service) Current() Snapshot {
 	return s.snapshot.Load()
@@ -326,8 +331,8 @@ func (s *Service) commitAndApply(ctx context.Context, principal domainidentity.P
 	}
 	application.UpdatedAt = time.Now().UTC()
 	application.Status, application.Error = applicationStatus(application.Items, err, rollbackRevisionID != "")
-	if updateErr := s.store.UpdateApplication(ctx, application); updateErr != nil && err == nil {
-		err = updateErr
+	if updateErr := s.store.UpdateApplication(ctx, application); updateErr != nil {
+		err = errors.Join(err, fmt.Errorf("update runtime config application: %w", updateErr))
 	}
 	revision.Status = application.Status
 	s.recordAudit(ctx, principal, revision, targetVersion)
@@ -414,15 +419,22 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 		keys = append(keys, change.Key)
 	}
 	metadata := map[string]any{"version": revision.Version, "keys": keys, "status": revision.Status}
+	action, summary := "settings.runtime_config.apply", "runtime configuration revision applied"
 	if targetVersion > 0 {
 		metadata["targetVersion"] = targetVersion
+		action, summary = "settings.runtime_config.rollback", "runtime configuration revision rolled back"
 	}
-	_ = s.audit.Record(ctx, domainaudit.Entry{
+	if err := s.audit.Record(ctx, domainaudit.Entry{
 		ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
 		ResourceKind: "RuntimeConfigRevision", ResourceName: revision.ID,
-		Action: "settings.runtime_config.apply", Result: string(revision.Status), Summary: "runtime configuration revision applied",
+		Action: action, Result: string(revision.Status), Summary: summary,
 		Metadata: metadata,
-	})
+	}); err != nil && s.logger != nil {
+		s.logger.Warn("runtime config audit record failed", append(requestctx.LoggerFields(requestctx.FromContext(ctx)),
+			zap.String("operation_type", action), zap.String("revision_id", revision.ID),
+			zap.String("status", string(revision.Status)), zap.Error(err),
+		)...)
+	}
 }
 
 func snapshotFromState(registry *Registry, state domainruntimeconfig.State) Snapshot {

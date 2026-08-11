@@ -61,7 +61,7 @@ func (r agentPodRoute) GetPodDetail(ctx context.Context, namespace, name string)
 }
 
 func (agentPodRoute) DeletePod(context.Context, string, string) (bool, error) {
-	return false, unsupportedAgentOperation("pod deletion is not supported for agent-connected clusters yet")
+	return true, unsupportedAgentOperation("pod deletion is not supported for agent-connected clusters yet")
 }
 
 func (r agentPodRoute) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {

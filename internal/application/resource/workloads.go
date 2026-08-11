@@ -212,7 +212,7 @@ func (w *Workloads) SetCronJobSuspend(ctx context.Context, principal domainident
 		return domainresource.CronJobDetailView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.CronJobDetailView{}, fmt.Errorf("%w: cronjob suspend is not supported for agent-connected clusters yet", apperrors.ErrUnsupportedOperation)
+		return domainresource.CronJobDetailView{}, w.unsupportedMutation(ctx, principal, connection, namespace, "CronJob", name, domainaccess.ActionSuspend, "cronjob suspend is not supported for agent-connected clusters yet")
 	}
 	item, err := w.direct.SetCronJobSuspend(ctx, clusterID, namespace, name, suspend)
 	if err != nil {
@@ -221,6 +221,7 @@ func (w *Workloads) SetCronJobSuspend(ctx context.Context, principal domainident
 	}
 	item.AllowedActions = stringifyActions(decision.AllowedActions)
 	_ = w.recordAudit(ctx, principal, connection.Summary.ID, namespace, "CronJob", name, string(domainaccess.ActionSuspend), "success", fmt.Sprintf("set cronjob suspend=%t", suspend))
+	w.recordOperation(ctx, principal, "platform.cronjob.suspend", connection.Summary.ID, namespace, "CronJob", name, fmt.Sprintf("set cronjob suspend=%t", suspend), map[string]any{"suspend": suspend})
 	return item, nil
 }
 

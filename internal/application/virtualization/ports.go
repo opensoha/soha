@@ -56,6 +56,7 @@ type FlavorRepository interface {
 type TaskRepository interface {
 	CreateTask(context.Context, domainvirtualization.Task) (domainvirtualization.Task, error)
 	UpdateTask(context.Context, domainvirtualization.Task) (domainvirtualization.Task, error)
+	UpdateTaskResult(context.Context, string, map[string]any) error
 	GetTask(context.Context, string) (domainvirtualization.Task, error)
 	ListTasks(context.Context, domainvirtualization.TaskFilter) ([]domainvirtualization.Task, error)
 	CountTasks(context.Context, domainvirtualization.TaskFilter) (int, error)

@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
@@ -21,6 +22,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/idempotency"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 )
@@ -53,6 +55,10 @@ type OperationRecorder interface {
 	Record(context.Context, domainoperation.Entry) error
 }
 
+type AuditRecorder interface {
+	Record(context.Context, domainaudit.Entry) error
+}
+
 type Service struct {
 	connections        ConnectionReader
 	connectionWriter   ConnectionWriter
@@ -66,6 +72,7 @@ type Service struct {
 	adapters           map[string]Adapter
 	permissions        *appaccess.PermissionResolver
 	operations         OperationRecorder
+	audit              AuditRecorder
 	credentialKey      string
 	credentialKeys     keyring.Ring
 	workerInterval     time.Duration
@@ -88,6 +95,7 @@ type Options struct {
 	WorkerInterval           time.Duration
 	SyncConcurrency          int
 	CredentialProvider       CredentialProvider
+	Audit                    AuditRecorder
 }
 
 type CredentialProvider interface {
@@ -238,6 +246,7 @@ func New(deps Dependencies, adapters map[string]Adapter, permissions *appaccess.
 		adapters:           normalized,
 		permissions:        permissions,
 		operations:         operations,
+		audit:              opts.Audit,
 		credentialKey:      strings.TrimSpace(opts.CredentialEncryptionKey),
 		credentialKeys:     opts.CredentialEncryptionKeys,
 		workerInterval:     interval,
@@ -301,7 +310,10 @@ func (s *Service) decorateConnections(items []domainvirtualization.Connection) [
 	return items
 }
 
-func (s *Service) CreateConnection(ctx context.Context, principal domainidentity.Principal, input ConnectionInput) (domainvirtualization.Connection, error) {
+func (s *Service) CreateConnection(ctx context.Context, principal domainidentity.Principal, input ConnectionInput) (_ domainvirtualization.Connection, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.connection.create", input.ID, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "create")); err != nil {
 		return domainvirtualization.Connection{}, err
 	}
@@ -317,7 +329,10 @@ func (s *Service) CreateConnection(ctx context.Context, principal domainidentity
 	return sanitizeConnection(item), nil
 }
 
-func (s *Service) UpdateConnection(ctx context.Context, principal domainidentity.Principal, id string, input ConnectionInput) (domainvirtualization.Connection, error) {
+func (s *Service) UpdateConnection(ctx context.Context, principal domainidentity.Principal, id string, input ConnectionInput) (_ domainvirtualization.Connection, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.connection.update", id, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "update")); err != nil {
 		return domainvirtualization.Connection{}, err
 	}
@@ -353,7 +368,10 @@ func (s *Service) GetConnectionDeleteDependencies(ctx context.Context, principal
 	return deps, nil
 }
 
-func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity.Principal, id string, opts DeleteConnectionOptions) error {
+func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity.Principal, id string, opts DeleteConnectionOptions) (retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.connection.delete", id, id, retErr, map[string]any{"force": opts.Force})
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "delete")); err != nil {
 		return err
 	}
@@ -394,13 +412,24 @@ func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity
 	return nil
 }
 
-func (s *Service) TestConnection(ctx context.Context, principal domainidentity.Principal, id string) (domainvirtualization.Task, error) {
+func (s *Service) TestConnection(ctx context.Context, principal domainidentity.Principal, id string) (_ domainvirtualization.Task, retErr error) {
+	return s.TestConnectionIdempotent(ctx, principal, id, "")
+}
+
+func (s *Service) TestConnectionIdempotent(ctx context.Context, principal domainidentity.Principal, id, idempotencyKey string) (_ domainvirtualization.Task, retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "virtualization.connection.test", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "test")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	connection, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
+	}
+	idempotencyInput := map[string]any{"connectionId": connection.ID}
+	if existing, found, err := s.existingIdempotentTask(ctx, "virtualization.connection.test", principal, idempotencyKey, idempotencyInput); err != nil {
+		return domainvirtualization.Task{}, err
+	} else if found {
+		return domainvirtualization.WithOperationState(existing, time.Now().UTC()), nil
 	}
 	adapterConnection, err := s.adapterConnection(ctx, connection)
 	if err != nil {
@@ -431,7 +460,7 @@ func (s *Service) TestConnection(ctx context.Context, principal domainidentity.P
 		health["status"] = "unavailable"
 	}
 	_, _ = s.connectionWriter.UpdateConnectionHealth(ctx, connection.ID, health, nil)
-	task, createErr := s.tasks.CreateTask(ctx, domainvirtualization.Task{
+	task, createErr := s.createTaskIdempotently(ctx, "virtualization.connection.test", principal, idempotencyKey, idempotencyInput, domainvirtualization.Task{
 		Provider:     connection.Provider,
 		ConnectionID: connection.ID,
 		TaskKind:     "connection_test",
@@ -464,7 +493,12 @@ func (s *Service) TestConnection(ctx context.Context, principal domainidentity.P
 	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 }
 
-func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.Principal, id string) (domainvirtualization.Task, error) {
+func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.Principal, id string) (_ domainvirtualization.Task, retErr error) {
+	return s.SyncConnectionIdempotent(ctx, principal, id, "")
+}
+
+func (s *Service) SyncConnectionIdempotent(ctx context.Context, principal domainidentity.Principal, id, idempotencyKey string) (_ domainvirtualization.Task, retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "virtualization.sync.enqueue", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationSyncManage, "sync")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
@@ -472,7 +506,7 @@ func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
-	task, err := s.enqueueSyncTask(ctx, principal, connection, map[string]any{"source": "manual"})
+	task, err := s.enqueueSyncTaskIdempotently(ctx, principal, connection, map[string]any{"source": "manual"}, idempotencyKey)
 	if err != nil {
 		return domainvirtualization.Task{}, err
 	}
@@ -480,7 +514,10 @@ func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.P
 	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 }
 
-func (s *Service) SyncAll(ctx context.Context, principal domainidentity.Principal) (domainvirtualization.Task, error) {
+func (s *Service) SyncAll(ctx context.Context, principal domainidentity.Principal) (_ domainvirtualization.Task, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.sync.global", "", "all connections", retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationSyncManage, "sync")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
@@ -683,7 +720,10 @@ func (s *Service) PlanVMCreate(ctx context.Context, principal domainidentity.Pri
 	}, nil
 }
 
-func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Principal, input CreateVMInput) (domainvirtualization.Task, error) {
+func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Principal, input CreateVMInput) (_ domainvirtualization.Task, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.vm.create.enqueue", input.ConnectionID, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsCreate); err != nil {
 		return domainvirtualization.Task{}, err
 	}
@@ -772,10 +812,18 @@ func (s *Service) prepareVMCreate(ctx context.Context, input CreateVMInput) (pre
 		input.BootImageID = image.ID
 	}
 	sourceRef := firstNonEmpty(stringValue(image.Config, "sourceRef"), image.ExternalID, imageID)
+	if normalizeProvider(connection.Provider) == ProviderKubeVirt &&
+		firstNonEmpty(input.SourceMode, sourceModeForProvider(connection.Provider, input.TemplateID, image)) == "datasource_clone" &&
+		input.DiskGiB <= 0 {
+		return preparedVMCreate{}, fmt.Errorf("%w: diskGiB must be greater than zero for a KubeVirt DataSource clone", apperrors.ErrInvalidArgument)
+	}
 	return preparedVMCreate{input: input, connection: connection, image: image, imageID: imageID, sourceRef: sourceRef}, nil
 }
 
-func (s *Service) VMAction(ctx context.Context, principal domainidentity.Principal, id string, input VMActionInput) (domainvirtualization.Task, error) {
+func (s *Service) VMAction(ctx context.Context, principal domainidentity.Principal, id string, input VMActionInput) (_ domainvirtualization.Task, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.vm.action.enqueue", id, id, retErr, map[string]any{"action": input.Action})
+	}()
 	action, err := normalizeAction(input.Action)
 	if err != nil {
 		return domainvirtualization.Task{}, err
@@ -846,12 +894,9 @@ func (s *Service) createTaskIdempotently(ctx context.Context, scope string, prin
 	if key == "" {
 		return s.tasks.CreateTask(ctx, task)
 	}
-	if len(key) < 8 || len(key) > 128 {
-		return domainvirtualization.Task{}, fmt.Errorf("%w: Idempotency-Key must contain 8 to 128 characters", apperrors.ErrInvalidArgument)
-	}
-	id, inputHash, err := idempotency.Derive(scope, firstNonEmpty(principal.UserID, principal.UserName), key, input)
+	id, inputHash, err := idempotentTaskIdentity(scope, principal, key, input)
 	if err != nil {
-		return domainvirtualization.Task{}, fmt.Errorf("derive virtualization task identity: %w", err)
+		return domainvirtualization.Task{}, err
 	}
 	if task.Payload == nil {
 		task.Payload = map[string]any{}
@@ -870,6 +915,39 @@ func (s *Service) createTaskIdempotently(ctx context.Context, scope string, prin
 		return domainvirtualization.Task{}, fmt.Errorf("%w: Idempotency-Key is already bound to different input", apperrors.ErrConflict)
 	}
 	return existing, nil
+}
+
+func (s *Service) existingIdempotentTask(ctx context.Context, scope string, principal domainidentity.Principal, key string, input any) (domainvirtualization.Task, bool, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return domainvirtualization.Task{}, false, nil
+	}
+	id, inputHash, err := idempotentTaskIdentity(scope, principal, key, input)
+	if err != nil {
+		return domainvirtualization.Task{}, false, err
+	}
+	existing, err := s.tasks.GetTask(ctx, id)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return domainvirtualization.Task{}, false, nil
+	}
+	if err != nil {
+		return domainvirtualization.Task{}, false, err
+	}
+	if !idempotency.Matches(existing.Payload, inputHash) {
+		return domainvirtualization.Task{}, false, fmt.Errorf("%w: Idempotency-Key is already bound to different input", apperrors.ErrConflict)
+	}
+	return existing, true, nil
+}
+
+func idempotentTaskIdentity(scope string, principal domainidentity.Principal, key string, input any) (string, string, error) {
+	if len(key) < 8 || len(key) > 128 {
+		return "", "", fmt.Errorf("%w: Idempotency-Key must contain 8 to 128 characters", apperrors.ErrInvalidArgument)
+	}
+	id, inputHash, err := idempotency.Derive(scope, firstNonEmpty(principal.UserID, principal.UserName), key, input)
+	if err != nil {
+		return "", "", fmt.Errorf("derive virtualization task identity: %w", err)
+	}
+	return id, inputHash, nil
 }
 
 func (s *Service) ListImages(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.ImageFilter) ([]domainvirtualization.Image, error) {
@@ -902,7 +980,10 @@ func imageListPermission(category string) string {
 	return appaccess.PermVirtualizationImagesView
 }
 
-func (s *Service) CreateImage(ctx context.Context, principal domainidentity.Principal, input ImageInput) (domainvirtualization.Image, error) {
+func (s *Service) CreateImage(ctx context.Context, principal domainidentity.Principal, input ImageInput) (_ domainvirtualization.Image, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.image.create", input.ID, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationImagesManage, "create")); err != nil {
 		return domainvirtualization.Image{}, err
 	}
@@ -918,7 +999,10 @@ func (s *Service) CreateImage(ctx context.Context, principal domainidentity.Prin
 	return stored, nil
 }
 
-func (s *Service) UpdateImage(ctx context.Context, principal domainidentity.Principal, id string, input ImageInput) (domainvirtualization.Image, error) {
+func (s *Service) UpdateImage(ctx context.Context, principal domainidentity.Principal, id string, input ImageInput) (_ domainvirtualization.Image, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.image.update", id, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationImagesManage, "update")); err != nil {
 		return domainvirtualization.Image{}, err
 	}
@@ -934,7 +1018,8 @@ func (s *Service) UpdateImage(ctx context.Context, principal domainidentity.Prin
 	return stored, nil
 }
 
-func (s *Service) DeleteImage(ctx context.Context, principal domainidentity.Principal, id string) error {
+func (s *Service) DeleteImage(ctx context.Context, principal domainidentity.Principal, id string) (retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "virtualization.image.delete", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationImagesManage, "delete")); err != nil {
 		return err
 	}
@@ -973,7 +1058,10 @@ func (s *Service) ListFlavorsPage(ctx context.Context, principal domainidentity.
 	return pageOf(items, total, filter.Page, filter.PageSize), nil
 }
 
-func (s *Service) CreateFlavor(ctx context.Context, principal domainidentity.Principal, input FlavorInput) (domainvirtualization.Flavor, error) {
+func (s *Service) CreateFlavor(ctx context.Context, principal domainidentity.Principal, input FlavorInput) (_ domainvirtualization.Flavor, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.flavor.create", input.ID, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationFlavorsManage, "create")); err != nil {
 		return domainvirtualization.Flavor{}, err
 	}
@@ -985,7 +1073,10 @@ func (s *Service) CreateFlavor(ctx context.Context, principal domainidentity.Pri
 	return item, nil
 }
 
-func (s *Service) UpdateFlavor(ctx context.Context, principal domainidentity.Principal, id string, input FlavorInput) (domainvirtualization.Flavor, error) {
+func (s *Service) UpdateFlavor(ctx context.Context, principal domainidentity.Principal, id string, input FlavorInput) (_ domainvirtualization.Flavor, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.flavor.update", id, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationFlavorsManage, "update")); err != nil {
 		return domainvirtualization.Flavor{}, err
 	}
@@ -997,7 +1088,8 @@ func (s *Service) UpdateFlavor(ctx context.Context, principal domainidentity.Pri
 	return item, nil
 }
 
-func (s *Service) DeleteFlavor(ctx context.Context, principal domainidentity.Principal, id string) error {
+func (s *Service) DeleteFlavor(ctx context.Context, principal domainidentity.Principal, id string) (retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "virtualization.flavor.delete", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationFlavorsManage, "delete")); err != nil {
 		return err
 	}
@@ -1057,7 +1149,10 @@ func (s *Service) ListOperationLogs(ctx context.Context, principal domainidentit
 	return s.taskLogs.ListTaskLogs(ctx, strings.TrimSpace(taskID), limit)
 }
 
-func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
+func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (_ domainvirtualization.Task, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.operation.cancel", taskID, taskID, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "cancel")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
@@ -1085,7 +1180,10 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 	return domainvirtualization.WithOperationState(updated, time.Now().UTC()), nil
 }
 
-func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
+func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (_ domainvirtualization.Task, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "virtualization.operation.retry", taskID, taskID, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "retry")); err != nil {
 		return domainvirtualization.Task{}, err
 	}
@@ -1711,8 +1809,7 @@ func (s *Service) snapshotConnectionDeleteTasks(ctx context.Context, connection 
 				result["vmSnapshot"] = vmDeleteSnapshot(vm)
 			}
 		}
-		task.Result = result
-		if _, err := s.tasks.UpdateTask(ctx, task); err != nil {
+		if err := s.tasks.UpdateTaskResult(ctx, task.ID, result); err != nil {
 			return fmt.Errorf("snapshot virtualization task %s before connection delete: %w", task.ID, err)
 		}
 	}
@@ -2041,8 +2138,12 @@ func (s *Service) imageFromInput(ctx context.Context, input ImageInput, id strin
 func sourceModeForProvider(provider, templateID string, image domainvirtualization.Image) string {
 	provider = normalizeProvider(provider)
 	if provider == ProviderPVE {
-		if strings.TrimSpace(templateID) != "" || strings.EqualFold(stringValue(image.Config, "sourceKind"), "template") {
+		sourceKind := strings.ToLower(strings.TrimSpace(stringValue(image.Config, "sourceKind")))
+		if strings.TrimSpace(templateID) != "" || sourceKind == "template" {
 			return "template_clone"
+		}
+		if sourceKind == "qemu" || sourceKind == "vm" {
+			return "vm_clone"
 		}
 		return "iso_install"
 	}
@@ -2089,9 +2190,6 @@ func pageOf[T any](items []T, total, page, pageSize int) domainvirtualization.Pa
 }
 
 func (s *Service) recordOperation(ctx context.Context, principal domainidentity.Principal, operationType, targetID, targetLabel, result, summary string, metadata map[string]any) {
-	if s.operations == nil {
-		return
-	}
 	targetScope := map[string]any{"module": "virtualization"}
 	if targetID != "" {
 		targetScope["targetId"] = targetID
@@ -2099,7 +2197,68 @@ func (s *Service) recordOperation(ctx context.Context, principal domainidentity.
 	if targetLabel != "" {
 		targetScope["targetLabel"] = targetLabel
 	}
-	_ = s.operations.Record(ctx, operationentry.New(ctx, principal, operationType, targetScope, result, summary, sanitizeMetadata(metadata)))
+	cleanMetadata := sanitizeMetadata(metadata)
+	if s.operations != nil {
+		_ = s.operations.Record(ctx, operationentry.New(ctx, principal, operationType, targetScope, result, summary, cleanMetadata))
+	}
+	if s.audit == nil {
+		return
+	}
+	meta := requestctx.FromContext(ctx)
+	auditMetadata := sanitizeMetadata(cleanMetadata)
+	auditMetadata["source"] = meta.Source
+	if targetID != "" {
+		auditMetadata["targetId"] = targetID
+	}
+	_ = s.audit.Record(ctx, domainaudit.Entry{
+		ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
+		ResourceKind: "Virtualization", ResourceName: firstNonEmpty(targetLabel, targetID), Action: operationType,
+		Result: auditResult(result), Summary: summary,
+		RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP,
+		Metadata: auditMetadata,
+	})
+}
+
+func (s *Service) recordMutationFailure(ctx context.Context, principal domainidentity.Principal, operationType, targetID, targetLabel string, err error, metadata map[string]any) {
+	if err == nil {
+		return
+	}
+	result, code := mutationErrorResult(err)
+	metadata = sanitizeMetadata(metadata)
+	metadata["errorCode"] = code
+	summary := "virtualization mutation failed"
+	if result == "deny" {
+		summary = "virtualization mutation denied"
+	}
+	s.recordOperation(ctx, principal, operationType, targetID, targetLabel, result, summary, metadata)
+}
+
+func mutationErrorResult(err error) (string, string) {
+	switch {
+	case errors.Is(err, apperrors.ErrAccessDenied), errors.Is(err, apperrors.ErrUnauthorized), errors.Is(err, apperrors.ErrMFARequired):
+		return "deny", "access_denied"
+	case errors.Is(err, apperrors.ErrInvalidArgument):
+		return "failure", "invalid_argument"
+	case errors.Is(err, apperrors.ErrConflict):
+		return "failure", "conflict"
+	case errors.Is(err, apperrors.ErrNotFound):
+		return "failure", "not_found"
+	case errors.Is(err, apperrors.ErrUnsupportedOperation), errors.Is(err, domainvirtualization.ErrUnsupported):
+		return "failure", "unsupported"
+	default:
+		return "failure", "internal"
+	}
+}
+
+func auditResult(result string) string {
+	switch strings.TrimSpace(result) {
+	case "success", TaskStatusSucceeded:
+		return "success"
+	case "deny":
+		return "deny"
+	default:
+		return "failure"
+	}
 }
 
 func sanitizeMetadata(metadata map[string]any) map[string]any {

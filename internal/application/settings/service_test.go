@@ -7,9 +7,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 type captureSettingsStore struct {
@@ -22,6 +28,42 @@ type capturedSetting struct {
 	category  string
 	value     map[string]any
 	updatedBy string
+}
+
+type settingsPermissionReader struct{}
+
+func (settingsPermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
+type captureSettingsAudit struct {
+	entries []domainaudit.Entry
+	err     error
+}
+
+func (c *captureSettingsAudit) Record(_ context.Context, entry domainaudit.Entry) error {
+	c.entries = append(c.entries, entry)
+	return c.err
+}
+
+type captureSettingsOperations struct {
+	entries []domainoperation.Entry
+	err     error
+}
+
+func (c *captureSettingsOperations) Record(_ context.Context, entry domainoperation.Entry) error {
+	c.entries = append(c.entries, entry)
+	return c.err
+}
+
+type stubSAMLMetadataPinner struct{}
+
+func (stubSAMLMetadataPinner) PinMetadata(_ context.Context, provider domainsettings.LoginProviderSettings) (domainsettings.LoginProviderSettings, error) {
+	return provider, nil
+}
+
+func (stubSAMLMetadataPinner) ValidateMetadata(context.Context, sohaapi.SAMLMetadataInput) (sohaapi.SAMLMetadataValidation, string, error) {
+	return sohaapi.SAMLMetadataValidation{Valid: true}, "", nil
 }
 
 func (s *captureSettingsStore) Get(_ context.Context, key string) (map[string]any, bool, error) {
@@ -79,14 +121,129 @@ func TestIdentitySettingsKeepsDeletedLoginProvidersDeleted(t *testing.T) {
 	}
 }
 
-func TestBrandingSettingsAreReadableWithoutManagementPermission(t *testing.T) {
+func TestBrandingSettingsRequireViewPermission(t *testing.T) {
 	service := &Service{
 		store:       &captureSettingsStore{},
-		permissions: appaccess.NewPermissionResolver(nil),
+		permissions: appaccess.NewPermissionResolver(settingsPermissionReader{}),
 	}
 
-	if _, err := service.GetBrandingSettings(context.Background(), domainidentity.Principal{UserID: "readonly"}); err != nil {
-		t.Fatalf("GetBrandingSettings returned error: %v", err)
+	if _, err := service.GetBrandingSettings(context.Background(), domainidentity.Principal{UserID: "readonly", Roles: []string{"readonly"}}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("GetBrandingSettings error = %v, want access denied", err)
+	}
+}
+
+func TestResolveBrandingSettingsRemainsAvailableToAuthBootstrap(t *testing.T) {
+	service := &Service{store: &captureSettingsStore{}}
+
+	if _, err := service.ResolveBrandingSettings(context.Background()); err != nil {
+		t.Fatalf("ResolveBrandingSettings returned error: %v", err)
+	}
+}
+
+func TestLoginProviderSecretsAreRedactedAndPreserved(t *testing.T) {
+	store := &captureSettingsStore{values: map[string]capturedSetting{
+		domainsettings.IdentityLoginProvidersSettingKey: {value: map[string]any{
+			"defaultProviderId": "oauth-main",
+			"providers": []any{map[string]any{
+				"id": "oauth-main", "name": "OAuth", "type": "oauth2", "enabled": false,
+				"clientSecret": "stored-secret", "certificate": "stored-certificate",
+			}},
+			"localPasswordLoginEnabled": true,
+		}},
+	}}
+	service := New(store, appaccess.NewPermissionResolver(settingsPermissionReader{}), nil, nil)
+	item, err := service.UpdateLoginProvidersSettings(context.Background(), domainidentity.Principal{UserID: "admin", Roles: []string{"admin"}}, []domainsettings.LoginProviderSettings{{
+		ID: "oauth-main", Name: "OAuth", Type: "oauth2", Enabled: false,
+	}}, "oauth-main", true)
+	if err != nil {
+		t.Fatalf("UpdateLoginProvidersSettings returned error: %v", err)
+	}
+	providers, ok := store.values[domainsettings.IdentityLoginProvidersSettingKey].value["providers"].([]map[string]any)
+	if !ok || len(providers) == 0 {
+		t.Fatalf("stored providers have unexpected shape: %#v", store.values[domainsettings.IdentityLoginProvidersSettingKey].value["providers"])
+	}
+	stored := providers[0]
+	if stored["clientSecret"] != "stored-secret" || stored["certificate"] != "stored-certificate" {
+		t.Fatalf("stored sensitive fields were not preserved: %#v", stored)
+	}
+	raw, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal identity settings: %v", err)
+	}
+	for _, forbidden := range []string{"clientSecret", "stored-secret", "certificate", "stored-certificate"} {
+		if stringContains(raw, forbidden) {
+			t.Fatalf("identity settings JSON leaked %q: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestSettingsMutationsRecordRedactedAuditAndOperations(t *testing.T) {
+	store := &captureSettingsStore{}
+	audit := &captureSettingsAudit{}
+	operations := &captureSettingsOperations{}
+	service := New(store, appaccess.NewPermissionResolver(settingsPermissionReader{}), audit, operations)
+	service.SetSAMLMetadataPinner(stubSAMLMetadataPinner{})
+	principal := domainidentity.Principal{UserID: "admin", UserName: "Admin", Roles: []string{"admin"}}
+	ctx := context.Background()
+
+	if _, err := service.UpdateLoginProvidersSettings(ctx, principal, nil, "", true); err != nil {
+		t.Fatalf("update identity settings: %v", err)
+	}
+	if _, err := service.UpdateBrandingSettings(ctx, principal, domainsettings.BrandingSettings{AppTitle: "Soha"}); err != nil {
+		t.Fatalf("update branding settings: %v", err)
+	}
+	if _, err := service.UpdateAIWorkbenchModelSettings(ctx, principal, domainsettings.AIWorkbenchModelSettings{Enabled: true}); err != nil {
+		t.Fatalf("update AI workbench settings: %v", err)
+	}
+	if _, err := service.UpdateAISkillsRegistry(ctx, principal, nil); err != nil {
+		t.Fatalf("update AI skills settings: %v", err)
+	}
+	if _, err := service.ValidateSAMLMetadata(ctx, principal, sohaapi.SAMLMetadataInput{Source: sohaapi.XML, XML: "sensitive-xml"}); err != nil {
+		t.Fatalf("validate SAML metadata: %v", err)
+	}
+
+	wantActions := []string{
+		"settings.identity.update",
+		"settings.branding.update",
+		"settings.ai.workbench_model.update",
+		"settings.ai.skills.update",
+		"settings.identity.saml.validate",
+	}
+	if len(audit.entries) != len(wantActions) || len(operations.entries) != len(wantActions) {
+		t.Fatalf("audit/operation counts = %d/%d, want %d", len(audit.entries), len(operations.entries), len(wantActions))
+	}
+	for index, action := range wantActions {
+		if audit.entries[index].Action != action || operations.entries[index].OperationType != action {
+			t.Fatalf("action %d = %q/%q, want %q", index, audit.entries[index].Action, operations.entries[index].OperationType, action)
+		}
+	}
+	raw, err := json.Marshal([]any{audit.entries, operations.entries})
+	if err != nil {
+		t.Fatalf("marshal audit evidence: %v", err)
+	}
+	for _, forbidden := range []string{"clientSecret", "certificate", "sensitive-xml"} {
+		if stringContains(raw, forbidden) {
+			t.Fatalf("settings evidence leaked %q: %s", forbidden, raw)
+		}
+	}
+}
+
+func TestSettingsRecorderFailuresAreObservable(t *testing.T) {
+	audit := &captureSettingsAudit{err: errors.New("audit unavailable")}
+	operations := &captureSettingsOperations{err: errors.New("operations unavailable")}
+	service := New(&captureSettingsStore{}, appaccess.NewPermissionResolver(settingsPermissionReader{}), audit, operations)
+	core, logs := observer.New(zap.WarnLevel)
+	service.SetInstrumentation(zap.New(core))
+
+	if _, err := service.UpdateBrandingSettings(context.Background(), domainidentity.Principal{UserID: "admin", Roles: []string{"admin"}}, domainsettings.BrandingSettings{AppTitle: "private-brand"}); err != nil {
+		t.Fatalf("UpdateBrandingSettings returned error: %v", err)
+	}
+	if logs.FilterMessage("settings evidence record failed").Len() != 2 {
+		t.Fatalf("warning logs = %d, want 2", logs.Len())
+	}
+	raw, _ := json.Marshal(logs.All())
+	if strings.Contains(string(raw), "private-brand") {
+		t.Fatalf("warning logs leaked settings values: %s", raw)
 	}
 }
 

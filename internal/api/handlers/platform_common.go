@@ -30,6 +30,15 @@ func parseLimit(value string, fallback int) int {
 	}
 	return limit
 }
+
+func parseMetricsWindow(c *gin.Context) (int, int) {
+	const maxMetricPoints = 1440
+	rangeMinutes := min(parseLimit(c.Query("rangeMinutes"), 60), 1440)
+	minimumStepSeconds := max(15, (rangeMinutes*60+maxMetricPoints-2)/(maxMetricPoints-1))
+	stepSeconds := min(max(parseLimit(c.Query("stepSeconds"), 60), minimumStepSeconds), 3600)
+	return rangeMinutes, stepSeconds
+}
+
 func parseOffset(value string) int {
 	offset, err := strconv.Atoi(value)
 	if err != nil || offset < 0 {

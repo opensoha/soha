@@ -253,6 +253,14 @@ func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 		return dockerRuntimeMutationSecuritySurface(method, path)
 	}
 	switch {
+	case strings.HasPrefix(path, "/api/v1/compute/provider-instances/"):
+		entry := nonPlatformMutationEntry("ComputeProviderInstance", nonPlatformMutationAction(method, path), appaccess.PermWorkspaceResourceView, false)
+		entry.DynamicPermission = true
+		return entry, true
+	case strings.HasPrefix(path, "/api/v1/compute/resources/"):
+		entry := nonPlatformMutationEntry("ComputeResource", nonPlatformMutationAction(method, path), appaccess.PermWorkspaceResourceView, false)
+		entry.DynamicPermission = true
+		return entry, true
 	case strings.HasPrefix(path, "/api/v1/compute/tasks/"):
 		// The facade delegates the domain-specific manage permission, audit, and
 		// operation record to the virtualization or Docker application service.

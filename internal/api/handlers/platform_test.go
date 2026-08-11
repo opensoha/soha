@@ -422,7 +422,24 @@ func TestPlatformGetStatefulSetMetricsBindsQuery(t *testing.T) {
 		called: resources.statefulSetMetricsCalled, clusterID: resources.statefulSetMetricsClusterID,
 		namespace: resources.statefulSetMetricsNamespace, name: resources.statefulSetMetricsName,
 		rangeMinutes: resources.statefulSetMetricsRangeMinutes, stepSeconds: resources.statefulSetMetricsStepSeconds,
-	}, "web")
+	}, "web", 30, 15)
+}
+
+func TestPlatformGetStatefulSetMetricsBoundsQueryWindow(t *testing.T) {
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
+	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/statefulsets/web/metrics?namespace=team-a&rangeMinutes=999999&stepSeconds=1", "", gin.Params{
+		{Key: "clusterID", Value: "cluster-a"},
+		{Key: "statefulSetName", Value: "web"},
+	})
+
+	handler.GetStatefulSetMetrics(ctx)
+
+	assertPlatformMetricsCall(t, recorder, platformMetricsCall{
+		called: resources.statefulSetMetricsCalled, clusterID: resources.statefulSetMetricsClusterID,
+		namespace: resources.statefulSetMetricsNamespace, name: resources.statefulSetMetricsName,
+		rangeMinutes: resources.statefulSetMetricsRangeMinutes, stepSeconds: resources.statefulSetMetricsStepSeconds,
+	}, "web", 1440, 61)
 }
 
 func TestPlatformGetDaemonSetMetricsBindsQuery(t *testing.T) {
@@ -439,7 +456,7 @@ func TestPlatformGetDaemonSetMetricsBindsQuery(t *testing.T) {
 		called: resources.daemonSetMetricsCalled, clusterID: resources.daemonSetMetricsClusterID,
 		namespace: resources.daemonSetMetricsNamespace, name: resources.daemonSetMetricsName,
 		rangeMinutes: resources.daemonSetMetricsRangeMinutes, stepSeconds: resources.daemonSetMetricsStepSeconds,
-	}, "node-agent")
+	}, "node-agent", 30, 15)
 }
 
 type platformMetricsCall struct {
@@ -449,7 +466,7 @@ type platformMetricsCall struct {
 	rangeMinutes, stepSeconds int
 }
 
-func assertPlatformMetricsCall(t *testing.T, recorder *httptest.ResponseRecorder, call platformMetricsCall, wantName string) {
+func assertPlatformMetricsCall(t *testing.T, recorder *httptest.ResponseRecorder, call platformMetricsCall, wantName string, wantRangeMinutes, wantStepSeconds int) {
 	t.Helper()
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
@@ -460,8 +477,8 @@ func assertPlatformMetricsCall(t *testing.T, recorder *httptest.ResponseRecorder
 	if call.clusterID != "cluster-a" || call.namespace != "team-a" || call.name != wantName {
 		t.Fatalf("scope = %#v/%#v/%#v, want cluster-a/team-a/%s", call.clusterID, call.namespace, call.name, wantName)
 	}
-	if call.rangeMinutes != 30 || call.stepSeconds != 15 {
-		t.Fatalf("metrics window = %d/%d, want 30/15", call.rangeMinutes, call.stepSeconds)
+	if call.rangeMinutes != wantRangeMinutes || call.stepSeconds != wantStepSeconds {
+		t.Fatalf("metrics window = %d/%d, want %d/%d", call.rangeMinutes, call.stepSeconds, wantRangeMinutes, wantStepSeconds)
 	}
 }
 

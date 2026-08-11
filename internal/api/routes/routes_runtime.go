@@ -5,10 +5,18 @@ import (
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
-func registerComputeRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
-	_ = cfg
+func registerComputeRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.GET("/compute/capabilities", deps.Compute.Capabilities)
 	protected.GET("/compute/overview", deps.Compute.Overview)
 	protected.GET("/compute/access-sources", deps.Compute.ListAccessSources)
+	protected.GET("/compute/providers", deps.Compute.ListProviders)
+	protected.GET("/compute/provider-instances", deps.Compute.ListProviderInstances)
+	protected.GET("/compute/provider-instances/:domain/:providerKey/:instanceRef", deps.Compute.GetProviderInstance)
+	protected.POST("/compute/provider-instances/:domain/:providerKey/:instanceRef/health-checks", deps.Compute.CheckProviderInstanceHealth)
+	protected.POST("/compute/provider-instances/:domain/:providerKey/:instanceRef/discoveries", deps.Compute.DiscoverProviderInstance)
+	protected.GET("/compute/resources/:domain/:kind/:id", deps.Compute.GetResource)
+	protected.GET("/compute/resources/:domain/:kind/:id/relations", deps.Compute.ListResourceRelations)
+	protected.POST("/compute/resources/:domain/:kind/:id/actions/:action", deps.Compute.ExecuteResourceAction)
 	protected.GET("/compute/tasks", deps.Compute.ListTasks)
 	protected.GET("/compute/tasks/:domain/:id", deps.Compute.GetTask)
 	protected.GET("/compute/tasks/:domain/:id/logs", deps.Compute.ListTaskLogs)
@@ -16,8 +24,7 @@ func registerComputeRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 	protected.POST("/compute/tasks/:domain/:id/retry", deps.Compute.RetryTask)
 }
 
-func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
-	_ = cfg
+func registerVirtualizationRoutes(protected gin.IRoutes, deps Dependencies) {
 
 	protected.GET("/virtualization/clusters", deps.Virtualization.ListConnections)
 	protected.POST("/virtualization/clusters", deps.Virtualization.CreateConnection)

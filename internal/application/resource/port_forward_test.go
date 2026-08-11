@@ -40,6 +40,8 @@ func (allowAllResourceAuthorizer) Authorize(context.Context, domainaccess.Reques
 
 func TestAgentPortForwardStartsLocalTunnelThroughAgent(t *testing.T) {
 	var seen []string
+	audit := &workloadAuditRecorder{}
+	operations := &workloadOperationRecorder{}
 	localPort := testFreeLocalPort(t)
 	server := newAgentPortForwardTestServer(t, localPort, &seen)
 	defer server.Close()
@@ -48,6 +50,8 @@ func TestAgentPortForwardStartsLocalTunnelThroughAgent(t *testing.T) {
 		Agents:      testAgentClients(agentinfra.NewRegistry(0)),
 		Connections: stubConnectionResolver{connection: agentConnection(server.URL)},
 		Authorizer:  allowAllResourceAuthorizer{},
+		Audit:       audit,
+		Operations:  operations,
 	})
 	principal := domainidentity.Principal{UserID: "user-1"}
 
@@ -67,6 +71,7 @@ func TestAgentPortForwardStartsLocalTunnelThroughAgent(t *testing.T) {
 
 	assertAgentTunnelRoundTrip(t, localPort)
 	assertAgentPortForwardLifecycle(t, service.PortForwards(), principal, &seen)
+	assertPortForwardGovernance(t, audit, operations)
 }
 
 func newAgentPortForwardTestServer(t *testing.T, localPort int, seen *[]string) *httptest.Server {
@@ -224,12 +229,16 @@ func TestPersistRegisteredPortForwardSessionCleansUpOnRepositoryFailure(t *testi
 
 func TestDirectPortForwardDelegatesTransportToInfrastructurePort(t *testing.T) {
 	starter := &recordingDirectPortForwardStarter{session: &recordingDirectPortForwardSession{}}
+	audit := &workloadAuditRecorder{}
+	operations := &workloadOperationRecorder{}
 	service := New(Dependencies{
 		Connections: stubConnectionResolver{connection: domaincluster.Connection{
 			Summary: domaincluster.Summary{ID: "direct-port-cluster", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig},
 		}},
 		Authorizer:   allowAllResourceAuthorizer{},
 		DirectTunnel: starter,
+		Audit:        audit,
+		Operations:   operations,
 	})
 	principal := domainidentity.Principal{UserID: "user-1"}
 	created, err := service.PortForwards().RegisterPortForward(
@@ -263,6 +272,37 @@ func TestDirectPortForwardDelegatesTransportToInfrastructurePort(t *testing.T) {
 	}
 	if !starter.session.stopped {
 		t.Fatal("StopPortForward() did not stop infrastructure session")
+	}
+	assertPortForwardGovernance(t, audit, operations)
+}
+
+func TestPortForwardValidationFailureIsAudited(t *testing.T) {
+	audit := &workloadAuditRecorder{}
+	service := New(Dependencies{
+		Connections: stubConnectionResolver{connection: domaincluster.Connection{Summary: domaincluster.Summary{
+			ID: "direct-port-cluster", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig,
+		}}},
+		Authorizer: allowAllResourceAuthorizer{},
+		Audit:      audit,
+	})
+	_, err := service.PortForwards().RegisterPortForward(t.Context(), domainidentity.Principal{UserID: "user-1"}, "direct-port-cluster", domainresource.PortForwardRegisterInput{
+		TargetKind: "Pod", TargetName: "api-0", LocalPort: 0, RemotePort: 8080,
+	})
+	if err == nil {
+		t.Fatal("RegisterPortForward() error = nil, want invalid port failure")
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Result != "failure" || audit.entries[0].ResourceName != "api-0" {
+		t.Fatalf("audit entries = %#v", audit.entries)
+	}
+}
+
+func assertPortForwardGovernance(t *testing.T, audit *workloadAuditRecorder, operations *workloadOperationRecorder) {
+	t.Helper()
+	if len(audit.entries) != 2 || audit.entries[0].Result != "success" || audit.entries[1].Result != "success" {
+		t.Fatalf("audit entries = %#v", audit.entries)
+	}
+	if len(operations.entries) != 2 || operations.entries[0].OperationType != "platform.port-forward.start" || operations.entries[1].OperationType != "platform.port-forward.stop" {
+		t.Fatalf("operation entries = %#v", operations.entries)
 	}
 }
 

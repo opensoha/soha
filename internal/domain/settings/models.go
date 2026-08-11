@@ -16,7 +16,7 @@ type LoginProviderSettings struct {
 	IconURL             string   `json:"iconUrl,omitempty"`
 	Enabled             bool     `json:"enabled"`
 	ClientID            string   `json:"clientId,omitempty"`
-	ClientSecret        string   `json:"clientSecret,omitempty"`
+	ClientSecret        string   `json:"-"`
 	Issuer              string   `json:"issuer,omitempty"`
 	AuthorizeURL        string   `json:"authorizeUrl,omitempty"`
 	TokenURL            string   `json:"tokenUrl,omitempty"`
@@ -40,7 +40,7 @@ type LoginProviderSettings struct {
 	MetadataURL         string   `json:"metadataUrl,omitempty"`
 	MetadataXML         string   `json:"-"`
 	EntityID            string   `json:"entityId,omitempty"`
-	Certificate         string   `json:"certificate,omitempty"`
+	Certificate         string   `json:"-"`
 }
 
 type IdentitySettings struct {

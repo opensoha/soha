@@ -776,6 +776,8 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 	}
 	related := map[string]any{"clusterId": req.ClusterID, "namespace": req.Namespace}
 	switch tool.Name {
+	case "k8s.namespaces.list", "k8s.workloads.overview", "k8s.configmaps.list", "k8s.secrets.metadata", "k8s.helm.releases.list":
+		return s.invokeKubernetesWorkbenchReadTool(ctx, principal, tool.Name, req, related)
 	case "k8s.pods.list", "k8s.pods.logs", "k8s.pods.describe":
 		return s.invokeKubernetesPodTool(ctx, principal, tool.Name, req, related)
 	case "k8s.deployments.list", "k8s.deployments.rollout_status", "k8s.deployments.events":
@@ -786,6 +788,37 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 		return s.invokeKubernetesClusterTool(ctx, principal, tool.Name, req, related)
 	default:
 		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
+	}
+}
+
+func (s *Service) invokeKubernetesWorkbenchReadTool(ctx context.Context, principal domainidentity.Principal, toolName string, req kubernetesToolRequest, related map[string]any) (any, map[string]any, error) {
+	resources, ok := s.resources.(KubernetesWorkbenchReadService)
+	if !ok {
+		return nil, related, fmt.Errorf("%w: Kubernetes workbench read service is not configured", apperrors.ErrInvalidArgument)
+	}
+	switch toolName {
+	case "k8s.namespaces.list":
+		items, err := resources.ListNamespaces(ctx, principal, req.ClusterID)
+		related["count"] = len(items)
+		return items, related, err
+	case "k8s.workloads.overview":
+		item, err := resources.GetWorkloadOverview(ctx, principal, req.ClusterID, req.Namespace)
+		related["totalPods"] = item.TotalPods
+		return item, related, err
+	case "k8s.configmaps.list":
+		items, err := resources.ListConfigMaps(ctx, principal, req.ClusterID, req.Namespace)
+		related["count"] = len(items)
+		return items, related, err
+	case "k8s.secrets.metadata":
+		items, err := resources.ListSecrets(ctx, principal, req.ClusterID, req.Namespace)
+		related["count"] = len(items)
+		return items, related, err
+	case "k8s.helm.releases.list":
+		items, err := resources.ListHelmReleases(ctx, principal, req.ClusterID, req.Namespace)
+		related["count"] = len(items)
+		return items, related, err
+	default:
+		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, toolName)
 	}
 }
 

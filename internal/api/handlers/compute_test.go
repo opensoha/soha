@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -15,14 +16,43 @@ import (
 )
 
 type computeHandlerFake struct {
-	filter appcompute.TaskFilter
+	filter         appcompute.TaskFilter
+	idempotencyKey string
 }
 
+func (*computeHandlerFake) Capabilities(context.Context, domainidentity.Principal) (sohaapi.ComputeCapabilityManifest, error) {
+	return sohaapi.ComputeCapabilityManifest{}, nil
+}
 func (*computeHandlerFake) Overview(context.Context, domainidentity.Principal) (sohaapi.ComputeOverview, error) {
 	return sohaapi.ComputeOverview{}, nil
 }
 func (*computeHandlerFake) ListAccessSources(context.Context, domainidentity.Principal, appcompute.AccessSourceFilter) (sohaapi.ComputeAccessSourceListEnvelope, error) {
 	return sohaapi.ComputeAccessSourceListEnvelope{}, nil
+}
+func (*computeHandlerFake) ListProviders(context.Context, domainidentity.Principal, appcompute.ProviderFilter) (sohaapi.ComputeProviderListEnvelope, error) {
+	return sohaapi.ComputeProviderListEnvelope{}, nil
+}
+func (*computeHandlerFake) ListProviderInstances(context.Context, domainidentity.Principal, appcompute.ProviderInstanceFilter) (sohaapi.ComputeProviderInstanceListEnvelope, error) {
+	return sohaapi.ComputeProviderInstanceListEnvelope{}, nil
+}
+func (*computeHandlerFake) GetProviderInstance(context.Context, domainidentity.Principal, string, string, string) (sohaapi.ComputeProviderInstance, error) {
+	return sohaapi.ComputeProviderInstance{}, nil
+}
+func (f *computeHandlerFake) CheckProviderInstanceHealth(_ context.Context, _ domainidentity.Principal, _, _, _, key string, _ sohaapi.ComputeProviderReadRequest) (sohaapi.ComputeTaskView, error) {
+	f.idempotencyKey = key
+	return sohaapi.ComputeTaskView{ID: "task-1"}, nil
+}
+func (*computeHandlerFake) DiscoverProviderInstance(context.Context, domainidentity.Principal, string, string, string, string, sohaapi.ComputeProviderDiscoverRequest) (sohaapi.ComputeTaskView, error) {
+	return sohaapi.ComputeTaskView{ID: "task-1"}, nil
+}
+func (*computeHandlerFake) GetResource(context.Context, domainidentity.Principal, string, string, string) (map[string]any, error) {
+	return map[string]any{}, nil
+}
+func (*computeHandlerFake) ListResourceRelations(context.Context, domainidentity.Principal, string, string, string, string, int) (sohaapi.ComputeResourceRelations, error) {
+	return sohaapi.ComputeResourceRelations{}, nil
+}
+func (*computeHandlerFake) ExecuteResourceAction(context.Context, domainidentity.Principal, string, string, string, string, string, sohaapi.ComputeResourceActionRequest) (sohaapi.ComputeTaskView, error) {
+	return sohaapi.ComputeTaskView{ID: "task-1"}, nil
 }
 func (f *computeHandlerFake) ListTasks(_ context.Context, _ domainidentity.Principal, filter appcompute.TaskFilter) (sohaapi.ComputeTaskListEnvelope, error) {
 	f.filter = filter
@@ -91,5 +121,33 @@ func TestComputeTaskHandlersExposeCanonicalFacade(t *testing.T) {
 	}
 	if service.filter.ResourceKind != "project" || service.filter.ResourceID != "project-1" {
 		t.Fatalf("task filter = %#v", service.filter)
+	}
+}
+
+func TestComputeProviderMutationRequiresAndForwardsIdempotencyKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &computeHandlerFake{}
+	handler := NewComputeHandler(service)
+	router := gin.New()
+	router.POST("/compute/provider-instances/:domain/:providerKey/:instanceRef/health-checks", handler.CheckProviderInstanceHealth)
+
+	for _, test := range []struct {
+		key    string
+		status int
+	}{
+		{status: http.StatusBadRequest},
+		{key: "compute-health-1", status: http.StatusAccepted},
+	} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/compute/provider-instances/virtualization/pve/connection-1/health-checks", strings.NewReader(`{"expectedGeneration":1}`))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Idempotency-Key", test.key)
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != test.status {
+			t.Fatalf("key %q status = %d, body = %s", test.key, recorder.Code, recorder.Body.String())
+		}
+	}
+	if service.idempotencyKey != "compute-health-1" {
+		t.Fatalf("idempotency key = %q", service.idempotencyKey)
 	}
 }

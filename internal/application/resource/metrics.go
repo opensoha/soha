@@ -353,55 +353,54 @@ func buildPodMetricDefinitions(namespace, podName, clusterID, clusterLabel strin
 	matchers := []string{
 		fmt.Sprintf(`namespace=%q`, namespace),
 		fmt.Sprintf(`pod=%q`, podName),
-		`container!=""`,
-		`container!="POD"`,
 	}
 	if strings.TrimSpace(clusterLabel) != "" && strings.TrimSpace(clusterID) != "" {
 		matchers = append(matchers, fmt.Sprintf(`%s=%q`, clusterLabel, clusterID))
 	}
-	filter := strings.Join(matchers, ",")
+	podFilter := strings.Join(matchers, ",")
+	containerFilter := strings.Join(append(append([]string{}, matchers...), `container!=""`, `container!="POD"`), ",")
 	return []metricDefinition{
 		{
 			Key:   "cpu",
 			Label: "CPU Usage",
 			Unit:  "cores",
-			Query: fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{%s}[5m]))`, filter),
+			Query: fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{%s}[5m]))`, containerFilter),
 		},
 		{
 			Key:   "memory",
 			Label: "Memory Working Set",
 			Unit:  "bytes",
-			Query: fmt.Sprintf(`sum(container_memory_working_set_bytes{%s})`, filter),
+			Query: fmt.Sprintf(`sum(container_memory_working_set_bytes{%s})`, containerFilter),
 		},
 		{
 			Key:   "network_rx",
 			Label: "Network Receive",
 			Unit:  "bytes/s",
-			Query: fmt.Sprintf(`sum(rate(container_network_receive_bytes_total{%s}[5m]))`, filter),
+			Query: fmt.Sprintf(`sum(rate(container_network_receive_bytes_total{%s}[5m]))`, podFilter),
 		},
 		{
 			Key:   "network_tx",
 			Label: "Network Transmit",
 			Unit:  "bytes/s",
-			Query: fmt.Sprintf(`sum(rate(container_network_transmit_bytes_total{%s}[5m]))`, filter),
+			Query: fmt.Sprintf(`sum(rate(container_network_transmit_bytes_total{%s}[5m]))`, podFilter),
 		},
 		{
 			Key:   "disk_read",
 			Label: "Disk Read",
 			Unit:  "bytes/s",
-			Query: fmt.Sprintf(`sum(rate(container_fs_reads_bytes_total{%s}[5m]))`, filter),
+			Query: fmt.Sprintf(`sum(rate(container_fs_reads_bytes_total{%s}[5m]))`, containerFilter),
 		},
 		{
 			Key:   "disk_write",
 			Label: "Disk Write",
 			Unit:  "bytes/s",
-			Query: fmt.Sprintf(`sum(rate(container_fs_writes_bytes_total{%s}[5m]))`, filter),
+			Query: fmt.Sprintf(`sum(rate(container_fs_writes_bytes_total{%s}[5m]))`, containerFilter),
 		},
 		{
 			Key:   "connections",
 			Label: "Open Connections",
 			Unit:  "count",
-			Query: fmt.Sprintf(`sum(container_sockets{%s})`, filter),
+			Query: fmt.Sprintf(`sum(container_sockets{%s})`, containerFilter),
 		},
 	}
 }
@@ -421,21 +420,20 @@ func buildPodSetMetricDefinitions(namespace string, podNames []string, clusterID
 	matchers := []string{
 		fmt.Sprintf(`namespace=%q`, namespace),
 		fmt.Sprintf(`pod=~%q`, strings.Join(escapedPods, "|")),
-		`container!=""`,
-		`container!="POD"`,
 	}
 	if strings.TrimSpace(clusterLabel) != "" && strings.TrimSpace(clusterID) != "" {
 		matchers = append(matchers, fmt.Sprintf(`%s=%q`, clusterLabel, clusterID))
 	}
-	filter := strings.Join(matchers, ",")
+	podFilter := strings.Join(matchers, ",")
+	containerFilter := strings.Join(append(append([]string{}, matchers...), `container!=""`, `container!="POD"`), ",")
 	return []metricDefinition{
-		{Key: "cpu", Label: "CPU Usage", Unit: "cores", Query: fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{%s}[5m]))`, filter)},
-		{Key: "memory", Label: "Memory Working Set", Unit: "bytes", Query: fmt.Sprintf(`sum(container_memory_working_set_bytes{%s})`, filter)},
-		{Key: "network_rx", Label: "Network Receive", Unit: "bytes/s", Query: fmt.Sprintf(`sum(rate(container_network_receive_bytes_total{%s}[5m]))`, filter)},
-		{Key: "network_tx", Label: "Network Transmit", Unit: "bytes/s", Query: fmt.Sprintf(`sum(rate(container_network_transmit_bytes_total{%s}[5m]))`, filter)},
-		{Key: "disk_read", Label: "Disk Read", Unit: "bytes/s", Query: fmt.Sprintf(`sum(rate(container_fs_reads_bytes_total{%s}[5m]))`, filter)},
-		{Key: "disk_write", Label: "Disk Write", Unit: "bytes/s", Query: fmt.Sprintf(`sum(rate(container_fs_writes_bytes_total{%s}[5m]))`, filter)},
-		{Key: "connections", Label: "Open Connections", Unit: "count", Query: fmt.Sprintf(`sum(container_sockets{%s})`, filter)},
+		{Key: "cpu", Label: "CPU Usage", Unit: "cores", Query: fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total{%s}[5m]))`, containerFilter)},
+		{Key: "memory", Label: "Memory Working Set", Unit: "bytes", Query: fmt.Sprintf(`sum(container_memory_working_set_bytes{%s})`, containerFilter)},
+		{Key: "network_rx", Label: "Network Receive", Unit: "bytes/s", Query: fmt.Sprintf(`sum(rate(container_network_receive_bytes_total{%s}[5m]))`, podFilter)},
+		{Key: "network_tx", Label: "Network Transmit", Unit: "bytes/s", Query: fmt.Sprintf(`sum(rate(container_network_transmit_bytes_total{%s}[5m]))`, podFilter)},
+		{Key: "disk_read", Label: "Disk Read", Unit: "bytes/s", Query: fmt.Sprintf(`sum(rate(container_fs_reads_bytes_total{%s}[5m]))`, containerFilter)},
+		{Key: "disk_write", Label: "Disk Write", Unit: "bytes/s", Query: fmt.Sprintf(`sum(rate(container_fs_writes_bytes_total{%s}[5m]))`, containerFilter)},
+		{Key: "connections", Label: "Open Connections", Unit: "count", Query: fmt.Sprintf(`sum(container_sockets{%s})`, containerFilter)},
 	}
 }
 
@@ -705,6 +703,8 @@ func (s *metricsSupport) queryMetricSeries(ctx context.Context, baseURL, bearerT
 }
 
 func (s *metricsSupport) queryMetricSeriesWithFallback(ctx context.Context, baseURL, bearerToken string, definitions, fallbackDefinitions []metricDefinition, namespace string, podNames []string, queryRange, step time.Duration) ([]domainresource.MetricSeriesView, string) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
 	series, firstError := s.queryMetricSeries(ctx, baseURL, bearerToken, definitions, queryRange, step)
 	if len(series) > 0 || len(fallbackDefinitions) == 0 {
 		return series, firstError

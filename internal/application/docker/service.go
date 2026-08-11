@@ -2,6 +2,9 @@ package docker
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +25,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/idempotency"
 	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 	"sigs.k8s.io/yaml"
 )
 
@@ -168,7 +172,10 @@ func (s *Service) GetHost(ctx context.Context, principal domainidentity.Principa
 	return s.repo.GetHost(ctx, id)
 }
 
-func (s *Service) CreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.HostInput) (domaindocker.Host, error) {
+func (s *Service) CreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.HostInput) (_ domaindocker.Host, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "docker.host.create", input.ID, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "create")); err != nil {
 		return domaindocker.Host{}, err
 	}
@@ -183,13 +190,28 @@ func (s *Service) CreateHost(ctx context.Context, principal domainidentity.Princ
 	return item, nil
 }
 
-func (s *Service) UpdateHost(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.HostInput) (domaindocker.Host, error) {
+func (s *Service) UpdateHost(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.HostInput) (_ domaindocker.Host, retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.host.update", id, input.Name, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "update")); err != nil {
 		return domaindocker.Host{}, err
 	}
 	if err := validateHostInput(input); err != nil {
 		return domaindocker.Host{}, err
 	}
+	current, err := s.repo.GetHost(ctx, id)
+	if err != nil {
+		return domaindocker.Host{}, err
+	}
+	input.Status = current.Status
+	input.AgentID = current.AgentID
+	input.AgentVersion = current.AgentVersion
+	input.DockerVersion = current.DockerVersion
+	input.ComposeVersion = current.ComposeVersion
+	input.Architecture = current.Architecture
+	input.VirtualizationConnectionID = current.VirtualizationConnectionID
+	input.VMID = current.VMID
+	input.VMName = current.VMName
+	input.IPAddress = current.IPAddress
 	item, err := s.repo.UpdateHost(ctx, id, input)
 	if err != nil {
 		return domaindocker.Host{}, err
@@ -198,7 +220,8 @@ func (s *Service) UpdateHost(ctx context.Context, principal domainidentity.Princ
 	return item, nil
 }
 
-func (s *Service) DeleteHost(ctx context.Context, principal domainidentity.Principal, id string) error {
+func (s *Service) DeleteHost(ctx context.Context, principal domainidentity.Principal, id string) (retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.host.delete", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "delete")); err != nil {
 		return err
 	}
@@ -243,7 +266,10 @@ func (s *Service) PlanQuickCreateHost(ctx context.Context, principal domainident
 	}, nil
 }
 
-func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.QuickCreateHostInput) (domaindocker.Operation, error) {
+func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.QuickCreateHostInput) (_ domaindocker.Operation, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "docker.host.provision.enqueue", "", input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "create")); err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -411,7 +437,10 @@ func (s *Service) GetProject(ctx context.Context, principal domainidentity.Princ
 	return s.repo.GetProject(ctx, id)
 }
 
-func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Principal, input domaindocker.ProjectInput) (domaindocker.Project, error) {
+func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Principal, input domaindocker.ProjectInput) (_ domaindocker.Project, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "docker.project.create", input.ID, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "create")); err != nil {
 		return domaindocker.Project{}, err
 	}
@@ -432,7 +461,8 @@ func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Pr
 	return item, nil
 }
 
-func (s *Service) UpdateProject(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ProjectInput) (domaindocker.Project, error) {
+func (s *Service) UpdateProject(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ProjectInput) (_ domaindocker.Project, retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.project.update", id, input.Name, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "update")); err != nil {
 		return domaindocker.Project{}, err
 	}
@@ -450,7 +480,8 @@ func (s *Service) UpdateProject(ctx context.Context, principal domainidentity.Pr
 	return item, nil
 }
 
-func (s *Service) DeleteProject(ctx context.Context, principal domainidentity.Principal, id string) error {
+func (s *Service) DeleteProject(ctx context.Context, principal domainidentity.Principal, id string) (retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.project.delete", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "delete")); err != nil {
 		return err
 	}
@@ -483,7 +514,10 @@ func (s *Service) PlanProjectDeploy(ctx context.Context, principal domainidentit
 	}, nil
 }
 
-func (s *Service) DeployProject(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ProjectDeployInput) (domaindocker.Operation, error) {
+func (s *Service) DeployProject(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ProjectDeployInput) (_ domaindocker.Operation, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "docker.project.deploy.enqueue", id, id, retErr, map[string]any{"action": input.Action})
+	}()
 	if err := s.authorize(ctx, principal, appaccess.PermDockerProjectsDeploy); err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -533,7 +567,10 @@ func buildProjectDeployPayload(project domaindocker.Project, action string) map[
 	return payload
 }
 
-func (s *Service) StartContainer(ctx context.Context, principal domainidentity.Principal, input domaindocker.ContainerStartInput) (domaindocker.Operation, error) {
+func (s *Service) StartContainer(ctx context.Context, principal domainidentity.Principal, input domaindocker.ContainerStartInput) (_ domaindocker.Operation, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "docker.container.start.enqueue", input.HostID, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "start")); err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -727,7 +764,10 @@ func (s *Service) ListServices(ctx context.Context, principal domainidentity.Pri
 	return pageOf(items, total, filter.Page, filter.PageSize), nil
 }
 
-func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ServiceActionInput) (domaindocker.Operation, error) {
+func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ServiceActionInput) (_ domaindocker.Operation, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "docker.service.action.enqueue", id, id, retErr, map[string]any{"action": input.Action})
+	}()
 	normalizedAction := strings.TrimSpace(input.Action)
 	if !slices.Contains([]string{"restart", "start", "stop", "logs"}, normalizedAction) {
 		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported service action %s", apperrors.ErrInvalidArgument, normalizedAction)
@@ -768,7 +808,10 @@ func (s *Service) ListPortMappings(ctx context.Context, principal domainidentity
 	return pageOf(items, total, filter.Page, filter.PageSize), nil
 }
 
-func (s *Service) CreatePortMapping(ctx context.Context, principal domainidentity.Principal, input domaindocker.PortMappingInput) (domaindocker.PortMapping, error) {
+func (s *Service) CreatePortMapping(ctx context.Context, principal domainidentity.Principal, input domaindocker.PortMappingInput) (_ domaindocker.PortMapping, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "docker.port.create", input.ID, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerPortsManage, "create")); err != nil {
 		return domaindocker.PortMapping{}, err
 	}
@@ -790,7 +833,8 @@ func (s *Service) CreatePortMapping(ctx context.Context, principal domainidentit
 	return item, nil
 }
 
-func (s *Service) UpdatePortMapping(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.PortMappingInput) (domaindocker.PortMapping, error) {
+func (s *Service) UpdatePortMapping(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.PortMappingInput) (_ domaindocker.PortMapping, retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.port.update", id, input.Name, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerPortsManage, "update")); err != nil {
 		return domaindocker.PortMapping{}, err
 	}
@@ -806,7 +850,8 @@ func (s *Service) UpdatePortMapping(ctx context.Context, principal domainidentit
 	return item, nil
 }
 
-func (s *Service) DeletePortMapping(ctx context.Context, principal domainidentity.Principal, id string) error {
+func (s *Service) DeletePortMapping(ctx context.Context, principal domainidentity.Principal, id string) (retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.port.delete", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerPortsManage, "delete")); err != nil {
 		return err
 	}
@@ -833,7 +878,10 @@ func (s *Service) ListTemplates(ctx context.Context, principal domainidentity.Pr
 	return pageOf(items, total, filter.Page, filter.PageSize), nil
 }
 
-func (s *Service) CreateTemplate(ctx context.Context, principal domainidentity.Principal, input domaindocker.TemplateInput) (domaindocker.Template, error) {
+func (s *Service) CreateTemplate(ctx context.Context, principal domainidentity.Principal, input domaindocker.TemplateInput) (_ domaindocker.Template, retErr error) {
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "docker.template.create", input.ID, input.Name, retErr, nil)
+	}()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerTemplatesManage, "create")); err != nil {
 		return domaindocker.Template{}, err
 	}
@@ -848,7 +896,8 @@ func (s *Service) CreateTemplate(ctx context.Context, principal domainidentity.P
 	return item, nil
 }
 
-func (s *Service) UpdateTemplate(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.TemplateInput) (domaindocker.Template, error) {
+func (s *Service) UpdateTemplate(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.TemplateInput) (_ domaindocker.Template, retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.template.update", id, input.Name, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerTemplatesManage, "update")); err != nil {
 		return domaindocker.Template{}, err
 	}
@@ -863,7 +912,8 @@ func (s *Service) UpdateTemplate(ctx context.Context, principal domainidentity.P
 	return item, nil
 }
 
-func (s *Service) DeleteTemplate(ctx context.Context, principal domainidentity.Principal, id string) error {
+func (s *Service) DeleteTemplate(ctx context.Context, principal domainidentity.Principal, id string) (retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.template.delete", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerTemplatesManage, "delete")); err != nil {
 		return err
 	}
@@ -911,7 +961,8 @@ func (s *Service) ListOperationLogs(ctx context.Context, principal domainidentit
 	return s.repo.ListOperationLogs(ctx, id, limit)
 }
 
-func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.Principal, id string) (domaindocker.Operation, error) {
+func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.Principal, id string) (_ domaindocker.Operation, retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.operation.cancel", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "cancel")); err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -936,7 +987,8 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
 }
 
-func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, id string) (domaindocker.Operation, error) {
+func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, id string) (_ domaindocker.Operation, retErr error) {
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.operation.retry", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "retry")); err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -947,9 +999,15 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	if !slices.Contains([]string{OperationStatusFailed, OperationStatusTimeout, OperationStatusCanceled}, item.Status) {
 		return domaindocker.Operation{}, fmt.Errorf("%w: operation is not retryable", apperrors.ErrInvalidArgument)
 	}
+	if item.MaxRetries == 0 {
+		item.MaxRetries = defaultOperationMaxRetries
+	}
+	if item.AttemptCount > item.MaxRetries {
+		return domaindocker.Operation{}, fmt.Errorf("%w: operation retry limit reached", apperrors.ErrInvalidArgument)
+	}
 	item.Status = OperationStatusQueued
-	item.AttemptCount++
 	item.ClaimedByWorkerID = ""
+	item.CallbackToken = ""
 	item.StartedAt = nil
 	item.LastHeartbeatAt = nil
 	item.FinishedAt = nil
@@ -964,9 +1022,11 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
 }
 
-func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.OperationClaimInput) (domaindocker.Operation, error) {
+func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.OperationClaimInput) (_ domaindocker.Operation, retErr error) {
 	s.reconcileHostProvisionOperations(ctx)
 	workerID := firstNonEmpty(input.WorkerID, input.AgentID)
+	principal := runnerPrincipal(workerID)
+	defer func() { s.recordMutationFailure(ctx, principal, "docker.operation.claim", "", workerID, retErr, nil) }()
 	if workerID == "" {
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker worker id is required", apperrors.ErrInvalidArgument)
 	}
@@ -974,7 +1034,15 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 	if len(kinds) == 0 {
 		kinds = []string{OperationKindHostProvision, OperationKindContainerStart, OperationKindProjectDeploy, OperationKindServiceAction, OperationKindPortReserve, OperationKindHostSync}
 	}
-	item, err := s.repo.ClaimOperation(ctx, workerID, input.AgentID, input.HostIDs, kinds, time.Now().UTC())
+	callbackToken := ""
+	if input.CallbackTokenSupported {
+		var tokenErr error
+		callbackToken, tokenErr = newDockerCallbackToken()
+		if tokenErr != nil {
+			return domaindocker.Operation{}, tokenErr
+		}
+	}
+	item, err := s.repo.ClaimOperation(ctx, workerID, input.AgentID, input.HostIDs, kinds, callbackToken, time.Now().UTC())
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
@@ -998,6 +1066,7 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 			Config:  config,
 		})
 	}
+	s.recordOperation(ctx, principal, "docker.operation.claim", item.ID, item.OperationKind, "success", "claimed docker operation", map[string]any{"attemptCount": item.AttemptCount})
 	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 }
 
@@ -1010,7 +1079,11 @@ func (s *Service) GetOperationForRunner(ctx context.Context, id string) (domaind
 	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 }
 
-func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocker.OperationCallbackInput) (domaindocker.Operation, error) {
+func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocker.OperationCallbackInput) (_ domaindocker.Operation, retErr error) {
+	principal := runnerPrincipal(input.WorkerID)
+	defer func() {
+		s.recordMutationFailure(ctx, principal, "docker.operation.callback", input.OperationID, input.OperationID, retErr, map[string]any{"callbackStatus": input.Status})
+	}()
 	item, err := s.repo.GetOperation(ctx, input.OperationID)
 	if err != nil {
 		return domaindocker.Operation{}, err
@@ -1026,6 +1099,9 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	if claimedBy != workerID {
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker operation is claimed by another worker", apperrors.ErrAccessDenied)
 	}
+	if item.CallbackToken != "" && subtle.ConstantTimeCompare([]byte(item.CallbackToken), []byte(strings.TrimSpace(input.CallbackToken))) != 1 {
+		return domaindocker.Operation{}, fmt.Errorf("%w: invalid docker operation callback token", apperrors.ErrAccessDenied)
+	}
 	status := strings.TrimSpace(input.Status)
 	if status == "" {
 		status = OperationStatusRunning
@@ -1037,6 +1113,7 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 		return domaindocker.Operation{}, err
 	}
 	if operationTerminal(item.Status) {
+		s.recordOperation(ctx, principal, "docker.operation.callback", item.ID, item.OperationKind, "success", "accepted idempotent docker operation callback", map[string]any{"callbackStatus": status, "idempotent": true})
 		return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 	}
 	now := time.Now().UTC()
@@ -1062,7 +1139,16 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 		s.touchHostFromCallback(ctx, updated.HostID, workerID, updated.OperationKind, status, input.Payload)
 	}
 	s.applyCallbackRuntimeState(ctx, updated, status, input.Payload)
+	s.recordOperation(ctx, principal, "docker.operation.callback", updated.ID, updated.OperationKind, "success", "accepted docker operation callback", map[string]any{"callbackStatus": status, "attemptCount": updated.AttemptCount})
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func newDockerCallbackToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("generate docker callback token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 func validateRuntimeEndpoint(raw string) error {
@@ -1622,9 +1708,6 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 }
 
 func (s *Service) recordOperation(ctx context.Context, principal domainidentity.Principal, operationType, targetID, targetLabel, result, summary string, metadata map[string]any) {
-	if s.operations == nil {
-		return
-	}
 	targetScope := map[string]any{"module": "docker"}
 	if targetID != "" {
 		targetScope["targetId"] = targetID
@@ -1632,7 +1715,73 @@ func (s *Service) recordOperation(ctx context.Context, principal domainidentity.
 	if targetLabel != "" {
 		targetScope["targetLabel"] = targetLabel
 	}
-	_ = s.operations.Record(ctx, operationentry.New(ctx, principal, operationType, targetScope, result, summary, sanitizeMetadata(metadata)))
+	cleanMetadata := sanitizeMetadata(metadata)
+	if s.operations != nil {
+		_ = s.operations.Record(ctx, operationentry.New(ctx, principal, operationType, targetScope, result, summary, cleanMetadata))
+	}
+	if s.audit == nil {
+		return
+	}
+	meta := requestctx.FromContext(ctx)
+	auditMetadata := sanitizeMetadata(cleanMetadata)
+	auditMetadata["source"] = meta.Source
+	if targetID != "" {
+		auditMetadata["targetId"] = targetID
+	}
+	_ = s.audit.Record(ctx, domainaudit.Entry{
+		ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
+		ResourceKind: "DockerRuntime", ResourceName: firstNonEmpty(targetLabel, targetID), Action: operationType,
+		Result: dockerAuditResult(result), Summary: summary,
+		RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP,
+		Metadata: auditMetadata,
+	})
+}
+
+func (s *Service) recordMutationFailure(ctx context.Context, principal domainidentity.Principal, operationType, targetID, targetLabel string, err error, metadata map[string]any) {
+	if err == nil {
+		return
+	}
+	result, code := dockerMutationErrorResult(err)
+	metadata = sanitizeMetadata(metadata)
+	metadata["errorCode"] = code
+	summary := "docker mutation failed"
+	if result == "deny" {
+		summary = "docker mutation denied"
+	}
+	s.recordOperation(ctx, principal, operationType, targetID, targetLabel, result, summary, metadata)
+}
+
+func dockerMutationErrorResult(err error) (string, string) {
+	switch {
+	case errors.Is(err, apperrors.ErrAccessDenied), errors.Is(err, apperrors.ErrUnauthorized), errors.Is(err, apperrors.ErrMFARequired):
+		return "deny", "access_denied"
+	case errors.Is(err, apperrors.ErrInvalidArgument):
+		return "failure", "invalid_argument"
+	case errors.Is(err, apperrors.ErrConflict):
+		return "failure", "conflict"
+	case errors.Is(err, apperrors.ErrNotFound):
+		return "failure", "not_found"
+	case errors.Is(err, apperrors.ErrUnsupportedOperation):
+		return "failure", "unsupported"
+	default:
+		return "failure", "internal"
+	}
+}
+
+func dockerAuditResult(result string) string {
+	switch strings.TrimSpace(result) {
+	case "success", OperationStatusCompleted:
+		return "success"
+	case "deny":
+		return "deny"
+	default:
+		return "failure"
+	}
+}
+
+func runnerPrincipal(workerID string) domainidentity.Principal {
+	workerID = strings.TrimSpace(workerID)
+	return domainidentity.Principal{UserID: workerID, UserName: workerID, Roles: []string{"runner"}}
 }
 
 func validateHostInput(input domaindocker.HostInput) error {

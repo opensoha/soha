@@ -430,6 +430,39 @@ func TestPVEAdapterCreateClonePayloadDoesNotLeakToken(t *testing.T) {
 	assertPVEClonePaths(t, paths)
 }
 
+func TestPVEAdapterCreateOrdinaryVMUsesFullClone(t *testing.T) {
+	var cloneBody string
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		if strings.HasSuffix(r.URL.Path, "/clone") {
+			raw, _ := io.ReadAll(r.Body)
+			cloneBody = string(raw)
+		}
+		writePVEData(w, []map[string]any{})
+	}))
+	defer server.Close()
+
+	adapter := NewPVEAdapter(server.Client())
+	_, err := adapter.CreateVM(context.Background(), Connection{
+		Endpoint: server.URL,
+		Options:  map[string]any{"vmid": "202", "defaultNode": "pve-a"},
+	}, CreateVMInput{
+		Name:       "ordinary-clone",
+		SourceMode: "vm_clone",
+		SourceRef:  "101",
+	})
+	if err != nil {
+		t.Fatalf("CreateVM() error = %v", err)
+	}
+	if !strings.Contains(cloneBody, `"full":1`) {
+		t.Fatalf("clone payload = %s, want full clone", cloneBody)
+	}
+	if len(paths) == 0 || paths[0] != "POST /api2/json/nodes/pve-a/qemu/101/clone" {
+		t.Fatalf("paths = %#v", paths)
+	}
+}
+
 func assertPVECloneVM(t *testing.T, vm VM) {
 	t.Helper()
 	if vm.ID != "200" || vm.Node != "pve-a" {
@@ -500,6 +533,7 @@ func TestPVEAdapterCreateISOPayloadUsesProviderParams(t *testing.T) {
 			"bridge":   "vmbr0",
 			"storage":  "local-lvm",
 			"cicustom": "user=local:snippets/docker-agent.yaml",
+			"osType":   "l26",
 		},
 	})
 	if err != nil {
@@ -508,7 +542,7 @@ func TestPVEAdapterCreateISOPayloadUsesProviderParams(t *testing.T) {
 	if vm.ID != "201" || vm.Node != "pve-1" || vm.Metadata["vmid"] != "201" {
 		t.Fatalf("vm = %#v", vm)
 	}
-	if !strings.Contains(body, `"arch":"aarch64"`) || !strings.Contains(body, `"cicustom":"user=local:snippets/docker-agent.yaml"`) || !strings.Contains(body, `"ide2":"local:iso/ubuntu.iso,media=cdrom"`) || !strings.Contains(body, `"memory":4096`) || !strings.Contains(body, `"net0":"virtio,bridge=vmbr0"`) || !strings.Contains(body, `"scsi0":"local-lvm:20"`) {
+	if !strings.Contains(body, `"arch":"aarch64"`) || !strings.Contains(body, `"cicustom":"user=local:snippets/docker-agent.yaml"`) || !strings.Contains(body, `"ide2":"local:iso/ubuntu.iso,media=cdrom"`) || !strings.Contains(body, `"memory":4096`) || !strings.Contains(body, `"net0":"virtio,bridge=vmbr0"`) || !strings.Contains(body, `"ostype":"l26"`) || !strings.Contains(body, `"scsi0":"local-lvm:20"`) {
 		t.Fatalf("payload = %s", body)
 	}
 	want := []string{"POST /api2/json/nodes/pve-1/qemu", "GET /api2/json/nodes/pve-1/qemu/201/status/current"}

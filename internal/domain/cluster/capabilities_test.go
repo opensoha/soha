@@ -29,6 +29,13 @@ func TestDefaultCapabilityMatrixDocumentsAgentGaps(t *testing.T) {
 	}
 	expectCapability(t, byKey["pod.exec"].Agent.Status == CapabilityStatusAvailable, "agent pod exec is unavailable")
 	expectCapability(t, byKey["port.forward"].Agent.Status == CapabilityStatusAvailable, "agent port forward is unavailable")
+	metrics := byKey["metrics"]
+	expectCapability(t, metrics.Direct.Status == CapabilityStatusAvailable, "direct metrics status = %q", metrics.Direct.Status)
+	expectCapability(t, metrics.Agent.Status == CapabilityStatusPartial, "agent metrics status = %q", metrics.Agent.Status)
+	expectCapability(t, metrics.Agent.Reason != "", "agent metrics reason is empty")
+	customResources := byKey["custom.resources"]
+	expectCapability(t, customResources.Agent.Status == CapabilityStatusPartial, "agent custom resources status = %q", customResources.Agent.Status)
+	expectCapability(t, customResources.Agent.Reason != "", "agent custom resources reason is empty")
 
 	deliveryActions := byKey["delivery.actions"]
 	expectCapability(t, deliveryActions.Agent.Status == CapabilityStatusPartial, "agent delivery actions status = %q", deliveryActions.Agent.Status)

@@ -282,3 +282,26 @@ func TestResolveClusterPrometheusSettingsDoesNotUseGlobalFallback(t *testing.T) 
 		t.Fatalf("query defaults = range %d step %d, want 60/60", settings.DefaultRangeMinutes, settings.StepSeconds)
 	}
 }
+
+func TestPodMetricDefinitionsKeepNetworkAtPodScope(t *testing.T) {
+	t.Parallel()
+
+	definitionSets := [][]metricDefinition{
+		buildPodMetricDefinitions("team-a", "api-0", "cluster-a", "cluster"),
+		buildPodSetMetricDefinitions("team-a", []string{"api-0", "api-1"}, "cluster-a", "cluster"),
+	}
+	for _, definitions := range definitionSets {
+		byKey := make(map[string]string, len(definitions))
+		for _, definition := range definitions {
+			byKey[definition.Key] = definition.Query
+		}
+		for _, key := range []string{"network_rx", "network_tx"} {
+			if strings.Contains(byKey[key], `container!=`) {
+				t.Fatalf("%s query excludes pod-level network samples: %s", key, byKey[key])
+			}
+		}
+		if !strings.Contains(byKey["cpu"], `container!=""`) {
+			t.Fatalf("cpu query includes pod sandbox samples: %s", byKey["cpu"])
+		}
+	}
+}

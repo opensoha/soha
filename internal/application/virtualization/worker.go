@@ -496,12 +496,16 @@ func (s *Service) enqueueStartupSync(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) enqueueSyncTask(ctx context.Context, principal domainidentity.Principal, connection domainvirtualization.Connection, metadata map[string]any) (domainvirtualization.Task, error) {
+	return s.enqueueSyncTaskIdempotently(ctx, principal, connection, metadata, "")
+}
+
+func (s *Service) enqueueSyncTaskIdempotently(ctx context.Context, principal domainidentity.Principal, connection domainvirtualization.Connection, metadata map[string]any, idempotencyKey string) (domainvirtualization.Task, error) {
 	payload := cloneMap(metadata)
 	if payload == nil {
 		payload = map[string]any{}
 	}
 	payload["connectionId"] = connection.ID
-	return s.tasks.CreateTask(ctx, domainvirtualization.Task{
+	return s.createTaskIdempotently(ctx, "virtualization.connection.sync", principal, idempotencyKey, payload, domainvirtualization.Task{
 		Provider:       connection.Provider,
 		ConnectionID:   connection.ID,
 		TaskKind:       TaskKindAssetSync,

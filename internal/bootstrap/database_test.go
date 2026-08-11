@@ -454,9 +454,11 @@ func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
 	}
 }
 
-func TestDockerHostProvisionerUsesPrivilegedVirtualizationBridge(t *testing.T) {
+func TestDockerHostProvisionerPreservesCallerPermissions(t *testing.T) {
 	virtualization := &captureDockerProvisionVirtualization{}
 	provisioner := dockerHostProvisioner{virtualization: virtualization}
+	input := appdockerHostProvisionInput("conn-pve")
+	input.ProviderParams = map[string]any{"node": "pve-a", "sourceMode": "vm_clone"}
 	principal := domainidentity.Principal{
 		UserID:         "docker-operator",
 		UserName:       "Docker Operator",
@@ -464,26 +466,29 @@ func TestDockerHostProvisionerUsesPrivilegedVirtualizationBridge(t *testing.T) {
 		PermissionKeys: []string{"docker.hosts.manage"},
 	}
 
-	if _, err := provisioner.ProvisionDockerHost(context.Background(), principal, appdockerHostProvisionInput("conn-pve")); err != nil {
+	if _, err := provisioner.ProvisionDockerHost(context.Background(), principal, input); err != nil {
 		t.Fatalf("ProvisionDockerHost() error = %v", err)
 	}
 	if virtualization.createPrincipal.UserID != "docker-operator" {
 		t.Fatalf("create principal user = %q, want docker-operator", virtualization.createPrincipal.UserID)
 	}
-	if !slices.Equal(virtualization.createPrincipal.Roles, []string{"admin"}) {
-		t.Fatalf("create principal roles = %#v, want admin bridge", virtualization.createPrincipal.Roles)
+	if !slices.Equal(virtualization.createPrincipal.Roles, principal.Roles) {
+		t.Fatalf("create principal roles = %#v, want %#v", virtualization.createPrincipal.Roles, principal.Roles)
 	}
-	if len(virtualization.createPrincipal.PermissionKeys) != 0 {
-		t.Fatalf("create principal should not carry capped permission keys: %#v", virtualization.createPrincipal.PermissionKeys)
+	if !slices.Equal(virtualization.createPrincipal.PermissionKeys, principal.PermissionKeys) {
+		t.Fatalf("create principal permission keys = %#v, want %#v", virtualization.createPrincipal.PermissionKeys, principal.PermissionKeys)
 	}
 	if virtualization.createInput.CloudInit == "" || virtualization.createInput.ImageID != "image-1" || virtualization.createInput.MemoryMiB != 4096 {
 		t.Fatalf("create vm input = %#v", virtualization.createInput)
+	}
+	if virtualization.createInput.Node != "pve-a" || virtualization.createInput.SourceMode != "vm_clone" {
+		t.Fatalf("clone source routing = %#v", virtualization.createInput)
 	}
 
 	if _, err := provisioner.CancelProvisionTask(context.Background(), principal, "task-1"); err != nil {
 		t.Fatalf("CancelProvisionTask() error = %v", err)
 	}
-	if virtualization.cancelPrincipal.UserID != "docker-operator" || !slices.Equal(virtualization.cancelPrincipal.Roles, []string{"admin"}) {
+	if virtualization.cancelPrincipal.UserID != "docker-operator" || !slices.Equal(virtualization.cancelPrincipal.Roles, principal.Roles) {
 		t.Fatalf("cancel principal = %#v", virtualization.cancelPrincipal)
 	}
 }

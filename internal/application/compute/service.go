@@ -25,17 +25,35 @@ const (
 )
 
 type VirtualizationReader interface {
+	GetConnection(context.Context, string) (domainvirtualization.Connection, error)
 	ListConnections(context.Context, domainvirtualization.ConnectionFilter) ([]domainvirtualization.Connection, error)
+	GetVM(context.Context, string) (domainvirtualization.VM, error)
 	ListVMs(context.Context, domainvirtualization.VMFilter) ([]domainvirtualization.VM, error)
+	GetImage(context.Context, string) (domainvirtualization.Image, error)
+	GetFlavor(context.Context, string) (domainvirtualization.Flavor, error)
 	ListTasks(context.Context, domainvirtualization.TaskFilter) ([]domainvirtualization.Task, error)
 }
 
 type RuntimeReader interface {
+	GetHost(context.Context, string) (domaindocker.Host, error)
 	ListHosts(context.Context, domaindocker.HostFilter) ([]domaindocker.Host, error)
+	GetProject(context.Context, string) (domaindocker.Project, error)
 	ListProjects(context.Context, domaindocker.ProjectFilter) ([]domaindocker.Project, error)
+	GetService(context.Context, string) (domaindocker.Service, error)
 	ListServices(context.Context, domaindocker.ServiceFilter) ([]domaindocker.Service, error)
+	GetPortMapping(context.Context, string) (domaindocker.PortMapping, error)
 	ListPortMappings(context.Context, domaindocker.PortMappingFilter) ([]domaindocker.PortMapping, error)
 	ListOperations(context.Context, domaindocker.OperationFilter) ([]domaindocker.Operation, error)
+}
+
+type VirtualizationProviderController interface {
+	TestConnectionIdempotent(context.Context, domainidentity.Principal, string, string) (domainvirtualization.Task, error)
+	SyncConnectionIdempotent(context.Context, domainidentity.Principal, string, string) (domainvirtualization.Task, error)
+	ExecuteVMAction(context.Context, domainidentity.Principal, string, VirtualizationActionInput) (domainvirtualization.Task, error)
+}
+
+type RuntimeProviderController interface {
+	ServiceAction(context.Context, domainidentity.Principal, string, domaindocker.ServiceActionInput) (domaindocker.Operation, error)
 }
 
 type VirtualizationTaskController interface {
@@ -57,6 +75,8 @@ type Service struct {
 	runtime               RuntimeReader
 	virtualizationTasks   VirtualizationTaskController
 	runtimeTasks          RuntimeTaskController
+	virtualizationControl VirtualizationProviderController
+	runtimeControl        RuntimeProviderController
 	permissions           *appaccess.PermissionResolver
 	virtualizationEnabled bool
 	runtimeEnabled        bool
@@ -68,6 +88,8 @@ type Options struct {
 	RuntimeEnabled        bool
 	VirtualizationTasks   VirtualizationTaskController
 	RuntimeTasks          RuntimeTaskController
+	VirtualizationControl VirtualizationProviderController
+	RuntimeControl        RuntimeProviderController
 	ModuleState           interface{ ModuleEnabled(string) bool }
 }
 
@@ -75,6 +97,7 @@ func New(virtualization VirtualizationReader, runtime RuntimeReader, permissions
 	return &Service{
 		virtualization: virtualization, runtime: runtime, permissions: permissions,
 		virtualizationTasks: options.VirtualizationTasks, runtimeTasks: options.RuntimeTasks,
+		virtualizationControl: options.VirtualizationControl, runtimeControl: options.RuntimeControl,
 		virtualizationEnabled: options.VirtualizationEnabled, runtimeEnabled: options.RuntimeEnabled,
 		modules: options.ModuleState,
 	}

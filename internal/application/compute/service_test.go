@@ -30,6 +30,7 @@ type virtualizationFake struct {
 	logs            []domainvirtualization.TaskLog
 	canceled        string
 	retried         string
+	action          VirtualizationActionInput
 }
 
 func (f *virtualizationFake) GetConnection(_ context.Context, id string) (domainvirtualization.Connection, error) {
@@ -108,6 +109,16 @@ func (f *virtualizationFake) RetryOperation(_ context.Context, _ domainidentity.
 	f.retried = id
 	return f.GetTask(context.Background(), id)
 }
+func (f *virtualizationFake) TestConnectionIdempotent(context.Context, domainidentity.Principal, string, string) (domainvirtualization.Task, error) {
+	return domainvirtualization.Task{ID: "health-1", TaskKind: "connection_test", Status: "succeeded", CreatedAt: time.Now().UTC()}, nil
+}
+func (f *virtualizationFake) SyncConnectionIdempotent(context.Context, domainidentity.Principal, string, string) (domainvirtualization.Task, error) {
+	return domainvirtualization.Task{ID: "sync-1", TaskKind: "asset_sync", Status: "queued", CreatedAt: time.Now().UTC()}, nil
+}
+func (f *virtualizationFake) ExecuteVMAction(_ context.Context, _ domainidentity.Principal, _ string, input VirtualizationActionInput) (domainvirtualization.Task, error) {
+	f.action = input
+	return domainvirtualization.Task{ID: "action-1", TaskKind: "vm_action", Status: "queued", CreatedAt: time.Now().UTC()}, nil
+}
 
 type runtimeFake struct {
 	hosts        []domaindocker.Host
@@ -122,6 +133,7 @@ type runtimeFake struct {
 	logs         []domaindocker.OperationLog
 	canceled     string
 	retried      string
+	action       domaindocker.ServiceActionInput
 }
 
 func (f *runtimeFake) GetHost(_ context.Context, id string) (domaindocker.Host, error) {
@@ -215,11 +227,15 @@ func (f *runtimeFake) RetryOperation(_ context.Context, _ domainidentity.Princip
 	f.retried = id
 	return f.GetOperation(context.Background(), domainidentity.Principal{}, id)
 }
+func (f *runtimeFake) ServiceAction(_ context.Context, _ domainidentity.Principal, _ string, input domaindocker.ServiceActionInput) (domaindocker.Operation, error) {
+	f.action = input
+	return domaindocker.Operation{ID: "runtime-action-1", OperationKind: "service_action", Status: "queued", CreatedAt: time.Now().UTC()}, nil
+}
 
 func newTestService(keys ...string) (*Service, *virtualizationFake, *runtimeFake) {
 	virt, runtime := &virtualizationFake{}, &runtimeFake{}
 	resolver := appaccess.NewPermissionResolver(roleReader{keys: keys})
-	return New(virt, runtime, resolver, Options{VirtualizationEnabled: true, RuntimeEnabled: true, VirtualizationTasks: virt, RuntimeTasks: runtime}), virt, runtime
+	return New(virt, runtime, resolver, Options{VirtualizationEnabled: true, RuntimeEnabled: true, VirtualizationTasks: virt, RuntimeTasks: runtime, VirtualizationControl: virt, RuntimeControl: runtime}), virt, runtime
 }
 func testPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{UserID: "u", Roles: []string{"test"}}
@@ -444,5 +460,56 @@ func TestTaskActionsUseIndependentPermissions(t *testing.T) {
 	}
 	if len(result.Items) != 1 || !result.Items[0].Cancelable || result.Items[0].Retryable {
 		t.Fatalf("task permissions = %#v, want cancel only", result.Items)
+	}
+}
+
+func TestProviderResourceRelationsRespectVisibility(t *testing.T) {
+	service, virt, _ := newTestService(appaccess.PermVirtualizationClustersView, appaccess.PermVirtualizationVMsView)
+	virt.connections = []domainvirtualization.Connection{{ID: "connection-1", Provider: "pve", Name: "PVE", Enabled: true}}
+	virt.vms = []domainvirtualization.VM{{ID: "vm-1", ConnectionID: "connection-1", Provider: "pve", Name: "VM"}}
+
+	resource, err := service.GetResource(context.Background(), testPrincipal(), "virtualization", "connection", "connection-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := resource["providerRaw"]; ok {
+		t.Fatalf("provider raw data leaked: %#v", resource)
+	}
+	relations, err := service.ListResourceRelations(context.Background(), testPrincipal(), "virtualization", "connection", "connection-1", "", 50)
+	if err != nil || len(relations.Relations) != 1 || relations.Relations[0].To.ID != "vm-1" {
+		t.Fatalf("relations = %#v, err = %v", relations, err)
+	}
+
+	service, virt, _ = newTestService(appaccess.PermVirtualizationClustersView)
+	virt.connections = []domainvirtualization.Connection{{ID: "connection-1", Provider: "pve", Name: "PVE", Enabled: true}}
+	virt.vms = []domainvirtualization.VM{{ID: "vm-1", ConnectionID: "connection-1", Provider: "pve", Name: "VM"}}
+	relations, err = service.ListResourceRelations(context.Background(), testPrincipal(), "virtualization", "connection", "connection-1", "", 50)
+	if err != nil || len(relations.Relations) != 0 {
+		t.Fatalf("hidden VM relation leaked: %#v, err = %v", relations, err)
+	}
+}
+
+func TestRuntimeHostRelationsSkipDisabledVirtualization(t *testing.T) {
+	service, _, runtime := newTestService(appaccess.PermDockerHostsView, appaccess.PermVirtualizationVMsView)
+	service.virtualizationEnabled = false
+	service.virtualization = nil
+	runtime.hosts = []domaindocker.Host{{ID: "host-1", VMID: "vm-1"}}
+
+	relations, err := service.ListResourceRelations(context.Background(), testPrincipal(), "container_runtime", "runtime_host", "host-1", "", 50)
+	if err != nil || len(relations.Relations) != 0 {
+		t.Fatalf("relations = %#v, err = %v", relations, err)
+	}
+}
+
+func TestProviderMutationsDelegateDurableTasks(t *testing.T) {
+	service, virt, _ := newTestService(appaccess.PermVirtualizationVMsPower, appaccess.PermVirtualizationOperationsView)
+	item, err := service.ExecuteResourceAction(context.Background(), testPrincipal(), "virtualization", "vm", "vm-1", "start", "compute-action-1", sohaapi.ComputeResourceActionRequest{})
+	if err != nil || item.ID != "action-1" || virt.action.Action != "start" || virt.action.IdempotencyKey != "compute-action-1" {
+		t.Fatalf("action = %#v, delegated = %#v, err = %v", item, virt.action, err)
+	}
+
+	_, err = service.CheckProviderInstanceHealth(context.Background(), testPrincipal(), "container_runtime", "docker", "host-1", "compute-health-1", sohaapi.ComputeProviderReadRequest{ExpectedGeneration: generation})
+	if !errors.Is(err, apperrors.ErrUnsupportedOperation) {
+		t.Fatalf("Docker health error = %v", err)
 	}
 }

@@ -123,7 +123,7 @@ type stubAuthBootstrapSettingsService struct {
 	branding domainsettings.BrandingSettings
 }
 
-func (s stubAuthBootstrapSettingsService) GetBrandingSettings(context.Context, domainidentity.Principal) (domainsettings.BrandingSettings, error) {
+func (s stubAuthBootstrapSettingsService) ResolveBrandingSettings(context.Context) (domainsettings.BrandingSettings, error) {
 	return s.branding, nil
 }
 

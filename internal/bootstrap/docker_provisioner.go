@@ -22,7 +22,7 @@ type dockerHostProvisioner struct {
 }
 
 func (p dockerHostProvisioner) ProvisionDockerHost(ctx context.Context, principal domainidentity.Principal, input appdocker.HostProvisionInput) (appdocker.HostProvisionTask, error) {
-	task, err := p.virtualization.CreateVM(ctx, dockerProvisionPrincipal(principal), appvirtualization.CreateVMInput{
+	task, err := p.virtualization.CreateVM(ctx, principal, appvirtualization.CreateVMInput{
 		ConnectionID:      input.ConnectionID,
 		Name:              input.Name,
 		Architecture:      input.Architecture,
@@ -32,8 +32,10 @@ func (p dockerHostProvisioner) ProvisionDockerHost(ctx context.Context, principa
 		BootImageID:       input.BootImageID,
 		ImageID:           input.ImageID,
 		FlavorID:          input.FlavorID,
+		Node:              stringFromMap(input.ProviderParams, "node"),
 		Network:           input.Network,
 		CloudInit:         input.CloudInit,
+		SourceMode:        stringFromMap(input.ProviderParams, "sourceMode"),
 		StartAfterCreate:  input.StartAfterCreate,
 		TemplateID:        input.TemplateID,
 		ProviderParams:    input.ProviderParams,
@@ -46,7 +48,7 @@ func (p dockerHostProvisioner) ProvisionDockerHost(ctx context.Context, principa
 }
 
 func (p dockerHostProvisioner) GetProvisionTask(ctx context.Context, taskID string) (appdocker.HostProvisionTask, error) {
-	principal := dockerProvisionPrincipal(domainidentity.Principal{UserID: "system", UserName: "System"})
+	principal := dockerProvisionSystemPrincipal()
 	task, err := p.virtualization.GetOperation(ctx, principal, taskID)
 	if err != nil {
 		return appdocker.HostProvisionTask{}, err
@@ -62,7 +64,7 @@ func (p dockerHostProvisioner) GetProvisionTask(ctx context.Context, taskID stri
 }
 
 func (p dockerHostProvisioner) CancelProvisionTask(ctx context.Context, principal domainidentity.Principal, taskID string) (appdocker.HostProvisionTask, error) {
-	task, err := p.virtualization.CancelOperation(ctx, dockerProvisionPrincipal(principal), taskID)
+	task, err := p.virtualization.CancelOperation(ctx, principal, taskID)
 	if err != nil {
 		return appdocker.HostProvisionTask{}, err
 	}
@@ -70,7 +72,7 @@ func (p dockerHostProvisioner) CancelProvisionTask(ctx context.Context, principa
 }
 
 func (p dockerHostProvisioner) RetryProvisionTask(ctx context.Context, principal domainidentity.Principal, taskID string) (appdocker.HostProvisionTask, error) {
-	task, err := p.virtualization.RetryOperation(ctx, dockerProvisionPrincipal(principal), taskID)
+	task, err := p.virtualization.RetryOperation(ctx, principal, taskID)
 	if err != nil {
 		return appdocker.HostProvisionTask{}, err
 	}
@@ -89,23 +91,11 @@ func hostProvisionTaskFromVirtualizationTask(task domainvirtualization.Task, vmN
 	}
 }
 
-func dockerProvisionPrincipal(principal domainidentity.Principal) domainidentity.Principal {
-	userID := strings.TrimSpace(principal.UserID)
-	if userID == "" {
-		userID = "system"
-	}
-	userName := strings.TrimSpace(principal.UserName)
-	if userName == "" {
-		userName = userID
-	}
+func dockerProvisionSystemPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{
-		UserID:   userID,
-		UserName: userName,
-		Email:    principal.Email,
+		UserID:   "system",
+		UserName: "System",
 		Roles:    []string{"admin"},
-		Teams:    principal.Teams,
-		Projects: principal.Projects,
-		Tags:     principal.Tags,
 	}
 }
 

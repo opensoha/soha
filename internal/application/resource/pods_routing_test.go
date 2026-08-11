@@ -28,15 +28,15 @@ func TestPodRoutesPreserveRuntimeErrorSemantics(t *testing.T) {
 	}
 }
 
-func TestAgentPodDeleteDoesNotRequestFailureAudit(t *testing.T) {
+func TestAgentPodDeleteRequestsFailureAudit(t *testing.T) {
 	t.Parallel()
 
 	auditFailure, err := (agentPodRoute{}).DeletePod(t.Context(), "platform", "api-0")
 	if err == nil {
 		t.Fatal("DeletePod() error = nil, want unsupported operation")
 	}
-	if auditFailure {
-		t.Fatal("DeletePod() requested a failure audit for the unchanged agent unsupported path")
+	if !auditFailure {
+		t.Fatal("DeletePod() did not request a failure audit for the unsupported attempt")
 	}
 }
 

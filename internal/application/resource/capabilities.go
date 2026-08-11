@@ -114,6 +114,7 @@ type PortForwards struct {
 // AI gateway runtime inspection without exposing the complete root service.
 type Runtime struct {
 	*Workloads
+	*Configuration
 	*Network
 	*Storage
 	*Helm
@@ -242,7 +243,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		creation:         creation,
 	}
 	service.runtime = &Runtime{
-		Workloads: workloads, Network: network, Storage: service.storage,
+		Workloads: workloads, Configuration: service.configuration, Network: network, Storage: service.storage,
 		Helm: service.helm, Inventory: inventory, Events: service.events,
 	}
 	return service

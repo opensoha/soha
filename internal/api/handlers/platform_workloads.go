@@ -94,8 +94,7 @@ func (h *podResourceHandler) ApplyPodYAML(c *gin.Context) {
 func (h *podResourceHandler) GetPodMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
-	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
+	rangeMinutes, stepSeconds := parseMetricsWindow(c)
 	item, err := h.diagnostics.GetPodMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
@@ -166,8 +165,7 @@ func (h *deploymentResourceHandler) ApplyDeploymentYAML(c *gin.Context) {
 func (h *deploymentResourceHandler) GetDeploymentMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
-	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
+	rangeMinutes, stepSeconds := parseMetricsWindow(c)
 	item, err := h.reader.GetDeploymentMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("deploymentName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
@@ -243,8 +241,7 @@ func (h *statefulSetResourceHandler) ApplyStatefulSetYAML(c *gin.Context) {
 func (h *statefulSetResourceHandler) GetStatefulSetMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
-	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
+	rangeMinutes, stepSeconds := parseMetricsWindow(c)
 	item, err := h.reader.GetStatefulSetMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
@@ -300,8 +297,7 @@ func (h *daemonSetResourceHandler) ApplyDaemonSetYAML(c *gin.Context) {
 func (h *daemonSetResourceHandler) GetDaemonSetMetrics(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
-	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
-	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
+	rangeMinutes, stepSeconds := parseMetricsWindow(c)
 	item, err := h.reader.GetDaemonSetMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)

@@ -8,15 +8,31 @@ import (
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/requestctx"
+	"go.uber.org/zap"
 )
+
+type AuditRecorder interface {
+	Record(context.Context, domainaudit.Entry) error
+}
+
+type OperationRecorder interface {
+	Record(context.Context, domainoperation.Entry) error
+}
 
 type Service struct {
 	store       domainsettings.Store
 	permissions *appaccess.PermissionResolver
+	audit       AuditRecorder
+	operations  OperationRecorder
 	saml        SAMLMetadataPinner
+	logger      *zap.Logger
 }
 
 type SAMLMetadataPinner interface {
@@ -24,11 +40,13 @@ type SAMLMetadataPinner interface {
 	ValidateMetadata(context.Context, sohaapi.SAMLMetadataInput) (sohaapi.SAMLMetadataValidation, string, error)
 }
 
-func New(store domainsettings.Store, permissions *appaccess.PermissionResolver) *Service {
-	return &Service{store: store, permissions: permissions}
+func New(store domainsettings.Store, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder) *Service {
+	return &Service{store: store, permissions: permissions, audit: audit, operations: operations}
 }
 
 func (s *Service) SetSAMLMetadataPinner(pinner SAMLMetadataPinner) { s.saml = pinner }
+
+func (s *Service) SetInstrumentation(logger *zap.Logger) { s.logger = logger }
 
 func (s *Service) GetIdentitySettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.IdentitySettings, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityView); err != nil {
@@ -41,10 +59,21 @@ func (s *Service) UpdateLoginProvidersSettings(ctx context.Context, principal do
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsIdentityManage, "update")); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
+	existing, err := s.identitySettings(ctx)
+	if err != nil {
+		return domainsettings.IdentitySettings{}, err
+	}
+	existingByID := make(map[string]domainsettings.LoginProviderSettings, len(existing.Providers))
+	for _, provider := range existing.Providers {
+		existingByID[provider.ID] = provider
+	}
 	normalized := make([]domainsettings.LoginProviderSettings, 0, len(providers))
 	seen := make(map[string]struct{}, len(providers))
 	for index, item := range providers {
 		current := normalizeLoginProvider(item, index)
+		if previous, ok := existingByID[current.ID]; ok {
+			current = retainLoginProviderSensitiveFields(current, previous)
+		}
 		if _, exists := seen[current.ID]; exists {
 			return domainsettings.IdentitySettings{}, fmt.Errorf("%w: duplicated login provider id %s", apperrors.ErrInvalidArgument, current.ID)
 		}
@@ -82,7 +111,24 @@ func (s *Service) UpdateLoginProvidersSettings(ctx context.Context, principal do
 	if err := s.persistLoginProvidersSettings(ctx, principal.UserID, normalized, defaultProviderID, localPasswordEnabled); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
+	s.recordMutation(ctx, principal, "settings.identity.update", "IdentitySettings", "identity", "success", "updated identity settings")
 	return s.identitySettings(ctx)
+}
+
+func retainLoginProviderSensitiveFields(current, previous domainsettings.LoginProviderSettings) domainsettings.LoginProviderSettings {
+	if previous.Type != current.Type {
+		return current
+	}
+	if current.ClientSecret == "" {
+		current.ClientSecret = previous.ClientSecret
+	}
+	if current.Certificate == "" {
+		current.Certificate = previous.Certificate
+	}
+	if current.MetadataXML == "" && current.MetadataURL == previous.MetadataURL {
+		current.MetadataXML = previous.MetadataXML
+	}
+	return current
 }
 
 func (s *Service) GetAISettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.AISettings, error) {
@@ -93,6 +139,9 @@ func (s *Service) GetAISettings(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) GetBrandingSettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.BrandingSettings, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsBrandingView); err != nil {
+		return domainsettings.BrandingSettings{}, err
+	}
 	return s.brandingSettings(ctx)
 }
 
@@ -117,6 +166,7 @@ func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainid
 	if err := s.store.Upsert(ctx, domainsettings.BrandingSettingKey, "branding", value, principal.UserID); err != nil {
 		return domainsettings.BrandingSettings{}, err
 	}
+	s.recordMutation(ctx, principal, "settings.branding.update", "BrandingSettings", "branding", "success", "updated branding settings")
 	return s.brandingSettings(ctx)
 }
 
@@ -129,7 +179,11 @@ func (s *Service) UpdateAIWorkbenchModelSettings(ctx context.Context, principal 
 		return domainsettings.AISettings{}, err
 	}
 	current.WorkbenchModel = normalizeAIWorkbenchModel(input)
-	return s.persistAISettings(ctx, principal.UserID, current.WorkbenchModel, skillsToMaps(current.SkillsRegistry))
+	updated, err := s.persistAISettings(ctx, principal.UserID, current.WorkbenchModel, skillsToMaps(current.SkillsRegistry))
+	if err == nil {
+		s.recordMutation(ctx, principal, "settings.ai.workbench_model.update", "AISettings", "workbenchModel", "success", "updated AI workbench model settings")
+	}
+	return updated, err
 }
 
 func (s *Service) UpdateAISkillsRegistry(ctx context.Context, principal domainidentity.Principal, skills []domainsettings.AISkillSettings) (domainsettings.AISettings, error) {
@@ -140,7 +194,11 @@ func (s *Service) UpdateAISkillsRegistry(ctx context.Context, principal domainid
 	if err != nil {
 		return domainsettings.AISettings{}, err
 	}
-	return s.persistAISettings(ctx, principal.UserID, current.WorkbenchModel, skillsToMaps(skills))
+	updated, err := s.persistAISettings(ctx, principal.UserID, current.WorkbenchModel, skillsToMaps(skills))
+	if err == nil {
+		s.recordMutation(ctx, principal, "settings.ai.skills.update", "AISettings", "skillsRegistry", "success", "updated AI skills registry")
+	}
+	return updated, err
 }
 
 func (s *Service) ResolveAISettings(ctx context.Context) (domainsettings.AISettings, error) {
@@ -770,4 +828,35 @@ func intValue(value any) (int, bool) {
 
 func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
 	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
+}
+
+func (s *Service) recordMutation(ctx context.Context, principal domainidentity.Principal, operationType, resourceKind, setting, result, summary string) {
+	meta := requestctx.FromContext(ctx)
+	if s.audit != nil {
+		if err := s.audit.Record(ctx, domainaudit.Entry{
+			ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
+			ResourceKind: resourceKind, ResourceName: setting, Action: operationType, Result: result, Summary: summary,
+			RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP,
+			Metadata: map[string]any{"setting": setting, "source": meta.Source},
+		}); err != nil {
+			s.logRecordFailure(ctx, "audit", operationType, resourceKind, setting, err)
+		}
+	}
+	if s.operations != nil {
+		if err := s.operations.Record(ctx, operationentry.New(ctx, principal, operationType,
+			map[string]any{"module": "settings", "resourceKind": resourceKind, "resourceName": setting},
+			result, summary, map[string]any{"setting": setting},
+		)); err != nil {
+			s.logRecordFailure(ctx, "operation", operationType, resourceKind, setting, err)
+		}
+	}
+}
+
+func (s *Service) logRecordFailure(ctx context.Context, recorder, operationType, resourceKind, resourceName string, err error) {
+	if s.logger != nil {
+		s.logger.Warn("settings evidence record failed", append(requestctx.LoggerFields(requestctx.FromContext(ctx)),
+			zap.String("recorder", recorder), zap.String("operation_type", operationType),
+			zap.String("resource_kind", resourceKind), zap.String("resource_name", resourceName), zap.Error(err),
+		)...)
+	}
 }

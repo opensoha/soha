@@ -165,6 +165,38 @@ func TestMapOperationPreservesConfiguredFlags(t *testing.T) {
 	}
 }
 
+func TestMapVMDetailRedactsProviderRaw(t *testing.T) {
+	mapped := mapVMDetail(appvirtualization.VMDetail{VM: domainvirtualization.VM{
+		ID: "vm-1",
+		Raw: map[string]any{
+			"providerParams": map[string]any{
+				"agentInstallScript":  "curl http://internal/install",
+				"controlPlaneBaseURL": "http://internal:8080",
+				"runtimeEndpoint":     "http://vm:18080",
+				"sshkeys":             "ssh-ed25519 public-key",
+				"storage":             "local-lvm",
+			},
+		},
+	}})
+
+	raw, ok := mapped["providerRaw"].(map[string]any)
+	if !ok {
+		t.Fatalf("providerRaw = %#v, want map", mapped["providerRaw"])
+	}
+	params, ok := raw["providerParams"].(map[string]any)
+	if !ok {
+		t.Fatalf("provider params = %#v, want map", raw["providerParams"])
+	}
+	for _, key := range []string{"agentInstallScript", "controlPlaneBaseURL", "runtimeEndpoint", "sshkeys"} {
+		if params[key] != nil || params[key+"Configured"] != true {
+			t.Fatalf("%s was not redacted: %#v", key, params)
+		}
+	}
+	if params["storage"] != "local-lvm" {
+		t.Fatalf("safe provider param was removed: %#v", params)
+	}
+}
+
 func TestMapConnectionRedactsPrometheusBearerToken(t *testing.T) {
 	mapped := mapConnection(domainvirtualization.Connection{
 		ID:       "conn-1",

@@ -351,6 +351,7 @@ type Operation struct {
 	Status            string          `json:"status"`
 	RequestedBy       string          `json:"requestedBy,omitempty"`
 	ClaimedByWorkerID string          `json:"claimedByWorkerId,omitempty"`
+	CallbackToken     string          `json:"-"`
 	AttemptCount      int             `json:"attemptCount"`
 	MaxRetries        int             `json:"maxRetries"`
 	TimeoutSeconds    int             `json:"timeoutSeconds"`
@@ -543,18 +544,20 @@ type OperationFilter struct {
 }
 
 type OperationClaimInput struct {
-	WorkerID       string   `json:"workerId"`
-	AgentID        string   `json:"agentId,omitempty"`
-	HostIDs        []string `json:"hostIds,omitempty"`
-	OperationKinds []string `json:"operationKinds,omitempty"`
+	WorkerID               string   `json:"workerId"`
+	AgentID                string   `json:"agentId,omitempty"`
+	HostIDs                []string `json:"hostIds,omitempty"`
+	OperationKinds         []string `json:"operationKinds,omitempty"`
+	CallbackTokenSupported bool     `json:"callbackTokenSupported,omitempty"`
 }
 
 type OperationCallbackInput struct {
-	OperationID string         `json:"operationId"`
-	WorkerID    string         `json:"workerId"`
-	Status      string         `json:"status"`
-	Payload     map[string]any `json:"payload,omitempty"`
-	Logs        []string       `json:"logs,omitempty"`
+	OperationID   string         `json:"operationId"`
+	WorkerID      string         `json:"workerId"`
+	CallbackToken string         `json:"callbackToken,omitempty"`
+	Status        string         `json:"status"`
+	Payload       map[string]any `json:"payload,omitempty"`
+	Logs          []string       `json:"logs,omitempty"`
 }
 
 type OperationLog struct {
@@ -718,7 +721,7 @@ type Repository interface {
 
 	CreateOperation(context.Context, OperationInput) (Operation, error)
 	UpdateOperation(context.Context, Operation) (Operation, error)
-	ClaimOperation(context.Context, string, string, []string, []string, time.Time) (Operation, error)
+	ClaimOperation(context.Context, string, string, []string, []string, string, time.Time) (Operation, error)
 	GetOperation(context.Context, string) (Operation, error)
 	ListOperations(context.Context, OperationFilter) ([]Operation, error)
 	CountOperations(context.Context, OperationFilter) (int, error)

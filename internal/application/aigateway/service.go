@@ -149,6 +149,14 @@ type ResourceService interface {
 	ClusterEventReader
 }
 
+type KubernetesWorkbenchReadService interface {
+	ListNamespaces(context.Context, domainidentity.Principal, string) ([]domainresource.NamespaceView, error)
+	GetWorkloadOverview(context.Context, domainidentity.Principal, string, string) (domainresource.WorkloadOverviewView, error)
+	ListConfigMaps(context.Context, domainidentity.Principal, string, string) ([]domainresource.ConfigMapView, error)
+	ListSecrets(context.Context, domainidentity.Principal, string, string) ([]domainresource.SecretView, error)
+	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
+}
+
 type AnalysisArtifactRecorder interface {
 	RecordGatewayAnalysisArtifact(context.Context, domainidentity.Principal, domaincopilot.GatewayAnalysisArtifactInput) (domaincopilot.AgentRun, error)
 	QueueGatewayAnalysisAgentRun(context.Context, domainidentity.Principal, domaincopilot.GatewayAnalysisAgentRunInput) (domaincopilot.AgentRun, error)

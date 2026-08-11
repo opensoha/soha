@@ -738,7 +738,7 @@ func mapVM(item domainvirtualization.VM) gin.H {
 		"ipAddresses":    item.IPAddresses,
 		"labels":         item.Labels,
 		"orphanHint":     virtualizationOrphanHint(item.Config),
-		"config":         item.Config,
+		"config":         sanitizeVirtualizationTaskMap(item.Config),
 		"createdAt":      item.CreatedAt,
 		"updatedAt":      item.UpdatedAt,
 		"capabilities":   item.Capabilities,
@@ -760,7 +760,7 @@ func mapVMDetail(item appvirtualization.VMDetail) gin.H {
 	vm := mapVM(item.VM)
 	out := gin.H{
 		"vm":          vm,
-		"providerRaw": item.VM.Raw,
+		"providerRaw": sanitizeVirtualizationTaskMap(item.VM.Raw),
 		"operations":  operations,
 		"logs":        item.Logs,
 	}
@@ -817,7 +817,7 @@ func mapImage(item domainvirtualization.Image) gin.H {
 		"ready":          item.Status != "stale" && item.Status != "deleted",
 		"description":    stringValue(item.Config, "description"),
 		"orphanHint":     virtualizationOrphanHint(item.Config),
-		"config":         item.Config,
+		"config":         sanitizeVirtualizationTaskMap(item.Config),
 		"createdAt":      item.CreatedAt,
 		"updatedAt":      item.UpdatedAt,
 		"allowedActions": []string{"update", "delete"},
@@ -861,7 +861,7 @@ func mapFlavor(item domainvirtualization.Flavor) gin.H {
 		"diskGiB":      item.DiskGB,
 		"description":  stringValue(item.Config, "description"),
 		"enabled":      item.Status != "disabled",
-		"config":       item.Config,
+		"config":       sanitizeVirtualizationTaskMap(item.Config),
 		"createdAt":    item.CreatedAt,
 		"updatedAt":    item.UpdatedAt,
 		"allowedActions": []string{
@@ -936,7 +936,11 @@ func virtualizationSensitiveKey(key string) bool {
 		strings.Contains(normalized, "password") ||
 		strings.Contains(normalized, "secret") ||
 		strings.Contains(normalized, "credential") ||
-		strings.Contains(normalized, "authorization")
+		strings.Contains(normalized, "authorization") ||
+		strings.Contains(normalized, "script") ||
+		strings.Contains(normalized, "sshkey") ||
+		normalized == "controlplanebaseurl" ||
+		normalized == "runtimeendpoint"
 }
 
 func virtualizationConfiguredFlag(key string, value any) bool {

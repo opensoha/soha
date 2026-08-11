@@ -458,7 +458,7 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 	if err != nil {
 		return VM{}, err
 	}
-	if input.SourceMode == "template_clone" || input.TemplateID != "" {
+	if input.SourceMode == "template_clone" || input.SourceMode == "vm_clone" || input.TemplateID != "" {
 		return a.createPVEClone(ctx, connection, plan)
 	}
 	return a.createPVENative(ctx, connection, plan)
@@ -524,17 +524,19 @@ func (a *PVEAdapter) createPVEClone(
 	connection Connection,
 	plan pveCreatePlan,
 ) (VM, error) {
-	templateID := firstNonEmpty(plan.input.TemplateID, plan.input.SourceRef, plan.input.BootImage)
-	if templateID == "" {
-		return VM{}, invalidf("template source is required")
+	sourceID := firstNonEmpty(plan.input.TemplateID, plan.input.SourceRef, plan.input.BootImage)
+	if sourceID == "" {
+		return VM{}, invalidf("clone source is required")
 	}
 	payload := map[string]any{"newid": plan.vmid, "name": plan.input.Name}
 	if plan.storage != "" {
 		payload["storage"] = plan.storage
+	}
+	if plan.storage != "" || plan.input.SourceMode == "vm_clone" {
 		payload["full"] = 1
 	}
 	endpoint := fmt.Sprintf(
-		"/nodes/%s/qemu/%s/clone", url.PathEscape(plan.node), url.PathEscape(templateID),
+		"/nodes/%s/qemu/%s/clone", url.PathEscape(plan.node), url.PathEscape(sourceID),
 	)
 	createUPID, err := a.doTaskAndWait(
 		ctx, connection, plan.node, http.MethodPost, endpoint, payload,
@@ -621,6 +623,9 @@ func pveCreatePayload(plan pveCreatePlan) map[string]any {
 	}
 	if arch := pveArchitecture(plan.input.Architecture); arch != "" {
 		payload["arch"] = arch
+	}
+	if osType := strings.TrimSpace(stringFromAny(plan.input.ProviderParams["osType"])); osType != "" {
+		payload["ostype"] = osType
 	}
 	addPVEDiskAndNetwork(payload, plan)
 	addPVECloudInitPayload(payload, plan)
@@ -1578,7 +1583,7 @@ func classifyPVEHTTPError(status int, endpoint string, body []byte) error {
 		nextAction = "verify the selected PVE storage or snippet storage exists on the target node"
 	case status == http.StatusNotFound && strings.Contains(lowerEndpoint, "/clone"):
 		reason = "template_not_found"
-		nextAction = "verify the PVE template VMID/sourceRef exists on the selected node"
+		nextAction = "verify the PVE template or VM sourceRef exists on the selected node"
 	case status == http.StatusNotFound && strings.Contains(lowerEndpoint, "/nodes/"):
 		reason = "node_unavailable"
 		nextAction = "verify the PVE node name and cluster availability"

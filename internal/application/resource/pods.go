@@ -80,6 +80,7 @@ func (w *Workloads) DeletePod(ctx context.Context, principal domainidentity.Prin
 
 	route, err := s.routePodDeletion(connection, clusterID)
 	if err != nil {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionDelete), "failure", err.Error())
 		return err
 	}
 	auditFailure, err := route.DeletePod(ctx, namespace, name)
@@ -91,6 +92,7 @@ func (w *Workloads) DeletePod(ctx context.Context, principal domainidentity.Prin
 	}
 
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionDelete), "success", "deleted pod for rebuild")
+	s.recordOperation(ctx, principal, "platform.pod.delete", connection.Summary.ID, namespace, "Pod", name, "deleted pod for rebuild", nil)
 	return nil
 }
 
@@ -144,11 +146,14 @@ func (w *Workloads) ExecPod(ctx context.Context, principal domainidentity.Princi
 	}
 	command = strings.TrimSpace(command)
 	if command == "" {
-		return domainresource.PodExecView{}, fmt.Errorf("%w: command is required", apperrors.ErrInvalidArgument)
+		err := fmt.Errorf("%w: command is required", apperrors.ErrInvalidArgument)
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionExec), "failure", err.Error())
+		return domainresource.PodExecView{}, err
 	}
 
 	route, err := s.routePods(connection, clusterID)
 	if err != nil {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionExec), "failure", err.Error())
 		return domainresource.PodExecView{}, err
 	}
 	item, err := route.ExecPod(ctx, namespace, name, container, command, timeoutSeconds)
@@ -157,6 +162,9 @@ func (w *Workloads) ExecPod(ctx context.Context, principal domainidentity.Princi
 		return domainresource.PodExecView{}, route.RuntimeError(err)
 	}
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionExec), "success", fmt.Sprintf("executed pod command via %s in namespace %s", route.Source(), displayNamespace(namespace)))
+	s.recordOperation(ctx, principal, "platform.pod.exec", connection.Summary.ID, namespace, "Pod", name, "executed pod command", map[string]any{
+		"container": strings.TrimSpace(container), "timeoutSeconds": timeoutSeconds,
+	})
 	return item, nil
 }
 
@@ -180,6 +188,9 @@ func (w *Workloads) StreamPodTerminal(ctx context.Context, principal domainident
 		return err
 	}
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionExec), "success", fmt.Sprintf("opened interactive pod terminal via %s in namespace %s", shell, displayNamespace(namespace)))
+	s.recordOperation(ctx, principal, "platform.pod.terminal", connection.Summary.ID, namespace, "Pod", name, "opened interactive pod terminal", map[string]any{
+		"container": strings.TrimSpace(container), "shell": shell,
+	})
 	return nil
 }
 
