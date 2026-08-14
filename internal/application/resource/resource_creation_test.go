@@ -81,6 +81,34 @@ func TestPreflightCreateResolvesNamespaceRulesBeforeAuthorization(t *testing.T) 
 	}
 }
 
+func TestGlobalCreateRequiresIndependentEntryPermission(t *testing.T) {
+	t.Parallel()
+	direct := &creationDirectStub{manifests: []domainresource.ResolvedCreateManifest{testCreateManifest("ConfigMap", "minio", true)}}
+	authorizer := &recordingCreateAuthorizer{allow: true}
+	permissions := &recordingRuntimePermission{err: apperrors.ErrAccessDenied}
+	creation := testResourceCreation(direct, authorizer, permissions, domaincluster.ConnectionModeDirectKubeconfig)
+
+	request := domainresource.ResourceCreateRequest{
+		Source: domainresource.ResourceCreateSourceGlobal, DefaultNamespace: "minio", Content: "manifest",
+	}
+	_, err := creation.PreflightCreate(context.Background(), domainidentity.Principal{UserID: "user-1"}, "cluster-a", request)
+	if !errors.Is(err, apperrors.ErrAccessDenied) || permissions.key != "platform.resource-creation.use" {
+		t.Fatalf("PreflightCreate() error=%v permission=%q, want independent entry permission denial", err, permissions.key)
+	}
+	if len(authorizer.requests) != 0 || direct.dryRunCalls != 0 {
+		t.Fatalf("resource checks ran before entry authorization: requests=%d dryRuns=%d", len(authorizer.requests), direct.dryRunCalls)
+	}
+
+	request.RequestID = "request-1"
+	creation.batches = &resourceCreationBatchStub{batch: domainresource.ResourceCreateBatch{
+		ID: "batch-1", ActorID: "user-1", ClusterID: "cluster-a", IdempotencyKey: request.RequestID,
+		ContentHash: hashResourceCreateRequest(request), Status: domainresource.ResourceCreateBatchSucceeded,
+	}}
+	if _, err := creation.ExecuteCreate(context.Background(), domainidentity.Principal{UserID: "user-1"}, "cluster-a", request); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("ExecuteCreate() error=%v, want entry permission denial before idempotent replay", err)
+	}
+}
+
 func TestExecuteCreateStopsBeforeAnyWriteWhenOneDocumentDenied(t *testing.T) {
 	t.Parallel()
 	direct := &creationDirectStub{manifests: []domainresource.ResolvedCreateManifest{
@@ -421,6 +449,16 @@ type allowRuntimePermission struct{}
 
 func (allowRuntimePermission) Authorize(context.Context, domainidentity.Principal, string) error {
 	return nil
+}
+
+type recordingRuntimePermission struct {
+	key string
+	err error
+}
+
+func (p *recordingRuntimePermission) Authorize(_ context.Context, _ domainidentity.Principal, key string) error {
+	p.key = key
+	return p.err
 }
 
 type captureCreateAudit struct{ entries []domainaudit.Entry }

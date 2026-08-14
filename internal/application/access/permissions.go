@@ -28,7 +28,7 @@ const (
 	PermPlatformExtensionsView            = "platform.extensions.view"
 	PermPlatformHelmView                  = "platform.helm.view"
 	PermPlatformClustersView              = "platform.clusters.view"
-	PermPlatformResourceCreate            = "platform.resource.create"
+	PermPlatformResourceCreationUse       = "platform.resource-creation.use"
 	PermPlatformDeploymentCreate          = "platform.deployment.create"
 	PermPlatformDeploymentDelete          = "platform.deployment.delete"
 	PermPlatformDeploymentRestart         = "platform.deployment.restart"
@@ -39,6 +39,7 @@ const (
 	PermPlatformPodsDelete                = "platform.pods.delete"
 	PermPlatformPodsExec                  = "platform.pods.exec"
 	PermPlatformPodsLogs                  = "platform.pods.logs"
+	PermPlatformPodsUpdate                = "platform.pods.update"
 	PermPlatformPodsView                  = "platform.pods.view"
 	PermPlatformAccessControlView         = "platform.access-control.view"
 	PermPlatformRBACManage                = "platform.rbac.manage"
@@ -234,6 +235,10 @@ const (
 	PermSoftwarePackageView               = "software.package.view"
 )
 
+// PermPlatformResourceCreate is kept as a source-compatibility alias.
+// Deprecated: use PermPlatformResourceCreationUse.
+const PermPlatformResourceCreate = PermPlatformResourceCreationUse
+
 var (
 	rolePermissionMatrixMu sync.RWMutex
 	rolePermissionMatrix   map[string][]string
@@ -256,7 +261,7 @@ var allPermissionKeySet = []string{
 	PermPlatformHelmView,
 	PermPlatformHelmValuesView,
 	PermPlatformClustersView,
-	PermPlatformResourceCreate,
+	PermPlatformResourceCreationUse,
 	PermPlatformDeploymentCreate,
 	PermPlatformDeploymentDelete,
 	PermPlatformDeploymentRestart,
@@ -267,6 +272,7 @@ var allPermissionKeySet = []string{
 	PermPlatformPodsDelete,
 	PermPlatformPodsExec,
 	PermPlatformPodsLogs,
+	PermPlatformPodsUpdate,
 	PermPlatformPodsView,
 	PermPlatformRBACManage,
 	PermPlatformRBACEscalate,
@@ -560,7 +566,7 @@ var opsRolePermissionKeys = []string{
 	PermPlatformHelmView,
 	PermPlatformHelmValuesView,
 	PermPlatformClustersView,
-	PermPlatformResourceCreate,
+	PermPlatformResourceCreationUse,
 	PermPlatformDeploymentCreate,
 	PermPlatformDeploymentRestart,
 	PermPlatformDeploymentScale,

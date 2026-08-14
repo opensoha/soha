@@ -910,13 +910,13 @@ var operationsToolCatalog = []domainaigateway.ToolCapability{
 	{
 		Name: "k8s.resources.create.preflight", Title: "Preflight Kubernetes Resources", Description: "Validate, authorize, and dry-run Kubernetes manifests without creating resources.",
 		Domain: "k8s", Action: "preflight", RiskLevel: domainaigateway.RiskLevelAnalyze,
-		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView}, RequiredScopes: []string{"cluster", "namespace"},
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreationUse}, RequiredScopes: []string{"cluster", "namespace"},
 		MCPAdapterID: "k8s.v1", MCPToolName: "k8s.resources.create.preflight", InputSchema: gatewayObjectSchema([]string{"clusterId", "source", "content"}, gatewayKubernetesResourceCreateProperties()),
 	},
 	{
 		Name: "k8s.resources.create.trigger", Title: "Create Kubernetes Resources", Description: "Create validated Kubernetes manifests through the durable resource creation batch.",
 		Domain: "k8s", Action: "execute", RiskLevel: domainaigateway.RiskLevelHigh, RequiresApproval: true,
-		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreate}, RequiredScopes: []string{"cluster", "namespace"},
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreationUse}, RequiredScopes: []string{"cluster", "namespace"},
 		MCPAdapterID: "k8s.v1", MCPToolName: "k8s.resources.create.trigger", InputSchema: gatewayObjectSchema([]string{"clusterId", "source", "content", "idempotencyKey"}, gatewayKubernetesResourceCreateProperties()),
 	},
 	{
@@ -1553,7 +1553,7 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Category:       "platform",
 			Description:    "Approval-bound Kubernetes manifest preflight and creation for scoped demo environments.",
 			CapabilityRefs: []string{"k8s.resources.create.preflight", "k8s.resources.create.trigger"},
-			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreate},
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreationUse},
 			RequiredScopes: []string{"cluster", "namespace"},
 		},
 		{

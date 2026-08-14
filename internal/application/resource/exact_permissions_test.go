@@ -19,12 +19,13 @@ func (a exactPermissionAuthorizer) Authorize(_ context.Context, request domainac
 
 func TestPodAllowedActionsUseExactPermissionKeys(t *testing.T) {
 	access := &resourceAccess{authorizer: exactPermissionAuthorizer{
-		appaccess.PermPlatformPodsView: true,
-		appaccess.PermPlatformPodsLogs: true,
+		appaccess.PermPlatformPodsView:   true,
+		appaccess.PermPlatformPodsLogs:   true,
+		appaccess.PermPlatformPodsUpdate: true,
 	}}
 	actions := access.allowedActionsForResource(context.Background(), domainidentity.Principal{}, domaincluster.Connection{}, "team-a", "Pod", domainaccess.ActionView)
-	if len(actions) != 2 || actions[0] != "view" || actions[1] != "logs" {
-		t.Fatalf("allowed actions = %#v, want [view logs]", actions)
+	if len(actions) != 3 || actions[0] != "view" || actions[1] != "logs" || actions[2] != "update" {
+		t.Fatalf("allowed actions = %#v, want [view logs update]", actions)
 	}
 	if key := resourcePermissionKey("workloads", "Deployment", domainaccess.ActionDelete); key != appaccess.PermPlatformDeploymentDelete {
 		t.Fatalf("deployment delete permission = %q", key)

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -41,6 +42,9 @@ func (s *ResourceCreation) PreflightCreate(ctx context.Context, principal domain
 	}
 	if s == nil {
 		return domainresource.ResourceCreatePreflight{}, fmt.Errorf("%w: resource creation service is not configured", apperrors.ErrClusterUnready)
+	}
+	if err := s.authorizeResourceCreationEntry(ctx, principal, request.Source); err != nil {
+		return domainresource.ResourceCreatePreflight{}, err
 	}
 	_, manifests, err := s.resolveCreateManifests(ctx, clusterID, request.Content)
 	if err != nil {
@@ -151,6 +155,9 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	if err != nil {
 		return domainresource.ResourceCreateExecution{}, err
 	}
+	if err := s.authorizeResourceCreationEntry(ctx, principal, request.Source); err != nil {
+		return domainresource.ResourceCreateExecution{}, err
+	}
 	if existing, found, err := s.findExistingCreateBatch(ctx, principal, clusterID, request); err != nil {
 		return domainresource.ResourceCreateExecution{}, err
 	} else if found {
@@ -223,6 +230,19 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	}
 	_ = s.recordCreateBatch(ctx, principal, clusterID, request.RequestID, result, result.Status)
 	return result, nil
+}
+
+func (s *ResourceCreation) authorizeResourceCreationEntry(ctx context.Context, principal domainidentity.Principal, source domainresource.ResourceCreateSource) error {
+	if source != domainresource.ResourceCreateSourceGlobal {
+		return nil
+	}
+	if s == nil || s.permissions == nil {
+		return fmt.Errorf("%w: global resource creation permission resolver is unavailable", apperrors.ErrAccessDenied)
+	}
+	if err := s.permissions.Authorize(ctx, principal, appaccess.PermPlatformResourceCreationUse); err != nil {
+		return fmt.Errorf("%w: global resource creation permission is required", apperrors.ErrAccessDenied)
+	}
+	return nil
 }
 
 func (s *ResourceCreation) findExistingCreateBatch(ctx context.Context, principal domainidentity.Principal, clusterID string, request domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, bool, error) {

@@ -2,7 +2,7 @@
 name: soha-backend
 description: >-
   Implement or review open-source Soha backend capabilities in `cmd/**`,
-  `internal/**`, and `configs/**` for Go 1.26.5, Gin, PostgreSQL, Kubernetes
+  `internal/**`, and `configs/**` for Go 1.26.6, Gin, PostgreSQL, Kubernetes
   `client-go`, and agent-connected clusters. Use when changing HTTP routes,
   handlers, application services, repositories, policy, bootstrap wiring,
   platform aggregation, durable operations, AI Gateway, Identity, knowledge,
@@ -107,7 +107,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## CI Gate
 
-Use Go `1.26.5` and run the release-sensitive gate with the root workspace disabled:
+Use Go `1.26.6` and run the release-sensitive gate with the root workspace disabled:
 
 ```bash
 GOWORK=off go mod tidy

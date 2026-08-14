@@ -30,7 +30,7 @@ func platformMutationSecuritySurface(method, path string) (platformMutationSecur
 
 	action := platformMutationAction(method, path)
 	dynamicPermission := strings.Contains(path, "/resource-creation/")
-	permissionKey := appaccess.PermPlatformResourceCreate
+	permissionKey := appaccess.PermPlatformResourceCreationUse
 	if !dynamicPermission {
 		permissionKey = appaccess.PlatformActionPermission(platformMutationResourceGroup(path), resourceKind, action)
 	}

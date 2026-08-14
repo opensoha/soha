@@ -31,7 +31,7 @@ func TestKubernetesResourceCreationToolsReuseResourceCreationService(t *testing.
 		ApprovalPolicy: map[string]any{"strategy": "allow"},
 	}}}
 	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{
-		"developer": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformResourceCreate},
+		"developer": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformResourceCreationUse},
 	}}), nil, repo)
 	creation := &fakeKubernetesResourceCreationService{}
 	service.SetResourceCreationService(creation)

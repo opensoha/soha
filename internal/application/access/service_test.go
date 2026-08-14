@@ -2,6 +2,7 @@ package access
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainscopegrant "github.com/opensoha/soha/internal/domain/scopegrant"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/policy"
 )
 
@@ -113,17 +115,33 @@ func TestLegacyManagePermissionExpandsOnlyToReplacementActions(t *testing.T) {
 	}
 }
 
-func TestGlobalResourceCreateEntryPermissionDefaultsToAdminAndOps(t *testing.T) {
+func TestIndependentResourceCreationEntryPermissionDefaultsToAdminAndOps(t *testing.T) {
 	SetRolePermissionMatrix(nil)
+	if !IsActiveAssignablePermission(PermPlatformResourceCreationUse) {
+		t.Fatalf("%s must remain independently assignable", PermPlatformResourceCreationUse)
+	}
 	for _, role := range []string{"admin", "ops"} {
-		if !HasPermission([]string{role}, PermPlatformResourceCreate) {
-			t.Fatalf("%s should include %s", role, PermPlatformResourceCreate)
+		if !HasPermission([]string{role}, PermPlatformResourceCreationUse) {
+			t.Fatalf("%s should include %s", role, PermPlatformResourceCreationUse)
 		}
 	}
 	for _, role := range []string{"developer", "tester", "readonly", "auditor"} {
-		if HasPermission([]string{role}, PermPlatformResourceCreate) {
-			t.Fatalf("%s must not include %s", role, PermPlatformResourceCreate)
+		if HasPermission([]string{role}, PermPlatformResourceCreationUse) {
+			t.Fatalf("%s must not include %s", role, PermPlatformResourceCreationUse)
 		}
+	}
+	if HasPermission([]string{"ops"}, "platform.configuration.config-maps.create") {
+		t.Fatal("ops must not retain resource-specific create grants expanded from the retired permission")
+	}
+}
+
+func TestRetiredResourceCreatePermissionIsUnknown(t *testing.T) {
+	const retired = "platform.resource.create"
+	if _, found, err := permissionDefinition(retired); err != nil || found {
+		t.Fatalf("permissionDefinition(%q) found=%v err=%v, want unknown", retired, found, err)
+	}
+	if _, err := CanonicalAssignablePermissionKeys([]string{retired}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("CanonicalAssignablePermissionKeys(%q) error=%v, want invalid argument", retired, err)
 	}
 }
 

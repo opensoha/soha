@@ -293,6 +293,8 @@ func podPermissionKey(action domainaccess.Action) string {
 		return appaccess.PermPlatformPodsLogs
 	case domainaccess.ActionExec:
 		return appaccess.PermPlatformPodsExec
+	case domainaccess.ActionUpdate:
+		return appaccess.PermPlatformPodsUpdate
 	case domainaccess.ActionDelete:
 		return appaccess.PermPlatformPodsDelete
 	default:
@@ -328,7 +330,7 @@ func isResourceReadAction(action domainaccess.Action) bool {
 func resourceActionCandidates(resourceGroup, kind string) []domainaccess.Action {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "pod":
-		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionLogs, domainaccess.ActionExec, domainaccess.ActionDelete}
+		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionLogs, domainaccess.ActionExec, domainaccess.ActionUpdate, domainaccess.ActionDelete}
 	case "deployment":
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDelete, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionRollback}
 	case "namespace", "node":
