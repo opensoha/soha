@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -76,6 +77,7 @@ type SAMLService interface {
 	ResumeSAMLSSO(context.Context, string, string) (appidentityprovider.SAMLRequestInput, error)
 	SAMLSSO(context.Context, string, string, string, domainidentity.Principal, appidentityprovider.SAMLRequestInput) (appidentityprovider.SAMLSSOResult, error)
 	RotateSAMLCertificate(context.Context, domainidentity.Principal, string, sohaapi.SAMLCertificateRotateRequest) (sohaapi.SAMLCertificateRotation, error)
+	RotateSAMLProviderCertificate(context.Context, domainidentity.Principal, string, sohaapi.SAMLCertificateRotateRequest) (sohaapi.SAMLCertificateRotation, error)
 }
 
 type ProxyService interface {
@@ -118,6 +120,7 @@ type OutpostContractRuntimeService interface {
 
 type OIDCClientService interface {
 	ListOIDCClients(context.Context, domainidentity.Principal, string) ([]domainprovider.OIDCClient, error)
+	GetOIDCClient(context.Context, domainidentity.Principal, string) (domainprovider.OIDCClient, error)
 	CreateOIDCClient(context.Context, domainidentity.Principal, string, domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error)
 	UpdateOIDCClient(context.Context, domainidentity.Principal, string, domainprovider.OIDCClientInput) (domainprovider.OIDCClient, error)
 	DeleteOIDCClient(context.Context, domainidentity.Principal, string) error
@@ -138,6 +141,7 @@ type Services struct {
 	Proxy                  ProxyService
 	OutpostRuntime         OutpostRuntimeService
 	OutpostContractRuntime OutpostContractRuntimeService
+	AccessURL              interface{ AccessURL() string }
 }
 
 type Handler struct {
@@ -180,12 +184,14 @@ type oidcClientHandler struct {
 }
 
 type oidcHandler struct {
-	service OIDCService
-	logout  OIDCLogoutService
+	service   OIDCService
+	logout    OIDCLogoutService
+	accessURL interface{ AccessURL() string }
 }
 
 type samlHandler struct {
-	service SAMLService
+	service   SAMLService
+	accessURL interface{ AccessURL() string }
 }
 
 type proxyHandler struct {
@@ -198,7 +204,10 @@ type outpostRuntimeHandler struct {
 
 type outpostContractRuntimeHandler struct{ service OutpostContractRuntimeService }
 
-const proxySessionCookieName = "soha_proxy_session"
+const (
+	proxySessionCookieName    = "soha_proxy_session"
+	maxSAMLSSORequestBodySize = 2 << 20
+)
 
 func New(services Services) *Handler {
 	return &Handler{
@@ -211,8 +220,8 @@ func New(services Services) *Handler {
 		providerHandler:               providerHandler{service: services.Providers},
 		outpostHandler:                outpostHandler{service: services.Outposts},
 		oidcClientHandler:             oidcClientHandler{service: services.OIDCClients},
-		oidcHandler:                   oidcHandler{service: services.OIDC, logout: services.OIDCLogout},
-		samlHandler:                   samlHandler{service: services.SAML},
+		oidcHandler:                   oidcHandler{service: services.OIDC, logout: services.OIDCLogout, accessURL: services.AccessURL},
+		samlHandler:                   samlHandler{service: services.SAML, accessURL: services.AccessURL},
 		proxyHandler:                  proxyHandler{service: services.Proxy},
 		outpostRuntimeHandler:         outpostRuntimeHandler{service: services.OutpostRuntime},
 		outpostContractRuntimeHandler: outpostContractRuntimeHandler{service: services.OutpostContractRuntime},
@@ -275,7 +284,7 @@ func (h *portalHandler) DeleteFavorite(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *portalHandler) ListRecent(c *gin.Context) {
@@ -354,7 +363,7 @@ func (h *applicationHandler) DeleteIdentityApplication(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *policyHandler) ListIdentityPolicies(c *gin.Context) {
@@ -487,7 +496,7 @@ func (h *providerHandler) DeleteIdentityProvider(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *outpostHandler) ListOutposts(c *gin.Context) {
@@ -571,7 +580,7 @@ func (h *outpostHandler) DeleteOutpost(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *outpostHandler) RotateOutpostToken(c *gin.Context) {
@@ -680,6 +689,20 @@ func (h *oidcClientHandler) ListOIDCClients(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *oidcClientHandler) GetOIDCClient(c *gin.Context) {
+	if h.service == nil {
+		writeError(c, fmt.Errorf("%w: identity provider service is not configured", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetOIDCClient(c.Request.Context(), principal, c.Param("clientID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *oidcClientHandler) CreateOIDCClient(c *gin.Context) {
 	if h.service == nil {
 		writeError(c, fmt.Errorf("%w: identity provider service is not configured", apperrors.ErrUnsupportedOperation))
@@ -691,9 +714,14 @@ func (h *oidcClientHandler) CreateOIDCClient(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateOIDCClient(c.Request.Context(), principal, c.Param("providerID"), req)
+	providerID := strings.TrimSpace(c.Param("providerID"))
+	item, err := h.service.CreateOIDCClient(c.Request.Context(), principal, providerID, req)
 	if err != nil {
 		writeError(c, err)
+		return
+	}
+	if providerID == "" {
+		apiresponse.Item(c, http.StatusCreated, item.Client)
 		return
 	}
 	apiresponse.Item(c, http.StatusCreated, item)
@@ -728,7 +756,7 @@ func (h *oidcClientHandler) DeleteOIDCClient(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+	c.Status(http.StatusNoContent)
 }
 
 func (h *oidcClientHandler) RotateSigningKey(c *gin.Context) {
@@ -750,7 +778,7 @@ func (h *oidcHandler) OIDCDiscovery(c *gin.Context) {
 		writeOIDCError(c, http.StatusServiceUnavailable, "server_error", "oidc provider service is not configured")
 		return
 	}
-	c.JSON(http.StatusOK, h.service.Discovery(issuerFromRequest(c)))
+	c.JSON(http.StatusOK, h.service.Discovery(issuerFromRequest(c, h.accessURL)))
 }
 
 func (h *samlHandler) SAMLMetadata(c *gin.Context) {
@@ -758,7 +786,7 @@ func (h *samlHandler) SAMLMetadata(c *gin.Context) {
 		writeError(c, fmt.Errorf("%w: SAML provider service is not configured", apperrors.ErrUnsupportedOperation))
 		return
 	}
-	metadata, err := h.service.SAMLProviderMetadata(c.Request.Context(), issuerFromRequest(c), c.Param("providerID"))
+	metadata, err := h.service.SAMLProviderMetadata(c.Request.Context(), issuerFromRequest(c, h.accessURL), c.Param("providerID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -774,6 +802,16 @@ func (h *samlHandler) SAMLSSO(c *gin.Context) {
 	encoded := c.Query("SAMLRequest")
 	relayState := c.Query("RelayState")
 	if c.Request.Method == http.MethodPost {
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSAMLSSORequestBodySize)
+		if err := c.Request.ParseForm(); err != nil {
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				apiresponse.Error(c, http.StatusRequestEntityTooLarge, "payload_too_large", "SAML request exceeds the request limit")
+				return
+			}
+			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid SAML request form")
+			return
+		}
 		encoded, relayState = c.PostForm("SAMLRequest"), c.PostForm("RelayState")
 	}
 	input := appidentityprovider.SAMLRequestInput{
@@ -785,7 +823,7 @@ func (h *samlHandler) SAMLSSO(c *gin.Context) {
 	if principal.UserID == "" {
 		if resumeToken == "" {
 			var err error
-			resumeToken, err = h.service.PrepareSAMLSSOLogin(c.Request.Context(), issuerFromRequest(c), c.Param("providerID"), input)
+			resumeToken, err = h.service.PrepareSAMLSSOLogin(c.Request.Context(), issuerFromRequest(c, h.accessURL), c.Param("providerID"), input)
 			if err != nil {
 				writeError(c, err)
 				return
@@ -804,7 +842,7 @@ func (h *samlHandler) SAMLSSO(c *gin.Context) {
 		}
 	}
 	result, err := h.service.SAMLSSO(
-		portalAccessContext(c), issuerFromRequest(c), c.Param("providerID"),
+		portalAccessContext(c), issuerFromRequest(c, h.accessURL), c.Param("providerID"),
 		apiMiddleware.AccessContextFromContext(c).SessionID, principal,
 		input,
 	)
@@ -833,13 +871,31 @@ func (h *samlHandler) RotateSAMLCertificate(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
+func (h *samlHandler) RotateSAMLProviderCertificate(c *gin.Context) {
+	if h.service == nil {
+		writeError(c, fmt.Errorf("%w: SAML provider service is not configured", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	var request sohaapi.SAMLCertificateRotateRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid SAML certificate rotation payload")
+		return
+	}
+	item, err := h.service.RotateSAMLProviderCertificate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("providerID"), request)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *oidcHandler) OIDCAuthorize(c *gin.Context) {
 	if h.service == nil {
 		writeOIDCError(c, http.StatusServiceUnavailable, "server_error", "oidc provider service is not configured")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	result, err := h.service.Authorize(c.Request.Context(), issuerFromRequest(c), principal, domainprovider.AuthorizeInput{
+	result, err := h.service.Authorize(c.Request.Context(), issuerFromRequest(c, h.accessURL), principal, domainprovider.AuthorizeInput{
 		ResponseType:        c.Query("response_type"),
 		ClientID:            c.Query("client_id"),
 		RedirectURI:         c.Query("redirect_uri"),
@@ -901,7 +957,7 @@ func (h *oidcHandler) OIDCToken(c *gin.Context) {
 		return
 	}
 	clientAuth := oidcClientAuthInputFromRequest(c)
-	result, err := h.service.Token(c.Request.Context(), issuerFromRequest(c), domainprovider.TokenInput{
+	result, err := h.service.Token(c.Request.Context(), issuerFromRequest(c, h.accessURL), domainprovider.TokenInput{
 		GrantType:     c.PostForm("grant_type"),
 		Code:          c.PostForm("code"),
 		RedirectURI:   c.PostForm("redirect_uri"),
@@ -927,7 +983,7 @@ func (h *oidcHandler) OIDCUserInfo(c *gin.Context) {
 		writeOIDCError(c, http.StatusServiceUnavailable, "server_error", "oidc provider service is not configured")
 		return
 	}
-	item, err := h.service.UserInfo(c.Request.Context(), issuerFromRequest(c), c.GetHeader("Authorization"))
+	item, err := h.service.UserInfo(c.Request.Context(), issuerFromRequest(c, h.accessURL), c.GetHeader("Authorization"))
 	if err != nil {
 		writeOIDCError(c, apierrors.StatusCode(err), "invalid_token", err.Error())
 		return
@@ -940,7 +996,7 @@ func (h *oidcHandler) OIDCIntrospect(c *gin.Context) {
 		writeOIDCError(c, http.StatusServiceUnavailable, "server_error", "oidc provider service is not configured")
 		return
 	}
-	item, err := h.service.Introspect(c.Request.Context(), issuerFromRequest(c), c.PostForm("token"), oidcClientAuthInputFromRequest(c))
+	item, err := h.service.Introspect(c.Request.Context(), issuerFromRequest(c, h.accessURL), c.PostForm("token"), oidcClientAuthInputFromRequest(c))
 	if err != nil {
 		writeOIDCError(c, apierrors.StatusCode(err), oauthClientAuthErrorCode(err), err.Error())
 		return
@@ -953,7 +1009,7 @@ func (h *oidcHandler) OIDCRevoke(c *gin.Context) {
 		writeOIDCError(c, http.StatusServiceUnavailable, "server_error", "oidc provider service is not configured")
 		return
 	}
-	if err := h.service.Revoke(c.Request.Context(), issuerFromRequest(c), c.PostForm("token"), oidcClientAuthInputFromRequest(c)); err != nil {
+	if err := h.service.Revoke(c.Request.Context(), issuerFromRequest(c, h.accessURL), c.PostForm("token"), oidcClientAuthInputFromRequest(c)); err != nil {
 		writeOIDCError(c, apierrors.StatusCode(err), oauthClientAuthErrorCode(err), err.Error())
 		return
 	}
@@ -965,7 +1021,7 @@ func (h *oidcHandler) OIDCEndSession(c *gin.Context) {
 		writeOIDCError(c, http.StatusServiceUnavailable, "server_error", "oidc provider service is not configured")
 		return
 	}
-	result, err := h.logout.EndSession(c.Request.Context(), issuerFromRequest(c), domainprovider.EndSessionInput{
+	result, err := h.logout.EndSession(c.Request.Context(), issuerFromRequest(c, h.accessURL), domainprovider.EndSessionInput{
 		IDTokenHint:           firstNonEmpty(c.PostForm("id_token_hint"), c.Query("id_token_hint")),
 		PostLogoutRedirectURI: firstNonEmpty(c.PostForm("post_logout_redirect_uri"), c.Query("post_logout_redirect_uri")),
 		State:                 firstNonEmpty(c.PostForm("state"), c.Query("state")),
@@ -1125,6 +1181,7 @@ func (h *proxyHandler) ProxyReverse(c *gin.Context) {
 	c.Request.URL.Path = proxyPath
 	c.Request.URL.RawPath = ""
 	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.Transport = reverseProxyTransport(result.AllowPrivateUpstream)
 	director := proxy.Director
 	proxy.Director = func(request *http.Request) {
 		director(request)
@@ -1143,6 +1200,46 @@ func (h *proxyHandler) ProxyReverse(c *gin.Context) {
 		http.Error(writer, "reverse proxy upstream unavailable", http.StatusBadGateway)
 	}
 	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+func reverseProxyTransport(allowPrivate bool) *http.Transport {
+	baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		baseTransport = &http.Transport{}
+	}
+	transport := baseTransport.Clone()
+	transport.Proxy = nil
+	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(address)
+		if err != nil {
+			return nil, err
+		}
+		addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+		if err != nil {
+			return nil, err
+		}
+		for _, address := range addresses {
+			if proxyIPAllowed(address.IP, allowPrivate) {
+				return dialer.DialContext(ctx, network, net.JoinHostPort(address.IP.String(), port))
+			}
+		}
+		return nil, fmt.Errorf("reverse proxy upstream resolves to a disallowed address")
+	}
+	transport.TLSHandshakeTimeout = 5 * time.Second
+	transport.ResponseHeaderTimeout = 15 * time.Second
+	transport.IdleConnTimeout = 30 * time.Second
+	return transport
+}
+
+func proxyIPAllowed(ip net.IP, allowPrivate bool) bool {
+	if ip == nil || ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() {
+		return false
+	}
+	if ip.IsLoopback() || ip.IsPrivate() {
+		return allowPrivate
+	}
+	return ip.IsGlobalUnicast()
 }
 
 func normalizeProxyRequestPath(value string) string {
@@ -1230,14 +1327,18 @@ func joinReverseProxyPath(basePath, suffix string) string {
 func stripProxyCredentials(request *http.Request) {
 	request.Header.Del("Authorization")
 	for key := range request.Header {
-		if strings.HasPrefix(strings.ToLower(key), "x-soha-") {
+		lowerKey := strings.ToLower(key)
+		if lowerKey == "forwarded" || lowerKey == "x-real-ip" ||
+			strings.HasPrefix(lowerKey, "x-forwarded-") ||
+			strings.HasPrefix(lowerKey, "x-original-") ||
+			strings.HasPrefix(lowerKey, "x-soha-") {
 			request.Header.Del(key)
 		}
 	}
 	cookies := request.Cookies()
 	request.Header.Del("Cookie")
 	for _, cookie := range cookies {
-		if cookie.Name != proxySessionCookieName {
+		if !strings.HasPrefix(strings.ToLower(cookie.Name), "soha_") {
 			request.AddCookie(cookie)
 		}
 	}
@@ -1442,10 +1543,18 @@ func proxyReturnTo(c *gin.Context) string {
 			target = proto + "://" + host + uri
 		}
 	}
-	if target == "" || strings.HasPrefix(target, "//") {
+	if target == "" || strings.Contains(target, "\\") || strings.HasPrefix(target, "//") {
 		return "/portal"
 	}
-	if _, err := url.Parse(target); err != nil {
+	parsed, err := url.Parse(target)
+	if err != nil || parsed.User != nil || parsed.Fragment != "" {
+		return "/portal"
+	}
+	if parsed.IsAbs() {
+		if parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return "/portal"
+		}
+	} else if !strings.HasPrefix(parsed.Path, "/") {
 		return "/portal"
 	}
 	return target
@@ -1460,20 +1569,17 @@ func proxyRedirectRequested(c *gin.Context) bool {
 	}
 }
 
-func issuerFromRequest(c *gin.Context) string {
-	proto := strings.TrimSpace(c.GetHeader("X-Forwarded-Proto"))
-	if proto == "" {
-		if c.Request.TLS != nil {
-			proto = "https"
-		} else {
-			proto = "http"
+func issuerFromRequest(c *gin.Context, configured interface{ AccessURL() string }) string {
+	if configured != nil {
+		if value := strings.TrimSpace(configured.AccessURL()); value != "" {
+			return strings.TrimRight(value, "/")
 		}
 	}
-	host := strings.TrimSpace(c.GetHeader("X-Forwarded-Host"))
-	if host == "" {
-		host = c.Request.Host
+	proto := "http"
+	if c.Request.TLS != nil {
+		proto = "https"
 	}
-	return strings.TrimRight(proto+"://"+host, "/")
+	return strings.TrimRight(proto+"://"+c.Request.Host, "/")
 }
 
 func parseBasicAuth(header string) (string, string, bool) {

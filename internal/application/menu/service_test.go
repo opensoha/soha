@@ -121,7 +121,7 @@ func TestListVisibleDerivesMenusFromPermissionKeys(t *testing.T) {
 	}
 }
 
-func TestListVisibleFallsBackToExplicitBindingsForMappedMenus(t *testing.T) {
+func TestListVisibleDoesNotLetRoleBindingsBypassMappedPermissions(t *testing.T) {
 	service := New(stubRepository{
 		items: []domainmenu.Record{
 			{ID: "system", Path: "/system", Enabled: true},
@@ -138,14 +138,8 @@ func TestListVisibleFallsBackToExplicitBindingsForMappedMenus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListVisible returned error: %v", err)
 	}
-	if len(items) != 1 {
-		t.Fatalf("root menus = %d, want 1", len(items))
-	}
-	if items[0].ID != "system" {
-		t.Fatalf("root menu = %s, want system", items[0].ID)
-	}
-	if len(items[0].Children) != 1 || items[0].Children[0].ID != "announcements" {
-		t.Fatalf("system children = %#v, want announcements only", items[0].Children)
+	if len(items) != 0 {
+		t.Fatalf("mapped menu role binding bypassed permission checks: %#v", items)
 	}
 }
 
@@ -200,7 +194,7 @@ func TestListVisibleIncludesNetworkTopologyUnderNetwork(t *testing.T) {
 	}
 }
 
-func TestListVisibleRestrictsRBACMenusToExplicitPlatformBindings(t *testing.T) {
+func TestListVisibleDerivesRBACMenusFromPlatformPermissions(t *testing.T) {
 	service := New(stubRepository{
 		items: []domainmenu.Record{
 			{ID: "platform-access-control", Path: "/platform-access-control", Enabled: true, RoleIDs: []string{"admin", "ops", "developer", "readonly"}},
@@ -208,7 +202,7 @@ func TestListVisibleRestrictsRBACMenusToExplicitPlatformBindings(t *testing.T) {
 		},
 	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"readonly": {},
+			"readonly": {appaccess.PermWorkspaceResourceView, appaccess.PlatformActionPermission("access-control", "ClusterRole", "view")},
 			"auditor":  {},
 		},
 	}), nil, nil)
@@ -236,6 +230,24 @@ func TestListVisibleRestrictsRBACMenusToExplicitPlatformBindings(t *testing.T) {
 	}
 }
 
+func TestListVisibleKeepsExplicitBindingsForUnmappedCustomMenus(t *testing.T) {
+	service := New(stubRepository{
+		items: []domainmenu.Record{
+			{ID: "custom-ops", Path: "/custom/ops", Enabled: true, RoleIDs: []string{"ops"}},
+		},
+	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{"ops": {}},
+	}), nil, nil)
+
+	items, err := service.ListVisible(context.Background(), domainidentity.Principal{Roles: []string{"ops"}})
+	if err != nil {
+		t.Fatalf("ListVisible returned error: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "custom-ops" {
+		t.Fatalf("custom explicit menu = %#v, want custom-ops", items)
+	}
+}
+
 func findMenu(items []domainmenu.Record, menuID string) *domainmenu.Record {
 	for index := range items {
 		if items[index].ID == menuID {
@@ -245,7 +257,7 @@ func findMenu(items []domainmenu.Record, menuID string) *domainmenu.Record {
 	return nil
 }
 
-func TestListVisiblePreservesUnmappedMenusWithoutBindings(t *testing.T) {
+func TestListVisibleHidesUnmappedMenusWithoutBindings(t *testing.T) {
 	service := New(stubRepository{
 		items: []domainmenu.Record{
 			{ID: "custom-catalog", Path: "/custom-catalog", Enabled: true},
@@ -261,11 +273,8 @@ func TestListVisiblePreservesUnmappedMenusWithoutBindings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListVisible returned error: %v", err)
 	}
-	if len(items) != 2 {
-		t.Fatalf("visible menus = %d, want 2", len(items))
-	}
-	if items[0].ID != "custom-catalog" || items[1].ID != "custom-delivery" {
-		t.Fatalf("visible menus = %#v, want unmapped menus preserved", items)
+	if len(items) != 0 {
+		t.Fatalf("unmapped menus without explicit bindings must stay hidden: %#v", items)
 	}
 }
 
@@ -290,5 +299,30 @@ func TestCreateAllowsEmptyMenuSection(t *testing.T) {
 	}
 	if created.Section != "" || repo.created.Section != "" {
 		t.Fatalf("created section = %q, stored section = %q, want empty", created.Section, repo.created.Section)
+	}
+}
+
+func TestCreateDropsRoleBindingsFromMappedMenus(t *testing.T) {
+	repo := &captureRepository{}
+	service := New(repo, appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin": {appaccess.ManagedActionPermission(appaccess.PermSystemMenusManage, "create")},
+		},
+	}), nil, nil)
+
+	created, err := service.Create(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, domainmenu.Input{
+		ID:      "access-directory-sync",
+		Path:    "/access/directory-sync",
+		LabelZH: "目录同步",
+		LabelEN: "Directory Sync",
+		IconKey: "sync",
+		Enabled: true,
+		RoleIDs: []string{"admin"},
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if len(created.RoleIDs) != 0 || len(repo.created.RoleIDs) != 0 {
+		t.Fatalf("mapped menu retained role bindings: created=%v stored=%v", created.RoleIDs, repo.created.RoleIDs)
 	}
 }

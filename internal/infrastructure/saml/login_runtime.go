@@ -105,7 +105,7 @@ func (r *LoginRuntime) Metadata(ctx context.Context, provider domainsettings.Log
 	_ = ctx
 	return BuildServiceProviderMetadata(
 		provider.EntityID,
-		provider.RedirectURL,
+		provider.EntityID,
 		provider.RedirectURL,
 	)
 }
@@ -123,7 +123,7 @@ func (r *LoginRuntime) serviceProvider(ctx context.Context, provider domainsetti
 		return nil, fmt.Errorf("parse pinned SAML metadata: %w", err)
 	}
 	return NewServiceProvider(ServiceProviderConfig{
-		EntityID: entityID, MetadataURL: provider.RedirectURL,
+		EntityID: entityID, MetadataURL: entityID,
 		ACSURL: provider.RedirectURL, IDPMetadata: metadata, Now: r.now,
 	})
 }

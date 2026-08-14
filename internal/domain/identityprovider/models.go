@@ -41,18 +41,19 @@ const (
 )
 
 type Provider struct {
-	ID            string         `json:"id"`
-	ApplicationID string         `json:"applicationId"`
-	Name          string         `json:"name"`
-	Type          string         `json:"type"`
-	Enabled       bool           `json:"enabled"`
-	Config        map[string]any `json:"config,omitempty"`
-	SecretRefs    map[string]any `json:"secretRefs,omitempty"`
-	Status        string         `json:"status"`
-	CreatedBy     string         `json:"createdBy,omitempty"`
-	UpdatedBy     string         `json:"updatedBy,omitempty"`
-	CreatedAt     time.Time      `json:"createdAt"`
-	UpdatedAt     time.Time      `json:"updatedAt"`
+	ID                      string         `json:"id"`
+	ApplicationID           string         `json:"applicationId"`
+	Name                    string         `json:"name"`
+	Type                    string         `json:"type"`
+	Enabled                 bool           `json:"enabled"`
+	Config                  map[string]any `json:"config,omitempty"`
+	SecretRefs              map[string]any `json:"secretRefs,omitempty"`
+	ConfiguredSecretAliases []string       `json:"configuredSecretAliases,omitempty"`
+	Status                  string         `json:"status"`
+	CreatedBy               string         `json:"createdBy,omitempty"`
+	UpdatedBy               string         `json:"updatedBy,omitempty"`
+	CreatedAt               time.Time      `json:"createdAt"`
+	UpdatedAt               time.Time      `json:"updatedAt"`
 }
 
 type ProviderInput struct {
@@ -80,6 +81,7 @@ type OIDCClient struct {
 	ClientType             string    `json:"clientType"`
 	ClientSecretHash       string    `json:"-"`
 	RedirectURIs           []string  `json:"redirectUris"`
+	RedirectURIRegexes     []string  `json:"redirectUriRegexes"`
 	PostLogoutRedirectURIs []string  `json:"postLogoutRedirectUris"`
 	AllowedScopes          []string  `json:"allowedScopes"`
 	AllowedGrantTypes      []string  `json:"allowedGrantTypes"`
@@ -98,6 +100,7 @@ type OIDCClientInput struct {
 	ClientType             string   `json:"clientType"`
 	ClientSecret           string   `json:"clientSecret"`
 	RedirectURIs           []string `json:"redirectUris"`
+	RedirectURIRegexes     []string `json:"redirectUriRegexes"`
 	PostLogoutRedirectURIs []string `json:"postLogoutRedirectUris"`
 	AllowedScopes          []string `json:"allowedScopes"`
 	AllowedGrantTypes      []string `json:"allowedGrantTypes"`
@@ -480,9 +483,10 @@ type ReverseProxyInput struct {
 }
 
 type ReverseProxyResult struct {
-	Auth             ProxyAuthResult
-	UpstreamURL      string
-	WebsocketEnabled bool
+	Auth                 ProxyAuthResult
+	UpstreamURL          string
+	WebsocketEnabled     bool
+	AllowPrivateUpstream bool
 }
 
 type Repository interface {

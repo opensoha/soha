@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -789,7 +790,6 @@ func newDeliveryCoreServices(cfg cfgpkg.Config, infra *infrastructure, repos *re
 	}
 	providerPortal := appproviderportal.New(repos.providerPortalRepository, permissions, audit)
 	providerPortal.SetOutpostRuntimeCapability(len(outpostSigningKey) > 0, "Outpost runtime signing key is not configured")
-	providerPortal.SetOIDCLaunchResolver(identityProvider)
 	providerPortal.SetProfileReader(identity)
 	return &deliveryCoreServices{
 		applications: applications, execution: executionService,
@@ -945,8 +945,14 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		core.operationService,
 		appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}),
 		appdocker.WithRuntimeBearerToken(cfg.Runtime.ExecutionRunnerToken),
+		appdocker.WithCredentialEncryptionKeys(cfg.Security.CredentialEncryptionKeys),
+		appdocker.WithAccessURLResolver(core.runtimeConfigService),
 		appdocker.WithAudit(core.auditService),
 		appdocker.WithLogStreamTickets(core.identityService),
+		appdocker.WithComposeSourceFetcher(func(ctx context.Context, rawURL string) (io.ReadCloser, error) {
+			remote, err := infra.softwareFetcher.Fetch(ctx, rawURL)
+			return remote.Content, err
+		}),
 	)
 	computeService := appcompute.New(repos.virtualizationRepository, repos.dockerRepository, core.permissionResolver, appcompute.Options{
 		VirtualizationEnabled: cfg.Modules.Virtualization.Enabled,
@@ -1280,6 +1286,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 			Proxy:                  core.identityProviderService,
 			OutpostRuntime:         core.identityProviderService,
 			OutpostContractRuntime: core.identityProviderService,
+			AccessURL:              core.runtimeConfigService,
 		}),
 		Authn: core.identityService,
 	}
@@ -1301,7 +1308,7 @@ func newVirtualizationHandler(service *appvirtualization.Service) *apiHandlers.V
 
 func newDockerHandler(service *appdocker.Service, keys keyring.Ring) *apiHandlers.DockerHandler {
 	return apiHandlers.NewDockerHandlerWithServices(apiHandlers.DockerServices{
-		Hosts: service, Projects: service, ProjectRuntime: service,
+		Hosts: service, HostInstallation: service, Projects: service, ProjectRuntime: service,
 		ProjectStorage: service, Services: service, PortMappings: service, Templates: service,
 		Operations: service, RunnerOperations: service, Planning: service,
 	}, keys)

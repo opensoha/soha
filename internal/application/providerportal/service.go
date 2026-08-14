@@ -42,10 +42,6 @@ type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
 
-type OIDCLaunchResolver interface {
-	OIDCLaunchURL(context.Context, domainportal.Application) (string, error)
-}
-
 type ProfileReader interface {
 	CurrentProfile(context.Context, domainidentity.Principal) (domainidentity.UserProfile, error)
 }
@@ -54,7 +50,6 @@ type Service struct {
 	repo                    domainportal.Repository
 	permissions             *appaccess.PermissionResolver
 	audit                   AuditRecorder
-	oidcLaunchResolver      OIDCLaunchResolver
 	profileReader           ProfileReader
 	outpostRuntimeAvailable bool
 	outpostRuntimeReason    string
@@ -67,10 +62,6 @@ func (s *Service) SetOutpostRuntimeCapability(available bool, reason string) {
 
 func New(repo domainportal.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder) *Service {
 	return &Service{repo: repo, permissions: permissions, audit: audit}
-}
-
-func (s *Service) SetOIDCLaunchResolver(resolver OIDCLaunchResolver) {
-	s.oidcLaunchResolver = resolver
 }
 
 func (s *Service) SetProfileReader(reader ProfileReader) {
@@ -141,11 +132,7 @@ func (s *Service) Launch(ctx context.Context, principal domainidentity.Principal
 		s.recordLaunch(ctx, principal, domainportal.Application{ID: applicationID}, "denied", err.Error(), "")
 		return domainportal.LaunchDecision{}, err
 	}
-	launchURL, err := s.launchURL(ctx, item)
-	if err != nil {
-		s.recordLaunch(ctx, principal, item, "denied", err.Error(), "")
-		return domainportal.LaunchDecision{}, err
-	}
+	launchURL := strings.TrimSpace(item.LaunchURL)
 	if strings.TrimSpace(launchURL) == "" {
 		reason := "launch URL is not configured"
 		s.recordLaunch(ctx, principal, item, "denied", reason, "")
@@ -162,13 +149,6 @@ func (s *Service) Launch(ctx context.Context, principal domainidentity.Principal
 		ProviderType: item.ProviderType,
 		Decision:     "allow",
 	}, nil
-}
-
-func (s *Service) launchURL(ctx context.Context, item domainportal.Application) (string, error) {
-	if item.ProviderType == domainportal.ProviderTypeOIDC && s.oidcLaunchResolver != nil {
-		return s.oidcLaunchResolver.OIDCLaunchURL(ctx, item)
-	}
-	return strings.TrimSpace(item.LaunchURL), nil
 }
 
 func (s *Service) SetFavorite(ctx context.Context, principal domainidentity.Principal, applicationID string) (domainportal.Application, error) {

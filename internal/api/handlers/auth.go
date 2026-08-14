@@ -132,7 +132,10 @@ type proLoginResponse struct {
 	CurrentAuthority string `json:"currentAuthority"`
 }
 
-const refreshCookieName = "soha_refresh_token"
+const (
+	refreshCookieName      = "soha_refresh_token"
+	maxSAMLACSRequestBytes = 2 << 20
+)
 
 type AuthHandler struct {
 	auth                IdentityAuthService
@@ -185,7 +188,7 @@ func (h *AuthHandler) setRefreshCookie(c *gin.Context, result domainidentity.Aut
 		return
 	}
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(refreshCookieName, refreshToken, h.refreshCookieMaxAge, "/api/v1/auth", "", c.Request.TLS != nil, true)
+	c.SetCookie(refreshCookieName, refreshToken, h.refreshCookieMaxAge, "/api/v1/auth", "", authRequestIsHTTPS(c), true)
 }
 
 func (h *AuthHandler) setProtocolAccessCookie(c *gin.Context, result domainidentity.AuthResult) {
@@ -211,7 +214,7 @@ func (h *AuthHandler) setAuthCookies(c *gin.Context, result domainidentity.AuthR
 
 func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(refreshCookieName, "", -1, "/api/v1/auth", "", c.Request.TLS != nil, true)
+	c.SetCookie(refreshCookieName, "", -1, "/api/v1/auth", "", authRequestIsHTTPS(c), true)
 }
 
 func (h *AuthHandler) clearProtocolAccessCookie(c *gin.Context) {
@@ -248,6 +251,11 @@ func (h *AuthHandler) LoginOptions(c *gin.Context) {
 	options.LocalPasswordLoginEnabled = slices.ContainsFunc(h.auth.ListProviders(c.Request.Context()), func(provider domainidentity.Provider) bool {
 		return provider.Type == "password" && provider.Enabled
 	})
+	if h.settings != nil {
+		if branding, err := h.settings.ResolveBrandingSettings(c.Request.Context()); err == nil {
+			options.Branding = &branding
+		}
+	}
 	apiresponse.Item(c, http.StatusOK, options)
 }
 
@@ -526,6 +534,16 @@ func (h *AuthHandler) ProviderCallback(c *gin.Context) {
 func (h *AuthHandler) SAMLACS(c *gin.Context) {
 	if h.saml == nil {
 		writeError(c, fmt.Errorf("%w: saml login runtime is not enabled", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxSAMLACSRequestBytes)
+	if err := c.Request.ParseForm(); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			apiresponse.Error(c, http.StatusRequestEntityTooLarge, "payload_too_large", "SAML response exceeds the request limit")
+			return
+		}
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid SAML response form")
 		return
 	}
 	redirectURL, err := h.saml.HandleSAMLResponse(c.Request.Context(), c.Param("providerID"), c.PostForm("SAMLResponse"), c.PostForm("RelayState"))

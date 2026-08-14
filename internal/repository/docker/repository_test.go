@@ -88,6 +88,39 @@ func TestClaimOperationUpdatesSelectedOperation(t *testing.T) {
 	}
 }
 
+func TestConsumeHostAgentInstallTicketLocksAndConsumesOnce(t *testing.T) {
+	repository, mock := newDockerRepository(t)
+	now := time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC)
+	expiresAt := now.Add(time.Minute)
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT operation_id,[\s\S]+FROM docker_host_agent_installations WHERE operation_id = \$1 FOR UPDATE`).
+		WithArgs("operation-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"operation_id", "host_id", "download_token_hash", "download_expires_at", "downloaded_at",
+			"enrollment_token_hash", "enrollment_expires_at", "enrolled_at", "agent_id",
+			"agent_token_ciphertext", "runtime_token_hash", "revoked_at", "created_at", "updated_at",
+		}).AddRow(
+			"operation-1", "host-1", "download-hash", expiresAt, nil,
+			"", nil, nil, "", "", "", nil, now, now,
+		))
+	mock.ExpectExec(`UPDATE docker_host_agent_installations[\s\S]+WHERE operation_id = \$[0-9]+ AND downloaded_at IS NULL`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	state, err := repository.ConsumeHostAgentInstallTicket(
+		context.Background(), "operation-1", "download-hash", "enrollment-hash", now.Add(15*time.Minute), now,
+	)
+	if err != nil {
+		t.Fatalf("ConsumeHostAgentInstallTicket() error = %v", err)
+	}
+	if state.DownloadedAt == nil || state.EnrollmentTokenHash != "enrollment-hash" || state.HostID != "host-1" {
+		t.Fatalf("consumed installation = %#v", state)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func newDockerRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {
 	t.Helper()
 	sqlDB, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))

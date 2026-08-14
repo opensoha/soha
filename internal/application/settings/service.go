@@ -151,6 +151,7 @@ func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainid
 	}
 	input.AppTitle = strings.TrimSpace(input.AppTitle)
 	input.SidebarTitle = strings.TrimSpace(input.SidebarTitle)
+	input.Slogan = strings.TrimSpace(input.Slogan)
 	input.LoginLogoURL = strings.TrimSpace(input.LoginLogoURL)
 	input.ExpandedLogoURL = strings.TrimSpace(input.ExpandedLogoURL)
 	input.CollapsedLogoURL = strings.TrimSpace(input.CollapsedLogoURL)
@@ -158,6 +159,7 @@ func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainid
 	value := map[string]any{
 		"appTitle":         input.AppTitle,
 		"sidebarTitle":     input.SidebarTitle,
+		"slogan":           input.Slogan,
 		"loginLogoUrl":     input.LoginLogoURL,
 		"expandedLogoUrl":  input.ExpandedLogoURL,
 		"collapsedLogoUrl": input.CollapsedLogoURL,
@@ -761,6 +763,7 @@ func (s *Service) brandingSettings(ctx context.Context) (domainsettings.Branding
 	item := domainsettings.BrandingSettings{
 		AppTitle:     "Soha",
 		SidebarTitle: "Soha",
+		Slogan:       "Soha 是一种能力！",
 	}
 	if s.store == nil {
 		return item, nil
@@ -774,6 +777,9 @@ func (s *Service) brandingSettings(ctx context.Context) (domainsettings.Branding
 	}
 	if value, ok := raw["sidebarTitle"].(string); ok && strings.TrimSpace(value) != "" {
 		item.SidebarTitle = strings.TrimSpace(value)
+	}
+	if value, ok := raw["slogan"].(string); ok && strings.TrimSpace(value) != "" {
+		item.Slogan = strings.TrimSpace(value)
 	}
 	if value, ok := raw["loginLogoUrl"].(string); ok {
 		item.LoginLogoURL = strings.TrimSpace(value)

@@ -45,7 +45,7 @@ func (s *dashboardHandlerStub) DeleteDashboard(context.Context, domainidentity.P
 	return nil
 }
 
-func (s *dashboardHandlerStub) QueryDashboardPanel(context.Context, domainidentity.Principal, string, string, time.Time, time.Time, time.Duration) (appmonitoring.MetricQueryResult, error) {
+func (s *dashboardHandlerStub) QueryDashboardPanel(context.Context, domainidentity.Principal, string, string, time.Time, time.Time, time.Duration, map[string]string) (appmonitoring.MetricQueryResult, error) {
 	return appmonitoring.MetricQueryResult{}, nil
 }
 

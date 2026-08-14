@@ -307,6 +307,7 @@ type AlertEvent struct {
 	Namespace          string            `json:"namespace,omitempty"`
 	Labels             map[string]string `json:"labels,omitempty"`
 	Annotations        map[string]string `json:"annotations,omitempty"`
+	QuerySnapshot      map[string]any    `json:"querySnapshot,omitempty"`
 	Receiver           string            `json:"receiver,omitempty"`
 	GeneratorURL       string            `json:"generatorUrl,omitempty"`
 	CurrentState       string            `json:"currentState,omitempty"`
@@ -332,6 +333,7 @@ type AlertEventInput struct {
 	Namespace          string            `json:"namespace,omitempty"`
 	Labels             map[string]string `json:"labels,omitempty"`
 	Annotations        map[string]string `json:"annotations,omitempty"`
+	QuerySnapshot      map[string]any    `json:"querySnapshot,omitempty"`
 	Receiver           string            `json:"receiver,omitempty"`
 	GeneratorURL       string            `json:"generatorUrl,omitempty"`
 	CurrentState       string            `json:"currentState,omitempty"`
@@ -613,36 +615,41 @@ type OnCallTask struct {
 type RuleTestResult struct {
 	RuleID              string           `json:"ruleId,omitempty"`
 	RuleType            string           `json:"ruleType,omitempty"`
+	State               string           `json:"state,omitempty"`
 	Summary             string           `json:"summary,omitempty"`
 	Matched             bool             `json:"matched"`
 	Samples             []map[string]any `json:"samples,omitempty"`
 	DataSources         []string         `json:"dataSources,omitempty"`
+	Errors              []string         `json:"errors,omitempty"`
+	QuerySnapshot       map[string]any   `json:"querySnapshot,omitempty"`
 	NotificationPreview []map[string]any `json:"notificationPreview,omitempty"`
 	ExecutedAt          time.Time        `json:"executedAt"`
 }
 
 type AlertRuleRun struct {
-	ID         string         `json:"id"`
-	RuleID     string         `json:"ruleId"`
-	Status     string         `json:"status"`
-	Summary    string         `json:"summary,omitempty"`
-	Matched    bool           `json:"matched"`
-	DurationMs int            `json:"durationMs"`
-	Error      string         `json:"error,omitempty"`
-	Result     map[string]any `json:"result,omitempty"`
-	CreatedAt  time.Time      `json:"createdAt"`
-	UpdatedAt  time.Time      `json:"updatedAt"`
+	ID            string         `json:"id"`
+	RuleID        string         `json:"ruleId"`
+	Status        string         `json:"status"`
+	Summary       string         `json:"summary,omitempty"`
+	Matched       bool           `json:"matched"`
+	DurationMs    int            `json:"durationMs"`
+	Error         string         `json:"error,omitempty"`
+	Result        map[string]any `json:"result,omitempty"`
+	QuerySnapshot map[string]any `json:"querySnapshot,omitempty"`
+	CreatedAt     time.Time      `json:"createdAt"`
+	UpdatedAt     time.Time      `json:"updatedAt"`
 }
 
 type AlertRuleRunInput struct {
-	ID         string         `json:"id"`
-	RuleID     string         `json:"ruleId"`
-	Status     string         `json:"status"`
-	Summary    string         `json:"summary,omitempty"`
-	Matched    bool           `json:"matched"`
-	DurationMs int            `json:"durationMs"`
-	Error      string         `json:"error,omitempty"`
-	Result     map[string]any `json:"result,omitempty"`
+	ID            string         `json:"id"`
+	RuleID        string         `json:"ruleId"`
+	Status        string         `json:"status"`
+	Summary       string         `json:"summary,omitempty"`
+	Matched       bool           `json:"matched"`
+	DurationMs    int            `json:"durationMs"`
+	Error         string         `json:"error,omitempty"`
+	Result        map[string]any `json:"result,omitempty"`
+	QuerySnapshot map[string]any `json:"querySnapshot,omitempty"`
 }
 
 type AlertRuleRunFilter struct {

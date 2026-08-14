@@ -272,7 +272,8 @@ administrator password.
 The JWT, runner, webhook, and credential-encryption settings all default to the
 public value `soha-123456789012345678901234567890`. This makes local, raw Docker,
 Compose, Kubernetes, and Helm startup deterministic, but it is not secure for a
-public installation. Override all four settings before exposing Soha. Prefer
+public installation. Soha logs a startup warning with the unchanged configuration
+key names, without logging their values. Override all four settings before exposing Soha. Prefer
 separate high-entropy values and keep the same configured values on every Soha
 replica. Changing the credential-encryption key does not re-encrypt existing
 records: migrate every stored ciphertext to the new key before restarting with

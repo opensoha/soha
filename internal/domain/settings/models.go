@@ -91,6 +91,7 @@ type AISettings struct {
 type BrandingSettings struct {
 	AppTitle         string `json:"appTitle"`
 	SidebarTitle     string `json:"sidebarTitle"`
+	Slogan           string `json:"slogan"`
 	LoginLogoURL     string `json:"loginLogoUrl"`
 	ExpandedLogoURL  string `json:"expandedLogoUrl"`
 	CollapsedLogoURL string `json:"collapsedLogoUrl"`

@@ -151,7 +151,7 @@ func (r *Repository) ListRuleRuns(ctx context.Context, filter domainalert.AlertR
 		args = append(args, strings.TrimSpace(filter.RuleID))
 	}
 	query := `
-		SELECT id, rule_id, status, summary, matched, duration_ms, error, result, created_at, updated_at
+		SELECT id, rule_id, status, summary, matched, duration_ms, error, result, query_snapshot, created_at, updated_at
 		FROM alert_rule_runs
 	`
 	if len(conditions) > 0 {
@@ -181,10 +181,14 @@ func (r *Repository) CreateRuleRun(ctx context.Context, input domainalert.AlertR
 	if err != nil {
 		return domainalert.AlertRuleRun{}, fmt.Errorf("marshal alert rule run result: %w", err)
 	}
+	querySnapshot, err := marshalOptionalJSON(item.QuerySnapshot)
+	if err != nil {
+		return domainalert.AlertRuleRun{}, fmt.Errorf("marshal alert rule run query snapshot: %w", err)
+	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO alert_rule_runs (id, rule_id, status, summary, matched, duration_ms, error, result, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.RuleID, item.Status, nullableString(item.Summary), item.Matched, item.DurationMs, nullableString(item.Error), string(result), item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		INSERT INTO alert_rule_runs (id, rule_id, status, summary, matched, duration_ms, error, result, query_snapshot, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.RuleID, item.Status, nullableString(item.Summary), item.Matched, item.DurationMs, nullableString(item.Error), string(result), querySnapshot, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domainalert.AlertRuleRun{}, fmt.Errorf("create alert rule run: %w", err)
 	}
 	return item, nil
@@ -211,7 +215,7 @@ func (r *Repository) ListEvents(ctx context.Context, filter domainalert.AlertEve
 	}
 	query := `
 		SELECT id, rule_id, source_type, source_system, fingerprint, title, summary, severity, status, cluster_id, namespace,
-			labels, annotations, receiver, generator_url, current_state, last_notification_at, starts_at, ends_at, last_seen_at, created_at, updated_at
+			labels, annotations, query_snapshot, receiver, generator_url, current_state, last_notification_at, starts_at, ends_at, last_seen_at, created_at, updated_at
 		FROM alert_events
 	`
 	if len(conditions) > 0 {
@@ -239,7 +243,7 @@ func (r *Repository) ListEvents(ctx context.Context, filter domainalert.AlertEve
 func (r *Repository) GetEvent(ctx context.Context, eventID string) (domainalert.AlertEvent, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, rule_id, source_type, source_system, fingerprint, title, summary, severity, status, cluster_id, namespace,
-			labels, annotations, receiver, generator_url, current_state, last_notification_at, starts_at, ends_at, last_seen_at, created_at, updated_at
+			labels, annotations, query_snapshot, receiver, generator_url, current_state, last_notification_at, starts_at, ends_at, last_seen_at, created_at, updated_at
 		FROM alert_events
 		WHERE id = ?
 		LIMIT 1
@@ -257,12 +261,16 @@ func (r *Repository) CreateEvent(ctx context.Context, input domainalert.AlertEve
 	if err != nil {
 		return domainalert.AlertEvent{}, fmt.Errorf("marshal alert event annotations: %w", err)
 	}
+	querySnapshot, err := marshalOptionalJSON(item.QuerySnapshot)
+	if err != nil {
+		return domainalert.AlertEvent{}, fmt.Errorf("marshal alert event query snapshot: %w", err)
+	}
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO alert_events (
 			id, rule_id, source_type, source_system, fingerprint, title, summary, severity, status, cluster_id, namespace,
-			labels, annotations, receiver, generator_url, current_state, last_notification_at, starts_at, ends_at, last_seen_at, created_at, updated_at
+			labels, annotations, query_snapshot, receiver, generator_url, current_state, last_notification_at, starts_at, ends_at, last_seen_at, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			rule_id = EXCLUDED.rule_id,
 			source_type = EXCLUDED.source_type,
@@ -285,6 +293,7 @@ func (r *Repository) CreateEvent(ctx context.Context, input domainalert.AlertEve
 					'acknowledgedByName', alert_events.annotations::jsonb->>'acknowledgedByName'
 				))
 			)::json,
+			query_snapshot = COALESCE(EXCLUDED.query_snapshot, alert_events.query_snapshot),
 			receiver = EXCLUDED.receiver,
 			generator_url = EXCLUDED.generator_url,
 			current_state = CASE
@@ -298,7 +307,7 @@ func (r *Repository) CreateEvent(ctx context.Context, input domainalert.AlertEve
 			last_seen_at = EXCLUDED.last_seen_at,
 			updated_at = EXCLUDED.updated_at
 	`, item.ID, nullableString(item.RuleID), item.SourceType, nullableString(item.SourceSystem), item.Fingerprint, item.Title, item.Summary, item.Severity, item.Status,
-		nullableString(item.ClusterID), nullableString(item.Namespace), string(labels), string(annotations), nullableString(item.Receiver), nullableString(item.GeneratorURL),
+		nullableString(item.ClusterID), nullableString(item.Namespace), string(labels), string(annotations), querySnapshot, nullableString(item.Receiver), nullableString(item.GeneratorURL),
 		nullableString(item.CurrentState), nullableTime(item.LastNotificationAt), nullableTime(item.StartsAt), nullableTime(item.EndsAt), nullableTime(item.LastSeenAt),
 		item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domainalert.AlertEvent{}, fmt.Errorf("create alert event: %w", err)
@@ -317,13 +326,17 @@ func (r *Repository) UpdateEvent(ctx context.Context, eventID string, input doma
 	if err != nil {
 		return domainalert.AlertEvent{}, fmt.Errorf("marshal alert event annotations: %w", err)
 	}
+	querySnapshot, err := marshalOptionalJSON(item.QuerySnapshot)
+	if err != nil {
+		return domainalert.AlertEvent{}, fmt.Errorf("marshal alert event query snapshot: %w", err)
+	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE alert_events
 		SET rule_id = ?, source_type = ?, source_system = ?, fingerprint = ?, title = ?, summary = ?, severity = ?, status = ?, cluster_id = ?, namespace = ?,
-			labels = ?, annotations = ?, receiver = ?, generator_url = ?, current_state = ?, last_notification_at = ?, starts_at = ?, ends_at = ?, last_seen_at = ?, updated_at = ?
+			labels = ?, annotations = ?, query_snapshot = COALESCE(?, query_snapshot), receiver = ?, generator_url = ?, current_state = ?, last_notification_at = ?, starts_at = ?, ends_at = ?, last_seen_at = ?, updated_at = ?
 		WHERE id = ?
 	`, nullableString(item.RuleID), item.SourceType, nullableString(item.SourceSystem), item.Fingerprint, item.Title, item.Summary, item.Severity, item.Status,
-		nullableString(item.ClusterID), nullableString(item.Namespace), string(labels), string(annotations), nullableString(item.Receiver), nullableString(item.GeneratorURL),
+		nullableString(item.ClusterID), nullableString(item.Namespace), string(labels), string(annotations), querySnapshot, nullableString(item.Receiver), nullableString(item.GeneratorURL),
 		nullableString(item.CurrentState), nullableTime(item.LastNotificationAt), nullableTime(item.StartsAt), nullableTime(item.EndsAt), nullableTime(item.LastSeenAt), item.UpdatedAt, item.ID)
 	if result.Error != nil {
 		return domainalert.AlertEvent{}, fmt.Errorf("update alert event: %w", result.Error)
@@ -980,6 +993,7 @@ func scanAlertEvent(rows *sql.Rows) (domainalert.AlertEvent, error) {
 	var item domainalert.AlertEvent
 	var labels []byte
 	var annotations []byte
+	var querySnapshot []byte
 	var ruleID sql.NullString
 	var sourceSystem sql.NullString
 	var clusterID sql.NullString
@@ -991,7 +1005,7 @@ func scanAlertEvent(rows *sql.Rows) (domainalert.AlertEvent, error) {
 	var startsAt sql.NullTime
 	var endsAt sql.NullTime
 	if err := rows.Scan(&item.ID, &ruleID, &item.SourceType, &sourceSystem, &item.Fingerprint, &item.Title, &item.Summary, &item.Severity, &item.Status, &clusterID, &namespace,
-		&labels, &annotations, &receiver, &generatorURL, &currentState, &lastNotificationAt, &startsAt, &endsAt, &item.LastSeenAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&labels, &annotations, &querySnapshot, &receiver, &generatorURL, &currentState, &lastNotificationAt, &startsAt, &endsAt, &item.LastSeenAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domainalert.AlertEvent{}, fmt.Errorf("scan alert event: %w", err)
 	}
 	if ruleID.Valid {
@@ -1026,6 +1040,7 @@ func scanAlertEvent(rows *sql.Rows) (domainalert.AlertEvent, error) {
 	}
 	_ = json.Unmarshal(labels, &item.Labels)
 	_ = json.Unmarshal(annotations, &item.Annotations)
+	_ = json.Unmarshal(querySnapshot, &item.QuerySnapshot)
 	return item, nil
 }
 
@@ -1033,6 +1048,7 @@ func scanAlertEventRow(row *sql.Row, eventID string) (domainalert.AlertEvent, er
 	var item domainalert.AlertEvent
 	var labels []byte
 	var annotations []byte
+	var querySnapshot []byte
 	var ruleID sql.NullString
 	var sourceSystem sql.NullString
 	var clusterID sql.NullString
@@ -1044,7 +1060,7 @@ func scanAlertEventRow(row *sql.Row, eventID string) (domainalert.AlertEvent, er
 	var startsAt sql.NullTime
 	var endsAt sql.NullTime
 	if err := row.Scan(&item.ID, &ruleID, &item.SourceType, &sourceSystem, &item.Fingerprint, &item.Title, &item.Summary, &item.Severity, &item.Status, &clusterID, &namespace,
-		&labels, &annotations, &receiver, &generatorURL, &currentState, &lastNotificationAt, &startsAt, &endsAt, &item.LastSeenAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&labels, &annotations, &querySnapshot, &receiver, &generatorURL, &currentState, &lastNotificationAt, &startsAt, &endsAt, &item.LastSeenAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domainalert.AlertEvent{}, alertNotFound("alert event", eventID)
 		}
@@ -1082,6 +1098,7 @@ func scanAlertEventRow(row *sql.Row, eventID string) (domainalert.AlertEvent, er
 	}
 	_ = json.Unmarshal(labels, &item.Labels)
 	_ = json.Unmarshal(annotations, &item.Annotations)
+	_ = json.Unmarshal(querySnapshot, &item.QuerySnapshot)
 	return item, nil
 }
 
@@ -1091,7 +1108,8 @@ func scanAlertRuleRun(rows *sql.Rows) (domainalert.AlertRuleRun, error) {
 	var summary sql.NullString
 	var runError sql.NullString
 	var result []byte
-	if err := rows.Scan(&item.ID, &ruleID, &item.Status, &summary, &item.Matched, &item.DurationMs, &runError, &result, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var querySnapshot []byte
+	if err := rows.Scan(&item.ID, &ruleID, &item.Status, &summary, &item.Matched, &item.DurationMs, &runError, &result, &querySnapshot, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domainalert.AlertRuleRun{}, fmt.Errorf("scan alert rule run: %w", err)
 	}
 	if ruleID.Valid {
@@ -1104,6 +1122,7 @@ func scanAlertRuleRun(rows *sql.Rows) (domainalert.AlertRuleRun, error) {
 		item.Error = runError.String
 	}
 	_ = json.Unmarshal(result, &item.Result)
+	_ = json.Unmarshal(querySnapshot, &item.QuerySnapshot)
 	return item, nil
 }
 
@@ -1120,16 +1139,17 @@ func normalizeAlertRuleRunInput(input domainalert.AlertRuleRunInput, now time.Ti
 		input.Result = map[string]any{}
 	}
 	return domainalert.AlertRuleRun{
-		ID:         id,
-		RuleID:     strings.TrimSpace(input.RuleID),
-		Status:     status,
-		Summary:    strings.TrimSpace(input.Summary),
-		Matched:    input.Matched,
-		DurationMs: input.DurationMs,
-		Error:      strings.TrimSpace(input.Error),
-		Result:     input.Result,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		ID:            id,
+		RuleID:        strings.TrimSpace(input.RuleID),
+		Status:        status,
+		Summary:       strings.TrimSpace(input.Summary),
+		Matched:       input.Matched,
+		DurationMs:    input.DurationMs,
+		Error:         strings.TrimSpace(input.Error),
+		Result:        input.Result,
+		QuerySnapshot: input.QuerySnapshot,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 }
 
@@ -1442,6 +1462,7 @@ func normalizeAlertEventInput(input domainalert.AlertEventInput, now time.Time) 
 		Namespace:          strings.TrimSpace(input.Namespace),
 		Labels:             input.Labels,
 		Annotations:        input.Annotations,
+		QuerySnapshot:      input.QuerySnapshot,
 		Receiver:           strings.TrimSpace(input.Receiver),
 		GeneratorURL:       strings.TrimSpace(input.GeneratorURL),
 		CurrentState:       currentState,
@@ -1689,4 +1710,15 @@ func normalizeStrings(items []string) []string {
 		}
 	}
 	return normalized
+}
+
+func marshalOptionalJSON(value map[string]any) (any, error) {
+	if len(value) == 0 {
+		return nil, nil
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return string(raw), nil
 }

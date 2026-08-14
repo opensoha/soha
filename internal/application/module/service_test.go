@@ -40,11 +40,40 @@ func TestListIncludesMonitoringLogMenus(t *testing.T) {
 		t.Fatalf("List returned error: %v", err)
 	}
 	status, ok := moduleStatusByID(items, "monitoring")
-	if !ok || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-logs") || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-log-data-sources") {
+	if !ok || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-explore") || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-log-data-sources") {
 		t.Fatalf("monitoring log seed menus missing: %#v", status)
+	}
+	for _, id := range []string{"monitoring-workbench-metrics", "monitoring-workbench-traces", "monitoring-workbench-logs", "monitoring-workbench-alerting"} {
+		if slices.Contains(status.Descriptor.SeedMenus, id) {
+			t.Fatalf("monitoring seed menus retained hidden compatibility route %s: %v", id, status.Descriptor.SeedMenus)
+		}
 	}
 	if status.Descriptor.Name != "可观测性工作台" {
 		t.Fatalf("monitoring module name = %q", status.Descriptor.Name)
+	}
+}
+
+func TestListIncludesCanonicalAIMenus(t *testing.T) {
+	service := New(cfgpkg.ModulesConfig{AI: cfgpkg.ModuleToggleConfig{Enabled: true}})
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ok := moduleStatusByID(items, "ai")
+	if !ok {
+		t.Fatal("AI module descriptor missing")
+	}
+	for _, id := range []string{
+		"ai-workbench-knowledge-pipelines",
+		"ai-workbench-evaluation-lifecycle",
+		"ai-workbench-memory",
+		"ai-workbench-provider-fleet",
+		"ai-workbench-environments",
+		"ai-workbench-production-operations",
+	} {
+		if !slices.Contains(status.Descriptor.SeedMenus, id) {
+			t.Fatalf("AI seed menus missing %s: %v", id, status.Descriptor.SeedMenus)
+		}
 	}
 }
 
@@ -92,8 +121,6 @@ func TestListIncludesVirtualizationDescriptor(t *testing.T) {
 		"virtualization-workbench-images",
 		"virtualization-workbench-storage",
 		"virtualization-workbench-flavors",
-		"virtualization-workbench-operations",
-		"virtualization-workbench-sync",
 	} {
 		if !slices.Contains(status.Descriptor.SeedMenus, menuID) {
 			t.Fatalf("virtualization seed menus = %v, missing %s", status.Descriptor.SeedMenus, menuID)
@@ -121,7 +148,13 @@ func TestListIncludesUnifiedComputeDescriptor(t *testing.T) {
 			t.Fatalf("compute seed menus missing %s: %v", menuID, status.Descriptor.SeedMenus)
 		}
 	}
-	for _, menuID := range []string{"compute-workbench-tasks-sync", "compute-workbench-tasks-build"} {
+	for _, menuID := range []string{
+		"compute-workbench-tasks-sync",
+		"compute-workbench-tasks-build",
+		"virtualization-workbench-operations",
+		"virtualization-workbench-sync",
+		"docker-workbench-operations",
+	} {
 		if slices.Contains(status.Descriptor.SeedMenus, menuID) {
 			t.Fatalf("compute seed menus retained legacy %s: %v", menuID, status.Descriptor.SeedMenus)
 		}
@@ -174,7 +207,7 @@ func TestListIncludesDockerDescriptorWithoutRemovedDetailMenus(t *testing.T) {
 			t.Fatalf("docker visible permissions = %v, missing %s", status.Descriptor.VisiblePermissions, permission)
 		}
 	}
-	for _, menuID := range []string{"docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations"} {
+	for _, menuID := range []string{"docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates"} {
 		if !slices.Contains(status.Descriptor.SeedMenus, menuID) {
 			t.Fatalf("docker seed menus = %v, missing %s", status.Descriptor.SeedMenus, menuID)
 		}

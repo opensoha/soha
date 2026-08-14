@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -548,6 +549,20 @@ func TestConfigValidateAllowsDocumentedSharedDefault(t *testing.T) {
 		if !matches {
 			t.Fatalf("%s keyring does not contain the shared default", name)
 		}
+	}
+}
+
+func TestDefaultSystemSecretKeysReportsOnlyPublicDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg := validSecureConfig()
+	cfg.Auth.JWT.Secret = defaultSystemSecret
+	cfg.Monitoring.WebhookToken = defaultSystemSecret
+
+	keys := cfg.DefaultSystemSecretKeys()
+	want := []string{"auth.jwt.secret", "monitoring.webhook_token"}
+	if !slices.Equal(keys, want) {
+		t.Fatalf("default system secret keys = %v, want %v", keys, want)
 	}
 }
 

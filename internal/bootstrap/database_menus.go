@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	appmenu "github.com/opensoha/soha/internal/application/menu"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"gorm.io/gorm"
 )
@@ -20,26 +21,23 @@ type menuSeed struct {
 	Section   string
 	SortOrder int
 	Enabled   bool
-	Roles     []string
 }
 
-var defaultUserRoles = []string{"admin", "ops", "developer", "tester", "readonly", "auditor"}
-var defaultComputeRoles = []string{"admin", "ops", "developer", "readonly"}
-
 var builtinMenuSeeds = []menuSeed{
-	{ID: "home-workbench", Path: "/portal", LabelZH: "首页", LabelEN: "Home", IconKey: "home", SortOrder: 1, Enabled: true, Roles: defaultUserRoles},
+	{ID: "home-workbench", Path: "/portal", LabelZH: "首页", LabelEN: "Home", IconKey: "home", SortOrder: 1, Enabled: true},
 	{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", SortOrder: 10, Enabled: true},
 	{ID: "cluster-resources-nodes", Path: "/cluster-resources/nodes", LabelZH: "节点", LabelEN: "Nodes", IconKey: "server", SortOrder: 20, Enabled: true},
+	{ID: "cluster-resources-namespaces", Path: "/cluster-resources/namespaces", LabelZH: "命名空间", LabelEN: "Namespaces", IconKey: "server", SortOrder: 21, Enabled: true},
 	{ID: "extensions", Path: "/extensions", LabelZH: "CRD", LabelEN: "CRD", IconKey: "puzzle", SortOrder: 90, Enabled: true},
 	{ID: "helm", Path: "/helm", LabelZH: "Helm", LabelEN: "Helm", IconKey: "puzzle", SortOrder: 80, Enabled: true},
 	{ID: "helm-releases", ParentID: "helm", Path: "/helm/releases", LabelZH: "Releases", LabelEN: "Releases", IconKey: "puzzle", SortOrder: 20, Enabled: true},
 	{ID: "helm-charts", ParentID: "helm", Path: "/helm/charts", LabelZH: "Charts", LabelEN: "Charts", IconKey: "puzzle", SortOrder: 21, Enabled: true},
-	{ID: "platform-access-control", Path: "/platform-access-control", LabelZH: "RBAC", LabelEN: "RBAC", IconKey: "shield", SortOrder: 70, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-	{ID: "platform-access-control-serviceaccounts", ParentID: "platform-access-control", Path: "/platform-access-control/serviceaccounts", LabelZH: "ServiceAccounts", LabelEN: "ServiceAccounts", IconKey: "shield", SortOrder: 23, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-	{ID: "platform-access-control-clusterroles", ParentID: "platform-access-control", Path: "/platform-access-control/clusterroles", LabelZH: "ClusterRoles", LabelEN: "ClusterRoles", IconKey: "shield", SortOrder: 24, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-	{ID: "platform-access-control-roles", ParentID: "platform-access-control", Path: "/platform-access-control/roles", LabelZH: "Roles", LabelEN: "Roles", IconKey: "shield", SortOrder: 25, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-	{ID: "platform-access-control-clusterrolebindings", ParentID: "platform-access-control", Path: "/platform-access-control/clusterrolebindings", LabelZH: "ClusterRoleBindings", LabelEN: "ClusterRoleBindings", IconKey: "shield", SortOrder: 26, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-	{ID: "platform-access-control-rolebindings", ParentID: "platform-access-control", Path: "/platform-access-control/rolebindings", LabelZH: "RoleBindings", LabelEN: "RoleBindings", IconKey: "shield", SortOrder: 27, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
+	{ID: "platform-access-control", Path: "/platform-access-control", LabelZH: "RBAC", LabelEN: "RBAC", IconKey: "shield", SortOrder: 70, Enabled: true},
+	{ID: "platform-access-control-serviceaccounts", ParentID: "platform-access-control", Path: "/platform-access-control/serviceaccounts", LabelZH: "ServiceAccounts", LabelEN: "ServiceAccounts", IconKey: "shield", SortOrder: 23, Enabled: true},
+	{ID: "platform-access-control-clusterroles", ParentID: "platform-access-control", Path: "/platform-access-control/clusterroles", LabelZH: "ClusterRoles", LabelEN: "ClusterRoles", IconKey: "shield", SortOrder: 24, Enabled: true},
+	{ID: "platform-access-control-roles", ParentID: "platform-access-control", Path: "/platform-access-control/roles", LabelZH: "Roles", LabelEN: "Roles", IconKey: "shield", SortOrder: 25, Enabled: true},
+	{ID: "platform-access-control-clusterrolebindings", ParentID: "platform-access-control", Path: "/platform-access-control/clusterrolebindings", LabelZH: "ClusterRoleBindings", LabelEN: "ClusterRoleBindings", IconKey: "shield", SortOrder: 26, Enabled: true},
+	{ID: "platform-access-control-rolebindings", ParentID: "platform-access-control", Path: "/platform-access-control/rolebindings", LabelZH: "RoleBindings", LabelEN: "RoleBindings", IconKey: "shield", SortOrder: 27, Enabled: true},
 	{ID: "workloads", Path: "/workloads", LabelZH: "工作负载", LabelEN: "Workloads", IconKey: "boxes", SortOrder: 30, Enabled: true},
 	{ID: "workloads-overview", ParentID: "workloads", Path: "/workloads/overview", LabelZH: "概览", LabelEN: "Overview", IconKey: "boxes", SortOrder: 31, Enabled: true},
 	{ID: "workloads-deployments", ParentID: "workloads", Path: "/workloads/deployments", LabelZH: "Deployments", LabelEN: "Deployments", IconKey: "boxes", SortOrder: 32, Enabled: true},
@@ -81,18 +79,15 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "storage-pv", ParentID: "storage", Path: "/storage/persistentvolumes", LabelZH: "PV", LabelEN: "PV", IconKey: "waves", SortOrder: 52, Enabled: true},
 	{ID: "storage-classes", ParentID: "storage", Path: "/storage/storageclasses", LabelZH: "StorageClasses", LabelEN: "StorageClasses", IconKey: "waves", SortOrder: 53, Enabled: true},
 	{ID: "clusters", Path: "/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", SortOrder: 99, Enabled: true},
-	{ID: "platform-manifests", Path: "/manifests", LabelZH: "应用清单", LabelEN: "Application Manifests", IconKey: "code", SortOrder: 100, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
+	{ID: "platform-manifests", Path: "/manifests", LabelZH: "应用清单", LabelEN: "Application Manifests", IconKey: "code", SortOrder: 100, Enabled: true},
 	{ID: "monitoring-workbench", Path: "/monitoring-workbench", LabelZH: "可观测性工作台", LabelEN: "Observability Workbench", IconKey: "gauge", Section: "ops", SortOrder: 60, Enabled: true},
 	{ID: "monitoring-workbench-overview", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 61, Enabled: true},
 	{ID: "monitoring-workbench-services", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/services", LabelZH: "服务", LabelEN: "Services", IconKey: "server", Section: "observe-signals", SortOrder: 62, Enabled: true},
-	{ID: "monitoring-workbench-metrics", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/metrics", LabelZH: "指标", LabelEN: "Metrics", IconKey: "activity", Section: "observe-signals", SortOrder: 63, Enabled: true},
+	{ID: "monitoring-workbench-explore", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/explore", LabelZH: "Explore", LabelEN: "Explore", IconKey: "history", Section: "observe-signals", SortOrder: 63, Enabled: true},
 	{ID: "monitoring-workbench-dashboards", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/dashboards", LabelZH: "表盘列表", LabelEN: "Dashboard List", IconKey: "activity", Section: "dashboards", SortOrder: 70, Enabled: true},
-	{ID: "monitoring-workbench-traces", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/traces", LabelZH: "链路", LabelEN: "Traces", IconKey: "network", Section: "observe-signals", SortOrder: 65, Enabled: true},
-	{ID: "monitoring-workbench-logs", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/logs", LabelZH: "日志", LabelEN: "Logs", IconKey: "history", Section: "observe-signals", SortOrder: 66, Enabled: true},
 	{ID: "monitoring-workbench-providers", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/providers", LabelZH: "Provider", LabelEN: "Providers", IconKey: "puzzle", Section: "observe-data", SortOrder: 67, Enabled: true},
 	{ID: "monitoring-workbench-log-data-sources", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/log-data-sources", LabelZH: "日志数据源", LabelEN: "Log Data Sources", IconKey: "server", Section: "observe-data", SortOrder: 68, Enabled: true},
 	{ID: "monitoring-workbench-integrations", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/integrations", LabelZH: "告警集成", LabelEN: "Alert Integrations", IconKey: "link", Section: "observe-data", SortOrder: 69, Enabled: true},
-	{ID: "monitoring-workbench-alerting", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/alerting", LabelZH: "告警总览", LabelEN: "Alerting Overview", IconKey: "siren", Section: "alerting", SortOrder: 70, Enabled: true},
 	{ID: "monitoring-workbench-rules", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/rules", LabelZH: "告警规则", LabelEN: "Alert Rules", IconKey: "siren", Section: "alerting", SortOrder: 71, Enabled: true},
 	{ID: "monitoring-workbench-alerts", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/alerts", LabelZH: "活跃告警", LabelEN: "Active Alerts", IconKey: "siren", Section: "alerting", SortOrder: 72, Enabled: true},
 	{ID: "monitoring-workbench-notifications", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/notifications", LabelZH: "通知策略", LabelEN: "Notification Policies", IconKey: "bell", Section: "alerting", SortOrder: 73, Enabled: true},
@@ -103,12 +98,17 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "ai-workbench-overview", ParentID: "ai-workbench", Path: "/ai-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true},
 	{ID: "ai-workbench-chat", ParentID: "ai-workbench", Path: "/ai-workbench/chat", LabelZH: "对话与分析", LabelEN: "Chat & Analysis", IconKey: "bot", Section: "ai-interaction", SortOrder: 10, Enabled: true},
 	{ID: "ai-workbench-knowledge", ParentID: "ai-workbench", Path: "/ai-workbench/knowledge", LabelZH: "Knowledge Center", LabelEN: "Knowledge Center", IconKey: "book", Section: "ai-interaction", SortOrder: 20, Enabled: true},
+	{ID: "ai-workbench-knowledge-pipelines", ParentID: "ai-workbench", Path: "/ai-workbench/knowledge-pipelines", LabelZH: "Knowledge Pipelines", LabelEN: "Knowledge Pipelines", IconKey: "book", Section: "ai-interaction", SortOrder: 25, Enabled: true},
 	{ID: "ai-workbench-inspection", ParentID: "ai-workbench", Path: "/ai-workbench/inspection", LabelZH: "巡检与自动化", LabelEN: "Inspection & Automation", IconKey: "inspect", Section: "ai-interaction", SortOrder: 30, Enabled: true},
 	{ID: "ai-workbench-agent-runs", ParentID: "ai-workbench", Path: "/ai-workbench/agent-runs", LabelZH: "Agent Runs", LabelEN: "Agent Runs", IconKey: "history", Section: "ai-interaction", SortOrder: 40, Enabled: true},
 	{ID: "ai-workbench-evaluations", ParentID: "ai-workbench", Path: "/ai-workbench/evaluations", LabelZH: "Evaluation", LabelEN: "Evaluation", IconKey: "inspect", Section: "ai-interaction", SortOrder: 50, Enabled: true},
+	{ID: "ai-workbench-evaluation-lifecycle", ParentID: "ai-workbench", Path: "/ai-workbench/evaluation-lifecycle", LabelZH: "Evaluation Lifecycle", LabelEN: "Evaluation Lifecycle", IconKey: "inspect", Section: "ai-interaction", SortOrder: 55, Enabled: true},
 	{ID: "ai-workbench-context", ParentID: "ai-workbench", Path: "/ai-workbench/context", LabelZH: "Context 与 Prompt", LabelEN: "Context & Prompt", IconKey: "inspect", Section: "ai-engineering", SortOrder: 10, Enabled: true},
+	{ID: "ai-workbench-memory", ParentID: "ai-workbench", Path: "/ai-workbench/memory", LabelZH: "Memory Policies", LabelEN: "Memory Policies", IconKey: "inspect", Section: "ai-engineering", SortOrder: 15, Enabled: true},
 	{ID: "ai-workbench-tool-settings", ParentID: "ai-workbench", Path: "/ai-workbench/tool-settings", LabelZH: "Skills 与 MCP", LabelEN: "Skills & MCP", IconKey: "wrench", Section: "ai-engineering", SortOrder: 20, Enabled: true},
 	{ID: "ai-workbench-agent-providers", ParentID: "ai-workbench", Path: "/ai-workbench/agent-providers", LabelZH: "Agent Providers", LabelEN: "Agent Providers", IconKey: "puzzle", Section: "ai-engineering", SortOrder: 30, Enabled: true},
+	{ID: "ai-workbench-provider-fleet", ParentID: "ai-workbench", Path: "/ai-workbench/provider-fleet", LabelZH: "Provider Fleet", LabelEN: "Provider Fleet", IconKey: "puzzle", Section: "ai-engineering", SortOrder: 35, Enabled: true},
+	{ID: "ai-workbench-environments", ParentID: "ai-workbench", Path: "/ai-workbench/environments", LabelZH: "Agent Environments", LabelEN: "Agent Environments", IconKey: "puzzle", Section: "ai-engineering", SortOrder: 40, Enabled: true},
 	{ID: "ai-workbench-model-settings", ParentID: "ai-workbench", Path: "/ai-workbench/model-settings", LabelZH: "默认模型", LabelEN: "Default Model", IconKey: "settings", Section: "ai-model-access", SortOrder: 5, Enabled: true},
 	{ID: "ai-gateway-relay", ParentID: "ai-workbench", Path: "/ai-gateway/relay", LabelZH: "模型与路由", LabelEN: "Models & Routes", IconKey: "link", Section: "ai-model-access", SortOrder: 10, Enabled: true},
 	{ID: "ai-gateway-clients", ParentID: "ai-workbench", Path: "/ai-gateway/clients", LabelZH: "AI Clients", LabelEN: "AI Clients", IconKey: "link", Section: "ai-model-access", SortOrder: 20, Enabled: true},
@@ -116,67 +116,64 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "ai-gateway-manifest", ParentID: "ai-workbench", Path: "/ai-gateway/manifest", LabelZH: "Capability Manifest", LabelEN: "Capability Manifest", IconKey: "shield", Section: "ai-governance", SortOrder: 10, Enabled: true},
 	{ID: "ai-gateway-governance", ParentID: "ai-workbench", Path: "/ai-gateway/governance", LabelZH: "Policy 与 Approval", LabelEN: "Policy & Approval", IconKey: "shield", Section: "ai-governance", SortOrder: 20, Enabled: true},
 	{ID: "ai-gateway-call-logs", ParentID: "ai-workbench", Path: "/ai-gateway/call-logs", LabelZH: "Call Logs", LabelEN: "Call Logs", IconKey: "history", Section: "ai-governance", SortOrder: 30, Enabled: true},
+	{ID: "ai-workbench-production-operations", ParentID: "ai-workbench", Path: "/ai-workbench/production-operations", LabelZH: "AI Operations", LabelEN: "AI Operations", IconKey: "gauge", Section: "ai-governance", SortOrder: 40, Enabled: true},
 	{ID: "settings-extensions", Path: "/settings/extensions", LabelZH: "扩展", LabelEN: "Extensions", IconKey: "puzzle", Section: "admin", SortOrder: 250, Enabled: true},
 	{ID: "settings-extensions-marketplace", ParentID: "settings-extensions", Path: "/plugins/marketplace", LabelZH: "插件市场", LabelEN: "Marketplace", IconKey: "puzzle", Section: "extensions", SortOrder: 10, Enabled: true},
-	{ID: "compute-workbench", Path: "/compute", LabelZH: "计算资源工作台", LabelEN: "Compute Workbench", IconKey: "server", Section: "ops", SortOrder: 80, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "compute-workbench-overview", ParentID: "compute-workbench", Path: "/compute/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 81, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "virtualization-workbench", ParentID: "compute-workbench", Path: "/compute/virtualization", LabelZH: "虚拟化资源", LabelEN: "Virtualization", IconKey: "server", Section: "virtualization", SortOrder: 10, Enabled: true},
+	{ID: "compute-workbench", Path: "/compute", LabelZH: "计算资源工作台", LabelEN: "Compute Workbench", IconKey: "server", SortOrder: 80, Enabled: true},
+	{ID: "compute-workbench-overview", ParentID: "compute-workbench", Path: "/compute/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 81, Enabled: true},
+	{ID: "virtualization-workbench", ParentID: "compute-workbench", Path: "/compute/virtualization", LabelZH: "虚拟化", LabelEN: "Virtualization", IconKey: "server", Section: "virtualization", SortOrder: 10, Enabled: true},
 	{ID: "virtualization-workbench-vms", ParentID: "virtualization-workbench", Path: "/compute/virtualization/vms", LabelZH: "虚拟机", LabelEN: "Virtual Machines", IconKey: "desktop", Section: "virtualization", SortOrder: 12, Enabled: true},
-	{ID: "virtualization-workbench-clusters", ParentID: "virtualization-workbench", Path: "/compute/virtualization/clusters", LabelZH: "连接", LabelEN: "Connections", IconKey: "cluster", Section: "virtualization", SortOrder: 13, Enabled: true},
+	{ID: "virtualization-workbench-clusters", ParentID: "virtualization-workbench", Path: "/compute/virtualization/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "cluster", Section: "virtualization", SortOrder: 13, Enabled: true},
 	{ID: "virtualization-workbench-images", ParentID: "virtualization-workbench", Path: "/compute/virtualization/images", LabelZH: "镜像与模板", LabelEN: "Images & Templates", IconKey: "image", Section: "virtualization", SortOrder: 14, Enabled: true},
 	{ID: "virtualization-workbench-storage", ParentID: "virtualization-workbench", Path: "/compute/virtualization/storage", LabelZH: "存储与卷", LabelEN: "Storage & Volumes", IconKey: "storage", Section: "virtualization", SortOrder: 15, Enabled: true},
 	{ID: "virtualization-workbench-flavors", ParentID: "virtualization-workbench", Path: "/compute/virtualization/flavors", LabelZH: "规格", LabelEN: "Flavors", IconKey: "flavor", Section: "virtualization", SortOrder: 16, Enabled: true},
-	{ID: "virtualization-workbench-operations", ParentID: "virtualization-workbench", Path: "/compute/tasks/operations?domain=virtualization", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "history", Section: "virtualization", SortOrder: 17, Enabled: true},
-	{ID: "virtualization-workbench-sync", ParentID: "virtualization-workbench", Path: "/compute/tasks/sync?domain=virtualization", LabelZH: "同步任务", LabelEN: "Sync Tasks", IconKey: "sync", Section: "virtualization", SortOrder: 18, Enabled: true},
-	{ID: "docker-workbench", ParentID: "compute-workbench", Path: "/compute/runtimes", LabelZH: "容器运行时", LabelEN: "Container Runtimes", IconKey: "docker", Section: "runtime", SortOrder: 20, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "docker-workbench-hosts", ParentID: "docker-workbench", Path: "/compute/runtimes/hosts", LabelZH: "运行时主机", LabelEN: "Runtime Hosts", IconKey: "server", Section: "runtime", SortOrder: 22, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "docker-workbench-projects", ParentID: "docker-workbench", Path: "/compute/runtimes/projects", LabelZH: "容器项目", LabelEN: "Container Projects", IconKey: "docker", Section: "runtime", SortOrder: 23, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "docker-workbench-templates", ParentID: "docker-workbench", Path: "/compute/runtimes/templates", LabelZH: "模板", LabelEN: "Templates", IconKey: "code", Section: "runtime", SortOrder: 24, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "docker-workbench-operations", ParentID: "docker-workbench", Path: "/compute/tasks/operations?domain=container_runtime", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "history", Section: "runtime", SortOrder: 25, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "compute-workbench-tasks-sync", ParentID: "compute-workbench", Path: "/compute/tasks/sync", LabelZH: "同步任务", LabelEN: "Sync Tasks", IconKey: "sync", Section: "management", SortOrder: 83, Enabled: false, Roles: defaultComputeRoles},
-	{ID: "compute-workbench-tasks-build", ParentID: "compute-workbench", Path: "/compute/tasks/build", LabelZH: "构建任务", LabelEN: "Build Tasks", IconKey: "activity", Section: "management", SortOrder: 84, Enabled: false, Roles: defaultComputeRoles},
-	{ID: "compute-workbench-tasks-operations", ParentID: "compute-workbench", Path: "/compute/tasks/operations", LabelZH: "任务中心", LabelEN: "Task Center", IconKey: "history", Section: "ops", SortOrder: 82, Enabled: true, Roles: defaultComputeRoles},
-	{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "delivery", SortOrder: 10, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
-	{ID: "delivery-onboarding", Path: "/delivery/onboarding", LabelZH: "应用接入", LabelEN: "Application Onboarding", IconKey: "code", Section: "delivery", SortOrder: 20, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-	{ID: "delivery-manifest-library", Path: "/delivery/manifests", LabelZH: "应用清单库", LabelEN: "Manifest Library", IconKey: "code", Section: "delivery", SortOrder: 25, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
-	{ID: "release-board", Path: "/release-board", LabelZH: "构建发布", LabelEN: "Build & Release", IconKey: "activity", Section: "delivery", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-	{ID: "delivery-testing", Path: "/delivery/testing", LabelZH: "测试验证", LabelEN: "Testing & Verification", IconKey: "shield", Section: "delivery", SortOrder: 40, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
-	{ID: "delivery-analysis", Path: "/delivery/analysis", LabelZH: "问题分析", LabelEN: "Issue Analysis", IconKey: "activity", Section: "delivery", SortOrder: 50, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
-	{ID: "release-bundles", Path: "/delivery/release-bundles", LabelZH: "版本包", LabelEN: "Release Bundles", IconKey: "blocks", Section: "delivery-records", SortOrder: 10, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
-	{ID: "execution-tasks", Path: "/delivery/execution-tasks", LabelZH: "执行任务", LabelEN: "Execution Tasks", IconKey: "activity", Section: "delivery-records", SortOrder: 20, Enabled: true, Roles: []string{"admin", "ops", "developer", "tester", "readonly"}},
-	{ID: "workflows", Path: "/workflows", LabelZH: "工作流", LabelEN: "Workflows", IconKey: "activity", Section: "delivery-records", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-	{ID: "releases", Path: "/releases", LabelZH: "发布记录", LabelEN: "Release Records", IconKey: "activity", Section: "delivery-records", SortOrder: 40, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-	{ID: "delivery-blueprints", Path: "/delivery/blueprints", LabelZH: "应用接入模板", LabelEN: "Onboarding Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 10, Enabled: true, Roles: []string{"admin", "ops"}},
-	{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 20, Enabled: true, Roles: []string{"admin", "ops"}},
-	{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "activity", Section: "delivery-platform", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops"}},
-	{ID: "application-environments", Path: "/application-environments", LabelZH: "环境绑定", LabelEN: "Environment Bindings", IconKey: "blocks", Section: "delivery-platform", SortOrder: 50, Enabled: true, Roles: []string{"admin", "ops"}},
-	{ID: "identity", Path: "/internal-workbench", LabelZH: "内网工作台", LabelEN: "Internal Workbench", IconKey: "shield", Section: "admin", SortOrder: 220, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-overview", ParentID: "identity", Path: "/internal-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-software", ParentID: "identity", Path: "/internal-workbench/software", LabelZH: "软件库", LabelEN: "Software Library", IconKey: "blocks", Section: "software", SortOrder: 5, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-software-storage", ParentID: "identity", Path: "/internal-workbench/software-storage", LabelZH: "存储文件", LabelEN: "Storage Files", IconKey: "server", Section: "software", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-applications", ParentID: "identity", Path: "/identity/applications", LabelZH: "应用目录", LabelEN: "Applications", IconKey: "blocks", Section: "provider", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "Provider", LabelEN: "Providers", IconKey: "shield", Section: "provider", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "Outpost", LabelEN: "Outposts", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
-	{ID: "identity-policies", ParentID: "identity", Path: "/identity/policies", LabelZH: "访问策略", LabelEN: "Policies", IconKey: "shield", Section: "provider", SortOrder: 40, Enabled: true, Roles: []string{"admin"}},
+	{ID: "docker-workbench", ParentID: "compute-workbench", Path: "/compute/runtimes", LabelZH: "容器运行时", LabelEN: "Container Runtimes", IconKey: "docker", Section: "runtime", SortOrder: 20, Enabled: true},
+	{ID: "docker-workbench-hosts", ParentID: "docker-workbench", Path: "/compute/runtimes/hosts", LabelZH: "运行时主机", LabelEN: "Runtime Hosts", IconKey: "server", Section: "runtime", SortOrder: 22, Enabled: true},
+	{ID: "docker-workbench-projects", ParentID: "docker-workbench", Path: "/compute/runtimes/projects", LabelZH: "容器管理", LabelEN: "Container Management", IconKey: "docker", Section: "runtime", SortOrder: 23, Enabled: true},
+	{ID: "docker-workbench-templates", ParentID: "docker-workbench", Path: "/compute/runtimes/templates", LabelZH: "部署模板", LabelEN: "Deployment Templates", IconKey: "code", Section: "runtime", SortOrder: 24, Enabled: true},
+	{ID: "compute-workbench-tasks-operations", ParentID: "compute-workbench", Path: "/compute/tasks/operations", LabelZH: "任务中心", LabelEN: "Task Center", IconKey: "history", SortOrder: 82, Enabled: true},
+	{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "delivery", SortOrder: 10, Enabled: true},
+	{ID: "delivery-overview", Path: "/delivery/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "delivery", SortOrder: 15, Enabled: true},
+	{ID: "delivery-onboarding", Path: "/delivery/onboarding", LabelZH: "应用接入", LabelEN: "Application Onboarding", IconKey: "code", Section: "delivery", SortOrder: 20, Enabled: true},
+	{ID: "delivery-manifest-library", Path: "/delivery/manifests", LabelZH: "应用清单库", LabelEN: "Manifest Library", IconKey: "code", Section: "delivery", SortOrder: 25, Enabled: true},
+	{ID: "release-board", Path: "/release-board", LabelZH: "构建发布", LabelEN: "Build & Release", IconKey: "activity", Section: "delivery", SortOrder: 30, Enabled: true},
+	{ID: "delivery-testing", Path: "/delivery/testing", LabelZH: "测试验证", LabelEN: "Testing & Verification", IconKey: "shield", Section: "delivery", SortOrder: 40, Enabled: true},
+	{ID: "delivery-analysis", Path: "/delivery/analysis", LabelZH: "问题分析", LabelEN: "Issue Analysis", IconKey: "activity", Section: "delivery", SortOrder: 50, Enabled: true},
+	{ID: "release-bundles", Path: "/delivery/release-bundles", LabelZH: "版本包", LabelEN: "Release Bundles", IconKey: "blocks", Section: "delivery-records", SortOrder: 10, Enabled: true},
+	{ID: "execution-tasks", Path: "/delivery/execution-tasks", LabelZH: "执行任务", LabelEN: "Execution Tasks", IconKey: "activity", Section: "delivery-records", SortOrder: 20, Enabled: true},
+	{ID: "workflows", Path: "/workflows", LabelZH: "工作流", LabelEN: "Workflows", IconKey: "activity", Section: "delivery-records", SortOrder: 30, Enabled: true},
+	{ID: "releases", Path: "/releases", LabelZH: "发布记录", LabelEN: "Release Records", IconKey: "activity", Section: "delivery-records", SortOrder: 40, Enabled: true},
+	{ID: "delivery-blueprints", Path: "/delivery/blueprints", LabelZH: "应用接入模板", LabelEN: "Onboarding Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 10, Enabled: true},
+	{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 20, Enabled: true},
+	{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "activity", Section: "delivery-platform", SortOrder: 30, Enabled: true},
+	{ID: "application-environments", Path: "/application-environments", LabelZH: "环境绑定", LabelEN: "Environment Bindings", IconKey: "blocks", Section: "delivery-platform", SortOrder: 50, Enabled: true},
+	{ID: "identity", Path: "/internal-workbench", LabelZH: "内网工作台", LabelEN: "Internal Workbench", IconKey: "shield", Section: "admin", SortOrder: 220, Enabled: true},
+	{ID: "identity-overview", ParentID: "identity", Path: "/internal-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true},
+	{ID: "identity-software", ParentID: "identity", Path: "/internal-workbench/software", LabelZH: "软件库", LabelEN: "Software Library", IconKey: "blocks", Section: "software", SortOrder: 5, Enabled: true},
+	{ID: "identity-software-storage", ParentID: "identity", Path: "/internal-workbench/software-storage", LabelZH: "存储文件", LabelEN: "Storage Files", IconKey: "server", Section: "software", SortOrder: 10, Enabled: true},
+	{ID: "identity-applications", ParentID: "identity", Path: "/identity/applications", LabelZH: "应用目录", LabelEN: "Applications", IconKey: "blocks", Section: "provider", SortOrder: 10, Enabled: true},
+	{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "Provider", LabelEN: "Providers", IconKey: "shield", Section: "provider", SortOrder: 20, Enabled: true},
+	{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "Outpost", LabelEN: "Outposts", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true},
+	{ID: "identity-policies", ParentID: "identity", Path: "/identity/policies", LabelZH: "访问策略", LabelEN: "Policies", IconKey: "shield", Section: "provider", SortOrder: 40, Enabled: true},
 	{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 227, Enabled: true},
-	{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "operations", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
-	{ID: "access-users", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "user", Section: "users", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
-	{ID: "access-roles", Path: "/access/roles", LabelZH: "角色", LabelEN: "Roles", IconKey: "shield", Section: "users", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
-	{ID: "access-teams", Path: "/access/teams", LabelZH: "组织", LabelEN: "Organizations", IconKey: "users", Section: "users", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
-	{ID: "access-policies", Path: "/access/policies", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "users", SortOrder: 40, Enabled: true, Roles: []string{"admin"}},
-	{ID: "access-directory-sync", Path: "/access/directory-sync", LabelZH: "目录同步", LabelEN: "Directory Sync", IconKey: "sync", Section: "users", SortOrder: 50, Enabled: true, Roles: []string{"admin"}},
-	{ID: "menus", ParentID: "system", Path: "/system/menus", LabelZH: "菜单管理", LabelEN: "Menu Management", IconKey: "menu-square", Section: "users", SortOrder: 50, Enabled: true, Roles: []string{"admin"}},
-	{ID: "system-online-users", ParentID: "system", Path: "/system/online-users", LabelZH: "在线用户", LabelEN: "Online Users", IconKey: "users", Section: "operations", SortOrder: 40, Enabled: true, Roles: []string{"admin"}},
+	{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "operations", SortOrder: 30, Enabled: true},
+	{ID: "access-users", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "user", Section: "users", SortOrder: 10, Enabled: true},
+	{ID: "access-roles", Path: "/access/roles", LabelZH: "角色", LabelEN: "Roles", IconKey: "shield", Section: "users", SortOrder: 20, Enabled: true},
+	{ID: "access-teams", Path: "/access/teams", LabelZH: "组织", LabelEN: "Organizations", IconKey: "users", Section: "users", SortOrder: 30, Enabled: true},
+	{ID: "access-policies", Path: "/access/policies", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "users", SortOrder: 40, Enabled: true},
+	{ID: "access-directory-sync", Path: "/access/directory-sync", LabelZH: "目录同步", LabelEN: "Directory Sync", IconKey: "sync", Section: "users", SortOrder: 50, Enabled: true},
+	{ID: "menus", ParentID: "system", Path: "/system/menus", LabelZH: "菜单管理", LabelEN: "Menu Management", IconKey: "menu-square", Section: "users", SortOrder: 50, Enabled: true},
+	{ID: "system-online-users", ParentID: "system", Path: "/system/online-users", LabelZH: "在线用户", LabelEN: "Online Users", IconKey: "users", Section: "operations", SortOrder: 40, Enabled: true},
 	{ID: "operations", ParentID: "system", Path: "/system/operations", LabelZH: "操作日志", LabelEN: "Operation Logs", IconKey: "clipboard-list", Section: "operations", SortOrder: 50, Enabled: true},
 	{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计日志", LabelEN: "Audit Logs", IconKey: "file-clock", Section: "operations", SortOrder: 60, Enabled: true},
-	{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "delivery-platform", SortOrder: 70, Enabled: true, Roles: []string{"admin", "ops"}},
-	{ID: "settings", Path: "/settings", LabelZH: "设置中心", LabelEN: "Settings Center", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true, Roles: []string{"admin"}},
-	{ID: "settings-overview", ParentID: "settings", Path: "/settings/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true, Roles: []string{"admin"}},
-	{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登录设置", LabelEN: "Login Settings", IconKey: "shield", Section: "users", SortOrder: 60, Enabled: true, Roles: []string{"admin"}},
-	{ID: "settings-source-control", ParentID: "settings", Path: "/settings/source-control", LabelZH: "代码源", LabelEN: "Source Control", IconKey: "code", Section: "integrations", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
-	{ID: "settings-secrets", ParentID: "settings", Path: "/settings/secrets", LabelZH: "Secret Store", LabelEN: "Secret Store", IconKey: "key", Section: "integrations", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
-	{ID: "settings-branding", ParentID: "settings", Path: "/settings/branding", LabelZH: "品牌设置", LabelEN: "Branding Settings", IconKey: "palette", Section: "extensions", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
-	{ID: "settings-runtime-configuration", ParentID: "settings", Path: "/settings/runtime-configuration", LabelZH: "运行时配置", LabelEN: "Runtime Configuration", IconKey: "settings", Section: "operations", SortOrder: 80, Enabled: true, Roles: []string{"admin"}},
+	{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "delivery-platform", SortOrder: 70, Enabled: true},
+	{ID: "settings", Path: "/settings", LabelZH: "设置中心", LabelEN: "Settings Center", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true},
+	{ID: "settings-overview", ParentID: "settings", Path: "/settings/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true},
+	{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登录设置", LabelEN: "Login Settings", IconKey: "shield", Section: "users", SortOrder: 60, Enabled: true},
+	{ID: "settings-source-control", ParentID: "settings", Path: "/settings/source-control", LabelZH: "代码源", LabelEN: "Source Control", IconKey: "code", Section: "integrations", SortOrder: 10, Enabled: true},
+	{ID: "settings-secrets", ParentID: "settings", Path: "/settings/secrets", LabelZH: "Secret Store", LabelEN: "Secret Store", IconKey: "key", Section: "integrations", SortOrder: 20, Enabled: true},
+	{ID: "settings-branding", ParentID: "settings", Path: "/settings/branding", LabelZH: "品牌设置", LabelEN: "Branding Settings", IconKey: "palette", Section: "extensions", SortOrder: 10, Enabled: true},
+	{ID: "settings-runtime-configuration", ParentID: "settings", Path: "/settings/runtime-configuration", LabelZH: "运行时配置", LabelEN: "Runtime Configuration", IconKey: "settings", Section: "operations", SortOrder: 80, Enabled: true},
 }
 
 func defaultMenuSeeds() []menuSeed {
@@ -226,6 +223,15 @@ func obsoleteMenuIDsForCleanup() []string {
 		"compute-workbench-tasks",
 		"compute-workbench-tasks-all",
 		"compute-workbench-access",
+		"virtualization-workbench-operations",
+		"virtualization-workbench-sync",
+		"docker-workbench-operations",
+		"compute-workbench-tasks-sync",
+		"compute-workbench-tasks-build",
+		"monitoring-workbench-metrics",
+		"monitoring-workbench-traces",
+		"monitoring-workbench-logs",
+		"monitoring-workbench-alerting",
 		"identity-audit",
 		"identity-sessions",
 		"access",
@@ -243,6 +249,9 @@ func validateMenuSeeds(items []menuSeed) error {
 		ids[item.ID] = struct{}{}
 	}
 	for _, item := range items {
+		if !appmenu.HasPermissionRule(item.ID) {
+			return fmt.Errorf("menu seed %q has no permission visibility rule", item.ID)
+		}
 		if item.ParentID == "" {
 			continue
 		}
@@ -264,22 +273,10 @@ func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) e
 		return err
 	}
 	menuIDs := make([]string, 0, len(items))
-	roleBindingValues := make([][]string, 0)
 	for _, item := range items {
 		menuIDs = append(menuIDs, item.ID)
-		for _, roleID := range item.Roles {
-			roleBindingValues = append(roleBindingValues, []string{fmt.Sprintf("%s:%s", item.ID, roleID), item.ID, roleID})
-		}
 	}
-	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, menuIDs).Error; err != nil {
-		return err
-	}
-	if len(roleBindingValues) > 0 {
-		if err := insertMenuRoleBindings(ctx, db, roleBindingValues, now); err != nil {
-			return err
-		}
-	}
-	return nil
+	return db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, menuIDs).Error
 }
 
 func upsertMenusAfterDeprecatedCleanup(ctx context.Context, db *gorm.DB, items []menuSeed, deprecatedIDs []string, now time.Time) error {
@@ -367,6 +364,7 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 		oldEN     string
 	}{
 		{id: "builds", section: "delivery", sortOrder: 10, labelZH: "应用中心", labelEN: "Application Center", oldZH: "应用中心", oldEN: "Applications"},
+		{id: "delivery-overview", section: "delivery", sortOrder: 15, labelZH: "总览", labelEN: "Overview", oldZH: "总览", oldEN: "Overview"},
 		{id: "delivery-onboarding", section: "delivery", sortOrder: 20, labelZH: "应用接入", labelEN: "Application Onboarding", oldZH: "应用接入", oldEN: "Application Onboarding"},
 		{id: "release-board", section: "delivery", sortOrder: 30, labelZH: "构建发布", labelEN: "Build & Release", oldZH: "发布看板", oldEN: "Release Board"},
 		{id: "delivery-testing", section: "delivery", sortOrder: 40, labelZH: "测试验证", labelEN: "Testing & Verification", oldZH: "测试验证", oldEN: "Testing & Verification"},
@@ -722,26 +720,6 @@ func upsertMenus(ctx context.Context, db *gorm.DB, items []menuSeed, now time.Ti
 	}
 	builder.WriteString(`
 		ON CONFLICT (id) DO NOTHING
-	`)
-	return db.WithContext(ctx).Exec(builder.String(), args...).Error
-}
-
-func insertMenuRoleBindings(ctx context.Context, db *gorm.DB, values [][]string, now time.Time) error {
-	var builder strings.Builder
-	args := make([]any, 0, len(values)*5)
-	builder.WriteString(`
-		INSERT INTO menu_role_bindings (id, menu_id, role_id, created_at, updated_at)
-		VALUES
-	`)
-	for index, value := range values {
-		if index > 0 {
-			builder.WriteString(",")
-		}
-		builder.WriteString(" (?, ?, ?, ?, ?)")
-		args = append(args, value[0], value[1], value[2], now, now)
-	}
-	builder.WriteString(`
-		ON CONFLICT (menu_id, role_id) DO UPDATE SET updated_at = EXCLUDED.updated_at
 	`)
 	return db.WithContext(ctx).Exec(builder.String(), args...).Error
 }

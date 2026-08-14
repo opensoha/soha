@@ -180,15 +180,15 @@ func samlProviderFromContract(id string, input sohaapi.SAMLLoginSourceInput) dom
 func applySAMLAttributeMappings(provider *domainsettings.LoginProviderSettings, mappings []sohaapi.SAMLAttributeMapping) {
 	for _, mapping := range mappings {
 		switch mapping.Target {
-		case sohaapi.Email:
+		case sohaapi.SAMLAttributeMappingTarget("email"):
 			provider.EmailField = mapping.Source
-		case sohaapi.Username, sohaapi.DisplayName:
+		case sohaapi.SAMLAttributeMappingTarget("username"), sohaapi.SAMLAttributeMappingTarget("displayName"):
 			provider.UserNameField = mapping.Source
-		case sohaapi.Role:
+		case sohaapi.SAMLAttributeMappingTarget("role"):
 			provider.RoleField = mapping.Source
-		case sohaapi.Organization:
+		case sohaapi.SAMLAttributeMappingTarget("organization"):
 			provider.OrganizationField = mapping.Source
-		case sohaapi.Subject:
+		case sohaapi.SAMLAttributeMappingTarget("subject"):
 			provider.UserIDField = mapping.Source
 		}
 	}
@@ -241,7 +241,7 @@ func samlMappings(provider domainsettings.LoginProviderSettings) []sohaapi.SAMLA
 	for _, item := range []struct {
 		source string
 		target sohaapi.SAMLAttributeMappingTarget
-	}{{provider.UserIDField, sohaapi.Subject}, {provider.EmailField, sohaapi.Email}, {provider.UserNameField, sohaapi.Username}, {provider.RoleField, sohaapi.Role}, {provider.OrganizationField, sohaapi.Organization}} {
+	}{{provider.UserIDField, sohaapi.SAMLAttributeMappingTarget("subject")}, {provider.EmailField, sohaapi.SAMLAttributeMappingTarget("email")}, {provider.UserNameField, sohaapi.SAMLAttributeMappingTarget("username")}, {provider.RoleField, sohaapi.SAMLAttributeMappingTarget("role")}, {provider.OrganizationField, sohaapi.SAMLAttributeMappingTarget("organization")}} {
 		if item.source != "" {
 			items = append(items, sohaapi.SAMLAttributeMapping{Source: item.source, Target: item.target})
 		}

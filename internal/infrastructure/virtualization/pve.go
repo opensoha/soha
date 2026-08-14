@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -523,7 +524,7 @@ func (a *PVEAdapter) createPVEClone(
 	ctx context.Context,
 	connection Connection,
 	plan pveCreatePlan,
-) (VM, error) {
+) (_ VM, retErr error) {
 	sourceID := firstNonEmpty(plan.input.TemplateID, plan.input.SourceRef, plan.input.BootImage)
 	if sourceID == "" {
 		return VM{}, invalidf("clone source is required")
@@ -544,6 +545,11 @@ func (a *PVEAdapter) createPVEClone(
 	if err != nil {
 		return VM{}, err
 	}
+	defer func() {
+		if retErr != nil {
+			retErr = a.compensateFailedPVECreate(ctx, connection, plan, retErr)
+		}
+	}()
 	resizeUPID := ""
 	if plan.input.DiskSize != "" {
 		resizeUPID, err = a.resizePVEClonedDisk(
@@ -595,7 +601,7 @@ func (a *PVEAdapter) createPVENative(
 	ctx context.Context,
 	connection Connection,
 	plan pveCreatePlan,
-) (VM, error) {
+) (_ VM, retErr error) {
 	endpoint := fmt.Sprintf("/nodes/%s/qemu", url.PathEscape(plan.node))
 	createUPID, err := a.doTaskAndWait(
 		ctx, connection, plan.node, http.MethodPost, endpoint, pveCreatePayload(plan),
@@ -603,6 +609,11 @@ func (a *PVEAdapter) createPVENative(
 	if err != nil {
 		return VM{}, err
 	}
+	defer func() {
+		if retErr != nil {
+			retErr = a.compensateFailedPVECreate(ctx, connection, plan, retErr)
+		}
+	}()
 	startUPID, err := a.startPVEAfterCreate(ctx, connection, plan)
 	if err != nil {
 		return VM{}, err
@@ -611,6 +622,23 @@ func (a *PVEAdapter) createPVENative(
 		"pveCreateUpid": createUPID,
 		"pveStartUpid":  startUPID,
 	})
+}
+
+func (a *PVEAdapter) compensateFailedPVECreate(ctx context.Context, connection Connection, plan pveCreatePlan, cause error) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pveTaskTimeout(connection))
+	defer cancel()
+	current, err := a.fetchVM(cleanupCtx, connection, plan.node, plan.vmid, "")
+	if err != nil {
+		return errors.Join(cause, fmt.Errorf("verify incomplete PVE virtual machine %s before deletion: %w", plan.vmid, err))
+	}
+	if current.Name == "" || current.Name != plan.input.Name {
+		return errors.Join(cause, fmt.Errorf("refuse to delete PVE virtual machine %s: current name %q does not match created name %q", plan.vmid, current.Name, plan.input.Name))
+	}
+	_, cleanupErr := a.deletePVEVM(cleanupCtx, connection, VM{ID: plan.vmid, Name: plan.input.Name, Node: plan.node})
+	if cleanupErr == nil {
+		return cause
+	}
+	return errors.Join(cause, fmt.Errorf("delete incomplete PVE virtual machine %s: %w", plan.vmid, cleanupErr))
 }
 
 func pveCreatePayload(plan pveCreatePlan) map[string]any {
@@ -1045,8 +1073,10 @@ func normalizePVESSHKeys(value string) string {
 	if value == "" {
 		return ""
 	}
-	if decoded, err := url.QueryUnescape(value); err == nil && decoded != value && looksLikeSSHAuthorizedKey(decoded) {
-		return value
+	if strings.Contains(value, "%") {
+		if decoded, err := url.QueryUnescape(value); err == nil && decoded != value && looksLikeSSHAuthorizedKey(decoded) {
+			return value
+		}
 	}
 	return strings.ReplaceAll(url.QueryEscape(value), "+", "%20")
 }

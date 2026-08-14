@@ -172,3 +172,51 @@ type TraceResult struct {
 	QueryCost    map[string]any   `json:"queryCost,omitempty"`
 	SampleWindow map[string]any   `json:"sampleWindow,omitempty"`
 }
+
+type ServiceQuery struct {
+	Scope       TraceScope
+	Environment string
+	ServiceID   string
+	ServiceName string
+	TimeFrom    time.Time
+	TimeTo      time.Time
+}
+
+type ServiceInstance struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type ServiceEndpoint struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type Service struct {
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	DisplayName string            `json:"displayName,omitempty"`
+	Instances   []ServiceInstance `json:"instances"`
+	Endpoints   []ServiceEndpoint `json:"endpoints"`
+}
+
+type ServiceResult struct {
+	SourceID string    `json:"sourceId"`
+	Services []Service `json:"services"`
+}
+
+type ServiceTopologyNode struct {
+	ServiceID string `json:"serviceId"`
+	Name      string `json:"name"`
+}
+
+type ServiceTopologyEdge struct {
+	SourceServiceID string `json:"sourceServiceId"`
+	TargetServiceID string `json:"targetServiceId"`
+}
+
+type ServiceTopology struct {
+	SourceID string                `json:"sourceId"`
+	Nodes    []ServiceTopologyNode `json:"nodes"`
+	Edges    []ServiceTopologyEdge `json:"edges"`
+}

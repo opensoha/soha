@@ -98,6 +98,17 @@ func TestSyncPlatformMenuSeedUpgradesMovesUntouchedApplicationManifests(t *testi
 	}
 }
 
+func TestDefaultComputeWorkbenchSectionsDoNotUseObservabilityGrouping(t *testing.T) {
+	for _, item := range defaultMenuSeeds() {
+		switch item.ID {
+		case "compute-workbench", "compute-workbench-overview", "compute-workbench-tasks-operations":
+			if item.Section != "" {
+				t.Fatalf("compute menu %s section = %q, want empty", item.ID, item.Section)
+			}
+		}
+	}
+}
+
 func TestInternalWorkbenchOverviewSeedUsesCanonicalPath(t *testing.T) {
 	paths := map[string]string{}
 	for _, item := range builtinMenuSeeds {

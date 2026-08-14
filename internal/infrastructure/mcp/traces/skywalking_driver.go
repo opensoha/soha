@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -42,6 +44,9 @@ func (d skyWalkingDriver) FindSlowSpans(ctx context.Context, sourceID string, co
 		return Result{}, fmt.Errorf("skywalking serviceName or query scope service is required")
 	}
 	query = normalizeSlowSpanQuery(query)
+	if strings.TrimSpace(stringValue(config["zipkinEndpoint"], "")) != "" {
+		return d.findZipkinSpans(ctx, sourceID, config, service, query)
+	}
 	req, err := newSkyWalkingRequest(ctx, config, service, query)
 	if err != nil {
 		return Result{}, err
@@ -74,6 +79,97 @@ func (d skyWalkingDriver) FindSlowSpans(ctx context.Context, sourceID string, co
 			"timeTo":   query.TimeTo.Format(time.RFC3339),
 		},
 	}, nil
+}
+
+type skyWalkingZipkinSpan struct {
+	TraceID       string `json:"traceId"`
+	ID            string `json:"id"`
+	ParentID      string `json:"parentId"`
+	Name          string `json:"name"`
+	Timestamp     int64  `json:"timestamp"`
+	Duration      int64  `json:"duration"`
+	LocalEndpoint struct {
+		ServiceName string `json:"serviceName"`
+	} `json:"localEndpoint"`
+	Tags map[string]string `json:"tags"`
+}
+
+func (d skyWalkingDriver) findZipkinSpans(ctx context.Context, sourceID string, config map[string]any, service string, query Query) (Result, error) {
+	requestURL, err := skyWalkingZipkinURL(config, service, query)
+	if err != nil {
+		return Result{}, err
+	}
+	req, err := newJaegerHTTPRequest(ctx, config, requestURL)
+	if err != nil {
+		return Result{}, err
+	}
+	resp, err := d.http.Do(req)
+	if err != nil {
+		return Result{}, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return Result{}, fmt.Errorf("skywalking zipkin query failed with status %d", resp.StatusCode)
+	}
+	var traces [][]skyWalkingZipkinSpan
+	if query.TraceID != "" {
+		var spans []skyWalkingZipkinSpan
+		if err := json.NewDecoder(resp.Body).Decode(&spans); err != nil {
+			return Result{}, err
+		}
+		traces = append(traces, spans)
+	} else if err := json.NewDecoder(resp.Body).Decode(&traces); err != nil {
+		return Result{}, err
+	}
+	spans := skyWalkingZipkinSpans(traces)
+	hotspotItems := traceHotspots(spans)
+	summary := "no trace hotspots detected"
+	if len(spans) > 0 {
+		summary = fmt.Sprintf("%d skywalking OTLP spans matched, %d hotspot groups", len(spans), len(hotspotItems))
+	}
+	return Result{
+		SourceID: sourceID, Summary: summary, Spans: spans, Hotspots: hotspotItems,
+		QueryCost:    map[string]any{"backendType": "skywalking", "queryMode": "zipkin", "spanCount": len(spans), "limit": query.Limit},
+		SampleWindow: map[string]any{"timeFrom": query.TimeFrom.Format(time.RFC3339), "timeTo": query.TimeTo.Format(time.RFC3339)},
+	}, nil
+}
+
+func skyWalkingZipkinURL(config map[string]any, service string, query Query) (string, error) {
+	base := strings.TrimRight(strings.TrimSpace(stringValue(config["zipkinEndpoint"], "")), "/")
+	path := "/api/v2/traces"
+	if query.TraceID != "" {
+		path = "/api/v2/trace/" + url.PathEscape(query.TraceID)
+	}
+	queryURL, err := url.Parse(base + path)
+	if err != nil {
+		return "", err
+	}
+	if query.TraceID == "" {
+		params := queryURL.Query()
+		params.Set("serviceName", service)
+		params.Set("endTs", strconv.FormatInt(query.TimeTo.UnixMilli(), 10))
+		params.Set("lookback", strconv.FormatInt(query.TimeTo.Sub(query.TimeFrom).Milliseconds(), 10))
+		params.Set("limit", strconv.Itoa(query.Limit))
+		params.Set("minDuration", strconv.FormatInt(query.MinDuration.Microseconds(), 10))
+		queryURL.RawQuery = params.Encode()
+	}
+	return queryURL.String(), nil
+}
+
+func skyWalkingZipkinSpans(traces [][]skyWalkingZipkinSpan) []Span {
+	spans := make([]Span, 0)
+	for _, trace := range traces {
+		for _, item := range trace {
+			service := strings.TrimSpace(item.LocalEndpoint.ServiceName)
+			spans = append(spans, Span{
+				TraceID: item.TraceID, SpanID: item.ID, ParentSpanID: item.ParentID,
+				Operation: item.Name, Service: service, DurationMS: float64(item.Duration) / 1000,
+				StartTime: time.UnixMicro(item.Timestamp).UTC(), Tags: item.Tags,
+				Error: item.Tags["error"] != "" || strings.EqualFold(item.Tags["otel.status_code"], "ERROR"),
+			})
+		}
+	}
+	return spans
 }
 
 const skyWalkingBasicTracesQuery = `
@@ -125,7 +221,11 @@ func newSkyWalkingRequest(
 	service string,
 	query Query,
 ) (*http.Request, error) {
-	body, err := json.Marshal(skyWalkingGraphQLPayload(service, query))
+	return newSkyWalkingGraphQLRequest(ctx, config, skyWalkingGraphQLPayload(service, query))
+}
+
+func newSkyWalkingGraphQLRequest(ctx context.Context, config map[string]any, payload map[string]any) (*http.Request, error) {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -169,21 +269,25 @@ func skyWalkingGraphQLPayload(service string, query Query) map[string]any {
 }
 
 func (d skyWalkingDriver) querySkyWalking(req *http.Request) (skyWalkingPayload, error) {
-	resp, err := d.http.Do(req)
-	if err != nil {
-		return skyWalkingPayload{}, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 300 {
-		return skyWalkingPayload{}, fmt.Errorf(
-			"skywalking query failed with status %d", resp.StatusCode,
-		)
-	}
 	var payload skyWalkingPayload
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+	if err := d.doSkyWalking(req, &payload); err != nil {
 		return skyWalkingPayload{}, err
 	}
 	return payload, nil
+}
+
+func (d skyWalkingDriver) doSkyWalking(req *http.Request, target any) error {
+	resp, err := d.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf(
+			"skywalking query failed with status %d", resp.StatusCode,
+		)
+	}
+	return json.NewDecoder(resp.Body).Decode(target)
 }
 
 func skyWalkingSpans(payload skyWalkingPayload, service string, fallbackTime time.Time) []Span {

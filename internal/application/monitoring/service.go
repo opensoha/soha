@@ -42,6 +42,12 @@ type TraceTelemetry interface {
 	FindSlowSpans(context.Context, string, string, map[string]any, telemetry.TraceQuery) (telemetry.TraceResult, error)
 }
 
+type ServiceTelemetry interface {
+	ListServices(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceResult, error)
+	GetService(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.Service, error)
+	GetServiceTopology(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceTopology, error)
+}
+
 type Service struct {
 	alertReader           AlertReader
 	alertWriter           AlertWriter
@@ -75,6 +81,7 @@ type Service struct {
 	logs                  LogTelemetry
 	metrics               MetricTelemetry
 	traces                TraceTelemetry
+	services              ServiceTelemetry
 	lifecycleMu           sync.Mutex
 	lifecycleCancel       context.CancelFunc
 	lifecycleDone         chan struct{}
@@ -120,6 +127,9 @@ func WithTelemetryBackends(logs LogTelemetry, metrics MetricTelemetry, traces Tr
 		}
 		if traces != nil {
 			service.traces = traces
+			if services, ok := traces.(ServiceTelemetry); ok {
+				service.services = services
+			}
 		}
 	}
 }
@@ -185,6 +195,7 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 		logs:                  unavailableTelemetry{},
 		metrics:               unavailableTelemetry{},
 		traces:                unavailableTelemetry{},
+		services:              unavailableTelemetry{},
 	}
 	for _, option := range options {
 		if option != nil {
@@ -240,6 +251,13 @@ func (s *Service) traceBackend() TraceTelemetry {
 	return unavailableTelemetry{}
 }
 
+func (s *Service) serviceBackend() ServiceTelemetry {
+	if s.services != nil {
+		return s.services
+	}
+	return unavailableTelemetry{}
+}
+
 type unavailableTelemetry struct{}
 
 func (unavailableTelemetry) Correlate(context.Context, string, string, map[string]any, telemetry.LogCorrelationQuery) (telemetry.LogCorrelationResult, error) {
@@ -256,6 +274,18 @@ func (unavailableTelemetry) RangeQuery(context.Context, string, string, map[stri
 
 func (unavailableTelemetry) FindSlowSpans(context.Context, string, string, map[string]any, telemetry.TraceQuery) (telemetry.TraceResult, error) {
 	return telemetry.TraceResult{}, errors.New("trace telemetry backend is not configured")
+}
+
+func (unavailableTelemetry) ListServices(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceResult, error) {
+	return telemetry.ServiceResult{}, errors.New("service telemetry backend is not configured")
+}
+
+func (unavailableTelemetry) GetService(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.Service, error) {
+	return telemetry.Service{}, errors.New("service telemetry backend is not configured")
+}
+
+func (unavailableTelemetry) GetServiceTopology(context.Context, string, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceTopology, error) {
+	return telemetry.ServiceTopology{}, errors.New("service telemetry backend is not configured")
 }
 
 func (s *Service) RecordGovernanceAlert(ctx context.Context, input domaingovernance.AlertInput) error {
@@ -325,6 +355,7 @@ func (s *Service) UpdateOwnership(ctx context.Context, principal domainidentity.
 		}
 		return domainalert.Instance{}, err
 	}
+	s.recordMonitoringMutation(ctx, principal, "Alert", item.ID, "observability.alert.assign", "updated alert ownership")
 	return item, nil
 }
 
@@ -345,6 +376,7 @@ func (s *Service) Acknowledge(ctx context.Context, principal domainidentity.Prin
 		}
 		return domainalert.Instance{}, err
 	}
+	s.recordMonitoringMutation(ctx, principal, "Alert", item.ID, "observability.alert.acknowledge", "acknowledged alert")
 	return item, nil
 }
 
@@ -368,7 +400,11 @@ func (s *Service) CreateChannel(ctx context.Context, principal domainidentity.Pr
 	if err := validateChannelInput(input); err != nil {
 		return domainalert.NotificationChannel{}, err
 	}
-	return s.channels.CreateChannel(ctx, input)
+	item, err := s.channels.CreateChannel(ctx, input)
+	if err == nil {
+		s.recordMonitoringMutation(ctx, principal, "NotificationChannel", item.ID, "observability.notification_channel.create", "created notification channel")
+	}
+	return item, err
 }
 
 func (s *Service) UpdateChannel(ctx context.Context, principal domainidentity.Principal, channelID string, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
@@ -378,12 +414,16 @@ func (s *Service) UpdateChannel(ctx context.Context, principal domainidentity.Pr
 	if s.channels == nil {
 		return domainalert.NotificationChannel{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	return updateMonitoringResource(
+	item, err := updateMonitoringResource(
 		ctx, channelID, "notification channel", func() error { return validateChannelInput(input) },
 		func(ctx context.Context, id string) (domainalert.NotificationChannel, error) {
 			return s.channels.UpdateChannel(ctx, id, input)
 		},
 	)
+	if err == nil {
+		s.recordMonitoringMutation(ctx, principal, "NotificationChannel", item.ID, "observability.notification_channel.update", "updated notification channel")
+	}
+	return item, err
 }
 
 func (s *Service) ListRoutes(ctx context.Context, principal domainidentity.Principal) ([]domainalert.AlertRoute, error) {
@@ -420,7 +460,11 @@ func (s *Service) CreateSilence(ctx context.Context, principal domainidentity.Pr
 	if err := validateSilenceInput(input); err != nil {
 		return domainalert.AlertSilence{}, err
 	}
-	return s.silences.CreateSilence(ctx, input)
+	item, err := s.silences.CreateSilence(ctx, input)
+	if err == nil {
+		s.recordMonitoringMutation(ctx, principal, "AlertSilence", item.ID, "observability.alert_silence.create", "created alert silence")
+	}
+	return item, err
 }
 
 func (s *Service) UpdateSilence(ctx context.Context, principal domainidentity.Principal, silenceID string, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
@@ -430,12 +474,16 @@ func (s *Service) UpdateSilence(ctx context.Context, principal domainidentity.Pr
 	if s.silences == nil {
 		return domainalert.AlertSilence{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	return updateMonitoringResource(
+	item, err := updateMonitoringResource(
 		ctx, silenceID, "alert silence", func() error { return validateSilenceInput(input) },
 		func(ctx context.Context, id string) (domainalert.AlertSilence, error) {
 			return s.silences.UpdateSilence(ctx, id, input)
 		},
 	)
+	if err == nil {
+		s.recordMonitoringMutation(ctx, principal, "AlertSilence", item.ID, "observability.alert_silence.update", "updated alert silence")
+	}
+	return item, err
 }
 
 func updateMonitoringResource[T any](ctx context.Context, id, resourceName string, validate func() error, update func(context.Context, string) (T, error)) (T, error) {
@@ -481,7 +529,9 @@ func (s *Service) CreateRoute(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return domainalert.AlertRoute{}, err
 	}
-	return compatAlertRoute(item), nil
+	result := compatAlertRoute(item)
+	s.recordMonitoringMutation(ctx, principal, "AlertRoute", result.ID, "observability.alert_route.create", "created alert route")
+	return result, nil
 }
 
 func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Principal, routeID string, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
@@ -504,7 +554,9 @@ func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Prin
 		}
 		return domainalert.AlertRoute{}, err
 	}
-	return compatAlertRoute(item), nil
+	result := compatAlertRoute(item)
+	s.recordMonitoringMutation(ctx, principal, "AlertRoute", result.ID, "observability.alert_route.update", "updated alert route")
+	return result, nil
 }
 
 func (s *Service) ValidateWebhookToken(token string) error {

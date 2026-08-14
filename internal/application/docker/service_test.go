@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +37,21 @@ func TestMutationEvidenceRecordsAuditAndDeniedOperation(t *testing.T) {
 	}
 	if len(audit.entries) != 2 || audit.entries[0].Result != "success" || audit.entries[1].Result != "deny" || audit.entries[1].Metadata["errorCode"] != "access_denied" {
 		t.Fatalf("audit evidence = %#v", audit.entries)
+	}
+}
+
+func TestEmptyOperationClaimDoesNotRecordFailure(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	operations := &captureDockerOperations{}
+	audit := &captureDockerAudit{}
+	service := New(repo, dockerTestPermissions(), operations, WithAudit(audit))
+
+	_, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{WorkerID: "worker-1"})
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("ClaimOperation() error = %v, want not found", err)
+	}
+	if len(operations.entries) != 0 || len(audit.entries) != 0 {
+		t.Fatalf("empty claim recorded evidence: operations=%#v audit=%#v", operations.entries, audit.entries)
 	}
 }
 
@@ -93,6 +110,36 @@ func TestCreateProjectRejectsComposeWithoutServices(t *testing.T) {
 	}
 }
 
+func TestCreateProjectFetchesRemoteComposeWithLimit(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online"}
+	service := New(repo, dockerTestPermissions(), nil, WithComposeSourceFetcher(
+		func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader("services:\n  web:\n    image: nginx:alpine\n")), nil
+		},
+	))
+
+	project, err := service.CreateProject(context.Background(), dockerTestPrincipal(), domaindocker.ProjectInput{
+		HostID: "host-1", Name: "remote", SourceKind: "url", SourceRef: "https://example.com/compose.yaml",
+		ComposeContent: "services:\n  stale:\n    image: alpine\n",
+	})
+	if err != nil || !strings.Contains(project.ComposeContent, "nginx:alpine") {
+		t.Fatalf("CreateProject() project = %#v, err = %v", project, err)
+	}
+
+	service = New(repo, dockerTestPermissions(), nil, WithComposeSourceFetcher(
+		func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader(strings.Repeat("x", maxRemoteComposeBytes+1))), nil
+		},
+	))
+	_, err = service.CreateProject(context.Background(), dockerTestPrincipal(), domaindocker.ProjectInput{
+		HostID: "host-1", Name: "oversized", SourceKind: "url", SourceRef: "https://example.com/compose.yaml",
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("CreateProject() oversized error = %v, want ErrInvalidArgument", err)
+	}
+}
+
 func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online"}
@@ -134,7 +181,7 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 func TestRunnerRetryRotatesCallbackTokenAndRejectsStaleAttempt(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	service := New(repo, dockerTestPermissions(), nil)
-	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{OperationKind: OperationKindHostSync, Status: OperationStatusQueued})
+	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{OperationKind: OperationKindProjectDeploy, Status: OperationStatusQueued})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +214,7 @@ func TestRunnerRetryRotatesCallbackTokenAndRejectsStaleAttempt(t *testing.T) {
 func TestRetryOperationCountsAttemptsOnClaimAndEnforcesLimit(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	service := New(repo, dockerTestPermissions(), nil)
-	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{OperationKind: OperationKindHostSync, Status: OperationStatusQueued})
+	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{OperationKind: OperationKindProjectDeploy, Status: OperationStatusQueued})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,6 +283,49 @@ func TestDefaultRunnerClaimIncludesHostProvision(t *testing.T) {
 	}
 }
 
+func TestHostSyncRequiresMatchingHostCredential(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "docker-host", Status: "pending"}
+	service := New(repo, dockerTestPermissions(), nil)
+	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{
+		HostID: "host-1", OperationKind: OperationKindHostSync, Status: OperationStatusQueued,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{
+		WorkerID: "legacy-runner", OperationKinds: []string{OperationKindHostSync},
+	})
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("legacy runner host sync claim error = %v, want not found", err)
+	}
+	wrongHost := domaindocker.RunnerAuthorization{HostID: "host-2", AgentID: "agent-2"}
+	_, err = service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{
+		WorkerID: "host-2", AgentID: "agent-2", HostIDs: []string{"host-1"}, Authorization: wrongHost,
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("cross-host claim error = %v, want access denied", err)
+	}
+
+	authorization := domaindocker.RunnerAuthorization{HostID: "host-1", AgentID: "agent-1"}
+	claimed, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{
+		WorkerID: "host-1", AgentID: "agent-1", Authorization: authorization,
+	})
+	if err != nil || claimed.ID != operation.ID || claimed.ClaimedByWorkerID != "host-1" {
+		t.Fatalf("host-bound claim = %#v, %v", claimed, err)
+	}
+	if _, err := service.GetOperationForRunner(context.Background(), operation.ID, wrongHost); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("cross-host status error = %v, want access denied", err)
+	}
+	_, err = service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
+		OperationID: operation.ID, WorkerID: "host-2", Status: OperationStatusCompleted, Authorization: wrongHost,
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("cross-host callback error = %v, want access denied", err)
+	}
+}
+
 func TestRunnerCallbackRejectsInvalidRuntimeEndpoint(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "docker-host", Status: "online", Endpoint: "http://10.0.0.9:18080"}
@@ -248,16 +338,20 @@ func TestRunnerCallbackRejectsInvalidRuntimeEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateOperation() error = %v", err)
 	}
-	claimed, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{WorkerID: "worker-1"})
+	authorization := domaindocker.RunnerAuthorization{HostID: "host-1", AgentID: "agent-1"}
+	claimed, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{
+		WorkerID: "host-1", AgentID: "agent-1", Authorization: authorization,
+	})
 	if err != nil {
 		t.Fatalf("ClaimOperation() error = %v", err)
 	}
 
 	_, err = service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
-		OperationID: claimed.ID,
-		WorkerID:    "worker-1",
-		Status:      OperationStatusCompleted,
-		Payload:     map[string]any{"endpoint": "file:///etc/passwd"},
+		OperationID:   claimed.ID,
+		WorkerID:      "host-1",
+		Authorization: authorization,
+		Status:        OperationStatusCompleted,
+		Payload:       map[string]any{"endpoint": "file:///etc/passwd"},
 	})
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("RecordOperationCallback() error = %v, want invalid argument", err)
@@ -395,14 +489,15 @@ func TestRunnerCallbackDoesNotWriteNilRuntimeFields(t *testing.T) {
 		HostID:            "host-1",
 		OperationKind:     OperationKindHostSync,
 		Status:            OperationStatusRunning,
-		ClaimedByWorkerID: "worker-1",
+		ClaimedByWorkerID: "host-1",
 	}
 	service := New(repo, dockerTestPermissions(), nil)
 
 	_, err := service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
-		OperationID: "operation-1",
-		WorkerID:    "worker-1",
-		Status:      OperationStatusCompleted,
+		OperationID:   "operation-1",
+		WorkerID:      "host-1",
+		Authorization: domaindocker.RunnerAuthorization{HostID: "host-1", AgentID: "agent-1"},
+		Status:        OperationStatusCompleted,
 		Payload: map[string]any{
 			"dockerVersion":  "Docker version 29.4.0",
 			"composeVersion": "Docker Compose version v5.1.2",
@@ -423,7 +518,7 @@ func TestRunnerCallbackDoesNotWriteNilRuntimeFields(t *testing.T) {
 	}
 }
 
-func TestUpdateHostPreservesAgentDiscoveredRuntimeFields(t *testing.T) {
+func TestUpdateHostPreservesAgentFieldsAndUpdatesVMRelation(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	repo.hosts["host-1"] = domaindocker.Host{
 		ID:                         "host-1",
@@ -443,8 +538,11 @@ func TestUpdateHostPreservesAgentDiscoveredRuntimeFields(t *testing.T) {
 	service := New(repo, dockerTestPermissions(), nil)
 
 	updated, err := service.UpdateHost(context.Background(), dockerTestPrincipal(), "host-1", domaindocker.HostInput{
-		Name:     "docker-host-renamed",
-		Endpoint: "http://10.0.0.10:18080",
+		Name:                       "docker-host-renamed",
+		Endpoint:                   "http://10.0.0.10:18080",
+		VirtualizationConnectionID: "pve-2",
+		VMID:                       "vm-2",
+		VMName:                     "docker-vm-2",
 	})
 	if err != nil {
 		t.Fatalf("UpdateHost() error = %v", err)
@@ -452,8 +550,11 @@ func TestUpdateHostPreservesAgentDiscoveredRuntimeFields(t *testing.T) {
 	if updated.Name != "docker-host-renamed" || updated.Endpoint != "http://10.0.0.10:18080" {
 		t.Fatalf("updated management fields = %#v", updated)
 	}
-	if updated.Status != "online" || updated.AgentID != "agent-1" || updated.DockerVersion != "26.1.0" || updated.ComposeVersion != "v2.27.0" || updated.Architecture != "amd64" || updated.VirtualizationConnectionID != "pve-1" || updated.VMID != "vm-1" || updated.VMName != "docker-vm" || updated.IPAddress != "10.0.0.9" {
+	if updated.Status != "online" || updated.AgentID != "agent-1" || updated.DockerVersion != "26.1.0" || updated.ComposeVersion != "v2.27.0" || updated.Architecture != "amd64" || updated.IPAddress != "10.0.0.9" {
 		t.Fatalf("updated runtime fields = %#v", updated)
+	}
+	if updated.VirtualizationConnectionID != "pve-2" || updated.VMID != "vm-2" || updated.VMName != "docker-vm-2" {
+		t.Fatalf("updated VM relation = %#v", updated)
 	}
 }
 
@@ -778,7 +879,7 @@ func TestQuickCreateHostReturnsOperationUpdateConflict(t *testing.T) {
 func TestQuickCreateHostBuildsDefaultDockerReadyCloudInit(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	provisioner := &captureHostProvisioner{}
-	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner), WithRuntimeBearerToken("runner-token-32-characters-minimum"))
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner), WithRuntimeBearerToken("global-runner-token-must-not-be-used"))
 
 	operation, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
 		Name:                       "docker-dev-1",
@@ -786,6 +887,7 @@ func TestQuickCreateHostBuildsDefaultDockerReadyCloudInit(t *testing.T) {
 		ImageID:                    "image-1",
 		Config: map[string]any{"providerParams": map[string]any{
 			"controlPlaneBaseURL": "http://soha.internal:8080/",
+			"runnerToken":         "host-bootstrap-token-32-characters",
 			"snippetStorage":      "local",
 		}},
 	})
@@ -794,9 +896,10 @@ func TestQuickCreateHostBuildsDefaultDockerReadyCloudInit(t *testing.T) {
 	}
 	cloudInit := provisioner.input.CloudInit
 	if !strings.Contains(cloudInit, "base_url: http://soha.internal:8080") ||
+		!strings.Contains(cloudInit, "host-bootstrap-token-32-characters") ||
+		strings.Contains(cloudInit, "global-runner-token-must-not-be-used") ||
 		!strings.Contains(cloudInit, "host-1") ||
 		!strings.Contains(cloudInit, "host_provision") ||
-		!strings.Contains(cloudInit, "project_action") ||
 		!strings.Contains(cloudInit, "runtime_endpoint: http://__SOHA_VM_IP__:18080") ||
 		strings.Contains(cloudInit, "${SOHA_DOCKER_HOST_ID}") {
 		t.Fatalf("default cloud-init = %s", cloudInit)
@@ -822,7 +925,10 @@ func TestQuickCreateHostBuildsDefaultDockerReadyCloudInit(t *testing.T) {
 
 func TestQuickCreateHostRejectsVirtualizationWithoutBootstrap(t *testing.T) {
 	repo := newMemoryDockerRepo()
-	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(&captureHostProvisioner{}))
+	service := New(repo, dockerTestPermissions(), nil,
+		WithHostProvisioner(&captureHostProvisioner{}),
+		WithRuntimeBearerToken("global-runner-token-must-not-bootstrap-hosts"),
+	)
 
 	_, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
 		Name:                       "docker-dev-empty",
@@ -1212,12 +1318,14 @@ func (c *captureHostProvisioner) RetryProvisionTask(_ context.Context, _ domaini
 }
 
 type memoryDockerRepo struct {
+	installMu           sync.Mutex
 	hosts               map[string]domaindocker.Host
 	projects            map[string]domaindocker.Project
 	services            map[string]domaindocker.Service
 	ports               map[string]domaindocker.PortMapping
 	templates           map[string]domaindocker.Template
 	operations          map[string]domaindocker.Operation
+	installations       map[string]domaindocker.HostAgentInstallationState
 	logs                map[string][]domaindocker.OperationLog
 	failCreateOperation error
 	failUpdateOperation error
@@ -1225,13 +1333,14 @@ type memoryDockerRepo struct {
 
 func newMemoryDockerRepo() *memoryDockerRepo {
 	return &memoryDockerRepo{
-		hosts:      map[string]domaindocker.Host{},
-		projects:   map[string]domaindocker.Project{},
-		services:   map[string]domaindocker.Service{},
-		ports:      map[string]domaindocker.PortMapping{},
-		templates:  map[string]domaindocker.Template{},
-		operations: map[string]domaindocker.Operation{},
-		logs:       map[string][]domaindocker.OperationLog{},
+		hosts:         map[string]domaindocker.Host{},
+		projects:      map[string]domaindocker.Project{},
+		services:      map[string]domaindocker.Service{},
+		ports:         map[string]domaindocker.PortMapping{},
+		templates:     map[string]domaindocker.Template{},
+		operations:    map[string]domaindocker.Operation{},
+		installations: map[string]domaindocker.HostAgentInstallationState{},
+		logs:          map[string][]domaindocker.OperationLog{},
 	}
 }
 
@@ -1650,6 +1759,96 @@ func (r *memoryDockerRepo) CreateOperation(_ context.Context, input domaindocker
 	item := domaindocker.Operation{ID: nextDockerID("operation", len(r.operations)), HostID: input.HostID, ProjectID: input.ProjectID, ServiceID: input.ServiceID, OperationKind: input.OperationKind, Status: firstNonEmpty(input.Status, "queued"), Payload: input.Payload, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	r.operations[item.ID] = item
 	return item, nil
+}
+
+func (r *memoryDockerRepo) CreateHostAgentInstallation(ctx context.Context, input domaindocker.OperationInput, state domaindocker.HostAgentInstallationState) (domaindocker.Operation, error) {
+	r.installMu.Lock()
+	defer r.installMu.Unlock()
+	operation, err := r.CreateOperation(ctx, input)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	state.OperationID = operation.ID
+	state.HostID = operation.HostID
+	state.CreatedAt = operation.CreatedAt
+	state.UpdatedAt = operation.UpdatedAt
+	r.installations[operation.ID] = state
+	return operation, nil
+}
+
+func (r *memoryDockerRepo) ConsumeHostAgentInstallTicket(_ context.Context, operationID, downloadTokenHash, enrollmentTokenHash string, enrollmentExpiresAt, now time.Time) (domaindocker.HostAgentInstallationState, error) {
+	r.installMu.Lock()
+	defer r.installMu.Unlock()
+	state, ok := r.installations[operationID]
+	if !ok || state.DownloadTokenHash != downloadTokenHash {
+		return domaindocker.HostAgentInstallationState{}, apperrors.ErrNotFound
+	}
+	if state.DownloadedAt != nil || !now.Before(state.DownloadExpiresAt) {
+		return domaindocker.HostAgentInstallationState{}, domaindocker.ErrHostAgentInstallationExpired
+	}
+	state.DownloadedAt = timePointer(now)
+	state.EnrollmentTokenHash = enrollmentTokenHash
+	state.EnrollmentExpiresAt = timePointer(enrollmentExpiresAt)
+	state.UpdatedAt = now
+	r.installations[operationID] = state
+	return state, nil
+}
+
+func (r *memoryDockerRepo) ExchangeHostAgentEnrollment(_ context.Context, input domaindocker.HostAgentEnrollmentExchange) (domaindocker.HostAgentInstallationState, error) {
+	r.installMu.Lock()
+	defer r.installMu.Unlock()
+	state, ok := r.installations[input.OperationID]
+	if !ok {
+		return domaindocker.HostAgentInstallationState{}, apperrors.ErrNotFound
+	}
+	if state.EnrolledAt != nil {
+		return domaindocker.HostAgentInstallationState{}, domaindocker.ErrHostAgentEnrollmentConsumed
+	}
+	if state.DownloadedAt == nil || state.EnrollmentTokenHash != input.EnrollmentTokenHash {
+		return domaindocker.HostAgentInstallationState{}, apperrors.ErrNotFound
+	}
+	if state.EnrollmentExpiresAt == nil || !input.EnrolledAt.Before(*state.EnrollmentExpiresAt) {
+		return domaindocker.HostAgentInstallationState{}, domaindocker.ErrHostAgentInstallationExpired
+	}
+	for id, candidate := range r.installations {
+		if id != input.OperationID && candidate.HostID == state.HostID && candidate.RuntimeTokenHash != "" && candidate.RevokedAt == nil {
+			candidate.RevokedAt = timePointer(input.EnrolledAt)
+			r.installations[id] = candidate
+		}
+	}
+	state.EnrolledAt = timePointer(input.EnrolledAt)
+	state.AgentID = input.AgentID
+	state.AgentTokenCiphertext = input.AgentTokenCiphertext
+	state.RuntimeTokenHash = input.RuntimeTokenHash
+	state.UpdatedAt = input.EnrolledAt
+	r.installations[input.OperationID] = state
+	return state, nil
+}
+
+func (r *memoryDockerRepo) GetHostAgentInstallationByRuntimeTokenHash(_ context.Context, runtimeTokenHash string) (domaindocker.HostAgentInstallationState, error) {
+	r.installMu.Lock()
+	defer r.installMu.Unlock()
+	for _, state := range r.installations {
+		if state.RuntimeTokenHash == runtimeTokenHash && state.EnrolledAt != nil && state.RevokedAt == nil {
+			return state, nil
+		}
+	}
+	return domaindocker.HostAgentInstallationState{}, apperrors.ErrNotFound
+}
+
+func (r *memoryDockerRepo) GetActiveHostAgentInstallation(_ context.Context, hostID string) (domaindocker.HostAgentInstallationState, error) {
+	r.installMu.Lock()
+	defer r.installMu.Unlock()
+	for _, state := range r.installations {
+		if state.HostID == hostID && state.EnrolledAt != nil && state.RevokedAt == nil {
+			return state, nil
+		}
+	}
+	return domaindocker.HostAgentInstallationState{}, apperrors.ErrNotFound
+}
+
+func timePointer(value time.Time) *time.Time {
+	return &value
 }
 
 func (r *memoryDockerRepo) UpdateOperation(_ context.Context, item domaindocker.Operation) (domaindocker.Operation, error) {

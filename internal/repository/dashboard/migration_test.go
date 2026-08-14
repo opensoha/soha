@@ -18,3 +18,16 @@ func TestDashboardMigrationDefinesDurableJSONPanels(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboardImportIRMigrationPreservesSourceAndWarnings(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/postgres/0047_observability_dashboard_import_ir.sql")
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	text := string(raw)
+	for _, expected := range []string{"source_format TEXT", "variables JSONB", "data_source_bindings JSONB", "import_warnings JSONB", "raw_json JSONB"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("migration missing %q", expected)
+		}
+	}
+}

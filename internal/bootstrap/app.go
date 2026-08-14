@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"go.uber.org/zap"
 )
 
 func New(ctx context.Context) (*App, error) {
@@ -16,6 +17,12 @@ func New(ctx context.Context) (*App, error) {
 	infra, initErr := newInfrastructure(ctx, &cfg)
 	if initErr != nil {
 		return nil, initErr
+	}
+	if keys := cfg.DefaultSystemSecretKeys(); len(keys) > 0 {
+		infra.logger.Warn(
+			"public default system secrets are configured; override them before exposing Soha",
+			zap.Strings("config_keys", keys),
+		)
 	}
 
 	repos := newRepositories(cfg, infra.databaseStore)

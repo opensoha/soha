@@ -1,6 +1,8 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/gin-gonic/gin"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
@@ -9,6 +11,8 @@ import (
 
 func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependencies) {
 	_ = cfg
+	limits := apiMiddleware.NewBoundedRateLimiter(10_000)
+	provider := func(c *gin.Context) string { return c.Param("providerID") }
 	v1.GET("/healthz", deps.System.Healthz)
 	v1.GET("/readyz", deps.System.Readyz)
 	v1.GET("/auth/providers", deps.Auth.ListProviders)
@@ -20,7 +24,7 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	v1.GET("/auth/providers/:providerID/login", deps.Auth.ProviderLogin)
 	v1.GET("/auth/login/:providerID/start", deps.Auth.ProviderLogin)
 	v1.GET("/auth/login/:providerID/callback", deps.Auth.ProviderCallback)
-	v1.POST("/auth/login/:providerID/acs", deps.Auth.SAMLACS)
+	v1.POST("/auth/login/:providerID/acs", limits.Middleware("saml-acs", 60, time.Minute, provider), deps.Auth.SAMLACS)
 	v1.GET("/auth/saml/:providerID/metadata", deps.Auth.SAMLMetadata)
 	v1.POST("/auth/oidc/exchange", deps.Auth.OIDCExchange)
 	if deps.AgentConnections != nil {
@@ -61,6 +65,8 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 		v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "delivery")).POST("/delivery/execution-tasks/claim", deps.Delivery.ClaimExecutionTask)
 	}
 	if deps.Docker != nil {
+		v1.GET("/docker/agent-installations/:installTicket/install.sh", deps.Docker.DownloadHostAgentInstaller)
+		v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "docker")).POST("/docker/agent-installations/:operationID/enroll", deps.Docker.ExchangeHostAgentEnrollment)
 		v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "docker")).POST("/docker/operations/claim", deps.Docker.ClaimOperation)
 		v1.GET("/docker/operations/:id/runner-status", deps.Docker.GetOperationRunnerStatus)
 		v1.POST("/docker/operation-callbacks", deps.Docker.RecordOperationCallback)

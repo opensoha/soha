@@ -135,8 +135,29 @@ func TestBrandingSettingsRequireViewPermission(t *testing.T) {
 func TestResolveBrandingSettingsRemainsAvailableToAuthBootstrap(t *testing.T) {
 	service := &Service{store: &captureSettingsStore{}}
 
-	if _, err := service.ResolveBrandingSettings(context.Background()); err != nil {
+	item, err := service.ResolveBrandingSettings(context.Background())
+	if err != nil {
 		t.Fatalf("ResolveBrandingSettings returned error: %v", err)
+	}
+	if item.Slogan != "Soha 是一种能力！" {
+		t.Fatalf("slogan = %q, want default slogan", item.Slogan)
+	}
+}
+
+func TestBrandingSettingsPersistSlogan(t *testing.T) {
+	store := &captureSettingsStore{}
+	service := New(store, appaccess.NewPermissionResolver(settingsPermissionReader{}), nil, nil)
+
+	item, err := service.UpdateBrandingSettings(
+		context.Background(),
+		domainidentity.Principal{UserID: "admin", Roles: []string{"admin"}},
+		domainsettings.BrandingSettings{AppTitle: "Soha", SidebarTitle: "Soha", Slogan: "  让平台协作更简单  "},
+	)
+	if err != nil {
+		t.Fatalf("UpdateBrandingSettings returned error: %v", err)
+	}
+	if item.Slogan != "让平台协作更简单" {
+		t.Fatalf("slogan = %q, want trimmed slogan", item.Slogan)
 	}
 }
 

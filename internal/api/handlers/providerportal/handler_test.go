@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainprovider "github.com/opensoha/soha/internal/domain/identityprovider"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -90,6 +91,26 @@ func TestProxyAuthInputReadsProxySessionCookie(t *testing.T) {
 	}
 }
 
+func TestSAMLSSORejectsOversizedPostBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := New(Services{SAML: stubSAMLService{}})
+	router := gin.New()
+	router.POST("/saml2/idp/:providerID/sso", handler.SAMLSSO)
+
+	recorder := httptest.NewRecorder()
+	body := "SAMLRequest=" + strings.Repeat("A", maxSAMLSSORequestBodySize)
+	request := httptest.NewRequest(http.MethodPost, "/saml2/idp/provider-1/sso", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), `"code":"payload_too_large"`) {
+		t.Fatalf("body = %q, want payload_too_large", recorder.Body.String())
+	}
+}
+
 func TestOIDCAuthorizeWritesEscapedFormPostResponse(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := newProtocolTestHandler(&stubProviderPortalIdentityProvider{
@@ -123,13 +144,20 @@ func TestProxyReverseForwardsAuthorizedRequestWithoutSohaCredentials(t *testing.
 	gin.SetMode(gin.TestMode)
 	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		payload := map[string]string{
-			"path":          request.URL.Path,
-			"query":         request.URL.RawQuery,
-			"authorization": request.Header.Get("Authorization"),
-			"identity":      request.Header.Get("X-Soha-User-ID"),
-			"spoofed":       request.Header.Get("X-Soha-Spoofed"),
-			"proxySession":  cookieValue(request, proxySessionCookieName),
-			"application":   cookieValue(request, "application_session"),
+			"path":           request.URL.Path,
+			"query":          request.URL.RawQuery,
+			"authorization":  request.Header.Get("Authorization"),
+			"identity":       request.Header.Get("X-Soha-User-ID"),
+			"spoofed":        request.Header.Get("X-Soha-Spoofed"),
+			"forwarded":      request.Header.Get("Forwarded"),
+			"forwardedFor":   request.Header.Get("X-Forwarded-For"),
+			"forwardedHost":  request.Header.Get("X-Forwarded-Host"),
+			"forwardedProto": request.Header.Get("X-Forwarded-Proto"),
+			"originalURL":    request.Header.Get("X-Original-URL"),
+			"realIP":         request.Header.Get("X-Real-IP"),
+			"proxySession":   cookieValue(request, proxySessionCookieName),
+			"protocolToken":  cookieValue(request, apiMiddleware.ProtocolAccessCookieName),
+			"application":    cookieValue(request, "application_session"),
 		}
 		writer.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(writer).Encode(payload)
@@ -146,7 +174,8 @@ func TestProxyReverseForwardsAuthorizedRequestWithoutSohaCredentials(t *testing.
 					Decision: domainprovider.ProxyDecisionAllow,
 					Headers:  map[string]string{"X-Soha-User-ID": "user-1"},
 				},
-				UpstreamURL: upstream.URL + "/base",
+				UpstreamURL:          upstream.URL + "/base",
+				AllowPrivateUpstream: true,
 			}, nil
 		},
 	})
@@ -161,13 +190,20 @@ func TestProxyReverseForwardsAuthorizedRequestWithoutSohaCredentials(t *testing.
 	}
 	request.Header.Set("Authorization", "Bearer must-not-leak")
 	request.Header.Set("X-Soha-Spoofed", "attacker")
+	request.Header.Set("Forwarded", "for=attacker;host=attacker.example;proto=https")
+	request.Header.Set("X-Forwarded-For", "attacker")
+	request.Header.Set("X-Forwarded-Host", "attacker.example")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-Original-URL", "https://attacker.example/private")
+	request.Header.Set("X-Real-IP", "203.0.113.10")
 	request.AddCookie(&http.Cookie{Name: proxySessionCookieName, Value: "proxy-token"})
+	request.AddCookie(&http.Cookie{Name: apiMiddleware.ProtocolAccessCookieName, Value: "protocol-token"})
 	request.AddCookie(&http.Cookie{Name: "application_session", Value: "keep-me"})
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatalf("proxy request: %v", err)
 	}
-	defer response.Body.Close()
+	t.Cleanup(func() { _ = response.Body.Close() })
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d", response.StatusCode)
@@ -179,8 +215,11 @@ func TestProxyReverseForwardsAuthorizedRequestWithoutSohaCredentials(t *testing.
 	if payload["path"] != "/base/dashboards/main" || payload["query"] != "view=home" {
 		t.Fatalf("upstream target = %#v", payload)
 	}
-	if payload["authorization"] != "" || payload["spoofed"] != "" || payload["proxySession"] != "" {
+	if payload["authorization"] != "" || payload["spoofed"] != "" || payload["proxySession"] != "" || payload["protocolToken"] != "" {
 		t.Fatalf("credentials leaked upstream: %#v", payload)
+	}
+	if payload["forwarded"] != "" || strings.Contains(payload["forwardedFor"], "attacker") || payload["forwardedHost"] != "" || payload["forwardedProto"] != "" || payload["originalURL"] != "" || payload["realIP"] != "" {
+		t.Fatalf("client proxy headers leaked upstream: %#v", payload)
 	}
 	if payload["identity"] != "user-1" || payload["application"] != "keep-me" {
 		t.Fatalf("authorized headers/cookies = %#v", payload)
@@ -200,8 +239,9 @@ func TestProxyReverseRewritesUpstreamRedirectAndCookieScope(t *testing.T) {
 	handler := newProtocolTestHandler(&stubProviderPortalIdentityProvider{
 		reverseProxyFunc: func(_ context.Context, _ domainidentity.Principal, _ domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error) {
 			return domainprovider.ReverseProxyResult{
-				Auth:        domainprovider.ProxyAuthResult{Decision: domainprovider.ProxyDecisionAllow},
-				UpstreamURL: upstream.URL,
+				Auth:                 domainprovider.ProxyAuthResult{Decision: domainprovider.ProxyDecisionAllow},
+				UpstreamURL:          upstream.URL,
+				AllowPrivateUpstream: true,
 			}, nil
 		},
 	})
@@ -218,7 +258,7 @@ func TestProxyReverseRewritesUpstreamRedirectAndCookieScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("proxy request: %v", err)
 	}
-	defer response.Body.Close()
+	t.Cleanup(func() { _ = response.Body.Close() })
 
 	wantBasePath := "/api/v1/provider/proxy/reverse/proxy-1"
 	if location := response.Header.Get("Location"); location != wantBasePath+"/login?next=%2Fdashboard" {
@@ -227,6 +267,51 @@ func TestProxyReverseRewritesUpstreamRedirectAndCookieScope(t *testing.T) {
 	cookie := response.Header.Get("Set-Cookie")
 	if !strings.Contains(cookie, "Path="+wantBasePath+"/") || strings.Contains(strings.ToLower(cookie), "domain=") {
 		t.Fatalf("Set-Cookie = %q, want proxy-scoped path without upstream domain", cookie)
+	}
+}
+
+func TestProxyReverseBlocksPrivateUpstreamByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	upstream := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("private upstream must not be reached")
+	}))
+	defer upstream.Close()
+	handler := newProtocolTestHandler(&stubProviderPortalIdentityProvider{
+		reverseProxyFunc: func(context.Context, domainidentity.Principal, domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error) {
+			return domainprovider.ReverseProxyResult{
+				Auth:        domainprovider.ProxyAuthResult{Decision: domainprovider.ProxyDecisionAllow},
+				UpstreamURL: upstream.URL,
+			}, nil
+		},
+	})
+	router := gin.New()
+	router.Any("/api/v1/provider/proxy/reverse/:providerID/*proxyPath", handler.ProxyReverse)
+	proxyServer := httptest.NewServer(router)
+	defer proxyServer.Close()
+
+	response, err := proxyServer.Client().Get(proxyServer.URL + "/api/v1/provider/proxy/reverse/proxy-1/")
+	if err != nil {
+		t.Fatalf("proxy request: %v", err)
+	}
+	t.Cleanup(func() { _ = response.Body.Close() })
+	if response.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusBadGateway)
+	}
+}
+
+func TestIssuerUsesConfiguredAccessURLAndIgnoresForwardedHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "http://internal.example/.well-known/openid-configuration", nil)
+	c.Request.Header.Set("X-Forwarded-Proto", "https")
+	c.Request.Header.Set("X-Forwarded-Host", "attacker.example")
+
+	if got := issuerFromRequest(c, staticAccessURL("https://soha.example/")); got != "https://soha.example" {
+		t.Fatalf("issuer = %q, want configured access URL", got)
+	}
+	if got := issuerFromRequest(c, nil); got != "http://internal.example" {
+		t.Fatalf("fallback issuer = %q, want request origin", got)
 	}
 }
 
@@ -321,6 +406,43 @@ func TestOutpostTokenFromRequestPrefersBearerToken(t *testing.T) {
 	}
 }
 
+func TestCreateOIDCClientLegacyResponseOmitsOneTimeSecret(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := stubOIDCClientService{
+		create: func(_ context.Context, _ domainidentity.Principal, providerID string, input domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error) {
+			if providerID != "" || input.ProviderID != "provider-1" {
+				t.Fatalf("provider path = %q, input provider = %q", providerID, input.ProviderID)
+			}
+			return domainprovider.OIDCClientCreated{
+				Client: domainprovider.OIDCClient{
+					ID:         "oidc-client-1",
+					ProviderID: "provider-1",
+					ClientID:   "client-1",
+				},
+				ClientSecret: "one-time-secret",
+			}, nil
+		},
+	}
+	handler := New(Services{OIDCClients: service})
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/identity/oidc-clients", strings.NewReader(`{"providerId":"provider-1","clientId":"client-1"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.CreateOIDCClient(c)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
+	}
+	body := recorder.Body.String()
+	if strings.Contains(body, "one-time-secret") || strings.Contains(body, `"clientSecret"`) {
+		t.Fatalf("legacy response exposed client secret: %s", body)
+	}
+	if !strings.Contains(body, `"clientId":"client-1"`) || strings.Contains(body, `"client":`) {
+		t.Fatalf("legacy response = %s, want direct OIDC client envelope", body)
+	}
+}
+
 func TestOIDCClientAuthInputFromRequestPrefersBasicAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
@@ -334,6 +456,15 @@ func TestOIDCClientAuthInputFromRequestPrefersBasicAuth(t *testing.T) {
 	if auth.ClientID != "basic-client" || auth.ClientSecret != "basic-secret" {
 		t.Fatalf("client auth = %#v, want basic credentials", auth)
 	}
+}
+
+type stubOIDCClientService struct {
+	OIDCClientService
+	create func(context.Context, domainidentity.Principal, string, domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error)
+}
+
+func (s stubOIDCClientService) CreateOIDCClient(ctx context.Context, principal domainidentity.Principal, providerID string, input domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error) {
+	return s.create(ctx, principal, providerID, input)
 }
 
 func TestOIDCClientAuthInputFromRequestReadsPostBody(t *testing.T) {
@@ -453,6 +584,27 @@ func TestProxyStartDoesNotRedirectWhenReturnToRejected(t *testing.T) {
 	}
 	if gotInput.ProviderID != "proxy-1" || gotInput.OriginalURL != target {
 		t.Fatalf("proxy auth input = %#v, want provider_id proxy-1 and return_to %q", gotInput, target)
+	}
+}
+
+func TestProxyReturnToRejectsUnsafeTargets(t *testing.T) {
+	tests := []string{
+		"//evil.example/path",
+		"/\\evil.example/path",
+		"javascript:alert(1)",
+		"relative/path",
+		"https://user:password@app.example/path",
+		"https://app.example/path#fragment",
+	}
+	for _, target := range tests {
+		t.Run(target, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/?return_to="+url.QueryEscape(target), nil)
+			if got := proxyReturnTo(ctx); got != "/portal" {
+				t.Fatalf("proxyReturnTo() = %q, want /portal", got)
+			}
+		})
 	}
 }
 
@@ -609,6 +761,12 @@ type stubProviderPortalIdentityProvider struct {
 	revokeFunc            func(context.Context, string, string, domainprovider.ClientAuthInput) error
 	reverseProxyFunc      func(context.Context, domainidentity.Principal, domainprovider.ReverseProxyInput) (domainprovider.ReverseProxyResult, error)
 }
+
+type stubSAMLService struct{ SAMLService }
+
+type staticAccessURL string
+
+func (value staticAccessURL) AccessURL() string { return string(value) }
 
 func newProtocolTestHandler(service *stubProviderPortalIdentityProvider) *Handler {
 	return New(Services{

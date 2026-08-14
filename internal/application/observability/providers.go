@@ -4,10 +4,12 @@ import (
 	"context"
 	"sort"
 	"strings"
+	"time"
 
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainobservability "github.com/opensoha/soha/internal/domain/observability"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 )
 
@@ -38,13 +40,69 @@ func (s *Service) ListProviders(ctx context.Context, principal domainidentity.Pr
 	if err != nil {
 		return nil, err
 	}
+	var dataSources []domainobservability.DataSource
+	if s.dataSources != nil {
+		dataSources, err = s.dataSources.ListDataSources(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	items := make([]sohaapi.ObservabilityProviderDefinition, 0, len(providers))
 	for _, provider := range providers {
 		definition := provider.definition
 		definition.Status, definition.StatusReason = s.providerExecutionStatus(provider)
+		definition.Configured, definition.RuntimeStatus, definition.RuntimeStatusReason, definition.LastValidatedAt = providerRuntimeStatus(definition, dataSources)
 		items = append(items, definition)
 	}
 	return items, nil
+}
+
+func providerRuntimeStatus(provider sohaapi.ObservabilityProviderDefinition, dataSources []domainobservability.DataSource) (bool, sohaapi.ObservabilityProviderRuntimeStatus, string, *time.Time) {
+	if provider.Status == sohaapi.ObservabilityProviderStatusUnsupported {
+		return false, sohaapi.ObservabilityProviderRuntimeStatusUnsupported, provider.StatusReason, nil
+	}
+	healthy, failed, unknown := 0, 0, 0
+	var lastValidatedAt *time.Time
+	for _, item := range dataSources {
+		if !item.Enabled || providerKeyForDataSource(item) != provider.ProviderKey {
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(item.ValidationStatus)) {
+		case "success":
+			healthy++
+		case "error":
+			failed++
+		default:
+			unknown++
+		}
+		if item.LastValidatedAt != nil && (lastValidatedAt == nil || item.LastValidatedAt.After(*lastValidatedAt)) {
+			value := item.LastValidatedAt.UTC()
+			lastValidatedAt = &value
+		}
+	}
+	configured := healthy+failed+unknown > 0
+	switch {
+	case !configured:
+		return false, sohaapi.ObservabilityProviderRuntimeStatusUnconfigured, "未配置已启用的数据源", nil
+	case failed > 0 && healthy > 0:
+		return true, sohaapi.ObservabilityProviderRuntimeStatusDegraded, "部分数据源最近校验失败", lastValidatedAt
+	case failed > 0:
+		return true, sohaapi.ObservabilityProviderRuntimeStatusFailed, "数据源最近校验失败", lastValidatedAt
+	case unknown > 0 && healthy > 0:
+		return true, sohaapi.ObservabilityProviderRuntimeStatusDegraded, "部分数据源尚未校验", lastValidatedAt
+	case unknown > 0:
+		return true, sohaapi.ObservabilityProviderRuntimeStatusUnknown, "数据源尚未校验", lastValidatedAt
+	default:
+		return true, sohaapi.ObservabilityProviderRuntimeStatusHealthy, "", lastValidatedAt
+	}
+}
+
+func providerKeyForDataSource(item domainobservability.DataSource) string {
+	key := strings.ToLower(strings.TrimSpace(item.BackendType))
+	if key == "es" {
+		return "elasticsearch"
+	}
+	return key
 }
 
 func (s *Service) resolveProvider(ctx context.Context, providerKey string) (resolvedProvider, bool, error) {

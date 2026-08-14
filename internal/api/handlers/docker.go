@@ -12,8 +12,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appdocker "github.com/opensoha/soha/internal/application/docker"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
@@ -29,6 +31,13 @@ type DockerHostService interface {
 	UpdateHost(context.Context, domainidentity.Principal, string, domaindocker.HostInput) (domaindocker.Host, error)
 	DeleteHost(context.Context, domainidentity.Principal, string) error
 	QuickCreateHost(context.Context, domainidentity.Principal, domaindocker.QuickCreateHostInput) (domaindocker.Operation, error)
+}
+
+type DockerHostInstallationService interface {
+	CreateHostAgentInstallation(context.Context, domainidentity.Principal, string) (domaindocker.HostAgentInstallation, error)
+	RenderHostAgentInstallation(context.Context, string) ([]byte, error)
+	ExchangeHostAgentEnrollment(context.Context, string, sohaapi.DockerHostAgentEnrollmentRequest) (sohaapi.DockerHostAgentCredentials, error)
+	AuthenticateHostAgent(context.Context, string) (domaindocker.RunnerAuthorization, error)
 }
 
 type DockerProjectService interface {
@@ -90,12 +99,13 @@ type DockerOperationService interface {
 
 type DockerRunnerOperationService interface {
 	ClaimOperation(context.Context, domaindocker.OperationClaimInput) (domaindocker.Operation, error)
-	GetOperationForRunner(context.Context, string) (domaindocker.Operation, error)
+	GetOperationForRunner(context.Context, string, domaindocker.RunnerAuthorization) (domaindocker.Operation, error)
 	RecordOperationCallback(context.Context, domaindocker.OperationCallbackInput) (domaindocker.Operation, error)
 }
 
 type DockerService interface {
 	DockerHostService
+	DockerHostInstallationService
 	DockerProjectService
 	DockerProjectRuntimeService
 	DockerProjectStorageService
@@ -108,6 +118,7 @@ type DockerService interface {
 
 type DockerServices struct {
 	Hosts            DockerHostService
+	HostInstallation DockerHostInstallationService
 	Projects         DockerProjectService
 	ProjectRuntime   DockerProjectRuntimeService
 	ProjectStorage   DockerProjectStorageService
@@ -121,6 +132,7 @@ type DockerServices struct {
 
 type DockerHandler struct {
 	hosts            DockerHostService
+	hostInstallation DockerHostInstallationService
 	projects         DockerProjectService
 	projectRuntime   DockerProjectRuntimeService
 	projectStorage   DockerProjectStorageService
@@ -144,7 +156,7 @@ func NewDockerHandler(service DockerService, runnerToken ...string) *DockerHandl
 func NewDockerHandlerWithRunnerKeys(service DockerService, keys keyring.Ring) *DockerHandler {
 	planning, _ := any(service).(DockerPlanningService)
 	return NewDockerHandlerWithServices(DockerServices{
-		Hosts: service, Projects: service, ProjectRuntime: service,
+		Hosts: service, HostInstallation: service, Projects: service, ProjectRuntime: service,
 		ProjectStorage: service, Services: service, PortMappings: service, Templates: service,
 		Operations: service, RunnerOperations: service, Planning: planning,
 	}, keys)
@@ -152,7 +164,7 @@ func NewDockerHandlerWithRunnerKeys(service DockerService, keys keyring.Ring) *D
 
 func NewDockerHandlerWithServices(services DockerServices, keys keyring.Ring) *DockerHandler {
 	return &DockerHandler{
-		hosts: services.Hosts, projects: services.Projects,
+		hosts: services.Hosts, hostInstallation: services.HostInstallation, projects: services.Projects,
 		projectRuntime: services.ProjectRuntime, projectStorage: services.ProjectStorage,
 		services: services.Services, portMappings: services.PortMappings, templates: services.Templates,
 		operations: services.Operations, runnerOperations: services.RunnerOperations, planning: services.Planning, runnerKeys: keys,
@@ -196,6 +208,52 @@ func (h *DockerHandler) CreateHost(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func (h *DockerHandler) CreateHostAgentInstallation(c *gin.Context) {
+	item, err := h.hostInstallation.CreateHostAgentInstallation(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DockerHandler) DownloadHostAgentInstaller(c *gin.Context) {
+	script, err := h.hostInstallation.RenderHostAgentInstallation(c.Request.Context(), c.Param("installTicket"))
+	if err != nil {
+		if errors.Is(err, appdocker.ErrHostAgentInstallationExpired) {
+			apiresponse.Error(c, http.StatusGone, "installation_expired", "Docker Agent installation URL has expired")
+			return
+		}
+		writeError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("Content-Disposition", `inline; filename="install-soha-agent.sh"`)
+	c.Data(http.StatusOK, "text/x-shellscript; charset=utf-8", script)
+}
+
+func (h *DockerHandler) ExchangeHostAgentEnrollment(c *gin.Context) {
+	var request sohaapi.DockerHostAgentEnrollmentRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Docker host Agent enrollment payload")
+		return
+	}
+	item, err := h.hostInstallation.ExchangeHostAgentEnrollment(c.Request.Context(), c.Param("operationID"), request)
+	if err != nil {
+		switch {
+		case errors.Is(err, appdocker.ErrHostAgentInstallationExpired):
+			apiresponse.Error(c, http.StatusGone, "installation_expired", "Docker host Agent enrollment has expired")
+		case errors.Is(err, appdocker.ErrHostAgentEnrollmentConsumed):
+			apiresponse.Error(c, http.StatusConflict, "conflict", "Docker host Agent enrollment was already consumed")
+		default:
+			writeError(c, err)
+		}
+		return
+	}
+	c.Header("Cache-Control", "no-store")
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
@@ -815,8 +873,9 @@ func (h *DockerHandler) RetryOperation(c *gin.Context) {
 }
 
 func (h *DockerHandler) ClaimOperation(c *gin.Context) {
-	if !authorizeDockerRunnerKeys(c, h.runnerKeys) {
-		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid docker runner token")
+	authorization, err := h.dockerRunnerAuthorization(c)
+	if err != nil {
+		writeError(c, err)
 		return
 	}
 	var req domaindocker.OperationClaimInput
@@ -824,6 +883,7 @@ func (h *DockerHandler) ClaimOperation(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker operation claim payload")
 		return
 	}
+	req.Authorization = authorization
 	item, err := h.runnerOperations.ClaimOperation(c.Request.Context(), req)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
@@ -840,11 +900,12 @@ func (h *DockerHandler) ClaimOperation(c *gin.Context) {
 }
 
 func (h *DockerHandler) GetOperationRunnerStatus(c *gin.Context) {
-	if !authorizeDockerRunnerKeys(c, h.runnerKeys) {
-		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid docker runner token")
+	authorization, err := h.dockerRunnerAuthorization(c)
+	if err != nil {
+		writeError(c, err)
 		return
 	}
-	item, err := h.runnerOperations.GetOperationForRunner(c.Request.Context(), c.Param("id"))
+	item, err := h.runnerOperations.GetOperationForRunner(c.Request.Context(), c.Param("id"), authorization)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -853,8 +914,9 @@ func (h *DockerHandler) GetOperationRunnerStatus(c *gin.Context) {
 }
 
 func (h *DockerHandler) RecordOperationCallback(c *gin.Context) {
-	if !authorizeDockerRunnerKeys(c, h.runnerKeys) {
-		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid docker runner token")
+	authorization, err := h.dockerRunnerAuthorization(c)
+	if err != nil {
+		writeError(c, err)
 		return
 	}
 	var req domaindocker.OperationCallbackInput
@@ -862,10 +924,26 @@ func (h *DockerHandler) RecordOperationCallback(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid docker operation callback payload")
 		return
 	}
+	req.Authorization = authorization
 	item, err := h.runnerOperations.RecordOperationCallback(c.Request.Context(), req)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusAccepted, item)
+}
+
+func (h *DockerHandler) dockerRunnerAuthorization(c *gin.Context) (domaindocker.RunnerAuthorization, error) {
+	if authorizeDockerRunnerKeys(c, h.runnerKeys) {
+		return domaindocker.RunnerAuthorization{}, nil
+	}
+	authorization, valid := apiMiddleware.SingleAuthorizationHeader(c.Request)
+	if !valid || h.hostInstallation == nil {
+		return domaindocker.RunnerAuthorization{}, apperrors.ErrUnauthorized
+	}
+	token := bearerTokenFromAuthorization(authorization)
+	if token == "" {
+		return domaindocker.RunnerAuthorization{}, apperrors.ErrUnauthorized
+	}
+	return h.hostInstallation.AuthenticateHostAgent(c.Request.Context(), token)
 }

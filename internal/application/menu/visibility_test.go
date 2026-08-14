@@ -8,22 +8,29 @@ import (
 )
 
 func TestApplicationMenusRequireWorkspaceApplicationPermission(t *testing.T) {
-	item := domainmenu.Record{ID: "builds", Path: "/applications"}
-
-	if isVisibleByPermissions(item, []string{appaccess.PermDeliveryApplicationsView}) {
-		t.Fatalf("application menu should require %s", appaccess.PermWorkspaceApplicationView)
-	}
-	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceApplicationView, appaccess.PermDeliveryApplicationsView}) {
-		t.Fatalf("application menu should be visible when workspace and page permissions are both present")
+	for _, item := range []domainmenu.Record{
+		{ID: "builds", Path: "/applications"},
+		{ID: "delivery-manifest-library", Path: "/delivery/manifests"},
+	} {
+		if isVisibleByPermissions(item, []string{appaccess.PermDeliveryApplicationsView}) {
+			t.Fatalf("%s should require %s", item.ID, appaccess.PermWorkspaceApplicationView)
+		}
+		if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceApplicationView, appaccess.PermDeliveryApplicationsView}) {
+			t.Fatalf("%s should be visible when workspace and page permissions are both present", item.ID)
+		}
 	}
 }
 
 func TestDeliveryWorkbenchTaskMenusUseAnyEvidencePermission(t *testing.T) {
+	overviewMenu := domainmenu.Record{ID: "delivery-overview", Path: "/delivery/overview"}
 	testingMenu := domainmenu.Record{ID: "delivery-testing", Path: "/delivery/testing"}
 	analysisMenu := domainmenu.Record{ID: "delivery-analysis", Path: "/delivery/analysis"}
 
 	if isVisibleByPermissions(testingMenu, []string{appaccess.PermDeliveryReleaseBundlesView}) {
 		t.Fatalf("delivery testing menu should require %s", appaccess.PermWorkspaceApplicationView)
+	}
+	if !isVisibleByPermissions(overviewMenu, []string{appaccess.PermWorkspaceApplicationView, appaccess.PermDeliveryApplicationEnvView}) {
+		t.Fatal("delivery overview menu should accept any delivery summary permission")
 	}
 	if !isVisibleByPermissions(testingMenu, []string{appaccess.PermWorkspaceApplicationView, appaccess.PermDeliveryReleaseBundlesView}) {
 		t.Fatalf("delivery testing menu should be visible with release bundle evidence permission")
@@ -113,30 +120,50 @@ func TestVirtualizationRootMenuVisibleWithAnyVirtualizationPermission(t *testing
 	}
 }
 
-func TestVirtualizationSyncMenuRequiresViewPermission(t *testing.T) {
-	item := domainmenu.Record{ID: "virtualization-workbench-sync", Path: "/virtualization/sync"}
-
-	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationSyncView}) {
-		t.Fatalf("virtualization sync menu should be visible with sync view permission")
-	}
-	if isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationSyncManage}) {
-		t.Fatalf("legacy sync manage permission must not directly unlock the menu")
+func TestComputeRootVisibleWithAnyChildReadPermission(t *testing.T) {
+	for _, menuID := range []string{"compute-workbench", "compute-workbench-overview"} {
+		item := domainmenu.Record{ID: menuID, Path: "/compute/overview"}
+		for _, permission := range []string{
+			appaccess.PermVirtualizationImagesView,
+			appaccess.PermVirtualizationStorageView,
+			appaccess.PermVirtualizationFlavorsView,
+			appaccess.PermVirtualizationSyncView,
+			appaccess.PermDockerTemplatesView,
+			appaccess.PermDockerOperationsView,
+		} {
+			if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, permission}) {
+				t.Fatalf("%s should be visible with %s", menuID, permission)
+			}
+		}
 	}
 }
 
-func TestComputeRootVisibleWithAnyChildReadPermission(t *testing.T) {
-	item := domainmenu.Record{ID: "compute-workbench", Path: "/compute"}
-	for _, permission := range []string{
-		appaccess.PermVirtualizationImagesView,
-		appaccess.PermVirtualizationStorageView,
-		appaccess.PermVirtualizationFlavorsView,
-		appaccess.PermVirtualizationSyncView,
-		appaccess.PermDockerTemplatesView,
-		appaccess.PermDockerOperationsView,
-	} {
-		if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, permission}) {
-			t.Fatalf("compute root should be visible with %s", permission)
-		}
+func TestCanonicalRouteMenusUseTheirRoutePermissions(t *testing.T) {
+	tests := []struct {
+		id         string
+		path       string
+		permission string
+	}{
+		{id: "platform-manifests", path: "/manifests", permission: appaccess.PermDeliveryApplicationsView},
+		{id: "delivery-manifest-library", path: "/delivery/manifests", permission: appaccess.PermDeliveryApplicationsView},
+		{id: "monitoring-workbench-integrations", path: "/monitoring-workbench/integrations", permission: appaccess.PermObserveAlertIntegrationsView},
+		{id: "docker-workbench-hosts", path: "/compute/runtimes/hosts", permission: appaccess.PermDockerHostsView},
+		{id: "docker-workbench-projects", path: "/compute/runtimes/projects", permission: appaccess.PermDockerProjectsView},
+		{id: "docker-workbench-templates", path: "/compute/runtimes/templates", permission: appaccess.PermDockerTemplatesView},
+		{id: "access-directory-sync", path: "/access/directory-sync", permission: appaccess.PermAccessDirectoryView},
+	}
+
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			item := domainmenu.Record{ID: test.id, Path: test.path}
+			permissions := []string{test.permission}
+			if workspace := workspacePermissionForMenu(item); workspace != "" {
+				permissions = append(permissions, workspace)
+			}
+			if !isVisibleByPermissions(item, permissions) {
+				t.Fatalf("%s should be visible with %v", test.id, permissions)
+			}
+		})
 	}
 }
 
@@ -175,6 +202,28 @@ func TestAIGatewayTokenMenuRequiresWorkspaceAndTokenPermission(t *testing.T) {
 	}
 	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "view")}) {
 		t.Fatalf("AI Gateway token menu should be visible when workspace and token view permissions are both present")
+	}
+}
+
+func TestCanonicalAIMenusUseExactReadPermissions(t *testing.T) {
+	tests := []struct {
+		id         string
+		permission string
+	}{
+		{id: "ai-workbench-knowledge-pipelines", permission: appaccess.PermAIKnowledgeConnectorsView},
+		{id: "ai-workbench-evaluation-lifecycle", permission: appaccess.PermAIEvaluationsView},
+		{id: "ai-workbench-memory", permission: appaccess.PermAIMemoryView},
+		{id: "ai-workbench-provider-fleet", permission: appaccess.PermAIAgentFleetView},
+		{id: "ai-workbench-environments", permission: appaccess.PermAIEnvironmentsView},
+		{id: "ai-workbench-production-operations", permission: appaccess.PermAIOperationsView},
+	}
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			item := domainmenu.Record{ID: test.id, Path: "/ai-workbench"}
+			if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, test.permission}) {
+				t.Fatalf("%s should be visible with %s", test.id, test.permission)
+			}
+		})
 	}
 }
 
@@ -285,6 +334,15 @@ func TestSettingsOverviewVisibleWithManagementPermission(t *testing.T) {
 	if !isVisibleByPermissions(item, []string{appaccess.PermSecretView}) {
 		t.Fatal("settings overview should be visible with secret view permission")
 	}
+	for _, permission := range []string{
+		appaccess.PermSystemOnlineUsersView,
+		appaccess.PermSystemAuditView,
+		appaccess.PermSystemOperationsView,
+	} {
+		if !isVisibleByPermissions(item, []string{permission}) {
+			t.Fatalf("settings overview should be visible with %s", permission)
+		}
+	}
 	secretStore := domainmenu.Record{ID: "settings-secrets", Path: "/settings/secrets"}
 	if !isVisibleByPermissions(secretStore, []string{appaccess.PermSecretView}) {
 		t.Fatal("secret store should be visible with secret view permission")
@@ -299,10 +357,6 @@ func TestMonitoringWorkbenchPermissionDoesNotExposeSettingsCenter(t *testing.T) 
 	monitoring := domainmenu.Record{ID: "monitoring-workbench", Path: "/monitoring-workbench"}
 	if !isVisibleByPermissions(monitoring, []string{appaccess.PermWorkspaceResourceView, appaccess.PermObserveMonitoringView}) {
 		t.Fatal("monitoring workbench must remain visible with observe permission")
-	}
-	logs := domainmenu.Record{ID: "monitoring-workbench-logs", Path: "/monitoring-workbench/logs"}
-	if !isVisibleByPermissions(logs, []string{appaccess.PermWorkspaceResourceView, appaccess.PermObserveMonitoringView}) {
-		t.Fatal("logs menu must use the monitoring view permission")
 	}
 }
 

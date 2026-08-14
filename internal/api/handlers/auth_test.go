@@ -123,6 +123,26 @@ type stubAuthBootstrapSettingsService struct {
 	branding domainsettings.BrandingSettings
 }
 
+type stubSAMLService struct {
+	providerID   string
+	response     string
+	relayState   string
+	redirectURL  string
+	responseSeen bool
+}
+
+func (s *stubSAMLService) HandleSAMLResponse(_ context.Context, providerID, response, relayState string) (string, error) {
+	s.providerID = providerID
+	s.response = response
+	s.relayState = relayState
+	s.responseSeen = true
+	return s.redirectURL, nil
+}
+
+func (*stubSAMLService) SAMLMetadata(context.Context, string) ([]byte, error) {
+	return nil, nil
+}
+
 func (s stubAuthBootstrapSettingsService) ResolveBrandingSettings(context.Context) (domainsettings.BrandingSettings, error) {
 	return s.branding, nil
 }
@@ -183,6 +203,30 @@ func TestAuthBootstrapReturnsCurrentUserSnapshotAndBranding(t *testing.T) {
 	}
 	if payload.Data.Branding.AppTitle != branding.AppTitle {
 		t.Fatalf("branding.appTitle = %q, want %q", payload.Data.Branding.AppTitle, branding.AppTitle)
+	}
+}
+
+func TestSAMLACSRejectsOversizedFormBeforeServiceCall(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &stubSAMLService{redirectURL: "/"}
+	handler := &AuthHandler{saml: service}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "providerID", Value: "provider-1"}}
+	ctx.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/login/provider-1/acs",
+		strings.NewReader("SAMLResponse="+strings.Repeat("a", maxSAMLACSRequestBytes)),
+	)
+	ctx.Request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	handler.SAMLACS(ctx)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
+	}
+	if service.responseSeen {
+		t.Fatal("oversized SAML response reached the application service")
 	}
 }
 
@@ -311,7 +355,8 @@ func TestAuthUpdateProfilePassesAvatarFields(t *testing.T) {
 func TestLoginOptionsReturnSliderVerificationConfig(t *testing.T) {
 	t.Parallel()
 
-	handler := NewAuthHandler(stubIdentityService{}, nil, nil, cfgpkg.AuthConfig{
+	branding := domainsettings.BrandingSettings{Slogan: "山水之间"}
+	handler := NewAuthHandler(stubIdentityService{}, nil, stubAuthBootstrapSettingsService{branding: branding}, cfgpkg.AuthConfig{
 		LoginVerification: cfgpkg.LoginVerificationConfig{SliderEnabled: true},
 	})
 
@@ -327,6 +372,7 @@ func TestLoginOptionsReturnSliderVerificationConfig(t *testing.T) {
 
 	var payload struct {
 		Data struct {
+			Branding     domainsettings.BrandingSettings `json:"branding"`
 			Verification struct {
 				SliderEnabled bool `json:"sliderEnabled"`
 			} `json:"verification"`
@@ -337,6 +383,9 @@ func TestLoginOptionsReturnSliderVerificationConfig(t *testing.T) {
 	}
 	if !payload.Data.Verification.SliderEnabled {
 		t.Fatal("sliderEnabled = false, want true")
+	}
+	if payload.Data.Branding.Slogan != branding.Slogan {
+		t.Fatalf("branding slogan = %q, want %q", payload.Data.Branding.Slogan, branding.Slogan)
 	}
 }
 
@@ -541,6 +590,31 @@ func TestLoginSetsHttpOnlyRefreshCookie(t *testing.T) {
 	}
 	if protocolCookie.MaxAge != 3600 {
 		t.Fatalf("protocol access cookie maxAge = %d, want 3600", protocolCookie.MaxAge)
+	}
+}
+
+func TestLoginMarksAuthCookiesSecureBehindHTTPSProxy(t *testing.T) {
+	t.Parallel()
+
+	identity := &recordingIdentityService{stubIdentityService: stubIdentityService{
+		loginResult: domainidentity.AuthResult{Tokens: domainidentity.TokenSet{
+			AccessToken: "access-1", RefreshToken: "refresh-1", ExpiresIn: 3600,
+		}},
+	}}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{JWT: cfgpkg.JWTConfig{RefreshTTL: time.Hour}})
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"login":"admin","password":"secret"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Request.Header.Set("X-Forwarded-Proto", "https")
+
+	handler.Login(ctx)
+
+	for _, name := range []string{refreshCookieName, apiMiddleware.ProtocolAccessCookieName} {
+		cookie := responseCookie(recorder, name)
+		if cookie == nil || !cookie.Secure {
+			t.Fatalf("%s cookie should be Secure behind an HTTPS proxy", name)
+		}
 	}
 }
 

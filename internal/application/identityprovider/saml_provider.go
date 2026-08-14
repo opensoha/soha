@@ -39,15 +39,49 @@ func (s *Service) RotateSAMLCertificate(ctx context.Context, principal domainide
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "rotate")); err != nil {
 		return sohaapi.SAMLCertificateRotation{}, err
 	}
+	repository, err := s.samlProviderRepository(request)
+	if err != nil {
+		return sohaapi.SAMLCertificateRotation{}, err
+	}
+	return s.rotateSAMLCertificate(ctx, principal, repository, strings.TrimSpace(certificateID), request)
+}
+
+func (s *Service) RotateSAMLProviderCertificate(ctx context.Context, principal domainidentity.Principal, providerID string, request sohaapi.SAMLCertificateRotateRequest) (sohaapi.SAMLCertificateRotation, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "rotate")); err != nil {
+		return sohaapi.SAMLCertificateRotation{}, err
+	}
+	provider, err := s.repo.GetProvider(ctx, strings.TrimSpace(providerID))
+	if err != nil {
+		return sohaapi.SAMLCertificateRotation{}, err
+	}
+	if provider.Type != domainprovider.ProviderTypeSAML {
+		return sohaapi.SAMLCertificateRotation{}, fmt.Errorf("%w: provider must use SAML", apperrors.ErrInvalidArgument)
+	}
+	repository, err := s.samlProviderRepository(request)
+	if err != nil {
+		return sohaapi.SAMLCertificateRotation{}, err
+	}
+	current, err := repository.GetActiveSAMLSigningKey(ctx, provider.ID)
+	if err != nil {
+		return sohaapi.SAMLCertificateRotation{}, err
+	}
+	return s.rotateSAMLCertificate(ctx, principal, repository, current.ID, request)
+}
+
+func (s *Service) samlProviderRepository(request sohaapi.SAMLCertificateRotateRequest) (samlProviderRepository, error) {
 	if request.OverlapSeconds < 0 || request.OverlapSeconds > int((30*24*time.Hour)/time.Second) {
-		return sohaapi.SAMLCertificateRotation{}, fmt.Errorf("%w: SAML certificate overlap must be between 0 and 2592000 seconds", apperrors.ErrInvalidArgument)
+		return nil, fmt.Errorf("%w: SAML certificate overlap must be between 0 and 2592000 seconds", apperrors.ErrInvalidArgument)
 	}
 	repository, ok := s.repo.(samlProviderRepository)
 	if !ok {
-		return sohaapi.SAMLCertificateRotation{}, fmt.Errorf("%w: SAML provider repository is not configured", apperrors.ErrUnsupportedOperation)
+		return nil, fmt.Errorf("%w: SAML provider repository is not configured", apperrors.ErrUnsupportedOperation)
 	}
+	return repository, nil
+}
+
+func (s *Service) rotateSAMLCertificate(ctx context.Context, principal domainidentity.Principal, repository samlProviderRepository, certificateID string, request sohaapi.SAMLCertificateRotateRequest) (sohaapi.SAMLCertificateRotation, error) {
 	now := time.Now().UTC()
-	current, err := repository.GetSAMLSigningKey(ctx, strings.TrimSpace(certificateID))
+	current, err := repository.GetSAMLSigningKey(ctx, certificateID)
 	if err != nil {
 		return sohaapi.SAMLCertificateRotation{}, err
 	}
@@ -55,7 +89,7 @@ func (s *Service) RotateSAMLCertificate(ctx context.Context, principal domainide
 	if err != nil {
 		return sohaapi.SAMLCertificateRotation{}, err
 	}
-	retiring, active, err := repository.RotateSAMLSigningKey(ctx, strings.TrimSpace(certificateID), generated, now.Add(time.Duration(request.OverlapSeconds)*time.Second))
+	retiring, active, err := repository.RotateSAMLSigningKey(ctx, certificateID, generated, now.Add(time.Duration(request.OverlapSeconds)*time.Second))
 	if err != nil {
 		return sohaapi.SAMLCertificateRotation{}, err
 	}

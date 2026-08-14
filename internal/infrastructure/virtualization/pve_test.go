@@ -463,6 +463,75 @@ func TestPVEAdapterCreateOrdinaryVMUsesFullClone(t *testing.T) {
 	}
 }
 
+func TestPVEAdapterCreateDeletesOnlyMatchingVMWhenPostCreateStepFails(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       CreateVMInput
+		currentName string
+		wantDeleted bool
+	}{
+		{
+			name: "clone configuration failure",
+			input: CreateVMInput{
+				Name: "clone-a", SourceMode: "template_clone", SourceRef: "9000",
+				ProviderParams: map[string]any{"ciuser": "soha"},
+			},
+			currentName: "clone-a",
+			wantDeleted: true,
+		},
+		{
+			name:        "native start failure",
+			input:       CreateVMInput{Name: "native-a", StartAfterCreate: true},
+			currentName: "native-a",
+			wantDeleted: true,
+		},
+		{
+			name: "reused vmid",
+			input: CreateVMInput{
+				Name: "clone-a", SourceMode: "template_clone", SourceRef: "9000",
+				ProviderParams: map[string]any{"ciuser": "soha"},
+			},
+			currentName: "replacement-vm",
+			wantDeleted: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			deleted := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPost && (strings.HasSuffix(r.URL.Path, "/clone") || strings.HasSuffix(r.URL.Path, "/qemu")):
+					writePVEData(w, nil)
+				case r.Method == http.MethodPost && (strings.HasSuffix(r.URL.Path, "/config") || strings.HasSuffix(r.URL.Path, "/status/start")):
+					http.Error(w, "post-create step failed", http.StatusBadRequest)
+				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/config"):
+					writePVEAny(w, map[string]any{})
+				case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status/current"):
+					writePVEAny(w, map[string]any{"name": test.currentName, "status": "stopped"})
+				case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/qemu/200"):
+					deleted = true
+					writePVEData(w, nil)
+				default:
+					t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+			}))
+			defer server.Close()
+
+			adapter := NewPVEAdapter(server.Client())
+			_, err := adapter.CreateVM(context.Background(), Connection{
+				Endpoint: server.URL,
+				Options:  map[string]any{"vmid": "200", "defaultNode": "pve-a"},
+			}, test.input)
+			if err == nil {
+				t.Fatal("CreateVM() error = nil, want post-create failure")
+			}
+			if deleted != test.wantDeleted {
+				t.Fatalf("deleted = %t, want %t", deleted, test.wantDeleted)
+			}
+		})
+	}
+}
+
 func assertPVECloneVM(t *testing.T, vm VM) {
 	t.Helper()
 	if vm.ID != "200" || vm.Node != "pve-a" {
@@ -631,6 +700,14 @@ func TestNormalizePVECloudInitSSHKeysPreservesBase64Plus(t *testing.T) {
 	keys := normalizePVECloudInitSSHKeys(key)
 	if len(keys) != 1 || keys[0] != key {
 		t.Fatalf("normalizePVECloudInitSSHKeys() = %#v, want raw key preserved", keys)
+	}
+}
+
+func TestNormalizePVESSHKeysEncodesBase64Plus(t *testing.T) {
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITest+Key user@example"
+	want := "ssh-ed25519%20AAAAC3NzaC1lZDI1NTE5AAAAITest%2BKey%20user%40example"
+	if got := normalizePVESSHKeys(key); got != want {
+		t.Fatalf("normalizePVESSHKeys() = %q, want %q", got, want)
 	}
 }
 

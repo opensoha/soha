@@ -20,6 +20,12 @@ type Driver interface {
 	FindSlowSpans(ctx context.Context, sourceID string, config map[string]any, query Query) (Result, error)
 }
 
+type ServiceDriver interface {
+	ListServices(context.Context, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceResult, error)
+	GetService(context.Context, string, map[string]any, telemetry.ServiceQuery) (telemetry.Service, error)
+	GetServiceTopology(context.Context, string, map[string]any, telemetry.ServiceQuery) (telemetry.ServiceTopology, error)
+}
+
 type Registry struct {
 	drivers map[string]Driver
 }
@@ -58,6 +64,39 @@ func (r *Registry) FindSlowSpans(ctx context.Context, backendType, sourceID stri
 		return result.Spans[i].DurationMS > result.Spans[j].DurationMS
 	})
 	return result, nil
+}
+
+func (r *Registry) ListServices(ctx context.Context, backendType, sourceID string, config map[string]any, query telemetry.ServiceQuery) (telemetry.ServiceResult, error) {
+	driver, ok := r.serviceDriver(backendType)
+	if !ok {
+		return telemetry.ServiceResult{}, fmt.Errorf("service catalog is unsupported by trace backend %s", backendType)
+	}
+	return driver.ListServices(ctx, sourceID, config, query)
+}
+
+func (r *Registry) GetService(ctx context.Context, backendType, sourceID string, config map[string]any, query telemetry.ServiceQuery) (telemetry.Service, error) {
+	driver, ok := r.serviceDriver(backendType)
+	if !ok {
+		return telemetry.Service{}, fmt.Errorf("service catalog is unsupported by trace backend %s", backendType)
+	}
+	return driver.GetService(ctx, sourceID, config, query)
+}
+
+func (r *Registry) GetServiceTopology(ctx context.Context, backendType, sourceID string, config map[string]any, query telemetry.ServiceQuery) (telemetry.ServiceTopology, error) {
+	driver, ok := r.serviceDriver(backendType)
+	if !ok {
+		return telemetry.ServiceTopology{}, fmt.Errorf("service topology is unsupported by trace backend %s", backendType)
+	}
+	return driver.GetServiceTopology(ctx, sourceID, config, query)
+}
+
+func (r *Registry) serviceDriver(backendType string) (ServiceDriver, bool) {
+	driver, ok := r.Get(backendType)
+	if !ok {
+		return nil, false
+	}
+	serviceDriver, ok := driver.(ServiceDriver)
+	return serviceDriver, ok
 }
 
 var defaultRegistry = NewRegistry()

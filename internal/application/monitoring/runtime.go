@@ -155,16 +155,30 @@ func (s *Service) evaluateRuleRun(ctx context.Context, rule domainalert.AlertRul
 	startedAt := time.Now().UTC()
 	result, err := s.evaluateRule(ctx, rule)
 	durationMs := int(time.Since(startedAt).Milliseconds())
-	matches := buildRuleMatches(rule, result)
+	matches := []ruleMatch{}
+	if result.Matched {
+		matches = buildRuleMatches(rule, result)
+	}
+	firingMatches := map[string]time.Time{}
+	if result.State == "matched" || result.State == "partial" {
+		for _, match := range matches {
+			if satisfied, matchStart := s.ruleWindowSatisfied(ctx, rule, match.Fingerprint, startedAt); satisfied {
+				firingMatches[match.Fingerprint] = matchStart
+			}
+		}
+	}
 	runInput := domainalert.AlertRuleRunInput{
-		RuleID:     rule.ID,
-		Status:     "clear",
-		Summary:    result.Summary,
-		Matched:    result.Matched,
-		DurationMs: durationMs,
+		RuleID:        rule.ID,
+		Status:        firstNonEmpty(result.State, "no_data"),
+		Summary:       result.Summary,
+		Matched:       result.Matched,
+		DurationMs:    durationMs,
+		QuerySnapshot: result.QuerySnapshot,
 		Result: map[string]any{
+			"state":               result.State,
 			"samples":             result.Samples,
 			"dataSources":         result.DataSources,
+			"errors":              result.Errors,
 			"notificationPreview": result.NotificationPreview,
 			"matches":             buildRuleMatchPayloads(matches),
 		},
@@ -173,21 +187,29 @@ func (s *Service) evaluateRuleRun(ctx context.Context, rule domainalert.AlertRul
 		runInput.Status = "error"
 		runInput.Error = err.Error()
 		runInput.Summary = err.Error()
-		runInput.Result = map[string]any{}
+		runInput.Result = map[string]any{"state": "error"}
+	} else if result.State == "error" || result.State == "partial" {
+		runInput.Error = strings.Join(result.Errors, "; ")
 	} else if result.Matched {
-		runInput.Status = "matched"
+		if len(firingMatches) > 0 {
+			runInput.Status = "firing"
+		} else {
+			runInput.Status = "pending"
+		}
 	}
 	run, createErr := s.ruleRuns.CreateRuleRun(ctx, runInput)
 	if createErr != nil || err != nil {
 		return
 	}
 	if !result.Matched {
-		s.resolveInternalRuleEvents(ctx, rule, nil, startedAt)
+		if result.State == "clear" {
+			s.resolveInternalRuleEvents(ctx, rule, nil, startedAt)
+		}
 		return
 	}
 	firingFingerprints := make([]string, 0, len(matches))
 	for _, match := range matches {
-		satisfied, matchStart := s.ruleWindowSatisfied(ctx, rule, match.Fingerprint)
+		matchStart, satisfied := firingMatches[match.Fingerprint]
 		if !satisfied {
 			continue
 		}
@@ -198,15 +220,14 @@ func (s *Service) evaluateRuleRun(ctx context.Context, rule domainalert.AlertRul
 		}
 		_, _ = s.fanOutEvent(ctx, event)
 	}
-	if len(firingFingerprints) > 0 {
+	if result.State == "matched" && len(firingFingerprints) > 0 {
 		s.resolveInternalRuleEvents(ctx, rule, firingFingerprints, startedAt)
 	}
 }
 
-func (s *Service) ruleWindowSatisfied(ctx context.Context, rule domainalert.AlertRule, fingerprint string) (bool, time.Time) {
-	now := time.Now().UTC()
+func (s *Service) ruleWindowSatisfied(ctx context.Context, rule domainalert.AlertRule, fingerprint string, evaluatedAt time.Time) (bool, time.Time) {
 	if rule.ForSeconds <= 0 {
-		return true, now
+		return true, evaluatedAt
 	}
 	intervalSeconds := int(s.ruleInterval.Seconds())
 	if intervalSeconds <= 0 {
@@ -216,28 +237,18 @@ func (s *Service) ruleWindowSatisfied(ctx context.Context, rule domainalert.Aler
 		RuleID: rule.ID,
 		Limit:  maxInt(10, rule.ForSeconds/intervalSeconds+5),
 	})
-	if err != nil || len(runs) == 0 {
+	if err != nil {
 		return false, time.Time{}
 	}
-	oldest := time.Time{}
-	seenLatestMatch := false
+	oldest := evaluatedAt
 	for _, run := range runs {
 		matched, found := ruleRunMatchedFingerprint(run, fingerprint)
 		if !matched || !found {
 			break
 		}
-		if !seenLatestMatch {
-			seenLatestMatch = true
-		}
 		oldest = run.CreatedAt
 	}
-	if !seenLatestMatch || oldest.IsZero() {
-		return false, time.Time{}
-	}
-	if rule.ForSeconds <= intervalSeconds {
-		return true, oldest
-	}
-	return now.Sub(oldest) >= time.Duration(rule.ForSeconds)*time.Second, oldest
+	return evaluatedAt.Sub(oldest) >= time.Duration(rule.ForSeconds)*time.Second, oldest
 }
 
 func (s *Service) resolveInternalRuleEvents(ctx context.Context, rule domainalert.AlertRule, activeFingerprints []string, now time.Time) {
@@ -307,6 +318,9 @@ func (s *Service) upsertInternalRuleEvent(ctx context.Context, rule domainalert.
 	event.Annotations = mergeLabelMaps(rule.Annotations, map[string]string{
 		"ruleSummary": result.Summary,
 	})
+	if len(event.QuerySnapshot) == 0 {
+		event.QuerySnapshot = result.QuerySnapshot
+	}
 	event.CurrentState = currentState
 	event.LastSeenAt = now
 	event.UpdatedAt = now
@@ -947,6 +961,12 @@ func buildRuleMatches(rule domainalert.AlertRule, result domainalert.RuleTestRes
 	matches := make([]ruleMatch, 0)
 	seen := map[string]struct{}{}
 	for _, sample := range result.Samples {
+		if matched, exists := sample["matched"]; exists {
+			matchedValue, ok := matched.(bool)
+			if !ok || !matchedValue {
+				continue
+			}
+		}
 		labels := mergeLabelMaps(baseLabels, ruleMatchLabels(rule.GroupBy, baseLabels, sample))
 		keyValues := make(map[string]string, len(rule.GroupBy))
 		for _, key := range rule.GroupBy {
@@ -1043,8 +1063,8 @@ func buildGroupedSummary(summary string, keyValues map[string]string) string {
 	return firstNonEmpty(summary, "rule matched") + " [" + strings.Join(parts, ", ") + "]"
 }
 
-func buildRuleMatchPayloads(matches []ruleMatch) []map[string]any {
-	items := make([]map[string]any, 0, len(matches))
+func buildRuleMatchPayloads(matches []ruleMatch) []any {
+	items := make([]any, 0, len(matches))
 	for _, match := range matches {
 		items = append(items, map[string]any{
 			"fingerprint": match.Fingerprint,

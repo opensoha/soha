@@ -524,7 +524,11 @@ func TestRegisterProviderPortalRoutesExposeIdentityProviderWorkbenchAndOIDCProto
 		"PATCH /api/v1/identity/policies/:applicationID",
 		"GET /api/v1/identity/providers/:providerID/oidc-clients",
 		"POST /api/v1/identity/providers/:providerID/oidc-clients",
+		"GET /api/v1/identity/oidc-clients",
+		"POST /api/v1/identity/oidc-clients",
 		"POST /api/v1/identity/providers/:providerID/signing-keys/rotate",
+		"POST /api/v1/identity/providers/:providerID/saml/certificate/rotate",
+		"GET /api/v1/identity/oidc-clients/:clientID",
 		"PATCH /api/v1/identity/oidc-clients/:clientID",
 		"DELETE /api/v1/identity/oidc-clients/:clientID",
 		"GET /api/v1/identity/outposts",
@@ -584,6 +588,26 @@ func TestRegisterPublicRoutesExposesGitLabOAuthCallback(t *testing.T) {
 		}
 	}
 	t.Fatal("missing public GitLab OAuth callback route")
+}
+
+func TestSAMLACSRouteRateLimitsPerProvider(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	registerPublicRoutes(router.Group("/api/v1"), cfgpkg.Config{}, routeTestDependencies())
+
+	for requestNumber := 1; requestNumber <= 61; requestNumber++ {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login/provider-1/acs", strings.NewReader("SAMLResponse=test"))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.RemoteAddr = "192.0.2.10:1234"
+		router.ServeHTTP(recorder, request)
+		if requestNumber < 61 && recorder.Code == http.StatusTooManyRequests {
+			t.Fatalf("request %d was rate limited early", requestNumber)
+		}
+		if requestNumber == 61 && recorder.Code != http.StatusTooManyRequests {
+			t.Fatalf("request %d status = %d, want %d", requestNumber, recorder.Code, http.StatusTooManyRequests)
+		}
+	}
 }
 
 func TestRegisterAccessRoutesPreservesEndpointContract(t *testing.T) {
@@ -748,6 +772,7 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 		{name: "gateway llm relay cache purge", method: "POST", path: "/api/v1/ai-gateway/relay/cache/purge", resourceKind: "AIGatewayLLMRelay", action: "create", permission: "ai.gateway.relay.create"},
 		{name: "secret rotate", method: "POST", path: "/api/v1/secrets/:secretID/versions", resourceKind: "SecretVersion", action: "rotate", permission: appaccess.PermSecretRotate, scoped: true},
 		{name: "docker project deploy", method: "POST", path: "/api/v1/docker/projects/:id/deploy", resourceKind: "DockerProject", action: "deploy", permission: appaccess.PermDockerProjectsDeploy},
+		{name: "docker host Agent installation", method: "POST", path: "/api/v1/docker/hosts/:id/agent-installation", resourceKind: "DockerHost", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "update")},
 		{name: "access scope grant update", method: "PUT", path: "/api/v1/access/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "update", permission: "access.scope-grants.update"},
 		{name: "identity policy update", method: "PATCH", path: "/api/v1/identity/policies/:applicationID", resourceKind: "IdentityPolicy", action: "update", permission: "identity.policies.update"},
 		{name: "identity outpost update", method: "PATCH", path: "/api/v1/identity/outposts/:outpostID", resourceKind: "IdentityOutpost", action: "update", permission: "identity.outposts.update"},

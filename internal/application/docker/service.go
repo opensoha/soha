@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"path"
 	"regexp"
@@ -24,6 +25,7 @@ import (
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/idempotency"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 	"sigs.k8s.io/yaml"
@@ -33,7 +35,6 @@ const (
 	OperationKindHostProvision  = "host_provision"
 	OperationKindContainerStart = "container_start"
 	OperationKindProjectDeploy  = "project_deploy"
-	OperationKindProjectAction  = "project_action"
 	OperationKindServiceAction  = "service_action"
 	OperationKindPortReserve    = "port_reserve"
 	OperationKindHostSync       = "host_sync"
@@ -51,6 +52,8 @@ const (
 	HostStatusAgentFailed       = "agent_failed"
 	defaultOperationMaxRetries  = 1
 	defaultOperationTimeout     = 1800
+	maxRemoteComposeBytes       = 1 << 20
+	remoteComposeTimeout        = 30 * time.Second
 )
 
 type Repository = domaindocker.Repository
@@ -110,6 +113,8 @@ type HostProvisionTaskController interface {
 
 type Option func(*Service)
 
+type ComposeSourceFetcher func(context.Context, string) (io.ReadCloser, error)
+
 func WithHostProvisioner(provisioner HostProvisioner) Option {
 	return func(s *Service) {
 		s.hostProvisioner = provisioner
@@ -122,6 +127,16 @@ func WithRuntimeBearerToken(token string) Option {
 	}
 }
 
+func WithCredentialEncryptionKeys(keys keyring.Ring) Option {
+	return func(s *Service) {
+		s.credentialEncryptionKeys = keys
+	}
+}
+
+func WithAccessURLResolver(resolver AccessURLResolver) Option {
+	return func(s *Service) { s.accessURL = resolver }
+}
+
 func WithAudit(audit AuditRecorder) Option {
 	return func(s *Service) { s.audit = audit }
 }
@@ -130,14 +145,21 @@ func WithLogStreamTickets(tickets LogStreamTicketIssuer) Option {
 	return func(s *Service) { s.logStreamTickets = tickets }
 }
 
+func WithComposeSourceFetcher(fetcher ComposeSourceFetcher) Option {
+	return func(s *Service) { s.composeSourceFetcher = fetcher }
+}
+
 type Service struct {
-	repo               Repository
-	permissions        *appaccess.PermissionResolver
-	operations         OperationRecorder
-	audit              AuditRecorder
-	logStreamTickets   LogStreamTicketIssuer
-	hostProvisioner    HostProvisioner
-	runtimeBearerToken string
+	repo                     Repository
+	permissions              *appaccess.PermissionResolver
+	operations               OperationRecorder
+	audit                    AuditRecorder
+	logStreamTickets         LogStreamTicketIssuer
+	hostProvisioner          HostProvisioner
+	runtimeBearerToken       string
+	credentialEncryptionKeys keyring.Ring
+	accessURL                AccessURLResolver
+	composeSourceFetcher     ComposeSourceFetcher
 }
 
 func New(repo Repository, permissions *appaccess.PermissionResolver, operations OperationRecorder, opts ...Option) *Service {
@@ -208,9 +230,6 @@ func (s *Service) UpdateHost(ctx context.Context, principal domainidentity.Princ
 	input.DockerVersion = current.DockerVersion
 	input.ComposeVersion = current.ComposeVersion
 	input.Architecture = current.Architecture
-	input.VirtualizationConnectionID = current.VirtualizationConnectionID
-	input.VMID = current.VMID
-	input.VMName = current.VMName
 	input.IPAddress = current.IPAddress
 	item, err := s.repo.UpdateHost(ctx, id, input)
 	if err != nil {
@@ -444,6 +463,9 @@ func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Pr
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "create")); err != nil {
 		return domaindocker.Project{}, err
 	}
+	if err := s.resolveRemoteCompose(ctx, &input); err != nil {
+		return domaindocker.Project{}, err
+	}
 	if err := validateProjectInput(input); err != nil {
 		return domaindocker.Project{}, err
 	}
@@ -464,6 +486,9 @@ func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Pr
 func (s *Service) UpdateProject(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ProjectInput) (_ domaindocker.Project, retErr error) {
 	defer func() { s.recordMutationFailure(ctx, principal, "docker.project.update", id, input.Name, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "update")); err != nil {
+		return domaindocker.Project{}, err
+	}
+	if err := s.resolveRemoteCompose(ctx, &input); err != nil {
 		return domaindocker.Project{}, err
 	}
 	if err := validateProjectInput(input); err != nil {
@@ -1024,15 +1049,37 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 
 func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.OperationClaimInput) (_ domaindocker.Operation, retErr error) {
 	s.reconcileHostProvisionOperations(ctx)
+	if input.Authorization.HostBound() {
+		if !runnerIdentityMatches(input.WorkerID, input.Authorization.HostID) || !runnerIdentityMatches(input.AgentID, input.Authorization.AgentID) || !runnerHostsMatch(input.HostIDs, input.Authorization.HostID) {
+			return domaindocker.Operation{}, fmt.Errorf("%w: Docker runner credential is bound to another host", apperrors.ErrAccessDenied)
+		}
+		input.WorkerID = input.Authorization.HostID
+		input.AgentID = input.Authorization.AgentID
+		input.HostIDs = []string{input.Authorization.HostID}
+	}
 	workerID := firstNonEmpty(input.WorkerID, input.AgentID)
 	principal := runnerPrincipal(workerID)
-	defer func() { s.recordMutationFailure(ctx, principal, "docker.operation.claim", "", workerID, retErr, nil) }()
+	defer func() {
+		if !errors.Is(retErr, apperrors.ErrNotFound) {
+			s.recordMutationFailure(ctx, principal, "docker.operation.claim", "", workerID, retErr, nil)
+		}
+	}()
 	if workerID == "" {
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker worker id is required", apperrors.ErrInvalidArgument)
 	}
 	kinds := input.OperationKinds
 	if len(kinds) == 0 {
-		kinds = []string{OperationKindHostProvision, OperationKindContainerStart, OperationKindProjectDeploy, OperationKindServiceAction, OperationKindPortReserve, OperationKindHostSync}
+		kinds = []string{OperationKindHostProvision, OperationKindContainerStart, OperationKindProjectDeploy, OperationKindServiceAction, OperationKindPortReserve}
+		if input.Authorization.HostBound() {
+			kinds = append(kinds, OperationKindHostSync)
+		}
+	} else if !input.Authorization.HostBound() {
+		kinds = slices.DeleteFunc(slices.Clone(kinds), func(kind string) bool {
+			return strings.TrimSpace(kind) == OperationKindHostSync
+		})
+		if len(kinds) == 0 {
+			return domaindocker.Operation{}, apperrors.ErrNotFound
+		}
 	}
 	callbackToken := ""
 	if input.CallbackTokenSupported {
@@ -1070,10 +1117,13 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 }
 
-func (s *Service) GetOperationForRunner(ctx context.Context, id string) (domaindocker.Operation, error) {
+func (s *Service) GetOperationForRunner(ctx context.Context, id string, authorization domaindocker.RunnerAuthorization) (domaindocker.Operation, error) {
 	s.reconcileHostProvisionOperations(ctx)
 	item, err := s.repo.GetOperation(ctx, id)
 	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if err := authorizeRunnerOperation(item, authorization); err != nil {
 		return domaindocker.Operation{}, err
 	}
 	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
@@ -1088,7 +1138,13 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
+	if err := authorizeRunnerOperation(item, input.Authorization); err != nil {
+		return domaindocker.Operation{}, err
+	}
 	workerID := strings.TrimSpace(input.WorkerID)
+	if input.Authorization.HostBound() && workerID != input.Authorization.HostID {
+		return domaindocker.Operation{}, fmt.Errorf("%w: Docker runner credential is bound to another worker", apperrors.ErrAccessDenied)
+	}
 	if workerID == "" {
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker worker id is required", apperrors.ErrInvalidArgument)
 	}
@@ -1141,6 +1197,33 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	s.applyCallbackRuntimeState(ctx, updated, status, input.Payload)
 	s.recordOperation(ctx, principal, "docker.operation.callback", updated.ID, updated.OperationKind, "success", "accepted docker operation callback", map[string]any{"callbackStatus": status, "attemptCount": updated.AttemptCount})
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func runnerIdentityMatches(requested, bound string) bool {
+	requested = strings.TrimSpace(requested)
+	return requested == "" || requested == strings.TrimSpace(bound)
+}
+
+func runnerHostsMatch(requested []string, bound string) bool {
+	for _, hostID := range requested {
+		if strings.TrimSpace(hostID) != strings.TrimSpace(bound) {
+			return false
+		}
+	}
+	return true
+}
+
+func authorizeRunnerOperation(item domaindocker.Operation, authorization domaindocker.RunnerAuthorization) error {
+	if authorization.HostBound() {
+		if strings.TrimSpace(item.HostID) != strings.TrimSpace(authorization.HostID) {
+			return fmt.Errorf("%w: Docker runner credential is bound to another host", apperrors.ErrAccessDenied)
+		}
+		return nil
+	}
+	if item.OperationKind == OperationKindHostSync {
+		return fmt.Errorf("%w: Docker host synchronization requires a host-bound runner credential", apperrors.ErrAccessDenied)
+	}
+	return nil
 }
 
 func newDockerCallbackToken() (string, error) {
@@ -1807,6 +1890,39 @@ func validateProjectInput(input domaindocker.ProjectInput) error {
 	if names := composeServiceNames(input.ComposeContent); len(names) == 0 {
 		return fmt.Errorf("%w: composeContent must define at least one service", apperrors.ErrInvalidArgument)
 	}
+	return nil
+}
+
+func (s *Service) resolveRemoteCompose(ctx context.Context, input *domaindocker.ProjectInput) error {
+	input.SourceKind = strings.TrimSpace(input.SourceKind)
+	if input.SourceKind != "url" {
+		return nil
+	}
+	input.SourceRef = strings.TrimSpace(input.SourceRef)
+	if input.SourceRef == "" {
+		return fmt.Errorf("%w: compose URL is required", apperrors.ErrInvalidArgument)
+	}
+	if s.composeSourceFetcher == nil {
+		return fmt.Errorf("%w: compose URL source is unavailable", apperrors.ErrInvalidArgument)
+	}
+	fetchCtx, cancel := context.WithTimeout(ctx, remoteComposeTimeout)
+	defer cancel()
+	content, err := s.composeSourceFetcher(fetchCtx, input.SourceRef)
+	if err != nil {
+		return fmt.Errorf("%w: compose URL could not be fetched", apperrors.ErrInvalidArgument)
+	}
+	if content == nil {
+		return fmt.Errorf("%w: compose URL returned no content", apperrors.ErrInvalidArgument)
+	}
+	defer func() { _ = content.Close() }()
+	data, err := io.ReadAll(io.LimitReader(content, maxRemoteComposeBytes+1))
+	if err != nil {
+		return fmt.Errorf("%w: read compose URL", apperrors.ErrInvalidArgument)
+	}
+	if len(data) > maxRemoteComposeBytes {
+		return fmt.Errorf("%w: remote compose exceeds 1 MiB", apperrors.ErrInvalidArgument)
+	}
+	input.ComposeContent = string(data)
 	return nil
 }
 
@@ -2743,7 +2859,6 @@ func (s *Service) defaultQuickCreateCloudInit(input domaindocker.QuickCreateHost
 	token := firstNonEmpty(
 		stringValue(providerParams, "runnerToken"),
 		stringValue(providerParams, "bearerToken"),
-		s.runtimeBearerToken,
 	)
 	if controlPlaneURL == "" || token == "" {
 		return ""
@@ -2785,7 +2900,6 @@ func renderDefaultQuickCreateCloudInit(controlPlaneURL, token, runtimeEndpoint, 
 					OperationKindHostProvision,
 					OperationKindContainerStart,
 					OperationKindProjectDeploy,
-					OperationKindProjectAction,
 					OperationKindServiceAction,
 					OperationKindPortReserve,
 					OperationKindHostSync,

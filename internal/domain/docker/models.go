@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -67,6 +68,54 @@ type HostInput struct {
 	AvailablePortEnd           int            `json:"availablePortEnd,omitempty"`
 	Labels                     map[string]any `json:"labels,omitempty"`
 	Config                     map[string]any `json:"config,omitempty"`
+}
+
+type HostAgentInstallation struct {
+	HostID      string    `json:"hostId"`
+	OperationID string    `json:"operationId"`
+	ScriptURL   string    `json:"scriptUrl"`
+	Command     string    `json:"command"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+}
+
+var (
+	ErrHostAgentInstallationExpired = errors.New("docker host Agent installation expired")
+	ErrHostAgentEnrollmentConsumed  = errors.New("docker host Agent enrollment already consumed")
+)
+
+type HostAgentInstallationState struct {
+	OperationID          string
+	HostID               string
+	DownloadTokenHash    string
+	DownloadExpiresAt    time.Time
+	DownloadedAt         *time.Time
+	EnrollmentTokenHash  string
+	EnrollmentExpiresAt  *time.Time
+	EnrolledAt           *time.Time
+	AgentID              string
+	AgentTokenCiphertext string
+	RuntimeTokenHash     string
+	RevokedAt            *time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+type HostAgentEnrollmentExchange struct {
+	OperationID          string
+	AgentID              string
+	EnrollmentTokenHash  string
+	AgentTokenCiphertext string
+	RuntimeTokenHash     string
+	EnrolledAt           time.Time
+}
+
+type RunnerAuthorization struct {
+	HostID  string
+	AgentID string
+}
+
+func (a RunnerAuthorization) HostBound() bool {
+	return strings.TrimSpace(a.HostID) != ""
 }
 
 type ProjectDeployInput struct {
@@ -544,20 +593,22 @@ type OperationFilter struct {
 }
 
 type OperationClaimInput struct {
-	WorkerID               string   `json:"workerId"`
-	AgentID                string   `json:"agentId,omitempty"`
-	HostIDs                []string `json:"hostIds,omitempty"`
-	OperationKinds         []string `json:"operationKinds,omitempty"`
-	CallbackTokenSupported bool     `json:"callbackTokenSupported,omitempty"`
+	WorkerID               string              `json:"workerId"`
+	AgentID                string              `json:"agentId,omitempty"`
+	HostIDs                []string            `json:"hostIds,omitempty"`
+	OperationKinds         []string            `json:"operationKinds,omitempty"`
+	CallbackTokenSupported bool                `json:"callbackTokenSupported,omitempty"`
+	Authorization          RunnerAuthorization `json:"-"`
 }
 
 type OperationCallbackInput struct {
-	OperationID   string         `json:"operationId"`
-	WorkerID      string         `json:"workerId"`
-	CallbackToken string         `json:"callbackToken,omitempty"`
-	Status        string         `json:"status"`
-	Payload       map[string]any `json:"payload,omitempty"`
-	Logs          []string       `json:"logs,omitempty"`
+	OperationID   string              `json:"operationId"`
+	WorkerID      string              `json:"workerId"`
+	CallbackToken string              `json:"callbackToken,omitempty"`
+	Status        string              `json:"status"`
+	Payload       map[string]any      `json:"payload,omitempty"`
+	Logs          []string            `json:"logs,omitempty"`
+	Authorization RunnerAuthorization `json:"-"`
 }
 
 type OperationLog struct {
@@ -720,6 +771,11 @@ type Repository interface {
 	DeleteTemplate(context.Context, string) error
 
 	CreateOperation(context.Context, OperationInput) (Operation, error)
+	CreateHostAgentInstallation(context.Context, OperationInput, HostAgentInstallationState) (Operation, error)
+	ConsumeHostAgentInstallTicket(context.Context, string, string, string, time.Time, time.Time) (HostAgentInstallationState, error)
+	ExchangeHostAgentEnrollment(context.Context, HostAgentEnrollmentExchange) (HostAgentInstallationState, error)
+	GetHostAgentInstallationByRuntimeTokenHash(context.Context, string) (HostAgentInstallationState, error)
+	GetActiveHostAgentInstallation(context.Context, string) (HostAgentInstallationState, error)
 	UpdateOperation(context.Context, Operation) (Operation, error)
 	ClaimOperation(context.Context, string, string, []string, []string, string, time.Time) (Operation, error)
 	GetOperation(context.Context, string) (Operation, error)

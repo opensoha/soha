@@ -293,6 +293,8 @@ func dockerRuntimeMutationSecuritySurface(method, path string) (nonPlatformMutat
 	switch {
 	case path == "/api/v1/docker/hosts/quick-create/plan":
 		return nonPlatformMutationEntry("DockerHostPlan", "plan", appaccess.PermDockerHostsView, false), true
+	case strings.HasPrefix(path, "/api/v1/docker/hosts/") && strings.HasSuffix(path, "/agent-installation"):
+		return nonPlatformMutationEntry("DockerHost", "update", appaccess.PermDockerHostsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/docker/hosts"):
 		return nonPlatformMutationEntry("DockerHost", nonPlatformMutationAction(method, path), appaccess.PermDockerHostsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/docker/projects") && strings.HasSuffix(path, "/deploy/plan"):

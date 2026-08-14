@@ -552,15 +552,22 @@ func (r *Repository) DeleteTemplate(ctx context.Context, id string) error {
 
 func (r *Repository) CreateOperation(ctx context.Context, input domaindocker.OperationInput) (domaindocker.Operation, error) {
 	item := operationFromInput(input)
+	if err := insertOperation(r.db.WithContext(ctx), item); err != nil {
+		return domaindocker.Operation{}, err
+	}
+	return item, nil
+}
+
+func insertOperation(db *gorm.DB, item domaindocker.Operation) error {
 	payload, err := marshalJSON(item.Payload)
 	if err != nil {
-		return domaindocker.Operation{}, fmt.Errorf("marshal docker operation payload: %w", err)
+		return fmt.Errorf("marshal docker operation payload: %w", err)
 	}
 	result, err := marshalJSON(item.Result)
 	if err != nil {
-		return domaindocker.Operation{}, fmt.Errorf("marshal docker operation result: %w", err)
+		return fmt.Errorf("marshal docker operation result: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := db.Exec(`
 		INSERT INTO docker_operations (
 			id, host_id, project_id, service_id, operation_kind, status, requested_by, claimed_by_worker_id,
 			callback_token, attempt_count, max_retries, timeout_seconds, payload, result, started_at, last_heartbeat_at,
@@ -570,9 +577,9 @@ func (r *Repository) CreateOperation(ctx context.Context, input domaindocker.Ope
 		item.Status, nullableString(item.RequestedBy), nullableString(item.ClaimedByWorkerID), nullableString(item.CallbackToken), item.AttemptCount, item.MaxRetries,
 		item.TimeoutSeconds, string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt,
 		item.CreatedAt, item.UpdatedAt).Error; err != nil {
-		return domaindocker.Operation{}, fmt.Errorf("create docker operation: %w", err)
+		return fmt.Errorf("create docker operation: %w", err)
 	}
-	return item, nil
+	return nil
 }
 
 func (r *Repository) UpdateOperation(ctx context.Context, item domaindocker.Operation) (domaindocker.Operation, error) {

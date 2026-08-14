@@ -74,7 +74,7 @@ func TestServiceLaunchAllowsProviderApplications(t *testing.T) {
 	}
 }
 
-func TestServiceLaunchUsesOIDCResolver(t *testing.T) {
+func TestServiceLaunchUsesConfiguredOIDCApplicationURL(t *testing.T) {
 	ctx := context.Background()
 	repo := &memoryPortalRepo{
 		applications: map[string]domainportal.Application{
@@ -86,11 +86,11 @@ func TestServiceLaunchUsesOIDCResolver(t *testing.T) {
 				ProviderType:  domainportal.ProviderTypeOIDC,
 				PortalVisible: true,
 				Status:        domainportal.ApplicationStatusEnabled,
+				LaunchURL:     "https://grafana.example.com/login",
 			},
 		},
 	}
 	service := New(repo, nil, nil)
-	service.SetOIDCLaunchResolver(staticOIDCLaunchResolver{url: "/oauth2/authorize?client_id=grafana"})
 
 	decision, err := service.Launch(ctx, domainidentity.Principal{
 		UserID:   "user-1",
@@ -99,7 +99,7 @@ func TestServiceLaunchUsesOIDCResolver(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Launch returned error: %v", err)
 	}
-	if decision.LaunchURL != "/oauth2/authorize?client_id=grafana" || decision.ProviderType != domainportal.ProviderTypeOIDC {
+	if decision.LaunchURL != "https://grafana.example.com/login" || decision.ProviderType != domainportal.ProviderTypeOIDC {
 		t.Fatalf("Launch decision = %#v", decision)
 	}
 	if len(repo.launches) != 1 || repo.launches[0].LaunchURL != decision.LaunchURL {
@@ -547,14 +547,6 @@ func portalApplicationManagePermissions() *appaccess.PermissionResolver {
 			},
 		},
 	})
-}
-
-type staticOIDCLaunchResolver struct {
-	url string
-}
-
-func (s staticOIDCLaunchResolver) OIDCLaunchURL(context.Context, domainportal.Application) (string, error) {
-	return s.url, nil
 }
 
 type staticProfileReader struct {

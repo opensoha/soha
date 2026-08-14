@@ -143,7 +143,7 @@ func (s *stubDockerRunnerOperationService) ClaimOperation(context.Context, domai
 	return s.item, s.err
 }
 
-func (s *stubDockerRunnerOperationService) GetOperationForRunner(context.Context, string) (domaindocker.Operation, error) {
+func (s *stubDockerRunnerOperationService) GetOperationForRunner(context.Context, string, domaindocker.RunnerAuthorization) (domaindocker.Operation, error) {
 	return s.item, s.err
 }
 

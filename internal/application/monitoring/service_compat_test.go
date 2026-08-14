@@ -9,6 +9,7 @@ import (
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainevent "github.com/opensoha/soha/internal/domain/event"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -17,6 +18,15 @@ import (
 
 type stubMonitoringRolePermissionReader struct {
 	matrix map[string][]string
+}
+
+type captureMonitoringAudit struct {
+	entries []domainaudit.Entry
+}
+
+func (c *captureMonitoringAudit) Record(_ context.Context, entry domainaudit.Entry) error {
+	c.entries = append(c.entries, entry)
+	return nil
 }
 
 func (s stubMonitoringRolePermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
@@ -36,6 +46,8 @@ type stubMonitoringCompatRepository struct {
 	updatedEventInput          domainalert.AlertEventInput
 	upsertSource               string
 	upsertAlerts               []domainalert.IngestAlert
+	ruleRuns                   []domainalert.AlertRuleRun
+	createdRuleRuns            []domainalert.AlertRuleRunInput
 }
 
 func serviceWithCompatRepository(repo *stubMonitoringCompatRepository) *Service {
@@ -174,12 +186,26 @@ func (s *stubMonitoringCompatRepository) UpdateRule(context.Context, string, dom
 	return domainalert.AlertRule{}, nil
 }
 
-func (s *stubMonitoringCompatRepository) ListRuleRuns(context.Context, domainalert.AlertRuleRunFilter) ([]domainalert.AlertRuleRun, error) {
-	return nil, nil
+func (s *stubMonitoringCompatRepository) ListRuleRuns(_ context.Context, filter domainalert.AlertRuleRunFilter) ([]domainalert.AlertRuleRun, error) {
+	items := make([]domainalert.AlertRuleRun, 0, len(s.ruleRuns))
+	for _, item := range s.ruleRuns {
+		if filter.RuleID == "" || item.RuleID == filter.RuleID {
+			items = append(items, item)
+		}
+	}
+	return items, nil
 }
 
-func (s *stubMonitoringCompatRepository) CreateRuleRun(context.Context, domainalert.AlertRuleRunInput) (domainalert.AlertRuleRun, error) {
-	return domainalert.AlertRuleRun{}, nil
+func (s *stubMonitoringCompatRepository) CreateRuleRun(_ context.Context, input domainalert.AlertRuleRunInput) (domainalert.AlertRuleRun, error) {
+	s.createdRuleRuns = append(s.createdRuleRuns, input)
+	now := time.Now().UTC()
+	item := domainalert.AlertRuleRun{
+		ID: input.ID, RuleID: input.RuleID, Status: input.Status, Summary: input.Summary,
+		Matched: input.Matched, DurationMs: input.DurationMs, Error: input.Error,
+		Result: input.Result, QuerySnapshot: input.QuerySnapshot, CreatedAt: now, UpdatedAt: now,
+	}
+	s.ruleRuns = append([]domainalert.AlertRuleRun{item}, s.ruleRuns...)
+	return item, nil
 }
 
 func (s *stubMonitoringCompatRepository) ListEvents(context.Context, domainalert.AlertEventFilter) ([]domainalert.AlertEvent, error) {
@@ -196,32 +222,36 @@ func (s *stubMonitoringCompatRepository) GetEvent(_ context.Context, eventID str
 			return item, nil
 		}
 	}
-	return domainalert.AlertEvent{}, nil
+	return domainalert.AlertEvent{}, apperrors.ErrNotFound
 }
 
 func (s *stubMonitoringCompatRepository) CreateEvent(_ context.Context, input domainalert.AlertEventInput) (domainalert.AlertEvent, error) {
 	event := domainalert.AlertEvent{
-		ID:           input.ID,
-		RuleID:       input.RuleID,
-		SourceType:   input.SourceType,
-		SourceSystem: input.SourceSystem,
-		Fingerprint:  input.Fingerprint,
-		Title:        input.Title,
-		Summary:      input.Summary,
-		Severity:     input.Severity,
-		Status:       input.Status,
-		ClusterID:    input.ClusterID,
-		Namespace:    input.Namespace,
-		Labels:       input.Labels,
-		Annotations:  input.Annotations,
-		Receiver:     input.Receiver,
-		GeneratorURL: input.GeneratorURL,
-		StartsAt:     input.StartsAt,
-		EndsAt:       input.EndsAt,
-		LastSeenAt:   input.LastSeenAt,
-		CurrentState: input.CurrentState,
-		CreatedAt:    time.Now().UTC(),
-		UpdatedAt:    time.Now().UTC(),
+		ID:            input.ID,
+		RuleID:        input.RuleID,
+		SourceType:    input.SourceType,
+		SourceSystem:  input.SourceSystem,
+		Fingerprint:   input.Fingerprint,
+		Title:         input.Title,
+		Summary:       input.Summary,
+		Severity:      input.Severity,
+		Status:        input.Status,
+		ClusterID:     input.ClusterID,
+		Namespace:     input.Namespace,
+		Labels:        input.Labels,
+		Annotations:   input.Annotations,
+		QuerySnapshot: input.QuerySnapshot,
+		Receiver:      input.Receiver,
+		GeneratorURL:  input.GeneratorURL,
+		StartsAt:      input.StartsAt,
+		EndsAt:        input.EndsAt,
+		LastSeenAt:    input.LastSeenAt,
+		CurrentState:  input.CurrentState,
+		CreatedAt:     time.Now().UTC(),
+		UpdatedAt:     time.Now().UTC(),
+	}
+	if s.alertEvents != nil {
+		s.alertEvents[event.ID] = event
 	}
 	return event, nil
 }
@@ -243,6 +273,7 @@ func (s *stubMonitoringCompatRepository) UpdateEvent(_ context.Context, eventID 
 		Namespace:          input.Namespace,
 		Labels:             input.Labels,
 		Annotations:        input.Annotations,
+		QuerySnapshot:      input.QuerySnapshot,
 		Receiver:           input.Receiver,
 		GeneratorURL:       input.GeneratorURL,
 		CurrentState:       input.CurrentState,
@@ -593,6 +624,8 @@ func TestServiceAcknowledgeEventPreservesSourceStatus(t *testing.T) {
 	}
 	service := serviceWithCompatRepository(repo)
 	service.permissions = monitoringCompatPermissions(appaccess.PermObserveAlertsAcknowledge)
+	audit := &captureMonitoringAudit{}
+	service.audit = audit
 
 	result, err := service.AcknowledgeEvent(context.Background(), monitoringCompatPrincipal(), "evt-1")
 	if err != nil {
@@ -609,6 +642,42 @@ func TestServiceAcknowledgeEventPreservesSourceStatus(t *testing.T) {
 	}
 	if result.Status != "firing" || result.CurrentState != "acknowledged" {
 		t.Fatalf("result status/currentState = %q/%q, want firing/acknowledged", result.Status, result.CurrentState)
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Action != "observability.alert_event.acknowledge" || audit.entries[0].ResourceName != "evt-1" {
+		t.Fatalf("audit entries = %#v, want acknowledged evt-1", audit.entries)
+	}
+}
+
+func TestServiceAlertIntegrationMutationAuditFollowsAuthorization(t *testing.T) {
+	input := domainalert.AlertIntegrationInput{
+		ID: "integration:test", Name: "Test", IntegrationType: "generic_json", Token: "secret-token", Enabled: true,
+	}
+
+	repo := &stubMonitoringCompatRepository{}
+	service := serviceWithCompatRepository(repo)
+	audit := &captureMonitoringAudit{}
+	service.audit = audit
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsManage)
+	item, err := service.CreateAlertIntegration(context.Background(), monitoringCompatPrincipal(), input)
+	if err != nil {
+		t.Fatalf("CreateAlertIntegration returned error: %v", err)
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Action != "observability.alert_integration.create" || audit.entries[0].ResourceName != item.ID {
+		t.Fatalf("audit entries = %#v, want created integration", audit.entries)
+	}
+	if audit.entries[0].Metadata != nil {
+		t.Fatalf("audit metadata = %#v, want no integration secret-bearing metadata", audit.entries[0].Metadata)
+	}
+
+	denied := serviceWithCompatRepository(&stubMonitoringCompatRepository{})
+	deniedAudit := &captureMonitoringAudit{}
+	denied.audit = deniedAudit
+	denied.permissions = monitoringCompatPermissions()
+	if _, err := denied.CreateAlertIntegration(context.Background(), monitoringCompatPrincipal(), input); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("denied CreateAlertIntegration error = %v, want access denied", err)
+	}
+	if len(deniedAudit.entries) != 0 {
+		t.Fatalf("denied audit entries = %#v, want none", deniedAudit.entries)
 	}
 }
 

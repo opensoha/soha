@@ -99,7 +99,10 @@ func TestLegacyElasticsearchProviderAlias(t *testing.T) {
 }
 
 func TestProviderCatalogUsesSignalNeutralViewPermission(t *testing.T) {
-	service := &Service{permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"observer": {appaccess.PermObserveMonitoringView}})}
+	service := &Service{
+		dataSources: &memoryDataSources{items: map[string]domainobservability.DataSource{}},
+		permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"observer": {appaccess.PermObserveMonitoringView}}),
+	}
 	items, err := service.ListProviders(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"observer"}})
 	if err != nil {
 		t.Fatalf("ListProviders() error = %v", err)
@@ -111,17 +114,54 @@ func TestProviderCatalogUsesSignalNeutralViewPermission(t *testing.T) {
 		if item.Status != sohaapi.ObservabilityProviderStatusSupported {
 			t.Fatalf("built-in provider status = %#v", item)
 		}
+		if item.Configured || item.RuntimeStatus != sohaapi.ObservabilityProviderRuntimeStatusUnconfigured {
+			t.Fatalf("built-in provider runtime status = %#v", item)
+		}
 	}
 }
 
 func TestProviderCatalogAllowsDataSourceViewPermission(t *testing.T) {
-	service := &Service{permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"data-source-reader": {appaccess.PermObserveLogDataSourcesView}})}
+	service := &Service{
+		dataSources: &memoryDataSources{items: map[string]domainobservability.DataSource{}},
+		permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"data-source-reader": {appaccess.PermObserveLogDataSourcesView}}),
+	}
 	items, err := service.ListProviders(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"data-source-reader"}})
 	if err != nil {
 		t.Fatalf("ListProviders() error = %v", err)
 	}
 	if len(items) == 0 {
 		t.Fatal("ListProviders() returned no built-in providers")
+	}
+}
+
+func TestProviderCatalogSeparatesCapabilityFromRuntimeHealth(t *testing.T) {
+	validatedAt := time.Date(2026, 8, 13, 1, 2, 3, 0, time.UTC)
+	service := &Service{
+		dataSources: &memoryDataSources{items: map[string]domainobservability.DataSource{
+			"healthy":  {ID: "healthy", SourceKind: "logs", BackendType: "loki", Enabled: true, ValidationStatus: "success", LastValidatedAt: &validatedAt},
+			"failed":   {ID: "failed", SourceKind: "logs", BackendType: "loki", Enabled: true, ValidationStatus: "error"},
+			"disabled": {ID: "disabled", SourceKind: "metrics", BackendType: "prometheus", Enabled: false, ValidationStatus: "success"},
+		}},
+		permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"observer": {appaccess.PermObserveMonitoringView}}),
+	}
+	items, err := service.ListProviders(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"observer"}})
+	if err != nil {
+		t.Fatalf("ListProviders() error = %v", err)
+	}
+	byKey := make(map[string]sohaapi.ObservabilityProviderDefinition, len(items))
+	for _, item := range items {
+		byKey[item.ProviderKey] = item
+	}
+	loki := byKey["loki"]
+	if loki.Status != sohaapi.ObservabilityProviderStatusSupported || !loki.Configured || loki.RuntimeStatus != sohaapi.ObservabilityProviderRuntimeStatusDegraded {
+		t.Fatalf("loki provider = %#v", loki)
+	}
+	if loki.LastValidatedAt == nil || !loki.LastValidatedAt.Equal(validatedAt) {
+		t.Fatalf("loki last validated at = %v", loki.LastValidatedAt)
+	}
+	prometheus := byKey["prometheus"]
+	if prometheus.Configured || prometheus.RuntimeStatus != sohaapi.ObservabilityProviderRuntimeStatusUnconfigured {
+		t.Fatalf("prometheus provider = %#v", prometheus)
 	}
 }
 

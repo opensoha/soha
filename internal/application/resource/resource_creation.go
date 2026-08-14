@@ -174,10 +174,8 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	if err != nil {
 		return domainresource.ResourceCreateExecution{}, err
 	}
-	for index := range manifests {
-		if _, err := resolveManifestTarget(&manifests[index], request); err != nil {
-			return domainresource.ResourceCreateExecution{}, err
-		}
+	if err := resolveCreateManifestTargets(manifests, request); err != nil {
+		return domainresource.ResourceCreateExecution{}, err
 	}
 	operationID := uuid.NewString()
 	result := domainresource.ResourceCreateExecution{
@@ -230,6 +228,15 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	}
 	_ = s.recordCreateBatch(ctx, principal, clusterID, request.RequestID, result, result.Status)
 	return result, nil
+}
+
+func resolveCreateManifestTargets(manifests []domainresource.ResolvedCreateManifest, request domainresource.ResourceCreateRequest) error {
+	for index := range manifests {
+		if _, err := resolveManifestTarget(&manifests[index], request); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *ResourceCreation) authorizeResourceCreationEntry(ctx context.Context, principal domainidentity.Principal, source domainresource.ResourceCreateSource) error {

@@ -408,16 +408,7 @@ func (c Config) staticProblems() []string {
 			problems = append(problems, fmt.Sprintf("http.trusted_proxies contains invalid IP or CIDR %q", proxy))
 		}
 	}
-	coreSecrets := []struct {
-		name  string
-		value string
-	}{
-		{name: "auth.jwt.secret", value: c.Auth.JWT.Secret},
-		{name: "runtime.execution_runner_token", value: c.Runtime.ExecutionRunnerToken},
-		{name: "monitoring.webhook_token", value: c.Monitoring.WebhookToken},
-		{name: "security.credential_encryption_key", value: c.Security.CredentialEncryptionKey},
-	}
-	for _, item := range coreSecrets {
+	for _, item := range c.systemSecrets() {
 		problems = appendSecretProblem(problems, item.name, item.value, true, 32)
 		if strings.TrimSpace(item.value) != item.value {
 			problems = append(problems, fmt.Sprintf("%s must not have leading or trailing whitespace", item.name))
@@ -431,6 +422,31 @@ func (c Config) staticProblems() []string {
 	}
 	problems = append(problems, validateSharedConfigProblems(c)...)
 	return problems
+}
+
+func (c Config) DefaultSystemSecretKeys() []string {
+	keys := make([]string, 0, 4)
+	for _, item := range c.systemSecrets() {
+		if item.value == defaultSystemSecret {
+			keys = append(keys, item.name)
+		}
+	}
+	return keys
+}
+
+func (c Config) systemSecrets() []struct {
+	name  string
+	value string
+} {
+	return []struct {
+		name  string
+		value string
+	}{
+		{name: "auth.jwt.secret", value: c.Auth.JWT.Secret},
+		{name: "runtime.execution_runner_token", value: c.Runtime.ExecutionRunnerToken},
+		{name: "monitoring.webhook_token", value: c.Monitoring.WebhookToken},
+		{name: "security.credential_encryption_key", value: c.Security.CredentialEncryptionKey},
+	}
 }
 
 func validateCompanionConfig(config PluginCompanionConfig) []string {

@@ -310,14 +310,18 @@ func (r *Repository) DeleteOutpost(ctx context.Context, outpostID string) error 
 }
 
 func (r *Repository) ListOIDCClients(ctx context.Context, providerID string) ([]domainprovider.OIDCClient, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, post_logout_redirect_uris, allowed_scopes,
+	query := `
+		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
 		       allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 		       refresh_token_ttl_seconds, status, created_at, updated_at
-		FROM identity_oidc_clients
-		WHERE provider_id = ?
-		ORDER BY client_id ASC, id ASC
-	`, strings.TrimSpace(providerID)).Rows()
+		FROM identity_oidc_clients`
+	args := make([]any, 0, 1)
+	if providerID = strings.TrimSpace(providerID); providerID != "" {
+		query += " WHERE provider_id = ?"
+		args = append(args, providerID)
+	}
+	query += " ORDER BY client_id ASC, id ASC"
+	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +339,7 @@ func (r *Repository) ListOIDCClients(ctx context.Context, providerID string) ([]
 
 func (r *Repository) GetOIDCClient(ctx context.Context, id string) (domainprovider.OIDCClient, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, post_logout_redirect_uris, allowed_scopes,
+		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
 		       allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 		       refresh_token_ttl_seconds, status, created_at, updated_at
 		FROM identity_oidc_clients
@@ -354,7 +358,7 @@ func (r *Repository) GetOIDCClient(ctx context.Context, id string) (domainprovid
 
 func (r *Repository) GetOIDCClientByClientID(ctx context.Context, clientID string) (domainprovider.OIDCClient, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, post_logout_redirect_uris, allowed_scopes,
+		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
 		       allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 		       refresh_token_ttl_seconds, status, created_at, updated_at
 		FROM identity_oidc_clients
@@ -376,6 +380,10 @@ func (r *Repository) CreateOIDCClient(ctx context.Context, item domainprovider.O
 	if err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("marshal redirect uris: %w", err)
 	}
+	redirectURIRegexes, err := marshalJSON(item.RedirectURIRegexes)
+	if err != nil {
+		return domainprovider.OIDCClient{}, fmt.Errorf("marshal redirect uri regexes: %w", err)
+	}
 	postLogoutRedirectURIs, err := marshalJSON(item.PostLogoutRedirectURIs)
 	if err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("marshal post logout redirect uris: %w", err)
@@ -390,12 +398,12 @@ func (r *Repository) CreateOIDCClient(ctx context.Context, item domainprovider.O
 	}
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO identity_oidc_clients (
-			id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, post_logout_redirect_uris, allowed_scopes,
+			id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
 			allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 			refresh_token_ttl_seconds, status, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash, redirectURIs, postLogoutRedirectURIs, scopes, grantTypes,
+		VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash, redirectURIs, redirectURIRegexes, postLogoutRedirectURIs, scopes, grantTypes,
 		item.RequirePKCE, item.AccessTokenTTLSeconds, item.IDTokenTTLSeconds, item.RefreshTokenTTLSeconds,
 		item.Status, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domainprovider.OIDCClient{}, err
@@ -407,6 +415,10 @@ func (r *Repository) UpdateOIDCClient(ctx context.Context, item domainprovider.O
 	redirectURIs, err := marshalJSON(item.RedirectURIs)
 	if err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("marshal redirect uris: %w", err)
+	}
+	redirectURIRegexes, err := marshalJSON(item.RedirectURIRegexes)
+	if err != nil {
+		return domainprovider.OIDCClient{}, fmt.Errorf("marshal redirect uri regexes: %w", err)
 	}
 	postLogoutRedirectURIs, err := marshalJSON(item.PostLogoutRedirectURIs)
 	if err != nil {
@@ -423,11 +435,11 @@ func (r *Repository) UpdateOIDCClient(ctx context.Context, item domainprovider.O
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE identity_oidc_clients
 		SET provider_id = ?, client_id = ?, client_type = ?, client_secret_hash = ?, redirect_uris = ?::jsonb,
-		    post_logout_redirect_uris = ?::jsonb, allowed_scopes = ?::jsonb, allowed_grant_types = ?::jsonb, require_pkce = ?,
+		    redirect_uri_regexes = ?::jsonb, post_logout_redirect_uris = ?::jsonb, allowed_scopes = ?::jsonb, allowed_grant_types = ?::jsonb, require_pkce = ?,
 		    access_token_ttl_seconds = ?, id_token_ttl_seconds = ?, refresh_token_ttl_seconds = ?,
 		    status = ?, updated_at = ?
 		WHERE id = ?
-	`, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash, redirectURIs, postLogoutRedirectURIs, scopes, grantTypes,
+	`, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash, redirectURIs, redirectURIRegexes, postLogoutRedirectURIs, scopes, grantTypes,
 		item.RequirePKCE, item.AccessTokenTTLSeconds, item.IDTokenTTLSeconds, item.RefreshTokenTTLSeconds,
 		item.Status, item.UpdatedAt, item.ID)
 	if result.Error != nil {
@@ -835,7 +847,7 @@ func scanOutpost(row scanner) (domainprovider.Outpost, error) {
 
 func scanOIDCClient(row scanner) (domainprovider.OIDCClient, error) {
 	var item domainprovider.OIDCClient
-	var redirectURIsRaw, postLogoutRedirectURIsRaw, scopesRaw, grantTypesRaw []byte
+	var redirectURIsRaw, redirectURIRegexesRaw, postLogoutRedirectURIsRaw, scopesRaw, grantTypesRaw []byte
 	if err := row.Scan(
 		&item.ID,
 		&item.ProviderID,
@@ -843,6 +855,7 @@ func scanOIDCClient(row scanner) (domainprovider.OIDCClient, error) {
 		&item.ClientType,
 		&item.ClientSecretHash,
 		&redirectURIsRaw,
+		&redirectURIRegexesRaw,
 		&postLogoutRedirectURIsRaw,
 		&scopesRaw,
 		&grantTypesRaw,
@@ -859,6 +872,9 @@ func scanOIDCClient(row scanner) (domainprovider.OIDCClient, error) {
 	if err := unmarshalJSON(redirectURIsRaw, &item.RedirectURIs, false); err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("decode redirect uris: %w", err)
 	}
+	if err := unmarshalJSON(redirectURIRegexesRaw, &item.RedirectURIRegexes, false); err != nil {
+		return domainprovider.OIDCClient{}, fmt.Errorf("decode redirect uri regexes: %w", err)
+	}
 	if err := unmarshalJSON(postLogoutRedirectURIsRaw, &item.PostLogoutRedirectURIs, false); err != nil {
 		return domainprovider.OIDCClient{}, fmt.Errorf("decode post logout redirect uris: %w", err)
 	}
@@ -870,6 +886,9 @@ func scanOIDCClient(row scanner) (domainprovider.OIDCClient, error) {
 	}
 	if item.RedirectURIs == nil {
 		item.RedirectURIs = []string{}
+	}
+	if item.RedirectURIRegexes == nil {
+		item.RedirectURIRegexes = []string{}
 	}
 	if item.PostLogoutRedirectURIs == nil {
 		item.PostLogoutRedirectURIs = []string{}

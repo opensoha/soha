@@ -92,7 +92,7 @@ func (s *Service) getProjectLogs(ctx context.Context, principal domainidentity.P
 	req := target.runtimeRequest()
 	req.TailLines = normalizeRuntimeTailLines(tailLines)
 	req.SinceSeconds = sinceSeconds
-	return postDockerRuntime[domaindocker.ProjectRuntimeLogs](ctx, target.Endpoint, s.runtimeBearerToken, "/docker/runtime/logs", req)
+	return postDockerRuntime[domaindocker.ProjectRuntimeLogs](ctx, target.Endpoint, target.BearerToken, "/docker/runtime/logs", req)
 }
 
 func (s *Service) StreamProjectLogs(ctx context.Context, principal domainidentity.Principal, projectID, serviceName string, tailLines int, stdout io.Writer) error {
@@ -116,8 +116,8 @@ func (s *Service) streamProjectLogs(ctx context.Context, principal domainidentit
 		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if s.runtimeBearerToken != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+s.runtimeBearerToken)
+	if target.BearerToken != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+target.BearerToken)
 	}
 	resp, err := dockerRuntimeStreamClient.Do(httpReq)
 	if err != nil {
@@ -147,8 +147,8 @@ func (s *Service) StreamProjectTerminal(ctx context.Context, principal domainide
 	req.Shell = shell
 	wsURL := dockerRuntimeWebSocketURL(target.Endpoint, "/docker/runtime/terminal")
 	headers := http.Header{}
-	if s.runtimeBearerToken != "" {
-		headers.Set("Authorization", "Bearer "+s.runtimeBearerToken)
+	if target.BearerToken != "" {
+		headers.Set("Authorization", "Bearer "+target.BearerToken)
 	}
 	conn, handshakeResponse, err := websocket.DefaultDialer.DialContext(ctx, wsURL, headers)
 	if handshakeResponse != nil {
@@ -210,7 +210,7 @@ func (s *Service) ListProjectVolumes(ctx context.Context, principal domainidenti
 	if err != nil {
 		return nil, err
 	}
-	return postDockerRuntime[[]domaindocker.ProjectVolume](ctx, target.Endpoint, s.runtimeBearerToken, "/docker/runtime/volumes", target.runtimeRequest())
+	return postDockerRuntime[[]domaindocker.ProjectVolume](ctx, target.Endpoint, target.BearerToken, "/docker/runtime/volumes", target.runtimeRequest())
 }
 
 func (s *Service) ListProjectVolumeFiles(ctx context.Context, principal domainidentity.Principal, projectID string, input domaindocker.ProjectVolumeFileListInput) (domaindocker.ProjectVolumeFileList, error) {
@@ -225,7 +225,7 @@ func (s *Service) ListProjectVolumeFiles(ctx context.Context, principal domainid
 	req.Target = input.Target
 	req.Path = input.Path
 	req.Limit = normalizeVolumeListLimit(input.Limit)
-	return postDockerRuntime[domaindocker.ProjectVolumeFileList](ctx, target.Endpoint, s.runtimeBearerToken, "/docker/runtime/volume-files", req)
+	return postDockerRuntime[domaindocker.ProjectVolumeFileList](ctx, target.Endpoint, target.BearerToken, "/docker/runtime/volume-files", req)
 }
 
 func (s *Service) ReadProjectVolumeFile(ctx context.Context, principal domainidentity.Principal, projectID string, input domaindocker.ProjectVolumeFileReadInput) (domaindocker.ProjectVolumeFileContent, error) {
@@ -240,13 +240,14 @@ func (s *Service) ReadProjectVolumeFile(ctx context.Context, principal domainide
 	req.Target = input.Target
 	req.Path = input.Path
 	req.LimitBytes = normalizeVolumeReadLimit(input.LimitBytes)
-	return postDockerRuntime[domaindocker.ProjectVolumeFileContent](ctx, target.Endpoint, s.runtimeBearerToken, "/docker/runtime/volume-file", req)
+	return postDockerRuntime[domaindocker.ProjectVolumeFileContent](ctx, target.Endpoint, target.BearerToken, "/docker/runtime/volume-file", req)
 }
 
 type dockerRuntimeTarget struct {
 	Project     domaindocker.Project
 	ServiceName string
 	Endpoint    string
+	BearerToken string
 }
 
 func (t dockerRuntimeTarget) runtimeRequest() dockerRuntimeRequest {
@@ -280,6 +281,10 @@ func (s *Service) projectRuntimeTarget(ctx context.Context, projectID, requested
 	if endpoint == "" {
 		return dockerRuntimeTarget{}, fmt.Errorf("%w: docker host agent endpoint is not available", apperrors.ErrClusterUnready)
 	}
+	bearerToken, err := s.hostAgentBearerToken(ctx, host.ID)
+	if err != nil {
+		return dockerRuntimeTarget{}, err
+	}
 	serviceName := strings.TrimSpace(requestedServiceName)
 	if serviceName == "" {
 		serviceName = stringValue(project.Config, "serviceName")
@@ -297,7 +302,7 @@ func (s *Service) projectRuntimeTarget(ctx context.Context, projectID, requested
 	if len(services) > 0 && !slices.Contains(services, serviceName) {
 		return dockerRuntimeTarget{}, fmt.Errorf("%w: docker service %s is not defined in compose", apperrors.ErrNotFound, serviceName)
 	}
-	return dockerRuntimeTarget{Project: project, ServiceName: serviceName, Endpoint: endpoint}, nil
+	return dockerRuntimeTarget{Project: project, ServiceName: serviceName, Endpoint: endpoint, BearerToken: bearerToken}, nil
 }
 
 func postDockerRuntime[T any](ctx context.Context, endpoint string, token string, runtimePath string, payload dockerRuntimeRequest) (T, error) {

@@ -46,11 +46,16 @@ func authorizeStaticBearerKeys(header string, keys keyring.Ring) bool {
 	if keys.Active().ID() == "" {
 		return false
 	}
+	actual := bearerTokenFromAuthorization(header)
+	return keys.Match(actual, time.Now().UTC())
+}
+
+func bearerTokenFromAuthorization(header string) string {
 	actual := strings.TrimSpace(header)
 	if len(actual) >= len("Bearer ") && strings.EqualFold(actual[:len("Bearer ")], "Bearer ") {
 		actual = strings.TrimSpace(actual[len("Bearer "):])
 	}
-	return keys.Match(actual, time.Now().UTC())
+	return actual
 }
 
 func legacyRunnerKeyring(token string) keyring.Ring {

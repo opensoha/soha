@@ -87,6 +87,8 @@ func (r *Registry) Analyze(ctx context.Context, backendType, sourceID string, co
 			"average":   average,
 			"max":       maxValue,
 			"min":       minValue,
+			"sum":       total,
+			"count":     len(item.Points),
 			"trend":     trend,
 		})
 	}

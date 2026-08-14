@@ -84,6 +84,27 @@ func TestJWTKeyringSignsWithKidAndVerifiesPreviousKeys(t *testing.T) {
 	}
 }
 
+func TestValidateOIDCNonceRequiresExactMatch(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		expected string
+		actual   string
+		wantErr  bool
+	}{
+		{name: "match", expected: "nonce-1", actual: "nonce-1"},
+		{name: "missing claim", expected: "nonce-1", wantErr: true},
+		{name: "mismatch", expected: "nonce-1", actual: "nonce-2", wantErr: true},
+		{name: "missing expected nonce", actual: "nonce-1", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateOIDCNonce(test.expected, test.actual)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("validateOIDCNonce() error = %v, wantErr %v", err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestNewRejectsMissingDependency(t *testing.T) {
 	t.Parallel()
 

@@ -12,6 +12,24 @@ import (
 	domainobservability "github.com/opensoha/soha/internal/domain/observability"
 )
 
+type stubDashboardRepository struct {
+	item domainobservability.Dashboard
+}
+
+func (s stubDashboardRepository) ListDashboards(context.Context) ([]domainobservability.Dashboard, error) {
+	return []domainobservability.Dashboard{s.item}, nil
+}
+
+func (s stubDashboardRepository) GetDashboard(context.Context, string) (domainobservability.Dashboard, error) {
+	return s.item, nil
+}
+
+func (s stubDashboardRepository) CreateDashboard(_ context.Context, item domainobservability.Dashboard) (domainobservability.Dashboard, error) {
+	return item, nil
+}
+
+func (stubDashboardRepository) DeleteDashboard(context.Context, string) error { return nil }
+
 func TestListMetricDataSourcesOnlyReturnsEnabledPrometheusSources(t *testing.T) {
 	service := &Service{
 		dataSources: stubSignalDataSources{items: []domaincopilot.DataSource{
@@ -80,15 +98,104 @@ func TestImportGrafanaDashboardNormalizesSupportedPanels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("import dashboard: %v", err)
 	}
-	if result.ImportedPanelCount != 1 || result.SkippedPanelCount != 1 {
+	if result.ImportedPanelCount != 2 || result.SkippedPanelCount != 0 {
 		t.Fatalf("counts = imported %d skipped %d", result.ImportedPanelCount, result.SkippedPanelCount)
 	}
 	panel := result.Dashboard.Panels[0]
 	if !panel.Queryable || len(panel.Targets) != 1 || panel.Targets[0].RefID != "A" {
 		t.Fatalf("panel = %#v", panel)
 	}
-	if len(result.Dashboard.Tags) != 1 || len(result.Warnings) < 3 {
+	if len(result.Dashboard.Tags) != 1 || len(result.Warnings) < 2 {
 		t.Fatalf("tags/warnings = %#v / %#v", result.Dashboard.Tags, result.Warnings)
+	}
+}
+
+func TestImportGrafanaDashboardPreservesVariablesBindingsAndUnsupportedPanels(t *testing.T) {
+	raw := `{
+		"title":"Compatibility",
+		"templating":{"list":[{"name":"namespace","label":"Namespace","type":"custom","query":"default,production","current":{"value":"production"}}]},
+		"panels":[
+			{"id":1,"title":"Requests","type":"gauge","datasource":{"type":"prometheus","uid":"prom-main"},"targets":[{"refId":"A","expr":"sum(http_requests_total{namespace=\"$namespace\"})"}]},
+			{"id":2,"title":"Plugin","type":"custom-plugin","pluginVersion":"1.2.3"}
+		]
+	}`
+
+	result, err := importGrafanaDashboard(raw, "prometheus-main", time.Now())
+	if err != nil {
+		t.Fatalf("import compatibility dashboard: %v", err)
+	}
+	if result.Dashboard.SourceFormat != "classic" || result.Dashboard.RawJSON != raw || len(result.Dashboard.Variables) != 1 {
+		t.Fatalf("dashboard fidelity = %#v", result.Dashboard)
+	}
+	if got := result.Dashboard.Variables[0]; got.Name != "namespace" || got.Current != "production" || len(got.Options) != 2 {
+		t.Fatalf("variable = %#v", got)
+	}
+	if len(result.Dashboard.DataSourceBindings) != 1 || result.Dashboard.Panels[0].Targets[0].DataSourceUID != "prom-main" {
+		t.Fatalf("bindings/panel = %#v / %#v", result.Dashboard.DataSourceBindings, result.Dashboard.Panels[0])
+	}
+	unsupported := result.Dashboard.Panels[1]
+	if unsupported.Type != "unsupported" || !unsupported.Unsupported || !strings.Contains(unsupported.RawJSON, `"pluginVersion":"1.2.3"`) {
+		t.Fatalf("unsupported panel = %#v", unsupported)
+	}
+}
+
+func TestImportGrafanaDashboardRejectsV2Resource(t *testing.T) {
+	_, err := importGrafanaDashboard(`{"apiVersion":"dashboard.grafana.app/v2beta1","kind":"Dashboard","spec":{"title":"V2"}}`, "prometheus-main", time.Now())
+	if err == nil || !strings.Contains(err.Error(), "V2 resources are not supported") {
+		t.Fatalf("expected explicit V2 rejection, got %v", err)
+	}
+}
+
+func TestResolveDashboardVariablesRejectsUnapprovedValues(t *testing.T) {
+	definitions := []domainobservability.DashboardVariable{{Name: "namespace", Current: "default", Options: []string{"default", "production"}}}
+	values, err := resolveDashboardVariables(definitions, map[string]string{"namespace": "production"})
+	if err != nil || values["namespace"] != "production" {
+		t.Fatalf("resolved variables = %#v, %v", values, err)
+	}
+	if _, err := resolveDashboardVariables(definitions, map[string]string{"namespace": `production\"} or vector(1)`}); err == nil {
+		t.Fatal("expected unapproved variable value to fail")
+	}
+}
+
+func TestQueryDashboardPanelValidatesBindingsBeforeBackendAndReturnsSnapshot(t *testing.T) {
+	now := time.Now().UTC()
+	metricBackend := &stubMetricTelemetry{}
+	dashboard := domainobservability.Dashboard{
+		ID: "dashboard:1", DataSourceID: "metrics",
+		Variables:          []domainobservability.DashboardVariable{{Name: "namespace", Current: "default", Options: []string{"default", "production"}}},
+		DataSourceBindings: []domainobservability.DashboardDataSourceBinding{{Type: "prometheus", UID: "prom-main", DataSourceID: "metrics"}},
+		Panels: []domainobservability.DashboardPanel{{
+			ID: "requests", Type: "timeseries", Queryable: true,
+			Targets: []domainobservability.DashboardTarget{{
+				RefID: "A", Expression: `sum(http_requests_total{namespace="$namespace"})`,
+				DataSourceType: "prometheus", DataSourceUID: "missing", DataSourceID: "metrics",
+			}},
+		}},
+	}
+	service := &Service{
+		dashboards: stubDashboardRepository{item: dashboard}, metrics: metricBackend,
+		dataSources: stubSignalDataSources{items: []domaincopilot.DataSource{{
+			ID: "metrics", BackendType: "prometheus", Enabled: true, Config: map[string]any{"endpoint": "http://prometheus:9090"},
+		}}},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveMonitoringView),
+	}
+
+	_, err := service.QueryDashboardPanel(context.Background(), monitoringCompatPrincipal(), dashboard.ID, "requests", now.Add(-time.Hour), now, time.Minute, map[string]string{"namespace": "production"})
+	if err == nil || metricBackend.called {
+		t.Fatalf("expected invalid binding before backend call, err=%v called=%v", err, metricBackend.called)
+	}
+
+	dashboard.Panels[0].Targets[0].DataSourceUID = "prom-main"
+	service.dashboards = stubDashboardRepository{item: dashboard}
+	result, err := service.QueryDashboardPanel(context.Background(), monitoringCompatPrincipal(), dashboard.ID, "requests", now.Add(-time.Hour), now, time.Minute, map[string]string{"namespace": "production"})
+	if err != nil {
+		t.Fatalf("query approved dashboard panel: %v", err)
+	}
+	if !metricBackend.called || !strings.Contains(metricBackend.query.Expression, `namespace="production"`) {
+		t.Fatalf("backend query = %#v", metricBackend.query)
+	}
+	if result.Meta == nil || result.Meta.Snapshot["query"] != metricBackend.query.Expression {
+		t.Fatalf("query meta = %#v", result.Meta)
 	}
 }
 

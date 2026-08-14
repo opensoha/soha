@@ -1085,10 +1085,17 @@ func verifiedOIDCProfile(ctx context.Context, verifier *oidc.IDTokenVerifier, oa
 	if err := idToken.Claims(&rawClaims); err == nil {
 		profile.Raw = rawClaims
 	}
-	if expectedNonce != "" && profile.Nonce != "" && profile.Nonce != expectedNonce {
-		return oidcProfile{}, fmt.Errorf("%w: oidc nonce mismatch", apperrors.ErrUnauthorized)
+	if err := validateOIDCNonce(expectedNonce, profile.Nonce); err != nil {
+		return oidcProfile{}, err
 	}
 	return profile, nil
+}
+
+func validateOIDCNonce(expected, actual string) error {
+	if expected == "" || actual == "" || actual != expected {
+		return fmt.Errorf("%w: oidc nonce mismatch", apperrors.ErrUnauthorized)
+	}
+	return nil
 }
 
 func enrichOIDCProfile(ctx context.Context, provider *oidc.Provider, oauthToken *oauth2.Token, loginProvider domainsettings.LoginProviderSettings, profile oidcProfile) oidcProfile {

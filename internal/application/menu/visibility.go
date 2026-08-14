@@ -25,14 +25,14 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 
 var workspaceResourceMenuPrefixes = []string{
 	"/cluster-resources", "/workloads", "/configuration", "/network", "/storage",
-	"/platform-access-control", "/helm", "/extensions", "/clusters", "/monitoring-workbench",
+	"/platform-access-control", "/helm", "/extensions", "/clusters", "/manifests", "/monitoring-workbench",
 	"/ai-gateway", "/ai-workbench", "/observability",
 	"/compute",
 }
 
 var workspaceApplicationMenuPrefixes = []string{
-	"/applications", "/application-environments", "/build-templates", "/delivery/onboarding",
-	"/delivery/testing", "/delivery/analysis", "/delivery/blueprints", "/delivery/release-bundles",
+	"/applications", "/application-environments", "/build-templates", "/delivery/overview", "/delivery/onboarding",
+	"/delivery/manifests", "/delivery/testing", "/delivery/analysis", "/delivery/blueprints", "/delivery/release-bundles",
 	"/delivery/execution-tasks", "/workflow-templates", "/release-board", "/workflows", "/releases", "/registries",
 }
 
@@ -61,6 +61,11 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 	return visibilityRule{}, false
 }
 
+func HasPermissionRule(menuID string) bool {
+	_, ok := permissionRuleForMenu(domainmenu.Record{ID: strings.TrimSpace(menuID)})
+	return ok
+}
+
 func coreDeliveryMenuRule(id string) (visibilityRule, bool) {
 	switch id {
 	case "home-workbench":
@@ -75,8 +80,10 @@ func coreDeliveryMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermPlatformExtensionsView}}, true
 	case "clusters":
 		return visibilityRule{permissions: []string{appaccess.PermPlatformClustersView}}, true
-	case "builds", "delivery-blueprints", "delivery-onboarding":
+	case "builds", "delivery-blueprints", "delivery-onboarding", "delivery-manifest-library", "platform-manifests":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
+	case "delivery-overview":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryApplicationEnvView, appaccess.PermDeliveryReleaseBoardView, appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryExecutionTasksView}}, true
 	case "delivery-testing":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryExecutionTasksView, appaccess.PermDeliveryReleaseBoardView}}, true
 	case "delivery-analysis":
@@ -120,10 +127,12 @@ func observabilityAIMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermObserveEventsView,
 			appaccess.PermObserveLogDataSourcesView,
 		}}, true
-	case "monitoring-workbench-overview", "monitoring-workbench-services", "monitoring-workbench-metrics", "monitoring-workbench-dashboards", "monitoring-workbench-traces", "monitoring-workbench-logs", "monitoring-workbench-providers", "monitoring-workbench-alerting":
+	case "monitoring-workbench-overview", "monitoring-workbench-services", "monitoring-workbench-explore", "monitoring-workbench-dashboards", "monitoring-workbench-providers":
 		return visibilityRule{permissions: []string{appaccess.PermObserveMonitoringView}}, true
 	case "monitoring-workbench-log-data-sources":
 		return visibilityRule{permissions: []string{appaccess.PermObserveLogDataSourcesView}}, true
+	case "monitoring-workbench-integrations":
+		return visibilityRule{permissions: []string{appaccess.PermObserveAlertIntegrationsView}}, true
 	case "monitoring-workbench-alerts":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAlertsView}}, true
 	case "monitoring-workbench-rules":
@@ -171,14 +180,24 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
 	case "ai-workbench-agent-providers":
 		return visibilityRule{permissions: []string{appaccess.PermAIAgentProvidersView}}, true
+	case "ai-workbench-provider-fleet":
+		return visibilityRule{permissions: []string{appaccess.PermAIAgentFleetView}}, true
+	case "ai-workbench-environments":
+		return visibilityRule{permissions: []string{appaccess.PermAIEnvironmentsView}}, true
 	case "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-tool-settings", "ai-workbench-operations", "ai-workbench-tools":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
 	case "ai-workbench-knowledge":
 		return visibilityRule{permissions: []string{appaccess.PermAIKnowledgeView}}, true
+	case "ai-workbench-knowledge-pipelines":
+		return visibilityRule{permissions: []string{appaccess.PermAIKnowledgeConnectorsView, appaccess.PermAIKnowledgeIngestionOperate}}, true
 	case "ai-workbench-context":
 		return visibilityRule{permissions: []string{appaccess.PermAIContextInspect}}, true
-	case "ai-workbench-evaluations":
+	case "ai-workbench-evaluations", "ai-workbench-evaluation-lifecycle":
 		return visibilityRule{permissions: []string{appaccess.PermAIEvaluationsView}}, true
+	case "ai-workbench-memory":
+		return visibilityRule{permissions: []string{appaccess.PermAIMemoryView}}, true
+	case "ai-workbench-production-operations":
+		return visibilityRule{permissions: []string{appaccess.PermAIOperationsView}}, true
 	case "ai-workbench-model-settings":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
 	case "ai-gateway-tokens":
@@ -230,10 +249,22 @@ func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationStorageView}}, true
 	case "virtualization-workbench-flavors":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationFlavorsView}}, true
-	case "virtualization-workbench-operations":
-		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView}}, true
-	case "virtualization-workbench-sync":
-		return visibilityRule{permissions: []string{appaccess.PermVirtualizationSyncView}}, true
+	case "docker-workbench":
+		return visibilityRule{permissions: []string{
+			appaccess.PermDockerOverviewView,
+			appaccess.PermDockerHostsView,
+			appaccess.PermDockerProjectsView,
+			appaccess.PermDockerServicesView,
+			appaccess.PermDockerPortsView,
+			appaccess.PermDockerTemplatesView,
+			appaccess.PermDockerOperationsView,
+		}}, true
+	case "docker-workbench-hosts":
+		return visibilityRule{permissions: []string{appaccess.PermDockerHostsView}}, true
+	case "docker-workbench-projects":
+		return visibilityRule{permissions: []string{appaccess.PermDockerProjectsView}}, true
+	case "docker-workbench-templates":
+		return visibilityRule{permissions: []string{appaccess.PermDockerTemplatesView}}, true
 	case "access":
 		return visibilityRule{permissions: []string{
 			appaccess.PermAccessUsersView,
@@ -250,6 +281,8 @@ func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermAccessGroupsView}}, true
 	case "access-policies":
 		return visibilityRule{permissions: []string{appaccess.PermAccessPoliciesView}}, true
+	case "access-directory-sync":
+		return visibilityRule{permissions: []string{appaccess.PermAccessDirectoryView}}, true
 	default:
 		return visibilityRule{}, false
 	}
@@ -257,7 +290,7 @@ func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
 
 func computeMenuRule(id string) (visibilityRule, bool) {
 	switch id {
-	case "compute-workbench":
+	case "compute-workbench", "compute-workbench-overview":
 		return visibilityRule{permissions: []string{
 			appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationVMsView,
 			appaccess.PermVirtualizationClustersView, appaccess.PermVirtualizationImagesView,
@@ -268,8 +301,6 @@ func computeMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermDockerServicesView, appaccess.PermDockerPortsView, appaccess.PermDockerTemplatesView,
 			appaccess.PermDockerOperationsView,
 		}}, true
-	case "compute-workbench-overview":
-		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOverviewView, appaccess.PermDockerOverviewView}}, true
 	case "compute-workbench-tasks-operations":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView, appaccess.PermDockerOperationsView}}, true
 	default:
@@ -328,6 +359,9 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermSettingsSystemIntegrationsView,
 			appaccess.PermSettingsRuntimeConfigView,
 			appaccess.PermSystemMenusView,
+			appaccess.PermSystemOnlineUsersView,
+			appaccess.PermSystemAuditView,
+			appaccess.PermSystemOperationsView,
 			appaccess.PermSecretView,
 		}}, true
 	case "settings-login":

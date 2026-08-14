@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -721,53 +721,6 @@ func TestServiceRotateSigningKeyRetainsPreviousJWKSKey(t *testing.T) {
 	}
 }
 
-func TestServiceOIDCLaunchURLBuildsAuthorizeURL(t *testing.T) {
-	ctx := context.Background()
-	repo := newMemoryRepo(t)
-	repo.client.RequirePKCE = false
-	repo.app.LaunchURL = ""
-	repo.app.Metadata = map[string]any{
-		"oidc": map[string]any{
-			"scopes": []any{"openid", "email"},
-		},
-	}
-	service := New(repo, &memoryUsers{}, nil, nil, "test-encryption-key-32-bytes-long")
-
-	launchURL, err := service.OIDCLaunchURL(ctx, repo.app)
-	if err != nil {
-		t.Fatalf("OIDCLaunchURL returned error: %v", err)
-	}
-	parsed, err := url.Parse(launchURL)
-	if err != nil {
-		t.Fatalf("parse launch URL: %v", err)
-	}
-	if parsed.Path != "/oauth2/authorize" {
-		t.Fatalf("launch path = %q, want /oauth2/authorize", parsed.Path)
-	}
-	query := parsed.Query()
-	if query.Get("response_type") != "code" || query.Get("client_id") != "client-1" {
-		t.Fatalf("launch query = %s", parsed.RawQuery)
-	}
-	if query.Get("redirect_uri") != "https://app.example/callback" {
-		t.Fatalf("redirect_uri = %q, want registered callback", query.Get("redirect_uri"))
-	}
-	if query.Get("scope") != "openid email" {
-		t.Fatalf("scope = %q, want metadata scopes", query.Get("scope"))
-	}
-}
-
-func TestServiceOIDCLaunchURLRejectsPKCERequiredClient(t *testing.T) {
-	ctx := context.Background()
-	repo := newMemoryRepo(t)
-	repo.app.LaunchURL = ""
-	service := New(repo, &memoryUsers{}, nil, nil, "test-encryption-key-32-bytes-long")
-
-	_, err := service.OIDCLaunchURL(ctx, repo.app)
-	if !errors.Is(err, apperrors.ErrNotFound) {
-		t.Fatalf("OIDCLaunchURL error = %v, want not found for portal launch without non-PKCE client", err)
-	}
-}
-
 func TestServiceProxyAuthAllowsAndInjectsHeaders(t *testing.T) {
 	ctx := context.Background()
 	repo := newMemoryRepo(t)
@@ -891,6 +844,14 @@ func TestServiceProxyAuthUsesProxySessionToken(t *testing.T) {
 	}
 }
 
+func TestServiceProxySessionRequiresPlatformSession(t *testing.T) {
+	service := New(newMemoryRepo(t), &memoryUsers{}, nil, nil, "test-encryption-key-32-bytes-long")
+	_, err := service.IssueProxySession(context.Background(), (&memoryUsers{}).principal(), domainidentity.AccessContext{})
+	if !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("IssueProxySession error = %v, want unauthorized", err)
+	}
+}
+
 func TestServiceProxySessionUsesKeyringAndAcceptsPreviousKey(t *testing.T) {
 	ctx := context.Background()
 	repo := newMemoryRepo(t)
@@ -991,8 +952,10 @@ func TestServiceProxyAuthRejectsProviderIDHostMismatch(t *testing.T) {
 	service := New(repo, &memoryUsers{}, nil, nil, "test-encryption-key-32-bytes-long")
 
 	_, err := service.ProxyAuth(ctx, (&memoryUsers{}).principal(), domainprovider.ProxyAuthInput{
-		ProviderID:  "provider-1",
-		OriginalURL: "https://evil.example/dashboards",
+		ProviderID:    "provider-1",
+		OriginalURL:   "https://evil.example/dashboards",
+		ForwardedHost: "grafana.example.com",
+		ForwardedURI:  "/dashboards",
 	})
 	if !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("ProxyAuth error = %v, want access denied", err)
@@ -1049,10 +1012,11 @@ func TestServiceReverseProxyAuthorizesConfiguredUpstream(t *testing.T) {
 	repo := newMemoryRepo(t)
 	repo.provider.Type = domainprovider.ProviderTypeProxy
 	repo.provider.Config = map[string]any{
-		"externalHost":      "grafana.example.com",
-		"mode":              domainprovider.ProxyModeReverseProxy,
-		"upstreamUrl":       "http://grafana.internal:3000/base",
-		"websocket_enabled": true,
+		"externalHost":         "grafana.example.com",
+		"mode":                 domainprovider.ProxyModeReverseProxy,
+		"upstreamUrl":          "http://grafana.internal:3000/base",
+		"allowPrivateUpstream": true,
+		"websocket_enabled":    true,
 	}
 	repo.app.ProviderType = domainportal.ProviderTypeProxy
 	repo.app.Status = domainportal.ApplicationStatusEnabled
@@ -1075,6 +1039,9 @@ func TestServiceReverseProxyAuthorizesConfiguredUpstream(t *testing.T) {
 	}
 	if !result.WebsocketEnabled {
 		t.Fatal("ReverseProxy websocket flag = false, want true")
+	}
+	if !result.AllowPrivateUpstream {
+		t.Fatal("ReverseProxy private-upstream flag = false, want true")
 	}
 }
 
@@ -1128,6 +1095,56 @@ func TestProviderFromInputValidatesReverseProxyConfiguration(t *testing.T) {
 	}
 }
 
+func TestServiceProviderResponsesRedactSecretReferences(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.provider.SecretRefs = map[string]any{
+		"CLIENT_SECRET": "soha://secrets/oidc-client",
+	}
+	service := New(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, "test-encryption-key-32-bytes-long")
+
+	items, err := service.ListProviders(ctx, (&memoryUsers{}).principal(), domainprovider.ProviderFilter{})
+	if err != nil {
+		t.Fatalf("ListProviders returned error: %v", err)
+	}
+	if len(items) != 1 || items[0].SecretRefs != nil {
+		t.Fatalf("providers leaked secret references: %#v", items)
+	}
+	if len(items[0].ConfiguredSecretAliases) != 1 || items[0].ConfiguredSecretAliases[0] != "CLIENT_SECRET" {
+		t.Fatalf("configured aliases = %#v", items[0].ConfiguredSecretAliases)
+	}
+	item, err := service.GetProvider(ctx, (&memoryUsers{}).principal(), repo.provider.ID)
+	if err != nil || item.SecretRefs != nil {
+		t.Fatalf("GetProvider result = %#v, error = %v", item, err)
+	}
+
+	repo.provider.Type = domainprovider.ProviderTypeProxy
+	repo.provider.Config = map[string]any{"externalHost": "grafana.example.com"}
+	repo.app.ProviderType = domainportal.ProviderTypeProxy
+	repo.app.Status = domainportal.ApplicationStatusEnabled
+	result, err := service.ProxyAuth(ctx, (&memoryUsers{}).principal(), domainprovider.ProxyAuthInput{
+		OriginalURL: "https://grafana.example.com/",
+	})
+	if err != nil || result.Provider.SecretRefs != nil {
+		t.Fatalf("ProxyAuth provider = %#v, error = %v", result.Provider, err)
+	}
+}
+
+func TestProviderFromInputValidatesSecretReferences(t *testing.T) {
+	input := domainprovider.ProviderInput{
+		ApplicationID: "app-1",
+		Name:          "OIDC",
+		Type:          domainprovider.ProviderTypeOIDC,
+		Status:        domainprovider.ProviderStatusEnabled,
+		SecretRefs:    map[string]any{"clientSecret": "plain-text-secret"},
+	}
+
+	_, err := providerFromInput("provider-1", input, domainidentity.Principal{}, time.Now())
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("providerFromInput error = %v, want invalid secret reference", err)
+	}
+}
+
 func TestProviderFromInputValidatesSAMLServiceProvider(t *testing.T) {
 	input := domainprovider.ProviderInput{
 		ApplicationID: "app-1",
@@ -1139,18 +1156,110 @@ func TestProviderFromInputValidatesSAMLServiceProvider(t *testing.T) {
 			"assertionConsumerServiceUrls": []any{"http://sp.example/saml/acs"},
 		},
 	}
-	_, err := providerFromInput("provider-1", input, domainidentity.Principal{}, time.Now())
-	if !errors.Is(err, apperrors.ErrInvalidArgument) {
-		t.Fatalf("providerFromInput insecure SAML ACS error = %v, want invalid argument", err)
-	}
-
-	input.Config["assertionConsumerServiceUrls"] = []any{"https://sp.example/saml/acs"}
 	provider, err := providerFromInput("provider-1", input, domainidentity.Principal{}, time.Now())
 	if err != nil {
-		t.Fatalf("providerFromInput valid SAML provider: %v", err)
+		t.Fatalf("providerFromInput HTTP SAML ACS: %v", err)
+	}
+
+	input.Config["assertionConsumerServiceUrls"] = []any{"ftp://sp.example/saml/acs"}
+	if _, err := providerFromInput("provider-1", input, domainidentity.Principal{}, time.Now()); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("providerFromInput unsupported SAML ACS error = %v, want invalid argument", err)
 	}
 	if provider.Type != domainprovider.ProviderTypeSAML {
 		t.Fatalf("provider type = %q", provider.Type)
+	}
+}
+
+func TestNormalizeRedirectURIsSupportsHTTP(t *testing.T) {
+	values, err := normalizeRedirectURIs([]string{"http://app.example/callback", "https://app.example/logout"})
+	if err != nil || len(values) != 2 {
+		t.Fatalf("normalizeRedirectURIs() = %#v, %v", values, err)
+	}
+	for _, value := range []string{"ftp://app.example/callback", "http://app.example/callback#fragment", "/callback"} {
+		if _, err := normalizeRedirectURIs([]string{value}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+			t.Fatalf("normalizeRedirectURIs(%q) error = %v, want invalid argument", value, err)
+		}
+	}
+}
+
+func TestRedirectURIAllowedSupportsStrictAndRegexRules(t *testing.T) {
+	client := domainprovider.OIDCClient{
+		RedirectURIs:       []string{"http://app.example/callback"},
+		RedirectURIRegexes: []string{`https?://[a-z0-9-]+\.example\.com/callback`},
+	}
+	tests := map[string]bool{
+		"http://app.example/callback":                                  true,
+		"https://tenant.example.com/callback":                          true,
+		"http://tenant.example.com/callback":                           true,
+		"https://tenant.example.com/callback/extra":                    false,
+		"https://evil.example.net/https://tenant.example.com/callback": false,
+		"ftp://tenant.example.com/callback":                            false,
+		"https://tenant.example.com/callback#token":                    false,
+	}
+	for candidate, want := range tests {
+		if got := redirectURIAllowed(client, candidate); got != want {
+			t.Errorf("redirectURIAllowed(%q) = %v, want %v", candidate, got, want)
+		}
+	}
+}
+
+func TestOIDCClientFromInputAllowsRegexOnlyRedirect(t *testing.T) {
+	client, err := oidcClientFromInput("client-record-1", domainprovider.OIDCClientInput{
+		ProviderID:         "provider-1",
+		ClientID:           "client-1",
+		RedirectURIRegexes: []string{`https?://[a-z0-9-]+\.example\.com/callback`},
+	}, "")
+	if err != nil {
+		t.Fatalf("oidcClientFromInput() error = %v", err)
+	}
+	if len(client.RedirectURIs) != 0 || len(client.RedirectURIRegexes) != 1 {
+		t.Fatalf("oidcClientFromInput() redirects = %#v, regexes = %#v", client.RedirectURIs, client.RedirectURIRegexes)
+	}
+
+	for _, pattern := range []string{"(", strings.Repeat("a", maxOIDCRedirectURIRegexLength+1)} {
+		_, err := oidcClientFromInput("client-record-1", domainprovider.OIDCClientInput{
+			ProviderID:         "provider-1",
+			ClientID:           "client-1",
+			RedirectURIRegexes: []string{pattern},
+		}, "")
+		if !errors.Is(err, apperrors.ErrInvalidArgument) {
+			t.Errorf("oidcClientFromInput(%q) error = %v, want invalid argument", pattern, err)
+		}
+	}
+}
+
+func TestServiceOIDCRegexRedirectIsRecheckedAtTokenExchange(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	repo.client.RedirectURIs = nil
+	repo.client.RedirectURIRegexes = []string{`https?://[a-z0-9-]+\.example\.com/callback`}
+	service := New(repo, &memoryUsers{}, nil, nil, "test-encryption-key-32-bytes-long")
+	verifier := strings.Repeat("v", 43)
+	redirectURI := "http://tenant.example.com/callback"
+
+	authorized, err := service.Authorize(ctx, "https://soha.example", (&memoryUsers{}).principal(), domainprovider.AuthorizeInput{
+		ResponseType:        "code",
+		ClientID:            "client-1",
+		RedirectURI:         redirectURI,
+		Scope:               "openid",
+		CodeChallenge:       pkceChallenge(verifier),
+		CodeChallengeMethod: "S256",
+	})
+	if err != nil {
+		t.Fatalf("Authorize() error = %v", err)
+	}
+
+	repo.client.RedirectURIRegexes = nil
+	_, err = service.Token(ctx, "https://soha.example", domainprovider.TokenInput{
+		GrantType:    "authorization_code",
+		Code:         authorized.Code,
+		RedirectURI:  redirectURI,
+		ClientID:     "client-1",
+		ClientSecret: "secret-1",
+		CodeVerifier: verifier,
+	})
+	if !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("Token() error = %v, want unauthorized after redirect rule removal", err)
 	}
 }
 
@@ -1318,7 +1427,7 @@ func TestServiceOutpostClaimAndHeartbeat(t *testing.T) {
 		t.Fatalf("changed heartbeat = %#v, error=%v", changed, err)
 	}
 
-	session, err := service.IssueProxySession(ctx, (&memoryUsers{}).principal(), domainidentity.AccessContext{})
+	session, err := service.IssueProxySession(ctx, (&memoryUsers{}).principal(), domainidentity.AccessContext{SessionID: "session-1"})
 	if err != nil {
 		t.Fatalf("IssueProxySession returned error: %v", err)
 	}
@@ -1508,6 +1617,41 @@ func TestServiceListOIDCClientsRequiresOIDCProvider(t *testing.T) {
 	}
 }
 
+func TestServiceListOIDCClientsWithoutProviderListsAll(t *testing.T) {
+	repo := newMemoryRepo(t)
+	service := New(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, "test-encryption-key-32-bytes-long")
+
+	items, err := service.ListOIDCClients(context.Background(), (&memoryUsers{}).principal(), "")
+	if err != nil {
+		t.Fatalf("ListOIDCClients returned error: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != repo.client.ID {
+		t.Fatalf("clients = %#v, want all clients", items)
+	}
+}
+
+func TestServiceCreateOIDCClientUsesInputProviderWithoutPathProvider(t *testing.T) {
+	repo := newMemoryRepo(t)
+	service := New(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, "test-encryption-key-32-bytes-long")
+
+	created, err := service.CreateOIDCClient(context.Background(), (&memoryUsers{}).principal(), "", domainprovider.OIDCClientInput{
+		ProviderID:        "provider-1",
+		ClientID:          "legacy-client",
+		ClientType:        domainprovider.OIDCClientTypePublic,
+		RedirectURIs:      []string{"https://app.example/callback"},
+		AllowedScopes:     []string{"openid"},
+		AllowedGrantTypes: []string{"authorization_code"},
+		RequirePKCE:       true,
+		Status:            domainprovider.OIDCClientStatusEnabled,
+	})
+	if err != nil {
+		t.Fatalf("CreateOIDCClient returned error: %v", err)
+	}
+	if created.Client.ProviderID != "provider-1" || created.Client.ClientID != "legacy-client" {
+		t.Fatalf("created client = %#v", created.Client)
+	}
+}
+
 func TestServiceCreateProviderRejectsDuplicateApplicationProvider(t *testing.T) {
 	ctx := context.Background()
 	repo := newMemoryRepo(t)
@@ -1563,6 +1707,23 @@ func TestServiceCreateOIDCClientRejectsUnsupportedGrantType(t *testing.T) {
 		AllowedScopes:     []string{"openid"},
 		AllowedGrantTypes: []string{"authorization_code", "client_credentials"},
 		Status:            domainprovider.OIDCClientStatusEnabled,
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("CreateOIDCClient error = %v, want invalid argument", err)
+	}
+}
+
+func TestServiceCreateOIDCClientRejectsShortExplicitSecret(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryRepo(t)
+	service := New(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, "test-encryption-key-32-bytes-long")
+
+	_, err := service.CreateOIDCClient(ctx, (&memoryUsers{}).principal(), "provider-1", domainprovider.OIDCClientInput{
+		ClientID:      "client-2",
+		ClientSecret:  "too-short",
+		RedirectURIs:  []string{"https://app.example/callback"},
+		AllowedScopes: []string{"openid"},
+		Status:        domainprovider.OIDCClientStatusEnabled,
 	})
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("CreateOIDCClient error = %v, want invalid argument", err)
@@ -1692,6 +1853,39 @@ func TestRotateSAMLCertificateReplacesActiveKeyAndRetainsOverlap(t *testing.T) {
 	}
 	if rotation.OverlapEndsAt.Before(time.Now().UTC().Add(9*time.Minute)) || rotation.Retiring.Status != sohaapi.CertificateSummaryStatusRetiring {
 		t.Fatalf("overlap was not retained: %#v", rotation)
+	}
+}
+
+func TestRotateSAMLProviderCertificateSelectsActiveKey(t *testing.T) {
+	repo := newMemoryRepo(t)
+	repo.provider.Type = domainprovider.ProviderTypeSAML
+	now := time.Now().UTC()
+	activeKey, err := keyring.NewKey("test", "test-encryption-key-32-bytes-long", now.Add(-time.Hour), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, err := keyring.New(activeKey, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewWithEncryptionKeys(repo, &memoryUsers{}, identityProviderTestPermissions(), nil, keys)
+	current, err := service.generateSAMLSigningKey(repo.provider.ID, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo.samlKey = current
+
+	rotation, err := service.RotateSAMLProviderCertificate(t.Context(), (&memoryUsers{}).principal(), repo.provider.ID, sohaapi.SAMLCertificateRotateRequest{OverlapSeconds: 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rotation.Retiring.ID != current.ID || rotation.Active.ID == current.ID {
+		t.Fatalf("unexpected provider certificate rotation: %#v", rotation)
+	}
+
+	repo.provider.Type = domainprovider.ProviderTypeOIDC
+	if _, err := service.RotateSAMLProviderCertificate(t.Context(), (&memoryUsers{}).principal(), repo.provider.ID, sohaapi.SAMLCertificateRotateRequest{}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("non-SAML provider rotation error = %v, want invalid argument", err)
 	}
 }
 
@@ -1892,7 +2086,7 @@ func (r *memoryRepo) GetProviderApplication(_ context.Context, providerID string
 }
 
 func (r *memoryRepo) ListOIDCClients(_ context.Context, providerID string) ([]domainprovider.OIDCClient, error) {
-	if providerID != r.client.ProviderID {
+	if providerID != "" && providerID != r.client.ProviderID {
 		return nil, nil
 	}
 	return []domainprovider.OIDCClient{r.client}, nil

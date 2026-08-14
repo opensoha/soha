@@ -55,7 +55,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.virtualization.enabled|modules.docker.enabled",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"virtualization.overview.view", "virtualization.vms.view", "virtualization.clusters.view", "virtualization.images.view", "virtualization.flavors.view", "virtualization.operations.view", "virtualization.sync.view", "docker.overview.view", "docker.hosts.view", "docker.projects.view", "docker.services.view", "docker.ports.view", "docker.templates.view", "docker.operations.view"},
-			SeedMenus:          []string{"compute-workbench", "compute-workbench-overview", "virtualization-workbench", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-storage", "virtualization-workbench-flavors", "virtualization-workbench-operations", "virtualization-workbench-sync", "docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations", "compute-workbench-tasks-operations"},
+			SeedMenus:          []string{"compute-workbench", "compute-workbench-overview", "virtualization-workbench", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-storage", "virtualization-workbench-flavors", "docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "compute-workbench-tasks-operations"},
 		},
 		{
 			ID:                 "virtualization",
@@ -64,7 +64,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.virtualization.enabled",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"virtualization.overview.view", "virtualization.vms.view", "virtualization.clusters.view", "virtualization.images.view", "virtualization.flavors.view", "virtualization.operations.view", "virtualization.sync.view"},
-			SeedMenus:          []string{"virtualization-workbench", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-storage", "virtualization-workbench-flavors", "virtualization-workbench-operations", "virtualization-workbench-sync"},
+			SeedMenus:          []string{"virtualization-workbench", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-storage", "virtualization-workbench-flavors"},
 		},
 		{
 			ID:                 "docker",
@@ -73,7 +73,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.docker.enabled",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"docker.overview.view", "docker.hosts.view", "docker.projects.view", "docker.services.view", "docker.ports.view", "docker.templates.view", "docker.operations.view"},
-			SeedMenus:          []string{"docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations"},
+			SeedMenus:          []string{"docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates"},
 		},
 		{
 			ID:                 "delivery",
@@ -82,7 +82,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.delivery.enabled",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"workspace.application.view"},
-			SeedMenus:          []string{"builds", "delivery-onboarding", "release-board", "delivery-testing", "delivery-analysis", "build-templates", "release-bundles", "execution-tasks", "workflow-templates", "application-environments", "workflows", "releases", "registries", "delivery-blueprints"},
+			SeedMenus:          []string{"builds", "delivery-overview", "delivery-onboarding", "release-board", "delivery-testing", "delivery-analysis", "build-templates", "release-bundles", "execution-tasks", "workflow-templates", "application-environments", "workflows", "releases", "registries", "delivery-blueprints"},
 		},
 		{
 			ID:                 "ai",
@@ -91,7 +91,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.ai.enabled",
 			Dependencies:       []string{"delivery"},
 			VisiblePermissions: []string{"observe.ai.view", "observe.ai.chat", "ai.knowledge.view", "ai.context.inspect", "ai.evaluations.view", "ai.agent-providers.view", "ai.agent-fleet.view", "ai.environments.view", "ai.memory.view", "ai.operations.view"},
-			SeedMenus:          []string{"ai-workbench", "ai-workbench-chat", "ai-workbench-inspection", "ai-workbench-tool-settings", "ai-workbench-model-settings"},
+			SeedMenus:          []string{"ai-workbench", "ai-workbench-overview", "ai-workbench-chat", "ai-workbench-knowledge", "ai-workbench-knowledge-pipelines", "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-evaluations", "ai-workbench-evaluation-lifecycle", "ai-workbench-context", "ai-workbench-memory", "ai-workbench-tool-settings", "ai-workbench-agent-providers", "ai-workbench-provider-fleet", "ai-workbench-environments", "ai-workbench-model-settings", "ai-workbench-production-operations"},
 		},
 		{
 			ID:                 "aiGateway",
@@ -109,7 +109,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.monitoring.enabled",
 			Dependencies:       []string{"ai"},
 			VisiblePermissions: []string{"observe.monitoring.view", "observe.log-data-sources.view", "observe.alerts.view"},
-			SeedMenus:          []string{"monitoring-workbench", "monitoring-workbench-overview", "monitoring-workbench-services", "monitoring-workbench-metrics", "monitoring-workbench-traces", "monitoring-workbench-logs", "monitoring-workbench-providers", "monitoring-workbench-log-data-sources", "monitoring-workbench-alerting", "monitoring-workbench-alerts", "monitoring-workbench-rules", "monitoring-workbench-notifications", "monitoring-workbench-healing", "monitoring-workbench-oncall", "monitoring-workbench-events"},
+			SeedMenus:          []string{"monitoring-workbench", "monitoring-workbench-overview", "monitoring-workbench-services", "monitoring-workbench-explore", "monitoring-workbench-dashboards", "monitoring-workbench-providers", "monitoring-workbench-log-data-sources", "monitoring-workbench-integrations", "monitoring-workbench-alerts", "monitoring-workbench-rules", "monitoring-workbench-notifications", "monitoring-workbench-healing", "monitoring-workbench-oncall", "monitoring-workbench-events"},
 		},
 		{
 			ID:                 "security",

@@ -1,5 +1,7 @@
 package dto
 
+import domainsettings "github.com/opensoha/soha/internal/domain/settings"
+
 type PasswordLoginRequest struct {
 	Login    string `json:"login"`
 	Password string `json:"password"`
@@ -10,8 +12,9 @@ type LoginVerificationOptions struct {
 }
 
 type LoginOptionsResponse struct {
-	Verification              LoginVerificationOptions `json:"verification"`
-	LocalPasswordLoginEnabled bool                     `json:"localPasswordLoginEnabled"`
+	Branding                  *domainsettings.BrandingSettings `json:"branding,omitempty"`
+	Verification              LoginVerificationOptions         `json:"verification"`
+	LocalPasswordLoginEnabled bool                             `json:"localPasswordLoginEnabled"`
 }
 
 type ProPasswordLoginRequest struct {

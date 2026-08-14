@@ -152,14 +152,13 @@ func shouldShowMenu(item domainmenu.Record, roleIDs []string, permissionKeys []s
 	if !item.Enabled {
 		return false
 	}
-	if isVisibleByPermissions(item, permissionKeys) {
-		return true
+	if _, mapped := permissionRuleForMenu(item); mapped {
+		return isVisibleByPermissions(item, permissionKeys)
 	}
 	if len(item.RoleIDs) > 0 {
 		return overlaps(item.RoleIDs, roleIDs)
 	}
-	_, derived := permissionRuleForMenu(item)
-	return !derived
+	return false
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainmenu.Input) (domainmenu.Record, error) {
@@ -169,6 +168,9 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	item, err := normalizeInput(input)
 	if err != nil {
 		return domainmenu.Record{}, err
+	}
+	if _, mapped := permissionRuleForMenu(item); mapped {
+		item.RoleIDs = nil
 	}
 	created, err := s.repo.Create(ctx, item)
 	if err == nil {
@@ -186,6 +188,9 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 		return domainmenu.Record{}, err
 	}
 	item.ID = strings.TrimSpace(menuID)
+	if _, mapped := permissionRuleForMenu(item); mapped {
+		item.RoleIDs = nil
+	}
 	updated, err := s.repo.Update(ctx, menuID, item)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {

@@ -39,6 +39,21 @@ func TestLoginRuntimeUsesPinnedMetadataWithoutNetwork(t *testing.T) {
 	}
 }
 
+func TestLoginRuntimeMetadataUsesEntityIDAndACSSeparately(t *testing.T) {
+	runtime := &LoginRuntime{}
+	metadata, err := runtime.Metadata(context.Background(), domainsettings.LoginProviderSettings{
+		EntityID:    "https://sp.example.test/metadata",
+		RedirectURL: "https://sp.example.test/acs",
+	})
+	if err != nil {
+		t.Fatalf("Metadata returned error: %v", err)
+	}
+	text := string(metadata)
+	if !strings.Contains(text, `entityID="https://sp.example.test/metadata"`) || !strings.Contains(text, `Location="https://sp.example.test/acs"`) {
+		t.Fatalf("metadata does not separate entity ID and ACS: %s", text)
+	}
+}
+
 func TestProviderRuntimeValidatesRegisteredServiceProvider(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	key, certificate := testCertificate(t, now)

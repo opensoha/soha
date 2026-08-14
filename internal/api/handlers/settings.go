@@ -239,6 +239,7 @@ func (h *SettingsHandler) UpdateBrandingSettings(c *gin.Context) {
 	item, err := h.branding.UpdateBrandingSettings(c.Request.Context(), principal, domainsettings.BrandingSettings{
 		AppTitle:         req.AppTitle,
 		SidebarTitle:     req.SidebarTitle,
+		Slogan:           req.Slogan,
 		LoginLogoURL:     req.LoginLogoURL,
 		ExpandedLogoURL:  req.ExpandedLogoURL,
 		CollapsedLogoURL: req.CollapsedLogoURL,

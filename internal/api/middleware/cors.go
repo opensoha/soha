@@ -2,18 +2,16 @@ package middleware
 
 import (
 	"net/http"
-	"slices"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
 func matchesOrigin(allowedOrigins []string, origin string) bool {
-	if len(allowedOrigins) == 0 || slices.Contains(allowedOrigins, "*") {
-		return true
-	}
-
 	for _, allowedOrigin := range allowedOrigins {
+		if allowedOrigin == "*" {
+			continue
+		}
 		if allowedOrigin == origin {
 			return true
 		}

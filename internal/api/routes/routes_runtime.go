@@ -67,6 +67,7 @@ func registerDockerRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depende
 
 	protected.GET("/docker/hosts", deps.Docker.ListHosts)
 	protected.POST("/docker/hosts", deps.Docker.CreateHost)
+	protected.POST("/docker/hosts/:id/agent-installation", deps.Docker.CreateHostAgentInstallation)
 	protected.POST("/docker/hosts/quick-create/plan", deps.Docker.PlanQuickCreateHost)
 	protected.POST("/docker/hosts/quick-create", deps.Docker.QuickCreateHost)
 	protected.GET("/docker/hosts/:id", deps.Docker.GetHost)

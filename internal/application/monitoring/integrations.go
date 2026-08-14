@@ -65,6 +65,7 @@ func (s *Service) CreateAlertIntegration(ctx context.Context, principal domainid
 	if err != nil {
 		return domainalert.AlertIntegration{}, err
 	}
+	s.recordMonitoringMutation(ctx, principal, "AlertIntegration", item.ID, "observability.alert_integration.create", "created alert integration")
 	return item, nil
 }
 
@@ -85,6 +86,7 @@ func (s *Service) UpdateAlertIntegration(ctx context.Context, principal domainid
 		}
 		return domainalert.AlertIntegration{}, err
 	}
+	s.recordMonitoringMutation(ctx, principal, "AlertIntegration", item.ID, "observability.alert_integration.update", "updated alert integration")
 	if strings.TrimSpace(input.Token) == "" {
 		return redactAlertIntegrationToken(item), nil
 	}

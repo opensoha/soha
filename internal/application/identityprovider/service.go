@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net/textproto"
 	"net/url"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -47,7 +48,11 @@ const (
 	proxySessionIssuer                = "soha-proxy-provider"
 	proxySessionAudience              = "soha-proxy"
 	proxySessionTokenType             = "proxy_session"
+	maxOIDCRedirectURIRegexes         = 100
+	maxOIDCRedirectURIRegexLength     = 2048
 )
+
+var providerSecretRefPattern = regexp.MustCompile(`^soha://secrets/[A-Za-z0-9._-]+(?:/versions/[1-9][0-9]*)?$`)
 
 type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
@@ -172,41 +177,13 @@ func (s *Service) JWKS(ctx context.Context) (domainprovider.JWKS, error) {
 	return domainprovider.JWKS{Keys: out}, nil
 }
 
-func (s *Service) OIDCLaunchURL(ctx context.Context, application domainportal.Application) (string, error) {
-	provider, err := s.resolveOIDCLaunchProvider(ctx, application)
-	if err != nil {
-		return "", err
-	}
-	client, err := s.resolveOIDCLaunchClient(ctx, application, provider)
-	if err != nil {
-		return "", err
-	}
-	redirectURI := oidcLaunchRedirectURI(application, client)
-	if redirectURI == "" {
-		return "", fmt.Errorf("%w: oidc redirect_uri is not configured", apperrors.ErrInvalidArgument)
-	}
-	if !containsString(client.RedirectURIs, redirectURI) {
-		return "", fmt.Errorf("%w: oidc redirect_uri is not registered", apperrors.ErrInvalidArgument)
-	}
-	scopes, err := oidcLaunchScopes(application, client)
-	if err != nil {
-		return "", err
-	}
-	values := url.Values{}
-	values.Set("response_type", "code")
-	values.Set("client_id", client.ClientID)
-	values.Set("redirect_uri", redirectURI)
-	values.Set("scope", strings.Join(scopes, " "))
-	return "/oauth2/authorize?" + values.Encode(), nil
-}
-
 func (s *Service) Authorize(ctx context.Context, issuer string, principal domainidentity.Principal, input domainprovider.AuthorizeInput) (domainprovider.AuthorizeResult, error) {
 	client, provider, application, err := s.resolveAuthorizeClient(ctx, input.ClientID)
 	if err != nil {
 		return domainprovider.AuthorizeResult{}, err
 	}
 	redirectURI := strings.TrimSpace(input.RedirectURI)
-	if !containsString(client.RedirectURIs, redirectURI) {
+	if !redirectURIAllowed(client, redirectURI) {
 		return domainprovider.AuthorizeResult{}, fmt.Errorf("%w: redirect_uri is not registered", apperrors.ErrInvalidArgument)
 	}
 	state := strings.TrimSpace(input.State)
@@ -354,20 +331,8 @@ func (s *Service) tokenAuthorizationCode(ctx context.Context, issuer string, inp
 	if err != nil {
 		return domainprovider.TokenResponse{}, err
 	}
-	if provider.ID != code.ProviderID {
-		return domainprovider.TokenResponse{}, fmt.Errorf("%w: authorization code provider mismatch", apperrors.ErrUnauthorized)
-	}
-	if !clientEnabled(client) || !providerEnabled(provider) {
-		return domainprovider.TokenResponse{}, fmt.Errorf("%w: oidc client or provider is disabled", apperrors.ErrUnauthorized)
-	}
-	if !containsString(normalizeGrantTypes(client.AllowedGrantTypes), "authorization_code") {
-		return domainprovider.TokenResponse{}, fmt.Errorf("%w: authorization_code grant is not allowed", apperrors.ErrInvalidArgument)
-	}
-	if strings.TrimSpace(input.ClientID) != "" && strings.TrimSpace(input.ClientID) != client.ClientID {
-		return domainprovider.TokenResponse{}, fmt.Errorf("%w: client_id mismatch", apperrors.ErrUnauthorized)
-	}
-	if strings.TrimSpace(input.RedirectURI) != code.RedirectURI {
-		return domainprovider.TokenResponse{}, fmt.Errorf("%w: redirect_uri does not match authorization request", apperrors.ErrUnauthorized)
+	if err := validateAuthorizationCodeClient(code, client, provider, input); err != nil {
+		return domainprovider.TokenResponse{}, err
 	}
 	if err := s.verifyClientSecret(client, input); err != nil {
 		return domainprovider.TokenResponse{}, err
@@ -418,6 +383,28 @@ func (s *Service) tokenAuthorizationCode(ctx context.Context, issuer string, inp
 		"scopes": code.Scopes,
 	})
 	return response, nil
+}
+
+func validateAuthorizationCodeClient(code domainprovider.AuthorizationCode, client domainprovider.OIDCClient, provider domainprovider.Provider, input domainprovider.TokenInput) error {
+	if provider.ID != code.ProviderID {
+		return fmt.Errorf("%w: authorization code provider mismatch", apperrors.ErrUnauthorized)
+	}
+	if !clientEnabled(client) || !providerEnabled(provider) {
+		return fmt.Errorf("%w: oidc client or provider is disabled", apperrors.ErrUnauthorized)
+	}
+	if !containsString(normalizeGrantTypes(client.AllowedGrantTypes), "authorization_code") {
+		return fmt.Errorf("%w: authorization_code grant is not allowed", apperrors.ErrInvalidArgument)
+	}
+	if clientID := strings.TrimSpace(input.ClientID); clientID != "" && clientID != client.ClientID {
+		return fmt.Errorf("%w: client_id mismatch", apperrors.ErrUnauthorized)
+	}
+	if strings.TrimSpace(input.RedirectURI) != code.RedirectURI {
+		return fmt.Errorf("%w: redirect_uri does not match authorization request", apperrors.ErrUnauthorized)
+	}
+	if !redirectURIAllowed(client, input.RedirectURI) {
+		return fmt.Errorf("%w: redirect_uri is no longer registered", apperrors.ErrUnauthorized)
+	}
+	return nil
 }
 
 func (s *Service) tokenRefresh(ctx context.Context, issuer string, input domainprovider.TokenInput) (domainprovider.TokenResponse, error) {
@@ -647,17 +634,19 @@ func (s *Service) IssueProxySession(ctx context.Context, principal domainidentit
 	if strings.TrimSpace(principal.UserID) == "" {
 		return domainprovider.ProxySession{}, fmt.Errorf("%w: authentication required", apperrors.ErrUnauthorized)
 	}
-	if accessCtx.SessionID != "" {
-		session, err := s.users.GetAuthSessionByID(ctx, accessCtx.SessionID)
-		if err != nil || session.Status != "active" || session.UserID != principal.UserID || !session.ExpiresAt.After(time.Now().UTC()) {
-			return domainprovider.ProxySession{}, fmt.Errorf("%w: platform session is invalid", apperrors.ErrUnauthorized)
-		}
+	sessionID := strings.TrimSpace(accessCtx.SessionID)
+	if sessionID == "" {
+		return domainprovider.ProxySession{}, fmt.Errorf("%w: platform session is required", apperrors.ErrUnauthorized)
+	}
+	session, err := s.users.GetAuthSessionByID(ctx, sessionID)
+	if err != nil || session.Status != "active" || session.UserID != principal.UserID || !session.ExpiresAt.After(time.Now().UTC()) {
+		return domainprovider.ProxySession{}, fmt.Errorf("%w: platform session is invalid", apperrors.ErrUnauthorized)
 	}
 	now := time.Now().UTC()
 	expiresAt := now.Add(proxySessionTTL)
 	claims := proxySessionClaims{
 		TokenType: proxySessionTokenType,
-		SessionID: accessCtx.SessionID,
+		SessionID: sessionID,
 		MFA:       metadataMFA(accessCtx.Metadata),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    proxySessionIssuer,
@@ -690,7 +679,7 @@ func (s *Service) ProxyAuth(ctx context.Context, principal domainidentity.Princi
 	result := domainprovider.ProxyAuthResult{
 		OriginalURL:  originalURL,
 		CookieDomain: proxyCookieDomain(provider, requestHost),
-		Provider:     provider,
+		Provider:     redactProviderSecrets(provider),
 		Application:  application,
 	}
 	if err := validateProxyProviderRuntime(provider, application); err != nil {
@@ -786,7 +775,6 @@ func (s *Service) ReverseProxy(ctx context.Context, principal domainidentity.Pri
 	}
 	auth, err := s.ProxyAuth(ctx, principal, domainprovider.ProxyAuthInput{
 		ProviderID:     providerID,
-		OriginalURL:    strings.TrimSpace(input.OriginalURL),
 		ForwardedHost:  hosts[0],
 		ForwardedProto: "https",
 		ForwardedURI:   normalizeReverseProxyPath(input.Path),
@@ -797,9 +785,10 @@ func (s *Service) ReverseProxy(ctx context.Context, principal domainidentity.Pri
 		return domainprovider.ReverseProxyResult{}, err
 	}
 	return domainprovider.ReverseProxyResult{
-		Auth:             auth,
-		UpstreamURL:      upstreamURL,
-		WebsocketEnabled: configBoolean(provider.Config, "websocketEnabled", "websocket_enabled"),
+		Auth:                 auth,
+		UpstreamURL:          upstreamURL,
+		WebsocketEnabled:     configBoolean(provider.Config, "websocketEnabled", "websocket_enabled"),
+		AllowPrivateUpstream: configBoolean(provider.Config, "allowPrivateUpstream", "allow_private_upstream"),
 	}, nil
 }
 
@@ -807,14 +796,25 @@ func (s *Service) ListProviders(ctx context.Context, principal domainidentity.Pr
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListProviders(ctx, filter)
+	items, err := s.repo.ListProviders(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	for index := range items {
+		items[index] = redactProviderSecrets(items[index])
+	}
+	return items, nil
 }
 
 func (s *Service) GetProvider(ctx context.Context, principal domainidentity.Principal, providerID string) (domainprovider.Provider, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersView); err != nil {
 		return domainprovider.Provider{}, err
 	}
-	return s.repo.GetProvider(ctx, providerID)
+	item, err := s.repo.GetProvider(ctx, providerID)
+	if err != nil {
+		return domainprovider.Provider{}, err
+	}
+	return redactProviderSecrets(item), nil
 }
 
 func (s *Service) CreateProvider(ctx context.Context, principal domainidentity.Principal, input domainprovider.ProviderInput) (domainprovider.Provider, error) {
@@ -839,7 +839,7 @@ func (s *Service) CreateProvider(ctx context.Context, principal domainidentity.P
 		return domainprovider.Provider{}, err
 	}
 	s.recordAudit(ctx, principal, "identity.provider.create", "success", created, domainprovider.OIDCClient{}, nil)
-	return created, nil
+	return redactProviderSecrets(created), nil
 }
 
 func (s *Service) UpdateProvider(ctx context.Context, principal domainidentity.Principal, providerID string, input domainprovider.ProviderInput) (domainprovider.Provider, error) {
@@ -851,6 +851,9 @@ func (s *Service) UpdateProvider(ctx context.Context, principal domainidentity.P
 		return domainprovider.Provider{}, err
 	}
 	now := time.Now().UTC()
+	if input.SecretRefs == nil {
+		input.SecretRefs = current.SecretRefs
+	}
 	item, err := providerFromInput(current.ID, input, principal, now)
 	if err != nil {
 		return domainprovider.Provider{}, err
@@ -873,7 +876,7 @@ func (s *Service) UpdateProvider(ctx context.Context, principal domainidentity.P
 		return domainprovider.Provider{}, err
 	}
 	s.recordAudit(ctx, principal, "identity.provider.update", "success", updated, domainprovider.OIDCClient{}, nil)
-	return updated, nil
+	return redactProviderSecrets(updated), nil
 }
 
 func (s *Service) DeleteProvider(ctx context.Context, principal domainidentity.Principal, providerID string) error {
@@ -1172,17 +1175,29 @@ func (s *Service) ListOIDCClients(ctx context.Context, principal domainidentity.
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersView); err != nil {
 		return nil, err
 	}
-	if _, err := s.requireOIDCProvider(ctx, providerID); err != nil {
-		return nil, err
+	providerID = strings.TrimSpace(providerID)
+	if providerID != "" {
+		if _, err := s.requireOIDCProvider(ctx, providerID); err != nil {
+			return nil, err
+		}
 	}
 	return s.repo.ListOIDCClients(ctx, providerID)
+}
+
+func (s *Service) GetOIDCClient(ctx context.Context, principal domainidentity.Principal, clientID string) (domainprovider.OIDCClient, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersView); err != nil {
+		return domainprovider.OIDCClient{}, err
+	}
+	return s.repo.GetOIDCClient(ctx, clientID)
 }
 
 func (s *Service) CreateOIDCClient(ctx context.Context, principal domainidentity.Principal, providerID string, input domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermIdentityProvidersManage, "create")); err != nil {
 		return domainprovider.OIDCClientCreated{}, err
 	}
-	input.ProviderID = providerID
+	if providerID = strings.TrimSpace(providerID); providerID != "" {
+		input.ProviderID = providerID
+	}
 	provider, err := s.requireOIDCProvider(ctx, input.ProviderID)
 	if err != nil {
 		return domainprovider.OIDCClientCreated{}, err
@@ -1277,69 +1292,6 @@ type proxySessionClaims struct {
 	SessionID string `json:"sid,omitempty"`
 	MFA       bool   `json:"mfa,omitempty"`
 	jwt.RegisteredClaims
-}
-
-func (s *Service) resolveOIDCLaunchProvider(ctx context.Context, application domainportal.Application) (domainprovider.Provider, error) {
-	providerID := strings.TrimSpace(application.ProviderID)
-	if providerID != "" {
-		provider, err := s.repo.GetProvider(ctx, providerID)
-		if err != nil {
-			return domainprovider.Provider{}, err
-		}
-		if provider.ApplicationID != application.ID {
-			return domainprovider.Provider{}, fmt.Errorf("%w: oidc provider is not bound to application", apperrors.ErrAccessDenied)
-		}
-		if !providerEnabled(provider) || provider.Type != domainprovider.ProviderTypeOIDC {
-			return domainprovider.Provider{}, fmt.Errorf("%w: oidc provider is disabled", apperrors.ErrUnauthorized)
-		}
-		return provider, nil
-	}
-	providers, err := s.repo.ListProviders(ctx, domainprovider.ProviderFilter{
-		Type:   domainprovider.ProviderTypeOIDC,
-		Status: domainprovider.ProviderStatusEnabled,
-	})
-	if err != nil {
-		return domainprovider.Provider{}, err
-	}
-	for _, provider := range providers {
-		if provider.ApplicationID == application.ID && providerEnabled(provider) && provider.Type == domainprovider.ProviderTypeOIDC {
-			return provider, nil
-		}
-	}
-	return domainprovider.Provider{}, fmt.Errorf("%w: oidc provider not found", apperrors.ErrNotFound)
-}
-
-func (s *Service) resolveOIDCLaunchClient(ctx context.Context, application domainportal.Application, provider domainprovider.Provider) (domainprovider.OIDCClient, error) {
-	clients, err := s.repo.ListOIDCClients(ctx, provider.ID)
-	if err != nil {
-		return domainprovider.OIDCClient{}, err
-	}
-	preferredClientID := applicationMetadataString(application.Metadata, "oidcClientId", "clientId")
-	for _, client := range clients {
-		if !clientEnabled(client) {
-			continue
-		}
-		if preferredClientID != "" && client.ClientID != preferredClientID {
-			continue
-		}
-		if !containsString(normalizeGrantTypes(client.AllowedGrantTypes), "authorization_code") {
-			if preferredClientID != "" {
-				return domainprovider.OIDCClient{}, fmt.Errorf("%w: oidc client does not allow authorization_code", apperrors.ErrInvalidArgument)
-			}
-			continue
-		}
-		if client.RequirePKCE {
-			if preferredClientID != "" {
-				return domainprovider.OIDCClient{}, fmt.Errorf("%w: portal oidc launch cannot use a PKCE-required client", apperrors.ErrInvalidArgument)
-			}
-			continue
-		}
-		return client, nil
-	}
-	if preferredClientID != "" {
-		return domainprovider.OIDCClient{}, fmt.Errorf("%w: oidc client is not available", apperrors.ErrNotFound)
-	}
-	return domainprovider.OIDCClient{}, fmt.Errorf("%w: oidc portal launch requires an enabled non-PKCE authorization_code client", apperrors.ErrNotFound)
 }
 
 func (s *Service) resolveAuthorizeClient(ctx context.Context, clientID string) (domainprovider.OIDCClient, domainprovider.Provider, domainportal.Application, error) {
@@ -1897,14 +1849,12 @@ func (s *Service) parseProxySessionAccess(ctx context.Context, tokenString strin
 	if claims == nil {
 		return domainidentity.Principal{}, false, fmt.Errorf("%w: invalid proxy session", apperrors.ErrUnauthorized)
 	}
-	if claims.TokenType != proxySessionTokenType || strings.TrimSpace(claims.Subject) == "" {
+	if claims.TokenType != proxySessionTokenType || strings.TrimSpace(claims.Subject) == "" || strings.TrimSpace(claims.SessionID) == "" {
 		return domainidentity.Principal{}, false, fmt.Errorf("%w: invalid proxy session", apperrors.ErrUnauthorized)
 	}
-	if claims.SessionID != "" {
-		session, err := s.users.GetAuthSessionByID(ctx, claims.SessionID)
-		if err != nil || session.Status != "active" || session.UserID != claims.Subject || !session.ExpiresAt.After(time.Now().UTC()) {
-			return domainidentity.Principal{}, false, fmt.Errorf("%w: platform session is invalid", apperrors.ErrUnauthorized)
-		}
+	session, err := s.users.GetAuthSessionByID(ctx, claims.SessionID)
+	if err != nil || session.Status != "active" || session.UserID != claims.Subject || !session.ExpiresAt.After(time.Now().UTC()) {
+		return domainidentity.Principal{}, false, fmt.Errorf("%w: platform session is invalid", apperrors.ErrUnauthorized)
 	}
 	principal, err := s.loadPrincipal(ctx, claims.Subject)
 	return principal, claims.MFA, err
@@ -2051,6 +2001,9 @@ func providerFromInput(providerID string, input domainprovider.ProviderInput, pr
 	if secretRefs == nil {
 		secretRefs = map[string]any{}
 	}
+	if err := validateProviderSecretRefs(secretRefs); err != nil {
+		return domainprovider.Provider{}, err
+	}
 	return domainprovider.Provider{
 		ID:            providerID,
 		ApplicationID: applicationID,
@@ -2065,6 +2018,47 @@ func providerFromInput(providerID string, input domainprovider.ProviderInput, pr
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}, nil
+}
+
+func validateProviderSecretRefs(secretRefs map[string]any) error {
+	for alias, raw := range secretRefs {
+		if !validSecretAlias(alias) {
+			return fmt.Errorf("%w: secret reference alias must use uppercase letters, digits, and underscores", apperrors.ErrInvalidArgument)
+		}
+		value, ok := raw.(string)
+		if !ok || !validSecretReference(value) {
+			return fmt.Errorf("%w: secret reference must use soha://secrets/<name>", apperrors.ErrInvalidArgument)
+		}
+	}
+	return nil
+}
+
+func validSecretAlias(value string) bool {
+	if value == "" || (value[0] < 'A' || value[0] > 'Z') && value[0] != '_' {
+		return false
+	}
+	for index := 1; index < len(value); index++ {
+		char := value[index]
+		if (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+func validSecretReference(value string) bool {
+	return providerSecretRefPattern.MatchString(strings.TrimSpace(value))
+}
+
+func redactProviderSecrets(item domainprovider.Provider) domainprovider.Provider {
+	aliases := make([]string, 0, len(item.SecretRefs))
+	for alias := range item.SecretRefs {
+		aliases = append(aliases, alias)
+	}
+	sort.Strings(aliases)
+	item.SecretRefs = nil
+	item.ConfiguredSecretAliases = aliases
+	return item
 }
 
 func validateProxyProviderConfig(config map[string]any) error {
@@ -2089,8 +2083,8 @@ func validateSAMLProviderConfig(config map[string]any) error {
 	}
 	for _, rawURL := range acs {
 		parsed, err := url.ParseRequestURI(rawURL)
-		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-			return fmt.Errorf("%w: saml assertion consumer service URLs must use https", apperrors.ErrInvalidArgument)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("%w: saml assertion consumer service URLs must use http or https", apperrors.ErrInvalidArgument)
 		}
 	}
 	certificate := configString(config, "spCertificatePem", "signingCertificatePem", "signing_certificate_pem")
@@ -2168,7 +2162,11 @@ func oidcClientFromInput(clientID string, input domainprovider.OIDCClientInput, 
 	if err != nil {
 		return domainprovider.OIDCClient{}, err
 	}
-	if len(redirectURIs) == 0 {
+	redirectURIRegexes, err := normalizeRedirectURIRegexes(input.RedirectURIRegexes)
+	if err != nil {
+		return domainprovider.OIDCClient{}, err
+	}
+	if len(redirectURIs)+len(redirectURIRegexes) == 0 {
 		return domainprovider.OIDCClient{}, fmt.Errorf("%w: at least one redirect_uri is required", apperrors.ErrInvalidArgument)
 	}
 	postLogoutRedirectURIs, err := normalizeRedirectURIs(input.PostLogoutRedirectURIs)
@@ -2199,6 +2197,9 @@ func oidcClientFromInput(clientID string, input domainprovider.OIDCClientInput, 
 	}
 	secretHash := ""
 	if strings.TrimSpace(plainSecret) != "" {
+		if len(plainSecret) < 16 {
+			return domainprovider.OIDCClient{}, fmt.Errorf("%w: oidc client secret must be at least 16 characters", apperrors.ErrInvalidArgument)
+		}
 		raw, err := bcrypt.GenerateFromPassword([]byte(plainSecret), bcrypt.DefaultCost)
 		if err != nil {
 			return domainprovider.OIDCClient{}, fmt.Errorf("hash oidc client secret: %w", err)
@@ -2216,6 +2217,7 @@ func oidcClientFromInput(clientID string, input domainprovider.OIDCClientInput, 
 		ClientType:             clientType,
 		ClientSecretHash:       secretHash,
 		RedirectURIs:           redirectURIs,
+		RedirectURIRegexes:     redirectURIRegexes,
 		PostLogoutRedirectURIs: postLogoutRedirectURIs,
 		AllowedScopes:          scopes,
 		AllowedGrantTypes:      grantTypes,
@@ -2284,60 +2286,52 @@ func normalizeOIDCClientGrantTypes(values []string) ([]string, error) {
 func normalizeRedirectURIs(values []string) ([]string, error) {
 	out := compactStrings(values)
 	for _, value := range out {
-		parsed, err := url.Parse(value)
-		if err != nil || !parsed.IsAbs() || parsed.Fragment != "" {
-			return nil, fmt.Errorf("%w: redirect_uri must be an absolute URI without fragment", apperrors.ErrInvalidArgument)
-		}
-		if parsed.Scheme != "https" && (parsed.Scheme != "http" || !isLoopbackHost(parsed.Hostname())) {
-			return nil, fmt.Errorf("%w: redirect_uri must use https except loopback localhost", apperrors.ErrInvalidArgument)
+		if !validRedirectURI(value) {
+			return nil, fmt.Errorf("%w: redirect_uri must be an absolute http or https URI without fragment", apperrors.ErrInvalidArgument)
 		}
 	}
 	return out, nil
 }
 
-func oidcLaunchRedirectURI(application domainportal.Application, client domainprovider.OIDCClient) string {
-	if value := applicationMetadataString(application.Metadata, "oidcRedirectUri", "redirectUri"); value != "" {
-		return value
+func normalizeRedirectURIRegexes(values []string) ([]string, error) {
+	out := compactStrings(values)
+	if len(out) > maxOIDCRedirectURIRegexes {
+		return nil, fmt.Errorf("%w: too many redirect_uri regular expressions", apperrors.ErrInvalidArgument)
 	}
-	if launchURL := strings.TrimSpace(application.LaunchURL); launchURL != "" && containsString(client.RedirectURIs, launchURL) {
-		return launchURL
-	}
-	if len(client.RedirectURIs) == 0 {
-		return ""
-	}
-	return client.RedirectURIs[0]
-}
-
-func oidcLaunchScopes(application domainportal.Application, client domainprovider.OIDCClient) ([]string, error) {
-	if values := applicationMetadataStringSlice(application.Metadata, "oidcScopes", "scopes"); len(values) > 0 {
-		return validateOIDCLaunchScopes(values, client.AllowedScopes)
-	}
-	allowed := normalizeAllowedScopes(client.AllowedScopes)
-	defaults := []string{"openid", "profile", "email"}
-	out := make([]string, 0, len(defaults))
-	for _, item := range defaults {
-		if containsString(allowed, item) {
-			out = append(out, item)
+	for _, pattern := range out {
+		if len(pattern) > maxOIDCRedirectURIRegexLength {
+			return nil, fmt.Errorf("%w: redirect_uri regular expression is too long", apperrors.ErrInvalidArgument)
 		}
-	}
-	if len(out) == 0 {
-		out = []string{"openid"}
+		if _, err := regexp.Compile(fullRedirectURIRegex(pattern)); err != nil {
+			return nil, fmt.Errorf("%w: invalid redirect_uri regular expression", apperrors.ErrInvalidArgument)
+		}
 	}
 	return out, nil
 }
 
-func validateOIDCLaunchScopes(values, allowed []string) ([]string, error) {
-	scopes := compactStrings(values)
-	if !containsString(scopes, "openid") {
-		scopes = append([]string{"openid"}, scopes...)
+func redirectURIAllowed(client domainprovider.OIDCClient, candidate string) bool {
+	if !validRedirectURI(candidate) {
+		return false
 	}
-	allowed = normalizeAllowedScopes(allowed)
-	for _, scope := range scopes {
-		if !containsString(allowed, scope) {
-			return nil, fmt.Errorf("%w: oidc scope is not allowed", apperrors.ErrInvalidArgument)
+	if containsString(client.RedirectURIs, candidate) {
+		return true
+	}
+	for _, pattern := range client.RedirectURIRegexes {
+		matched, err := regexp.MatchString(fullRedirectURIRegex(pattern), candidate)
+		if err == nil && matched {
+			return true
 		}
 	}
-	return scopes, nil
+	return false
+}
+
+func fullRedirectURIRegex(pattern string) string {
+	return `\A(` + pattern + `)\z`
+}
+
+func validRedirectURI(value string) bool {
+	parsed, err := url.Parse(value)
+	return err == nil && parsed.Host != "" && parsed.Fragment == "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 
 func normalizeCodeChallengeMethod(value string) string {
@@ -2384,11 +2378,11 @@ func proxyOriginalURL(input domainprovider.ProxyAuthInput) string {
 }
 
 func proxyRequestHost(input domainprovider.ProxyAuthInput) string {
-	return normalizeProxyHost(firstNonEmpty(input.ForwardedHost, hostFromURL(input.OriginalURL), input.RequestHost))
+	return normalizeProxyHost(firstNonEmpty(hostFromURL(input.OriginalURL), input.ForwardedHost, input.RequestHost))
 }
 
 func proxyPath(input domainprovider.ProxyAuthInput) string {
-	value := strings.TrimSpace(firstNonEmpty(input.ForwardedURI, pathFromURL(input.OriginalURL), input.RequestPath))
+	value := strings.TrimSpace(firstNonEmpty(pathFromURL(input.OriginalURL), input.ForwardedURI, input.RequestPath))
 	if value == "" {
 		return "/"
 	}
@@ -2686,26 +2680,6 @@ func configBoolean(config map[string]any, keys ...string) bool {
 	return false
 }
 
-func applicationMetadataString(metadata map[string]any, keys ...string) string {
-	if value := metadataStringFromMap(metadata, keys...); value != "" {
-		return value
-	}
-	if nested := metadataObject(metadata, "oidc"); nested != nil {
-		return metadataStringFromMap(nested, keys...)
-	}
-	return ""
-}
-
-func applicationMetadataStringSlice(metadata map[string]any, keys ...string) []string {
-	if values := metadataStringSliceFromMap(metadata, keys...); len(values) > 0 {
-		return values
-	}
-	if nested := metadataObject(metadata, "oidc"); nested != nil {
-		return metadataStringSliceFromMap(nested, keys...)
-	}
-	return nil
-}
-
 func metadataStringFromMap(metadata map[string]any, keys ...string) string {
 	for _, key := range keys {
 		value, ok := metadata[key]
@@ -2717,48 +2691,6 @@ func metadataStringFromMap(metadata map[string]any, keys ...string) string {
 		}
 	}
 	return ""
-}
-
-func metadataStringSliceFromMap(metadata map[string]any, keys ...string) []string {
-	out := make([]string, 0)
-	for _, key := range keys {
-		value, ok := metadata[key]
-		if !ok {
-			continue
-		}
-		switch typed := value.(type) {
-		case string:
-			out = append(out, strings.Fields(typed)...)
-		case []string:
-			out = append(out, typed...)
-		case []any:
-			for _, item := range typed {
-				if text, ok := item.(string); ok {
-					out = append(out, text)
-				}
-			}
-		}
-	}
-	return compactStrings(out)
-}
-
-func metadataObject(metadata map[string]any, key string) map[string]any {
-	value, ok := metadata[key]
-	if !ok {
-		return nil
-	}
-	switch typed := value.(type) {
-	case map[string]any:
-		return typed
-	case map[string]string:
-		out := make(map[string]any, len(typed))
-		for key, value := range typed {
-			out[key] = value
-		}
-		return out
-	default:
-		return nil
-	}
 }
 
 func isSafeHeaderName(value string) bool {
@@ -2932,11 +2864,6 @@ func cloneMap(input map[string]any) map[string]any {
 		out[key] = value
 	}
 	return out
-}
-
-func isLoopbackHost(host string) bool {
-	host = strings.ToLower(strings.TrimSpace(host))
-	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func ttlSeconds(value, fallback int) int {

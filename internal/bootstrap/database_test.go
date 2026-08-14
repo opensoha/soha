@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -20,15 +21,22 @@ import (
 
 func TestDefaultMenusIncludeDirectorySync(t *testing.T) {
 	if !slices.ContainsFunc(defaultMenuSeeds(), func(item menuSeed) bool {
-		return item.ID == "access-directory-sync" && item.Path == "/access/directory-sync" && slices.Contains(item.Roles, "admin")
+		return item.ID == "access-directory-sync" && item.Path == "/access/directory-sync"
 	}) {
-		t.Fatal("default menus missing admin directory sync entry")
+		t.Fatal("default menus missing directory sync entry")
 	}
 }
 
 func TestDefaultMenuSeedsValidate(t *testing.T) {
 	if err := validateMenuSeeds(defaultMenuSeeds()); err != nil {
 		t.Fatalf("default menu seeds must stay internally consistent: %v", err)
+	}
+}
+
+func TestMenuSeedValidationRejectsMissingPermissionRule(t *testing.T) {
+	err := validateMenuSeeds([]menuSeed{{ID: "unmapped-builtin", Path: "/unmapped", Enabled: true}})
+	if err == nil || !strings.Contains(err.Error(), "no permission visibility rule") {
+		t.Fatalf("validateMenuSeeds error = %v, want missing permission rule", err)
 	}
 }
 
@@ -321,8 +329,6 @@ func TestDefaultMenuSeedsIncludeVirtualizationWorkbench(t *testing.T) {
 		"virtualization-workbench-images",
 		"virtualization-workbench-storage",
 		"virtualization-workbench-flavors",
-		"virtualization-workbench-operations",
-		"virtualization-workbench-sync",
 	} {
 		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id }) {
 			t.Fatalf("default menu seeds missing %s", id)
@@ -337,7 +343,6 @@ func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
 		"docker-workbench-hosts",
 		"docker-workbench-projects",
 		"docker-workbench-templates",
-		"docker-workbench-operations",
 	} {
 		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id }) {
 			t.Fatalf("default menu seeds missing %s", id)
@@ -348,19 +353,23 @@ func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
 func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T) {
 	items := defaultMenuSeeds()
 	expected := map[string]string{
-		"compute-workbench":                   "/compute",
-		"compute-workbench-overview":          "/compute/overview",
-		"virtualization-workbench-clusters":   "/compute/virtualization/clusters",
-		"virtualization-workbench-storage":    "/compute/virtualization/storage",
-		"virtualization-workbench-operations": "/compute/tasks/operations?domain=virtualization",
-		"virtualization-workbench-sync":       "/compute/tasks/sync?domain=virtualization",
-		"docker-workbench-hosts":              "/compute/runtimes/hosts",
-		"docker-workbench-operations":         "/compute/tasks/operations?domain=container_runtime",
-		"compute-workbench-tasks-sync":        "/compute/tasks/sync",
-		"compute-workbench-tasks-build":       "/compute/tasks/build",
-		"compute-workbench-tasks-operations":  "/compute/tasks/operations",
+		"compute-workbench":                  "/compute",
+		"compute-workbench-overview":         "/compute/overview",
+		"virtualization-workbench-clusters":  "/compute/virtualization/clusters",
+		"virtualization-workbench-storage":   "/compute/virtualization/storage",
+		"docker-workbench-hosts":             "/compute/runtimes/hosts",
+		"compute-workbench-tasks-operations": "/compute/tasks/operations",
 	}
-	for _, id := range []string{"compute-workbench-tasks", "compute-workbench-tasks-all", "compute-workbench-access"} {
+	for _, id := range []string{
+		"compute-workbench-tasks",
+		"compute-workbench-tasks-all",
+		"compute-workbench-access",
+		"virtualization-workbench-operations",
+		"virtualization-workbench-sync",
+		"docker-workbench-operations",
+		"compute-workbench-tasks-sync",
+		"compute-workbench-tasks-build",
+	} {
 		if !slices.Contains(obsoleteMenuIDsForCleanup(), id) {
 			t.Fatalf("obsolete compute menu id %s must remain in database cleanup", id)
 		}
@@ -373,20 +382,13 @@ func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T
 			t.Fatalf("missing compute menu %s at %s", id, path)
 		}
 	}
-	for _, id := range []string{"compute-workbench-tasks-sync", "compute-workbench-tasks-build"} {
-		if !slices.ContainsFunc(items, func(item menuSeed) bool {
-			return item.ID == id && item.ParentID == "compute-workbench" && item.Section == "management"
-		}) {
-			t.Fatalf("compute resource management menu %s is not attached directly to the workbench", id)
-		}
-	}
-	for _, id := range []string{"compute-workbench-tasks-sync", "compute-workbench-tasks-build"} {
-		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id && !item.Enabled }) {
-			t.Fatalf("legacy compute task menu %s must be disabled", id)
+	for _, id := range []string{"compute-workbench", "compute-workbench-overview", "compute-workbench-tasks-operations"} {
+		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id && item.Section == "" }) {
+			t.Fatalf("compute root menu %s must not inherit the observability section", id)
 		}
 	}
 	if !slices.ContainsFunc(items, func(item menuSeed) bool {
-		return item.ID == "compute-workbench-tasks-operations" && item.Enabled && item.LabelZH == "任务中心" && item.LabelEN == "Task Center" && item.ParentID == "compute-workbench" && item.Section == "ops" && item.SortOrder == 82
+		return item.ID == "compute-workbench-tasks-operations" && item.Enabled && item.LabelZH == "任务中心" && item.LabelEN == "Task Center" && item.ParentID == "compute-workbench" && item.Section == "" && item.SortOrder == 82
 	}) {
 		t.Fatal("canonical compute task menu must be enabled directly after Overview")
 	}
@@ -398,21 +400,20 @@ func TestComputeWorkbenchSeedsUseCanonicalPathsAndDisableAsOneShell(t *testing.T
 	}
 }
 
-func TestComputeWorkbenchSeedsBindDefaultResourceRoles(t *testing.T) {
-	for _, item := range defaultMenuSeeds() {
-		if isVirtualizationMenuSeed(item) {
-			if len(item.Roles) != 0 {
-				t.Fatalf("virtualization menu %s must rely on permissions, got roles %v", item.ID, item.Roles)
-			}
-			continue
-		}
-		if !isComputeMenuSeed(item) && !isDockerMenuSeed(item) {
-			continue
-		}
-		for _, role := range defaultComputeRoles {
-			if !slices.Contains(item.Roles, role) {
-				t.Fatalf("compute menu %s roles = %v, missing %s", item.ID, item.Roles, role)
-			}
+func TestDefaultMenuSeedsCoverCanonicalRouteMenus(t *testing.T) {
+	items := defaultMenuSeeds()
+	for _, id := range []string{
+		"cluster-resources-namespaces",
+		"monitoring-workbench-explore",
+		"ai-workbench-knowledge-pipelines",
+		"ai-workbench-evaluation-lifecycle",
+		"ai-workbench-memory",
+		"ai-workbench-provider-fleet",
+		"ai-workbench-environments",
+		"ai-workbench-production-operations",
+	} {
+		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id && item.Enabled }) {
+			t.Fatalf("default menu seeds missing canonical route menu %s", id)
 		}
 	}
 }
@@ -424,14 +425,11 @@ func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
 	}{
 		"monitoring-workbench-overview":         {path: "/monitoring-workbench/overview"},
 		"monitoring-workbench-services":         {path: "/monitoring-workbench/services", section: "observe-signals"},
-		"monitoring-workbench-metrics":          {path: "/monitoring-workbench/metrics", section: "observe-signals"},
+		"monitoring-workbench-explore":          {path: "/monitoring-workbench/explore", section: "observe-signals"},
 		"monitoring-workbench-dashboards":       {path: "/monitoring-workbench/dashboards", section: "dashboards"},
-		"monitoring-workbench-traces":           {path: "/monitoring-workbench/traces", section: "observe-signals"},
-		"monitoring-workbench-logs":             {path: "/monitoring-workbench/logs", section: "observe-signals"},
 		"monitoring-workbench-providers":        {path: "/monitoring-workbench/providers", section: "observe-data"},
 		"monitoring-workbench-log-data-sources": {path: "/monitoring-workbench/log-data-sources", section: "observe-data"},
 		"monitoring-workbench-integrations":     {path: "/monitoring-workbench/integrations", section: "observe-data"},
-		"monitoring-workbench-alerting":         {path: "/monitoring-workbench/alerting", section: "alerting"},
 		"monitoring-workbench-rules":            {path: "/monitoring-workbench/rules", section: "alerting"},
 		"monitoring-workbench-alerts":           {path: "/monitoring-workbench/alerts", section: "alerting"},
 		"monitoring-workbench-notifications":    {path: "/monitoring-workbench/notifications", section: "alerting"},
@@ -451,6 +449,14 @@ func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
 		return item.ID == "monitoring-workbench" && item.LabelZH == "可观测性工作台" && item.LabelEN == "Observability Workbench"
 	}) {
 		t.Fatal("observability workbench seed label is missing")
+	}
+	for _, id := range []string{"monitoring-workbench-metrics", "monitoring-workbench-traces", "monitoring-workbench-logs", "monitoring-workbench-alerting"} {
+		if !slices.Contains(obsoleteMenuIDsForCleanup(), id) {
+			t.Fatalf("legacy observability menu %s must remain in database cleanup", id)
+		}
+		if slices.ContainsFunc(defaultMenuSeeds(), func(item menuSeed) bool { return item.ID == id }) {
+			t.Fatalf("legacy observability menu %s must not remain in seeds", id)
+		}
 	}
 }
 
@@ -766,6 +772,7 @@ func TestDefaultMenuSeedsGroupDeliveryWorkbenchByUserTask(t *testing.T) {
 	items := defaultMenuSeeds()
 	expected := map[string]string{
 		"builds":                    "delivery",
+		"delivery-overview":         "delivery",
 		"delivery-manifest-library": "delivery",
 		"delivery-onboarding":       "delivery",
 		"release-board":             "delivery",
@@ -793,56 +800,6 @@ func TestDefaultMenuSeedsGroupDeliveryWorkbenchByUserTask(t *testing.T) {
 	}
 	if len(expected) > 0 {
 		t.Fatalf("default menu seeds missing delivery menus: %v", expected)
-	}
-}
-
-func TestDefaultMenuSeedsBindDeliveryMenusByResponsibility(t *testing.T) {
-	items := defaultMenuSeeds()
-	byID := make(map[string]menuSeed, len(items))
-	for _, item := range items {
-		byID[item.ID] = item
-	}
-
-	expectedRoles := map[string][]string{
-		"builds":            {"admin", "ops", "developer", "tester", "readonly"},
-		"delivery-testing":  {"admin", "ops", "developer", "tester", "readonly"},
-		"delivery-analysis": {"admin", "ops", "developer", "tester", "readonly"},
-		"release-bundles":   {"admin", "ops", "developer", "tester", "readonly"},
-		"execution-tasks":   {"admin", "ops", "developer", "tester", "readonly"},
-		"workflows":         {"admin", "ops", "developer", "readonly"},
-		"releases":          {"admin", "ops", "developer", "readonly"},
-	}
-	for menuID, roles := range expectedRoles {
-		item, ok := byID[menuID]
-		if !ok {
-			t.Fatalf("default menu seeds missing %s", menuID)
-		}
-		for _, role := range roles {
-			if !slices.Contains(item.Roles, role) {
-				t.Fatalf("menu %s roles = %v, missing %s", menuID, item.Roles, role)
-			}
-		}
-	}
-
-	restrictedMenus := []string{
-		"delivery-onboarding",
-		"release-board",
-		"delivery-blueprints",
-		"build-templates",
-		"workflow-templates",
-		"application-environments",
-		"registries",
-	}
-	for _, menuID := range restrictedMenus {
-		item, ok := byID[menuID]
-		if !ok {
-			t.Fatalf("default menu seeds missing %s", menuID)
-		}
-		for _, role := range []string{"tester", "readonly"} {
-			if slices.Contains(item.Roles, role) {
-				t.Fatalf("menu %s roles = %v, should not include %s", menuID, item.Roles, role)
-			}
-		}
 	}
 }
 
