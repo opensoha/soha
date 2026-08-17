@@ -9,11 +9,11 @@ on:
       web_ref:
         description: "soha-web release tag to embed"
         required: true
-        default: "v0.1.5"
+        default: "v0.1.6"
       contracts_ref:
         description: "soha-contracts tag or commit to consume as the release module"
         required: true
-        default: "v0.1.5"
+        default: "v0.1.13"
       web_sha256:
         description: "Optional expected sha256 for the soha-web dist tarball; checked against the release checksum asset when provided"
         required: false
@@ -27,8 +27,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      WEB_REF: ${{ inputs.web_ref || github.ref_name }}
-      CONTRACTS_REF: ${{ inputs.contracts_ref || github.ref_name }}
+      WEB_REF: ${{ inputs.web_ref || 'v0.1.6' }}
+      CONTRACTS_REF: ${{ inputs.contracts_ref || 'v0.1.13' }}
       WEB_SHA256: ${{ inputs.web_sha256 }}
     steps:
       - name: Checkout soha
@@ -40,6 +40,12 @@ jobs:
           go-version: "1.26.6"
           cache: true
           cache-dependency-path: soha/go.sum
+      - name: Verify release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        working-directory: soha
+        run: |
+          grep -F "newTag: ${GITHUB_REF_NAME}" deploy/kustomization.yaml
+          grep -F "image: ghcr.io/opensoha/soha:${GITHUB_REF_NAME}" deploy/deployment.yaml
       - name: Configure private module access
         env:
           GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
