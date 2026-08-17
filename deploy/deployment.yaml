@@ -116,6 +116,18 @@ spec:
       port: 5432
       targetPort: postgres
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: soha-data
+  namespace: soha
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -142,7 +154,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: soha
-          image: ghcr.io/opensoha/soha:v0.1.6
+          image: ghcr.io/opensoha/soha:v0.1.7
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -208,6 +220,13 @@ spec:
             limits:
               cpu: "1"
               memory: 1Gi
+          volumeMounts:
+            - name: soha-data
+              mountPath: /app/data
+      volumes:
+        - name: soha-data
+          persistentVolumeClaim:
+            claimName: soha-data
 ---
 apiVersion: v1
 kind: Service

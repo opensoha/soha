@@ -27,8 +27,10 @@ COPY --from=go-build /out/soha /app/soha
 COPY configs /app/configs
 COPY migrations /app/migrations
 COPY deploy/entrypoint.sh /app/entrypoint.sh
-ENV SOHA_CONFIG_FILE=/app/configs/config.yaml
-RUN chmod 0755 /app/entrypoint.sh
+ENV SOHA_CONFIG_FILE=/app/configs/config.yaml \
+    SOHA_SOFTWARE_STORAGE_DIR=/app/data/software \
+    SOHA_PLUGINS_COMPANION_STORAGE_DIR=/app/data/companion
+RUN mkdir -p /app/data && chown 10001:10001 /app/data && chmod 0755 /app/entrypoint.sh
 USER 10001:10001
 EXPOSE 8080
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -246,6 +246,7 @@ docker run -d \
   --name soha \
   --restart unless-stopped \
   -p 8080:8080 \
+  --mount source=soha-data,target=/app/data \
   --add-host host.docker.internal:host-gateway \
   -e SOHA_DATABASE_HOST=host.docker.internal \
   -e SOHA_DATABASE_PASSWORD=pgsql \
@@ -254,8 +255,10 @@ docker run -d \
   -e SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_MONITORING_WEBHOOK_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY=soha-123456789012345678901234567890 \
-  ghcr.io/opensoha/soha:v0.1.6
+  ghcr.io/opensoha/soha:v0.1.7
 ```
+
+`soha-data` 卷用于持久化上传的软件包和 companion 数据。
 
 JWT、runner、webhook 与凭据加密设置统一默认使用公开值
 `soha-123456789012345678901234567890`。这让本地进程、raw Docker、Compose、
@@ -280,10 +283,10 @@ Soha 启动不依赖 SecretStore 卷、secret bundle、writer lease 或 secrets 
 构建镜像：
 
 ```bash
-make deploy-image IMAGE_TAG=v0.1.6
+make deploy-image IMAGE_TAG=v0.1.7
 
 # 网络访问 proxy.golang.org 不稳定时：
-make deploy-image IMAGE_TAG=v0.1.6 GOPROXY=https://goproxy.cn,direct
+make deploy-image IMAGE_TAG=v0.1.7 GOPROXY=https://goproxy.cn,direct
 ```
 
 使用 Helm 安装：

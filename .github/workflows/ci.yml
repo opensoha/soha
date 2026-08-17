@@ -84,3 +84,9 @@ jobs:
       - name: Docker build
         working-directory: soha
         run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
+      - name: Verify container storage permissions
+        run: >-
+          docker run --rm --entrypoint sh ghcr.io/opensoha/soha:test -ec
+          'test "$(id -u)" = 10001 &&
+          mkdir -p "$SOHA_SOFTWARE_STORAGE_DIR" "$SOHA_PLUGINS_COMPANION_STORAGE_DIR" &&
+          touch "$SOHA_SOFTWARE_STORAGE_DIR/.writable" "$SOHA_PLUGINS_COMPANION_STORAGE_DIR/.writable"'
