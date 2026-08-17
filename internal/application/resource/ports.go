@@ -205,6 +205,8 @@ type DirectWorkloads interface {
 	DirectWorkloadInventoryReader
 }
 
+type WorkloadSnapshotBuilder func(string, domainresource.WorkloadSnapshotRequest) (domainresource.WorkloadSnapshot, error)
+
 type ConfigurationObjectAgent interface {
 	ListConfigMaps(context.Context, string) ([]domainresource.ConfigMapView, error)
 	ListSecrets(context.Context, string) ([]domainresource.SecretView, error)

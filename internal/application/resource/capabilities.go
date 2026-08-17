@@ -27,6 +27,7 @@ type Workloads struct {
 	directConfig  DirectConfiguration
 	direct        DirectWorkloads
 	network       DirectNetworkReader
+	snapshot      WorkloadSnapshotBuilder
 	yaml          resourceYAMLApplier
 }
 
@@ -213,7 +214,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		resourceAccess: access, metricsSupport: metrics,
 		agent:         deps.Agents.Workloads,
 		configuration: deps.Agents.Configuration, directPods: deps.DirectPods, direct: deps.DirectWorkloads,
-		directConfig: deps.DirectConfiguration, network: deps.DirectNetwork, yaml: genericResources,
+		directConfig: deps.DirectConfiguration, network: deps.DirectNetwork, snapshot: deps.WorkloadSnapshot, yaml: genericResources,
 	}
 	logs := &Logs{
 		resourceAccess: access, agent: deps.Agents.Logs, direct: deps.DirectLogs, durable: deps.DurableLogs, tickets: deps.StreamTickets,

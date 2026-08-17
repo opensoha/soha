@@ -907,6 +907,11 @@
       "classification": "public"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/resource-creation/workload-snapshot",
+      "classification": "public"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/storage/persistentvolumeclaims",
       "classification": "public"

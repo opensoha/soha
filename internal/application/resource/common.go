@@ -496,7 +496,7 @@ func resourceGroupForKind(kind string) string {
 		return "storage"
 	case "serviceaccount", "role", "rolebinding", "clusterrole", "clusterrolebinding":
 		return "access-control"
-	case "customresourcedefinition", "customresource", "helmrelease":
+	case "customresourcedefinition", "customresource", "helmrelease", "workloadcronjob":
 		return "extensions"
 	case "namespace", "node", "cluster":
 		return "inventory"

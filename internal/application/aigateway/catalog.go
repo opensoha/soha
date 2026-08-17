@@ -908,6 +908,14 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 
 var operationsToolCatalog = []domainaigateway.ToolCapability{
 	{
+		Name: "k8s.workloads.snapshot.generate", Title: "Generate Kubernetes Workload Snapshot", Description: "Generate a Job, CronJob, or image-following WorkloadCronJob manifest from a scoped workload pod template without creating resources.",
+		Domain: "k8s", Action: "generate", RiskLevel: domainaigateway.RiskLevelAnalyze,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke}, RequiredScopes: []string{"cluster", "namespace"},
+		MCPAdapterID: "k8s.v1", MCPToolName: "k8s.workloads.snapshot.generate", InputSchema: gatewayObjectSchema(
+			[]string{"clusterId", "namespace", "sourceKind", "sourceName", "targetKind", "targetName", "restartPolicy"}, gatewayKubernetesWorkloadSnapshotProperties(),
+		),
+	},
+	{
 		Name: "k8s.resources.create.preflight", Title: "Preflight Kubernetes Resources", Description: "Validate, authorize, and dry-run Kubernetes manifests without creating resources.",
 		Domain: "k8s", Action: "preflight", RiskLevel: domainaigateway.RiskLevelAnalyze,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreationUse}, RequiredScopes: []string{"cluster", "namespace"},
@@ -1090,6 +1098,20 @@ func gatewayKubernetesResourceCreateProperties() map[string]any {
 		"content": gatewayStringSchema("Bounded YAML or JSON manifest content."), "defaultNamespace": gatewayStringSchema("Default namespace."),
 		"resourceGroup": gatewayStringSchema("Optional resource authorization group."), "expectedApiVersion": gatewayStringSchema("Optional expected API version."),
 		"expectedKind": gatewayStringSchema("Optional expected resource kind."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
+	}
+}
+
+func gatewayKubernetesWorkloadSnapshotProperties() map[string]any {
+	return map[string]any{
+		"clusterId": gatewayStringSchema("Cluster id."), "namespace": gatewayStringSchema("Source and target namespace."),
+		"sourceKind": map[string]any{"type": "string", "enum": []string{"Deployment", "StatefulSet", "DaemonSet"}}, "sourceName": gatewayStringSchema("Source workload name."),
+		"sourceContainer": gatewayStringSchema("Regular source container to retain; defaults to the first container."),
+		"targetKind":      map[string]any{"type": "string", "enum": []string{"Job", "CronJob", "WorkloadCronJob"}}, "targetName": gatewayStringSchema("Generated resource name."),
+		"description": gatewayStringSchema("Optional snapshot remark."), "labels": gatewayFreeformObjectSchema("Additional labels."), "annotations": gatewayFreeformObjectSchema("Additional annotations."),
+		"command": gatewayStringArraySchema("Optional container command override."), "args": gatewayStringArraySchema("Optional container argument override."),
+		"restartPolicy": map[string]any{"type": "string", "enum": []string{"Never", "OnFailure"}},
+		"parallelism":   gatewayIntegerSchema("Optional Job parallelism."), "completions": gatewayIntegerSchema("Optional Job completions."), "backoffLimit": gatewayIntegerSchema("Optional Job retry limit."),
+		"activeDeadlineSeconds": gatewayIntegerSchema("Optional execution deadline in seconds."), "schedule": gatewayStringSchema("Cron schedule required for CronJob and WorkloadCronJob targets."), "suspend": gatewayBooleanSchema("Whether a generated CronJob starts suspended."),
 	}
 }
 
@@ -1551,8 +1573,8 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			ID:             "k8s-resource-provisioner",
 			Name:           "K8s Resource Provisioner",
 			Category:       "platform",
-			Description:    "Approval-bound Kubernetes manifest preflight and creation for scoped demo environments.",
-			CapabilityRefs: []string{"k8s.resources.create.preflight", "k8s.resources.create.trigger"},
+			Description:    "Kubernetes workload snapshot generation plus approval-bound manifest preflight and creation for scoped environments.",
+			CapabilityRefs: []string{"k8s.workloads.snapshot.generate", "k8s.resources.create.preflight", "k8s.resources.create.trigger"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermPlatformResourceCreationUse},
 			RequiredScopes: []string{"cluster", "namespace"},
 		},

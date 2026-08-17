@@ -20,6 +20,12 @@ type stubRepository struct {
 
 type stubAuthorizer struct{}
 
+type agentSummaryStub struct{ summary domaincluster.Summary }
+
+func (s agentSummaryStub) GetSummary(context.Context) (domaincluster.Summary, error) {
+	return s.summary, nil
+}
+
 func (stubAuthorizer) Authorize(_ context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
 	if request.Cluster.ClusterID == "cluster-2" {
 		return domainaccess.Decision{Allowed: false, Reason: "denied"}, nil
@@ -270,5 +276,26 @@ func TestSyncConnectionUsesFixedHealthMessageForInvalidClusterConfig(t *testing.
 	}
 	if strings.Contains(repo.connection.Summary.Health.Message, "has no kubeconfig metadata") {
 		t.Fatalf("health message leaked underlying config error: %q", repo.connection.Summary.Health.Message)
+	}
+}
+
+func TestSyncConnectionPersistsAgentClusterID(t *testing.T) {
+	repo := &stubRepository{connection: domaincluster.Connection{
+		Summary:  domaincluster.Summary{ID: "registration-id", Name: "agent-one", ConnectionMode: domaincluster.ConnectionModeAgent},
+		Metadata: map[string]any{"endpoint": "http://agent.internal"},
+	}}
+	service := newTestService(t, repo)
+	service.agents = func(domaincluster.Connection) (AgentSummaryClient, error) {
+		return agentSummaryStub{summary: domaincluster.Summary{ID: "agent-native-id", Health: domaincluster.Health{Status: "healthy"}}}, nil
+	}
+
+	if err := service.syncConnection(context.Background(), repo.connection); err != nil {
+		t.Fatalf("syncConnection returned error: %v", err)
+	}
+	if got := repo.connection.Metadata[domaincluster.MetadataAgentClusterID]; got != "agent-native-id" {
+		t.Fatalf("agent cluster ID = %v, want %q", got, "agent-native-id")
+	}
+	if got := repo.connection.Summary.ID; got != "registration-id" {
+		t.Fatalf("registered cluster ID = %q, want %q", got, "registration-id")
 	}
 }

@@ -12,7 +12,24 @@ import (
 )
 
 type resourceCreationHandler struct {
-	service ResourceCreationService
+	service  ResourceCreationService
+	snapshot WorkloadSnapshotService
+}
+
+func (h *resourceCreationHandler) GenerateWorkloadSnapshot(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 128<<10)
+	var request domainresource.WorkloadSnapshotRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid workload snapshot payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	result, err := h.snapshot.GenerateWorkloadSnapshot(c.Request.Context(), principal, c.Param("clusterID"), request)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, result)
 }
 
 func (h *resourceCreationHandler) DecideResourceCreationScope(c *gin.Context) {

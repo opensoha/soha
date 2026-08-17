@@ -24,6 +24,22 @@ func TestExecuteResourceCreationRequiresIdempotencyKey(t *testing.T) {
 	}
 }
 
+func TestGenerateWorkloadSnapshotUsesContractWireShape(t *testing.T) {
+	t.Parallel()
+	service := &workloadSnapshotHandlerStub{result: domainresource.WorkloadSnapshot{
+		Content: "apiVersion: batch/v1\nkind: Job\n", SourceUID: "source-uid", SelectedContainer: "worker",
+		Containers: []domainresource.WorkloadSnapshotContainer{{Name: "worker", Image: "example/worker:1"}}, Warnings: []string{},
+	}}
+	ctx, recorder := resourceCreationTestContext(http.MethodPost, `{"namespace":"ops","sourceKind":"Deployment","sourceName":"api","targetKind":"Job","targetName":"report","restartPolicy":"Never"}`)
+	(&resourceCreationHandler{snapshot: service}).GenerateWorkloadSnapshot(ctx)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if service.request.SourceName != "api" || service.request.TargetKind != domainresource.WorkloadSnapshotTargetJob || !strings.Contains(recorder.Body.String(), `"selectedContainer":"worker"`) {
+		t.Fatalf("request=%#v body=%s", service.request, recorder.Body.String())
+	}
+}
+
 func TestPreflightResourceCreationUsesContractWireShape(t *testing.T) {
 	t.Parallel()
 	service := &resourceCreationHandlerStub{preflight: domainresource.ResourceCreatePreflight{
@@ -111,6 +127,16 @@ type resourceCreationHandlerStub struct {
 	preflight       domainresource.ResourceCreatePreflight
 	preflightCalled bool
 	executeCalled   bool
+}
+
+type workloadSnapshotHandlerStub struct {
+	request domainresource.WorkloadSnapshotRequest
+	result  domainresource.WorkloadSnapshot
+}
+
+func (s *workloadSnapshotHandlerStub) GenerateWorkloadSnapshot(_ context.Context, _ domainidentity.Principal, _ string, request domainresource.WorkloadSnapshotRequest) (domainresource.WorkloadSnapshot, error) {
+	s.request = request
+	return s.result, nil
 }
 
 func (s *resourceCreationHandlerStub) PreflightCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreatePreflight, error) {

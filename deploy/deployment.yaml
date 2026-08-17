@@ -142,7 +142,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: soha
-          image: ghcr.io/opensoha/soha:v0.1.5
+          image: ghcr.io/opensoha/soha:v0.1.6
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

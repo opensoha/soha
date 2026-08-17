@@ -262,7 +262,7 @@ docker run -d \
   -e SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_MONITORING_WEBHOOK_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY=soha-123456789012345678901234567890 \
-  ghcr.io/opensoha/soha:v0.1.5
+  ghcr.io/opensoha/soha:v0.1.6
 ```
 
 The bootstrap password is inserted only when the `opensoha` user's password
@@ -296,10 +296,10 @@ Recommended boundaries:
 Build the image:
 
 ```bash
-make deploy-image IMAGE_TAG=v0.1.5
+make deploy-image IMAGE_TAG=v0.1.6
 
 # When proxy.golang.org is unstable:
-make deploy-image IMAGE_TAG=v0.1.5 GOPROXY=https://goproxy.cn,direct
+make deploy-image IMAGE_TAG=v0.1.6 GOPROXY=https://goproxy.cn,direct
 ```
 
 Install with Helm:

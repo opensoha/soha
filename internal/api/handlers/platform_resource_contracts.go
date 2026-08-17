@@ -82,6 +82,10 @@ type CronJobService interface {
 	SetCronJobSuspend(context.Context, domainidentity.Principal, string, string, string, bool) (domainresource.CronJobDetailView, error)
 }
 
+type WorkloadSnapshotService interface {
+	GenerateWorkloadSnapshot(context.Context, domainidentity.Principal, string, domainresource.WorkloadSnapshotRequest) (domainresource.WorkloadSnapshot, error)
+}
+
 type WorkloadInventoryService interface {
 	ListReplicaSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReplicaSetView, error)
 	GetReplicaSetDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ReplicaSetDetailView, error)
@@ -317,6 +321,7 @@ type ResourceServices struct {
 	WorkloadInventory      WorkloadInventoryService
 	Creator                ResourceCreator
 	ResourceCreation       ResourceCreationService
+	WorkloadSnapshots      WorkloadSnapshotService
 	ConfigMaps             ConfigMapService
 	Secrets                SecretService
 	ConfigurationInventory ConfigurationInventoryService

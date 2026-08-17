@@ -532,18 +532,42 @@ func (s *resourceCreationBatchStub) Complete(_ context.Context, _ string, status
 }
 
 type agentCreationStub struct {
-	manifests []domainresource.ResolvedCreateManifest
-	dryRunErr error
+	manifests       []domainresource.ResolvedCreateManifest
+	dryRunErr       error
+	dryRunClusterID string
+	createClusterID string
 }
 
 func (s *agentCreationStub) ResolveCreateManifests(context.Context, string, int) ([]domainresource.ResolvedCreateManifest, error) {
 	return append([]domainresource.ResolvedCreateManifest(nil), s.manifests...), nil
 }
 
-func (s *agentCreationStub) DryRunCreateManifest(context.Context, string, string, domainresource.ResolvedCreateManifest) error {
+func (s *agentCreationStub) DryRunCreateManifest(_ context.Context, _, clusterID string, _ domainresource.ResolvedCreateManifest) error {
+	s.dryRunClusterID = clusterID
 	return s.dryRunErr
 }
 
-func (s *agentCreationStub) CreateResolvedManifest(context.Context, string, string, domainresource.ResolvedCreateManifest) (domainresource.ResourceYAMLView, error) {
+func (s *agentCreationStub) CreateResolvedManifest(_ context.Context, _, clusterID string, _ domainresource.ResolvedCreateManifest) (domainresource.ResourceYAMLView, error) {
+	s.createClusterID = clusterID
 	return domainresource.ResourceYAMLView{}, nil
+}
+
+func TestAgentResourceCreationUsesAgentClusterID(t *testing.T) {
+	stub := &agentCreationStub{}
+	creation := &ResourceCreation{agent: func(domaincluster.Connection) (AgentResourceCreator, error) { return stub, nil }}
+	connection := domaincluster.Connection{
+		Summary:  domaincluster.Summary{ID: "registration-id", ConnectionMode: domaincluster.ConnectionModeAgent},
+		Metadata: map[string]any{domaincluster.MetadataAgentClusterID: "agent-native-id"},
+	}
+	manifest := testCreateManifest("ConfigMap", "default", true)
+
+	if err := creation.dryRunCreateManifest(context.Background(), connection, "registration-id", manifest); err != nil {
+		t.Fatalf("dryRunCreateManifest returned error: %v", err)
+	}
+	if _, err := creation.createResolvedManifest(context.Background(), connection, "operation-id", "registration-id", manifest); err != nil {
+		t.Fatalf("createResolvedManifest returned error: %v", err)
+	}
+	if stub.dryRunClusterID != "agent-native-id" || stub.createClusterID != "agent-native-id" {
+		t.Fatalf("agent cluster IDs dry-run=%q create=%q, want agent-native-id", stub.dryRunClusterID, stub.createClusterID)
+	}
 }

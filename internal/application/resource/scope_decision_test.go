@@ -77,6 +77,8 @@ func TestDecideCreateScopeDistinguishesDeniedAuthorizationFromPublishedAgentCapa
 		{name: "permission denied", mode: domaincluster.ConnectionModeDirectKubeconfig, decision: domainaccess.Decision{Allowed: false, Reason: "scope denied"}, wantStatus: "available", wantAllow: false},
 		{name: "agent capability missing", mode: domaincluster.ConnectionModeAgent, decision: domainaccess.Decision{Allowed: true, AllowedActions: []domainaccess.Action{domainaccess.ActionCreate}}, wantStatus: "unsupported", wantAllow: true},
 		{name: "agent capability published", mode: domaincluster.ConnectionModeAgent, capabilities: []string{"resource.creation"}, decision: domainaccess.Decision{Allowed: true, AllowedActions: []domainaccess.Action{domainaccess.ActionCreate}}, wantStatus: "available", wantAllow: true},
+		{name: "legacy agent manifest capabilities published", mode: domaincluster.ConnectionModeAgent, capabilities: []string{"manifest.preflight", "manifest.ssa"}, decision: domainaccess.Decision{Allowed: true, AllowedActions: []domainaccess.Action{domainaccess.ActionCreate}}, wantStatus: "available", wantAllow: true},
+		{name: "legacy agent manifest apply missing", mode: domaincluster.ConnectionModeAgent, capabilities: []string{"manifest.preflight"}, decision: domainaccess.Decision{Allowed: true, AllowedActions: []domainaccess.Action{domainaccess.ActionCreate}}, wantStatus: "unsupported", wantAllow: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

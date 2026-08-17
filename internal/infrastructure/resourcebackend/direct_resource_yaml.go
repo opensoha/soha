@@ -178,6 +178,7 @@ type resourceKindDefinition struct {
 }
 
 var resourceKindDefinitions = map[string]resourceKindDefinition{
+	"namespace":                      {gvr: schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}},
 	"pod":                            {gvr: schema.GroupVersionResource{Version: "v1", Resource: "pods"}, namespaced: true},
 	"node":                           {gvr: schema.GroupVersionResource{Version: "v1", Resource: "nodes"}},
 	"deployment":                     {gvr: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, namespaced: true},
@@ -215,6 +216,8 @@ var resourceKindDefinitions = map[string]resourceKindDefinition{
 	"runtimeclass":                   {gvr: schema.GroupVersionResource{Group: "node.k8s.io", Version: "v1", Resource: "runtimeclasses"}},
 	"clusterrole":                    {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"}},
 	"clusterrolebinding":             {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"}},
+	"customresourcedefinition":       {gvr: schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}},
+	"workloadcronjob":                {gvr: schema.GroupVersionResource{Group: "workloads.soha.io", Version: "v1alpha1", Resource: "workloadcronjobs"}, namespaced: true},
 	"mutatingwebhookconfiguration":   {gvr: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1", Resource: "mutatingwebhookconfigurations"}},
 	"validatingwebhookconfiguration": {gvr: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1", Resource: "validatingwebhookconfigurations"}},
 }

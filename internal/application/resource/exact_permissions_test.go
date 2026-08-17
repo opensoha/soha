@@ -32,6 +32,19 @@ func TestPodAllowedActionsUseExactPermissionKeys(t *testing.T) {
 	}
 }
 
+func TestWorkloadCronJobUsesCustomResourceCreatePermission(t *testing.T) {
+	t.Parallel()
+
+	group := resourceGroupForKind("WorkloadCronJob")
+	if group != "extensions" {
+		t.Fatalf("resource group = %q, want extensions", group)
+	}
+	const want = "platform.extensions.custom-resources.create"
+	if key := resourcePermissionKey(group, "WorkloadCronJob", domainaccess.ActionCreate); key != want {
+		t.Fatalf("create permission = %q, want %q", key, want)
+	}
+}
+
 func TestKubernetesResourceReadsUseExactPermissionKeys(t *testing.T) {
 	t.Parallel()
 

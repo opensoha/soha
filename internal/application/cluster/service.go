@@ -598,6 +598,17 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 			summary.Health = domaincluster.Health{Status: "degraded", Message: clusterHealthMessage(err, "agent summary unavailable"), LastChecked: time.Now().UTC()}
 			break
 		}
+		if agentClusterID := strings.TrimSpace(observed.ID); agentClusterID != "" {
+			if connection.Metadata == nil {
+				connection.Metadata = map[string]any{}
+			}
+			if storedID, _ := connection.Metadata[domaincluster.MetadataAgentClusterID].(string); storedID != agentClusterID {
+				connection.Metadata[domaincluster.MetadataAgentClusterID] = agentClusterID
+				if err := s.repo.UpdateRegistration(ctx, connection); err != nil {
+					return fmt.Errorf("persist agent cluster identity: %w", err)
+				}
+			}
+		}
 		summary.Version = observed.Version
 		summary.Capabilities = observed.Capabilities
 		if observed.Health.Status != "" {

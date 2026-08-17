@@ -9,6 +9,7 @@ import (
 
 func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/clusters/:clusterID/resource-creation/scope-decision", deps.Platform.DecideResourceCreationScope)
+	protected.POST("/clusters/:clusterID/resource-creation/workload-snapshot", deps.Platform.GenerateWorkloadSnapshot)
 	protected.POST("/clusters/:clusterID/resource-creation/preflight", deps.Platform.PreflightResourceCreation)
 	protected.POST("/clusters/:clusterID/resource-creation/execute", deps.Platform.ExecuteResourceCreation)
 	registerPlatformClusterRoutes(protected, deps)

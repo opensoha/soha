@@ -103,12 +103,15 @@ func TestResourceGVRForKindSupportsPlatformKinds(t *testing.T) {
 		resource        string
 		namespaceScoped bool
 	}{
+		{kind: "Namespace", resource: "namespaces"},
 		{kind: "ServiceAccount", resource: "serviceaccounts", namespaceScoped: true},
 		{kind: "Role", resource: "roles", namespaceScoped: true},
 		{kind: "ClusterRole", resource: "clusterroles"},
 		{kind: "ReplicaSet", resource: "replicasets", namespaceScoped: true},
 		{kind: "PersistentVolumeClaim", resource: "persistentvolumeclaims", namespaceScoped: true},
 		{kind: "StorageClass", resource: "storageclasses"},
+		{kind: "CustomResourceDefinition", resource: "customresourcedefinitions"},
+		{kind: "WorkloadCronJob", resource: "workloadcronjobs", namespaceScoped: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.kind, func(t *testing.T) {

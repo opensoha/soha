@@ -150,7 +150,7 @@ func completeResourceServices(resources *stubPlatformResourceService) ResourceSe
 		StatefulSetReader: resources, StatefulSetEditor: resources,
 		DaemonSetReader: resources, DaemonSetEditor: resources,
 		Jobs: resources, CronJobs: resources, WorkloadInventory: resources,
-		Creator: resources, ResourceCreation: resources, ConfigMaps: resources, Secrets: resources, ConfigurationInventory: resources,
+		Creator: resources, ResourceCreation: resources, WorkloadSnapshots: resources, ConfigMaps: resources, Secrets: resources, ConfigurationInventory: resources,
 		NetworkOverview: resources, NetworkInventory: resources, GatewayRouting: resources, GatewayPolicy: resources,
 		PersistentVolumeClaims: resources, PersistentVolumes: resources, StorageClasses: resources,
 		NamespacedRBAC: resources, ClusterRBAC: resources,

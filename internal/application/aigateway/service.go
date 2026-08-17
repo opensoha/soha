@@ -157,6 +157,10 @@ type KubernetesWorkbenchReadService interface {
 	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
 }
 
+type KubernetesWorkloadSnapshotService interface {
+	GenerateWorkloadSnapshot(context.Context, domainidentity.Principal, string, domainresource.WorkloadSnapshotRequest) (domainresource.WorkloadSnapshot, error)
+}
+
 type AnalysisArtifactRecorder interface {
 	RecordGatewayAnalysisArtifact(context.Context, domainidentity.Principal, domaincopilot.GatewayAnalysisArtifactInput) (domaincopilot.AgentRun, error)
 	QueueGatewayAnalysisAgentRun(context.Context, domainidentity.Principal, domaincopilot.GatewayAnalysisAgentRunInput) (domaincopilot.AgentRun, error)

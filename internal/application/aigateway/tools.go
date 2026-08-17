@@ -762,6 +762,9 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 	if tool.Name == "k8s.resources.create.preflight" || tool.Name == "k8s.resources.create.trigger" {
 		return s.invokeKubernetesResourceCreationTool(ctx, principal, tool.Name, input)
 	}
+	if tool.Name == "k8s.workloads.snapshot.generate" {
+		return s.invokeKubernetesWorkloadSnapshotTool(ctx, principal, input)
+	}
 	if s.resources == nil {
 		return nil, nil, fmt.Errorf("%w: Kubernetes resource gateway service is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -848,6 +851,31 @@ func (s *Service) invokeKubernetesResourceCreationTool(ctx context.Context, prin
 	req.ResourceCreateRequest.RequestID = req.IdempotencyKey
 	item, err := s.resourceCreation.ExecuteCreate(ctx, principal, req.ClusterID, req.ResourceCreateRequest)
 	return item, map[string]any{"clusterId": req.ClusterID, "operationId": item.OperationID, "contentHash": item.ContentHash}, err
+}
+
+func (s *Service) invokeKubernetesWorkloadSnapshotTool(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
+	resources, ok := s.resources.(KubernetesWorkloadSnapshotService)
+	if !ok {
+		return nil, nil, fmt.Errorf("%w: Kubernetes workload snapshot service is not configured", apperrors.ErrInvalidArgument)
+	}
+	var req struct {
+		ClusterID string `json:"clusterId"`
+		domainresource.WorkloadSnapshotRequest
+	}
+	if err := mapInput(input, &req); err != nil {
+		return nil, nil, err
+	}
+	req.ClusterID = strings.TrimSpace(req.ClusterID)
+	if req.ClusterID == "" {
+		return nil, nil, fmt.Errorf("%w: clusterId is required", apperrors.ErrInvalidArgument)
+	}
+	item, err := resources.GenerateWorkloadSnapshot(ctx, principal, req.ClusterID, req.WorkloadSnapshotRequest)
+	related := map[string]any{"clusterId": req.ClusterID, "namespace": req.Namespace}
+	if err == nil {
+		related["sourceUid"] = item.SourceUID
+		related["selectedContainer"] = item.SelectedContainer
+	}
+	return item, related, err
 }
 
 func (s *Service) invokeKubernetesPodTool(ctx context.Context, principal domainidentity.Principal, toolName string, req kubernetesToolRequest, related map[string]any) (any, map[string]any, error) {

@@ -47,6 +47,7 @@ func platformMutationSecuritySurface(method, path string) (platformMutationSecur
 
 func isReadOnlyPOST(method, path string) bool {
 	return method == "POST" && (strings.HasSuffix(path, "/resource-creation/scope-decision") ||
+		strings.HasSuffix(path, "/resource-creation/workload-snapshot") ||
 		strings.HasSuffix(path, "/resource-creation/preflight") ||
 		strings.HasSuffix(path, "/observability/logging/preflight") ||
 		strings.HasSuffix(path, "/logs/query") ||

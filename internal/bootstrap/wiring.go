@@ -683,6 +683,7 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 		DirectCustom: resourceDirect, DirectConfiguration: resourceDirect, DirectEvents: resourceDirect, DirectGeneric: resourceDirect, DirectResourceCreate: resourceDirect,
 		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectLogs: resourceDirect, DirectNetwork: resourceDirect,
 		DirectPods: resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
+		WorkloadSnapshot: resourceDirect.BuildWorkloadSnapshot,
 	})
 	observabilityService.ConfigureCollection(appobservability.CollectionDependencies{
 		Settings: repos.settingsRepository, Connections: repos.clusterRepository, Helm: resourceService.Helm(), PortForwards: resourceService.PortForwards(), Access: access,
@@ -1152,6 +1153,7 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 		Jobs: workloads, CronJobs: workloads, WorkloadInventory: workloads,
 		Creator: configuration, ConfigMaps: configuration, Secrets: configuration,
 		ResourceCreation:       service.ResourceCreation(),
+		WorkloadSnapshots:      workloads,
 		ConfigurationInventory: configuration,
 		NetworkOverview:        network, NetworkInventory: network, GatewayRouting: network, GatewayPolicy: network,
 		PersistentVolumeClaims: storage, PersistentVolumes: storage, StorageClasses: storage,

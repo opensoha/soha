@@ -10,6 +10,7 @@ type ConnectionMode string
 const (
 	ConnectionModeDirectKubeconfig ConnectionMode = "direct_kubeconfig"
 	ConnectionModeAgent            ConnectionMode = "agent"
+	MetadataAgentClusterID                        = "agent_cluster_id"
 )
 
 type Health struct {

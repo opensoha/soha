@@ -76,6 +76,7 @@ type Dependencies struct {
 	DirectStorage        DirectStorageReader
 	DirectTunnel         DirectPortForwardStarter
 	DirectWorkloads      DirectWorkloads
+	WorkloadSnapshot     WorkloadSnapshotBuilder
 }
 
 type crdResourceDefinition struct {

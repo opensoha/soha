@@ -305,7 +305,7 @@ func (s *ResourceCreation) dryRunCreateManifest(ctx context.Context, connection 
 	if err != nil {
 		return err
 	}
-	return client.DryRunCreateManifest(ctx, "preflight-"+uuid.NewString(), clusterID, manifest)
+	return client.DryRunCreateManifest(ctx, "preflight-"+uuid.NewString(), agentResourceClusterID(connection, clusterID), manifest)
 }
 
 func (s *ResourceCreation) createResolvedManifest(ctx context.Context, connection domaincluster.Connection, operationID, clusterID string, manifest domainresource.ResolvedCreateManifest) (domainresource.ResourceYAMLView, error) {
@@ -316,7 +316,14 @@ func (s *ResourceCreation) createResolvedManifest(ctx context.Context, connectio
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	return client.CreateResolvedManifest(ctx, operationID, clusterID, manifest)
+	return client.CreateResolvedManifest(ctx, operationID, agentResourceClusterID(connection, clusterID), manifest)
+}
+
+func agentResourceClusterID(connection domaincluster.Connection, fallback string) string {
+	if clusterID, _ := connection.Metadata[domaincluster.MetadataAgentClusterID].(string); strings.TrimSpace(clusterID) != "" {
+		return strings.TrimSpace(clusterID)
+	}
+	return fallback
 }
 
 func preflightRejectionError(preflight domainresource.ResourceCreatePreflight) error {

@@ -52,9 +52,11 @@ func resourceCreateCapability(connection domaincluster.Connection) domainresourc
 	result := domainresource.ResourceCreateCapability{Key: "resource.create", Status: "available", Mode: "direct"}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
 		result.Mode = "agent"
-		if !slices.Contains(connection.Summary.Capabilities, "resource.creation") {
+		capabilities := connection.Summary.Capabilities
+		legacyManifestCreate := slices.Contains(capabilities, "manifest.preflight") && slices.Contains(capabilities, "manifest.ssa")
+		if !slices.Contains(capabilities, "resource.creation") && !legacyManifestCreate {
 			result.Status = "unsupported"
-			result.Reason = "connected agent has not published the resource.creation capability"
+			result.Reason = "connected agent has not published resource creation capabilities"
 		}
 	}
 	return result
