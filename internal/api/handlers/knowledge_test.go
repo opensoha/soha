@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -35,6 +36,20 @@ func TestWriteKnowledgeErrorMapsDomainErrors(t *testing.T) {
 			writeKnowledgeError(context, fmt.Errorf("load knowledge: %w", test.err))
 			if response.Code != test.status {
 				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+			var payload struct {
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if payload.Error.Message == "" || payload.Error.Message == fmt.Sprintf("load knowledge: %v", test.err) {
+				t.Fatalf("unsafe public message = %q", payload.Error.Message)
+			}
+			if len(context.Errors) != 1 {
+				t.Fatalf("recorded errors = %d, want 1", len(context.Errors))
 			}
 		})
 	}

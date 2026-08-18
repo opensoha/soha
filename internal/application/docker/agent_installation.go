@@ -48,7 +48,12 @@ func (s *Service) CreateHostAgentInstallation(ctx context.Context, principal dom
 		return domaindocker.HostAgentInstallation{}, err
 	}
 	if s.repo == nil || s.accessURL == nil || s.credentialEncryptionKeys.Active().ID() == "" {
-		return domaindocker.HostAgentInstallation{}, fmt.Errorf("%w: Docker Agent installation is unavailable", apperrors.ErrInvalidArgument)
+		return domaindocker.HostAgentInstallation{}, apperrors.NewBusiness(
+			apperrors.ErrInvalidArgument,
+			"agent_installation_unavailable",
+			"Agent installation service is not ready; check the server encryption key and public access URL configuration",
+			"Agent 安装服务尚未就绪，请检查服务端加密密钥和对外访问地址配置",
+		)
 	}
 	host, err := s.repo.GetHost(ctx, strings.TrimSpace(hostID))
 	if err != nil {
@@ -56,10 +61,20 @@ func (s *Service) CreateHostAgentInstallation(ctx context.Context, principal dom
 	}
 	accessURL := strings.TrimSpace(s.accessURL.AccessURL())
 	if accessURL == "" {
-		return domaindocker.HostAgentInstallation{}, fmt.Errorf("%w: configure 访问地址 before generating the Agent installation", apperrors.ErrInvalidArgument)
+		return domaindocker.HostAgentInstallation{}, apperrors.NewBusiness(
+			apperrors.ErrInvalidArgument,
+			"public_access_url_not_configured",
+			"Soha public access URL is not configured; set Access URL under Settings > Runtime Configuration and try again",
+			"Soha 对外访问地址尚未配置，请前往“设置中心 > 运行时配置”设置“访问地址”后重试",
+		)
 	}
 	if _, err := buildHostAgentInstallerURL(accessURL, "validate"); err != nil {
-		return domaindocker.HostAgentInstallation{}, fmt.Errorf("%w: invalid 访问地址", apperrors.ErrInvalidArgument)
+		return domaindocker.HostAgentInstallation{}, apperrors.NewBusiness(
+			apperrors.ErrInvalidArgument,
+			"public_access_url_invalid",
+			"Soha public access URL is invalid; configure a complete HTTP or HTTPS URL",
+			"Soha 对外访问地址格式不正确，请配置完整的 HTTP 或 HTTPS 地址",
+		)
 	}
 
 	secret, err := newDockerCallbackToken()

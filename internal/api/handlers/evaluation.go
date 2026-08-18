@@ -64,7 +64,7 @@ func (h *EvaluationHandler) listDatasets(c *gin.Context) {
 	}
 	items, err := h.service.ListDatasets(c.Request.Context())
 	if err != nil {
-		writeEvaluationError(c, err)
+		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
@@ -80,7 +80,7 @@ func (h *EvaluationHandler) createDataset(c *gin.Context) {
 		return
 	}
 	if err := h.service.PutDataset(c.Request.Context(), dataset); err != nil {
-		writeEvaluationError(c, err)
+		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusCreated, dataset)
@@ -92,7 +92,7 @@ func (h *EvaluationHandler) listRuns(c *gin.Context) {
 	}
 	items, err := h.service.ListRuns(c.Request.Context())
 	if err != nil {
-		writeEvaluationError(c, err)
+		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
@@ -109,7 +109,7 @@ func (h *EvaluationHandler) startRun(c *gin.Context) {
 	}
 	started, err := h.service.StartRun(c.Request.Context(), run, h.now())
 	if err != nil {
-		writeEvaluationError(c, err)
+		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusAccepted, started)
@@ -145,7 +145,7 @@ func (h *EvaluationHandler) getRun(c *gin.Context) {
 	}
 	run, err := h.service.GetRun(c.Request.Context(), c.Param("runID"))
 	if err != nil {
-		writeEvaluationError(c, err)
+		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, run)
@@ -164,7 +164,7 @@ func (h *EvaluationHandler) completeRun(c *gin.Context) {
 	}
 	completed, err := h.service.CompleteRun(c.Request.Context(), c.Param("runID"), input.Outputs, h.now())
 	if err != nil {
-		writeEvaluationError(c, err)
+		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, completed)
@@ -176,7 +176,7 @@ func (h *EvaluationHandler) listRunResults(c *gin.Context) {
 	}
 	run, err := h.service.GetRun(c.Request.Context(), c.Param("runID"))
 	if err != nil {
-		writeEvaluationError(c, err)
+		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, run.Results)
@@ -211,17 +211,4 @@ func (h *EvaluationHandler) authorize(c *gin.Context, check func() error) bool {
 		return false
 	}
 	return true
-}
-
-func writeEvaluationError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, appaieval.ErrNotFound):
-		apiresponse.Error(c, http.StatusNotFound, "not_found", err.Error())
-	case errors.Is(err, appaieval.ErrConflict):
-		apiresponse.Error(c, http.StatusConflict, "conflict", err.Error())
-	case strings.Contains(err.Error(), "required"), strings.Contains(err.Error(), "duplicate"):
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
-	default:
-		apiresponse.Error(c, http.StatusInternalServerError, "internal_error", "evaluation operation failed")
-	}
 }

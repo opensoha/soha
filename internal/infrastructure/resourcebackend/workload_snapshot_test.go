@@ -37,6 +37,9 @@ func TestBuildWorkloadSnapshotCopiesRuntimeAndBuildsBatchResources(t *testing.T)
 			if len(containers) != 1 || containers[0].Name != "worker" || len(containers[0].Env) != 1 || len(containers[0].Command) != 1 || len(containers[0].Args) != 2 {
 				t.Fatalf("selected container = %#v", containers)
 			}
+			if containers[0].LivenessProbe == nil || containers[0].ReadinessProbe == nil {
+				t.Fatalf("legacy snapshot omitted probes = %#v", containers[0])
+			}
 			if job.Spec.Template.Spec.ServiceAccountName != "runtime" || len(job.Spec.Template.Spec.InitContainers) != 1 || len(job.Spec.Template.Spec.Volumes) != 1 || job.Spec.Template.Spec.RestartPolicy != "Never" {
 				t.Fatalf("copied pod spec = %#v", job.Spec.Template.Spec)
 			}
@@ -86,6 +89,43 @@ func TestBuildWorkloadSnapshotCopiesRuntimeAndBuildsBatchResources(t *testing.T)
 	}
 }
 
+func TestBuildWorkloadSnapshotSelectsRuntimeModules(t *testing.T) {
+	t.Parallel()
+	result, err := (&Direct{}).BuildWorkloadSnapshot(snapshotSourceYAML("Deployment"), domainresource.WorkloadSnapshotRequest{
+		Namespace: "ops", SourceKind: domainresource.WorkloadSnapshotSourceDeployment, SourceName: "api", SourceContainer: "worker",
+		TargetKind: domainresource.WorkloadSnapshotTargetJob, TargetName: "report", RestartPolicy: domainresource.WorkloadSnapshotRestartNever,
+		Inherit: []domainresource.WorkloadSnapshotInheritance{
+			domainresource.WorkloadSnapshotInheritEnvironment,
+			domainresource.WorkloadSnapshotInheritStorage,
+			domainresource.WorkloadSnapshotInheritResources,
+			domainresource.WorkloadSnapshotInheritSecurityContext,
+			domainresource.WorkloadSnapshotInheritScheduling,
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildWorkloadSnapshot() error = %v", err)
+	}
+	var job batchv1.Job
+	if err := yaml.Unmarshal([]byte(result.Content), &job); err != nil {
+		t.Fatalf("decode Job: %v", err)
+	}
+	template := job.Spec.Template
+	container := template.Spec.Containers[0]
+	if len(template.Labels) != 0 || len(template.Annotations) != 0 {
+		t.Fatalf("template metadata was inherited = %#v", template.ObjectMeta)
+	}
+	if container.LivenessProbe != nil || container.ReadinessProbe != nil || container.StartupProbe != nil || container.Lifecycle != nil || len(container.Ports) != 0 {
+		t.Fatalf("service runtime was inherited = %#v", container)
+	}
+	if len(template.Spec.InitContainers) != 0 {
+		t.Fatalf("init containers were inherited = %#v", template.Spec.InitContainers)
+	}
+	if len(container.Env) != 1 || len(container.EnvFrom) != 1 || len(container.VolumeMounts) != 1 || len(container.Resources.Limits) != 1 || container.SecurityContext == nil ||
+		len(template.Spec.Volumes) != 1 || template.Spec.ServiceAccountName != "runtime" || template.Spec.NodeSelector["pool"] != "batch" || template.Spec.SecurityContext == nil {
+		t.Fatalf("selected runtime modules = %#v", template.Spec)
+	}
+}
+
 func snapshotSourceYAML(kind string) string {
 	return fmt.Sprintf(`apiVersion: apps/v1
 kind: %s
@@ -99,6 +139,8 @@ spec:
       labels:
         app: api
         pod-template-hash: generated
+      annotations:
+        workload.example/revision: one
       ownerReferences:
         - apiVersion: apps/v1
           kind: ReplicaSet
@@ -106,6 +148,10 @@ spec:
           uid: generated-uid
     spec:
       serviceAccountName: runtime
+      nodeSelector:
+        pool: batch
+      securityContext:
+        runAsNonRoot: true
       restartPolicy: Always
       initContainers:
         - name: prepare
@@ -113,9 +159,36 @@ spec:
       containers:
         - name: worker
           image: example/api:1
+          ports:
+            - name: http
+              containerPort: 8080
           env:
             - name: APP_ENV
               value: production
+          envFrom:
+            - configMapRef:
+                name: api-env
+          resources:
+            limits:
+              cpu: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          startupProbe:
+            httpGet:
+              path: /startupz
+              port: http
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "true"]
           volumeMounts:
             - name: config
               mountPath: /etc/app

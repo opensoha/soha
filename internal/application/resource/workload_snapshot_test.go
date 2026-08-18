@@ -62,6 +62,22 @@ func TestNormalizeWorkloadCronJobRequiresSchedule(t *testing.T) {
 	}
 }
 
+func TestNormalizeWorkloadSnapshotRejectsInvalidInheritance(t *testing.T) {
+	t.Parallel()
+	request := domainresource.WorkloadSnapshotRequest{
+		Namespace: "ops", SourceKind: domainresource.WorkloadSnapshotSourceDeployment, SourceName: "api",
+		TargetKind: domainresource.WorkloadSnapshotTargetJob, TargetName: "report", RestartPolicy: domainresource.WorkloadSnapshotRestartNever,
+		Inherit: []domainresource.WorkloadSnapshotInheritance{domainresource.WorkloadSnapshotInheritEnvironment, domainresource.WorkloadSnapshotInheritEnvironment},
+	}
+	if _, err := normalizeWorkloadSnapshotRequest(request); err == nil {
+		t.Fatal("normalizeWorkloadSnapshotRequest() accepted duplicate inheritance modules")
+	}
+	request.Inherit = []domainresource.WorkloadSnapshotInheritance{"unknown"}
+	if _, err := normalizeWorkloadSnapshotRequest(request); err == nil {
+		t.Fatal("normalizeWorkloadSnapshotRequest() accepted an unknown inheritance module")
+	}
+}
+
 type snapshotSourceDirect struct {
 	DirectWorkloads
 	called bool

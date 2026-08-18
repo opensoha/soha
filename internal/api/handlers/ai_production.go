@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"strings"
@@ -97,7 +98,7 @@ func (h *AIProductionHandler) createRollout(c *gin.Context) {
 		CanaryPercent    int               `json:"canaryPercent"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeProductionError(c, errors.New("invalid provider rollout"))
+		writeError(c, fmt.Errorf("%w: invalid provider rollout", apperrors.ErrInvalidArgument))
 		return
 	}
 	item, err := h.service.CreateRollout(c, appaiproduction.ProviderRollout{ID: input.ID, Name: input.Name, DesiredRevision: input.DesiredRevision, PreviousRevision: input.PreviousRevision, CanaryPercent: input.CanaryPercent, Target: appaiproduction.FleetTarget{Environments: input.Environments, Platforms: input.Platforms, Architectures: input.Architectures, Labels: input.Labels}})
@@ -109,7 +110,7 @@ func (h *AIProductionHandler) transitionRollout(c *gin.Context) {
 	}
 	action := c.Param("action")
 	if action != "pause" && action != "resume" && action != "rollback" {
-		writeProductionError(c, errors.New("invalid rollout action"))
+		writeError(c, fmt.Errorf("%w: invalid rollout action", apperrors.ErrInvalidArgument))
 		return
 	}
 	item, err := h.service.TransitionRollout(c, c.Param("rolloutID"), action)
@@ -128,7 +129,7 @@ func (h *AIProductionHandler) createConformance(c *gin.Context) {
 	}
 	var input appaiproduction.ConformanceRun
 	if c.ShouldBindJSON(&input) != nil {
-		writeProductionError(c, errors.New("invalid conformance run"))
+		writeError(c, fmt.Errorf("%w: invalid conformance run", apperrors.ErrInvalidArgument))
 		return
 	}
 	item, err := h.service.CreateConformanceRun(c, input)
@@ -147,7 +148,7 @@ func (h *AIProductionHandler) putEnvironmentTemplate(c *gin.Context) {
 	}
 	var input appaiproduction.EnvironmentTemplate
 	if c.ShouldBindJSON(&input) != nil {
-		writeProductionError(c, errors.New("invalid environment template"))
+		writeError(c, fmt.Errorf("%w: invalid environment template", apperrors.ErrInvalidArgument))
 		return
 	}
 	item, err := h.service.PutEnvironmentTemplate(c, input)
@@ -187,7 +188,7 @@ func (h *AIProductionHandler) startOperation(c *gin.Context) {
 	}
 	var input appaiproduction.Operation
 	if c.ShouldBindJSON(&input) != nil {
-		writeProductionError(c, errors.New("invalid AI production operation"))
+		writeError(c, fmt.Errorf("%w: invalid AI production operation", apperrors.ErrInvalidArgument))
 		return
 	}
 	item, err := h.service.StartOperation(c, input)
@@ -207,7 +208,7 @@ func (h *AIProductionHandler) rebuildKnowledgeBase(c *gin.Context) {
 	}
 	baseID := strings.TrimSpace(c.Param("baseID"))
 	if baseID == "" {
-		writeProductionError(c, errors.New("knowledge base id is required"))
+		writeError(c, fmt.Errorf("%w: knowledge base id is required", apperrors.ErrInvalidArgument))
 		return
 	}
 	item, err := h.service.StartOperation(c, appaiproduction.Operation{
@@ -217,27 +218,15 @@ func (h *AIProductionHandler) rebuildKnowledgeBase(c *gin.Context) {
 }
 func writeProductionItem(c *gin.Context, status int, item any, err error) {
 	if err != nil {
-		writeProductionError(c, err)
+		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, status, item)
 }
 func writeProductionItems(c *gin.Context, items any, err error) {
 	if err != nil {
-		writeProductionError(c, err)
+		writeError(c, err)
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
-}
-func writeProductionError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, appaiproduction.ErrNotFound):
-		apiresponse.Error(c, http.StatusNotFound, "not_found", err.Error())
-	case errors.Is(err, appaiproduction.ErrConflict):
-		apiresponse.Error(c, http.StatusConflict, "conflict", err.Error())
-	case strings.Contains(err.Error(), "invalid"), strings.Contains(err.Error(), "required"), strings.Contains(err.Error(), "exceeds"):
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
-	default:
-		apiresponse.Error(c, http.StatusInternalServerError, "internal_error", "AI production operation failed")
-	}
 }

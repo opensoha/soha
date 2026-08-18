@@ -338,9 +338,35 @@ func preflightRejectionError(preflight domainresource.ResourceCreatePreflight) e
 		if document.ErrorCode == "resource_capability_unsupported" {
 			sentinel = apperrors.ErrUnsupportedOperation
 		}
-		return fmt.Errorf("%w: %s: %s", sentinel, document.ErrorCode, document.Error)
+		englishMessage, chineseMessage := resourcePreflightBusinessMessage(document.ErrorCode)
+		return apperrors.NewBusiness(
+			sentinel,
+			document.ErrorCode,
+			englishMessage,
+			chineseMessage,
+		)
 	}
-	return fmt.Errorf("%w: resource preflight is not ready", apperrors.ErrInvalidArgument)
+	return apperrors.NewBusiness(
+		apperrors.ErrInvalidArgument,
+		"resource_preflight_failed",
+		"Resource creation preflight did not pass",
+		"资源创建预检未通过，请检查清单和目标集群后重试",
+	)
+}
+
+func resourcePreflightBusinessMessage(code string) (string, string) {
+	switch code {
+	case "resource_dry_run_failed":
+		return "Kubernetes rejected the resource configuration; review the failed resource and field in the preflight result", "Kubernetes 拒绝了资源配置，请在预检结果中查看失败资源和字段原因"
+	case "resource_create_denied", "high_risk_permission_required":
+		return "You do not have permission to create one or more resources", "没有创建一个或多个资源的权限"
+	case "resource_capability_unsupported":
+		return "The target cluster connection does not support creating this resource", "目标集群当前的连接方式不支持创建此资源"
+	case "namespace_mismatch", "namespace_required", "resource_kind_mismatch", "multi_document_not_allowed":
+		return "The resource manifest does not match the selected target; review the preflight result", "资源清单与所选目标不匹配，请查看预检结果"
+	default:
+		return "The resource manifest did not pass preflight; review the preflight result", "资源清单未通过预检，请查看预检结果"
+	}
 }
 
 func normalizeResourceCreateRequest(request domainresource.ResourceCreateRequest) (domainresource.ResourceCreateRequest, error) {
@@ -544,5 +570,12 @@ func publicCreateResourceError(kind string, err error) string {
 	if strings.EqualFold(strings.TrimSpace(kind), "Secret") {
 		return "Kubernetes rejected the Secret resource; sensitive provider details were omitted"
 	}
-	return publicCreateError(err)
+	var business *apperrors.BusinessError
+	if errors.As(err, &business) {
+		return business.Message("")
+	}
+	if strings.TrimSpace(kind) == "" {
+		kind = "resource"
+	}
+	return fmt.Sprintf("Kubernetes could not validate the %s resource; try again or contact an administrator", strings.TrimSpace(kind))
 }

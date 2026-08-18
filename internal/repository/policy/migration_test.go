@@ -29,3 +29,30 @@ func TestIndependentResourceCreationPermissionMigrationRetiresLegacyGrant(t *tes
 		t.Fatal("legacy resource create grant must not be mapped to the new entry permission")
 	}
 }
+
+func TestIndependentWorkbenchEntryPermissionMigrationPreservesExistingAccess(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/postgres/0051_independent_workbench_entry_permissions.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migration := string(raw)
+	for _, expected := range []string{
+		"identity.portal.view",
+		"workspace.application.view",
+		"workspace.resource.view",
+		"workbench.ai.view",
+		"workbench.compute.view",
+		"workbench.delivery.view",
+		"workbench.home.view",
+		"workbench.monitoring.view",
+		"workbench.platform.view",
+		"workbench.security.view",
+		"workbench.settings.view",
+		"UPDATE personal_access_tokens",
+		"UPDATE service_account_tokens",
+	} {
+		if !strings.Contains(migration, expected) {
+			t.Fatalf("workbench entry permission migration missing %q", expected)
+		}
+	}
+}

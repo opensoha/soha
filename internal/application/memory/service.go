@@ -2,14 +2,15 @@ package memory
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-var ErrNotFound = errors.New("memory record not found")
+var ErrNotFound = fmt.Errorf("memory record not found: %w", apperrors.ErrNotFound)
 
 type Record struct {
 	ID         string     `json:"id"`
@@ -65,14 +66,14 @@ func (s *Service) PutPolicy(ctx context.Context, policy Policy) error {
 	policy.ID = strings.TrimSpace(policy.ID)
 	policy.Version = strings.TrimSpace(policy.Version)
 	if policy.ID == "" || policy.Version == "" || policy.MaximumTTL <= 0 || policy.DefaultTTL <= 0 || policy.DefaultTTL > policy.MaximumTTL {
-		return fmt.Errorf("invalid memory policy")
+		return fmt.Errorf("%w: invalid memory policy", apperrors.ErrInvalidArgument)
 	}
 	if policy.MinimumConfidence < 0 || policy.MinimumConfidence > 1 {
-		return fmt.Errorf("invalid memory policy confidence")
+		return fmt.Errorf("%w: invalid memory policy confidence", apperrors.ErrInvalidArgument)
 	}
 	policy.OwnerTypes = normalizeStrings(policy.OwnerTypes, 8)
 	if len(policy.OwnerTypes) == 0 {
-		return fmt.Errorf("memory policy owner types are required")
+		return fmt.Errorf("%w: memory policy owner types are required", apperrors.ErrInvalidArgument)
 	}
 	return s.store.PutPolicy(ctx, policy)
 }
@@ -93,19 +94,19 @@ func (s *Service) PutRecord(ctx context.Context, record Record, policy Policy) (
 	record.PolicyVer = strings.TrimSpace(record.PolicyVer)
 	record.SourceType = strings.TrimSpace(record.SourceType)
 	if record.ID == "" || record.OwnerID == "" || record.Fact == "" || len(record.Fact) > 8_000 || !strings.HasPrefix(record.ScopeHash, "sha256:") {
-		return Record{}, fmt.Errorf("invalid memory record")
+		return Record{}, fmt.Errorf("%w: invalid memory record", apperrors.ErrInvalidArgument)
 	}
 	if !slices.Contains(policy.OwnerTypes, record.OwnerType) || !policy.Enabled || record.PolicyVer != policy.Version {
-		return Record{}, fmt.Errorf("memory policy does not allow owner or version")
+		return Record{}, fmt.Errorf("%w: memory policy does not allow owner or version", apperrors.ErrInvalidArgument)
 	}
 	if record.SourceType != "explicit_user" && record.SourceType != "curated_extractor" {
-		return Record{}, fmt.Errorf("memory source must be explicit or curated")
+		return Record{}, fmt.Errorf("%w: memory source must be explicit or curated", apperrors.ErrInvalidArgument)
 	}
 	if policy.ExplicitWriteOnly && record.SourceType != "explicit_user" {
-		return Record{}, fmt.Errorf("memory policy requires explicit user writes")
+		return Record{}, fmt.Errorf("%w: memory policy requires explicit user writes", apperrors.ErrInvalidArgument)
 	}
 	if record.Confidence < policy.MinimumConfidence || record.Confidence > 1 {
-		return Record{}, fmt.Errorf("memory confidence is outside policy")
+		return Record{}, fmt.Errorf("%w: memory confidence is outside policy", apperrors.ErrInvalidArgument)
 	}
 	record.SourceRefs = normalizeStrings(record.SourceRefs, 32)
 	now := s.now().UTC()
@@ -117,7 +118,7 @@ func (s *Service) PutRecord(ctx context.Context, record Record, policy Policy) (
 		record.ExpiresAt = &expiresAt
 	}
 	if record.ExpiresAt.Before(now) || record.ExpiresAt.After(now.Add(policy.MaximumTTL)) {
-		return Record{}, fmt.Errorf("memory expiry is outside policy")
+		return Record{}, fmt.Errorf("%w: memory expiry is outside policy", apperrors.ErrInvalidArgument)
 	}
 	record.Status = "active"
 	record.CreatedAt = now
@@ -145,7 +146,7 @@ func (s *Service) GetRecord(ctx context.Context, id string) (Record, error) {
 func (s *Service) DeleteRecord(ctx context.Context, id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return fmt.Errorf("memory record id is required")
+		return fmt.Errorf("%w: memory record id is required", apperrors.ErrInvalidArgument)
 	}
 	return s.store.DeleteRecord(ctx, id, s.now().UTC())
 }

@@ -2,16 +2,17 @@ package multiagent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-var ErrNotFound = errors.New("multi-agent plan not found")
+var ErrNotFound = fmt.Errorf("multi-agent plan not found: %w", apperrors.ErrNotFound)
 
 type Budget struct {
 	MaxSteps     int     `json:"maxSteps"`
@@ -66,7 +67,7 @@ func (s *Service) Create(ctx context.Context, plan Plan, grantedPermissions []st
 	plan.ID = strings.TrimSpace(plan.ID)
 	plan.CoordinatorRef = strings.TrimSpace(plan.CoordinatorRef)
 	if plan.ID == "" || plan.CoordinatorRef == "" || len(plan.Subtasks) == 0 || len(plan.Subtasks) > 8 {
-		return Plan{}, fmt.Errorf("invalid bounded multi-agent plan")
+		return Plan{}, fmt.Errorf("%w: invalid bounded multi-agent plan", apperrors.ErrInvalidArgument)
 	}
 	if err := validateBudget(plan.SharedBudget); err != nil {
 		return Plan{}, err
@@ -81,10 +82,10 @@ func (s *Service) Create(ctx context.Context, plan Plan, grantedPermissions []st
 		task := &plan.Subtasks[i]
 		task.ID = strings.TrimSpace(task.ID)
 		if task.ID == "" || task.AgentProfileRef == "" || task.Input == "" {
-			return Plan{}, fmt.Errorf("multi-agent subtask identity is required")
+			return Plan{}, fmt.Errorf("%w: multi-agent subtask identity is required", apperrors.ErrInvalidArgument)
 		}
 		if _, duplicate := ids[task.ID]; duplicate {
-			return Plan{}, fmt.Errorf("duplicate multi-agent subtask %q", task.ID)
+			return Plan{}, fmt.Errorf("%w: duplicate multi-agent subtask %q", apperrors.ErrInvalidArgument, task.ID)
 		}
 		ids[task.ID] = struct{}{}
 		if err := validateBudget(task.Budget); err != nil {
@@ -92,7 +93,7 @@ func (s *Service) Create(ctx context.Context, plan Plan, grantedPermissions []st
 		}
 		for _, permission := range task.PermissionKeys {
 			if _, ok := allowed[permission]; !ok {
-				return Plan{}, fmt.Errorf("subtask %q exceeds principal permissions", task.ID)
+				return Plan{}, fmt.Errorf("%w: subtask %q exceeds principal permissions", apperrors.ErrInvalidArgument, task.ID)
 			}
 		}
 		task.Status = "pending"
@@ -100,7 +101,7 @@ func (s *Service) Create(ctx context.Context, plan Plan, grantedPermissions []st
 	for _, task := range plan.Subtasks {
 		for _, dependency := range task.DependsOn {
 			if _, ok := ids[dependency]; !ok || dependency == task.ID {
-				return Plan{}, fmt.Errorf("invalid multi-agent dependency")
+				return Plan{}, fmt.Errorf("%w: invalid multi-agent dependency", apperrors.ErrInvalidArgument)
 			}
 		}
 	}
@@ -136,7 +137,7 @@ func (s *Service) CompleteSubtask(ctx context.Context, planID, subtaskID, output
 		return Plan{}, err
 	}
 	if plan.Status != "running" {
-		return Plan{}, fmt.Errorf("multi-agent plan is terminal")
+		return Plan{}, fmt.Errorf("%w: multi-agent plan is terminal", apperrors.ErrConflict)
 	}
 	found := false
 	for i := range plan.Subtasks {
@@ -145,7 +146,7 @@ func (s *Service) CompleteSubtask(ctx context.Context, planID, subtaskID, output
 		}
 		for _, dependency := range plan.Subtasks[i].DependsOn {
 			if subtaskStatus(plan.Subtasks, dependency) != "completed" {
-				return Plan{}, fmt.Errorf("multi-agent dependencies are incomplete")
+				return Plan{}, fmt.Errorf("%w: multi-agent dependencies are incomplete", apperrors.ErrConflict)
 			}
 		}
 		plan.Subtasks[i].Status = "completed"
@@ -154,7 +155,7 @@ func (s *Service) CompleteSubtask(ctx context.Context, planID, subtaskID, output
 		break
 	}
 	if !found || outputRef == "" {
-		return Plan{}, fmt.Errorf("multi-agent subtask or output is invalid")
+		return Plan{}, fmt.Errorf("%w: multi-agent subtask or output is invalid", apperrors.ErrInvalidArgument)
 	}
 	allCompleted := true
 	outputs := make([]string, 0, len(plan.Subtasks))
@@ -234,7 +235,7 @@ func (s *MemoryStore) List(context.Context) ([]Plan, error) {
 
 func validateBudget(budget Budget) error {
 	if budget.MaxSteps <= 0 || budget.MaxSteps > 100 || budget.MaxTokens <= 0 || budget.MaxTokens > 2_000_000 || budget.MaxCost < 0 || budget.DeadlineSecs <= 0 || budget.DeadlineSecs > 86_400 {
-		return fmt.Errorf("invalid multi-agent budget")
+		return fmt.Errorf("%w: invalid multi-agent budget", apperrors.ErrInvalidArgument)
 	}
 	return nil
 }

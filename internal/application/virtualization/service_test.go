@@ -845,6 +845,25 @@ func TestPlanVMCreateRejectsKubeVirtDataSourceWithoutDiskSize(t *testing.T) {
 	}
 }
 
+func TestPlanVMCreateRequiresCatalogPermissionsOnlyForSelections(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
+	principal := domainidentity.Principal{UserID: "viewer", Roles: []string{"viewer"}}
+	service := MustNew(testDependencies(repo), nil, appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{
+		"viewer": {appaccess.PermVirtualizationVMsView},
+	}}), nil, Options{})
+
+	if _, err := service.PlanVMCreate(context.Background(), principal, CreateVMInput{ConnectionID: conn.ID, Name: "vm-a", DiskGiB: 1}); err != nil {
+		t.Fatalf("PlanVMCreate() without catalog selections error = %v, want nil", err)
+	}
+	if _, err := service.PlanVMCreate(context.Background(), principal, CreateVMInput{ConnectionID: conn.ID, Name: "vm-a", FlavorID: "flavor-1"}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("PlanVMCreate() with flavor error = %v, want access denied", err)
+	}
+	if _, err := service.PlanVMCreate(context.Background(), principal, CreateVMInput{ConnectionID: conn.ID, Name: "vm-a", BootImageID: "image-1"}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("PlanVMCreate() with image error = %v, want access denied", err)
+	}
+}
+
 func TestSourceModeForPVEOrdinaryVM(t *testing.T) {
 	image := domainvirtualization.Image{Config: map[string]any{"sourceKind": "qemu"}}
 	if got := sourceModeForProvider(ProviderPVE, "", image); got != "vm_clone" {
@@ -953,6 +972,31 @@ func TestImageManagementAndVMDetail(t *testing.T) {
 	}
 	if len(detail.Operations) != 1 || len(detail.Logs) != 1 {
 		t.Fatalf("detail operations/logs = %d/%d, want 1/1", len(detail.Operations), len(detail.Logs))
+	}
+}
+
+func TestGetVMDetailRedactsRelatedResourcesWithoutPermissions(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
+	image := domainvirtualization.Image{ID: "image-1", Provider: ProviderKubeVirt, ConnectionID: conn.ID, Name: "ubuntu"}
+	flavor := domainvirtualization.Flavor{ID: "flavor-1", Provider: ProviderKubeVirt, ConnectionID: conn.ID, Name: "small"}
+	repo.images[image.ID] = image
+	repo.flavors[flavor.ID] = flavor
+	vm := domainvirtualization.VM{ID: "vm-1", Provider: ProviderKubeVirt, ConnectionID: conn.ID, Name: "vm-1", ImageID: image.ID, FlavorID: flavor.ID}
+	repo.vms[vm.ID] = vm
+	_, _ = repo.CreateTask(context.Background(), domainvirtualization.Task{ID: "task-1", Provider: ProviderKubeVirt, ConnectionID: conn.ID, VMID: vm.ID, TaskKind: TaskKindVMAction, Status: TaskStatusSucceeded})
+	_ = repo.CreateTaskLog(context.Background(), domainvirtualization.TaskLog{TaskID: "task-1", LogLevel: "info", Message: "started"})
+	principal := domainidentity.Principal{UserID: "viewer", Roles: []string{"viewer"}}
+	service := MustNew(testDependencies(repo), nil, appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{
+		"viewer": {appaccess.PermVirtualizationVMsView},
+	}}), nil, Options{})
+
+	detail, err := service.GetVMDetail(context.Background(), principal, vm.ID)
+	if err != nil {
+		t.Fatalf("GetVMDetail() error = %v", err)
+	}
+	if detail.Connection != nil || detail.Image != nil || detail.Flavor != nil || len(detail.Operations) != 0 || len(detail.Logs) != 0 {
+		t.Fatalf("GetVMDetail() exposed related resources: %#v", detail)
 	}
 }
 

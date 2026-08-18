@@ -9,11 +9,11 @@ on:
       web_ref:
         description: "soha-web release tag to embed"
         required: true
-        default: "v0.1.6"
+        default: "v0.1.7"
       contracts_ref:
         description: "soha-contracts tag or commit to consume as the release module"
         required: true
-        default: "v0.1.13"
+        default: "v0.1.14"
       web_sha256:
         description: "Optional expected sha256 for the soha-web dist tarball; checked against the release checksum asset when provided"
         required: false
@@ -27,8 +27,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      WEB_REF: ${{ inputs.web_ref || 'v0.1.6' }}
-      CONTRACTS_REF: ${{ inputs.contracts_ref || 'v0.1.13' }}
+      WEB_REF: ${{ inputs.web_ref || 'v0.1.7' }}
+      CONTRACTS_REF: ${{ inputs.contracts_ref || 'v0.1.14' }}
       WEB_SHA256: ${{ inputs.web_sha256 }}
     steps:
       - name: Checkout soha

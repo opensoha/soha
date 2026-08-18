@@ -15,6 +15,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	apierrors "github.com/opensoha/soha/internal/api/errors"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	appdirectorysync "github.com/opensoha/soha/internal/application/directorysync"
@@ -804,19 +805,19 @@ func normalizeConnectorError(operation string, err error) error {
 }
 
 func writeError(c *gin.Context, err error) {
-	_ = c.Error(err)
-	status, code, message := http.StatusInternalServerError, "internal_error", "internal server error"
-	switch {
-	case errors.Is(err, errDirectoryLoginProviderUnavailable):
-		status, code, message = http.StatusBadRequest, "directory_login_provider_unavailable", "login provider not found, disabled, or incompatible; select it again in the directory connection"
-	case errors.Is(err, apperrors.ErrUnsupportedOperation):
-		status, code, message = http.StatusNotImplemented, "unsupported_operation", "operation is not supported"
-	case errors.Is(err, apperrors.ErrInvalidArgument):
-		status, code, message = http.StatusBadRequest, "invalid_argument", "invalid request"
-	case errors.Is(err, apperrors.ErrConflict):
-		status, code, message = http.StatusConflict, "conflict", "resource conflict"
-	case errors.Is(err, apperrors.ErrNotFound):
-		status, code, message = http.StatusNotFound, "not_found", "resource not found"
+	if errors.Is(err, errDirectoryLoginProviderUnavailable) {
+		err = errors.Join(err, apperrors.NewBusiness(
+			apperrors.ErrInvalidArgument,
+			"directory_login_provider_unavailable",
+			"login provider not found, disabled, or incompatible; select it again in the directory connection",
+			"登录提供方不存在、已禁用或不兼容，请在目录连接中重新选择",
+		))
 	}
-	apiresponse.Error(c, status, code, message)
+	_ = c.Error(err)
+	apiresponse.Error(
+		c,
+		apierrors.StatusCode(err),
+		apierrors.Code(err),
+		apierrors.Message(err, apierrors.RequestLanguage(c.Request)),
+	)
 }

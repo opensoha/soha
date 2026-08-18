@@ -138,10 +138,8 @@ func TestListIncludesUnifiedComputeDescriptor(t *testing.T) {
 	if !ok || !status.Enabled || status.Descriptor.DefaultPath != "/compute/overview" {
 		t.Fatalf("compute module = %#v", status)
 	}
-	for _, permission := range []string{"virtualization.images.view", "virtualization.flavors.view", "virtualization.sync.view", "docker.templates.view", "docker.operations.view"} {
-		if !slices.Contains(status.Descriptor.VisiblePermissions, permission) {
-			t.Fatalf("compute permissions missing %s: %v", permission, status.Descriptor.VisiblePermissions)
-		}
+	if !slices.Equal(status.Descriptor.VisiblePermissions, []string{"workbench.compute.view"}) {
+		t.Fatalf("compute visible permissions = %v, want independent workbench entry", status.Descriptor.VisiblePermissions)
 	}
 	for _, menuID := range []string{"virtualization-workbench-storage", "compute-workbench-tasks-operations"} {
 		if !slices.Contains(status.Descriptor.SeedMenus, menuID) {

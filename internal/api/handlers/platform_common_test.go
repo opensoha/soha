@@ -71,3 +71,37 @@ func TestWriteErrorUsesStableClientFacingMessageAndRecordsCause(t *testing.T) {
 		t.Fatal("public response contains internal error details")
 	}
 }
+
+func TestWriteErrorUsesLocalizedBusinessMessageWithoutLeakingCause(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/docker/hosts/host-1/agent-installation", nil)
+	ctx.Request.Header.Set("Accept-Language", "zh-CN")
+	cause := fmt.Errorf("private encryption key path: %w", apperrors.NewBusiness(
+		apperrors.ErrInvalidArgument,
+		"agent_installation_unavailable",
+		"Agent installation service is not ready",
+		"Agent 安装服务尚未就绪，请检查服务端加密密钥和对外访问地址配置",
+	))
+
+	writeError(ctx, cause)
+
+	var payload struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if recorder.Code != http.StatusBadRequest || payload.Error.Code != "agent_installation_unavailable" {
+		t.Fatalf("response = %d %#v", recorder.Code, payload.Error)
+	}
+	if payload.Error.Message != "Agent 安装服务尚未就绪，请检查服务端加密密钥和对外访问地址配置" {
+		t.Fatalf("message = %q", payload.Error.Message)
+	}
+	if strings.Contains(recorder.Body.String(), "encryption key path") {
+		t.Fatal("public response contains internal error details")
+	}
+}

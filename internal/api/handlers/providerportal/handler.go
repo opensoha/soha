@@ -919,7 +919,7 @@ func (h *oidcHandler) OIDCAuthorize(c *gin.Context) {
 			c.Redirect(http.StatusFound, "/login?return_to="+url.QueryEscape(c.Request.URL.RequestURI()))
 			return
 		}
-		writeOIDCError(c, apierrors.StatusCode(err), "invalid_request", err.Error())
+		writeOIDCServiceError(c, apierrors.StatusCode(err), "invalid_request", err)
 		return
 	}
 	if result.ResponseMode == "form_post" {
@@ -972,7 +972,7 @@ func (h *oidcHandler) OIDCToken(c *gin.Context) {
 		if status == http.StatusOK {
 			status = http.StatusBadRequest
 		}
-		writeOIDCError(c, status, oauthErrorCode(err), err.Error())
+		writeOIDCServiceError(c, status, oauthErrorCode(err), err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
@@ -985,7 +985,7 @@ func (h *oidcHandler) OIDCUserInfo(c *gin.Context) {
 	}
 	item, err := h.service.UserInfo(c.Request.Context(), issuerFromRequest(c, h.accessURL), c.GetHeader("Authorization"))
 	if err != nil {
-		writeOIDCError(c, apierrors.StatusCode(err), "invalid_token", err.Error())
+		writeOIDCServiceError(c, apierrors.StatusCode(err), "invalid_token", err)
 		return
 	}
 	c.JSON(http.StatusOK, item)
@@ -998,7 +998,7 @@ func (h *oidcHandler) OIDCIntrospect(c *gin.Context) {
 	}
 	item, err := h.service.Introspect(c.Request.Context(), issuerFromRequest(c, h.accessURL), c.PostForm("token"), oidcClientAuthInputFromRequest(c))
 	if err != nil {
-		writeOIDCError(c, apierrors.StatusCode(err), oauthClientAuthErrorCode(err), err.Error())
+		writeOIDCServiceError(c, apierrors.StatusCode(err), oauthClientAuthErrorCode(err), err)
 		return
 	}
 	c.JSON(http.StatusOK, item)
@@ -1010,7 +1010,7 @@ func (h *oidcHandler) OIDCRevoke(c *gin.Context) {
 		return
 	}
 	if err := h.service.Revoke(c.Request.Context(), issuerFromRequest(c, h.accessURL), c.PostForm("token"), oidcClientAuthInputFromRequest(c)); err != nil {
-		writeOIDCError(c, apierrors.StatusCode(err), oauthClientAuthErrorCode(err), err.Error())
+		writeOIDCServiceError(c, apierrors.StatusCode(err), oauthClientAuthErrorCode(err), err)
 		return
 	}
 	c.Status(http.StatusOK)
@@ -1027,7 +1027,7 @@ func (h *oidcHandler) OIDCEndSession(c *gin.Context) {
 		State:                 firstNonEmpty(c.PostForm("state"), c.Query("state")),
 	})
 	if err != nil {
-		writeOIDCError(c, apierrors.StatusCode(err), "invalid_request", err.Error())
+		writeOIDCServiceError(c, apierrors.StatusCode(err), "invalid_request", err)
 		return
 	}
 	if result.RedirectURI == "" {
@@ -1054,7 +1054,7 @@ func (h *oidcHandler) OIDCJWKS(c *gin.Context) {
 	}
 	items, err := h.service.JWKS(c.Request.Context())
 	if err != nil {
-		writeOIDCError(c, apierrors.StatusCode(err), "server_error", err.Error())
+		writeOIDCServiceError(c, apierrors.StatusCode(err), "server_error", err)
 		return
 	}
 	c.JSON(http.StatusOK, items)
@@ -1619,6 +1619,7 @@ func oauthClientAuthErrorCode(err error) string {
 }
 
 func writeOIDCAuthorizeErrorRedirect(c *gin.Context, redirectErr *domainprovider.AuthorizeRedirectError) {
+	_ = c.Error(redirectErr)
 	target, err := url.Parse(redirectErr.RedirectURI)
 	if err != nil || !target.IsAbs() || target.Fragment != "" {
 		writeOIDCError(c, http.StatusBadRequest, "invalid_request", "redirect_uri is invalid")
@@ -1629,10 +1630,7 @@ func writeOIDCAuthorizeErrorRedirect(c *gin.Context, redirectErr *domainprovider
 	if code == "" {
 		code = oauthAuthorizeErrorCode(redirectErr)
 	}
-	description := strings.TrimSpace(redirectErr.Description)
-	if description == "" {
-		description = redirectErr.Error()
-	}
+	description := apierrors.Message(redirectErr, apierrors.RequestLanguage(c.Request))
 	values.Set("error", code)
 	if description != "" {
 		values.Set("error_description", description)
@@ -1665,6 +1663,11 @@ func writeOIDCError(c *gin.Context, status int, code, description string) {
 	})
 }
 
+func writeOIDCServiceError(c *gin.Context, status int, code string, err error) {
+	_ = c.Error(err)
+	writeOIDCError(c, status, code, apierrors.Message(err, apierrors.RequestLanguage(c.Request)))
+}
+
 func parseLimit(value string, fallback int) int {
 	limit, err := strconv.Atoi(value)
 	if value == "" || err != nil || limit <= 0 {
@@ -1695,5 +1698,5 @@ func writeError(c *gin.Context, err error) {
 		err = errors.New("handler returned a nil error")
 	}
 	_ = c.Error(err)
-	apiresponse.Error(c, apierrors.StatusCode(err), apierrors.Code(err), apierrors.Message(err))
+	apiresponse.Error(c, apierrors.StatusCode(err), apierrors.Code(err), apierrors.Message(err, apierrors.RequestLanguage(c.Request)))
 }

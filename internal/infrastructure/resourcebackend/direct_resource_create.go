@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -137,7 +139,7 @@ func (d *Direct) createResolvedManifest(ctx context.Context, clusterID string, m
 	defer cancel()
 	created, err := dynamicResource(bundle.Dynamic, gvr, manifest.Ref.Namespaced, item.GetNamespace()).Create(queryCtx, item, metav1.CreateOptions{DryRun: dryRun})
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, kubernetesCreateError(manifest.Ref.Kind, err)
 	}
 	unstructured.RemoveNestedField(created.Object, "metadata", "managedFields")
 	rendered, err := syaml.Marshal(created.Object)
@@ -145,6 +147,71 @@ func (d *Direct) createResolvedManifest(ctx context.Context, clusterID string, m
 		return domainresource.ResourceYAMLView{}, err
 	}
 	return domainresource.ResourceYAMLView{Kind: created.GetKind(), Name: created.GetName(), Namespace: created.GetNamespace(), Content: string(rendered)}, nil
+}
+
+func kubernetesCreateError(kind string, err error) error {
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		kind = "resource"
+	}
+	category := apperrors.ErrInvalidArgument
+	code := "resource_validation_failed"
+	englishMessage := fmt.Sprintf("Kubernetes could not validate the %s resource", kind)
+	chineseMessage := fmt.Sprintf("Kubernetes 无法校验 %s 资源", kind)
+
+	var statusError k8serrors.APIStatus
+	if errors.As(err, &statusError) {
+		status := statusError.Status()
+		if status.Details != nil && strings.TrimSpace(status.Details.Kind) != "" {
+			kind = strings.TrimSpace(status.Details.Kind)
+		}
+		target := kind
+		if status.Details != nil && strings.TrimSpace(status.Details.Name) != "" {
+			target += "/" + strings.TrimSpace(status.Details.Name)
+		}
+		if status.Details != nil && len(status.Details.Causes) > 0 {
+			cause := status.Details.Causes[0]
+			englishReason, chineseReason := kubernetesCauseReason(cause.Type)
+			if field := strings.TrimSpace(cause.Field); field != "" {
+				englishMessage = fmt.Sprintf("Kubernetes rejected %s: field %s %s", target, field, englishReason)
+				chineseMessage = fmt.Sprintf("Kubernetes 拒绝了 %s：字段 %s%s", target, field, chineseReason)
+			} else {
+				englishMessage = fmt.Sprintf("Kubernetes rejected %s: %s", target, englishReason)
+				chineseMessage = fmt.Sprintf("Kubernetes 拒绝了 %s：%s", target, chineseReason)
+			}
+		}
+	}
+	if k8serrors.IsAlreadyExists(err) {
+		category = apperrors.ErrConflict
+		code = "resource_already_exists"
+	} else if k8serrors.IsForbidden(err) {
+		category = apperrors.ErrAccessDenied
+		code = "resource_create_denied"
+	}
+	return fmt.Errorf("%w: %v", apperrors.NewBusiness(category, code, englishMessage, chineseMessage), err)
+}
+
+func kubernetesCauseReason(cause metav1.CauseType) (string, string) {
+	switch cause {
+	case metav1.CauseTypeFieldValueNotFound:
+		return "references a value that was not found", "引用的值不存在"
+	case metav1.CauseTypeFieldValueRequired:
+		return "is required", "为必填项"
+	case metav1.CauseTypeFieldValueDuplicate:
+		return "contains a duplicate value", "包含重复值"
+	case metav1.CauseTypeFieldValueNotSupported:
+		return "uses an unsupported value", "使用了不支持的值"
+	case metav1.CauseTypeForbidden:
+		return "is not allowed", "不允许使用该值"
+	case metav1.CauseTypeTooLong:
+		return "is too long", "长度超出限制"
+	case metav1.CauseTypeTooMany:
+		return "contains too many items", "条目数量超出限制"
+	case metav1.CauseTypeTypeInvalid:
+		return "has the wrong value type", "值类型不正确"
+	default:
+		return "has an invalid value", "的值不正确"
+	}
 }
 
 var _ appresource.DirectResourceCreator = (*Direct)(nil)

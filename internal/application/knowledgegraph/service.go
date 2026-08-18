@@ -2,16 +2,17 @@ package knowledgegraph
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
-var ErrNotFound = errors.New("knowledge graph revision not found")
+var ErrNotFound = fmt.Errorf("knowledge graph revision not found: %w", apperrors.ErrNotFound)
 
 type Entity struct {
 	ID          string   `json:"id"`
@@ -84,10 +85,10 @@ func (s *Service) PutRevision(ctx context.Context, revision Revision) error {
 	revision.SourceIndexRef = strings.TrimSpace(revision.SourceIndexRef)
 	revision.ExtractorVer = strings.TrimSpace(revision.ExtractorVer)
 	if revision.ID == "" || revision.KnowledgeBaseID == "" || revision.SourceIndexRef == "" || revision.ExtractorVer == "" {
-		return fmt.Errorf("knowledge graph revision identity is required")
+		return fmt.Errorf("%w: knowledge graph revision identity is required", apperrors.ErrInvalidArgument)
 	}
 	if len(revision.Entities) > 50_000 || len(revision.Relations) > 200_000 || len(revision.Communities) > 5_000 {
-		return fmt.Errorf("knowledge graph revision exceeds bounded size")
+		return fmt.Errorf("%w: knowledge graph revision exceeds bounded size", apperrors.ErrInvalidArgument)
 	}
 	entityIDs := make(map[string]struct{}, len(revision.Entities))
 	for i := range revision.Entities {
@@ -96,10 +97,10 @@ func (s *Service) PutRevision(ctx context.Context, revision Revision) error {
 		entity.Name = strings.TrimSpace(entity.Name)
 		entity.SourceRefs = normalizeRefs(entity.SourceRefs)
 		if entity.ID == "" || entity.Name == "" || len(entity.SourceRefs) == 0 {
-			return fmt.Errorf("knowledge graph entity identity and provenance are required")
+			return fmt.Errorf("%w: knowledge graph entity identity and provenance are required", apperrors.ErrInvalidArgument)
 		}
 		if _, exists := entityIDs[entity.ID]; exists {
-			return fmt.Errorf("duplicate knowledge graph entity %q", entity.ID)
+			return fmt.Errorf("%w: duplicate knowledge graph entity %q", apperrors.ErrInvalidArgument, entity.ID)
 		}
 		entityIDs[entity.ID] = struct{}{}
 	}
@@ -109,7 +110,7 @@ func (s *Service) PutRevision(ctx context.Context, revision Revision) error {
 		_, hasFrom := entityIDs[relation.FromEntityID]
 		_, hasTo := entityIDs[relation.ToEntityID]
 		if relation.ID == "" || !hasFrom || !hasTo || len(relation.SourceRefs) == 0 || relation.Confidence < 0 || relation.Confidence > 1 {
-			return fmt.Errorf("invalid knowledge graph relation")
+			return fmt.Errorf("%w: invalid knowledge graph relation", apperrors.ErrInvalidArgument)
 		}
 	}
 	revision.Status = "verified"
@@ -123,7 +124,7 @@ func (s *Service) Publish(ctx context.Context, id string) (Revision, error) {
 		return Revision{}, err
 	}
 	if revision.Status != "verified" {
-		return Revision{}, fmt.Errorf("knowledge graph revision is not verified")
+		return Revision{}, fmt.Errorf("%w: knowledge graph revision is not verified", apperrors.ErrConflict)
 	}
 	return s.store.Publish(ctx, revision.ID, s.now().UTC())
 }
@@ -149,11 +150,11 @@ func (s *Service) Query(ctx context.Context, revisionID, query, mode string, lim
 		return QueryResult{}, err
 	}
 	if revision.Status != "active" {
-		return QueryResult{}, fmt.Errorf("knowledge graph revision is not active")
+		return QueryResult{}, fmt.Errorf("%w: knowledge graph revision is not active", apperrors.ErrConflict)
 	}
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
-		return QueryResult{}, fmt.Errorf("knowledge graph query is required")
+		return QueryResult{}, fmt.Errorf("%w: knowledge graph query is required", apperrors.ErrInvalidArgument)
 	}
 	if limit <= 0 || limit > 50 {
 		limit = 10

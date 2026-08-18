@@ -132,7 +132,8 @@ func (h *Handler) SCIMPatchUser(c *gin.Context) {
 		return
 	}
 	if err := validatePatch(patch, map[string]bool{"active": true, "username": true, "displayname": true, "emails": true, "phonenumbers": true}); err != nil {
-		h.scimError(c, http.StatusBadRequest, "invalidSyntax", err.Error())
+		_ = c.Error(err)
+		h.scimError(c, http.StatusBadRequest, "invalidSyntax", "Invalid PatchOp payload")
 		return
 	}
 	applyUserPatch(&input, patch)
@@ -233,7 +234,8 @@ func (h *Handler) SCIMPatchGroup(c *gin.Context) {
 		return
 	}
 	if err := validatePatch(patch, map[string]bool{"displayname": true, "parentid": true, "members": true}); err != nil {
-		h.scimError(c, http.StatusBadRequest, "invalidSyntax", err.Error())
+		_ = c.Error(err)
+		h.scimError(c, http.StatusBadRequest, "invalidSyntax", "Invalid PatchOp payload")
 		return
 	}
 	applyGroupPatch(&input, patch)

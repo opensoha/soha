@@ -64,6 +64,9 @@ func normalizeWorkloadSnapshotRequest(request domainresource.WorkloadSnapshotReq
 	if err := validateWorkloadSnapshotMetadata(request); err != nil {
 		return request, err
 	}
+	if err := validateWorkloadSnapshotInheritance(request.Inherit); err != nil {
+		return request, err
+	}
 	if err := validateSnapshotStrings("command", request.Command); err != nil {
 		return request, err
 	}
@@ -74,6 +77,20 @@ func normalizeWorkloadSnapshotRequest(request domainresource.WorkloadSnapshotReq
 		return request, err
 	}
 	return request, nil
+}
+
+func validateWorkloadSnapshotInheritance(values []domainresource.WorkloadSnapshotInheritance) error {
+	seen := make(map[domainresource.WorkloadSnapshotInheritance]struct{}, len(values))
+	for _, value := range values {
+		if !value.Valid() {
+			return fmt.Errorf("%w: unsupported workload snapshot inheritance module %q", apperrors.ErrInvalidArgument, value)
+		}
+		if _, exists := seen[value]; exists {
+			return fmt.Errorf("%w: duplicate workload snapshot inheritance module %q", apperrors.ErrInvalidArgument, value)
+		}
+		seen[value] = struct{}{}
+	}
+	return nil
 }
 
 func validateWorkloadSnapshotIdentity(request domainresource.WorkloadSnapshotRequest) error {

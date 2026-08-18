@@ -34,7 +34,7 @@ func (h *PlatformHandler) ListAuditLogs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	filter, err := parsePlatformAuditFilter(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 		return
 	}
 	items, err := h.audit.ListAuthorized(c.Request.Context(), principal, filter)
@@ -49,7 +49,7 @@ func (h *PlatformHandler) AuditSummary(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	filter, err := parsePlatformAuditFilter(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 		return
 	}
 	item, err := h.audit.SummaryAuthorized(c.Request.Context(), principal, filter)
@@ -64,7 +64,7 @@ func (h *PlatformHandler) ExportAuditLogs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	filter, err := parsePlatformAuditFilter(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 		return
 	}
 	export, err := h.audit.ExportCSVAuthorized(c.Request.Context(), principal, filter)
@@ -178,7 +178,7 @@ func (h *PlatformHandler) ListOperationLogs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	filter, err := parsePlatformOperationFilter(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 		return
 	}
 	items, err := h.operations.ListAuthorized(c.Request.Context(), principal, filter)
@@ -193,7 +193,7 @@ func (h *PlatformHandler) OperationSummary(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	filter, err := parsePlatformOperationFilter(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 		return
 	}
 	item, err := h.operations.SummaryAuthorized(c.Request.Context(), principal, filter)
@@ -208,7 +208,7 @@ func (h *PlatformHandler) ExportOperationLogs(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	filter, err := parsePlatformOperationFilter(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 		return
 	}
 	export, err := h.operations.ExportCSVAuthorized(c.Request.Context(), principal, filter)

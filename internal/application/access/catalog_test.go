@@ -123,20 +123,54 @@ func TestCatalogListUsersFailsClosedWithoutRuntimeResolver(t *testing.T) {
 	}
 }
 
-func TestDefaultRolePermissionsIncludeWorkspaceEntryPermissions(t *testing.T) {
+func TestDefaultRolePermissionsIncludeIndependentWorkbenchEntries(t *testing.T) {
 	SetRolePermissionMatrix(nil)
 
-	if !HasPermission([]string{"developer"}, PermWorkspaceApplicationView) {
-		t.Fatalf("developer role should include %s", PermWorkspaceApplicationView)
+	allEntries := []string{
+		PermWorkbenchAIView,
+		PermWorkbenchComputeView,
+		PermWorkbenchDeliveryView,
+		PermWorkbenchHomeView,
+		PermWorkbenchMonitoringView,
+		PermWorkbenchPlatformView,
+		PermWorkbenchSecurityView,
+		PermWorkbenchSettingsView,
 	}
-	if !HasPermission([]string{"developer"}, PermWorkspaceResourceView) {
-		t.Fatalf("developer role should include %s", PermWorkspaceResourceView)
+	for _, role := range []string{"admin", "ops", "developer", "readonly"} {
+		for _, permission := range allEntries {
+			if !HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should include %s", role, permission)
+			}
+			if !IsActiveAssignablePermission(permission) {
+				t.Fatalf("%s should be active and assignable", permission)
+			}
+		}
 	}
-	if !HasPermission([]string{"auditor"}, PermWorkspaceResourceView) {
-		t.Fatalf("auditor role should include %s", PermWorkspaceResourceView)
+	for _, permission := range []string{PermWorkbenchHomeView, PermWorkbenchDeliveryView} {
+		if !HasPermission([]string{"tester"}, permission) {
+			t.Fatalf("tester role should include %s", permission)
+		}
 	}
-	if HasPermission([]string{"auditor"}, PermWorkspaceApplicationView) {
-		t.Fatalf("auditor role should not include %s", PermWorkspaceApplicationView)
+	for _, permission := range []string{PermWorkbenchPlatformView, PermWorkbenchComputeView, PermWorkbenchAIView} {
+		if HasPermission([]string{"tester"}, permission) {
+			t.Fatalf("tester role should not include %s", permission)
+		}
+	}
+	for _, permission := range []string{
+		PermWorkbenchHomeView,
+		PermWorkbenchMonitoringView,
+		PermWorkbenchPlatformView,
+		PermWorkbenchSecurityView,
+		PermWorkbenchSettingsView,
+	} {
+		if !HasPermission([]string{"auditor"}, permission) {
+			t.Fatalf("auditor role should include %s", permission)
+		}
+	}
+	for _, permission := range []string{PermWorkbenchComputeView, PermWorkbenchDeliveryView, PermWorkbenchAIView} {
+		if HasPermission([]string{"auditor"}, permission) {
+			t.Fatalf("auditor role should not include %s", permission)
+		}
 	}
 }
 
@@ -144,6 +178,7 @@ func TestDefaultRolePermissionsDeliveryWorkbenchRoles(t *testing.T) {
 	SetRolePermissionMatrix(nil)
 
 	for _, permission := range []string{
+		PermWorkbenchDeliveryView,
 		PermWorkspaceApplicationView,
 		PermDeliveryApplicationsView,
 		PermDeliveryApplicationServicesView,
@@ -157,6 +192,7 @@ func TestDefaultRolePermissionsDeliveryWorkbenchRoles(t *testing.T) {
 	}
 
 	for _, permission := range []string{
+		PermWorkbenchDeliveryView,
 		PermWorkspaceApplicationView,
 		PermDeliveryApplicationsView,
 		PermDeliveryApplicationServicesView,

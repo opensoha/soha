@@ -94,7 +94,12 @@ func TestListVisibleDerivesMenusFromPermissionKeys(t *testing.T) {
 		},
 	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"custom": {appaccess.PermWorkspaceResourceView, appaccess.PermPlatformWorkloadsView, appaccess.PermSettingsIdentityView},
+			"custom": {
+				appaccess.PermWorkbenchPlatformView,
+				appaccess.PermWorkbenchSettingsView,
+				appaccess.PermPlatformWorkloadsView,
+				appaccess.PermSettingsIdentityView,
+			},
 		},
 	}), nil, nil)
 
@@ -171,7 +176,7 @@ func TestListVisibleIncludesNetworkTopologyUnderNetwork(t *testing.T) {
 		},
 	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"custom": {appaccess.PermWorkspaceResourceView, appaccess.PermPlatformNetworkView},
+			"custom": {appaccess.PermWorkbenchPlatformView, appaccess.PermPlatformNetworkView},
 		},
 	}), nil, nil)
 
@@ -202,7 +207,7 @@ func TestListVisibleDerivesRBACMenusFromPlatformPermissions(t *testing.T) {
 		},
 	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"readonly": {appaccess.PermWorkspaceResourceView, appaccess.PlatformActionPermission("access-control", "ClusterRole", "view")},
+			"readonly": {appaccess.PermWorkbenchPlatformView, appaccess.PlatformActionPermission("access-control", "ClusterRole", "view")},
 			"auditor":  {},
 		},
 	}), nil, nil)

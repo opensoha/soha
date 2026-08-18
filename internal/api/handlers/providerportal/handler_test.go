@@ -496,7 +496,6 @@ func TestOIDCAuthorizeRedirectsSafeOAuthError(t *testing.T) {
 				RedirectURI: "https://app.example/callback?existing=1",
 				State:       input.State,
 				Code:        "invalid_scope",
-				Description: err.Error(),
 				Err:         err,
 			}
 		},
@@ -527,7 +526,7 @@ func TestOIDCAuthorizeRedirectsSafeOAuthError(t *testing.T) {
 	if query.Get("existing") != "1" || query.Get("error") != "invalid_scope" || query.Get("state") != "state-1" {
 		t.Fatalf("Location query = %s", parsed.RawQuery)
 	}
-	if query.Get("error_description") != "invalid argument: scope is not allowed" {
+	if query.Get("error_description") != "invalid request" {
 		t.Fatalf("error_description = %q", query.Get("error_description"))
 	}
 }

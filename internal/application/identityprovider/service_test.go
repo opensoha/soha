@@ -687,8 +687,8 @@ func TestServiceOIDCAuthorizeReturnsRedirectErrorsAfterRegisteredRedirectURI(t *
 			if redirectErr.RedirectURI != "https://app.example/callback" || redirectErr.State != "state-1" || redirectErr.Code != tt.wantCode {
 				t.Fatalf("AuthorizeRedirectError = %#v", redirectErr)
 			}
-			if redirectErr.Description == "" {
-				t.Fatalf("AuthorizeRedirectError description is empty")
+			if redirectErr.Description != "" {
+				t.Fatalf("AuthorizeRedirectError description = %q, want HTTP boundary to derive it", redirectErr.Description)
 			}
 			if len(repo.codes) != 0 {
 				t.Fatalf("authorization codes = %d, want 0", len(repo.codes))

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -145,7 +144,7 @@ func (h *AIAdvancedHandler) putExecutorProfile(c *gin.Context) {
 	}
 	var input appaieval.ExecutorProfile
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid executor profile"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid executor profile", apperrors.ErrInvalidArgument))
 		return
 	}
 	if err := h.evaluation.PutExecutorProfile(c, input); err != nil {
@@ -163,7 +162,7 @@ func (h *AIAdvancedHandler) executeRun(c *gin.Context) {
 		ExecutorProfileID string                    `json:"executorProfileId"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid execution request"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid execution request", apperrors.ErrInvalidArgument))
 		return
 	}
 	profile, err := h.resolveExecutorProfile(c, input.ExecutorProfileID, input.Profile)
@@ -199,7 +198,7 @@ func (h *AIAdvancedHandler) putReplay(c *gin.Context) {
 		ExecutorProfileID string `json:"executorProfileId"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid replay plan"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid replay plan", apperrors.ErrInvalidArgument))
 		return
 	}
 	plan := input.ReplayPlan
@@ -273,7 +272,7 @@ func (h *AIAdvancedHandler) putGatePolicy(c *gin.Context) {
 		Threshold float64 `json:"threshold"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid gate policy"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid gate policy", apperrors.ErrInvalidArgument))
 		return
 	}
 	policy := input.GatePolicy
@@ -306,7 +305,7 @@ func (h *AIAdvancedHandler) evaluateGate(c *gin.Context) {
 		PolicyID       string               `json:"policyId"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid gate request"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid gate request", apperrors.ErrInvalidArgument))
 		return
 	}
 	policy := input.Policy
@@ -350,7 +349,7 @@ func (h *AIAdvancedHandler) putFeedback(c *gin.Context) {
 		Disposition string `json:"disposition"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid feedback sample"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid feedback sample", apperrors.ErrInvalidArgument))
 		return
 	}
 	sample := input.FeedbackSample
@@ -386,7 +385,7 @@ func (h *AIAdvancedHandler) putMemoryPolicy(c *gin.Context) {
 		TTLDays     int    `json:"ttlDays"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid memory policy"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid memory policy", apperrors.ErrInvalidArgument))
 		return
 	}
 	policy := input.Policy
@@ -433,7 +432,7 @@ func (h *AIAdvancedHandler) putMemory(c *gin.Context) {
 		PolicyVersion string           `json:"policyVersion"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid memory record"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid memory record", apperrors.ErrInvalidArgument))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -486,7 +485,7 @@ func (h *AIAdvancedHandler) putGraphRevision(c *gin.Context) {
 	}
 	var input appknowledgegraph.Revision
 	if c.ShouldBindJSON(&input) != nil || (input.KnowledgeBaseID != "" && input.KnowledgeBaseID != c.Param("baseID")) {
-		writeAdvancedError(c, errors.New("invalid graph revision"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid graph revision", apperrors.ErrInvalidArgument))
 		return
 	}
 	input.KnowledgeBaseID = c.Param("baseID")
@@ -509,7 +508,7 @@ func (h *AIAdvancedHandler) publishGraphRevision(c *gin.Context) {
 		return
 	}
 	if revision.KnowledgeBaseID != c.Param("baseID") {
-		writeAdvancedError(c, errors.New("graph revision base mismatch"))
+		writeAdvancedError(c, fmt.Errorf("%w: graph revision base mismatch", apperrors.ErrInvalidArgument))
 		return
 	}
 	if !h.requireKnowledgeBaseAccess(c, revision.KnowledgeBaseID) {
@@ -528,7 +527,7 @@ func (h *AIAdvancedHandler) queryGraphRevision(c *gin.Context) {
 		Limit int    `json:"limit"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid graph query"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid graph query", apperrors.ErrInvalidArgument))
 		return
 	}
 	revision, err := h.graph.GetRevision(c, c.Param("revisionID"))
@@ -537,7 +536,7 @@ func (h *AIAdvancedHandler) queryGraphRevision(c *gin.Context) {
 		return
 	}
 	if revision.KnowledgeBaseID != c.Param("baseID") {
-		writeAdvancedError(c, errors.New("graph revision base mismatch"))
+		writeAdvancedError(c, fmt.Errorf("%w: graph revision base mismatch", apperrors.ErrInvalidArgument))
 		return
 	}
 	if !h.requireKnowledgeBaseAccess(c, revision.KnowledgeBaseID) {
@@ -587,7 +586,7 @@ func (h *AIAdvancedHandler) agenticSearch(c *gin.Context) {
 		TopK             int        `json:"topK"`
 	}
 	if c.ShouldBindJSON(&input) != nil || len(input.RoundQueries) == 0 || len(input.RoundQueries) > 5 {
-		writeAdvancedError(c, errors.New("invalid agentic search plan"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid agentic search plan", apperrors.ErrInvalidArgument))
 		return
 	}
 	service, err := appagenticrag.NewService(h.retriever, boundedQueryPlanner{rounds: input.RoundQueries})
@@ -612,7 +611,7 @@ func (h *AIAdvancedHandler) createMultiAgent(c *gin.Context) {
 	}
 	var input appmultiagent.Plan
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid multi-agent plan"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid multi-agent plan", apperrors.ErrInvalidArgument))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -636,7 +635,7 @@ func (h *AIAdvancedHandler) completeMultiAgentSubtask(c *gin.Context) {
 		OutputRef string `json:"outputRef"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
-		writeAdvancedError(c, errors.New("invalid subtask completion"))
+		writeAdvancedError(c, fmt.Errorf("%w: invalid subtask completion", apperrors.ErrInvalidArgument))
 		return
 	}
 	item, err := h.multiAgent.CompleteSubtask(c, c.Param("planID"), c.Param("subtaskID"), input.OutputRef)
@@ -665,17 +664,5 @@ func writeAdvancedItems(c *gin.Context, items any, err error) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 func writeAdvancedError(c *gin.Context, err error) {
-	if errors.Is(err, appaieval.ErrNotFound) || errors.Is(err, appmemory.ErrNotFound) || errors.Is(err, appknowledgegraph.ErrNotFound) || errors.Is(err, appmultiagent.ErrNotFound) {
-		apiresponse.Error(c, http.StatusNotFound, "not_found", err.Error())
-		return
-	}
-	if errors.Is(err, appaieval.ErrConflict) || strings.Contains(err.Error(), "terminal") {
-		apiresponse.Error(c, http.StatusConflict, "conflict", err.Error())
-		return
-	}
-	if strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "unsupported") || strings.Contains(err.Error(), "exceeds") || strings.Contains(err.Error(), "outside") || strings.Contains(err.Error(), "incomplete") || strings.Contains(err.Error(), "mismatch") {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
-		return
-	}
-	apiresponse.Error(c, http.StatusInternalServerError, "internal_error", "advanced AI operation failed (reference "+strconv.Itoa(http.StatusInternalServerError)+")")
+	writeError(c, err)
 }

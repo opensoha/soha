@@ -13,8 +13,8 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 
 	required := []string{
 		"contracts_ref:",
-		"WEB_REF: ${{ inputs.web_ref || 'v0.1.6' }}",
-		"CONTRACTS_REF: ${{ inputs.contracts_ref || 'v0.1.13' }}",
+		"WEB_REF: ${{ inputs.web_ref || 'v0.1.7' }}",
+		"CONTRACTS_REF: ${{ inputs.contracts_ref || 'v0.1.14' }}",
 		"WEB_SHA256: ${{ inputs.web_sha256 }}",
 		"go get \"github.com/opensoha/soha-contracts@${CONTRACTS_REF}\"",
 		"go list -m github.com/opensoha/soha-contracts",

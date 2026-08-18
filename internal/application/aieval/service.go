@@ -2,18 +2,19 @@ package aieval
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"reflect"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 var (
-	ErrNotFound = errors.New("evaluation resource not found")
-	ErrConflict = errors.New("evaluation resource conflict")
+	ErrNotFound = fmt.Errorf("evaluation resource not found: %w", apperrors.ErrNotFound)
+	ErrConflict = fmt.Errorf("evaluation resource conflict: %w", apperrors.ErrConflict)
 )
 
 type Dataset struct {
@@ -142,7 +143,7 @@ func (s *Service) GetRun(ctx context.Context, id string) (Run, error) {
 
 func (s *Service) StartRun(ctx context.Context, run Run, now time.Time) (Run, error) {
 	if strings.TrimSpace(run.ID) == "" || strings.TrimSpace(run.DatasetID) == "" || strings.TrimSpace(run.DatasetVersion) == "" {
-		return Run{}, fmt.Errorf("evaluation run and dataset identity are required")
+		return Run{}, fmt.Errorf("%w: evaluation run and dataset identity are required", apperrors.ErrInvalidArgument)
 	}
 	if _, err := s.store.GetDataset(ctx, run.DatasetID, run.DatasetVersion); err != nil {
 		return Run{}, err
@@ -172,7 +173,7 @@ func (s *Service) CompleteRun(ctx context.Context, id string, outputs []SampleOu
 	byID := make(map[string]SampleOutput, len(outputs))
 	for _, output := range outputs {
 		if _, exists := byID[output.SampleID]; exists {
-			return Run{}, fmt.Errorf("duplicate output for sample %q", output.SampleID)
+			return Run{}, fmt.Errorf("%w: duplicate output for sample %q", apperrors.ErrInvalidArgument, output.SampleID)
 		}
 		byID[output.SampleID] = output
 	}
@@ -226,15 +227,15 @@ func EvaluateSample(sample DatasetSample, output SampleOutput) Result {
 
 func validateDataset(dataset Dataset) error {
 	if strings.TrimSpace(dataset.ID) == "" || strings.TrimSpace(dataset.Name) == "" || strings.TrimSpace(dataset.Version) == "" || len(dataset.Samples) == 0 {
-		return fmt.Errorf("evaluation dataset identity and samples are required")
+		return fmt.Errorf("%w: evaluation dataset identity and samples are required", apperrors.ErrInvalidArgument)
 	}
 	seen := map[string]struct{}{}
 	for _, sample := range dataset.Samples {
 		if strings.TrimSpace(sample.ID) == "" || strings.TrimSpace(sample.Input) == "" {
-			return fmt.Errorf("evaluation sample id and input are required")
+			return fmt.Errorf("%w: evaluation sample id and input are required", apperrors.ErrInvalidArgument)
 		}
 		if _, ok := seen[sample.ID]; ok {
-			return fmt.Errorf("duplicate evaluation sample %q", sample.ID)
+			return fmt.Errorf("%w: duplicate evaluation sample %q", apperrors.ErrInvalidArgument, sample.ID)
 		}
 		seen[sample.ID] = struct{}{}
 	}

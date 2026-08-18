@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -561,7 +562,7 @@ func (h *aiGatewayAccessPolicyHandler) DeleteAccessPolicy(c *gin.Context) {
 func (h *aiGatewayGovernanceHandler) GovernanceStatus(c *gin.Context) {
 	windowHours, err := parseAIGatewayWindowHours(c.Query("windowHours"), 0)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apierrors.ErrInvalidArgument, err))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -631,7 +632,7 @@ func (h *aiGatewayGovernanceHandler) DeleteSkillBinding(c *gin.Context) {
 func (h *aiGatewayAuditHandler) ListAuditLogs(c *gin.Context) {
 	filter, err := parseAIGatewayAuditLogFilter(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apierrors.ErrInvalidArgument, err))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -646,7 +647,7 @@ func (h *aiGatewayAuditHandler) ListAuditLogs(c *gin.Context) {
 func (h *aiGatewayApprovalHandler) ListApprovalRequests(c *gin.Context) {
 	filter, err := parseAIGatewayApprovalRequestFilter(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apierrors.ErrInvalidArgument, err))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -802,7 +803,7 @@ func (h *aiGatewayModelRouteHandler) DeleteLLMModelRoute(c *gin.Context) {
 func (h *aiGatewayRelayObservabilityHandler) ListLLMCallLogs(c *gin.Context) {
 	filter, err := parseLLMCallLogFilter(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apierrors.ErrInvalidArgument, err))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -827,7 +828,7 @@ func (h *aiGatewayRelayObservabilityHandler) LLMRelayMetrics(c *gin.Context) {
 func (h *aiGatewayRelayObservabilityHandler) LLMRelayCacheStats(c *gin.Context) {
 	windowHours, err := parseAIGatewayWindowHours(c.Query("windowHours"), 24)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apierrors.ErrInvalidArgument, err))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -1109,7 +1110,7 @@ func (h *aiGatewayRelayHandler) relayLLMWebSocket(c *gin.Context, providerKind, 
 		UserAgent:    c.Request.UserAgent(),
 	}, c.Writer, c.Request)
 	if err != nil {
-		relayNativeError(c, apiStatusCode(err), apiErrorCode(err), err.Error())
+		relayNativeServiceError(c, err)
 	}
 }
 
@@ -1143,7 +1144,7 @@ func (h *aiGatewayRelayHandler) relayLLMWithPathModel(c *gin.Context, providerKi
 		UserAgent:    c.Request.UserAgent(),
 	}, c.Writer)
 	if err != nil {
-		relayNativeError(c, apiStatusCode(err), apiErrorCode(err), err.Error())
+		relayNativeServiceError(c, err)
 	}
 }
 
@@ -1328,12 +1329,9 @@ func parseBoolQuery(value string) bool {
 	}
 }
 
-func apiStatusCode(err error) int {
-	return apierrors.StatusCode(err)
-}
-
-func apiErrorCode(err error) string {
-	return apierrors.Code(err)
+func relayNativeServiceError(c *gin.Context, err error) {
+	_ = c.Error(err)
+	relayNativeError(c, apierrors.StatusCode(err), apierrors.Code(err), apierrors.Message(err, apierrors.RequestLanguage(c.Request)))
 }
 
 func relayNativeError(c *gin.Context, status int, code, message string) {

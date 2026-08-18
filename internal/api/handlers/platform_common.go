@@ -53,5 +53,5 @@ func writeError(c *gin.Context, err error) {
 	_ = c.Error(err)
 	status := aperrors.StatusCode(err)
 	code := aperrors.Code(err)
-	apiresponse.Error(c, status, code, aperrors.Message(err))
+	apiresponse.Error(c, status, code, aperrors.Message(err, aperrors.RequestLanguage(c.Request)))
 }

@@ -48,6 +48,43 @@ func TestHostAgentInstallationUsesOneTimeHostBoundCredentials(t *testing.T) {
 	}
 }
 
+func TestHostAgentInstallationExplainsAccessURLConfigurationErrors(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "runtime-1", Status: "pending"}
+	service := newDockerInstallTestService(t, repo, "legacy-runner-token-32-characters-minimum")
+
+	for _, test := range []struct {
+		name      string
+		accessURL string
+		code      string
+		message   string
+	}{
+		{
+			name:    "missing",
+			code:    "public_access_url_not_configured",
+			message: "Soha 对外访问地址尚未配置，请前往“设置中心 > 运行时配置”设置“访问地址”后重试",
+		},
+		{
+			name:      "invalid",
+			accessURL: "localhost:8080",
+			code:      "public_access_url_invalid",
+			message:   "Soha 对外访问地址格式不正确，请配置完整的 HTTP 或 HTTPS 地址",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service.accessURL = dockerInstallAccessURL(test.accessURL)
+			_, err := service.CreateHostAgentInstallation(context.Background(), dockerTestPrincipal(), "host-1")
+			var business *apperrors.BusinessError
+			if !errors.Is(err, apperrors.ErrInvalidArgument) || !errors.As(err, &business) {
+				t.Fatalf("CreateHostAgentInstallation() error = %v, want business invalid argument", err)
+			}
+			if business.Code() != test.code || business.Message("zh-CN") != test.message {
+				t.Fatalf("business error = %q %q", business.Code(), business.Message("zh-CN"))
+			}
+		})
+	}
+}
+
 func createHostAgentInstallation(t *testing.T, service *Service, repo *memoryDockerRepo) (domaindocker.HostAgentInstallation, string) {
 	t.Helper()
 	installation, err := service.CreateHostAgentInstallation(context.Background(), dockerTestPrincipal(), "host-1")

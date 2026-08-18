@@ -338,6 +338,41 @@ func TestResourceCreateContentHashBindsScopeAndSource(t *testing.T) {
 	}
 }
 
+func TestPreflightRejectionReturnsPublicBusinessReason(t *testing.T) {
+	const privateDetail = "private-provider-detail"
+	err := preflightRejectionError(domainresource.ResourceCreatePreflight{Documents: []domainresource.ResourceCreateDocument{{
+		ErrorCode: "resource_dry_run_failed",
+		Error:     privateDetail,
+	}}})
+
+	var business *apperrors.BusinessError
+	if !errors.As(err, &business) {
+		t.Fatalf("preflightRejectionError() = %v, want BusinessError", err)
+	}
+	if business.Code() != "resource_dry_run_failed" {
+		t.Fatalf("Code() = %q", business.Code())
+	}
+	want := "Kubernetes 拒绝了资源配置，请在预检结果中查看失败资源和字段原因"
+	if got := business.Message("zh-CN"); got != want {
+		t.Fatalf("Message(zh-CN) = %q, want %q", got, want)
+	}
+	if strings.Contains(business.Error(), privateDetail) {
+		t.Fatal("business error exposed provider detail")
+	}
+}
+
+func TestPublicCreateResourceErrorHidesUnstructuredProviderDetail(t *testing.T) {
+	const privateDetail = "dial 10.0.0.8 with token=private-token"
+	got := publicCreateResourceError("Deployment", errors.New(privateDetail))
+
+	if got != "Kubernetes could not validate the Deployment resource; try again or contact an administrator" {
+		t.Fatalf("publicCreateResourceError() = %q", got)
+	}
+	if strings.Contains(got, privateDetail) {
+		t.Fatal("public resource error exposed provider detail")
+	}
+}
+
 func TestSecretCreateNeverPersistsOrReturnsManifestValues(t *testing.T) {
 	t.Parallel()
 	const marker = "LEAK-ME-SECRET-VALUE"

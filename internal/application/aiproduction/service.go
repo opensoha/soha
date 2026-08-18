@@ -2,18 +2,18 @@ package aiproduction
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"time"
 
 	appaieval "github.com/opensoha/soha/internal/application/aieval"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 var (
-	ErrNotFound = errors.New("AI production resource not found")
-	ErrConflict = errors.New("AI production resource conflict")
+	ErrNotFound = fmt.Errorf("AI production resource not found: %w", apperrors.ErrNotFound)
+	ErrConflict = fmt.Errorf("AI production resource conflict: %w", apperrors.ErrConflict)
 )
 
 type FleetTarget struct {
@@ -124,13 +124,13 @@ func (s *Service) ListRollouts(ctx context.Context) ([]ProviderRollout, error) {
 func (s *Service) CreateRollout(ctx context.Context, item ProviderRollout) (ProviderRollout, error) {
 	item.ID, item.Name = strings.TrimSpace(item.ID), strings.TrimSpace(item.Name)
 	if item.ID == "" || item.DesiredRevision == 0 || item.CanaryPercent < 1 || item.CanaryPercent > 100 {
-		return ProviderRollout{}, fmt.Errorf("invalid provider rollout")
+		return ProviderRollout{}, fmt.Errorf("%w: invalid provider rollout", apperrors.ErrInvalidArgument)
 	}
 	item.Target.Environments = normalize(item.Target.Environments, 64)
 	item.Target.Platforms = normalize(item.Target.Platforms, 16)
 	item.Target.Architectures = normalize(item.Target.Architectures, 16)
 	if len(item.Target.Labels) > 64 {
-		return ProviderRollout{}, fmt.Errorf("provider rollout target exceeds limits")
+		return ProviderRollout{}, fmt.Errorf("%w: provider rollout target exceeds limits", apperrors.ErrInvalidArgument)
 	}
 	now := s.now().UTC()
 	item.Status, item.CreatedAt, item.UpdatedAt = "validating", now, now
@@ -165,7 +165,7 @@ func (s *Service) ListConformanceRuns(ctx context.Context) ([]ConformanceRun, er
 func (s *Service) CreateConformanceRun(ctx context.Context, item ConformanceRun) (ConformanceRun, error) {
 	item.ID, item.ProviderRef, item.EnvironmentRef, item.SuiteVersion = strings.TrimSpace(item.ID), strings.TrimSpace(item.ProviderRef), strings.TrimSpace(item.EnvironmentRef), strings.TrimSpace(item.SuiteVersion)
 	if item.ID == "" || item.ProviderRef == "" || item.EnvironmentRef == "" || item.SuiteVersion == "" {
-		return ConformanceRun{}, fmt.Errorf("invalid conformance run")
+		return ConformanceRun{}, fmt.Errorf("%w: invalid conformance run", apperrors.ErrInvalidArgument)
 	}
 	now := s.now().UTC()
 	item.Status, item.CreatedAt, item.UpdatedAt = "queued", now, now
@@ -180,7 +180,7 @@ func (s *Service) ListEnvironmentTemplates(ctx context.Context) ([]EnvironmentTe
 func (s *Service) PutEnvironmentTemplate(ctx context.Context, item EnvironmentTemplate) (EnvironmentTemplate, error) {
 	item.ID, item.Name, item.Backend, item.IsolationMode = strings.TrimSpace(item.ID), strings.TrimSpace(item.Name), strings.TrimSpace(item.Backend), strings.TrimSpace(item.IsolationMode)
 	if item.ID == "" || item.Name == "" || (item.Backend != "container" && item.Backend != "kubernetes") || (item.IsolationMode != "read-only" && item.IsolationMode != "disposable-write") {
-		return EnvironmentTemplate{}, fmt.Errorf("invalid environment template")
+		return EnvironmentTemplate{}, fmt.Errorf("%w: invalid environment template", apperrors.ErrInvalidArgument)
 	}
 	now := s.now().UTC()
 	item.Status, item.CreatedAt, item.UpdatedAt = "active", now, now
@@ -242,7 +242,7 @@ func (s *Service) StartOperation(ctx context.Context, item Operation) (Operation
 	categories := map[string]string{"backup": "backup", "restore": "recovery", "index_rebuild": "recovery", "drill": "slo"}
 	item.Category = categories[item.Kind]
 	if item.Category == "" || item.TargetRef == "" || item.RunbookID == "" {
-		return Operation{}, fmt.Errorf("invalid AI production operation")
+		return Operation{}, fmt.Errorf("%w: invalid AI production operation", apperrors.ErrInvalidArgument)
 	}
 	now := s.now().UTC()
 	item.Status, item.CreatedAt, item.UpdatedAt = "queued", now, now

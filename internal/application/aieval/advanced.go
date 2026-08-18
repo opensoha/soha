@@ -9,6 +9,7 @@ import (
 	"time"
 
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 const maxEvaluationSamples = 500
@@ -150,10 +151,10 @@ func (s *AdvancedService) PutExecutorProfile(ctx context.Context, profile Execut
 	profile.EnvironmentPolicy = strings.TrimSpace(profile.EnvironmentPolicy)
 	profile.IsolationMode = strings.TrimSpace(profile.IsolationMode)
 	if profile.ID == "" || profile.EnvironmentPolicy == "" || profile.Timeout <= 0 || profile.Timeout > 30*time.Minute {
-		return fmt.Errorf("invalid evaluation executor profile")
+		return fmt.Errorf("%w: invalid evaluation executor profile", apperrors.ErrInvalidArgument)
 	}
 	if profile.IsolationMode != "read-only" && profile.IsolationMode != "disposable-write" {
-		return fmt.Errorf("unsupported evaluation isolation mode")
+		return fmt.Errorf("%w: unsupported evaluation isolation mode", apperrors.ErrInvalidArgument)
 	}
 	return s.store.PutExecutorProfile(ctx, profile)
 }
@@ -175,7 +176,7 @@ func (s *AdvancedService) ExecuteRun(ctx context.Context, principal domainidenti
 		return Run{}, err
 	}
 	if len(dataset.Samples) > maxEvaluationSamples {
-		return Run{}, fmt.Errorf("evaluation dataset exceeds %d samples", maxEvaluationSamples)
+		return Run{}, fmt.Errorf("%w: evaluation dataset exceeds %d samples", apperrors.ErrInvalidArgument, maxEvaluationSamples)
 	}
 	outputs := make([]SampleOutput, 0, len(dataset.Samples))
 	for _, sample := range dataset.Samples {
@@ -227,10 +228,10 @@ func (s *AdvancedService) ListAttempts(ctx context.Context, runID string) ([]Sam
 func (s *AdvancedService) PutReplayPlan(ctx context.Context, plan ReplayPlan) error {
 	plan.ID = strings.TrimSpace(plan.ID)
 	if plan.ID == "" || len(plan.SourceTraceRefs) == 0 || len(plan.SourceTraceRefs) > maxEvaluationSamples {
-		return fmt.Errorf("invalid evaluation replay plan")
+		return fmt.Errorf("%w: invalid evaluation replay plan", apperrors.ErrInvalidArgument)
 	}
 	if !plan.ReadOnly && plan.Profile.IsolationMode != "disposable-write" {
-		return fmt.Errorf("write replay requires disposable-write isolation")
+		return fmt.Errorf("%w: write replay requires disposable-write isolation", apperrors.ErrInvalidArgument)
 	}
 	plan.SourceTraceRefs = slices.Clone(plan.SourceTraceRefs)
 	plan.CandidateRefs = maps.Clone(plan.CandidateRefs)
@@ -246,20 +247,20 @@ func (s *AdvancedService) PutGatePolicy(ctx context.Context, policy GatePolicy) 
 	policy.ID = strings.TrimSpace(policy.ID)
 	policy.Version = strings.TrimSpace(policy.Version)
 	if policy.ID == "" || policy.Version == "" || len(policy.MinimumScores) == 0 {
-		return fmt.Errorf("invalid evaluation gate policy")
+		return fmt.Errorf("%w: invalid evaluation gate policy", apperrors.ErrInvalidArgument)
 	}
 	for name, score := range policy.MinimumScores {
 		if strings.TrimSpace(name) == "" || score < 0 || score > 1 {
-			return fmt.Errorf("invalid minimum score in evaluation gate policy")
+			return fmt.Errorf("%w: invalid minimum score in evaluation gate policy", apperrors.ErrInvalidArgument)
 		}
 	}
 	for name, regression := range policy.MaximumRegression {
 		if strings.TrimSpace(name) == "" || regression < 0 || regression > 1 {
-			return fmt.Errorf("invalid maximum regression in evaluation gate policy")
+			return fmt.Errorf("%w: invalid maximum regression in evaluation gate policy", apperrors.ErrInvalidArgument)
 		}
 	}
 	if policy.MaximumCost < 0 || policy.MaximumLatencyMS < 0 {
-		return fmt.Errorf("invalid evaluation gate operational limit")
+		return fmt.Errorf("%w: invalid evaluation gate operational limit", apperrors.ErrInvalidArgument)
 	}
 	policy.MinimumScores = maps.Clone(policy.MinimumScores)
 	policy.MaximumRegression = maps.Clone(policy.MaximumRegression)
@@ -374,10 +375,10 @@ func (s *AdvancedService) PutFeedback(ctx context.Context, sample FeedbackSample
 	sample.ScopeHash = strings.TrimSpace(sample.ScopeHash)
 	sample.Decision = strings.TrimSpace(sample.Decision)
 	if sample.ID == "" || sample.TraceRef == "" || !strings.HasPrefix(sample.ScopeHash, "sha256:") {
-		return fmt.Errorf("invalid evaluation feedback sample")
+		return fmt.Errorf("%w: invalid evaluation feedback sample", apperrors.ErrInvalidArgument)
 	}
 	if sample.Decision != "pending" && sample.Decision != "accepted" && sample.Decision != "rejected" && sample.Decision != "deleted" {
-		return fmt.Errorf("unsupported feedback decision")
+		return fmt.Errorf("%w: unsupported feedback decision", apperrors.ErrInvalidArgument)
 	}
 	sample.CreatedAt = s.now().UTC()
 	return s.store.PutFeedback(ctx, sample)

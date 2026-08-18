@@ -13,5 +13,5 @@ func writeError(c *gin.Context, err error) {
 		err = errors.New("handler returned a nil error")
 	}
 	_ = c.Error(err)
-	apiresponse.Error(c, apierrors.StatusCode(err), apierrors.Code(err), apierrors.Message(err))
+	apiresponse.Error(c, apierrors.StatusCode(err), apierrors.Code(err), apierrors.Message(err, apierrors.RequestLanguage(c.Request)))
 }

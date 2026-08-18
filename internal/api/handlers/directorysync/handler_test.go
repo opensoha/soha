@@ -425,6 +425,14 @@ func TestSCIMPatchUserAppliesSupportedPatchAndRejectsUnknownPath(t *testing.T) {
 			if recorder.Code != test.want {
 				t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 			}
+			if test.want == http.StatusBadRequest {
+				if strings.Contains(recorder.Body.String(), "roles") {
+					t.Fatalf("response exposes validation details: %s", recorder.Body.String())
+				}
+				if len(ctx.Errors) != 1 {
+					t.Fatalf("recorded errors = %d, want 1", len(ctx.Errors))
+				}
+			}
 			if test.want == http.StatusOK && (repo.scimPerson.DisplayName != "Grace" || repo.scimPerson.Status != domain.ProjectionSuspended) {
 				t.Fatalf("person=%#v active=%v", repo.scimPerson, active)
 			}

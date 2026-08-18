@@ -12,25 +12,36 @@ type visibilityRule struct {
 	permissions []string
 }
 
-func workspacePermissionForMenu(item domainmenu.Record) string {
+func workbenchPermissionForMenu(item domainmenu.Record) string {
 	path := strings.TrimSpace(item.Path)
-	if path == "/" || hasMenuPathPrefix(path, workspaceResourceMenuPrefixes) {
-		return appaccess.PermWorkspaceResourceView
+	switch {
+	case hasMenuPathPrefix(path, []string{"/portal"}):
+		return appaccess.PermWorkbenchHomeView
+	case path == "/" || hasMenuPathPrefix(path, platformWorkbenchMenuPrefixes):
+		return appaccess.PermWorkbenchPlatformView
+	case hasMenuPathPrefix(path, []string{"/compute"}):
+		return appaccess.PermWorkbenchComputeView
+	case hasMenuPathPrefix(path, deliveryWorkbenchMenuPrefixes):
+		return appaccess.PermWorkbenchDeliveryView
+	case hasMenuPathPrefix(path, []string{"/ai-gateway", "/ai-workbench"}):
+		return appaccess.PermWorkbenchAIView
+	case hasMenuPathPrefix(path, []string{"/monitoring-workbench", "/observability"}):
+		return appaccess.PermWorkbenchMonitoringView
+	case hasMenuPathPrefix(path, []string{"/identity/audit", "/access", "/plugins", "/settings", "/system"}):
+		return appaccess.PermWorkbenchSettingsView
+	case hasMenuPathPrefix(path, []string{"/identity", "/internal-workbench"}):
+		return appaccess.PermWorkbenchSecurityView
+	default:
+		return ""
 	}
-	if hasMenuPathPrefix(path, workspaceApplicationMenuPrefixes) {
-		return appaccess.PermWorkspaceApplicationView
-	}
-	return ""
 }
 
-var workspaceResourceMenuPrefixes = []string{
+var platformWorkbenchMenuPrefixes = []string{
 	"/cluster-resources", "/workloads", "/configuration", "/network", "/storage",
-	"/platform-access-control", "/helm", "/extensions", "/clusters", "/manifests", "/monitoring-workbench",
-	"/ai-gateway", "/ai-workbench", "/observability",
-	"/compute",
+	"/platform-access-control", "/helm", "/extensions", "/clusters", "/manifests",
 }
 
-var workspaceApplicationMenuPrefixes = []string{
+var deliveryWorkbenchMenuPrefixes = []string{
 	"/applications", "/application-environments", "/build-templates", "/delivery/overview", "/delivery/onboarding",
 	"/delivery/manifests", "/delivery/testing", "/delivery/analysis", "/delivery/blueprints", "/delivery/release-bundles",
 	"/delivery/execution-tasks", "/workflow-templates", "/release-board", "/workflows", "/releases", "/registries",
@@ -467,7 +478,7 @@ func platformResourceViewPermissions(group string) []string {
 }
 
 func isVisibleByPermissions(item domainmenu.Record, permissionKeys []string) bool {
-	if workspacePermission := workspacePermissionForMenu(item); workspacePermission != "" && !slices.Contains(permissionKeys, workspacePermission) {
+	if workbenchPermission := workbenchPermissionForMenu(item); workbenchPermission != "" && !slices.Contains(permissionKeys, workbenchPermission) {
 		return false
 	}
 	rule, ok := permissionRuleForMenu(item)

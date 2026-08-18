@@ -77,6 +77,10 @@ func (d *Direct) BuildWorkloadSnapshot(sourceYAML string, request domainresource
 	}
 
 	container := template.Spec.Containers[containerIndex].DeepCopy()
+	if request.Inherit != nil {
+		template = projectWorkloadSnapshotTemplate(template, *container, request.Inherit)
+		container = &template.Spec.Containers[0]
+	}
 	if len(request.Command) > 0 {
 		container.Command = slices.Clone(request.Command)
 	}
@@ -150,6 +154,108 @@ func (d *Direct) BuildWorkloadSnapshot(sourceYAML string, request domainresource
 		Content: string(content), SourceUID: string(uid), SelectedContainer: selected,
 		Containers: containers, Warnings: warnings,
 	}, nil
+}
+
+func projectWorkloadSnapshotTemplate(source *corev1.PodTemplateSpec, container corev1.Container, inheritance []domainresource.WorkloadSnapshotInheritance) *corev1.PodTemplateSpec {
+	enabled := make(map[domainresource.WorkloadSnapshotInheritance]bool, len(inheritance))
+	for _, module := range inheritance {
+		enabled[module] = true
+	}
+	template := &corev1.PodTemplateSpec{
+		Spec: corev1.PodSpec{Containers: []corev1.Container{projectSnapshotContainer(container, enabled)}},
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritTemplateMetadata] {
+		template.ObjectMeta = *source.ObjectMeta.DeepCopy()
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritInitContainers] {
+		template.Spec.InitContainers = make([]corev1.Container, len(source.Spec.InitContainers))
+		for index, initContainer := range source.Spec.InitContainers {
+			template.Spec.InitContainers[index] = projectSnapshotContainer(initContainer, enabled)
+		}
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritStorage] {
+		template.Spec.Volumes = source.Spec.Volumes
+		template.Spec.ResourceClaims = source.Spec.ResourceClaims
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritResources] {
+		template.Spec.Overhead = source.Spec.Overhead
+		template.Spec.Resources = source.Spec.Resources
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritSecurityContext] {
+		template.Spec.HostNetwork = source.Spec.HostNetwork
+		template.Spec.HostPID = source.Spec.HostPID
+		template.Spec.HostIPC = source.Spec.HostIPC
+		template.Spec.ShareProcessNamespace = source.Spec.ShareProcessNamespace
+		template.Spec.SecurityContext = source.Spec.SecurityContext
+		template.Spec.HostUsers = source.Spec.HostUsers
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritScheduling] {
+		template.Spec.DNSPolicy = source.Spec.DNSPolicy
+		template.Spec.NodeSelector = source.Spec.NodeSelector
+		template.Spec.ServiceAccountName = source.Spec.ServiceAccountName
+		template.Spec.DeprecatedServiceAccount = source.Spec.DeprecatedServiceAccount
+		template.Spec.AutomountServiceAccountToken = source.Spec.AutomountServiceAccountToken
+		template.Spec.ImagePullSecrets = source.Spec.ImagePullSecrets
+		template.Spec.Affinity = source.Spec.Affinity
+		template.Spec.SchedulerName = source.Spec.SchedulerName
+		template.Spec.Tolerations = source.Spec.Tolerations
+		template.Spec.PriorityClassName = source.Spec.PriorityClassName
+		template.Spec.Priority = source.Spec.Priority
+		template.Spec.DNSConfig = source.Spec.DNSConfig
+		template.Spec.RuntimeClassName = source.Spec.RuntimeClassName
+		template.Spec.PreemptionPolicy = source.Spec.PreemptionPolicy
+		template.Spec.TopologySpreadConstraints = source.Spec.TopologySpreadConstraints
+		template.Spec.OS = source.Spec.OS
+		template.Spec.SchedulingGates = source.Spec.SchedulingGates
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritServiceRuntime] {
+		template.Spec.TerminationGracePeriodSeconds = source.Spec.TerminationGracePeriodSeconds
+		template.Spec.Hostname = source.Spec.Hostname
+		template.Spec.Subdomain = source.Spec.Subdomain
+		template.Spec.HostAliases = source.Spec.HostAliases
+		template.Spec.ReadinessGates = source.Spec.ReadinessGates
+		template.Spec.EnableServiceLinks = source.Spec.EnableServiceLinks
+		template.Spec.SetHostnameAsFQDN = source.Spec.SetHostnameAsFQDN
+		template.Spec.HostnameOverride = source.Spec.HostnameOverride
+	}
+	return template
+}
+
+func projectSnapshotContainer(source corev1.Container, enabled map[domainresource.WorkloadSnapshotInheritance]bool) corev1.Container {
+	container := corev1.Container{
+		Name: source.Name, Image: source.Image, ImagePullPolicy: source.ImagePullPolicy,
+		Command: slices.Clone(source.Command), Args: slices.Clone(source.Args), WorkingDir: source.WorkingDir,
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritEnvironment] {
+		container.Env = source.Env
+		container.EnvFrom = source.EnvFrom
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritStorage] {
+		container.VolumeMounts = source.VolumeMounts
+		container.VolumeDevices = source.VolumeDevices
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritResources] {
+		container.Resources = source.Resources
+		container.ResizePolicy = source.ResizePolicy
+		if !enabled[domainresource.WorkloadSnapshotInheritStorage] {
+			container.Resources.Claims = nil
+		}
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritSecurityContext] {
+		container.SecurityContext = source.SecurityContext
+	}
+	if enabled[domainresource.WorkloadSnapshotInheritServiceRuntime] {
+		container.Ports = source.Ports
+		container.RestartPolicy = source.RestartPolicy
+		container.RestartPolicyRules = source.RestartPolicyRules
+		container.LivenessProbe = source.LivenessProbe
+		container.ReadinessProbe = source.ReadinessProbe
+		container.StartupProbe = source.StartupProbe
+		container.Lifecycle = source.Lifecycle
+		container.TerminationMessagePath = source.TerminationMessagePath
+		container.TerminationMessagePolicy = source.TerminationMessagePolicy
+	}
+	return container
 }
 
 func workloadSnapshotSource(sourceYAML string, request domainresource.WorkloadSnapshotRequest) (*corev1.PodTemplateSpec, types.UID, []domainresource.WorkloadSnapshotContainer, error) {

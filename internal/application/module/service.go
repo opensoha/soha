@@ -36,7 +36,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			DefaultPath:        "/portal",
 			EnabledConfigKey:   "modules.home.enabled",
 			Dependencies:       []string{},
-			VisiblePermissions: []string{"identity.portal.view"},
+			VisiblePermissions: []string{"workbench.home.view"},
 			SeedMenus:          []string{"home-workbench"},
 		},
 		{
@@ -45,7 +45,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			DefaultPath:        "/",
 			EnabledConfigKey:   "",
 			Dependencies:       []string{},
-			VisiblePermissions: []string{"workspace.resource.view"},
+			VisiblePermissions: []string{"workbench.platform.view"},
 			SeedMenus:          []string{"dashboard", "clusters", "workloads", "configuration", "network", "network-gateway-api-gatewayclasses", "network-gateway-api-gateways", "network-gateway-api-httproutes", "network-gateway-api-backendtlspolicies", "network-gateway-api-grpcroutes", "network-gateway-api-referencegrants", "storage", "platform-access-control", "extensions", "helm"},
 		},
 		{
@@ -54,7 +54,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			DefaultPath:        "/compute/overview",
 			EnabledConfigKey:   "modules.virtualization.enabled|modules.docker.enabled",
 			Dependencies:       []string{},
-			VisiblePermissions: []string{"virtualization.overview.view", "virtualization.vms.view", "virtualization.clusters.view", "virtualization.images.view", "virtualization.flavors.view", "virtualization.operations.view", "virtualization.sync.view", "docker.overview.view", "docker.hosts.view", "docker.projects.view", "docker.services.view", "docker.ports.view", "docker.templates.view", "docker.operations.view"},
+			VisiblePermissions: []string{"workbench.compute.view"},
 			SeedMenus:          []string{"compute-workbench", "compute-workbench-overview", "virtualization-workbench", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-storage", "virtualization-workbench-flavors", "docker-workbench", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "compute-workbench-tasks-operations"},
 		},
 		{
@@ -81,7 +81,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			DefaultPath:        "/applications",
 			EnabledConfigKey:   "modules.delivery.enabled",
 			Dependencies:       []string{},
-			VisiblePermissions: []string{"workspace.application.view"},
+			VisiblePermissions: []string{"workbench.delivery.view"},
 			SeedMenus:          []string{"builds", "delivery-overview", "delivery-onboarding", "release-board", "delivery-testing", "delivery-analysis", "build-templates", "release-bundles", "execution-tasks", "workflow-templates", "application-environments", "workflows", "releases", "registries", "delivery-blueprints"},
 		},
 		{
@@ -90,7 +90,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			DefaultPath:        "/ai-workbench",
 			EnabledConfigKey:   "modules.ai.enabled",
 			Dependencies:       []string{"delivery"},
-			VisiblePermissions: []string{"observe.ai.view", "observe.ai.chat", "ai.knowledge.view", "ai.context.inspect", "ai.evaluations.view", "ai.agent-providers.view", "ai.agent-fleet.view", "ai.environments.view", "ai.memory.view", "ai.operations.view"},
+			VisiblePermissions: []string{"workbench.ai.view"},
 			SeedMenus:          []string{"ai-workbench", "ai-workbench-overview", "ai-workbench-chat", "ai-workbench-knowledge", "ai-workbench-knowledge-pipelines", "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-evaluations", "ai-workbench-evaluation-lifecycle", "ai-workbench-context", "ai-workbench-memory", "ai-workbench-tool-settings", "ai-workbench-agent-providers", "ai-workbench-provider-fleet", "ai-workbench-environments", "ai-workbench-model-settings", "ai-workbench-production-operations"},
 		},
 		{
@@ -108,7 +108,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			DefaultPath:        "/monitoring-workbench",
 			EnabledConfigKey:   "modules.monitoring.enabled",
 			Dependencies:       []string{"ai"},
-			VisiblePermissions: []string{"observe.monitoring.view", "observe.log-data-sources.view", "observe.alerts.view"},
+			VisiblePermissions: []string{"workbench.monitoring.view"},
 			SeedMenus:          []string{"monitoring-workbench", "monitoring-workbench-overview", "monitoring-workbench-services", "monitoring-workbench-explore", "monitoring-workbench-dashboards", "monitoring-workbench-providers", "monitoring-workbench-log-data-sources", "monitoring-workbench-integrations", "monitoring-workbench-alerts", "monitoring-workbench-rules", "monitoring-workbench-notifications", "monitoring-workbench-healing", "monitoring-workbench-oncall", "monitoring-workbench-events"},
 		},
 		{
@@ -116,7 +116,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			Name:               "内网工作台",
 			DefaultPath:        "/internal-workbench/overview",
 			EnabledConfigKey:   "modules.security.enabled",
-			VisiblePermissions: []string{"identity.applications.view", "identity.providers.view", "identity.outposts.view", "identity.policies.view"},
+			VisiblePermissions: []string{"workbench.security.view"},
 			SeedMenus:          []string{"identity", "identity-applications", "identity-providers", "identity-outposts", "identity-policies"},
 		},
 		{

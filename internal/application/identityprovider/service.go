@@ -1406,15 +1406,10 @@ func authorizeRedirectError(redirectURI, state, code string, err error) error {
 	if strings.TrimSpace(code) == "" {
 		code = authorizeRedirectErrorCode(err)
 	}
-	description := ""
-	if err != nil {
-		description = err.Error()
-	}
 	return &domainprovider.AuthorizeRedirectError{
 		RedirectURI: strings.TrimSpace(redirectURI),
 		State:       strings.TrimSpace(state),
 		Code:        strings.TrimSpace(code),
-		Description: description,
 		Err:         err,
 	}
 }

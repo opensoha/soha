@@ -12,6 +12,7 @@ import (
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainknowledge "github.com/opensoha/soha/internal/domain/knowledge"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type KnowledgeService interface {
@@ -323,17 +324,22 @@ func knowledgeQueryInt(c *gin.Context, key string, fallback int) int {
 func writeKnowledgeError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, domainknowledge.ErrAccessDenied):
-		apiresponse.Error(c, http.StatusForbidden, "forbidden", "knowledge access denied")
+		writeError(c, errors.Join(err, apperrors.NewBusiness(
+			apperrors.ErrAccessDenied,
+			"forbidden",
+			"knowledge access denied",
+			"没有知识库访问权限",
+		)))
 	case errors.Is(err, domainknowledge.ErrBaseNotFound), errors.Is(err, domainknowledge.ErrSourceNotFound):
-		apiresponse.Error(c, http.StatusNotFound, "not_found", err.Error())
+		writeError(c, errors.Join(err, apperrors.ErrNotFound))
 	case errors.Is(err, domainknowledge.ErrIngestionNotFound):
-		apiresponse.Error(c, http.StatusNotFound, "not_found", err.Error())
+		writeError(c, errors.Join(err, apperrors.ErrNotFound))
 	case errors.Is(err, domainknowledge.ErrIngestionConflict):
-		apiresponse.Error(c, http.StatusConflict, "conflict", err.Error())
+		writeError(c, errors.Join(err, apperrors.ErrConflict))
 	case errors.Is(err, domainknowledge.ErrInvalidInput), errors.Is(err, domainknowledge.ErrRetrievalExhausted):
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, errors.Join(err, apperrors.ErrInvalidArgument))
 	case errors.Is(err, domainknowledge.ErrSourceUnavailable):
-		apiresponse.Error(c, http.StatusServiceUnavailable, "service_unavailable", err.Error())
+		writeError(c, errors.Join(err, apperrors.ErrServiceUnavailable))
 	default:
 		writeError(c, err)
 	}

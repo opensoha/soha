@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -453,7 +454,7 @@ func (h *DeliveryHandler) ListDeliveryBlueprints(c *gin.Context) {
 func (h *DeliveryHandler) CreateDeliveryBlueprint(c *gin.Context) {
 	input, err := decodeDeliveryBlueprintRequest(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -468,7 +469,7 @@ func (h *DeliveryHandler) CreateDeliveryBlueprint(c *gin.Context) {
 func (h *DeliveryHandler) UpdateDeliveryBlueprint(c *gin.Context) {
 	input, err := decodeDeliveryBlueprintRequest(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -513,7 +514,7 @@ func (h *DeliveryHandler) BootstrapApplicationFromBlueprint(c *gin.Context) {
 func (h *DeliveryHandler) CreateDeliveryDraft(c *gin.Context) {
 	input, err := decodeDeliveryDraftRequest(c)
 	if err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		writeError(c, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err))
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)

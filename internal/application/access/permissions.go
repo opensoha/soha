@@ -16,6 +16,14 @@ const (
 const (
 	PermWorkspaceApplicationView          = "workspace.application.view"
 	PermWorkspaceResourceView             = "workspace.resource.view"
+	PermWorkbenchAIView                   = "workbench.ai.view"
+	PermWorkbenchComputeView              = "workbench.compute.view"
+	PermWorkbenchDeliveryView             = "workbench.delivery.view"
+	PermWorkbenchHomeView                 = "workbench.home.view"
+	PermWorkbenchMonitoringView           = "workbench.monitoring.view"
+	PermWorkbenchPlatformView             = "workbench.platform.view"
+	PermWorkbenchSecurityView             = "workbench.security.view"
+	PermWorkbenchSettingsView             = "workbench.settings.view"
 	PermOverviewView                      = "overview.view"
 	PermPlatformNodesView                 = "platform.nodes.view"
 	PermPlatformNamespacesView            = "platform.namespaces.view"
@@ -245,6 +253,14 @@ var (
 )
 
 var allPermissionKeySet = []string{
+	PermWorkbenchAIView,
+	PermWorkbenchComputeView,
+	PermWorkbenchDeliveryView,
+	PermWorkbenchHomeView,
+	PermWorkbenchMonitoringView,
+	PermWorkbenchPlatformView,
+	PermWorkbenchSecurityView,
+	PermWorkbenchSettingsView,
 	PermWorkspaceApplicationView,
 	PermWorkspaceResourceView,
 	PermOverviewView,
@@ -551,6 +567,14 @@ func pluralPermissionResource(kind string) string {
 }
 
 var opsRolePermissionKeys = []string{
+	PermWorkbenchAIView,
+	PermWorkbenchComputeView,
+	PermWorkbenchDeliveryView,
+	PermWorkbenchHomeView,
+	PermWorkbenchMonitoringView,
+	PermWorkbenchPlatformView,
+	PermWorkbenchSecurityView,
+	PermWorkbenchSettingsView,
 	PermSoftwarePackageView,
 	PermWorkspaceApplicationView,
 	PermWorkspaceResourceView,
@@ -704,6 +728,14 @@ var opsRolePermissionKeys = []string{
 	PermSettingsRuntimeConfigView,
 }
 var developerRolePermissionKeys = []string{
+	PermWorkbenchAIView,
+	PermWorkbenchComputeView,
+	PermWorkbenchDeliveryView,
+	PermWorkbenchHomeView,
+	PermWorkbenchMonitoringView,
+	PermWorkbenchPlatformView,
+	PermWorkbenchSecurityView,
+	PermWorkbenchSettingsView,
 	PermSoftwarePackageView,
 	PermWorkspaceApplicationView,
 	PermWorkspaceResourceView,
@@ -772,6 +804,8 @@ var developerRolePermissionKeys = []string{
 	PermDockerOperationsView,
 }
 var testerRolePermissionKeys = []string{
+	PermWorkbenchDeliveryView,
+	PermWorkbenchHomeView,
 	PermSoftwarePackageView,
 	PermWorkspaceApplicationView,
 	PermOverviewView,
@@ -783,6 +817,14 @@ var testerRolePermissionKeys = []string{
 	PermIdentityPortalView,
 }
 var readonlyRolePermissionKeys = []string{
+	PermWorkbenchAIView,
+	PermWorkbenchComputeView,
+	PermWorkbenchDeliveryView,
+	PermWorkbenchHomeView,
+	PermWorkbenchMonitoringView,
+	PermWorkbenchPlatformView,
+	PermWorkbenchSecurityView,
+	PermWorkbenchSettingsView,
 	PermSoftwarePackageView,
 	PermWorkspaceApplicationView,
 	PermWorkspaceResourceView,
@@ -831,6 +873,11 @@ var readonlyRolePermissionKeys = []string{
 	PermDockerOperationsView,
 }
 var auditorRolePermissionKeys = []string{
+	PermWorkbenchHomeView,
+	PermWorkbenchMonitoringView,
+	PermWorkbenchPlatformView,
+	PermWorkbenchSecurityView,
+	PermWorkbenchSettingsView,
 	PermSoftwarePackageView,
 	PermWorkspaceResourceView,
 	PermOverviewView,

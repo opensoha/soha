@@ -626,20 +626,30 @@ func (s *Service) GetVMDetail(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return VMDetail{}, err
 	}
-	detail := VMDetail{VM: vm}
-	if connection, err := s.connections.GetConnection(ctx, vm.ConnectionID); err == nil {
-		sanitized := sanitizeConnection(connection)
-		detail.Connection = &sanitized
+	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return VMDetail{}, err
 	}
-	if vm.ImageID != "" {
+	detail := VMDetail{VM: vm}
+	if slices.Contains(permissionKeys, appaccess.PermVirtualizationClustersView) {
+		connection, err := s.connections.GetConnection(ctx, vm.ConnectionID)
+		if err == nil {
+			sanitized := sanitizeConnection(connection)
+			detail.Connection = &sanitized
+		}
+	}
+	if slices.Contains(permissionKeys, appaccess.PermVirtualizationImagesView) && vm.ImageID != "" {
 		if image, err := s.images.GetImage(ctx, vm.ImageID); err == nil {
 			detail.Image = &image
 		}
 	}
-	if vm.FlavorID != "" {
+	if slices.Contains(permissionKeys, appaccess.PermVirtualizationFlavorsView) && vm.FlavorID != "" {
 		if flavor, err := s.flavors.GetFlavor(ctx, vm.FlavorID); err == nil {
 			detail.Flavor = &flavor
 		}
+	}
+	if !slices.Contains(permissionKeys, appaccess.PermVirtualizationOperationsView) {
+		return detail, nil
 	}
 	tasks, err := s.tasks.ListTasks(ctx, domainvirtualization.TaskFilter{VMID: vm.ID, Limit: 20})
 	if err != nil {
@@ -686,8 +696,16 @@ type preparedVMCreate struct {
 }
 
 func (s *Service) PlanVMCreate(ctx context.Context, principal domainidentity.Principal, input CreateVMInput) (domainoperation.Plan, error) {
-	for _, permission := range []string{appaccess.PermVirtualizationVMsView, appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationImagesView} {
-		if err := s.authorize(ctx, principal, permission); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsView); err != nil {
+		return domainoperation.Plan{}, err
+	}
+	if strings.TrimSpace(input.FlavorID) != "" {
+		if err := s.authorize(ctx, principal, appaccess.PermVirtualizationFlavorsView); err != nil {
+			return domainoperation.Plan{}, err
+		}
+	}
+	if strings.TrimSpace(firstNonEmpty(input.ImageID, input.BootImageID)) != "" {
+		if err := s.authorize(ctx, principal, appaccess.PermVirtualizationImagesView); err != nil {
 			return domainoperation.Plan{}, err
 		}
 	}
