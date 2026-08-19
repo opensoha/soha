@@ -2109,6 +2109,50 @@ func TestQueueGatewayAnalysisAgentRunDefaultsExternalProvider(t *testing.T) {
 	}
 }
 
+func TestListAgentRunsUsesOwnedSessionScopeAndChatPermission(t *testing.T) {
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.session = domaincopilot.Session{ID: "session-1", CreatedBy: "user-1"}
+	repo.agentRuns = []domaincopilot.AgentRun{
+		{ID: "run-1", SessionID: "session-1", CreatedBy: "user-1"},
+		{ID: "run-2", SessionID: "session-2", CreatedBy: "user-1"},
+		{ID: "run-3", SessionID: "session-1", CreatedBy: "user-2"},
+	}
+
+	items, err := service.ListAgentRuns(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1")
+	if err != nil {
+		t.Fatalf("list session agent runs: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "run-1" {
+		t.Fatalf("expected only the owned session run, got %#v", items)
+	}
+	if !repo.getSessionCalled || repo.agentRunFilter.CreatedBy != "user-1" || repo.agentRunFilter.SessionID != "session-1" {
+		t.Fatalf("expected owned session filter, got %#v", repo.agentRunFilter)
+	}
+}
+
+func TestListAgentRunsRejectsUnknownSessionBeforeQuery(t *testing.T) {
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.getSessionErr = apperrors.ErrNotFound
+
+	_, err := service.ListAgentRuns(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "other-session")
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("expected not found for unowned session, got %v", err)
+	}
+	if repo.listAgentRunsCalled {
+		t.Fatal("agent runs repository queried before session ownership was established")
+	}
+}
+
 func TestAgentRunReturnPathsIncludeOperationState(t *testing.T) {
 	queuedAt := time.Now().UTC().Add(-2 * time.Minute)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
@@ -2128,7 +2172,7 @@ func TestAgentRunReturnPathsIncludeOperationState(t *testing.T) {
 		UpdatedAt:      queuedAt,
 	}}
 
-	listed, err := service.ListAgentRuns(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"viewer"}})
+	listed, err := service.ListAgentRuns(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"viewer"}}, "")
 	if err != nil {
 		t.Fatalf("list agent runs: %v", err)
 	}
@@ -2137,6 +2181,9 @@ func TestAgentRunReturnPathsIncludeOperationState(t *testing.T) {
 	}
 	if listed[0].CallbackToken != "" {
 		t.Fatalf("expected list response to hide callback token")
+	}
+	if repo.agentRunFilter.CreatedBy != "user-1" || repo.agentRunFilter.SessionID != "" {
+		t.Fatalf("expected global list to remain user scoped, got %#v", repo.agentRunFilter)
 	}
 
 	claimed, err := service.ClaimAgentRun(context.Background(), domaincopilot.AgentRunClaimInput{AgentID: "runner-1"})
@@ -2341,6 +2388,9 @@ func TestStreamMessageExternalAgentEmitsProviderAwareQueuedStatus(t *testing.T) 
 	}
 	if len(liveEvents) == 0 || liveEvents[0].Type != "agent.status" || liveEvents[0].ProviderID != "hermes" || liveEvents[0].ProviderKind != "hermes" || liveEvents[0].Status != domaincopilot.AgentRunStatusQueued {
 		t.Fatalf("expected provider-aware queued status, got %#v", liveEvents)
+	}
+	if liveEvents[len(liveEvents)-1].Type != "message.done" || liveEvents[len(liveEvents)-1].MessageID == "" {
+		t.Fatalf("expected explicit terminal acknowledgement for queued run, got %#v", liveEvents)
 	}
 	if len(result.Events) == 0 || result.Events[len(result.Events)-1].ProviderID != "hermes" || result.Events[len(result.Events)-1].ProviderKind != "hermes" {
 		t.Fatalf("expected replay events to keep external provider identity, got %#v", result.Events)
@@ -3308,9 +3358,12 @@ func (r *captureCopilotAuditRecorder) List(context.Context, domainaudit.Filter) 
 
 type inspectionAuthzTestRepository struct {
 	listInspectionRunsCalled   bool
+	listAgentRunsCalled        bool
 	getSessionCalled           bool
 	listDataSourcesCalled      bool
 	updateMessageMetadataCalls int
+	getSessionErr              error
+	agentRunFilter             domaincopilot.AgentRunFilter
 	session                    domaincopilot.Session
 	messages                   []domaincopilot.Message
 	createdMessage             domaincopilot.Message
@@ -3709,6 +3762,9 @@ func (r *inspectionAuthzTestRepository) ListSessions(context.Context, string, in
 
 func (r *inspectionAuthzTestRepository) GetSession(context.Context, string, string) (domaincopilot.Session, error) {
 	r.getSessionCalled = true
+	if r.getSessionErr != nil {
+		return domaincopilot.Session{}, r.getSessionErr
+	}
 	if r.session.ID != "" {
 		return r.session, nil
 	}
@@ -3877,8 +3933,20 @@ func (r *inspectionAuthzTestRepository) UpdateRootCauseRun(_ context.Context, ru
 	return run, nil
 }
 
-func (r *inspectionAuthzTestRepository) ListAgentRuns(context.Context, domaincopilot.AgentRunFilter) ([]domaincopilot.AgentRun, error) {
-	return append([]domaincopilot.AgentRun(nil), r.agentRuns...), nil
+func (r *inspectionAuthzTestRepository) ListAgentRuns(_ context.Context, filter domaincopilot.AgentRunFilter) ([]domaincopilot.AgentRun, error) {
+	r.listAgentRunsCalled = true
+	r.agentRunFilter = filter
+	items := make([]domaincopilot.AgentRun, 0, len(r.agentRuns))
+	for _, run := range r.agentRuns {
+		if filter.CreatedBy != "" && run.CreatedBy != filter.CreatedBy {
+			continue
+		}
+		if filter.SessionID != "" && run.SessionID != filter.SessionID {
+			continue
+		}
+		items = append(items, run)
+	}
+	return items, nil
 }
 
 func (r *inspectionAuthzTestRepository) GetAgentRun(_ context.Context, _ string, runID string) (domaincopilot.AgentRun, error) {

@@ -97,6 +97,7 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "ai-workbench", Path: "/ai-workbench", LabelZH: "AI工作台", LabelEN: "AI Workbench", IconKey: "bot", Section: "ops", SortOrder: 15, Enabled: true},
 	{ID: "ai-workbench-overview", ParentID: "ai-workbench", Path: "/ai-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true},
 	{ID: "ai-workbench-chat", ParentID: "ai-workbench", Path: "/ai-workbench/chat", LabelZH: "对话与分析", LabelEN: "Chat & Analysis", IconKey: "bot", Section: "ai-interaction", SortOrder: 10, Enabled: true},
+	{ID: "ai-workbench-companion", ParentID: "ai-workbench", Path: "/ai-workbench/companion", LabelZH: "Companion", LabelEN: "Companion", IconKey: "bot", Section: "ai-interaction", SortOrder: 15, Enabled: true},
 	{ID: "ai-workbench-knowledge", ParentID: "ai-workbench", Path: "/ai-workbench/knowledge", LabelZH: "Knowledge Center", LabelEN: "Knowledge Center", IconKey: "book", Section: "ai-interaction", SortOrder: 20, Enabled: true},
 	{ID: "ai-workbench-knowledge-pipelines", ParentID: "ai-workbench", Path: "/ai-workbench/knowledge-pipelines", LabelZH: "Knowledge Pipelines", LabelEN: "Knowledge Pipelines", IconKey: "book", Section: "ai-interaction", SortOrder: 25, Enabled: true},
 	{ID: "ai-workbench-inspection", ParentID: "ai-workbench", Path: "/ai-workbench/inspection", LabelZH: "巡检与自动化", LabelEN: "Inspection & Automation", IconKey: "inspect", Section: "ai-interaction", SortOrder: 30, Enabled: true},

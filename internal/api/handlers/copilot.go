@@ -68,7 +68,7 @@ type CopilotRootCauseService interface {
 
 type CopilotAgentRunService interface {
 	ListAgentProviders(context.Context, domainidentity.Principal) ([]domaincopilot.AgentProvider, error)
-	ListAgentRuns(context.Context, domainidentity.Principal) ([]domaincopilot.AgentRun, error)
+	ListAgentRuns(context.Context, domainidentity.Principal, string) ([]domaincopilot.AgentRun, error)
 	CancelAgentRun(context.Context, domainidentity.Principal, string) (domaincopilot.AgentRun, error)
 	ClaimAgentRun(context.Context, domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error)
 	RecordAgentRunCallback(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error)
@@ -220,7 +220,7 @@ func (h *copilotAgentRunHandler) ListAgentProviders(c *gin.Context) {
 
 func (h *copilotAgentRunHandler) ListAgentRuns(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListAgentRuns(c.Request.Context(), principal)
+	items, err := h.service.ListAgentRuns(c.Request.Context(), principal, c.Query("sessionId"))
 	if err != nil {
 		writeError(c, err)
 		return

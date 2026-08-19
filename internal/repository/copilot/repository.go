@@ -683,6 +683,10 @@ func (r *Repository) ListAgentRuns(ctx context.Context, filter domaincopilot.Age
 		clauses = append(clauses, "created_by = ?")
 		args = append(args, value)
 	}
+	if value := strings.TrimSpace(filter.SessionID); value != "" {
+		clauses = append(clauses, "session_id = ?")
+		args = append(args, value)
+	}
 	if value := strings.TrimSpace(filter.Status); value != "" {
 		clauses = append(clauses, "status = ?")
 		args = append(args, value)

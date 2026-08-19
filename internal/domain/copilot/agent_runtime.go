@@ -826,6 +826,7 @@ type GatewayAnalysisAgentRunInput struct {
 
 type AgentRunFilter struct {
 	CreatedBy      string
+	SessionID      string
 	Status         string
 	ProviderID     string
 	CapabilityID   string

@@ -508,6 +508,7 @@ func TestDefaultMenuSeedsIncludeUnifiedAIWorkbench(t *testing.T) {
 	}{
 		"ai-workbench-overview":        {path: "/ai-workbench/overview"},
 		"ai-workbench-chat":            {path: "/ai-workbench/chat", section: "ai-interaction"},
+		"ai-workbench-companion":       {path: "/ai-workbench/companion", section: "ai-interaction"},
 		"ai-workbench-knowledge":       {path: "/ai-workbench/knowledge", section: "ai-interaction"},
 		"ai-workbench-inspection":      {path: "/ai-workbench/inspection", section: "ai-interaction"},
 		"ai-workbench-agent-runs":      {path: "/ai-workbench/agent-runs", section: "ai-interaction"},

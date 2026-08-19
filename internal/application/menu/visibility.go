@@ -187,7 +187,7 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 			appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "view"),
 			appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "view"),
 		}}, true
-	case "ai-workbench-chat", "ai-workbench-investigation":
+	case "ai-workbench-chat", "ai-workbench-companion", "ai-workbench-investigation":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
 	case "ai-workbench-agent-providers":
 		return visibilityRule{permissions: []string{appaccess.PermAIAgentProvidersView}}, true

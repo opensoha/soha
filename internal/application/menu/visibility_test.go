@@ -277,12 +277,19 @@ func TestUnifiedAIWorkbenchRootAcceptsAIOrGatewayPermissions(t *testing.T) {
 }
 
 func TestUnifiedAIWorkbenchLeafPermissionsStayNarrow(t *testing.T) {
+	companion := domainmenu.Record{ID: "ai-workbench-companion", Path: "/ai-workbench/companion"}
 	knowledge := domainmenu.Record{ID: "ai-workbench-knowledge", Path: "/ai-workbench/knowledge"}
 	contextInspector := domainmenu.Record{ID: "ai-workbench-context", Path: "/ai-workbench/context"}
 	evaluations := domainmenu.Record{ID: "ai-workbench-evaluations", Path: "/ai-workbench/evaluations"}
 	relay := domainmenu.Record{ID: "ai-gateway-relay", Path: "/ai-gateway/relay"}
 	entry := appaccess.PermWorkbenchAIView
 
+	if isVisibleByPermissions(companion, []string{entry, appaccess.PermObserveAIView}) {
+		t.Fatal("Companion should not inherit generic AI view permission")
+	}
+	if !isVisibleByPermissions(companion, []string{entry, appaccess.PermObserveAIChatUse}) {
+		t.Fatal("Companion should accept AI chat permission")
+	}
 	if isVisibleByPermissions(knowledge, []string{entry, appaccess.PermObserveAIView}) {
 		t.Fatal("Knowledge Center should not inherit generic AI view permission")
 	}

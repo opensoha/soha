@@ -40,11 +40,25 @@ func (s *Service) ListAgentProviders(ctx context.Context, principal domainidenti
 	return s.agentProviderCatalog(), nil
 }
 
-func (s *Service) ListAgentRuns(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.AgentRun, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
+func (s *Service) ListAgentRuns(ctx context.Context, principal domainidentity.Principal, sessionID string) ([]domaincopilot.AgentRun, error) {
+	sessionID = strings.TrimSpace(sessionID)
+	permission := appaccess.PermObserveAIView
+	if sessionID != "" {
+		permission = appaccess.PermObserveAIChatUse
+	}
+	if err := s.authorizePrincipal(ctx, principal, permission); err != nil {
 		return nil, err
 	}
-	items, err := s.agentRuns.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{Limit: 50})
+	if sessionID != "" {
+		if _, err := s.sessions.GetSession(ctx, principal.UserID, sessionID); err != nil {
+			return nil, err
+		}
+	}
+	items, err := s.agentRuns.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{
+		CreatedBy: principal.UserID,
+		SessionID: sessionID,
+		Limit:     50,
+	})
 	if err != nil {
 		return nil, err
 	}

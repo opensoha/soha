@@ -91,7 +91,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.ai.enabled",
 			Dependencies:       []string{"delivery"},
 			VisiblePermissions: []string{"workbench.ai.view"},
-			SeedMenus:          []string{"ai-workbench", "ai-workbench-overview", "ai-workbench-chat", "ai-workbench-knowledge", "ai-workbench-knowledge-pipelines", "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-evaluations", "ai-workbench-evaluation-lifecycle", "ai-workbench-context", "ai-workbench-memory", "ai-workbench-tool-settings", "ai-workbench-agent-providers", "ai-workbench-provider-fleet", "ai-workbench-environments", "ai-workbench-model-settings", "ai-workbench-production-operations"},
+			SeedMenus:          []string{"ai-workbench", "ai-workbench-overview", "ai-workbench-chat", "ai-workbench-companion", "ai-workbench-knowledge", "ai-workbench-knowledge-pipelines", "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-evaluations", "ai-workbench-evaluation-lifecycle", "ai-workbench-context", "ai-workbench-memory", "ai-workbench-tool-settings", "ai-workbench-agent-providers", "ai-workbench-provider-fleet", "ai-workbench-environments", "ai-workbench-model-settings", "ai-workbench-production-operations"},
 		},
 		{
 			ID:                 "aiGateway",

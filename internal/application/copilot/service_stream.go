@@ -292,6 +292,13 @@ func emitExternalAgentQueued(sink domaincopilot.WorkbenchStreamEventSink, envelo
 		ProviderKind: firstNonEmpty(stringValue(status["providerKind"]), providerKindOrInternalApp(stringValue(status["providerId"]))),
 		Status:       firstNonEmpty(stringValue(status["status"]), domaincopilot.AgentRunStatusQueued),
 	})
+	sink(domaincopilot.WorkbenchStreamEvent{
+		Type:      "message.done",
+		MessageID: assistant.ID,
+		Role:      "assistant",
+		Content:   assistant.Content,
+		Metadata:  assistant.Metadata,
+	})
 }
 
 func (s *Service) runInternalStreamAnalysisMessage(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, metadata domaincopilot.SessionMetadata, userMessage domaincopilot.Message, input domaincopilot.RootCauseRunInput, locale string, eventSink domaincopilot.WorkbenchStreamEventSink) (domaincopilot.SessionMessageEnvelope, string, error) {

@@ -95,7 +95,7 @@ func (h *podStreamResourceHandler) streamPodLogsWithReconnect(
 			return err
 		}
 		connectedOnce = true
-		currentTailLines = 0
+		currentTailLines = 1
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -163,9 +163,12 @@ func (h *podStreamResourceHandler) StreamPodTerminal(c *gin.Context) {
 		_ = stdinWriter.Close()
 	}()
 
-	exitMessage := terminalMessage{Type: "exit", Message: streamExitMessage(streamExitKindPodTerminal)}
-	<-streamErrCh
-	_ = session.WriteMessage(exitMessage)
+	streamErr := <-streamErrCh
+	resultMessage := terminalMessage{Type: "exit", Message: streamExitMessage(streamExitKindPodTerminal)}
+	if streamErr != nil && !errors.Is(streamErr, context.Canceled) {
+		resultMessage = terminalMessage{Type: "error", Message: "terminal session ended with an error"}
+	}
+	_ = session.WriteMessage(resultMessage)
 	session.Cancel()
 	_ = session.conn.Close()
 	<-readDone
