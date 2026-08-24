@@ -94,8 +94,11 @@ type CustomResources struct {
 
 type GenericResources struct {
 	*resourceAccess
-	agent  AgentClientFactory[GenericResourceAgent]
-	direct DirectGenericResource
+	agent          AgentClientFactory[GenericResourceAgent]
+	direct         DirectGenericResource
+	resourceEvents DirectResourceEventStream
+	resourceGraph  DirectResourceGraph
+	security       DirectSecurityPosture
 }
 
 type Events struct {
@@ -188,6 +191,11 @@ func (s *Service) Runtime() *Runtime {
 	return s.runtime
 }
 
+// Search returns the permission-filtered resource search capability.
+func (s *Service) Search() *ResourceSearch {
+	return s.search
+}
+
 func newServiceCapabilities(deps Dependencies) *Service {
 	access := &resourceAccess{
 		directClusters: deps.Clusters, resolver: deps.Connections, authorizer: deps.Authorizer,
@@ -200,7 +208,8 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
 	}
 	genericResources := &GenericResources{
-		resourceAccess: access, agent: deps.Agents.Generic, direct: deps.DirectGeneric,
+		resourceAccess: access, agent: deps.Agents.Generic, direct: deps.DirectGeneric, resourceEvents: deps.DirectResourceEvents,
+		resourceGraph: deps.DirectResourceGraph, security: deps.DirectSecurity,
 	}
 	creation := &ResourceCreation{
 		resourceAccess: access,
@@ -247,5 +256,6 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		Workloads: workloads, Configuration: service.configuration, Network: network, Storage: service.storage,
 		Helm: service.helm, Inventory: inventory, Events: service.events,
 	}
+	service.search = newResourceSearch(workloads, service.configuration, network, inventory)
 	return service
 }

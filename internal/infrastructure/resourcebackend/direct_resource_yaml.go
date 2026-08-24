@@ -2,6 +2,7 @@ package resourcebackend
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -9,10 +10,13 @@ import (
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 )
 
@@ -109,13 +113,23 @@ func (d *Direct) DeleteResource(ctx context.Context, clusterID, namespace, kind,
 }
 
 func (d *Direct) ApplyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
+	view, _, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, false)
+	return view, err
+}
+
+func (d *Direct) DryRunResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceUpdateAnalysis, error) {
+	_, analysis, err := d.applyResourceYAML(ctx, clusterID, namespace, kind, name, content, true)
+	return analysis, err
+}
+
+func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string, dryRun bool) (domainresource.ResourceYAMLView, domainresource.ResourceUpdateAnalysis, error) {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
 	var object map[string]any
 	if err := yaml.Unmarshal([]byte(content), &object); err != nil {
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: invalid yaml: %v", apperrors.ErrInvalidArgument, err)
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: invalid yaml: %v", apperrors.ErrInvalidArgument, err)
 	}
 	item := &unstructured.Unstructured{Object: object}
 	item.SetKind(kind)
@@ -126,43 +140,61 @@ func (d *Direct) ApplyResourceYAML(ctx context.Context, clusterID, namespace, ki
 		item.SetNamespace(namespace)
 	}
 	if item.GetName() != name {
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.name does not match target resource", apperrors.ErrInvalidArgument)
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: yaml metadata.name does not match target resource", apperrors.ErrInvalidArgument)
 	}
 	gvr, namespaceScoped, err := resourceGVRForKind(kind)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
 	if namespaceScoped {
 		if item.GetNamespace() != namespace {
-			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.namespace does not match target resource", apperrors.ErrInvalidArgument)
+			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: yaml metadata.namespace does not match target resource", apperrors.ErrInvalidArgument)
 		}
 	} else {
 		if strings.TrimSpace(item.GetNamespace()) != "" {
-			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.namespace must be empty for cluster-scoped resource", apperrors.ErrInvalidArgument)
+			return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: yaml metadata.namespace must be empty for cluster-scoped resource", apperrors.ErrInvalidArgument)
 		}
 		item.SetNamespace("")
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	resource := dynamicResource(bundle.Dynamic, gvr, namespaceScoped, namespace)
-	if item.GetResourceVersion() == "" {
-		current, err := resource.Get(queryCtx, name, metav1.GetOptions{})
-		if err != nil {
-			return domainresource.ResourceYAMLView{}, err
-		}
-		item.SetResourceVersion(current.GetResourceVersion())
-	}
-	updated, err := resource.Update(queryCtx, item, metav1.UpdateOptions{})
+	resource := dynamicResource(bundle.Dynamic, gvr, namespaceScoped, item.GetNamespace())
+	current, err := resource.Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
+	item.SetAPIVersion(gvr.GroupVersion().String())
+	item.SetResourceVersion("")
+	unstructured.RemoveNestedField(item.Object, "metadata", "uid")
+	unstructured.RemoveNestedField(item.Object, "metadata", "managedFields")
+	unstructured.RemoveNestedField(item.Object, "metadata", "creationTimestamp")
+	unstructured.RemoveNestedField(item.Object, "metadata", "generation")
+	unstructured.RemoveNestedField(item.Object, "status")
+	analysis := analyzeResourceUpdate(current, item)
+	patch, err := json.Marshal(item.Object)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, analysis, err
+	}
+	options := metav1.PatchOptions{FieldManager: resourceEditFieldManager, Force: ptr.To(false)}
+	if dryRun {
+		options.DryRun = []string{metav1.DryRunAll}
+	}
+	updated, err := resource.Patch(queryCtx, name, types.ApplyPatchType, patch, options)
+	if err != nil {
+		if dryRun && apierrors.IsConflict(err) {
+			analysis.Conflicts = conflictsFromError(err.Error(), analysis)
+			return domainresource.ResourceYAMLView{}, analysis, nil
+		}
+		return domainresource.ResourceYAMLView{}, analysis, err
+	}
+	unstructured.RemoveNestedField(updated.Object, "metadata", "managedFields")
 	rendered, err := yaml.Marshal(updated.Object)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, analysis, err
 	}
 	return domainresource.ResourceYAMLView{
 		Kind: kind, Name: name, Namespace: item.GetNamespace(), Content: string(rendered),
-	}, nil
+	}, analysis, nil
 }
 
 func dynamicResource(client dynamic.Interface, gvr schema.GroupVersionResource, namespaced bool, namespace string) dynamic.ResourceInterface {

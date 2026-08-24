@@ -49,6 +49,9 @@ func isReadOnlyPOST(method, path string) bool {
 	return method == "POST" && (strings.HasSuffix(path, "/resource-creation/scope-decision") ||
 		strings.HasSuffix(path, "/resource-creation/workload-snapshot") ||
 		strings.HasSuffix(path, "/resource-creation/preflight") ||
+		strings.HasSuffix(path, "/resources/update-plan") ||
+		strings.HasSuffix(path, "/rollback/plan") ||
+		strings.HasSuffix(path, "/access-control/access-reviews") ||
 		strings.HasSuffix(path, "/observability/logging/preflight") ||
 		strings.HasSuffix(path, "/logs/query") ||
 		strings.HasSuffix(path, "/logs/stream-ticket") ||
@@ -321,11 +324,25 @@ func dockerRuntimeMutationSecuritySurface(method, path string) (nonPlatformMutat
 }
 
 func copilotMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if entry, ok := copilotConfigurationMutationSecuritySurface(method, path); ok {
+		return entry, true
+	}
+	return copilotSessionMutationSecuritySurface(method, path)
+}
+
+func copilotConfigurationMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	switch {
 	case strings.HasPrefix(path, "/api/v1/copilot/agent-runs/"):
 		return nonPlatformMutationEntry("AgentRun", "cancel", appaccess.PermObserveAIInspectionManage, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/data-sources"):
-		return nonPlatformMutationEntry("CopilotDataSource", nonPlatformMutationAction(method, path), appaccess.PermObserveAIInspectionManage, false), true
+		action := nonPlatformMutationAction(method, path)
+		permission := appaccess.PermAIDataSourcesUpdate
+		if action == "create" {
+			permission = appaccess.PermAIDataSourcesCreate
+		} else if action == "validate" {
+			permission = appaccess.PermAIDataSourcesValidate
+		}
+		return nonPlatformMutationEntry("CopilotDataSource", action, permission, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/analysis-profiles"):
 		return nonPlatformMutationEntry("CopilotAnalysisProfile", nonPlatformMutationAction(method, path), appaccess.PermObserveAIInspectionManage, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/automation-policies"):
@@ -334,6 +351,13 @@ func copilotMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 		return nonPlatformMutationEntry("RootCauseRun", "run", appaccess.PermObserveAIRootCauseRun, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/global-assistant/events"):
 		return nonPlatformMutationEntry("AIWorkbenchGlobalAssistant", "record-event", appaccess.PermObserveAIChatUse, false), true
+	default:
+		return nonPlatformMutationSecuritySurfaceEntry{}, false
+	}
+}
+
+func copilotSessionMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	switch {
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions") && strings.Contains(path, "/inspection-task"):
 		return nonPlatformMutationEntry("InspectionTask", "create", appaccess.PermObserveAIInspectionManage, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions") && strings.Contains(path, "/analyze"):
@@ -492,6 +516,8 @@ func settingsMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		return nonPlatformMutationEntry("RuntimeConfigRevision", nonPlatformMutationAction(method, path), appaccess.PermSettingsRuntimeConfigManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/identity"):
 		return nonPlatformMutationEntry("IdentitySettings", "update", appaccess.PermSettingsIdentityManage, false), true
+	case strings.HasPrefix(path, "/api/v1/settings/ai/skills"):
+		return nonPlatformMutationEntry("AISkillSettings", nonPlatformMutationAction(method, path), appaccess.PermAIGatewaySkillsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/ai"):
 		return nonPlatformMutationEntry("AISettings", nonPlatformMutationAction(method, path), appaccess.PermSettingsAIManage, false), true
 	case strings.HasPrefix(path, "/api/v1/settings/branding"):

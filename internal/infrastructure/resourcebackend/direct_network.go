@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -257,16 +258,29 @@ func (d *Direct) GetNetworkPolicyDetail(ctx context.Context, clusterID, namespac
 
 func mapService(item corev1.Service) domainresource.ServiceView {
 	ports := make([]string, 0, len(item.Spec.Ports))
+	portMappings := make([]domainresource.ServicePortView, 0, len(item.Spec.Ports))
 	for _, port := range item.Spec.Ports {
 		name := port.Name
 		if name != "" {
 			name += ":"
 		}
-		ports = append(ports, fmt.Sprintf("%s%d/%s", name, port.Port, strings.ToLower(string(port.Protocol))))
+		description := fmt.Sprintf("%s%d/%s", name, port.Port, strings.ToLower(string(port.Protocol)))
+		if port.NodePort > 0 {
+			description += fmt.Sprintf(" (nodePort:%d)", port.NodePort)
+		}
+		ports = append(ports, description)
+		targetPort := port.TargetPort.String()
+		if targetPort == "" || targetPort == "0" {
+			targetPort = strconv.Itoa(int(port.Port))
+		}
+		portMappings = append(portMappings, domainresource.ServicePortView{
+			Name: port.Name, Protocol: string(port.Protocol), TargetPort: targetPort,
+			Port: port.Port, NodePort: port.NodePort,
+		})
 	}
 	return domainresource.ServiceView{
 		Name: item.Name, Namespace: item.Namespace, Type: string(item.Spec.Type),
-		ClusterIP: item.Spec.ClusterIP, Ports: ports, Selector: item.Spec.Selector,
+		ClusterIP: item.Spec.ClusterIP, Ports: ports, PortMappings: portMappings, Selector: item.Spec.Selector,
 		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
 	}
 }
@@ -276,7 +290,8 @@ func buildServiceDetail(item corev1.Service, slices []discoveryv1.EndpointSlice,
 	endpoints := mapEndpointSliceEndpoints(slices)
 	return domainresource.ServiceDetailView{
 		Name: summary.Name, Namespace: summary.Namespace, Type: summary.Type, ClusterIP: summary.ClusterIP,
-		Ports: summary.Ports, Selector: summary.Selector, Labels: cloneMap(item.Labels), Annotations: cloneMap(item.Annotations),
+		Ports: summary.Ports, PortMappings: summary.PortMappings, Selector: summary.Selector,
+		Labels: cloneMap(item.Labels), Annotations: cloneMap(item.Annotations),
 		Endpoints: endpoints, BackendPods: backendPods, AgeSeconds: summary.AgeSeconds,
 	}
 }

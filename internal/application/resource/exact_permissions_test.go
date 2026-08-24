@@ -84,6 +84,18 @@ func TestKubernetesResourceReadsUseExactPermissionKeys(t *testing.T) {
 	}
 }
 
+func TestHelmChartUsesHelmViewPermission(t *testing.T) {
+	t.Parallel()
+
+	group := resourceGroupForKind("HelmChart")
+	if group != "extensions" {
+		t.Fatalf("resourceGroupForKind(HelmChart) = %q, want extensions", group)
+	}
+	if got := resourcePermissionKey(group, "HelmChart", domainaccess.ActionList); got != appaccess.PermPlatformHelmView {
+		t.Fatalf("resourcePermissionKey(extensions, HelmChart, list) = %q, want %q", got, appaccess.PermPlatformHelmView)
+	}
+}
+
 func TestKubernetesReadAuthorizationPopulatesRowActions(t *testing.T) {
 	t.Parallel()
 

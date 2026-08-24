@@ -2,8 +2,8 @@ package requestctx
 
 import "go.uber.org/zap"
 
-func LoggerFields(metadata Metadata) []zap.Field {
-	fields := make([]zap.Field, 0, 5)
+func CorrelationFields(metadata Metadata) []zap.Field {
+	fields := make([]zap.Field, 0, 3)
 	if metadata.RequestID != "" {
 		fields = append(fields, zap.String("request_id", metadata.RequestID))
 	}
@@ -13,6 +13,11 @@ func LoggerFields(metadata Metadata) []zap.Field {
 	if metadata.SpanID != "" {
 		fields = append(fields, zap.String("span_id", metadata.SpanID))
 	}
+	return fields
+}
+
+func LoggerFields(metadata Metadata) []zap.Field {
+	fields := CorrelationFields(metadata)
 	if metadata.Path != "" {
 		fields = append(fields, zap.String("request_path", metadata.Path))
 	}

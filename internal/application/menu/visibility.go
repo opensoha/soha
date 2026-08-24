@@ -166,6 +166,13 @@ func observabilityAIMenuRule(id string) (visibilityRule, bool) {
 }
 
 func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
+	if rule, ok := aiWorkbenchCapabilityMenuRule(id); ok {
+		return rule, true
+	}
+	return aiGatewayMenuRule(id)
+}
+
+func aiWorkbenchCapabilityMenuRule(id string) (visibilityRule, bool) {
 	switch id {
 	case "ai-workbench", "ai-workbench-overview":
 		return visibilityRule{permissions: []string{
@@ -173,6 +180,7 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermObserveAIChatUse,
 			appaccess.PermAIKnowledgeView,
 			appaccess.PermAIContextInspect,
+			appaccess.PermAIDataSourcesView,
 			appaccess.PermAIEvaluationsView,
 			appaccess.PermAIAgentProvidersView,
 			appaccess.PermSettingsAIView,
@@ -197,6 +205,15 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermAIEnvironmentsView}}, true
 	case "ai-workbench-inspection", "ai-workbench-agent-runs", "ai-workbench-tool-settings", "ai-workbench-operations", "ai-workbench-tools":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
+	case "ai-workbench-mcp":
+		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
+	case "ai-workbench-data-sources":
+		return visibilityRule{permissions: []string{appaccess.PermAIDataSourcesView, appaccess.PermSettingsAIView}}, true
+	case "ai-workbench-skills":
+		return visibilityRule{permissions: []string{
+			appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "view"),
+			appaccess.PermSettingsAIView,
+		}}, true
 	case "ai-workbench-knowledge":
 		return visibilityRule{permissions: []string{appaccess.PermAIKnowledgeView}}, true
 	case "ai-workbench-knowledge-pipelines":
@@ -211,6 +228,13 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermAIOperationsView}}, true
 	case "ai-workbench-model-settings":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
+	default:
+		return visibilityRule{}, false
+	}
+}
+
+func aiGatewayMenuRule(id string) (visibilityRule, bool) {
+	switch id {
 	case "ai-gateway-tokens":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayInvoke, appaccess.ManagedActionPermission(appaccess.PermAIGatewayTokensManage, "view")}}, true
 	case "ai-gateway-manifest":
@@ -225,7 +249,6 @@ func aiWorkbenchMenuRule(id string) (visibilityRule, bool) {
 			appaccess.ManagedActionPermission(appaccess.PermAIGatewayApprovalsManage, "view"),
 			appaccess.ManagedActionPermission(appaccess.PermAIGatewayGrantsManage, "view"),
 			appaccess.ManagedActionPermission(appaccess.PermAIGatewayPoliciesManage, "view"),
-			appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "view"),
 		}}, true
 	case "ai-gateway-call-logs":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true

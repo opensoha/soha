@@ -136,6 +136,10 @@ type clusterEventResourceHandler struct{ service ClusterEventService }
 type portForwardResourceHandler struct{ service PortForwardService }
 type podStreamResourceHandler struct{ service PodStreamService }
 type clusterLogResourceHandler struct{ service ClusterLogService }
+type resourceSearchHandler struct{ service ResourceSearchService }
+type resourceEventStreamHandler struct{ service ResourceEventStreamService }
+type resourceGraphHandler struct{ service ResourceGraphService }
+type securityPostureHandler struct{ service SecurityPostureService }
 
 type PlatformHandler struct {
 	*podResourceHandler
@@ -168,6 +172,10 @@ type PlatformHandler struct {
 	*podStreamResourceHandler
 	*clusterLogResourceHandler
 	*resourceCreationHandler
+	*resourceSearchHandler
+	*resourceEventStreamHandler
+	*resourceGraphHandler
+	*securityPostureHandler
 
 	audit       AuditService
 	events      EventService
@@ -269,6 +277,10 @@ func NewPlatformHandlerWithResources(deps PlatformDependencies) (*PlatformHandle
 		podStreamResourceHandler:    &podStreamResourceHandler{service: resources.PodStreams},
 		clusterLogResourceHandler:   &clusterLogResourceHandler{service: resources.Logs},
 		resourceCreationHandler:     &resourceCreationHandler{service: resources.ResourceCreation, snapshot: resources.WorkloadSnapshots},
+		resourceSearchHandler:       &resourceSearchHandler{service: resources.Search},
+		resourceEventStreamHandler:  &resourceEventStreamHandler{service: resources.ResourceEvents},
+		resourceGraphHandler:        &resourceGraphHandler{service: resources.ResourceGraph},
+		securityPostureHandler:      &securityPostureHandler{service: resources.SecurityPosture},
 		audit:                       deps.Audit,
 		events:                      deps.Events,
 		operations:                  deps.Operations,
@@ -302,7 +314,11 @@ func validatePlatformDependencies(deps PlatformDependencies) error {
 		"helm release editor": deps.Resources.HelmReleaseEditor, "namespaces": deps.Resources.Namespaces,
 		"node reader": deps.Resources.NodeReader, "node editor": deps.Resources.NodeEditor,
 		"generic resources": deps.Resources.Generic, "cluster events": deps.Resources.Events,
-		"port forwards": deps.Resources.PortForwards,
+		"port forwards":    deps.Resources.PortForwards,
+		"resource search":  deps.Resources.Search,
+		"resource events":  deps.Resources.ResourceEvents,
+		"resource graph":   deps.Resources.ResourceGraph,
+		"security posture": deps.Resources.SecurityPosture,
 	}
 	for name, dependency := range required {
 		if isNilPlatformDependency(dependency) {

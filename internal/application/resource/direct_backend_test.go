@@ -101,6 +101,85 @@ func TestDirectCapabilitiesDelegateToTechnologyFreePorts(t *testing.T) {
 	}
 }
 
+func TestHelmManifestAndRollbackUseRevisionAwareBackend(t *testing.T) {
+	connection := domaincluster.Connection{Summary: domaincluster.Summary{
+		ID: "direct-cluster", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig,
+	}}
+	helm := &stubDirectHelmReleaseReader{}
+	service := New(Dependencies{
+		Connections: stubConnectionResolver{connection: connection},
+		Authorizer:  requestActionAuthorizer{},
+		Permissions: allowRuntimePermission{}, Audit: discardAuditRecorder{}, DirectHelm: helm,
+	})
+	principal := domainidentity.Principal{UserID: "user-1"}
+	input := domainresource.HelmReleaseRollbackInput{Revision: 2, Wait: true, TimeoutSeconds: 60}
+
+	manifest, err := service.Helm().GetHelmReleaseManifest(context.Background(), principal, "direct-cluster", "platform", "gateway", "2")
+	if err != nil || manifest.Revision != "2" || helm.manifestRevision != "2" {
+		t.Fatalf("manifest = %#v backend revision=%q error=%v", manifest, helm.manifestRevision, err)
+	}
+	plan, err := service.Helm().PlanHelmReleaseRollback(context.Background(), principal, "direct-cluster", "platform", "gateway", input)
+	if err != nil || !plan.Ready || !plan.RequiresApproval || helm.dryRunRevision != 2 {
+		t.Fatalf("plan = %#v backend revision=%d error=%v", plan, helm.dryRunRevision, err)
+	}
+	detail, err := service.Helm().RollbackHelmRelease(context.Background(), principal, "direct-cluster", "platform", "gateway", input)
+	if err != nil || detail.Revision != "3" || helm.rollbackRevision != 2 {
+		t.Fatalf("detail = %#v backend revision=%d error=%v", detail, helm.rollbackRevision, err)
+	}
+}
+
+func TestReviewSubjectAccessDelegatesToClusterAuthorization(t *testing.T) {
+	connection := domaincluster.Connection{Summary: domaincluster.Summary{
+		ID: "direct-cluster", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig,
+	}}
+	rbac := &stubDirectRBACAccessReviewer{}
+	service := New(Dependencies{
+		Connections: stubConnectionResolver{connection: connection}, Authorizer: requestActionAuthorizer{},
+		Permissions: allowRuntimePermission{}, Audit: discardAuditRecorder{}, DirectRBAC: rbac,
+	})
+	input := domainresource.SubjectAccessReviewInput{
+		Subject: domainresource.AccessReviewSubject{Kind: "ServiceAccount", Namespace: "team-a", Name: "builder"},
+		Checks:  []domainresource.AccessReviewCheck{{Verb: "create", Resource: "deployments", Group: "apps", Namespace: "team-a"}},
+	}
+
+	result, err := service.RBAC().ReviewSubjectAccess(context.Background(), domainidentity.Principal{UserID: "user-1"}, "direct-cluster", input)
+	if err != nil || len(result.Decisions) != 1 || !result.Decisions[0].Allowed {
+		t.Fatalf("result = %#v error=%v", result, err)
+	}
+	if rbac.clusterID != "direct-cluster" || rbac.input.Subject.Name != "builder" {
+		t.Fatalf("backend request = cluster %q input %#v", rbac.clusterID, rbac.input)
+	}
+}
+
+func TestServiceAccountAccessReviewFallsBackToServiceAccountView(t *testing.T) {
+	connection := domaincluster.Connection{Summary: domaincluster.Summary{ID: "direct-cluster", ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig}}
+	service := New(Dependencies{
+		Connections: stubConnectionResolver{connection: connection}, Authorizer: requestActionAuthorizer{},
+		Permissions: &recordingDenyRuntimePermissions{}, Audit: discardAuditRecorder{}, DirectRBAC: &stubDirectRBACAccessReviewer{},
+	})
+	_, err := service.RBAC().ReviewSubjectAccess(context.Background(), domainidentity.Principal{UserID: "viewer"}, "direct-cluster", domainresource.SubjectAccessReviewInput{
+		Subject: domainresource.AccessReviewSubject{Kind: "ServiceAccount", Namespace: "team-a", Name: "builder"},
+		Checks:  []domainresource.AccessReviewCheck{{Verb: "get", Resource: "pods", Namespace: "team-a"}},
+	})
+	if err != nil {
+		t.Fatalf("ReviewSubjectAccess() error = %v", err)
+	}
+}
+
+type stubDirectRBACAccessReviewer struct {
+	DirectRBACReader
+	clusterID string
+	input     domainresource.SubjectAccessReviewInput
+}
+
+func (s *stubDirectRBACAccessReviewer) ReviewSubjectAccess(_ context.Context, clusterID string, input domainresource.SubjectAccessReviewInput) (domainresource.SubjectAccessReviewResult, error) {
+	s.clusterID, s.input = clusterID, input
+	return domainresource.SubjectAccessReviewResult{
+		Subject:   input.Subject,
+		Decisions: []domainresource.AccessReviewDecision{{Check: input.Checks[0], Allowed: true, Reason: "allowed by RoleBinding"}},
+	}, nil
+}
+
 type stubDirectEventReader struct {
 	clusterID string
 	namespace string
@@ -117,9 +196,12 @@ func (s *stubDirectEventReader) ListClusterEvents(_ context.Context, clusterID, 
 }
 
 type stubDirectHelmReleaseReader struct {
-	clusterID string
-	namespace string
-	items     []domainresource.HelmReleaseView
+	clusterID        string
+	namespace        string
+	manifestRevision string
+	dryRunRevision   int
+	rollbackRevision int
+	items            []domainresource.HelmReleaseView
 }
 
 type stubDirectPods struct {
@@ -192,7 +274,7 @@ func (s *stubDirectHelmReleaseReader) ListHelmReleases(_ context.Context, cluste
 }
 
 func (*stubDirectHelmReleaseReader) GetHelmReleaseDetail(context.Context, string, string, string) (domainresource.HelmReleaseDetailView, error) {
-	return domainresource.HelmReleaseDetailView{}, nil
+	return domainresource.HelmReleaseDetailView{Revision: "3"}, nil
 }
 
 func (*stubDirectHelmReleaseReader) ListHelmReleaseHistory(context.Context, string, string, string) ([]domainresource.HelmReleaseHistoryView, error) {
@@ -201,6 +283,21 @@ func (*stubDirectHelmReleaseReader) ListHelmReleaseHistory(context.Context, stri
 
 func (*stubDirectHelmReleaseReader) GetHelmReleaseValues(context.Context, string, string, string, string) (domainresource.HelmValuesView, error) {
 	return domainresource.HelmValuesView{}, nil
+}
+
+func (s *stubDirectHelmReleaseReader) GetHelmReleaseManifest(_ context.Context, _, _, _, revision string) (domainresource.HelmReleaseManifestView, error) {
+	s.manifestRevision = revision
+	return domainresource.HelmReleaseManifestView{Revision: revision, Content: "kind: Deployment", Digest: "digest"}, nil
+}
+
+func (s *stubDirectHelmReleaseReader) DryRunHelmReleaseRollback(_ context.Context, _, _, _ string, input domainresource.HelmReleaseRollbackInput) error {
+	s.dryRunRevision = input.Revision
+	return nil
+}
+
+func (s *stubDirectHelmReleaseReader) RollbackHelmRelease(_ context.Context, _, _, _ string, input domainresource.HelmReleaseRollbackInput) (domainresource.HelmReleaseDetailView, error) {
+	s.rollbackRevision = input.Revision
+	return domainresource.HelmReleaseDetailView{Revision: "3"}, nil
 }
 
 func (*stubDirectHelmReleaseReader) InstallHelmChart(context.Context, string, domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, error) {

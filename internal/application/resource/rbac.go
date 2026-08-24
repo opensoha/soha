@@ -5,11 +5,85 @@ import (
 	"fmt"
 	"strings"
 
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
+
+func (r *RBAC) ReviewSubjectAccess(ctx context.Context, principal domainidentity.Principal, clusterID string, input domainresource.SubjectAccessReviewInput) (domainresource.SubjectAccessReviewResult, error) {
+	input, err := normalizeSubjectAccessReviewInput(input)
+	if err != nil {
+		return domainresource.SubjectAccessReviewResult{}, err
+	}
+	var connection domaincluster.Connection
+	if permissionErr := r.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformAccessReviewsExecute); permissionErr != nil {
+		if input.Subject.Kind != "ServiceAccount" {
+			return domainresource.SubjectAccessReviewResult{}, permissionErr
+		}
+		connection, _, err = r.authorize(ctx, principal, clusterID, input.Subject.Namespace, "ServiceAccount", domainaccess.ActionView)
+		if err != nil {
+			return domainresource.SubjectAccessReviewResult{}, err
+		}
+	} else {
+		connection, err = r.loadConnection(ctx, clusterID)
+		if err != nil {
+			return domainresource.SubjectAccessReviewResult{}, err
+		}
+	}
+	var result domainresource.SubjectAccessReviewResult
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := r.rbacAgentClient(connection)
+		if err != nil {
+			return domainresource.SubjectAccessReviewResult{}, err
+		}
+		result, err = client.ReviewSubjectAccess(ctx, input)
+	} else {
+		if r.direct == nil {
+			return domainresource.SubjectAccessReviewResult{}, fmt.Errorf("%w: direct RBAC reader is not configured", apperrors.ErrClusterUnready)
+		}
+		result, err = r.direct.ReviewSubjectAccess(ctx, clusterID, input)
+	}
+	if err != nil {
+		return domainresource.SubjectAccessReviewResult{}, err
+	}
+	_ = r.recordAudit(ctx, principal, connection.Summary.ID, input.Subject.Namespace, "SubjectAccessReview", input.Subject.Name, "review", "success", fmt.Sprintf("reviewed %d effective access checks", len(input.Checks)))
+	return result, nil
+}
+
+func normalizeSubjectAccessReviewInput(input domainresource.SubjectAccessReviewInput) (domainresource.SubjectAccessReviewInput, error) {
+	input.Subject.Kind = strings.TrimSpace(input.Subject.Kind)
+	input.Subject.Name = strings.TrimSpace(input.Subject.Name)
+	input.Subject.Namespace = strings.TrimSpace(input.Subject.Namespace)
+	if input.Subject.Name == "" {
+		return input, fmt.Errorf("%w: subject name is required", apperrors.ErrInvalidArgument)
+	}
+	switch input.Subject.Kind {
+	case "User", "Group":
+	case "ServiceAccount":
+		if input.Subject.Namespace == "" {
+			return input, fmt.Errorf("%w: service account namespace is required", apperrors.ErrInvalidArgument)
+		}
+	default:
+		return input, fmt.Errorf("%w: subject kind must be User, Group, or ServiceAccount", apperrors.ErrInvalidArgument)
+	}
+	if len(input.Checks) == 0 || len(input.Checks) > 50 {
+		return input, fmt.Errorf("%w: checks must contain between 1 and 50 items", apperrors.ErrInvalidArgument)
+	}
+	for index := range input.Checks {
+		input.Checks[index].Verb = strings.TrimSpace(input.Checks[index].Verb)
+		input.Checks[index].Group = strings.TrimSpace(input.Checks[index].Group)
+		input.Checks[index].Resource = strings.TrimSpace(input.Checks[index].Resource)
+		input.Checks[index].Namespace = strings.TrimSpace(input.Checks[index].Namespace)
+		input.Checks[index].Name = strings.TrimSpace(input.Checks[index].Name)
+		if input.Checks[index].Verb == "" || input.Checks[index].Resource == "" {
+			return input, fmt.Errorf("%w: check verb and resource are required", apperrors.ErrInvalidArgument)
+		}
+	}
+	return input, nil
+}
 
 func (r *RBAC) ListServiceAccounts(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.ServiceAccountView, error) {
 	return listRoutedModeResources(ctx, r.resourceAccess, principal, namespacedListRequest(clusterID, namespace, "ServiceAccount", "serviceaccounts"), r.rbacAgentClient, r.directRBAC,

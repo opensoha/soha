@@ -5,6 +5,7 @@ import (
 	"io"
 
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
@@ -225,6 +226,7 @@ type NamespacedRBACService interface {
 	ServiceAccountService
 	RoleService
 	RoleBindingService
+	ReviewSubjectAccess(context.Context, domainidentity.Principal, string, domainresource.SubjectAccessReviewInput) (domainresource.SubjectAccessReviewResult, error)
 }
 
 type ClusterRBACService interface {
@@ -259,10 +261,13 @@ type HelmReleaseReader interface {
 	GetHelmReleaseDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.HelmReleaseDetailView, error)
 	ListHelmReleaseHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.HelmReleaseHistoryView, error)
 	GetHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error)
+	GetHelmReleaseManifest(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmReleaseManifestView, error)
 }
 
 type HelmReleaseEditor interface {
 	UpdateHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error)
+	PlanHelmReleaseRollback(context.Context, domainidentity.Principal, string, string, string, domainresource.HelmReleaseRollbackInput) (domainoperation.Plan, error)
+	RollbackHelmRelease(context.Context, domainidentity.Principal, string, string, string, domainresource.HelmReleaseRollbackInput) (domainresource.HelmReleaseDetailView, error)
 	DeleteHelmRelease(context.Context, domainidentity.Principal, string, string, string) error
 }
 
@@ -289,6 +294,7 @@ type NodeEditor interface {
 
 type GenericResourceService interface {
 	GetResourceYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
+	PlanResourceYAMLUpdate(context.Context, domainidentity.Principal, string, domainresource.ResourceUpdatePlanRequest) (domainoperation.Plan, error)
 	ApplyResourceYAMLByKind(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	DeleteResourceByKind(context.Context, domainidentity.Principal, string, string, string, string) error
 }
@@ -301,6 +307,22 @@ type PortForwardService interface {
 
 type ClusterEventService interface {
 	ListClusterEvents(context.Context, domainidentity.Principal, string, string, int) ([]domainresource.ClusterEventView, error)
+}
+
+type ResourceSearchService interface {
+	SearchResources(context.Context, domainidentity.Principal, string, domainresource.ResourceSearchInput) (domainresource.ResourceSearchResult, error)
+}
+
+type ResourceEventStreamService interface {
+	SubscribeResourceEvents(context.Context, domainidentity.Principal, string, string, []string) (<-chan domainresource.ResourceStreamEvent, func(), error)
+}
+
+type ResourceGraphService interface {
+	GetResourceGraph(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceGraph, error)
+}
+
+type SecurityPostureService interface {
+	GetSecurityPosture(context.Context, domainidentity.Principal, string, string, int) (domainresource.SecurityPosture, error)
 }
 
 // ResourceServices wires independently replaceable capability contracts.
@@ -345,4 +367,8 @@ type ResourceServices struct {
 	Generic                GenericResourceService
 	Events                 ClusterEventService
 	PortForwards           PortForwardService
+	Search                 ResourceSearchService
+	ResourceEvents         ResourceEventStreamService
+	ResourceGraph          ResourceGraphService
+	SecurityPosture        SecurityPostureService
 }

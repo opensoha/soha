@@ -25,6 +25,7 @@ func TestCapabilityFacadesRestrictRootServiceSurface(t *testing.T) {
 		{name: "generic resources", facade: &GenericResources{}, exposes: "GetResourceYAML", hides: "ListPods"},
 		{name: "events", facade: &Events{}, exposes: "ListClusterEvents", hides: "ListPods"},
 		{name: "port forwards", facade: &PortForwards{}, exposes: "ListPortForwards", hides: "ListPods"},
+		{name: "search", facade: &ResourceSearch{}, exposes: "SearchResources", hides: "ListPods"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -55,6 +56,9 @@ func TestServiceCapabilityAccessorsReturnRestrictedFacades(t *testing.T) {
 	if service.Events() == nil || service.PortForwards() == nil || service.Runtime() == nil {
 		t.Fatal("capability accessor returned nil")
 	}
+	if service.Search() == nil {
+		t.Fatal("search capability accessor returned nil")
+	}
 	workloads := service.Workloads()
 	network := service.Network()
 	if workloads != service.Workloads() || network != service.Network() {
@@ -69,6 +73,7 @@ func TestCapabilitiesDoNotRetainRootService(t *testing.T) {
 	capabilities := []any{
 		Workloads{}, Configuration{}, Network{}, Storage{}, RBAC{}, Helm{},
 		Inventory{}, CustomResources{}, GenericResources{}, Events{}, PortForwards{},
+		ResourceSearch{},
 	}
 	for _, capability := range capabilities {
 		capabilityType := reflect.TypeOf(capability)
@@ -123,6 +128,7 @@ func TestRootServiceExportsOnlyCapabilityAccessors(t *testing.T) {
 		"RBAC",
 		"ResourceCreation",
 		"Runtime",
+		"Search",
 		"Storage",
 		"Workloads",
 	}

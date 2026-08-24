@@ -20,6 +20,7 @@ func registerComputeRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/compute/tasks", deps.Compute.ListTasks)
 	protected.GET("/compute/tasks/:domain/:id", deps.Compute.GetTask)
 	protected.GET("/compute/tasks/:domain/:id/logs", deps.Compute.ListTaskLogs)
+	protected.GET("/compute/tasks/:domain/:id/stream", deps.Compute.StreamTask)
 	protected.POST("/compute/tasks/:domain/:id/cancel", deps.Compute.CancelTask)
 	protected.POST("/compute/tasks/:domain/:id/retry", deps.Compute.RetryTask)
 }

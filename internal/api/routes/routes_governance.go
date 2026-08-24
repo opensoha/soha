@@ -241,6 +241,7 @@ func registerSettingsRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.PUT("/settings/identity/providers", deps.Settings.UpdateLoginProvidersSettings)
 	protected.GET("/settings/ai", deps.Settings.GetAISettings)
 	protected.PUT("/settings/ai/workbench-model", deps.Settings.UpdateAIWorkbenchModelSettings)
+	protected.GET("/settings/ai/skills", deps.Settings.GetAISkills)
 	protected.PUT("/settings/ai/skills", deps.Settings.UpdateAISkills)
 	protected.GET("/settings/branding", deps.Settings.GetBrandingSettings)
 	protected.PUT("/settings/branding", deps.Settings.UpdateBrandingSettings)

@@ -14,6 +14,7 @@ import (
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 	"go.uber.org/zap"
 )
@@ -138,6 +139,18 @@ func (s *Service) GetAISettings(ctx context.Context, principal domainidentity.Pr
 	return s.aiSettings(ctx)
 }
 
+func (s *Service) GetAISkillsRegistry(ctx context.Context, principal domainidentity.Principal) ([]domainsettings.AISkillSettings, error) {
+	if err := s.authorizeAny(
+		ctx,
+		principal,
+		appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "view"),
+		appaccess.PermSettingsAIView,
+	); err != nil {
+		return nil, err
+	}
+	return s.ResolveAISkillsRegistry(ctx)
+}
+
 func (s *Service) GetBrandingSettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.BrandingSettings, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermSettingsBrandingView); err != nil {
 		return domainsettings.BrandingSettings{}, err
@@ -189,7 +202,12 @@ func (s *Service) UpdateAIWorkbenchModelSettings(ctx context.Context, principal 
 }
 
 func (s *Service) UpdateAISkillsRegistry(ctx context.Context, principal domainidentity.Principal, skills []domainsettings.AISkillSettings) (domainsettings.AISettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
+	if err := s.authorizeAny(
+		ctx,
+		principal,
+		appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "update"),
+		appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update"),
+	); err != nil {
 		return domainsettings.AISettings{}, err
 	}
 	current, err := s.aiSettings(ctx)
@@ -836,6 +854,10 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }
 
+func (s *Service) authorizeAny(ctx context.Context, principal domainidentity.Principal, permissionKeys ...string) error {
+	return appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, permissionKeys...)
+}
+
 func (s *Service) recordMutation(ctx context.Context, principal domainidentity.Principal, operationType, resourceKind, setting, result, summary string) {
 	meta := requestctx.FromContext(ctx)
 	if s.audit != nil {
@@ -862,7 +884,8 @@ func (s *Service) logRecordFailure(ctx context.Context, recorder, operationType,
 	if s.logger != nil {
 		s.logger.Warn("settings evidence record failed", append(requestctx.LoggerFields(requestctx.FromContext(ctx)),
 			zap.String("recorder", recorder), zap.String("operation_type", operationType),
-			zap.String("resource_kind", resourceKind), zap.String("resource_name", resourceName), zap.Error(err),
+			zap.String("resource_kind", resourceKind), zap.String("resource_name", resourceName),
+			zap.String("error", redaction.LogText(err.Error(), 2048)),
 		)...)
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/yamux"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type Registry struct {
@@ -804,6 +805,16 @@ func (c *Client) GetServiceAccountDetail(ctx context.Context, namespace, name st
 	return payload.Data, nil
 }
 
+func (c *Client) ReviewSubjectAccess(ctx context.Context, input domainresource.SubjectAccessReviewInput) (domainresource.SubjectAccessReviewResult, error) {
+	var payload struct {
+		Data domainresource.SubjectAccessReviewResult `json:"data"`
+	}
+	if err := c.request(ctx, http.MethodPost, "/api/v1/platform/access-control/access-reviews", input, &payload); err != nil {
+		return domainresource.SubjectAccessReviewResult{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListRoles(ctx context.Context, namespace string) ([]domainresource.RoleView, error) {
 	var payload struct {
 		Items []domainresource.RoleView `json:"items"`
@@ -989,6 +1000,22 @@ func (c *Client) GetHelmReleaseValues(ctx context.Context, namespace, name, revi
 	return payload.Data, nil
 }
 
+func (c *Client) GetHelmReleaseManifest(ctx context.Context, namespace, name, revision string) (domainresource.HelmReleaseManifestView, error) {
+	var payload struct {
+		Data domainresource.HelmReleaseManifestView `json:"data"`
+	}
+	values := url.Values{}
+	values.Set("namespace", namespace)
+	if strings.TrimSpace(revision) != "" {
+		values.Set("revision", revision)
+	}
+	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/manifest?%s", url.PathEscape(name), values.Encode())
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.HelmReleaseManifestView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) InstallHelmChart(ctx context.Context, input domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, error) {
 	var payload struct {
 		Data domainresource.HelmChartInstallResult `json:"data"`
@@ -1006,6 +1033,36 @@ func (c *Client) UpdateHelmReleaseValues(ctx context.Context, namespace, name, c
 	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/values?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
 	if err := c.request(ctx, http.MethodPut, path, helmReleaseValuesRequest{Content: content}, &payload); err != nil {
 		return domainresource.HelmValuesView{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) DryRunHelmReleaseRollback(ctx context.Context, namespace, name string, input domainresource.HelmReleaseRollbackInput) error {
+	var payload struct {
+		Data struct {
+			Valid bool `json:"valid"`
+		} `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/rollback/preflight?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodPost, path, input, &payload); err != nil {
+		if strings.Contains(err.Error(), "status 404") || strings.Contains(err.Error(), "status 405") {
+			return fmt.Errorf("%w: agent helm rollback preflight is not published", apperrors.ErrUnsupportedOperation)
+		}
+		return err
+	}
+	if !payload.Data.Valid {
+		return fmt.Errorf("%w: agent helm rollback preflight did not pass", apperrors.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func (c *Client) RollbackHelmRelease(ctx context.Context, namespace, name string, input domainresource.HelmReleaseRollbackInput) (domainresource.HelmReleaseDetailView, error) {
+	var payload struct {
+		Data domainresource.HelmReleaseDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/rollback?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodPost, path, input, &payload); err != nil {
+		return domainresource.HelmReleaseDetailView{}, err
 	}
 	return payload.Data, nil
 }
@@ -1596,6 +1653,88 @@ func (c *Client) ApplyResourceYAML(ctx context.Context, namespace, kind, name, c
 		return domainresource.ResourceYAMLView{}, err
 	}
 	return payload.Data, nil
+}
+
+func (c *Client) DryRunResourceYAML(ctx context.Context, namespace, kind, name, content string) (domainresource.ResourceUpdateAnalysis, error) {
+	var payload struct {
+		Data struct {
+			Valid    bool                                  `json:"valid"`
+			Analysis domainresource.ResourceUpdateAnalysis `json:"analysis"`
+		} `json:"data"`
+	}
+	err := c.request(ctx, http.MethodPost, "/api/v1/platform/resources/yaml/preflight", resourceYAMLRequest{
+		Namespace: namespace,
+		Kind:      kind,
+		Name:      name,
+		Content:   content,
+	}, &payload)
+	if err != nil {
+		if strings.Contains(err.Error(), "status 404") || strings.Contains(err.Error(), "status 405") {
+			return domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: agent resource update preflight is not published", apperrors.ErrUnsupportedOperation)
+		}
+		return domainresource.ResourceUpdateAnalysis{}, err
+	}
+	if !payload.Data.Valid {
+		return domainresource.ResourceUpdateAnalysis{}, fmt.Errorf("%w: agent resource update preflight did not pass", apperrors.ErrInvalidArgument)
+	}
+	return payload.Data.Analysis, nil
+}
+
+func (c *Client) GetResourceGraph(ctx context.Context, namespace, kind, name string) (domainresource.ResourceGraph, error) {
+	var payload struct {
+		Data domainresource.ResourceGraph `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/resources/graph?namespace=%s&kind=%s&name=%s", url.QueryEscape(namespace), url.QueryEscape(kind), url.QueryEscape(name))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ResourceGraph{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) GetSecurityPosture(ctx context.Context, namespace string, limit int) (domainresource.SecurityPosture, error) {
+	var payload struct {
+		Data domainresource.SecurityPosture `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/security/posture?namespace=%s&limit=%d", url.QueryEscape(namespace), limit)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.SecurityPosture{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) SubscribeResourceEvents(ctx context.Context, namespace string, kinds []string) (<-chan domainresource.ResourceStreamEvent, func(), error) {
+	path := fmt.Sprintf("/api/v1/platform/resources/stream?namespace=%s&kinds=%s", url.QueryEscape(namespace), url.QueryEscape(strings.Join(kinds, ",")))
+	streamCtx, cancel := context.WithCancel(ctx)
+	stream, err := c.openStream(streamCtx, http.MethodGet, path, nil)
+	if err != nil {
+		cancel()
+		return nil, nil, err
+	}
+	events := make(chan domainresource.ResourceStreamEvent, 64)
+	go func() {
+		defer close(events)
+		defer stream.Close()
+		decoder := json.NewDecoder(stream)
+		for {
+			var event domainresource.ResourceStreamEvent
+			if err := decoder.Decode(&event); err != nil {
+				return
+			}
+			select {
+			case events <- event:
+			case <-streamCtx.Done():
+				return
+			}
+		}
+	}()
+	var once sync.Once
+	unsubscribe := func() {
+		once.Do(func() {
+			cancel()
+			_ = stream.Close()
+		})
+	}
+	return events, unsubscribe, nil
 }
 
 func (c *Client) DeleteResource(ctx context.Context, namespace, kind, name string) error {

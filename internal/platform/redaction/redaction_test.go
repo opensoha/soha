@@ -3,6 +3,7 @@ package redaction
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func mustRedactedValue[T any](t *testing.T, value any) T {
@@ -57,5 +58,18 @@ func TestTextRedactsCommonSecretPatterns(t *testing.T) {
 	}
 	if strings.Count(redacted, Redacted) != 5 {
 		t.Fatalf("redaction count mismatch in %q", redacted)
+	}
+}
+
+func TestLogTextSanitizesAndBoundsOutput(t *testing.T) {
+	value := LogText("token=raw-token\n\x00abc\u754c", 8)
+	if strings.Contains(value, "raw-token") || strings.ContainsAny(value, "\n\x00") {
+		t.Fatalf("LogText() did not sanitize output: %q", value)
+	}
+	if !strings.HasSuffix(value, "...") {
+		t.Fatalf("LogText() = %q, want truncation marker", value)
+	}
+	if !utf8.ValidString(value) {
+		t.Fatalf("LogText() returned invalid UTF-8: %q", value)
 	}
 }

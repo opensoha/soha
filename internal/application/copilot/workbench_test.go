@@ -572,6 +572,53 @@ func TestWorkbenchCatalogAllowsAgentProviderViewPermission(t *testing.T) {
 	}
 }
 
+func TestDataSourceActionsAcceptGranularPermissions(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	input := domaincopilot.DataSourceInput{
+		Name: "Prometheus", SourceKind: "metrics", BackendType: "prometheus",
+		Enabled: true, MCPAdapter: "metrics.v1", Config: map[string]any{"endpoint": "http://prometheus:9090"},
+	}
+	tests := []struct {
+		name       string
+		permission string
+		call       func(*Service, domainidentity.Principal) error
+	}{
+		{name: "view", permission: appaccess.PermAIDataSourcesView, call: func(service *Service, principal domainidentity.Principal) error {
+			_, err := service.ListDataSources(context.Background(), principal)
+			return err
+		}},
+		{name: "create", permission: appaccess.PermAIDataSourcesCreate, call: func(service *Service, principal domainidentity.Principal) error {
+			_, err := service.CreateDataSource(context.Background(), principal, input)
+			return err
+		}},
+		{name: "update", permission: appaccess.PermAIDataSourcesUpdate, call: func(service *Service, principal domainidentity.Principal) error {
+			_, err := service.UpdateDataSource(context.Background(), principal, "ds-1", input)
+			return err
+		}},
+		{name: "validate", permission: appaccess.PermAIDataSourcesValidate, call: func(service *Service, principal domainidentity.Principal) error {
+			_, err := service.ValidateDataSource(context.Background(), principal, "ds-1")
+			return err
+		}},
+		{name: "legacy view", permission: appaccess.PermSettingsAIView, call: func(service *Service, principal domainidentity.Principal) error {
+			_, err := service.ListDataSources(context.Background(), principal)
+			return err
+		}},
+		{name: "legacy update", permission: appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update"), call: func(service *Service, principal domainidentity.Principal) error {
+			_, err := service.CreateDataSource(context.Background(), principal, input)
+			return err
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service, _ := newInspectionAuthzTestService(map[string][]string{"operator": {test.permission}})
+			err := test.call(service, domainidentity.Principal{UserID: "user-1", Roles: []string{"operator"}})
+			if errors.Is(err, apperrors.ErrAccessDenied) {
+				t.Fatalf("expected %s to authorize action, got %v", test.permission, err)
+			}
+		})
+	}
+}
+
 func TestCreateSessionStoresGlobalAssistantMetadata(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, _ := newInspectionAuthzTestService(map[string][]string{

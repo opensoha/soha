@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/informers"
 	appslisters "k8s.io/client-go/listers/apps/v1"
@@ -18,6 +20,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/redaction"
 )
@@ -25,19 +28,37 @@ import (
 var ErrCacheNotReady = errors.New("informer cache not ready")
 
 const (
-	resourceNamespaces   = "namespaces"
-	resourceNodes        = "nodes"
-	resourcePods         = "pods"
-	resourceServices     = "services"
-	resourceEvents       = "events"
-	resourceDeployments  = "deployments"
-	resourceStatefulSets = "statefulsets"
-	resourceIngresses    = "ingresses"
+	resourceNamespaces      = "namespaces"
+	resourceNodes           = "nodes"
+	resourcePods            = "pods"
+	resourceServices        = "services"
+	resourceEvents          = "events"
+	resourceDeployments     = "deployments"
+	resourceStatefulSets    = "statefulsets"
+	resourceIngresses       = "ingresses"
+	resourceDaemonSets      = "daemonsets"
+	resourceReplicaSets     = "replicasets"
+	resourceJobs            = "jobs"
+	resourceCronJobs        = "cronjobs"
+	resourceEndpointSlices  = "endpointslices"
+	resourceNetworkPolicies = "networkpolicies"
 )
 
 var informerResources = []string{
 	resourceNamespaces, resourceNodes, resourcePods, resourceServices,
 	resourceEvents, resourceDeployments, resourceStatefulSets, resourceIngresses,
+	resourceDaemonSets, resourceReplicaSets, resourceJobs, resourceCronJobs,
+	resourceEndpointSlices, resourceNetworkPolicies,
+}
+
+const resourceEventBuffer = 64
+
+type resourceSubscription struct {
+	id        uint64
+	namespace string
+	kinds     map[string]struct{}
+	events    chan domainresource.ResourceStreamEvent
+	closeOnce sync.Once
 }
 
 type bundleManager interface {
@@ -95,6 +116,8 @@ type Service struct {
 	manager            bundleManager
 	caches             map[string]*clusterCache
 	registrationErrors map[string]domaincluster.CacheDiagnostic
+	subscribers        map[string]map[uint64]*resourceSubscription
+	nextSubscriberID   uint64
 	mu                 sync.RWMutex
 }
 
@@ -102,6 +125,7 @@ func New(manager bundleManager) *Service {
 	return &Service{
 		manager: manager, caches: map[string]*clusterCache{},
 		registrationErrors: map[string]domaincluster.CacheDiagnostic{},
+		subscribers:        map[string]map[uint64]*resourceSubscription{},
 	}
 }
 
@@ -136,6 +160,12 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 	deployInformer := factory.Apps().V1().Deployments()
 	statefulSetInformer := factory.Apps().V1().StatefulSets()
 	ingressInformer := factory.Networking().V1().Ingresses()
+	daemonSetInformer := factory.Apps().V1().DaemonSets()
+	replicaSetInformer := factory.Apps().V1().ReplicaSets()
+	jobInformer := factory.Batch().V1().Jobs()
+	cronJobInformer := factory.Batch().V1().CronJobs()
+	endpointSliceInformer := factory.Discovery().V1().EndpointSlices()
+	networkPolicyInformer := factory.Networking().V1().NetworkPolicies()
 	entry := &clusterCache{
 		factory:           factory,
 		namespaceLister:   nsInformer.Lister(),
@@ -150,22 +180,58 @@ func (s *Service) RegisterCluster(ctx context.Context, clusterID string) error {
 		resources:         newResourceStates(),
 	}
 	informers := []struct {
-		resource string
-		informer cache.SharedIndexInformer
+		resource   string
+		apiVersion string
+		kind       string
+		namespaced bool
+		informer   cache.SharedIndexInformer
 	}{
-		{resourceNamespaces, nsInformer.Informer()},
-		{resourceNodes, nodeInformer.Informer()},
-		{resourcePods, podInformer.Informer()},
-		{resourceServices, serviceInformer.Informer()},
-		{resourceEvents, eventInformer.Informer()},
-		{resourceDeployments, deployInformer.Informer()},
-		{resourceStatefulSets, statefulSetInformer.Informer()},
-		{resourceIngresses, ingressInformer.Informer()},
+		{resourceNamespaces, "v1", "Namespace", false, nsInformer.Informer()},
+		{resourceNodes, "v1", "Node", false, nodeInformer.Informer()},
+		{resourcePods, "v1", "Pod", true, podInformer.Informer()},
+		{resourceServices, "v1", "Service", true, serviceInformer.Informer()},
+		{resourceEvents, "v1", "Event", true, eventInformer.Informer()},
+		{resourceDeployments, "apps/v1", "Deployment", true, deployInformer.Informer()},
+		{resourceStatefulSets, "apps/v1", "StatefulSet", true, statefulSetInformer.Informer()},
+		{resourceIngresses, "networking.k8s.io/v1", "Ingress", true, ingressInformer.Informer()},
+		{resourceDaemonSets, "apps/v1", "DaemonSet", true, daemonSetInformer.Informer()},
+		{resourceReplicaSets, "apps/v1", "ReplicaSet", true, replicaSetInformer.Informer()},
+		{resourceJobs, "batch/v1", "Job", true, jobInformer.Informer()},
+		{resourceCronJobs, "batch/v1", "CronJob", true, cronJobInformer.Informer()},
+		{resourceEndpointSlices, "discovery.k8s.io/v1", "EndpointSlice", true, endpointSliceInformer.Informer()},
+		{resourceNetworkPolicies, "networking.k8s.io/v1", "NetworkPolicy", true, networkPolicyInformer.Informer()},
 	}
 	for _, item := range informers {
+		item := item
 		state := entry.resources[item.resource]
 		if err := item.informer.SetWatchErrorHandler(func(_ *cache.Reflector, err error) {
-			state.transition("degraded", redaction.Text(err.Error()), state.diagnostic("").Ready)
+			message := redaction.Text(err.Error())
+			state.transition("degraded", message, state.diagnostic("").Ready)
+			s.publish(domainresource.ResourceStreamEvent{
+				Type: "error", ClusterID: clusterID, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
+				Source: "informer", CacheStatus: "degraded", Message: message, ResyncRequired: true,
+			})
+		}); err != nil {
+			state.transition("error", redaction.Text(err.Error()), false)
+		}
+		if _, err := item.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj any) {
+				s.publishInformerObject(clusterID, item.apiVersion, item.kind, item.namespaced, "added", obj)
+				state.transition("ready", "", true)
+			},
+			UpdateFunc: func(oldObj, newObj any) {
+				oldAccessor, oldErr := meta.Accessor(oldObj)
+				newAccessor, newErr := meta.Accessor(newObj)
+				if oldErr == nil && newErr == nil && oldAccessor.GetResourceVersion() != "" && oldAccessor.GetResourceVersion() == newAccessor.GetResourceVersion() {
+					return
+				}
+				s.publishInformerObject(clusterID, item.apiVersion, item.kind, item.namespaced, "modified", newObj)
+				state.transition("ready", "", true)
+			},
+			DeleteFunc: func(obj any) {
+				s.publishInformerObject(clusterID, item.apiVersion, item.kind, item.namespaced, "deleted", deletedObject(obj))
+				state.transition("ready", "", true)
+			},
 		}); err != nil {
 			state.transition("error", redaction.Text(err.Error()), false)
 		}
@@ -204,6 +270,7 @@ func (s *Service) UnregisterCluster(clusterID string) {
 		delete(s.caches, clusterID)
 	}
 	delete(s.registrationErrors, clusterID)
+	s.closeClusterSubscriptionsLocked(clusterID)
 }
 
 func (s *Service) waitForSync(entry *clusterCache, resource string, syncFn cache.InformerSynced) {
@@ -218,6 +285,9 @@ func (s *Service) Stop() {
 	for clusterID, entry := range s.caches {
 		close(entry.stopCh)
 		delete(s.caches, clusterID)
+	}
+	for clusterID := range s.subscribers {
+		s.closeClusterSubscriptionsLocked(clusterID)
 	}
 }
 
@@ -274,7 +344,144 @@ func (s *Service) recordRegistrationError(clusterID string, err error) {
 }
 
 func (s *Service) resourceReady(entry *clusterCache, resource string) bool {
-	return entry.resources[resource].diagnostic(resource).Ready
+	diagnostic := entry.resources[resource].diagnostic(resource)
+	return diagnostic.Ready && diagnostic.Status != "degraded" && diagnostic.Status != "error"
+}
+
+func (s *Service) Subscribe(clusterID, namespace string, kinds []string) (<-chan domainresource.ResourceStreamEvent, func(), error) {
+	if _, ok := s.entry(clusterID); !ok {
+		return nil, nil, ErrCacheNotReady
+	}
+	cacheStatus := resourceStreamCacheStatus(s.Status(clusterID))
+	filter := make(map[string]struct{}, len(kinds))
+	for _, kind := range kinds {
+		if normalized := strings.ToLower(strings.TrimSpace(kind)); normalized != "" {
+			filter[normalized] = struct{}{}
+		}
+	}
+	s.mu.Lock()
+	if _, ok := s.caches[clusterID]; !ok {
+		s.mu.Unlock()
+		return nil, nil, ErrCacheNotReady
+	}
+	s.nextSubscriberID++
+	subscription := &resourceSubscription{
+		id: s.nextSubscriberID, namespace: strings.TrimSpace(namespace), kinds: filter,
+		events: make(chan domainresource.ResourceStreamEvent, resourceEventBuffer),
+	}
+	if s.subscribers[clusterID] == nil {
+		s.subscribers[clusterID] = map[uint64]*resourceSubscription{}
+	}
+	s.subscribers[clusterID][subscription.id] = subscription
+	subscription.events <- domainresource.ResourceStreamEvent{
+		Type: "status", ClusterID: clusterID, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Source: "informer", CacheStatus: cacheStatus, ResyncRequired: cacheStatus == "degraded",
+	}
+	s.mu.Unlock()
+	cancel := func() {
+		s.mu.Lock()
+		if current := s.subscribers[clusterID][subscription.id]; current == subscription {
+			delete(s.subscribers[clusterID], subscription.id)
+			if len(s.subscribers[clusterID]) == 0 {
+				delete(s.subscribers, clusterID)
+			}
+		}
+		subscription.close()
+		s.mu.Unlock()
+	}
+	return subscription.events, cancel, nil
+}
+
+func (s *Service) closeClusterSubscriptionsLocked(clusterID string) {
+	for _, subscription := range s.subscribers[clusterID] {
+		subscription.close()
+	}
+	delete(s.subscribers, clusterID)
+}
+
+func (s *resourceSubscription) close() {
+	s.closeOnce.Do(func() { close(s.events) })
+}
+
+func resourceStreamCacheStatus(diagnostic domaincluster.CacheDiagnostic) string {
+	if diagnostic.Status == "ready" && diagnostic.Ready {
+		return "live"
+	}
+	for _, resource := range diagnostic.Resources {
+		if resource.Status == "degraded" || resource.Status == "error" {
+			return "degraded"
+		}
+	}
+	if diagnostic.Status == "error" {
+		return "degraded"
+	}
+	return "warming"
+}
+
+func (s *Service) publishInformerObject(clusterID, apiVersion, kind string, namespaced bool, eventType string, obj any) {
+	accessor, err := meta.Accessor(obj)
+	if err != nil {
+		return
+	}
+	scopeMode := domainresource.ResourceScopeModeCluster
+	if namespaced {
+		scopeMode = domainresource.ResourceScopeModeNamespace
+	}
+	resource := &domainresource.ResourceRef{
+		ClusterID: clusterID, APIVersion: apiVersion, Kind: kind, Name: accessor.GetName(),
+		Namespace: accessor.GetNamespace(), ScopeMode: scopeMode, UID: string(accessor.GetUID()),
+	}
+	s.publish(domainresource.ResourceStreamEvent{
+		Type: eventType, ClusterID: clusterID, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Source: "informer", Resource: resource, ResourceVersion: accessor.GetResourceVersion(), CacheStatus: "live",
+	})
+}
+
+func deletedObject(obj any) any {
+	if tombstone, ok := obj.(cache.DeletedFinalStateUnknown); ok {
+		return tombstone.Obj
+	}
+	return obj
+}
+
+func (s *Service) publish(event domainresource.ResourceStreamEvent) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, subscriber := range s.subscribers[event.ClusterID] {
+		if !subscriber.matches(event) {
+			continue
+		}
+		select {
+		case subscriber.events <- event:
+		default:
+			select {
+			case <-subscriber.events:
+			default:
+			}
+			reset := domainresource.ResourceStreamEvent{
+				Type: "reset", ClusterID: event.ClusterID, ObservedAt: time.Now().UTC().Format(time.RFC3339Nano),
+				Source: event.Source, CacheStatus: "degraded", Message: "resource event buffer overflow", ResyncRequired: true,
+			}
+			select {
+			case subscriber.events <- reset:
+			default:
+			}
+		}
+	}
+}
+
+func (s *resourceSubscription) matches(event domainresource.ResourceStreamEvent) bool {
+	if event.Resource == nil {
+		return true
+	}
+	if s.namespace != "" && event.Resource.Namespace != "" && event.Resource.Namespace != s.namespace {
+		return false
+	}
+	if len(s.kinds) == 0 {
+		return true
+	}
+	_, ok := s.kinds[strings.ToLower(event.Resource.Kind)]
+	return ok
 }
 
 // List methods return shallow value snapshots of client-go's immutable cache

@@ -819,6 +819,9 @@ func TestStreamTicketAllowsRuntimeStreams(t *testing.T) {
 	service := newTestServiceWithUserStore(repo)
 
 	for _, path := range []string{
+		"/api/v1/alert-events/stream",
+		"/api/v1/clusters/cluster-a/resources/stream",
+		"/api/v1/compute/tasks/container_runtime/task-1/stream",
 		"/api/v1/docker/projects/project-1/runtime/logs/stream",
 		"/api/v1/docker/projects/project-1/logs/stream",
 		"/api/v1/docker/projects/project-1/runtime/terminal",

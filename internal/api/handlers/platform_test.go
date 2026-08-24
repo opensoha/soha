@@ -71,6 +71,10 @@ type stubPlatformResourceService struct {
 	logQuery                       domainresource.LogQuery
 	logTicketCalled                bool
 	logTicketAccess                domainidentity.AccessContext
+	resourceSearchClusterID        string
+	resourceSearchInput            domainresource.ResourceSearchInput
+	resourceUpdatePlanClusterID    string
+	resourceUpdatePlanInput        domainresource.ResourceUpdatePlanRequest
 }
 
 func newStubPlatformResourceService() *stubPlatformResourceService {
@@ -158,6 +162,7 @@ func completeResourceServices(resources *stubPlatformResourceService) ResourceSe
 		Helm: resources, HelmReleaseReader: resources, HelmReleaseEditor: resources,
 		Namespaces: resources, NodeReader: resources, NodeEditor: resources,
 		Generic: resources, Events: resources, PortForwards: resources,
+		Search: resources, ResourceEvents: resources, ResourceGraph: resources, SecurityPosture: resources,
 	}
 }
 
@@ -367,6 +372,47 @@ func (s *stubPlatformResourceService) InstallHelmChart(_ context.Context, _ doma
 	return domainresource.HelmChartInstallResult{Name: input.ReleaseName, Namespace: input.Namespace, Status: "deployed"}, nil
 }
 
+func (s *stubPlatformResourceService) SearchResources(_ context.Context, _ domainidentity.Principal, clusterID string, input domainresource.ResourceSearchInput) (domainresource.ResourceSearchResult, error) {
+	s.resourceSearchClusterID = clusterID
+	s.resourceSearchInput = input
+	return domainresource.ResourceSearchResult{
+		Items: []domainresource.ResourceSearchItem{
+			{
+				Resource: domainresource.ResourceRef{
+					ClusterID: clusterID, APIVersion: "v1", Kind: "Pod", Name: "api-0",
+					Namespace: input.Namespace, ScopeMode: domainresource.ResourceScopeModeNamespace,
+				},
+				Status: "Running",
+			},
+		},
+		Truncated: true,
+	}, nil
+}
+
+func (s *stubPlatformResourceService) SubscribeResourceEvents(context.Context, domainidentity.Principal, string, string, []string) (<-chan domainresource.ResourceStreamEvent, func(), error) {
+	events := make(chan domainresource.ResourceStreamEvent)
+	return events, func() {}, nil
+}
+
+func (s *stubPlatformResourceService) GetResourceGraph(_ context.Context, _ domainidentity.Principal, clusterID, namespace, kind, name string) (domainresource.ResourceGraph, error) {
+	return domainresource.ResourceGraph{ClusterID: clusterID, Namespace: namespace, RootID: kind + "/" + name, Nodes: []domainresource.ResourceGraphNode{}, Edges: []domainresource.ResourceGraphEdge{}, Evidence: []domainresource.ResourceEvidence{}, Warnings: []string{}}, nil
+}
+
+func (s *stubPlatformResourceService) GetSecurityPosture(_ context.Context, _ domainidentity.Principal, clusterID, _ string, _ int) (domainresource.SecurityPosture, error) {
+	return domainresource.SecurityPosture{ClusterID: clusterID, Provider: "kubescape", Status: "unsupported", Findings: []domainresource.SecurityFinding{}, Warnings: []string{}}, nil
+}
+
+func (s *stubPlatformResourceService) PlanResourceYAMLUpdate(_ context.Context, _ domainidentity.Principal, clusterID string, input domainresource.ResourceUpdatePlanRequest) (domainoperation.Plan, error) {
+	s.resourceUpdatePlanClusterID = clusterID
+	s.resourceUpdatePlanInput = input
+	return domainoperation.Plan{
+		Capability: "k8s.resources.update", Target: clusterID + "/" + input.Namespace + "/" + input.Kind + "/" + input.Name,
+		Ready: true, RiskLevel: "mutate", InputHash: strings.Repeat("a", 64),
+		Changes:  []domainoperation.PlanChange{{Action: "update", Resource: input.Kind + "/" + input.Name, Summary: "dry-run passed"}},
+		Warnings: []string{},
+	}, nil
+}
+
 func newPlatformTestContext(method, target, body string, params gin.Params) (*gin.Context, *httptest.ResponseRecorder) {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -405,6 +451,68 @@ func TestPlatformListPodsPassesScopeAndPrincipal(t *testing.T) {
 	}
 	if len(payload.Items) != 1 || payload.Items[0].Name != "api-0" {
 		t.Fatalf("items = %#v", payload.Items)
+	}
+}
+
+func TestPlatformSearchResourcesBindsQuery(t *testing.T) {
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
+	ctx, recorder := newPlatformTestContext(
+		http.MethodGet,
+		"/api/v1/clusters/cluster-a/resources/search?q=api&namespace=team-a&kinds=Pod,Service&limit=5",
+		"",
+		gin.Params{{Key: "clusterID", Value: "cluster-a"}},
+	)
+
+	handler.SearchResources(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if resources.resourceSearchClusterID != "cluster-a" {
+		t.Fatalf("clusterID = %q", resources.resourceSearchClusterID)
+	}
+	input := resources.resourceSearchInput
+	if input.Query != "api" || input.Namespace != "team-a" || input.Limit != 5 {
+		t.Fatalf("input = %#v", input)
+	}
+	if len(input.Kinds) != 2 || input.Kinds[0] != "Pod" || input.Kinds[1] != "Service" {
+		t.Fatalf("kinds = %#v", input.Kinds)
+	}
+	var payload struct {
+		Data domainresource.ResourceSearchResult `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !payload.Data.Truncated || len(payload.Data.Items) != 1 {
+		t.Fatalf("data = %#v", payload.Data)
+	}
+}
+
+func TestPlatformPlanResourceUpdateBindsPayload(t *testing.T) {
+	resources := newStubPlatformResourceService()
+	handler := newTestPlatformHandler(nil, resources, nil, nil, nil, nil)
+	ctx, recorder := newPlatformTestContext(
+		http.MethodPost,
+		"/api/v1/clusters/cluster-a/resources/update-plan",
+		`{"namespace":"team-a","kind":"Deployment","name":"api","content":"kind: Deployment"}`,
+		gin.Params{{Key: "clusterID", Value: "cluster-a"}},
+	)
+
+	handler.PlanResourceUpdate(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if resources.resourceUpdatePlanClusterID != "cluster-a" || resources.resourceUpdatePlanInput.Name != "api" || resources.resourceUpdatePlanInput.Kind != "Deployment" {
+		t.Fatalf("plan target = %q %#v", resources.resourceUpdatePlanClusterID, resources.resourceUpdatePlanInput)
+	}
+	var payload struct {
+		Data domainoperation.Plan `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil || !payload.Data.Ready {
+		t.Fatalf("response = %s error=%v", recorder.Body.String(), err)
 	}
 }
 

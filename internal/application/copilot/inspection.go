@@ -20,6 +20,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	aperrors "github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"go.uber.org/zap"
 )
@@ -110,10 +111,13 @@ func (s *Service) runInspectionScheduler(ctx context.Context) {
 				s.metrics.RecordFinish(runtimeobs.ComponentCopilotInspection, "scheduled", time.Since(startedAt), 0, taskCount, outcome, err)
 			}
 			if err != nil {
-				s.logWarn("copilot inspection cycle failed", zap.Int("tasks", taskCount), zap.Duration("duration", time.Since(startedAt)), zap.Error(err))
+				s.logWarnCtx(ctx, "copilot inspection cycle failed", zap.String("event", "copilot.inspection.cycle_failed"),
+					zap.Int("task_count", taskCount), zap.Float64("duration_ms", float64(time.Since(startedAt))/float64(time.Millisecond)),
+					zap.String("error", redaction.LogText(err.Error(), 2048)))
 				continue
 			}
-			s.logDebug("copilot inspection cycle completed", zap.Int("tasks", taskCount), zap.Duration("duration", time.Since(startedAt)))
+			s.logDebugCtx(ctx, "copilot inspection cycle completed", zap.String("event", "copilot.inspection.cycle_completed"),
+				zap.Int("task_count", taskCount), zap.Float64("duration_ms", float64(time.Since(startedAt))/float64(time.Millisecond)))
 		}
 	}
 }
@@ -128,11 +132,13 @@ func (s *Service) runAgentTimeoutSweeper(ctx context.Context) {
 		case <-ticker.C:
 			count, err := s.sweepAgentRunTimeouts(ctx)
 			if err != nil {
-				s.logWarn("copilot agent runtime timeout sweep failed", zap.Error(err))
+				s.logWarnCtx(ctx, "copilot agent runtime timeout sweep failed", zap.String("event", "copilot.agent_runtime.timeout_sweep_failed"),
+					zap.String("error", redaction.LogText(err.Error(), 2048)))
 				continue
 			}
 			if count > 0 {
-				s.logWarn("copilot agent runtime runs timed out", zap.Int("runs", count))
+				s.logWarnCtx(ctx, "copilot agent runtime runs timed out",
+					zap.String("event", "copilot.agent_runtime.runs_timed_out"), zap.Int("run_count", count))
 			}
 		}
 	}
@@ -547,12 +553,14 @@ func (s *Service) runDueInspectionTasks(ctx context.Context) (int, error) {
 			defer wait.Done()
 			for task := range jobs {
 				if _, err := s.executeInspection(ctx, systemPrincipal(), task, "system:inspection", localeFromInspectionMetadata(task.Metadata, "")); err != nil {
-					s.logWarn("copilot inspection task failed", zap.String("taskID", task.ID), zap.Error(err))
+					s.logWarnCtx(ctx, "copilot inspection task failed", zap.String("event", "copilot.inspection.task_failed"),
+						zap.String("task_id", task.ID), zap.String("error", redaction.LogText(err.Error(), 2048)))
 					errCh <- err
 					continue
 				}
 				if err := s.inspectionTasks.TouchInspectionTaskRun(ctx, task.ID, time.Now().UTC()); err != nil {
-					s.logWarn("copilot inspection task touch failed", zap.String("taskID", task.ID), zap.Error(err))
+					s.logWarnCtx(ctx, "copilot inspection task touch failed", zap.String("event", "copilot.inspection.task_touch_failed"),
+						zap.String("task_id", task.ID), zap.String("error", redaction.LogText(err.Error(), 2048)))
 					errCh <- err
 				}
 			}
@@ -624,7 +632,9 @@ func (s *Service) executeInspection(ctx context.Context, principal domainidentit
 	if s.metrics != nil {
 		s.metrics.RecordFinish(runtimeobs.ComponentCopilotInspection, task.ID, time.Since(startedAt), 0, len(findings), runtimeobs.OutcomeSucceeded, nil)
 	}
-	s.logDebug("copilot inspection task completed", zap.String("taskID", task.ID), zap.Int("findings", len(findings)), zap.Duration("duration", time.Since(startedAt)))
+	s.logDebugCtx(ctx, "copilot inspection task completed", zap.String("event", "copilot.inspection.task_completed"),
+		zap.String("task_id", task.ID), zap.Int("finding_count", len(findings)),
+		zap.Float64("duration_ms", float64(time.Since(startedAt))/float64(time.Millisecond)))
 	return savedRun, nil
 }
 

@@ -214,6 +214,8 @@ make dev-web
 make build
 make test
 make deploy-image
+make remote-dev-sync
+make remote-dev-status
 ```
 
 ## Deployment
@@ -225,6 +227,51 @@ Soha ships as a single-binary runtime by default: one application container serv
 - [configs/config.yaml](./configs/config.yaml): default application config
 - [deploy/deployment.yaml](./deploy/deployment.yaml): raw Kubernetes manifest baseline
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize entrypoint for image tag, namespace, and patch overrides without Helm
+
+### Remote Kubernetes development
+
+`ops.popicorns.com` is the shared development endpoint; no separate
+`dev.ops.popicorns.com` environment is used. The remote development workload
+reuses the existing `opensoha` PostgreSQL database, `soha-config` Secret, and
+`soha-data` PVC.
+
+To mirror the current local working trees, install DevSpace and keep this command
+running:
+
+```bash
+make remote-dev-sync
+```
+
+DevSpace uploads local tracked, untracked, and uncommitted source changes from
+`soha`, `soha-web`, and `soha-contracts` without building an image. Backend build
+inputs trigger an automatic rebuild; Vite handles frontend HMR. `Ctrl-C` stops
+further uploads, restores the Helm workload, and removes the temporary development
+Deployment. The stable Pod remains warm while local sync is active. If the terminal
+is forcibly terminated before cleanup runs, use `make remote-dev-down`; run the sync
+command again to resume.
+
+To develop from pushed branches or refs instead of local files:
+
+```bash
+make remote-dev-up \
+  REMOTE_DEV_SOHA_REF=my-branch \
+  REMOTE_DEV_WEB_REF=my-branch \
+  REMOTE_DEV_CONTRACTS_REF=my-branch
+```
+
+The Git mode polls those refs inside the cluster. Local and Git source modes are
+mutually exclusive, so Git resets cannot overwrite local DevSpace changes.
+Because either mode changes the Helm Deployment replica count and the existing
+Service selector, restore the release before running a Helm upgrade:
+
+```bash
+make remote-dev-status
+make remote-dev-logs
+make remote-dev-down
+```
+
+This is a shared-data development environment: migrations and application writes
+affect the existing `soha` database.
 
 ```bash
 make deploy-image

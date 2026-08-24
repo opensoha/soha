@@ -7,7 +7,19 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
+
+func TestAccessReviewIdentityFormatsServiceAccount(t *testing.T) {
+	user, groups := accessReviewIdentity(domainresource.AccessReviewSubject{Kind: "ServiceAccount", Namespace: "team-a", Name: "builder"})
+	if user != "system:serviceaccount:team-a:builder" {
+		t.Fatalf("user = %q", user)
+	}
+	if len(groups) != 3 || groups[1] != "system:serviceaccounts:team-a" {
+		t.Fatalf("groups = %#v", groups)
+	}
+}
 
 func TestMapRoleDetailIncludesRuleSummaries(t *testing.T) {
 	t.Parallel()

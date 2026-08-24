@@ -37,8 +37,11 @@ import (
 var (
 	usernameSanitizer = regexp.MustCompile(`[^a-z0-9._-]+`)
 	streamTicketPaths = []*regexp.Regexp{
+		regexp.MustCompile(`^/api/v1/alert-events/stream$`),
 		regexp.MustCompile(`^/api/v1/clusters/[^/]+/logs/stream$`),
+		regexp.MustCompile(`^/api/v1/clusters/[^/]+/resources/stream$`),
 		regexp.MustCompile(`^/api/v1/clusters/[^/]+/workloads/pods/[^/]+/(logs/stream|terminal)$`),
+		regexp.MustCompile(`^/api/v1/compute/tasks/(virtualization|container_runtime)/[^/]+/stream$`),
 		regexp.MustCompile(`^/api/v1/virtualization/operations/[^/]+/stream$`),
 		regexp.MustCompile(`^/api/v1/virtualization/vms/[^/]+/console/(vnc|novnc)$`),
 		regexp.MustCompile(`^/api/v1/docker/projects/[^/]+/(runtime/logs/stream|logs/stream|runtime/terminal)$`),

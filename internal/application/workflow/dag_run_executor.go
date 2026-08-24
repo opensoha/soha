@@ -9,6 +9,7 @@ import (
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"go.uber.org/zap"
 )
@@ -137,7 +138,8 @@ func (e *dagRunExecutor) start(ctx context.Context, state *dagRunState) {
 	if e.metrics != nil {
 		e.metrics.RecordStart(runtimeobs.ComponentWorkflowRunner, state.run.ID, e.queueDepth(), len(state.definition.Nodes))
 	}
-	e.logDebugCtx(ctx, "workflow execution started", zap.String("runID", state.run.ID), zap.String("applicationID", state.run.ApplicationID))
+	e.logDebugCtx(ctx, "workflow execution started", zap.String("event", "workflow.execution.started"),
+		zap.String("run_id", state.run.ID), zap.String("application_id", state.run.ApplicationID))
 	state.run.Status = "running"
 	ensureDAGExecutionMetadata(&state.run)
 	appendDAGRunEvent(&state.run, map[string]any{
@@ -163,7 +165,8 @@ func (e *dagRunExecutor) cancelIfRequested(ctx context.Context, state *dagRunSta
 	if e.metrics != nil {
 		e.metrics.RecordFinish(runtimeobs.ComponentWorkflowRunner, state.run.ID, time.Since(state.startedAt), e.queueDepth(), len(state.definition.Nodes), runtimeobs.OutcomeCanceled, err)
 	}
-	e.logWarnCtx(ctx, "workflow execution canceled", zap.String("runID", state.run.ID), zap.Error(err))
+	e.logWarnCtx(ctx, "workflow execution canceled", zap.String("event", "workflow.execution.canceled"),
+		zap.String("run_id", state.run.ID), zap.String("error", redaction.LogText(err.Error(), 2048)))
 	return true
 }
 
@@ -298,15 +301,21 @@ func (e *dagRunExecutor) finish(ctx context.Context, state *dagRunState) {
 	e.persist(ctx, state)
 	duration := time.Since(state.startedAt)
 	if finalStatus == workflowStatusWaitingApproval || finalStatus == workflowStatusWaitingExecution {
-		e.logDebugCtx(ctx, "workflow execution paused", zap.String("runID", state.run.ID), zap.String("applicationID", state.run.ApplicationID), zap.String("status", finalStatus), zap.Duration("duration", duration))
+		e.logDebugCtx(ctx, "workflow execution paused", zap.String("event", "workflow.execution.paused"),
+			zap.String("run_id", state.run.ID), zap.String("application_id", state.run.ApplicationID),
+			zap.String("status", finalStatus), zap.Float64("duration_ms", float64(duration)/float64(time.Millisecond)))
 		return
 	}
 	e.recordFinishMetrics(state, finalStatus, duration)
 	if finalStatus == "failed" {
-		e.logWarnCtx(ctx, "workflow execution failed", zap.String("runID", state.run.ID), zap.String("applicationID", state.run.ApplicationID), zap.Duration("duration", duration))
+		e.logWarnCtx(ctx, "workflow execution failed", zap.String("event", "workflow.execution.failed"),
+			zap.String("run_id", state.run.ID), zap.String("application_id", state.run.ApplicationID),
+			zap.Float64("duration_ms", float64(duration)/float64(time.Millisecond)))
 		return
 	}
-	e.logDebugCtx(ctx, "workflow execution completed", zap.String("runID", state.run.ID), zap.String("applicationID", state.run.ApplicationID), zap.Duration("duration", duration))
+	e.logDebugCtx(ctx, "workflow execution completed", zap.String("event", "workflow.execution.completed"),
+		zap.String("run_id", state.run.ID), zap.String("application_id", state.run.ApplicationID),
+		zap.Float64("duration_ms", float64(duration)/float64(time.Millisecond)))
 }
 
 func (s *dagRunState) finalStatus() string {

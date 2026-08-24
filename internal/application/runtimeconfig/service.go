@@ -17,6 +17,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainruntimeconfig "github.com/opensoha/soha/internal/domain/runtimeconfig"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 	"go.uber.org/zap"
 )
@@ -432,7 +433,7 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 	}); err != nil && s.logger != nil {
 		s.logger.Warn("runtime config audit record failed", append(requestctx.LoggerFields(requestctx.FromContext(ctx)),
 			zap.String("operation_type", action), zap.String("revision_id", revision.ID),
-			zap.String("status", string(revision.Status)), zap.Error(err),
+			zap.String("status", string(revision.Status)), zap.String("error", redaction.LogText(err.Error(), 2048)),
 		)...)
 	}
 }

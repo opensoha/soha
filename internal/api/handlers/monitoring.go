@@ -72,6 +72,7 @@ type AlertEventService interface {
 	AcknowledgeEvent(context.Context, domainidentity.Principal, string) (domainalert.AlertEvent, error)
 	ResolveEvent(context.Context, domainidentity.Principal, string) (domainalert.AlertEvent, error)
 	HealEvent(context.Context, domainidentity.Principal, string, string) (domainalert.HealingRun, error)
+	SubscribeEventSignals(context.Context, domainidentity.Principal, string) (<-chan domainalert.AlertEventStreamSignal, error)
 }
 
 type HealingRunService interface {

@@ -20,6 +20,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
 	"go.uber.org/zap"
@@ -356,7 +357,8 @@ func (s *Service) logRecordFailure(ctx context.Context, recorder, operationType,
 	if s.logger != nil {
 		s.logger.Warn("system integration evidence record failed", append(requestctx.LoggerFields(requestctx.FromContext(ctx)),
 			zap.String("recorder", recorder), zap.String("operation_type", operationType),
-			zap.String("resource_kind", "SystemIntegration"), zap.String("resource_name", resourceName), zap.Error(err),
+			zap.String("resource_kind", "SystemIntegration"), zap.String("resource_name", resourceName),
+			zap.String("error", redaction.LogText(err.Error(), 2048)),
 		)...)
 	}
 }

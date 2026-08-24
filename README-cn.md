@@ -209,6 +209,8 @@ make dev-web
 make build
 make test
 make deploy-image
+make remote-dev-sync
+make remote-dev-status
 ```
 
 ## 部署
@@ -220,6 +222,45 @@ Soha 默认按单二进制运行时交付：一个应用容器提供 API 和内�
 - [configs/config.yaml](./configs/config.yaml): 默认应用配置
 - [deploy/deployment.yaml](./deploy/deployment.yaml): 原生 Kubernetes 清单基线
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize 入口，用于在不引入 Helm 时覆盖镜像 tag、namespace 或补丁
+
+### 远程 Kubernetes 开发
+
+`ops.popicorns.com` 直接作为共享开发环境，不再使用独立的
+`dev.ops.popicorns.com`。远程开发工作负载复用 `opensoha` 命名空间里现有的
+PostgreSQL、`soha-config` Secret 和 `soha-data` PVC。
+
+如需直接同步当前本地工作树，安装 DevSpace 后保持下面的命令运行：
+
+```bash
+make remote-dev-sync
+```
+
+DevSpace 会单向上传 `soha`、`soha-web` 和 `soha-contracts` 中已跟踪、未跟踪及
+未提交的源码改动，不需要构建镜像。后端构建输入变化后自动重编译，前端继续使用
+Vite HMR。`Ctrl-C` 会停止后续上传、恢复 Helm 工作负载并删除临时开发 Deployment；
+本地同步期间稳定 Pod 会保持运行。若终端被强制结束而未执行清理，运行
+`make remote-dev-down`；需要继续时重新执行同步命令即可。
+
+如需改为使用已经推送的分支或 ref：
+
+```bash
+make remote-dev-up \
+  REMOTE_DEV_SOHA_REF=my-branch \
+  REMOTE_DEV_WEB_REF=my-branch \
+  REMOTE_DEV_CONTRACTS_REF=my-branch
+```
+
+Git 模式会在集群内轮询这些 ref。本地同步与 Git 同步互斥，因此 Git reset 不会覆盖
+DevSpace 上传的本地修改。两种模式都会调整 Helm Deployment 的副本数和现有 Service
+selector，因此执行 Helm upgrade 前要先恢复 Helm 工作负载：
+
+```bash
+make remote-dev-status
+make remote-dev-logs
+make remote-dev-down
+```
+
+这是共享数据的开发环境，迁移和应用写操作会直接影响现有 `soha` 数据库。
 
 ```bash
 make deploy-image

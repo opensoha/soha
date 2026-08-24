@@ -344,10 +344,24 @@ type AlertEventInput struct {
 }
 
 type AlertEventFilter struct {
-	Status    string
-	RuleID    string
-	ClusterID string
-	Limit     int
+	Status       string
+	RuleID       string
+	ClusterID    string
+	Limit        int
+	UpdatedAfter time.Time
+	AfterID      string
+	Ascending    bool
+}
+
+type AlertEventStreamSignal struct {
+	Type           string    `json:"type"`
+	ObservedAt     time.Time `json:"observedAt"`
+	ClusterID      string    `json:"clusterId,omitempty"`
+	Namespace      string    `json:"namespace,omitempty"`
+	EventID        string    `json:"eventId,omitempty"`
+	EventStatus    string    `json:"eventStatus,omitempty"`
+	Message        string    `json:"message,omitempty"`
+	ResyncRequired bool      `json:"resyncRequired,omitempty"`
 }
 
 type NotificationPolicy struct {

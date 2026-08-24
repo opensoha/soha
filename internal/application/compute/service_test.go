@@ -268,6 +268,58 @@ func TestOverviewOmitsUnauthorizedSectionsAndDegradesReadFailure(t *testing.T) {
 	}
 }
 
+func TestOverviewMarksStaleAgentHeartbeatUnavailableAndReportsFreshness(t *testing.T) {
+	service, _, runtime := newTestService(appaccess.PermDockerOverviewView, appaccess.PermDockerHostsView)
+	stale := time.Now().UTC().Add(-3 * runtimeHostHeartbeatMaxAge)
+	runtime.hosts = []domaindocker.Host{{
+		ID:              "host-1",
+		Name:            "stale-host",
+		Status:          "online",
+		AgentID:         "agent-1",
+		LastHeartbeatAt: &stale,
+	}}
+
+	result, err := service.Overview(context.Background(), testPrincipal())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.GeneratedAt == nil || result.Freshness == nil || result.Freshness.Status != sohaapi.ComputeFreshnessStatusFresh {
+		t.Fatalf("freshness = %#v generatedAt=%v", result.Freshness, result.GeneratedAt)
+	}
+	if result.Runtimes == nil || result.Runtimes.Summary == nil || result.Runtimes.Summary.Available != 0 || result.Runtimes.Summary.Error != 1 {
+		t.Fatalf("runtime summary = %#v", result.Runtimes)
+	}
+	if result.Agents == nil || result.Agents.Summary == nil || result.Agents.Summary.Online != 0 || result.Agents.Summary.Offline != 1 {
+		t.Fatalf("agent summary = %#v", result.Agents)
+	}
+	if len(result.Attention) != 1 || result.Attention[0].Code != "runtime_host_unavailable" {
+		t.Fatalf("attention = %#v", result.Attention)
+	}
+}
+
+func TestRuntimeHostStatusUsesHeartbeatOnlyForAgentHosts(t *testing.T) {
+	now := time.Date(2026, 8, 23, 12, 0, 0, 0, time.UTC)
+	fresh := now.Add(-runtimeHostHeartbeatMaxAge / 2)
+	stale := now.Add(-2 * runtimeHostHeartbeatMaxAge)
+	tests := []struct {
+		name string
+		host domaindocker.Host
+		want sohaapi.ComputeHealthStatus
+	}{
+		{name: "direct host keeps provider status", host: domaindocker.Host{Status: "online"}, want: sohaapi.ComputeHealthStatusHealthy},
+		{name: "fresh agent", host: domaindocker.Host{Status: "online", AgentID: "agent", LastHeartbeatAt: &fresh}, want: sohaapi.ComputeHealthStatusHealthy},
+		{name: "stale agent", host: domaindocker.Host{Status: "online", AgentID: "agent", LastHeartbeatAt: &stale}, want: sohaapi.ComputeHealthStatusUnavailable},
+		{name: "agent without heartbeat", host: domaindocker.Host{Status: "online", AgentID: "agent"}, want: sohaapi.ComputeHealthStatusUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := runtimeHostStatusAt(test.host, now); got != test.want {
+				t.Fatalf("status = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestOverviewDerivesVisibilityFromChildPermissions(t *testing.T) {
 	for _, permission := range []string{appaccess.PermVirtualizationImagesView, appaccess.PermVirtualizationFlavorsView} {
 		service, virt, runtime := newTestService(permission)
@@ -353,6 +405,59 @@ func TestVirtualizationTaskPermissionsSeparateSyncAndOperations(t *testing.T) {
 	}
 	if result.Items[0].Cancelable || len(result.Items[0].AvailableActions) != 1 || result.Items[0].AvailableActions[0] != sohaapi.ComputeTaskActionLogs {
 		t.Fatalf("read-only task actions = %#v", result.Items[0].AvailableActions)
+	}
+}
+
+func TestTaskViewsExposeOperationalEvidence(t *testing.T) {
+	now := time.Now().UTC()
+	heartbeat := now.Add(-30 * time.Second)
+	running := runtimeTaskView(domaindocker.Operation{
+		ID:              "operation-1",
+		OperationKind:   "service_action",
+		Status:          "running",
+		TimeoutSeconds:  120,
+		LastHeartbeatAt: &heartbeat,
+		Result:          map[string]any{"progress": 0.4, "message": "provider accepted"},
+		CreatedAt:       now.Add(-time.Minute),
+	}, true, true)
+	if running.Heartbeat == nil || running.Heartbeat.Status != sohaapi.ComputeTaskHeartbeatStatusFresh || running.Progress != 0.4 {
+		t.Fatalf("running evidence = %#v", running)
+	}
+	if running.Result == nil || running.Result.Status != sohaapi.ComputeTaskResultStatusAccepted {
+		t.Fatalf("running result = %#v", running.Result)
+	}
+
+	finished := now.Add(-time.Second)
+	failed := virtualizationTaskView(domainvirtualization.Task{
+		ID:         "task-1",
+		TaskKind:   "vm_action",
+		Status:     "failed",
+		Result:     map[string]any{"error": "provider rejected action"},
+		FinishedAt: &finished,
+		CreatedAt:  now.Add(-time.Minute),
+	}, true, true)
+	if failed.Failure == nil || failed.Failure.Code != "failed" || failed.Failure.Message != "provider rejected action" {
+		t.Fatalf("failure = %#v", failed.Failure)
+	}
+	if failed.Result == nil || failed.Result.Status != sohaapi.ComputeTaskResultStatusFailed {
+		t.Fatalf("failed result = %#v", failed.Result)
+	}
+}
+
+func TestListTasksSupportsServerSideKindSorting(t *testing.T) {
+	service, virt, _ := newTestService(appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView)
+	createdAt := time.Now().UTC()
+	virt.tasks = []domainvirtualization.Task{
+		{ID: "z", TaskKind: "vm_create", Status: "queued", CreatedAt: createdAt},
+		{ID: "a", TaskKind: "asset_sync", Status: "queued", CreatedAt: createdAt},
+	}
+
+	result, err := service.ListTasks(context.Background(), testPrincipal(), TaskFilter{SortBy: "kind", SortOrder: "asc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 2 || result.Items[0].Kind != "asset_sync" || result.Items[1].Kind != "vm_create" {
+		t.Fatalf("items = %#v", result.Items)
 	}
 }
 

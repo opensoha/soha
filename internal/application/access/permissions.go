@@ -50,6 +50,7 @@ const (
 	PermPlatformPodsUpdate                = "platform.pods.update"
 	PermPlatformPodsView                  = "platform.pods.view"
 	PermPlatformAccessControlView         = "platform.access-control.view"
+	PermPlatformAccessReviewsExecute      = "platform.access-control.access-reviews.execute"
 	PermPlatformRBACManage                = "platform.rbac.manage"
 	PermPlatformRBACEscalate              = "platform.rbac.escalate"
 	PermPlatformRBACBind                  = "platform.rbac.bind"
@@ -118,6 +119,10 @@ const (
 	PermAIKnowledgeRebuild                = "ai.knowledge.rebuild"
 	PermAIKnowledgeGraphManage            = "ai.knowledge.graph.manage"
 	PermAIContextInspect                  = "ai.context.inspect"
+	PermAIDataSourcesCreate               = "ai.data-sources.create"
+	PermAIDataSourcesUpdate               = "ai.data-sources.update"
+	PermAIDataSourcesValidate             = "ai.data-sources.validate"
+	PermAIDataSourcesView                 = "ai.data-sources.view"
 	PermAIEvaluationsView                 = "ai.evaluations.view"
 	PermAIEvaluationsManage               = "ai.evaluations.manage"
 	PermAIEvaluationsExecute              = "ai.evaluations.execute"
@@ -358,6 +363,10 @@ var allPermissionKeySet = []string{
 	PermAIKnowledgeRebuild,
 	PermAIKnowledgeGraphManage,
 	PermAIContextInspect,
+	PermAIDataSourcesCreate,
+	PermAIDataSourcesUpdate,
+	PermAIDataSourcesValidate,
+	PermAIDataSourcesView,
 	PermAIEvaluationsView,
 	PermAIEvaluationsManage,
 	PermAIEvaluationsExecute,

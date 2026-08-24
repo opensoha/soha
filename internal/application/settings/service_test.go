@@ -36,6 +36,12 @@ func (settingsPermissionReader) ListRolePermissions(context.Context) (map[string
 	return map[string][]string{}, nil
 }
 
+type fixedSettingsPermissionReader map[string][]string
+
+func (r fixedSettingsPermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
+	return r, nil
+}
+
 type captureSettingsAudit struct {
 	entries []domainaudit.Entry
 	err     error
@@ -129,6 +135,24 @@ func TestBrandingSettingsRequireViewPermission(t *testing.T) {
 
 	if _, err := service.GetBrandingSettings(context.Background(), domainidentity.Principal{UserID: "readonly", Roles: []string{"readonly"}}); !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("GetBrandingSettings error = %v, want access denied", err)
+	}
+}
+
+func TestAISkillsRegistryAcceptsDedicatedPermissions(t *testing.T) {
+	reader := fixedSettingsPermissionReader{
+		"skills-reader": {appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "view")},
+		"skills-editor": {appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "update")},
+	}
+	service := New(&captureSettingsStore{}, appaccess.NewPermissionResolver(reader), nil, nil)
+
+	if _, err := service.GetAISkillsRegistry(context.Background(), domainidentity.Principal{Roles: []string{"skills-reader"}}); err != nil {
+		t.Fatalf("GetAISkillsRegistry returned error: %v", err)
+	}
+	if _, err := service.UpdateAISkillsRegistry(context.Background(), domainidentity.Principal{UserID: "editor", Roles: []string{"skills-editor"}}, nil); err != nil {
+		t.Fatalf("UpdateAISkillsRegistry returned error: %v", err)
+	}
+	if _, err := service.GetAISettings(context.Background(), domainidentity.Principal{Roles: []string{"skills-reader"}}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("GetAISettings error = %v, want access denied", err)
 	}
 }
 

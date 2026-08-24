@@ -91,6 +91,7 @@ import (
 	virtualizationinfra "github.com/opensoha/soha/internal/infrastructure/virtualization"
 	webauthninfra "github.com/opensoha/soha/internal/infrastructure/webauthn"
 	"github.com/opensoha/soha/internal/platform/keyring"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/runtimeinfo"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"github.com/opensoha/soha/internal/policy"
@@ -305,7 +306,7 @@ func newInfrastructure(ctx context.Context, cfg *cfgpkg.Config) (*infrastructure
 	}
 	softwareFetcher := softwarefetchinfra.New(appsoftware.MaxPackageBytes)
 
-	databaseStore, err := dbinfra.New(cfg.Database)
+	databaseStore, err := dbinfra.New(cfg.Database, logger)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("connect database: %w", err)
@@ -430,7 +431,9 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		return nil, fmt.Errorf("build secret service: %w", err)
 	}
 	systemIntegrationService := appsystemintegration.New(repos.systemIntegrationRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
-	systemIntegrationService.SetInstrumentation(infra.logger)
+	systemIntegrationService.SetInstrumentation(infra.logger.Named("system_integration").With(
+		zap.String("event", "system_integration.evidence.record_failed"),
+	))
 	systemIntegrationService.RegisterSourceAdapter("gitlab", gitLabSourceAdapterFactory{})
 	systemIntegrationService.RegisterOAuthProvider("gitlab", gitlabinfra.NewOAuthProvider())
 	runtimeConfigService, err := appruntimeconfig.New(ctx, repos.runtimeConfigRepository, appruntimeconfig.NewRegistry(appruntimeconfig.RegistryOptions{
@@ -473,7 +476,9 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	if err != nil {
 		return nil, fmt.Errorf("build runtime config service: %w", err)
 	}
-	runtimeConfigService.SetInstrumentation(infra.logger)
+	runtimeConfigService.SetInstrumentation(infra.logger.Named("runtime_config").With(
+		zap.String("event", "runtime_config.audit.record_failed"),
+	))
 	cfg = runtimeEffectiveConfig(cfg, runtimeConfigService.Current())
 	repos.alertRepository.SetUpsertBatchSize(cfg.Runtime.AlertUpsertBatchSize)
 	infra.agentRegistry.SetDefaultTimeout(cfg.MCP.DefaultTimeout)
@@ -482,7 +487,9 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	menuService.SetModuleState(runtimeConfigService)
 	moduleService := appmodule.NewRuntime(runtimeConfigService)
 	settingsService := appsettings.New(repos.settingsRepository, permissionResolver, auditService, operationService)
-	settingsService.SetInstrumentation(infra.logger)
+	settingsService.SetInstrumentation(infra.logger.Named("settings").With(
+		zap.String("event", "settings.evidence.record_failed"),
+	))
 	samlLoginRuntime := samlinfra.NewLoginRuntime()
 	settingsService.SetSAMLMetadataPinner(samlLoginRuntime)
 	directorySyncConnectors := directorysynchandler.NewRegistry(directorysynchandler.TokenResolver(
@@ -659,7 +666,7 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 	}
 	clusterService.SetAccessURLResolver(accessURL)
 	clusterService.SetSyncLimit(cfg.Runtime.ClusterSyncParallelism)
-	clusterService.SetInstrumentation(infra.logger, infra.runtimeMetrics)
+	clusterService.SetInstrumentation(infra.logger.Named("cluster"), infra.runtimeMetrics)
 	clusterService.Start(infra.lifecycleCtx)
 
 	resourceClusters := resourcebackendinfra.NewClusters(infra.clusterManager)
@@ -680,7 +687,7 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 		Clusters: resourceClusters, Agents: resourcebackendinfra.NewAgentClients(infra.agentRegistry), Connections: repos.clusterRepository,
 		StreamTickets: streamTickets, DurableLogs: observabilityService,
 		Authorizer: access, Permissions: permissions, Audit: audit, Operations: operations, CreationOperations: operations, CreationBatches: repos.resourceCreationRepository, PortForwards: repos.portForwardRepository,
-		DirectCustom: resourceDirect, DirectConfiguration: resourceDirect, DirectEvents: resourceDirect, DirectGeneric: resourceDirect, DirectResourceCreate: resourceDirect,
+		DirectCustom: resourceDirect, DirectConfiguration: resourceDirect, DirectEvents: resourceDirect, DirectResourceEvents: resourceDirect, DirectResourceGraph: resourceDirect, DirectSecurity: resourceDirect, DirectGeneric: resourceDirect, DirectResourceCreate: resourceDirect,
 		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectLogs: resourceDirect, DirectNetwork: resourceDirect,
 		DirectPods: resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
 		WorkloadSnapshot: resourceDirect.BuildWorkloadSnapshot,
@@ -689,7 +696,10 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 		Settings: repos.settingsRepository, Connections: repos.clusterRepository, Helm: resourceService.Helm(), PortForwards: resourceService.PortForwards(), Access: access,
 	})
 	if err := resourceService.PortForwards().RestorePortForwards(ctx); err != nil {
-		infra.logger.Warn("restore port forwards failed", zap.Error(err))
+		infra.logger.Named("platform").Warn("restore port forwards failed",
+			zap.String("event", "platform.port_forwards.restore_failed"),
+			zap.String("error", redaction.LogText(err.Error(), 2048)),
+		)
 	}
 	eventService := newEventService(repos.eventRepository, audit, cfg.AIGateway.ConnectorEventSink.Token)
 	monitoringService, err := appmonitoring.New(appmonitoring.Dependencies{
@@ -849,7 +859,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	workflowService := appworkflow.New(repos.workflowRepository, repos.applicationRepository, core.accessService, core.permissionResolver, repos.catalogRepository, core.buildService, core.releaseService, runtimeResources)
 	workflowService.SetArtifactStore(repos.deliveryRepository)
 	workflowService.SetRuntimeOptions(cfg.Runtime.WorkflowWorkers, cfg.Runtime.WorkflowQueueSize, cfg.Runtime.WorkflowNodeParallelism)
-	workflowService.SetInstrumentation(infra.logger, infra.runtimeMetrics)
+	workflowService.SetInstrumentation(infra.logger.Named("workflow"), infra.runtimeMetrics)
 	workflowService.SetAlertMutator(core.monitoringService)
 	core.executionService.SetWorkflowExecutionTaskSink(workflowService)
 	if cfg.Modules.Delivery.Enabled {
@@ -872,7 +882,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	)
 	copilotService.SetMCPRegistry(infra.mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
-	copilotService.SetInstrumentation(infra.logger, infra.runtimeMetrics)
+	copilotService.SetInstrumentation(infra.logger.Named("copilot"), infra.runtimeMetrics)
 	copilotService.SetSecretLeaseService(core.secretService)
 	agentProviderService, err := appagentharness.NewProviderControlPlane(
 		appagentharness.NewProviderReconciler(core.pluginExtensions),
@@ -1161,8 +1171,8 @@ func newPlatformResourceServices(service *appresource.Service) apiHandlers.Resou
 		CRDReader: service.CustomResources(), CRDEditor: service.CustomResources(),
 		Helm: helm, HelmReleaseReader: helm, HelmReleaseEditor: helm,
 		Namespaces: inventory, NodeReader: inventory, NodeEditor: inventory,
-		Generic: service.GenericResources(), Events: service.Events(),
-		PortForwards: service.PortForwards(),
+		Generic: service.GenericResources(), Events: service.Events(), ResourceEvents: service.GenericResources(), ResourceGraph: service.GenericResources(), SecurityPosture: service.GenericResources(),
+		PortForwards: service.PortForwards(), Search: service.Search(),
 	}
 
 }

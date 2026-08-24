@@ -46,6 +46,7 @@ type Service struct {
 	portForwards     *PortForwards
 	runtime          *Runtime
 	creation         *ResourceCreation
+	search           *ResourceSearch
 }
 
 type Dependencies struct {
@@ -61,6 +62,9 @@ type Dependencies struct {
 	CreationBatches      ResourceCreationBatchRepository
 	PortForwards         PortForwardRepository
 	DirectEvents         DirectEventReader
+	DirectResourceEvents DirectResourceEventStream
+	DirectResourceGraph  DirectResourceGraph
+	DirectSecurity       DirectSecurityPosture
 	DirectCustom         DirectCustomResource
 	DirectConfiguration  DirectConfiguration
 	DirectGeneric        DirectGenericResource

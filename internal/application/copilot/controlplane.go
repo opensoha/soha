@@ -16,7 +16,7 @@ import (
 )
 
 func (s *Service) ListDataSourceCapabilities(ctx context.Context, principal domainidentity.Principal) ([]domainmcp.Adapter, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIView); err != nil {
+	if err := s.authorizeAnyPrincipal(ctx, principal, appaccess.PermAIDataSourcesView, appaccess.PermSettingsAIView); err != nil {
 		return nil, err
 	}
 	if s.mcpRegistry == nil {
@@ -101,6 +101,7 @@ func (s *Service) authorizeAnyWorkbenchPermission(ctx context.Context, principal
 	for _, permission := range []string{
 		appaccess.PermObserveAIChatUse,
 		appaccess.PermObserveAIView,
+		appaccess.PermAIDataSourcesView,
 		appaccess.PermSettingsAIView,
 		appaccess.PermAIAgentProvidersView,
 	} {
@@ -112,14 +113,14 @@ func (s *Service) authorizeAnyWorkbenchPermission(ctx context.Context, principal
 }
 
 func (s *Service) ListDataSources(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.DataSource, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIView); err != nil {
+	if err := s.authorizeAnyPrincipal(ctx, principal, appaccess.PermAIDataSourcesView, appaccess.PermSettingsAIView); err != nil {
 		return nil, err
 	}
 	return s.dataSources.ListDataSources(ctx)
 }
 
 func (s *Service) CreateDataSource(ctx context.Context, principal domainidentity.Principal, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
+	if err := s.authorizeAnyPrincipal(ctx, principal, appaccess.PermAIDataSourcesCreate, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.DataSource{}, err
 	}
 	item, err := s.normalizeDataSourceInput(input)
@@ -145,7 +146,7 @@ func (s *Service) CreateDataSource(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity.Principal, dataSourceID string, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
+	if err := s.authorizeAnyPrincipal(ctx, principal, appaccess.PermAIDataSourcesUpdate, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.DataSource{}, err
 	}
 	input.ID = strings.TrimSpace(dataSourceID)
@@ -157,7 +158,7 @@ func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) ValidateDataSource(ctx context.Context, principal domainidentity.Principal, dataSourceID string) (domaincopilot.DataSource, error) {
-	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
+	if err := s.authorizeAnyPrincipal(ctx, principal, appaccess.PermAIDataSourcesValidate, appaccess.ManagedActionPermission(appaccess.PermSettingsAIManage, "update")); err != nil {
 		return domaincopilot.DataSource{}, err
 	}
 	item, err := s.dataSources.GetDataSource(ctx, strings.TrimSpace(dataSourceID))

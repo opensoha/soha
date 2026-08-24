@@ -12,6 +12,7 @@ import (
 	"time"
 
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -22,7 +23,7 @@ type Store struct {
 	driver string
 }
 
-func New(cfg cfgpkg.DatabaseConfig) (*Store, error) {
+func New(cfg cfgpkg.DatabaseConfig, logger *zap.Logger) (*Store, error) {
 	driver := strings.ToLower(strings.TrimSpace(cfg.Driver))
 	if driver == "" {
 		driver = "postgres"
@@ -36,7 +37,7 @@ func New(cfg cfgpkg.DatabaseConfig) (*Store, error) {
 		return nil, fmt.Errorf("unsupported database driver: %s", driver)
 	}
 
-	db, err := gorm.Open(dialector, &gorm.Config{})
+	db, err := gorm.Open(dialector, &gorm.Config{Logger: newGORMLogger(logger)})
 	if err != nil {
 		return nil, fmt.Errorf("open gorm %s: %w", driver, err)
 	}

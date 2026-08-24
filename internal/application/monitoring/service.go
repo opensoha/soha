@@ -49,43 +49,44 @@ type ServiceTelemetry interface {
 }
 
 type Service struct {
-	alertReader           AlertReader
-	alertWriter           AlertWriter
-	channels              ChannelRepository
-	silences              SilenceRepository
-	deliveryLogs          DeliveryLogRepository
-	rules                 RuleRepository
-	ruleRuns              RuleRunRepository
-	alertEvents           AlertEventRepository
-	notificationPolicies  NotificationPolicyRepository
-	notificationTemplates NotificationTemplateRepository
-	healingPolicies       HealingPolicyRepository
-	healingRuns           HealingRunRepository
-	onCallSchedules       OnCallScheduleRepository
-	onCallRotations       OnCallRotationRepository
-	onCallEscalations     OnCallEscalationRepository
-	onCallAssignments     OnCallAssignmentRepository
-	integrations          AlertIntegrationRepository
-	events                EventWriter
-	permissions           *appaccess.PermissionResolver
-	webhookToken          string
-	webhookKeys           keyring.Ring
-	enabled               bool
-	httpClient            *http.Client
-	automation            AlertAutomationHandler
-	dataSources           DataSourceRepository
-	dashboards            DashboardRepository
-	audit                 AuditRecorder
-	workflow              WorkflowExecutor
-	ruleInterval          time.Duration
-	logs                  LogTelemetry
-	metrics               MetricTelemetry
-	traces                TraceTelemetry
-	services              ServiceTelemetry
-	lifecycleMu           sync.Mutex
-	lifecycleCancel       context.CancelFunc
-	lifecycleDone         chan struct{}
-	running               bool
+	alertReader              AlertReader
+	alertWriter              AlertWriter
+	channels                 ChannelRepository
+	silences                 SilenceRepository
+	deliveryLogs             DeliveryLogRepository
+	rules                    RuleRepository
+	ruleRuns                 RuleRunRepository
+	alertEvents              AlertEventRepository
+	notificationPolicies     NotificationPolicyRepository
+	notificationTemplates    NotificationTemplateRepository
+	healingPolicies          HealingPolicyRepository
+	healingRuns              HealingRunRepository
+	onCallSchedules          OnCallScheduleRepository
+	onCallRotations          OnCallRotationRepository
+	onCallEscalations        OnCallEscalationRepository
+	onCallAssignments        OnCallAssignmentRepository
+	integrations             AlertIntegrationRepository
+	events                   EventWriter
+	permissions              *appaccess.PermissionResolver
+	webhookToken             string
+	webhookKeys              keyring.Ring
+	enabled                  bool
+	httpClient               *http.Client
+	automation               AlertAutomationHandler
+	dataSources              DataSourceRepository
+	dashboards               DashboardRepository
+	audit                    AuditRecorder
+	workflow                 WorkflowExecutor
+	ruleInterval             time.Duration
+	alertEventStreamInterval time.Duration
+	logs                     LogTelemetry
+	metrics                  MetricTelemetry
+	traces                   TraceTelemetry
+	services                 ServiceTelemetry
+	lifecycleMu              sync.Mutex
+	lifecycleCancel          context.CancelFunc
+	lifecycleDone            chan struct{}
+	running                  bool
 }
 
 type Dependencies struct {
@@ -166,36 +167,37 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 		}
 	}
 	service := &Service{
-		alertReader:           deps.AlertReader,
-		alertWriter:           deps.AlertWriter,
-		channels:              deps.Channels,
-		silences:              deps.Silences,
-		deliveryLogs:          deps.DeliveryLogs,
-		rules:                 deps.Rules,
-		ruleRuns:              deps.RuleRuns,
-		alertEvents:           deps.AlertEvents,
-		notificationPolicies:  deps.NotificationPolicies,
-		notificationTemplates: deps.NotificationTemplates,
-		healingPolicies:       deps.HealingPolicies,
-		healingRuns:           deps.HealingRuns,
-		onCallSchedules:       deps.OnCallSchedules,
-		onCallRotations:       deps.OnCallRotations,
-		onCallEscalations:     deps.OnCallEscalations,
-		onCallAssignments:     deps.OnCallAssignments,
-		integrations:          deps.Integrations,
-		events:                deps.Events,
-		dataSources:           deps.DataSources,
-		dashboards:            deps.Dashboards,
-		audit:                 deps.Audit,
-		permissions:           deps.Permissions,
-		enabled:               deps.Enabled,
-		webhookKeys:           deps.WebhookKeys,
-		httpClient:            &http.Client{Timeout: 8 * time.Second},
-		ruleInterval:          1 * time.Minute,
-		logs:                  unavailableTelemetry{},
-		metrics:               unavailableTelemetry{},
-		traces:                unavailableTelemetry{},
-		services:              unavailableTelemetry{},
+		alertReader:              deps.AlertReader,
+		alertWriter:              deps.AlertWriter,
+		channels:                 deps.Channels,
+		silences:                 deps.Silences,
+		deliveryLogs:             deps.DeliveryLogs,
+		rules:                    deps.Rules,
+		ruleRuns:                 deps.RuleRuns,
+		alertEvents:              deps.AlertEvents,
+		notificationPolicies:     deps.NotificationPolicies,
+		notificationTemplates:    deps.NotificationTemplates,
+		healingPolicies:          deps.HealingPolicies,
+		healingRuns:              deps.HealingRuns,
+		onCallSchedules:          deps.OnCallSchedules,
+		onCallRotations:          deps.OnCallRotations,
+		onCallEscalations:        deps.OnCallEscalations,
+		onCallAssignments:        deps.OnCallAssignments,
+		integrations:             deps.Integrations,
+		events:                   deps.Events,
+		dataSources:              deps.DataSources,
+		dashboards:               deps.Dashboards,
+		audit:                    deps.Audit,
+		permissions:              deps.Permissions,
+		enabled:                  deps.Enabled,
+		webhookKeys:              deps.WebhookKeys,
+		httpClient:               &http.Client{Timeout: 8 * time.Second},
+		ruleInterval:             1 * time.Minute,
+		alertEventStreamInterval: 2 * time.Second,
+		logs:                     unavailableTelemetry{},
+		metrics:                  unavailableTelemetry{},
+		traces:                   unavailableTelemetry{},
+		services:                 unavailableTelemetry{},
 	}
 	for _, option := range options {
 		if option != nil {

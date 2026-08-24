@@ -21,6 +21,7 @@ type IdentitySettingsService interface {
 
 type AISettingsService interface {
 	GetAISettings(context.Context, domainidentity.Principal) (domainsettings.AISettings, error)
+	GetAISkillsRegistry(context.Context, domainidentity.Principal) ([]domainsettings.AISkillSettings, error)
 	UpdateAIWorkbenchModelSettings(context.Context, domainidentity.Principal, domainsettings.AIWorkbenchModelSettings) (domainsettings.AISettings, error)
 	UpdateAISkillsRegistry(context.Context, domainidentity.Principal, []domainsettings.AISkillSettings) (domainsettings.AISettings, error)
 }
@@ -106,6 +107,16 @@ func (h *SettingsHandler) GetAISettings(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, mapAISettingsResponse(item))
+}
+
+func (h *SettingsHandler) GetAISkills(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.ai.GetAISkillsRegistry(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, map[string]any{"skillsRegistry": items})
 }
 
 func (h *SettingsHandler) UpdateAIWorkbenchModelSettings(c *gin.Context) {

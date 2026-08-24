@@ -18,6 +18,7 @@ import (
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	swaggerinfra "github.com/opensoha/soha/internal/infrastructure/swagger"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/staticassets"
 	"go.uber.org/zap"
 )
@@ -80,10 +81,15 @@ type Dependencies struct {
 
 func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server {
 	gin.SetMode(gin.ReleaseMode)
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	logger = logger.Named("http")
 
 	router := gin.New()
 	if err := router.SetTrustedProxies(cfg.HTTP.TrustedProxies); err != nil {
-		logger.Error("invalid trusted proxy configuration; proxy headers disabled", zap.Error(err))
+		logger.Error("invalid trusted proxy configuration; proxy headers disabled",
+			zap.String("event", "http.trusted_proxies.invalid"), safeLogError(err))
 		_ = router.SetTrustedProxies(nil)
 	}
 	router.Use(gin.Recovery())
@@ -118,6 +124,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	registerSPA(router, logger, cfg.Assets.Web)
 
 	logger.Info("http server configured",
+		zap.String("event", "http.server.configured"),
 		zap.String("addr", cfg.HTTP.Addr),
 		zap.String("base_path", cfg.HTTP.BasePath),
 	)
@@ -142,14 +149,16 @@ func registerDocs(router *gin.Engine, logger *zap.Logger, cfg cfgpkg.DocsAssetsC
 	case assetModeDir:
 		buildFS, err := staticassets.DiskFS(cfg.Dir)
 		if err != nil {
-			logger.Warn("docs assets not available, docs serving disabled", zap.String("dir", cfg.Dir), zap.Error(err))
+			logger.Warn("docs assets not available, docs serving disabled",
+				zap.String("event", "http.docs.assets_unavailable"), zap.String("dir", cfg.Dir), safeLogError(err))
 			return
 		}
 		registerDocsFS(router, buildFS)
 	case assetModeDisabled:
-		logger.Info("docs serving disabled")
+		logger.Info("docs serving disabled", zap.String("event", "http.docs.disabled"))
 	default:
-		logger.Warn("unknown docs assets mode, docs serving disabled", zap.String("mode", cfg.Mode))
+		logger.Warn("unknown docs assets mode, docs serving disabled",
+			zap.String("event", "http.docs.mode_unknown"), zap.String("mode", cfg.Mode))
 	}
 }
 
@@ -183,7 +192,7 @@ func registerDocsFS(router *gin.Engine, buildFS fs.FS) {
 func registerDocsRedirect(router *gin.Engine, logger *zap.Logger, externalURL string) {
 	baseURL := strings.TrimSpace(externalURL)
 	if baseURL == "" {
-		logger.Warn("docs external URL is empty, docs redirect disabled")
+		logger.Warn("docs external URL is empty, docs redirect disabled", zap.String("event", "http.docs.url_missing"))
 		return
 	}
 
@@ -206,7 +215,8 @@ func registerDocsRedirect(router *gin.Engine, logger *zap.Logger, externalURL st
 func registerDocsProxy(router *gin.Engine, logger *zap.Logger, proxyURL string) {
 	proxy, err := newReverseProxy(proxyURL, logger, "docs")
 	if err != nil {
-		logger.Warn("docs proxy unavailable, docs serving disabled", zap.String("proxy_url", proxyURL), zap.Error(err))
+		logger.Warn("docs proxy unavailable, docs serving disabled",
+			zap.String("event", "http.docs.proxy_unavailable"), safeLogError(err))
 		return
 	}
 
@@ -237,23 +247,26 @@ func registerSPA(router *gin.Engine, logger *zap.Logger, cfg cfgpkg.WebAssetsCon
 	case assetModeEmbed:
 		distFS, err := staticassets.DefaultWebFS(cfg.Dir)
 		if err != nil {
-			logger.Warn("web assets not available, SPA serving disabled", zap.String("dir", cfg.Dir), zap.Error(err))
+			logger.Warn("web assets not available, SPA serving disabled",
+				zap.String("event", "http.web.assets_unavailable"), zap.String("dir", cfg.Dir), safeLogError(err))
 			return
 		}
 		registerSPAFS(router, distFS)
 	case assetModeDir:
 		distFS, err := staticassets.DiskFS(cfg.Dir)
 		if err != nil {
-			logger.Warn("web assets not available, SPA serving disabled", zap.String("dir", cfg.Dir), zap.Error(err))
+			logger.Warn("web assets not available, SPA serving disabled",
+				zap.String("event", "http.web.assets_unavailable"), zap.String("dir", cfg.Dir), safeLogError(err))
 			return
 		}
 		registerSPAFS(router, distFS)
 	case assetModeProxy:
 		registerSPAProxy(router, logger, cfg.ProxyURL)
 	case assetModeDisabled:
-		logger.Info("web serving disabled")
+		logger.Info("web serving disabled", zap.String("event", "http.web.disabled"))
 	default:
-		logger.Warn("unknown web assets mode, SPA serving disabled", zap.String("mode", cfg.Mode))
+		logger.Warn("unknown web assets mode, SPA serving disabled",
+			zap.String("event", "http.web.mode_unknown"), zap.String("mode", cfg.Mode))
 	}
 }
 
@@ -283,7 +296,8 @@ func registerSPAFS(router *gin.Engine, distFS fs.FS) {
 func registerSPAProxy(router *gin.Engine, logger *zap.Logger, proxyURL string) {
 	proxy, err := newReverseProxy(proxyURL, logger, "web")
 	if err != nil {
-		logger.Warn("web proxy unavailable, SPA serving disabled", zap.String("proxy_url", proxyURL), zap.Error(err))
+		logger.Warn("web proxy unavailable, SPA serving disabled",
+			zap.String("event", "http.web.proxy_unavailable"), safeLogError(err))
 		return
 	}
 
@@ -312,6 +326,13 @@ func normalizedAssetMode(raw, fallback string) string {
 	return mode
 }
 
+func safeLogError(err error) zap.Field {
+	if err == nil {
+		return zap.Skip()
+	}
+	return zap.String("error", redaction.LogText(err.Error(), 2048))
+}
+
 func newReverseProxy(rawURL string, logger *zap.Logger, name string) (*httputil.ReverseProxy, error) {
 	target, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
@@ -323,7 +344,8 @@ func newReverseProxy(rawURL string, logger *zap.Logger, name string) (*httputil.
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		logger.Warn("static asset proxy request failed", zap.String("asset", name), zap.Error(err))
+		logger.Warn("static asset proxy request failed",
+			zap.String("event", "http.assets.proxy_failed"), zap.String("asset", name), safeLogError(err))
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 	}
 	return proxy, nil

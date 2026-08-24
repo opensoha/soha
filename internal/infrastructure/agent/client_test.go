@@ -104,11 +104,14 @@ func TestClientResourceYAMLMethodsUseAgentPlatformEndpoints(t *testing.T) {
 	if _, err := client.ApplyResourceYAML(context.Background(), "platform", "ConfigMap", "app-config", "apiVersion: v1\nkind: ConfigMap\n"); err != nil {
 		t.Fatalf("ApplyResourceYAML() error = %v", err)
 	}
+	if _, err := client.DryRunResourceYAML(context.Background(), "platform", "ConfigMap", "app-config", "apiVersion: v1\nkind: ConfigMap\n"); err != nil {
+		t.Fatalf("DryRunResourceYAML() error = %v", err)
+	}
 	if err := client.DeleteResource(context.Background(), "platform", "ConfigMap", "app-config"); err != nil {
 		t.Fatalf("DeleteResource() error = %v", err)
 	}
-	if len(seen) != 3 {
-		t.Fatalf("request count = %d, want 3: %#v", len(seen), seen)
+	if len(seen) != 4 {
+		t.Fatalf("request count = %d, want 4: %#v", len(seen), seen)
 	}
 }
 
@@ -259,12 +262,22 @@ func resourceYAMLTestHandler(t *testing.T, seen *[]string) http.HandlerFunc {
 			handleResourceYAMLGet(t, w, r)
 		case "PUT /api/v1/platform/resources/yaml":
 			handleResourceYAMLApply(t, w, r)
+		case "POST /api/v1/platform/resources/yaml/preflight":
+			handleResourceYAMLPreflight(t, w, r)
 		case "DELETE /api/v1/platform/resources":
 			handleResourceDelete(t, w, r)
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
 	}
+}
+
+func handleResourceYAMLPreflight(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	var req resourceYAMLRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Namespace != "platform" || req.Kind != "ConfigMap" || req.Name != "app-config" || req.Content == "" {
+		t.Fatalf("unexpected preflight request: %#v error=%v", req, err)
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"valid": true}})
 }
 
 func handleResourceYAMLGet(t *testing.T, w http.ResponseWriter, r *http.Request) {

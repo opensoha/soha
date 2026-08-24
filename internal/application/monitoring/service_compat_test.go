@@ -34,6 +34,7 @@ func (s stubMonitoringRolePermissionReader) ListRolePermissions(context.Context)
 }
 
 type stubMonitoringCompatRepository struct {
+	listEventsFn               func(context.Context, domainalert.AlertEventFilter) ([]domainalert.AlertEvent, error)
 	listNotificationPoliciesFn func(context.Context) ([]domainalert.NotificationPolicy, error)
 	createNotificationPolicyFn func(context.Context, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
 	updateNotificationPolicyFn func(context.Context, string, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
@@ -208,12 +209,58 @@ func (s *stubMonitoringCompatRepository) CreateRuleRun(_ context.Context, input 
 	return item, nil
 }
 
-func (s *stubMonitoringCompatRepository) ListEvents(context.Context, domainalert.AlertEventFilter) ([]domainalert.AlertEvent, error) {
+func (s *stubMonitoringCompatRepository) ListEvents(ctx context.Context, filter domainalert.AlertEventFilter) ([]domainalert.AlertEvent, error) {
+	if s.listEventsFn != nil {
+		return s.listEventsFn(ctx, filter)
+	}
 	items := make([]domainalert.AlertEvent, 0, len(s.alertEvents))
 	for _, item := range s.alertEvents {
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func TestServiceSubscribeEventSignalsStartsWithResetAndStreamsDurableChanges(t *testing.T) {
+	filters := make(chan domainalert.AlertEventFilter, 2)
+	called := false
+	repo := &stubMonitoringCompatRepository{
+		listEventsFn: func(_ context.Context, filter domainalert.AlertEventFilter) ([]domainalert.AlertEvent, error) {
+			select {
+			case filters <- filter:
+			default:
+			}
+			if called {
+				return nil, nil
+			}
+			called = true
+			updatedAt := filter.UpdatedAfter.Add(time.Nanosecond)
+			return []domainalert.AlertEvent{{
+				ID: "evt-1", ClusterID: "cluster-a", Namespace: "team-a", Status: "firing", UpdatedAt: updatedAt,
+			}}, nil
+		},
+	}
+	service := serviceWithCompatRepository(repo)
+	service.permissions = monitoringCompatPermissions(appaccess.PermObserveAlertsView)
+	service.alertEventStreamInterval = time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	signals, err := service.SubscribeEventSignals(ctx, monitoringCompatPrincipal(), "cluster-a")
+	if err != nil {
+		t.Fatalf("SubscribeEventSignals() error = %v", err)
+	}
+	reset := <-signals
+	if reset.Type != "reset" || !reset.ResyncRequired {
+		t.Fatalf("initial signal = %#v, want reset requiring resync", reset)
+	}
+	change := <-signals
+	if change.Type != "changed" || change.EventID != "evt-1" || change.ClusterID != "cluster-a" {
+		t.Fatalf("change signal = %#v", change)
+	}
+	filter := <-filters
+	if filter.ClusterID != "cluster-a" || filter.UpdatedAfter.IsZero() || !filter.Ascending {
+		t.Fatalf("stream filter = %#v", filter)
+	}
 }
 
 func (s *stubMonitoringCompatRepository) GetEvent(_ context.Context, eventID string) (domainalert.AlertEvent, error) {

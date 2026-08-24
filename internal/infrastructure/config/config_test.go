@@ -97,6 +97,9 @@ func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
 	if cfg.Logger.Level != "info" {
 		t.Fatalf("logger level default = %q, want info", cfg.Logger.Level)
 	}
+	if cfg.Logger.Format != "json" {
+		t.Fatalf("logger format default = %q, want json", cfg.Logger.Format)
+	}
 	if cfg.Database.Password != "pgsql" {
 		t.Fatalf("database password default = %q, want pgsql", cfg.Database.Password)
 	}
@@ -507,6 +510,29 @@ func TestConfigValidateRejectsInvalidTrustedProxy(t *testing.T) {
 	}
 }
 
+func TestConfigValidateRejectsInvalidLoggerSettings(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		level   string
+		format  string
+		problem string
+	}{
+		{name: "level", level: "verbose", format: "json", problem: "logger.level"},
+		{name: "format", level: "info", format: "text", problem: "logger.format"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := validSecureConfig()
+			cfg.Logger = LoggerConfig{Level: test.level, Format: test.format}
+			if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), test.problem) {
+				t.Fatalf("Validate() error = %v, want %s problem", err, test.problem)
+			}
+		})
+	}
+}
+
 func TestConfigValidateAcceptsTrustedProxyIPAndCIDR(t *testing.T) {
 	t.Parallel()
 
@@ -599,6 +625,7 @@ func TestExpandEnvExpandsSensitiveConfig(t *testing.T) {
 
 func validSecureConfig() Config {
 	return Config{
+		Logger: LoggerConfig{Level: "info", Format: "json"},
 		Runtime: RuntimeConfig{
 			ExecutionRunnerToken: "runner-token-123456789012345678901234",
 		},

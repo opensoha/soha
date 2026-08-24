@@ -167,6 +167,40 @@ func (h *helmReleaseResourceHandler) GetHelmReleaseValues(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
+func (h *helmReleaseResourceHandler) GetHelmReleaseManifest(c *gin.Context) {
+	item, err := h.reader.GetHelmReleaseManifest(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("clusterID"), c.Query("namespace"), c.Param("releaseName"), c.Query("revision"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+func (h *helmReleaseResourceHandler) PlanHelmReleaseRollback(c *gin.Context) {
+	var input domainresource.HelmReleaseRollbackInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid helm release rollback payload")
+		return
+	}
+	plan, err := h.editor.PlanHelmReleaseRollback(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("clusterID"), c.Query("namespace"), c.Param("releaseName"), input)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, plan)
+}
+func (h *helmReleaseResourceHandler) RollbackHelmRelease(c *gin.Context) {
+	var input domainresource.HelmReleaseRollbackInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid helm release rollback payload")
+		return
+	}
+	item, err := h.editor.RollbackHelmRelease(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("clusterID"), c.Query("namespace"), c.Param("releaseName"), input)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
 func (h *helmReleaseResourceHandler) UpdateHelmReleaseValues(c *gin.Context) {
 	var payload struct {
 		Content string `json:"content"`

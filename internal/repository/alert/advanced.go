@@ -213,6 +213,15 @@ func (r *Repository) ListEvents(ctx context.Context, filter domainalert.AlertEve
 		conditions = append(conditions, "cluster_id = ?")
 		args = append(args, strings.TrimSpace(filter.ClusterID))
 	}
+	if !filter.UpdatedAfter.IsZero() {
+		if afterID := strings.TrimSpace(filter.AfterID); afterID != "" {
+			conditions = append(conditions, "(updated_at > ? OR (updated_at = ? AND id > ?))")
+			args = append(args, filter.UpdatedAfter, filter.UpdatedAfter, afterID)
+		} else {
+			conditions = append(conditions, "updated_at > ?")
+			args = append(args, filter.UpdatedAfter)
+		}
+	}
 	query := `
 		SELECT id, rule_id, source_type, source_system, fingerprint, title, summary, severity, status, cluster_id, namespace,
 			labels, annotations, query_snapshot, receiver, generator_url, current_state, last_notification_at, starts_at, ends_at, last_seen_at, created_at, updated_at
@@ -221,7 +230,11 @@ func (r *Repository) ListEvents(ctx context.Context, filter domainalert.AlertEve
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += " ORDER BY last_seen_at DESC, updated_at DESC LIMIT ?"
+	if filter.Ascending {
+		query += " ORDER BY updated_at ASC, id ASC LIMIT ?"
+	} else {
+		query += " ORDER BY last_seen_at DESC, updated_at DESC LIMIT ?"
+	}
 	args = append(args, limit)
 	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {

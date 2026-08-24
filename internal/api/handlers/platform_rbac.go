@@ -36,6 +36,20 @@ func (h *namespacedRBACResourceHandler) ListServiceAccounts(c *gin.Context) {
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
+
+func (h *namespacedRBACResourceHandler) ReviewSubjectAccess(c *gin.Context) {
+	var input domainresource.SubjectAccessReviewInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid subject access review payload")
+		return
+	}
+	item, err := h.service.ReviewSubjectAccess(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("clusterID"), input)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
 func (h *namespacedRBACResourceHandler) GetServiceAccountDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")

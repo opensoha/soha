@@ -198,7 +198,8 @@ func (s *Service) enqueueDAGRun(ctx context.Context, task dagRunTask) error {
 		if s.metrics != nil {
 			s.metrics.SetQueueDepth(runtimeobs.ComponentWorkflowRunner, depth)
 		}
-		s.logDebugCtx(ctx, "workflow queued", zap.String("runID", task.run.ID), zap.String("applicationID", task.run.ApplicationID), zap.Int("queueDepth", depth))
+		s.logDebugCtx(ctx, "workflow queued", zap.String("event", "workflow.queued"),
+			zap.String("run_id", task.run.ID), zap.String("application_id", task.run.ApplicationID), zap.Int("queue_depth", depth))
 		return nil
 	}
 	if s.metrics != nil {

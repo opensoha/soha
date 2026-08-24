@@ -22,6 +22,7 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	aperrors "github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/telemetry"
 	"go.uber.org/zap"
 )
@@ -243,7 +244,9 @@ func (s *Service) sweepAgentRunTimeouts(ctx context.Context) (int, error) {
 			ErrorMessage:      stringValue(payload["error"]),
 		})
 		if callbackErr != nil {
-			s.logWarn("copilot agent runtime timeout callback failed", zap.String("runID", run.ID), zap.Error(callbackErr))
+			s.logWarnCtx(ctx, "copilot agent runtime timeout callback failed",
+				zap.String("event", "copilot.agent_runtime.timeout_callback_failed"), zap.String("run_id", run.ID),
+				zap.String("error", redaction.LogText(callbackErr.Error(), 2048)))
 			continue
 		}
 		count++

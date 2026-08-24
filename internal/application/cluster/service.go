@@ -18,6 +18,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/appconfig"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"go.uber.org/zap"
@@ -144,7 +145,8 @@ func (s *Service) Start(ctx context.Context) {
 func (s *Service) restoreRuntimeRegistrations(ctx context.Context) {
 	connections, err := s.repo.ListConnections(ctx)
 	if err != nil {
-		s.logWarnCtx(ctx, "cluster restore registrations failed", zap.Error(err))
+		s.logWarnCtx(ctx, "cluster restore registrations failed",
+			zap.String("event", "cluster.registrations.restore_failed"), zap.String("error", redaction.LogText(err.Error(), 2048)))
 		return
 	}
 	for _, connection := range connections {
@@ -153,13 +155,15 @@ func (s *Service) restoreRuntimeRegistrations(ctx context.Context) {
 		}
 		cfg, err := runtimeClusterConfig(connection)
 		if err != nil {
-			s.logWarnCtx(ctx, "cluster runtime config invalid", zap.String("clusterID", connection.Summary.ID), zap.Error(err))
+			s.logWarnCtx(ctx, "cluster runtime config invalid", zap.String("event", "cluster.runtime_config.invalid"),
+				zap.String("cluster_id", connection.Summary.ID), zap.String("error", redaction.LogText(err.Error(), 2048)))
 			continue
 		}
 		s.registry.RegisterCluster(*cfg)
 		if s.cache != nil {
 			if err := s.cache.RegisterCluster(ctx, connection.Summary.ID); err != nil {
-				s.logWarnCtx(ctx, "cluster informer registration failed", zap.String("clusterID", connection.Summary.ID), zap.Error(err))
+				s.logWarnCtx(ctx, "cluster informer registration failed", zap.String("event", "cluster.informer.registration_failed"),
+					zap.String("cluster_id", connection.Summary.ID), zap.String("error", redaction.LogText(err.Error(), 2048)))
 			}
 		}
 	}
@@ -488,10 +492,15 @@ func (s *Service) runSyncCycle(ctx context.Context, operationID string) {
 		s.metrics.RecordFinish(runtimeobs.ComponentClusterSync, operationID, time.Since(startedAt), 0, itemCount, outcome, err)
 	}
 	if err != nil {
-		s.logWarnCtx(ctx, "cluster sync failed", zap.String("operation", operationID), zap.Int("items", itemCount), zap.Duration("duration", time.Since(startedAt)), zap.Error(err))
+		s.logWarnCtx(ctx, "cluster sync failed", zap.String("event", "cluster.sync.failed"),
+			zap.String("operation_id", operationID), zap.Int("item_count", itemCount),
+			zap.Float64("duration_ms", float64(time.Since(startedAt))/float64(time.Millisecond)),
+			zap.String("error", redaction.LogText(err.Error(), 2048)))
 		return
 	}
-	s.logDebugCtx(ctx, "cluster sync completed", zap.String("operation", operationID), zap.Int("items", itemCount), zap.Duration("duration", time.Since(startedAt)))
+	s.logDebugCtx(ctx, "cluster sync completed", zap.String("event", "cluster.sync.completed"),
+		zap.String("operation_id", operationID), zap.Int("item_count", itemCount),
+		zap.Float64("duration_ms", float64(time.Since(startedAt))/float64(time.Millisecond)))
 }
 
 func (s *Service) runSyncJobs(ctx context.Context, total int, run func(jobIndex int) error) error {
@@ -657,7 +666,8 @@ func (s *Service) registerCache(ctx context.Context, clusterID string) {
 		return
 	}
 	if err := s.cache.RegisterCluster(ctx, clusterID); err != nil {
-		s.logWarnCtx(ctx, "cluster informer registration failed", zap.String("clusterID", clusterID), zap.Error(err))
+		s.logWarnCtx(ctx, "cluster informer registration failed", zap.String("event", "cluster.informer.registration_failed"),
+			zap.String("cluster_id", clusterID), zap.String("error", redaction.LogText(err.Error(), 2048)))
 	}
 }
 

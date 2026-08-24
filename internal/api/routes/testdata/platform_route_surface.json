@@ -22,6 +22,11 @@
       "classification": "internal"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/access-control/access-reviews",
+      "classification": "public"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/access-control/clusterrolebindings",
       "classification": "public"
@@ -548,6 +553,21 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/helm/releases/:releaseName/manifest",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/helm/releases/:releaseName/rollback",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/helm/releases/:releaseName/rollback/plan",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/clusters/:clusterID/helm/releases/:releaseName/values",
       "classification": "internal"
     },
@@ -909,6 +929,31 @@
     {
       "method": "POST",
       "path": "/api/v1/clusters/:clusterID/resource-creation/workload-snapshot",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/resources/graph",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/resources/search",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/resources/stream",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/resources/update-plan",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/security/posture",
       "classification": "public"
     },
     {

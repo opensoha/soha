@@ -230,6 +230,35 @@ func TestCanonicalAIMenusUseExactReadPermissions(t *testing.T) {
 	}
 }
 
+func TestSkillsMCPAndDataSourceMenusUseIndependentPermissions(t *testing.T) {
+	entry := appaccess.PermWorkbenchAIView
+	mcp := domainmenu.Record{ID: "ai-workbench-mcp", Path: "/ai-workbench/mcp"}
+	dataSources := domainmenu.Record{ID: "ai-workbench-data-sources", Path: "/ai-workbench/data-sources"}
+	skills := domainmenu.Record{ID: "ai-workbench-skills", Path: "/ai-workbench/skills"}
+
+	if !isVisibleByPermissions(mcp, []string{entry, appaccess.PermObserveAIView}) {
+		t.Fatal("MCP menu should accept AI observe permission")
+	}
+	if isVisibleByPermissions(mcp, []string{entry, appaccess.PermSettingsAIView}) {
+		t.Fatal("MCP menu must not borrow data-source visibility")
+	}
+	if !isVisibleByPermissions(dataSources, []string{entry, appaccess.PermAIDataSourcesView}) {
+		t.Fatal("Data Sources menu should accept its view permission")
+	}
+	if !isVisibleByPermissions(dataSources, []string{entry, appaccess.PermSettingsAIView}) {
+		t.Fatal("Data Sources menu should retain settings AI compatibility")
+	}
+	if isVisibleByPermissions(skills, []string{entry, appaccess.PermObserveAIView}) {
+		t.Fatal("Skills menu must not borrow MCP visibility")
+	}
+	if !isVisibleByPermissions(skills, []string{entry, appaccess.ManagedActionPermission(appaccess.PermAIGatewaySkillsManage, "view")}) {
+		t.Fatal("Skills menu should accept skills view permission")
+	}
+	if !isVisibleByPermissions(skills, []string{entry, appaccess.PermSettingsAIView}) {
+		t.Fatal("Skills menu should retain settings AI compatibility")
+	}
+}
+
 func TestAIGatewayChildMenusUseSpecificPermissions(t *testing.T) {
 	manifest := domainmenu.Record{ID: "ai-gateway-manifest", Path: "/ai-gateway/manifest"}
 	clients := domainmenu.Record{ID: "ai-gateway-clients", Path: "/ai-gateway/clients"}

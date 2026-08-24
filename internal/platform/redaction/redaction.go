@@ -3,6 +3,7 @@ package redaction
 import (
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 const Redacted = "[REDACTED]"
@@ -71,6 +72,27 @@ func Text(value string) string {
 	value = authorizationValuePattern.ReplaceAllString(value, "$1"+Redacted)
 	value = sensitiveValuePattern.ReplaceAllString(value, "$1$2"+Redacted)
 	return sensitiveQueryPattern.ReplaceAllString(value, "$1"+Redacted)
+}
+
+func LogText(value string, maxBytes int) string {
+	value = Text(value)
+	value = strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == '\t' {
+			return ' '
+		}
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, value)
+	if maxBytes <= 0 || len(value) <= maxBytes {
+		return value
+	}
+	value = value[:maxBytes]
+	for len(value) > 0 && !utf8.ValidString(value) {
+		value = value[:len(value)-1]
+	}
+	return value + "..."
 }
 
 func SensitiveKey(key string) bool {

@@ -12,6 +12,10 @@ func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/clusters/:clusterID/resource-creation/workload-snapshot", deps.Platform.GenerateWorkloadSnapshot)
 	protected.POST("/clusters/:clusterID/resource-creation/preflight", deps.Platform.PreflightResourceCreation)
 	protected.POST("/clusters/:clusterID/resource-creation/execute", deps.Platform.ExecuteResourceCreation)
+	protected.POST("/clusters/:clusterID/resources/update-plan", deps.Platform.PlanResourceUpdate)
+	protected.GET("/clusters/:clusterID/resources/stream", deps.Platform.StreamResourceEvents)
+	protected.GET("/clusters/:clusterID/resources/graph", deps.Platform.GetResourceGraph)
+	protected.GET("/clusters/:clusterID/security/posture", deps.Platform.GetSecurityPosture)
 	registerPlatformClusterRoutes(protected, deps)
 	registerPlatformLogRoutes(protected, deps)
 	registerPlatformWorkloadRoutes(protected, deps)
@@ -141,6 +145,7 @@ func registerPlatformConfigurationRoutes(protected gin.IRoutes, deps Dependencie
 	protected.GET("/clusters/:clusterID/configuration/leases", deps.Platform.ListLeases)
 
 	protected.GET("/clusters/:clusterID/access-control/serviceaccounts", deps.Platform.ListServiceAccounts)
+	protected.POST("/clusters/:clusterID/access-control/access-reviews", deps.Platform.ReviewSubjectAccess)
 	protected.POST("/clusters/:clusterID/access-control/serviceaccounts", deps.Platform.CreateServiceAccount)
 	protected.GET("/clusters/:clusterID/access-control/serviceaccounts/:name/detail", deps.Platform.GetServiceAccountDetail)
 	protected.GET("/clusters/:clusterID/access-control/roles", deps.Platform.ListRoles)
@@ -186,6 +191,7 @@ func registerPlatformNetworkStorageRoutes(protected gin.IRoutes, deps Dependenci
 	protected.GET("/clusters/:clusterID/network/port-forwards", deps.Platform.ListPortForwards)
 	protected.POST("/clusters/:clusterID/network/port-forwards", deps.Platform.RegisterPortForward)
 	protected.DELETE("/clusters/:clusterID/network/port-forwards/:sessionID", deps.Platform.StopPortForward)
+	protected.GET("/clusters/:clusterID/resources/search", deps.Platform.SearchResources)
 
 	protected.GET("/clusters/:clusterID/storage/persistentvolumeclaims", deps.Platform.ListPersistentVolumeClaims)
 	protected.POST("/clusters/:clusterID/storage/persistentvolumeclaims", deps.Platform.CreatePersistentVolumeClaim)
@@ -216,8 +222,11 @@ func registerPlatformExtensionRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/clusters/:clusterID/helm/releases", deps.Platform.ListHelmReleases)
 	protected.GET("/clusters/:clusterID/helm/releases/:releaseName/detail", deps.Platform.GetHelmReleaseDetail)
 	protected.GET("/clusters/:clusterID/helm/releases/:releaseName/history", deps.Platform.ListHelmReleaseHistory)
+	protected.GET("/clusters/:clusterID/helm/releases/:releaseName/manifest", deps.Platform.GetHelmReleaseManifest)
 	protected.GET("/clusters/:clusterID/helm/releases/:releaseName/values", deps.Platform.GetHelmReleaseValues)
 	protected.PUT("/clusters/:clusterID/helm/releases/:releaseName/values", deps.Platform.UpdateHelmReleaseValues)
+	protected.POST("/clusters/:clusterID/helm/releases/:releaseName/rollback/plan", deps.Platform.PlanHelmReleaseRollback)
+	protected.POST("/clusters/:clusterID/helm/releases/:releaseName/rollback", deps.Platform.RollbackHelmRelease)
 	protected.DELETE("/clusters/:clusterID/helm/releases/:releaseName", deps.Platform.DeleteHelmRelease)
 
 	protected.GET("/clusters/:clusterID/events", deps.Platform.ListClusterEvents)

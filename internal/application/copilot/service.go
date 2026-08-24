@@ -31,6 +31,7 @@ import (
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	aperrors "github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"github.com/opensoha/soha/internal/platform/telemetry"
 	"go.uber.org/zap"
@@ -467,15 +468,15 @@ func (s *Service) SetAgentRuntimeReaders(execution ExecutionTaskReader, resource
 	s.oncall = oncall
 }
 
-func (s *Service) logWarn(message string, fields ...zap.Field) {
+func (s *Service) logWarnCtx(ctx context.Context, message string, fields ...zap.Field) {
 	if s.logger != nil {
-		s.logger.Warn(message, fields...)
+		s.logger.Warn(message, append(requestctx.LoggerFields(requestctx.FromContext(ctx)), fields...)...)
 	}
 }
 
-func (s *Service) logDebug(message string, fields ...zap.Field) {
+func (s *Service) logDebugCtx(ctx context.Context, message string, fields ...zap.Field) {
 	if s.logger != nil {
-		s.logger.Debug(message, fields...)
+		s.logger.Debug(message, append(requestctx.LoggerFields(requestctx.FromContext(ctx)), fields...)...)
 	}
 }
 

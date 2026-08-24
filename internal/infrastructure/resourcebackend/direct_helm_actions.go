@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opensoha/soha-contracts/helmrelease"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -112,6 +113,67 @@ func (d *Direct) GetHelmReleaseValues(ctx context.Context, clusterID, namespace,
 		Revision: strconv.Itoa(releaseV1.Version), Content: content, Original: content,
 		Editable: false, DiffEnabled: true,
 	}, nil
+}
+
+func (d *Direct) GetHelmReleaseManifest(ctx context.Context, clusterID, namespace, name, revision string) (domainresource.HelmReleaseManifestView, error) {
+	actionConfig, err := d.helmActionConfig(ctx, clusterID, namespace)
+	if err != nil {
+		return domainresource.HelmReleaseManifestView{}, err
+	}
+	getter := action.NewGet(actionConfig)
+	if strings.TrimSpace(revision) != "" {
+		parsedRevision, err := strconv.Atoi(strings.TrimSpace(revision))
+		if err != nil || parsedRevision <= 0 {
+			return domainresource.HelmReleaseManifestView{}, fmt.Errorf("%w: revision must be a positive integer", apperrors.ErrInvalidArgument)
+		}
+		getter.Version = parsedRevision
+	}
+	release, err := getter.Run(name)
+	if err != nil {
+		return domainresource.HelmReleaseManifestView{}, mapHelmReleaseSDKError(name, "get helm release manifest", err)
+	}
+	releaseV1, err := helmSDKReleaseV1(release)
+	if err != nil {
+		return domainresource.HelmReleaseManifestView{}, mapHelmReleaseSDKError(name, "read helm release manifest", err)
+	}
+	return domainresource.HelmReleaseManifestView{
+		Name: releaseV1.Name, Namespace: releaseV1.Namespace, Revision: strconv.Itoa(releaseV1.Version),
+		Content: releaseV1.Manifest, Digest: helmrelease.Digest(releaseV1.Manifest),
+	}, nil
+}
+
+func (d *Direct) DryRunHelmReleaseRollback(ctx context.Context, clusterID, namespace, name string, input domainresource.HelmReleaseRollbackInput) error {
+	_, err := d.rollbackHelmRelease(ctx, clusterID, namespace, name, input, true)
+	return err
+}
+
+func (d *Direct) RollbackHelmRelease(ctx context.Context, clusterID, namespace, name string, input domainresource.HelmReleaseRollbackInput) (domainresource.HelmReleaseDetailView, error) {
+	return d.rollbackHelmRelease(ctx, clusterID, namespace, name, input, false)
+}
+
+func (d *Direct) rollbackHelmRelease(ctx context.Context, clusterID, namespace, name string, input domainresource.HelmReleaseRollbackInput, dryRun bool) (domainresource.HelmReleaseDetailView, error) {
+	actionConfig, err := d.helmActionConfig(ctx, clusterID, namespace)
+	if err != nil {
+		return domainresource.HelmReleaseDetailView{}, err
+	}
+	rollback := action.NewRollback(actionConfig)
+	rollback.Version = input.Revision
+	rollback.Timeout = time.Duration(input.TimeoutSeconds) * time.Second
+	rollback.WaitForJobs = input.Wait
+	rollback.WaitStrategy = kube.HookOnlyStrategy
+	if input.Wait {
+		rollback.WaitStrategy = kube.LegacyStrategy
+	}
+	if dryRun {
+		rollback.DryRunStrategy = action.DryRunServer
+	}
+	if err := rollback.Run(name); err != nil {
+		return domainresource.HelmReleaseDetailView{}, mapHelmReleaseSDKError(name, "rollback helm release", err)
+	}
+	if dryRun {
+		return domainresource.HelmReleaseDetailView{}, nil
+	}
+	return d.GetHelmReleaseDetail(ctx, clusterID, namespace, name)
 }
 
 func (d *Direct) UpdateHelmReleaseValues(ctx context.Context, clusterID, namespace, name, content string) (domainresource.HelmValuesView, error) {

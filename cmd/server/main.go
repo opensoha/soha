@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/opensoha/soha/internal/bootstrap"
+	"github.com/opensoha/soha/internal/platform/redaction"
 	"go.uber.org/zap"
 )
 
@@ -37,14 +38,15 @@ func runServer(ctx context.Context) error {
 		runErr <- application.Run()
 	}()
 
-	application.Logger.Info("soha api started")
+	application.Logger.Info("soha api started", zap.String("event", "server.started"))
 
 	var runFailure error
 	select {
 	case <-ctx.Done():
 	case err := <-runErr:
 		if err != nil {
-			application.Logger.Error("server exited with error", zap.Error(err))
+			application.Logger.Error("server exited with error",
+				zap.String("event", "server.run.failed"), zap.String("error", redaction.LogText(err.Error(), 2048)))
 			runFailure = fmt.Errorf("run soha api: %w", err)
 		}
 	}
@@ -52,7 +54,8 @@ func runServer(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := application.Shutdown(shutdownCtx); err != nil {
-		application.Logger.Error("graceful shutdown failed", zap.Error(err))
+		application.Logger.Error("graceful shutdown failed",
+			zap.String("event", "server.shutdown.failed"), zap.String("error", redaction.LogText(err.Error(), 2048)))
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
 	return runFailure

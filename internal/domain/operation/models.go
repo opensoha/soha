@@ -3,6 +3,8 @@ package operation
 import (
 	"context"
 	"time"
+
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
 type Entry struct {
@@ -22,14 +24,15 @@ type Entry struct {
 }
 
 type Plan struct {
-	Capability       string       `json:"capability"`
-	Target           string       `json:"target"`
-	Ready            bool         `json:"ready"`
-	RiskLevel        string       `json:"riskLevel"`
-	RequiresApproval bool         `json:"requiresApproval"`
-	InputHash        string       `json:"inputHash,omitempty"`
-	Changes          []PlanChange `json:"changes"`
-	Warnings         []string     `json:"warnings"`
+	Capability               string                                 `json:"capability"`
+	Target                   string                                 `json:"target"`
+	Ready                    bool                                   `json:"ready"`
+	RiskLevel                string                                 `json:"riskLevel"`
+	RequiresApproval         bool                                   `json:"requiresApproval"`
+	InputHash                string                                 `json:"inputHash,omitempty"`
+	Changes                  []PlanChange                           `json:"changes"`
+	Warnings                 []string                               `json:"warnings"`
+	KubernetesResourceUpdate *domainresource.ResourceUpdateAnalysis `json:"kubernetesResourceUpdate,omitempty"`
 }
 
 type PlanChange struct {

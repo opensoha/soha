@@ -6,7 +6,22 @@ import (
 	"github.com/gin-gonic/gin"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
+
+func (h *genericResourceHandler) PlanResourceUpdate(c *gin.Context) {
+	var request domainresource.ResourceUpdatePlanRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid resource update plan payload")
+		return
+	}
+	plan, err := h.service.PlanResourceYAMLUpdate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("clusterID"), request)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, plan)
+}
 
 func (h *genericResourceHandler) genericResourceYAMLGetWithParam(kind, nameParam string) gin.HandlerFunc {
 	return func(c *gin.Context) {

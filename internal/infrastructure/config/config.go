@@ -15,6 +15,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/appconfig"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/spf13/viper"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -400,6 +401,15 @@ func (c Config) Validate() error {
 
 func (c Config) staticProblems() []string {
 	problems := make([]string, 0)
+	var logLevel zapcore.Level
+	if err := logLevel.UnmarshalText([]byte(strings.ToLower(strings.TrimSpace(c.Logger.Level)))); err != nil {
+		problems = append(problems, fmt.Sprintf("logger.level %q is invalid", c.Logger.Level))
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Logger.Format)) {
+	case "console", "json":
+	default:
+		problems = append(problems, fmt.Sprintf("logger.format %q must be console or json", c.Logger.Format))
+	}
 	if c.Auth.EnableDevAuth {
 		problems = append(problems, "auth.enable_dev_auth must be false")
 	}
@@ -712,7 +722,7 @@ var configDefaults = []struct {
 	{"http.cors_allowed_origins", []string{"http://localhost:*", "http://127.0.0.1:*"}},
 	{"http.trusted_proxies", []string{}},
 	{"logger.level", "info"},
-	{"logger.format", "console"},
+	{"logger.format", "json"},
 	{"runtime.workflow_workers", 4},
 	{"runtime.workflow_queue_size", 64},
 	{"runtime.workflow_node_parallelism", 4},

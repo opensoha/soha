@@ -8,6 +8,7 @@ import (
 
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	corev1 "k8s.io/api/core/v1"
@@ -61,6 +62,13 @@ func (d *Direct) ListClusterEvents(ctx context.Context, clusterID, namespace str
 		views = views[:limit]
 	}
 	return views, source, nil
+}
+
+func (d *Direct) SubscribeResourceEvents(clusterID, namespace string, kinds []string) (<-chan domainresource.ResourceStreamEvent, func(), error) {
+	if d == nil || d.cache == nil || d.cache.Service == nil {
+		return nil, nil, informerinfra.ErrCacheNotReady
+	}
+	return d.cache.Subscribe(clusterID, namespace, kinds)
 }
 
 func (d *Direct) directClients(ctx context.Context, clusterID string) (*k8sinfra.Bundle, error) {

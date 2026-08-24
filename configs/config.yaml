@@ -16,7 +16,7 @@ http:
 
 logger:
   level: info
-  format: console
+  format: json
 
 runtime:
   virtualization_startup_sync_enabled: true

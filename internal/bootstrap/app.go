@@ -19,8 +19,9 @@ func New(ctx context.Context) (*App, error) {
 		return nil, initErr
 	}
 	if keys := cfg.DefaultSystemSecretKeys(); len(keys) > 0 {
-		infra.logger.Warn(
+		infra.logger.Named("bootstrap").Warn(
 			"public default system secrets are configured; override them before exposing Soha",
+			zap.String("event", "security.default_secrets.configured"),
 			zap.Strings("config_keys", keys),
 		)
 	}
@@ -47,7 +48,7 @@ func New(ctx context.Context) (*App, error) {
 
 	return &App{
 		Config:                cfg,
-		Logger:                infra.logger,
+		Logger:                infra.logger.Named("server"),
 		Database:              infra.databaseStore,
 		Informers:             infra.informers,
 		WorkflowService:       delivery.workflowService,

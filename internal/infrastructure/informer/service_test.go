@@ -14,6 +14,7 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/redaction"
 )
@@ -89,6 +90,9 @@ func TestResourceReadinessIsIndependent(t *testing.T) {
 	if status.Status != "partial" || status.Ready {
 		t.Fatalf("Status() = %#v, want partial and not fully ready", status)
 	}
+	if streamStatus := resourceStreamCacheStatus(status); streamStatus != "degraded" {
+		t.Fatalf("resourceStreamCacheStatus() = %q, want degraded", streamStatus)
+	}
 }
 
 func TestRegistrationErrorIsDiagnosable(t *testing.T) {
@@ -110,6 +114,128 @@ func TestWatchErrorDiagnosticIsRedacted(t *testing.T) {
 	diagnostic := state.diagnostic(resourcePods)
 	if diagnostic.Status != "degraded" || !diagnostic.Ready || strings.Contains(diagnostic.Message, "super-secret") {
 		t.Fatalf("diagnostic = %#v", diagnostic)
+	}
+}
+
+func TestResourceEventSubscriptionFiltersNamespaceAndKind(t *testing.T) {
+	client := fake.NewSimpleClientset()
+	service := New(fakeBundleManager{bundle: &k8sinfra.Bundle{Typed: client}})
+	if err := service.RegisterCluster(t.Context(), "cluster-1"); err != nil {
+		t.Fatalf("RegisterCluster() error = %v", err)
+	}
+	t.Cleanup(service.Stop)
+	waitFor(t, 3*time.Second, func() bool { return service.Ready("cluster-1") })
+
+	events, cancel, err := service.Subscribe("cluster-1", "ns-a", []string{"Pod"})
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	t.Cleanup(cancel)
+	select {
+	case event := <-events:
+		if event.Type != "status" || event.CacheStatus != "live" {
+			t.Fatalf("initial event = %#v, want live status", event)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for initial resource stream status")
+	}
+	if _, err := client.CoreV1().Services("ns-a").Create(t.Context(), &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "ignored-service", Namespace: "ns-a"}}, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+	if _, err := client.CoreV1().Pods("ns-b").Create(t.Context(), &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "ignored-pod", Namespace: "ns-b"}}, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create other pod: %v", err)
+	}
+	if _, err := client.CoreV1().Pods("ns-a").Create(t.Context(), &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "ns-a", UID: "pod-uid"}}, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("create pod: %v", err)
+	}
+
+	select {
+	case event := <-events:
+		if event.Type != "added" || event.ClusterID != "cluster-1" || event.Resource == nil {
+			t.Fatalf("event = %#v", event)
+		}
+		if event.Resource.Kind != "Pod" || event.Resource.Name != "api" || event.Resource.Namespace != "ns-a" || event.Resource.UID != "pod-uid" {
+			t.Fatalf("resource = %#v", event.Resource)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for resource event")
+	}
+}
+
+func TestResourceEventSubscriptionsClose(t *testing.T) {
+	tests := []struct {
+		name string
+		stop func(*Service, func())
+	}{
+		{name: "cancel", stop: func(_ *Service, cancel func()) { cancel() }},
+		{name: "unregister", stop: func(service *Service, _ func()) { service.UnregisterCluster("cluster-1") }},
+		{name: "stop", stop: func(service *Service, _ func()) { service.Stop() }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := readySubscriptionService()
+			events, cancel, err := service.Subscribe("cluster-1", "", nil)
+			if err != nil {
+				t.Fatalf("Subscribe() error = %v", err)
+			}
+			<-events
+			test.stop(service, cancel)
+			cancel()
+			select {
+			case _, ok := <-events:
+				if ok {
+					t.Fatal("subscription remained open")
+				}
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for subscription close")
+			}
+		})
+	}
+}
+
+func TestResourceEventPublishAndUnregisterAreConcurrentSafe(t *testing.T) {
+	service := readySubscriptionService()
+	events, cancel, err := service.Subscribe("cluster-1", "", nil)
+	if err != nil {
+		t.Fatalf("Subscribe() error = %v", err)
+	}
+	defer cancel()
+	<-events
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 1000 {
+			service.publish(domainresource.ResourceStreamEvent{Type: "modified", ClusterID: "cluster-1"})
+		}
+	}()
+	service.UnregisterCluster("cluster-1")
+	<-done
+	for range events {
+	}
+}
+
+func readySubscriptionService() *Service {
+	service := New(fakeBundleManager{})
+	resources := newResourceStates()
+	for _, state := range resources {
+		state.transition("ready", "", true)
+	}
+	service.caches["cluster-1"] = &clusterCache{stopCh: make(chan struct{}), resources: resources}
+	return service
+}
+
+func TestDegradedResourceCacheIsUnavailable(t *testing.T) {
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	if err := indexer.Add(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "ns-a"}}); err != nil {
+		t.Fatalf("index pod: %v", err)
+	}
+	entry := &clusterCache{podLister: corelisters.NewPodLister(indexer), resources: newResourceStates()}
+	entry.resources[resourcePods].transition("degraded", "watch disconnected", true)
+	service := New(fakeBundleManager{})
+	service.caches["cluster-1"] = entry
+
+	if _, err := service.ListPods("cluster-1", "ns-a"); !errors.Is(err, ErrCacheNotReady) {
+		t.Fatalf("ListPods() error = %v, want ErrCacheNotReady", err)
 	}
 }
 

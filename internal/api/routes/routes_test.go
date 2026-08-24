@@ -136,9 +136,9 @@ func TestRegisterComputeRoutesAlwaysRegistersStableSurface(t *testing.T) {
 		cfg  cfgpkg.Config
 		want int
 	}{
-		{name: "disabled", cfg: cfgpkg.Config{}, want: 16},
-		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 16},
-		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 16},
+		{name: "disabled", cfg: cfgpkg.Config{}, want: 17},
+		{name: "virtualization", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 17},
+		{name: "docker", cfg: cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}}}, want: 17},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			router := gin.New()
@@ -167,6 +167,7 @@ func TestRegisterComputeRoutesAlwaysRegistersStableSurface(t *testing.T) {
 					"POST /api/v1/compute/resources/:domain/:kind/:id/actions/:action",
 					"GET /api/v1/compute/tasks/:domain/:id",
 					"GET /api/v1/compute/tasks/:domain/:id/logs",
+					"GET /api/v1/compute/tasks/:domain/:id/stream",
 					"POST /api/v1/compute/tasks/:domain/:id/cancel",
 					"POST /api/v1/compute/tasks/:domain/:id/retry",
 				} {

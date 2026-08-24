@@ -70,6 +70,9 @@ func TestListIncludesCanonicalAIMenus(t *testing.T) {
 		"ai-workbench-provider-fleet",
 		"ai-workbench-environments",
 		"ai-workbench-production-operations",
+		"ai-workbench-mcp",
+		"ai-workbench-data-sources",
+		"ai-workbench-skills",
 	} {
 		if !slices.Contains(status.Descriptor.SeedMenus, id) {
 			t.Fatalf("AI seed menus missing %s: %v", id, status.Descriptor.SeedMenus)

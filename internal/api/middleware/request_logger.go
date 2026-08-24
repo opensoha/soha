@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	"github.com/opensoha/soha/internal/platform/redaction"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 	"go.uber.org/zap"
 )
 
@@ -20,15 +21,26 @@ func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 		startedAt := time.Now()
 		c.Next()
 
-		fields := []zap.Field{
-			zap.String("request_id", c.GetString("request_id")),
+		status := c.Writer.Status()
+		route := c.FullPath()
+		if route == "" {
+			route = "unmatched"
+		}
+		if status < http.StatusBadRequest && (route == "/healthz" || route == "/readyz") {
+			return
+		}
+
+		fields := append([]zap.Field{
+			zap.String("event", requestLogEvent(status)),
+		}, requestctx.CorrelationFields(requestctx.FromContext(c.Request.Context()))...)
+		fields = append(fields,
 			zap.String("method", c.Request.Method),
-			zap.String("path", c.Request.URL.Path),
+			zap.String("route", route),
 			zap.String("peer_ip", requestPeerIP(c.Request)),
 			zap.String("client_ip", c.ClientIP()),
-			zap.Int("status", c.Writer.Status()),
-			zap.Duration("latency", time.Since(startedAt)),
-		}
+			zap.Int("status", status),
+			zap.Float64("latency_ms", float64(time.Since(startedAt))/float64(time.Millisecond)),
+		)
 		if len(c.Errors) > 0 {
 			fields = append(fields, zap.String("error", safeRequestError(c.Errors.Last().Err)))
 		}
@@ -36,11 +48,13 @@ func RequestLogger(logger *zap.Logger) gin.HandlerFunc {
 			fields = append(fields, zap.String("error_code", code))
 		}
 
-		switch status := c.Writer.Status(); {
+		switch {
 		case status >= http.StatusInternalServerError:
 			logger.Error("http request failed", fields...)
-		case status >= http.StatusBadRequest:
+		case status == http.StatusUnauthorized || status == http.StatusForbidden || status == http.StatusTooManyRequests:
 			logger.Warn("http request rejected", fields...)
+		case status >= http.StatusBadRequest:
+			logger.Info("http request rejected", fields...)
 		default:
 			logger.Info("http request completed", fields...)
 		}
@@ -51,21 +65,17 @@ func safeRequestError(err error) string {
 	if err == nil {
 		return ""
 	}
-	const maxCauseBytes = 2048
-	cause := redaction.Text(err.Error())
-	cause = strings.Map(func(r rune) rune {
-		if r == '\n' || r == '\r' || r == '\t' {
-			return ' '
-		}
-		if r < 0x20 || r == 0x7f {
-			return -1
-		}
-		return r
-	}, cause)
-	if len(cause) > maxCauseBytes {
-		cause = cause[:maxCauseBytes] + "..."
+	return redaction.LogText(err.Error(), 2048)
+}
+
+func requestLogEvent(status int) string {
+	if status >= http.StatusInternalServerError {
+		return "http.request.failed"
 	}
-	return cause
+	if status >= http.StatusBadRequest {
+		return "http.request.rejected"
+	}
+	return "http.request.completed"
 }
 
 func requestPeerIP(request *http.Request) string {

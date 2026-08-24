@@ -72,6 +72,7 @@ func registerAlertRuleRoutes(protected gin.IRoutes, deps Dependencies) {
 
 func registerAlertEventRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/alert-events", deps.Monitoring.ListEvents)
+	protected.GET("/alert-events/stream", deps.Monitoring.StreamEvents)
 	protected.GET("/alert-events/:eventID", deps.Monitoring.GetEvent)
 	protected.POST("/alert-events/:eventID/acknowledge", deps.Monitoring.AcknowledgeEvent)
 	protected.POST("/alert-events/:eventID/resolve", deps.Monitoring.ResolveEvent)

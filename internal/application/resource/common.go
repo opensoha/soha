@@ -267,7 +267,7 @@ func resourcePermissionKey(resourceGroup, kind string, action domainaccess.Actio
 		case "workloads", "configuration", "network", "storage", "access-control":
 			return appaccess.PlatformActionPermission(resourceGroup, kind, string(domainaccess.ActionView))
 		case "extensions":
-			if strings.EqualFold(kind, "HelmRelease") {
+			if strings.EqualFold(kind, "HelmRelease") || strings.EqualFold(kind, "HelmChart") {
 				return appaccess.PermPlatformHelmView
 			}
 			return appaccess.PermPlatformExtensionsView
@@ -496,7 +496,7 @@ func resourceGroupForKind(kind string) string {
 		return "storage"
 	case "serviceaccount", "role", "rolebinding", "clusterrole", "clusterrolebinding":
 		return "access-control"
-	case "customresourcedefinition", "customresource", "helmrelease", "workloadcronjob":
+	case "customresourcedefinition", "customresource", "helmchart", "helmrelease", "workloadcronjob":
 		return "extensions"
 	case "namespace", "node", "cluster":
 		return "inventory"

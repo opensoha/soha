@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
@@ -18,6 +19,7 @@ import (
 type computeHandlerFake struct {
 	filter         appcompute.TaskFilter
 	idempotencyKey string
+	task           sohaapi.ComputeTaskView
 }
 
 func (*computeHandlerFake) Capabilities(context.Context, domainidentity.Principal) (sohaapi.ComputeCapabilityManifest, error) {
@@ -61,7 +63,10 @@ func (f *computeHandlerFake) ListTasks(_ context.Context, _ domainidentity.Princ
 	}
 	return sohaapi.ComputeTaskListEnvelope{}, nil
 }
-func (*computeHandlerFake) GetTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error) {
+func (f *computeHandlerFake) GetTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error) {
+	if f.task.ID != "" {
+		return f.task, nil
+	}
 	return sohaapi.ComputeTaskView{ID: "task-1"}, nil
 }
 func (*computeHandlerFake) ListTaskLogs(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskLogListEnvelope, error) {
@@ -78,7 +83,7 @@ func TestComputeHandlerRejectsInvalidTaskFiltersAndCursor(t *testing.T) {
 	router := gin.New()
 	handler := NewComputeHandler(&computeHandlerFake{})
 	router.GET("/compute/tasks", handler.ListTasks)
-	for _, target := range []string{"/compute/tasks?status=bogus", "/compute/tasks?cursor=bogus"} {
+	for _, target := range []string{"/compute/tasks?status=bogus", "/compute/tasks?sortBy=bogus", "/compute/tasks?sortOrder=sideways", "/compute/tasks?cursor=bogus"} {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, target, nil)
 		router.ServeHTTP(recorder, request)
@@ -104,7 +109,7 @@ func TestComputeTaskHandlersExposeCanonicalFacade(t *testing.T) {
 		target string
 		status int
 	}{
-		{method: http.MethodGet, target: "/compute/tasks?resourceKind=project&resourceId=project-1", status: http.StatusOK},
+		{method: http.MethodGet, target: "/compute/tasks?resourceKind=project&resourceId=project-1&sortBy=kind&sortOrder=asc", status: http.StatusOK},
 		{method: http.MethodGet, target: "/compute/tasks/virtualization/task-1", status: http.StatusOK},
 		{method: http.MethodGet, target: "/compute/tasks/virtualization/task-1/logs", status: http.StatusOK},
 		{method: http.MethodPost, target: "/compute/tasks/virtualization/task-1/cancel", status: http.StatusAccepted},
@@ -119,8 +124,42 @@ func TestComputeTaskHandlersExposeCanonicalFacade(t *testing.T) {
 			t.Fatalf("%s %s status = %d, body = %s", item.method, item.target, recorder.Code, recorder.Body.String())
 		}
 	}
-	if service.filter.ResourceKind != "project" || service.filter.ResourceID != "project-1" {
+	if service.filter.ResourceKind != "project" || service.filter.ResourceID != "project-1" || service.filter.SortBy != "kind" || service.filter.SortOrder != "asc" {
 		t.Fatalf("task filter = %#v", service.filter)
+	}
+}
+
+func TestComputeTaskStreamEmitsTerminalSnapshot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &computeHandlerFake{task: sohaapi.ComputeTaskView{
+		ID:               "task-1",
+		Domain:           sohaapi.ComputeTaskDomainVirtualization,
+		SourceType:       "virtualization_task",
+		SourceID:         "task-1",
+		Kind:             "vm_action",
+		Category:         sohaapi.ComputeTaskCategoryLifecycle,
+		NormalizedStatus: sohaapi.ComputeTaskStatusSucceeded,
+		RawStatus:        "completed",
+		Resources:        []sohaapi.ComputeResourceRef{},
+		AvailableActions: []sohaapi.ComputeTaskAction{sohaapi.ComputeTaskActionLogs},
+		CreatedAt:        time.Now().UTC(),
+	}}
+	handler := NewComputeHandler(service)
+	router := gin.New()
+	router.GET("/compute/tasks/:domain/:id/stream", handler.StreamTask)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/compute/tasks/virtualization/task-1/stream", nil)
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
+	}
+	if contentType := recorder.Header().Get("Content-Type"); !strings.Contains(contentType, "text/event-stream") {
+		t.Fatalf("content type = %q", contentType)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"type":"snapshot"`) || !strings.Contains(body, `"normalizedStatus":"succeeded"`) {
+		t.Fatalf("body = %s", body)
 	}
 }
 

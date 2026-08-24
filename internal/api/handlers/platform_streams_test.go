@@ -127,3 +127,62 @@ func TestStreamPodTerminalReportsSafeResult(t *testing.T) {
 		})
 	}
 }
+
+type resourceEventStreamServiceStub struct {
+	events    chan domainresource.ResourceStreamEvent
+	namespace string
+	kinds     []string
+}
+
+func (s *resourceEventStreamServiceStub) SubscribeResourceEvents(_ context.Context, _ domainidentity.Principal, _ string, namespace string, kinds []string) (<-chan domainresource.ResourceStreamEvent, func(), error) {
+	s.namespace = namespace
+	s.kinds = append([]string(nil), kinds...)
+	return s.events, func() {}, nil
+}
+
+func TestStreamResourceEventsWritesStatusAndMetadataEvent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	events := make(chan domainresource.ResourceStreamEvent, 2)
+	events <- domainresource.ResourceStreamEvent{
+		Type: "status", ClusterID: "cluster-a", ObservedAt: "2026-08-23T07:59:59Z", CacheStatus: "live",
+	}
+	events <- domainresource.ResourceStreamEvent{
+		Type: "added", ClusterID: "cluster-a", ObservedAt: "2026-08-23T08:00:00Z",
+		Resource: &domainresource.ResourceRef{
+			ClusterID: "cluster-a", APIVersion: "v1", Kind: "Pod", Name: "api", Namespace: "team-a",
+			ScopeMode: domainresource.ResourceScopeModeNamespace,
+		},
+	}
+	service := &resourceEventStreamServiceStub{events: events}
+	handler := &resourceEventStreamHandler{service: service}
+	router := gin.New()
+	router.GET("/clusters/:clusterID/resources/stream", handler.StreamResourceEvents)
+	server := httptest.NewServer(router)
+	defer server.Close()
+
+	endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/clusters/cluster-a/resources/stream?namespace=team-a&kinds=Pod,Deployment"
+	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if err != nil {
+		t.Fatalf("dial resource websocket: %v", err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+
+	var status domainresource.ResourceStreamEvent
+	if err := conn.ReadJSON(&status); err != nil {
+		t.Fatalf("read resource stream status: %v", err)
+	}
+	if status.Type != "status" || status.CacheStatus != "live" {
+		t.Fatalf("status = %#v", status)
+	}
+	var event domainresource.ResourceStreamEvent
+	if err := conn.ReadJSON(&event); err != nil {
+		t.Fatalf("read resource event: %v", err)
+	}
+	if event.Resource == nil || event.Resource.Name != "api" {
+		t.Fatalf("event = %#v", event)
+	}
+	if service.namespace != "team-a" || !reflect.DeepEqual(service.kinds, []string{"Pod", "Deployment"}) {
+		t.Fatalf("subscription = namespace %q kinds %#v", service.namespace, service.kinds)
+	}
+}

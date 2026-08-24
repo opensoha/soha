@@ -18,6 +18,7 @@ import (
 	storagev1 "k8s.io/api/storage/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func TestClustersExposeMetadataThroughApplicationPort(t *testing.T) {
@@ -211,11 +212,32 @@ func TestNetworkMappingsPreserveRoutesAndPorts(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "team-a", CreationTimestamp: created},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP, ClusterIP: "10.0.0.1", Selector: map[string]string{"app": "api"},
-			Ports: []corev1.ServicePort{{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP}},
+			Ports: []corev1.ServicePort{{
+				Name: "http", Port: 80, Protocol: corev1.ProtocolTCP,
+				TargetPort: intstr.FromString("http-backend"),
+			}},
 		},
 	})
 	if service.Name != "api" || len(service.Ports) != 1 || service.Ports[0] != "http:80/tcp" {
 		t.Fatalf("mapService() = %#v", service)
+	}
+	if len(service.PortMappings) != 1 || service.PortMappings[0].TargetPort != "http-backend" || service.PortMappings[0].Port != 80 || service.PortMappings[0].NodePort != 0 {
+		t.Fatalf("mapService() port mappings = %#v", service.PortMappings)
+	}
+	nodePortService := mapService(corev1.Service{
+		Spec: corev1.ServiceSpec{
+			Type: corev1.ServiceTypeNodePort,
+			Ports: []corev1.ServicePort{{
+				Name: "http", Port: 80, NodePort: 30080, Protocol: corev1.ProtocolTCP,
+				TargetPort: intstr.FromInt32(8080),
+			}},
+		},
+	})
+	if len(nodePortService.Ports) != 1 || nodePortService.Ports[0] != "http:80/tcp (nodePort:30080)" {
+		t.Fatalf("mapService(NodePort) = %#v", nodePortService)
+	}
+	if len(nodePortService.PortMappings) != 1 || nodePortService.PortMappings[0].TargetPort != "8080" || nodePortService.PortMappings[0].NodePort != 30080 {
+		t.Fatalf("mapService(NodePort) port mappings = %#v", nodePortService.PortMappings)
 	}
 
 	className := "nginx"
@@ -249,11 +271,12 @@ func TestNetworkMappingsPreserveRoutesAndPorts(t *testing.T) {
 	ready := true
 	detail := buildServiceDetail(corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: "team-a", Labels: map[string]string{"app": "api"}},
+		Spec:       corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 80, Protocol: corev1.ProtocolTCP}}},
 	}, []discoveryv1.EndpointSlice{{Endpoints: []discoveryv1.Endpoint{{
 		Addresses: []string{"10.1.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: &ready},
 		TargetRef: &corev1.ObjectReference{Kind: "Pod", Name: "api-1"},
 	}}}}, []domainresource.PodView{{Name: "api-1", Namespace: "team-a"}})
-	if len(detail.Endpoints) != 1 || detail.Endpoints[0].Address != "10.1.0.1" || len(detail.BackendPods) != 1 || detail.Labels["app"] != "api" {
+	if len(detail.Endpoints) != 1 || detail.Endpoints[0].Address != "10.1.0.1" || len(detail.BackendPods) != 1 || detail.Labels["app"] != "api" || len(detail.PortMappings) != 1 || detail.PortMappings[0].TargetPort != "80" {
 		t.Fatalf("buildServiceDetail() = %#v", detail)
 	}
 }

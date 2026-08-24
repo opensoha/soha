@@ -33,6 +33,10 @@ func (s stubSettingsService) GetAISettings(context.Context, domainidentity.Princ
 	return s.ai, nil
 }
 
+func (s stubSettingsService) GetAISkillsRegistry(context.Context, domainidentity.Principal) ([]domainsettings.AISkillSettings, error) {
+	return s.ai.SkillsRegistry, nil
+}
+
 func (s stubSettingsService) UpdateAIWorkbenchModelSettings(context.Context, domainidentity.Principal, domainsettings.AIWorkbenchModelSettings) (domainsettings.AISettings, error) {
 	return s.ai, nil
 }
@@ -75,6 +79,29 @@ func TestGetAISettingsDoesNotSerializeLegacyProviderFields(t *testing.T) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("GET /settings/ai leaked %q: %s", forbidden, body)
 		}
+	}
+}
+
+func TestGetAISkillsOnlySerializesSkillsRegistry(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/settings/ai/skills", nil)
+	handler := NewSettingsHandler(stubSettingsService{ai: domainsettings.AISettings{
+		WorkbenchModel: domainsettings.AIWorkbenchModelSettings{DefaultPublicModel: "private-model"},
+		SkillsRegistry: []domainsettings.AISkillSettings{{ID: "logs", Name: "日志分析"}},
+	}}, nil)
+
+	handler.GetAISkills(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, "skillsRegistry") || !strings.Contains(body, "logs") {
+		t.Fatalf("expected skills response, got %s", body)
+	}
+	if strings.Contains(body, "workbenchModel") || strings.Contains(body, "private-model") {
+		t.Fatalf("GET /settings/ai/skills leaked model settings: %s", body)
 	}
 }
 

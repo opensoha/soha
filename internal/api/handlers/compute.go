@@ -1,9 +1,13 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
@@ -204,7 +208,10 @@ func (h *ComputeHandler) ListTasks(c *gin.Context) {
 		writeError(c, invalidComputeFilter("category"))
 		return
 	}
-	result, err := h.service.ListTasks(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), appcompute.TaskFilter{Domain: c.Query("domain"), ProviderKey: c.Query("providerKey"), Status: c.Query("status"), Category: c.Query("category"), ResourceKind: c.Query("resourceKind"), ResourceID: c.Query("resourceId"), Cursor: c.Query("cursor"), Limit: queryLimit(c, 50)})
+	if !validComputeTaskSort(c) {
+		return
+	}
+	result, err := h.service.ListTasks(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), appcompute.TaskFilter{Domain: c.Query("domain"), ProviderKey: c.Query("providerKey"), Status: c.Query("status"), Category: c.Query("category"), ResourceKind: c.Query("resourceKind"), ResourceID: c.Query("resourceId"), SortBy: c.Query("sortBy"), SortOrder: c.Query("sortOrder"), Cursor: c.Query("cursor"), Limit: queryLimit(c, 50)})
 	if err != nil {
 		writeError(c, err)
 		return
@@ -234,6 +241,82 @@ func (h *ComputeHandler) ListTaskLogs(c *gin.Context) {
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, result)
+}
+
+func (h *ComputeHandler) StreamTask(c *gin.Context) {
+	if !validComputeTaskDomain(c) {
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	domain, taskID := c.Param("domain"), c.Param("id")
+	task, err := h.service.GetTask(c.Request.Context(), principal, domain, taskID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	if err := clearResponseWriteDeadline(c); err != nil {
+		_ = c.Error(err)
+		apiresponse.Error(c, http.StatusInternalServerError, "stream_unavailable", "streaming response is unavailable")
+		return
+	}
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	sequence := int64(1)
+	lastTask, _ := json.Marshal(task)
+	if writeComputeTaskEvent(c, sohaapi.ComputeTaskStreamEventTypeSnapshot, task, sequence) || computeTaskTerminal(task.NormalizedStatus) {
+		return
+	}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-ticker.C:
+			current, readErr := h.service.GetTask(c.Request.Context(), principal, domain, taskID)
+			sequence++
+			if readErr != nil {
+				writeComputeTaskErrorEvent(c, sequence)
+				return
+			}
+			currentJSON, _ := json.Marshal(current)
+			eventType := sohaapi.ComputeTaskStreamEventTypeHeartbeat
+			if !bytes.Equal(lastTask, currentJSON) {
+				eventType = sohaapi.ComputeTaskStreamEventTypeUpdated
+			}
+			if computeTaskTerminal(current.NormalizedStatus) {
+				eventType = sohaapi.ComputeTaskStreamEventTypeTerminal
+			}
+			if writeComputeTaskEvent(c, eventType, current, sequence) || computeTaskTerminal(current.NormalizedStatus) {
+				return
+			}
+			lastTask = currentJSON
+		}
+	}
+}
+
+func writeComputeTaskEvent(c *gin.Context, eventType sohaapi.ComputeTaskStreamEventType, task sohaapi.ComputeTaskView, sequence int64) bool {
+	event := sohaapi.ComputeTaskStreamEvent{Type: eventType, ObservedAt: time.Now().UTC(), Sequence: sequence, Task: &task}
+	data, _ := json.Marshal(event)
+	if _, err := fmt.Fprintf(c.Writer, "data: %s\n\n", data); err != nil {
+		return true
+	}
+	c.Writer.Flush()
+	return false
+}
+
+func writeComputeTaskErrorEvent(c *gin.Context, sequence int64) {
+	event := sohaapi.ComputeTaskStreamEvent{Type: sohaapi.ComputeTaskStreamEventTypeError, ObservedAt: time.Now().UTC(), Sequence: sequence, Message: "task stream source is unavailable"}
+	data, _ := json.Marshal(event)
+	_, _ = fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", data)
+	c.Writer.Flush()
+}
+
+func computeTaskTerminal(status sohaapi.ComputeTaskStatus) bool {
+	return status == sohaapi.ComputeTaskStatusSucceeded || status == sohaapi.ComputeTaskStatusFailed || status == sohaapi.ComputeTaskStatusCanceled || status == sohaapi.ComputeTaskStatusTimeout
 }
 
 func (h *ComputeHandler) CancelTask(c *gin.Context) {
@@ -266,6 +349,18 @@ func (h *ComputeHandler) mutateTask(c *gin.Context, cancel bool) {
 func validComputeTaskDomain(c *gin.Context) bool {
 	if !sohaapi.ComputeTaskDomain(strings.TrimSpace(c.Param("domain"))).Valid() {
 		writeError(c, invalidComputeFilter("domain"))
+		return false
+	}
+	return true
+}
+
+func validComputeTaskSort(c *gin.Context) bool {
+	if value := strings.TrimSpace(c.Query("sortBy")); value != "" && value != "createdAt" && value != "kind" && value != "domain" && value != "status" {
+		writeError(c, invalidComputeFilter("sortBy"))
+		return false
+	}
+	if value := strings.TrimSpace(c.Query("sortOrder")); value != "" && value != "asc" && value != "desc" {
+		writeError(c, invalidComputeFilter("sortOrder"))
 		return false
 	}
 	return true
