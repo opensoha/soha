@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,6 +103,38 @@ func TestValidateOIDCNonceRequiresExactMatch(t *testing.T) {
 				t.Fatalf("validateOIDCNonce() error = %v, wantErr %v", err, test.wantErr)
 			}
 		})
+	}
+}
+
+func TestHandleProviderCallbackRejectsOIDCStateFromDifferentProvider(t *testing.T) {
+	ctx := context.Background()
+	repo := newLoginMappingUserRepo()
+	routeProvider := domainsettings.LoginProviderSettings{ID: "oidc-route", Type: "oidc", Enabled: true}
+	stateProvider := domainsettings.LoginProviderSettings{ID: "oidc-state", Type: "oidc", Enabled: true}
+	service := newTestServiceWithUserStore(repo)
+	service.settings = loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{
+		routeProvider.ID: routeProvider,
+		stateProvider.ID: stateProvider,
+	}}
+	const state = "provider-bound-state"
+	if err := repo.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
+		Token: state,
+		Kind:  oidcStateKind,
+		Payload: map[string]any{
+			"providerId": stateProvider.ID,
+			"nonce":      "nonce-1",
+			"returnTo":   "/",
+		},
+		ExpiresAt: time.Now().UTC().Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.HandleProviderCallback(ctx, routeProvider.ID, state, "code-1"); !errors.Is(err, apperrors.ErrUnauthorized) || !strings.Contains(err.Error(), "provider mismatch") {
+		t.Fatalf("mismatched provider callback error = %v", err)
+	}
+	if _, err := service.HandleProviderCallback(ctx, stateProvider.ID, state, "code-1"); !errors.Is(err, apperrors.ErrUnauthorized) || !strings.Contains(err.Error(), "missing or expired") {
+		t.Fatalf("consumed mismatched state replay error = %v", err)
 	}
 }
 
@@ -973,6 +1006,7 @@ func (s loginProviderSettingsStub) ResolveLoginProvider(_ context.Context, provi
 }
 
 type loginMappingUserRepo struct {
+	ephemeralMu  sync.Mutex
 	usersByID    map[string]userrepo.User
 	emailToID    map[string]string
 	identities   map[string]userrepo.OIDCIdentity
@@ -1219,6 +1253,9 @@ func (r *loginMappingUserRepo) RevokeSession(_ context.Context, refreshID string
 }
 
 func (r *loginMappingUserRepo) CreateEphemeralToken(_ context.Context, token userrepo.EphemeralToken) error {
+	r.ephemeralMu.Lock()
+	defer r.ephemeralMu.Unlock()
+
 	if token.CreatedAt.IsZero() {
 		token.CreatedAt = time.Now().UTC()
 	}
@@ -1231,6 +1268,9 @@ func (r *loginMappingUserRepo) CreateEphemeralToken(_ context.Context, token use
 }
 
 func (r *loginMappingUserRepo) ConsumeEphemeralToken(_ context.Context, token, kind string) (userrepo.EphemeralToken, error) {
+	r.ephemeralMu.Lock()
+	defer r.ephemeralMu.Unlock()
+
 	key := kind + "|" + token
 	item, ok := r.ephemeral[key]
 	if !ok || item.ExpiresAt.Before(time.Now().UTC()) {

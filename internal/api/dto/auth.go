@@ -36,6 +36,18 @@ type OIDCExchangeRequest struct {
 	Code string `json:"code"`
 }
 
+type DesktopAuthAttemptCreateRequest struct {
+	ProviderID          string `json:"providerId"`
+	RedirectURI         string `json:"redirectUri"`
+	CodeChallenge       string `json:"codeChallenge"`
+	CodeChallengeMethod string `json:"codeChallengeMethod"`
+}
+
+type DesktopAuthAttemptExchangeRequest struct {
+	Code         string `json:"code"`
+	CodeVerifier string `json:"codeVerifier"`
+}
+
 type UpdateProfileRequest struct {
 	DisplayName string `json:"displayName"`
 	Email       string `json:"email"`

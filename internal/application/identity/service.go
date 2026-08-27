@@ -925,7 +925,7 @@ func (s *Service) BeginOIDCLogin(ctx context.Context, returnTo string) (string, 
 }
 
 func (s *Service) BeginProviderLogin(ctx context.Context, providerID, returnTo string) (string, error) {
-	return s.beginProviderAuthorization(ctx, providerID, returnTo, "")
+	return s.beginProviderAuthorization(ctx, providerID, returnTo, "", nil)
 }
 
 func (s *Service) BeginProviderLink(ctx context.Context, principal domainidentity.Principal, providerID, returnTo string) (string, error) {
@@ -935,10 +935,10 @@ func (s *Service) BeginProviderLink(ctx context.Context, principal domainidentit
 	if strings.TrimSpace(returnTo) == "" {
 		returnTo = "/account/profile"
 	}
-	return s.beginProviderAuthorization(ctx, providerID, returnTo, principal.UserID)
+	return s.beginProviderAuthorization(ctx, providerID, returnTo, principal.UserID, nil)
 }
 
-func (s *Service) beginProviderAuthorization(ctx context.Context, providerID, returnTo, linkUserID string) (string, error) {
+func (s *Service) beginProviderAuthorization(ctx context.Context, providerID, returnTo, linkUserID string, desktop *desktopAuthCompletion) (string, error) {
 	returnTo, err := normalizeLocalReturnTo(returnTo)
 	if err != nil {
 		return "", err
@@ -966,7 +966,7 @@ func (s *Service) beginProviderAuthorization(ctx context.Context, providerID, re
 				"providerId": provider.ID,
 				"type":       provider.Type,
 				"linkUserId": linkUserID,
-			}, returnTo),
+			}, returnTo, desktop),
 			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
 		}); err != nil {
 			return "", fmt.Errorf("store oidc state: %w", err)
@@ -981,7 +981,7 @@ func (s *Service) beginProviderAuthorization(ctx context.Context, providerID, re
 				"providerId": provider.ID,
 				"type":       provider.Type,
 				"linkUserId": linkUserID,
-			}, returnTo),
+			}, returnTo, desktop),
 			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
 		}); err != nil {
 			return "", fmt.Errorf("store oauth state: %w", err)
@@ -992,13 +992,17 @@ func (s *Service) beginProviderAuthorization(ctx context.Context, providerID, re
 		oauthConfig := oauth2ConfigFromProvider(provider)
 		return oauthConfig.AuthCodeURL(state), nil
 	case "saml":
-		return s.beginSAMLLogin(ctx, provider, returnTo, linkUserID)
+		return s.beginSAMLLogin(ctx, provider, returnTo, linkUserID, desktop)
 	default:
 		return "", fmt.Errorf("%w: unsupported login provider type %s", apperrors.ErrInvalidArgument, provider.Type)
 	}
 }
 
 func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (string, error) {
+	return s.handleOIDCCallback(ctx, "", state, code)
+}
+
+func (s *Service) handleOIDCCallback(ctx context.Context, expectedProviderID, state, code string) (string, error) {
 	if strings.TrimSpace(state) == "" || strings.TrimSpace(code) == "" {
 		return "", fmt.Errorf("%w: missing oidc callback parameters", apperrors.ErrInvalidArgument)
 	}
@@ -1006,12 +1010,19 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 	if err != nil {
 		return "", fmt.Errorf("%w: oidc state missing or expired", apperrors.ErrUnauthorized)
 	}
+	providerID, _ := stateToken.Payload["providerId"].(string)
+	if expectedProviderID != "" && providerID != expectedProviderID {
+		return "", fmt.Errorf("%w: oidc state provider mismatch", apperrors.ErrUnauthorized)
+	}
 	statePayload, err := decodeOIDCStatePayload(stateToken.Payload)
 	if err != nil {
 		return "", err
 	}
+	completion, err := desktopCompletionFromState(stateToken.Payload)
+	if err != nil {
+		return "", err
+	}
 
-	providerID, _ := stateToken.Payload["providerId"].(string)
 	loginProvider, err := s.resolveLoginProvider(ctx, providerID)
 	if err != nil {
 		return "", err
@@ -1039,23 +1050,13 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 	if err != nil {
 		return "", err
 	}
-	result, err := s.issueAuthResult(ctx, principal, "oidc")
+	redirectURL, desktop, err := s.completeFederatedLogin(ctx, principal, loginProvider, completion)
 	if err != nil {
 		return "", err
 	}
-	exchangeCode, err := s.storeOIDCExchange(ctx, result)
-	if err != nil {
-		return "", err
+	if !desktop {
+		_ = s.recordAudit(ctx, principal, "login", "success", "oidc login succeeded", map[string]any{"provider": oidcCfg.ProviderName})
 	}
-	redirectURL, err := addQueryValue(oidcCfg.FrontendRedirectURL, "code", exchangeCode)
-	if err != nil {
-		return "", err
-	}
-	redirectURL, err = addReturnToQuery(redirectURL, statePayload.ReturnTo)
-	if err != nil {
-		return "", err
-	}
-	_ = s.recordAudit(ctx, principal, "login", "success", "oidc login succeeded", map[string]any{"provider": oidcCfg.ProviderName})
 	return redirectURL, nil
 }
 
@@ -1209,7 +1210,7 @@ func (s *Service) HandleProviderCallback(ctx context.Context, providerID, state,
 	}
 	switch provider.Type {
 	case "oidc":
-		return s.HandleOIDCCallback(ctx, state, code)
+		return s.handleOIDCCallback(ctx, provider.ID, state, code)
 	case "oauth2", "feishu", "dingtalk", "wecom":
 		return s.handleOAuth2Callback(ctx, provider, state, code)
 	case "saml":
@@ -1842,11 +1843,11 @@ func addReturnToQuery(rawURL, returnTo string) (string, error) {
 	return addQueryValue(rawURL, "return_to", returnTo)
 }
 
-func loginStatePayload(payload map[string]any, returnTo string) map[string]any {
+func loginStatePayload(payload map[string]any, returnTo string, desktop *desktopAuthCompletion) map[string]any {
 	if returnTo != "" {
 		payload["returnTo"] = returnTo
 	}
-	return payload
+	return addDesktopCompletion(payload, desktop)
 }
 
 func stateReturnTo(payload map[string]any) (string, error) {
@@ -2087,7 +2088,7 @@ func (s *Service) handleOAuth2Callback(ctx context.Context, provider domainsetti
 	if payloadProviderID, _ := stateToken.Payload["providerId"].(string); payloadProviderID != "" && payloadProviderID != provider.ID {
 		return "", fmt.Errorf("%w: oauth provider mismatch", apperrors.ErrUnauthorized)
 	}
-	returnTo, err := stateReturnTo(stateToken.Payload)
+	completion, err := desktopCompletionFromState(stateToken.Payload)
 	if err != nil {
 		return "", err
 	}
@@ -2103,42 +2104,19 @@ func (s *Service) handleOAuth2Callback(ctx context.Context, provider domainsetti
 		if err := s.linkExternalIdentity(ctx, linkUserID, provider, profile); err != nil {
 			return "", err
 		}
-		return linkedIdentityRedirect(returnTo, provider.ID)
+		return linkedIdentityRedirect(completion.ReturnTo, provider.ID)
 	}
 	principal, err := s.reconcileExternalUser(ctx, provider, profile)
 	if err != nil {
 		return "", err
 	}
-	result, err := s.issueAuthResult(ctx, principal, provider.Type)
+	redirectURL, desktop, err := s.completeFederatedLogin(ctx, principal, provider, completion)
 	if err != nil {
 		return "", err
 	}
-	exchangeCode := uuid.NewString()
-	payload, err := json.Marshal(oidcExchangePayload{Result: result})
-	if err != nil {
-		return "", fmt.Errorf("marshal oauth exchange payload: %w", err)
+	if !desktop {
+		_ = s.recordAudit(ctx, principal, "login", "success", "oauth2 login succeeded", map[string]any{"provider": provider.ID, "providerType": provider.Type})
 	}
-	var payloadMap map[string]any
-	if err := json.Unmarshal(payload, &payloadMap); err != nil {
-		return "", fmt.Errorf("decode oauth exchange payload: %w", err)
-	}
-	if err := s.ephemeralTokens.CreateEphemeralToken(ctx, domainidentity.EphemeralToken{
-		Token:     exchangeCode,
-		Kind:      oidcExchangeKind,
-		Payload:   payloadMap,
-		ExpiresAt: time.Now().UTC().Add(2 * time.Minute),
-	}); err != nil {
-		return "", fmt.Errorf("store oauth exchange payload: %w", err)
-	}
-	redirectURL, err := addQueryValue(provider.FrontendRedirectURL, "code", exchangeCode)
-	if err != nil {
-		return "", err
-	}
-	redirectURL, err = addReturnToQuery(redirectURL, returnTo)
-	if err != nil {
-		return "", err
-	}
-	_ = s.recordAudit(ctx, principal, "login", "success", "oauth2 login succeeded", map[string]any{"provider": provider.ID, "providerType": provider.Type})
 	return redirectURL, nil
 }
 

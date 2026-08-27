@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -47,6 +48,12 @@ type IdentityFederationService interface {
 type IdentitySAMLService interface {
 	HandleSAMLResponse(context.Context, string, string, string) (string, error)
 	SAMLMetadata(context.Context, string) ([]byte, error)
+}
+
+type IdentityDesktopAuthService interface {
+	CreateDesktopAuthAttempt(context.Context, domainidentity.DesktopAuthAttemptCreate) (domainidentity.DesktopAuthAttempt, error)
+	BeginDesktopAuthAttempt(context.Context, string) (string, error)
+	ConsumeDesktopAuthAttempt(context.Context, string, string, string) (domainidentity.AuthResult, error)
 }
 
 type IdentitySessionService interface {
@@ -141,6 +148,7 @@ type AuthHandler struct {
 	auth                IdentityAuthService
 	profile             IdentityProfileService
 	federation          IdentityFederationService
+	desktop             IdentityDesktopAuthService
 	saml                IdentitySAMLService
 	sessions            IdentitySessionService
 	streamTickets       IdentityStreamTicketService
@@ -163,6 +171,7 @@ func NewAuthHandlerWithServices(auth IdentityAuthService, profile IdentityProfil
 		auth:                auth,
 		profile:             profile,
 		federation:          federation,
+		desktop:             desktopAuthService(federation),
 		saml:                samlService(federation),
 		sessions:            sessions,
 		streamTickets:       streamTickets,
@@ -179,6 +188,11 @@ func NewAuthHandlerWithServices(auth IdentityAuthService, profile IdentityProfil
 
 func samlService(federation IdentityFederationService) IdentitySAMLService {
 	service, _ := federation.(IdentitySAMLService)
+	return service
+}
+
+func desktopAuthService(federation IdentityFederationService) IdentityDesktopAuthService {
+	service, _ := federation.(IdentityDesktopAuthService)
 	return service
 }
 
@@ -502,6 +516,78 @@ func (h *AuthHandler) OIDCExchange(c *gin.Context) {
 	}
 	h.setAuthCookies(c, result)
 	apiresponse.Item(c, http.StatusOK, result)
+}
+
+func (h *AuthHandler) CreateDesktopAuthAttempt(c *gin.Context) {
+	if h.desktop == nil {
+		writeError(c, fmt.Errorf("%w: desktop authentication is not enabled", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	origin, err := authRequestOrigin(c)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	var req dto.DesktopAuthAttemptCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid desktop auth attempt payload")
+		return
+	}
+	attempt, err := h.desktop.CreateDesktopAuthAttempt(c.Request.Context(), domainidentity.DesktopAuthAttemptCreate{
+		ProviderID: req.ProviderID, RedirectURI: req.RedirectURI,
+		CodeChallenge: req.CodeChallenge, CodeChallengeMethod: req.CodeChallengeMethod,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	attempt.AuthorizationURL = origin + "/api/v1/auth/desktop/attempts/" + url.PathEscape(attempt.AttemptID) + "/start"
+	apiresponse.Item(c, http.StatusCreated, attempt)
+}
+
+func (h *AuthHandler) StartDesktopAuthAttempt(c *gin.Context) {
+	if h.desktop == nil {
+		writeError(c, fmt.Errorf("%w: desktop authentication is not enabled", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	loginURL, err := h.desktop.BeginDesktopAuthAttempt(c.Request.Context(), c.Param("attemptID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Redirect(http.StatusTemporaryRedirect, loginURL)
+}
+
+func (h *AuthHandler) ExchangeDesktopAuthAttempt(c *gin.Context) {
+	if h.desktop == nil {
+		writeError(c, fmt.Errorf("%w: desktop authentication is not enabled", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	var req dto.DesktopAuthAttemptExchangeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid desktop auth exchange payload")
+		return
+	}
+	result, err := h.desktop.ConsumeDesktopAuthAttempt(c.Request.Context(), c.Param("attemptID"), req.Code, req.CodeVerifier)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	h.setAuthCookies(c, result)
+	apiresponse.Item(c, http.StatusOK, result)
+}
+
+func authRequestOrigin(c *gin.Context) (string, error) {
+	scheme := "http"
+	if authRequestIsHTTPS(c) {
+		scheme = "https"
+	}
+	host := strings.TrimSpace(c.Request.Host)
+	origin, err := url.Parse(scheme + "://" + host)
+	if err != nil || origin.Hostname() == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" {
+		return "", fmt.Errorf("%w: request origin is invalid", apperrors.ErrInvalidArgument)
+	}
+	return origin.Scheme + "://" + origin.Host, nil
 }
 
 func (h *AuthHandler) ProviderLogin(c *gin.Context) {

@@ -2,7 +2,6 @@ package identity
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -30,7 +29,7 @@ type SAMLLoginRuntime interface {
 	Metadata(context.Context, domainsettings.LoginProviderSettings) ([]byte, error)
 }
 
-func (s *Service) beginSAMLLogin(ctx context.Context, provider domainsettings.LoginProviderSettings, returnTo, linkUserID string) (string, error) {
+func (s *Service) beginSAMLLogin(ctx context.Context, provider domainsettings.LoginProviderSettings, returnTo, linkUserID string, desktop *desktopAuthCompletion) (string, error) {
 	if s.saml == nil {
 		return "", fmt.Errorf("%w: saml login runtime is not enabled", apperrors.ErrUnsupportedOperation)
 	}
@@ -50,7 +49,7 @@ func (s *Service) beginSAMLLogin(ctx context.Context, provider domainsettings.Lo
 			"type":       provider.Type,
 			"linkUserId": linkUserID,
 			"requestId":  request.ID,
-		}, returnTo),
+		}, returnTo, desktop),
 		ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
 	}); err != nil {
 		return "", fmt.Errorf("store saml state: %w", err)
@@ -90,7 +89,7 @@ func (s *Service) HandleSAMLResponse(ctx context.Context, providerID, encodedRes
 	}); err != nil {
 		return "", fmt.Errorf("%w: saml assertion was already consumed", apperrors.ErrUnauthorized)
 	}
-	returnTo, err := stateReturnTo(state.Payload)
+	completion, err := desktopCompletionFromState(state.Payload)
 	if err != nil {
 		return "", err
 	}
@@ -99,13 +98,14 @@ func (s *Service) HandleSAMLResponse(ctx context.Context, providerID, encodedRes
 		if err := s.linkExternalIdentity(ctx, linkUserID, provider, profile); err != nil {
 			return "", err
 		}
-		return linkedIdentityRedirect(returnTo, provider.ID)
+		return linkedIdentityRedirect(completion.ReturnTo, provider.ID)
 	}
 	principal, err := s.reconcileExternalUser(ctx, provider, profile)
 	if err != nil {
 		return "", err
 	}
-	return s.completeExternalLogin(ctx, principal, provider, returnTo)
+	redirectURL, _, err := s.completeFederatedLogin(ctx, principal, provider, completion)
+	return redirectURL, err
 }
 
 func (s *Service) SAMLMetadata(ctx context.Context, providerID string) ([]byte, error) {
@@ -135,33 +135,6 @@ func samlProfile(provider domainsettings.LoginProviderSettings, assertion SAMLAs
 		raw[name] = append([]string(nil), values...)
 	}
 	return genericProfile{ID: assertion.Subject, Email: first(emailField), Name: first(nameField), Raw: raw, Provider: provider.ID}
-}
-
-func (s *Service) completeExternalLogin(ctx context.Context, principal domainidentity.Principal, provider domainsettings.LoginProviderSettings, returnTo string) (string, error) {
-	result, err := s.issueAuthResult(ctx, principal, provider.Type)
-	if err != nil {
-		return "", err
-	}
-	payload, err := json.Marshal(oidcExchangePayload{Result: result})
-	if err != nil {
-		return "", fmt.Errorf("marshal external login exchange payload: %w", err)
-	}
-	var payloadMap map[string]any
-	if err := json.Unmarshal(payload, &payloadMap); err != nil {
-		return "", fmt.Errorf("decode external login exchange payload: %w", err)
-	}
-	exchangeCode := uuid.NewString()
-	if err := s.ephemeralTokens.CreateEphemeralToken(ctx, domainidentity.EphemeralToken{
-		Token: exchangeCode, Kind: oidcExchangeKind, Payload: payloadMap,
-		ExpiresAt: time.Now().UTC().Add(2 * time.Minute),
-	}); err != nil {
-		return "", fmt.Errorf("store external login exchange payload: %w", err)
-	}
-	redirectURL, err := addQueryValue(provider.FrontendRedirectURL, "code", exchangeCode)
-	if err != nil {
-		return "", err
-	}
-	return addReturnToQuery(redirectURL, returnTo)
 }
 
 const (
