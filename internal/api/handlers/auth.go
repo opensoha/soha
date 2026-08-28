@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -140,8 +141,9 @@ type proLoginResponse struct {
 }
 
 const (
-	refreshCookieName      = "soha_refresh_token"
-	maxSAMLACSRequestBytes = 2 << 20
+	refreshCookieName          = "soha_refresh_token"
+	maxDesktopAuthRequestBytes = 8 << 10
+	maxSAMLACSRequestBytes     = 2 << 20
 )
 
 type AuthHandler struct {
@@ -529,8 +531,7 @@ func (h *AuthHandler) CreateDesktopAuthAttempt(c *gin.Context) {
 		return
 	}
 	var req dto.DesktopAuthAttemptCreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid desktop auth attempt payload")
+	if !bindDesktopAuthJSON(c, &req) {
 		return
 	}
 	attempt, err := h.desktop.CreateDesktopAuthAttempt(c.Request.Context(), domainidentity.DesktopAuthAttemptCreate{
@@ -564,8 +565,7 @@ func (h *AuthHandler) ExchangeDesktopAuthAttempt(c *gin.Context) {
 		return
 	}
 	var req dto.DesktopAuthAttemptExchangeRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid desktop auth exchange payload")
+	if !bindDesktopAuthJSON(c, &req) {
 		return
 	}
 	result, err := h.desktop.ConsumeDesktopAuthAttempt(c.Request.Context(), c.Param("attemptID"), req.Code, req.CodeVerifier)
@@ -575,6 +575,26 @@ func (h *AuthHandler) ExchangeDesktopAuthAttempt(c *gin.Context) {
 	}
 	h.setAuthCookies(c, result)
 	apiresponse.Item(c, http.StatusOK, result)
+}
+
+func bindDesktopAuthJSON(c *gin.Context, destination any) bool {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDesktopAuthRequestBytes)
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	err := decoder.Decode(destination)
+	if err == nil {
+		err = decoder.Decode(&struct{}{})
+		if errors.Is(err, io.EOF) {
+			return true
+		}
+	}
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		apiresponse.Error(c, http.StatusRequestEntityTooLarge, "payload_too_large", "desktop authentication payload exceeds the request limit")
+		return false
+	}
+	apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid desktop authentication payload")
+	return false
 }
 
 func authRequestOrigin(c *gin.Context) (string, error) {

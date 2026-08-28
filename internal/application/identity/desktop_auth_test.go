@@ -121,6 +121,24 @@ func TestCreateDesktopAuthAttemptRejectsUnavailableAndUnsupportedProviders(t *te
 	}
 }
 
+func TestDesktopAuthRejectsOversizedPublicIdentifiers(t *testing.T) {
+	service := newTestServiceWithUserStore(newLoginMappingUserRepo())
+	verifier := strings.Repeat("a", 43)
+
+	if _, err := service.CreateDesktopAuthAttempt(context.Background(), domainidentity.DesktopAuthAttemptCreate{
+		ProviderID: strings.Repeat("a", 129), RedirectURI: "http://127.0.0.1:49152/callback/abcdefghijklmnop",
+		CodeChallenge: desktopCodeChallenge(verifier), CodeChallengeMethod: "S256",
+	}); desktopBusinessCode(err) != "desktop_auth_invalid_provider" {
+		t.Fatalf("oversized provider error = %v", err)
+	}
+	if _, err := service.BeginDesktopAuthAttempt(context.Background(), strings.Repeat("a", 129)); desktopBusinessCode(err) != "desktop_auth_invalid_attempt" {
+		t.Fatalf("oversized attempt error = %v", err)
+	}
+	if _, err := service.ConsumeDesktopAuthAttempt(context.Background(), "attempt-1", strings.Repeat("a", 513), verifier); desktopBusinessCode(err) != "desktop_auth_invalid_exchange" {
+		t.Fatalf("oversized exchange code error = %v", err)
+	}
+}
+
 func TestDesktopAuthExchangeConsumesFailuresAndIssuesOneSession(t *testing.T) {
 	repo := newLoginMappingUserRepo()
 	repo.usersByID["user-1"] = userrepo.User{

@@ -44,3 +44,12 @@ func TestGenericMessageUsesRequestedLanguage(t *testing.T) {
 		t.Fatalf("Message(ErrServiceUnavailable, zh-CN) = %q", got)
 	}
 }
+
+func TestGoneErrorMapsToHTTPGone(t *testing.T) {
+	if got := StatusCode(ErrGone); got != http.StatusGone {
+		t.Fatalf("StatusCode(ErrGone) = %d", got)
+	}
+	if got := Code(ErrGone); got != "gone" {
+		t.Fatalf("Code(ErrGone) = %q", got)
+	}
+}

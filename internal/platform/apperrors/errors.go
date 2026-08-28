@@ -10,6 +10,7 @@ var (
 	ErrAccessDenied         = errors.New("access denied")
 	ErrMFARequired          = errors.New("mfa required")
 	ErrConflict             = errors.New("conflict")
+	ErrGone                 = errors.New("gone")
 	ErrNotFound             = errors.New("not found")
 	ErrClusterUnready       = errors.New("cluster unavailable")
 	ErrServiceUnavailable   = errors.New("service unavailable")

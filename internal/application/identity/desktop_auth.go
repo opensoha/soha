@@ -20,8 +20,11 @@ import (
 )
 
 const (
-	desktopAuthAttemptKind  = "desktop_auth_attempt"
-	desktopAuthCallbackKind = "desktop_auth_callback"
+	desktopAuthAttemptKind        = "desktop_auth_attempt"
+	desktopAuthCallbackKind       = "desktop_auth_callback"
+	desktopAuthMaxProviderIDBytes = 128
+	desktopAuthMaxAttemptIDBytes  = 128
+	desktopAuthMaxCodeBytes       = 512
 )
 
 var (
@@ -46,6 +49,14 @@ type desktopAuthCallbackPayload struct {
 
 func (s *Service) CreateDesktopAuthAttempt(ctx context.Context, input domainidentity.DesktopAuthAttemptCreate) (domainidentity.DesktopAuthAttempt, error) {
 	providerID := strings.TrimSpace(input.ProviderID)
+	if providerID == "" || len(providerID) > desktopAuthMaxProviderIDBytes {
+		return domainidentity.DesktopAuthAttempt{}, desktopAuthBusinessError(
+			apperrors.ErrInvalidArgument,
+			"desktop_auth_invalid_provider",
+			"desktop login provider is invalid",
+			"桌面登录提供商无效",
+		)
+	}
 	provider, err := s.resolveLoginProvider(ctx, providerID)
 	if err != nil || !provider.Enabled || provider.Type == "password" || provider.Type == "saml" && s.saml == nil {
 		return domainidentity.DesktopAuthAttempt{}, desktopAuthBusinessError(
@@ -97,12 +108,12 @@ func (s *Service) CreateDesktopAuthAttempt(ctx context.Context, input domainiden
 
 func (s *Service) BeginDesktopAuthAttempt(ctx context.Context, attemptID string) (string, error) {
 	attemptID = strings.TrimSpace(attemptID)
-	if attemptID == "" {
-		return "", desktopAuthBusinessError(apperrors.ErrInvalidArgument, "desktop_auth_invalid_attempt", "desktop auth attempt is required", "缺少桌面登录尝试")
+	if attemptID == "" || len(attemptID) > desktopAuthMaxAttemptIDBytes {
+		return "", desktopAuthBusinessError(apperrors.ErrInvalidArgument, "desktop_auth_invalid_attempt", "desktop auth attempt is invalid", "桌面登录尝试无效")
 	}
 	token, err := s.ephemeralTokens.ConsumeEphemeralToken(ctx, attemptID, desktopAuthAttemptKind)
 	if err != nil {
-		return "", desktopAuthBusinessError(apperrors.ErrNotFound, "desktop_auth_attempt_expired", "desktop auth attempt is unknown or expired", "桌面登录尝试不存在或已过期")
+		return "", desktopAuthBusinessError(apperrors.ErrGone, "desktop_auth_attempt_expired", "desktop auth attempt is unknown or expired", "桌面登录尝试不存在或已过期")
 	}
 	providerID, _ := token.Payload["providerId"].(string)
 	redirectURI, _ := token.Payload["redirectUri"].(string)
@@ -121,12 +132,12 @@ func (s *Service) BeginDesktopAuthAttempt(ctx context.Context, attemptID string)
 func (s *Service) ConsumeDesktopAuthAttempt(ctx context.Context, attemptID, code, codeVerifier string) (domainidentity.AuthResult, error) {
 	attemptID = strings.TrimSpace(attemptID)
 	code = strings.TrimSpace(code)
-	if attemptID == "" || code == "" || !desktopVerifierPattern.MatchString(codeVerifier) {
+	if attemptID == "" || len(attemptID) > desktopAuthMaxAttemptIDBytes || code == "" || len(code) > desktopAuthMaxCodeBytes || !desktopVerifierPattern.MatchString(codeVerifier) {
 		return domainidentity.AuthResult{}, desktopAuthBusinessError(apperrors.ErrInvalidArgument, "desktop_auth_invalid_exchange", "desktop auth exchange payload is invalid", "桌面登录交换参数无效")
 	}
 	token, err := s.ephemeralTokens.ConsumeEphemeralToken(ctx, code, desktopAuthCallbackKind)
 	if err != nil {
-		return domainidentity.AuthResult{}, desktopAuthBusinessError(apperrors.ErrUnauthorized, "desktop_auth_code_expired", "desktop auth code is unknown, expired, or consumed", "桌面登录代码不存在、已过期或已使用")
+		return domainidentity.AuthResult{}, desktopAuthBusinessError(apperrors.ErrGone, "desktop_auth_code_expired", "desktop auth code is unknown, expired, or consumed", "桌面登录代码不存在、已过期或已使用")
 	}
 	var payload desktopAuthCallbackPayload
 	rawPayload, err := json.Marshal(token.Payload)

@@ -13,6 +13,7 @@ var (
 	ErrAccessDenied         = legacy.ErrAccessDenied
 	ErrMFARequired          = legacy.ErrMFARequired
 	ErrConflict             = legacy.ErrConflict
+	ErrGone                 = legacy.ErrGone
 	ErrNotFound             = legacy.ErrNotFound
 	ErrClusterUnready       = legacy.ErrClusterUnready
 	ErrServiceUnavailable   = legacy.ErrServiceUnavailable
@@ -41,6 +42,8 @@ func StatusCode(err error) int {
 		return http.StatusForbidden
 	case errors.Is(err, ErrConflict):
 		return http.StatusConflict
+	case errors.Is(err, ErrGone):
+		return http.StatusGone
 	case errors.Is(err, ErrNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, ErrClusterUnready):
@@ -70,6 +73,8 @@ func Code(err error) string {
 		return "mfa_required"
 	case errors.Is(err, ErrConflict):
 		return "conflict"
+	case errors.Is(err, ErrGone):
+		return "gone"
 	case errors.Is(err, ErrNotFound):
 		return "not_found"
 	case errors.Is(err, ErrClusterUnready):
@@ -104,6 +109,8 @@ func Message(err error, acceptLanguage ...string) string {
 		return localizedMessage(chinese, "multi-factor authentication is required", "需要完成多因素认证")
 	case errors.Is(err, ErrConflict):
 		return localizedMessage(chinese, "resource conflict", "资源状态冲突")
+	case errors.Is(err, ErrGone):
+		return localizedMessage(chinese, "resource is no longer available", "资源已失效")
 	case errors.Is(err, ErrNotFound):
 		return localizedMessage(chinese, "resource not found", "未找到对应资源")
 	case errors.Is(err, ErrClusterUnready):
