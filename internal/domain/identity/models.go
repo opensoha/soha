@@ -129,6 +129,19 @@ type AuthResult struct {
 	Tokens TokenSet  `json:"tokens"`
 }
 
+type DesktopAuthAttemptCreate struct {
+	ProviderID          string `json:"providerId"`
+	RedirectURI         string `json:"redirectUri"`
+	CodeChallenge       string `json:"codeChallenge"`
+	CodeChallengeMethod string `json:"codeChallengeMethod"`
+}
+
+type DesktopAuthAttempt struct {
+	AttemptID        string    `json:"attemptId"`
+	AuthorizationURL string    `json:"authorizationUrl"`
+	ExpiresAt        time.Time `json:"expiresAt"`
+}
+
 type StreamTicketRequest struct {
 	Path     string         `json:"path"`
 	Metadata map[string]any `json:"-"`

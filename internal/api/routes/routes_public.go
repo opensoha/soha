@@ -13,6 +13,7 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	_ = cfg
 	limits := apiMiddleware.NewBoundedRateLimiter(10_000)
 	provider := func(c *gin.Context) string { return c.Param("providerID") }
+	attempt := func(c *gin.Context) string { return c.Param("attemptID") }
 	v1.GET("/healthz", deps.System.Healthz)
 	v1.GET("/readyz", deps.System.Readyz)
 	v1.GET("/auth/providers", deps.Auth.ListProviders)
@@ -27,6 +28,9 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	v1.POST("/auth/login/:providerID/acs", limits.Middleware("saml-acs", 60, time.Minute, provider), deps.Auth.SAMLACS)
 	v1.GET("/auth/saml/:providerID/metadata", deps.Auth.SAMLMetadata)
 	v1.POST("/auth/oidc/exchange", deps.Auth.OIDCExchange)
+	v1.POST("/auth/desktop/attempts", limits.Middleware("desktop-auth-create", 20, time.Minute, nil), deps.Auth.CreateDesktopAuthAttempt)
+	v1.GET("/auth/desktop/attempts/:attemptID/start", limits.Middleware("desktop-auth-start", 30, time.Minute, attempt), deps.Auth.StartDesktopAuthAttempt)
+	v1.POST("/auth/desktop/attempts/:attemptID/exchange", limits.Middleware("desktop-auth-exchange", 30, time.Minute, attempt), deps.Auth.ExchangeDesktopAuthAttempt)
 	if deps.AgentConnections != nil {
 		v1.GET("/kubernetes/agent-installations/:installTicket/manifest.yaml", deps.AgentConnections.DownloadManifest)
 		v1.GET("/agent-sessions/connect", deps.AgentConnections.Connect)
