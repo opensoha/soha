@@ -6,8 +6,10 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -19,15 +21,16 @@ func (testRolePermissions) ListRolePermissions(context.Context) (map[string][]st
 }
 
 type testPackageStore struct {
-	created bool
+	created   bool
+	downloads int
 }
 
 func (s *testPackageStore) List(context.Context, Filter) ([]Package, string, error) {
 	return nil, "", nil
 }
 
-func (s *testPackageStore) Storage(context.Context, string, int) (Storage, error) {
-	return Storage{Backend: "filesystem"}, nil
+func (s *testPackageStore) Storage(context.Context, string, string, int) (Storage, error) {
+	return Storage{Backend: "s3"}, nil
 }
 
 func (s *testPackageStore) Create(_ context.Context, input UploadInput, _ io.Reader) (Package, error) {
@@ -39,7 +42,23 @@ func (s *testPackageStore) Open(context.Context, string) (Package, io.ReadCloser
 	return Package{}, nil, apperrors.ErrNotFound
 }
 
+func (s *testPackageStore) IncrementDownloadCount(context.Context, string) error {
+	s.downloads++
+	return nil
+}
+
 func (s *testPackageStore) Delete(context.Context, string) error { return nil }
+
+type testDownloadAudit struct{ entries []domainaudit.Entry }
+
+func (a *testDownloadAudit) Record(_ context.Context, entry domainaudit.Entry) error {
+	a.entries = append(a.entries, entry)
+	return nil
+}
+
+func (a *testDownloadAudit) ListAuthorized(context.Context, domainidentity.Principal, domainaudit.Filter) ([]domainaudit.Entry, error) {
+	return a.entries, nil
+}
 
 type testURLFetcher struct {
 	called bool
@@ -64,6 +83,27 @@ func TestUploadRejectsUnsupportedInstallerBeforeStorage(t *testing.T) {
 	}
 	if store.created {
 		t.Fatal("unsupported installer reached storage")
+	}
+}
+
+func TestUploadRejectsClientSuppliedNonDefaultScope(t *testing.T) {
+	store := &testPackageStore{}
+	service := New(store, nil, appaccess.NewPermissionResolver(testRolePermissions{}), nil, nil)
+	principal := domainidentity.Principal{Roles: []string{"admin"}}
+
+	for _, input := range []UploadInput{
+		{TenantID: "other", WorkspaceID: "default", Visibility: "workspace"},
+		{TenantID: "default", WorkspaceID: "other", Visibility: "workspace"},
+		{TenantID: "default", WorkspaceID: "default", Visibility: "tenant"},
+	} {
+		input.SoftwareID, input.Name, input.Publisher, input.Version = "demo", "Demo", "OpenSoha", "1.0.0"
+		input.Platform, input.Arch, input.FileName = "darwin", "arm64", "demo.pkg"
+		if _, err := service.Upload(t.Context(), principal, input, bytes.NewBufferString("payload")); !errors.Is(err, apperrors.ErrInvalidArgument) {
+			t.Fatalf("scope %#v error = %v", input, err)
+		}
+	}
+	if store.created {
+		t.Fatal("non-default scope reached storage")
 	}
 }
 
@@ -100,5 +140,33 @@ func TestImportURLRejectsMetadataBeforeFetch(t *testing.T) {
 	})
 	if !errors.Is(err, apperrors.ErrInvalidArgument) || fetcher.called || store.created {
 		t.Fatalf("invalid metadata reached fetch or storage: err=%v fetcher=%v store=%v", err, fetcher.called, store.created)
+	}
+}
+
+func TestCompletedDownloadIsCountedAndListed(t *testing.T) {
+	store := &testPackageStore{}
+	audit := &testDownloadAudit{}
+	service := New(store, nil, nil, audit, nil)
+	principal := domainidentity.Principal{UserID: "user-1", UserName: "OpenSoha"}
+	item := Package{ID: "pkg-1", SizeBytes: 7}
+
+	if err := service.CompleteDownload(t.Context(), principal, item, 7, 125*time.Millisecond, nil); err != nil {
+		t.Fatal(err)
+	}
+	if store.downloads != 1 || len(audit.entries) != 1 || audit.entries[0].Result != "success" {
+		t.Fatalf("downloads=%d audit=%#v", store.downloads, audit.entries)
+	}
+	audit.entries[0].ID = "audit-1"
+	audit.entries[0].CreatedAt = time.Date(2026, 8, 27, 8, 0, 0, 0, time.UTC)
+	audit.entries[0].SourceIP = "127.0.0.1"
+	records, err := service.DownloadRecords(t.Context(), principal, "pkg-1", 50)
+	if err != nil || len(records) != 1 || records[0].DurationMS != 125 || records[0].SourceIP != "127.0.0.1" {
+		t.Fatalf("records=%#v err=%v", records, err)
+	}
+	if err := service.CompleteDownload(t.Context(), principal, item, 3, 20*time.Millisecond, io.ErrUnexpectedEOF); err != nil {
+		t.Fatal(err)
+	}
+	if store.downloads != 1 || audit.entries[1].Result != "failed" {
+		t.Fatalf("incomplete download was counted: downloads=%d audit=%#v", store.downloads, audit.entries)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -2743,6 +2744,43 @@ func TestRecordAgentToolCallRejectsUnboundTool(t *testing.T) {
 	}
 }
 
+func TestRecordAgentToolCallRejectsAgentThatDidNotClaimRun(t *testing.T) {
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:               "agent:tool-claimed",
+			ProviderID:       "hermes",
+			ProviderKind:     "hermes",
+			CapabilityID:     "root_cause",
+			Status:           domaincopilot.AgentRunStatusRunning,
+			CallbackToken:    "callback-token",
+			ClaimedByAgentID: "runner-a",
+			ToolBindings: []domaincopilot.AgentToolBinding{{
+				ID:           "platform.events",
+				CapabilityID: "root_cause",
+				ToolKind:     "mcp",
+				AdapterID:    "platform-native.v1",
+				ToolName:     "events.query",
+			}},
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		},
+	}
+	service := newTestService(repo)
+
+	_, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
+		RunID:         "agent:tool-claimed",
+		CallbackToken: "callback-token",
+		AgentID:       "runner-b",
+		ToolBindingID: "platform.events",
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("expected access denied for non-owning agent, got %v", err)
+	}
+	if repo.callback.RunID != "" {
+		t.Fatalf("expected rejected tool call to skip callback persistence, got %#v", repo.callback)
+	}
+}
+
 func TestRecordAgentToolCallExecutesBoundEventsTool(t *testing.T) {
 	repo := &agentRuntimeCallbackTestRepository{
 		agentRun: domaincopilot.AgentRun{
@@ -2769,6 +2807,8 @@ func TestRecordAgentToolCallExecutesBoundEventsTool(t *testing.T) {
 		},
 	}
 	service := newTestService(repo)
+	audits := &captureCopilotAuditRecorder{}
+	service.audits = audits
 	service.events = agentToolEventReader{items: []domainevent.Envelope{{
 		ID:        "event-1",
 		Source:    "kubernetes",
@@ -2802,6 +2842,13 @@ func TestRecordAgentToolCallExecutesBoundEventsTool(t *testing.T) {
 	}
 	if result.Output["count"] != 1 {
 		t.Fatalf("expected filtered event count, got %#v", result.Output)
+	}
+	relatedIDs := mapValue(result.Output["relatedIds"])
+	if relatedIDs["agentRunId"] != "agent:tool-events" || relatedIDs["toolBindingId"] != "platform.events" {
+		t.Fatalf("expected tool correlation ids, got %#v", relatedIDs)
+	}
+	if len(audits.entries) != 1 || audits.entries[0].Action != "ai_agent.tool_call" || audits.entries[0].ResourceName != "events.query" {
+		t.Fatalf("expected one agent tool audit, got %#v", audits.entries)
 	}
 	if repo.callback.Status != domaincopilot.AgentRunStatusRunning || repo.callback.RunID != "agent:tool-events" {
 		t.Fatalf("expected running callback persistence, got %#v", repo.callback)
@@ -2843,13 +2890,20 @@ func TestRecordAgentToolCallExecutesDeliveryAndAlertTools(t *testing.T) {
 func newDeliveryAgentToolCallTestService() (*Service, *agentRuntimeCallbackTestRepository) {
 	repo := &agentRuntimeCallbackTestRepository{
 		agentRun: domaincopilot.AgentRun{
-			ID:            "agent:tool-delivery",
-			ProviderID:    "hermes",
-			ProviderKind:  "hermes",
-			CapabilityID:  "delivery_failure",
-			Status:        domaincopilot.AgentRunStatusRunning,
-			Scope:         domaincopilot.SessionScope{ClusterID: "cluster-a", Namespace: "payments", Workload: "payment-api"},
-			Input:         map[string]any{"applicationId": "app-payments"},
+			ID:           "agent:tool-delivery",
+			ProviderID:   "hermes",
+			ProviderKind: "hermes",
+			CapabilityID: "delivery_failure",
+			Status:       domaincopilot.AgentRunStatusRunning,
+			Scope:        domaincopilot.SessionScope{ClusterID: "cluster-a", Namespace: "payments", Workload: "payment-api"},
+			Input: map[string]any{
+				"applicationId": "app-payments",
+				"_sohaPrincipal": map[string]any{
+					"userId":         "user-sre",
+					"roles":          []string{"developer"},
+					"permissionKeys": []string{appaccess.PermObserveAlertsView},
+				},
+			},
 			CallbackToken: "callback-token",
 			ToolBindings: []domaincopilot.AgentToolBinding{{
 				ID:           "delivery.releases",
@@ -2927,13 +2981,27 @@ func recordAgentToolCallCount(t *testing.T, service *Service, bindingID string) 
 func TestRecordAgentToolCallExecutesWorkbenchContextTools(t *testing.T) {
 	repo := &agentRuntimeCallbackTestRepository{
 		agentRun: domaincopilot.AgentRun{
-			ID:            "agent:tool-workbench-context",
-			ProviderID:    "hermes",
-			ProviderKind:  "hermes",
-			CapabilityID:  "platform_resource_diagnosis",
-			Status:        domaincopilot.AgentRunStatusRunning,
-			Scope:         domaincopilot.SessionScope{ClusterID: "cluster-a", Namespace: "payments", Workload: "payment-api", Service: "payment-api"},
-			Input:         map[string]any{"applicationId": "app-payments", "dockerHostId": "docker-host-1", "composeProjectId": "compose-1", "virtualizationConnectionId": "pve-1", "vmId": "vm-1"},
+			ID:           "agent:tool-workbench-context",
+			ProviderID:   "hermes",
+			ProviderKind: "hermes",
+			CapabilityID: "platform_resource_diagnosis",
+			Status:       domaincopilot.AgentRunStatusRunning,
+			Scope:        domaincopilot.SessionScope{ClusterID: "cluster-a", Namespace: "payments", Workload: "payment-api", Service: "payment-api"},
+			Input: map[string]any{
+				"applicationId": "app-payments", "dockerHostId": "docker-host-1", "composeProjectId": "compose-1", "virtualizationConnectionId": "pve-1", "vmId": "vm-1",
+				"_sohaPrincipal": map[string]any{
+					"userId": "user-sre",
+					"roles":  []string{"developer"},
+					"permissionKeys": []string{
+						appaccess.PermDeliveryExecutionTasksView,
+						appaccess.PermWorkspaceResourceView,
+						appaccess.PermDockerOperationsView,
+						appaccess.PermDockerServicesView,
+						appaccess.PermVirtualizationOperationsView,
+						appaccess.PermObserveOncallView,
+					},
+				},
+			},
 			CallbackToken: "callback-token",
 			ToolBindings: []domaincopilot.AgentToolBinding{{
 				ID:           "delivery.execution_tasks",
@@ -3018,6 +3086,24 @@ func TestRecordAgentToolCallExecutesWorkbenchContextTools(t *testing.T) {
 	}
 	if len(repo.agentRun.ToolExecutions) != 6 {
 		t.Fatalf("expected six workbench context tool executions, got %#v", repo.agentRun.ToolExecutions)
+	}
+}
+
+func TestAgentToolPrincipalUsesQueuedPermissionSnapshot(t *testing.T) {
+	principal, err := agentToolPrincipal(domaincopilot.AgentRun{
+		CreatedBy: "user-sre",
+		Input: map[string]any{"_sohaPrincipal": map[string]any{
+			"userId":         "user-sre",
+			"userName":       "SRE User",
+			"roles":          []any{"developer"},
+			"permissionKeys": []any{appaccess.PermPlatformPodsView},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("agentToolPrincipal() error = %v", err)
+	}
+	if principal.UserID != "user-sre" || !slices.Equal(principal.Roles, []string{"developer"}) || !slices.Equal(principal.PermissionKeys, []string{appaccess.PermPlatformPodsView}) {
+		t.Fatalf("agent tool principal = %#v", principal)
 	}
 }
 

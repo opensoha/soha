@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
@@ -23,6 +24,7 @@ import (
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	aperrors "github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/redaction"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 	"github.com/opensoha/soha/internal/platform/telemetry"
 	"go.uber.org/zap"
 )
@@ -179,11 +181,15 @@ func (s *Service) RecordAgentToolCall(ctx context.Context, input domaincopilot.A
 	if agentRunStatusTerminal(run.Status) {
 		return domaincopilot.AgentToolCallResult{}, fmt.Errorf("%w: agent run is already terminal", aperrors.ErrInvalidArgument)
 	}
+	if claimedBy := strings.TrimSpace(run.ClaimedByAgentID); claimedBy != "" && claimedBy != strings.TrimSpace(input.AgentID) {
+		return domaincopilot.AgentToolCallResult{}, fmt.Errorf("%w: agent tool caller does not own this run", aperrors.ErrAccessDenied)
+	}
 	binding, ok := resolveAgentToolBinding(run, input)
 	if !ok {
 		return domaincopilot.AgentToolCallResult{}, fmt.Errorf("%w: tool binding is not allowed for this agent run", aperrors.ErrAccessDenied)
 	}
 	toolExecution, output, _ := s.executeAgentToolBinding(ctx, run, binding, input)
+	s.recordAgentToolAudit(ctx, run, binding, input, toolExecution)
 	nextExecutions := append(append([]domaincopilot.ToolExecution{}, run.ToolExecutions...), toolExecution)
 	updated, persistErr := s.agentRuns.UpdateAgentRunCallback(ctx, domaincopilot.AgentRunCallbackInput{
 		RunID:          run.ID,
@@ -957,6 +963,17 @@ func (s *Service) executeAgentToolBinding(ctx context.Context, run domaincopilot
 		summary = err.Error()
 		output = map[string]any{"error": err.Error()}
 	}
+	relatedIDs := compactMetadataMap(map[string]any{
+		"agentRunId":     run.ID,
+		"rootCauseRunId": run.RootCauseRunID,
+		"sessionId":      run.SessionID,
+		"agentId":        input.AgentID,
+		"toolBindingId":  binding.ID,
+	})
+	if output == nil {
+		output = map[string]any{}
+	}
+	output["relatedIds"] = relatedIDs
 	toolExecution := domaincopilot.ToolExecution{
 		ID:          "tool:" + uuid.NewString(),
 		AdapterID:   firstNonEmpty(binding.AdapterID, binding.ToolKind),
@@ -972,6 +989,40 @@ func (s *Service) executeAgentToolBinding(ctx context.Context, run domaincopilot
 		return toolExecution, output, err
 	}
 	return toolExecution, output, nil
+}
+
+func (s *Service) recordAgentToolAudit(ctx context.Context, run domaincopilot.AgentRun, binding domaincopilot.AgentToolBinding, input domaincopilot.AgentToolCallInput, execution domaincopilot.ToolExecution) {
+	if s == nil || s.audits == nil {
+		return
+	}
+	meta := requestctx.FromContext(ctx)
+	_ = s.audits.Record(ctx, domainaudit.Entry{
+		ActorID:       firstNonEmpty(run.CreatedBy, input.AgentID, "agent-runtime"),
+		ActorName:     firstNonEmpty(input.AgentID, run.ProviderID, "Agent Runtime"),
+		ClusterID:     run.Scope.ClusterID,
+		Namespace:     run.Scope.Namespace,
+		ResourceKind:  "AIAgentTool",
+		ResourceName:  binding.ToolName,
+		Action:        "ai_agent.tool_call",
+		Result:        execution.Status,
+		Summary:       fmt.Sprintf("Agent tool %s completed with status %s", binding.ToolName, execution.Status),
+		RequestPath:   meta.Path,
+		RequestMethod: meta.Method,
+		RequestID:     meta.RequestID,
+		SourceIP:      meta.SourceIP,
+		Metadata: compactMetadataMap(map[string]any{
+			"agentRunId":      run.ID,
+			"rootCauseRunId":  run.RootCauseRunID,
+			"sessionId":       run.SessionID,
+			"agentId":         input.AgentID,
+			"providerId":      run.ProviderID,
+			"capabilityId":    run.CapabilityID,
+			"toolExecutionId": execution.ID,
+			"toolBindingId":   binding.ID,
+			"adapterId":       binding.AdapterID,
+			"toolName":        binding.ToolName,
+		}),
+	})
 }
 
 func (s *Service) executeAgentToolBindingOutput(ctx context.Context, run domaincopilot.AgentRun, binding domaincopilot.AgentToolBinding, input map[string]any) (map[string]any, error) {
@@ -1167,8 +1218,12 @@ func (s *Service) executeAgentExecutionTasksTool(ctx context.Context, run domain
 	if s.execution == nil {
 		return nil, fmt.Errorf("%w: execution task reader is not configured", aperrors.ErrNotFound)
 	}
+	principal, err := agentToolPrincipal(run)
+	if err != nil {
+		return nil, err
+	}
 	limit := firstPositive(intCondition(input["limit"]), 20)
-	items, err := s.execution.ListExecutionTasks(ctx, agentToolPrincipal(), domaindelivery.ExecutionTaskFilter{
+	items, err := s.execution.ListExecutionTasks(ctx, principal, domaindelivery.ExecutionTaskFilter{
 		ApplicationID:            firstNonEmpty(stringValue(input["applicationId"]), stringValue(run.Input["applicationId"])),
 		ApplicationEnvironmentID: firstNonEmpty(stringValue(input["applicationEnvironmentId"]), stringValue(run.Input["applicationEnvironmentId"])),
 		ReleaseBundleID:          firstNonEmpty(stringValue(input["releaseBundleId"]), stringValue(run.Input["releaseBundleId"])),
@@ -1195,7 +1250,10 @@ func (s *Service) executeAgentPlatformResourcesTool(ctx context.Context, run dom
 	}
 	namespace := firstNonEmpty(stringValue(input["namespace"]), run.Scope.Namespace)
 	limit := firstPositive(intCondition(input["limit"]), evidenceBudget(run.Toolset, 20), 20)
-	principal := agentToolPrincipal()
+	principal, err := agentToolPrincipal(run)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]any{
 		"clusterId":   clusterID,
 		"namespace":   namespace,
@@ -1235,8 +1293,12 @@ func (s *Service) executeAgentDockerOperationsTool(ctx context.Context, run doma
 	if s.docker == nil {
 		return nil, fmt.Errorf("%w: docker reader is not configured", aperrors.ErrNotFound)
 	}
+	principal, err := agentToolPrincipal(run)
+	if err != nil {
+		return nil, err
+	}
 	limit := firstPositive(intCondition(input["limit"]), 20)
-	page, err := s.docker.ListOperations(ctx, agentToolPrincipal(), domaindocker.OperationFilter{
+	page, err := s.docker.ListOperations(ctx, principal, domaindocker.OperationFilter{
 		HostID:        firstNonEmpty(stringValue(input["hostId"]), stringValue(run.Input["dockerHostId"])),
 		ProjectID:     firstNonEmpty(stringValue(input["projectId"]), stringValue(run.Input["composeProjectId"])),
 		ServiceID:     firstNonEmpty(stringValue(input["serviceId"]), stringValue(run.Input["dockerServiceId"])),
@@ -1258,8 +1320,12 @@ func (s *Service) executeAgentDockerServicesTool(ctx context.Context, run domain
 	if s.docker == nil {
 		return nil, fmt.Errorf("%w: docker reader is not configured", aperrors.ErrNotFound)
 	}
+	principal, err := agentToolPrincipal(run)
+	if err != nil {
+		return nil, err
+	}
 	limit := firstPositive(intCondition(input["limit"]), 20)
-	page, err := s.docker.ListServices(ctx, agentToolPrincipal(), domaindocker.ServiceFilter{
+	page, err := s.docker.ListServices(ctx, principal, domaindocker.ServiceFilter{
 		HostID:    firstNonEmpty(stringValue(input["hostId"]), stringValue(run.Input["dockerHostId"])),
 		ProjectID: firstNonEmpty(stringValue(input["projectId"]), stringValue(run.Input["composeProjectId"])),
 		Status:    stringValue(input["status"]),
@@ -1280,8 +1346,12 @@ func (s *Service) executeAgentVirtualizationOperationsTool(ctx context.Context, 
 	if s.virtualization == nil {
 		return nil, fmt.Errorf("%w: virtualization reader is not configured", aperrors.ErrNotFound)
 	}
+	principal, err := agentToolPrincipal(run)
+	if err != nil {
+		return nil, err
+	}
 	limit := firstPositive(intCondition(input["limit"]), 20)
-	items, err := s.virtualization.ListOperations(ctx, agentToolPrincipal(), domainvirtualization.TaskFilter{
+	items, err := s.virtualization.ListOperations(ctx, principal, domainvirtualization.TaskFilter{
 		Provider:     stringValue(input["provider"]),
 		ConnectionID: firstNonEmpty(stringValue(input["connectionId"]), stringValue(run.Input["virtualizationConnectionId"])),
 		VMID:         firstNonEmpty(stringValue(input["vmId"]), stringValue(run.Input["vmId"])),
@@ -1302,8 +1372,12 @@ func (s *Service) executeAgentAlertsTool(ctx context.Context, run domaincopilot.
 	if s.alerts == nil {
 		return nil, fmt.Errorf("%w: alert reader is not configured", aperrors.ErrNotFound)
 	}
+	principal, err := agentToolPrincipal(run)
+	if err != nil {
+		return nil, err
+	}
 	limit := firstPositive(intCondition(input["limit"]), 20)
-	items, err := s.alerts.ListAlerts(ctx, agentToolPrincipal(), domainalert.Filter{
+	items, err := s.alerts.ListAlerts(ctx, principal, domainalert.Filter{
 		Status:    firstNonEmpty(stringValue(input["status"]), "firing"),
 		ClusterID: firstNonEmpty(stringValue(input["clusterId"]), run.Scope.ClusterID),
 		Limit:     limit,
@@ -1322,6 +1396,10 @@ func (s *Service) executeAgentOnCallResolveTool(ctx context.Context, run domainc
 	if s.oncall == nil {
 		return nil, fmt.Errorf("%w: on-call resolver is not configured", aperrors.ErrNotFound)
 	}
+	principal, err := agentToolPrincipal(run)
+	if err != nil {
+		return nil, err
+	}
 	labels := map[string]string{}
 	if raw, ok := input["labels"].(map[string]string); ok {
 		for key, value := range raw {
@@ -1334,7 +1412,7 @@ func (s *Service) executeAgentOnCallResolveTool(ctx context.Context, run domainc
 			}
 		}
 	}
-	result, err := s.oncall.ResolveOnCall(ctx, agentToolPrincipal(), domainalert.OnCallResolveInput{
+	result, err := s.oncall.ResolveOnCall(ctx, principal, domainalert.OnCallResolveInput{
 		AlertID:         firstNonEmpty(stringValue(input["alertId"]), run.Scope.AlertID),
 		IntegrationID:   stringValue(input["integrationId"]),
 		IntegrationType: stringValue(input["integrationType"]),
@@ -1416,11 +1494,41 @@ func minPositive(value, maxValue int) int {
 	return value
 }
 
-func agentToolPrincipal() domainidentity.Principal {
+func agentToolPrincipal(run domaincopilot.AgentRun) (domainidentity.Principal, error) {
+	snapshot, ok := run.Input["_sohaPrincipal"].(map[string]any)
+	if !ok {
+		return domainidentity.Principal{}, fmt.Errorf("%w: agent run principal snapshot is unavailable", aperrors.ErrAccessDenied)
+	}
+	permissionKeys := agentPrincipalStringList(snapshot["permissionKeys"])
+	roles := agentPrincipalStringList(snapshot["roles"])
+	if len(permissionKeys) == 0 || len(roles) == 0 {
+		return domainidentity.Principal{}, fmt.Errorf("%w: agent run principal snapshot is incomplete", aperrors.ErrAccessDenied)
+	}
 	return domainidentity.Principal{
-		UserID:   "agent-runtime",
-		UserName: "Agent Runtime",
-		Roles:    []string{"admin"},
+		UserID:         firstNonEmpty(stringValue(snapshot["userId"]), run.CreatedBy),
+		UserName:       stringValue(snapshot["userName"]),
+		Roles:          roles,
+		Teams:          agentPrincipalStringList(snapshot["teams"]),
+		Projects:       agentPrincipalStringList(snapshot["projects"]),
+		Tags:           agentPrincipalStringList(snapshot["tags"]),
+		PermissionKeys: permissionKeys,
+	}, nil
+}
+
+func agentPrincipalStringList(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return normalizeStringList(typed)
+	case []any:
+		items := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
+				items = append(items, text)
+			}
+		}
+		return normalizeStringList(items)
+	default:
+		return nil
 	}
 }
 
@@ -1798,6 +1906,23 @@ func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
+	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	runInput := make(map[string]any, len(input.Input)+1)
+	for key, value := range input.Input {
+		runInput[key] = value
+	}
+	runInput["_sohaPrincipal"] = map[string]any{
+		"userId":         principal.UserID,
+		"userName":       principal.UserName,
+		"roles":          normalizeStringList(principal.Roles),
+		"teams":          normalizeStringList(principal.Teams),
+		"projects":       normalizeStringList(principal.Projects),
+		"tags":           normalizeStringList(principal.Tags),
+		"permissionKeys": permissionKeys,
+	}
 	skillBindings := input.SkillBindings
 	if len(skillBindings) == 0 {
 		skillBindings = s.agentSkillBindingsForRun(provider, capabilityID, input.SkillIDs)
@@ -1817,7 +1942,7 @@ func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.P
 		Toolset:        input.Toolset,
 		ToolBindings:   toolBindings,
 		SkillBindings:  skillBindings,
-		Input:          input.Input,
+		Input:          runInput,
 		Output:         map[string]any{},
 		CallbackToken:  uuid.NewString(),
 		TimeoutSeconds: timeoutSeconds,

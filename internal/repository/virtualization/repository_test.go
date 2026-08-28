@@ -3,6 +3,7 @@ package virtualization
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -134,14 +135,14 @@ func TestUpdateTaskFencesClaimedWorkerAttempt(t *testing.T) {
 		t.Fatalf("gorm.Open() error = %v", err)
 	}
 	repo := New(db)
-	mock.ExpectExec(`(?s)UPDATE virtualization_tasks.*WHERE id = \$12 AND claimed_by_worker_id = \$13 AND attempt_count = \$14 AND status = 'running'`).
+	mock.ExpectExec(`(?s)UPDATE virtualization_tasks.*WHERE id = \$12 AND updated_at = \$13 AND claimed_by_worker_id = \$14 AND attempt_count = \$15 AND status = 'running'`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	_, err = repo.UpdateTask(context.Background(), domainvirtualization.Task{
 		ID: "task-1", Status: "completed", ClaimedByWorkerID: "worker-1", AttemptCount: 2,
 	})
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("UpdateTask() error = %v, want ErrNotFound for stale attempt", err)
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("UpdateTask() error = %v, want conflict for stale attempt", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet SQL expectations: %v", err)
@@ -169,5 +170,15 @@ func TestUpdateTaskResultPreservesTaskState(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestTaskClausesSupportsAllowedTaskKinds(t *testing.T) {
+	clauses, args := taskClauses(domainvirtualization.TaskFilter{TaskKinds: []string{"asset_sync", "vm_action"}})
+	if len(clauses) != 1 || clauses[0] != "task_kind IN (?, ?)" {
+		t.Fatalf("clauses = %#v, want task kind allowlist", clauses)
+	}
+	if !reflect.DeepEqual(args, []any{"asset_sync", "vm_action"}) {
+		t.Fatalf("args = %#v", args)
 	}
 }

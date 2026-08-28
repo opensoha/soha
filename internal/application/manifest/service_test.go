@@ -93,6 +93,13 @@ func (testApplications) Get(_ context.Context, _ domainidentity.Principal, id st
 	return domainapp.App{ID: id, Key: "payments", Group: "commerce", BusinessLineID: "finance"}, nil
 }
 
+func (testApplications) GetService(_ context.Context, _ domainidentity.Principal, applicationID, serviceID string) (domainapp.Service, error) {
+	if applicationID != "payments" || serviceID != "payments-api" {
+		return domainapp.Service{}, apperrors.ErrNotFound
+	}
+	return domainapp.Service{ID: serviceID, ApplicationID: applicationID}, nil
+}
+
 type testEnvironments struct{}
 
 func (testEnvironments) GetApplicationEnvironment(_ context.Context, _ domainidentity.Principal, id string) (domaincatalog.ApplicationEnvironment, error) {
@@ -124,11 +131,25 @@ func newTestService(repository domainmanifest.Repository, authorizer domainacces
 	return New(repository, testApplications{}, testEnvironments{}, testClusters{}, authorizer, appaccess.NewPermissionResolver(testRoleReader{}), nil, nil)
 }
 
+type testRevisionPromoter struct {
+	calls    int
+	revision int
+	err      error
+}
+
+func (p *testRevisionPromoter) PromoteRevision(_ context.Context, _ domainidentity.Principal, _ domainmanifest.Package, revision int) error {
+	p.calls++
+	p.revision = revision
+	return p.err
+}
+
 func TestCreateAndPublishManifestPackage(t *testing.T) {
 	repository := &testRepository{}
 	service := newTestService(repository, testAuthorizer{})
+	promoter := &testRevisionPromoter{}
+	service.SetRevisionPromoter(promoter)
 	created, err := service.Create(context.Background(), testPrincipal(), domainmanifest.Input{
-		Name: "Payments ingress", ApplicationID: "payments", Renderer: domainmanifest.RendererRaw,
+		Name: "Payments ingress", ApplicationID: "payments", ServiceID: " payments-api ", Renderer: domainmanifest.RendererRaw,
 		Files: []domainmanifest.File{{Path: "base/ingress.yaml", Content: `apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -139,7 +160,7 @@ metadata:
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if created.Status != domainmanifest.StatusDraft || created.ID == "" {
+	if created.Status != domainmanifest.StatusDraft || created.ID == "" || created.ServiceID != "payments-api" {
 		t.Fatalf("Create() = %#v, want identified draft", created)
 	}
 
@@ -152,6 +173,43 @@ metadata:
 	}
 	if repository.revision.Digest == "" || repository.revision.Note != "initial release" {
 		t.Fatalf("revision = %#v, want immutable digest and note", repository.revision)
+	}
+	if promoter.calls != 1 || promoter.revision != 1 {
+		t.Fatalf("revision promoter = %#v, want one v1 call", promoter)
+	}
+}
+
+func TestPublishRetryPromotesExistingRevisionWithoutCreatingDuplicate(t *testing.T) {
+	repository := &testRepository{item: domainmanifest.Package{
+		ID: "manifest-1", Name: "Payments", ApplicationID: "payments", Renderer: domainmanifest.RendererRaw,
+		Status: domainmanifest.StatusDraft, Files: []domainmanifest.File{{Path: "deployment.yaml", Content: "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: payments\n"}},
+	}}
+	promoter := &testRevisionPromoter{err: errors.New("queue unavailable")}
+	service := newTestService(repository, testAuthorizer{})
+	service.SetRevisionPromoter(promoter)
+
+	if _, err := service.Publish(context.Background(), testPrincipal(), repository.item.ID, "release"); err == nil {
+		t.Fatal("Publish() error = nil, want promoter failure")
+	}
+	if len(repository.revisions) != 1 {
+		t.Fatalf("revisions after failed promotion = %d, want 1", len(repository.revisions))
+	}
+	promoter.err = nil
+	if _, err := service.Publish(context.Background(), testPrincipal(), repository.item.ID, "release"); err != nil {
+		t.Fatalf("Publish() retry error = %v", err)
+	}
+	if len(repository.revisions) != 1 || promoter.calls != 2 || promoter.revision != 1 {
+		t.Fatalf("retry state: revisions=%d promoter=%#v", len(repository.revisions), promoter)
+	}
+}
+
+func TestCreateRejectsServiceOutsideApplication(t *testing.T) {
+	service := newTestService(&testRepository{}, testAuthorizer{})
+	_, err := service.Create(context.Background(), testPrincipal(), domainmanifest.Input{
+		Name: "Wrong service", ApplicationID: "payments", ServiceID: "orders-api", Renderer: domainmanifest.RendererRaw,
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("Create() error = %v, want invalid argument", err)
 	}
 }
 
@@ -198,7 +256,7 @@ func TestCreateRejectsApplicationScopeDenial(t *testing.T) {
 func TestListConstrainsRepositoryToAuthorizedApplicationsAndPage(t *testing.T) {
 	repository := &testRepository{}
 	service := newTestService(repository, testAuthorizer{})
-	_, err := service.List(context.Background(), testPrincipal(), domainmanifest.Filter{Page: 2, PageSize: 50})
+	_, err := service.List(context.Background(), testPrincipal(), domainmanifest.Filter{ServiceID: "svc-api", Page: 2, PageSize: 50})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -207,6 +265,9 @@ func TestListConstrainsRepositoryToAuthorizedApplicationsAndPage(t *testing.T) {
 	}
 	if repository.filter.Page != 2 || repository.filter.PageSize != 50 {
 		t.Fatalf("List() pagination = %d/%d, want 2/50", repository.filter.Page, repository.filter.PageSize)
+	}
+	if repository.filter.ServiceID != "svc-api" {
+		t.Fatalf("List() service ID = %q, want svc-api", repository.filter.ServiceID)
 	}
 }
 

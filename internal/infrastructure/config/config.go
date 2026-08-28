@@ -30,23 +30,23 @@ const (
 )
 
 type Config struct {
-	App        AppConfig        `mapstructure:"app"`
-	HTTP       HTTPConfig       `mapstructure:"http"`
-	Logger     LoggerConfig     `mapstructure:"logger"`
-	Runtime    RuntimeConfig    `mapstructure:"runtime"`
-	Database   DatabaseConfig   `mapstructure:"database"`
-	Auth       AuthConfig       `mapstructure:"auth"`
-	Monitoring MonitoringConfig `mapstructure:"monitoring"`
-	Swagger    SwaggerConfig    `mapstructure:"swagger"`
-	MCP        MCPConfig        `mapstructure:"mcp"`
-	AIGateway  AIGatewayConfig  `mapstructure:"ai_gateway"`
-	Plugins    PluginsConfig    `mapstructure:"plugins"`
-	Software   SoftwareConfig   `mapstructure:"software"`
-	Modules    ModulesConfig    `mapstructure:"modules"`
-	Assets     AssetsConfig     `mapstructure:"assets"`
-	Security   SecurityConfig   `mapstructure:"security"`
-	Bootstrap  BootstrapConfig  `mapstructure:"bootstrap"`
-	Kubernetes KubernetesConfig `mapstructure:"kubernetes"`
+	App            AppConfig            `mapstructure:"app"`
+	HTTP           HTTPConfig           `mapstructure:"http"`
+	Logger         LoggerConfig         `mapstructure:"logger"`
+	Runtime        RuntimeConfig        `mapstructure:"runtime"`
+	Database       DatabaseConfig       `mapstructure:"database"`
+	Auth           AuthConfig           `mapstructure:"auth"`
+	Monitoring     MonitoringConfig     `mapstructure:"monitoring"`
+	Swagger        SwaggerConfig        `mapstructure:"swagger"`
+	MCP            MCPConfig            `mapstructure:"mcp"`
+	AIGateway      AIGatewayConfig      `mapstructure:"ai_gateway"`
+	Plugins        PluginsConfig        `mapstructure:"plugins"`
+	LegacySoftware LegacySoftwareConfig `mapstructure:"software"`
+	Modules        ModulesConfig        `mapstructure:"modules"`
+	Assets         AssetsConfig         `mapstructure:"assets"`
+	Security       SecurityConfig       `mapstructure:"security"`
+	Bootstrap      BootstrapConfig      `mapstructure:"bootstrap"`
+	Kubernetes     KubernetesConfig     `mapstructure:"kubernetes"`
 }
 
 type AppConfig struct {
@@ -214,7 +214,9 @@ type PluginMarketplaceSource struct {
 	URL string `mapstructure:"url"`
 }
 
-type SoftwareConfig struct {
+// LegacySoftwareConfig is read only to prevent an object-storage cutover from
+// silently hiding packages stored at a former custom filesystem path.
+type LegacySoftwareConfig struct {
 	StorageDir string `mapstructure:"storage_dir"`
 }
 
@@ -805,7 +807,6 @@ var configDefaults = []struct {
 	{"plugins.marketplace.url", DefaultMarketplaceURL},
 	{"plugins.marketplace.source_id", DefaultMarketplaceSourceID},
 	{"plugins.marketplace.sources", []map[string]any{}},
-	{"software.storage_dir", "data/software"},
 	{"plugins.companion.storage_dir", ".data/companion"},
 	{"plugins.companion.max_package_bytes", 268435456},
 	{"plugins.companion.allow_live2d", false},

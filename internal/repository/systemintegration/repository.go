@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -100,7 +101,7 @@ func (r *Repository) Create(ctx context.Context, item domain.Integration, creden
 		return upsertCredentials(tx, item.ID, credentials, item.UpdatedAt)
 	})
 	if err != nil {
-		return domain.Integration{}, fmt.Errorf("create system integration: %w", err)
+		return domain.Integration{}, fmt.Errorf("create system integration: %w", constraintError(err))
 	}
 	return r.Get(ctx, item.ID)
 }
@@ -137,7 +138,7 @@ func (r *Repository) Update(ctx context.Context, item domain.Integration, expect
 		return upsertCredentials(tx, item.ID, credentials, item.UpdatedAt)
 	})
 	if err != nil {
-		return domain.Integration{}, err
+		return domain.Integration{}, constraintError(err)
 	}
 	return r.Get(ctx, item.ID)
 }
@@ -145,12 +146,20 @@ func (r *Repository) Update(ctx context.Context, item domain.Integration, expect
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).Exec(`DELETE FROM system_integrations WHERE id=?`, strings.TrimSpace(id))
 	if result.Error != nil {
-		return result.Error
+		return constraintError(result.Error)
 	}
 	if result.RowsAffected == 0 {
 		return fmt.Errorf("%w: system integration not found", apperrors.ErrNotFound)
 	}
 	return nil
+}
+
+func constraintError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && (pgErr.Code == "23503" || pgErr.Code == "23505") {
+		return fmt.Errorf("%w: system integration is already active or still in use", apperrors.ErrConflict)
+	}
+	return err
 }
 
 func (r *Repository) Credentials(ctx context.Context, id string) (map[string]string, error) {

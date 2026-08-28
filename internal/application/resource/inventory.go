@@ -219,32 +219,32 @@ func (i *Inventory) SetNodeUnschedulable(ctx context.Context, principal domainid
 }
 
 func (i *Inventory) DrainNode(ctx context.Context, principal domainidentity.Principal, clusterID, nodeName string, input domainresource.NodeDrainInput) error {
-	connection, _, err := i.authorize(ctx, principal, clusterID, "", "Node", domainaccess.ActionUpdate)
+	connection, _, err := i.authorize(ctx, principal, clusterID, "", "Node", domainaccess.ActionDrain)
 	if err != nil {
 		return err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return i.unsupportedMutation(ctx, principal, connection, "", "Node", nodeName, domainaccess.ActionUpdate, "node drain is not supported for agent-connected clusters yet")
+		return i.unsupportedMutation(ctx, principal, connection, "", "Node", nodeName, domainaccess.ActionDrain, "node drain is not supported for agent-connected clusters yet")
 	}
 	if input.TimeoutSeconds == 0 {
 		input.TimeoutSeconds = 300
 	}
 	if input.TimeoutSeconds < 30 || input.TimeoutSeconds > 1800 {
 		err := fmt.Errorf("%w: drain timeoutSeconds must be between 30 and 1800", apperrors.ErrInvalidArgument)
-		_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "failure", err.Error())
+		_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", nodeName, string(domainaccess.ActionDrain), "failure", err.Error())
 		return err
 	}
 	direct, err := i.directInventory()
 	if err != nil {
-		_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "failure", err.Error())
+		_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", nodeName, string(domainaccess.ActionDrain), "failure", err.Error())
 		return err
 	}
 	if err := direct.DrainNode(ctx, clusterID, nodeName, input); err != nil {
-		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "failure", err.Error())
+		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionDrain), "failure", err.Error())
 		return err
 	}
 	summary := "cordoned node and submitted pod eviction requests"
-	_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "success", summary)
+	_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionDrain), "success", summary)
 	i.recordOperation(ctx, principal, "platform.node.drain", clusterID, "", "Node", nodeName, summary, map[string]any{
 		"force": input.Force, "deleteEmptyDirData": input.DeleteEmptyDirData, "timeoutSeconds": input.TimeoutSeconds,
 	})

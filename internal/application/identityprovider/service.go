@@ -1181,14 +1181,22 @@ func (s *Service) ListOIDCClients(ctx context.Context, principal domainidentity.
 			return nil, err
 		}
 	}
-	return s.repo.ListOIDCClients(ctx, providerID)
+	items, err := s.repo.ListOIDCClients(ctx, providerID)
+	if err != nil {
+		return nil, err
+	}
+	return oidcClientsForResponse(items), nil
 }
 
 func (s *Service) GetOIDCClient(ctx context.Context, principal domainidentity.Principal, clientID string) (domainprovider.OIDCClient, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityProvidersView); err != nil {
 		return domainprovider.OIDCClient{}, err
 	}
-	return s.repo.GetOIDCClient(ctx, clientID)
+	item, err := s.repo.GetOIDCClient(ctx, clientID)
+	if err != nil {
+		return domainprovider.OIDCClient{}, err
+	}
+	return oidcClientForResponse(item), nil
 }
 
 func (s *Service) CreateOIDCClient(ctx context.Context, principal domainidentity.Principal, providerID string, input domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error) {
@@ -1197,6 +1205,9 @@ func (s *Service) CreateOIDCClient(ctx context.Context, principal domainidentity
 	}
 	if providerID = strings.TrimSpace(providerID); providerID != "" {
 		input.ProviderID = providerID
+	}
+	if strings.TrimSpace(input.ClientID) == "" {
+		input.ClientID = uuid.NewString()
 	}
 	provider, err := s.requireOIDCProvider(ctx, input.ProviderID)
 	if err != nil {
@@ -1213,12 +1224,15 @@ func (s *Service) CreateOIDCClient(ctx context.Context, principal domainidentity
 	if err != nil {
 		return domainprovider.OIDCClientCreated{}, err
 	}
+	if err := s.protectOIDCClientSecret(&item, secret); err != nil {
+		return domainprovider.OIDCClientCreated{}, err
+	}
 	created, err := s.repo.CreateOIDCClient(ctx, item)
 	if err != nil {
 		return domainprovider.OIDCClientCreated{}, err
 	}
 	s.recordAudit(ctx, principal, "identity.oidc_client.create", "success", provider, created, nil)
-	return domainprovider.OIDCClientCreated{Client: created, ClientSecret: secret}, nil
+	return domainprovider.OIDCClientCreated{Client: oidcClientForResponse(created), ClientSecret: secret}, nil
 }
 
 func (s *Service) UpdateOIDCClient(ctx context.Context, principal domainidentity.Principal, clientID string, input domainprovider.OIDCClientInput) (domainprovider.OIDCClient, error) {
@@ -1231,6 +1245,9 @@ func (s *Service) UpdateOIDCClient(ctx context.Context, principal domainidentity
 	}
 	if strings.TrimSpace(input.ProviderID) == "" {
 		input.ProviderID = current.ProviderID
+	}
+	if strings.TrimSpace(input.ClientID) == "" {
+		input.ClientID = current.ClientID
 	}
 	if strings.EqualFold(strings.TrimSpace(input.ClientType), domainprovider.OIDCClientTypeConfidential) &&
 		current.ClientType == domainprovider.OIDCClientTypePublic && strings.TrimSpace(input.ClientSecret) == "" {
@@ -1245,15 +1262,22 @@ func (s *Service) UpdateOIDCClient(ctx context.Context, principal domainidentity
 		return domainprovider.OIDCClient{}, err
 	}
 	item.CreatedAt = current.CreatedAt
-	if strings.TrimSpace(input.ClientSecret) == "" {
+	secret := strings.TrimSpace(input.ClientSecret)
+	if secret == "" && item.ClientType != domainprovider.OIDCClientTypePublic {
 		item.ClientSecretHash = current.ClientSecretHash
+		item.ClientSecretCiphertext = current.ClientSecretCiphertext
+		item.ClientSecretHashAtEncryption = current.ClientSecretHashAtEncryption
+	} else if secret != "" {
+		if err := s.protectOIDCClientSecret(&item, secret); err != nil {
+			return domainprovider.OIDCClient{}, err
+		}
 	}
 	updated, err := s.repo.UpdateOIDCClient(ctx, item)
 	if err != nil {
 		return domainprovider.OIDCClient{}, err
 	}
 	s.recordAudit(ctx, principal, "identity.oidc_client.update", "success", provider, updated, nil)
-	return updated, nil
+	return oidcClientForResponse(updated), nil
 }
 
 func (s *Service) DeleteOIDCClient(ctx context.Context, principal domainidentity.Principal, clientID string) error {

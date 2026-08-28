@@ -2,6 +2,7 @@ package resource
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +13,11 @@ import (
 
 func TestPodRoutesPreserveRuntimeErrorSemantics(t *testing.T) {
 	t.Parallel()
+
+	typed := fmt.Errorf("%w: terminal is not supported", apperrors.ErrUnsupportedOperation)
+	if got := (agentPodRoute{}).RuntimeError(typed); got != typed {
+		t.Fatalf("agent RuntimeError() = %v, want typed error preserved", got)
+	}
 
 	cause := errors.New("backend unavailable")
 	agentErr := (agentPodRoute{}).RuntimeError(cause)

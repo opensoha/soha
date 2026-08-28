@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -38,9 +39,27 @@ func resolveAgentClient[T any](factory AgentClientFactory[T], connection domainc
 	}
 	client, err := factory(connection)
 	if err != nil {
-		return zero, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		return zero, wrapAgentResourceError(err)
 	}
 	return client, nil
+}
+
+func wrapAgentResourceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, apperrors.ErrUnauthorized) ||
+		errors.Is(err, apperrors.ErrAccessDenied) ||
+		errors.Is(err, apperrors.ErrMFARequired) ||
+		errors.Is(err, apperrors.ErrConflict) ||
+		errors.Is(err, apperrors.ErrNotFound) ||
+		errors.Is(err, apperrors.ErrClusterUnready) ||
+		errors.Is(err, apperrors.ErrServiceUnavailable) ||
+		errors.Is(err, apperrors.ErrInvalidArgument) ||
+		errors.Is(err, apperrors.ErrUnsupportedOperation) {
+		return err
+	}
+	return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 }
 
 func (s *Workloads) workloadAgentClient(connection domaincluster.Connection) (WorkloadAgent, error) {
@@ -257,6 +276,10 @@ func resourcePermissionKey(resourceGroup, kind string, action domainaccess.Actio
 		if isResourceReadAction(action) {
 			return appaccess.PermPlatformWorkloadsOverviewView
 		}
+	case "node":
+		if action == domainaccess.ActionDrain {
+			return "platform.nodes.drain"
+		}
 	case "networktopology":
 		if isResourceReadAction(action) {
 			return appaccess.PermPlatformNetworkTopologyView
@@ -333,8 +356,10 @@ func resourceActionCandidates(resourceGroup, kind string) []domainaccess.Action 
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionLogs, domainaccess.ActionExec, domainaccess.ActionUpdate, domainaccess.ActionDelete}
 	case "deployment":
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDelete, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionRollback}
-	case "namespace", "node":
+	case "namespace":
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDelete}
+	case "node":
+		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDrain, domainaccess.ActionDelete}
 	case "helmrelease":
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionCreate, domainaccess.ActionUpdate, domainaccess.ActionDelete}
 	}

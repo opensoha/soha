@@ -166,7 +166,7 @@ func (h *Helm) GetHelmReleaseDetail(ctx context.Context, principal domainidentit
 		}
 		item, err = client.GetHelmReleaseDetail(ctx, namespace, name)
 		if err != nil {
-			return domainresource.HelmReleaseDetailView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return domainresource.HelmReleaseDetailView{}, wrapAgentResourceError(err)
 		}
 		source = "agent"
 	default:
@@ -202,7 +202,7 @@ func (h *Helm) ListHelmReleaseHistory(ctx context.Context, principal domainident
 		}
 		items, err = client.ListHelmReleaseHistory(ctx, namespace, name)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return nil, wrapAgentResourceError(err)
 		}
 		source = "agent"
 	default:
@@ -241,7 +241,7 @@ func (h *Helm) GetHelmReleaseValues(ctx context.Context, principal domainidentit
 		}
 		item, err = client.GetHelmReleaseValues(ctx, namespace, name, revision)
 		if err != nil {
-			return domainresource.HelmValuesView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return domainresource.HelmValuesView{}, wrapAgentResourceError(err)
 		}
 		source = "agent"
 	default:

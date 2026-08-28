@@ -2,6 +2,8 @@ package providerportal
 
 import (
 	"context"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +11,23 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestAccessControlMigrationAllowsDenyAndHidesLegacyMenu(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/postgres/0054_identity_application_access_control.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migration := string(raw)
+	for _, expected := range []string{
+		"CHECK (effect IN ('allow', 'deny'))",
+		"WHERE id = 'identity-policies'",
+		"SET enabled = false",
+	} {
+		if !strings.Contains(migration, expected) {
+			t.Fatalf("access control migration missing %q", expected)
+		}
+	}
+}
 
 func TestRepositoryListRecentLaunchesAllowsNullProviderID(t *testing.T) {
 	repo, mock := newProviderPortalRepository(t)

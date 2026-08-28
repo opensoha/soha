@@ -241,6 +241,32 @@ func TestRetryOperationCountsAttemptsOnClaimAndEnforcesLimit(t *testing.T) {
 	}
 }
 
+func TestRetryOperationIdempotencyAndReason(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	service := New(repo, dockerTestPermissions(), nil)
+	operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{
+		OperationKind: OperationKindProjectDeploy,
+		Status:        OperationStatusFailed,
+		Payload:       map[string]any{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := OperationMutationInput{IdempotencyKey: "retry-request-1", Reason: "transient failure"}
+	first, err := service.RetryOperationIdempotent(context.Background(), dockerTestPrincipal(), operation.ID, input)
+	if err != nil || first.Result["retryReason"] != "transient failure" {
+		t.Fatalf("first retry = %#v, err=%v", first, err)
+	}
+	second, err := service.RetryOperationIdempotent(context.Background(), dockerTestPrincipal(), operation.ID, input)
+	if err != nil || second.Status != OperationStatusQueued {
+		t.Fatalf("replayed retry = %#v, err=%v", second, err)
+	}
+	_, err = service.RetryOperationIdempotent(context.Background(), dockerTestPrincipal(), operation.ID, OperationMutationInput{IdempotencyKey: "retry-request-1", Reason: "different"})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("conflicting retry error = %v", err)
+	}
+}
+
 func TestRunnerCallbackRequiresClaimedOperation(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	service := New(repo, dockerTestPermissions(), nil)

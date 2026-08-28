@@ -123,20 +123,14 @@ func TestVirtualizationRootMenuVisibleWithAnyVirtualizationPermission(t *testing
 	}
 }
 
-func TestComputeRootVisibleWithAnyChildReadPermission(t *testing.T) {
+func TestComputeRootUsesWorkbenchEntryPermission(t *testing.T) {
 	for _, menuID := range []string{"compute-workbench", "compute-workbench-overview"} {
 		item := domainmenu.Record{ID: menuID, Path: "/compute/overview"}
-		for _, permission := range []string{
-			appaccess.PermVirtualizationImagesView,
-			appaccess.PermVirtualizationStorageView,
-			appaccess.PermVirtualizationFlavorsView,
-			appaccess.PermVirtualizationSyncView,
-			appaccess.PermDockerTemplatesView,
-			appaccess.PermDockerOperationsView,
-		} {
-			if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchComputeView, permission}) {
-				t.Fatalf("%s should be visible with %s", menuID, permission)
-			}
+		if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchComputeView}) {
+			t.Fatalf("%s should be visible with the Compute workbench entry permission", menuID)
+		}
+		if isVisibleByPermissions(item, []string{appaccess.PermVirtualizationImagesView}) {
+			t.Fatalf("%s must stay hidden without the Compute workbench entry permission", menuID)
 		}
 	}
 }
@@ -418,14 +412,12 @@ func TestSystemMenusRequireSettingsWorkbenchEntry(t *testing.T) {
 }
 
 func TestSoftwareMenusRequirePackageViewPermission(t *testing.T) {
-	for _, id := range []string{"identity-software", "identity-software-storage"} {
-		item := domainmenu.Record{ID: id, Path: "/internal-workbench/software"}
-		if isVisibleByPermissions(item, nil) {
-			t.Fatalf("%s should require %s", id, appaccess.PermSoftwarePackageView)
-		}
-		if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchSecurityView, appaccess.PermSoftwarePackageView}) {
-			t.Fatalf("%s should be visible with software package view permission", id)
-		}
+	item := domainmenu.Record{ID: "identity-software", Path: "/internal-workbench/software"}
+	if isVisibleByPermissions(item, nil) {
+		t.Fatalf("identity-software should require %s", appaccess.PermSoftwarePackageView)
+	}
+	if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchSecurityView, appaccess.PermSoftwarePackageView}) {
+		t.Fatal("identity-software should be visible with software package view permission")
 	}
 }
 

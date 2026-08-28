@@ -270,7 +270,12 @@ func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 		// operation record to the virtualization or Docker application service.
 		return nonPlatformMutationEntry("ComputeTask", nonPlatformMutationAction(method, path), appaccess.PermWorkspaceResourceView, false), true
 	case strings.HasPrefix(path, "/api/v1/virtualization/clusters"):
-		return nonPlatformMutationEntry("VirtualizationCluster", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationClustersManage, false), true
+		action := nonPlatformMutationAction(method, path)
+		permissionKey := appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, action)
+		if action == "sync" {
+			permissionKey = appaccess.ManagedActionPermission(appaccess.PermVirtualizationSyncManage, action)
+		}
+		return nonPlatformMutationEntry("VirtualizationCluster", action, permissionKey, false), true
 	case path == "/api/v1/virtualization/vms/plan":
 		return nonPlatformMutationEntry("VirtualMachinePlan", "plan", appaccess.PermVirtualizationVMsView, false), true
 	case path == "/api/v1/virtualization/vms":
@@ -398,6 +403,10 @@ func accessMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 		return nonPlatformMutationEntry("DirectorySyncRun", nonPlatformMutationAction(method, path), appaccess.PermAccessDirectorySync, false), true
 	case strings.HasPrefix(path, "/api/v1/access/directory-connections"):
 		return nonPlatformMutationEntry("DirectoryConnection", nonPlatformMutationAction(method, path), appaccess.PermAccessDirectoryManage, false), true
+	case strings.HasPrefix(path, "/api/v1/access/scope-grants"):
+		return nonPlatformMutationEntry("ScopeGrant", nonPlatformMutationAction(method, path), appaccess.PermAccessScopeGrantsManage, false), true
+	case (strings.HasPrefix(path, "/api/v1/access/users/") || strings.HasPrefix(path, "/api/v1/access/teams/")) && strings.Contains(path, "/scope-grants"):
+		return nonPlatformMutationEntry("ScopeGrant", nonPlatformMutationAction(method, path), appaccess.PermAccessScopeGrantsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/access/users"):
 		return nonPlatformMutationEntry("AccessUser", accessRouteAction(method, path), appaccess.PermAccessUsersManage, false), true
 	case strings.HasPrefix(path, "/api/v1/access/roles"):
@@ -406,8 +415,6 @@ func accessMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 		return nonPlatformMutationEntry("AccessTeam", nonPlatformMutationAction(method, path), appaccess.PermAccessGroupsManage, false), true
 	case strings.HasPrefix(path, "/api/v1/access/policies"):
 		return nonPlatformMutationEntry("AccessPolicy", nonPlatformMutationAction(method, path), appaccess.PermAccessPoliciesManage, false), true
-	case strings.HasPrefix(path, "/api/v1/access/scope-grants"):
-		return nonPlatformMutationEntry("ScopeGrant", nonPlatformMutationAction(method, path), appaccess.PermAccessScopeGrantsManage, false), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }

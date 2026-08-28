@@ -32,7 +32,7 @@ func (h *ManifestHandler) List(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	page, _ := strconv.Atoi(c.Query("page"))
 	pageSize, _ := strconv.Atoi(c.Query("pageSize"))
-	items, err := h.service.List(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domainmanifest.Filter{ApplicationID: c.Query("applicationId"), ClusterID: c.Query("clusterId"), Namespace: c.Query("namespace"), Search: c.Query("search"), Page: page, PageSize: pageSize, Limit: limit})
+	items, err := h.service.List(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domainmanifest.Filter{ApplicationID: c.Query("applicationId"), ServiceID: c.Query("serviceId"), ClusterID: c.Query("clusterId"), Namespace: c.Query("namespace"), Search: c.Query("search"), Page: page, PageSize: pageSize, Limit: limit})
 	if err != nil {
 		writeError(c, err)
 		return

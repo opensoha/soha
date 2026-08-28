@@ -75,23 +75,26 @@ type ProviderFilter struct {
 }
 
 type OIDCClient struct {
-	ID                     string    `json:"id"`
-	ProviderID             string    `json:"providerId"`
-	ClientID               string    `json:"clientId"`
-	ClientType             string    `json:"clientType"`
-	ClientSecretHash       string    `json:"-"`
-	RedirectURIs           []string  `json:"redirectUris"`
-	RedirectURIRegexes     []string  `json:"redirectUriRegexes"`
-	PostLogoutRedirectURIs []string  `json:"postLogoutRedirectUris"`
-	AllowedScopes          []string  `json:"allowedScopes"`
-	AllowedGrantTypes      []string  `json:"allowedGrantTypes"`
-	RequirePKCE            bool      `json:"requirePkce"`
-	AccessTokenTTLSeconds  int       `json:"accessTokenTtlSeconds"`
-	IDTokenTTLSeconds      int       `json:"idTokenTtlSeconds"`
-	RefreshTokenTTLSeconds int       `json:"refreshTokenTtlSeconds"`
-	Status                 string    `json:"status"`
-	CreatedAt              time.Time `json:"createdAt"`
-	UpdatedAt              time.Time `json:"updatedAt"`
+	ID                           string    `json:"id"`
+	ProviderID                   string    `json:"providerId"`
+	ClientID                     string    `json:"clientId"`
+	ClientType                   string    `json:"clientType"`
+	ClientSecretHash             string    `json:"-"`
+	ClientSecretCiphertext       string    `json:"-"`
+	ClientSecretHashAtEncryption string    `json:"-"`
+	ClientSecretAvailable        bool      `json:"clientSecretAvailable"`
+	RedirectURIs                 []string  `json:"redirectUris"`
+	RedirectURIRegexes           []string  `json:"redirectUriRegexes"`
+	PostLogoutRedirectURIs       []string  `json:"postLogoutRedirectUris"`
+	AllowedScopes                []string  `json:"allowedScopes"`
+	AllowedGrantTypes            []string  `json:"allowedGrantTypes"`
+	RequirePKCE                  bool      `json:"requirePkce"`
+	AccessTokenTTLSeconds        int       `json:"accessTokenTtlSeconds"`
+	IDTokenTTLSeconds            int       `json:"idTokenTtlSeconds"`
+	RefreshTokenTTLSeconds       int       `json:"refreshTokenTtlSeconds"`
+	Status                       string    `json:"status"`
+	CreatedAt                    time.Time `json:"createdAt"`
+	UpdatedAt                    time.Time `json:"updatedAt"`
 }
 
 type OIDCClientInput struct {
@@ -114,6 +117,12 @@ type OIDCClientInput struct {
 type OIDCClientCreated struct {
 	Client       OIDCClient `json:"client"`
 	ClientSecret string     `json:"clientSecret,omitempty"`
+}
+
+type OIDCClientSecretReveal struct {
+	ClientID     string    `json:"clientId"`
+	ClientSecret string    `json:"clientSecret"`
+	RevealedAt   time.Time `json:"revealedAt"`
 }
 
 type Outpost struct {

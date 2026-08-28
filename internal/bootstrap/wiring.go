@@ -86,7 +86,7 @@ import (
 	resourcebackendinfra "github.com/opensoha/soha/internal/infrastructure/resourcebackend"
 	samlinfra "github.com/opensoha/soha/internal/infrastructure/saml"
 	softwarefetchinfra "github.com/opensoha/soha/internal/infrastructure/softwarefetch"
-	softwarestoreinfra "github.com/opensoha/soha/internal/infrastructure/softwarestore"
+	softwareobjectstoreinfra "github.com/opensoha/soha/internal/infrastructure/softwareobjectstore"
 	vaultsecretinfra "github.com/opensoha/soha/internal/infrastructure/vaultsecret"
 	virtualizationinfra "github.com/opensoha/soha/internal/infrastructure/virtualization"
 	webauthninfra "github.com/opensoha/soha/internal/infrastructure/webauthn"
@@ -133,6 +133,7 @@ import (
 	scopegrantrepo "github.com/opensoha/soha/internal/repository/scopegrant"
 	secretrepo "github.com/opensoha/soha/internal/repository/secret"
 	settingsrepo "github.com/opensoha/soha/internal/repository/settings"
+	softwarerepo "github.com/opensoha/soha/internal/repository/software"
 	systemintegrationrepo "github.com/opensoha/soha/internal/repository/systemintegration"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
 	virtualizationrepo "github.com/opensoha/soha/internal/repository/virtualization"
@@ -149,7 +150,6 @@ type infrastructure struct {
 	mcpRegistry     *mcpinfra.Registry
 	runtimeMetrics  *runtimeobs.Registry
 	softwareFetcher *softwarefetchinfra.Fetcher
-	softwareStore   *softwarestoreinfra.Store
 	lifecycleCtx    context.Context
 	cancel          context.CancelFunc
 }
@@ -299,10 +299,9 @@ func newInfrastructure(ctx context.Context, cfg *cfgpkg.Config) (*infrastructure
 		cancel()
 		return nil, fmt.Errorf("build logger: %w", err)
 	}
-	softwareStore, err := softwarestoreinfra.New(cfg.Software.StorageDir)
-	if err != nil {
+	if err := rejectLegacySoftwareStorage(cfg.LegacySoftware.StorageDir); err != nil {
 		cancel()
-		return nil, fmt.Errorf("build software package storage: %w", err)
+		return nil, err
 	}
 	softwareFetcher := softwarefetchinfra.New(appsoftware.MaxPackageBytes)
 
@@ -352,7 +351,6 @@ func newInfrastructure(ctx context.Context, cfg *cfgpkg.Config) (*infrastructure
 		mcpRegistry:     mcpinfra.NewRegistry(cfg.MCP.DefaultTimeout),
 		runtimeMetrics:  runtimeobs.NewRegistry(),
 		softwareFetcher: softwareFetcher,
-		softwareStore:   softwareStore,
 		lifecycleCtx:    lifecycleCtx,
 		cancel:          cancel,
 	}, nil
@@ -421,7 +419,6 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	permissionResolver := appaccess.NewPermissionResolver(repos.policyRepository)
 	auditService := appaudit.New(repos.auditRepository, permissionResolver)
 	operationService := appoperation.New(repos.operationRepository, permissionResolver)
-	softwareService := appsoftware.New(infra.softwareStore, infra.softwareFetcher, permissionResolver, auditService, operationService)
 	vaultReader, err := newVaultKV2Reader(cfg.Security)
 	if err != nil {
 		return nil, err
@@ -436,6 +433,13 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	))
 	systemIntegrationService.RegisterSourceAdapter("gitlab", gitLabSourceAdapterFactory{})
 	systemIntegrationService.RegisterOAuthProvider("gitlab", gitlabinfra.NewOAuthProvider())
+	objectStoreFactory := softwareobjectstoreinfra.Factory{}
+	systemIntegrationService.RegisterConnectionTester("storage", "s3", objectStoreFactory)
+	softwareStore, err := softwarerepo.New(infra.databaseStore.DB(), softwareobjectstoreinfra.NewProvider(systemIntegrationService))
+	if err != nil {
+		return nil, fmt.Errorf("build software package storage: %w", err)
+	}
+	softwareService := appsoftware.New(softwareStore, infra.softwareFetcher, permissionResolver, auditService, operationService)
 	runtimeConfigService, err := appruntimeconfig.New(ctx, repos.runtimeConfigRepository, appruntimeconfig.NewRegistry(appruntimeconfig.RegistryOptions{
 		AccessURL:                     cfg.HTTP.AccessURL,
 		AssistantGlobal:               cfg.Modules.AI.FeatureFlags()["assistant.global"],
@@ -969,8 +973,8 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		VirtualizationEnabled: cfg.Modules.Virtualization.Enabled,
 		RuntimeEnabled:        cfg.Modules.Docker.Enabled,
 		ModuleState:           core.runtimeConfigService,
-		VirtualizationTasks:   virtualizationService,
-		RuntimeTasks:          dockerService,
+		VirtualizationTasks:   computeVirtualizationTaskController{service: virtualizationService},
+		RuntimeTasks:          computeRuntimeTaskController{service: dockerService},
 		VirtualizationControl: computeVirtualizationController{service: virtualizationService},
 		RuntimeControl:        dockerService,
 	})
@@ -1084,6 +1088,7 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	}
 	aiGatewayService.SetDeliveryServices(core.applicationService, delivery.deliveryService)
 	aiGatewayService.SetOperationsServices(delivery.virtualizationService, delivery.dockerService)
+	aiGatewayService.SetComputeService(delivery.computeService)
 	aiGatewayService.SetCatalogService(core.catalogService)
 	aiGatewayService.SetResourceService(core.resourceService.Runtime())
 	aiGatewayService.SetResourceCreationService(core.resourceService.ResourceCreation())
@@ -1190,6 +1195,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		core.auditService,
 		core.operationService,
 	)
+	delivery.deliveryService.SetManifestPackages(manifestService)
 	manifestDeclarativeService := appmanifest.NewDeclarative(manifestService, repos.manifestRepository, appmanifest.DeclarativeRuntimeDependencies{
 		Renderer: manifestruntimeinfra.NewRenderer(),
 		Direct:   manifestruntimeinfra.NewDirect(infra.clusterManager),
@@ -1197,6 +1203,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Tasks:    core.executionService,
 		Sources:  repos.applicationRepository,
 	})
+	manifestService.SetRevisionPromoter(manifestDeclarativeService)
 	core.executionService.AddExecutionTaskSink(manifestDeclarativeService)
 	if cfg.Modules.Delivery.Enabled {
 		manifestDeclarativeService.Start(infra.lifecycleCtx)

@@ -31,9 +31,10 @@ const (
 	ProviderKubeVirt = "kubevirt"
 	ProviderPVE      = "pve"
 
-	TaskKindVMCreate  = "vm_create"
-	TaskKindVMAction  = "vm_action"
-	TaskKindAssetSync = "asset_sync"
+	TaskKindConnectionTest = "connection_test"
+	TaskKindVMCreate       = "vm_create"
+	TaskKindVMAction       = "vm_action"
+	TaskKindAssetSync      = "asset_sync"
 
 	TaskStatusQueued    = "queued"
 	TaskStatusRunning   = "running"
@@ -155,6 +156,11 @@ type VMActionInput struct {
 	Disks          []domainvirtualization.AdapterDiskChange    `json:"disks,omitempty"`
 	Networks       []domainvirtualization.AdapterNetworkChange `json:"networks,omitempty"`
 	IdempotencyKey string                                      `json:"-"`
+}
+
+type OperationMutationInput struct {
+	IdempotencyKey string
+	Reason         string
 }
 
 type ImageInput struct {
@@ -463,7 +469,7 @@ func (s *Service) TestConnectionIdempotent(ctx context.Context, principal domain
 	task, createErr := s.createTaskIdempotently(ctx, "virtualization.connection.test", principal, idempotencyKey, idempotencyInput, domainvirtualization.Task{
 		Provider:     connection.Provider,
 		ConnectionID: connection.ID,
-		TaskKind:     "connection_test",
+		TaskKind:     TaskKindConnectionTest,
 		Status:       status,
 		RequestedBy:  principal.UserID,
 		Payload:      map[string]any{"connectionId": connection.ID},
@@ -1125,18 +1131,28 @@ func (s *Service) DeleteFlavor(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) ListOperations(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.TaskFilter) ([]domainvirtualization.Task, error) {
-	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView); err != nil {
+	canOperations, canSync, err := s.operationReadAccess(ctx, principal)
+	if err != nil {
 		return nil, err
+	}
+	filter, visible := restrictOperationTaskFilter(filter, canOperations, canSync)
+	if !visible {
+		return []domainvirtualization.Task{}, nil
 	}
 	items, err := s.tasks.ListTasks(ctx, filter)
 	return domainvirtualization.WithOperationStates(items, time.Now().UTC()), err
 }
 
 func (s *Service) ListOperationsPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.TaskFilter) (domainvirtualization.Page[domainvirtualization.Task], error) {
-	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView); err != nil {
+	canOperations, canSync, err := s.operationReadAccess(ctx, principal)
+	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Task]{}, err
 	}
 	filter.Page, filter.PageSize = normalizedPageRequest(filter.Page, filter.PageSize, filter.Limit)
+	filter, visible := restrictOperationTaskFilter(filter, canOperations, canSync)
+	if !visible {
+		return pageOf([]domainvirtualization.Task{}, 0, filter.Page, filter.PageSize), nil
+	}
 	items, err := s.tasks.ListTasks(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Task]{}, err
@@ -1150,24 +1166,82 @@ func (s *Service) ListOperationsPage(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) GetOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
-	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView); err != nil {
+	canOperations, canSync, err := s.operationReadAccess(ctx, principal)
+	if err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	item, err := s.tasks.GetTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
+	if !operationTaskKindVisible(canOperations, canSync, item.TaskKind) {
+		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization task is not visible", apperrors.ErrAccessDenied)
+	}
 	return domainvirtualization.WithOperationState(item, time.Now().UTC()), nil
 }
 
 func (s *Service) ListOperationLogs(ctx context.Context, principal domainidentity.Principal, taskID string, limit int) ([]domainvirtualization.TaskLog, error) {
-	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView); err != nil {
+	if _, err := s.GetOperation(ctx, principal, taskID); err != nil {
 		return nil, err
 	}
 	return s.taskLogs.ListTaskLogs(ctx, strings.TrimSpace(taskID), limit)
 }
 
+func (s *Service) operationReadAccess(ctx context.Context, principal domainidentity.Principal) (bool, bool, error) {
+	keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return false, false, err
+	}
+	canOperations := slices.Contains(keys, appaccess.PermVirtualizationOperationsView)
+	canSync := slices.Contains(keys, appaccess.PermVirtualizationSyncView)
+	if !canOperations && !canSync {
+		return false, false, fmt.Errorf("%w: missing virtualization operation permission", apperrors.ErrAccessDenied)
+	}
+	return canOperations, canSync, nil
+}
+
+func restrictOperationTaskFilter(filter domainvirtualization.TaskFilter, canOperations, canSync bool) (domainvirtualization.TaskFilter, bool) {
+	if kind := strings.TrimSpace(filter.TaskKind); kind != "" {
+		filter.TaskKind = kind
+		filter.TaskKinds = nil
+		return filter, operationTaskKindVisible(canOperations, canSync, kind)
+	}
+	allowed := allowedOperationTaskKinds(canOperations, canSync)
+	if len(filter.TaskKinds) > 0 {
+		requested := filter.TaskKinds
+		allowed = slices.DeleteFunc(allowed, func(kind string) bool { return !slices.Contains(requested, kind) })
+	}
+	filter.TaskKinds = allowed
+	return filter, len(allowed) > 0
+}
+
+func allowedOperationTaskKinds(canOperations, canSync bool) []string {
+	kinds := []string{}
+	if canOperations {
+		kinds = append(kinds, TaskKindConnectionTest, TaskKindVMCreate, TaskKindVMAction)
+	}
+	if canSync {
+		kinds = append(kinds, TaskKindAssetSync)
+	}
+	return kinds
+}
+
+func operationTaskKindVisible(canOperations, canSync bool, kind string) bool {
+	switch strings.TrimSpace(kind) {
+	case TaskKindAssetSync:
+		return canSync
+	case TaskKindConnectionTest, TaskKindVMCreate, TaskKindVMAction:
+		return canOperations
+	default:
+		return false
+	}
+}
+
 func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (_ domainvirtualization.Task, retErr error) {
+	return s.CancelOperationIdempotent(ctx, principal, taskID, OperationMutationInput{})
+}
+
+func (s *Service) CancelOperationIdempotent(ctx context.Context, principal domainidentity.Principal, taskID string, input OperationMutationInput) (_ domainvirtualization.Task, retErr error) {
 	defer func() {
 		s.recordMutationFailure(ctx, principal, "virtualization.operation.cancel", taskID, taskID, retErr, nil)
 	}()
@@ -1177,6 +1251,13 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 	task, err := s.tasks.GetTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
+	}
+	receiptID, inputHash, replayed, err := operationMutationReceipt(task.Payload, "virtualization.operation.cancel/"+task.ID, principal, input)
+	if err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	if replayed {
+		return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 	}
 	if !isCancelableTaskStatus(task.Status) {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization operation %s cannot be canceled from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
@@ -1189,16 +1270,36 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 		"canceledBy": principal.UserID,
 		"canceledAt": now.Format(time.RFC3339),
 	})
+	if reason := strings.TrimSpace(input.Reason); reason != "" {
+		task.Result["cancelReason"] = reason
+	}
+	if task.Payload == nil {
+		task.Payload = map[string]any{}
+	}
+	idempotency.RecordReceipt(task.Payload, receiptID, inputHash)
 	updated, err := s.tasks.UpdateTask(ctx, task)
 	if err != nil {
+		if replay, ok := s.replayedOperationMutation(ctx, task.ID, "virtualization.operation.cancel/"+task.ID, principal, input); ok {
+			return replay, nil
+		}
 		return domainvirtualization.Task{}, err
 	}
-	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "warn", Message: "operation canceled", Payload: map[string]any{"actor": principal.UserID}})
-	s.recordOperation(ctx, principal, "virtualization.operation.cancel", updated.ID, updated.TaskKind, "success", "canceled virtualization operation", map[string]any{"taskId": updated.ID})
+	metadata := map[string]any{"actor": principal.UserID}
+	operationMetadata := map[string]any{"taskId": updated.ID}
+	if reason := strings.TrimSpace(input.Reason); reason != "" {
+		metadata["reason"] = reason
+		operationMetadata["reason"] = reason
+	}
+	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "warn", Message: "operation canceled", Payload: metadata})
+	s.recordOperation(ctx, principal, "virtualization.operation.cancel", updated.ID, updated.TaskKind, "success", "canceled virtualization operation", operationMetadata)
 	return domainvirtualization.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (_ domainvirtualization.Task, retErr error) {
+	return s.RetryOperationIdempotent(ctx, principal, taskID, OperationMutationInput{})
+}
+
+func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domainidentity.Principal, taskID string, input OperationMutationInput) (_ domainvirtualization.Task, retErr error) {
 	defer func() {
 		s.recordMutationFailure(ctx, principal, "virtualization.operation.retry", taskID, taskID, retErr, nil)
 	}()
@@ -1208,6 +1309,13 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	task, err := s.tasks.GetTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
+	}
+	receiptID, inputHash, replayed, err := operationMutationReceipt(task.Payload, "virtualization.operation.retry/"+task.ID, principal, input)
+	if err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	if replayed {
+		return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 	}
 	if !isRetryableTaskStatus(task.Status) {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization operation %s cannot be retried from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
@@ -1228,13 +1336,49 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 		"retriedBy": principal.UserID,
 		"retriedAt": time.Now().UTC().Format(time.RFC3339),
 	})
+	if reason := strings.TrimSpace(input.Reason); reason != "" {
+		task.Result["retryReason"] = reason
+	}
+	if task.Payload == nil {
+		task.Payload = map[string]any{}
+	}
+	idempotency.RecordReceipt(task.Payload, receiptID, inputHash)
 	updated, err := s.tasks.UpdateTask(ctx, task)
 	if err != nil {
+		if replay, ok := s.replayedOperationMutation(ctx, task.ID, "virtualization.operation.retry/"+task.ID, principal, input); ok {
+			return replay, nil
+		}
 		return domainvirtualization.Task{}, err
 	}
-	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "info", Message: "operation queued for retry", Payload: map[string]any{"actor": principal.UserID}})
-	s.recordOperation(ctx, principal, "virtualization.operation.retry", updated.ID, updated.TaskKind, "success", "queued virtualization operation retry", map[string]any{"taskId": updated.ID})
+	metadata := map[string]any{"actor": principal.UserID}
+	operationMetadata := map[string]any{"taskId": updated.ID}
+	if reason := strings.TrimSpace(input.Reason); reason != "" {
+		metadata["reason"] = reason
+		operationMetadata["reason"] = reason
+	}
+	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "info", Message: "operation queued for retry", Payload: metadata})
+	s.recordOperation(ctx, principal, "virtualization.operation.retry", updated.ID, updated.TaskKind, "success", "queued virtualization operation retry", operationMetadata)
 	return domainvirtualization.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func operationMutationReceipt(payload map[string]any, scope string, principal domainidentity.Principal, input OperationMutationInput) (string, string, bool, error) {
+	if strings.TrimSpace(input.IdempotencyKey) == "" {
+		return "", "", false, nil
+	}
+	receiptID, inputHash, replayed, err := idempotency.LookupReceipt(payload, scope, firstNonEmpty(principal.UserID, principal.UserName), input.IdempotencyKey, map[string]string{"reason": strings.TrimSpace(input.Reason)})
+	if errors.Is(err, idempotency.ErrInputMismatch) {
+		return "", "", false, fmt.Errorf("%w: %s", apperrors.ErrConflict, err)
+	}
+	return receiptID, inputHash, replayed, err
+}
+
+func (s *Service) replayedOperationMutation(ctx context.Context, taskID, scope string, principal domainidentity.Principal, input OperationMutationInput) (domainvirtualization.Task, bool) {
+	latest, err := s.tasks.GetTask(ctx, taskID)
+	if err != nil {
+		return domainvirtualization.Task{}, false
+	}
+	_, _, replayed, err := operationMutationReceipt(latest.Payload, scope, principal, input)
+	return domainvirtualization.WithOperationState(latest, time.Now().UTC()), err == nil && replayed
 }
 
 func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Principal, vmID string, rangeMinutes, stepSeconds int) (domainvirtualization.VMMetricsResult, error) {

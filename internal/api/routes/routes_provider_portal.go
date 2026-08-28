@@ -49,6 +49,7 @@ func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/identity/providers/:providerID/saml/certificate/rotate", deps.ProviderPortal.RotateSAMLProviderCertificate)
 	protected.POST("/identity/saml/certificates/:certificateID/rotate", deps.ProviderPortal.RotateSAMLCertificate)
 	protected.GET("/identity/oidc-clients/:clientID", deps.ProviderPortal.GetOIDCClient)
+	protected.POST("/identity/oidc-clients/:clientID/secret/reveal", deps.ProviderPortal.RevealOIDCClientSecret)
 	protected.PUT("/identity/oidc-clients/:clientID", deps.ProviderPortal.UpdateOIDCClient)
 	protected.PATCH("/identity/oidc-clients/:clientID", deps.ProviderPortal.UpdateOIDCClient)
 	protected.DELETE("/identity/oidc-clients/:clientID", deps.ProviderPortal.DeleteOIDCClient)

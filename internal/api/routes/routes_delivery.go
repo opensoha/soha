@@ -80,6 +80,7 @@ func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
 }
 
 func registerDeliveryCatalogRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.GET("/delivery/environments", deps.Catalog.ListEnvironments)
 	protected.POST("/application-environments", deps.Catalog.CreateApplicationEnvironment)
 	protected.PUT("/application-environments/:applicationEnvironmentID", deps.Catalog.UpdateApplicationEnvironment)
 	protected.DELETE("/application-environments/:applicationEnvironmentID", deps.Catalog.DeleteApplicationEnvironment)

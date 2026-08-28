@@ -122,6 +122,7 @@ func TestDefaultMenuSeedsExcludeDeprecatedIDs(t *testing.T) {
 func TestObsoleteMenuCleanupIncludesPersistedLegacyIDs(t *testing.T) {
 	cleanupIDs := obsoleteMenuIDsForCleanup()
 	for _, id := range []string{
+		"identity-software-storage",
 		"plugins-marketplace",
 		"extensions-marketplace",
 		"ai-gateway-overview",
@@ -625,12 +626,10 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 	}{
 		"identity-overview":              {section: "", sortOrder: 1},
 		"identity-software":              {section: "software", sortOrder: 5},
-		"identity-software-storage":      {section: "software", sortOrder: 10},
 		"settings-overview":              {section: "", sortOrder: 1},
 		"identity-applications":          {section: "provider", sortOrder: 10},
 		"identity-providers":             {section: "provider", sortOrder: 20},
 		"identity-outposts":              {section: "provider", sortOrder: 30},
-		"identity-policies":              {section: "provider", sortOrder: 40},
 		"settings-source-control":        {section: "integrations", sortOrder: 10},
 		"settings-secrets":               {section: "integrations", sortOrder: 20},
 		"menus":                          {section: "users", sortOrder: 50},
@@ -775,22 +774,22 @@ func TestDefaultMenuSeedsPlaceApplicationCenterFirstInDelivery(t *testing.T) {
 func TestDefaultMenuSeedsGroupDeliveryWorkbenchByUserTask(t *testing.T) {
 	items := defaultMenuSeeds()
 	expected := map[string]string{
-		"builds":                    "delivery",
-		"delivery-overview":         "delivery",
-		"delivery-manifest-library": "delivery",
-		"delivery-onboarding":       "delivery",
-		"release-board":             "delivery",
-		"delivery-testing":          "delivery",
-		"delivery-analysis":         "delivery",
-		"release-bundles":           "delivery-records",
-		"execution-tasks":           "delivery-records",
-		"workflows":                 "delivery-records",
-		"releases":                  "delivery-records",
-		"delivery-blueprints":       "delivery-platform",
-		"build-templates":           "delivery-platform",
-		"workflow-templates":        "delivery-platform",
-		"application-environments":  "delivery-platform",
-		"registries":                "delivery-platform",
+		"builds":                         "delivery",
+		"delivery-overview":              "delivery",
+		"delivery-manifest-library":      "delivery",
+		"delivery-onboarding":            "delivery",
+		"release-board":                  "delivery",
+		"delivery-testing":               "delivery",
+		"delivery-analysis":              "delivery",
+		"release-bundles":                "delivery-records",
+		"execution-tasks":                "delivery-records",
+		"workflows":                      "delivery-records",
+		"releases":                       "delivery-records",
+		"delivery-blueprints":            "delivery-platform",
+		"build-templates":                "delivery-platform",
+		"workflow-templates":             "delivery-platform",
+		"delivery-environment-directory": "delivery-platform",
+		"registries":                     "delivery-platform",
 	}
 	for _, item := range items {
 		section, ok := expected[item.ID]

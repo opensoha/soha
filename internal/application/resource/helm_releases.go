@@ -29,7 +29,7 @@ func (h *Helm) ListHelmReleases(ctx context.Context, principal domainidentity.Pr
 		}
 		items, err = client.ListHelmReleases(ctx, namespace)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return nil, wrapAgentResourceError(err)
 		}
 		source = "agent"
 	default:

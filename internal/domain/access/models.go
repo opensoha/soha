@@ -23,6 +23,7 @@ const (
 	ActionTrigger  Action = "trigger"
 	ActionLogs     Action = "logs"
 	ActionExec     Action = "exec"
+	ActionDrain    Action = "drain"
 )
 
 type PolicyEffect string

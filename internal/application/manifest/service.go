@@ -34,9 +34,14 @@ type OperationRecorder interface {
 	Record(context.Context, domainoperation.Entry) error
 }
 
+type RevisionPromoter interface {
+	PromoteRevision(context.Context, domainidentity.Principal, domainmanifest.Package, int) error
+}
+
 type ApplicationReader interface {
 	List(context.Context, domainidentity.Principal, domainapp.Filter) ([]domainapp.App, error)
 	Get(context.Context, domainidentity.Principal, string) (domainapp.App, error)
+	GetService(context.Context, domainidentity.Principal, string, string) (domainapp.Service, error)
 }
 
 type EnvironmentReader interface {
@@ -56,10 +61,15 @@ type Service struct {
 	permissions  *appaccess.PermissionResolver
 	audit        AuditRecorder
 	operations   OperationRecorder
+	promoter     RevisionPromoter
 }
 
 func New(repository domainmanifest.Repository, applications ApplicationReader, environments EnvironmentReader, clusters ClusterReader, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder) *Service {
 	return &Service{repository: repository, applications: applications, environments: environments, clusters: clusters, authorizer: authorizer, permissions: permissions, audit: audit, operations: operations}
+}
+
+func (s *Service) SetRevisionPromoter(promoter RevisionPromoter) {
+	s.promoter = promoter
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainmanifest.Filter) (domainmanifest.Page, error) {
@@ -103,6 +113,9 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	}
 	app, err := s.authorizeInput(ctx, principal, domainaccess.ActionCreate, item)
 	if err != nil {
+		return domainmanifest.Package{}, err
+	}
+	if err := s.validateServiceScope(ctx, principal, item); err != nil {
 		return domainmanifest.Package{}, err
 	}
 	item.BusinessLineID = app.BusinessLineID
@@ -161,6 +174,9 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	}
 	app, err := s.authorizeInput(ctx, principal, domainaccess.ActionUpdate, item)
 	if err != nil {
+		return domainmanifest.Package{}, err
+	}
+	if err := s.validateServiceScope(ctx, principal, item); err != nil {
 		return domainmanifest.Package{}, err
 	}
 	item.BusinessLineID = app.BusinessLineID
@@ -222,6 +238,12 @@ func (s *Service) Publish(ctx context.Context, principal domainidentity.Principa
 	if err := validateRenderableFiles(item); err != nil {
 		return domainmanifest.Package{}, err
 	}
+	if item.Status == domainmanifest.StatusPublished && item.CurrentRevision > 0 && s.promoter != nil {
+		if err := s.promoter.PromoteRevision(ctx, principal, item, item.CurrentRevision); err != nil {
+			return item, fmt.Errorf("promote manifest revision v%d: %w", item.CurrentRevision, err)
+		}
+		return item, nil
+	}
 	payload, err := json.Marshal(struct {
 		Files    []domainmanifest.File    `json:"files"`
 		Bindings []domainmanifest.Binding `json:"bindings"`
@@ -244,6 +266,11 @@ func (s *Service) Publish(ctx context.Context, principal domainidentity.Principa
 		return domainmanifest.Package{}, err
 	}
 	s.record(ctx, principal, "delivery.manifest.publish", published, fmt.Sprintf("published manifest revision v%d", revision.Version))
+	if s.promoter != nil {
+		if err := s.promoter.PromoteRevision(ctx, principal, published, revision.Version); err != nil {
+			return published, fmt.Errorf("promote manifest revision v%d: %w", revision.Version, err)
+		}
+	}
 	return published, nil
 }
 
@@ -312,6 +339,19 @@ func (s *Service) authorizeInput(ctx context.Context, principal domainidentity.P
 
 func (s *Service) authorizePackage(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package) (domainapp.App, error) {
 	return s.authorizeInput(ctx, principal, action, item)
+}
+
+func (s *Service) validateServiceScope(ctx context.Context, principal domainidentity.Principal, item domainmanifest.Package) error {
+	if item.ServiceID == "" {
+		return nil
+	}
+	if _, err := s.applications.GetService(ctx, principal, item.ApplicationID, item.ServiceID); err != nil {
+		if errors.Is(err, apperrors.ErrNotFound) {
+			return fmt.Errorf("%w: service %s does not belong to application %s", apperrors.ErrInvalidArgument, item.ServiceID, item.ApplicationID)
+		}
+		return fmt.Errorf("validate manifest service: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) validateBindings(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item *domainmanifest.Package, app domainapp.App) error {
@@ -413,7 +453,7 @@ func normalizeInput(input domainmanifest.Input) (domainmanifest.Package, error) 
 	if err != nil {
 		return domainmanifest.Package{}, err
 	}
-	return domainmanifest.Package{Name: name, Description: strings.TrimSpace(input.Description), ApplicationID: applicationID, BusinessLineID: strings.TrimSpace(input.BusinessLineID), Renderer: renderer, Files: files, Bindings: bindings}, nil
+	return domainmanifest.Package{Name: name, Description: strings.TrimSpace(input.Description), ApplicationID: applicationID, ServiceID: strings.TrimSpace(input.ServiceID), BusinessLineID: strings.TrimSpace(input.BusinessLineID), Renderer: renderer, Files: files, Bindings: bindings}, nil
 }
 
 func (s *Service) get(ctx context.Context, packageID string) (domainmanifest.Package, error) {

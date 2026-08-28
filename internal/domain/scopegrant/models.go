@@ -51,6 +51,7 @@ type Input struct {
 
 type Repository interface {
 	List(context.Context) ([]Record, error)
+	ListBySubject(context.Context, string, string) ([]Record, error)
 	Get(context.Context, string) (Record, error)
 	Create(context.Context, Input) (Record, error)
 	Update(context.Context, string, Input) (Record, error)

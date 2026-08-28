@@ -272,7 +272,7 @@ func (w *Workloads) RollbackDeployment(ctx context.Context, principal domainiden
 		source = "agent"
 		if err != nil {
 			_ = w.recordAudit(ctx, principal, clusterID, namespace, "Deployment", name, string(domainaccess.ActionRollback), "failure", err.Error())
-			return domainresource.DeploymentRollbackView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return domainresource.DeploymentRollbackView{}, wrapAgentResourceError(err)
 		}
 	} else if err := w.direct.RollbackDeployment(ctx, clusterID, namespace, name, revision); err != nil {
 		_ = w.recordAudit(ctx, principal, clusterID, namespace, "Deployment", name, string(domainaccess.ActionRollback), "failure", err.Error())

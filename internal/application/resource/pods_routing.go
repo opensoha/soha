@@ -97,10 +97,7 @@ func (agentPodRoute) SupportsUsageMetrics() bool {
 }
 
 func (agentPodRoute) RuntimeError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	return wrapAgentResourceError(err)
 }
 
 type directPodRoute struct {

@@ -492,6 +492,54 @@ func TestGetConnectionDeleteDependenciesSummarizesLinkedResources(t *testing.T) 
 	}
 }
 
+func TestOperationReadsAreScopedByTaskKindPermission(t *testing.T) {
+	repo := newMemoryRepo()
+	now := time.Now().UTC()
+	repo.tasks["sync-task"] = domainvirtualization.Task{ID: "sync-task", TaskKind: TaskKindAssetSync, Status: TaskStatusRunning, CreatedAt: now}
+	repo.tasks["vm-task"] = domainvirtualization.Task{ID: "vm-task", TaskKind: TaskKindVMAction, Status: TaskStatusSucceeded, CreatedAt: now.Add(-time.Second)}
+	repo.logs["sync-task"] = []domainvirtualization.TaskLog{{ID: "sync-log", TaskID: "sync-task", Message: "sync"}}
+	repo.logs["vm-task"] = []domainvirtualization.TaskLog{{ID: "vm-log", TaskID: "vm-task", Message: "vm"}}
+
+	tests := []struct {
+		name       string
+		permission string
+		visibleID  string
+		hiddenID   string
+	}{
+		{name: "sync viewer", permission: appaccess.PermVirtualizationSyncView, visibleID: "sync-task", hiddenID: "vm-task"},
+		{name: "operation viewer", permission: appaccess.PermVirtualizationOperationsView, visibleID: "vm-task", hiddenID: "sync-task"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			principal := domainidentity.Principal{UserID: test.name, Roles: []string{test.name}}
+			permissions := appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{test.name: {test.permission}}})
+			service := MustNew(testDependencies(repo), map[string]Adapter{ProviderKubeVirt: fakeAdapter{}, ProviderPVE: fakeAdapter{}}, permissions, &captureOperations{}, Options{CredentialEncryptionKey: "test-secret"})
+
+			items, err := service.ListOperations(context.Background(), principal, domainvirtualization.TaskFilter{})
+			if err != nil || len(items) != 1 || items[0].ID != test.visibleID {
+				t.Fatalf("ListOperations() = %#v, %v; want only %s", items, err, test.visibleID)
+			}
+			page, err := service.ListOperationsPage(context.Background(), principal, domainvirtualization.TaskFilter{Page: 1, PageSize: 15})
+			if err != nil || page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != test.visibleID {
+				t.Fatalf("ListOperationsPage() = %#v, %v; want only %s", page, err, test.visibleID)
+			}
+			if _, err := service.GetOperation(context.Background(), principal, test.visibleID); err != nil {
+				t.Fatalf("GetOperation(%s) error = %v", test.visibleID, err)
+			}
+			if _, err := service.GetOperation(context.Background(), principal, test.hiddenID); !errors.Is(err, apperrors.ErrAccessDenied) {
+				t.Fatalf("GetOperation(%s) error = %v, want access denied", test.hiddenID, err)
+			}
+			logs, err := service.ListOperationLogs(context.Background(), principal, test.visibleID, 20)
+			if err != nil || len(logs) != 1 {
+				t.Fatalf("ListOperationLogs(%s) = %#v, %v", test.visibleID, logs, err)
+			}
+			if _, err := service.ListOperationLogs(context.Background(), principal, test.hiddenID, 20); !errors.Is(err, apperrors.ErrAccessDenied) {
+				t.Fatalf("ListOperationLogs(%s) error = %v, want access denied", test.hiddenID, err)
+			}
+		})
+	}
+}
+
 func TestDeleteConnectionBlocksDependenciesWithoutForce(t *testing.T) {
 	repo := newMemoryRepo()
 	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderPVE, Name: "pve-a", Enabled: true})
@@ -717,6 +765,31 @@ func TestCancelAndRetryOperation(t *testing.T) {
 	}
 	if retried.OperationState == nil || retried.OperationState.Phase != "pending" || !retried.OperationState.Cancelable {
 		t.Fatalf("retried operation state = %#v", retried.OperationState)
+	}
+}
+
+func TestCancelOperationIdempotencyAndReason(t *testing.T) {
+	repo := newMemoryRepo()
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+	task, err := repo.CreateTask(context.Background(), domainvirtualization.Task{
+		Provider: ProviderKubeVirt, TaskKind: TaskKindAssetSync, Status: TaskStatusQueued,
+		Payload: map[string]any{}, MaxRetries: 1, TimeoutSeconds: 1800,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := OperationMutationInput{IdempotencyKey: "cancel-request-1", Reason: "maintenance"}
+	first, err := service.CancelOperationIdempotent(context.Background(), testPrincipal(), task.ID, input)
+	if err != nil || first.Result["cancelReason"] != "maintenance" {
+		t.Fatalf("first cancel = %#v, err=%v", first, err)
+	}
+	second, err := service.CancelOperationIdempotent(context.Background(), testPrincipal(), task.ID, input)
+	if err != nil || second.Status != TaskStatusCanceled {
+		t.Fatalf("replayed cancel = %#v, err=%v", second, err)
+	}
+	_, err = service.CancelOperationIdempotent(context.Background(), testPrincipal(), task.ID, OperationMutationInput{IdempotencyKey: "cancel-request-1", Reason: "different"})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("conflicting cancel error = %v", err)
 	}
 }
 
@@ -1856,6 +1929,9 @@ func (r *memoryRepo) ListTasks(_ context.Context, filter domainvirtualization.Ta
 			continue
 		}
 		if filter.TaskKind != "" && item.TaskKind != filter.TaskKind {
+			continue
+		}
+		if len(filter.TaskKinds) > 0 && !slices.Contains(filter.TaskKinds, item.TaskKind) {
 			continue
 		}
 		items = append(items, item)

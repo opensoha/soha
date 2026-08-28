@@ -98,6 +98,11 @@ type HostProvisionTask struct {
 	Result       map[string]any
 }
 
+type OperationMutationInput struct {
+	IdempotencyKey string
+	Reason         string
+}
+
 type HostProvisioner interface {
 	ProvisionDockerHost(context.Context, domainidentity.Principal, HostProvisionInput) (HostProvisionTask, error)
 }
@@ -987,6 +992,10 @@ func (s *Service) ListOperationLogs(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.Principal, id string) (_ domaindocker.Operation, retErr error) {
+	return s.CancelOperationIdempotent(ctx, principal, id, OperationMutationInput{})
+}
+
+func (s *Service) CancelOperationIdempotent(ctx context.Context, principal domainidentity.Principal, id string, input OperationMutationInput) (_ domaindocker.Operation, retErr error) {
 	defer func() { s.recordMutationFailure(ctx, principal, "docker.operation.cancel", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "cancel")); err != nil {
 		return domaindocker.Operation{}, err
@@ -995,6 +1004,13 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
+	receiptID, inputHash, replayed, err := dockerOperationMutationReceipt(item.Payload, "docker.operation.cancel/"+item.ID, principal, input)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if replayed {
+		return domaindocker.WithOperationState(item, time.Now().UTC()), nil
+	}
 	if !slices.Contains([]string{OperationStatusQueued, OperationStatusRunning}, item.Status) {
 		return domaindocker.Operation{}, fmt.Errorf("%w: operation is not cancelable", apperrors.ErrInvalidArgument)
 	}
@@ -1002,17 +1018,37 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 	item.Status = OperationStatusCanceled
 	item.FinishedAt = &now
 	item.Result = mergeMap(item.Result, map[string]any{"canceledBy": principal.UserID})
+	if reason := strings.TrimSpace(input.Reason); reason != "" {
+		item.Result["cancelReason"] = reason
+	}
+	if item.Payload == nil {
+		item.Payload = map[string]any{}
+	}
+	idempotency.RecordReceipt(item.Payload, receiptID, inputHash)
 	updated, err := s.repo.UpdateOperation(ctx, item)
 	if err != nil {
+		if replay, ok := s.replayedDockerOperationMutation(ctx, item.ID, "docker.operation.cancel/"+item.ID, principal, input); ok {
+			return replay, nil
+		}
 		return domaindocker.Operation{}, err
 	}
 	updated = s.cancelLinkedHostProvisionTask(ctx, principal, updated)
-	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "warn", Message: "operation canceled by control plane", Payload: map[string]any{"userId": principal.UserID}})
-	s.recordOperation(ctx, principal, "docker.operation.cancel", updated.ID, updated.OperationKind, "success", "canceled docker operation", map[string]any{"operationId": updated.ID})
+	logMetadata := map[string]any{"userId": principal.UserID}
+	operationMetadata := map[string]any{"operationId": updated.ID}
+	if reason := strings.TrimSpace(input.Reason); reason != "" {
+		logMetadata["reason"] = reason
+		operationMetadata["reason"] = reason
+	}
+	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "warn", Message: "operation canceled by control plane", Payload: logMetadata})
+	s.recordOperation(ctx, principal, "docker.operation.cancel", updated.ID, updated.OperationKind, "success", "canceled docker operation", operationMetadata)
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, id string) (_ domaindocker.Operation, retErr error) {
+	return s.RetryOperationIdempotent(ctx, principal, id, OperationMutationInput{})
+}
+
+func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domainidentity.Principal, id string, input OperationMutationInput) (_ domaindocker.Operation, retErr error) {
 	defer func() { s.recordMutationFailure(ctx, principal, "docker.operation.retry", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "retry")); err != nil {
 		return domaindocker.Operation{}, err
@@ -1020,6 +1056,13 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	item, err := s.repo.GetOperation(ctx, id)
 	if err != nil {
 		return domaindocker.Operation{}, err
+	}
+	receiptID, inputHash, replayed, err := dockerOperationMutationReceipt(item.Payload, "docker.operation.retry/"+item.ID, principal, input)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if replayed {
+		return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 	}
 	if !slices.Contains([]string{OperationStatusFailed, OperationStatusTimeout, OperationStatusCanceled}, item.Status) {
 		return domaindocker.Operation{}, fmt.Errorf("%w: operation is not retryable", apperrors.ErrInvalidArgument)
@@ -1037,14 +1080,50 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	item.LastHeartbeatAt = nil
 	item.FinishedAt = nil
 	item.Result = mergeMap(item.Result, map[string]any{"retriedBy": principal.UserID})
+	if reason := strings.TrimSpace(input.Reason); reason != "" {
+		item.Result["retryReason"] = reason
+	}
+	if item.Payload == nil {
+		item.Payload = map[string]any{}
+	}
+	idempotency.RecordReceipt(item.Payload, receiptID, inputHash)
 	updated, err := s.repo.UpdateOperation(ctx, item)
 	if err != nil {
+		if replay, ok := s.replayedDockerOperationMutation(ctx, item.ID, "docker.operation.retry/"+item.ID, principal, input); ok {
+			return replay, nil
+		}
 		return domaindocker.Operation{}, err
 	}
 	updated = s.retryLinkedHostProvisionTask(ctx, principal, updated)
-	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "info", Message: "operation retry queued", Payload: map[string]any{"userId": principal.UserID}})
-	s.recordOperation(ctx, principal, "docker.operation.retry", updated.ID, updated.OperationKind, "success", "queued docker operation retry", map[string]any{"operationId": updated.ID})
+	logMetadata := map[string]any{"userId": principal.UserID}
+	operationMetadata := map[string]any{"operationId": updated.ID}
+	if reason := strings.TrimSpace(input.Reason); reason != "" {
+		logMetadata["reason"] = reason
+		operationMetadata["reason"] = reason
+	}
+	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "info", Message: "operation retry queued", Payload: logMetadata})
+	s.recordOperation(ctx, principal, "docker.operation.retry", updated.ID, updated.OperationKind, "success", "queued docker operation retry", operationMetadata)
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func dockerOperationMutationReceipt(payload map[string]any, scope string, principal domainidentity.Principal, input OperationMutationInput) (string, string, bool, error) {
+	if strings.TrimSpace(input.IdempotencyKey) == "" {
+		return "", "", false, nil
+	}
+	receiptID, inputHash, replayed, err := idempotency.LookupReceipt(payload, scope, firstNonEmpty(principal.UserID, principal.UserName), input.IdempotencyKey, map[string]string{"reason": strings.TrimSpace(input.Reason)})
+	if errors.Is(err, idempotency.ErrInputMismatch) {
+		return "", "", false, fmt.Errorf("%w: %s", apperrors.ErrConflict, err)
+	}
+	return receiptID, inputHash, replayed, err
+}
+
+func (s *Service) replayedDockerOperationMutation(ctx context.Context, operationID, scope string, principal domainidentity.Principal, input OperationMutationInput) (domaindocker.Operation, bool) {
+	latest, err := s.repo.GetOperation(ctx, operationID)
+	if err != nil {
+		return domaindocker.Operation{}, false
+	}
+	_, _, replayed, err := dockerOperationMutationReceipt(latest.Payload, scope, principal, input)
+	return domaindocker.WithOperationState(latest, time.Now().UTC()), err == nil && replayed
 }
 
 func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.OperationClaimInput) (_ domaindocker.Operation, retErr error) {

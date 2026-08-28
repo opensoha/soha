@@ -12,4 +12,5 @@ func registerSoftwareRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/software/storage", deps.Software.Storage)
 	protected.DELETE("/software/packages/:packageID", deps.Software.Delete)
 	protected.GET("/software/packages/:packageID/download", deps.Software.Download)
+	protected.GET("/software/packages/:packageID/download-records", deps.Software.DownloadRecords)
 }

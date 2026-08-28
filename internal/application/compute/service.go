@@ -60,15 +60,20 @@ type RuntimeProviderController interface {
 type VirtualizationTaskController interface {
 	GetOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
 	ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domainvirtualization.TaskLog, error)
-	CancelOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
-	RetryOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
+	CancelOperation(context.Context, domainidentity.Principal, string, TaskMutationInput) (domainvirtualization.Task, error)
+	RetryOperation(context.Context, domainidentity.Principal, string, TaskMutationInput) (domainvirtualization.Task, error)
 }
 
 type RuntimeTaskController interface {
 	GetOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
 	ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domaindocker.OperationLog, error)
-	CancelOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
-	RetryOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
+	CancelOperation(context.Context, domainidentity.Principal, string, TaskMutationInput) (domaindocker.Operation, error)
+	RetryOperation(context.Context, domainidentity.Principal, string, TaskMutationInput) (domaindocker.Operation, error)
+}
+
+type TaskMutationInput struct {
+	IdempotencyKey string
+	Reason         string
 }
 
 type Service struct {
@@ -625,7 +630,7 @@ func (s *Service) ListTaskLogs(ctx context.Context, principal domainidentity.Pri
 		if !s.virtualizationAvailable() || s.virtualizationTasks == nil {
 			return sohaapi.ComputeTaskLogListEnvelope{}, unavailableTaskDomain(domain)
 		}
-		if _, err := s.virtualizationTasks.GetOperation(ctx, principal, strings.TrimSpace(taskID)); err != nil {
+		if _, err := s.GetTask(ctx, principal, domain, taskID); err != nil {
 			return sohaapi.ComputeTaskLogListEnvelope{}, err
 		}
 		items, err := s.virtualizationTasks.ListOperationLogs(ctx, principal, strings.TrimSpace(taskID), maxReadLimit)
@@ -637,7 +642,7 @@ func (s *Service) ListTaskLogs(ctx context.Context, principal domainidentity.Pri
 		if !s.runtimeAvailable() || s.runtimeTasks == nil {
 			return sohaapi.ComputeTaskLogListEnvelope{}, unavailableTaskDomain(domain)
 		}
-		if _, err := s.runtimeTasks.GetOperation(ctx, principal, strings.TrimSpace(taskID)); err != nil {
+		if _, err := s.GetTask(ctx, principal, domain, taskID); err != nil {
 			return sohaapi.ComputeTaskLogListEnvelope{}, err
 		}
 		items, err := s.runtimeTasks.ListOperationLogs(ctx, principal, strings.TrimSpace(taskID), maxReadLimit)
@@ -650,15 +655,15 @@ func (s *Service) ListTaskLogs(ctx context.Context, principal domainidentity.Pri
 	}
 }
 
-func (s *Service) CancelTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string) (sohaapi.ComputeTaskView, error) {
-	return s.mutateTask(ctx, principal, domain, taskID, true)
+func (s *Service) CancelTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string, input TaskMutationInput) (sohaapi.ComputeTaskView, error) {
+	return s.mutateTask(ctx, principal, domain, taskID, input, true)
 }
 
-func (s *Service) RetryTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string) (sohaapi.ComputeTaskView, error) {
-	return s.mutateTask(ctx, principal, domain, taskID, false)
+func (s *Service) RetryTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string, input TaskMutationInput) (sohaapi.ComputeTaskView, error) {
+	return s.mutateTask(ctx, principal, domain, taskID, input, false)
 }
 
-func (s *Service) mutateTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string, cancel bool) (sohaapi.ComputeTaskView, error) {
+func (s *Service) mutateTask(ctx context.Context, principal domainidentity.Principal, domain, taskID string, input TaskMutationInput, cancel bool) (sohaapi.ComputeTaskView, error) {
 	switch strings.TrimSpace(domain) {
 	case string(sohaapi.ComputeTaskDomainVirtualization):
 		if !s.virtualizationAvailable() || s.virtualizationTasks == nil {
@@ -667,9 +672,9 @@ func (s *Service) mutateTask(ctx context.Context, principal domainidentity.Princ
 		var item domainvirtualization.Task
 		var err error
 		if cancel {
-			item, err = s.virtualizationTasks.CancelOperation(ctx, principal, strings.TrimSpace(taskID))
+			item, err = s.virtualizationTasks.CancelOperation(ctx, principal, strings.TrimSpace(taskID), input)
 		} else {
-			item, err = s.virtualizationTasks.RetryOperation(ctx, principal, strings.TrimSpace(taskID))
+			item, err = s.virtualizationTasks.RetryOperation(ctx, principal, strings.TrimSpace(taskID), input)
 		}
 		if err != nil {
 			return sohaapi.ComputeTaskView{}, err
@@ -690,9 +695,9 @@ func (s *Service) mutateTask(ctx context.Context, principal domainidentity.Princ
 		var item domaindocker.Operation
 		var err error
 		if cancel {
-			item, err = s.runtimeTasks.CancelOperation(ctx, principal, strings.TrimSpace(taskID))
+			item, err = s.runtimeTasks.CancelOperation(ctx, principal, strings.TrimSpace(taskID), input)
 		} else {
-			item, err = s.runtimeTasks.RetryOperation(ctx, principal, strings.TrimSpace(taskID))
+			item, err = s.runtimeTasks.RetryOperation(ctx, principal, strings.TrimSpace(taskID), input)
 		}
 		if err != nil {
 			return sohaapi.ComputeTaskView{}, err

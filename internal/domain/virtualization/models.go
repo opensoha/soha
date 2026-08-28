@@ -353,6 +353,7 @@ type TaskFilter struct {
 	Abnormal     bool
 	Pending      bool
 	TaskKind     string
+	TaskKinds    []string
 	Search       string
 	Page         int
 	PageSize     int

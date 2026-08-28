@@ -36,14 +36,43 @@ func New(repo domainscopegrant.Repository, permissions *appaccess.PermissionReso
 	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations}
 }
 
-func (s *Service) List(ctx context.Context, principal domainidentity.Principal) ([]domainscopegrant.Record, error) {
+func (s *Service) List(ctx context.Context, principal domainidentity.Principal, subjectType, subjectID string) ([]domainscopegrant.Record, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermAccessScopeGrantsView); err != nil {
+		return nil, err
+	}
+	subjectType, subjectID, err := validateSubject(subjectType, subjectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.ListBySubject(ctx, subjectType, subjectID)
+}
+
+func (s *Service) ListLegacy(ctx context.Context, principal domainidentity.Principal) ([]domainscopegrant.Record, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermAccessScopeGrantsView); err != nil {
 		return nil, err
 	}
 	return s.repo.List(ctx)
 }
 
-func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainscopegrant.Input) (domainscopegrant.Record, error) {
+func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, subjectType, subjectID string, input domainscopegrant.Input) (domainscopegrant.Record, error) {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAccessScopeGrantsManage, "create")); err != nil {
+		return domainscopegrant.Record{}, err
+	}
+	input, err := bindSubject(input, subjectType, subjectID)
+	if err != nil {
+		return domainscopegrant.Record{}, err
+	}
+	if err := validateInput(input); err != nil {
+		return domainscopegrant.Record{}, err
+	}
+	item, err := s.repo.Create(ctx, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "access.scope_grant.create", item.ID, input.SubjectID, "created scope grant")
+	}
+	return item, err
+}
+
+func (s *Service) CreateLegacy(ctx context.Context, principal domainidentity.Principal, input domainscopegrant.Input) (domainscopegrant.Record, error) {
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAccessScopeGrantsManage, "create")); err != nil {
 		return domainscopegrant.Record{}, err
 	}
@@ -57,7 +86,32 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	return item, err
 }
 
-func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, id string, input domainscopegrant.Input) (domainscopegrant.Record, error) {
+func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, subjectType, subjectID, id string, input domainscopegrant.Input) (domainscopegrant.Record, error) {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAccessScopeGrantsManage, "update")); err != nil {
+		return domainscopegrant.Record{}, err
+	}
+	input, err := bindSubject(input, subjectType, subjectID)
+	if err != nil {
+		return domainscopegrant.Record{}, err
+	}
+	if err := validateInput(input); err != nil {
+		return domainscopegrant.Record{}, err
+	}
+	existing, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return domainscopegrant.Record{}, normalizeRepoError(err)
+	}
+	if existing.SubjectType != input.SubjectType || existing.SubjectID != input.SubjectID {
+		return domainscopegrant.Record{}, fmt.Errorf("%w: scope grant not found", apperrors.ErrNotFound)
+	}
+	item, err := s.repo.Update(ctx, id, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "access.scope_grant.update", item.ID, input.SubjectID, "updated scope grant")
+	}
+	return item, normalizeRepoError(err)
+}
+
+func (s *Service) UpdateLegacy(ctx context.Context, principal domainidentity.Principal, id string, input domainscopegrant.Input) (domainscopegrant.Record, error) {
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAccessScopeGrantsManage, "update")); err != nil {
 		return domainscopegrant.Record{}, err
 	}
@@ -71,7 +125,29 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	return item, normalizeRepoError(err)
 }
 
-func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, id string) error {
+func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, subjectType, subjectID, id string) error {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAccessScopeGrantsManage, "delete")); err != nil {
+		return err
+	}
+	subjectType, subjectID, err := validateSubject(subjectType, subjectID)
+	if err != nil {
+		return err
+	}
+	existing, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return normalizeRepoError(err)
+	}
+	if existing.SubjectType != subjectType || existing.SubjectID != subjectID {
+		return fmt.Errorf("%w: scope grant not found", apperrors.ErrNotFound)
+	}
+	if err := normalizeRepoError(s.repo.Delete(ctx, id)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "access.scope_grant.delete", id, existing.SubjectID, "deleted scope grant")
+	return nil
+}
+
+func (s *Service) DeleteLegacy(ctx context.Context, principal domainidentity.Principal, id string) error {
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermAccessScopeGrantsManage, "delete")); err != nil {
 		return err
 	}
@@ -80,6 +156,28 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 	}
 	s.recordWriteLogs(ctx, principal, "access.scope_grant.delete", id, id, "deleted scope grant")
 	return nil
+}
+
+func bindSubject(input domainscopegrant.Input, subjectType, subjectID string) (domainscopegrant.Input, error) {
+	subjectType, subjectID, err := validateSubject(subjectType, subjectID)
+	if err != nil {
+		return domainscopegrant.Input{}, err
+	}
+	if strings.ToLower(strings.TrimSpace(input.SubjectType)) != subjectType || strings.TrimSpace(input.SubjectID) != subjectID {
+		return domainscopegrant.Input{}, fmt.Errorf("%w: scope grant subject must match the route", apperrors.ErrInvalidArgument)
+	}
+	input.SubjectType = subjectType
+	input.SubjectID = subjectID
+	return input, nil
+}
+
+func validateSubject(subjectType, subjectID string) (string, string, error) {
+	subjectType = strings.ToLower(strings.TrimSpace(subjectType))
+	subjectID = strings.TrimSpace(subjectID)
+	if (subjectType != "user" && subjectType != "team") || subjectID == "" {
+		return "", "", fmt.Errorf("%w: valid subject type and id are required", apperrors.ErrInvalidArgument)
+	}
+	return subjectType, subjectID, nil
 }
 
 func validateInput(input domainscopegrant.Input) error {

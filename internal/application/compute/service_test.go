@@ -101,11 +101,11 @@ func (f *virtualizationFake) GetOperation(_ context.Context, _ domainidentity.Pr
 func (f *virtualizationFake) ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domainvirtualization.TaskLog, error) {
 	return append([]domainvirtualization.TaskLog(nil), f.logs...), nil
 }
-func (f *virtualizationFake) CancelOperation(_ context.Context, _ domainidentity.Principal, id string) (domainvirtualization.Task, error) {
+func (f *virtualizationFake) CancelOperation(_ context.Context, _ domainidentity.Principal, id string, _ TaskMutationInput) (domainvirtualization.Task, error) {
 	f.canceled = id
 	return f.GetTask(context.Background(), id)
 }
-func (f *virtualizationFake) RetryOperation(_ context.Context, _ domainidentity.Principal, id string) (domainvirtualization.Task, error) {
+func (f *virtualizationFake) RetryOperation(_ context.Context, _ domainidentity.Principal, id string, _ TaskMutationInput) (domainvirtualization.Task, error) {
 	f.retried = id
 	return f.GetTask(context.Background(), id)
 }
@@ -219,11 +219,11 @@ func (f *runtimeFake) ListOperations(context.Context, domaindocker.OperationFilt
 func (f *runtimeFake) ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domaindocker.OperationLog, error) {
 	return append([]domaindocker.OperationLog(nil), f.logs...), nil
 }
-func (f *runtimeFake) CancelOperation(_ context.Context, _ domainidentity.Principal, id string) (domaindocker.Operation, error) {
+func (f *runtimeFake) CancelOperation(_ context.Context, _ domainidentity.Principal, id string, _ TaskMutationInput) (domaindocker.Operation, error) {
 	f.canceled = id
 	return f.GetOperation(context.Background(), domainidentity.Principal{}, id)
 }
-func (f *runtimeFake) RetryOperation(_ context.Context, _ domainidentity.Principal, id string) (domaindocker.Operation, error) {
+func (f *runtimeFake) RetryOperation(_ context.Context, _ domainidentity.Principal, id string, _ TaskMutationInput) (domaindocker.Operation, error) {
 	f.retried = id
 	return f.GetOperation(context.Background(), domainidentity.Principal{}, id)
 }
@@ -541,10 +541,10 @@ func TestTaskFacadeRoutesDetailLogsCancelAndRetry(t *testing.T) {
 	if err != nil || len(logs.Items) != 1 || logs.Items[0].Payload != `{"step":1}` {
 		t.Fatalf("ListTaskLogs = %#v, %v", logs, err)
 	}
-	if _, err := service.CancelTask(context.Background(), testPrincipal(), "virtualization", "virt-1"); err != nil || virt.canceled != "virt-1" {
+	if _, err := service.CancelTask(context.Background(), testPrincipal(), "virtualization", "virt-1", TaskMutationInput{IdempotencyKey: "cancel-key", Reason: "maintenance"}); err != nil || virt.canceled != "virt-1" {
 		t.Fatalf("CancelTask err=%v canceled=%q", err, virt.canceled)
 	}
-	if _, err := service.RetryTask(context.Background(), testPrincipal(), "container_runtime", "docker-1"); err != nil || runtime.retried != "docker-1" {
+	if _, err := service.RetryTask(context.Background(), testPrincipal(), "container_runtime", "docker-1", TaskMutationInput{IdempotencyKey: "retry-key"}); err != nil || runtime.retried != "docker-1" {
 		t.Fatalf("RetryTask err=%v retried=%q", err, runtime.retried)
 	}
 	if _, err := service.GetTask(context.Background(), testPrincipal(), "bogus", "task"); !errors.Is(err, apperrors.ErrInvalidArgument) {
@@ -565,6 +565,17 @@ func TestTaskActionsUseIndependentPermissions(t *testing.T) {
 	}
 	if len(result.Items) != 1 || !result.Items[0].Cancelable || result.Items[0].Retryable {
 		t.Fatalf("task permissions = %#v, want cancel only", result.Items)
+	}
+}
+
+func TestTaskLogsReuseTaskVisibilityCheck(t *testing.T) {
+	service, virt, _ := newTestService(appaccess.PermVirtualizationSyncView)
+	virt.tasks = []domainvirtualization.Task{{ID: "vm-task", TaskKind: "vm_action", Status: "completed", CreatedAt: time.Now().UTC()}}
+	virt.logs = []domainvirtualization.TaskLog{{ID: "vm-log", TaskID: "vm-task", Message: "hidden"}}
+
+	_, err := service.ListTaskLogs(context.Background(), testPrincipal(), "virtualization", "vm-task")
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("ListTaskLogs() error = %v, want access denied", err)
 	}
 }
 

@@ -14,7 +14,6 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
-	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 const nodePodUsageTimeout = 1200 * time.Millisecond
@@ -40,7 +39,7 @@ func (i *Inventory) GetNodeDetail(ctx context.Context, principal domainidentity.
 		}
 		item, err = client.GetNodeDetail(ctx, nodeName)
 		if err != nil {
-			return domainresource.NodeDetailView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return domainresource.NodeDetailView{}, wrapAgentResourceError(err)
 		}
 	} else {
 		direct, err := i.directInventory()

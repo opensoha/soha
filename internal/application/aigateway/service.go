@@ -7,7 +7,9 @@ import (
 	"sync"
 	"time"
 
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appcompute "github.com/opensoha/soha/internal/application/compute"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
@@ -35,7 +37,7 @@ const (
 	defaultRelayMaxRequestBytes   = 32 << 20
 )
 
-var gatewaySensitiveValuePattern = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-]?key|authorization|credential)(\s*[:=]\s*)([^\s,;]+)`)
+var gatewaySensitiveValuePattern = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-]?key|authorization|credential)(\s*[:=]\s*)((?:Bearer\s+)?[^\s,;]+)`)
 
 type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
@@ -190,6 +192,15 @@ type KubernetesResourceCreationService interface {
 	ExecuteCreate(context.Context, domainidentity.Principal, string, domainresource.ResourceCreateRequest) (domainresource.ResourceCreateExecution, error)
 }
 
+type ComputeReadService interface {
+	Overview(context.Context, domainidentity.Principal) (sohaapi.ComputeOverview, error)
+	GetResource(context.Context, domainidentity.Principal, string, string, string) (map[string]any, error)
+	ListResourceRelations(context.Context, domainidentity.Principal, string, string, string, string, int) (sohaapi.ComputeResourceRelations, error)
+	ListTasks(context.Context, domainidentity.Principal, appcompute.TaskFilter) (sohaapi.ComputeTaskListEnvelope, error)
+	GetTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error)
+	ListTaskLogs(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskLogListEnvelope, error)
+}
+
 type Service struct {
 	permissions *appaccess.PermissionResolver
 	audit       AuditRecorder
@@ -226,6 +237,7 @@ type Service struct {
 	oncall             OnCallResolver
 	virtualization     VirtualizationOperationsService
 	docker             DockerOperationsService
+	compute            ComputeReadService
 	registry           *capabilityRegistry
 }
 
@@ -306,6 +318,10 @@ func (s *Service) SetOnCallResolver(oncall OnCallResolver) {
 func (s *Service) SetOperationsServices(virtualization VirtualizationOperationsService, docker DockerOperationsService) {
 	s.virtualization = virtualization
 	s.docker = docker
+}
+
+func (s *Service) SetComputeService(compute ComputeReadService) {
+	s.compute = compute
 }
 
 func (s *Service) personalTokenRepository() PersonalAccessTokenRepository {

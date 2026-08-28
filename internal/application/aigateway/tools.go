@@ -253,6 +253,8 @@ func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentit
 		return s.invokeVirtualizationTool(ctx, principal, tool.Name, input)
 	case strings.HasPrefix(tool.Name, "docker."):
 		return s.invokeDockerTool(ctx, principal, tool.Name, input)
+	case strings.HasPrefix(tool.Name, "compute."):
+		return s.invokeComputeTool(ctx, principal, tool.Name, input)
 	case tool.Name == "diagnosis.release_failure.analyze":
 		return s.invokeReleaseFailureDiagnosis(ctx, principal, input)
 	case strings.HasPrefix(tool.Name, "gateway."):

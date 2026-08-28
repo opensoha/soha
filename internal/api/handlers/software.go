@@ -7,6 +7,7 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
@@ -17,26 +18,32 @@ import (
 
 type SoftwarePackageService interface {
 	List(context.Context, domainidentity.Principal, appsoftware.Filter) ([]appsoftware.Package, string, error)
-	Storage(context.Context, domainidentity.Principal, string, int) (appsoftware.Storage, error)
+	Storage(context.Context, domainidentity.Principal, string, string, int) (appsoftware.Storage, error)
 	Upload(context.Context, domainidentity.Principal, appsoftware.UploadInput, io.Reader) (appsoftware.Package, error)
 	ImportURL(context.Context, domainidentity.Principal, appsoftware.URLImportInput) (appsoftware.Package, error)
 	Open(context.Context, domainidentity.Principal, string) (appsoftware.Package, io.ReadCloser, error)
+	CompleteDownload(context.Context, domainidentity.Principal, appsoftware.Package, int64, time.Duration, error) error
+	DownloadRecords(context.Context, domainidentity.Principal, string, int) ([]appsoftware.DownloadRecord, error)
 	Delete(context.Context, domainidentity.Principal, string) error
 }
 
 type SoftwareHandler struct{ service SoftwarePackageService }
 
 type softwarePackageURLImportRequest struct {
-	SoftwareID  string `json:"softwareId"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Publisher   string `json:"publisher"`
-	Category    string `json:"category"`
-	Version     string `json:"version"`
-	Platform    string `json:"platform"`
-	Arch        string `json:"arch"`
-	URL         string `json:"url"`
-	FileName    string `json:"fileName"`
+	StorageIntegrationID string `json:"storageIntegrationId"`
+	SoftwareID           string `json:"softwareId"`
+	Name                 string `json:"name"`
+	Description          string `json:"description"`
+	Publisher            string `json:"publisher"`
+	Category             string `json:"category"`
+	TenantID             string `json:"tenantId"`
+	WorkspaceID          string `json:"workspaceId"`
+	Visibility           string `json:"visibility"`
+	Version              string `json:"version"`
+	Platform             string `json:"platform"`
+	Arch                 string `json:"arch"`
+	URL                  string `json:"url"`
+	FileName             string `json:"fileName"`
 }
 
 func NewSoftwareHandler(service SoftwarePackageService) *SoftwareHandler {
@@ -49,7 +56,7 @@ func (h *SoftwareHandler) List(c *gin.Context) {
 		return
 	}
 	items, next, err := h.service.List(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), appsoftware.Filter{
-		Platform: c.Query("platform"), Arch: c.Query("arch"), Cursor: c.Query("cursor"), Limit: limit,
+		StorageIntegrationID: c.Query("storageIntegrationId"), Platform: c.Query("platform"), Arch: c.Query("arch"), Cursor: c.Query("cursor"), Limit: limit,
 	})
 	if err != nil {
 		writeError(c, err)
@@ -63,7 +70,7 @@ func (h *SoftwareHandler) Storage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	storage, err := h.service.Storage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Query("cursor"), limit)
+	storage, err := h.service.Storage(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Query("storageIntegrationId"), c.Query("cursor"), limit)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -97,8 +104,10 @@ func (h *SoftwareHandler) Upload(c *gin.Context) {
 	}
 	defer file.Close()
 	item, err := h.service.Upload(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), appsoftware.UploadInput{
-		SoftwareID: c.PostForm("softwareId"), Name: c.PostForm("name"), Description: c.PostForm("description"),
+		StorageIntegrationID: c.PostForm("storageIntegrationId"),
+		SoftwareID:           c.PostForm("softwareId"), Name: c.PostForm("name"), Description: c.PostForm("description"),
 		Publisher: c.PostForm("publisher"), Category: c.PostForm("category"), Version: c.PostForm("version"),
+		TenantID: c.PostForm("tenantId"), WorkspaceID: c.PostForm("workspaceId"), Visibility: c.PostForm("visibility"),
 		Platform: c.PostForm("platform"), Arch: c.PostForm("arch"), FileName: header.Filename,
 	}, file)
 	if err != nil {
@@ -117,8 +126,10 @@ func (h *SoftwareHandler) ImportURL(c *gin.Context) {
 	}
 	item, err := h.service.ImportURL(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), appsoftware.URLImportInput{
 		UploadInput: appsoftware.UploadInput{
-			SoftwareID: request.SoftwareID, Name: request.Name, Description: request.Description,
+			StorageIntegrationID: request.StorageIntegrationID,
+			SoftwareID:           request.SoftwareID, Name: request.Name, Description: request.Description,
 			Publisher: request.Publisher, Category: request.Category, Version: request.Version,
+			TenantID: request.TenantID, WorkspaceID: request.WorkspaceID, Visibility: request.Visibility,
 			Platform: request.Platform, Arch: request.Arch, FileName: request.FileName,
 		},
 		URL: request.URL,
@@ -131,12 +142,14 @@ func (h *SoftwareHandler) ImportURL(c *gin.Context) {
 }
 
 func (h *SoftwareHandler) Download(c *gin.Context) {
-	item, reader, err := h.service.Open(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("packageID"))
+	ctx := c.Request.Context()
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, reader, err := h.service.Open(ctx, principal, c.Param("packageID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	defer reader.Close()
+	started := time.Now()
 	c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": item.FileName}))
 	c.Header("Content-Length", strconv.FormatInt(item.SizeBytes, 10))
 	c.Header("Content-Type", "application/octet-stream")
@@ -144,9 +157,27 @@ func (h *SoftwareHandler) Download(c *gin.Context) {
 	c.Header("X-Checksum-SHA256", item.SHA256)
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Status(http.StatusOK)
-	if _, err := io.Copy(c.Writer, reader); err != nil {
+	bytesSent, copyErr := io.Copy(c.Writer, reader)
+	transferErr := errors.Join(copyErr, reader.Close())
+	if err := h.service.CompleteDownload(ctx, principal, item, bytesSent, time.Since(started), transferErr); err != nil {
 		_ = c.Error(err)
 	}
+	if transferErr != nil {
+		_ = c.Error(transferErr)
+	}
+}
+
+func (h *SoftwareHandler) DownloadRecords(c *gin.Context) {
+	limit, ok := softwareLimit(c)
+	if !ok {
+		return
+	}
+	items, err := h.service.DownloadRecords(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("packageID"), limit)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, gin.H{"items": items})
 }
 
 func (h *SoftwareHandler) Delete(c *gin.Context) {

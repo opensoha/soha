@@ -2,15 +2,17 @@ package aigateway
 
 import (
 	"encoding/json"
+	"slices"
 	"testing"
 
 	contractsopenapi "github.com/opensoha/soha-contracts/openapi"
 )
 
 type openAPICapability struct {
-	Name             string `json:"name"`
-	RiskLevel        string `json:"riskLevel"`
-	RequiresApproval bool   `json:"requiresApproval"`
+	Name             string   `json:"name"`
+	RiskLevel        string   `json:"riskLevel"`
+	RequiresApproval bool     `json:"requiresApproval"`
+	PermissionKeys   []string `json:"permissionKeys"`
 }
 
 type openAPIOperation struct {
@@ -37,13 +39,15 @@ func TestOpenAPICapabilitiesMatchLiveMCPToolCatalog(t *testing.T) {
 		riskLevel        string
 		requiresApproval bool
 		mcpToolName      string
+		permissionKeys   []string
 	})
 	for _, tool := range defaultTools() {
 		tools[tool.Name] = struct {
 			riskLevel        string
 			requiresApproval bool
 			mcpToolName      string
-		}{string(tool.RiskLevel), tool.RequiresApproval, tool.MCPToolName}
+			permissionKeys   []string
+		}{string(tool.RiskLevel), tool.RequiresApproval, tool.MCPToolName, slices.Clone(tool.PermissionKeys)}
 	}
 
 	checked := 0
@@ -66,6 +70,15 @@ func TestOpenAPICapabilitiesMatchLiveMCPToolCatalog(t *testing.T) {
 			}
 			if tool.mcpToolName != capability.Name {
 				t.Errorf("%s %s capability %q MCP tool = %q", method, path, capability.Name, tool.mcpToolName)
+			}
+			if len(capability.PermissionKeys) > 0 {
+				contractKeys := slices.Clone(capability.PermissionKeys)
+				catalogKeys := slices.Clone(tool.permissionKeys)
+				slices.Sort(contractKeys)
+				slices.Sort(catalogKeys)
+				if !slices.Equal(contractKeys, catalogKeys) {
+					t.Errorf("%s %s capability %q permission keys = %v, catalog = %v", method, path, capability.Name, contractKeys, catalogKeys)
+				}
 			}
 		}
 	}

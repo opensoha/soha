@@ -26,13 +26,28 @@ func New(db *gorm.DB) *Repository {
 }
 
 func (r *Repository) List(ctx context.Context) ([]domainscopegrant.Record, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	return r.list(ctx, `
 		SELECT id, subject_type, subject_id, business_line_id, environment_ids, application_ids,
 		       scope_type, cluster_ids, namespaces, namespace_selector, resource_groups, resource_kinds,
 		       role, effect, enabled, created_at, updated_at
 		FROM scope_grants
 		ORDER BY created_at DESC
-	`).Rows()
+	`)
+}
+
+func (r *Repository) ListBySubject(ctx context.Context, subjectType, subjectID string) ([]domainscopegrant.Record, error) {
+	return r.list(ctx, `
+		SELECT id, subject_type, subject_id, business_line_id, environment_ids, application_ids,
+		       scope_type, cluster_ids, namespaces, namespace_selector, resource_groups, resource_kinds,
+		       role, effect, enabled, created_at, updated_at
+		FROM scope_grants
+		WHERE subject_type = ? AND subject_id = ?
+		ORDER BY created_at DESC
+	`, strings.ToLower(strings.TrimSpace(subjectType)), strings.TrimSpace(subjectID))
+}
+
+func (r *Repository) list(ctx context.Context, query string, args ...any) ([]domainscopegrant.Record, error) {
+	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query scope grants: %w", err)
 	}

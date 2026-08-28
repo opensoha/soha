@@ -1,0 +1,200 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soha-dev
+  labels:
+    app.kubernetes.io/name: soha-dev
+    app.kubernetes.io/instance: soha
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: soha
+    app.kubernetes.io/mode: remote-dev
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: soha-dev
+      app.kubernetes.io/instance: soha
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: soha-dev
+        app.kubernetes.io/instance: soha
+        app.kubernetes.io/component: app
+        app.kubernetes.io/part-of: soha
+        app.kubernetes.io/mode: remote-dev
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: source-sync
+          image: golang:1.26.6-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - /scripts/source-sync.sh
+          env:
+            - name: HOME
+              value: /workspace/.home/source-sync
+            - name: SYNC_MODE
+              value: git
+            - name: SYNC_INTERVAL_SECONDS
+              value: "3"
+            - name: SOHA_REPOSITORY
+              value: https://github.com/opensoha/soha.git
+            - name: SOHA_REF
+              value: main
+            - name: SOHA_WEB_REPOSITORY
+              value: https://github.com/opensoha/soha-web.git
+            - name: SOHA_WEB_REF
+              value: main
+            - name: SOHA_CONTRACTS_REPOSITORY
+              value: https://github.com/opensoha/soha-contracts.git
+            - name: SOHA_CONTRACTS_REF
+              value: main
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+
+        - name: backend
+          image: golang:1.26.6-bookworm
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - /scripts/backend.sh
+          env:
+            - name: HOME
+              value: /workspace/.home/backend
+            - name: GOCACHE
+              value: /workspace/.cache/go-build
+            - name: GOMODCACHE
+              value: /workspace/.cache/go-mod
+            - name: GOPROXY
+              value: https://goproxy.cn,direct
+            - name: RELOAD_INTERVAL_SECONDS
+              value: "3"
+            - name: SOHA_CONFIG_FILE
+              value: /app/configs/config.yaml
+            - name: SOHA_ASSETS_WEB_MODE
+              value: proxy
+            - name: SOHA_ASSETS_WEB_PROXY_URL
+              value: http://127.0.0.1:5173
+            - name: SOHA_DATABASE_MIGRATION_FILE
+              value: /workspace/soha/migrations/postgres/0001_init.sql
+            - name: SOHA_PLUGINS_COMPANION_STORAGE_DIR
+              value: /app/data/companion
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: app-config
+              mountPath: /app/configs/config.yaml
+              subPath: config.yaml
+              readOnly: true
+            - name: app-data
+              mountPath: /app/data
+
+        - name: web
+          image: node:22-bookworm-slim
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/sh
+            - /scripts/web.sh
+          env:
+            - name: HOME
+              value: /workspace/.home/web
+            - name: npm_config_cache
+              value: /workspace/.cache/npm
+            - name: RELOAD_INTERVAL_SECONDS
+              value: "3"
+            - name: __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+              value: ops.popicorns.com
+          ports:
+            - name: vite
+              containerPort: 5173
+          readinessProbe:
+            httpGet:
+              path: /
+              port: vite
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: scripts
+          configMap:
+            name: soha-remote-dev-scripts
+            defaultMode: 0555
+        - name: app-config
+          secret:
+            secretName: soha-config
+        - name: app-data
+          persistentVolumeClaim:
+            claimName: soha-data

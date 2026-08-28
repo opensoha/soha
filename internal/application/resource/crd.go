@@ -308,13 +308,6 @@ func (c *CustomResources) directCustomResources() (DirectCustomResource, error) 
 	return c.direct, nil
 }
 
-func wrapAgentResourceError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-}
-
 func populateAllowedActionsCRDs(items []domainresource.CRDView, decision domainaccess.Decision) {
 	for index := range items {
 		if len(items[index].AllowedActions) == 0 {

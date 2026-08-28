@@ -1,0 +1,70 @@
+version: v2beta1
+name: soha-remote-dev
+
+dev:
+  soha:
+    namespace: opensoha
+    labelSelector:
+      app.kubernetes.io/name: soha-dev
+      app.kubernetes.io/instance: soha
+      app.kubernetes.io/component: app
+    container: source-sync
+    sync:
+      - path: .:/workspace/soha
+        initialSync: mirrorLocal
+        disableDownload: true
+        excludePaths:
+          - .git/
+          - node_modules/
+          - dist/
+          - coverage/
+          - test-results/
+          - graphify-out/
+          - .cache/
+          - .next/
+          - bin/
+          - tmp/
+          - .tmp/
+          - .DS_Store
+          - .env
+          - .env.local
+          - .env.production
+      - path: ../soha-web:/workspace/soha-web
+        initialSync: mirrorLocal
+        disableDownload: true
+        excludePaths:
+          - .git/
+          - node_modules/
+          - dist/
+          - coverage/
+          - test-results/
+          - graphify-out/
+          - .cache/
+          - .next/
+          - bin/
+          - tmp/
+          - .tmp/
+          - .DS_Store
+          - .env
+          - .env.local
+          - .env.production
+      - path: ../soha-contracts:/workspace/soha-contracts
+        initialSync: mirrorLocal
+        disableDownload: true
+        excludePaths:
+          - .git/
+          - node_modules/
+          - dist/
+          - generated/
+          - coverage/
+          - test-results/
+          - graphify-out/
+          - .cache/
+          - .next/
+          - bin/
+          - tmp/
+          - .tmp/
+          - .DS_Store
+          - .env
+          - .env.local
+          - .env.production

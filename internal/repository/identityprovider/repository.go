@@ -311,7 +311,9 @@ func (r *Repository) DeleteOutpost(ctx context.Context, outpostID string) error 
 
 func (r *Repository) ListOIDCClients(ctx context.Context, providerID string) ([]domainprovider.OIDCClient, error) {
 	query := `
-		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
+		SELECT id, provider_id, client_id, client_type, client_secret_hash,
+		       COALESCE(client_secret_ciphertext, ''), COALESCE(client_secret_hash_at_encryption, ''),
+		       redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
 		       allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 		       refresh_token_ttl_seconds, status, created_at, updated_at
 		FROM identity_oidc_clients`
@@ -339,7 +341,9 @@ func (r *Repository) ListOIDCClients(ctx context.Context, providerID string) ([]
 
 func (r *Repository) GetOIDCClient(ctx context.Context, id string) (domainprovider.OIDCClient, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
+		SELECT id, provider_id, client_id, client_type, client_secret_hash,
+		       COALESCE(client_secret_ciphertext, ''), COALESCE(client_secret_hash_at_encryption, ''),
+		       redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
 		       allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 		       refresh_token_ttl_seconds, status, created_at, updated_at
 		FROM identity_oidc_clients
@@ -358,7 +362,9 @@ func (r *Repository) GetOIDCClient(ctx context.Context, id string) (domainprovid
 
 func (r *Repository) GetOIDCClientByClientID(ctx context.Context, clientID string) (domainprovider.OIDCClient, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
+		SELECT id, provider_id, client_id, client_type, client_secret_hash,
+		       COALESCE(client_secret_ciphertext, ''), COALESCE(client_secret_hash_at_encryption, ''),
+		       redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
 		       allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 		       refresh_token_ttl_seconds, status, created_at, updated_at
 		FROM identity_oidc_clients
@@ -398,12 +404,14 @@ func (r *Repository) CreateOIDCClient(ctx context.Context, item domainprovider.O
 	}
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO identity_oidc_clients (
-			id, provider_id, client_id, client_type, client_secret_hash, redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
+			id, provider_id, client_id, client_type, client_secret_hash, client_secret_ciphertext, client_secret_hash_at_encryption,
+			redirect_uris, redirect_uri_regexes, post_logout_redirect_uris, allowed_scopes,
 			allowed_grant_types, require_pkce, access_token_ttl_seconds, id_token_ttl_seconds,
 			refresh_token_ttl_seconds, status, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash, redirectURIs, redirectURIRegexes, postLogoutRedirectURIs, scopes, grantTypes,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash,
+		nullableString(item.ClientSecretCiphertext), nullableString(item.ClientSecretHashAtEncryption), redirectURIs, redirectURIRegexes, postLogoutRedirectURIs, scopes, grantTypes,
 		item.RequirePKCE, item.AccessTokenTTLSeconds, item.IDTokenTTLSeconds, item.RefreshTokenTTLSeconds,
 		item.Status, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domainprovider.OIDCClient{}, err
@@ -434,12 +442,14 @@ func (r *Repository) UpdateOIDCClient(ctx context.Context, item domainprovider.O
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE identity_oidc_clients
-		SET provider_id = ?, client_id = ?, client_type = ?, client_secret_hash = ?, redirect_uris = ?::jsonb,
+		SET provider_id = ?, client_id = ?, client_type = ?, client_secret_hash = ?,
+		    client_secret_ciphertext = ?, client_secret_hash_at_encryption = ?, redirect_uris = ?::jsonb,
 		    redirect_uri_regexes = ?::jsonb, post_logout_redirect_uris = ?::jsonb, allowed_scopes = ?::jsonb, allowed_grant_types = ?::jsonb, require_pkce = ?,
 		    access_token_ttl_seconds = ?, id_token_ttl_seconds = ?, refresh_token_ttl_seconds = ?,
 		    status = ?, updated_at = ?
 		WHERE id = ?
-	`, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash, redirectURIs, redirectURIRegexes, postLogoutRedirectURIs, scopes, grantTypes,
+	`, item.ProviderID, item.ClientID, item.ClientType, item.ClientSecretHash,
+		nullableString(item.ClientSecretCiphertext), nullableString(item.ClientSecretHashAtEncryption), redirectURIs, redirectURIRegexes, postLogoutRedirectURIs, scopes, grantTypes,
 		item.RequirePKCE, item.AccessTokenTTLSeconds, item.IDTokenTTLSeconds, item.RefreshTokenTTLSeconds,
 		item.Status, item.UpdatedAt, item.ID)
 	if result.Error != nil {
@@ -854,6 +864,8 @@ func scanOIDCClient(row scanner) (domainprovider.OIDCClient, error) {
 		&item.ClientID,
 		&item.ClientType,
 		&item.ClientSecretHash,
+		&item.ClientSecretCiphertext,
+		&item.ClientSecretHashAtEncryption,
 		&redirectURIsRaw,
 		&redirectURIRegexesRaw,
 		&postLogoutRedirectURIsRaw,

@@ -9,7 +9,9 @@ import (
 
 const (
 	CategorySourceControl = "source_control"
+	CategoryStorage       = "storage"
 	ProviderGitLab        = "gitlab"
+	ProviderS3            = "s3"
 	HealthUnknown         = "unknown"
 	HealthHealthy         = "healthy"
 	HealthUnhealthy       = "unhealthy"

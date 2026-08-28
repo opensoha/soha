@@ -107,9 +107,6 @@ plugins:
     require_signature: false
     trusted_public_keys: {}
 
-software:
-  storage_dir: data/software
-
 modules:
   home:
     enabled: true

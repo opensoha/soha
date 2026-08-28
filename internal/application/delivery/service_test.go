@@ -3,6 +3,7 @@ package delivery
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
@@ -493,6 +495,34 @@ type draftRepository struct {
 	updateErr   error
 }
 
+type manifestPackageWriter struct {
+	items     []domainmanifest.Package
+	inputs    []domainmanifest.Input
+	createErr error
+}
+
+func (w *manifestPackageWriter) List(_ context.Context, _ domainidentity.Principal, _ domainmanifest.Filter) (domainmanifest.Page, error) {
+	return domainmanifest.Page{Items: append([]domainmanifest.Package(nil), w.items...)}, nil
+}
+
+func (w *manifestPackageWriter) Create(_ context.Context, _ domainidentity.Principal, input domainmanifest.Input) (domainmanifest.Package, error) {
+	w.inputs = append(w.inputs, input)
+	item := domainmanifest.Package{
+		ID:            "manifest-created",
+		Name:          input.Name,
+		Description:   input.Description,
+		ApplicationID: input.ApplicationID,
+		Renderer:      input.Renderer,
+		Files:         input.Files,
+		Bindings:      input.Bindings,
+	}
+	w.items = append(w.items, item)
+	if w.createErr != nil {
+		return domainmanifest.Package{}, w.createErr
+	}
+	return item, nil
+}
+
 func (r *draftRepository) CreateDeliveryDraft(_ context.Context, input domaindelivery.DeliveryDraftInput, createdBy string) (domaindelivery.DeliveryDraft, error) {
 	r.createCount++
 	r.createInput = &input
@@ -872,6 +902,120 @@ func TestConfirmDeliveryDraftCreatesApplicationServicesAndBindings(t *testing.T)
 
 	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); err == nil {
 		t.Fatal("ConfirmDeliveryDraft second call returned nil error, want already-confirmed error")
+	}
+}
+
+func TestConfirmDeliveryDraftSeedsApplicationManifestPackage(t *testing.T) {
+	repo := &draftRepository{draft: domaindelivery.DeliveryDraft{
+		ID:     "draft-1",
+		Source: domaindelivery.DeliveryDraftSourceBlueprint,
+		Status: domaindelivery.DeliveryDraftStatusDraft,
+		ApplicationDraft: domaindelivery.BlueprintApplicationDraft{
+			Name: "Demo API", Key: "demo-api", Enabled: true,
+		},
+		EnvironmentBindings: []domaindelivery.BlueprintEnvironmentBindingTemplate{{EnvironmentKey: "dev"}},
+		Files: []domaindelivery.BlueprintFileTemplate{
+			{Path: "Dockerfile", Kind: "dockerfile", Content: "FROM scratch"},
+			{Path: "deploy/deployment.yaml", Kind: "yaml_manifest", Content: "apiVersion: apps/v1\nkind: Deployment\n"},
+			{Path: "README.md", Kind: "readme", Content: "docs"},
+		},
+		PostCreateActions: []string{"create_manifest_package"},
+	}}
+	manifestWriter := &manifestPackageWriter{}
+	service := New(
+		stubApplicationReader{app: domainapp.App{ID: "app-created", Key: "other", Name: "Demo API"}},
+		stubCatalogReader{
+			envs: []domaincatalog.Environment{{ID: "env-dev", Key: "dev", Name: "Development"}},
+			bindings: []domaincatalog.ApplicationEnvironment{{
+				ID: "binding-dev", ApplicationID: "app-created", EnvironmentID: "env-dev", EnvironmentKey: "dev",
+				Targets: []domaincatalog.ReleaseTarget{
+					{ClusterID: "cluster-1", Namespace: "demo", Enabled: true},
+					{ClusterID: "cluster-2", Namespace: "demo", Enabled: false},
+				},
+			}},
+		},
+		stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate),
+	)
+	service.SetManifestPackages(manifestWriter)
+
+	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); err != nil {
+		t.Fatalf("ConfirmDeliveryDraft returned error: %v", err)
+	}
+	if len(manifestWriter.inputs) != 1 {
+		t.Fatalf("manifest create inputs = %d, want 1", len(manifestWriter.inputs))
+	}
+	input := manifestWriter.inputs[0]
+	if input.ApplicationID != "app-created" || input.ServiceID != "" || input.Renderer != domainmanifest.RendererRaw {
+		t.Fatalf("manifest scope = %#v", input)
+	}
+	if len(input.Files) != 1 || input.Files[0].Path != "deploy/deployment.yaml" {
+		t.Fatalf("manifest files = %#v", input.Files)
+	}
+	if len(input.Bindings) != 1 || input.Bindings[0].ApplicationEnvironmentID != "binding-dev" || input.Bindings[0].ClusterID != "cluster-1" {
+		t.Fatalf("manifest bindings = %#v", input.Bindings)
+	}
+
+	if err := service.ensureManifestSeed(context.Background(), deliveryActionPrincipal(), domainapp.App{ID: "app-created", Name: "Demo API"}, []domaincatalog.ApplicationEnvironment{{
+		ID: "binding-dev", ApplicationID: "app-created", EnvironmentID: "env-dev", EnvironmentKey: "dev",
+		Targets: []domaincatalog.ReleaseTarget{{ClusterID: "cluster-1", Namespace: "demo", Enabled: true}},
+	}}, renderedSpecFromDraft(repo.draft)); err != nil {
+		t.Fatalf("ensureManifestSeed retry returned error: %v", err)
+	}
+	if len(manifestWriter.inputs) != 1 {
+		t.Fatalf("manifest create inputs after retry = %d, want 1", len(manifestWriter.inputs))
+	}
+}
+
+func TestConfirmDeliveryDraftRestoresDraftAfterManifestSeedFailure(t *testing.T) {
+	seedErr := errors.New("manifest storage unavailable")
+	appUpdateCount := 0
+	serviceUpdateCount := 0
+	bindingUpdateCount := 0
+	repo := &draftRepository{draft: domaindelivery.DeliveryDraft{
+		ID: "draft-1", Source: domaindelivery.DeliveryDraftSourceBlueprint, Status: domaindelivery.DeliveryDraftStatusDraft,
+		ApplicationDraft:    domaindelivery.BlueprintApplicationDraft{Name: "Demo API", Key: "demo-api", Enabled: true},
+		Services:            []domaindelivery.DeliveryDraftService{{Key: "api", Name: "API", ServiceKind: domainapp.ServiceKindKubernetesWorkload, Enabled: true}},
+		EnvironmentBindings: []domaindelivery.BlueprintEnvironmentBindingTemplate{{EnvironmentKey: "dev"}},
+		Files:               []domaindelivery.BlueprintFileTemplate{{Path: "deploy/deployment.yaml", Kind: "yaml_manifest", Content: "kind: Deployment\n"}},
+		PostCreateActions:   []string{"create_manifest_package"},
+	}}
+	app := domainapp.App{ID: "app-created", Key: "demo-api", Name: "Demo API"}
+	binding := domaincatalog.ApplicationEnvironment{ID: "binding-dev", ApplicationID: app.ID, EnvironmentID: "env-dev", EnvironmentKey: "dev"}
+	manifestWriter := &manifestPackageWriter{createErr: seedErr}
+	service := New(
+		stubApplicationReader{
+			app: app, services: []domainapp.Service{{ID: "service-api", ApplicationID: app.ID, Key: "api"}},
+			updateCount: &appUpdateCount, updateServiceCount: &serviceUpdateCount,
+		},
+		stubCatalogReader{
+			envs:     []domaincatalog.Environment{{ID: "env-dev", Key: "dev", Name: "Development"}},
+			bindings: []domaincatalog.ApplicationEnvironment{binding}, updateCount: &bindingUpdateCount,
+		},
+		stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate),
+	)
+	service.SetManifestPackages(manifestWriter)
+
+	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); !errors.Is(err, seedErr) || !strings.Contains(err.Error(), "application changes retained; retry confirmation") {
+		t.Fatalf("ConfirmDeliveryDraft error = %v, want retryable partial-completion context", err)
+	}
+	if repo.draft.Status != domaindelivery.DeliveryDraftStatusDraft || repo.updateCount != 2 {
+		t.Fatalf("draft after failure = status %q, updates %d; want draft and 2 updates", repo.draft.Status, repo.updateCount)
+	}
+	if appUpdateCount != 1 || serviceUpdateCount != 1 || bindingUpdateCount != 1 || len(manifestWriter.inputs) != 1 {
+		t.Fatalf("first attempt writes = app %d, service %d, binding %d, manifest %d; want one each", appUpdateCount, serviceUpdateCount, bindingUpdateCount, len(manifestWriter.inputs))
+	}
+
+	result, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1")
+	if err != nil {
+		t.Fatalf("ConfirmDeliveryDraft retry error = %v", err)
+	}
+	if result.Draft.Status != domaindelivery.DeliveryDraftStatusConfirmed || repo.updateCount != 4 {
+		t.Fatalf("draft after retry = status %q, updates %d; want confirmed and 4 updates", result.Draft.Status, repo.updateCount)
+	}
+	if appUpdateCount != 2 || serviceUpdateCount != 2 || bindingUpdateCount != 2 || len(manifestWriter.inputs) != 1 {
+		t.Fatalf("retry writes = app %d, service %d, binding %d, manifest %d; want idempotent upserts and one seed", appUpdateCount, serviceUpdateCount, bindingUpdateCount, len(manifestWriter.inputs))
 	}
 }
 

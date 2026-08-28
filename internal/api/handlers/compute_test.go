@@ -19,6 +19,7 @@ import (
 type computeHandlerFake struct {
 	filter         appcompute.TaskFilter
 	idempotencyKey string
+	mutationInput  appcompute.TaskMutationInput
 	task           sohaapi.ComputeTaskView
 }
 
@@ -72,10 +73,12 @@ func (f *computeHandlerFake) GetTask(context.Context, domainidentity.Principal, 
 func (*computeHandlerFake) ListTaskLogs(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskLogListEnvelope, error) {
 	return sohaapi.ComputeTaskLogListEnvelope{Items: []sohaapi.ComputeTaskLog{}}, nil
 }
-func (*computeHandlerFake) CancelTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error) {
+func (f *computeHandlerFake) CancelTask(_ context.Context, _ domainidentity.Principal, _, _ string, input appcompute.TaskMutationInput) (sohaapi.ComputeTaskView, error) {
+	f.mutationInput = input
 	return sohaapi.ComputeTaskView{ID: "task-1"}, nil
 }
-func (*computeHandlerFake) RetryTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error) {
+func (f *computeHandlerFake) RetryTask(_ context.Context, _ domainidentity.Principal, _, _ string, input appcompute.TaskMutationInput) (sohaapi.ComputeTaskView, error) {
+	f.mutationInput = input
 	return sohaapi.ComputeTaskView{ID: "task-1"}, nil
 }
 func TestComputeHandlerRejectsInvalidTaskFiltersAndCursor(t *testing.T) {
@@ -118,7 +121,17 @@ func TestComputeTaskHandlersExposeCanonicalFacade(t *testing.T) {
 	}
 	for _, item := range requests {
 		recorder := httptest.NewRecorder()
-		request := httptest.NewRequest(item.method, item.target, nil)
+		var body *strings.Reader
+		if item.method == http.MethodPost {
+			body = strings.NewReader(`{"reason":"operator request"}`)
+		} else {
+			body = strings.NewReader("")
+		}
+		request := httptest.NewRequest(item.method, item.target, body)
+		if item.method == http.MethodPost {
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Idempotency-Key", "compute-task-1")
+		}
 		router.ServeHTTP(recorder, request)
 		if recorder.Code != item.status {
 			t.Fatalf("%s %s status = %d, body = %s", item.method, item.target, recorder.Code, recorder.Body.String())
@@ -126,6 +139,26 @@ func TestComputeTaskHandlersExposeCanonicalFacade(t *testing.T) {
 	}
 	if service.filter.ResourceKind != "project" || service.filter.ResourceID != "project-1" || service.filter.SortBy != "kind" || service.filter.SortOrder != "asc" {
 		t.Fatalf("task filter = %#v", service.filter)
+	}
+	if service.mutationInput.IdempotencyKey != "compute-task-1" || service.mutationInput.Reason != "operator request" {
+		t.Fatalf("mutation input = %#v", service.mutationInput)
+	}
+}
+
+func TestComputeTaskMutationRequiresValidIdempotencyKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewComputeHandler(&computeHandlerFake{})
+	router := gin.New()
+	router.POST("/compute/tasks/:domain/:id/cancel", handler.CancelTask)
+
+	for _, key := range []string{"", "short"} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/compute/tasks/virtualization/task-1/cancel", nil)
+		request.Header.Set("Idempotency-Key", key)
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("key %q status = %d, body = %s", key, recorder.Code, recorder.Body.String())
+		}
 	}
 }
 

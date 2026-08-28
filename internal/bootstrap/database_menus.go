@@ -150,15 +150,13 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "delivery-blueprints", Path: "/delivery/blueprints", LabelZH: "应用接入模板", LabelEN: "Onboarding Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 10, Enabled: true},
 	{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 20, Enabled: true},
 	{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "activity", Section: "delivery-platform", SortOrder: 30, Enabled: true},
-	{ID: "application-environments", Path: "/application-environments", LabelZH: "环境绑定", LabelEN: "Environment Bindings", IconKey: "blocks", Section: "delivery-platform", SortOrder: 50, Enabled: true},
+	{ID: "delivery-environment-directory", Path: "/delivery/environments", LabelZH: "环境目录", LabelEN: "Environment Directory", IconKey: "blocks", Section: "delivery-platform", SortOrder: 40, Enabled: true},
 	{ID: "identity", Path: "/internal-workbench", LabelZH: "内网工作台", LabelEN: "Internal Workbench", IconKey: "shield", Section: "admin", SortOrder: 220, Enabled: true},
 	{ID: "identity-overview", ParentID: "identity", Path: "/internal-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true},
 	{ID: "identity-software", ParentID: "identity", Path: "/internal-workbench/software", LabelZH: "软件库", LabelEN: "Software Library", IconKey: "blocks", Section: "software", SortOrder: 5, Enabled: true},
-	{ID: "identity-software-storage", ParentID: "identity", Path: "/internal-workbench/software-storage", LabelZH: "存储文件", LabelEN: "Storage Files", IconKey: "server", Section: "software", SortOrder: 10, Enabled: true},
 	{ID: "identity-applications", ParentID: "identity", Path: "/identity/applications", LabelZH: "应用目录", LabelEN: "Applications", IconKey: "blocks", Section: "provider", SortOrder: 10, Enabled: true},
 	{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "Provider", LabelEN: "Providers", IconKey: "shield", Section: "provider", SortOrder: 20, Enabled: true},
 	{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "Outpost", LabelEN: "Outposts", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true},
-	{ID: "identity-policies", ParentID: "identity", Path: "/identity/policies", LabelZH: "访问策略", LabelEN: "Policies", IconKey: "shield", Section: "provider", SortOrder: 40, Enabled: true},
 	{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 227, Enabled: true},
 	{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "operations", SortOrder: 30, Enabled: true},
 	{ID: "access-users", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "user", Section: "users", SortOrder: 10, Enabled: true},
@@ -186,6 +184,7 @@ func defaultMenuSeeds() []menuSeed {
 
 func obsoleteMenuIDsForCleanup() []string {
 	return []string{
+		"identity-software-storage",
 		"assistant-root-cause",
 		"assistant-performance",
 		"assistant-chat",
@@ -223,6 +222,7 @@ func obsoleteMenuIDsForCleanup() []string {
 		"events",
 		"business-lines",
 		"delivery-environments",
+		"application-environments",
 		"application-management",
 		"compute-workbench-tasks",
 		"compute-workbench-tasks-all",
@@ -380,7 +380,7 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 		{id: "delivery-blueprints", section: "delivery-platform", sortOrder: 10, labelZH: "应用接入模板", labelEN: "Onboarding Templates", oldZH: "交付蓝图", oldEN: "Delivery Blueprints"},
 		{id: "build-templates", section: "delivery-platform", sortOrder: 20, labelZH: "构建模板", labelEN: "Build Templates", oldZH: "构建模板", oldEN: "Build Templates"},
 		{id: "workflow-templates", section: "delivery-platform", sortOrder: 30, labelZH: "发布流程模板", labelEN: "Workflow Templates", oldZH: "发布流程模板", oldEN: "Workflow Templates"},
-		{id: "application-environments", section: "delivery-platform", sortOrder: 50, labelZH: "环境绑定", labelEN: "Environment Bindings", oldZH: "应用环境绑定", oldEN: "Application Environment Bindings"},
+		{id: "delivery-environment-directory", section: "delivery-platform", sortOrder: 40, labelZH: "环境目录", labelEN: "Environment Directory", oldZH: "环境目录", oldEN: "Environment Directory"},
 		{id: "registries", section: "delivery-platform", sortOrder: 70, labelZH: "镜像仓库", labelEN: "Registry Connections", oldZH: "镜像仓库", oldEN: "Registry Connections"},
 	}
 	for _, item := range deliveryItems {
@@ -512,7 +512,6 @@ func syncAccessMenuSeedUpgrades(ctx context.Context, db *gorm.DB, now time.Time)
 		{id: "identity-outposts", section: "provider", sortOrder: 30},
 		{id: "settings-source-control", section: "integrations", sortOrder: 10},
 		{id: "settings-secrets", section: "integrations", sortOrder: 20},
-		{id: "identity-policies", section: "provider", sortOrder: 40},
 		{id: "access-users", section: "users", sortOrder: 10},
 		{id: "access-roles", section: "users", sortOrder: 20},
 		{id: "access-teams", section: "users", sortOrder: 30},
@@ -658,6 +657,7 @@ func isDeliveryMenuSeed(item menuSeed) bool {
 		strings.HasPrefix(item.Path, "/delivery/testing") ||
 		strings.HasPrefix(item.Path, "/delivery/analysis") ||
 		strings.HasPrefix(item.Path, "/delivery/blueprints") ||
+		strings.HasPrefix(item.Path, "/delivery/environments") ||
 		strings.HasPrefix(item.Path, "/delivery/release-bundles") ||
 		strings.HasPrefix(item.Path, "/delivery/execution-tasks") ||
 		strings.HasPrefix(item.Path, "/workflow-templates") ||

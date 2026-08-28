@@ -121,6 +121,7 @@ type OutpostContractRuntimeService interface {
 type OIDCClientService interface {
 	ListOIDCClients(context.Context, domainidentity.Principal, string) ([]domainprovider.OIDCClient, error)
 	GetOIDCClient(context.Context, domainidentity.Principal, string) (domainprovider.OIDCClient, error)
+	RevealOIDCClientSecret(context.Context, domainidentity.Principal, string) (domainprovider.OIDCClientSecretReveal, error)
 	CreateOIDCClient(context.Context, domainidentity.Principal, string, domainprovider.OIDCClientInput) (domainprovider.OIDCClientCreated, error)
 	UpdateOIDCClient(context.Context, domainidentity.Principal, string, domainprovider.OIDCClientInput) (domainprovider.OIDCClient, error)
 	DeleteOIDCClient(context.Context, domainidentity.Principal, string) error
@@ -703,6 +704,22 @@ func (h *oidcClientHandler) GetOIDCClient(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
+func (h *oidcClientHandler) RevealOIDCClientSecret(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	if h.service == nil {
+		writeError(c, fmt.Errorf("%w: identity provider service is not configured", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.RevealOIDCClientSecret(c.Request.Context(), principal, c.Param("clientID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *oidcClientHandler) CreateOIDCClient(c *gin.Context) {
 	if h.service == nil {
 		writeError(c, fmt.Errorf("%w: identity provider service is not configured", apperrors.ErrUnsupportedOperation))
@@ -719,6 +736,10 @@ func (h *oidcClientHandler) CreateOIDCClient(c *gin.Context) {
 	if err != nil {
 		writeError(c, err)
 		return
+	}
+	if item.ClientSecret != "" {
+		c.Header("Cache-Control", "no-store")
+		c.Header("Pragma", "no-cache")
 	}
 	if providerID == "" {
 		apiresponse.Item(c, http.StatusCreated, item.Client)

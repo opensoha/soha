@@ -299,7 +299,11 @@ docker run -d \
   ghcr.io/opensoha/soha:v0.1.7
 ```
 
-`soha-data` 卷用于持久化上传的软件包和 companion 数据。
+`soha-data` 卷仅用于持久化 companion 数据。软件包必须使用已启用的 S3 兼容系统集成，不再存入应用本地卷。
+
+请在**内网工作台 → 软件库**中配置对象存储。S3 兼容连接通过 `endpoint`、`bucket`、`region`、Path-style 和可选对象前缀支持 AWS S3、MinIO、阿里云 OSS、腾讯云 COS 与自定义兼容端点。私网或集群内端点必须显式开启**允许私网 Endpoint**，HTTP 端点还必须开启**允许 HTTP**。Access Key 使用 `security.credential_encryption_key` 加密保存，API 永不返回明文；上传软件包前可点击**测试连接**。可以同时启用多个地域或供应商的存储连接；上传时选择目标连接，已有软件包仍通过原连接下载和删除。连接创建后 endpoint 与 bucket 不可原地修改，凭据可以轮换，如需迁移存储应新建连接。
+
+升级过程不会静默忽略旧文件系统目录。如果仍检测到 `data/software/index.json`（或旧的 `SOHA_SOFTWARE_STORAGE_DIR`），新版本会停止启动并报告迁移错误。升级前先停止旧版本，把完整 legacy 目录移到备份位置；启动新版本并配置、测试 S3 兼容存储后，按照 `index.json` 中的原始元数据和文件名逐个重新上传 blob。只有在包数量、总字节数、SHA-256 和下载都验证完成后才能删除备份。
 
 JWT、runner、webhook 与凭据加密设置统一默认使用公开值
 `soha-123456789012345678901234567890`。这让本地进程、raw Docker、Compose、

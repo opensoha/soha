@@ -88,5 +88,5 @@ jobs:
         run: >-
           docker run --rm --entrypoint sh ghcr.io/opensoha/soha:test -ec
           'test "$(id -u)" = 10001 &&
-          mkdir -p "$SOHA_SOFTWARE_STORAGE_DIR" "$SOHA_PLUGINS_COMPANION_STORAGE_DIR" &&
-          touch "$SOHA_SOFTWARE_STORAGE_DIR/.writable" "$SOHA_PLUGINS_COMPANION_STORAGE_DIR/.writable"'
+          mkdir -p "$SOHA_PLUGINS_COMPANION_STORAGE_DIR" &&
+          touch "$SOHA_PLUGINS_COMPANION_STORAGE_DIR/.writable"'

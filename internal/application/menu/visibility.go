@@ -109,7 +109,7 @@ func coreDeliveryMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowTemplatesView}}, true
 	case "release-board":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBoardView}}, true
-	case "application-environments":
+	case "application-environments", "delivery-environment-directory":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationEnvView}}, true
 	case "workflows":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowsView}}, true
@@ -325,16 +325,7 @@ func virtualizationAccessMenuRule(id string) (visibilityRule, bool) {
 func computeMenuRule(id string) (visibilityRule, bool) {
 	switch id {
 	case "compute-workbench", "compute-workbench-overview":
-		return visibilityRule{permissions: []string{
-			appaccess.PermVirtualizationOverviewView, appaccess.PermVirtualizationVMsView,
-			appaccess.PermVirtualizationClustersView, appaccess.PermVirtualizationImagesView,
-			appaccess.PermVirtualizationStorageView,
-			appaccess.PermVirtualizationFlavorsView, appaccess.PermVirtualizationOperationsView,
-			appaccess.PermVirtualizationSyncView,
-			appaccess.PermDockerOverviewView, appaccess.PermDockerHostsView, appaccess.PermDockerProjectsView,
-			appaccess.PermDockerServicesView, appaccess.PermDockerPortsView, appaccess.PermDockerTemplatesView,
-			appaccess.PermDockerOperationsView,
-		}}, true
+		return visibilityRule{permissions: []string{appaccess.PermWorkbenchComputeView}}, true
 	case "compute-workbench-tasks-operations":
 		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView, appaccess.PermDockerOperationsView}}, true
 	default:
@@ -361,7 +352,7 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermIdentityPoliciesView,
 			appaccess.PermIdentityAuditView,
 		}}, true
-	case "identity-software", "identity-software-storage":
+	case "identity-software":
 		return visibilityRule{permissions: []string{appaccess.PermSoftwarePackageView}}, true
 	case "identity-applications":
 		return visibilityRule{permissions: []string{appaccess.PermIdentityApplicationsView}}, true

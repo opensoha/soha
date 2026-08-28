@@ -313,7 +313,11 @@ docker run -d \
   ghcr.io/opensoha/soha:v0.1.7
 ```
 
-The `soha-data` volume persists uploaded software packages and companion data.
+The `soha-data` volume persists companion data. Software packages require an enabled S3-compatible system integration and are not stored on the local application volume.
+
+Configure software object storage from **Internal Workbench → Software Library**. S3-compatible connections support AWS S3, MinIO, Alibaba Cloud OSS, Tencent Cloud COS, and custom compatible endpoints through `endpoint`, `bucket`, `region`, path-style addressing, and an optional object prefix. Private or cluster-local endpoints require the explicit **Allow private endpoint** switch; plain HTTP additionally requires **Allow HTTP**. Access keys are stored encrypted with `security.credential_encryption_key`, never returned by the API, and can be checked with **Test connection** before uploading packages. Multiple storage integrations may be enabled for different providers or regions; uploads select a target integration and existing packages keep their original integration for download and deletion. Endpoint and bucket configuration are immutable after creation; rotate credentials in place, or create a new integration for a storage migration.
+
+Upgrades do not silently discard the former filesystem catalog. If `data/software/index.json` (or the legacy `SOHA_SOFTWARE_STORAGE_DIR`) still exists, startup stops with a migration error. Before upgrading, stop the old release and move the complete legacy directory to a backup location. Start the new release, configure and test S3-compatible storage, then re-upload each indexed blob with its original metadata and file name. Keep the backup until package count, byte totals, SHA-256 values, and downloads have been verified.
 
 The bootstrap password is inserted only when the `opensoha` user's password
 credential does not already exist, so routine restarts never reset a changed

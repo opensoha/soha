@@ -16,7 +16,7 @@ func TestHandlersRejectInvalidPayloadsWithStableErrorCode(t *testing.T) {
 		handler gin.HandlerFunc
 	}{
 		{name: "user", path: "/access/users", handler: New(Services{}).CreateUser},
-		{name: "scope grant", path: "/access/scope-grants", handler: NewScopeGrantHandler(nil).Create},
+		{name: "scope grant", path: "/access/users/user-1/scope-grants", handler: NewScopeGrantHandler(nil).Create("user")},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

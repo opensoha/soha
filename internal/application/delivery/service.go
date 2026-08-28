@@ -17,6 +17,7 @@ import (
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -42,6 +43,11 @@ type CatalogReader interface {
 	GetApplicationEnvironment(context.Context, domainidentity.Principal, string) (domaincatalog.ApplicationEnvironment, error)
 	CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
 	UpdateApplicationEnvironment(context.Context, domainidentity.Principal, string, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
+}
+
+type ManifestPackageWriter interface {
+	List(context.Context, domainidentity.Principal, domainmanifest.Filter) (domainmanifest.Page, error)
+	Create(context.Context, domainidentity.Principal, domainmanifest.Input) (domainmanifest.Package, error)
 }
 
 type BuildReader interface {
@@ -137,6 +143,7 @@ type Service struct {
 	governance        *deliverygovernance.Service
 	logs              LogRuntime
 	logTickets        LogStreamTicketIssuer
+	manifestPackages  ManifestPackageWriter
 }
 
 func uniqueStrings(values []string) []string {
@@ -176,6 +183,10 @@ func New(applications ApplicationReader, catalog CatalogReader, builds BuildRead
 func (s *Service) SetRecorders(audit AuditRecorder, operations OperationRecorder) {
 	s.audit = audit
 	s.operations = operations
+}
+
+func (s *Service) SetManifestPackages(writer ManifestPackageWriter) {
+	s.manifestPackages = writer
 }
 
 func (s *Service) SetGovernance(service *deliverygovernance.Service) {
@@ -782,6 +793,9 @@ func (s *Service) ConfirmDeliveryDraft(ctx context.Context, principal domainiden
 	app, services, bindings, err := s.applyRenderedDeliverySpec(ctx, principal, spec)
 	if err != nil {
 		return domaindelivery.DeliveryDraftConfirmResult{}, s.restoreDeliveryDraftConfirmFailure(ctx, draft, err)
+	}
+	if err := s.ensureManifestSeed(ctx, principal, app, bindings, spec); err != nil {
+		return domaindelivery.DeliveryDraftConfirmResult{}, s.restoreDeliveryDraftConfirmFailure(ctx, draft, fmt.Errorf("application changes retained; retry confirmation: %w", err))
 	}
 	now = time.Now().UTC()
 	draft.Status = domaindelivery.DeliveryDraftStatusConfirmed
@@ -2793,6 +2807,84 @@ func (s *Service) applyRenderedDeliverySpec(ctx context.Context, principal domai
 		return domainapp.App{}, nil, nil, err
 	}
 	return app, services, bindings, nil
+}
+
+const manifestSeedDescription = "由应用接入模板生成，可在应用内继续调整。"
+
+func (s *Service) ensureManifestSeed(ctx context.Context, principal domainidentity.Principal, app domainapp.App, environments []domaincatalog.ApplicationEnvironment, spec domaindelivery.RenderedDeliverySpec) error {
+	files := manifestSeedFiles(spec.Files)
+	if s.manifestPackages == nil || len(files) == 0 || !shouldCreateManifestSeed(spec.PostCreateActions) {
+		return nil
+	}
+	name := strings.TrimSpace(app.Name) + " 接入资源"
+	existing, err := s.manifestPackages.List(ctx, principal, domainmanifest.Filter{ApplicationID: app.ID, Search: name, PageSize: 200})
+	if err != nil {
+		return fmt.Errorf("list manifest seeds: %w", err)
+	}
+	for _, item := range existing.Items {
+		if item.Name == name && item.Description == manifestSeedDescription {
+			return nil
+		}
+	}
+	_, err = s.manifestPackages.Create(ctx, principal, domainmanifest.Input{
+		Name:          name,
+		Description:   manifestSeedDescription,
+		ApplicationID: app.ID,
+		Renderer:      domainmanifest.RendererRaw,
+		Files:         files,
+		Bindings:      manifestSeedBindings(environments),
+	})
+	if err != nil {
+		return fmt.Errorf("create manifest seed: %w", err)
+	}
+	return nil
+}
+
+func shouldCreateManifestSeed(actions []string) bool {
+	for _, action := range actions {
+		switch strings.TrimSpace(action) {
+		case "create_manifest_package", "render_spec":
+			return true
+		}
+	}
+	return false
+}
+
+func manifestSeedFiles(files []domaindelivery.BlueprintFileTemplate) []domainmanifest.File {
+	result := make([]domainmanifest.File, 0, len(files))
+	for _, file := range files {
+		switch strings.TrimSpace(file.Kind) {
+		case "yaml_manifest", "deployment", "service":
+			result = append(result, domainmanifest.File{Path: file.Path, Content: file.Content})
+		}
+	}
+	return result
+}
+
+func manifestSeedBindings(environments []domaincatalog.ApplicationEnvironment) []domainmanifest.Binding {
+	result := make([]domainmanifest.Binding, 0)
+	seen := map[string]struct{}{}
+	for _, environment := range environments {
+		for _, target := range environment.Targets {
+			clusterID := strings.TrimSpace(target.ClusterID)
+			namespace := strings.TrimSpace(target.Namespace)
+			key := clusterID + "\x00" + namespace
+			if !target.Enabled || clusterID == "" || namespace == "" {
+				continue
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			result = append(result, domainmanifest.Binding{
+				ApplicationEnvironmentID: environment.ID,
+				EnvironmentKey:           environment.EnvironmentKey,
+				ClusterID:                clusterID,
+				Namespace:                namespace,
+			})
+		}
+	}
+	return result
 }
 
 func validateDeliveryServices(services []domaindelivery.DeliveryDraftService) error {

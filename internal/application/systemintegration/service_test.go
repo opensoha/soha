@@ -81,6 +81,29 @@ func (f captureSourceFactory) Build(domain.Integration, map[string]string) (Sour
 	return f.adapter, nil
 }
 
+type captureConnectionTester struct{ called bool }
+
+func (t *captureConnectionTester) TestConnection(context.Context) error {
+	t.called = true
+	return nil
+}
+
+type captureConnectionFactory struct {
+	tester      ConnectionTester
+	integration domain.Integration
+	credentials map[string]string
+}
+
+func (f *captureConnectionFactory) Build(item domain.Integration, credentials map[string]string) (ConnectionTester, error) {
+	f.integration = item
+	f.credentials = cloneStrings(credentials)
+	return f.tester, nil
+}
+
+func (*captureConnectionFactory) Capabilities() []string {
+	return []string{"object.get", "object.put", "object.delete"}
+}
+
 type captureOAuthProvider struct {
 	exchanged bool
 	refreshed bool
@@ -192,6 +215,157 @@ func TestCreateEncryptsCredentialsAndNeverReturnsSecret(t *testing.T) {
 	}
 	if resolved["token"] != "raw-secret-token" {
 		t.Fatalf("resolved credential = %q, want decrypted token", resolved["token"])
+	}
+}
+
+func TestCreateS3StorageIntegrationValidatesAndEncryptsCredentials(t *testing.T) {
+	repo := newMemoryIntegrationRepository()
+	service := testIntegrationService(t, repo)
+	request := sohaapi.SystemIntegrationCreateRequest{
+		Category: sohaapi.SystemIntegrationCategory(domain.CategoryStorage), ProviderType: domain.ProviderS3,
+		Name: "Software object storage", Enabled: true,
+		Configuration: []sohaapi.SystemIntegrationConfigurationField{
+			{Key: "endpoint", Value: "https://minio.example.com"},
+			{Key: "bucket", Value: "soha-software"},
+			{Key: "region", Value: "us-east-1"},
+			{Key: "path_style", Value: "true"},
+		},
+		Credentials: []sohaapi.SystemIntegrationCredentialInput{
+			{Key: "access_key_id", Value: "minio-access"},
+			{Key: "secret_access_key", Value: "minio-secret"},
+		},
+	}
+	item, err := service.Create(t.Context(), adminPrincipal(), request)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if item.Category != sohaapi.SystemIntegrationCategory(domain.CategoryStorage) || item.ProviderType != domain.ProviderS3 {
+		t.Fatalf("unexpected storage integration: %#v", item)
+	}
+	for key, raw := range repo.credentials[item.ID] {
+		if !secretcrypto.Encrypted(raw) || strings.Contains(raw, key) {
+			t.Fatalf("credential %s was not stored encrypted", key)
+		}
+	}
+
+	request.Configuration[0].Value = "http://minio.example.com"
+	if _, err := service.Create(t.Context(), adminPrincipal(), request); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("insecure endpoint error = %v", err)
+	}
+	request.Configuration = append(request.Configuration, sohaapi.SystemIntegrationConfigurationField{Key: "insecure", Value: "true"})
+	if _, err := service.Create(t.Context(), adminPrincipal(), request); err != nil {
+		t.Fatalf("explicit insecure endpoint should be accepted: %v", err)
+	}
+	request.ProviderType = "unknown"
+	if _, err := service.Create(t.Context(), adminPrincipal(), request); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("unknown storage provider error = %v", err)
+	}
+	request.ProviderType = domain.ProviderS3
+	request.Configuration[0].Value = "https://127.0.0.1"
+	if _, err := service.Create(t.Context(), adminPrincipal(), request); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("private endpoint without allow_private error = %v", err)
+	}
+}
+
+func TestResolveStorageConnectionRequiresTargetWhenMultipleAreEnabled(t *testing.T) {
+	repo := newMemoryIntegrationRepository()
+	service := testIntegrationService(t, repo)
+	request := sohaapi.SystemIntegrationCreateRequest{
+		Category: sohaapi.SystemIntegrationCategory(domain.CategoryStorage), ProviderType: domain.ProviderS3,
+		Name: "Storage 1", Enabled: true,
+		Configuration: []sohaapi.SystemIntegrationConfigurationField{
+			{Key: "bucket", Value: "soha-software"}, {Key: "region", Value: "us-east-1"},
+		},
+		Credentials: []sohaapi.SystemIntegrationCredentialInput{
+			{Key: "access_key_id", Value: "access"}, {Key: "secret_access_key", Value: "secret"},
+		},
+	}
+	first, err := service.Create(t.Context(), adminPrincipal(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Name = "Storage 2"
+	if _, err := service.Create(t.Context(), adminPrincipal(), request); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.ResolveStorageConnection(t.Context(), "", true); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("missing target error = %v", err)
+	}
+	if resolved, _, err := service.ResolveStorageConnection(t.Context(), first.ID, true); err != nil || resolved.ID != first.ID {
+		t.Fatalf("resolved=%#v err=%v", resolved, err)
+	}
+	disabled := repo.items[first.ID]
+	disabled.Enabled = false
+	repo.items[first.ID] = disabled
+	if _, _, err := service.ResolveStorageConnection(t.Context(), first.ID, true); !errors.Is(err, apperrors.ErrServiceUnavailable) {
+		t.Fatalf("disabled upload target error = %v", err)
+	}
+	if _, _, err := service.ResolveStorageConnection(t.Context(), first.ID, false); err != nil {
+		t.Fatalf("historical storage should remain readable: %v", err)
+	}
+}
+
+func TestS3StorageConnectionUsesRegisteredTesterWithDecryptedCredentials(t *testing.T) {
+	repo := newMemoryIntegrationRepository()
+	service := testIntegrationService(t, repo)
+	tester := &captureConnectionTester{}
+	factory := &captureConnectionFactory{tester: tester}
+	service.RegisterConnectionTester(domain.CategoryStorage, domain.ProviderS3, factory)
+	item, err := service.Create(t.Context(), adminPrincipal(), sohaapi.SystemIntegrationCreateRequest{
+		Category: sohaapi.SystemIntegrationCategory(domain.CategoryStorage), ProviderType: domain.ProviderS3,
+		Name: "Software object storage", Enabled: true,
+		Configuration: []sohaapi.SystemIntegrationConfigurationField{
+			{Key: "endpoint", Value: "https://minio.example.com"},
+			{Key: "bucket", Value: "soha-software"},
+			{Key: "region", Value: "us-east-1"},
+		},
+		Credentials: []sohaapi.SystemIntegrationCredentialInput{
+			{Key: "access_key_id", Value: "minio-access"},
+			{Key: "secret_access_key", Value: "minio-secret"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Test(t.Context(), adminPrincipal(), item.ID)
+	if err != nil {
+		t.Fatalf("Test() error = %v", err)
+	}
+	if !tester.called || result.Status != sohaapi.SystemIntegrationTestStatusSucceeded {
+		t.Fatalf("unexpected test result: called=%v result=%#v", tester.called, result)
+	}
+	if factory.credentials["access_key_id"] != "minio-access" || factory.credentials["secret_access_key"] != "minio-secret" {
+		t.Fatalf("factory received wrong credentials: %#v", factory.credentials)
+	}
+	if len(result.Capabilities) != 3 || result.Capabilities[0] != "object.get" {
+		t.Fatalf("capabilities = %#v", result.Capabilities)
+	}
+}
+
+func TestS3StorageEndpointIsImmutableAfterCreation(t *testing.T) {
+	repo := newMemoryIntegrationRepository()
+	service := testIntegrationService(t, repo)
+	item, err := service.Create(t.Context(), adminPrincipal(), sohaapi.SystemIntegrationCreateRequest{
+		Category: sohaapi.SystemIntegrationCategory(domain.CategoryStorage), ProviderType: domain.ProviderS3,
+		Name: "Software object storage", Enabled: true,
+		Configuration: []sohaapi.SystemIntegrationConfigurationField{
+			{Key: "endpoint", Value: "https://minio.example.com"},
+			{Key: "bucket", Value: "soha-software"},
+			{Key: "region", Value: "us-east-1"},
+		},
+		Credentials: []sohaapi.SystemIntegrationCredentialInput{
+			{Key: "access_key_id", Value: "minio-access"},
+			{Key: "secret_access_key", Value: "minio-secret"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := append([]sohaapi.SystemIntegrationConfigurationField(nil), item.Configuration...)
+	changed[0].Value = "other-bucket"
+	_, err = service.Update(t.Context(), adminPrincipal(), item.ID, domain.UpdateInput{ExpectedVersion: item.Version, Configuration: &changed})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("storage reconfiguration error = %v", err)
 	}
 }
 

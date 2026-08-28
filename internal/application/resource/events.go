@@ -40,7 +40,7 @@ func (e *Events) ListClusterEvents(ctx context.Context, principal domainidentity
 		}
 		items, err = client.ListClusterEvents(ctx, backendNamespace, backendLimit)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return nil, wrapAgentResourceError(err)
 		}
 		source = "agent"
 	default:

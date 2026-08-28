@@ -8,7 +8,6 @@ import (
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
-	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type workloadListSpec[T any] struct {
@@ -142,7 +141,7 @@ func routeWorkload[T any](ctx context.Context, w *Workloads, connection domaincl
 	}
 	item, err := agent(client)
 	if err != nil {
-		return zero, "agent", fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		return zero, "agent", wrapAgentResourceError(err)
 	}
 	return item, "agent", nil
 }
@@ -178,7 +177,7 @@ func performWorkloadMutation(ctx context.Context, w *Workloads, principal domain
 		source = "agent"
 		if err != nil {
 			_ = w.recordAudit(ctx, principal, clusterID, namespace, spec.kind, name, string(spec.action), "failure", err.Error())
-			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return wrapAgentResourceError(err)
 		}
 	} else if err := spec.direct(); err != nil {
 		_ = w.recordAudit(ctx, principal, clusterID, namespace, spec.kind, name, string(spec.action), "failure", err.Error())

@@ -33,6 +33,7 @@ type Package struct {
 	Name            string    `json:"name"`
 	Description     string    `json:"description,omitempty"`
 	ApplicationID   string    `json:"applicationId"`
+	ServiceID       string    `json:"serviceId,omitempty"`
 	BusinessLineID  string    `json:"businessLineId,omitempty"`
 	Renderer        string    `json:"renderer"`
 	Status          string    `json:"status"`
@@ -49,6 +50,7 @@ type Input struct {
 	Name           string    `json:"name"`
 	Description    string    `json:"description,omitempty"`
 	ApplicationID  string    `json:"applicationId"`
+	ServiceID      string    `json:"serviceId,omitempty"`
 	BusinessLineID string    `json:"businessLineId,omitempty"`
 	Renderer       string    `json:"renderer"`
 	Files          []File    `json:"files"`
@@ -58,6 +60,7 @@ type Input struct {
 type Filter struct {
 	ApplicationID  string
 	ApplicationIDs []string
+	ServiceID      string
 	ClusterID      string
 	Namespace      string
 	Search         string

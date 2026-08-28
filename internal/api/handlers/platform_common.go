@@ -17,6 +17,10 @@ func requiredIdempotencyKey(c *gin.Context) (string, bool) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "Idempotency-Key header is required")
 		return "", false
 	}
+	if len(key) < 8 || len(key) > 128 {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "Idempotency-Key must contain between 8 and 128 characters")
+		return "", false
+	}
 	return key, true
 }
 

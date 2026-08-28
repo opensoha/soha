@@ -73,10 +73,18 @@ func registerAccessPolicyScopeRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/access/policies", deps.Access.CreatePolicy)
 	protected.PUT("/access/policies/:policyID", deps.Access.UpdatePolicy)
 	protected.DELETE("/access/policies/:policyID", deps.Access.DeletePolicy)
-	protected.GET("/access/scope-grants", deps.ScopeGrants.List)
-	protected.POST("/access/scope-grants", deps.ScopeGrants.Create)
-	protected.PUT("/access/scope-grants/:scopeGrantID", deps.ScopeGrants.Update)
-	protected.DELETE("/access/scope-grants/:scopeGrantID", deps.ScopeGrants.Delete)
+	protected.GET("/access/scope-grants", deps.ScopeGrants.ListLegacy)
+	protected.POST("/access/scope-grants", deps.ScopeGrants.CreateLegacy)
+	protected.PUT("/access/scope-grants/:scopeGrantID", deps.ScopeGrants.UpdateLegacy)
+	protected.DELETE("/access/scope-grants/:scopeGrantID", deps.ScopeGrants.DeleteLegacy)
+	protected.GET("/access/users/:userID/scope-grants", deps.ScopeGrants.List("user"))
+	protected.POST("/access/users/:userID/scope-grants", deps.ScopeGrants.Create("user"))
+	protected.PUT("/access/users/:userID/scope-grants/:scopeGrantID", deps.ScopeGrants.Update("user"))
+	protected.DELETE("/access/users/:userID/scope-grants/:scopeGrantID", deps.ScopeGrants.Delete("user"))
+	protected.GET("/access/teams/:teamID/scope-grants", deps.ScopeGrants.List("team"))
+	protected.POST("/access/teams/:teamID/scope-grants", deps.ScopeGrants.Create("team"))
+	protected.PUT("/access/teams/:teamID/scope-grants/:scopeGrantID", deps.ScopeGrants.Update("team"))
+	protected.DELETE("/access/teams/:teamID/scope-grants/:scopeGrantID", deps.ScopeGrants.Delete("team"))
 }
 
 func registerAIGatewayRoutes(protected gin.IRoutes, deps Dependencies) {

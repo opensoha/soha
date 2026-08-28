@@ -108,6 +108,21 @@ func TestRegisterPlatformRoutesKeepsCoreOperationalSurface(t *testing.T) {
 	}
 }
 
+func TestRegisterDeliveryCatalogRoutesExposesEnvironmentDirectory(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	registerDeliveryRoutes(
+		router.Group("/api/v1"),
+		allRoutesEnabledConfig(),
+		Dependencies{Catalog: &apiHandlers.CatalogHandler{}},
+	)
+
+	if !slices.Contains(routeMethodPaths(router.Routes()), "GET /api/v1/delivery/environments") {
+		t.Fatal("delivery environment directory route is not registered")
+	}
+}
+
 func TestRegisterCopilotRoutesExposesAgentRunCancel(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -645,6 +660,14 @@ func TestRegisterAccessRoutesPreservesEndpointContract(t *testing.T) {
 		"POST /api/v1/access/scope-grants",
 		"PUT /api/v1/access/scope-grants/:scopeGrantID",
 		"DELETE /api/v1/access/scope-grants/:scopeGrantID",
+		"GET /api/v1/access/users/:userID/scope-grants",
+		"POST /api/v1/access/users/:userID/scope-grants",
+		"PUT /api/v1/access/users/:userID/scope-grants/:scopeGrantID",
+		"DELETE /api/v1/access/users/:userID/scope-grants/:scopeGrantID",
+		"GET /api/v1/access/teams/:teamID/scope-grants",
+		"POST /api/v1/access/teams/:teamID/scope-grants",
+		"PUT /api/v1/access/teams/:teamID/scope-grants/:scopeGrantID",
+		"DELETE /api/v1/access/teams/:teamID/scope-grants/:scopeGrantID",
 	} {
 		if _, ok := registered[route]; !ok {
 			t.Fatalf("missing route %s", route)
@@ -774,7 +797,9 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 		{name: "secret rotate", method: "POST", path: "/api/v1/secrets/:secretID/versions", resourceKind: "SecretVersion", action: "rotate", permission: appaccess.PermSecretRotate, scoped: true},
 		{name: "docker project deploy", method: "POST", path: "/api/v1/docker/projects/:id/deploy", resourceKind: "DockerProject", action: "deploy", permission: appaccess.PermDockerProjectsDeploy},
 		{name: "docker host Agent installation", method: "POST", path: "/api/v1/docker/hosts/:id/agent-installation", resourceKind: "DockerHost", action: "update", permission: appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "update")},
-		{name: "access scope grant update", method: "PUT", path: "/api/v1/access/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "update", permission: "access.scope-grants.update"},
+		{name: "legacy scope grant update", method: "PUT", path: "/api/v1/access/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "update", permission: "access.scope-grants.update"},
+		{name: "access user scope grant update", method: "PUT", path: "/api/v1/access/users/:userID/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "update", permission: "access.scope-grants.update"},
+		{name: "access team scope grant delete", method: "DELETE", path: "/api/v1/access/teams/:teamID/scope-grants/:scopeGrantID", resourceKind: "ScopeGrant", action: "delete", permission: "access.scope-grants.delete"},
 		{name: "identity policy update", method: "PATCH", path: "/api/v1/identity/policies/:applicationID", resourceKind: "IdentityPolicy", action: "update", permission: "identity.policies.update"},
 		{name: "identity outpost update", method: "PATCH", path: "/api/v1/identity/outposts/:outpostID", resourceKind: "IdentityOutpost", action: "update", permission: "identity.outposts.update"},
 	} {

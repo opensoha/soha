@@ -521,6 +521,7 @@ func (r *Repository) CreateTask(ctx context.Context, item domainvirtualization.T
 }
 
 func (r *Repository) UpdateTask(ctx context.Context, item domainvirtualization.Task) (domainvirtualization.Task, error) {
+	expectedUpdatedAt := item.UpdatedAt
 	if item.MaxRetries == 0 {
 		item.MaxRetries = 1
 	}
@@ -540,8 +541,8 @@ func (r *Repository) UpdateTask(ctx context.Context, item domainvirtualization.T
 		UPDATE virtualization_tasks
 		SET status = ?, claimed_by_worker_id = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
 		    result = ?, payload = ?, started_at = ?, last_heartbeat_at = ?, finished_at = ?, updated_at = ?
-		WHERE id = ?`
-	args := []any{item.Status, nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries, item.TimeoutSeconds, string(resultPayload), string(payload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt, item.UpdatedAt, item.ID}
+		WHERE id = ? AND updated_at = ?`
+	args := []any{item.Status, nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries, item.TimeoutSeconds, string(resultPayload), string(payload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt, item.UpdatedAt, item.ID, expectedUpdatedAt}
 	if strings.TrimSpace(item.ClaimedByWorkerID) != "" {
 		query += ` AND claimed_by_worker_id = ? AND attempt_count = ? AND status = 'running'`
 		args = append(args, strings.TrimSpace(item.ClaimedByWorkerID), item.AttemptCount)
@@ -551,7 +552,7 @@ func (r *Repository) UpdateTask(ctx context.Context, item domainvirtualization.T
 		return domainvirtualization.Task{}, fmt.Errorf("update virtualization task: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainvirtualization.Task{}, ErrNotFound
+		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization task changed", apperrors.ErrConflict)
 	}
 	return r.GetTask(ctx, item.ID)
 }
@@ -1296,7 +1297,20 @@ func taskClauses(filter domainvirtualization.TaskFilter) ([]string, []any) {
 		clauses = append(clauses, "status IN (?, ?)")
 		args = append(args, "queued", "running")
 	}
-	if value := strings.TrimSpace(filter.TaskKind); value != "" {
+	if len(filter.TaskKinds) > 0 {
+		kinds := make([]string, 0, len(filter.TaskKinds))
+		for _, kind := range filter.TaskKinds {
+			if trimmed := strings.TrimSpace(kind); trimmed != "" {
+				kinds = append(kinds, trimmed)
+			}
+		}
+		if len(kinds) > 0 {
+			clauses = append(clauses, fmt.Sprintf("task_kind IN (%s)", placeholders(len(kinds))))
+			for _, kind := range kinds {
+				args = append(args, kind)
+			}
+		}
+	} else if value := strings.TrimSpace(filter.TaskKind); value != "" {
 		clauses = append(clauses, "task_kind = ?")
 		args = append(args, value)
 	}

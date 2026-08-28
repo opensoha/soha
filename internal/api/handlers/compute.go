@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -33,8 +35,8 @@ type ComputeService interface {
 	ListTasks(context.Context, domainidentity.Principal, appcompute.TaskFilter) (sohaapi.ComputeTaskListEnvelope, error)
 	GetTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error)
 	ListTaskLogs(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskLogListEnvelope, error)
-	CancelTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error)
-	RetryTask(context.Context, domainidentity.Principal, string, string) (sohaapi.ComputeTaskView, error)
+	CancelTask(context.Context, domainidentity.Principal, string, string, appcompute.TaskMutationInput) (sohaapi.ComputeTaskView, error)
+	RetryTask(context.Context, domainidentity.Principal, string, string, appcompute.TaskMutationInput) (sohaapi.ComputeTaskView, error)
 }
 
 type ComputeHandler struct{ service ComputeService }
@@ -331,13 +333,23 @@ func (h *ComputeHandler) mutateTask(c *gin.Context, cancel bool) {
 	if !validComputeTaskDomain(c) {
 		return
 	}
+	key, ok := requiredIdempotencyKey(c)
+	if !ok {
+		return
+	}
+	var request sohaapi.ComputeTaskMutationRequest
+	if err := c.ShouldBindJSON(&request); err != nil && !errors.Is(err, io.EOF) {
+		writeError(c, invalidComputeFilter("request body"))
+		return
+	}
+	input := appcompute.TaskMutationInput{IdempotencyKey: key, Reason: strings.TrimSpace(request.Reason)}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	var item sohaapi.ComputeTaskView
 	var err error
 	if cancel {
-		item, err = h.service.CancelTask(c.Request.Context(), principal, c.Param("domain"), c.Param("id"))
+		item, err = h.service.CancelTask(c.Request.Context(), principal, c.Param("domain"), c.Param("id"), input)
 	} else {
-		item, err = h.service.RetryTask(c.Request.Context(), principal, c.Param("domain"), c.Param("id"))
+		item, err = h.service.RetryTask(c.Request.Context(), principal, c.Param("domain"), c.Param("id"), input)
 	}
 	if err != nil {
 		writeError(c, err)

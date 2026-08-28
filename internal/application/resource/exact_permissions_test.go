@@ -111,7 +111,7 @@ func TestKubernetesReadAuthorizationPopulatesRowActions(t *testing.T) {
 		{"network", "network", "Service", []string{"platform.network.services.view", "platform.network.services.delete"}, []string{"view", "delete"}},
 		{"storage", "storage", "PersistentVolumeClaim", []string{"platform.storage.persistent-volume-claims.view", "platform.storage.persistent-volume-claims.delete"}, []string{"view", "delete"}},
 		{"rbac", "access-control", "Role", []string{"platform.access-control.roles.view", "platform.access-control.roles.delete"}, []string{"view", "delete"}},
-		{"node", "inventory", "Node", []string{"platform.nodes.view", "platform.nodes.update", "platform.nodes.delete"}, []string{"view", "update", "delete"}},
+		{"node", "inventory", "Node", []string{"platform.nodes.view", "platform.nodes.update", "platform.nodes.drain", "platform.nodes.delete"}, []string{"view", "update", "drain", "delete"}},
 		{"custom resource", "extensions", "Addon", []string{"platform.extensions.view", "platform.extensions.custom-resources.delete"}, []string{"view", "delete"}},
 		{"helm release", "extensions", "HelmRelease", []string{"platform.helm.view", "platform.helm.releases.update", "platform.helm.releases.delete"}, []string{"view", "update", "delete"}},
 	}

@@ -34,7 +34,7 @@ func (g *GenericResources) applyResourceYAML(ctx context.Context, principal doma
 		item, err = client.ApplyResourceYAML(ctx, namespace, kind, name, content)
 		if err != nil {
 			_ = g.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionUpdate), "failure", err.Error())
-			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return domainresource.ResourceYAMLView{}, wrapAgentResourceError(err)
 		}
 	} else {
 		if g.direct == nil {
@@ -73,7 +73,7 @@ func (g *GenericResources) GetResourceYAML(ctx context.Context, principal domain
 		}
 		item, err = client.GetResourceYAML(ctx, namespace, kind, name)
 		if err != nil {
-			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return domainresource.ResourceYAMLView{}, wrapAgentResourceError(err)
 		}
 	} else {
 		if g.direct == nil {
@@ -100,7 +100,7 @@ func (g *GenericResources) DeleteResourceByKind(ctx context.Context, principal d
 		}
 		if err := client.DeleteResource(ctx, namespace, kind, name); err != nil {
 			_ = g.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
-			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return wrapAgentResourceError(err)
 		}
 	} else {
 		if g.direct == nil {

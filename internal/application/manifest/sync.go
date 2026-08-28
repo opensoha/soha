@@ -169,6 +169,14 @@ func (s *DeclarativeService) autoDeploySyncedRevision(ctx context.Context, paylo
 	if err != nil {
 		return err
 	}
+	return s.promoteRevision(ctx, item, revision, "system:manifest-sync")
+}
+
+func (s *DeclarativeService) PromoteRevision(ctx context.Context, principal domainidentity.Principal, item domainmanifest.Package, revision int) error {
+	return s.promoteRevision(ctx, item, revision, principal.UserID)
+}
+
+func (s *DeclarativeService) promoteRevision(ctx context.Context, item domainmanifest.Package, revision int, actorID string) error {
 	bindings, err := s.repository.ListBindings(ctx, item.ID)
 	if err != nil {
 		return err
@@ -209,7 +217,7 @@ func (s *DeclarativeService) autoDeploySyncedRevision(ctx context.Context, paylo
 		if err != nil {
 			return err
 		}
-		applyPayload := s.taskPayload(domainmanifest.TaskActionApply, item, binding, deployment, rendered, deployment.Generation, false, "system:manifest-sync")
+		applyPayload := s.taskPayload(domainmanifest.TaskActionApply, item, binding, deployment, rendered, deployment.Generation, false, actorID)
 		applyPayload.IdempotencyKey = operationKey(deployment, domainmanifest.TaskActionApply)
 		if _, err := s.queueOperation(ctx, item, binding, deployment, applyPayload); err != nil {
 			return err

@@ -13,6 +13,7 @@ import (
 )
 
 type ApplicationEnvironmentService interface {
+	ListEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.Environment, error)
 	ListApplicationEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error)
 	GetApplicationEnvironment(context.Context, domainidentity.Principal, string) (domaincatalog.ApplicationEnvironment, error)
 	CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
@@ -54,6 +55,18 @@ func NewCatalogHandler(service CatalogService) *CatalogHandler {
 
 func NewCatalogHandlerWithServices(environments ApplicationEnvironmentService, builds BuildTemplateService, workflows WorkflowTemplateService) *CatalogHandler {
 	return &CatalogHandler{environments: environments, builds: builds, workflows: workflows}
+}
+
+func (h *CatalogHandler) ListEnvironments(c *gin.Context) {
+	items, err := h.environments.ListEnvironments(
+		c.Request.Context(),
+		apiMiddleware.PrincipalFromContext(c),
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
 }
 
 func (h *CatalogHandler) ListApplicationEnvironments(c *gin.Context) {

@@ -181,7 +181,7 @@ func (p *PortForwards) ListPortForwards(ctx context.Context, principal domainide
 		}
 		items, err := client.ListPortForwards(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return nil, wrapAgentResourceError(err)
 		}
 		for _, item := range items {
 			if item.ClusterID == "" {
@@ -224,7 +224,7 @@ func (p *PortForwards) ListPortForwards(ctx context.Context, principal domainide
 
 func (p *PortForwards) RegisterPortForward(ctx context.Context, principal domainidentity.Principal, clusterID string, input domainresource.PortForwardRegisterInput) (result domainresource.PortForwardSessionView, err error) {
 	s := p
-	connection, _, err := s.authorize(ctx, principal, clusterID, input.Namespace, "PortForward", domainaccess.ActionUpdate)
+	connection, _, err := s.authorize(ctx, principal, clusterID, input.Namespace, "PortForward", domainaccess.ActionCreate)
 	if err != nil {
 		return domainresource.PortForwardSessionView{}, err
 	}
@@ -235,7 +235,7 @@ func (p *PortForwards) RegisterPortForward(ctx context.Context, principal domain
 	targetName := strings.TrimSpace(input.TargetName)
 	defer func() {
 		if err != nil {
-			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "PortForward", targetName, string(domainaccess.ActionUpdate), "failure", err.Error())
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "PortForward", targetName, string(domainaccess.ActionCreate), "failure", err.Error())
 		}
 	}()
 	kind := strings.TrimSpace(input.TargetKind)
@@ -269,7 +269,7 @@ func (p *PortForwards) RegisterPortForward(ctx context.Context, principal domain
 		return domainresource.PortForwardSessionView{}, err
 	}
 	message := "started " + connectionMode + " port-forward session"
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "PortForward", targetName, string(domainaccess.ActionUpdate), "success", message)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "PortForward", targetName, string(domainaccess.ActionCreate), "success", message)
 	s.recordOperation(ctx, principal, "platform.port-forward.start", connection.Summary.ID, namespace, "PortForward", result.SessionID, message, map[string]any{
 		"connectionMode": connectionMode, "localPort": input.LocalPort, "remotePort": input.RemotePort, "targetKind": kind, "targetName": targetName,
 	})
@@ -279,7 +279,7 @@ func (p *PortForwards) RegisterPortForward(ctx context.Context, principal domain
 func (s *PortForwards) registerAgentPortForward(ctx context.Context, client PortForwardAgent, clusterID, userID string, input domainresource.PortForwardRegisterInput) (domainresource.PortForwardSessionView, error) {
 	view, err := client.RegisterPortForward(ctx, input)
 	if err != nil {
-		return domainresource.PortForwardSessionView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		return domainresource.PortForwardSessionView{}, wrapAgentResourceError(err)
 	}
 	if view.ClusterID == "" {
 		view.ClusterID = clusterID
@@ -357,7 +357,7 @@ func (p *PortForwards) StopPortForward(ctx context.Context, principal domainiden
 			stopPortForwardSession(session)
 		}
 		if err := client.StopPortForward(ctx, sessionID); err != nil {
-			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			return wrapAgentResourceError(err)
 		}
 		if s.repository != nil {
 			if err := s.repository.Delete(ctx, sessionID); err != nil {

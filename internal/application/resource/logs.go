@@ -51,10 +51,7 @@ func (agentLogRoute) Source() string { return "agent" }
 func (r agentLogRoute) AuditClusterID() string { return r.clusterID }
 
 func (agentLogRoute) RuntimeError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	return wrapAgentResourceError(err)
 }
 
 type directLogRoute struct {

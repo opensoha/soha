@@ -3,8 +3,10 @@ package systemintegration
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,6 +21,7 @@ import (
 	domain "github.com/opensoha/soha/internal/domain/systemintegration"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
+	"github.com/opensoha/soha/internal/platform/netguard"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/requestctx"
@@ -47,6 +50,15 @@ type SourceAdapterFactory interface {
 	Build(domain.Integration, map[string]string) (SourceAdapter, error)
 }
 
+type ConnectionTester interface {
+	TestConnection(context.Context) error
+}
+
+type ConnectionTesterFactory interface {
+	Build(domain.Integration, map[string]string) (ConnectionTester, error)
+	Capabilities() []string
+}
+
 type Service struct {
 	repo        domain.Repository
 	permissions *appaccess.PermissionResolver
@@ -54,13 +66,14 @@ type Service struct {
 	operations  OperationRecorder
 	keys        keyring.Ring
 	adapters    map[string]SourceAdapterFactory
+	testers     map[string]ConnectionTesterFactory
 	oauth       map[string]OAuthProvider
 	now         func() time.Time
 	logger      *zap.Logger
 }
 
 func New(repo domain.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) *Service {
-	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations, keys: keys, adapters: map[string]SourceAdapterFactory{}, oauth: map[string]OAuthProvider{}, now: time.Now}
+	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations, keys: keys, adapters: map[string]SourceAdapterFactory{}, testers: map[string]ConnectionTesterFactory{}, oauth: map[string]OAuthProvider{}, now: time.Now}
 }
 
 func (s *Service) SetInstrumentation(logger *zap.Logger) { s.logger = logger }
@@ -69,6 +82,13 @@ func (s *Service) RegisterSourceAdapter(providerType string, factory SourceAdapt
 	providerType = strings.ToLower(strings.TrimSpace(providerType))
 	if providerType != "" && factory != nil {
 		s.adapters[providerType] = factory
+	}
+}
+
+func (s *Service) RegisterConnectionTester(category, providerType string, factory ConnectionTesterFactory) {
+	key := connectionTesterKey(category, providerType)
+	if key != "/" && factory != nil {
+		s.testers[key] = factory
 	}
 }
 
@@ -160,14 +180,14 @@ func (s *Service) Test(ctx context.Context, principal domainidentity.Principal, 
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSettingsSystemIntegrationsManage, "test")); err != nil {
 		return sohaapi.SystemIntegrationTestResult{}, err
 	}
-	item, adapter, err := s.sourceAdapter(ctx, strings.TrimSpace(id), false)
+	item, adapter, capabilities, err := s.connectionTester(ctx, strings.TrimSpace(id))
 	if err != nil {
 		return sohaapi.SystemIntegrationTestResult{}, err
 	}
 	started := s.now().UTC()
 	err = adapter.TestConnection(ctx)
 	checkedAt := s.now().UTC()
-	result := sohaapi.SystemIntegrationTestResult{IntegrationID: item.ID, CheckedAt: checkedAt, LatencyMs: max(0, checkedAt.Sub(started).Milliseconds()), Capabilities: sourceCapabilities()}
+	result := sohaapi.SystemIntegrationTestResult{IntegrationID: item.ID, CheckedAt: checkedAt, LatencyMs: max(0, checkedAt.Sub(started).Milliseconds()), Capabilities: capabilities}
 	if err != nil {
 		result.Status = sohaapi.SystemIntegrationTestStatusFailed
 		result.Message = "connection test failed"
@@ -177,6 +197,62 @@ func (s *Service) Test(ctx context.Context, principal domainidentity.Principal, 
 	result.Status = sohaapi.SystemIntegrationTestStatusSucceeded
 	_ = s.repo.UpdateHealth(ctx, item.ID, domain.HealthHealthy, "", checkedAt)
 	return result, nil
+}
+
+func (s *Service) connectionTester(ctx context.Context, id string) (domain.Integration, ConnectionTester, []string, error) {
+	item, err := s.repo.Get(ctx, id)
+	if err != nil {
+		return domain.Integration{}, nil, nil, err
+	}
+	if factory := s.testers[connectionTesterKey(item.Category, item.ProviderType)]; factory != nil {
+		credentials, err := s.decryptCredentials(ctx, item.ID)
+		if err != nil {
+			return domain.Integration{}, nil, nil, err
+		}
+		tester, err := factory.Build(item, credentials)
+		return item, tester, append([]string(nil), factory.Capabilities()...), err
+	}
+	if item.Category == domain.CategorySourceControl {
+		item, adapter, err := s.sourceAdapter(ctx, id, false)
+		return item, adapter, sourceCapabilities(), err
+	}
+	return domain.Integration{}, nil, nil, fmt.Errorf("%w: integration provider is unsupported", apperrors.ErrUnsupportedOperation)
+}
+
+func connectionTesterKey(category, providerType string) string {
+	return strings.ToLower(strings.TrimSpace(category)) + "/" + strings.ToLower(strings.TrimSpace(providerType))
+}
+
+// ResolveStorageConnection is the internal execution boundary for the active
+// software object-store connection. Plaintext credentials must not be persisted.
+func (s *Service) ResolveStorageConnection(ctx context.Context, id string, requireEnabled bool) (domain.Integration, map[string]string, error) {
+	id = strings.TrimSpace(id)
+	var item domain.Integration
+	if id == "" {
+		enabled := true
+		items, err := s.repo.List(ctx, domain.Filter{Category: domain.CategoryStorage, ProviderType: domain.ProviderS3, Enabled: &enabled})
+		if err != nil {
+			return domain.Integration{}, nil, err
+		}
+		if len(items) == 0 {
+			return domain.Integration{}, nil, fmt.Errorf("%w: no enabled software object storage integration is available", apperrors.ErrServiceUnavailable)
+		}
+		if len(items) > 1 {
+			return domain.Integration{}, nil, fmt.Errorf("%w: storageIntegrationId is required when multiple object storage integrations are enabled", apperrors.ErrInvalidArgument)
+		}
+		item = items[0]
+	} else {
+		var err error
+		item, err = s.repo.Get(ctx, id)
+		if err != nil {
+			return domain.Integration{}, nil, err
+		}
+	}
+	if item.Category != domain.CategoryStorage || item.ProviderType != domain.ProviderS3 || requireEnabled && !item.Enabled {
+		return domain.Integration{}, nil, fmt.Errorf("%w: software object storage integration is unavailable", apperrors.ErrServiceUnavailable)
+	}
+	credentials, err := s.decryptCredentials(ctx, item.ID)
+	return item, credentials, err
 }
 
 func (s *Service) normalizeCreate(request sohaapi.SystemIntegrationCreateRequest, actor string) (domain.Integration, map[string]string, error) {
@@ -220,6 +296,9 @@ func (s *Service) normalizeUpdate(current domain.Integration, input domain.Updat
 		configuration, err := normalizeConfiguration(*input.Configuration)
 		if err != nil {
 			return domain.Integration{}, nil, nil, err
+		}
+		if current.Category == domain.CategoryStorage && !slices.Equal(current.Configuration, configuration) {
+			return domain.Integration{}, nil, nil, fmt.Errorf("%w: create a new storage integration to change endpoint or bucket", apperrors.ErrConflict)
 		}
 		item.Configuration = configuration
 	}
@@ -414,6 +493,12 @@ func normalizeKeys(keys []string) ([]string, error) {
 }
 
 func validateProviderConfiguration(category, providerType string, enabled bool, fields []sohaapi.SystemIntegrationConfigurationField, credentials map[string]struct{}) error {
+	if category == domain.CategoryStorage {
+		if providerType != domain.ProviderS3 {
+			return fmt.Errorf("%w: storage provider must be s3", apperrors.ErrInvalidArgument)
+		}
+		return validateS3StorageConfiguration(enabled, fields, credentials)
+	}
 	if category != domain.CategorySourceControl || providerType != domain.ProviderGitLab {
 		return nil
 	}
@@ -430,6 +515,92 @@ func validateProviderConfiguration(category, providerType string, enabled bool, 
 		}
 	}
 	return validateGitLabAuthentication(config, enabled, credentials)
+}
+
+func validateS3StorageConfiguration(enabled bool, fields []sohaapi.SystemIntegrationConfigurationField, credentials map[string]struct{}) error {
+	config := configurationMap(fields)
+	if err := validateS3ConfigurationKeys(config); err != nil {
+		return err
+	}
+	insecure, err := parseOptionalBool(config["insecure"])
+	if err != nil {
+		return fmt.Errorf("%w: s3 insecure must be a boolean", apperrors.ErrInvalidArgument)
+	}
+	allowPrivate, err := parseOptionalBool(config["allow_private"])
+	if err != nil {
+		return fmt.Errorf("%w: s3 allow_private must be a boolean", apperrors.ErrInvalidArgument)
+	}
+	if err := validateS3Endpoint(config["endpoint"], insecure, allowPrivate); err != nil {
+		return err
+	}
+	if err := validateS3Location(config); err != nil {
+		return err
+	}
+	if _, err := parseOptionalBool(config["path_style"]); err != nil {
+		return fmt.Errorf("%w: s3 path_style must be a boolean", apperrors.ErrInvalidArgument)
+	}
+	if prefix := strings.Trim(config["prefix"], "/"); strings.Contains(prefix, "..") || len(prefix) > 512 {
+		return fmt.Errorf("%w: invalid s3 object prefix", apperrors.ErrInvalidArgument)
+	}
+	if enabled {
+		return validateS3Credentials(credentials)
+	}
+	return nil
+}
+
+func validateS3ConfigurationKeys(config map[string]string) error {
+	allowed := map[string]bool{"endpoint": true, "bucket": true, "region": true, "path_style": true, "insecure": true, "allow_private": true, "prefix": true}
+	for key := range config {
+		if !allowed[key] {
+			return fmt.Errorf("%w: unsupported s3 storage configuration key %s", apperrors.ErrInvalidArgument, key)
+		}
+	}
+	return nil
+}
+
+func validateS3Endpoint(value string, insecure, allowPrivate bool) error {
+	endpoint := strings.TrimRight(value, "/")
+	if endpoint == "" {
+		return nil
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+		return fmt.Errorf("%w: s3 endpoint must be an HTTP(S) base URL", apperrors.ErrInvalidArgument)
+	}
+	if parsed.Scheme == "http" && !insecure {
+		return fmt.Errorf("%w: s3 HTTP endpoint requires insecure=true", apperrors.ErrInvalidArgument)
+	}
+	if ip := net.ParseIP(parsed.Hostname()); ip != nil && netguard.BlockedOutboundIP(ip) && !allowPrivate {
+		return fmt.Errorf("%w: private s3 endpoint requires allow_private=true", apperrors.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func validateS3Location(config map[string]string) error {
+	if bucket := strings.TrimSpace(config["bucket"]); bucket == "" || len(bucket) > 255 {
+		return fmt.Errorf("%w: s3 bucket is required", apperrors.ErrInvalidArgument)
+	}
+	if region := strings.TrimSpace(config["region"]); region == "" || len(region) > 128 {
+		return fmt.Errorf("%w: s3 region is required", apperrors.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func validateS3Credentials(credentials map[string]struct{}) error {
+	for _, key := range []string{"access_key_id", "secret_access_key"} {
+		if _, ok := credentials[key]; !ok {
+			return fmt.Errorf("%w: s3 %s credential is required when enabled", apperrors.ErrInvalidArgument, key)
+		}
+	}
+	return nil
+}
+
+func parseOptionalBool(value string) (bool, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return false, nil
+	}
+	return strconv.ParseBool(value)
 }
 
 func validateGitLabAuthentication(config map[string]string, enabled bool, credentials map[string]struct{}) error {
@@ -486,7 +657,7 @@ func validKey(value string) bool {
 
 func validCategory(value string) bool {
 	switch value {
-	case "identity", "project_management", "source_control", "configuration", "ci_cd", "code_quality", "api_gateway", "monitoring", "messaging", "ai", "cloud", "other":
+	case "identity", "project_management", "source_control", "configuration", "ci_cd", "code_quality", "api_gateway", "monitoring", "messaging", "ai", "cloud", "storage", "other":
 		return true
 	default:
 		return false

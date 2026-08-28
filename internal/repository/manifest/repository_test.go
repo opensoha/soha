@@ -20,17 +20,17 @@ import (
 func TestListAppliesAuthorizedApplicationsAndPagination(t *testing.T) {
 	repository, mock := newManifestRepository(t)
 	now := time.Now().UTC()
-	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM manifest_packages WHERE archived_at IS NULL AND application_id IN \(\$1,\$2\)`).
-		WithArgs("app-1", "app-2").
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM manifest_packages WHERE archived_at IS NULL AND application_id IN \(\$1,\$2\) AND service_id = \$3`).
+		WithArgs("app-1", "app-2", "svc-api").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(3))
-	mock.ExpectQuery(`SELECT id, name, description, application_id, business_line_id, renderer, status, current_revision, files, bindings, created_by, updated_by, created_at, updated_at FROM manifest_packages WHERE archived_at IS NULL AND application_id IN \(\$1,\$2\) ORDER BY updated_at DESC LIMIT \$3 OFFSET \$4`).
-		WithArgs("app-1", "app-2", 2, 2).
+	mock.ExpectQuery(`SELECT id, name, description, application_id, COALESCE\(service_id, ''\), business_line_id, renderer, status, current_revision, files, bindings, created_by, updated_by, created_at, updated_at FROM manifest_packages WHERE archived_at IS NULL AND application_id IN \(\$1,\$2\) AND service_id = \$3 ORDER BY updated_at DESC LIMIT \$4 OFFSET \$5`).
+		WithArgs("app-1", "app-2", "svc-api", 2, 2).
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "name", "description", "application_id", "business_line_id", "renderer", "status", "current_revision", "files", "bindings", "created_by", "updated_by", "created_at", "updated_at",
-		}).AddRow("manifest-3", "Ingress", "", "app-2", "line-1", domainmanifest.RendererRaw, domainmanifest.StatusDraft, 0, `[]`, `[]`, "admin", "admin", now, now))
+			"id", "name", "description", "application_id", "service_id", "business_line_id", "renderer", "status", "current_revision", "files", "bindings", "created_by", "updated_by", "created_at", "updated_at",
+		}).AddRow("manifest-3", "Ingress", "", "app-2", "", "line-1", domainmanifest.RendererRaw, domainmanifest.StatusDraft, 0, `[]`, `[]`, "admin", "admin", now, now))
 
 	page, err := repository.List(context.Background(), domainmanifest.Filter{
-		ApplicationIDs: []string{"app-1", "app-2"}, Page: 2, PageSize: 2,
+		ApplicationIDs: []string{"app-1", "app-2"}, ServiceID: "svc-api", Page: 2, PageSize: 2,
 	})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
@@ -179,7 +179,7 @@ func TestCreatePackageMaintainsRelationalBindings(t *testing.T) {
 	repository, mock := newManifestRepository(t)
 	now := time.Now().UTC()
 	item := domainmanifest.Package{
-		ID: "manifest-1", Name: "Payments", ApplicationID: "payments", Renderer: domainmanifest.RendererRaw,
+		ID: "manifest-1", Name: "Payments", ApplicationID: "payments", ServiceID: "payments-api", Renderer: domainmanifest.RendererRaw,
 		Status: domainmanifest.StatusDraft, Files: []domainmanifest.File{},
 		Bindings: []domainmanifest.Binding{{
 			ID: "binding-1", ApplicationEnvironmentID: "payments-dev", EnvironmentKey: "dev",
@@ -192,7 +192,10 @@ func TestCreatePackageMaintainsRelationalBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 	mock.ExpectBegin()
-	mock.ExpectExec(`INSERT INTO manifest_packages`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO manifest_packages .*service_id.*NULLIF\(\$5, ''\)`).
+		WithArgs(item.ID, item.Name, item.Description, item.ApplicationID, item.ServiceID, item.BusinessLineID, item.Renderer,
+			item.Status, item.CurrentRevision, files, bindings, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`INSERT INTO manifest_bindings`).
 		WithArgs("binding-1", "manifest-1", "payments-dev", "dev", "dev-1", "payments", `{"image":"v2"}`, now, now).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -203,20 +206,38 @@ func TestCreatePackageMaintainsRelationalBindings(t *testing.T) {
 	mock.ExpectCommit()
 	mock.ExpectQuery(`SELECT id, name, description.*FROM manifest_packages`).WithArgs("manifest-1").
 		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "name", "description", "application_id", "business_line_id", "renderer", "status",
+			"id", "name", "description", "application_id", "service_id", "business_line_id", "renderer", "status",
 			"current_revision", "files", "bindings", "created_by", "updated_by", "created_at", "updated_at",
-		}).AddRow(item.ID, item.Name, item.Description, item.ApplicationID, item.BusinessLineID, item.Renderer,
+		}).AddRow(item.ID, item.Name, item.Description, item.ApplicationID, item.ServiceID, item.BusinessLineID, item.Renderer,
 			item.Status, item.CurrentRevision, files, bindings, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt))
 
 	created, err := repository.Create(context.Background(), item)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	if len(created.Bindings) != 1 || created.Bindings[0].ID != "binding-1" {
+	if created.ServiceID != item.ServiceID || len(created.Bindings) != 1 || created.Bindings[0].ID != "binding-1" {
 		t.Fatalf("Create() bindings = %#v, want relationally projected binding", created.Bindings)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet SQL expectations: %v", err)
+	}
+}
+
+func TestManifestPackageServiceScopeMigration(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/postgres/0057_manifest_package_service_scope.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, required := range []string{
+		"ADD COLUMN IF NOT EXISTS service_id",
+		"manifest_packages_service_id_fkey",
+		"REFERENCES public.application_services(id) ON DELETE SET NULL",
+		"idx_manifest_packages_service",
+	} {
+		if !strings.Contains(text, required) {
+			t.Fatalf("migration missing %q", required)
+		}
 	}
 }
 
