@@ -779,9 +779,13 @@ func defaultEmailFieldForProviderType(providerType string) string {
 
 func (s *Service) brandingSettings(ctx context.Context) (domainsettings.BrandingSettings, error) {
 	item := domainsettings.BrandingSettings{
-		AppTitle:     "Soha",
-		SidebarTitle: "Soha",
-		Slogan:       "Soha 是一种能力！",
+		AppTitle:         "Soha",
+		SidebarTitle:     "Soha",
+		Slogan:           "Soha 是一种能力！",
+		LoginLogoURL:     "/logo.svg",
+		ExpandedLogoURL:  "/logo.svg",
+		CollapsedLogoURL: "/logo.svg",
+		FaviconURL:       "/logo.svg",
 	}
 	if s.store == nil {
 		return item, nil
@@ -799,16 +803,16 @@ func (s *Service) brandingSettings(ctx context.Context) (domainsettings.Branding
 	if value, ok := raw["slogan"].(string); ok && strings.TrimSpace(value) != "" {
 		item.Slogan = strings.TrimSpace(value)
 	}
-	if value, ok := raw["loginLogoUrl"].(string); ok {
+	if value, ok := raw["loginLogoUrl"].(string); ok && strings.TrimSpace(value) != "" {
 		item.LoginLogoURL = strings.TrimSpace(value)
 	}
-	if value, ok := raw["expandedLogoUrl"].(string); ok {
+	if value, ok := raw["expandedLogoUrl"].(string); ok && strings.TrimSpace(value) != "" {
 		item.ExpandedLogoURL = strings.TrimSpace(value)
 	}
-	if value, ok := raw["collapsedLogoUrl"].(string); ok {
+	if value, ok := raw["collapsedLogoUrl"].(string); ok && strings.TrimSpace(value) != "" {
 		item.CollapsedLogoURL = strings.TrimSpace(value)
 	}
-	if value, ok := raw["faviconUrl"].(string); ok {
+	if value, ok := raw["faviconUrl"].(string); ok && strings.TrimSpace(value) != "" {
 		item.FaviconURL = strings.TrimSpace(value)
 	}
 	return item, nil

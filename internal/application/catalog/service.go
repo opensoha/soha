@@ -94,7 +94,22 @@ func (s *Service) ListApplicationEnvironments(ctx context.Context, principal dom
 	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListApplicationEnvironments(ctx)
+	items, err := s.repo.ListApplicationEnvironments(ctx)
+	if err != nil {
+		return nil, normalizeRepoError(err)
+	}
+	allowed := make([]domaincatalog.ApplicationEnvironment, 0, len(items))
+	for _, item := range items {
+		err := s.authorizeApplicationEnvironment(ctx, principal, domainaccess.ActionView, item)
+		if err == nil {
+			allowed = append(allowed, item)
+			continue
+		}
+		if !errors.Is(err, apperrors.ErrAccessDenied) {
+			return nil, err
+		}
+	}
+	return allowed, nil
 }
 
 func (s *Service) GetApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, id string) (domaincatalog.ApplicationEnvironment, error) {
@@ -121,6 +136,9 @@ func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal do
 	if err := s.authorizeApplicationEnvironmentInput(ctx, principal, domainaccess.ActionCreate, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
+	if err := s.validateApplicationEnvironmentWorkflow(ctx, input); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
 	item, err := s.repo.CreateApplicationEnvironment(ctx, input)
 	if err == nil {
 		s.recordWriteLogs(ctx, principal, "delivery.application_environment.create", "ApplicationEnvironment", item.ID, item.ID, "created application environment binding")
@@ -143,6 +161,9 @@ func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal do
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	if err := s.authorizeApplicationEnvironmentInput(ctx, principal, domainaccess.ActionUpdate, input); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := s.validateApplicationEnvironmentWorkflow(ctx, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	item, err := s.repo.UpdateApplicationEnvironment(ctx, id, input)
@@ -236,11 +257,24 @@ func (s *Service) ListWorkflowTemplates(ctx context.Context, principal domainide
 	if err := s.authorize(ctx, principal, appaccess.PermDeliveryWorkflowTemplatesView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListWorkflowTemplates(ctx)
+	items, err := s.repo.ListWorkflowTemplates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	visible := make([]domaincatalog.WorkflowTemplate, 0, len(items))
+	for _, item := range items {
+		if !isApplicationWorkflowCategory(item.Category) {
+			visible = append(visible, item)
+		}
+	}
+	return visible, nil
 }
 
 func (s *Service) GetWorkflowTemplateUsage(ctx context.Context, principal domainidentity.Principal, id string) (domaincatalog.TemplateUsageSummary, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermDeliveryWorkflowTemplatesView); err != nil {
+		return domaincatalog.TemplateUsageSummary{}, err
+	}
+	if err := s.rejectApplicationWorkflowTemplate(ctx, id); err != nil {
 		return domaincatalog.TemplateUsageSummary{}, err
 	}
 	return s.workflowTemplateUsage(ctx, principal, strings.TrimSpace(id))
@@ -251,6 +285,9 @@ func (s *Service) CreateWorkflowTemplate(ctx context.Context, principal domainid
 		return domaincatalog.WorkflowTemplate{}, err
 	}
 	input = normalizeWorkflowTemplateInput(input)
+	if isApplicationWorkflowCategory(input.Category) {
+		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: application workflows must be saved through their application environment", apperrors.ErrInvalidArgument)
+	}
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
@@ -268,7 +305,13 @@ func (s *Service) UpdateWorkflowTemplate(ctx context.Context, principal domainid
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryWorkflowTemplatesManage, "update")); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
 	}
+	if err := s.rejectApplicationWorkflowTemplate(ctx, id); err != nil {
+		return domaincatalog.WorkflowTemplate{}, err
+	}
 	input = normalizeWorkflowTemplateInput(input)
+	if isApplicationWorkflowCategory(input.Category) {
+		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: application workflows must be saved through their application environment", apperrors.ErrInvalidArgument)
+	}
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
@@ -287,10 +330,85 @@ func (s *Service) DeleteWorkflowTemplate(ctx context.Context, principal domainid
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryWorkflowTemplatesManage, "delete")); err != nil {
 		return err
 	}
+	if err := s.rejectApplicationWorkflowTemplate(ctx, id); err != nil {
+		return err
+	}
 	if err := normalizeRepoError(s.repo.DeleteWorkflowTemplate(ctx, id)); err != nil {
 		return err
 	}
 	s.recordWriteLogs(ctx, principal, "delivery.workflow_template.delete", "WorkflowTemplate", id, id, "deleted workflow template")
+	return nil
+}
+
+func (s *Service) SaveApplicationWorkflow(ctx context.Context, principal domainidentity.Principal, applicationID, bindingID string, input domaincatalog.ApplicationWorkflowInput) (domaincatalog.ApplicationEnvironment, error) {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update")); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	applicationID = strings.TrimSpace(applicationID)
+	bindingID = strings.TrimSpace(bindingID)
+	if applicationID == "" || bindingID == "" || strings.TrimSpace(input.Name) == "" {
+		return domaincatalog.ApplicationEnvironment{}, fmt.Errorf("%w: applicationID, applicationEnvironmentID, and name are required", apperrors.ErrInvalidArgument)
+	}
+	current, err := s.repo.GetApplicationEnvironment(ctx, bindingID)
+	if err != nil {
+		return domaincatalog.ApplicationEnvironment{}, normalizeRepoError(err)
+	}
+	if current.ApplicationID != applicationID {
+		return domaincatalog.ApplicationEnvironment{}, fmt.Errorf("%w: application environment not found", apperrors.ErrNotFound)
+	}
+	if err := s.authorizeApplicationEnvironment(ctx, principal, domainaccess.ActionUpdate, current); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateWorkflowTemplateDefinition(input.Definition); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	template, err := s.repo.SaveApplicationWorkflow(ctx, applicationID, bindingID, domaincatalog.WorkflowTemplateInput{
+		Key:         "app-" + bindingID,
+		Name:        strings.TrimSpace(input.Name),
+		Description: strings.TrimSpace(input.Description),
+		Category:    "application:" + applicationID,
+		Definition:  input.Definition,
+		Enabled:     input.Enabled,
+	})
+	if err != nil {
+		return domaincatalog.ApplicationEnvironment{}, normalizeRepoError(err)
+	}
+	current.WorkflowTemplateID = template.ID
+	current.WorkflowTemplate = &template
+	if !template.UpdatedAt.IsZero() {
+		current.UpdatedAt = template.UpdatedAt
+	}
+	s.recordWriteLogs(ctx, principal, "delivery.application_workflow.save", "ApplicationEnvironment", current.ID, current.ID, "saved application workflow")
+	return current, nil
+}
+
+func isApplicationWorkflowCategory(category string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(category)), "application:")
+}
+
+func (s *Service) rejectApplicationWorkflowTemplate(ctx context.Context, id string) error {
+	item, err := s.repo.GetWorkflowTemplate(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return normalizeRepoError(err)
+	}
+	if isApplicationWorkflowCategory(item.Category) {
+		return fmt.Errorf("%w: workflow template not found", apperrors.ErrNotFound)
+	}
+	return nil
+}
+
+func (s *Service) validateApplicationEnvironmentWorkflow(ctx context.Context, input domaincatalog.ApplicationEnvironmentInput) error {
+	templateID := strings.TrimSpace(input.WorkflowTemplateID)
+	if templateID == "" {
+		return nil
+	}
+	item, err := s.repo.GetWorkflowTemplate(ctx, templateID)
+	if err != nil {
+		return normalizeRepoError(err)
+	}
+	if isApplicationWorkflowCategory(item.Category) && strings.TrimSpace(item.Category) != "application:"+strings.TrimSpace(input.ApplicationID) {
+		return fmt.Errorf("%w: workflow template belongs to another application", apperrors.ErrAccessDenied)
+	}
 	return nil
 }
 

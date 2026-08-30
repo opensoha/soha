@@ -205,7 +205,7 @@ func TestSeedUserUsesConfiguredUserID(t *testing.T) {
 	}
 
 	mock.ExpectExec(`(?s)INSERT INTO users .*ON CONFLICT \(id\) DO UPDATE SET`).
-		WithArgs(cfg.Auth.DevPrincipal.UserID, "opensoha", "opensoha@soha.local", "OpenSoha", `[]`, `{}`, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WithArgs(cfg.Auth.DevPrincipal.UserID, "opensoha", "opensoha@soha.local", "OpenSoha", `[]`, `{"avatarUrl":"/logo.svg"}`, sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if err := seedUser(context.Background(), db, cfg); err != nil {

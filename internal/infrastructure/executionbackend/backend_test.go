@@ -73,6 +73,72 @@ func TestClustersCreateExecutionJob(t *testing.T) {
 	}
 }
 
+func TestBuildExecutionJobChecksOutMultipleRepositories(t *testing.T) {
+	job, err := buildExecutionJob(appexecution.ExecutionJobRequest{
+		TaskID:    "task:multi-repo",
+		TaskKind:  "build",
+		Namespace: "jobs",
+		Commands:  []string{"make build"},
+		Workspace: map[string]any{"checkouts": []any{
+			map[string]any{"repositoryURL": "https://example.invalid/api.git", "refType": "commit", "refName": "abc123"},
+			map[string]any{"repositoryURL": "https://example.invalid/lib.git", "checkoutPath": "shared/lib", "refType": "tag", "refName": "v1.0.0", "submodules": true},
+		}},
+		DefaultImage:    "alpine:3.20",
+		DefaultGitImage: "alpine/git:2.47.0",
+	})
+	if err != nil {
+		t.Fatalf("buildExecutionJob() error = %v", err)
+	}
+	if len(job.Spec.Template.Spec.InitContainers) != 1 {
+		t.Fatalf("init containers = %#v", job.Spec.Template.Spec.InitContainers)
+	}
+	script := job.Spec.Template.Spec.InitContainers[0].Command[2]
+	for _, expected := range []string{
+		"git clone 'https://example.invalid/api.git' '/workspace'",
+		"git checkout 'abc123'",
+		"git clone 'https://example.invalid/lib.git' '/workspace/shared/lib'",
+		"git checkout 'tags/v1.0.0'",
+		"git submodule update --init --recursive",
+	} {
+		if !strings.Contains(script, expected) {
+			t.Fatalf("checkout script = %q, missing %q", script, expected)
+		}
+	}
+}
+
+func TestBuildExecutionJobRejectsCheckoutPathTraversal(t *testing.T) {
+	for _, checkoutPath := range []string{"../escape", "services/../escape"} {
+		_, err := buildExecutionJob(appexecution.ExecutionJobRequest{
+			TaskID:    "task:invalid-path",
+			TaskKind:  "build",
+			Namespace: "jobs",
+			Commands:  []string{"true"},
+			Workspace: map[string]any{"checkout": map[string]any{
+				"repositoryURL": "https://example.invalid/api.git",
+				"checkoutPath":  checkoutPath,
+			}},
+		})
+		if !errors.Is(err, apperrors.ErrInvalidArgument) {
+			t.Fatalf("buildExecutionJob(%q) error = %v, want ErrInvalidArgument", checkoutPath, err)
+		}
+	}
+}
+
+func TestBuildExecutionJobRejectsCommandDirPathTraversal(t *testing.T) {
+	for _, commandDir := range []string{"../escape", "services/../../escape", `services\..\..\escape`} {
+		_, err := buildExecutionJob(appexecution.ExecutionJobRequest{
+			TaskID:    "task:invalid-command-dir",
+			TaskKind:  "build",
+			Namespace: "jobs",
+			Commands:  []string{"true"},
+			Runtime:   map[string]any{"commandDir": commandDir},
+		})
+		if !errors.Is(err, apperrors.ErrInvalidArgument) {
+			t.Fatalf("buildExecutionJob(%q) error = %v, want ErrInvalidArgument", commandDir, err)
+		}
+	}
+}
+
 func TestClustersInspectExecutionJob(t *testing.T) {
 	client := fake.NewSimpleClientset(&batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: "job-a", Namespace: "jobs"},

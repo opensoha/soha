@@ -17,18 +17,25 @@ type Record struct {
 }
 
 type TriggerInput struct {
-	ApplicationID            string         `json:"applicationId"`
-	ServiceID                string         `json:"serviceId,omitempty"`
-	RepositoryID             string         `json:"repositoryId,omitempty"`
-	ApplicationEnvironmentID string         `json:"applicationEnvironmentId,omitempty"`
-	BuildSourceID            string         `json:"buildSourceId,omitempty"`
-	RefType                  string         `json:"refType"`
-	RefName                  string         `json:"refName"`
-	ImageTag                 string         `json:"imageTag"`
-	BuildArgs                map[string]any `json:"buildArgs,omitempty"`
-	Variables                map[string]any `json:"variables,omitempty"`
-	TriggeredByWorkflowRunID string         `json:"triggeredByWorkflowRunId,omitempty"`
-	ResolvedCommit           string         `json:"resolvedCommit,omitempty"`
+	ApplicationID            string          `json:"applicationId"`
+	ServiceID                string          `json:"serviceId,omitempty"`
+	RepositoryID             string          `json:"repositoryId,omitempty"`
+	ApplicationEnvironmentID string          `json:"applicationEnvironmentId,omitempty"`
+	BuildSourceID            string          `json:"buildSourceId,omitempty"`
+	RefType                  string          `json:"refType"`
+	RefName                  string          `json:"refName"`
+	RepositoryRefs           []RepositoryRef `json:"repositoryRefs,omitempty"`
+	ImageTag                 string          `json:"imageTag"`
+	BuildArgs                map[string]any  `json:"buildArgs,omitempty"`
+	Variables                map[string]any  `json:"variables,omitempty"`
+	TriggeredByWorkflowRunID string          `json:"triggeredByWorkflowRunId,omitempty"`
+	ResolvedCommit           string          `json:"resolvedCommit,omitempty"`
+}
+
+type RepositoryRef struct {
+	RepositoryID string `json:"repositoryId"`
+	RefType      string `json:"refType"`
+	RefName      string `json:"refName"`
 }
 
 type Filter struct {

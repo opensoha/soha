@@ -11,10 +11,12 @@ import (
 )
 
 const (
-	runtimeHealthHealthy     = "healthy"
-	runtimeHealthProgressing = "progressing"
-	runtimeHealthUnhealthy   = "unhealthy"
-	runtimeHealthUnknown     = "unknown"
+	runtimeEnvironmentAvailable   = "available"
+	runtimeEnvironmentUnavailable = "unavailable"
+	runtimeHealthHealthy          = "healthy"
+	runtimeHealthProgressing      = "progressing"
+	runtimeHealthUnhealthy        = "unhealthy"
+	runtimeHealthUnknown          = "unknown"
 )
 
 func (s *Service) enrichApplicationRuntimeDetail(
@@ -50,6 +52,9 @@ func applicationRuntimeSummaryFor(environments []domaindelivery.ApplicationRunti
 		HealthStatus:     runtimeHealthUnknown,
 	}
 	for environmentIndex := range environments {
+		if environments[environmentIndex].Status == runtimeEnvironmentUnavailable {
+			summary.HealthStatus = runtimeHealthUnhealthy
+		}
 		for workloadIndex := range environments[environmentIndex].Workloads {
 			workload := &environments[environmentIndex].Workloads[workloadIndex]
 			service := runtimeServiceForWorkload(*workload, services)
@@ -70,7 +75,7 @@ func applicationRuntimeSummaryFor(environments []domaindelivery.ApplicationRunti
 		}
 	}
 	switch {
-	case summary.UnhealthyWorkloads > 0:
+	case summary.HealthStatus == runtimeHealthUnhealthy || summary.UnhealthyWorkloads > 0:
 		summary.HealthStatus = runtimeHealthUnhealthy
 	case summary.ProgressingWorkloads > 0:
 		summary.HealthStatus = runtimeHealthProgressing

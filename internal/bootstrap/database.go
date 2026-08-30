@@ -372,6 +372,10 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 			username = EXCLUDED.username,
 			email = EXCLUDED.email,
 			display_name = EXCLUDED.display_name,
+			preferences = CASE
+				WHEN users.preferences::jsonb = '{}'::jsonb THEN EXCLUDED.preferences
+				ELSE users.preferences
+			END,
 			updated_at = EXCLUDED.updated_at
 	`,
 		userID,
@@ -379,7 +383,7 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 		email,
 		cfg.Auth.DevPrincipal.Name,
 		`[]`,
-		`{}`,
+		`{"avatarUrl":"/logo.svg"}`,
 		now,
 		now,
 	).Error; err != nil {

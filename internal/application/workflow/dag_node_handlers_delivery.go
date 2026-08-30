@@ -242,6 +242,7 @@ func (h buildDAGNodeHandler) execute(ctx context.Context, input dagNodeExecution
 		BuildSourceID:            firstNonEmpty(workflowInput.BuildSourceID, input.binding.BuildPolicy.SourceID),
 		RefType:                  firstNonEmpty(workflowInput.RefType, input.binding.BuildPolicy.RefType, "branch"),
 		RefName:                  firstNonEmpty(workflowInput.RefName, input.binding.BuildPolicy.RefValue, input.app.DefaultBranch, "main"),
+		RepositoryRefs:           workflowInput.RepositoryRefs,
 		ImageTag:                 firstNonEmpty(workflowInput.ImageTag, input.app.DefaultTag),
 		BuildArgs:                mergeDAGMaps(input.binding.BuildPolicy.BuildArgs, workflowInput.BuildArgs),
 		Variables:                mergeDAGMaps(input.binding.BuildPolicy.Variables, workflowInput.Variables),

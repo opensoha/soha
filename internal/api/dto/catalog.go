@@ -21,6 +21,10 @@ type ApplicationEnvironmentRequest struct {
 	ID                 string                  `json:"id"`
 	ApplicationID      string                  `json:"applicationId"`
 	EnvironmentID      string                  `json:"environmentId"`
+	Alias              string                  `json:"alias"`
+	ClusterID          string                  `json:"clusterId"`
+	Namespace          string                  `json:"namespace"`
+	RegistryID         string                  `json:"registryId"`
 	StrategyProfileID  string                  `json:"strategyProfileId"`
 	PromotionPolicyID  string                  `json:"promotionPolicyId"`
 	ArtifactPolicyID   string                  `json:"artifactPolicyId"`
@@ -73,6 +77,13 @@ type WorkflowTemplateRequest struct {
 	Name        string         `json:"name"`
 	Description string         `json:"description"`
 	Category    string         `json:"category"`
+	Definition  map[string]any `json:"definition"`
+	Enabled     bool           `json:"enabled"`
+}
+
+type ApplicationWorkflowRequest struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
 	Definition  map[string]any `json:"definition"`
 	Enabled     bool           `json:"enabled"`
 }

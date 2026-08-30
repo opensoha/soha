@@ -1,19 +1,26 @@
 package dto
 
+type BuildRepositoryRefRequest struct {
+	RepositoryID string `json:"repositoryId"`
+	RefType      string `json:"refType"`
+	RefName      string `json:"refName"`
+}
+
 type ApplicationDeliveryActionRequest struct {
-	Action                   string         `json:"action"`
-	ApplicationEnvironmentID string         `json:"applicationEnvironmentId"`
-	TargetID                 string         `json:"targetId"`
-	TargetIDs                []string       `json:"targetIds"`
-	BuildSourceID            string         `json:"buildSourceId"`
-	RefType                  string         `json:"refType"`
-	RefName                  string         `json:"refName"`
-	ImageTag                 string         `json:"imageTag"`
-	ReleaseName              string         `json:"releaseName"`
-	ContainerName            string         `json:"containerName"`
-	ValuesContent            string         `json:"valuesContent"`
-	Variables                map[string]any `json:"variables"`
-	BuildArgs                map[string]any `json:"buildArgs"`
+	Action                   string                      `json:"action"`
+	ApplicationEnvironmentID string                      `json:"applicationEnvironmentId"`
+	TargetID                 string                      `json:"targetId"`
+	TargetIDs                []string                    `json:"targetIds"`
+	BuildSourceID            string                      `json:"buildSourceId"`
+	RefType                  string                      `json:"refType"`
+	RefName                  string                      `json:"refName"`
+	RepositoryRefs           []BuildRepositoryRefRequest `json:"repositoryRefs"`
+	ImageTag                 string                      `json:"imageTag"`
+	ReleaseName              string                      `json:"releaseName"`
+	ContainerName            string                      `json:"containerName"`
+	ValuesContent            string                      `json:"valuesContent"`
+	Variables                map[string]any              `json:"variables"`
+	BuildArgs                map[string]any              `json:"buildArgs"`
 }
 
 type ExecutionCallbackRequest struct {

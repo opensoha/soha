@@ -166,6 +166,9 @@ func TestResolveBrandingSettingsRemainsAvailableToAuthBootstrap(t *testing.T) {
 	if item.Slogan != "Soha 是一种能力！" {
 		t.Fatalf("slogan = %q, want default slogan", item.Slogan)
 	}
+	if item.LoginLogoURL != "/logo.svg" || item.ExpandedLogoURL != "/logo.svg" || item.CollapsedLogoURL != "/logo.svg" || item.FaviconURL != "/logo.svg" {
+		t.Fatalf("default branding logo URLs = %#v, want /logo.svg", item)
+	}
 }
 
 func TestBrandingSettingsPersistSlogan(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -207,6 +208,14 @@ func (h *DeliveryHandler) TriggerApplicationDeliveryAction(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
+	repositoryRefs := make([]domainbuild.RepositoryRef, 0, len(req.RepositoryRefs))
+	for _, item := range req.RepositoryRefs {
+		repositoryRefs = append(repositoryRefs, domainbuild.RepositoryRef{
+			RepositoryID: item.RepositoryID,
+			RefType:      item.RefType,
+			RefName:      item.RefName,
+		})
+	}
 	item, err := h.applications.TriggerApplicationDeliveryAction(c.Request.Context(), principal, c.Param("applicationID"), domaindelivery.ApplicationDeliveryActionInput{
 		Action:                   domaindelivery.ApplicationDeliveryActionKind(req.Action),
 		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
@@ -215,6 +224,7 @@ func (h *DeliveryHandler) TriggerApplicationDeliveryAction(c *gin.Context) {
 		BuildSourceID:            req.BuildSourceID,
 		RefType:                  req.RefType,
 		RefName:                  req.RefName,
+		RepositoryRefs:           repositoryRefs,
 		ImageTag:                 req.ImageTag,
 		ReleaseName:              req.ReleaseName,
 		ContainerName:            req.ContainerName,

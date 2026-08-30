@@ -19,6 +19,7 @@ type ApplicationEnvironmentService interface {
 	CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
 	UpdateApplicationEnvironment(context.Context, domainidentity.Principal, string, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
 	DeleteApplicationEnvironment(context.Context, domainidentity.Principal, string) error
+	SaveApplicationWorkflow(context.Context, domainidentity.Principal, string, string, domaincatalog.ApplicationWorkflowInput) (domaincatalog.ApplicationEnvironment, error)
 }
 
 type BuildTemplateService interface {
@@ -126,6 +127,31 @@ func (h *CatalogHandler) DeleteApplicationEnvironment(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *CatalogHandler) SaveApplicationWorkflow(c *gin.Context) {
+	var req dto.ApplicationWorkflowRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid application workflow payload")
+		return
+	}
+	item, err := h.environments.SaveApplicationWorkflow(
+		c.Request.Context(),
+		apiMiddleware.PrincipalFromContext(c),
+		c.Param("applicationID"),
+		c.Param("applicationEnvironmentID"),
+		domaincatalog.ApplicationWorkflowInput{
+			Name:        req.Name,
+			Description: req.Description,
+			Definition:  req.Definition,
+			Enabled:     req.Enabled,
+		},
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *CatalogHandler) ListBuildTemplates(c *gin.Context) {
@@ -301,6 +327,10 @@ func mapApplicationEnvironmentInput(req dto.ApplicationEnvironmentRequest) domai
 		ID:                 req.ID,
 		ApplicationID:      req.ApplicationID,
 		EnvironmentID:      req.EnvironmentID,
+		Alias:              req.Alias,
+		ClusterID:          req.ClusterID,
+		Namespace:          req.Namespace,
+		RegistryID:         req.RegistryID,
 		StrategyProfileID:  req.StrategyProfileID,
 		PromotionPolicyID:  req.PromotionPolicyID,
 		ArtifactPolicyID:   req.ArtifactPolicyID,

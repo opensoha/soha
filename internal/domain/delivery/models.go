@@ -491,6 +491,7 @@ type ApplicationDeliveryActionInput struct {
 	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
 	RefType                  string                        `json:"refType,omitempty"`
 	RefName                  string                        `json:"refName,omitempty"`
+	RepositoryRefs           []domainbuild.RepositoryRef   `json:"repositoryRefs,omitempty"`
 	ImageTag                 string                        `json:"imageTag,omitempty"`
 	ReleaseName              string                        `json:"releaseName,omitempty"`
 	ContainerName            string                        `json:"containerName,omitempty"`
@@ -674,6 +675,7 @@ type ApplicationRuntimeEnvironment struct {
 	EnvironmentID            string                         `json:"environmentId"`
 	EnvironmentName          string                         `json:"environmentName,omitempty"`
 	EnvironmentKey           string                         `json:"environmentKey,omitempty"`
+	Status                   string                         `json:"status,omitempty"`
 	ActionKind               string                         `json:"actionKind,omitempty"`
 	RequiresApproval         bool                           `json:"requiresApproval"`
 	ResourceSelector         domaincatalog.ResourceSelector `json:"resourceSelector,omitempty"`

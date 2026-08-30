@@ -23,9 +23,20 @@ import (
 
 type stubCatalogRepository struct {
 	lastWorkflowTemplate    domaincatalog.WorkflowTemplateInput
+	lastWorkflowApplication string
+	lastWorkflowBinding     string
 	lastBuildTemplate       domaincatalog.BuildTemplateInput
 	applicationEnvironments map[string]domaincatalog.ApplicationEnvironment
 	environments            []domaincatalog.Environment
+	workflowTemplates       map[string]domaincatalog.WorkflowTemplate
+}
+
+type errorCatalogAuthorizer struct {
+	err error
+}
+
+func (a errorCatalogAuthorizer) Authorize(context.Context, domainaccess.Request) (domainaccess.Decision, error) {
+	return domainaccess.Decision{}, a.err
 }
 
 func (s *stubCatalogRepository) ListEnvironments(context.Context) ([]domaincatalog.Environment, error) {
@@ -87,11 +98,18 @@ func (s *stubCatalogRepository) DeleteBuildTemplate(context.Context, string) err
 	return nil
 }
 func (s *stubCatalogRepository) ListWorkflowTemplates(context.Context) ([]domaincatalog.WorkflowTemplate, error) {
-	return nil, nil
+	items := make([]domaincatalog.WorkflowTemplate, 0, len(s.workflowTemplates))
+	for _, item := range s.workflowTemplates {
+		items = append(items, item)
+	}
+	return items, nil
 }
 
-func (s *stubCatalogRepository) GetWorkflowTemplate(context.Context, string) (domaincatalog.WorkflowTemplate, error) {
-	return domaincatalog.WorkflowTemplate{}, nil
+func (s *stubCatalogRepository) GetWorkflowTemplate(_ context.Context, id string) (domaincatalog.WorkflowTemplate, error) {
+	if item, ok := s.workflowTemplates[id]; ok {
+		return item, nil
+	}
+	return domaincatalog.WorkflowTemplate{}, apperrors.ErrNotFound
 }
 
 func (s *stubCatalogRepository) CreateWorkflowTemplate(_ context.Context, input domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error) {
@@ -105,6 +123,21 @@ func (s *stubCatalogRepository) UpdateWorkflowTemplate(_ context.Context, _ stri
 }
 
 func (s *stubCatalogRepository) DeleteWorkflowTemplate(context.Context, string) error { return nil }
+
+func (s *stubCatalogRepository) SaveApplicationWorkflow(_ context.Context, applicationID, bindingID string, input domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error) {
+	s.lastWorkflowApplication = applicationID
+	s.lastWorkflowBinding = bindingID
+	s.lastWorkflowTemplate = input
+	return domaincatalog.WorkflowTemplate{
+		ID:          "workflow-1",
+		Key:         input.Key,
+		Name:        input.Name,
+		Description: input.Description,
+		Category:    input.Category,
+		Definition:  input.Definition,
+		Enabled:     input.Enabled,
+	}, nil
+}
 
 type stubCatalogApps struct {
 	items map[string]domainapp.App
@@ -220,6 +253,125 @@ func TestCreateWorkflowTemplateRejectsUnsupportedStepType(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("CreateWorkflowTemplate returned nil error, want unsupported step type error")
+	}
+}
+
+func TestListWorkflowTemplatesHidesApplicationWorkflows(t *testing.T) {
+	repo := &stubCatalogRepository{workflowTemplates: map[string]domaincatalog.WorkflowTemplate{
+		"global":  {ID: "global", Category: "release"},
+		"private": {ID: "private", Category: "application:app-2"},
+	}}
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesView), nil, nil)
+
+	items, err := service.ListWorkflowTemplates(context.Background(), domainidentity.Principal{Roles: []string{"admin"}})
+	if err != nil {
+		t.Fatalf("ListWorkflowTemplates returned error: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "global" {
+		t.Fatalf("items = %#v, want only global template", items)
+	}
+}
+
+func TestCreateWorkflowTemplateRejectsApplicationCategory(t *testing.T) {
+	repo := &stubCatalogRepository{}
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesManage), nil, nil)
+
+	_, err := service.CreateWorkflowTemplate(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, domaincatalog.WorkflowTemplateInput{
+		Key:      "private",
+		Name:     "private",
+		Category: "application:app-2",
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("CreateWorkflowTemplate error = %v, want ErrInvalidArgument", err)
+	}
+	if repo.lastWorkflowTemplate.Key != "" {
+		t.Fatalf("repository received private template: %#v", repo.lastWorkflowTemplate)
+	}
+}
+
+func TestUpdateWorkflowTemplateHidesApplicationTemplate(t *testing.T) {
+	repo := &stubCatalogRepository{workflowTemplates: map[string]domaincatalog.WorkflowTemplate{
+		"private": {ID: "private", Category: "application:app-2"},
+	}}
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesManage), nil, nil)
+
+	_, err := service.UpdateWorkflowTemplate(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, "private", domaincatalog.WorkflowTemplateInput{
+		Key:  "private",
+		Name: "private",
+	})
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("UpdateWorkflowTemplate error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestSaveApplicationWorkflowUsesApplicationBoundary(t *testing.T) {
+	repo := &stubCatalogRepository{applicationEnvironments: map[string]domaincatalog.ApplicationEnvironment{
+		"binding-1": {
+			ID:             "binding-1",
+			ApplicationID:  "app-1",
+			BusinessLineID: "line-1",
+			EnvironmentID:  "production",
+			EnvironmentKey: "production",
+		},
+	}}
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryApplicationEnvManage), nil, nil)
+
+	item, err := service.SaveApplicationWorkflow(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, "app-1", "binding-1", domaincatalog.ApplicationWorkflowInput{
+		Name:       "Production release",
+		Definition: map[string]any{"mode": "release_dag", "nodes": []any{map[string]any{"id": "approval", "name": "Approval", "type": "manual_approval"}}, "edges": []any{}},
+		Enabled:    true,
+	})
+	if err != nil {
+		t.Fatalf("SaveApplicationWorkflow returned error: %v", err)
+	}
+	if repo.lastWorkflowApplication != "app-1" || repo.lastWorkflowBinding != "binding-1" {
+		t.Fatalf("repository boundary = %q/%q", repo.lastWorkflowApplication, repo.lastWorkflowBinding)
+	}
+	if repo.lastWorkflowTemplate.Category != "application:app-1" || repo.lastWorkflowTemplate.Key == "" {
+		t.Fatalf("repository workflow = %#v", repo.lastWorkflowTemplate)
+	}
+	if item.WorkflowTemplateID != "workflow-1" || item.WorkflowTemplate == nil {
+		t.Fatalf("saved binding = %#v", item)
+	}
+}
+
+func TestSaveApplicationWorkflowRejectsBindingFromAnotherApplication(t *testing.T) {
+	repo := &stubCatalogRepository{applicationEnvironments: map[string]domaincatalog.ApplicationEnvironment{
+		"binding-1": {ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "production"},
+	}}
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryApplicationEnvManage), nil, nil)
+
+	_, err := service.SaveApplicationWorkflow(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, "app-2", "binding-1", domaincatalog.ApplicationWorkflowInput{
+		Name:       "Production release",
+		Definition: map[string]any{"mode": "release_dag", "nodes": []any{map[string]any{"id": "approval", "name": "Approval", "type": "manual_approval"}}, "edges": []any{}},
+		Enabled:    true,
+	})
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("SaveApplicationWorkflow error = %v, want ErrNotFound", err)
+	}
+	if repo.lastWorkflowBinding != "" {
+		t.Fatalf("repository called for mismatched binding: %q", repo.lastWorkflowBinding)
+	}
+}
+
+func TestUpdateApplicationEnvironmentRejectsWorkflowFromAnotherApplication(t *testing.T) {
+	repo := &stubCatalogRepository{
+		applicationEnvironments: map[string]domaincatalog.ApplicationEnvironment{
+			"binding-1": {ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "production"},
+		},
+		workflowTemplates: map[string]domaincatalog.WorkflowTemplate{
+			"workflow-2": {ID: "workflow-2", Category: "application:app-2"},
+		},
+	}
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryApplicationEnvManage), nil, nil)
+
+	_, err := service.UpdateApplicationEnvironment(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, "binding-1", domaincatalog.ApplicationEnvironmentInput{
+		ApplicationID:      "app-1",
+		EnvironmentID:      "production",
+		WorkflowTemplateID: "workflow-2",
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("UpdateApplicationEnvironment error = %v, want ErrAccessDenied", err)
 	}
 }
 
@@ -353,6 +505,62 @@ func TestUpdateApplicationEnvironmentDeniesOutsideScopeGrant(t *testing.T) {
 	}
 }
 
+func TestListApplicationEnvironmentsFiltersOutsideScopeGrant(t *testing.T) {
+	items := map[string]domaincatalog.ApplicationEnvironment{
+		"binding-1": {
+			ID:             "binding-1",
+			ApplicationID:  "app-1",
+			BusinessLineID: "bl-retail",
+			EnvironmentID:  "env-dev",
+			EnvironmentKey: "dev",
+		},
+		"binding-2": {
+			ID:             "binding-2",
+			ApplicationID:  "app-2",
+			BusinessLineID: "bl-retail",
+			EnvironmentID:  "env-dev",
+			EnvironmentKey: "dev",
+		},
+	}
+	repo := &stubCatalogRepository{applicationEnvironments: items}
+	authorizer := accessServiceForCatalogTests([]domainscopegrant.Record{{
+		ID:             "grant-1",
+		SubjectType:    "user",
+		SubjectID:      "user-1",
+		BusinessLineID: "bl-retail",
+		EnvironmentIDs: []string{"env-dev"},
+		ApplicationIDs: []string{"app-1"},
+		Role:           "developer",
+		Effect:         "allow",
+		Enabled:        true,
+	}}, []domaincatalog.Environment{{ID: "env-dev", Key: "dev"}}, []domaincatalog.ApplicationEnvironment{items["binding-1"], items["binding-2"]})
+	service := New(repo, authorizer, nil, catalogPermissions(appaccess.PermDeliveryApplicationEnvView), nil, nil)
+
+	got, err := service.ListApplicationEnvironments(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"admin"},
+	})
+	if err != nil {
+		t.Fatalf("ListApplicationEnvironments() error = %v", err)
+	}
+	if len(got) != 1 || got[0].ApplicationID != "app-1" {
+		t.Fatalf("ListApplicationEnvironments() = %#v, want only app-1", got)
+	}
+}
+
+func TestListApplicationEnvironmentsReturnsAuthorizationErrors(t *testing.T) {
+	authorizationErr := errors.New("authorization resolver unavailable")
+	repo := &stubCatalogRepository{applicationEnvironments: map[string]domaincatalog.ApplicationEnvironment{
+		"binding-1": {ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-dev"},
+	}}
+	service := New(repo, errorCatalogAuthorizer{err: authorizationErr}, nil, catalogPermissions(appaccess.PermDeliveryApplicationEnvView), nil, nil)
+
+	_, err := service.ListApplicationEnvironments(context.Background(), domainidentity.Principal{Roles: []string{"admin"}})
+	if !errors.Is(err, authorizationErr) {
+		t.Fatalf("ListApplicationEnvironments() error = %v, want %v", err, authorizationErr)
+	}
+}
+
 func TestCreateWorkflowTemplateAllowsDelegatedManagePermission(t *testing.T) {
 	repo := &stubCatalogRepository{}
 	service := New(repo, nil, nil, appaccess.NewPermissionResolver(stubCatalogRolePermissionReader{
@@ -374,6 +582,9 @@ func TestWorkflowTemplateUsageSummarizesProductionRisk(t *testing.T) {
 	repo := &stubCatalogRepository{
 		environments: []domaincatalog.Environment{
 			{ID: "env-prod", Key: "prod", Name: "Production", IsProduction: true, RequiresApproval: true},
+		},
+		workflowTemplates: map[string]domaincatalog.WorkflowTemplate{
+			"wf-1": {ID: "wf-1", Category: "release"},
 		},
 		applicationEnvironments: map[string]domaincatalog.ApplicationEnvironment{
 			"binding-1": {

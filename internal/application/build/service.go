@@ -3,6 +3,7 @@ package build
 import (
 	"context"
 	"fmt"
+	"path"
 	"sort"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ type BuildRepository interface {
 
 type ApplicationReader interface {
 	Get(context.Context, string) (domainapp.App, error)
+	GetRepository(context.Context, string) (domainapp.SourceRepository, error)
 }
 
 type BuildTemplateReader interface {
@@ -105,6 +107,11 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if input.RefType != "branch" && input.RefType != "tag" && input.RefType != "commit" {
 		return domainbuild.Record{}, fmt.Errorf("%w: refType must be branch, tag, or commit", apperrors.ErrInvalidArgument)
 	}
+	repositoryRefs, err := normalizeRepositoryRefs(input.RepositoryRefs)
+	if err != nil {
+		return domainbuild.Record{}, err
+	}
+	input.RepositoryRefs = repositoryRefs
 	app, err := s.apps.Get(ctx, input.ApplicationID)
 	if err != nil {
 		return domainbuild.Record{}, err
@@ -122,7 +129,10 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app.ID); err != nil {
 		return domainbuild.Record{}, err
 	}
-	metadata := s.buildTriggerMetadata(ctx, app, buildSource, input, effectiveImageTag, imageRef)
+	metadata, err := s.buildTriggerMetadata(ctx, app, buildSource, input, effectiveImageTag, imageRef)
+	if err != nil {
+		return domainbuild.Record{}, err
+	}
 	metadata["serviceId"] = strings.TrimSpace(input.ServiceID)
 	metadata["repositoryId"] = strings.TrimSpace(input.RepositoryID)
 	metadata["resolvedCommit"] = strings.TrimSpace(input.ResolvedCommit)
@@ -155,21 +165,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		"executionTaskStatus":   task.Status,
 	})
 	record.Metadata = metadata
-	switch task.Status {
-	case "running", "dispatching":
-		record.Status = "running"
-		if task.StartedAt != nil {
-			record.StartedAt = task.StartedAt
-		}
-	case "completed":
-		record.Status = "completed"
-		record.StartedAt = task.StartedAt
-		record.FinishedAt = task.FinishedAt
-	case "failed", "canceled", "callback_timeout":
-		record.Status = "failed"
-		record.StartedAt = task.StartedAt
-		record.FinishedAt = task.FinishedAt
-	}
+	record = applyExecutionTaskStatus(record, task)
 	updated, updateErr := s.repo.Update(ctx, record)
 	if updateErr != nil {
 		return domainbuild.Record{}, fmt.Errorf("link build record to execution task: %w", updateErr)
@@ -179,7 +175,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	return record, nil
 }
 
-func (s *Service) buildTriggerMetadata(ctx context.Context, app domainapp.App, buildSource *domainapp.BuildSource, input domainbuild.TriggerInput, effectiveImageTag, imageRef string) map[string]any {
+func (s *Service) buildTriggerMetadata(ctx context.Context, app domainapp.App, buildSource *domainapp.BuildSource, input domainbuild.TriggerInput, effectiveImageTag, imageRef string) (map[string]any, error) {
 	metadata := map[string]any{
 		"applicationName":          app.Name,
 		"applicationEnvironmentId": strings.TrimSpace(input.ApplicationEnvironmentID),
@@ -208,14 +204,18 @@ func (s *Service) buildTriggerMetadata(ctx context.Context, app domainapp.App, b
 		"image":       imageRef,
 	}
 	appendBuildSourceMetadata(ctx, s.templates, buildSource, metadata)
-	if workspace := buildExecutionWorkspace(app, buildSource, input); len(workspace) > 0 {
+	workspace, err := s.buildExecutionWorkspace(ctx, app, buildSource, input)
+	if err != nil {
+		return nil, err
+	}
+	if len(workspace) > 0 {
 		metadata["workspace"] = workspace
 	}
 	metadata["runtime"] = buildExecutionRuntime(buildSource, metadata)
 	if commands := buildExecutionCommands(buildSource, metadata, imageRef); len(commands) > 0 {
 		metadata["commands"] = commands
 	}
-	return metadata
+	return metadata, nil
 }
 
 func (s *Service) recordTriggeredBuild(ctx context.Context, principal domainidentity.Principal, app domainapp.App, input domainbuild.TriggerInput, record domainbuild.Record) {
@@ -545,7 +545,7 @@ func renderCommands(commands []string, source *domainapp.BuildSource, imageRef s
 	return items
 }
 
-func buildExecutionWorkspace(app domainapp.App, source *domainapp.BuildSource, input domainbuild.TriggerInput) map[string]any {
+func (s *Service) buildExecutionWorkspace(ctx context.Context, app domainapp.App, source *domainapp.BuildSource, input domainbuild.TriggerInput) (map[string]any, error) {
 	workspace := map[string]any{}
 	workspacePath := firstNonEmptyString(
 		configString(source, "workspacePath"),
@@ -578,6 +578,15 @@ func buildExecutionWorkspace(app domainapp.App, source *domainapp.BuildSource, i
 			checkoutEnabled = boolValue(value, checkoutEnabled)
 		}
 	}
+	checkouts, err := s.resolveRepositoryCheckouts(ctx, app, source, input, checkoutEnabled)
+	if err != nil {
+		return nil, err
+	}
+	if len(checkouts) > 0 {
+		workspace["checkout"] = checkouts[0]
+		workspace["checkouts"] = checkouts
+		return workspace, nil
+	}
 	checkout := map[string]any{
 		"enabled":        checkoutEnabled,
 		"repositoryPath": strings.TrimSpace(app.RepositoryPath),
@@ -589,7 +598,211 @@ func buildExecutionWorkspace(app domainapp.App, source *domainapp.BuildSource, i
 	if checkoutEnabled || strings.TrimSpace(fmt.Sprint(checkout["repositoryURL"])) != "" || strings.TrimSpace(app.RepositoryPath) != "" {
 		workspace["checkout"] = checkout
 	}
-	return workspace
+	return workspace, nil
+}
+
+type buildRepositoryBinding struct {
+	RepositoryID         string
+	CheckoutPath         string
+	DefaultBranch        string
+	AllowCommitSelection bool
+	Submodules           bool
+	Explicit             bool
+}
+
+func (s *Service) resolveRepositoryCheckouts(ctx context.Context, app domainapp.App, source *domainapp.BuildSource, input domainbuild.TriggerInput, enabled bool) ([]map[string]any, error) {
+	bindings := repositoryBindingsForBuild(app, source, input)
+	if len(bindings) == 0 {
+		return nil, nil
+	}
+	refs := make(map[string]domainbuild.RepositoryRef, len(input.RepositoryRefs))
+	for _, item := range input.RepositoryRefs {
+		refs[item.RepositoryID] = item
+	}
+	checkouts := make([]map[string]any, 0, len(bindings))
+	seenRepositories := map[string]struct{}{}
+	seenPaths := map[string]struct{}{}
+	for index, binding := range bindings {
+		repositoryID := strings.TrimSpace(binding.RepositoryID)
+		if repositoryID == "" {
+			return nil, fmt.Errorf("%w: repositoryId is required for every build repository", apperrors.ErrInvalidArgument)
+		}
+		if _, exists := seenRepositories[repositoryID]; exists {
+			return nil, fmt.Errorf("%w: duplicate build repository %q", apperrors.ErrInvalidArgument, repositoryID)
+		}
+		seenRepositories[repositoryID] = struct{}{}
+		var repositoryRef *domainbuild.RepositoryRef
+		if item, ok := refs[repositoryID]; ok {
+			repositoryRef = &item
+			delete(refs, repositoryID)
+		}
+		checkout, err := s.resolveRepositoryCheckout(ctx, app, binding, input, repositoryRef, index, enabled)
+		if err != nil {
+			return nil, err
+		}
+		checkoutPath, _ := checkout["checkoutPath"].(string)
+		if _, exists := seenPaths[checkoutPath]; exists {
+			return nil, fmt.Errorf("%w: duplicate checkoutPath %q", apperrors.ErrInvalidArgument, checkoutPath)
+		}
+		seenPaths[checkoutPath] = struct{}{}
+		checkouts = append(checkouts, checkout)
+	}
+	if len(refs) > 0 {
+		return nil, fmt.Errorf("%w: repositoryRefs contains a repository that is not part of the build source", apperrors.ErrInvalidArgument)
+	}
+	return checkouts, nil
+}
+
+func repositoryBindingsForBuild(app domainapp.App, source *domainapp.BuildSource, input domainbuild.TriggerInput) []buildRepositoryBinding {
+	if bindings := buildRepositoryBindings(source); len(bindings) > 0 {
+		return bindings
+	}
+	if repositoryID := configString(source, "repositoryId"); repositoryID != "" {
+		return []buildRepositoryBinding{{RepositoryID: repositoryID}}
+	}
+	if len(input.RepositoryRefs) > 0 {
+		bindings := make([]buildRepositoryBinding, 0, len(input.RepositoryRefs))
+		for _, item := range input.RepositoryRefs {
+			bindings = append(bindings, buildRepositoryBinding{RepositoryID: item.RepositoryID})
+		}
+		return bindings
+	}
+	if repositoryID := strings.TrimSpace(input.RepositoryID); repositoryID != "" {
+		return []buildRepositoryBinding{{RepositoryID: repositoryID}}
+	}
+	if len(app.RepositoryIDs) == 1 {
+		return []buildRepositoryBinding{{RepositoryID: strings.TrimSpace(app.RepositoryIDs[0])}}
+	}
+	return nil
+}
+
+func (s *Service) resolveRepositoryCheckout(ctx context.Context, app domainapp.App, binding buildRepositoryBinding, input domainbuild.TriggerInput, repositoryRef *domainbuild.RepositoryRef, index int, enabled bool) (map[string]any, error) {
+	repositoryID := strings.TrimSpace(binding.RepositoryID)
+	repository, err := s.apps.GetRepository(ctx, repositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve build repository %s: %w", repositoryID, err)
+	}
+	if len(repository.ApplicationIDs) > 0 && !containsString(repository.ApplicationIDs, app.ID) {
+		return nil, fmt.Errorf("%w: repository %q is not linked to application", apperrors.ErrAccessDenied, repositoryID)
+	}
+	checkoutPath := strings.TrimSpace(binding.CheckoutPath)
+	if checkoutPath == "" && index > 0 {
+		checkoutPath = fmt.Sprintf("repository-%d", index+1)
+	}
+	checkoutPath, err = normalizeCheckoutPath(checkoutPath)
+	if err != nil {
+		return nil, err
+	}
+	refType := "branch"
+	refName := firstNonEmptyString(binding.DefaultBranch, repository.DefaultBranch, app.DefaultBranch, "main")
+	if index == 0 {
+		refType = firstNonEmptyString(input.RefType, refType)
+		refName = firstNonEmptyString(input.RefName, refName)
+	}
+	if repositoryRef != nil {
+		refType = repositoryRef.RefType
+		refName = repositoryRef.RefName
+	}
+	if binding.Explicit && refType == "commit" && !binding.AllowCommitSelection {
+		return nil, fmt.Errorf("%w: commit selection is disabled for repository %q", apperrors.ErrInvalidArgument, repositoryID)
+	}
+	if strings.TrimSpace(repository.URL) == "" {
+		return nil, fmt.Errorf("%w: repository %q has no clone URL", apperrors.ErrInvalidArgument, repositoryID)
+	}
+	return map[string]any{
+		"enabled":        enabled,
+		"repositoryId":   repositoryID,
+		"repositoryPath": strings.TrimSpace(repository.Path),
+		"repositoryURL":  strings.TrimSpace(repository.URL),
+		"refType":        refType,
+		"refName":        refName,
+		"defaultBranch":  firstNonEmptyString(binding.DefaultBranch, repository.DefaultBranch, app.DefaultBranch),
+		"checkoutPath":   checkoutPath,
+		"submodules":     binding.Submodules,
+	}, nil
+}
+
+func buildRepositoryBindings(source *domainapp.BuildSource) []buildRepositoryBinding {
+	if source == nil || len(source.Config) == 0 {
+		return nil
+	}
+	raw, ok := source.Config["repositoryBindings"].([]any)
+	if !ok {
+		if typed, typedOK := source.Config["repositoryBindings"].([]map[string]any); typedOK {
+			raw = make([]any, len(typed))
+			for index := range typed {
+				raw[index] = typed[index]
+			}
+		}
+	}
+	bindings := make([]buildRepositoryBinding, 0, len(raw))
+	for _, item := range raw {
+		value, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		bindings = append(bindings, buildRepositoryBinding{
+			RepositoryID:         strings.TrimSpace(fmt.Sprint(value["repositoryId"])),
+			CheckoutPath:         strings.TrimSpace(fmt.Sprint(value["checkoutPath"])),
+			DefaultBranch:        strings.TrimSpace(fmt.Sprint(value["defaultBranch"])),
+			AllowCommitSelection: boolValue(value["allowCommitSelection"], false),
+			Submodules:           boolValue(value["submodules"], false),
+			Explicit:             true,
+		})
+	}
+	return bindings
+}
+
+func normalizeRepositoryRefs(items []domainbuild.RepositoryRef) ([]domainbuild.RepositoryRef, error) {
+	result := make([]domainbuild.RepositoryRef, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		item.RepositoryID = strings.TrimSpace(item.RepositoryID)
+		item.RefType = strings.ToLower(strings.TrimSpace(item.RefType))
+		item.RefName = strings.TrimSpace(item.RefName)
+		if item.RepositoryID == "" || item.RefName == "" {
+			return nil, fmt.Errorf("%w: repositoryId and refName are required for repositoryRefs", apperrors.ErrInvalidArgument)
+		}
+		if item.RefType != "branch" && item.RefType != "tag" && item.RefType != "commit" {
+			return nil, fmt.Errorf("%w: repository refType must be branch, tag, or commit", apperrors.ErrInvalidArgument)
+		}
+		if _, exists := seen[item.RepositoryID]; exists {
+			return nil, fmt.Errorf("%w: duplicate repository ref %q", apperrors.ErrInvalidArgument, item.RepositoryID)
+		}
+		seen[item.RepositoryID] = struct{}{}
+		result = append(result, item)
+	}
+	return result, nil
+}
+
+func normalizeCheckoutPath(value string) (string, error) {
+	value = strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	if value == "" || value == "." {
+		return "", nil
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == ".." {
+			return "", fmt.Errorf("%w: checkoutPath must stay inside the build workspace", apperrors.ErrInvalidArgument)
+		}
+	}
+	cleaned := path.Clean(value)
+	if path.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("%w: checkoutPath must stay inside the build workspace", apperrors.ErrInvalidArgument)
+	}
+	if cleaned == "." {
+		return "", nil
+	}
+	return cleaned, nil
+}
+
+func containsString(items []string, wanted string) bool {
+	wanted = strings.TrimSpace(wanted)
+	for _, item := range items {
+		if strings.TrimSpace(item) == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) failRecord(ctx context.Context, record domainbuild.Record, reason string) (domainbuild.Record, error) {
@@ -608,11 +821,36 @@ func (s *Service) failRecord(ctx context.Context, record domainbuild.Record, rea
 	return updated, fmt.Errorf("%w: %s", apperrors.ErrInvalidArgument, strings.TrimSpace(reason))
 }
 
+func applyExecutionTaskStatus(record domainbuild.Record, task domaindelivery.ExecutionTask) domainbuild.Record {
+	switch task.Status {
+	case "running", "dispatching":
+		record.Status = "running"
+		if task.StartedAt != nil {
+			record.StartedAt = task.StartedAt
+		}
+	case "completed":
+		record.Status = "completed"
+		record.StartedAt = task.StartedAt
+		record.FinishedAt = task.FinishedAt
+	case "failed", "canceled", "callback_timeout":
+		record.Status = "failed"
+		record.StartedAt = task.StartedAt
+		record.FinishedAt = task.FinishedAt
+	}
+	return record
+}
+
 func mergeBuildMetadata(base, overlay map[string]any) map[string]any {
 	if base == nil {
 		base = map[string]any{}
 	}
 	for key, value := range overlay {
+		baseMap, baseIsMap := base[key].(map[string]any)
+		overlayMap, overlayIsMap := value.(map[string]any)
+		if baseIsMap && overlayIsMap {
+			base[key] = mergeBuildMetadata(baseMap, overlayMap)
+			continue
+		}
 		base[key] = value
 	}
 	return base

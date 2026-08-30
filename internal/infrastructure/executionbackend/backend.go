@@ -3,6 +3,7 @@ package executionbackend
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -133,13 +134,17 @@ func buildExecutionJob(request appexecution.ExecutionJobRequest) (batchv1.Job, e
 	}
 	runtime := request.Runtime
 	workspace := request.Workspace
-	checkout := mapValue(workspace["checkout"])
+	checkouts := checkoutValues(workspace)
 	jobName := buildExecutionJobName(request.TaskID)
 	shell := firstNonEmpty(stringValue(runtime["shell"]), "/bin/sh")
 	script := "set -e\n" + strings.Join(commands, "\n")
 	workingDir := "/workspace"
 	if commandDir := stringValue(runtime["commandDir"]); commandDir != "" && commandDir != "." {
-		workingDir = "/workspace/" + trimRelativePath(commandDir)
+		var err error
+		workingDir, err = checkoutDestination(commandDir)
+		if err != nil {
+			return batchv1.Job{}, err
+		}
 	}
 	container := corev1.Container{
 		Name:            "runner",
@@ -158,12 +163,16 @@ func buildExecutionJob(request appexecution.ExecutionJobRequest) (batchv1.Job, e
 		},
 		Containers: []corev1.Container{container},
 	}
-	if repositoryURL := firstNonEmpty(stringValue(checkout["repositoryURL"]), stringValue(checkout["repositoryUrl"])); repositoryURL != "" {
+	checkoutScript, err := buildCheckoutScript(checkouts)
+	if err != nil {
+		return batchv1.Job{}, err
+	}
+	if checkoutScript != "" {
 		podSpec.InitContainers = []corev1.Container{{
 			Name:            "checkout",
 			Image:           firstNonEmpty(stringValue(runtime["checkoutImage"]), request.DefaultGitImage),
 			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-lc", buildCheckoutScript(checkout, repositoryURL)},
+			Command:         []string{"/bin/sh", "-lc", checkoutScript},
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "workspace", MountPath: "/workspace"},
 			},
@@ -235,22 +244,88 @@ func buildExecutionJobName(taskID string) string {
 	return fmt.Sprintf("soha-exec-%s-%d", base, time.Now().UTC().Unix()%100000)
 }
 
-func buildCheckoutScript(checkout map[string]any, repositoryURL string) string {
-	refType := firstNonEmpty(stringValue(checkout["refType"]), "branch")
-	refName := stringValue(checkout["refName"])
-	if refName == "" && refType == "branch" {
-		refName = stringValue(checkout["defaultBranch"])
+func buildCheckoutScript(checkouts []map[string]any) (string, error) {
+	lines := []string{"set -e"}
+	seenDestinations := map[string]struct{}{}
+	for _, checkout := range checkouts {
+		if !boolValue(checkout["enabled"], true) {
+			continue
+		}
+		repositoryURL := firstNonEmpty(stringValue(checkout["repositoryURL"]), stringValue(checkout["repositoryUrl"]))
+		if repositoryURL == "" {
+			continue
+		}
+		destination, err := checkoutDestination(stringValue(checkout["checkoutPath"]))
+		if err != nil {
+			return "", err
+		}
+		if _, exists := seenDestinations[destination]; exists {
+			return "", fmt.Errorf("%w: duplicate checkout destination %q", apperrors.ErrInvalidArgument, destination)
+		}
+		seenDestinations[destination] = struct{}{}
+		if destination != "/workspace" {
+			lines = append(lines, "mkdir -p "+shellQuote(path.Dir(destination)))
+		}
+		lines = append(lines, "git clone "+shellQuote(repositoryURL)+" "+shellQuote(destination), "cd "+shellQuote(destination))
+		refType := firstNonEmpty(stringValue(checkout["refType"]), "branch")
+		refName := stringValue(checkout["refName"])
+		if refName == "" && refType == "branch" {
+			refName = stringValue(checkout["defaultBranch"])
+		}
+		if refName != "" {
+			if refType == "tag" {
+				refName = "tags/" + refName
+			}
+			lines = append(lines, "git checkout "+shellQuote(refName))
+		}
+		if boolValue(checkout["submodules"], false) {
+			lines = append(lines, "git submodule update --init --recursive")
+		}
 	}
-	lines := []string{"set -e", "git clone " + shellQuote(repositoryURL) + " /workspace", "cd /workspace"}
-	if refName == "" {
-		return strings.Join(lines, "\n")
+	if len(lines) == 1 {
+		return "", nil
 	}
-	if refType == "tag" {
-		lines = append(lines, "git checkout tags/"+shellQuote(refName))
-	} else {
-		lines = append(lines, "git checkout "+shellQuote(refName))
+	return strings.Join(lines, "\n"), nil
+}
+
+func checkoutValues(workspace map[string]any) []map[string]any {
+	result := make([]map[string]any, 0)
+	switch values := workspace["checkouts"].(type) {
+	case []map[string]any:
+		result = append(result, values...)
+	case []any:
+		for _, value := range values {
+			if item, ok := value.(map[string]any); ok {
+				result = append(result, item)
+			}
+		}
 	}
-	return strings.Join(lines, "\n")
+	if len(result) == 0 {
+		if checkout := mapValue(workspace["checkout"]); len(checkout) > 0 {
+			result = append(result, checkout)
+		}
+	}
+	return result
+}
+
+func checkoutDestination(value string) (string, error) {
+	value = strings.ReplaceAll(strings.TrimSpace(value), "\\", "/")
+	if value == "" || value == "." {
+		return "/workspace", nil
+	}
+	for _, segment := range strings.Split(value, "/") {
+		if segment == ".." {
+			return "", fmt.Errorf("%w: path must stay inside the build workspace", apperrors.ErrInvalidArgument)
+		}
+	}
+	cleaned := path.Clean(value)
+	if path.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", fmt.Errorf("%w: path must stay inside the build workspace", apperrors.ErrInvalidArgument)
+	}
+	if cleaned == "." {
+		return "/workspace", nil
+	}
+	return "/workspace/" + cleaned, nil
 }
 
 func trimmedStrings(values []string) []string {
@@ -273,6 +348,13 @@ func stringValue(value any) string {
 	return strings.TrimSpace(text)
 }
 
+func boolValue(value any, fallback bool) bool {
+	if result, ok := value.(bool); ok {
+		return result
+	}
+	return fallback
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if value = strings.TrimSpace(value); value != "" {
@@ -284,19 +366,6 @@ func firstNonEmpty(values ...string) string {
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
-}
-
-func trimRelativePath(value string) string {
-	value = strings.TrimSpace(value)
-	value = strings.TrimPrefix(value, "./")
-	value = strings.TrimPrefix(value, "/")
-	for strings.HasPrefix(value, "../") {
-		value = strings.TrimPrefix(value, "../")
-	}
-	if value == "." {
-		return ""
-	}
-	return value
 }
 
 func int64Pointer(value int64) *int64 {

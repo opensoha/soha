@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,6 +20,53 @@ import (
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
+
+type concurrentReadGate struct {
+	started chan string
+	release chan struct{}
+	once    sync.Once
+}
+
+func newConcurrentReadGate(t *testing.T, size int) *concurrentReadGate {
+	t.Helper()
+	gate := &concurrentReadGate{
+		started: make(chan string, size),
+		release: make(chan struct{}),
+	}
+	t.Cleanup(gate.open)
+	return gate
+}
+
+func (g *concurrentReadGate) wait(label string) {
+	if g == nil {
+		return
+	}
+	g.started <- label
+	<-g.release
+}
+
+func (g *concurrentReadGate) open() {
+	g.once.Do(func() { close(g.release) })
+}
+
+func waitForConcurrentReads(t *testing.T, gate *concurrentReadGate, labels ...string) {
+	t.Helper()
+	want := make(map[string]struct{}, len(labels))
+	for _, label := range labels {
+		want[label] = struct{}{}
+	}
+	for len(want) > 0 {
+		select {
+		case label := <-gate.started:
+			if _, ok := want[label]; !ok {
+				t.Fatalf("unexpected or duplicate read %q", label)
+			}
+			delete(want, label)
+		case <-time.After(time.Second):
+			t.Fatalf("reads did not start concurrently; still waiting for %v", want)
+		}
+	}
+}
 
 type stubApplicationReader struct {
 	app                domainapp.App
@@ -97,13 +145,17 @@ type stubCatalogReader struct {
 	envs        []domaincatalog.Environment
 	createCount *int
 	updateCount *int
+	updateInput *domaincatalog.ApplicationEnvironmentInput
+	readGate    *concurrentReadGate
 }
 
 func (s stubCatalogReader) ListEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.Environment, error) {
+	s.readGate.wait("environments")
 	return s.envs, nil
 }
 
 func (s stubCatalogReader) ListApplicationEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error) {
+	s.readGate.wait("bindings")
 	return s.bindings, nil
 }
 
@@ -129,9 +181,12 @@ func (s stubCatalogReader) CreateApplicationEnvironment(context.Context, domaini
 	return s.bindings[0], nil
 }
 
-func (s stubCatalogReader) UpdateApplicationEnvironment(context.Context, domainidentity.Principal, string, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
+func (s stubCatalogReader) UpdateApplicationEnvironment(_ context.Context, _ domainidentity.Principal, _ string, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
 	if s.updateCount != nil {
 		*s.updateCount = *s.updateCount + 1
+	}
+	if s.updateInput != nil {
+		*s.updateInput = input
 	}
 	if len(s.bindings) == 0 {
 		return domaincatalog.ApplicationEnvironment{}, nil
@@ -145,9 +200,11 @@ type stubBuildReader struct {
 	triggerInput *domainbuild.TriggerInput
 	triggerCount *int
 	triggerErr   error
+	readGate     *concurrentReadGate
 }
 
 func (s stubBuildReader) List(context.Context, domainidentity.Principal, domainbuild.Filter) ([]domainbuild.Record, error) {
+	s.readGate.wait("builds")
 	return s.listItems, nil
 }
 
@@ -182,9 +239,11 @@ type stubWorkflowReader struct {
 	listItems    []domainworkflow.Run
 	triggerInput *domainworkflow.Input
 	triggerCount *int
+	readGate     *concurrentReadGate
 }
 
 func (s stubWorkflowReader) List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error) {
+	s.readGate.wait("workflows")
 	return s.listItems, nil
 }
 
@@ -243,9 +302,11 @@ type stubReleaseReader struct {
 	triggerInput *domainrelease.TriggerInput
 	triggerCount *int
 	trigger      func(domainrelease.TriggerInput) domainrelease.Record
+	readGate     *concurrentReadGate
 }
 
 func (s stubReleaseReader) List(context.Context, domainidentity.Principal, domainrelease.Filter) ([]domainrelease.Record, error) {
+	s.readGate.wait("releases")
 	return s.listItems, nil
 }
 
@@ -284,6 +345,7 @@ type stubTargetReader struct {
 	ingresses         map[string][]domainresource.IngressView
 	hpas              map[string][]domainresource.HorizontalPodAutoscalerView
 	helmReleases      map[string][]domainresource.HelmReleaseView
+	detailReadGate    *concurrentReadGate
 }
 
 func (s stubTargetReader) ListHelmReleases(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.HelmReleaseView, error) {
@@ -291,6 +353,7 @@ func (s stubTargetReader) ListHelmReleases(_ context.Context, _ domainidentity.P
 }
 
 func (s stubTargetReader) ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error) {
+	s.detailReadGate.wait("pods")
 	return nil, nil
 }
 
@@ -299,14 +362,17 @@ func (s stubTargetReader) ListDeployments(_ context.Context, _ domainidentity.Pr
 }
 
 func (s stubTargetReader) GetDeploymentDetail(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name string) (domainresource.DeploymentDetailView, error) {
+	s.detailReadGate.wait("deployment")
 	return s.deploymentDetails[clusterID+"/"+namespace+"/"+name], nil
 }
 
 func (s stubTargetReader) ListServices(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.ServiceView, error) {
+	s.detailReadGate.wait("services")
 	return s.services[clusterID+"/"+namespace], nil
 }
 
 func (s stubTargetReader) ListIngresses(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.IngressView, error) {
+	s.detailReadGate.wait("ingresses")
 	return s.ingresses[clusterID+"/"+namespace], nil
 }
 
@@ -350,6 +416,7 @@ type stubRepository struct {
 	helmImportInput     *domaindelivery.HelmReleaseImportInput
 	helmImportResult    domaindelivery.HelmReleaseImportResult
 	helmImportCallCount *int
+	readGate            *concurrentReadGate
 }
 
 func (s stubRepository) ImportKubernetesServices(_ context.Context, input domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error) {
@@ -373,6 +440,7 @@ func (s stubRepository) ImportHelmReleases(_ context.Context, input domaindelive
 }
 
 func (s stubRepository) ListReleaseBundles(context.Context, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
+	s.readGate.wait("bundles")
 	return s.bundles, nil
 }
 
@@ -389,6 +457,7 @@ func (stubRepository) UpdateReleaseBundle(context.Context, domaindelivery.Releas
 }
 
 func (s stubRepository) ListExecutionTasks(context.Context, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error) {
+	s.readGate.wait("tasks")
 	return s.tasks, nil
 }
 
@@ -902,6 +971,39 @@ func TestConfirmDeliveryDraftCreatesApplicationServicesAndBindings(t *testing.T)
 
 	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); err == nil {
 		t.Fatal("ConfirmDeliveryDraft second call returned nil error, want already-confirmed error")
+	}
+}
+
+func TestUpsertEnvironmentBindingsPreservesEnvironmentDefaults(t *testing.T) {
+	existing := domaincatalog.ApplicationEnvironment{
+		ID:            "binding-dev",
+		ApplicationID: "app-1",
+		EnvironmentID: "env-dev",
+		Alias:         "开发",
+		ClusterID:     "cluster-1",
+		Namespace:     "demo-dev",
+		RegistryID:    "registry-1",
+	}
+	var updateInput domaincatalog.ApplicationEnvironmentInput
+	service := New(
+		stubApplicationReader{},
+		stubCatalogReader{
+			envs:        []domaincatalog.Environment{{ID: "env-dev", Key: "dev"}},
+			bindings:    []domaincatalog.ApplicationEnvironment{existing},
+			updateInput: &updateInput,
+		},
+		stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, stubRepository{}, nil, nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate),
+	)
+
+	_, err := service.upsertEnvironmentBindings(context.Background(), deliveryActionPrincipal(), domainapp.App{ID: "app-1"}, domaindelivery.RenderedDeliverySpec{
+		EnvironmentBindings: []domaindelivery.BlueprintEnvironmentBindingTemplate{{EnvironmentKey: "dev"}},
+	})
+	if err != nil {
+		t.Fatalf("upsertEnvironmentBindings returned error: %v", err)
+	}
+	if updateInput.Alias != existing.Alias || updateInput.ClusterID != existing.ClusterID || updateInput.Namespace != existing.Namespace || updateInput.RegistryID != existing.RegistryID {
+		t.Fatalf("environment defaults = %#v, want preserved from %#v", updateInput, existing)
 	}
 }
 
@@ -1529,6 +1631,94 @@ func TestGetApplicationDetailIncludesBindingTargets(t *testing.T) {
 	target := result.Bindings[0].Targets[0]
 	if target.ClusterID != "cluster-a" || target.Namespace != "namespace-a" || target.WorkloadName != "demo-api" {
 		t.Fatalf("Targets = %+v, want cluster/namespace/workload summary", target)
+	}
+}
+
+func TestLoadDeliveryContextRunsIndependentReadsConcurrently(t *testing.T) {
+	gate := newConcurrentReadGate(t, 7)
+	service := New(
+		stubApplicationReader{},
+		stubCatalogReader{readGate: gate},
+		stubBuildReader{readGate: gate},
+		stubWorkflowReader{readGate: gate},
+		stubReleaseReader{readGate: gate},
+		stubRepository{readGate: gate},
+		nil,
+		nil,
+		nil,
+	)
+	done := make(chan error, 1)
+	go func() {
+		_, _, _, _, _, _, _, err := service.loadDeliveryContext(context.Background(), domainidentity.Principal{}, "app-1")
+		done <- err
+	}()
+
+	waitForConcurrentReads(t, gate, "bindings", "environments", "bundles", "tasks", "builds", "workflows", "releases")
+	gate.open()
+	if err := <-done; err != nil {
+		t.Fatalf("loadDeliveryContext returned error: %v", err)
+	}
+}
+
+func TestGetApplicationWorkloadRuntimeDetailRunsKubernetesReadsConcurrently(t *testing.T) {
+	gate := newConcurrentReadGate(t, 4)
+	service := New(
+		stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "demo"}},
+		stubCatalogReader{
+			envs: []domaincatalog.Environment{{ID: "env-1", Name: "prod"}},
+			bindings: []domaincatalog.ApplicationEnvironment{
+				{
+					ID:             "binding-1",
+					ApplicationID:  "app-1",
+					EnvironmentID:  "env-1",
+					EnvironmentKey: "prod",
+					Targets: []domaincatalog.ReleaseTarget{
+						{
+							ID:           "target-1",
+							ClusterID:    "cluster-a",
+							Namespace:    "namespace-a",
+							WorkloadKind: "Deployment",
+							WorkloadName: "expected-workload",
+							Enabled:      true,
+						},
+					},
+				},
+			},
+		},
+		stubBuildReader{},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		stubRepository{},
+		nil,
+		stubTargetReader{
+			deployments: map[string][]domainresource.DeploymentView{
+				"cluster-a/namespace-a": {{Name: "expected-workload"}},
+			},
+			deploymentDetails: map[string]domainresource.DeploymentDetailView{
+				"cluster-a/namespace-a/expected-workload": {},
+			},
+			detailReadGate: gate,
+		},
+		nil,
+	)
+	type result struct {
+		detail domaindelivery.ApplicationWorkloadRuntimeDetail
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		detail, err := service.GetApplicationWorkloadRuntimeDetail(context.Background(), domainidentity.Principal{}, "app-1", "binding-1", "expected-workload")
+		done <- result{detail: detail, err: err}
+	}()
+
+	waitForConcurrentReads(t, gate, "deployment", "pods", "services", "ingresses")
+	gate.open()
+	got := <-done
+	if got.err != nil {
+		t.Fatalf("GetApplicationWorkloadRuntimeDetail returned error: %v", got.err)
+	}
+	if got.detail.Workload.WorkloadName != "expected-workload" {
+		t.Fatalf("WorkloadName = %q, want expected-workload", got.detail.Workload.WorkloadName)
 	}
 }
 

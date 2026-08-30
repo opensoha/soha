@@ -2,6 +2,7 @@ package build
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -50,9 +51,98 @@ func TestKanikoBuildExecutionCommandPushesAndWritesDigest(t *testing.T) {
 
 func TestBuildExecutionWorkspaceAlwaysCollectsImageDigest(t *testing.T) {
 	app := domainapp.App{ID: "app-1", Key: "api", RepositoryPath: "group/api"}
-	workspace := buildExecutionWorkspace(app, &domainapp.BuildSource{Type: domainapp.BuildSourceTypeRepoDockerfile}, structTriggerInput("main"))
+	workspace, err := (&Service{}).buildExecutionWorkspace(context.Background(), app, &domainapp.BuildSource{Type: domainapp.BuildSourceTypeRepoDockerfile}, structTriggerInput("main"))
+	if err != nil {
+		t.Fatalf("buildExecutionWorkspace() error = %v", err)
+	}
 	files, ok := workspace["artifactFiles"].([]string)
 	if !ok || len(files) != 1 || files[0] != ".soha-image-digest" {
+		t.Fatalf("artifact files = %#v", workspace["artifactFiles"])
+	}
+}
+
+func TestBuildExecutionWorkspaceResolvesRepositoryBindings(t *testing.T) {
+	app := domainapp.App{ID: "app-1", Key: "api", DefaultBranch: "main"}
+	service := &Service{apps: buildAppFake{repositories: map[string]domainapp.SourceRepository{
+		"repo-api": {ID: "repo-api", URL: "https://git.example/api.git", Path: "team/api", DefaultBranch: "main", ApplicationIDs: []string{"app-1"}},
+		"repo-lib": {ID: "repo-lib", URL: "https://git.example/lib.git", Path: "team/lib", DefaultBranch: "develop", ApplicationIDs: []string{"app-1"}},
+	}}}
+	source := &domainapp.BuildSource{Type: domainapp.BuildSourceTypeRepoDockerfile, Config: map[string]any{
+		"repositoryBindings": []any{
+			map[string]any{"repositoryId": "repo-api", "allowCommitSelection": true},
+			map[string]any{"repositoryId": "repo-lib", "checkoutPath": "shared/lib", "submodules": true},
+		},
+	}}
+	workspace, err := service.buildExecutionWorkspace(context.Background(), app, source, domainbuild.TriggerInput{
+		RefType: "branch",
+		RefName: "main",
+		RepositoryRefs: []domainbuild.RepositoryRef{
+			{RepositoryID: "repo-api", RefType: "commit", RefName: "abc123"},
+			{RepositoryID: "repo-lib", RefType: "tag", RefName: "v1.0.0"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildExecutionWorkspace() error = %v", err)
+	}
+	checkouts, ok := workspace["checkouts"].([]map[string]any)
+	if !ok || len(checkouts) != 2 {
+		t.Fatalf("checkouts = %#v", workspace["checkouts"])
+	}
+	if checkouts[0]["repositoryURL"] != "https://git.example/api.git" || checkouts[0]["refType"] != "commit" || checkouts[0]["refName"] != "abc123" {
+		t.Fatalf("primary checkout = %#v", checkouts[0])
+	}
+	if checkouts[1]["checkoutPath"] != "shared/lib" || checkouts[1]["submodules"] != true || checkouts[1]["refName"] != "v1.0.0" {
+		t.Fatalf("secondary checkout = %#v", checkouts[1])
+	}
+}
+
+func TestBuildExecutionWorkspaceUsesRepositoryRefsWithoutBindings(t *testing.T) {
+	app := domainapp.App{ID: "app-1", DefaultBranch: "main", RepositoryIDs: []string{"repo-api", "repo-lib"}}
+	service := &Service{apps: buildAppFake{repositories: map[string]domainapp.SourceRepository{
+		"repo-api": {ID: "repo-api", URL: "https://git.example/api.git", DefaultBranch: "main", ApplicationIDs: []string{"app-1"}},
+		"repo-lib": {ID: "repo-lib", URL: "https://git.example/lib.git", DefaultBranch: "main", ApplicationIDs: []string{"app-1"}},
+	}}}
+	workspace, err := service.buildExecutionWorkspace(context.Background(), app, &domainapp.BuildSource{Type: domainapp.BuildSourceTypeRepoDockerfile}, domainbuild.TriggerInput{
+		RefType: "branch",
+		RefName: "main",
+		RepositoryRefs: []domainbuild.RepositoryRef{
+			{RepositoryID: "repo-api", RefType: "commit", RefName: "abc123"},
+			{RepositoryID: "repo-lib", RefType: "tag", RefName: "v1.0.0"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildExecutionWorkspace() error = %v", err)
+	}
+	checkouts, _ := workspace["checkouts"].([]map[string]any)
+	if len(checkouts) != 2 || checkouts[0]["refName"] != "abc123" || checkouts[1]["refName"] != "v1.0.0" {
+		t.Fatalf("checkouts = %#v", workspace["checkouts"])
+	}
+}
+
+func TestNormalizeCheckoutPathRejectsTraversalSegments(t *testing.T) {
+	for _, value := range []string{"../escape", "services/../escape", `services\..\escape`} {
+		if _, err := normalizeCheckoutPath(value); err == nil {
+			t.Fatalf("normalizeCheckoutPath(%q) error = nil", value)
+		}
+	}
+}
+
+func TestMergeBuildMetadataPreservesNestedWorkspace(t *testing.T) {
+	metadata := mergeBuildMetadata(
+		map[string]any{"workspace": map[string]any{
+			"checkouts": []map[string]any{{"repositoryId": "repo-api"}, {"repositoryId": "repo-lib"}},
+		}},
+		map[string]any{"workspace": map[string]any{
+			"artifactFiles": []string{".soha-image-digest"},
+		}},
+	)
+	workspace := metadataMap(metadata, "workspace")
+	checkouts, _ := workspace["checkouts"].([]map[string]any)
+	if len(checkouts) != 2 || checkouts[1]["repositoryId"] != "repo-lib" {
+		t.Fatalf("checkouts = %#v", workspace["checkouts"])
+	}
+	artifacts, _ := workspace["artifactFiles"].([]string)
+	if len(artifacts) != 1 || artifacts[0] != ".soha-image-digest" {
 		t.Fatalf("artifact files = %#v", workspace["artifactFiles"])
 	}
 }
@@ -77,9 +167,18 @@ func (r *buildRepoFake) Update(_ context.Context, item domainbuild.Record) (doma
 	return item, nil
 }
 
-type buildAppFake struct{ app domainapp.App }
+type buildAppFake struct {
+	app          domainapp.App
+	repositories map[string]domainapp.SourceRepository
+}
 
 func (r buildAppFake) Get(context.Context, string) (domainapp.App, error) { return r.app, nil }
+func (r buildAppFake) GetRepository(_ context.Context, id string) (domainapp.SourceRepository, error) {
+	if item, ok := r.repositories[id]; ok {
+		return item, nil
+	}
+	return domainapp.SourceRepository{}, fmt.Errorf("repository %s not found", id)
+}
 
 type executionFake struct{}
 

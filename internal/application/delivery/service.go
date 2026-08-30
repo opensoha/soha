@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -263,27 +264,46 @@ func (s *Service) GetApplicationRuntimeDetail(ctx context.Context, principal dom
 	for _, item := range environments {
 		envByID[item.ID] = item
 	}
-	items := make([]domaindelivery.ApplicationRuntimeEnvironment, 0)
+	applicationBindings := make([]domaincatalog.ApplicationEnvironment, 0, len(bindings))
 	for _, binding := range bindings {
-		if binding.ApplicationID != app.ID {
-			continue
+		if binding.ApplicationID == app.ID {
+			applicationBindings = append(applicationBindings, binding)
 		}
-		environment := envByID[binding.EnvironmentID]
-		workloads, workloadsErr := s.listRuntimeWorkloadsForBinding(ctx, principal, app, binding, bundles, tasks, builds, workflows, releases)
-		if workloadsErr != nil {
-			return domaindelivery.ApplicationRuntimeDetail{}, workloadsErr
-		}
-		items = append(items, domaindelivery.ApplicationRuntimeEnvironment{
-			ApplicationEnvironmentID: binding.ID,
-			EnvironmentID:            binding.EnvironmentID,
-			EnvironmentName:          environment.Name,
-			EnvironmentKey:           binding.EnvironmentKey,
-			ActionKind:               actionKindForBinding(binding, environment),
-			RequiresApproval:         requiresApproval(binding, environment),
-			ResourceSelector:         binding.ResourceSelector,
-			Targets:                  binding.Targets,
-			Workloads:                workloads,
+	}
+	items := make([]domaindelivery.ApplicationRuntimeEnvironment, len(applicationBindings))
+	errs := make([]error, len(applicationBindings))
+	var group sync.WaitGroup
+	for index, binding := range applicationBindings {
+		group.Go(func() {
+			environment := envByID[binding.EnvironmentID]
+			workloads, workloadsErr := s.listRuntimeWorkloadsForBinding(ctx, principal, app, binding, bundles, tasks, builds, workflows, releases)
+			if workloadsErr != nil && !errors.Is(workloadsErr, apperrors.ErrClusterUnready) && !errors.Is(workloadsErr, context.DeadlineExceeded) {
+				errs[index] = workloadsErr
+				return
+			}
+			status := runtimeEnvironmentAvailable
+			if workloadsErr != nil {
+				status = runtimeEnvironmentUnavailable
+			}
+			items[index] = domaindelivery.ApplicationRuntimeEnvironment{
+				ApplicationEnvironmentID: binding.ID,
+				EnvironmentID:            binding.EnvironmentID,
+				EnvironmentName:          environment.Name,
+				EnvironmentKey:           binding.EnvironmentKey,
+				Status:                   status,
+				ActionKind:               actionKindForBinding(binding, environment),
+				RequiresApproval:         requiresApproval(binding, environment),
+				ResourceSelector:         binding.ResourceSelector,
+				Targets:                  binding.Targets,
+				Workloads:                workloads,
+			}
 		})
+	}
+	group.Wait()
+	for _, itemErr := range errs {
+		if itemErr != nil {
+			return domaindelivery.ApplicationRuntimeDetail{}, itemErr
+		}
 	}
 	detail := domaindelivery.ApplicationRuntimeDetail{
 		Application:  app,
@@ -334,21 +354,31 @@ func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, princ
 	if selected == nil {
 		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: workload not found", apperrors.ErrNotFound)
 	}
-	deployment, err := s.targets.GetDeploymentDetail(ctx, principal, selected.ClusterID, selected.Namespace, selected.WorkloadName)
-	if err != nil {
-		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
-	}
-	pods, err := s.targets.ListPods(ctx, principal, selected.ClusterID, selected.Namespace)
-	if err != nil {
-		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
-	}
-	services, err := s.targets.ListServices(ctx, principal, selected.ClusterID, selected.Namespace)
-	if err != nil {
-		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
-	}
-	ingresses, err := s.targets.ListIngresses(ctx, principal, selected.ClusterID, selected.Namespace)
-	if err != nil {
-		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	var (
+		deployment domainresource.DeploymentDetailView
+		pods       []domainresource.PodView
+		services   []domainresource.ServiceView
+		ingresses  []domainresource.IngressView
+		errs       [4]error
+		group      sync.WaitGroup
+	)
+	group.Go(func() {
+		deployment, errs[0] = s.targets.GetDeploymentDetail(ctx, principal, selected.ClusterID, selected.Namespace, selected.WorkloadName)
+	})
+	group.Go(func() {
+		pods, errs[1] = s.targets.ListPods(ctx, principal, selected.ClusterID, selected.Namespace)
+	})
+	group.Go(func() {
+		services, errs[2] = s.targets.ListServices(ctx, principal, selected.ClusterID, selected.Namespace)
+	})
+	group.Go(func() {
+		ingresses, errs[3] = s.targets.ListIngresses(ctx, principal, selected.ClusterID, selected.Namespace)
+	})
+	group.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+		}
 	}
 	return domaindelivery.ApplicationWorkloadRuntimeDetail{
 		Application: app,
@@ -1211,6 +1241,7 @@ func (s *Service) triggerApplicationBuild(ctx context.Context, principal domaini
 		BuildSourceID:            buildSourceID,
 		RefType:                  refType,
 		RefName:                  refName,
+		RepositoryRefs:           input.RepositoryRefs,
 		ImageTag:                 imageTag,
 		BuildArgs:                mergeActionMaps(binding.BuildPolicy.BuildArgs, input.BuildArgs),
 		Variables:                mergeActionMaps(binding.BuildPolicy.Variables, input.Variables),
@@ -1262,6 +1293,7 @@ func workflowInputForDeliveryAction(app domainapp.App, binding domaincatalog.App
 		BuildSourceID:            buildSourceID,
 		RefType:                  refType,
 		RefName:                  refName,
+		RepositoryRefs:           input.RepositoryRefs,
 		ImageTag:                 imageTag,
 		ReleaseName:              firstNonEmpty(input.ReleaseName, imageTag, binding.ID),
 		ContainerName:            firstNonEmpty(input.ContainerName, resolvedTarget.ContainerName),
@@ -2385,35 +2417,39 @@ func (s *Service) hasRuntimePermission(ctx context.Context, principal domainiden
 }
 
 func (s *Service) loadDeliveryContext(ctx context.Context, principal domainidentity.Principal, applicationID string) ([]domaincatalog.ApplicationEnvironment, []domaincatalog.Environment, []domaindelivery.ReleaseBundle, []domaindelivery.ExecutionTask, []domainbuild.Record, []domainworkflow.Run, []domainrelease.Record, error) {
-	bindings, err := s.catalog.ListApplicationEnvironments(ctx, principal)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, err
-	}
-	environments, err := s.catalog.ListEnvironments(ctx, principal)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, err
-	}
-	bundles, err := s.repository.ListReleaseBundles(ctx, domaindelivery.ReleaseBundleFilter{ApplicationID: applicationID, Limit: 20})
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, err
-	}
-	tasks, err := s.repository.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: applicationID, Limit: 20})
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, err
+	var (
+		bindings     []domaincatalog.ApplicationEnvironment
+		environments []domaincatalog.Environment
+		bundles      []domaindelivery.ReleaseBundle
+		tasks        []domaindelivery.ExecutionTask
+		builds       []domainbuild.Record
+		workflows    []domainworkflow.Run
+		releases     []domainrelease.Record
+		errs         [7]error
+		group        sync.WaitGroup
+	)
+	group.Go(func() { bindings, errs[0] = s.catalog.ListApplicationEnvironments(ctx, principal) })
+	group.Go(func() { environments, errs[1] = s.catalog.ListEnvironments(ctx, principal) })
+	group.Go(func() {
+		bundles, errs[2] = s.repository.ListReleaseBundles(ctx, domaindelivery.ReleaseBundleFilter{ApplicationID: applicationID, Limit: 20})
+	})
+	group.Go(func() {
+		tasks, errs[3] = s.repository.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: applicationID, Limit: 20})
+	})
+	group.Go(func() {
+		builds, errs[4] = s.builds.List(ctx, principal, domainbuild.Filter{ApplicationID: applicationID, Limit: 20})
+	})
+	group.Go(func() { workflows, errs[5] = s.workflows.List(ctx, principal, applicationID, 20) })
+	group.Go(func() {
+		releases, errs[6] = s.releases.List(ctx, principal, domainrelease.Filter{ApplicationID: applicationID, Limit: 20})
+	})
+	group.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return nil, nil, nil, nil, nil, nil, nil, err
+		}
 	}
 	tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
-	builds, err := s.builds.List(ctx, principal, domainbuild.Filter{ApplicationID: applicationID, Limit: 20})
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, err
-	}
-	workflows, err := s.workflows.List(ctx, principal, applicationID, 20)
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, err
-	}
-	releases, err := s.releases.List(ctx, principal, domainrelease.Filter{ApplicationID: applicationID, Limit: 20})
-	if err != nil {
-		return nil, nil, nil, nil, nil, nil, nil, err
-	}
 	return bindings, environments, bundles, tasks, builds, workflows, releases, nil
 }
 
@@ -3016,6 +3052,10 @@ func (s *Service) upsertEnvironmentBindings(ctx context.Context, principal domai
 		for _, item := range existingBindings {
 			if item.ApplicationID == app.ID && item.EnvironmentID == environmentID {
 				existingID = item.ID
+				input.Alias = item.Alias
+				input.ClusterID = item.ClusterID
+				input.Namespace = item.Namespace
+				input.RegistryID = item.RegistryID
 				break
 			}
 		}

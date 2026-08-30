@@ -86,6 +86,10 @@ type ApplicationEnvironment struct {
 	ApplicationGroup   string            `json:"applicationGroup,omitempty"`
 	EnvironmentID      string            `json:"environmentId"`
 	EnvironmentKey     string            `json:"environmentKey,omitempty"`
+	Alias              string            `json:"alias,omitempty"`
+	ClusterID          string            `json:"clusterId,omitempty"`
+	Namespace          string            `json:"namespace,omitempty"`
+	RegistryID         string            `json:"registryId,omitempty"`
 	StrategyProfileID  string            `json:"strategyProfileId,omitempty"`
 	PromotionPolicyID  string            `json:"promotionPolicyId,omitempty"`
 	ArtifactPolicyID   string            `json:"artifactPolicyId,omitempty"`
@@ -103,6 +107,10 @@ type ApplicationEnvironmentInput struct {
 	ID                 string               `json:"id"`
 	ApplicationID      string               `json:"applicationId"`
 	EnvironmentID      string               `json:"environmentId"`
+	Alias              string               `json:"alias,omitempty"`
+	ClusterID          string               `json:"clusterId,omitempty"`
+	Namespace          string               `json:"namespace,omitempty"`
+	RegistryID         string               `json:"registryId,omitempty"`
 	StrategyProfileID  string               `json:"strategyProfileId,omitempty"`
 	PromotionPolicyID  string               `json:"promotionPolicyId,omitempty"`
 	ArtifactPolicyID   string               `json:"artifactPolicyId,omitempty"`
@@ -160,6 +168,13 @@ type WorkflowTemplateInput struct {
 	Description string         `json:"description,omitempty"`
 	Category    string         `json:"category,omitempty"`
 	Definition  map[string]any `json:"definition,omitempty"`
+	Enabled     bool           `json:"enabled"`
+}
+
+type ApplicationWorkflowInput struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Definition  map[string]any `json:"definition"`
 	Enabled     bool           `json:"enabled"`
 }
 
@@ -255,4 +270,5 @@ type Repository interface {
 	CreateWorkflowTemplate(context.Context, WorkflowTemplateInput) (WorkflowTemplate, error)
 	UpdateWorkflowTemplate(context.Context, string, WorkflowTemplateInput) (WorkflowTemplate, error)
 	DeleteWorkflowTemplate(context.Context, string) error
+	SaveApplicationWorkflow(context.Context, string, string, WorkflowTemplateInput) (WorkflowTemplate, error)
 }
