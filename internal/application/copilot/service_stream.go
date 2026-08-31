@@ -530,6 +530,7 @@ func emitInternalAnalysisArtifacts(
 ) {
 	for _, artifact := range artifacts {
 		for _, evidence := range artifact.Evidence {
+			source := workbenchSourceFromEvidence(evidence)
 			sink(domaincopilot.WorkbenchStreamEvent{
 				Type:         "source.updated",
 				RunID:        artifact.RunID,
@@ -537,12 +538,7 @@ func emitInternalAnalysisArtifacts(
 				CreatedAt:    createdAt,
 				ProviderID:   agentProviderInternal,
 				ProviderKind: "internal",
-				Source: &domaincopilot.WorkbenchSource{
-					ID:      evidence.ID,
-					Kind:    streamSourceKindFromEvidence(evidence.Kind),
-					Title:   evidence.Title,
-					Summary: evidence.Summary,
-				},
+				Source:       &source,
 			})
 		}
 		sink(domaincopilot.WorkbenchStreamEvent{

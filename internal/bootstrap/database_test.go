@@ -132,6 +132,7 @@ func TestObsoleteMenuCleanupIncludesPersistedLegacyIDs(t *testing.T) {
 		"access",
 		"account-profile",
 		"settings-about",
+		"monitoring-workbench-explore",
 	} {
 		if !slices.Contains(cleanupIDs, id) {
 			t.Fatalf("obsolete menu cleanup is missing persisted id %q", id)
@@ -405,7 +406,9 @@ func TestDefaultMenuSeedsCoverCanonicalRouteMenus(t *testing.T) {
 	items := defaultMenuSeeds()
 	for _, id := range []string{
 		"cluster-resources-namespaces",
-		"monitoring-workbench-explore",
+		"monitoring-workbench-metrics",
+		"monitoring-workbench-traces",
+		"monitoring-workbench-logs",
 		"ai-workbench-knowledge-pipelines",
 		"ai-workbench-evaluation-lifecycle",
 		"ai-workbench-memory",
@@ -417,6 +420,11 @@ func TestDefaultMenuSeedsCoverCanonicalRouteMenus(t *testing.T) {
 			t.Fatalf("default menu seeds missing canonical route menu %s", id)
 		}
 	}
+	if slices.ContainsFunc(items, func(item menuSeed) bool {
+		return item.ID == "monitoring-workbench-explore"
+	}) {
+		t.Fatal("removed Explore route must not remain in default menu seeds")
+	}
 }
 
 func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
@@ -426,7 +434,9 @@ func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
 	}{
 		"monitoring-workbench-overview":         {path: "/monitoring-workbench/overview"},
 		"monitoring-workbench-services":         {path: "/monitoring-workbench/services", section: "observe-signals"},
-		"monitoring-workbench-explore":          {path: "/monitoring-workbench/explore", section: "observe-signals"},
+		"monitoring-workbench-metrics":          {path: "/monitoring-workbench/metrics", section: "observe-signals"},
+		"monitoring-workbench-traces":           {path: "/monitoring-workbench/traces", section: "observe-signals"},
+		"monitoring-workbench-logs":             {path: "/monitoring-workbench/logs", section: "observe-signals"},
 		"monitoring-workbench-dashboards":       {path: "/monitoring-workbench/dashboards", section: "dashboards"},
 		"monitoring-workbench-providers":        {path: "/monitoring-workbench/providers", section: "observe-data"},
 		"monitoring-workbench-log-data-sources": {path: "/monitoring-workbench/log-data-sources", section: "observe-data"},
@@ -451,7 +461,7 @@ func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
 	}) {
 		t.Fatal("observability workbench seed label is missing")
 	}
-	for _, id := range []string{"monitoring-workbench-metrics", "monitoring-workbench-traces", "monitoring-workbench-logs", "monitoring-workbench-alerting"} {
+	for _, id := range []string{"monitoring-workbench-alerting", "monitoring-workbench-explore"} {
 		if !slices.Contains(obsoleteMenuIDsForCleanup(), id) {
 			t.Fatalf("legacy observability menu %s must remain in database cleanup", id)
 		}

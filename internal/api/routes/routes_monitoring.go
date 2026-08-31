@@ -63,6 +63,7 @@ func registerAlertStateIntegrationRoutes(protected gin.IRoutes, deps Dependencie
 
 func registerAlertRuleRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/alert-rules", deps.Monitoring.ListRules)
+	protected.GET("/alert-rules/:ruleID", deps.Monitoring.GetRule)
 	protected.POST("/alert-rules", deps.Monitoring.CreateRule)
 	protected.PUT("/alert-rules/:ruleID", deps.Monitoring.UpdateRule)
 	protected.POST("/alert-rules/:ruleID/validate", deps.Monitoring.TestRule)

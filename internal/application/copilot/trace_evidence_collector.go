@@ -98,14 +98,14 @@ func (s *Service) collectTraceSourceEvidence(ctx context.Context, request traceE
 		return
 	}
 	result.playbookResults["traces:"+source.ID] = "matched"
-	sourceEvidence, hotServices := buildTraceSpanEvidence(request.input, source, spans)
+	sourceEvidence, hotServices := buildTraceSpanEvidence(request.input, source, spans, request.timeFrom, request.timeTo)
 	result.evidence = append(result.evidence, sourceEvidence...)
 	if len(hotServices) > 0 {
 		result.hypotheses = append(result.hypotheses, traceHotspotHypothesis(request.locale, source.ID, hotServices, sourceEvidence))
 	}
 }
 
-func buildTraceSpanEvidence(input domaincopilot.RootCauseRunInput, source domaincopilot.DataSource, spans []telemetry.TraceSpan) ([]domaincopilot.RootCauseEvidence, []string) {
+func buildTraceSpanEvidence(input domaincopilot.RootCauseRunInput, source domaincopilot.DataSource, spans []telemetry.TraceSpan, timeFrom, timeTo time.Time) ([]domaincopilot.RootCauseEvidence, []string) {
 	evidenceItems := make([]domaincopilot.RootCauseEvidence, 0, len(spans))
 	hotServices := make([]string, 0)
 	for index, span := range spans {
@@ -133,6 +133,8 @@ func buildTraceSpanEvidence(input domaincopilot.RootCauseRunInput, source domain
 				"clusterId":    input.ClusterID,
 				"namespace":    input.Namespace,
 				"workload":     input.WorkloadName,
+				"timeFrom":     timeFrom,
+				"timeTo":       timeTo,
 			},
 		}
 		evidenceItems = append(evidenceItems, evidence)

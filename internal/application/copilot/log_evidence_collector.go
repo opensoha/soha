@@ -101,12 +101,12 @@ func (s *Service) collectLogSourceEvidence(ctx context.Context, request logEvide
 		StartedAt:   now,
 		CompletedAt: &now,
 	})
-	signatureEvidence := buildLogSignatureEvidence(request.input, source, correlation, signatures)
+	signatureEvidence := buildLogSignatureEvidence(request.input, source, correlation, signatures, request.timeFrom, request.timeTo)
 	result.evidence = append(result.evidence, signatureEvidence...)
 	appendLogEvidenceHypotheses(result, request.locale, signatures, signatureEvidence)
 }
 
-func buildLogSignatureEvidence(input domaincopilot.RootCauseRunInput, source domaincopilot.DataSource, correlation telemetry.LogCorrelationResult, signatures []telemetry.LogSignature) []domaincopilot.RootCauseEvidence {
+func buildLogSignatureEvidence(input domaincopilot.RootCauseRunInput, source domaincopilot.DataSource, correlation telemetry.LogCorrelationResult, signatures []telemetry.LogSignature, timeFrom, timeTo time.Time) []domaincopilot.RootCauseEvidence {
 	evidenceItems := make([]domaincopilot.RootCauseEvidence, 0, len(signatures))
 	for index, item := range signatures {
 		attributes := map[string]any{
@@ -121,6 +121,9 @@ func buildLogSignatureEvidence(input domaincopilot.RootCauseRunInput, source dom
 			"namespace":     input.Namespace,
 			"workload":      input.WorkloadName,
 			"service":       firstNonEmptyCorrelationService(correlation.Records, input.WorkloadName),
+			"query":         input.Question,
+			"timeFrom":      timeFrom,
+			"timeTo":        timeTo,
 		}
 		if strings.TrimSpace(correlation.ErrorKind) != "" {
 			attributes["errorKind"] = correlation.ErrorKind

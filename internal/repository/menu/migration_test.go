@@ -87,3 +87,39 @@ func TestBuiltinMenuPermissionMigrationRemovesOnlyKnownRoleBindings(t *testing.T
 		t.Fatal("built-in menu permission migration must preserve custom menu bindings")
 	}
 }
+
+func TestObservabilitySignalMenuMigrationRestoresSignalsAndHidesExplore(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/postgres/0058_observability_signal_menus.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migration := string(raw)
+	for _, expected := range []string{
+		"monitoring-workbench-metrics",
+		"monitoring-workbench-traces",
+		"monitoring-workbench-logs",
+		"monitoring-workbench-explore",
+		"ON CONFLICT (id) DO UPDATE",
+		"SET enabled = false",
+	} {
+		if !strings.Contains(migration, expected) {
+			t.Fatalf("observability signal menu migration missing %q", expected)
+		}
+	}
+}
+
+func TestRemoveObservabilityExploreMenuMigrationDeletesBindingsBeforeMenu(t *testing.T) {
+	raw, err := os.ReadFile("../../../migrations/postgres/0059_remove_observability_explore_menu.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migration := string(raw)
+	bindingDelete := strings.Index(migration, "DELETE FROM menu_role_bindings")
+	menuDelete := strings.Index(migration, "DELETE FROM menus")
+	if bindingDelete < 0 || menuDelete < 0 || bindingDelete > menuDelete {
+		t.Fatal("Explore cleanup migration must delete role bindings before the menu")
+	}
+	if strings.Count(migration, "monitoring-workbench-explore") != 2 {
+		t.Fatal("Explore cleanup migration must target only the binding and menu rows")
+	}
+}

@@ -41,7 +41,7 @@ func (s *Service) QueryDurableLogs(ctx context.Context, principal domainidentity
 	if selector == nil {
 		return domainresource.LogPage{}, fmt.Errorf("%w: log selector is required", apperrors.ErrInvalidArgument)
 	}
-	item, err := s.selectDataSource(ctx, clusterID, selector.Namespace)
+	item, err := s.selectDataSource(ctx, query.DataSourceID, clusterID, selector.Namespace)
 	if err != nil {
 		return domainresource.LogPage{}, err
 	}
@@ -117,12 +117,15 @@ func (s *Service) resolveCursor(value string, expected durableCursor) (string, e
 	return cursor.Provider, nil
 }
 
-func (s *Service) selectDataSource(ctx context.Context, clusterID, namespace string) (domainobservability.DataSource, error) {
+func (s *Service) selectDataSource(ctx context.Context, dataSourceID, clusterID, namespace string) (domainobservability.DataSource, error) {
 	items, err := s.dataSources.ListDataSources(ctx)
 	if err != nil {
 		return domainobservability.DataSource{}, err
 	}
 	for _, item := range items {
+		if dataSourceID != "" && item.ID != dataSourceID {
+			continue
+		}
 		if item.SourceKind == dataSourceKindLogs && item.Enabled && scopeAllows(item.Scope, "clusterIds", clusterID) && scopeAllows(item.Scope, "namespaces", namespace) {
 			return item, nil
 		}

@@ -45,6 +45,18 @@ func TestRegisterSettingsRoutesDoesNotExposeGlobalPrometheusSettings(t *testing.
 	}
 }
 
+func TestRegisterAlertRuleRoutesIncludesDetail(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	registerAlertRuleRoutes(router.Group("/api/v1"), Dependencies{Monitoring: &apiHandlers.MonitoringHandler{}})
+
+	const detailRoute = "GET /api/v1/alert-rules/:ruleID"
+	if !slices.Contains(routeMethodPaths(router.Routes()), detailRoute) {
+		t.Fatalf("alert rule detail route is not registered: %s", detailRoute)
+	}
+}
+
 func TestRegisterPlatformRoutesKeepsCoreOperationalSurface(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

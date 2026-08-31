@@ -80,3 +80,23 @@ func TestObservabilityHandlerListsMetricDataSources(t *testing.T) {
 		t.Fatalf("status/body = %d %s", recorder.Code, recorder.Body.String())
 	}
 }
+
+func TestPublicQueryMetaPreservesAppliedSnapshot(t *testing.T) {
+	to := time.Now().UTC()
+	from := to.Add(-time.Hour)
+	meta := publicQueryMeta(appmonitoring.QueryMeta{
+		State: "success", ObservedAt: to, ScopeRestricted: true,
+		Snapshot: map[string]any{
+			"version": "v1", "signal": "metrics", "dataSourceId": "prometheus-main", "backendType": "prometheus",
+			"context": map[string]any{
+				"version": "v1", "scope": map[string]any{"clusterId": "cluster-a", "namespace": "payments", "workload": "api-v1", "service": "api"},
+				"timeRange": map[string]any{"from": from, "to": to}, "scopeRestricted": true,
+			},
+			"queryLanguage": "metric_key", "metricKey": "cpu_usage", "createdAt": to,
+		},
+	})
+
+	if meta.Snapshot == nil || meta.Snapshot.DataSourceID != "prometheus-main" || meta.Snapshot.MetricKey != "cpu_usage" || meta.Snapshot.QueryLanguage != "metric_key" || meta.Snapshot.Context.Scope.ClusterID != "cluster-a" || meta.Snapshot.Context.Scope.Namespace != "payments" || meta.Snapshot.Context.Scope.Workload != "api-v1" || meta.Snapshot.Context.Scope.Service != "api" || !meta.ScopeRestricted || !meta.Snapshot.Context.ScopeRestricted {
+		t.Fatalf("public snapshot lost query context: %#v", meta)
+	}
+}

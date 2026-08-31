@@ -393,6 +393,19 @@ func TestMonitoringWorkbenchPermissionDoesNotExposeSettingsCenter(t *testing.T) 
 	}
 }
 
+func TestMonitoringSignalMenusReuseMonitoringViewPermission(t *testing.T) {
+	permissions := []string{appaccess.PermWorkbenchMonitoringView, appaccess.PermObserveMonitoringView}
+	for _, id := range []string{"monitoring-workbench-metrics", "monitoring-workbench-traces", "monitoring-workbench-logs"} {
+		item := domainmenu.Record{ID: id, Path: "/monitoring-workbench"}
+		if !isVisibleByPermissions(item, permissions) {
+			t.Fatalf("%s should reuse the monitoring view permission", id)
+		}
+	}
+	if HasPermissionRule("monitoring-workbench-explore") {
+		t.Fatal("removed Explore menu must not keep a permission visibility rule")
+	}
+}
+
 func TestExtensionCenterVisibleWithPluginViewPermission(t *testing.T) {
 	item := domainmenu.Record{ID: "settings-extensions", Path: "/settings/extensions"}
 	if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchSettingsView, appaccess.PermPluginView}) {

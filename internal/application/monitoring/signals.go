@@ -34,6 +34,7 @@ type TraceQueryResult struct {
 	Summary      string
 	Services     []string
 	Spans        []telemetry.TraceSpan
+	Meta         *QueryMeta
 }
 
 type MetricDefinition struct {
@@ -113,11 +114,34 @@ func (s *Service) QueryMetrics(ctx context.Context, principal domainidentity.Pri
 	if err != nil {
 		return MetricQueryResult{}, err
 	}
+	if !signalScopeAllows(source.Scope, "clusterIds", query.Scope.ClusterID) ||
+		!signalScopeAllows(source.Scope, "namespaces", query.Scope.Namespace) {
+		return MetricQueryResult{}, fmt.Errorf("%w: metric query scope is not isolated by the data source", apperrors.ErrInvalidArgument)
+	}
 	series, _, err := s.metricBackend().RangeQuery(ctx, source.BackendType, source.ID, source.Config, query)
 	if err != nil {
 		return MetricQueryResult{}, err
 	}
-	return MetricQueryResult{DataSourceID: source.ID, BackendType: source.BackendType, Series: series}, nil
+	observedAt := time.Now().UTC()
+	state := "success"
+	if len(series) == 0 {
+		state = "empty"
+	}
+	return MetricQueryResult{
+		DataSourceID: source.ID, BackendType: source.BackendType, Series: series,
+		Meta: &QueryMeta{State: state, ObservedAt: observedAt, Snapshot: map[string]any{
+			"version": "v1", "signal": "metrics", "dataSourceId": source.ID, "backendType": source.BackendType,
+			"context": map[string]any{
+				"version": "v1",
+				"scope": map[string]any{
+					"clusterId": query.Scope.ClusterID, "namespace": query.Scope.Namespace,
+					"workload": query.Scope.Workload, "service": query.Scope.Service,
+				},
+				"timeRange": map[string]any{"from": query.TimeFrom, "to": query.TimeTo},
+			},
+			"queryLanguage": "metric_key", "metricKey": query.MetricKey, "createdAt": observedAt,
+		}},
+	}, nil
 }
 
 func (s *Service) QueryTraces(ctx context.Context, principal domainidentity.Principal, dataSourceID string, query telemetry.TraceQuery) (TraceQueryResult, error) {
@@ -154,9 +178,29 @@ func (s *Service) QueryTraces(ctx context.Context, principal domainidentity.Prin
 		services = append(services, service)
 	}
 	sort.Strings(services)
+	observedAt := time.Now().UTC()
+	state := "success"
+	if len(result.Spans) == 0 {
+		state = "empty"
+	}
+	queryContext := map[string]any{
+		"version": "v1",
+		"scope": map[string]any{
+			"clusterId": query.Scope.ClusterID, "namespace": query.Scope.Namespace,
+			"workload": query.Scope.Workload, "service": query.Scope.Service,
+		},
+		"timeRange": map[string]any{"from": query.TimeFrom, "to": query.TimeTo},
+	}
+	if query.TraceID != "" {
+		queryContext["filter"] = map[string]any{"traceId": query.TraceID}
+	}
 	return TraceQueryResult{
 		DataSourceID: source.ID, BackendType: source.BackendType, Summary: result.Summary,
 		Services: services, Spans: result.Spans,
+		Meta: &QueryMeta{State: state, ObservedAt: observedAt, Snapshot: map[string]any{
+			"version": "v1", "signal": "traces", "dataSourceId": source.ID, "backendType": source.BackendType,
+			"context": queryContext, "queryLanguage": "trace_filter", "traceId": query.TraceID, "createdAt": observedAt,
+		}},
 	}, nil
 }
 
@@ -263,6 +307,20 @@ func serviceScopeSupported(scope map[string]any, key, requested string) bool {
 	}
 	values := signalScopeValues(scope[key])
 	return len(values) == 1 && values[0] == requested
+}
+
+func signalScopeAllows(scope map[string]any, key, requested string) bool {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return true
+	}
+	values := signalScopeValues(scope[key])
+	for _, value := range values {
+		if value == requested {
+			return true
+		}
+	}
+	return len(values) == 0
 }
 
 func signalScopeValues(value any) []string {

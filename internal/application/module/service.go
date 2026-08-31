@@ -109,7 +109,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.monitoring.enabled",
 			Dependencies:       []string{"ai"},
 			VisiblePermissions: []string{"workbench.monitoring.view"},
-			SeedMenus:          []string{"monitoring-workbench", "monitoring-workbench-overview", "monitoring-workbench-services", "monitoring-workbench-explore", "monitoring-workbench-dashboards", "monitoring-workbench-providers", "monitoring-workbench-log-data-sources", "monitoring-workbench-integrations", "monitoring-workbench-alerts", "monitoring-workbench-rules", "monitoring-workbench-notifications", "monitoring-workbench-healing", "monitoring-workbench-oncall", "monitoring-workbench-events"},
+			SeedMenus:          []string{"monitoring-workbench", "monitoring-workbench-overview", "monitoring-workbench-services", "monitoring-workbench-metrics", "monitoring-workbench-traces", "monitoring-workbench-logs", "monitoring-workbench-dashboards", "monitoring-workbench-providers", "monitoring-workbench-log-data-sources", "monitoring-workbench-integrations", "monitoring-workbench-alerts", "monitoring-workbench-rules", "monitoring-workbench-notifications", "monitoring-workbench-healing", "monitoring-workbench-oncall", "monitoring-workbench-events"},
 		},
 		{
 			ID:                 "security",

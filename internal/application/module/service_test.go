@@ -33,19 +33,24 @@ func TestListIncludesEnabledHomeWorkbench(t *testing.T) {
 	}
 }
 
-func TestListIncludesMonitoringLogMenus(t *testing.T) {
+func TestListIncludesMonitoringSignalMenus(t *testing.T) {
 	service := New(cfgpkg.ModulesConfig{Monitoring: cfgpkg.ModuleToggleConfig{Enabled: true}})
 	items, err := service.List(context.Background())
 	if err != nil {
 		t.Fatalf("List returned error: %v", err)
 	}
 	status, ok := moduleStatusByID(items, "monitoring")
-	if !ok || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-explore") || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-log-data-sources") {
-		t.Fatalf("monitoring log seed menus missing: %#v", status)
+	if !ok || !slices.Contains(status.Descriptor.SeedMenus, "monitoring-workbench-log-data-sources") {
+		t.Fatalf("monitoring seed menus missing: %#v", status)
 	}
-	for _, id := range []string{"monitoring-workbench-metrics", "monitoring-workbench-traces", "monitoring-workbench-logs", "monitoring-workbench-alerting"} {
+	for _, id := range []string{"monitoring-workbench-metrics", "monitoring-workbench-traces", "monitoring-workbench-logs"} {
+		if !slices.Contains(status.Descriptor.SeedMenus, id) {
+			t.Fatalf("monitoring signal seed menu %s missing: %v", id, status.Descriptor.SeedMenus)
+		}
+	}
+	for _, id := range []string{"monitoring-workbench-explore", "monitoring-workbench-alerting"} {
 		if slices.Contains(status.Descriptor.SeedMenus, id) {
-			t.Fatalf("monitoring seed menus retained hidden compatibility route %s: %v", id, status.Descriptor.SeedMenus)
+			t.Fatalf("monitoring seed menus retained hidden route %s: %v", id, status.Descriptor.SeedMenus)
 		}
 	}
 	if status.Descriptor.Name != "可观测性工作台" {

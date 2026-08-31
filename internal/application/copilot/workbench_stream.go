@@ -2,6 +2,7 @@ package copilot
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 )
 
 const maxAgentRunWorkbenchEvents = 200
+const maxEvidenceSourceRange = 7 * 24 * time.Hour
 
 func narrowWorkbenchToolset(sessionToolset, requestToolset domaincopilot.SessionToolset, requestScopeOverrides map[string]any, sessionScope domaincopilot.SessionScope) domaincopilot.SessionToolset {
 	out := domaincopilot.SessionToolset{
@@ -227,12 +229,7 @@ func workbenchSourcesFromArtifacts(artifacts []domaincopilot.AnalysisArtifact) [
 				continue
 			}
 			seen[id] = struct{}{}
-			out = append(out, domaincopilot.WorkbenchSource{
-				ID:      id,
-				Kind:    streamSourceKindFromEvidence(evidence.Kind),
-				Title:   evidence.Title,
-				Summary: evidence.Summary,
-			})
+			out = append(out, workbenchSourceFromEvidence(evidence))
 		}
 	}
 	return out
@@ -300,12 +297,8 @@ func streamEventsFromEnvelope(sessionID string, envelope domaincopilot.SessionMe
 		for _, artifact := range envelope.AnalysisArtifacts {
 			for _, evidence := range artifact.Evidence {
 				source := base("source.updated", artifact.RunID)
-				source.Source = &domaincopilot.WorkbenchSource{
-					ID:      evidence.ID,
-					Kind:    streamSourceKindFromEvidence(evidence.Kind),
-					Title:   evidence.Title,
-					Summary: evidence.Summary,
-				}
+				mapped := workbenchSourceFromEvidence(evidence)
+				source.Source = &mapped
 				events = append(events, source)
 			}
 			updated := base("artifact.updated", artifact.RunID)
@@ -462,6 +455,66 @@ func streamSourceKindFromEvidence(kind string) string {
 		return "document"
 	default:
 		return "event"
+	}
+}
+
+func workbenchSourceFromEvidence(evidence domaincopilot.RootCauseEvidence) domaincopilot.WorkbenchSource {
+	return domaincopilot.WorkbenchSource{
+		ID: evidence.ID, Kind: streamSourceKindFromEvidence(evidence.Kind), Title: evidence.Title,
+		URL: evidenceSourceURL(evidence), Summary: evidence.Summary,
+	}
+}
+
+func evidenceSourceURL(evidence domaincopilot.RootCauseEvidence) string {
+	attributes := evidence.Attributes
+	from, fromOK := evidenceSourceTime(attributes["timeFrom"])
+	to, toOK := evidenceSourceTime(attributes["timeTo"])
+	if !fromOK || !toOK || !from.Before(to) || to.Sub(from) > maxEvidenceSourceRange {
+		return ""
+	}
+	sourceID := strings.TrimSpace(stringValue(attributes["sourceId"]))
+	if sourceID == "" {
+		return ""
+	}
+	kind := streamSourceKindFromEvidence(evidence.Kind)
+	path := ""
+	switch kind {
+	case "log":
+		path = "/monitoring-workbench/logs"
+	case "metric":
+		if strings.TrimSpace(stringValue(attributes["metricKey"])) == "" {
+			return ""
+		}
+		path = "/monitoring-workbench/metrics"
+	case "trace":
+		if strings.TrimSpace(stringValue(attributes["traceId"])) == "" {
+			return ""
+		}
+		path = "/monitoring-workbench/traces"
+	default:
+		return ""
+	}
+	query := url.Values{"dataSourceId": {sourceID}, "from": {from.UTC().Format(time.RFC3339)}, "to": {to.UTC().Format(time.RFC3339)}}
+	for key, attributeKey := range map[string]string{
+		"cluster": "clusterId", "namespace": "namespace", "workload": "workload", "service": "service",
+		"metricKey": "metricKey", "traceId": "traceId", "spanId": "spanId", "text": "query",
+	} {
+		if value := strings.TrimSpace(stringValue(attributes[attributeKey])); value != "" {
+			query.Set(key, value)
+		}
+	}
+	return (&url.URL{Path: path, RawQuery: query.Encode()}).String()
+}
+
+func evidenceSourceTime(value any) (time.Time, bool) {
+	switch typed := value.(type) {
+	case time.Time:
+		return typed, !typed.IsZero()
+	case string:
+		parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(typed))
+		return parsed, err == nil
+	default:
+		return time.Time{}, false
 	}
 }
 

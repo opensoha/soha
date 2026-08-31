@@ -142,14 +142,14 @@ func (s *Service) collectMetricSourceEvidence(ctx context.Context, request metri
 		return
 	}
 	result.playbookResults["metrics:"+source.ID] = "matched"
-	sourceEvidence, spikingMetrics := buildMetricSignalEvidence(request.input, source, signals)
+	sourceEvidence, spikingMetrics := buildMetricSignalEvidence(request.input, source, signals, request.timeFrom, request.timeTo)
 	result.evidence = append(result.evidence, sourceEvidence...)
 	if len(spikingMetrics) > 0 {
 		result.hypotheses = append(result.hypotheses, metricAnomalyHypothesis(request.locale, source.ID, spikingMetrics, sourceEvidence))
 	}
 }
 
-func buildMetricSignalEvidence(input domaincopilot.RootCauseRunInput, source domaincopilot.DataSource, signals []map[string]any) ([]domaincopilot.RootCauseEvidence, []string) {
+func buildMetricSignalEvidence(input domaincopilot.RootCauseRunInput, source domaincopilot.DataSource, signals []map[string]any, timeFrom, timeTo time.Time) ([]domaincopilot.RootCauseEvidence, []string) {
 	evidenceItems := make([]domaincopilot.RootCauseEvidence, 0, len(signals))
 	spikingMetrics := make([]string, 0)
 	for _, signal := range signals {
@@ -181,6 +181,8 @@ func buildMetricSignalEvidence(input domaincopilot.RootCauseRunInput, source dom
 				"namespace":   input.Namespace,
 				"workload":    input.WorkloadName,
 				"service":     input.WorkloadName,
+				"timeFrom":    timeFrom,
+				"timeTo":      timeTo,
 			},
 		}
 		evidenceItems = append(evidenceItems, evidence)

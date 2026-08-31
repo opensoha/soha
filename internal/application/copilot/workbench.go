@@ -3,6 +3,7 @@ package copilot
 import (
 	"context"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"time"
@@ -592,16 +593,7 @@ func (s *Service) runSessionPerformance(ctx context.Context, sessionID string, s
 			StartedAt:   now,
 			CompletedAt: &now,
 		}
-		evidence := make([]domaincopilot.RootCauseEvidence, 0, len(signals))
-		for _, item := range signals {
-			evidence = append(evidence, domaincopilot.RootCauseEvidence{
-				ID:         fmt.Sprintf("metrics:%s:%s", source.ID, item["metricKey"]),
-				Kind:       "metrics.signal",
-				Title:      fmt.Sprintf("%v", item["label"]),
-				Summary:    fmt.Sprintf("latest=%v average=%v trend=%v", item["latest"], item["average"], item["trend"]),
-				Attributes: item,
-			})
-		}
+		evidence := sessionMetricEvidence(source.ID, scope, signals, timeFrom, timeTo)
 		runID := "perf:" + uuid.NewString()
 		snapshot := analysisArtifactSnapshot(map[string]any{"sourceId": source.ID, "backendType": source.BackendType}, map[string]string{
 			"sessionId":      sessionID,
@@ -653,6 +645,31 @@ func (s *Service) runSessionPerformance(ctx context.Context, sessionID string, s
 	return nil, domaincopilot.AnalysisArtifact{}, fmt.Errorf("no enabled metrics.v1 data source found")
 }
 
+func sessionMetricEvidence(sourceID string, scope domaincopilot.SessionScope, signals []map[string]any, from, to time.Time) []domaincopilot.RootCauseEvidence {
+	evidence := make([]domaincopilot.RootCauseEvidence, 0, len(signals))
+	for _, item := range signals {
+		attributes := maps.Clone(item)
+		if attributes == nil {
+			attributes = map[string]any{}
+		}
+		attributes["sourceId"] = sourceID
+		attributes["clusterId"] = scope.ClusterID
+		attributes["namespace"] = scope.Namespace
+		attributes["workload"] = scope.Workload
+		attributes["service"] = scope.Service
+		attributes["timeFrom"] = from
+		attributes["timeTo"] = to
+		evidence = append(evidence, domaincopilot.RootCauseEvidence{
+			ID:         fmt.Sprintf("metrics:%s:%s", sourceID, item["metricKey"]),
+			Kind:       "metrics.signal",
+			Title:      fmt.Sprintf("%v", item["label"]),
+			Summary:    fmt.Sprintf("latest=%v average=%v trend=%v", item["latest"], item["average"], item["trend"]),
+			Attributes: attributes,
+		})
+	}
+	return evidence
+}
+
 func (s *Service) runSessionTrace(ctx context.Context, sessionID string, scope domaincopilot.SessionScope, toolset domaincopilot.SessionToolset, prompt, createdBy, triggerType, dedupKey string) ([]domaincopilot.ToolExecution, domaincopilot.AnalysisArtifact, error) {
 	const adapterID = "traces.v1"
 	const toolName = "traces.find_slow_spans"
@@ -694,6 +711,8 @@ func (s *Service) runSessionTrace(ctx context.Context, sessionID string, scope d
 			source:      source,
 			result:      result,
 			spans:       spans,
+			timeFrom:    timeFrom,
+			timeTo:      timeTo,
 		})
 	}
 	return nil, domaincopilot.AnalysisArtifact{}, fmt.Errorf("no enabled traces.v1 data source found")
@@ -710,12 +729,14 @@ type sessionTraceArtifactInput struct {
 	source      domaincopilot.DataSource
 	result      telemetry.TraceResult
 	spans       []telemetry.TraceSpan
+	timeFrom    time.Time
+	timeTo      time.Time
 }
 
 func (s *Service) persistSessionTrace(ctx context.Context, input sessionTraceArtifactInput) ([]domaincopilot.ToolExecution, domaincopilot.AnalysisArtifact, error) {
 	now := time.Now().UTC()
 	tool := sessionTraceTool(input, now)
-	evidence := sessionTraceEvidence(input.source.ID, input.spans)
+	evidence := sessionTraceEvidence(input.source.ID, input.scope, input.spans, input.timeFrom, input.timeTo)
 	runID := "trace:" + uuid.NewString()
 	snapshot := analysisArtifactSnapshot(map[string]any{"sourceId": input.source.ID, "backendType": input.source.BackendType, "hotspots": input.result.Hotspots}, map[string]string{
 		"sessionId": input.sessionID, "rootCauseRunId": runID, "analysisRunId": runID, "analysisKind": "trace",
@@ -750,14 +771,14 @@ func sessionTraceTool(input sessionTraceArtifactInput, now time.Time) domaincopi
 	}
 }
 
-func sessionTraceEvidence(sourceID string, spans []telemetry.TraceSpan) []domaincopilot.RootCauseEvidence {
+func sessionTraceEvidence(sourceID string, scope domaincopilot.SessionScope, spans []telemetry.TraceSpan, from, to time.Time) []domaincopilot.RootCauseEvidence {
 	evidence := make([]domaincopilot.RootCauseEvidence, 0, len(spans))
 	for index, item := range spans {
 		evidence = append(evidence, domaincopilot.RootCauseEvidence{
 			ID: fmt.Sprintf("trace:%s:%d", sourceID, index+1), Kind: "trace.span",
 			Title:      fmt.Sprintf("%s / %s", item.Service, item.Operation),
 			Summary:    fmt.Sprintf("duration=%.2fms trace=%s", item.DurationMS, item.TraceID),
-			Attributes: map[string]any{"traceId": item.TraceID, "spanId": item.SpanID, "parentSpanId": item.ParentSpanID, "durationMs": item.DurationMS, "error": item.Error, "tags": item.Tags, "service": item.Service, "operation": item.Operation},
+			Attributes: map[string]any{"sourceId": sourceID, "clusterId": scope.ClusterID, "namespace": scope.Namespace, "workload": scope.Workload, "service": item.Service, "timeFrom": from, "timeTo": to, "traceId": item.TraceID, "spanId": item.SpanID, "parentSpanId": item.ParentSpanID, "durationMs": item.DurationMS, "error": item.Error, "tags": item.Tags, "operation": item.Operation},
 		})
 	}
 	return evidence

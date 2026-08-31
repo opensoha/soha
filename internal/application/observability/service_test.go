@@ -193,3 +193,26 @@ func TestDurableLogQueryRequiresSelector(t *testing.T) {
 		t.Fatalf("QueryDurableLogs() error = %v, want invalid argument", err)
 	}
 }
+
+func TestSelectDataSourceHonorsExplicitIDAndScope(t *testing.T) {
+	service := &Service{dataSources: &memoryDataSources{items: map[string]domainobservability.DataSource{
+		"first": {
+			ID: "first", SourceKind: dataSourceKindLogs, Enabled: true,
+		},
+		"requested": {
+			ID: "requested", SourceKind: dataSourceKindLogs, Enabled: true,
+			Scope: map[string]any{"clusterIds": []string{"cluster-a"}, "namespaces": []string{"team-a"}},
+		},
+	}}}
+
+	item, err := service.selectDataSource(context.Background(), "requested", "cluster-a", "team-a")
+	if err != nil || item.ID != "requested" {
+		t.Fatalf("selectDataSource() = %#v, %v, want requested", item, err)
+	}
+	if _, err := service.selectDataSource(context.Background(), "requested", "cluster-b", "team-a"); !errors.Is(err, apperrors.ErrClusterUnready) {
+		t.Fatalf("out-of-scope selectDataSource() error = %v, want cluster unready", err)
+	}
+	if _, err := service.selectDataSource(context.Background(), "missing", "cluster-a", "team-a"); !errors.Is(err, apperrors.ErrClusterUnready) {
+		t.Fatalf("missing selectDataSource() error = %v, want cluster unready", err)
+	}
+}

@@ -293,7 +293,7 @@ func publicQueryMeta(meta appmonitoring.QueryMeta) sohaapi.ObservabilityQueryRes
 	observedAt := meta.ObservedAt
 	return sohaapi.ObservabilityQueryResultMeta{
 		State: sohaapi.ObservabilityQueryState(meta.State), Warnings: meta.Warnings,
-		ObservedAt: &observedAt, ScopeRestricted: meta.ScopeRestricted,
+		ObservedAt: &observedAt, ScopeRestricted: meta.ScopeRestricted, Snapshot: publicQuerySnapshot(meta.Snapshot),
 	}
 }
 
@@ -315,30 +315,57 @@ func writeObservabilityMetricResult(c *gin.Context, result appmonitoring.MetricQ
 	}
 	if result.Meta != nil {
 		meta := publicQueryMeta(*result.Meta)
-		meta.Snapshot = publicMetricQuerySnapshot(result.Meta.Snapshot)
 		response.Meta = &meta
 	}
 	apiresponse.Item(c, http.StatusOK, response)
 }
 
-func publicMetricQuerySnapshot(value map[string]any) *sohaapi.ObservabilityQuerySnapshot {
+func publicQuerySnapshot(value map[string]any) *sohaapi.ObservabilityQuerySnapshot {
 	contextValue, _ := value["context"].(map[string]any)
+	scopeValue, _ := contextValue["scope"].(map[string]any)
 	timeRange, _ := contextValue["timeRange"].(map[string]any)
 	from, fromOK := timeRange["from"].(time.Time)
 	to, toOK := timeRange["to"].(time.Time)
 	if !fromOK || !toOK {
 		return nil
 	}
-	createdAt, _ := value["createdAt"].(time.Time)
-	return &sohaapi.ObservabilityQuerySnapshot{
-		Version: sohaapi.ObservabilityQuerySnapshotVersion("v1"), Signal: sohaapi.ObservabilitySignal("metrics"),
-		DataSourceID: dashboardSnapshotString(value["dataSourceId"]), BackendType: dashboardSnapshotString(value["backendType"]),
-		Context: sohaapi.ObservabilityContext{
-			Version: sohaapi.ObservabilityContextVersion("v1"), Scope: sohaapi.ObservabilityQueryScope{},
-			TimeRange: sohaapi.ObservabilityTimeRange{From: from, To: to},
+	context := sohaapi.ObservabilityContext{
+		Version: sohaapi.ObservabilityContextVersion("v1"),
+		Scope: sohaapi.ObservabilityQueryScope{
+			WorkspaceID: dashboardSnapshotString(scopeValue["workspaceId"]), Environment: dashboardSnapshotString(scopeValue["environment"]),
+			ClusterID: dashboardSnapshotString(scopeValue["clusterId"]), Namespace: dashboardSnapshotString(scopeValue["namespace"]),
+			Workload: dashboardSnapshotString(scopeValue["workload"]), Service: dashboardSnapshotString(scopeValue["service"]),
 		},
-		QueryLanguage: sohaapi.ObservabilityQueryLanguage("promql"), Query: dashboardSnapshotString(value["query"]), CreatedAt: &createdAt,
+		TimeRange: sohaapi.ObservabilityTimeRange{From: from, To: to},
 	}
+	context.ScopeRestricted, _ = contextValue["scopeRestricted"].(bool)
+	if filterValue, ok := contextValue["filter"].(map[string]any); ok {
+		context.Filter = &sohaapi.ObservabilityFilter{
+			Text: dashboardSnapshotString(filterValue["text"]), TraceID: dashboardSnapshotString(filterValue["traceId"]),
+			SpanID: dashboardSnapshotString(filterValue["spanId"]),
+		}
+		if labels, ok := filterValue["labels"].(map[string]string); ok {
+			context.Filter.Labels = labels
+		}
+	}
+	if resourceValue, ok := contextValue["resource"].(map[string]any); ok {
+		kind := dashboardSnapshotString(resourceValue["kind"])
+		name := dashboardSnapshotString(resourceValue["name"])
+		if kind != "" && name != "" {
+			context.Resource = &sohaapi.ObservabilityResourceIdentity{Kind: kind, Name: name, UID: dashboardSnapshotString(resourceValue["uid"])}
+		}
+	}
+	snapshot := &sohaapi.ObservabilityQuerySnapshot{
+		Version: sohaapi.ObservabilityQuerySnapshotVersion("v1"), Signal: sohaapi.ObservabilitySignal(dashboardSnapshotString(value["signal"])),
+		DataSourceID: dashboardSnapshotString(value["dataSourceId"]), BackendType: dashboardSnapshotString(value["backendType"]),
+		Context: context, QueryLanguage: sohaapi.ObservabilityQueryLanguage(dashboardSnapshotString(value["queryLanguage"])),
+		Query: dashboardSnapshotString(value["query"]), MetricKey: dashboardSnapshotString(value["metricKey"]),
+		TraceID: dashboardSnapshotString(value["traceId"]), SpanID: dashboardSnapshotString(value["spanId"]),
+	}
+	if createdAt, ok := value["createdAt"].(time.Time); ok {
+		snapshot.CreatedAt = &createdAt
+	}
+	return snapshot
 }
 
 func dashboardSnapshotString(value any) string {
@@ -514,13 +541,18 @@ func (h *ObservabilityHandler) QueryTraces(c *gin.Context) {
 			StartTime: span.StartTime, Tags: tags, Error: span.Error,
 		})
 	}
-	apiresponse.Item(c, http.StatusOK, sohaapi.ObservabilityTraceQueryResult{
+	response := sohaapi.ObservabilityTraceQueryResult{
 		DataSourceID: result.DataSourceID,
 		BackendType:  sohaapi.ObservabilityTraceQueryResultBackendType(result.BackendType),
 		Summary:      result.Summary,
 		Services:     result.Services,
 		Spans:        spans,
-	})
+	}
+	if result.Meta != nil {
+		meta := publicQueryMeta(*result.Meta)
+		response.Meta = &meta
+	}
+	apiresponse.Item(c, http.StatusOK, response)
 }
 
 func metricQueryScope(scope *sohaapi.ObservabilityQueryScope) telemetry.MetricScope {

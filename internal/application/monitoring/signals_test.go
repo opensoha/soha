@@ -88,6 +88,7 @@ func TestQueryMetricsRequiresPermissionAndUsesEnabledPrometheusSource(t *testing
 	}
 	now := time.Now().UTC()
 	result, err := service.QueryMetrics(context.Background(), monitoringCompatPrincipal(), "", telemetry.MetricRangeQuery{
+		Scope:     telemetry.MetricScope{ClusterID: "cluster-a", Namespace: "payments", Workload: "api-v1", Service: "api"},
 		MetricKey: "cpu_usage", TimeFrom: now.Add(-time.Hour), TimeTo: now, Step: time.Minute,
 	})
 	if err != nil {
@@ -96,6 +97,14 @@ func TestQueryMetricsRequiresPermissionAndUsesEnabledPrometheusSource(t *testing
 	if result.DataSourceID != "metrics" || !metricBackend.called || len(result.Series) != 1 {
 		t.Fatalf("unexpected metric result: %#v", result)
 	}
+	if result.Meta == nil {
+		t.Fatal("metric query result has no reproducible snapshot")
+	}
+	contextValue, _ := result.Meta.Snapshot["context"].(map[string]any)
+	scope, _ := contextValue["scope"].(map[string]any)
+	if result.Meta.State != "success" || result.Meta.Snapshot["queryLanguage"] != "metric_key" || result.Meta.Snapshot["metricKey"] != "cpu_usage" || scope["clusterId"] != "cluster-a" || scope["namespace"] != "payments" || scope["workload"] != "api-v1" || scope["service"] != "api" {
+		t.Fatalf("metric query snapshot lost applied context: %#v", result.Meta)
+	}
 
 	service.permissions = monitoringCompatPermissions()
 	_, err = service.QueryMetrics(context.Background(), monitoringCompatPrincipal(), "", telemetry.MetricRangeQuery{
@@ -103,6 +112,30 @@ func TestQueryMetricsRequiresPermissionAndUsesEnabledPrometheusSource(t *testing
 	})
 	if !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("expected access denied, got %v", err)
+	}
+}
+
+func TestQueryMetricsRejectsScopeNotIsolatedByDataSource(t *testing.T) {
+	metricBackend := &stubMetricTelemetry{}
+	service := &Service{
+		dataSources: stubSignalDataSources{items: []domaincopilot.DataSource{{
+			ID: "metrics", BackendType: "prometheus", Enabled: true,
+			Config: map[string]any{"endpoint": "http://prometheus:9090"},
+			Scope:  map[string]any{"clusterIds": []string{"cluster-a"}, "namespaces": []string{"team-a"}},
+		}}},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveMonitoringView),
+		metrics:     metricBackend,
+	}
+	now := time.Now().UTC()
+	_, err := service.QueryMetrics(context.Background(), monitoringCompatPrincipal(), "", telemetry.MetricRangeQuery{
+		Scope:     telemetry.MetricScope{ClusterID: "cluster-b", Namespace: "team-a"},
+		MetricKey: "cpu_usage", TimeFrom: now.Add(-time.Hour), TimeTo: now, Step: time.Minute,
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("expected unsupported scope error, got %v", err)
+	}
+	if metricBackend.called {
+		t.Fatal("metric backend must not receive a scope outside the data source boundary")
 	}
 }
 
@@ -116,6 +149,7 @@ func TestQueryTracesReturnsSortedUniqueServices(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	result, err := service.QueryTraces(context.Background(), monitoringCompatPrincipal(), "", telemetry.TraceQuery{
+		Scope: telemetry.TraceScope{Service: "api", Workload: "api-v1"}, TraceID: "trace-1",
 		TimeFrom: now.Add(-time.Hour), TimeTo: now,
 	})
 	if err != nil {
@@ -123,6 +157,14 @@ func TestQueryTracesReturnsSortedUniqueServices(t *testing.T) {
 	}
 	if len(result.Services) != 2 || result.Services[0] != "api" || result.Services[1] != "worker" {
 		t.Fatalf("unexpected services: %#v", result.Services)
+	}
+	if result.Meta == nil {
+		t.Fatal("trace query result has no reproducible snapshot")
+	}
+	contextValue, _ := result.Meta.Snapshot["context"].(map[string]any)
+	scope, _ := contextValue["scope"].(map[string]any)
+	if result.Meta.State != "success" || result.Meta.Snapshot["queryLanguage"] != "trace_filter" || result.Meta.Snapshot["traceId"] != "trace-1" || scope["service"] != "api" || scope["workload"] != "api-v1" {
+		t.Fatalf("trace query snapshot lost applied context: %#v", result.Meta)
 	}
 }
 
