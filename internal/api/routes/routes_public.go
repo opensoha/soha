@@ -14,6 +14,11 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	limits := apiMiddleware.NewBoundedRateLimiter(10_000)
 	provider := func(c *gin.Context) string { return c.Param("providerID") }
 	attempt := func(c *gin.Context) string { return c.Param("attemptID") }
+	handoffRateLimited := func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Header("Referrer-Policy", "no-referrer")
+		deps.Auth.AuditBrowserHandoffFailure(c, "rate_limited")
+	}
 	v1.GET("/healthz", deps.System.Healthz)
 	v1.GET("/readyz", deps.System.Readyz)
 	v1.GET("/auth/providers", deps.Auth.ListProviders)
@@ -31,6 +36,8 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	v1.POST("/auth/desktop/attempts", limits.Middleware("desktop-auth-create", 20, time.Minute, nil), deps.Auth.CreateDesktopAuthAttempt)
 	v1.GET("/auth/desktop/attempts/:attemptID/start", limits.Middleware("desktop-auth-start", 30, time.Minute, attempt), deps.Auth.StartDesktopAuthAttempt)
 	v1.POST("/auth/desktop/attempts/:attemptID/exchange", limits.Middleware("desktop-auth-exchange", 30, time.Minute, attempt), deps.Auth.ExchangeDesktopAuthAttempt)
+	v1.GET("/auth/browser-handoffs/:browserHandoffID", limits.Middleware("browser-handoff-inspect", 60, time.Minute, nil, handoffRateLimited), deps.Auth.GetBrowserHandoff)
+	v1.POST("/auth/browser-handoffs/:browserHandoffID/complete", limits.Middleware("browser-handoff-complete", 30, time.Minute, nil, handoffRateLimited), deps.Auth.CompleteBrowserHandoff)
 	if deps.AgentConnections != nil {
 		v1.GET("/kubernetes/agent-installations/:installTicket/manifest.yaml", deps.AgentConnections.DownloadManifest)
 		v1.GET("/agent-sessions/connect", deps.AgentConnections.Connect)

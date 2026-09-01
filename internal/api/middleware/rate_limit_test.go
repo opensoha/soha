@@ -38,3 +38,28 @@ func TestBoundedRateLimiterLimitsPerIdentifierAndResets(t *testing.T) {
 		t.Fatalf("reset status = %d", got.Code)
 	}
 }
+
+func TestBoundedRateLimiterCanLimitByIPAndReportDenial(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	limiter := NewBoundedRateLimiter(10)
+	denied := 0
+	router := gin.New()
+	router.GET("/handoff/:id", limiter.Middleware("browser-handoff", 1, time.Minute, nil, func(*gin.Context) {
+		denied++
+	}), func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	for index, id := range []string{"first-ticket", "second-ticket"} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/handoff/"+id, nil))
+		want := http.StatusNoContent
+		if index == 1 {
+			want = http.StatusTooManyRequests
+		}
+		if recorder.Code != want {
+			t.Fatalf("request %d status = %d, want %d", index, recorder.Code, want)
+		}
+	}
+	if denied != 1 {
+		t.Fatalf("denial callbacks = %d, want 1", denied)
+	}
+}

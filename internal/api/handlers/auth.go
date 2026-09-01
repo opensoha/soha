@@ -18,6 +18,7 @@ import (
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainportal "github.com/opensoha/soha/internal/domain/providerportal"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -55,6 +56,12 @@ type IdentityDesktopAuthService interface {
 	CreateDesktopAuthAttempt(context.Context, domainidentity.DesktopAuthAttemptCreate) (domainidentity.DesktopAuthAttempt, error)
 	BeginDesktopAuthAttempt(context.Context, string) (string, error)
 	ConsumeDesktopAuthAttempt(context.Context, string, string, string) (domainidentity.AuthResult, error)
+}
+
+type IdentityBrowserHandoffService interface {
+	GetBrowserHandoff(context.Context, string) (domainportal.BrowserHandoff, error)
+	CompleteBrowserHandoff(context.Context, string, string, string, string) (domainportal.BrowserHandoffCompletion, domainidentity.AuthResult, error)
+	AuditBrowserHandoffFailure(context.Context, domainidentity.Principal, string, string)
 }
 
 type IdentitySessionService interface {
@@ -151,6 +158,7 @@ type AuthHandler struct {
 	profile             IdentityProfileService
 	federation          IdentityFederationService
 	desktop             IdentityDesktopAuthService
+	browserHandoffs     IdentityBrowserHandoffService
 	saml                IdentitySAMLService
 	sessions            IdentitySessionService
 	streamTickets       IdentityStreamTicketService
@@ -174,6 +182,7 @@ func NewAuthHandlerWithServices(auth IdentityAuthService, profile IdentityProfil
 		profile:             profile,
 		federation:          federation,
 		desktop:             desktopAuthService(federation),
+		browserHandoffs:     browserHandoffService(auth),
 		saml:                samlService(federation),
 		sessions:            sessions,
 		streamTickets:       streamTickets,
@@ -195,6 +204,11 @@ func samlService(federation IdentityFederationService) IdentitySAMLService {
 
 func desktopAuthService(federation IdentityFederationService) IdentityDesktopAuthService {
 	service, _ := federation.(IdentityDesktopAuthService)
+	return service
+}
+
+func browserHandoffService(auth IdentityAuthService) IdentityBrowserHandoffService {
+	service, _ := auth.(IdentityBrowserHandoffService)
 	return service
 }
 
@@ -577,6 +591,58 @@ func (h *AuthHandler) ExchangeDesktopAuthAttempt(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, result)
 }
 
+func (h *AuthHandler) GetBrowserHandoff(c *gin.Context) {
+	setBrowserHandoffResponseHeaders(c)
+	if h.browserHandoffs == nil {
+		writeError(c, fmt.Errorf("%w: browser handoff is not enabled", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	handoff, err := h.browserHandoffs.GetBrowserHandoff(c.Request.Context(), c.Param("browserHandoffID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, handoff)
+}
+
+func (h *AuthHandler) CompleteBrowserHandoff(c *gin.Context) {
+	setBrowserHandoffResponseHeaders(c)
+	if h.browserHandoffs == nil {
+		writeError(c, fmt.Errorf("%w: browser handoff is not enabled", apperrors.ErrUnsupportedOperation))
+		return
+	}
+	accessToken, _ := c.Cookie(apiMiddleware.ProtocolAccessCookieName)
+	refreshToken, _ := c.Cookie(refreshCookieName)
+	completion, result, err := h.browserHandoffs.CompleteBrowserHandoff(
+		c.Request.Context(), c.Param("browserHandoffID"), browserHandoffRequestOrigin(c), strings.TrimSpace(accessToken), strings.TrimSpace(refreshToken),
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	h.setAuthCookies(c, result)
+	apiresponse.Item(c, http.StatusOK, completion)
+}
+
+func browserHandoffRequestOrigin(c *gin.Context) string {
+	origins := c.Request.Header.Values("Origin")
+	if len(origins) != 1 {
+		return ""
+	}
+	return strings.TrimSpace(origins[0])
+}
+
+func setBrowserHandoffResponseHeaders(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Header("Referrer-Policy", "no-referrer")
+}
+
+func (h *AuthHandler) AuditBrowserHandoffFailure(c *gin.Context, reason string) {
+	if h.browserHandoffs != nil {
+		h.browserHandoffs.AuditBrowserHandoffFailure(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), "", reason)
+	}
+}
+
 func bindDesktopAuthJSON(c *gin.Context, destination any) bool {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxDesktopAuthRequestBytes)
 	decoder := json.NewDecoder(c.Request.Body)
@@ -598,16 +664,7 @@ func bindDesktopAuthJSON(c *gin.Context, destination any) bool {
 }
 
 func authRequestOrigin(c *gin.Context) (string, error) {
-	scheme := "http"
-	if authRequestIsHTTPS(c) {
-		scheme = "https"
-	}
-	host := strings.TrimSpace(c.Request.Host)
-	origin, err := url.Parse(scheme + "://" + host)
-	if err != nil || origin.Hostname() == "" || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" {
-		return "", fmt.Errorf("%w: request origin is invalid", apperrors.ErrInvalidArgument)
-	}
-	return origin.Scheme + "://" + origin.Host, nil
+	return apiMiddleware.RequestOrigin(c)
 }
 
 func (h *AuthHandler) ProviderLogin(c *gin.Context) {

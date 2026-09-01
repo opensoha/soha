@@ -110,6 +110,7 @@ type SessionAdminStore interface {
 
 type EphemeralTokenStore interface {
 	CreateEphemeralToken(context.Context, domainidentity.EphemeralToken) error
+	GetEphemeralToken(context.Context, string, string) (domainidentity.EphemeralToken, error)
 	ConsumeEphemeralToken(context.Context, string, string) (domainidentity.EphemeralToken, error)
 }
 

@@ -128,10 +128,30 @@ type AccessPolicyContext struct {
 }
 
 type LaunchDecision struct {
-	Application  Application `json:"application"`
-	LaunchURL    string      `json:"launchUrl"`
-	ProviderType string      `json:"providerType"`
-	Decision     string      `json:"decision"`
+	Application      Application `json:"application"`
+	LaunchURL        string      `json:"launchUrl"`
+	ProviderType     string      `json:"providerType"`
+	Decision         string      `json:"decision"`
+	HandoffExpiresAt *time.Time  `json:"handoffExpiresAt,omitempty"`
+}
+
+type BrowserHandoff struct {
+	ID          string                    `json:"-"`
+	Application BrowserHandoffApplication `json:"application"`
+	AccountName string                    `json:"accountName"`
+	Status      string                    `json:"status"`
+	ExpiresAt   time.Time                 `json:"expiresAt"`
+}
+
+type BrowserHandoffApplication struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	IconURL string `json:"iconUrl,omitempty"`
+}
+
+type BrowserHandoffCompletion struct {
+	Status         string `json:"status"`
+	DestinationURL string `json:"destinationUrl"`
 }
 
 type ApplicationLaunch struct {

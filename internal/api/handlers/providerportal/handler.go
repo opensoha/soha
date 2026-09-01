@@ -3,9 +3,11 @@ package providerportal
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -39,6 +41,11 @@ type PortalInteractor interface {
 	SetFavorite(context.Context, domainidentity.Principal, string) (domainportal.Application, error)
 	DeleteFavorite(context.Context, domainidentity.Principal, string) error
 	ListRecent(context.Context, domainidentity.Principal, int) ([]domainportal.ApplicationLaunch, error)
+}
+
+type BrowserHandoffIssuer interface {
+	CreateBrowserHandoff(context.Context, domainidentity.Principal, domainidentity.AccessContext, domainportal.Application, string) (domainportal.BrowserHandoff, error)
+	AuditBrowserHandoffFailure(context.Context, domainidentity.Principal, string, string)
 }
 
 type ApplicationService interface {
@@ -131,6 +138,7 @@ type OIDCClientService interface {
 type Services struct {
 	PortalReader           PortalReader
 	PortalInteractor       PortalInteractor
+	BrowserHandoffs        BrowserHandoffIssuer
 	Applications           ApplicationService
 	Policies               PolicyService
 	Providers              ProviderService
@@ -160,8 +168,11 @@ type Handler struct {
 }
 
 type portalHandler struct {
-	reader     PortalReader
-	interactor PortalInteractor
+	reader          PortalReader
+	interactor      PortalInteractor
+	browserHandoffs BrowserHandoffIssuer
+	handoffLimits   *apiMiddleware.BoundedRateLimiter
+	accessURL       interface{ AccessURL() string }
 }
 
 type applicationHandler struct {
@@ -213,8 +224,11 @@ const (
 func New(services Services) *Handler {
 	return &Handler{
 		portalHandler: portalHandler{
-			reader:     services.PortalReader,
-			interactor: services.PortalInteractor,
+			reader:          services.PortalReader,
+			interactor:      services.PortalInteractor,
+			browserHandoffs: services.BrowserHandoffs,
+			handoffLimits:   apiMiddleware.NewBoundedRateLimiter(10_000),
+			accessURL:       services.AccessURL,
 		},
 		applicationHandler:            applicationHandler{service: services.Applications},
 		policyHandler:                 policyHandler{service: services.Policies},
@@ -260,13 +274,71 @@ func (h *portalHandler) GetPortalApplication(c *gin.Context) {
 }
 
 func (h *portalHandler) LaunchPortalApplication(c *gin.Context) {
+	surface, ok := portalLaunchSurface(c)
+	if !ok {
+		return
+	}
 	principal := apiMiddleware.PrincipalFromContext(c)
+	var access domainidentity.AccessContext
+	var audience string
+	if surface == string(sohaapi.Desktop) {
+		if h.browserHandoffs == nil {
+			writeError(c, fmt.Errorf("%w: browser handoff is not enabled", apperrors.ErrUnsupportedOperation))
+			return
+		}
+		access = apiMiddleware.AccessContextFromContext(c)
+		allowed, retryAfter := h.handoffLimits.Allow("browser-handoff-create|"+principal.UserID+"|"+access.SessionID, 20, time.Minute)
+		if !allowed {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+			h.browserHandoffs.AuditBrowserHandoffFailure(c.Request.Context(), principal, c.Param("applicationID"), "rate_limited")
+			apiresponse.Error(c, http.StatusTooManyRequests, "rate_limited", "too many requests")
+			return
+		}
+		audience = issuerFromRequest(c, h.accessURL)
+	}
 	item, err := h.interactor.Launch(portalAccessContext(c), principal, c.Param("applicationID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
+	if surface == string(sohaapi.Desktop) {
+		handoff, err := h.browserHandoffs.CreateBrowserHandoff(c.Request.Context(), principal, access, item.Application, audience)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		item.LaunchURL = "/auth/browser-handoff/" + url.PathEscape(handoff.ID)
+		item.Application.LaunchURL = item.LaunchURL
+		item.HandoffExpiresAt = &handoff.ExpiresAt
+	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func portalLaunchSurface(c *gin.Context) (string, bool) {
+	if c.Request.Body == nil || c.Request.ContentLength == 0 {
+		return string(sohaapi.Web), true
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 1024)
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	var request sohaapi.PortalLaunchRequest
+	err := decoder.Decode(&request)
+	if err == nil {
+		err = decoder.Decode(&struct{}{})
+		if errors.Is(err, io.EOF) && request.Surface == "" {
+			return string(sohaapi.Web), true
+		}
+		if errors.Is(err, io.EOF) && request.Surface.Valid() {
+			return string(request.Surface), true
+		}
+	}
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		apiresponse.Error(c, http.StatusRequestEntityTooLarge, "payload_too_large", "portal launch payload exceeds the request limit")
+		return "", false
+	}
+	apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid portal launch payload")
+	return "", false
 }
 
 func (h *portalHandler) SetFavorite(c *gin.Context) {

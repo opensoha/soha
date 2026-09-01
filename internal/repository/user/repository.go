@@ -692,6 +692,16 @@ func (r *Repository) CreateEphemeralToken(ctx context.Context, token EphemeralTo
 	`, token.Token, token.Kind, string(payload), token.ExpiresAt, createdAt).Error
 }
 
+func (r *Repository) GetEphemeralToken(ctx context.Context, tokenID, kind string) (EphemeralToken, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT token, kind, payload, expires_at, created_at
+		FROM auth_ephemeral_tokens
+		WHERE token = ? AND kind = ? AND expires_at > ?
+		LIMIT 1
+	`, tokenID, kind, time.Now().UTC()).Row()
+	return scanEphemeralToken(row)
+}
+
 func (r *Repository) ConsumeEphemeralToken(ctx context.Context, tokenID, kind string) (EphemeralToken, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		DELETE FROM auth_ephemeral_tokens

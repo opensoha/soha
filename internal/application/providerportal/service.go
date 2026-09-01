@@ -141,7 +141,6 @@ func (s *Service) Launch(ctx context.Context, principal domainidentity.Principal
 	s.recordLaunch(ctx, principal, item, "allow", "portal launch allowed", launchURL)
 	s.recordAudit(ctx, principal, "portal.launch", "success", item, "launched identity application", map[string]any{
 		"providerType": item.ProviderType,
-		"launchUrl":    launchURL,
 	})
 	return domainportal.LaunchDecision{
 		Application:  item,

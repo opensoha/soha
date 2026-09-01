@@ -1267,6 +1267,17 @@ func (r *loginMappingUserRepo) CreateEphemeralToken(_ context.Context, token use
 	return nil
 }
 
+func (r *loginMappingUserRepo) GetEphemeralToken(_ context.Context, token, kind string) (userrepo.EphemeralToken, error) {
+	r.ephemeralMu.Lock()
+	defer r.ephemeralMu.Unlock()
+
+	item, ok := r.ephemeral[kind+"|"+token]
+	if !ok || item.ExpiresAt.Before(time.Now().UTC()) {
+		return userrepo.EphemeralToken{}, userrepo.ErrNotFound
+	}
+	return item, nil
+}
+
 func (r *loginMappingUserRepo) ConsumeEphemeralToken(_ context.Context, token, kind string) (userrepo.EphemeralToken, error) {
 	r.ephemeralMu.Lock()
 	defer r.ephemeralMu.Unlock()

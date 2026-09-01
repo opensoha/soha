@@ -1294,6 +1294,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		ProviderPortal: providerportalhandler.New(providerportalhandler.Services{
 			PortalReader:           core.providerPortalService,
 			PortalInteractor:       core.providerPortalService,
+			BrowserHandoffs:        core.identityService,
 			Applications:           core.providerPortalService,
 			Policies:               core.providerPortalService,
 			Providers:              core.identityProviderService,

@@ -29,15 +29,18 @@ func NewBoundedRateLimiter(maxEntries int) *BoundedRateLimiter {
 	return &BoundedRateLimiter{entries: make(map[string]rateLimitEntry), maxEntries: maxEntries, now: time.Now}
 }
 
-func (l *BoundedRateLimiter) Middleware(class string, limit int, window time.Duration, identifier func(*gin.Context) string) gin.HandlerFunc {
+func (l *BoundedRateLimiter) Middleware(class string, limit int, window time.Duration, identifier func(*gin.Context) string, onDeny ...func(*gin.Context)) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id := ""
 		if identifier != nil {
 			id = strings.TrimSpace(identifier(c))
 		}
 		key := strings.TrimSpace(class) + "|" + c.ClientIP() + "|" + id
-		allowed, retryAfter := l.allow(key, limit, window)
+		allowed, retryAfter := l.Allow(key, limit, window)
 		if !allowed {
+			if len(onDeny) > 0 && onDeny[0] != nil {
+				onDeny[0](c)
+			}
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error":   "rate_limited",
@@ -47,6 +50,10 @@ func (l *BoundedRateLimiter) Middleware(class string, limit int, window time.Dur
 		}
 		c.Next()
 	}
+}
+
+func (l *BoundedRateLimiter) Allow(key string, limit int, window time.Duration) (bool, int) {
+	return l.allow(strings.TrimSpace(key), limit, window)
 }
 
 func (l *BoundedRateLimiter) allow(key string, limit int, window time.Duration) (bool, int) {
