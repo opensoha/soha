@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/golang-jwt/jwt/v5"
@@ -872,7 +873,7 @@ func (s *Service) ChangeCurrentPassword(ctx context.Context, principal domainide
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(input.CurrentPassword)); err != nil {
 		return fmt.Errorf("%w: current password is incorrect", apperrors.ErrUnauthorized)
 	}
-	if len(input.NewPassword) < 8 {
+	if utf8.RuneCountInString(input.NewPassword) < 8 {
 		return fmt.Errorf("%w: new password must be at least 8 characters", apperrors.ErrInvalidArgument)
 	}
 	nextHash, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)

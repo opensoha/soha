@@ -22,6 +22,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 )
 
@@ -909,6 +910,24 @@ func TestStreamTicketRejectsMismatchedPath(t *testing.T) {
 	}
 }
 
+func TestChangeCurrentPasswordCountsCharacters(t *testing.T) {
+	repo := newLoginMappingUserRepo()
+	hash, err := bcrypt.GenerateFromPassword([]byte("current-password"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("GenerateFromPassword() error = %v", err)
+	}
+	repo.passwordHash = string(hash)
+
+	err = newTestServiceWithUserStore(repo).ChangeCurrentPassword(
+		context.Background(),
+		domainidentity.Principal{UserID: "u1"},
+		domainidentity.PasswordChange{CurrentPassword: "current-password", NewPassword: "密码密码密码密"},
+	)
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("ChangeCurrentPassword() error = %v, want ErrInvalidArgument", err)
+	}
+}
+
 func TestReconcileOIDCUserMigratesLegacyProviderIdentity(t *testing.T) {
 	ctx := context.Background()
 	repo := newLoginMappingUserRepo()
@@ -1018,6 +1037,7 @@ type loginMappingUserRepo struct {
 	sessionsByID map[string]userrepo.Session
 	refreshToID  map[string]string
 	ephemeral    map[string]userrepo.EphemeralToken
+	passwordHash string
 }
 
 func newLoginMappingUserRepo() *loginMappingUserRepo {
@@ -1076,11 +1096,15 @@ func (r *loginMappingUserRepo) UpsertUser(_ context.Context, user userrepo.User)
 	return nil
 }
 
-func (r *loginMappingUserRepo) SetPasswordHash(context.Context, string, string) error {
+func (r *loginMappingUserRepo) SetPasswordHash(_ context.Context, _, passwordHash string) error {
+	r.passwordHash = passwordHash
 	return nil
 }
 
 func (r *loginMappingUserRepo) GetPasswordHash(context.Context, string) (string, error) {
+	if r.passwordHash != "" {
+		return r.passwordHash, nil
+	}
 	return "", userrepo.ErrNotFound
 }
 
