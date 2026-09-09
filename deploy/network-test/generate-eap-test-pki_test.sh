@@ -39,7 +39,7 @@ test ! -e "$output_dir/network-control/ca.key"
 test ! -e "$output_dir/freeradius-control/ca.key"
 
 key_mode() {
-	stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+	stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
 }
 
 test "$(key_mode "$output_dir/issuer/ca.key")" = 600
