@@ -194,11 +194,38 @@ func TestRegistryExposesMigratedOperationalSettings(t *testing.T) {
 		KeyMCPDefaultTimeout:             sohaapi.RuntimeConfigValueTypeDuration,
 		KeyAIGatewayDefaultTimeout:       sohaapi.RuntimeConfigValueTypeDuration,
 		KeyAIGatewayMaxRequestBodyMB:     sohaapi.RuntimeConfigValueTypeInteger,
+		KeyNetworkHeartbeatInterval:      sohaapi.RuntimeConfigValueTypeInteger,
+		KeyNetworkConfigPollInterval:     sohaapi.RuntimeConfigValueTypeInteger,
 	}
 	for key, valueType := range tests {
 		definition, ok := registry.Definition(key)
 		if !ok || definition.ValueType != valueType || !definition.Editable {
 			t.Fatalf("definition %q = %#v", key, definition)
+		}
+	}
+}
+
+func TestNetworkRuntimeIntervalsDefaultToSixtySecondsAndEnforceSafeBounds(t *testing.T) {
+	registry := NewRegistry(RegistryOptions{})
+	for _, key := range []string{KeyNetworkHeartbeatInterval, KeyNetworkConfigPollInterval} {
+		definition, ok := registry.Definition(key)
+		if !ok {
+			t.Fatalf("definition %q missing", key)
+		}
+		if definition.Category != "内网工作台 · 设备通信" || definition.DefaultValue != int64(60) || definition.BaselineValue != int64(60) || definition.ApplyMode != sohaapi.RuntimeConfigApplyModeHot || definition.EnvironmentVariable != "" {
+			t.Fatalf("definition %q = %#v", key, definition)
+		}
+		if err := definition.Validate(int64(30)); err != nil {
+			t.Fatalf("minimum interval rejected: %v", err)
+		}
+		if err := definition.Validate(int64(300)); err != nil {
+			t.Fatalf("maximum interval rejected: %v", err)
+		}
+		if err := definition.Validate(int64(29)); err == nil {
+			t.Fatal("interval below safe bound accepted")
+		}
+		if err := definition.Validate(int64(301)); err == nil {
+			t.Fatal("interval above safe bound accepted")
 		}
 	}
 }

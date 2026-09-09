@@ -1,0 +1,65 @@
+files soha_lab_users {
+	filename = /run/freeradius/soha-lab-users
+}
+
+rest soha_authorize_password {
+	tls {
+		ca_info_file = $ENV{SOHA_RADIUS_CONTROL_CA_FILE}
+		certificate_file = $ENV{SOHA_RADIUS_CONTROL_CERT_FILE}
+		private_key_file = $ENV{SOHA_RADIUS_CONTROL_KEY_FILE}
+		check_cert = yes
+		check_cert_cn = yes
+	}
+	connect_timeout = 3.0
+	post-auth {
+		uri = "$ENV{SOHA_RADIUS_CONTROL_URL}/api/network-control/v1/runtimes/$ENV{SOHA_RADIUS_RUNTIME_ID}/radius:post-auth"
+		method = post
+		body = json
+		data = '{"requestId":"radius-%{sha256:%{NAS-Identifier}|%{User-Name}|%{Calling-Station-Id}|%{hex:&Packet-Authentication-Vector}}","nasId":"%{NAS-Identifier}","subjectId":"%{User-Name}","deviceId":"%{Calling-Station-Id}","authenticationMethod":"password-compatible"}'
+		force_to = json
+		tls = ${..tls}
+		timeout = 3.0
+		chunk = 4096
+	}
+}
+
+rest soha_authorize_eap_tls {
+	tls {
+		ca_info_file = $ENV{SOHA_RADIUS_CONTROL_CA_FILE}
+		certificate_file = $ENV{SOHA_RADIUS_CONTROL_CERT_FILE}
+		private_key_file = $ENV{SOHA_RADIUS_CONTROL_KEY_FILE}
+		check_cert = yes
+		check_cert_cn = yes
+	}
+	connect_timeout = 3.0
+	post-auth {
+		uri = "$ENV{SOHA_RADIUS_CONTROL_URL}/api/network-control/v1/runtimes/$ENV{SOHA_RADIUS_RUNTIME_ID}/radius:post-auth"
+		method = post
+		body = json
+		data = '{"requestId":"radius-%{sha256:%{NAS-Identifier}|%{User-Name}|%{Calling-Station-Id}|%{hex:&Packet-Authentication-Vector}}","nasId":"%{NAS-Identifier}","subjectId":"%{User-Name}","stationId":"%{Calling-Station-Id}","authenticationMethod":"eap-tls","clientCertificateSerial":"%{TLS-Client-Cert-Serial}","clientCertificateAuthorityKeyId":"%{TLS-Client-Cert-X509v3-Authority-Key-Identifier}"}'
+		force_to = json
+		tls = ${..tls}
+		timeout = 3.0
+		chunk = 4096
+	}
+}
+
+rest soha_accounting {
+	tls {
+		ca_info_file = $ENV{SOHA_RADIUS_INGEST_CA_FILE}
+		certificate_file = $ENV{SOHA_RADIUS_INGEST_CERT_FILE}
+		private_key_file = $ENV{SOHA_RADIUS_INGEST_KEY_FILE}
+		check_cert = yes
+		check_cert_cn = yes
+	}
+	connect_timeout = 3.0
+	accounting {
+		uri = "$ENV{SOHA_RADIUS_INGEST_URL}/api/ingest/v1/radius/accounting"
+		method = post
+		body = json
+		data = '{"schemaVersion":"network-radius-accounting/v1alpha1","eventTimestamp":%{integer:&Event-Timestamp},"statusType":"%{control:Tmp-String-0}","accountingSessionId":"%{Acct-Session-Id}","sessionId":"%{control:Tmp-String-1}","nasId":"%{NAS-Identifier}","nasPortId":"%{NAS-Port-Id}","userId":"%{User-Name}","deviceId":"%{Calling-Station-Id}","sessionTimeSeconds":%{%{integer:&Acct-Session-Time}:-0},"inputOctets":%{%{integer:&Acct-Input-Octets}:-0},"outputOctets":%{%{integer:&Acct-Output-Octets}:-0},"inputPackets":%{%{integer:&Acct-Input-Packets}:-0},"outputPackets":%{%{integer:&Acct-Output-Packets}:-0}}'
+		tls = ${..tls}
+		timeout = 3.0
+		chunk = 4096
+	}
+}

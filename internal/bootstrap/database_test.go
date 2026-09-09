@@ -792,8 +792,6 @@ func TestDefaultMenuSeedsGroupDeliveryWorkbenchByUserTask(t *testing.T) {
 		"delivery-testing":               "delivery",
 		"delivery-analysis":              "delivery",
 		"release-bundles":                "delivery-records",
-		"execution-tasks":                "delivery-records",
-		"workflows":                      "delivery-records",
 		"releases":                       "delivery-records",
 		"delivery-blueprints":            "delivery-platform",
 		"build-templates":                "delivery-platform",

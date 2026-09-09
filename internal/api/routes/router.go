@@ -64,6 +64,7 @@ type Dependencies struct {
 	Compute             *apiHandlers.ComputeHandler
 	Virtualization      *apiHandlers.VirtualizationHandler
 	Docker              *apiHandlers.DockerHandler
+	NetworkAccess       *apiHandlers.NetworkAccessHandler
 	Access              *accesshandler.Handler
 	DirectorySync       *directorysynchandler.Handler
 	ScopeGrants         *accesshandler.ScopeGrantHandler

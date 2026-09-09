@@ -84,10 +84,12 @@ build-web: ## Build the frontend artifact from soha-web and stage it for embeddi
 	mkdir -p $(WEB_DIST_DIR)
 	cp -R $(SOHA_WEB_DIR)/dist/. $(WEB_DIST_DIR)/
 
-build: build-web ## Build the embedded soha server binary.
+build: build-web ## Build the management, network-control, and ingest binaries.
 	CGO_ENABLED=0 go build -tags embedassets -o bin/soha ./cmd/server
+	CGO_ENABLED=0 go build -o bin/network-control ./cmd/network-control
+	CGO_ENABLED=0 go build -o bin/ingest ./cmd/ingest
 
-deploy-image: build-web ## Build the single-project application image.
+deploy-image: build-web ## Build the application and network runtime image.
 	docker build --build-arg GOPROXY=$(GOPROXY) --build-context contracts=$(SOHA_CONTRACTS_DIR) -f $(APP_DOCKERFILE) $(IMAGE_BUILD_TAGS) .
 
 # Test

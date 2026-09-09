@@ -39,6 +39,15 @@ func (a errorCatalogAuthorizer) Authorize(context.Context, domainaccess.Request)
 	return domainaccess.Decision{}, a.err
 }
 
+type recordingCatalogAuthorizer struct {
+	request domainaccess.Request
+}
+
+func (a *recordingCatalogAuthorizer) Authorize(_ context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+	a.request = request
+	return domainaccess.Decision{Allowed: true}, nil
+}
+
 func (s *stubCatalogRepository) ListEnvironments(context.Context) ([]domaincatalog.Environment, error) {
 	return s.environments, nil
 }
@@ -558,6 +567,34 @@ func TestListApplicationEnvironmentsReturnsAuthorizationErrors(t *testing.T) {
 	_, err := service.ListApplicationEnvironments(context.Background(), domainidentity.Principal{Roles: []string{"admin"}})
 	if !errors.Is(err, authorizationErr) {
 		t.Fatalf("ListApplicationEnvironments() error = %v, want %v", err, authorizationErr)
+	}
+}
+
+func TestAuthorizeApplicationEnvironmentPermissionUsesBindingScope(t *testing.T) {
+	authorizer := &recordingCatalogAuthorizer{}
+	service := New(&stubCatalogRepository{applicationEnvironments: map[string]domaincatalog.ApplicationEnvironment{
+		"binding-prod": {
+			ID:               "binding-prod",
+			ApplicationID:    "app-1",
+			BusinessLineID:   "bl-retail",
+			ApplicationGroup: "payments",
+			EnvironmentID:    "env-prod",
+			EnvironmentKey:   "prod",
+		},
+	}}, authorizer, nil, catalogPermissions("delivery.application-environments.approve"), nil, nil)
+
+	_, err := service.AuthorizeApplicationEnvironmentPermission(
+		context.Background(),
+		domainidentity.Principal{UserID: "approver-1", Roles: []string{"admin"}},
+		"binding-prod",
+		"delivery.application-environments.approve",
+	)
+	if err != nil {
+		t.Fatalf("AuthorizeApplicationEnvironmentPermission() error = %v", err)
+	}
+	if authorizer.request.PermissionKey != "delivery.application-environments.approve" ||
+		authorizer.request.Delivery.ApplicationID != "app-1" || authorizer.request.Delivery.EnvironmentKey != "prod" {
+		t.Fatalf("authorization request = %#v, want approval permission scoped to app-1/prod", authorizer.request)
 	}
 }
 

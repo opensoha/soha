@@ -82,7 +82,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.delivery.enabled",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"workbench.delivery.view"},
-			SeedMenus:          []string{"builds", "delivery-overview", "delivery-onboarding", "release-board", "delivery-testing", "delivery-analysis", "build-templates", "release-bundles", "execution-tasks", "workflow-templates", "delivery-environment-directory", "workflows", "releases", "registries", "delivery-blueprints"},
+			SeedMenus:          []string{"builds", "delivery-overview", "delivery-onboarding", "release-board", "delivery-testing", "delivery-analysis", "build-templates", "release-bundles", "workflow-templates", "delivery-environment-directory", "releases", "registries", "delivery-blueprints"},
 		},
 		{
 			ID:                 "ai",
@@ -117,7 +117,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			DefaultPath:        "/internal-workbench/overview",
 			EnabledConfigKey:   "modules.security.enabled",
 			VisiblePermissions: []string{"workbench.security.view"},
-			SeedMenus:          []string{"identity", "identity-applications", "identity-providers", "identity-outposts"},
+			SeedMenus:          []string{"identity", "network-access", "identity-applications", "identity-providers", "identity-outposts"},
 		},
 		{
 			ID:                 "cmdb",

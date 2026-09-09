@@ -1754,11 +1754,11 @@ func buildExecutionArtifacts(task domaindelivery.ExecutionTask) []domaindelivery
 		}
 		appendArtifact(item)
 	}
-	if jobName := strings.TrimSpace(fmt.Sprint(task.Result["k8sJobName"])); jobName != "" {
+	if jobName := artifactString(task.Result["k8sJobName"]); jobName != "" {
 		appendArtifact(domaindelivery.ExecutionArtifact{
 			Kind:   "k8s_job",
 			Name:   jobName,
-			Status: strings.TrimSpace(fmt.Sprint(task.Result["k8sJobStatus"])),
+			Status: artifactString(task.Result["k8sJobStatus"]),
 			Metadata: map[string]any{
 				"clusterId": task.Result["k8sJobClusterId"],
 				"namespace": task.Result["k8sJobNamespace"],
@@ -1766,11 +1766,11 @@ func buildExecutionArtifacts(task domaindelivery.ExecutionTask) []domaindelivery
 		})
 	}
 	if len(items) == 0 {
-		if image := strings.TrimSpace(fmt.Sprint(task.Result["image"])); image != "" {
+		if image := artifactString(task.Result["image"]); image != "" {
 			appendArtifact(domaindelivery.ExecutionArtifact{
 				Kind:   "image",
 				Ref:    image,
-				Digest: strings.TrimSpace(fmt.Sprint(task.Result["imageDigest"])),
+				Digest: artifactString(task.Result["imageDigest"]),
 				Status: task.Status,
 			})
 		}
@@ -1780,17 +1780,17 @@ func buildExecutionArtifacts(task domaindelivery.ExecutionTask) []domaindelivery
 
 func executionArtifactFromMap(raw map[string]any) domaindelivery.ExecutionArtifact {
 	item := domaindelivery.ExecutionArtifact{
-		ID:              strings.TrimSpace(fmt.Sprint(raw["id"])),
-		ExecutionTaskID: strings.TrimSpace(fmt.Sprint(raw["executionTaskId"])),
-		ReleaseBundleID: strings.TrimSpace(fmt.Sprint(raw["releaseBundleId"])),
-		WorkflowRunID:   strings.TrimSpace(fmt.Sprint(raw["workflowRunId"])),
-		WorkflowNodeID:  strings.TrimSpace(fmt.Sprint(raw["workflowNodeId"])),
-		Kind:            strings.TrimSpace(fmt.Sprint(raw["kind"])),
-		Name:            strings.TrimSpace(fmt.Sprint(raw["name"])),
-		Ref:             strings.TrimSpace(fmt.Sprint(raw["ref"])),
-		Digest:          strings.TrimSpace(fmt.Sprint(raw["digest"])),
-		Path:            strings.TrimSpace(fmt.Sprint(raw["path"])),
-		Status:          strings.TrimSpace(fmt.Sprint(raw["status"])),
+		ID:              artifactString(raw["id"]),
+		ExecutionTaskID: artifactString(raw["executionTaskId"]),
+		ReleaseBundleID: artifactString(raw["releaseBundleId"]),
+		WorkflowRunID:   artifactString(raw["workflowRunId"]),
+		WorkflowNodeID:  artifactString(raw["workflowNodeId"]),
+		Kind:            artifactString(raw["kind"]),
+		Name:            artifactString(raw["name"]),
+		Ref:             artifactString(raw["ref"]),
+		Digest:          artifactString(raw["digest"]),
+		Path:            artifactString(raw["path"]),
+		Status:          artifactString(raw["status"]),
 		SizeBytes:       toInt64(raw["sizeBytes"]),
 		Metadata:        map[string]any{},
 	}
@@ -1817,6 +1817,13 @@ func executionArtifactFromMap(raw map[string]any) domaindelivery.ExecutionArtifa
 		item.Metadata = nil
 	}
 	return item
+}
+
+func artifactString(value any) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func valueAsMapSlice(raw any) []map[string]any {

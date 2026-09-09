@@ -85,6 +85,39 @@ func (s *Service) MarkRead(ctx context.Context, principal domainidentity.Princip
 	return s.repo.MarkRead(ctx, item.ID, principal.UserID, time.Now().UTC())
 }
 
+func (s *Service) Receipts(ctx context.Context, principal domainidentity.Principal, announcementID string, query domainannouncement.ReceiptQuery) (domainannouncement.ReceiptPage, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsView); err != nil {
+		return domainannouncement.ReceiptPage{}, err
+	}
+	announcementID = strings.TrimSpace(announcementID)
+	if announcementID == "" {
+		return domainannouncement.ReceiptPage{}, fmt.Errorf("%w: announcement id is required", apperrors.ErrInvalidArgument)
+	}
+	query.Keyword = strings.TrimSpace(query.Keyword)
+	if len([]rune(query.Keyword)) > 200 {
+		return domainannouncement.ReceiptPage{}, fmt.Errorf("%w: keyword is too long", apperrors.ErrInvalidArgument)
+	}
+	query.State = strings.ToLower(strings.TrimSpace(query.State))
+	if query.State == "" {
+		query.State = "all"
+	}
+	if query.State != "all" && query.State != "read" && query.State != "unread" {
+		return domainannouncement.ReceiptPage{}, fmt.Errorf("%w: invalid receipt state", apperrors.ErrInvalidArgument)
+	}
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+	if query.PageSize <= 0 {
+		query.PageSize = 15
+	} else if query.PageSize > 100 {
+		query.PageSize = 100
+	}
+	if _, err := s.getAnnouncement(ctx, announcementID); err != nil {
+		return domainannouncement.ReceiptPage{}, err
+	}
+	return s.repo.ListReceipts(ctx, announcementID, query)
+}
+
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainannouncement.Input) (domainannouncement.Record, error) {
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermSystemAnnouncementsManage, "create")); err != nil {
 		return domainannouncement.Record{}, err
@@ -221,7 +254,6 @@ func normalizeInput(input domainannouncement.Input) (domainannouncement.Record, 
 	return domainannouncement.Record{
 		ID:       strings.TrimSpace(input.ID),
 		Title:    title,
-		Summary:  strings.TrimSpace(input.Summary),
 		Content:  content,
 		Level:    level,
 		Status:   status,

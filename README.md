@@ -220,12 +220,13 @@ make remote-dev-status
 
 ## Deployment
 
-Soha ships as a single-binary runtime by default: one application container serves the API and embedded SPA. Documentation is published from `soha-docs` and linked through the configured docs URL.
+Soha runs one process per container. The default process serves the management API and embedded SPA; independent `network-control`, `ingest`, and privileged `network-gateway` workloads keep realtime authorization, high-frequency telemetry, and the WireGuard data plane outside the management-server process. Documentation is published from `soha-docs` and linked through the configured docs URL.
 
 - [deploy/Dockerfile](./deploy/Dockerfile): multi-stage image build
 - [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local stack with PostgreSQL and optional Hermes runner services
 - [configs/config.yaml](./configs/config.yaml): default application config
 - [deploy/deployment.yaml](./deploy/deployment.yaml): raw Kubernetes manifest baseline
+- [deploy/network-runtime.yaml](./deploy/network-runtime.yaml): independent network-control, ingest, ingest PostgreSQL, and WireGuard gateway workloads
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize entrypoint for image tag, namespace, and patch overrides without Helm
 
 ### Remote Kubernetes development
@@ -277,6 +278,112 @@ affect the existing `soha` database.
 make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
 ```
+
+The network runtimes are opt-in in Compose because their mTLS private keys must
+not be committed. Place `tls.crt`, `tls.key`, and `ca.crt` in separate server
+and client-identity directories, keep private files at mode `0440` or `0600`,
+then start the profile:
+
+```bash
+SOHA_NETWORK_CONTROL_TLS_DIR=/absolute/path/network-control-tls \
+SOHA_INGEST_TLS_DIR=/absolute/path/ingest-tls \
+SOHA_NETWORK_INGEST_QUERY_TLS_DIR=/absolute/path/core-ingest-query-tls \
+SOHA_NETWORK_INGEST_QUERY_URL=https://ingest:8083 \
+SOHA_NETWORK_INGEST_QUERY_CA_FILE=/run/soha-network-ingest-query/ca.crt \
+SOHA_NETWORK_INGEST_QUERY_CERT_FILE=/run/soha-network-ingest-query/tls.crt \
+SOHA_NETWORK_INGEST_QUERY_KEY_FILE=/run/soha-network-ingest-query/tls.key \
+SOHA_NETWORK_INGEST_QUERY_SERVER_NAME=ingest \
+SOHA_NETWORK_GATEWAY_CONTROL_CLIENT_TLS_DIR=/absolute/path/gateway-control-tls \
+SOHA_NETWORK_GATEWAY_INGEST_CLIENT_TLS_DIR=/absolute/path/gateway-ingest-tls \
+docker compose -f deploy/docker-compose.yaml --profile network-access up -d --build
+```
+
+This starts `network-control` on 8082, `ingest` on 8083, and a dedicated ingest
+PostgreSQL instance, plus the separately privileged WireGuard gateway on UDP
+51820. `/healthz` is process health; network-control and gateway `/readyz`
+become ready only after their required policy/configuration has been published.
+The core ingest-query client certificate must have the exact URI SAN
+`spiffe://opensoha.local/network-ingest/core/soha-server`; do not reuse the
+gateway ingest identity. Only bounded aggregate summaries return to core.
+
+Component smoke containers live in the same Compose file and remain disabled by
+default. `network-test` provides mihomo, `radclient`, a one-shot EAP-TLS
+`eapol_test` client, and a NET_ADMIN-scoped WireGuard/HTTP client:
+
+```bash
+docker compose -f deploy/docker-compose.yaml --profile network-test up -d --build \
+  mihomo-test network-test-client radius-test-client
+docker compose -f deploy/docker-compose.yaml --profile network-test exec -T network-test-client \
+  sh -c 'curl -fsS --proxy http://mihomo-test:7890 -H "Authorization: Bearer soha-network-test" http://mihomo-test:9090/version >/dev/null && ip link add wg-smoke type wireguard && wg show interfaces && ip link del wg-smoke'
+docker compose -f deploy/docker-compose.yaml --profile network-test exec -T radius-test-client radclient -v
+```
+
+For a real EAP-TLS exchange, generate a seven-day disposable lab CA and matching
+network-control, NAS, FreeRADIUS, and endpoint identities under the ignored
+runtime directory. The endpoint certificate is deliberately shared with the
+EAP client so its serial and authority key ID match the credential created by
+endpoint enrollment:
+
+```bash
+sh deploy/network-test/generate-eap-test-pki.sh \
+  deploy/network-runtime-tls/eap-lab <soha-subject-id>
+```
+
+Start `network-control` and FreeRADIUS with the generated directories, create
+an enrollment for runtime `endpoint-eap-test`, and consume it with
+`eap-test-client/tls.crt` and `tls.key`. Do not insert a certificate binding
+directly. Then run the client in the FreeRADIUS network namespace so the
+loopback-only lab NAS remains closed to other containers:
+
+```bash
+SOHA_NETWORK_CONTROL_TLS_DIR=./network-runtime-tls/eap-lab/network-control \
+SOHA_RADIUS_CONTROL_CLIENT_TLS_DIR=./network-runtime-tls/eap-lab/freeradius-control \
+SOHA_RADIUS_EAP_TLS_DIR=./network-runtime-tls/eap-lab/freeradius-eap \
+SOHA_RADIUS_EAP_TEST_TLS_DIR=./network-runtime-tls/eap-lab/eap-test-client \
+docker compose -f deploy/docker-compose.yaml --profile network-access \
+  --profile network-test run --rm --build radius-eap-test-client
+```
+
+Success requires `CTRL-EVENT-EAP-SUCCESS` and an `Access-Accept`; a TLS failure,
+unknown or revoked certificate binding, or denied policy must exit non-zero.
+The client command exposes the disposable lab shared secret in its own container
+process arguments because that is the only interface provided by `eapol_test`;
+never use a production NAS secret for this test. Keep `issuer/ca.key` offline
+from every container and delete the whole lab directory after validation.
+
+For an A/B/C lab, run `network-access` together with
+`network-multisite-test`. The existing `network-gateway` is A; the profile adds
+B on UDP 51821 and C on UDP 51822 with separate keys, enrollment identities,
+and data volumes. In the workbench, leave A's `hubGatewayId` empty, set B and C
+to A's gateway ID, and advertise only non-overlapping CIDRs owned by each site.
+This is a static routed hub-and-spoke topology: B-to-C traffic transits A.
+
+```bash
+docker compose -f deploy/docker-compose.yaml --profile network-access \
+  --profile network-multisite-test up -d --build \
+  network-gateway network-gateway-b network-gateway-c
+```
+
+Raw Kubernetes uses the same process split. The raw manifests use `:local`
+images until a release containing the network runtimes is available; v0.1.7
+and v0.1.8 do not contain these binaries. Build both images from this checkout:
+
+```bash
+make deploy-image
+docker build --build-context contracts=../soha-contracts \
+  --target network-gateway-runtime -f deploy/Dockerfile \
+  -t ghcr.io/opensoha/soha-network-gateway:local .
+```
+
+Load these images into every target cluster node, or push them to your own
+registry and replace both image references in `deploy/kustomization.yaml`.
+Use the same application image for server, network-control, and ingest.
+Before `kubectl apply -k deploy`,
+create `soha-network-runtime-tls` in namespace `soha` with the keys named
+at the top of `deploy/network-runtime.yaml`. Certificates must cover the actual
+Service/load-balancer names and be issued by the mounted client CA; never store
+their private keys in this repository. The core query identity uses the same
+URI SAN stated above and its own `network-core-ingest-query.*` Secret keys.
 
 Run the application container without Compose when PostgreSQL is already
 reachable. This example keeps every standard default explicit so each value can

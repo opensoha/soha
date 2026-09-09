@@ -1,0 +1,482 @@
+# Prerequisite: create `soha-network-runtime-tls` in namespace `soha` with
+# network-control.crt/key, ingest.crt/key, client-ca.crt, and separately issued
+# network-gateway-control.crt/key/ca.crt, network-gateway-ingest.crt/key/ca.crt,
+# and network-core-ingest-query.crt/key/ca.crt.
+# Keep private keys outside source control and issue certificates for the deployed service names.
+# Build and load the :local images described in README.md, or replace both image
+# references with tested builds. Released v0.1.7/v0.1.8 lack these runtime binaries.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: soha-ingest-postgres-data
+  namespace: soha
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soha-ingest-postgres
+  namespace: soha
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: soha-ingest-postgres
+  template:
+    metadata:
+      labels:
+        app: soha-ingest-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:0.8.5-pg18-trixie
+          args:
+            - postgres
+            - -c
+            - shared_preload_libraries=pg_stat_statements
+            - -c
+            - compute_query_id=on
+          ports:
+            - containerPort: 5432
+              name: postgres
+          env:
+            - name: POSTGRES_DB
+              value: soha_ingest
+            - name: POSTGRES_USER
+              value: pgsql
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: ingest-postgres-password
+          startupProbe:
+            exec:
+              command: [sh, -ec, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+            periodSeconds: 2
+            timeoutSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: [sh, -ec, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            exec:
+              command: [sh, -ec, 'pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"']
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: soha-ingest-postgres-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: soha-ingest-postgres
+  namespace: soha
+spec:
+  selector:
+    app: soha-ingest-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soha-network-control
+  namespace: soha
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: soha-network-control
+  template:
+    metadata:
+      labels:
+        app: soha-network-control
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: network-control
+          image: ghcr.io/opensoha/soha:local
+          imagePullPolicy: IfNotPresent
+          args:
+            - /app/network-control
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: SOHA_CONFIG_FILE
+              value: /app/configs/config.yaml
+            - name: SOHA_NETWORK_CONTROL_DATABASE_HOST
+              value: soha-postgres
+            - name: SOHA_NETWORK_CONTROL_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: postgres-password
+            - name: SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: credential-encryption-key
+            - name: SOHA_NETWORK_CONTROL_TLS_CERT_FILE
+              value: /run/soha-network-control/tls.crt
+            - name: SOHA_NETWORK_CONTROL_TLS_KEY_FILE
+              value: /run/soha-network-control/tls.key
+            - name: SOHA_NETWORK_CONTROL_TLS_CLIENT_CA_FILE
+              value: /run/soha-network-control/client-ca.crt
+          ports:
+            - containerPort: 8082
+              name: https
+          startupProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /readyz
+              port: https
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: runtime-tls
+              mountPath: /run/soha-network-control
+              readOnly: true
+      volumes:
+        - name: runtime-tls
+          secret:
+            secretName: soha-network-runtime-tls
+            defaultMode: 0440
+            items:
+              - key: network-control.crt
+                path: tls.crt
+              - key: network-control.key
+                path: tls.key
+              - key: client-ca.crt
+                path: client-ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: soha-network-control
+  namespace: soha
+spec:
+  type: LoadBalancer
+  selector:
+    app: soha-network-control
+  ports:
+    - name: https
+      port: 8082
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soha-ingest
+  namespace: soha
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: soha-ingest
+  template:
+    metadata:
+      labels:
+        app: soha-ingest
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ingest
+          image: ghcr.io/opensoha/soha:local
+          imagePullPolicy: IfNotPresent
+          args:
+            - /app/ingest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: SOHA_CONFIG_FILE
+              value: /app/configs/config.yaml
+            - name: SOHA_INGEST_DATABASE_HOST
+              value: soha-ingest-postgres
+            - name: SOHA_INGEST_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: ingest-postgres-password
+            - name: SOHA_INGEST_TLS_CERT_FILE
+              value: /run/soha-ingest/tls.crt
+            - name: SOHA_INGEST_TLS_KEY_FILE
+              value: /run/soha-ingest/tls.key
+            - name: SOHA_INGEST_TLS_CLIENT_CA_FILE
+              value: /run/soha-ingest/client-ca.crt
+          ports:
+            - containerPort: 8083
+              name: https
+          startupProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /readyz
+              port: https
+          livenessProbe:
+            httpGet:
+              scheme: HTTPS
+              path: /healthz
+              port: https
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          volumeMounts:
+            - name: runtime-tls
+              mountPath: /run/soha-ingest
+              readOnly: true
+      volumes:
+        - name: runtime-tls
+          secret:
+            secretName: soha-network-runtime-tls
+            defaultMode: 0440
+            items:
+              - key: ingest.crt
+                path: tls.crt
+              - key: ingest.key
+                path: tls.key
+              - key: client-ca.crt
+                path: client-ca.crt
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: soha-ingest
+  namespace: soha
+spec:
+  type: LoadBalancer
+  selector:
+    app: soha-ingest
+  ports:
+    - name: https
+      port: 8083
+      targetPort: https
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: soha-network-gateway-data
+  namespace: soha
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: soha-network-gateway
+  namespace: soha
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: soha-network-gateway
+  template:
+    metadata:
+      labels:
+        app: soha-network-gateway
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        sysctls:
+          - name: net.ipv4.ip_forward
+            value: "1"
+      containers:
+        - name: network-gateway
+          image: ghcr.io/opensoha/soha-network-gateway:local
+          imagePullPolicy: IfNotPresent
+          args:
+            - run
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_ADMIN
+          env:
+            - name: SOHA_NETWORK_GATEWAY_RUNTIME_ID
+              value: gateway-default
+            - name: SOHA_NETWORK_GATEWAY_DEVICE_ID
+              value: gateway-default
+            - name: SOHA_NETWORK_GATEWAY_CONTROL_URL
+              value: https://soha-network-control:8082
+            - name: SOHA_NETWORK_GATEWAY_CONTROL_CERT_FILE
+              value: /run/soha-network-gateway/control/tls.crt
+            - name: SOHA_NETWORK_GATEWAY_CONTROL_KEY_FILE
+              value: /run/soha-network-gateway/control/tls.key
+            - name: SOHA_NETWORK_GATEWAY_CONTROL_CA_FILE
+              value: /run/soha-network-gateway/control/ca.crt
+            - name: SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME
+              value: soha-network-control
+            - name: SOHA_NETWORK_GATEWAY_INGEST_URL
+              value: https://soha-ingest:8083
+            - name: SOHA_NETWORK_GATEWAY_INGEST_CERT_FILE
+              value: /run/soha-network-gateway/ingest/tls.crt
+            - name: SOHA_NETWORK_GATEWAY_INGEST_KEY_FILE
+              value: /run/soha-network-gateway/ingest/tls.key
+            - name: SOHA_NETWORK_GATEWAY_INGEST_CA_FILE
+              value: /run/soha-network-gateway/ingest/ca.crt
+            - name: SOHA_NETWORK_GATEWAY_INGEST_SERVER_NAME
+              value: soha-ingest
+            - name: SOHA_NETWORK_GATEWAY_PRIVATE_KEY_FILE
+              value: /var/lib/soha-network-gateway/wireguard.key
+            - name: SOHA_NETWORK_GATEWAY_EGRESS_INTERFACE
+              value: eth0
+            - name: SOHA_NETWORK_GATEWAY_HEALTH_ADDR
+              value: :8084
+          ports:
+            - containerPort: 51820
+              name: wireguard
+              protocol: UDP
+            - containerPort: 8084
+              name: health
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: control-tls
+              mountPath: /run/soha-network-gateway/control
+              readOnly: true
+            - name: ingest-tls
+              mountPath: /run/soha-network-gateway/ingest
+              readOnly: true
+            - name: gateway-data
+              mountPath: /var/lib/soha-network-gateway
+      volumes:
+        - name: control-tls
+          secret:
+            secretName: soha-network-runtime-tls
+            defaultMode: 0440
+            items:
+              - key: network-gateway-control.crt
+                path: tls.crt
+              - key: network-gateway-control.key
+                path: tls.key
+              - key: network-gateway-control-ca.crt
+                path: ca.crt
+        - name: ingest-tls
+          secret:
+            secretName: soha-network-runtime-tls
+            defaultMode: 0440
+            items:
+              - key: network-gateway-ingest.crt
+                path: tls.crt
+              - key: network-gateway-ingest.key
+                path: tls.key
+              - key: network-gateway-ingest-ca.crt
+                path: ca.crt
+        - name: gateway-data
+          persistentVolumeClaim:
+            claimName: soha-network-gateway-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: soha-network-gateway
+  namespace: soha
+spec:
+  type: LoadBalancer
+  selector:
+    app: soha-network-gateway
+  ports:
+    - name: wireguard
+      port: 51820
+      targetPort: wireguard
+      protocol: UDP

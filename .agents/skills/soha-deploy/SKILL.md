@@ -1,12 +1,6 @@
 ---
 name: soha-deploy
-description: >-
-  Prepare or review Soha core deployment artifacts for container builds, raw
-  Docker, Docker Compose, and raw Kubernetes YAML under `deploy/**`. Use when
-  changing Dockerfiles, embedded frontend delivery, configuration binding,
-  PostgreSQL wiring, service exposure, ingress, image tags, health checks,
-  multi-replica settings, or deployment security warnings. Helm chart work
-  belongs in the sibling `soha-helm` repository.
+description: Change or review core Docker, Compose, and raw Kubernetes deployment assets. Use soha-helm for charts; deployment review alone does not authorize rollout.
 ---
 
 # Soha Deploy

@@ -45,6 +45,7 @@ import (
 	appmodule "github.com/opensoha/soha/internal/application/module"
 	appmonitoring "github.com/opensoha/soha/internal/application/monitoring"
 	appmultiagent "github.com/opensoha/soha/internal/application/multiagent"
+	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
 	appobservability "github.com/opensoha/soha/internal/application/observability"
 	appoperation "github.com/opensoha/soha/internal/application/operation"
 	appplugin "github.com/opensoha/soha/internal/application/plugin"
@@ -90,6 +91,8 @@ import (
 	vaultsecretinfra "github.com/opensoha/soha/internal/infrastructure/vaultsecret"
 	virtualizationinfra "github.com/opensoha/soha/internal/infrastructure/virtualization"
 	webauthninfra "github.com/opensoha/soha/internal/infrastructure/webauthn"
+	"github.com/opensoha/soha/internal/networkidentity"
+	"github.com/opensoha/soha/internal/networkingestquery"
 	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/redaction"
 	"github.com/opensoha/soha/internal/platform/runtimeinfo"
@@ -121,6 +124,8 @@ import (
 	memoryrepo "github.com/opensoha/soha/internal/repository/memory"
 	menurepo "github.com/opensoha/soha/internal/repository/menu"
 	multiagentrepo "github.com/opensoha/soha/internal/repository/multiagent"
+	networkaccessrepo "github.com/opensoha/soha/internal/repository/networkaccess"
+	networkruntimerepo "github.com/opensoha/soha/internal/repository/networkruntime"
 	operationrepo "github.com/opensoha/soha/internal/repository/operationlog"
 	pluginrepo "github.com/opensoha/soha/internal/repository/plugin"
 	policyrepo "github.com/opensoha/soha/internal/repository/policy"
@@ -197,47 +202,53 @@ type repositories struct {
 	runtimeConfigRepository     *runtimeconfigrepo.Repository
 	systemIntegrationRepository *systemintegrationrepo.Repository
 	secretRepository            *secretrepo.Repository
+	networkAccessRepository     *networkaccessrepo.Repository
+	networkRuntimeRepository    *networkruntimerepo.Repository
 }
 
 type coreServices struct {
-	permissionResolver       *appaccess.PermissionResolver
-	auditService             *appaudit.Service
-	operationService         *appoperation.Service
-	announcementService      *appannouncement.Service
-	menuService              *appmenu.Service
-	moduleService            *appmodule.Service
-	settingsService          *appsettings.Service
-	runtimeConfigService     *appruntimeconfig.Service
-	identityService          *appidentity.Service
-	policyEngine             *policy.Engine
-	accessService            *appaccess.Service
-	accessCatalogService     *appaccess.CatalogService
-	accessManagementService  *appaccess.ManagementService
-	accessConsoleService     *appaccess.ConsoleService
-	systemIntegrationService *appsystemintegration.Service
-	secretService            *appsecret.Service
-	clusterService           *appcluster.Service
-	resourceService          *appresource.Service
-	eventService             *appevent.Service
-	monitoringService        *appmonitoring.Service
-	observabilityService     *appobservability.Service
-	applicationService       *appregistry.Service
-	executionService         *appexecution.Service
-	buildService             *appbuild.Service
-	catalogService           *appcatalog.Service
-	scopeGrantService        *appscopegrant.Service
-	registryService          *appregistryconn.Service
-	releaseService           *apprelease.Service
-	integrationService       *appintegration.Service
-	pluginService            *appplugin.Service
-	softwareService          *appsoftware.Service
-	companionService         *appcompanion.Service
-	identityProviderService  *appidentityprovider.Service
-	identityMFAService       *appmfa.Service
-	providerPortalService    *appproviderportal.Service
-	directorySyncService     *appdirectorysync.Service
-	directorySyncConnectors  *directorysynchandler.Registry
-	pluginExtensions         *appplugin.ExtensionRegistry
+	permissionResolver        *appaccess.PermissionResolver
+	auditService              *appaudit.Service
+	operationService          *appoperation.Service
+	announcementService       *appannouncement.Service
+	menuService               *appmenu.Service
+	moduleService             *appmodule.Service
+	settingsService           *appsettings.Service
+	runtimeConfigService      *appruntimeconfig.Service
+	identityService           *appidentity.Service
+	policyEngine              *policy.Engine
+	accessService             *appaccess.Service
+	accessCatalogService      *appaccess.CatalogService
+	accessManagementService   *appaccess.ManagementService
+	accessConsoleService      *appaccess.ConsoleService
+	systemIntegrationService  *appsystemintegration.Service
+	secretService             *appsecret.Service
+	networkAccessService      *appnetworkaccess.Service
+	networkEnrollmentService  *appnetworkaccess.EnrollmentService
+	networkAccessGrantService *appnetworkaccess.AccessGrantService
+	networkIngestQuery        apiHandlers.NetworkTelemetryService
+	clusterService            *appcluster.Service
+	resourceService           *appresource.Service
+	eventService              *appevent.Service
+	monitoringService         *appmonitoring.Service
+	observabilityService      *appobservability.Service
+	applicationService        *appregistry.Service
+	executionService          *appexecution.Service
+	buildService              *appbuild.Service
+	catalogService            *appcatalog.Service
+	scopeGrantService         *appscopegrant.Service
+	registryService           *appregistryconn.Service
+	releaseService            *apprelease.Service
+	integrationService        *appintegration.Service
+	pluginService             *appplugin.Service
+	softwareService           *appsoftware.Service
+	companionService          *appcompanion.Service
+	identityProviderService   *appidentityprovider.Service
+	identityMFAService        *appmfa.Service
+	providerPortalService     *appproviderportal.Service
+	directorySyncService      *appdirectorysync.Service
+	directorySyncConnectors   *directorysynchandler.Registry
+	pluginExtensions          *appplugin.ExtensionRegistry
 }
 
 type deliveryServices struct {
@@ -412,6 +423,8 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		runtimeConfigRepository:     runtimeconfigrepo.New(db),
 		systemIntegrationRepository: systemintegrationrepo.New(db),
 		secretRepository:            secretrepo.New(db),
+		networkAccessRepository:     networkaccessrepo.New(db),
+		networkRuntimeRepository:    networkruntimerepo.New(db),
 	}
 }
 
@@ -535,6 +548,41 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	accessCatalogService := appaccess.NewCatalog(repos.identityRepository, repos.policyRepository, accessService, menuService, permissionResolver)
 	accessManagementService := appaccess.NewManagement(repos.identityRepository, repos.policyRepository, permissionResolver, auditService, operationService)
 	accessConsoleService := appaccess.NewConsole(accessCatalogService, accessManagementService)
+	networkAccessService, err := appnetworkaccess.New(repos.networkAccessRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
+	if err != nil {
+		infra.cancel()
+		return nil, fmt.Errorf("build network access service: %w", err)
+	}
+	networkEnrollmentService, err := appnetworkaccess.NewEnrollmentService(repos.networkRuntimeRepository, permissionResolver, auditService, operationService)
+	if err != nil {
+		infra.cancel()
+		return nil, fmt.Errorf("build network enrollment service: %w", err)
+	}
+	networkAccessGrantService, err := appnetworkaccess.NewAccessGrantService(repos.networkRuntimeRepository, repos.networkAccessRepository, identityMFAService, permissionResolver, auditService, operationService)
+	if err != nil {
+		infra.cancel()
+		return nil, fmt.Errorf("build network access grant service: %w", err)
+	}
+	var networkIngestQuery apiHandlers.NetworkTelemetryService
+	if cfg.NetworkIngestQuery.Configured() {
+		tlsConfig, err := networkidentity.LoadClientTLS(cfg.NetworkIngestQuery.CertFile, cfg.NetworkIngestQuery.KeyFile, cfg.NetworkIngestQuery.CAFile, cfg.NetworkIngestQuery.ServerName)
+		if err != nil {
+			infra.cancel()
+			return nil, fmt.Errorf("build network ingest query TLS: %w", err)
+		}
+		baseTransport, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			infra.cancel()
+			return nil, fmt.Errorf("default HTTP transport is not configurable")
+		}
+		transport := baseTransport.Clone()
+		transport.TLSClientConfig = tlsConfig
+		networkIngestQuery, err = networkingestquery.New(cfg.NetworkIngestQuery.URL, &http.Client{Transport: transport, Timeout: cfg.NetworkIngestQuery.Timeout}, cfg.NetworkIngestQuery.MaxResponseBytes)
+		if err != nil {
+			infra.cancel()
+			return nil, fmt.Errorf("build network ingest query client: %w", err)
+		}
+	}
 	directorySyncService := appdirectorysync.New(repos.directorySyncRepository, directorysyncrepo.NewDatabaseProjector(infra.databaseStore.DB()))
 	directoryScheduler := appdirectorysync.NewScheduler(repos.directorySyncRepository, directorySyncService, func(_ context.Context, connection directorysyncdomain.Connection) (appdirectorysync.Connector, error) {
 		return directorySyncConnectors.Connector(connection.ProviderType)
@@ -594,44 +642,48 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	}})
 
 	return &coreServices{
-		permissionResolver:       permissionResolver,
-		auditService:             auditService,
-		operationService:         operationService,
-		announcementService:      announcementService,
-		menuService:              menuService,
-		moduleService:            moduleService,
-		settingsService:          settingsService,
-		runtimeConfigService:     runtimeConfigService,
-		identityService:          identityService,
-		identityMFAService:       identityMFAService,
-		policyEngine:             policyEngine,
-		accessService:            accessService,
-		accessCatalogService:     accessCatalogService,
-		accessManagementService:  accessManagementService,
-		accessConsoleService:     accessConsoleService,
-		systemIntegrationService: systemIntegrationService,
-		secretService:            secretService,
-		clusterService:           platformCore.cluster,
-		resourceService:          platformCore.resources,
-		eventService:             platformCore.events,
-		monitoringService:        platformCore.monitoring,
-		observabilityService:     platformCore.observability,
-		applicationService:       deliveryCore.applications,
-		executionService:         deliveryCore.execution,
-		buildService:             deliveryCore.builds,
-		catalogService:           deliveryCore.catalog,
-		scopeGrantService:        deliveryCore.scopeGrants,
-		registryService:          deliveryCore.registries,
-		releaseService:           deliveryCore.releases,
-		integrationService:       deliveryCore.integration,
-		pluginService:            deliveryCore.plugins,
-		softwareService:          softwareService,
-		companionService:         companionService,
-		pluginExtensions:         deliveryCore.pluginExtensions,
-		identityProviderService:  deliveryCore.identityProvider,
-		providerPortalService:    deliveryCore.providerPortal,
-		directorySyncService:     directorySyncService,
-		directorySyncConnectors:  directorySyncConnectors,
+		permissionResolver:        permissionResolver,
+		auditService:              auditService,
+		operationService:          operationService,
+		announcementService:       announcementService,
+		menuService:               menuService,
+		moduleService:             moduleService,
+		settingsService:           settingsService,
+		runtimeConfigService:      runtimeConfigService,
+		identityService:           identityService,
+		identityMFAService:        identityMFAService,
+		policyEngine:              policyEngine,
+		accessService:             accessService,
+		accessCatalogService:      accessCatalogService,
+		accessManagementService:   accessManagementService,
+		accessConsoleService:      accessConsoleService,
+		systemIntegrationService:  systemIntegrationService,
+		secretService:             secretService,
+		networkAccessService:      networkAccessService,
+		networkEnrollmentService:  networkEnrollmentService,
+		networkAccessGrantService: networkAccessGrantService,
+		networkIngestQuery:        networkIngestQuery,
+		clusterService:            platformCore.cluster,
+		resourceService:           platformCore.resources,
+		eventService:              platformCore.events,
+		monitoringService:         platformCore.monitoring,
+		observabilityService:      platformCore.observability,
+		applicationService:        deliveryCore.applications,
+		executionService:          deliveryCore.execution,
+		buildService:              deliveryCore.builds,
+		catalogService:            deliveryCore.catalog,
+		scopeGrantService:         deliveryCore.scopeGrants,
+		registryService:           deliveryCore.registries,
+		releaseService:            deliveryCore.releases,
+		integrationService:        deliveryCore.integration,
+		pluginService:             deliveryCore.plugins,
+		softwareService:           softwareService,
+		companionService:          companionService,
+		pluginExtensions:          deliveryCore.pluginExtensions,
+		identityProviderService:   deliveryCore.identityProvider,
+		providerPortalService:     deliveryCore.providerPortal,
+		directorySyncService:      directorySyncService,
+		directorySyncConnectors:   directorySyncConnectors,
 	}, nil
 }
 
@@ -1089,6 +1141,12 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	aiGatewayService.SetDeliveryServices(core.applicationService, delivery.deliveryService)
 	aiGatewayService.SetOperationsServices(delivery.virtualizationService, delivery.dockerService)
 	aiGatewayService.SetComputeService(delivery.computeService)
+	aiGatewayService.SetNetworkAccessPreviewService(core.networkAccessService)
+	aiGatewayService.SetNetworkEnrollmentService(core.networkEnrollmentService)
+	aiGatewayService.SetNetworkAccessGrantService(core.networkAccessGrantService)
+	if core.networkIngestQuery != nil {
+		aiGatewayService.SetNetworkTelemetryService(core.networkIngestQuery)
+	}
 	aiGatewayService.SetCatalogService(core.catalogService)
 	aiGatewayService.SetResourceService(core.resourceService.Runtime())
 	aiGatewayService.SetResourceCreationService(core.resourceService.ResourceCreation())
@@ -1276,6 +1334,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Compute:        apiHandlers.NewComputeHandler(delivery.computeService),
 		Virtualization: newVirtualizationHandler(delivery.virtualizationService),
 		Docker:         newDockerHandler(delivery.dockerService, cfg.Runtime.ExecutionRunnerKeys),
+		NetworkAccess:  apiHandlers.NewNetworkAccessHandler(core.networkAccessService, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery),
 		Access: accesshandler.New(accesshandler.Services{
 			Users: core.accessConsoleService, Catalog: core.accessConsoleService,
 			Roles: core.accessConsoleService, Teams: core.accessConsoleService, Policies: core.accessConsoleService,

@@ -3,6 +3,7 @@ package announcement
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -25,7 +26,7 @@ func (r *Repository) List(ctx context.Context, limit int) ([]domainannouncement.
 		limit = 50
 	}
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, title, summary, content, level, status, audience, sticky,
+		SELECT id, title, content, level, status, audience, sticky,
 		       starts_at, ends_at, published_at, created_by, updated_by, created_at, updated_at
 		FROM announcements
 		ORDER BY sticky DESC, updated_at DESC
@@ -49,7 +50,7 @@ func (r *Repository) List(ctx context.Context, limit int) ([]domainannouncement.
 
 func (r *Repository) Get(ctx context.Context, id string) (domainannouncement.Record, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, title, summary, content, level, status, audience, sticky,
+		SELECT id, title, content, level, status, audience, sticky,
 		       starts_at, ends_at, published_at, created_by, updated_by, created_at, updated_at
 		FROM announcements
 		WHERE id = ?
@@ -68,10 +69,10 @@ func (r *Repository) Get(ctx context.Context, id string) (domainannouncement.Rec
 func (r *Repository) Create(ctx context.Context, item domainannouncement.Record) (domainannouncement.Record, error) {
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO announcements (
-			id, title, summary, content, level, status, audience, sticky,
+			id, title, content, level, status, audience, sticky,
 			starts_at, ends_at, published_at, created_by, updated_by, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.Title, item.Summary, item.Content, item.Level, item.Status, item.Audience, item.Sticky,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.Title, item.Content, item.Level, item.Status, item.Audience, item.Sticky,
 		nullTime(item.StartsAt), nullTime(item.EndsAt), nullTime(item.PublishedAt), item.CreatedBy, item.UpdatedBy,
 		parseRFC3339(item.CreatedAt), parseRFC3339(item.UpdatedAt)).Error; err != nil {
 		return domainannouncement.Record{}, err
@@ -82,10 +83,10 @@ func (r *Repository) Create(ctx context.Context, item domainannouncement.Record)
 func (r *Repository) Update(ctx context.Context, id string, item domainannouncement.Record) (domainannouncement.Record, error) {
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE announcements
-		SET title = ?, summary = ?, content = ?, level = ?, status = ?, audience = ?, sticky = ?,
+		SET title = ?, content = ?, level = ?, status = ?, audience = ?, sticky = ?,
 		    starts_at = ?, ends_at = ?, published_at = ?, updated_by = ?, updated_at = ?
 		WHERE id = ?
-	`, item.Title, item.Summary, item.Content, item.Level, item.Status, item.Audience, item.Sticky,
+	`, item.Title, item.Content, item.Level, item.Status, item.Audience, item.Sticky,
 		nullTime(item.StartsAt), nullTime(item.EndsAt), nullTime(item.PublishedAt), item.UpdatedBy,
 		parseRFC3339(item.UpdatedAt), id)
 	if result.Error != nil {
@@ -152,7 +153,7 @@ func (r *Repository) ListInbox(ctx context.Context, userID string, limit int, no
 		limit = 10
 	}
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT a.id, a.title, a.summary, a.content, a.level, a.status, a.audience, a.sticky,
+		SELECT a.id, a.title, a.content, a.level, a.status, a.audience, a.sticky,
 		       a.starts_at, a.ends_at, a.published_at, a.created_by, a.updated_by, a.created_at, a.updated_at,
 		       ar.read_at
 		FROM announcements a
@@ -214,6 +215,84 @@ func (r *Repository) MarkRead(ctx context.Context, announcementID, userID string
 	`, uuid.NewString(), announcementID, userID, now, now, now).Error
 }
 
+func (r *Repository) ListReceipts(ctx context.Context, announcementID string, query domainannouncement.ReceiptQuery) (domainannouncement.ReceiptPage, error) {
+	pattern := "%" + query.Keyword + "%"
+	args := []any{announcementID, query.Keyword, pattern, pattern, pattern}
+	var readCount, unreadCount int
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT COUNT(ar.read_at) AS read_count,
+		       COUNT(*) - COUNT(ar.read_at) AS unread_count
+		FROM users u
+		LEFT JOIN announcement_receipts ar
+		  ON ar.announcement_id = ? AND ar.user_id = u.id
+		WHERE u.status = 'active'
+		  AND (? = '' OR u.username ILIKE ? OR COALESCE(u.display_name, '') ILIKE ? OR u.email ILIKE ?)
+	`, args...).Row().Scan(&readCount, &unreadCount); err != nil {
+		return domainannouncement.ReceiptPage{}, fmt.Errorf("count announcement receipts: %w", err)
+	}
+
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT u.id, u.username, COALESCE(u.display_name, ''), u.email,
+		       COALESCE((
+		         SELECT json_agg(t.name ORDER BY t.name)
+		         FROM user_team_bindings utb
+		         JOIN teams t ON t.id = utb.team_id
+		         WHERE utb.user_id = u.id
+		       ), '[]'::json),
+		       ar.read_at
+		FROM users u
+		LEFT JOIN announcement_receipts ar
+		  ON ar.announcement_id = ? AND ar.user_id = u.id
+		WHERE u.status = 'active'
+		  AND (? = '' OR u.username ILIKE ? OR COALESCE(u.display_name, '') ILIKE ? OR u.email ILIKE ?)
+		  AND (? = 'all' OR (? = 'read' AND ar.read_at IS NOT NULL) OR (? = 'unread' AND ar.read_at IS NULL))
+		ORDER BY (ar.read_at IS NULL) DESC, ar.read_at DESC NULLS LAST, u.username ASC, u.id ASC
+		LIMIT ? OFFSET ?
+	`, append(args, query.State, query.State, query.State, query.PageSize, (query.Page-1)*query.PageSize)...).Rows()
+	if err != nil {
+		return domainannouncement.ReceiptPage{}, fmt.Errorf("query announcement receipts: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	items := make([]domainannouncement.Receipt, 0, query.PageSize)
+	for rows.Next() {
+		var item domainannouncement.Receipt
+		var teamNames []byte
+		var readAt sql.NullTime
+		if err := rows.Scan(&item.UserID, &item.Username, &item.DisplayName, &item.Email, &teamNames, &readAt); err != nil {
+			return domainannouncement.ReceiptPage{}, fmt.Errorf("scan announcement receipt: %w", err)
+		}
+		if err := json.Unmarshal(teamNames, &item.TeamNames); err != nil {
+			return domainannouncement.ReceiptPage{}, fmt.Errorf("decode announcement receipt teams: %w", err)
+		}
+		if readAt.Valid {
+			value := readAt.Time.UTC().Format(time.RFC3339)
+			item.IsRead = true
+			item.ReadAt = &value
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return domainannouncement.ReceiptPage{}, fmt.Errorf("iterate announcement receipts: %w", err)
+	}
+
+	total := readCount + unreadCount
+	switch query.State {
+	case "read":
+		total = readCount
+	case "unread":
+		total = unreadCount
+	}
+	return domainannouncement.ReceiptPage{
+		Items:       items,
+		Total:       total,
+		Page:        query.Page,
+		PageSize:    query.PageSize,
+		ReadCount:   readCount,
+		UnreadCount: unreadCount,
+	}, nil
+}
+
 func scanAnnouncementRows(rows *sql.Rows) (domainannouncement.Record, error) {
 	var item domainannouncement.Record
 	var startsAt sql.NullTime
@@ -224,7 +303,6 @@ func scanAnnouncementRows(rows *sql.Rows) (domainannouncement.Record, error) {
 	if err := rows.Scan(
 		&item.ID,
 		&item.Title,
-		&item.Summary,
 		&item.Content,
 		&item.Level,
 		&item.Status,
@@ -253,7 +331,6 @@ func scanAnnouncementRow(row *sql.Row) (domainannouncement.Record, error) {
 	if err := row.Scan(
 		&item.ID,
 		&item.Title,
-		&item.Summary,
 		&item.Content,
 		&item.Level,
 		&item.Status,
@@ -283,7 +360,6 @@ func scanInboxItem(rows *sql.Rows) (domainannouncement.InboxItem, error) {
 	if err := rows.Scan(
 		&item.ID,
 		&item.Title,
-		&item.Summary,
 		&item.Content,
 		&item.Level,
 		&item.Status,

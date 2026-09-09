@@ -3,8 +3,11 @@ kind: Kustomization
 namespace: soha
 resources:
   - deployment.yaml
+  - network-runtime.yaml
 images:
   - name: pgvector/pgvector
     newTag: 0.8.5-pg18-trixie
   - name: ghcr.io/opensoha/soha
-    newTag: v0.1.8
+    newTag: local
+  - name: ghcr.io/opensoha/soha-network-gateway
+    newTag: local

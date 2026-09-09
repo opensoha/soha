@@ -38,6 +38,82 @@ database:
   auto_migrate: true
   migration_file: migrations/postgres/0001_init.sql
 
+network_control:
+  http:
+    addr: :8082
+    read_timeout: 10s
+    write_timeout: 10s
+    idle_timeout: 60s
+    max_header_bytes: 65536
+  logger:
+    level: info
+    format: json
+  database:
+    driver: postgres
+    host: localhost
+    port: 5432
+    name: soha
+    user: pgsql
+    password: pgsql
+    sslmode: disable
+    max_open_conns: 8
+    max_idle_conns: 4
+    conn_max_lifetime: 1h
+    auto_migrate: false
+    migration_path: migrations/postgres
+  tls:
+    cert_file: ${SOHA_NETWORK_CONTROL_TLS_CERT_FILE}
+    key_file: ${SOHA_NETWORK_CONTROL_TLS_KEY_FILE}
+    client_ca_file: ${SOHA_NETWORK_CONTROL_TLS_CLIENT_CA_FILE}
+  snapshot_refresh_interval: 1s
+  max_body_bytes: 1048576
+  requests_per_minute: 600
+  max_clock_skew: 5m
+  configuration_ttl: 5m
+  lease_ttl: 5m
+
+ingest:
+  http:
+    addr: :8083
+    read_timeout: 10s
+    write_timeout: 10s
+    idle_timeout: 60s
+    max_header_bytes: 65536
+  logger:
+    level: info
+    format: json
+  database:
+    driver: postgres
+    host: localhost
+    port: 5432
+    name: soha_ingest
+    user: pgsql
+    password: pgsql
+    sslmode: disable
+    max_open_conns: 12
+    max_idle_conns: 6
+    conn_max_lifetime: 1h
+    auto_migrate: true
+    migration_path: migrations/network-ingest/postgres
+  tls:
+    cert_file: ${SOHA_INGEST_TLS_CERT_FILE}
+    key_file: ${SOHA_INGEST_TLS_KEY_FILE}
+    client_ca_file: ${SOHA_INGEST_TLS_CLIENT_CA_FILE}
+  max_body_bytes: 8388608
+  max_events_per_batch: 1000
+  requests_per_minute: 1200
+  max_clock_skew: 5m
+  retention: 168h
+
+network_ingest_query:
+  url: ${SOHA_NETWORK_INGEST_QUERY_URL}
+  ca_file: ${SOHA_NETWORK_INGEST_QUERY_CA_FILE}
+  cert_file: ${SOHA_NETWORK_INGEST_QUERY_CERT_FILE}
+  key_file: ${SOHA_NETWORK_INGEST_QUERY_KEY_FILE}
+  server_name: ${SOHA_NETWORK_INGEST_QUERY_SERVER_NAME}
+  timeout: 5s
+  max_response_bytes: 1048576
+
 auth:
   enable_dev_auth: false
   login_verification:

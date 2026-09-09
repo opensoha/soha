@@ -623,6 +623,22 @@ func TestExpandEnvExpandsSensitiveConfig(t *testing.T) {
 	}
 }
 
+func TestNetworkIngestQueryConfigIsOptionalAndAllOrNothing(t *testing.T) {
+	if err := (NetworkIngestQueryConfig{}).Validate(); err != nil {
+		t.Fatalf("disabled Validate() error = %v", err)
+	}
+	if err := (NetworkIngestQueryConfig{URL: "https://ingest.example.test"}).Validate(); err == nil {
+		t.Fatal("partial ingest query configuration was accepted")
+	}
+	configured := NetworkIngestQueryConfig{
+		URL: "https://ingest.example.test", CAFile: "/tls/ca.crt", CertFile: "/tls/tls.crt", KeyFile: "/tls/tls.key",
+		ServerName: "ingest.example.test", Timeout: 5 * time.Second, MaxResponseBytes: 1 << 20,
+	}
+	if err := configured.Validate(); err != nil || !configured.Configured() {
+		t.Fatalf("configured Validate()/Configured() = %v/%t", err, configured.Configured())
+	}
+}
+
 func validSecureConfig() Config {
 	return Config{
 		Logger: LoggerConfig{Level: "info", Format: "json"},

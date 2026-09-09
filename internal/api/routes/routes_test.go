@@ -1040,6 +1040,7 @@ func routeTestDependencies() Dependencies {
 		Software:           &apiHandlers.SoftwareHandler{},
 		Virtualization:     &apiHandlers.VirtualizationHandler{},
 		Docker:             &apiHandlers.DockerHandler{},
+		NetworkAccess:      &apiHandlers.NetworkAccessHandler{},
 		Access:             &accesshandler.Handler{},
 		ScopeGrants:        &accesshandler.ScopeGrantHandler{},
 		Menu:               &apiHandlers.MenuHandler{},

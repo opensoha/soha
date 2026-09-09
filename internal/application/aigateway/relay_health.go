@@ -88,6 +88,7 @@ func (s *Service) runLLMRelayHealthChecks(ctx context.Context, principal domaini
 			result = relayHealthCheckFailedResult(upstream, checkErr)
 		}
 		run.Checked++
+		result.Models = nil
 		run.Results = append(run.Results, result)
 		transition, err := s.updateRelayHealthCheckState(ctx, principal, upstream, result, checkErr, policy)
 		if err != nil {

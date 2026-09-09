@@ -58,6 +58,23 @@ func TestListIncludesMonitoringSignalMenus(t *testing.T) {
 	}
 }
 
+func TestListExcludesRemovedDeliveryMenus(t *testing.T) {
+	service := New(cfgpkg.ModulesConfig{Delivery: cfgpkg.ModuleToggleConfig{Enabled: true}})
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, ok := moduleStatusByID(items, "delivery")
+	if !ok {
+		t.Fatal("delivery module descriptor missing")
+	}
+	for _, id := range []string{"execution-tasks", "workflows"} {
+		if slices.Contains(status.Descriptor.SeedMenus, id) {
+			t.Fatalf("delivery seed menus retained removed menu %s: %v", id, status.Descriptor.SeedMenus)
+		}
+	}
+}
+
 func TestListIncludesCanonicalAIMenus(t *testing.T) {
 	service := New(cfgpkg.ModulesConfig{AI: cfgpkg.ModuleToggleConfig{Enabled: true}})
 	items, err := service.List(context.Background())
@@ -310,6 +327,9 @@ func TestListUsesInternalWorkbenchOverviewAsSecurityDefault(t *testing.T) {
 	}
 	if status.Descriptor.DefaultPath != "/internal-workbench/overview" {
 		t.Fatalf("security default path = %q", status.Descriptor.DefaultPath)
+	}
+	if !slices.Contains(status.Descriptor.SeedMenus, "network-access") {
+		t.Fatal("security module must own the network-access menu")
 	}
 }
 

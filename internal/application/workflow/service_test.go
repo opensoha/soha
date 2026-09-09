@@ -11,6 +11,7 @@ import (
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
@@ -196,6 +197,15 @@ func (s *stubWorkflowCatalog) ListApplicationEnvironments(context.Context) ([]do
 	return s.items, nil
 }
 
+func (s *stubWorkflowCatalog) GetApplicationEnvironment(_ context.Context, bindingID string) (domaincatalog.ApplicationEnvironment, error) {
+	for _, item := range s.items {
+		if item.ID == bindingID {
+			return item, nil
+		}
+	}
+	return domaincatalog.ApplicationEnvironment{}, apprepo.ErrNotFound
+}
+
 type stubWorkflowReleaseExecutor struct{}
 
 func (stubWorkflowReleaseExecutor) Trigger(_ context.Context, _ domainidentity.Principal, input domainrelease.TriggerInput) (domainrelease.Record, error) {
@@ -378,6 +388,12 @@ type stubWorkflowRolePermissionReader struct {
 	matrix map[string][]string
 }
 
+type environmentWorkflowAuthorizer struct{}
+
+func (environmentWorkflowAuthorizer) Authorize(_ context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+	return domainaccess.Decision{Allowed: request.Delivery.EnvironmentKey != "prod"}, nil
+}
+
 func (s stubWorkflowRolePermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
 	return s.matrix, nil
 }
@@ -429,6 +445,31 @@ func TestListPrunesStaleApplications(t *testing.T) {
 		if deletedIDs[i] != expected[i] {
 			t.Fatalf("deletedIDs = %v, want %v", deletedIDs, expected)
 		}
+	}
+}
+
+func TestListFiltersRunsOutsideApplicationEnvironmentScope(t *testing.T) {
+	repo := &stubWorkflowRepository{items: []domainworkflow.Run{
+		{ID: "run-dev", ApplicationID: "app-1", Metadata: map[string]any{"bindingId": "binding-dev"}},
+		{ID: "run-prod", ApplicationID: "app-1", Metadata: map[string]any{"bindingId": "binding-prod"}},
+	}}
+	service := &Service{
+		repo:       repo,
+		apps:       &stubWorkflowApps{},
+		authorizer: environmentWorkflowAuthorizer{},
+		catalog: &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{
+			{ID: "binding-dev", ApplicationID: "app-1", EnvironmentKey: "dev"},
+			{ID: "binding-prod", ApplicationID: "app-1", EnvironmentKey: "prod"},
+		}},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsView}}}),
+	}
+
+	items, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, "", 50)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(items) != 1 || items[0].ID != "run-dev" {
+		t.Fatalf("List() items = %#v, want only run-dev", items)
 	}
 }
 
@@ -511,7 +552,7 @@ func TestTriggerExecutesDAGWorkflowTemplate(t *testing.T) {
 		releases:    stubWorkflowReleaseExecutor{},
 		resources:   stubWorkflowResourceExecutor{},
 		builds:      stubWorkflowBuildExecutor{},
-		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger, appaccess.PermDeliveryApplicationEnvApprove}}}),
 	}
 	runnerCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()

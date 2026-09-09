@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -31,7 +32,7 @@ func (s *Service) loadDAGApprovalState(ctx context.Context, principal domainiden
 	if err != nil {
 		return dagApprovalState{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, run.ApplicationID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionApprove, app, run.ApplicationID, configString(run.Metadata, "bindingId"), appaccess.PermDeliveryApplicationEnvApprove); err != nil {
 		return dagApprovalState{}, err
 	}
 	if run.Status != workflowStatusWaitingApproval {
@@ -104,11 +105,12 @@ func dagApprovalDecision(action, actorName string) (string, string, string) {
 
 func (s *Service) resumeDAGAfterApproval(ctx context.Context, principal domainidentity.Principal, state dagApprovalState, run domainworkflow.Run) (domainworkflow.Run, error) {
 	input := domainworkflow.Input{
-		ApplicationID:  state.run.ApplicationID,
-		WorkflowName:   state.run.WorkflowName,
-		ClusterID:      state.run.ClusterID,
-		Namespace:      state.run.Namespace,
-		DeploymentName: state.run.DeploymentName,
+		ApplicationID:            state.run.ApplicationID,
+		ApplicationEnvironmentID: configString(state.run.Metadata, "bindingId"),
+		WorkflowName:             state.run.WorkflowName,
+		ClusterID:                state.run.ClusterID,
+		Namespace:                state.run.Namespace,
+		DeploymentName:           state.run.DeploymentName,
 	}
 	binding, err := s.findApplicationEnvironmentBinding(ctx, input)
 	if err != nil {

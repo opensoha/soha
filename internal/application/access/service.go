@@ -315,6 +315,8 @@ func (s *Service) applyDeliveryScopeGrantConstraint(
 	envKeyMap map[string]string,
 ) domainaccess.Decision {
 	matchedActions := make([]domainaccess.Action, 0)
+	highestSpecificity := -1
+	explicitlyDenied := false
 	for _, grant := range subjectGrants {
 		if normalizedScopeType(grant.ScopeType) == domainscopegrant.ScopeTypePlatform {
 			continue
@@ -322,13 +324,26 @@ func (s *Service) applyDeliveryScopeGrantConstraint(
 		if !grantMatchesDeliveryScope(grant, request.Delivery, envKeyMap) {
 			continue
 		}
+		specificity := deliveryScopeGrantSpecificity(grant)
+		if specificity < highestSpecificity {
+			continue
+		}
+		if specificity > highestSpecificity {
+			highestSpecificity = specificity
+			explicitlyDenied = false
+			matchedActions = matchedActions[:0]
+		}
 		if normalizedEffect(grant.Effect) == "deny" {
-			decision.Allowed = false
-			decision.Reason = "scope grant explicitly denies this delivery scope"
-			decision.AllowedActions = nil
-			return decision
+			explicitlyDenied = true
+			continue
 		}
 		matchedActions = unionActions(matchedActions, roleMatrix[grant.Role])
+	}
+	if explicitlyDenied {
+		decision.Allowed = false
+		decision.Reason = "most specific scope grant explicitly denies this delivery scope"
+		decision.AllowedActions = nil
+		return decision
 	}
 
 	if len(matchedActions) == 0 {
@@ -348,6 +363,17 @@ func (s *Service) applyDeliveryScopeGrantConstraint(
 		decision.Reason = fmt.Sprintf("action %s filtered out by scope grant", request.Action)
 	}
 	return decision
+}
+
+func deliveryScopeGrantSpecificity(grant domainscopegrant.Record) int {
+	specificity := 0
+	if len(grant.ApplicationIDs) > 0 {
+		specificity += 2
+	}
+	if len(grant.EnvironmentIDs) > 0 {
+		specificity++
+	}
+	return specificity
 }
 
 func (s *Service) applyPlatformScopeGrantConstraint(

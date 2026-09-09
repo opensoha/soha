@@ -120,6 +120,7 @@ type ToolInvocationRequest struct {
 	AIClientName string            `json:"aiClientName,omitempty"`
 	SkillID      string            `json:"skillId,omitempty"`
 	RequestID    string            `json:"requestId,omitempty"`
+	SessionID    string            `json:"-"`
 }
 
 type ToolInvocationResult struct {
@@ -287,6 +288,7 @@ type ApprovalRequest struct {
 	ApprovalPolicyRef string            `json:"approvalPolicyRef,omitempty"`
 	ActorType         string            `json:"actorType"`
 	ActorID           string            `json:"actorId"`
+	ActorSessionID    string            `json:"-"`
 	ActorName         string            `json:"actorName,omitempty"`
 	ActorRoles        []string          `json:"actorRoles,omitempty"`
 	ActorTeams        []string          `json:"actorTeams,omitempty"`
@@ -984,7 +986,9 @@ type LLMUpstreamTestResult struct {
 	ProviderKind string    `json:"providerKind"`
 	Status       string    `json:"status"`
 	HTTPStatus   int       `json:"httpStatus,omitempty"`
-	DurationMs   int64     `json:"durationMs,omitempty"`
+	DurationMs   int64     `json:"durationMs"`
+	ModelCount   int       `json:"modelCount"`
+	Models       []string  `json:"models,omitempty"`
 	CheckedAt    time.Time `json:"checkedAt"`
 }
 

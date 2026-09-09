@@ -49,6 +49,7 @@ type ApplicationReader interface {
 
 type CatalogReader interface {
 	ListApplicationEnvironments(context.Context) ([]domaincatalog.ApplicationEnvironment, error)
+	GetApplicationEnvironment(context.Context, string) (domaincatalog.ApplicationEnvironment, error)
 }
 
 type BuildExecutor interface {
@@ -235,7 +236,7 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 			}
 			continue
 		}
-		if err := s.authorize(ctx, principal, domainaccess.ActionList, app, item.ApplicationID); err != nil {
+		if err := s.authorize(ctx, principal, domainaccess.ActionList, app, item.ApplicationID, configString(item.Metadata, "bindingId"), ""); err != nil {
 			continue
 		}
 		allowed = append(allowed, item)
@@ -264,7 +265,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, w
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionView, app, item.ApplicationID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionView, app, item.ApplicationID, configString(item.Metadata, "bindingId"), ""); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	return item, nil
@@ -284,12 +285,15 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, ""); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	if run, binding, definition, ok, err := s.prepareBoundDAGRun(ctx, app, input); err != nil {
 		return domainworkflow.Run{}, err
 	} else if ok {
+		if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, ""); err != nil {
+			return domainworkflow.Run{}, err
+		}
 		created, err := s.repo.Create(ctx, run)
 		if err != nil {
 			return domainworkflow.Run{}, err
@@ -357,11 +361,14 @@ func (s *Service) TriggerValidation(ctx context.Context, principal domainidentit
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, ""); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	run, binding, definition, err := s.prepareValidationDAGRun(ctx, app, input)
 	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, ""); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	created, err := s.repo.Create(ctx, run)
@@ -400,11 +407,14 @@ func (s *Service) TriggerRollback(ctx context.Context, principal domainidentity.
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, ""); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	run, binding, definition, err := s.prepareRollbackDAGRun(ctx, app, input)
 	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, ""); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	created, err := s.repo.Create(ctx, run)
@@ -616,7 +626,7 @@ func (s *Service) RecordExecutionTaskResult(ctx context.Context, task domaindeli
 }
 
 func (s *Service) resolveApproval(ctx context.Context, principal domainidentity.Principal, workflowRunID, action, comment string) (domainworkflow.Run, error) {
-	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryApplicationEnvApprove); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	approvalState, err := s.loadDAGApprovalState(ctx, principal, workflowRunID)
@@ -979,13 +989,32 @@ func isApplicationMissing(err error) bool {
 	return errors.Is(err, apperrors.ErrNotFound)
 }
 
-func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, app domainapp.App, resourceName string) error {
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, app domainapp.App, resourceName, bindingID, permissionKey string) error {
 	if s.authorizer == nil {
 		return nil
 	}
+	businessLineID := app.BusinessLineID
+	applicationGroup := app.Group
+	environmentKey := ""
+	if bindingID = strings.TrimSpace(bindingID); bindingID != "" {
+		if s.catalog == nil {
+			return fmt.Errorf("%w: application environment scope unavailable", apperrors.ErrAccessDenied)
+		}
+		binding, err := s.catalog.GetApplicationEnvironment(ctx, bindingID)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(binding.ApplicationID) != strings.TrimSpace(app.ID) {
+			return fmt.Errorf("%w: application environment does not belong to application", apperrors.ErrAccessDenied)
+		}
+		businessLineID = firstNonEmpty(binding.BusinessLineID, businessLineID)
+		applicationGroup = firstNonEmpty(binding.ApplicationGroup, applicationGroup)
+		environmentKey = firstNonEmpty(binding.EnvironmentKey, binding.EnvironmentID)
+	}
 	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
-		Principal: principal,
-		Action:    action,
+		Principal:     principal,
+		PermissionKey: strings.TrimSpace(permissionKey),
+		Action:        action,
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,
@@ -999,8 +1028,9 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 			Owner: app.Key,
 		},
 		Delivery: domainaccess.DeliveryAttributes{
-			BusinessLineID:   app.BusinessLineID,
-			ApplicationGroup: app.Group,
+			BusinessLineID:   businessLineID,
+			ApplicationGroup: applicationGroup,
+			EnvironmentKey:   environmentKey,
 			ApplicationID:    app.ID,
 		},
 		Context: domainaccess.ContextAttributes{

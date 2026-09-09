@@ -1,15 +1,6 @@
 ---
 name: soha-backend
-description: >-
-  Implement or review open-source Soha backend capabilities in `cmd/**`,
-  `internal/**`, and `configs/**` for Go 1.26.6, Gin, PostgreSQL, Kubernetes
-  `client-go`, and agent-connected clusters. Use when changing HTTP routes,
-  handlers, application services, repositories, policy, bootstrap wiring,
-  platform aggregation, durable operations, AI Gateway, Identity, knowledge,
-  evaluation, memory, or other control-plane modules. This skill enforces the
-  modular-monolith dependency direction, contracts-first public behavior,
-  explicit scope and authorization, audit-safe operations, direct-versus-agent
-  capability handling, and the open-source versus Cloud boundary.
+description: Implement or review Soha core Go backend behavior, authorization, durable operations, and module boundaries. Client, agent, Cloud, and public contract changes belong to their owning repositories.
 ---
 
 # Soha Backend
@@ -51,7 +42,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## Go Hotspot Refactor Rules
 
-- Split oversized files by stable behavior domains before changing logic. Prefer same-package file moves first so method receivers, private helpers, tests, and API contracts stay intact.
+- When a refactor is needed for the requested change, split by stable behavior domains and prefer same-package moves. Do not require file splitting before an unrelated small fix.
 - Platform handler REST methods are split by resource domain: `platform_inventory.go`, `platform_workloads.go`, `platform_configuration.go`, `platform_network.go`, `platform_storage.go`, `platform_rbac.go`, `platform_crd_helm.go`, `platform_generic.go`, and `platform_observability.go`. WebSocket stream behavior belongs in `platform_streams.go`; keep the shared `websocketStreamSession` lifecycle helper there.
 - Platform resource application methods are split by resource family: `pods.go`/`pods_helpers.go`, `workloads.go`, `configuration.go`, `rbac.go`, `network.go`, `storage.go`, `crd.go`, `events.go`, and `resource_yaml.go`. Keep authorization, audit, capability orchestration, typed connection routing, and platform DTO contracts in application code. Keep direct Kubernetes/Helm clients, cache/live fallback, SPDY transport, and provider-object mapping in `internal/infrastructure/resourcebackend`.
 - Application production code must not import Kubernetes/Helm SDKs or `internal/infrastructure`. Preserve the zero-tolerance dependency boundary tests; do not recreate `DirectClients`, an application `ResourceCache`, or connection-mode branch clones.

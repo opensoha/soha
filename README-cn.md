@@ -215,12 +215,13 @@ make remote-dev-status
 
 ## 部署
 
-Soha 默认按单二进制运行时交付：一个应用容器提供 API 和内嵌 SPA。文档由 `soha-docs` 独立发布，并通过配置的文档 URL 链接。
+Soha 每个容器只运行一个进程。默认进程提供管理 API 和内嵌 SPA；独立的 `network-control`、`ingest` 与特权隔离的 `network-gateway` 工作负载，使实时授权、高频遥测和 WireGuard 数据面都不与管理服务共用进程。文档由 `soha-docs` 独立发布，并通过配置的文档 URL 链接。
 
 - [deploy/Dockerfile](./deploy/Dockerfile): 多阶段镜像构建
 - [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): 包含 PostgreSQL 与可选 Hermes runner 服务的本地栈
 - [configs/config.yaml](./configs/config.yaml): 默认应用配置
 - [deploy/deployment.yaml](./deploy/deployment.yaml): 原生 Kubernetes 清单基线
+- [deploy/network-runtime.yaml](./deploy/network-runtime.yaml): 独立的 network-control、ingest、ingest PostgreSQL 与 WireGuard gateway 工作负载
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize 入口，用于在不引入 Helm 时覆盖镜像 tag、namespace 或补丁
 
 ### 远程 Kubernetes 开发
@@ -266,6 +267,105 @@ make remote-dev-down
 make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
 ```
+
+网络运行时在 Compose 中通过 profile 显式开启，因为 mTLS 私钥不能提交到仓库。
+分别准备包含 `tls.crt`、`tls.key` 和 `ca.crt` 的服务端与客户端身份目录，将私钥权限设为 `0440` 或 `0600`，然后启动：
+
+```bash
+SOHA_NETWORK_CONTROL_TLS_DIR=/绝对路径/network-control-tls \
+SOHA_INGEST_TLS_DIR=/绝对路径/ingest-tls \
+SOHA_NETWORK_INGEST_QUERY_TLS_DIR=/绝对路径/core-ingest-query-tls \
+SOHA_NETWORK_INGEST_QUERY_URL=https://ingest:8083 \
+SOHA_NETWORK_INGEST_QUERY_CA_FILE=/run/soha-network-ingest-query/ca.crt \
+SOHA_NETWORK_INGEST_QUERY_CERT_FILE=/run/soha-network-ingest-query/tls.crt \
+SOHA_NETWORK_INGEST_QUERY_KEY_FILE=/run/soha-network-ingest-query/tls.key \
+SOHA_NETWORK_INGEST_QUERY_SERVER_NAME=ingest \
+SOHA_NETWORK_GATEWAY_CONTROL_CLIENT_TLS_DIR=/绝对路径/gateway-control-tls \
+SOHA_NETWORK_GATEWAY_INGEST_CLIENT_TLS_DIR=/绝对路径/gateway-ingest-tls \
+docker compose -f deploy/docker-compose.yaml --profile network-access up -d --build
+```
+
+该 profile 会启动 8082 端口的 `network-control`、8083 端口的 `ingest`，以及
+独立的 ingest PostgreSQL 和监听 UDP 51820 的 WireGuard gateway。`/healthz`
+表示进程存活；只有发布所需策略或配置后，network-control 与 gateway 的
+`/readyz` 才会就绪。
+core 的 ingest 查询客户端证书必须使用精确 URI SAN
+`spiffe://opensoha.local/network-ingest/core/soha-server`，不得复用 gateway
+ingest 身份；只有有界的聚合摘要会回到 core。
+
+组件测试容器也在同一个 Compose 文件中，并且默认不启动。`network-test`
+提供 mihomo、`radclient`、一次性 EAP-TLS `eapol_test` 客户端，以及仅授予
+NET_ADMIN 的 WireGuard/HTTP 测试客户端：
+
+```bash
+docker compose -f deploy/docker-compose.yaml --profile network-test up -d --build \
+  mihomo-test network-test-client radius-test-client
+docker compose -f deploy/docker-compose.yaml --profile network-test exec -T network-test-client \
+  sh -c 'curl -fsS --proxy http://mihomo-test:7890 -H "Authorization: Bearer soha-network-test" http://mihomo-test:9090/version >/dev/null && ip link add wg-smoke type wireguard && wg show interfaces && ip link del wg-smoke'
+docker compose -f deploy/docker-compose.yaml --profile network-test exec -T radius-test-client radclient -v
+```
+
+要执行真实 EAP-TLS 握手，先在已忽略的运行时目录生成有效期七天的一次性
+实验 CA，以及相互匹配的 network-control、NAS、FreeRADIUS 和 endpoint 身份。
+endpoint 证书会同时用于 EAP 客户端，使其 serial 和 authority key ID 与端点
+注册产生的 credential 一致：
+
+```bash
+sh deploy/network-test/generate-eap-test-pki.sh \
+  deploy/network-runtime-tls/eap-lab <soha-subject-id>
+```
+
+使用生成目录启动 network-control 与 FreeRADIUS，为运行时
+`endpoint-eap-test` 创建 enrollment，并通过 `eap-test-client/tls.crt` 与
+`tls.key` 消费该 enrollment；不要直接写入证书绑定。随后让测试客户端共享
+FreeRADIUS 网络命名空间，loopback-only 实验 NAS 不会因此向其他容器开放：
+
+```bash
+SOHA_NETWORK_CONTROL_TLS_DIR=./network-runtime-tls/eap-lab/network-control \
+SOHA_RADIUS_CONTROL_CLIENT_TLS_DIR=./network-runtime-tls/eap-lab/freeradius-control \
+SOHA_RADIUS_EAP_TLS_DIR=./network-runtime-tls/eap-lab/freeradius-eap \
+SOHA_RADIUS_EAP_TEST_TLS_DIR=./network-runtime-tls/eap-lab/eap-test-client \
+docker compose -f deploy/docker-compose.yaml --profile network-access \
+  --profile network-test run --rm --build radius-eap-test-client
+```
+
+成功必须同时出现 `CTRL-EVENT-EAP-SUCCESS` 和 `Access-Accept`；TLS 失败、未知或
+已吊销的证书绑定、策略拒绝都必须以非零状态退出。`eapol_test` 只接受命令行
+形式的 shared secret，因此该一次性实验 secret 会出现在测试容器自己的进程参数中；
+这里绝不能使用生产 NAS secret。`issuer/ca.key` 不得挂载到任何容器，验证后应
+删除整个实验目录。
+
+A/B/C 实验环境同时启用 `network-access` 与 `network-multisite-test`。
+现有 `network-gateway` 作为 A；该 profile 增加监听 UDP 51821 的 B 和 UDP
+51822 的 C，三者使用独立密钥、注册身份和数据卷。工作台中 A 的
+`hubGatewayId` 留空，B/C 都填写 A 的网关 ID，并且每个站点只声明自己拥有、
+互不重叠的 `advertisedCidrs`。当前采用静态路由 Hub/Spoke，B 到 C 经 A 转发。
+
+```bash
+docker compose -f deploy/docker-compose.yaml --profile network-access \
+  --profile network-multisite-test up -d --build \
+  network-gateway network-gateway-b network-gateway-c
+```
+
+原生 Kubernetes 使用同样的进程拆分。在包含网络运行时的发行镜像发布前，
+原始清单使用 `:local` 镜像；v0.1.7 和 v0.1.8 不包含这些新可执行文件。
+先从当前工作树构建两种镜像：
+
+```bash
+make deploy-image
+docker build --build-context contracts=../soha-contracts \
+  --target network-gateway-runtime -f deploy/Dockerfile \
+  -t ghcr.io/opensoha/soha-network-gateway:local .
+```
+
+将镜像导入每个目标集群节点，或推送到自有镜像仓库后替换
+`deploy/kustomization.yaml` 中两种镜像引用。server、network-control 和 ingest
+必须使用同一应用镜像。执行 `kubectl apply -k deploy` 前，需在
+`soha` namespace 创建 `soha-network-runtime-tls`，并提供
+`deploy/network-runtime.yaml` 顶部列出的全部 key。证书必须覆盖实际 Service/
+LoadBalancer 名称并由挂载的客户端 CA 签发；私钥不得写入本仓库。
+core 查询身份使用上述 URI SAN，并使用独立的
+`network-core-ingest-query.*` Secret key。
 
 当 PostgreSQL 已经可访问、且不使用 Compose 时，可以直接启动应用容器。
 下面显式写出所有标准默认值，部署前可分别替换：

@@ -813,12 +813,12 @@ func (r *Repository) CreateApprovalRequest(ctx context.Context, item domainaigat
 	}
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO ai_gateway_approval_requests (
-			id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_name, actor_roles, actor_teams,
+			id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_session_id, actor_name, actor_roles, actor_teams,
 			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, secret_refs, related_ids, output,
 			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.Status, item.Strategy, nullableString(item.PolicyID), nullableString(item.ApprovalPolicyRef), item.ActorType, item.ActorID, nullableString(item.ActorName), actorRoles, actorTeams,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.Status, item.Strategy, nullableString(item.PolicyID), nullableString(item.ApprovalPolicyRef), item.ActorType, item.ActorID, nullableString(item.ActorSessionID), nullableString(item.ActorName), actorRoles, actorTeams,
 		nullableString(item.AIClientID), nullableString(item.AIClientName), nullableString(item.SkillID), item.ToolName, string(item.RiskLevel), item.RequiresApproval, resourceScope, toolInput, secretRefs, relatedIDs, output,
 		item.Summary, nullableString(item.RequestID), nullableString(item.SourceIP), nullableString(item.DecidedBy), nullableString(item.DecidedByName), item.DecidedAt, nullableString(item.DecisionComment), item.ExpiresAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domainaigateway.ApprovalRequest{}, err
@@ -828,7 +828,7 @@ func (r *Repository) CreateApprovalRequest(ctx context.Context, item domainaigat
 
 func (r *Repository) GetApprovalRequest(ctx context.Context, requestID string) (domainaigateway.ApprovalRequest, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_name, actor_roles, actor_teams,
+		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_session_id, actor_name, actor_roles, actor_teams,
 			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, secret_refs, related_ids, output,
 			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
 		FROM ai_gateway_approval_requests
@@ -840,7 +840,7 @@ func (r *Repository) GetApprovalRequest(ctx context.Context, requestID string) (
 
 func (r *Repository) ListApprovalRequests(ctx context.Context, filter domainaigateway.ApprovalRequestFilter) ([]domainaigateway.ApprovalRequest, error) {
 	query := `
-		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_name, actor_roles, actor_teams,
+		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_session_id, actor_name, actor_roles, actor_teams,
 			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, secret_refs, related_ids, output,
 			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
 		FROM ai_gateway_approval_requests
@@ -1135,7 +1135,7 @@ func scanApprovalRequestScanner(scanner interface {
 	Scan(dest ...any) error
 }) (domainaigateway.ApprovalRequest, error) {
 	var item domainaigateway.ApprovalRequest
-	var policyID, approvalPolicyRef, actorName, aiClientID, aiClientName, skillID, requestID, sourceIP, decidedBy, decidedByName, decisionComment sql.NullString
+	var policyID, approvalPolicyRef, actorSessionID, actorName, aiClientID, aiClientName, skillID, requestID, sourceIP, decidedBy, decidedByName, decisionComment sql.NullString
 	var decidedAt, expiresAt sql.NullTime
 	var actorRoles, actorTeams, resourceScope, toolInput, secretRefs, relatedIDs, output []byte
 	var riskLevel string
@@ -1147,6 +1147,7 @@ func scanApprovalRequestScanner(scanner interface {
 		&approvalPolicyRef,
 		&item.ActorType,
 		&item.ActorID,
+		&actorSessionID,
 		&actorName,
 		&actorRoles,
 		&actorTeams,
@@ -1176,6 +1177,7 @@ func scanApprovalRequestScanner(scanner interface {
 	}
 	item.PolicyID = policyID.String
 	item.ApprovalPolicyRef = approvalPolicyRef.String
+	item.ActorSessionID = actorSessionID.String
 	item.ActorName = actorName.String
 	item.AIClientID = aiClientID.String
 	item.AIClientName = aiClientName.String

@@ -9,10 +9,16 @@ WHERE menu_id IN (
 INSERT INTO menus (
     id, parent_id, path, label_zh, label_en, icon_key, section,
     sort_order, enabled, created_at, updated_at
-) VALUES
+) SELECT candidate.*
+FROM (VALUES
     ('monitoring-workbench-metrics', 'monitoring-workbench', '/monitoring-workbench/metrics', '指标', 'Metrics', 'activity', 'observe-signals', 63, true, NOW(), NOW()),
     ('monitoring-workbench-traces', 'monitoring-workbench', '/monitoring-workbench/traces', '链路', 'Traces', 'link', 'observe-signals', 64, true, NOW(), NOW()),
     ('monitoring-workbench-logs', 'monitoring-workbench', '/monitoring-workbench/logs', '日志', 'Logs', 'file-clock', 'observe-signals', 65, true, NOW(), NOW())
+) AS candidate(
+    id, parent_id, path, label_zh, label_en, icon_key, section,
+    sort_order, enabled, created_at, updated_at
+)
+WHERE EXISTS (SELECT 1 FROM menus AS parent WHERE parent.id = candidate.parent_id)
 ON CONFLICT (id) DO UPDATE
 SET parent_id = EXCLUDED.parent_id,
     path = EXCLUDED.path,

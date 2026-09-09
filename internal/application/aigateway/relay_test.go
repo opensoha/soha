@@ -5342,6 +5342,52 @@ func testRelayTokenConcurrencyLimit(t *testing.T, stream bool) {
 	assertRelayLogWithErrorCode(t, repo, errorCode)
 }
 
+func TestRelayModelsFromResponse(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		body string
+		want []string
+	}{
+		{name: "OpenAI data", body: `{"data":[{"id":"gpt-5.6-sol"},{"id":"gpt-5.6-luna"}]}`, want: []string{"gpt-5.6-luna", "gpt-5.6-sol"}},
+		{name: "Gemini models", body: `{"models":[{"name":"models/gemini-2.5-pro"}]}`, want: []string{"gemini-2.5-pro"}},
+		{name: "invalid JSON", body: `{`, want: nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := relayModelsFromResponse([]byte(tt.body)); !slices.Equal(got, tt.want) {
+				t.Fatalf("relayModelsFromResponse() = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTestLLMUpstreamDraftDiscoversModels(t *testing.T) {
+	const apiKey = "sk-draft-test" // #nosec G101 -- nonfunctional credential used by the local mock upstream.
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path = %q, want /v1/models", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+apiKey {
+			t.Errorf("Authorization = %q", got)
+		}
+		_, _ = io.WriteString(w, `{"data":[{"id":"gpt-5.6-luna"},{"id":"gpt-5.6-sol"}]}`)
+	}))
+	defer upstream.Close()
+
+	service := newRelayRuntimeTestService(&relayTestRepository{}, upstream.Client())
+	result, err := service.TestLLMUpstreamDraft(context.Background(), relayTestManagePrincipal(), domainaigateway.LLMUpstreamInput{
+		Name:         "draft",
+		ProviderKind: "openai",
+		BaseURL:      upstream.URL + "/v1",
+		APIKey:       apiKey,
+	})
+	if err != nil {
+		t.Fatalf("TestLLMUpstreamDraft returned error: %v", err)
+	}
+	if result.Status != "success" || result.ModelCount != 2 || !slices.Equal(result.Models, []string{"gpt-5.6-luna", "gpt-5.6-sol"}) {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
 func newRelayRuntimeTestService(repo *relayTestRepository, client *http.Client) *Service {
 	return newRelayRuntimeTestServiceWithAudit(repo, client, nil, nil)
 }

@@ -105,6 +105,7 @@ func (s *Service) createToolApprovalRequest(ctx context.Context, principal domai
 		ApprovalPolicyRef: decision.ApprovalPolicyRef,
 		ActorType:         actorType,
 		ActorID:           actorID,
+		ActorSessionID:    strings.TrimSpace(input.SessionID),
 		ActorName:         principal.UserName,
 		ActorRoles:        normalizeStringSlice(principal.Roles),
 		ActorTeams:        normalizeStringSlice(principal.Teams),
@@ -404,7 +405,7 @@ func (s *Service) approveApprovalRequest(ctx context.Context, principal domainid
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
 	request.ToolInput = gatewayApprovalReplayInput(request)
-	output, relatedIDs, err := s.invokeGatewayTool(ctx, replayPrincipal, tool, request.ToolInput, request.SecretRefs)
+	output, relatedIDs, err := s.invokeGatewayTool(ctx, replayPrincipal, tool, request.ToolInput, request.SecretRefs, request.ActorSessionID)
 	if err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}

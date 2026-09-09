@@ -1606,6 +1606,7 @@ func approvalRequestInvocationInput(request domainaigateway.ApprovalRequest) dom
 		AIClientName: request.AIClientName,
 		SkillID:      request.SkillID,
 		RequestID:    request.RequestID,
+		SessionID:    request.ActorSessionID,
 	}
 }
 
@@ -1763,5 +1764,11 @@ func gatewayScopeAliases() []gatewayScopeAlias {
 		{key: "namespace", aliases: []string{"namespace", "namespaces"}},
 		{key: "releaseBundleId", aliases: []string{"releaseBundleId", "releaseBundleID", "releaseBundle", "releaseBundleIds", "releaseBundleIDs", "bundleId", "bundleID"}},
 		{key: "executionTaskId", aliases: []string{"executionTaskId", "executionTaskID", "executionTask", "executionTaskIds", "executionTaskIDs", "taskId", "taskID"}},
+		{key: "runtimeId", aliases: []string{"runtimeId", "runtimeID"}},
+		{key: "enrollmentId", aliases: []string{"enrollmentId", "enrollmentID"}},
+		{key: "deviceId", aliases: []string{"deviceId", "deviceID"}},
+		{key: "subjectUserId", aliases: []string{"subjectUserId", "subjectUserID", "subjectId", "subjectID"}},
+		{key: "siteId", aliases: []string{"siteId", "siteID"}},
+		{key: "networkResourceId", aliases: []string{"networkResourceId", "networkResourceID", "resourceId", "resourceID"}},
 	}
 }

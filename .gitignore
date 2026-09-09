@@ -10,6 +10,7 @@ tmp/
 dist/
 .dev/
 .devspace/
+deploy/network-runtime-tls/
 .soha/
 .claude/
 .codex/

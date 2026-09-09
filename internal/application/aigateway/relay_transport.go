@@ -3,6 +3,7 @@ package aigateway
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -74,6 +75,7 @@ type relayTransportResult struct {
 
 const (
 	relayMaxNonStreamResponseBytes = 16 << 20
+	relayMaxModelListResponseBytes = 1 << 20
 	relayStreamAuditBufferBytes    = 1 << 20
 )
 
@@ -740,10 +742,17 @@ func (s *Service) testRelayUpstream(ctx context.Context, upstream domainaigatewa
 		return domainaigateway.LLMUpstreamTestResult{}, fmt.Errorf("%w: relay upstream test failed", apperrors.ErrClusterUnready)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, relayMaxModelListResponseBytes))
+	if err != nil {
+		return domainaigateway.LLMUpstreamTestResult{}, fmt.Errorf("read relay upstream model list: %w", err)
+	}
 	status := "success"
 	if resp.StatusCode >= 400 {
 		status = "failure"
+	}
+	models := []string(nil)
+	if status == "success" {
+		models = relayModelsFromResponse(body)
 	}
 	return domainaigateway.LLMUpstreamTestResult{
 		UpstreamID:   upstream.ID,
@@ -751,8 +760,26 @@ func (s *Service) testRelayUpstream(ctx context.Context, upstream domainaigatewa
 		Status:       status,
 		HTTPStatus:   resp.StatusCode,
 		DurationMs:   time.Since(started).Milliseconds(),
+		ModelCount:   len(models),
+		Models:       models,
 		CheckedAt:    checkedAt,
 	}, nil
+}
+
+func relayModelsFromResponse(body []byte) []string {
+	var payload struct {
+		Data   []struct{ ID, Name, Model string } `json:"data"`
+		Models []struct{ ID, Name, Model string } `json:"models"`
+	}
+	if json.Unmarshal(body, &payload) != nil {
+		return nil
+	}
+	models := make([]string, 0, len(payload.Data)+len(payload.Models))
+	for _, item := range append(payload.Data, payload.Models...) {
+		model := strings.TrimPrefix(firstNonEmpty(item.ID, item.Name, item.Model), "models/")
+		models = append(models, model)
+	}
+	return normalizeStringSlice(models)
 }
 
 func applyRelayUpstreamHeaders(headers http.Header, req LLMRelayHTTPRequest, upstream domainaigateway.LLMUpstream, apiKey string) {

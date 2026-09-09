@@ -10,6 +10,7 @@ import (
 	"time"
 
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"github.com/opensoha/soha/internal/networkprotocol"
 )
 
 const (
@@ -91,6 +92,8 @@ const (
 	KeyAIGatewayHealthCheckInterval  = "ai_gateway.relay.health_check_interval"
 	KeyAIGatewayMaxRequestBodyMB     = "ai_gateway.relay.max_request_body_mb"
 	KeyAIGatewayIncludeStreamUsage   = "ai_gateway.relay.include_usage_for_openai_stream"
+	KeyNetworkHeartbeatInterval      = "network.runtime.heartbeat_interval_seconds"
+	KeyNetworkConfigPollInterval     = "network.runtime.configuration_poll_interval_seconds"
 )
 
 type Definition struct {
@@ -174,6 +177,8 @@ func NewRegistry(options RegistryOptions) *Registry {
 		durationDefinition(KeyAIGatewayHealthCheckInterval, "AI Gateway", "健康检查间隔", "中继上游健康检查周期", sohaapi.RuntimeConfigApplyModeRestart, time.Minute, options.AIGatewayHealthCheckInterval),
 		integerDefinition(KeyAIGatewayMaxRequestBodyMB, "AI Gateway", "最大请求体", "中继请求体大小上限（MB）", sohaapi.RuntimeConfigApplyModeRestart, 32, options.AIGatewayMaxRequestBodyMB, 1, 1024),
 		booleanDefinitionWithDescription(KeyAIGatewayIncludeStreamUsage, "AI Gateway", "流式响应 Usage", "在 OpenAI 流式响应中请求返回 usage 数据", sohaapi.RuntimeConfigApplyModeRestart, options.AIGatewayIncludeStreamUsage),
+		networkIntervalDefinition(KeyNetworkHeartbeatInterval, "设备心跳间隔", "App 与网络网关上报存活状态的基础间隔；各端自动应用 ±20% 抖动"),
+		networkIntervalDefinition(KeyNetworkConfigPollInterval, "配置轮询间隔", "App 与网络网关拉取网络配置的基础间隔；各端自动应用 ±20% 抖动"),
 	}
 	items := make(map[string]Definition, len(definitions))
 	keys := make([]string, 0, len(definitions))
@@ -183,6 +188,16 @@ func NewRegistry(options RegistryOptions) *Registry {
 	}
 	sort.Strings(keys)
 	return &Registry{definitions: items, keys: keys}
+}
+
+func networkIntervalDefinition(key, label, description string) Definition {
+	definition := integerDefinition(
+		key, "内网工作台 · 设备通信", label, description, sohaapi.RuntimeConfigApplyModeHot,
+		networkprotocol.DefaultRuntimeIntervalSeconds, networkprotocol.DefaultRuntimeIntervalSeconds,
+		networkprotocol.MinRuntimeIntervalSeconds, networkprotocol.MaxRuntimeIntervalSeconds,
+	)
+	definition.EnvironmentVariable = ""
+	return definition
 }
 
 func booleanDefinition(key, category, label string, mode sohaapi.RuntimeConfigApplyMode, baseline bool) Definition {

@@ -11,6 +11,7 @@ metadata:
 type: Opaque
 stringData:
   postgres-password: pgsql
+  ingest-postgres-password: pgsql
   auth-dev-principal-password: opensoha
   jwt-secret: soha-123456789012345678901234567890
   execution-runner-token: soha-123456789012345678901234567890
@@ -154,7 +155,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: soha
-          image: ghcr.io/opensoha/soha:v0.1.8
+          image: ghcr.io/opensoha/soha:local
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
@@ -196,6 +197,16 @@ spec:
                 secretKeyRef:
                   name: soha-app-config
                   key: credential-encryption-key
+            - name: SOHA_NETWORK_INGEST_QUERY_URL
+              value: https://soha-ingest:8083
+            - name: SOHA_NETWORK_INGEST_QUERY_CA_FILE
+              value: /run/soha-network-ingest-query/ca.crt
+            - name: SOHA_NETWORK_INGEST_QUERY_CERT_FILE
+              value: /run/soha-network-ingest-query/tls.crt
+            - name: SOHA_NETWORK_INGEST_QUERY_KEY_FILE
+              value: /run/soha-network-ingest-query/tls.key
+            - name: SOHA_NETWORK_INGEST_QUERY_SERVER_NAME
+              value: soha-ingest
           ports:
             - containerPort: 8080
               name: http
@@ -223,10 +234,24 @@ spec:
           volumeMounts:
             - name: soha-data
               mountPath: /app/data
+            - name: network-ingest-query-tls
+              mountPath: /run/soha-network-ingest-query
+              readOnly: true
       volumes:
         - name: soha-data
           persistentVolumeClaim:
             claimName: soha-data
+        - name: network-ingest-query-tls
+          secret:
+            secretName: soha-network-runtime-tls
+            defaultMode: 0440
+            items:
+              - key: network-core-ingest-query.crt
+                path: tls.crt
+              - key: network-core-ingest-query.key
+                path: tls.key
+              - key: network-core-ingest-query-ca.crt
+                path: ca.crt
 ---
 apiVersion: v1
 kind: Service

@@ -27,8 +27,9 @@ WHERE id IN (
 INSERT INTO menus (
     id, parent_id, path, label_zh, label_en, icon_key, section,
     sort_order, enabled, created_at, updated_at
-) VALUES
-    ('cluster-resources-namespaces', NULL, '/cluster-resources/namespaces', '命名空间', 'Namespaces', 'server', '', 21, true, NOW(), NOW()),
+) SELECT candidate.*
+FROM (VALUES
+    ('cluster-resources-namespaces', NULL::text, '/cluster-resources/namespaces', '命名空间', 'Namespaces', 'server', '', 21, true, NOW(), NOW()),
     ('monitoring-workbench-explore', 'monitoring-workbench', '/monitoring-workbench/explore', 'Explore', 'Explore', 'history', 'observe-signals', 63, true, NOW(), NOW()),
     ('ai-workbench-knowledge-pipelines', 'ai-workbench', '/ai-workbench/knowledge-pipelines', 'Knowledge Pipelines', 'Knowledge Pipelines', 'book', 'ai-interaction', 25, true, NOW(), NOW()),
     ('ai-workbench-evaluation-lifecycle', 'ai-workbench', '/ai-workbench/evaluation-lifecycle', 'Evaluation Lifecycle', 'Evaluation Lifecycle', 'inspect', 'ai-interaction', 55, true, NOW(), NOW()),
@@ -36,6 +37,12 @@ INSERT INTO menus (
     ('ai-workbench-provider-fleet', 'ai-workbench', '/ai-workbench/provider-fleet', 'Provider Fleet', 'Provider Fleet', 'puzzle', 'ai-engineering', 35, true, NOW(), NOW()),
     ('ai-workbench-environments', 'ai-workbench', '/ai-workbench/environments', 'Agent Environments', 'Agent Environments', 'puzzle', 'ai-engineering', 40, true, NOW(), NOW()),
     ('ai-workbench-production-operations', 'ai-workbench', '/ai-workbench/production-operations', 'AI Operations', 'AI Operations', 'gauge', 'ai-governance', 40, true, NOW(), NOW())
+) AS candidate(
+    id, parent_id, path, label_zh, label_en, icon_key, section,
+    sort_order, enabled, created_at, updated_at
+)
+WHERE candidate.parent_id IS NULL
+   OR EXISTS (SELECT 1 FROM menus AS parent WHERE parent.id = candidate.parent_id)
 ON CONFLICT (id) DO NOTHING;
 
 UPDATE menus AS menu

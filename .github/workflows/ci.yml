@@ -78,15 +78,29 @@ jobs:
           working-directory: soha
           only-new-issues: true
           args: --timeout=5m
-      - name: Build embedded server
+      - name: Build application binaries
         working-directory: soha
-        run: GOWORK=off CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
+        run: |
+          GOWORK=off CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
+          GOWORK=off CGO_ENABLED=0 go build -o /tmp/network-control ./cmd/network-control
+          GOWORK=off CGO_ENABLED=0 go build -o /tmp/ingest ./cmd/ingest
+      - name: Verify network test assets
+        working-directory: soha
+        run: |
+          sh deploy/network-test/generate-eap-test-pki_test.sh
+          sh deploy/network-test/eapol-test_test.sh
+          docker compose -f deploy/docker-compose.yaml --profile network-access --profile network-test config --quiet
       - name: Docker build
         working-directory: soha
-        run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
+        run: |
+          docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
+          docker build --target radius-eap-test-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-radius-eap-test:test .
       - name: Verify container storage permissions
         run: >-
           docker run --rm --entrypoint sh ghcr.io/opensoha/soha:test -ec
           'test "$(id -u)" = 10001 &&
+          test -x /app/soha &&
+          test -x /app/network-control &&
+          test -x /app/ingest &&
           mkdir -p "$SOHA_PLUGINS_COMPANION_STORAGE_DIR" &&
           touch "$SOHA_PLUGINS_COMPANION_STORAGE_DIR/.writable"'

@@ -26,6 +26,29 @@ services:
       timeout: 5s
       retries: 20
 
+  ingest-postgres:
+    image: ${SOHA_POSTGRES_IMAGE:-pgvector/pgvector:0.8.5-pg18-trixie}
+    profiles:
+      - network-access
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - compute_query_id=on
+    container_name: ${SOHA_INGEST_POSTGRES_CONTAINER_NAME:-soha-ingest-pgsql}
+    environment:
+      POSTGRES_DB: soha_ingest
+      POSTGRES_USER: pgsql
+      POSTGRES_PASSWORD: ${SOHA_INGEST_DATABASE_PASSWORD:-pgsql}
+    volumes:
+      - soha-ingest-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgsql -d soha_ingest"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   redis:
     image: redis:7.4-alpine
     container_name: ${SOHA_REDIS_CONTAINER_NAME:-soha-redis}
@@ -59,10 +82,16 @@ services:
       SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN: ${SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN:-soha-123456789012345678901234567890}
       SOHA_MONITORING_WEBHOOK_TOKEN: ${SOHA_MONITORING_WEBHOOK_TOKEN:-soha-123456789012345678901234567890}
       SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY: ${SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY:-soha-123456789012345678901234567890}
+      SOHA_NETWORK_INGEST_QUERY_URL: ${SOHA_NETWORK_INGEST_QUERY_URL:-}
+      SOHA_NETWORK_INGEST_QUERY_CA_FILE: ${SOHA_NETWORK_INGEST_QUERY_CA_FILE:-}
+      SOHA_NETWORK_INGEST_QUERY_CERT_FILE: ${SOHA_NETWORK_INGEST_QUERY_CERT_FILE:-}
+      SOHA_NETWORK_INGEST_QUERY_KEY_FILE: ${SOHA_NETWORK_INGEST_QUERY_KEY_FILE:-}
+      SOHA_NETWORK_INGEST_QUERY_SERVER_NAME: ${SOHA_NETWORK_INGEST_QUERY_SERVER_NAME:-}
     ports:
       - "${SOHA_HTTP_BIND:-127.0.0.1}:${SOHA_HTTP_PORT:-8080}:8080"
     volumes:
       - ../configs/config.yaml:/app/configs/config.yaml:ro
+      - ${SOHA_NETWORK_INGEST_QUERY_TLS_DIR:-./network-runtime-tls/core-ingest-query}:/run/soha-network-ingest-query:ro
       - soha-data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -71,6 +100,406 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
+
+  network-control:
+    profiles:
+      - network-access
+    container_name: ${SOHA_NETWORK_CONTROL_CONTAINER_NAME:-soha-network-control}
+    image: ${SOHA_IMAGE:-ghcr.io/opensoha/soha:local}
+    command: ["/app/network-control"]
+    depends_on:
+      soha:
+        condition: service_healthy
+    environment:
+      SOHA_CONFIG_FILE: /app/configs/config.yaml
+      SOHA_NETWORK_CONTROL_DATABASE_HOST: postgres
+      SOHA_NETWORK_CONTROL_DATABASE_PASSWORD: ${SOHA_DATABASE_PASSWORD:-pgsql}
+      SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY: ${SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY:-soha-123456789012345678901234567890}
+      SOHA_NETWORK_CONTROL_TLS_CERT_FILE: /run/soha-network-control/tls.crt
+      SOHA_NETWORK_CONTROL_TLS_KEY_FILE: /run/soha-network-control/tls.key
+      SOHA_NETWORK_CONTROL_TLS_CLIENT_CA_FILE: /run/soha-network-control/ca.crt
+    ports:
+      - "${SOHA_NETWORK_CONTROL_BIND:-127.0.0.1}:${SOHA_NETWORK_CONTROL_PORT:-8082}:8082"
+    volumes:
+      - ../configs/config.yaml:/app/configs/config.yaml:ro
+      - ${SOHA_NETWORK_CONTROL_TLS_DIR:-./network-runtime-tls/network-control}:/run/soha-network-control:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-check-certificate -q -O - https://127.0.0.1:8082/healthz >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  ingest:
+    profiles:
+      - network-access
+    container_name: ${SOHA_INGEST_CONTAINER_NAME:-soha-ingest}
+    image: ${SOHA_IMAGE:-ghcr.io/opensoha/soha:local}
+    command: ["/app/ingest"]
+    depends_on:
+      ingest-postgres:
+        condition: service_healthy
+    environment:
+      SOHA_CONFIG_FILE: /app/configs/config.yaml
+      SOHA_INGEST_DATABASE_HOST: ingest-postgres
+      SOHA_INGEST_DATABASE_PASSWORD: ${SOHA_INGEST_DATABASE_PASSWORD:-pgsql}
+      SOHA_INGEST_TLS_CERT_FILE: /run/soha-ingest/tls.crt
+      SOHA_INGEST_TLS_KEY_FILE: /run/soha-ingest/tls.key
+      SOHA_INGEST_TLS_CLIENT_CA_FILE: /run/soha-ingest/ca.crt
+    ports:
+      - "${SOHA_INGEST_BIND:-127.0.0.1}:${SOHA_INGEST_PORT:-8083}:8083"
+    volumes:
+      - ../configs/config.yaml:/app/configs/config.yaml:ro
+      - ${SOHA_INGEST_TLS_DIR:-./network-runtime-tls/ingest}:/run/soha-ingest:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-check-certificate -q -O - https://127.0.0.1:8083/readyz >/dev/null 2>&1 || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  freeradius:
+    profiles:
+      - network-access
+    platform: linux/amd64
+    container_name: ${SOHA_RADIUS_CONTAINER_NAME:-soha-freeradius}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: radius-runtime
+      additional_contexts:
+        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
+    image: ${SOHA_RADIUS_IMAGE:-ghcr.io/opensoha/soha-freeradius:local}
+    depends_on:
+      network-control:
+        condition: service_healthy
+      ingest:
+        condition: service_healthy
+    environment:
+      SOHA_RADIUS_RUNTIME_ID: ${SOHA_RADIUS_RUNTIME_ID:-radius-lab}
+      SOHA_RADIUS_NAS_ID: ${SOHA_RADIUS_NAS_ID:-nas-lab}
+      SOHA_RADIUS_NAS_CIDR: ${SOHA_RADIUS_NAS_CIDR:-127.0.0.1/32}
+      SOHA_RADIUS_SHARED_SECRET_FILE: /run/soha-radius/secrets/shared-secret
+      SOHA_RADIUS_CONTROL_URL: https://network-control:8082
+      SOHA_RADIUS_CONTROL_KEY_FILE: /run/soha-radius/control/tls.key
+      SOHA_RADIUS_CONTROL_CERT_FILE: /run/soha-radius/control/tls.crt
+      SOHA_RADIUS_CONTROL_CA_FILE: /run/soha-radius/control/ca.crt
+      SOHA_RADIUS_INGEST_URL: https://ingest:8083
+      SOHA_RADIUS_INGEST_KEY_FILE: /run/soha-radius/ingest/tls.key
+      SOHA_RADIUS_INGEST_CERT_FILE: /run/soha-radius/ingest/tls.crt
+      SOHA_RADIUS_INGEST_CA_FILE: /run/soha-radius/ingest/ca.crt
+      SOHA_RADIUS_EAP_KEY_FILE: /run/soha-radius/eap/tls.key
+      SOHA_RADIUS_EAP_CERT_FILE: /run/soha-radius/eap/tls.crt
+      SOHA_RADIUS_EAP_CA_FILE: /run/soha-radius/eap/ca.crt
+      SOHA_RADIUS_LAB_USERNAME: ${SOHA_RADIUS_LAB_USERNAME:-}
+      SOHA_RADIUS_LAB_PASSWORD_FILE: ${SOHA_RADIUS_LAB_PASSWORD_FILE:-}
+    ports:
+      - "${SOHA_RADIUS_BIND:-127.0.0.1}:${SOHA_RADIUS_AUTH_PORT:-1812}:1812/udp"
+      - "${SOHA_RADIUS_BIND:-127.0.0.1}:${SOHA_RADIUS_ACCOUNTING_PORT:-1813}:1813/udp"
+    volumes:
+      - ${SOHA_RADIUS_SECRET_DIR:-./network-runtime-tls/freeradius-secrets}:/run/soha-radius/secrets:ro
+      - ${SOHA_RADIUS_EAP_TLS_DIR:-./network-runtime-tls/freeradius-eap}:/run/soha-radius/eap:ro
+      - ${SOHA_RADIUS_CONTROL_CLIENT_TLS_DIR:-./network-runtime-tls/freeradius-control}:/run/soha-radius/control:ro
+      - ${SOHA_RADIUS_INGEST_CLIENT_TLS_DIR:-./network-runtime-tls/freeradius-ingest}:/run/soha-radius/ingest:ro
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  radius-test-client:
+    profiles:
+      - network-test
+    platform: linux/amd64
+    container_name: ${SOHA_RADIUS_TEST_CLIENT_CONTAINER_NAME:-soha-radius-test-client}
+    image: freeradius/freeradius-server:3.2.10@sha256:cc7fd136e7b03e7b332d94297530318e824a4ecfedbce54562cced723e71e812
+    entrypoint: ["tail", "-f", "/dev/null"]
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${SOHA_RADIUS_SECRET_DIR:-./network-runtime-tls/freeradius-secrets}:/run/soha-radius/secrets:ro
+
+  radius-eap-test-client:
+    profiles:
+      - network-test
+    container_name: ${SOHA_RADIUS_EAP_TEST_CLIENT_CONTAINER_NAME:-soha-radius-eap-test-client}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: radius-eap-test-runtime
+    image: ${SOHA_RADIUS_EAP_TEST_IMAGE:-ghcr.io/opensoha/soha-radius-eap-test:local}
+    depends_on:
+      freeradius:
+        condition: service_healthy
+    network_mode: service:freeradius
+    environment:
+      SOHA_RADIUS_EAP_TEST_CONFIG_FILE: /run/soha-radius/eap-test/eapol-test.conf
+      SOHA_RADIUS_SHARED_SECRET_FILE: /run/soha-radius/secrets/shared-secret
+      SOHA_RADIUS_NAS_ID: ${SOHA_RADIUS_NAS_ID:-nas-lab}
+      SOHA_RADIUS_TEST_STATION_ID: ${SOHA_RADIUS_TEST_STATION_ID:-02:00:00:00:00:01}
+    cap_drop:
+      - ALL
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1700
+    volumes:
+      - ${SOHA_RADIUS_SECRET_DIR:-./network-runtime-tls/freeradius-secrets}:/run/soha-radius/secrets:ro
+      - ${SOHA_RADIUS_EAP_TEST_TLS_DIR:-./network-runtime-tls/eap-test-client}:/run/soha-radius/eap-test:ro
+
+  radius-adapter:
+    profiles:
+      - network-access
+    platform: linux/amd64
+    container_name: ${SOHA_RADIUS_ADAPTER_CONTAINER_NAME:-soha-radius-adapter}
+    image: ${SOHA_RADIUS_IMAGE:-ghcr.io/opensoha/soha-freeradius:local}
+    command: ["/usr/local/bin/radius-adapter"]
+    depends_on:
+      freeradius:
+        condition: service_healthy
+      network-control:
+        condition: service_healthy
+    environment:
+      SOHA_RADIUS_RUNTIME_ID: ${SOHA_RADIUS_RUNTIME_ID:-radius-lab}
+      SOHA_RADIUS_NAS_ID: ${SOHA_RADIUS_NAS_ID:-nas-lab}
+      SOHA_RADIUS_NAS_TARGET: ${SOHA_RADIUS_NAS_TARGET:-127.0.0.1:3799}
+      SOHA_RADIUS_SHARED_SECRET_FILE: /run/soha-radius/secrets/shared-secret
+      SOHA_RADIUS_CONTROL_URL: https://network-control:8082
+      SOHA_RADIUS_CONTROL_KEY_FILE: /run/soha-radius/control/tls.key
+      SOHA_RADIUS_CONTROL_CERT_FILE: /run/soha-radius/control/tls.crt
+      SOHA_RADIUS_CONTROL_CA_FILE: /run/soha-radius/control/ca.crt
+      SOHA_RADIUS_CONTROL_SERVER_NAME: ${SOHA_RADIUS_CONTROL_SERVER_NAME:-network-control}
+      SOHA_RADIUS_JOURNAL_FILE: /var/lib/soha-radius/results.json
+    volumes:
+      - ${SOHA_RADIUS_SECRET_DIR:-./network-runtime-tls/freeradius-secrets}:/run/soha-radius/secrets:ro
+      - ${SOHA_RADIUS_CONTROL_CLIENT_TLS_DIR:-./network-runtime-tls/freeradius-control}:/run/soha-radius/control:ro
+      - soha-radius-adapter-data:/var/lib/soha-radius
+
+  network-gateway:
+    profiles:
+      - network-access
+    container_name: ${SOHA_NETWORK_GATEWAY_CONTAINER_NAME:-soha-network-gateway}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: network-gateway-runtime
+      additional_contexts:
+        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
+    image: ${SOHA_NETWORK_GATEWAY_IMAGE:-ghcr.io/opensoha/soha-network-gateway:local}
+    depends_on:
+      network-control:
+        condition: service_healthy
+      ingest:
+        condition: service_healthy
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    environment:
+      SOHA_NETWORK_GATEWAY_RUNTIME_ID: ${SOHA_NETWORK_GATEWAY_RUNTIME_ID:-gateway-lab}
+      SOHA_NETWORK_GATEWAY_DEVICE_ID: ${SOHA_NETWORK_GATEWAY_DEVICE_ID:-gateway-lab}
+      SOHA_NETWORK_GATEWAY_CONTROL_URL: https://network-control:8082
+      SOHA_NETWORK_GATEWAY_CONTROL_KEY_FILE: /run/soha-network-gateway/control/tls.key
+      SOHA_NETWORK_GATEWAY_CONTROL_CERT_FILE: /run/soha-network-gateway/control/tls.crt
+      SOHA_NETWORK_GATEWAY_CONTROL_CA_FILE: /run/soha-network-gateway/control/ca.crt
+      SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME: ${SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME:-network-control}
+      SOHA_NETWORK_GATEWAY_INGEST_URL: https://ingest:8083
+      SOHA_NETWORK_GATEWAY_INGEST_KEY_FILE: /run/soha-network-gateway/ingest/tls.key
+      SOHA_NETWORK_GATEWAY_INGEST_CERT_FILE: /run/soha-network-gateway/ingest/tls.crt
+      SOHA_NETWORK_GATEWAY_INGEST_CA_FILE: /run/soha-network-gateway/ingest/ca.crt
+      SOHA_NETWORK_GATEWAY_INGEST_SERVER_NAME: ${SOHA_NETWORK_GATEWAY_INGEST_SERVER_NAME:-ingest}
+      SOHA_NETWORK_GATEWAY_PRIVATE_KEY_FILE: /var/lib/soha-network-gateway/wireguard.key
+      SOHA_NETWORK_GATEWAY_HEALTH_ADDR: :8084
+      SOHA_NETWORK_GATEWAY_EGRESS_INTERFACE: ${SOHA_NETWORK_GATEWAY_EGRESS_INTERFACE:-}
+      SOHA_NETWORK_GATEWAY_ENROLLMENT_ID: ${SOHA_NETWORK_GATEWAY_ENROLLMENT_ID:-}
+      SOHA_NETWORK_GATEWAY_ENROLLMENT_CHALLENGE_ID: ${SOHA_NETWORK_GATEWAY_ENROLLMENT_CHALLENGE_ID:-}
+      SOHA_NETWORK_GATEWAY_ENROLLMENT_TOKEN_FILE: /run/soha-network-gateway/enrollment/token
+    ports:
+      - "${SOHA_NETWORK_GATEWAY_BIND:-0.0.0.0}:${SOHA_NETWORK_GATEWAY_PORT:-51820}:51820/udp"
+      - "${SOHA_NETWORK_GATEWAY_HEALTH_BIND:-127.0.0.1}:${SOHA_NETWORK_GATEWAY_HEALTH_PORT:-8084}:8084"
+    volumes:
+      - ${SOHA_NETWORK_GATEWAY_CONTROL_CLIENT_TLS_DIR:-./network-runtime-tls/network-gateway-control}:/run/soha-network-gateway/control:ro
+      - ${SOHA_NETWORK_GATEWAY_INGEST_CLIENT_TLS_DIR:-./network-runtime-tls/network-gateway-ingest}:/run/soha-network-gateway/ingest:ro
+      - ${SOHA_NETWORK_GATEWAY_ENROLLMENT_DIR:-./network-runtime-tls/network-gateway-enrollment}:/run/soha-network-gateway/enrollment:ro
+      - soha-network-gateway-data:/var/lib/soha-network-gateway
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8084/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  network-gateway-b:
+    profiles:
+      - network-multisite-test
+    container_name: ${SOHA_NETWORK_GATEWAY_B_CONTAINER_NAME:-soha-network-gateway-b}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: network-gateway-runtime
+      additional_contexts:
+        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
+    image: ${SOHA_NETWORK_GATEWAY_IMAGE:-ghcr.io/opensoha/soha-network-gateway:local}
+    depends_on:
+      network-control:
+        condition: service_healthy
+      ingest:
+        condition: service_healthy
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    environment:
+      SOHA_NETWORK_GATEWAY_RUNTIME_ID: ${SOHA_NETWORK_GATEWAY_B_RUNTIME_ID:-gateway-lab-b}
+      SOHA_NETWORK_GATEWAY_DEVICE_ID: ${SOHA_NETWORK_GATEWAY_B_DEVICE_ID:-gateway-lab-b}
+      SOHA_NETWORK_GATEWAY_CONTROL_URL: https://network-control:8082
+      SOHA_NETWORK_GATEWAY_CONTROL_KEY_FILE: /run/soha-network-gateway/control/tls.key
+      SOHA_NETWORK_GATEWAY_CONTROL_CERT_FILE: /run/soha-network-gateway/control/tls.crt
+      SOHA_NETWORK_GATEWAY_CONTROL_CA_FILE: /run/soha-network-gateway/control/ca.crt
+      SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME: ${SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME:-network-control}
+      SOHA_NETWORK_GATEWAY_INGEST_URL: https://ingest:8083
+      SOHA_NETWORK_GATEWAY_INGEST_KEY_FILE: /run/soha-network-gateway/ingest/tls.key
+      SOHA_NETWORK_GATEWAY_INGEST_CERT_FILE: /run/soha-network-gateway/ingest/tls.crt
+      SOHA_NETWORK_GATEWAY_INGEST_CA_FILE: /run/soha-network-gateway/ingest/ca.crt
+      SOHA_NETWORK_GATEWAY_INGEST_SERVER_NAME: ${SOHA_NETWORK_GATEWAY_INGEST_SERVER_NAME:-ingest}
+      SOHA_NETWORK_GATEWAY_PRIVATE_KEY_FILE: /var/lib/soha-network-gateway/wireguard.key
+      SOHA_NETWORK_GATEWAY_HEALTH_ADDR: :8084
+      SOHA_NETWORK_GATEWAY_EGRESS_INTERFACE: ${SOHA_NETWORK_GATEWAY_B_EGRESS_INTERFACE:-}
+      SOHA_NETWORK_GATEWAY_ENROLLMENT_ID: ${SOHA_NETWORK_GATEWAY_B_ENROLLMENT_ID:-}
+      SOHA_NETWORK_GATEWAY_ENROLLMENT_CHALLENGE_ID: ${SOHA_NETWORK_GATEWAY_B_ENROLLMENT_CHALLENGE_ID:-}
+      SOHA_NETWORK_GATEWAY_ENROLLMENT_TOKEN_FILE: /run/soha-network-gateway/enrollment/token
+    ports:
+      - "${SOHA_NETWORK_GATEWAY_B_BIND:-0.0.0.0}:${SOHA_NETWORK_GATEWAY_B_PORT:-51821}:51821/udp"
+      - "${SOHA_NETWORK_GATEWAY_B_HEALTH_BIND:-127.0.0.1}:${SOHA_NETWORK_GATEWAY_B_HEALTH_PORT:-8085}:8084"
+    volumes:
+      - ${SOHA_NETWORK_GATEWAY_B_CONTROL_CLIENT_TLS_DIR:-./network-runtime-tls/network-gateway-b-control}:/run/soha-network-gateway/control:ro
+      - ${SOHA_NETWORK_GATEWAY_B_INGEST_CLIENT_TLS_DIR:-./network-runtime-tls/network-gateway-b-ingest}:/run/soha-network-gateway/ingest:ro
+      - ${SOHA_NETWORK_GATEWAY_B_ENROLLMENT_DIR:-./network-runtime-tls/network-gateway-b-enrollment}:/run/soha-network-gateway/enrollment:ro
+      - soha-network-gateway-b-data:/var/lib/soha-network-gateway
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8084/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  network-gateway-c:
+    profiles:
+      - network-multisite-test
+    container_name: ${SOHA_NETWORK_GATEWAY_C_CONTAINER_NAME:-soha-network-gateway-c}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: network-gateway-runtime
+      additional_contexts:
+        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
+    image: ${SOHA_NETWORK_GATEWAY_IMAGE:-ghcr.io/opensoha/soha-network-gateway:local}
+    depends_on:
+      network-control:
+        condition: service_healthy
+      ingest:
+        condition: service_healthy
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    environment:
+      SOHA_NETWORK_GATEWAY_RUNTIME_ID: ${SOHA_NETWORK_GATEWAY_C_RUNTIME_ID:-gateway-lab-c}
+      SOHA_NETWORK_GATEWAY_DEVICE_ID: ${SOHA_NETWORK_GATEWAY_C_DEVICE_ID:-gateway-lab-c}
+      SOHA_NETWORK_GATEWAY_CONTROL_URL: https://network-control:8082
+      SOHA_NETWORK_GATEWAY_CONTROL_KEY_FILE: /run/soha-network-gateway/control/tls.key
+      SOHA_NETWORK_GATEWAY_CONTROL_CERT_FILE: /run/soha-network-gateway/control/tls.crt
+      SOHA_NETWORK_GATEWAY_CONTROL_CA_FILE: /run/soha-network-gateway/control/ca.crt
+      SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME: ${SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME:-network-control}
+      SOHA_NETWORK_GATEWAY_INGEST_URL: https://ingest:8083
+      SOHA_NETWORK_GATEWAY_INGEST_KEY_FILE: /run/soha-network-gateway/ingest/tls.key
+      SOHA_NETWORK_GATEWAY_INGEST_CERT_FILE: /run/soha-network-gateway/ingest/tls.crt
+      SOHA_NETWORK_GATEWAY_INGEST_CA_FILE: /run/soha-network-gateway/ingest/ca.crt
+      SOHA_NETWORK_GATEWAY_INGEST_SERVER_NAME: ${SOHA_NETWORK_GATEWAY_INGEST_SERVER_NAME:-ingest}
+      SOHA_NETWORK_GATEWAY_PRIVATE_KEY_FILE: /var/lib/soha-network-gateway/wireguard.key
+      SOHA_NETWORK_GATEWAY_HEALTH_ADDR: :8084
+      SOHA_NETWORK_GATEWAY_EGRESS_INTERFACE: ${SOHA_NETWORK_GATEWAY_C_EGRESS_INTERFACE:-}
+      SOHA_NETWORK_GATEWAY_ENROLLMENT_ID: ${SOHA_NETWORK_GATEWAY_C_ENROLLMENT_ID:-}
+      SOHA_NETWORK_GATEWAY_ENROLLMENT_CHALLENGE_ID: ${SOHA_NETWORK_GATEWAY_C_ENROLLMENT_CHALLENGE_ID:-}
+      SOHA_NETWORK_GATEWAY_ENROLLMENT_TOKEN_FILE: /run/soha-network-gateway/enrollment/token
+    ports:
+      - "${SOHA_NETWORK_GATEWAY_C_BIND:-0.0.0.0}:${SOHA_NETWORK_GATEWAY_C_PORT:-51822}:51822/udp"
+      - "${SOHA_NETWORK_GATEWAY_C_HEALTH_BIND:-127.0.0.1}:${SOHA_NETWORK_GATEWAY_C_HEALTH_PORT:-8086}:8084"
+    volumes:
+      - ${SOHA_NETWORK_GATEWAY_C_CONTROL_CLIENT_TLS_DIR:-./network-runtime-tls/network-gateway-c-control}:/run/soha-network-gateway/control:ro
+      - ${SOHA_NETWORK_GATEWAY_C_INGEST_CLIENT_TLS_DIR:-./network-runtime-tls/network-gateway-c-ingest}:/run/soha-network-gateway/ingest:ro
+      - ${SOHA_NETWORK_GATEWAY_C_ENROLLMENT_DIR:-./network-runtime-tls/network-gateway-c-enrollment}:/run/soha-network-gateway/enrollment:ro
+      - soha-network-gateway-c-data:/var/lib/soha-network-gateway
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8084/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  mihomo-test:
+    profiles:
+      - network-test
+    container_name: ${SOHA_MIHOMO_TEST_CONTAINER_NAME:-soha-mihomo-test}
+    image: ${SOHA_MIHOMO_TEST_IMAGE:-metacubex/mihomo:v1.19.30@sha256:baf38d282b785d7037337676714a69e3fdd1f2d9bf748dfd25fce681a624ea74}
+    command: ["-f", "/etc/mihomo/config.yaml"]
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${SOHA_MIHOMO_TEST_BIND:-127.0.0.1}:${SOHA_MIHOMO_TEST_MIXED_PORT:-17890}:7890"
+      - "${SOHA_MIHOMO_TEST_BIND:-127.0.0.1}:${SOHA_MIHOMO_TEST_CONTROLLER_PORT:-19090}:9090"
+    volumes:
+      - ./network-test/mihomo.yaml:/etc/mihomo/config.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget --header='Authorization: Bearer soha-network-test' -q -O - http://127.0.0.1:9090/version >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  network-test-client:
+    profiles:
+      - network-test
+    container_name: ${SOHA_NETWORK_TEST_CLIENT_CONTAINER_NAME:-soha-network-test-client}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+      target: network-test-runtime
+      additional_contexts:
+        contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
+    image: ${SOHA_NETWORK_TEST_CLIENT_IMAGE:-ghcr.io/opensoha/soha-network-test-client:local}
+    depends_on:
+      mihomo-test:
+        condition: service_healthy
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true
 
   hermes-agent-setup:
     image: nousresearch/hermes-agent:latest
@@ -128,6 +557,16 @@ volumes:
     name: ${SOHA_DATA_VOLUME:-soha-data}
   soha-postgres-data:
     name: ${SOHA_POSTGRES_VOLUME:-soha-postgres-data}
+  soha-ingest-postgres-data:
+    name: ${SOHA_INGEST_POSTGRES_VOLUME:-soha-ingest-postgres-data}
+  soha-radius-adapter-data:
+    name: ${SOHA_RADIUS_ADAPTER_VOLUME:-soha-radius-adapter-data}
+  soha-network-gateway-data:
+    name: ${SOHA_NETWORK_GATEWAY_VOLUME:-soha-network-gateway-data}
+  soha-network-gateway-b-data:
+    name: ${SOHA_NETWORK_GATEWAY_B_VOLUME:-soha-network-gateway-b-data}
+  soha-network-gateway-c-data:
+    name: ${SOHA_NETWORK_GATEWAY_C_VOLUME:-soha-network-gateway-c-data}
   soha-hermes-data:
     name: ${SOHA_HERMES_DATA_VOLUME:-soha-hermes-data}
   soha-hermes-runtime:

@@ -8,7 +8,6 @@ import (
 type Record struct {
 	ID          string  `json:"id"`
 	Title       string  `json:"title"`
-	Summary     string  `json:"summary"`
 	Content     string  `json:"content"`
 	Level       string  `json:"level"`
 	Status      string  `json:"status"`
@@ -26,7 +25,6 @@ type Record struct {
 type Input struct {
 	ID       string  `json:"id"`
 	Title    string  `json:"title"`
-	Summary  string  `json:"summary"`
 	Content  string  `json:"content"`
 	Level    string  `json:"level"`
 	Status   string  `json:"status"`
@@ -47,6 +45,32 @@ type Inbox struct {
 	UnreadCount int         `json:"unreadCount"`
 }
 
+type ReceiptQuery struct {
+	Keyword  string
+	State    string
+	Page     int
+	PageSize int
+}
+
+type Receipt struct {
+	UserID      string   `json:"userId"`
+	Username    string   `json:"username"`
+	DisplayName string   `json:"displayName"`
+	Email       string   `json:"email"`
+	TeamNames   []string `json:"teamNames,omitempty"`
+	IsRead      bool     `json:"isRead"`
+	ReadAt      *string  `json:"readAt,omitempty"`
+}
+
+type ReceiptPage struct {
+	Items       []Receipt `json:"items"`
+	Total       int       `json:"total"`
+	Page        int       `json:"page"`
+	PageSize    int       `json:"pageSize"`
+	ReadCount   int       `json:"readCount"`
+	UnreadCount int       `json:"unreadCount"`
+}
+
 type Repository interface {
 	List(context.Context, int) ([]Record, error)
 	Get(context.Context, string) (Record, error)
@@ -57,4 +81,5 @@ type Repository interface {
 	Withdraw(context.Context, string, time.Time, string) (Record, error)
 	ListInbox(context.Context, string, int, time.Time) (Inbox, error)
 	MarkRead(context.Context, string, string, time.Time) error
+	ListReceipts(context.Context, string, ReceiptQuery) (ReceiptPage, error)
 }

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opensoha/soha/internal/api/dto"
@@ -17,6 +18,7 @@ type AnnouncementReader interface {
 	Get(context.Context, domainidentity.Principal, string) (domainannouncement.Record, error)
 	Inbox(context.Context, domainidentity.Principal, int) (domainannouncement.Inbox, error)
 	MarkRead(context.Context, domainidentity.Principal, string) error
+	Receipts(context.Context, domainidentity.Principal, string, domainannouncement.ReceiptQuery) (domainannouncement.ReceiptPage, error)
 }
 
 type AnnouncementWriter interface {
@@ -84,6 +86,27 @@ func (h *AnnouncementHandler) MarkRead(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *AnnouncementHandler) Receipts(c *gin.Context) {
+	page, _ := strconv.Atoi(c.Query("page"))
+	pageSize, _ := strconv.Atoi(c.Query("pageSize"))
+	item, err := h.reader.Receipts(
+		c.Request.Context(),
+		apiMiddleware.PrincipalFromContext(c),
+		c.Param("announcementID"),
+		domainannouncement.ReceiptQuery{
+			Keyword:  c.Query("keyword"),
+			State:    c.Query("state"),
+			Page:     page,
+			PageSize: pageSize,
+		},
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *AnnouncementHandler) Create(c *gin.Context) {
 	var req dto.UpsertAnnouncementRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -118,7 +141,6 @@ func announcementInput(req dto.UpsertAnnouncementRequest) domainannouncement.Inp
 	return domainannouncement.Input{
 		ID:       req.ID,
 		Title:    req.Title,
-		Summary:  req.Summary,
 		Content:  req.Content,
 		Level:    req.Level,
 		Status:   req.Status,

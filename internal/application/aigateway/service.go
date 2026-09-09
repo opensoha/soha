@@ -218,27 +218,31 @@ type Service struct {
 	llmRelayRepo    LLMRelayRepository
 	secrets         SecretReferenceResolver
 
-	rateLimits         RateLimitBackend
-	relayConfig        LLMRelayConfig
-	httpClient         *http.Client
-	relaySelector      *relaySelector
-	relayCredentials   *relayCredentialCodec
-	relayTransport     *relayHTTPTransport
-	relayCache         *relayResponseCache
-	relayConcurrencyMu sync.Mutex
-	relayConcurrency   map[string]int
-	relayHealthOnce    sync.Once
-	apps               ApplicationService
-	delivery           DeliveryService
-	catalog            CatalogService
-	resources          ResourceService
-	resourceCreation   KubernetesResourceCreationService
-	copilot            AnalysisArtifactRecorder
-	oncall             OnCallResolver
-	virtualization     VirtualizationOperationsService
-	docker             DockerOperationsService
-	compute            ComputeReadService
-	registry           *capabilityRegistry
+	rateLimits          RateLimitBackend
+	relayConfig         LLMRelayConfig
+	httpClient          *http.Client
+	relaySelector       *relaySelector
+	relayCredentials    *relayCredentialCodec
+	relayTransport      *relayHTTPTransport
+	relayCache          *relayResponseCache
+	relayConcurrencyMu  sync.Mutex
+	relayConcurrency    map[string]int
+	relayHealthOnce     sync.Once
+	apps                ApplicationService
+	delivery            DeliveryService
+	catalog             CatalogService
+	resources           ResourceService
+	resourceCreation    KubernetesResourceCreationService
+	copilot             AnalysisArtifactRecorder
+	oncall              OnCallResolver
+	virtualization      VirtualizationOperationsService
+	docker              DockerOperationsService
+	compute             ComputeReadService
+	networkAccess       NetworkAccessPreviewService
+	networkEnrollments  NetworkEnrollmentService
+	networkAccessGrants NetworkAccessGrantService
+	networkTelemetry    NetworkTelemetryService
+	registry            *capabilityRegistry
 }
 
 func NewWithDeps(deps ServiceDeps) *Service {

@@ -29,7 +29,7 @@ func workbenchPermissionForMenu(item domainmenu.Record) string {
 		return appaccess.PermWorkbenchMonitoringView
 	case hasMenuPathPrefix(path, []string{"/identity/audit", "/access", "/plugins", "/settings", "/system"}):
 		return appaccess.PermWorkbenchSettingsView
-	case hasMenuPathPrefix(path, []string{"/identity", "/internal-workbench"}):
+	case hasMenuPathPrefix(path, []string{"/identity", "/internal-workbench", "/network-access"}):
 		return appaccess.PermWorkbenchSecurityView
 	default:
 		return ""
@@ -49,7 +49,7 @@ var deliveryWorkbenchMenuPrefixes = []string{
 
 func hasMenuPathPrefix(path string, prefixes []string) bool {
 	for _, prefix := range prefixes {
-		if strings.HasPrefix(path, prefix) {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
 			return true
 		}
 	}
@@ -103,16 +103,12 @@ func coreDeliveryMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryBuildTemplatesView}}, true
 	case "release-bundles":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBundlesView}}, true
-	case "execution-tasks":
-		return visibilityRule{permissions: []string{appaccess.PermDeliveryExecutionTasksView}}, true
 	case "workflow-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowTemplatesView}}, true
 	case "release-board":
-		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBoardView}}, true
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowsView}}, true
 	case "application-environments", "delivery-environment-directory":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationEnvView}}, true
-	case "workflows":
-		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowsView}}, true
 	case "releases":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleasesView}}, true
 	case "registries":
@@ -333,7 +329,52 @@ func computeMenuRule(id string) (visibilityRule, bool) {
 	}
 }
 
+func networkAccessMenuRule(id string) (visibilityRule, bool) {
+	switch id {
+	case "network-access":
+		return visibilityRule{permissions: []string{
+			appaccess.PermNetworkAccessEndpointDevicesView,
+			appaccess.PermNetworkAccessSitesView,
+			appaccess.PermNetworkAccessSpacesView,
+			appaccess.PermNetworkAccessResourcesView,
+			appaccess.PermNetworkAccessGatewaysView,
+			appaccess.PermNetworkAccessMihomoProfilesView,
+			appaccess.PermNetworkAccessTelemetryView,
+			appaccess.PermNetworkAccessEnrollmentsView,
+			appaccess.PermNetworkAccessAccessGrantsView,
+			appaccess.PermNetworkAccessPolicyView,
+		}}, true
+	case "network-access-devices":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessEndpointDevicesView}}, true
+	case "network-access-user-admission", "network-access-sites", "network-access-ssids", "network-access-wifi", "network-access-wired", "network-access-nas-bindings", "network-access-site-profile-bindings", "network-access-sessions":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSitesView}}, true
+	case "network-access-settings":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSitesView, appaccess.PermNetworkAccessEnrollmentsView}}, true
+	case "network-access-spaces":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessSpacesView}}, true
+	case "network-access-resources":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessResourcesView}}, true
+	case "network-access-gateways":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessGatewaysView}}, true
+	case "network-access-mihomo-profiles":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessMihomoProfilesView}}, true
+	case "network-access-telemetry", "network-access-proxy-overview", "network-access-proxy-connections":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessTelemetryView}}, true
+	case "network-access-enrollments", "network-access-radius-services":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessEnrollmentsView}}, true
+	case "network-access-access-grants":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessAccessGrantsView}}, true
+	case "network-access-policy":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessPolicyView}}, true
+	default:
+		return visibilityRule{}, false
+	}
+}
+
 func identitySystemMenuRule(id string) (visibilityRule, bool) {
+	if rule, ok := networkAccessMenuRule(id); ok {
+		return rule, true
+	}
 	switch id {
 	case "system":
 		return visibilityRule{permissions: []string{
@@ -351,6 +392,16 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermIdentityOutpostsView,
 			appaccess.PermIdentityPoliciesView,
 			appaccess.PermIdentityAuditView,
+			appaccess.PermNetworkAccessEndpointDevicesView,
+			appaccess.PermNetworkAccessSitesView,
+			appaccess.PermNetworkAccessSpacesView,
+			appaccess.PermNetworkAccessResourcesView,
+			appaccess.PermNetworkAccessGatewaysView,
+			appaccess.PermNetworkAccessMihomoProfilesView,
+			appaccess.PermNetworkAccessTelemetryView,
+			appaccess.PermNetworkAccessEnrollmentsView,
+			appaccess.PermNetworkAccessAccessGrantsView,
+			appaccess.PermNetworkAccessPolicyView,
 		}}, true
 	case "identity-software":
 		return visibilityRule{permissions: []string{appaccess.PermSoftwarePackageView}}, true

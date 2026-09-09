@@ -1,0 +1,76 @@
+package routes
+
+import "github.com/gin-gonic/gin"
+
+func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
+	if deps.NetworkAccess == nil {
+		return
+	}
+	handler := deps.NetworkAccess
+	registerNetworkAccessDeviceRoutes(protected, deps)
+	protected.GET("/network-access/sites", handler.ListSites)
+	protected.POST("/network-access/sites", handler.CreateSite)
+	protected.GET("/network-access/sites/:siteID", handler.GetSite)
+	protected.PUT("/network-access/sites/:siteID", handler.UpdateSite)
+	protected.DELETE("/network-access/sites/:siteID", handler.DeleteSite)
+	protected.GET("/network-access/spaces", handler.ListSpaces)
+	protected.POST("/network-access/spaces", handler.CreateSpace)
+	protected.GET("/network-access/spaces/:spaceID", handler.GetSpace)
+	protected.PUT("/network-access/spaces/:spaceID", handler.UpdateSpace)
+	protected.DELETE("/network-access/spaces/:spaceID", handler.DeleteSpace)
+	protected.GET("/network-access/resources", handler.ListResources)
+	protected.POST("/network-access/resources", handler.CreateResource)
+	protected.GET("/network-access/resources/:resourceID", handler.GetResource)
+	protected.PUT("/network-access/resources/:resourceID", handler.UpdateResource)
+	protected.DELETE("/network-access/resources/:resourceID", handler.DeleteResource)
+	protected.GET("/network-access/gateways", handler.ListGateways)
+	protected.POST("/network-access/gateways", handler.CreateGateway)
+	protected.GET("/network-access/gateways/:gatewayID", handler.GetGateway)
+	protected.PUT("/network-access/gateways/:gatewayID", handler.UpdateGateway)
+	protected.GET("/network-access/mihomo-profiles", handler.ListMihomoProfiles)
+	protected.POST("/network-access/mihomo-profiles", handler.CreateMihomoProfile)
+	protected.GET("/network-access/mihomo-profiles/:profileID", handler.GetMihomoProfile)
+	protected.PUT("/network-access/mihomo-profiles/:profileID", handler.UpdateMihomoProfile)
+	protected.DELETE("/network-access/mihomo-profiles/:profileID", handler.DeleteMihomoProfile)
+	protected.GET("/network-access/nas-bindings", handler.ListNASBindings)
+	protected.POST("/network-access/nas-bindings", handler.CreateNASBinding)
+	protected.GET("/network-access/nas-bindings/:bindingID", handler.GetNASBinding)
+	protected.PUT("/network-access/nas-bindings/:bindingID", handler.UpdateNASBinding)
+	protected.DELETE("/network-access/nas-bindings/:bindingID", handler.DeleteNASBinding)
+	protected.GET("/network-access/site-profile-bindings", handler.ListSiteProfileBindings)
+	protected.POST("/network-access/site-profile-bindings", handler.CreateSiteProfileBinding)
+	protected.GET("/network-access/site-profile-bindings/:bindingID", handler.GetSiteProfileBinding)
+	protected.PUT("/network-access/site-profile-bindings/:bindingID", handler.UpdateSiteProfileBinding)
+	protected.DELETE("/network-access/site-profile-bindings/:bindingID", handler.DeleteSiteProfileBinding)
+	protected.GET("/network-access/enrollments", handler.ListEnrollments)
+	protected.POST("/network-access/enrollments", handler.CreateEnrollment)
+	protected.GET("/network-access/enrollments/:enrollmentID", handler.GetEnrollment)
+	protected.POST("/network-access/enrollments/:enrollmentID/revoke", handler.RevokeEnrollment)
+	protected.GET("/network-access/sessions", handler.ListSessions)
+	protected.GET("/network-access/telemetry/summary", handler.GetTelemetrySummary)
+	protected.GET("/network-access/sessions/:sessionID", handler.GetSession)
+	protected.POST("/network-access/sessions/:sessionID/actions/plan", handler.PlanSessionAction)
+	protected.POST("/network-access/sessions/:sessionID/actions/execute", handler.ExecuteSessionAction)
+	protected.GET("/network-access/access-grants", handler.ListAccessGrants)
+	protected.POST("/network-access/access-grants", handler.CreateAccessGrant)
+	protected.GET("/network-access/access-grants/:grantID", handler.GetAccessGrant)
+	protected.POST("/network-access/access-grants/:grantID/revoke", handler.RevokeAccessGrant)
+	protected.GET("/network-access/policies", handler.ListPolicies)
+	protected.POST("/network-access/policies", handler.CreatePolicy)
+	protected.POST("/network-access/policies/compile", handler.CompilePolicySnapshot)
+	protected.GET("/network-access/policies/:policyID", handler.GetPolicy)
+	protected.PUT("/network-access/policies/:policyID", handler.UpdatePolicy)
+	protected.DELETE("/network-access/policies/:policyID", handler.DeletePolicy)
+	protected.GET("/network-access/policy/snapshot", handler.GetPolicySnapshot)
+	protected.POST("/network-access/policy/preview", handler.PreviewPolicy)
+	protected.POST("/network-access/conflicts/analyze", handler.AnalyzeConflicts)
+}
+
+func registerNetworkAccessDeviceRoutes(protected gin.IRoutes, deps Dependencies) {
+	handler := deps.NetworkAccess
+	protected.GET("/network-access/devices", handler.ListDevices)
+	protected.GET("/network-access/devices/:deviceID", handler.GetDevice)
+	protected.PUT("/network-access/devices/:deviceID/registration", handler.RegisterDevice)
+	protected.PUT("/network-access/devices/:deviceID", handler.UpdateDevice)
+	protected.GET("/network-access/connection-options", handler.ListConnectionOptions)
+}

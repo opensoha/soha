@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -51,5 +52,16 @@ func TestClaimExecutionTaskClosesSelectedRowAndUpdatesTask(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuildExecutionArtifactsIgnoresMissingValues(t *testing.T) {
+	if got := buildExecutionArtifacts(domaindelivery.ExecutionTask{Result: map[string]any{}}); len(got) != 0 {
+		t.Fatalf("buildExecutionArtifacts() = %#v, want no artifacts", got)
+	}
+
+	item := executionArtifactFromMap(map[string]any{"kind": "image", "ref": nil})
+	if item.Ref != "" || item.Digest != "" || item.Name != "" {
+		t.Fatalf("executionArtifactFromMap() kept missing values: %#v", item)
 	}
 }

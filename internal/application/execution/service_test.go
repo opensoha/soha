@@ -523,7 +523,7 @@ func TestListAndGetExecutionTasksAttachOperationState(t *testing.T) {
 	}
 	permissions := appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"developer": {appaccess.PermDeliveryWorkflowsView},
+			"developer": {appaccess.PermDeliveryExecutionTasksView},
 		},
 	})
 	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", permissions)
@@ -543,6 +543,22 @@ func TestListAndGetExecutionTasksAttachOperationState(t *testing.T) {
 	}
 	if got.OperationState == nil || got.OperationState.FailureMessage != "build failed" {
 		t.Fatalf("got task missing failure operation state: %#v", got.OperationState)
+	}
+}
+
+func TestResolveArtifactValuesIgnoresMissingFields(t *testing.T) {
+	if got := resolveArtifactRef(map[string]any{}, map[string]any{}); got != "" {
+		t.Fatalf("resolveArtifactRef() = %q, want empty", got)
+	}
+	if got := resolveArtifactDigest(map[string]any{"imageDigest": nil}, map[string]any{}); got != "" {
+		t.Fatalf("resolveArtifactDigest() = %q, want empty", got)
+	}
+	clusterID, namespace, jobName := executionJobRef(domaindelivery.ExecutionTask{Result: map[string]any{}})
+	if clusterID != "" || namespace != "" || jobName != "" {
+		t.Fatalf("executionJobRef() = %q, %q, %q; want empty values", clusterID, namespace, jobName)
+	}
+	if got := (&Service{}).resolveExecutionJobClusterID(domaindelivery.ExecutionTask{Payload: map[string]any{}}); got != "" {
+		t.Fatalf("resolveExecutionJobClusterID() = %q, want empty", got)
 	}
 }
 

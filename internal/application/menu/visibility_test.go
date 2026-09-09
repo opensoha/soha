@@ -143,6 +143,7 @@ func TestCanonicalRouteMenusUseTheirRoutePermissions(t *testing.T) {
 	}{
 		{id: "platform-manifests", path: "/manifests", permission: appaccess.PermDeliveryApplicationsView},
 		{id: "delivery-manifest-library", path: "/delivery/manifests", permission: appaccess.PermDeliveryApplicationsView},
+		{id: "release-board", path: "/release-board", permission: appaccess.PermDeliveryWorkflowsView},
 		{id: "monitoring-workbench-integrations", path: "/monitoring-workbench/integrations", permission: appaccess.PermObserveAlertIntegrationsView},
 		{id: "docker-workbench-hosts", path: "/compute/runtimes/hosts", permission: appaccess.PermDockerHostsView},
 		{id: "docker-workbench-projects", path: "/compute/runtimes/projects", permission: appaccess.PermDockerProjectsView},
@@ -431,6 +432,67 @@ func TestSoftwareMenusRequirePackageViewPermission(t *testing.T) {
 	}
 	if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchSecurityView, appaccess.PermSoftwarePackageView}) {
 		t.Fatal("identity-software should be visible with software package view permission")
+	}
+}
+
+func TestNetworkAccessMenuRequiresWorkbenchAndAnyNetworkViewPermission(t *testing.T) {
+	item := domainmenu.Record{ID: "network-access", Path: "/network-access"}
+	if isVisibleByPermissions(item, []string{appaccess.PermNetworkAccessMihomoProfilesView}) {
+		t.Fatal("network access should require the security workbench entry")
+	}
+	if !isVisibleByPermissions(item, []string{
+		appaccess.PermWorkbenchSecurityView,
+		appaccess.PermNetworkAccessMihomoProfilesView,
+	}) {
+		t.Fatal("network access should accept any network view permission")
+	}
+	if got := workbenchPermissionForMenu(item); got != appaccess.PermWorkbenchSecurityView {
+		t.Fatalf("network access workbench permission = %q", got)
+	}
+}
+
+func TestNetworkAccessLeafMenusRequireTheirOwnViewPermission(t *testing.T) {
+	tests := []struct {
+		id         string
+		path       string
+		permission string
+	}{
+		{id: "network-access-devices", path: "/network-access/devices", permission: appaccess.PermNetworkAccessEndpointDevicesView},
+		{id: "network-access-sites", path: "/network-access/sites", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-user-admission", path: "/network-access/user-admission", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-settings", path: "/network-access/settings", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-ssids", path: "/network-access/ssids", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-wifi", path: "/network-access/wifi", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-wired", path: "/network-access/wired", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-nas-bindings", path: "/network-access/nas-bindings", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-radius-services", path: "/network-access/radius-services", permission: appaccess.PermNetworkAccessEnrollmentsView},
+		{id: "network-access-site-profile-bindings", path: "/network-access/site-profile-bindings", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-sessions", path: "/network-access/sessions", permission: appaccess.PermNetworkAccessSitesView},
+		{id: "network-access-telemetry", path: "/network-access/telemetry", permission: appaccess.PermNetworkAccessTelemetryView},
+		{id: "network-access-spaces", path: "/network-access/spaces", permission: appaccess.PermNetworkAccessSpacesView},
+		{id: "network-access-resources", path: "/network-access/resources", permission: appaccess.PermNetworkAccessResourcesView},
+		{id: "network-access-gateways", path: "/network-access/gateways", permission: appaccess.PermNetworkAccessGatewaysView},
+		{id: "network-access-enrollments", path: "/network-access/enrollments", permission: appaccess.PermNetworkAccessEnrollmentsView},
+		{id: "network-access-access-grants", path: "/network-access/access-grants", permission: appaccess.PermNetworkAccessAccessGrantsView},
+		{id: "network-access-policy", path: "/network-access/policy", permission: appaccess.PermNetworkAccessPolicyView},
+		{id: "network-access-mihomo-profiles", path: "/network-access/mihomo-profiles", permission: appaccess.PermNetworkAccessMihomoProfilesView},
+		{id: "network-access-proxy-overview", path: "/network-access/proxy-overview", permission: appaccess.PermNetworkAccessTelemetryView},
+		{id: "network-access-proxy-connections", path: "/network-access/proxy-connections", permission: appaccess.PermNetworkAccessTelemetryView},
+	}
+
+	for _, test := range tests {
+		t.Run(test.id, func(t *testing.T) {
+			item := domainmenu.Record{ID: test.id, Path: test.path}
+			if isVisibleByPermissions(item, []string{test.permission}) {
+				t.Fatal("menu should require the security workbench entry")
+			}
+			if isVisibleByPermissions(item, []string{appaccess.PermWorkbenchSecurityView}) {
+				t.Fatal("menu should require its view permission")
+			}
+			if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchSecurityView, test.permission}) {
+				t.Fatal("menu should be visible with workbench and view permissions")
+			}
+		})
 	}
 }
 

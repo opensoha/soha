@@ -21,6 +21,7 @@ const (
 	ActionScale    Action = "scale"
 	ActionSuspend  Action = "suspend"
 	ActionTrigger  Action = "trigger"
+	ActionApprove  Action = "approve"
 	ActionLogs     Action = "logs"
 	ActionExec     Action = "exec"
 	ActionDrain    Action = "drain"

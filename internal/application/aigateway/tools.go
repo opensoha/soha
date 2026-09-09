@@ -68,7 +68,7 @@ func (s *Service) InvokeTool(ctx context.Context, principal domainidentity.Princ
 		return s.holdToolInvocation(ctx, principal, input, tool, decision, redactionSummary)
 	}
 
-	output, relatedIDs, err := s.invokeGatewayTool(ctx, principal, tool, input.Input, input.SecretRefs)
+	output, relatedIDs, err := s.invokeGatewayTool(ctx, principal, tool, input.Input, input.SecretRefs, input.SessionID)
 	if err != nil {
 		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "failure", err.Error(), relatedIDs, redactionSummary)
 		return domainaigateway.ToolInvocationResult{}, err
@@ -227,7 +227,7 @@ func (s *Service) GetPrompt(ctx context.Context, principal domainidentity.Princi
 		},
 	}, nil
 }
-func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any, secretRefs map[string]string) (any, map[string]any, error) {
+func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any, secretRefs map[string]string, sessionID string) (any, map[string]any, error) {
 	if len(secretRefs) > 0 {
 		if s.secrets == nil {
 			return nil, nil, fmt.Errorf("%w: secret resolver is not configured", apperrors.ErrInvalidArgument)
@@ -245,6 +245,8 @@ func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentit
 		ctx = domainsecret.WithExecutionContext(ctx, domainsecret.ExecutionContext{References: pinned, Principal: principal, Target: target})
 	}
 	switch {
+	case strings.HasPrefix(tool.Name, "network_access."):
+		return s.invokeNetworkAccessTool(ctx, principal, sessionID, tool.Name, input)
 	case strings.HasPrefix(tool.Name, "delivery."):
 		return s.invokeDeliveryTool(ctx, principal, tool, input)
 	case strings.HasPrefix(tool.Name, "k8s."):

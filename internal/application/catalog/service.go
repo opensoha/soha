@@ -126,6 +126,22 @@ func (s *Service) GetApplicationEnvironment(ctx context.Context, principal domai
 	return item, nil
 }
 
+func (s *Service) AuthorizeApplicationEnvironmentPermission(ctx context.Context, principal domainidentity.Principal, id, permissionKey string) (domaincatalog.ApplicationEnvironment, error) {
+	if err := s.authorize(ctx, principal, permissionKey); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	item, err := s.repo.GetApplicationEnvironment(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domaincatalog.ApplicationEnvironment{}, normalizeRepoError(err)
+	}
+	if s.authorizer != nil {
+		if err := s.authorizeDelivery(ctx, principal, permissionKey, "", "ApplicationEnvironment", item.ID, item.BusinessLineID, item.ApplicationGroup, item.EnvironmentKey, item.ApplicationID); err != nil {
+			return domaincatalog.ApplicationEnvironment{}, err
+		}
+	}
+	return item, nil
+}
+
 func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "create")); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
@@ -1342,7 +1358,7 @@ func (s *Service) authorizeApplicationEnvironment(ctx context.Context, principal
 	if s.authorizer == nil {
 		return nil
 	}
-	return s.authorizeDelivery(ctx, principal, action, "ApplicationEnvironment", item.ID, item.BusinessLineID, item.ApplicationGroup, item.EnvironmentKey, item.ApplicationID)
+	return s.authorizeDelivery(ctx, principal, "", action, "ApplicationEnvironment", item.ID, item.BusinessLineID, item.ApplicationGroup, item.EnvironmentKey, item.ApplicationID)
 }
 
 func (s *Service) authorizeApplicationEnvironmentInput(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, input domaincatalog.ApplicationEnvironmentInput) error {
@@ -1357,7 +1373,7 @@ func (s *Service) authorizeApplicationEnvironmentInput(ctx context.Context, prin
 	if resourceName == "" {
 		resourceName = fmt.Sprintf("%s:%s", strings.TrimSpace(input.ApplicationID), strings.TrimSpace(input.EnvironmentID))
 	}
-	return s.authorizeDelivery(ctx, principal, action, "ApplicationEnvironment", resourceName, businessLineID, applicationGroup, input.EnvironmentID, input.ApplicationID)
+	return s.authorizeDelivery(ctx, principal, "", action, "ApplicationEnvironment", resourceName, businessLineID, applicationGroup, input.EnvironmentID, input.ApplicationID)
 }
 
 func (s *Service) lookupApplicationScope(ctx context.Context, applicationID string) (string, string, error) {
@@ -1383,10 +1399,11 @@ func (s *Service) lookupApplicationScope(ctx context.Context, applicationID stri
 	return "", "", nil
 }
 
-func (s *Service) authorizeDelivery(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, resourceKind, resourceName, businessLineID, applicationGroup, environmentKey, applicationID string) error {
+func (s *Service) authorizeDelivery(ctx context.Context, principal domainidentity.Principal, permissionKey string, action domainaccess.Action, resourceKind, resourceName, businessLineID, applicationGroup, environmentKey, applicationID string) error {
 	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
-		Principal: principal,
-		Action:    action,
+		Principal:     principal,
+		PermissionKey: strings.TrimSpace(permissionKey),
+		Action:        action,
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,

@@ -1,0 +1,14 @@
+mixed-port: 7890
+allow-lan: true
+bind-address: "*"
+mode: rule
+log-level: warning
+ipv6: false
+external-controller: 0.0.0.0:9090
+secret: soha-network-test
+tun:
+  enable: false
+dns:
+  enable: false
+rules:
+  - MATCH,DIRECT

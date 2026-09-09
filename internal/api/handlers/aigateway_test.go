@@ -241,6 +241,10 @@ func (s *stubAIGatewayService) TestLLMUpstream(context.Context, domainidentity.P
 	return domainaigateway.LLMUpstreamTestResult{}, nil
 }
 
+func (s *stubAIGatewayService) TestLLMUpstreamDraft(context.Context, domainidentity.Principal, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstreamTestResult, error) {
+	return domainaigateway.LLMUpstreamTestResult{}, nil
+}
+
 func (s *stubAIGatewayService) RunLLMRelayHealthChecks(context.Context, domainidentity.Principal) (domainaigateway.LLMRelayHealthCheckRun, error) {
 	return domainaigateway.LLMRelayHealthCheckRun{}, nil
 }

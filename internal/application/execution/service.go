@@ -192,21 +192,21 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 }
 
 func (s *Service) ListReleaseBundles(ctx context.Context, principal domainidentity.Principal, filter domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleaseBoardView); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleaseBundlesView); err != nil {
 		return nil, err
 	}
 	return s.repo.ListReleaseBundles(ctx, filter)
 }
 
 func (s *Service) GetReleaseBundle(ctx context.Context, principal domainidentity.Principal, bundleID string) (domaindelivery.ReleaseBundle, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleaseBoardView); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleaseBundlesView); err != nil {
 		return domaindelivery.ReleaseBundle{}, err
 	}
 	return s.repo.GetReleaseBundle(ctx, strings.TrimSpace(bundleID))
 }
 
 func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidentity.Principal, filter domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsView); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return nil, err
 	}
 	items, err := s.repo.ListExecutionTasks(ctx, filter)
@@ -214,7 +214,7 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string) (domaindelivery.ExecutionTask, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsView); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
 	task, err := s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
@@ -222,21 +222,21 @@ func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentity.Principal, taskID string, limit int) ([]domaindelivery.ExecutionLog, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsView); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return nil, err
 	}
 	return s.repo.ListExecutionLogs(ctx, strings.TrimSpace(taskID), limit)
 }
 
 func (s *Service) ListExecutionArtifacts(ctx context.Context, principal domainidentity.Principal, taskID string) ([]domaindelivery.ExecutionArtifact, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsView); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return nil, err
 	}
 	return s.repo.ListExecutionArtifacts(ctx, strings.TrimSpace(taskID))
 }
 
 func (s *Service) ListReleaseBundleArtifacts(ctx context.Context, principal domainidentity.Principal, bundleID string) ([]domaindelivery.ExecutionArtifact, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleaseBoardView); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleaseBundlesView); err != nil {
 		return nil, err
 	}
 	return s.repo.ListExecutionArtifactsByBundle(ctx, strings.TrimSpace(bundleID))
@@ -646,7 +646,7 @@ func (s *Service) recordExecutionCallbackLogs(ctx context.Context, taskID string
 		return
 	}
 	for _, item := range logs {
-		message := strings.TrimSpace(fmt.Sprint(item))
+		message := valueAsString(item)
 		if message == "" {
 			continue
 		}
@@ -801,7 +801,7 @@ func (s *Service) stopRemoteRuntimeTask(ctx context.Context, taskID string, resu
 	if strings.TrimSpace(s.runnerToken) == "" {
 		return nil
 	}
-	endpoint := strings.TrimSpace(fmt.Sprint(result["runtimeEndpoint"]))
+	endpoint := valueAsString(result["runtimeEndpoint"])
 	if endpoint == "" {
 		return nil
 	}
@@ -987,7 +987,7 @@ func (s *Service) dispatchK8sJobExecution(ctx context.Context, task domaindelive
 		return false, domaindelivery.ExecutionTask{}, nil
 	}
 	jobConfig := s.jobRuntimeOptions()
-	namespace := firstNonEmpty(strings.TrimSpace(fmt.Sprint(task.Payload["jobNamespace"])), jobConfig.Namespace)
+	namespace := firstNonEmpty(valueAsString(task.Payload["jobNamespace"]), jobConfig.Namespace)
 	created, err := s.clusters.CreateExecutionJob(ctx, clusterID, ExecutionJobRequest{
 		TaskID:          task.ID,
 		TaskKind:        task.TaskKind,
@@ -1098,10 +1098,10 @@ func (s *Service) resolveExecutionJobClusterID(task domaindelivery.ExecutionTask
 	if value := s.jobRuntimeOptions().ClusterID; value != "" {
 		return value
 	}
-	if value := strings.TrimSpace(fmt.Sprint(task.Payload["jobClusterId"])); value != "" {
+	if value := valueAsString(task.Payload["jobClusterId"]); value != "" {
 		return value
 	}
-	if value := strings.TrimSpace(fmt.Sprint(task.Payload["clusterId"])); value != "" {
+	if value := valueAsString(task.Payload["clusterId"]); value != "" {
 		return value
 	}
 	if s.clusters != nil {
@@ -1114,9 +1114,9 @@ func (s *Service) resolveExecutionJobClusterID(task domaindelivery.ExecutionTask
 }
 
 func executionJobRef(task domaindelivery.ExecutionTask) (string, string, string) {
-	return strings.TrimSpace(fmt.Sprint(task.Result["k8sJobClusterId"])),
-		strings.TrimSpace(fmt.Sprint(task.Result["k8sJobNamespace"])),
-		strings.TrimSpace(fmt.Sprint(task.Result["k8sJobName"]))
+	return valueAsString(task.Result["k8sJobClusterId"]),
+		valueAsString(task.Result["k8sJobNamespace"]),
+		valueAsString(task.Result["k8sJobName"])
 }
 
 func (s *Service) markTaskFailed(ctx context.Context, task domaindelivery.ExecutionTask, now time.Time, message string) error {
@@ -1213,7 +1213,7 @@ func valueAsStringSlice(raw any) []string {
 	case []any:
 		items := make([]string, 0, len(value))
 		for _, item := range value {
-			if trimmed := strings.TrimSpace(fmt.Sprint(item)); trimmed != "" {
+			if trimmed := valueAsString(item); trimmed != "" {
 				items = append(items, trimmed)
 			}
 		}
@@ -1373,47 +1373,54 @@ func effectiveTimeoutSeconds(task domaindelivery.ExecutionTask) int {
 }
 
 func resolveArtifactRef(result, payload map[string]any) string {
-	if ref := strings.TrimSpace(fmt.Sprint(result["image"])); ref != "" {
+	if ref := valueAsString(result["image"]); ref != "" {
 		return ref
 	}
 	if artifact, ok := result["artifact"].(map[string]any); ok {
-		if ref := strings.TrimSpace(fmt.Sprint(artifact["ref"])); ref != "" {
+		if ref := valueAsString(artifact["ref"]); ref != "" {
 			return ref
 		}
 	}
 	if artifacts := valueAsMapSlice(result["artifacts"]); len(artifacts) > 0 {
 		for _, artifact := range artifacts {
-			if ref := strings.TrimSpace(fmt.Sprint(artifact["ref"])); ref != "" {
+			if ref := valueAsString(artifact["ref"]); ref != "" {
 				return ref
 			}
 		}
 	}
-	if ref := strings.TrimSpace(fmt.Sprint(payload["image"])); ref != "" {
+	if ref := valueAsString(payload["image"]); ref != "" {
 		return ref
 	}
 	return ""
 }
 
 func resolveArtifactDigest(result, payload map[string]any) string {
-	if digest := strings.TrimSpace(fmt.Sprint(result["imageDigest"])); digest != "" && digest != "pending" {
+	if digest := valueAsString(result["imageDigest"]); digest != "" && digest != "pending" {
 		return digest
 	}
 	if artifact, ok := result["artifact"].(map[string]any); ok {
-		if digest := strings.TrimSpace(fmt.Sprint(artifact["digest"])); digest != "" && digest != "pending" {
+		if digest := valueAsString(artifact["digest"]); digest != "" && digest != "pending" {
 			return digest
 		}
 	}
 	if artifacts := valueAsMapSlice(result["artifacts"]); len(artifacts) > 0 {
 		for _, artifact := range artifacts {
-			if digest := strings.TrimSpace(fmt.Sprint(artifact["digest"])); digest != "" && digest != "pending" {
+			if digest := valueAsString(artifact["digest"]); digest != "" && digest != "pending" {
 				return digest
 			}
 		}
 	}
-	if digest := strings.TrimSpace(fmt.Sprint(payload["imageDigest"])); digest != "" && digest != "pending" {
+	if digest := valueAsString(payload["imageDigest"]); digest != "" && digest != "pending" {
 		return digest
 	}
 	return ""
+}
+
+func valueAsString(value any) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
 }
 
 func valueAsMapSlice(raw any) []map[string]any {

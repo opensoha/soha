@@ -86,6 +86,7 @@ type AIGatewayUpstreamService interface {
 	CreateLLMUpstream(context.Context, domainidentity.Principal, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error)
 	UpdateLLMUpstream(context.Context, domainidentity.Principal, string, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error)
 	TestLLMUpstream(context.Context, domainidentity.Principal, string) (domainaigateway.LLMUpstreamTestResult, error)
+	TestLLMUpstreamDraft(context.Context, domainidentity.Principal, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstreamTestResult, error)
 	RunLLMRelayHealthChecks(context.Context, domainidentity.Principal) (domainaigateway.LLMRelayHealthCheckRun, error)
 }
 
@@ -239,6 +240,7 @@ func (h *aiGatewayCapabilityHandler) InvokeTool(c *gin.Context) {
 	req.AIClientName = firstNonEmpty(req.AIClientName, firstHeaderValue(c, "X-Soha-AI-Client", "X-AI-Client"))
 	req.SkillID = firstNonEmpty(req.SkillID, firstHeaderValue(c, "X-Soha-Skill-ID", "X-Skill-ID"))
 	req.RequestID = firstNonEmpty(req.RequestID, c.GetString("request_id"))
+	req.SessionID = apiMiddleware.AccessContextFromContext(c).SessionID
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.InvokeTool(c.Request.Context(), principal, req)
 	if err != nil {
@@ -728,6 +730,21 @@ func (h *aiGatewayUpstreamHandler) UpdateLLMUpstream(c *gin.Context) {
 func (h *aiGatewayUpstreamHandler) TestLLMUpstream(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.TestLLMUpstream(c.Request.Context(), principal, c.Param("upstreamID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *aiGatewayUpstreamHandler) TestLLMUpstreamDraft(c *gin.Context) {
+	var req domainaigateway.LLMUpstreamInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM upstream payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.TestLLMUpstreamDraft(c.Request.Context(), principal, req)
 	if err != nil {
 		writeError(c, err)
 		return

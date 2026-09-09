@@ -1,0 +1,94 @@
+server default {
+	listen {
+		type = auth
+		ipaddr = *
+		port = 1812
+	}
+	listen {
+		type = acct
+		ipaddr = *
+		port = 1813
+	}
+
+	authorize {
+		if (!&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}" || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+			reject
+		}
+		if (&EAP-Message) {
+			eap {
+				ok = return
+				updated = return
+			}
+		}
+		else {
+			soha_lab_users
+			if (notfound) {
+				reject
+			}
+			pap
+		}
+	}
+
+	authenticate {
+		Auth-Type PAP {
+			pap
+		}
+		eap
+	}
+
+	preacct {
+		preprocess
+		acct_unique
+	}
+
+	accounting {
+		update control { &Tmp-String-1 := "%{string:&Class}" }
+		if (!&Event-Timestamp || !&Acct-Session-Id || &Acct-Session-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}" || !&NAS-Port-Id || &NAS-Port-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&control:Tmp-String-1 || &control:Tmp-String-1 !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+			fail
+		}
+		if (&Acct-Status-Type == Start) {
+			update control { &Tmp-String-0 := "start" }
+		}
+		elsif (&Acct-Status-Type == Interim-Update) {
+			update control { &Tmp-String-0 := "interim-update" }
+		}
+		elsif (&Acct-Status-Type == Stop) {
+			update control { &Tmp-String-0 := "stop" }
+		}
+		elsif (&Acct-Status-Type == Accounting-On) {
+			update control { &Tmp-String-0 := "accounting-on" }
+		}
+		elsif (&Acct-Status-Type == Accounting-Off) {
+			update control { &Tmp-String-0 := "accounting-off" }
+		}
+		else {
+			fail
+		}
+		soha_accounting
+		if (fail || invalid) {
+			fail
+		}
+	}
+
+	post-auth {
+		if (!&User-Name || &User-Name !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/ || !&NAS-Identifier || &NAS-Identifier != "$ENV{SOHA_RADIUS_NAS_ID}" || !&Calling-Station-Id || &Calling-Station-Id !~ /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/) {
+			reject
+		}
+		if (&TLS-Client-Cert-Serial) {
+			if (&TLS-Client-Cert-Serial !~ /^[A-Fa-f0-9]{1,40}$/ || !&TLS-Client-Cert-X509v3-Authority-Key-Identifier || &TLS-Client-Cert-X509v3-Authority-Key-Identifier !~ /^[A-Fa-f0-9:]{16,191}$/) {
+				reject
+			}
+			soha_authorize_eap_tls
+		}
+		else {
+			soha_authorize_password
+		}
+		if (fail || invalid || notfound || reject || userlock || !&reply:Class) {
+			reject
+		}
+
+		Post-Auth-Type REJECT {
+			attr_filter.access_reject
+		}
+	}
+}

@@ -30,23 +30,24 @@ const (
 )
 
 type Config struct {
-	App            AppConfig            `mapstructure:"app"`
-	HTTP           HTTPConfig           `mapstructure:"http"`
-	Logger         LoggerConfig         `mapstructure:"logger"`
-	Runtime        RuntimeConfig        `mapstructure:"runtime"`
-	Database       DatabaseConfig       `mapstructure:"database"`
-	Auth           AuthConfig           `mapstructure:"auth"`
-	Monitoring     MonitoringConfig     `mapstructure:"monitoring"`
-	Swagger        SwaggerConfig        `mapstructure:"swagger"`
-	MCP            MCPConfig            `mapstructure:"mcp"`
-	AIGateway      AIGatewayConfig      `mapstructure:"ai_gateway"`
-	Plugins        PluginsConfig        `mapstructure:"plugins"`
-	LegacySoftware LegacySoftwareConfig `mapstructure:"software"`
-	Modules        ModulesConfig        `mapstructure:"modules"`
-	Assets         AssetsConfig         `mapstructure:"assets"`
-	Security       SecurityConfig       `mapstructure:"security"`
-	Bootstrap      BootstrapConfig      `mapstructure:"bootstrap"`
-	Kubernetes     KubernetesConfig     `mapstructure:"kubernetes"`
+	App                AppConfig                `mapstructure:"app"`
+	HTTP               HTTPConfig               `mapstructure:"http"`
+	Logger             LoggerConfig             `mapstructure:"logger"`
+	Runtime            RuntimeConfig            `mapstructure:"runtime"`
+	Database           DatabaseConfig           `mapstructure:"database"`
+	Auth               AuthConfig               `mapstructure:"auth"`
+	Monitoring         MonitoringConfig         `mapstructure:"monitoring"`
+	Swagger            SwaggerConfig            `mapstructure:"swagger"`
+	MCP                MCPConfig                `mapstructure:"mcp"`
+	AIGateway          AIGatewayConfig          `mapstructure:"ai_gateway"`
+	Plugins            PluginsConfig            `mapstructure:"plugins"`
+	LegacySoftware     LegacySoftwareConfig     `mapstructure:"software"`
+	Modules            ModulesConfig            `mapstructure:"modules"`
+	Assets             AssetsConfig             `mapstructure:"assets"`
+	Security           SecurityConfig           `mapstructure:"security"`
+	Bootstrap          BootstrapConfig          `mapstructure:"bootstrap"`
+	Kubernetes         KubernetesConfig         `mapstructure:"kubernetes"`
+	NetworkIngestQuery NetworkIngestQueryConfig `mapstructure:"network_ingest_query"`
 }
 
 type AppConfig struct {
@@ -63,6 +64,47 @@ type HTTPConfig struct {
 	BasePath           string        `mapstructure:"base_path"`
 	CORSAllowedOrigins []string      `mapstructure:"cors_allowed_origins"`
 	TrustedProxies     []string      `mapstructure:"trusted_proxies"`
+}
+
+type NetworkIngestQueryConfig struct {
+	URL              string        `mapstructure:"url"`
+	CAFile           string        `mapstructure:"ca_file"`
+	CertFile         string        `mapstructure:"cert_file"`
+	KeyFile          string        `mapstructure:"key_file"`
+	ServerName       string        `mapstructure:"server_name"`
+	Timeout          time.Duration `mapstructure:"timeout"`
+	MaxResponseBytes int64         `mapstructure:"max_response_bytes"`
+}
+
+func (c NetworkIngestQueryConfig) Configured() bool { return strings.TrimSpace(c.URL) != "" }
+
+func (c NetworkIngestQueryConfig) Validate() error {
+	values := []string{c.URL, c.CAFile, c.CertFile, c.KeyFile, c.ServerName}
+	configured := 0
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			configured++
+		}
+	}
+	if configured == 0 {
+		return nil
+	}
+	if configured != len(values) {
+		return fmt.Errorf("network_ingest_query URL, TLS files, and server name must be configured together")
+	}
+	parsed, err := url.Parse(c.URL)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.Path != "" && parsed.Path != "/" {
+		return fmt.Errorf("network_ingest_query.url must be an HTTPS origin")
+	}
+	for _, value := range values {
+		if strings.TrimSpace(value) != value || strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("network_ingest_query values must not contain surrounding whitespace or NUL")
+		}
+	}
+	if c.Timeout <= 0 || c.Timeout > 30*time.Second || c.MaxResponseBytes < 1024 || c.MaxResponseBytes > 4<<20 {
+		return fmt.Errorf("network_ingest_query timeout or response limit is invalid")
+	}
+	return nil
 }
 
 type LoggerConfig struct {
@@ -379,6 +421,11 @@ func (c *Config) expandEnv() {
 	c.Security.VaultKV2.Namespace = os.ExpandEnv(c.Security.VaultKV2.Namespace)
 	c.Security.OutpostSigningKeyID = os.ExpandEnv(c.Security.OutpostSigningKeyID)
 	c.Security.OutpostSigningPrivateKey = os.ExpandEnv(c.Security.OutpostSigningPrivateKey)
+	c.NetworkIngestQuery.URL = os.ExpandEnv(c.NetworkIngestQuery.URL)
+	c.NetworkIngestQuery.CAFile = os.ExpandEnv(c.NetworkIngestQuery.CAFile)
+	c.NetworkIngestQuery.CertFile = os.ExpandEnv(c.NetworkIngestQuery.CertFile)
+	c.NetworkIngestQuery.KeyFile = os.ExpandEnv(c.NetworkIngestQuery.KeyFile)
+	c.NetworkIngestQuery.ServerName = os.ExpandEnv(c.NetworkIngestQuery.ServerName)
 	for i := range c.Kubernetes.Clusters {
 		c.Kubernetes.Clusters[i].Kubeconfig = os.ExpandEnv(c.Kubernetes.Clusters[i].Kubeconfig)
 		c.Kubernetes.Clusters[i].KubeconfigData = os.ExpandEnv(c.Kubernetes.Clusters[i].KubeconfigData)
@@ -429,6 +476,9 @@ func (c Config) staticProblems() []string {
 	problems = append(problems, validateWebAuthnConfig(c.Security)...)
 	problems = append(problems, validateSecretProvider(c.Security)...)
 	problems = append(problems, validateCompanionConfig(c.Plugins.Companion)...)
+	if err := c.NetworkIngestQuery.Validate(); err != nil {
+		problems = append(problems, err.Error())
+	}
 	if _, _, err := c.Security.OutpostSigningKey(); err != nil {
 		problems = append(problems, err.Error())
 	}
@@ -837,6 +887,13 @@ var configDefaults = []struct {
 	{"security.vault_kv2.max_response_bytes", int64(2 << 20)},
 	{"security.webauthn_rp_id", "localhost"},
 	{"security.webauthn_origins", []string{"http://localhost:5173", "http://localhost:8080"}},
+	{"network_ingest_query.url", ""},
+	{"network_ingest_query.ca_file", ""},
+	{"network_ingest_query.cert_file", ""},
+	{"network_ingest_query.key_file", ""},
+	{"network_ingest_query.server_name", ""},
+	{"network_ingest_query.timeout", 5 * time.Second},
+	{"network_ingest_query.max_response_bytes", int64(1 << 20)},
 	{"bootstrap.seed_defaults", true},
 	{"kubernetes.clusters", []map[string]any{}},
 }

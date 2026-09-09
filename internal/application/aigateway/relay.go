@@ -145,6 +145,21 @@ func (s *Service) TestLLMUpstream(ctx context.Context, principal domainidentity.
 	if err != nil {
 		return domainaigateway.LLMUpstreamTestResult{}, err
 	}
+	return s.testLLMUpstream(ctx, principal, upstream)
+}
+
+func (s *Service) TestLLMUpstreamDraft(ctx context.Context, principal domainidentity.Principal, input domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstreamTestResult, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermAIGatewayRelayManage, "test")); err != nil {
+		return domainaigateway.LLMUpstreamTestResult{}, err
+	}
+	upstream, err := s.normalizeLLMUpstreamInput(ctx, principal, "", input)
+	if err != nil {
+		return domainaigateway.LLMUpstreamTestResult{}, err
+	}
+	return s.testLLMUpstream(ctx, principal, upstream)
+}
+
+func (s *Service) testLLMUpstream(ctx context.Context, principal domainidentity.Principal, upstream domainaigateway.LLMUpstream) (domainaigateway.LLMUpstreamTestResult, error) {
 	result, err := s.testRelayUpstream(ctx, upstream)
 	if err != nil {
 		_ = s.recordRelayAudit(ctx, principal, "ai_gateway.relay.upstream.test", "failure", "tested AI Gateway relay upstream", map[string]any{
@@ -159,6 +174,7 @@ func (s *Service) TestLLMUpstream(ctx context.Context, principal domainidentity.
 		"providerKind": upstream.ProviderKind,
 		"httpStatus":   result.HTTPStatus,
 		"durationMs":   result.DurationMs,
+		"modelCount":   result.ModelCount,
 	})
 	return result, nil
 }

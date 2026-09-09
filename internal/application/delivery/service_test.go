@@ -72,6 +72,7 @@ type stubApplicationReader struct {
 	app                domainapp.App
 	apps               []domainapp.App
 	services           []domainapp.Service
+	getErrByID         map[string]error
 	createErr          error
 	createCount        *int
 	updateCount        *int
@@ -86,7 +87,10 @@ func (s stubApplicationReader) List(context.Context, domainidentity.Principal, d
 	return []domainapp.App{s.app}, nil
 }
 
-func (s stubApplicationReader) Get(context.Context, domainidentity.Principal, string) (domainapp.App, error) {
+func (s stubApplicationReader) Get(_ context.Context, _ domainidentity.Principal, applicationID string) (domainapp.App, error) {
+	if err := s.getErrByID[applicationID]; err != nil {
+		return domainapp.App{}, err
+	}
 	return s.app, nil
 }
 
@@ -141,12 +145,13 @@ func (s stubApplicationReader) UpdateService(_ context.Context, _ domainidentity
 }
 
 type stubCatalogReader struct {
-	bindings    []domaincatalog.ApplicationEnvironment
-	envs        []domaincatalog.Environment
-	createCount *int
-	updateCount *int
-	updateInput *domaincatalog.ApplicationEnvironmentInput
-	readGate    *concurrentReadGate
+	bindings          []domaincatalog.ApplicationEnvironment
+	envs              []domaincatalog.Environment
+	getErrByBindingID map[string]error
+	createCount       *int
+	updateCount       *int
+	updateInput       *domaincatalog.ApplicationEnvironmentInput
+	readGate          *concurrentReadGate
 }
 
 func (s stubCatalogReader) ListEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.Environment, error) {
@@ -160,6 +165,9 @@ func (s stubCatalogReader) ListApplicationEnvironments(context.Context, domainid
 }
 
 func (s stubCatalogReader) GetApplicationEnvironment(_ context.Context, _ domainidentity.Principal, bindingID string) (domaincatalog.ApplicationEnvironment, error) {
+	if err := s.getErrByBindingID[bindingID]; err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
 	for _, binding := range s.bindings {
 		if binding.ID == bindingID {
 			return binding, nil
@@ -169,6 +177,10 @@ func (s stubCatalogReader) GetApplicationEnvironment(_ context.Context, _ domain
 		return domaincatalog.ApplicationEnvironment{}, nil
 	}
 	return s.bindings[0], nil
+}
+
+func (s stubCatalogReader) AuthorizeApplicationEnvironmentPermission(ctx context.Context, principal domainidentity.Principal, bindingID, _ string) (domaincatalog.ApplicationEnvironment, error) {
+	return s.GetApplicationEnvironment(ctx, principal, bindingID)
 }
 
 func (s stubCatalogReader) CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
@@ -404,6 +416,97 @@ func deliveryActionPermissions(keys ...string) *appaccess.PermissionResolver {
 
 func deliveryActionPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{UserID: "dev-1", UserName: "developer", Roles: []string{"developer"}}
+}
+
+func TestExecutionRecordsFilterApplicationsOutsidePrincipalScope(t *testing.T) {
+	service := New(
+		stubApplicationReader{getErrByID: map[string]error{"app-denied": apperrors.ErrAccessDenied}},
+		nil,
+		nil,
+		nil,
+		nil,
+		stubRepository{
+			bundles: []domaindelivery.ReleaseBundle{
+				{ID: "bundle-allowed", ApplicationID: "app-allowed"},
+				{ID: "bundle-denied", ApplicationID: "app-denied"},
+			},
+			tasks: []domaindelivery.ExecutionTask{
+				{ID: "task-allowed", ApplicationID: "app-allowed"},
+				{ID: "task-denied", ApplicationID: "app-denied"},
+			},
+		},
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryExecutionTasksView),
+	)
+	principal := deliveryActionPrincipal()
+
+	bundles, err := service.ListReleaseBundles(context.Background(), principal, domaindelivery.ReleaseBundleFilter{})
+	if err != nil {
+		t.Fatalf("ListReleaseBundles returned error: %v", err)
+	}
+	if len(bundles) != 1 || bundles[0].ID != "bundle-allowed" {
+		t.Fatalf("ListReleaseBundles returned %#v, want only authorized bundle", bundles)
+	}
+
+	tasks, err := service.ListExecutionTasks(context.Background(), principal, domaindelivery.ExecutionTaskFilter{})
+	if err != nil {
+		t.Fatalf("ListExecutionTasks returned error: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "task-allowed" {
+		t.Fatalf("ListExecutionTasks returned %#v, want only authorized task", tasks)
+	}
+
+	_, err = service.ListReleaseBundles(context.Background(), principal, domaindelivery.ReleaseBundleFilter{ApplicationID: "app-denied"})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("ListReleaseBundles denied scope error = %v, want ErrAccessDenied", err)
+	}
+}
+
+func TestExecutionRecordsFilterApplicationEnvironmentsOutsidePrincipalScope(t *testing.T) {
+	service := New(
+		stubApplicationReader{app: domainapp.App{ID: "app-1"}},
+		stubCatalogReader{
+			bindings: []domaincatalog.ApplicationEnvironment{
+				{ID: "binding-dev", ApplicationID: "app-1"},
+				{ID: "binding-prod", ApplicationID: "app-1"},
+			},
+			getErrByBindingID: map[string]error{"binding-prod": apperrors.ErrAccessDenied},
+		},
+		nil,
+		nil,
+		nil,
+		stubRepository{
+			bundles: []domaindelivery.ReleaseBundle{
+				{ID: "bundle-dev", ApplicationID: "app-1", ApplicationEnvironmentID: "binding-dev"},
+				{ID: "bundle-prod", ApplicationID: "app-1", ApplicationEnvironmentID: "binding-prod"},
+			},
+			tasks: []domaindelivery.ExecutionTask{
+				{ID: "task-dev", ApplicationID: "app-1", ApplicationEnvironmentID: "binding-dev"},
+				{ID: "task-prod", ApplicationID: "app-1", ApplicationEnvironmentID: "binding-prod"},
+			},
+		},
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryExecutionTasksView),
+	)
+	principal := deliveryActionPrincipal()
+
+	bundles, err := service.ListReleaseBundles(context.Background(), principal, domaindelivery.ReleaseBundleFilter{})
+	if err != nil {
+		t.Fatalf("ListReleaseBundles() error = %v", err)
+	}
+	if len(bundles) != 1 || bundles[0].ID != "bundle-dev" {
+		t.Fatalf("ListReleaseBundles() = %#v, want only binding-dev", bundles)
+	}
+
+	tasks, err := service.ListExecutionTasks(context.Background(), principal, domaindelivery.ExecutionTaskFilter{})
+	if err != nil {
+		t.Fatalf("ListExecutionTasks() error = %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].ID != "task-dev" {
+		t.Fatalf("ListExecutionTasks() = %#v, want only binding-dev", tasks)
+	}
 }
 
 type stubRepository struct {
@@ -1383,6 +1486,25 @@ func TestConfirmDeliveryPlanTriggersExistingAction(t *testing.T) {
 	}
 }
 
+func TestGetDeliveryPlanChecksApplicationEnvironmentScope(t *testing.T) {
+	repo := &planRepository{plan: domaindelivery.DeliveryPlan{
+		ID:                       "plan-prod",
+		ApplicationID:            "app-1",
+		ApplicationEnvironmentID: "binding-prod",
+	}}
+	service := New(
+		stubApplicationReader{app: domainapp.App{ID: "app-1"}},
+		stubCatalogReader{getErrByBindingID: map[string]error{"binding-prod": apperrors.ErrAccessDenied}},
+		stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsView),
+	)
+
+	_, err := service.GetDeliveryPlan(context.Background(), deliveryActionPrincipal(), repo.plan.ID)
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("GetDeliveryPlan() error = %v, want ErrAccessDenied", err)
+	}
+}
+
 func TestDeliveryPlanApprovalBlocksExecutionUntilApproved(t *testing.T) {
 	buildCount := 0
 	repo := &planRepository{plan: domaindelivery.DeliveryPlan{
@@ -1396,7 +1518,7 @@ func TestDeliveryPlanApprovalBlocksExecutionUntilApproved(t *testing.T) {
 		stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "Payments API", Key: "payments-api", DefaultBranch: "main", BuildSources: []domainapp.BuildSource{{ID: "source-1", IsDefault: true}}}},
 		stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-prod", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}}}},
 		stubBuildReader{triggerCount: &buildCount}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
-		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger, appaccess.PermDeliveryApplicationsUpdate),
+		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger, appaccess.PermDeliveryApplicationEnvApprove),
 	)
 
 	result, err := service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), repo.plan.ID)
@@ -1427,13 +1549,31 @@ func TestDeliveryPlanApprovalBlocksExecutionUntilApproved(t *testing.T) {
 
 func TestDeliveryPlanApprovalRejectKeepsExecutionBlocked(t *testing.T) {
 	repo := &planRepository{plan: domaindelivery.DeliveryPlan{ID: "plan-reject", Status: domaindelivery.DeliveryPlanStatusWaitingApproval, RequiresApproval: true, Impact: map[string]any{"approval": []any{map[string]any{"status": "requested"}}}}}
-	service := New(stubApplicationReader{}, stubCatalogReader{}, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil, deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate))
+	service := New(stubApplicationReader{}, stubCatalogReader{}, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil, deliveryActionPermissions(appaccess.PermDeliveryApplicationEnvApprove))
 	plan, err := service.DecideDeliveryPlanApproval(context.Background(), deliveryActionPrincipal(), repo.plan.ID, domaindelivery.DeliveryPlanApprovalInput{Action: "reject", Comment: "missing evidence"})
 	if err != nil {
 		t.Fatalf("DecideDeliveryPlanApproval reject returned error: %v", err)
 	}
 	if plan.Status != domaindelivery.DeliveryPlanStatusDraft || deliveryPlanApprovalGranted(plan) {
 		t.Fatalf("rejected plan state = %q impact=%#v", plan.Status, plan.Impact)
+	}
+}
+
+func TestDeliveryPlanApprovalRequiresDedicatedPermission(t *testing.T) {
+	repo := &planRepository{plan: domaindelivery.DeliveryPlan{
+		ID: "plan-approval", Status: domaindelivery.DeliveryPlanStatusWaitingApproval,
+		ApplicationID: "app-1", ApplicationEnvironmentID: "binding-1", RequiresApproval: true,
+	}}
+	service := New(
+		stubApplicationReader{},
+		stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1"}}},
+		stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate),
+	)
+
+	_, err := service.DecideDeliveryPlanApproval(context.Background(), deliveryActionPrincipal(), repo.plan.ID, domaindelivery.DeliveryPlanApprovalInput{Action: "approve"})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("DecideDeliveryPlanApproval() error = %v, want ErrAccessDenied", err)
 	}
 }
 

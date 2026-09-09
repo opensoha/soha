@@ -52,6 +52,9 @@ func isReadOnlyPOST(method, path string) bool {
 		strings.HasSuffix(path, "/resources/update-plan") ||
 		strings.HasSuffix(path, "/rollback/plan") ||
 		strings.HasSuffix(path, "/access-control/access-reviews") ||
+		strings.HasSuffix(path, "/network-access/policy/preview") ||
+		strings.HasSuffix(path, "/network-access/conflicts/analyze") ||
+		strings.HasSuffix(path, "/network-access/sessions/:sessionID/actions/plan") ||
 		strings.HasSuffix(path, "/observability/logging/preflight") ||
 		strings.HasSuffix(path, "/logs/query") ||
 		strings.HasSuffix(path, "/logs/stream-ticket") ||
@@ -112,6 +115,67 @@ var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatform
 	identityMutationSecuritySurface,
 	settingsMutationSecuritySurface,
 	softwareMutationSecuritySurface,
+	networkAccessMutationSecuritySurface,
+}
+
+func networkAccessMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if !strings.HasPrefix(path, "/api/v1/network-access/") {
+		return nonPlatformMutationSecuritySurfaceEntry{}, false
+	}
+	action := nonPlatformMutationAction(method, path)
+	switch {
+	case strings.HasPrefix(path, "/api/v1/network-access/devices/"):
+		return nonPlatformMutationEntry("EndpointDevice", action, appaccess.PermNetworkAccessEndpointDevicesUpdate, false), true
+	case path == "/api/v1/network-access/enrollments":
+		return nonPlatformMutationEntry("NetworkRuntimeEnrollment", "create", appaccess.PermNetworkAccessEnrollmentsCreate, false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/enrollments/") && strings.HasSuffix(path, "/revoke"):
+		return nonPlatformMutationEntry("NetworkRuntimeEnrollment", "revoke", appaccess.PermNetworkAccessEnrollmentsRevoke, false), true
+	case path == "/api/v1/network-access/access-grants":
+		return nonPlatformMutationEntry("NetworkAccessGrant", "create", appaccess.PermNetworkAccessAccessGrantsCreate, false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/access-grants/") && strings.HasSuffix(path, "/revoke"):
+		return nonPlatformMutationEntry("NetworkAccessGrant", "revoke", appaccess.PermNetworkAccessAccessGrantsRevoke, false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/nas-bindings"):
+		return nonPlatformMutationEntry("NetworkNASBinding", action, appaccess.PermNetworkAccessSitesUpdate, false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/site-profile-bindings"):
+		return nonPlatformMutationEntry("NetworkSiteProfileBinding", action, appaccess.PermNetworkAccessSitesUpdate, false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/sessions/") && strings.HasSuffix(path, "/actions/execute"):
+		return nonPlatformMutationEntry("NetworkSessionCommand", "execute", appaccess.PermNetworkAccessSitesUpdate, false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/gateways"):
+		return nonPlatformMutationEntry("NetworkGateway", action, networkAccessPermission(method, appaccess.PermNetworkAccessGatewaysCreate, appaccess.PermNetworkAccessGatewaysUpdate, ""), false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/mihomo-profiles"):
+		return nonPlatformMutationEntry("NetworkMihomoProfile", action, networkAccessPermission(method, appaccess.PermNetworkAccessMihomoProfilesCreate, appaccess.PermNetworkAccessMihomoProfilesUpdate, appaccess.PermNetworkAccessMihomoProfilesDelete), false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/sites"):
+		return nonPlatformMutationEntry("NetworkSite", action, networkAccessPermission(method, appaccess.PermNetworkAccessSitesCreate, appaccess.PermNetworkAccessSitesUpdate, appaccess.PermNetworkAccessSitesDelete), false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/spaces"):
+		return nonPlatformMutationEntry("NetworkSpace", action, networkAccessPermission(method, appaccess.PermNetworkAccessSpacesCreate, appaccess.PermNetworkAccessSpacesUpdate, appaccess.PermNetworkAccessSpacesDelete), false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/resources"):
+		return nonPlatformMutationEntry("NetworkResource", action, networkAccessPermission(method, appaccess.PermNetworkAccessResourcesCreate, appaccess.PermNetworkAccessResourcesUpdate, appaccess.PermNetworkAccessResourcesDelete), false), true
+	default:
+		return networkAccessPolicyMutationSecuritySurface(method, path)
+	}
+}
+
+func networkAccessPolicyMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	action := nonPlatformMutationAction(method, path)
+	switch {
+	case path == "/api/v1/network-access/policies/compile":
+		return nonPlatformMutationEntry("NetworkPolicySnapshot", "compile", appaccess.PermNetworkAccessPolicyUpdate, false), true
+	case strings.HasPrefix(path, "/api/v1/network-access/policies"):
+		return nonPlatformMutationEntry("NetworkAccessPolicy", action, networkAccessPermission(method, appaccess.PermNetworkAccessPolicyCreate, appaccess.PermNetworkAccessPolicyUpdate, appaccess.PermNetworkAccessPolicyDelete), false), true
+	default:
+		return nonPlatformMutationSecuritySurfaceEntry{}, false
+	}
+}
+
+func networkAccessPermission(method, create, update, delete string) string {
+	switch method {
+	case "POST":
+		return create
+	case "DELETE":
+		return delete
+	default:
+		return update
+	}
 }
 
 func softwareMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {

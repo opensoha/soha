@@ -491,6 +491,59 @@ func TestAuthorizeAllowsDeveloperTriggerActionWithinApplicationGroupScopeGrant(t
 	})
 }
 
+func TestAuthorizeUsesMostSpecificDeliveryScopeGrant(t *testing.T) {
+	tests := []struct {
+		name   string
+		grants []domainscopegrant.Record
+		want   bool
+	}{
+		{
+			name: "environment role replaces application default role",
+			grants: []domainscopegrant.Record{
+				{ID: "app", SubjectType: "user", SubjectID: "user-1", BusinessLineID: "bl-retail", ApplicationIDs: []string{"app-1"}, Role: "ops", Effect: "allow", Enabled: true},
+				{ID: "environment", SubjectType: "user", SubjectID: "user-1", BusinessLineID: "bl-retail", ApplicationIDs: []string{"app-1"}, EnvironmentIDs: []string{"env-prod"}, Role: "readonly", Effect: "allow", Enabled: true},
+			},
+			want: false,
+		},
+		{
+			name: "environment allow overrides application deny",
+			grants: []domainscopegrant.Record{
+				{ID: "app", SubjectType: "user", SubjectID: "user-1", BusinessLineID: "bl-retail", ApplicationIDs: []string{"app-1"}, Role: "readonly", Effect: "deny", Enabled: true},
+				{ID: "environment", SubjectType: "user", SubjectID: "user-1", BusinessLineID: "bl-retail", ApplicationIDs: []string{"app-1"}, EnvironmentIDs: []string{"env-prod"}, Role: "ops", Effect: "allow", Enabled: true},
+			},
+			want: true,
+		},
+		{
+			name: "deny wins within the same scope",
+			grants: []domainscopegrant.Record{
+				{ID: "allow", SubjectType: "user", SubjectID: "user-1", BusinessLineID: "bl-retail", ApplicationIDs: []string{"app-1"}, EnvironmentIDs: []string{"env-prod"}, Role: "ops", Effect: "allow", Enabled: true},
+				{ID: "deny", SubjectType: "team", SubjectID: "team-1", BusinessLineID: "bl-retail", ApplicationIDs: []string{"app-1"}, EnvironmentIDs: []string{"env-prod"}, Role: "readonly", Effect: "deny", Enabled: true},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := New(policy.NewEngine(), nil, stubScopeGrantReader{items: tt.grants}, stubCatalogReader{
+				environments: []domaincatalog.Environment{{ID: "env-prod", Key: "prod"}},
+			})
+			decision, err := service.Authorize(context.Background(), domainaccess.Request{
+				Principal: domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}, Teams: []string{"team-1"}},
+				Action:    domainaccess.ActionUpdate,
+				Subject:   domainaccess.SubjectAttributes{UserID: "user-1", Roles: []string{"admin"}, Teams: []string{"team-1"}},
+				Resource:  domainaccess.ResourceAttributes{Kind: "ApplicationEnvironment", Name: "binding-prod"},
+				Delivery:  domainaccess.DeliveryAttributes{BusinessLineID: "bl-retail", EnvironmentKey: "prod", ApplicationID: "app-1"},
+			})
+			if err != nil {
+				t.Fatalf("Authorize returned error: %v", err)
+			}
+			if decision.Allowed != tt.want {
+				t.Fatalf("decision.Allowed = %v, reason=%q, want %v", decision.Allowed, decision.Reason, tt.want)
+			}
+		})
+	}
+}
+
 func assertDeveloperTriggerAllowed(t *testing.T, grantBusinessLine string, delivery domainaccess.DeliveryAttributes) {
 	t.Helper()
 	service := New(

@@ -34,6 +34,7 @@ func registerProtectedRoutes(protected *gin.RouterGroup, cfg cfgpkg.Config, deps
 		apiHandlers.RegisterAIProductionRoutes(aiRoutes, deps.AIProduction)
 	}
 	registerOperationalAuditRoutes(protected, deps)
+	registerNetworkAccessRoutes(protected, deps)
 	registerAccessRoutes(protected, deps)
 	registerDirectorySyncRoutes(protected, deps)
 	registerProviderPortalRoutes(protected, deps)

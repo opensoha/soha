@@ -513,9 +513,13 @@ func (s *Service) requireRecentStepUp(ctx context.Context, userID, sessionID str
 		return err
 	}
 	if !ok {
-		return fmt.Errorf("%w: recent MFA verification required", apperrors.ErrUnauthorized)
+		return apperrors.NewBusiness(apperrors.ErrMFARequired, "mfa_required", "Recent MFA verification is required.", "需要最近完成多因素认证。")
 	}
 	return nil
+}
+
+func (s *Service) RequireRecentStepUp(ctx context.Context, userID, sessionID string) error {
+	return s.requireRecentStepUp(ctx, userID, sessionID)
 }
 
 func challengeResult(now time.Time, method string) sohaapi.MFAChallengeResult {

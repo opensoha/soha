@@ -42,6 +42,7 @@ type CatalogReader interface {
 	ListEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.Environment, error)
 	ListApplicationEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error)
 	GetApplicationEnvironment(context.Context, domainidentity.Principal, string) (domaincatalog.ApplicationEnvironment, error)
+	AuthorizeApplicationEnvironmentPermission(context.Context, domainidentity.Principal, string, string) (domaincatalog.ApplicationEnvironment, error)
 	CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
 	UpdateApplicationEnvironment(context.Context, domainidentity.Principal, string, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
 }
@@ -495,7 +496,24 @@ func (s *Service) ListReleaseBundles(ctx context.Context, principal domainidenti
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleaseBundlesView); err != nil {
 		return nil, err
 	}
-	return s.repository.ListReleaseBundles(ctx, filter)
+	if strings.TrimSpace(filter.ApplicationID) != "" || strings.TrimSpace(filter.ApplicationEnvironmentID) != "" {
+		if err := s.authorizeRuntimeScope(ctx, principal, filter.ApplicationID, filter.ApplicationEnvironmentID); err != nil {
+			return nil, err
+		}
+	}
+	items, err := s.repository.ListReleaseBundles(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]domaindelivery.ReleaseBundle, 0, len(items))
+	for _, item := range items {
+		if err := s.authorizeRuntimeScope(ctx, principal, item.ApplicationID, item.ApplicationEnvironmentID); err == nil {
+			filtered = append(filtered, item)
+		} else if !isHiddenRuntimeScopeError(err) {
+			return nil, err
+		}
+	}
+	return filtered, nil
 }
 
 func (s *Service) GetReleaseBundle(ctx context.Context, principal domainidentity.Principal, bundleID string) (domaindelivery.ReleaseBundle, error) {
@@ -504,6 +522,9 @@ func (s *Service) GetReleaseBundle(ctx context.Context, principal domainidentity
 	}
 	bundle, err := s.repository.GetReleaseBundle(ctx, strings.TrimSpace(bundleID))
 	if err != nil {
+		return domaindelivery.ReleaseBundle{}, err
+	}
+	if err := s.authorizeRuntimeScope(ctx, principal, bundle.ApplicationID, bundle.ApplicationEnvironmentID); err != nil {
 		return domaindelivery.ReleaseBundle{}, err
 	}
 	artifacts, artifactErr := s.repository.ListExecutionArtifactsByBundle(ctx, bundle.ID)
@@ -517,8 +538,24 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(filter.ApplicationID) != "" || strings.TrimSpace(filter.ApplicationEnvironmentID) != "" {
+		if err := s.authorizeRuntimeScope(ctx, principal, filter.ApplicationID, filter.ApplicationEnvironmentID); err != nil {
+			return nil, err
+		}
+	}
 	items, err := s.repository.ListExecutionTasks(ctx, filter)
-	return domaindelivery.WithOperationStates(items, time.Now().UTC()), err
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]domaindelivery.ExecutionTask, 0, len(items))
+	for _, item := range items {
+		if err := s.authorizeRuntimeScope(ctx, principal, item.ApplicationID, item.ApplicationEnvironmentID); err == nil {
+			filtered = append(filtered, item)
+		} else if !isHiddenRuntimeScopeError(err) {
+			return nil, err
+		}
+	}
+	return domaindelivery.WithOperationStates(filtered, time.Now().UTC()), nil
 }
 
 func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string) (domaindelivery.ExecutionTask, error) {
@@ -527,6 +564,9 @@ func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity
 	}
 	task, err := s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	if err := s.authorizeRuntimeScope(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
 	artifacts, artifactErr := s.repository.ListExecutionArtifacts(ctx, task.ID)
@@ -540,39 +580,134 @@ func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentit
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return nil, err
 	}
-	return s.repository.ListExecutionLogs(ctx, strings.TrimSpace(taskID), limit)
+	taskID = strings.TrimSpace(taskID)
+	task, err := s.repository.GetExecutionTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeRuntimeScope(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
+		return nil, err
+	}
+	return s.repository.ListExecutionLogs(ctx, taskID, limit)
 }
 
 func (s *Service) ListArtifacts(ctx context.Context, principal domainidentity.Principal, filter domaindelivery.ArtifactFilter) ([]domaindelivery.ExecutionArtifact, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return nil, err
 	}
-	return s.repository.ListArtifacts(ctx, filter)
+	scopeApplicationID := strings.TrimSpace(filter.ApplicationID)
+	scopeEnvironmentID := strings.TrimSpace(filter.ApplicationEnvironmentID)
+	if scopeApplicationID == "" && strings.TrimSpace(filter.ExecutionTaskID) != "" {
+		task, err := s.repository.GetExecutionTask(ctx, strings.TrimSpace(filter.ExecutionTaskID))
+		if err != nil {
+			return nil, err
+		}
+		scopeApplicationID = task.ApplicationID
+		scopeEnvironmentID = task.ApplicationEnvironmentID
+	}
+	if scopeApplicationID == "" && strings.TrimSpace(filter.ReleaseBundleID) != "" {
+		bundle, err := s.repository.GetReleaseBundle(ctx, strings.TrimSpace(filter.ReleaseBundleID))
+		if err != nil {
+			return nil, err
+		}
+		scopeApplicationID = bundle.ApplicationID
+		scopeEnvironmentID = bundle.ApplicationEnvironmentID
+	}
+	if scopeApplicationID != "" || scopeEnvironmentID != "" {
+		if err := s.authorizeRuntimeScope(ctx, principal, scopeApplicationID, scopeEnvironmentID); err != nil {
+			return nil, err
+		}
+	}
+	items, err := s.repository.ListArtifacts(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]domaindelivery.ExecutionArtifact, 0, len(items))
+	for _, item := range items {
+		if err := s.authorizeRuntimeScope(ctx, principal, item.ApplicationID, item.ApplicationEnvironmentID); err == nil {
+			filtered = append(filtered, item)
+		} else if !isHiddenRuntimeScopeError(err) {
+			return nil, err
+		}
+	}
+	return filtered, nil
 }
 
 func (s *Service) ListExecutionArtifacts(ctx context.Context, principal domainidentity.Principal, taskID string) ([]domaindelivery.ExecutionArtifact, error) {
-	if s.execution != nil {
-		return s.execution.ListExecutionArtifacts(ctx, principal, strings.TrimSpace(taskID))
-	}
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return nil, err
 	}
-	return s.repository.ListExecutionArtifacts(ctx, strings.TrimSpace(taskID))
+	taskID = strings.TrimSpace(taskID)
+	task, err := s.repository.GetExecutionTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeRuntimeScope(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
+		return nil, err
+	}
+	if s.execution != nil {
+		return s.execution.ListExecutionArtifacts(ctx, principal, taskID)
+	}
+	return s.repository.ListExecutionArtifacts(ctx, taskID)
 }
 
 func (s *Service) ListReleaseBundleArtifacts(ctx context.Context, principal domainidentity.Principal, bundleID string) ([]domaindelivery.ExecutionArtifact, error) {
-	if s.execution != nil {
-		return s.execution.ListReleaseBundleArtifacts(ctx, principal, strings.TrimSpace(bundleID))
-	}
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleaseBundlesView); err != nil {
 		return nil, err
 	}
-	return s.repository.ListExecutionArtifactsByBundle(ctx, strings.TrimSpace(bundleID))
+	bundleID = strings.TrimSpace(bundleID)
+	bundle, err := s.repository.GetReleaseBundle(ctx, bundleID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeRuntimeScope(ctx, principal, bundle.ApplicationID, bundle.ApplicationEnvironmentID); err != nil {
+		return nil, err
+	}
+	if s.execution != nil {
+		return s.execution.ListReleaseBundleArtifacts(ctx, principal, bundleID)
+	}
+	return s.repository.ListExecutionArtifactsByBundle(ctx, bundleID)
+}
+
+func (s *Service) authorizeApplicationView(ctx context.Context, principal domainidentity.Principal, applicationID string) error {
+	applicationID = strings.TrimSpace(applicationID)
+	if applicationID == "" || s.applications == nil {
+		return fmt.Errorf("%w: application scope unavailable", apperrors.ErrAccessDenied)
+	}
+	_, err := s.applications.Get(ctx, principal, applicationID)
+	return err
+}
+
+func (s *Service) authorizeRuntimeScope(ctx context.Context, principal domainidentity.Principal, applicationID, applicationEnvironmentID string) error {
+	applicationID = strings.TrimSpace(applicationID)
+	applicationEnvironmentID = strings.TrimSpace(applicationEnvironmentID)
+	if applicationEnvironmentID == "" {
+		return s.authorizeApplicationView(ctx, principal, applicationID)
+	}
+	if s.catalog == nil {
+		return fmt.Errorf("%w: application environment scope unavailable", apperrors.ErrAccessDenied)
+	}
+	binding, err := s.catalog.GetApplicationEnvironment(ctx, principal, applicationEnvironmentID)
+	if err != nil {
+		return err
+	}
+	if applicationID != "" && strings.TrimSpace(binding.ApplicationID) != applicationID {
+		return fmt.Errorf("%w: application environment does not belong to application", apperrors.ErrAccessDenied)
+	}
+	return nil
+}
+
+func isHiddenRuntimeScopeError(err error) bool {
+	return errors.Is(err, apperrors.ErrAccessDenied) || errors.Is(err, apperrors.ErrNotFound)
 }
 
 func (s *Service) GetBuildRuntimeDetail(ctx context.Context, principal domainidentity.Principal, buildID string) (domaindelivery.RuntimeObjectDetail, error) {
 	record, err := s.builds.Get(ctx, principal, strings.TrimSpace(buildID))
 	if err != nil {
+		return domaindelivery.RuntimeObjectDetail{}, err
+	}
+	bindingID := metadataString(record.Metadata, "applicationEnvironmentId")
+	if err := s.authorizeRuntimeScope(ctx, principal, record.ApplicationID, bindingID); err != nil {
 		return domaindelivery.RuntimeObjectDetail{}, err
 	}
 	artifacts := s.artifactsForRuntimeObject(ctx, domaindelivery.ArtifactFilter{
@@ -582,7 +717,7 @@ func (s *Service) GetBuildRuntimeDetail(ctx context.Context, principal domainide
 		WorkflowRunID:   metadataString(record.Metadata, "triggeredByWorkflowRunId"),
 		Limit:           100,
 	})
-	return s.buildRuntimeObjectDetail(ctx, principal, "build", record.ID, record.ApplicationID, metadataString(record.Metadata, "applicationEnvironmentId"), record, record.Metadata, artifacts, map[string]any{
+	return s.buildRuntimeObjectDetail(ctx, principal, "build", record.ID, record.ApplicationID, bindingID, record, record.Metadata, artifacts, map[string]any{
 		"sourceSystem": record.SourceSystem,
 		"metadata":     record.Metadata,
 		"startedAt":    record.StartedAt,
@@ -595,8 +730,12 @@ func (s *Service) GetWorkflowRuntimeDetail(ctx context.Context, principal domain
 	if err != nil {
 		return domaindelivery.RuntimeObjectDetail{}, err
 	}
+	bindingID := metadataString(run.Metadata, "bindingId")
+	if err := s.authorizeRuntimeScope(ctx, principal, run.ApplicationID, bindingID); err != nil {
+		return domaindelivery.RuntimeObjectDetail{}, err
+	}
 	artifacts := s.artifactsForRuntimeObject(ctx, domaindelivery.ArtifactFilter{WorkflowRunID: run.ID, Limit: 500})
-	return s.buildRuntimeObjectDetail(ctx, principal, "workflow", run.ID, run.ApplicationID, metadataString(run.Metadata, "bindingId"), run, run.Metadata, artifacts, map[string]any{
+	return s.buildRuntimeObjectDetail(ctx, principal, "workflow", run.ID, run.ApplicationID, bindingID, run, run.Metadata, artifacts, map[string]any{
 		"workflowName": run.WorkflowName,
 		"steps":        run.Steps,
 		"nodeRuns":     run.NodeRuns,
@@ -610,6 +749,10 @@ func (s *Service) GetReleaseRuntimeDetail(ctx context.Context, principal domaini
 	if err != nil {
 		return domaindelivery.RuntimeObjectDetail{}, err
 	}
+	bindingID := metadataString(record.Metadata, "applicationEnvironmentId")
+	if err := s.authorizeRuntimeScope(ctx, principal, record.ApplicationID, bindingID); err != nil {
+		return domaindelivery.RuntimeObjectDetail{}, err
+	}
 	artifacts := s.artifactsForRuntimeObject(ctx, domaindelivery.ArtifactFilter{
 		ApplicationID:   record.ApplicationID,
 		ExecutionTaskID: metadataString(record.Metadata, "executionTaskId"),
@@ -617,7 +760,7 @@ func (s *Service) GetReleaseRuntimeDetail(ctx context.Context, principal domaini
 		WorkflowRunID:   metadataString(record.Metadata, "workflowRunId"),
 		Limit:           100,
 	})
-	return s.buildRuntimeObjectDetail(ctx, principal, "release", record.ID, record.ApplicationID, metadataString(record.Metadata, "applicationEnvironmentId"), record, record.Metadata, artifacts, map[string]any{
+	return s.buildRuntimeObjectDetail(ctx, principal, "release", record.ID, record.ApplicationID, bindingID, record, record.Metadata, artifacts, map[string]any{
 		"clusterId":      record.ClusterID,
 		"namespace":      record.Namespace,
 		"deploymentName": record.DeploymentName,
@@ -893,12 +1036,22 @@ func (s *Service) GetDeliveryPlan(ctx context.Context, principal domainidentity.
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsView); err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
-	return s.repository.GetDeliveryPlan(ctx, strings.TrimSpace(planID))
+	plan, err := s.repository.GetDeliveryPlan(ctx, strings.TrimSpace(planID))
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	if err := s.authorizeRuntimeScope(ctx, principal, plan.ApplicationID, plan.ApplicationEnvironmentID); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	return plan, nil
 }
 
 func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainidentity.Principal, planID string) (domaindelivery.DeliveryPlanConfirmResult, error) {
 	plan, err := s.repository.GetDeliveryPlan(ctx, strings.TrimSpace(planID))
 	if err != nil {
+		return domaindelivery.DeliveryPlanConfirmResult{}, err
+	}
+	if err := s.authorizeRuntimeScope(ctx, principal, plan.ApplicationID, plan.ApplicationEnvironmentID); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
 	switch plan.Status {
@@ -912,7 +1065,7 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 	default:
 		return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery plan status %s cannot be confirmed", apperrors.ErrInvalidArgument, plan.Status)
 	}
-	if err := s.authorizeApplicationDeliveryAction(ctx, principal, plan.Action); err != nil {
+	if err := s.authorizeApplicationDeliveryAction(ctx, principal, plan.ApplicationEnvironmentID, plan.Action); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
 	if plan.RequiresApproval && !deliveryPlanApprovalGranted(plan) {
@@ -979,7 +1132,7 @@ func approvalStatus(plan domaindelivery.DeliveryPlan) string {
 }
 
 func (s *Service) DecideDeliveryPlanApproval(ctx context.Context, principal domainidentity.Principal, planID string, input domaindelivery.DeliveryPlanApprovalInput) (domaindelivery.DeliveryPlan, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationEnvApprove); err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
 	plan, err := s.repository.GetDeliveryPlan(ctx, strings.TrimSpace(planID))
@@ -1036,7 +1189,7 @@ func deliveryPlanApprovalGranted(plan domaindelivery.DeliveryPlan) bool {
 }
 
 func (s *Service) authorizeDeliveryPlanApprover(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan) error {
-	binding, err := s.catalog.GetApplicationEnvironment(ctx, principal, plan.ApplicationEnvironmentID)
+	binding, err := s.catalog.AuthorizeApplicationEnvironmentPermission(ctx, principal, plan.ApplicationEnvironmentID, appaccess.PermDeliveryApplicationEnvApprove)
 	if err != nil {
 		return err
 	}
@@ -1110,7 +1263,7 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 	if action != domaindelivery.ApplicationDeliveryActionBuild && len(targets) == 0 {
 		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
 	}
-	if err := s.authorizeApplicationDeliveryAction(ctx, principal, action); err != nil {
+	if err := s.authorizeApplicationDeliveryAction(ctx, principal, binding.ID, action); err != nil {
 		return domaindelivery.ApplicationDeliveryActionResult{}, err
 	}
 	result := domaindelivery.ApplicationDeliveryActionResult{
@@ -1215,22 +1368,32 @@ func normalizeApplicationDeliveryAction(action domaindelivery.ApplicationDeliver
 	return normalized
 }
 
-func (s *Service) authorizeApplicationDeliveryAction(ctx context.Context, principal domainidentity.Principal, action domaindelivery.ApplicationDeliveryActionKind) error {
+func (s *Service) authorizeApplicationDeliveryAction(ctx context.Context, principal domainidentity.Principal, bindingID string, action domaindelivery.ApplicationDeliveryActionKind) error {
+	permissionKeys := []string{}
 	switch action {
 	case domaindelivery.ApplicationDeliveryActionBuild:
-		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryBuildsTrigger)
+		permissionKeys = append(permissionKeys, appaccess.PermDeliveryBuildsTrigger)
 	case domaindelivery.ApplicationDeliveryActionDeploy:
-		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleasesTrigger)
+		permissionKeys = append(permissionKeys, appaccess.PermDeliveryReleasesTrigger)
 	case domaindelivery.ApplicationDeliveryActionWorkflow, domaindelivery.ApplicationDeliveryActionVerify, domaindelivery.ApplicationDeliveryActionRollback:
-		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsTrigger)
+		permissionKeys = append(permissionKeys, appaccess.PermDeliveryWorkflowsTrigger)
 	case domaindelivery.ApplicationDeliveryActionBuildDeploy:
-		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryBuildsTrigger); err != nil {
-			return err
-		}
-		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsTrigger)
+		permissionKeys = append(permissionKeys, appaccess.PermDeliveryBuildsTrigger, appaccess.PermDeliveryWorkflowsTrigger)
 	default:
 		return fmt.Errorf("%w: unsupported application delivery action %q", apperrors.ErrInvalidArgument, action)
 	}
+	if s.catalog == nil {
+		return fmt.Errorf("%w: application environment scope unavailable", apperrors.ErrAccessDenied)
+	}
+	for _, permissionKey := range permissionKeys {
+		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey); err != nil {
+			return err
+		}
+		if _, err := s.catalog.AuthorizeApplicationEnvironmentPermission(ctx, principal, bindingID, permissionKey); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) triggerApplicationBuild(ctx context.Context, principal domainidentity.Principal, app domainapp.App, binding domaincatalog.ApplicationEnvironment, input domaindelivery.ApplicationDeliveryActionInput) (domainbuild.Record, error) {
@@ -2557,6 +2720,15 @@ func latestBuildForBinding(binding domaincatalog.ApplicationEnvironment, items [
 func latestWorkflowForBinding(binding domaincatalog.ApplicationEnvironment, items []domainworkflow.Run) *domainworkflow.Run {
 	for _, item := range items {
 		if item.ApplicationID != binding.ApplicationID {
+			continue
+		}
+		if bindingID := metadataString(item.Metadata, "bindingId"); bindingID != "" && bindingID == binding.ID {
+			copyItem := item
+			return &copyItem
+		}
+	}
+	for _, item := range items {
+		if item.ApplicationID != binding.ApplicationID || metadataString(item.Metadata, "bindingId") != "" {
 			continue
 		}
 		if matchesBindingTarget(binding, item.ClusterID, item.Namespace, item.DeploymentName) {
