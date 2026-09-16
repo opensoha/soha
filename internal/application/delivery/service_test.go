@@ -3,7 +3,6 @@ package delivery
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -254,7 +253,7 @@ type stubWorkflowReader struct {
 	readGate     *concurrentReadGate
 }
 
-func (s stubWorkflowReader) List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error) {
+func (s stubWorkflowReader) List(context.Context, domainidentity.Principal, string, string, int) ([]domainworkflow.Run, error) {
 	s.readGate.wait("workflows")
 	return s.listItems, nil
 }
@@ -659,6 +658,9 @@ func (stubRepository) UpdateDeliveryPlan(context.Context, domaindelivery.Deliver
 }
 
 type draftRepository struct {
+	confirmationReceipt                        *domaindelivery.DeliveryDraftConfirmResult
+	creationReceipt                            *domaindelivery.DeliveryDraft
+	creationDigest, creationActor, creationKey string
 	stubRepository
 	draft       domaindelivery.DeliveryDraft
 	createInput *domaindelivery.DeliveryDraftInput
@@ -688,10 +690,10 @@ func (w *manifestPackageWriter) Create(_ context.Context, _ domainidentity.Princ
 		Files:         input.Files,
 		Bindings:      input.Bindings,
 	}
-	w.items = append(w.items, item)
 	if w.createErr != nil {
 		return domainmanifest.Package{}, w.createErr
 	}
+	w.items = append(w.items, item)
 	return item, nil
 }
 
@@ -741,6 +743,10 @@ func (r *planRepository) CreateDeliveryPlan(_ context.Context, input domaindeliv
 	r.createCount++
 	r.createInput = &input
 	plan := domaindelivery.DeliveryPlan{
+		DockerSnapshots: input.DockerSnapshots, DockerPrepared: input.DockerPrepared,
+		ManifestSnapshots:        input.ManifestSnapshots,
+		HelmSnapshots:            input.HelmSnapshots,
+		HelmPreparedCiphertext:   input.HelmPreparedCiphertext,
 		ID:                       firstNonEmpty(input.ID, "plan-created"),
 		Source:                   firstNonEmpty(input.Source, domaindelivery.DeliveryPlanSourceManual),
 		Status:                   domaindelivery.DeliveryPlanStatusDraft,
@@ -1065,15 +1071,16 @@ func TestConfirmDeliveryDraftCreatesApplicationServicesAndBindings(t *testing.T)
 	if bindingCreateCount != 1 {
 		t.Fatalf("binding create count = %d, want 1", bindingCreateCount)
 	}
-	if repo.updateCount != 2 {
-		t.Fatalf("draft update count = %d, want 2", repo.updateCount)
+	if repo.updateCount != 1 {
+		t.Fatalf("draft update count = %d, want 1 committed receipt", repo.updateCount)
 	}
 	if len(result.Spec.Services) != 1 {
 		t.Fatalf("spec services length = %d, want 1", len(result.Spec.Services))
 	}
 
-	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); err == nil {
-		t.Fatal("ConfirmDeliveryDraft second call returned nil error, want already-confirmed error")
+	replay, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1")
+	if err != nil || replay.Application.ID != result.Application.ID || appCreateCount != 1 || serviceCreateCount != 1 || bindingCreateCount != 1 || repo.updateCount != 1 {
+		t.Fatalf("confirmation replay repeated writes or lost receipt: %+v %v", replay, err)
 	}
 }
 
@@ -1174,18 +1181,19 @@ func TestConfirmDeliveryDraftSeedsApplicationManifestPackage(t *testing.T) {
 
 func TestConfirmDeliveryDraftRestoresDraftAfterManifestSeedFailure(t *testing.T) {
 	seedErr := errors.New("manifest storage unavailable")
+	version := int64(1)
 	appUpdateCount := 0
 	serviceUpdateCount := 0
 	bindingUpdateCount := 0
 	repo := &draftRepository{draft: domaindelivery.DeliveryDraft{
 		ID: "draft-1", Source: domaindelivery.DeliveryDraftSourceBlueprint, Status: domaindelivery.DeliveryDraftStatusDraft,
-		ApplicationDraft:    domaindelivery.BlueprintApplicationDraft{Name: "Demo API", Key: "demo-api", Enabled: true},
+		ApplicationDraft:    domaindelivery.BlueprintApplicationDraft{ID: "app-created", ExpectedVersion: &version, Name: "Demo API", Key: "demo-api", Enabled: true},
 		Services:            []domaindelivery.DeliveryDraftService{{Key: "api", Name: "API", ServiceKind: domainapp.ServiceKindKubernetesWorkload, Enabled: true}},
 		EnvironmentBindings: []domaindelivery.BlueprintEnvironmentBindingTemplate{{EnvironmentKey: "dev"}},
 		Files:               []domaindelivery.BlueprintFileTemplate{{Path: "deploy/deployment.yaml", Kind: "yaml_manifest", Content: "kind: Deployment\n"}},
 		PostCreateActions:   []string{"create_manifest_package"},
 	}}
-	app := domainapp.App{ID: "app-created", Key: "demo-api", Name: "Demo API"}
+	app := domainapp.App{ID: "app-created", Version: 2, Key: "demo-api", Name: "Demo API"}
 	binding := domaincatalog.ApplicationEnvironment{ID: "binding-dev", ApplicationID: app.ID, EnvironmentID: "env-dev", EnvironmentKey: "dev"}
 	manifestWriter := &manifestPackageWriter{createErr: seedErr}
 	service := New(
@@ -1202,29 +1210,30 @@ func TestConfirmDeliveryDraftRestoresDraftAfterManifestSeedFailure(t *testing.T)
 	)
 	service.SetManifestPackages(manifestWriter)
 
-	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); !errors.Is(err, seedErr) || !strings.Contains(err.Error(), "application changes retained; retry confirmation") {
-		t.Fatalf("ConfirmDeliveryDraft error = %v, want retryable partial-completion context", err)
+	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); !errors.Is(err, seedErr) {
+		t.Fatalf("ConfirmDeliveryDraft error = %v, want seed error with transaction rollback", err)
 	}
-	if repo.draft.Status != domaindelivery.DeliveryDraftStatusDraft || repo.updateCount != 2 {
-		t.Fatalf("draft after failure = status %q, updates %d; want draft and 2 updates", repo.draft.Status, repo.updateCount)
+	if repo.draft.Status != domaindelivery.DeliveryDraftStatusDraft || repo.updateCount != 0 {
+		t.Fatalf("draft after failure = status %q, updates %d; want draft without a committed receipt", repo.draft.Status, repo.updateCount)
 	}
 	if appUpdateCount != 1 || serviceUpdateCount != 1 || bindingUpdateCount != 1 || len(manifestWriter.inputs) != 1 {
 		t.Fatalf("first attempt writes = app %d, service %d, binding %d, manifest %d; want one each", appUpdateCount, serviceUpdateCount, bindingUpdateCount, len(manifestWriter.inputs))
 	}
 
+	manifestWriter.createErr = nil
 	result, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1")
 	if err != nil {
 		t.Fatalf("ConfirmDeliveryDraft retry error = %v", err)
 	}
-	if result.Draft.Status != domaindelivery.DeliveryDraftStatusConfirmed || repo.updateCount != 4 {
-		t.Fatalf("draft after retry = status %q, updates %d; want confirmed and 4 updates", result.Draft.Status, repo.updateCount)
+	if result.Draft.Status != domaindelivery.DeliveryDraftStatusConfirmed || repo.updateCount != 1 {
+		t.Fatalf("draft after retry = status %q, updates %d; want one confirmed receipt", result.Draft.Status, repo.updateCount)
 	}
-	if appUpdateCount != 2 || serviceUpdateCount != 2 || bindingUpdateCount != 2 || len(manifestWriter.inputs) != 1 {
-		t.Fatalf("retry writes = app %d, service %d, binding %d, manifest %d; want idempotent upserts and one seed", appUpdateCount, serviceUpdateCount, bindingUpdateCount, len(manifestWriter.inputs))
+	if appUpdateCount != 2 || serviceUpdateCount != 2 || bindingUpdateCount != 2 || len(manifestWriter.inputs) != 2 {
+		t.Fatalf("retry writes = app %d, service %d, binding %d, manifest %d; want a new transaction and one committed seed", appUpdateCount, serviceUpdateCount, bindingUpdateCount, len(manifestWriter.inputs))
 	}
 }
 
-func TestConfirmDeliveryDraftStopsWhenClaimUpdateFails(t *testing.T) {
+func TestConfirmDeliveryDraftStopsWhenConfirmationLockFails(t *testing.T) {
 	appCreateCount := 0
 	serviceCreateCount := 0
 	bindingCreateCount := 0
@@ -1277,10 +1286,10 @@ func TestConfirmDeliveryDraftStopsWhenClaimUpdateFails(t *testing.T) {
 	)
 
 	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); err == nil {
-		t.Fatal("ConfirmDeliveryDraft returned nil error, want claim update failure")
+		t.Fatal("ConfirmDeliveryDraft returned nil error, want confirmation lock failure")
 	}
-	if repo.updateCount != 1 {
-		t.Fatalf("draft update count = %d, want 1", repo.updateCount)
+	if repo.updateCount != 0 {
+		t.Fatalf("draft update count = %d, want 0", repo.updateCount)
 	}
 	if appCreateCount != 0 {
 		t.Fatalf("application create count = %d, want 0", appCreateCount)
@@ -1333,8 +1342,8 @@ func TestConfirmDeliveryDraftRestoresDraftStatusWhenApplyFails(t *testing.T) {
 	if repo.draft.Status != domaindelivery.DeliveryDraftStatusDraft {
 		t.Fatalf("draft status after failed confirm = %q, want draft", repo.draft.Status)
 	}
-	if repo.updateCount != 2 {
-		t.Fatalf("draft update count after failed confirm = %d, want claim and restore updates", repo.updateCount)
+	if repo.updateCount != 0 {
+		t.Fatalf("draft update count after failed confirm = %d, want no committed receipt", repo.updateCount)
 	}
 	if appCreateCount != 1 {
 		t.Fatalf("application create count = %d, want 1", appCreateCount)
@@ -1358,8 +1367,8 @@ func TestConfirmDeliveryDraftRestoresDraftStatusWhenApplyFails(t *testing.T) {
 	if result.Draft.Status != domaindelivery.DeliveryDraftStatusConfirmed {
 		t.Fatalf("draft status after retry = %q, want confirmed", result.Draft.Status)
 	}
-	if repo.updateCount != 4 {
-		t.Fatalf("draft update count after retry = %d, want 4", repo.updateCount)
+	if repo.updateCount != 1 {
+		t.Fatalf("draft update count after retry = %d, want one committed receipt", repo.updateCount)
 	}
 }
 
@@ -1502,6 +1511,47 @@ func TestGetDeliveryPlanChecksApplicationEnvironmentScope(t *testing.T) {
 	_, err := service.GetDeliveryPlan(context.Background(), deliveryActionPrincipal(), repo.plan.ID)
 	if !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("GetDeliveryPlan() error = %v, want ErrAccessDenied", err)
+	}
+}
+
+func TestConfirmedPlanReaderRequiresCurrentApprovalAndScope(t *testing.T) {
+	for _, scenario := range []string{"approved", "no approval required", "unapproved", "revoked", "draft", "scope denied"} {
+		t.Run(scenario, func(t *testing.T) {
+			repo := &planRepository{plan: domaindelivery.DeliveryPlan{ID: "plan", ApplicationID: "app-1", ApplicationEnvironmentID: "binding-1", Status: domaindelivery.DeliveryPlanStatusConfirmed, RequiresApproval: true, Impact: map[string]any{"approval": []any{map[string]any{"status": "approved"}}}}}
+			catalog := stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{{ID: "binding-1", ApplicationID: "app-1"}}}
+			switch scenario {
+			case "no approval required":
+				repo.plan.RequiresApproval = false
+				repo.plan.Impact = nil
+			case "unapproved":
+				repo.plan.Impact = nil
+			case "revoked":
+				approvals, ok := repo.plan.Impact["approval"].([]any)
+				if !ok {
+					t.Fatal("unexpected approval impact")
+				}
+				repo.plan.Impact["approval"] = append(approvals, map[string]any{"status": "rejected"})
+			case "draft":
+				repo.plan.Status = domaindelivery.DeliveryPlanStatusDraft
+			case "scope denied":
+				catalog.getErrByBindingID = map[string]error{"binding-1": apperrors.ErrAccessDenied}
+			}
+			service := New(stubApplicationReader{app: domainapp.App{ID: "app-1"}}, catalog, stubBuildReader{}, stubWorkflowReader{}, stubReleaseReader{}, repo, nil, nil, deliveryActionPermissions(appaccess.PermDeliveryApplicationsView))
+			_, err := service.GetConfirmedDeliveryPlan(t.Context(), deliveryActionPrincipal(), "plan")
+			if scenario == "approved" || scenario == "no approval required" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			want := apperrors.ErrConflict
+			if scenario == "scope denied" {
+				want = apperrors.ErrAccessDenied
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("error=%v, want %v", err, want)
+			}
+		})
 	}
 }
 
@@ -2462,4 +2512,68 @@ func TestTriggerApplicationDeliveryActionDeployRequiresReleasePermission(t *test
 	if releaseCount != 0 {
 		t.Fatalf("release trigger count = %d, want 0", releaseCount)
 	}
+}
+
+func TestServicePresetRetainsPublishedTemplateParameters(t *testing.T) {
+	reference := &domaincatalog.DeploymentTemplateBinding{TemplateID: "http", Version: 2, Parameters: map[string]any{"enabled": false, "replicas": float64(0)}}
+	blueprint := domaindelivery.DeliveryBlueprint{Services: []domaindelivery.DeliveryDraftService{{Key: "web", Name: "Web", Enabled: true, DeploymentTemplate: reference}}}
+	spec := renderedSpecFromBlueprint(blueprint)
+	input := serviceInputFromDraft(spec.Services[0])
+	if input.DeploymentTemplate == nil || input.DeploymentTemplate.TemplateID != "http" || input.DeploymentTemplate.Version != 2 || input.DeploymentTemplate.Parameters["enabled"] != false || input.DeploymentTemplate.Parameters["replicas"] != float64(0) {
+		t.Fatalf("template preset changed: %+v", input.DeploymentTemplate)
+	}
+}
+
+func (stubRepository) FindDeliveryDraftCreation(context.Context, string, string, string) (domaindelivery.DeliveryDraft, error) {
+	return domaindelivery.DeliveryDraft{}, apperrors.ErrNotFound
+}
+func (stubRepository) CreateDeliveryDraftIdempotent(context.Context, domaindelivery.DeliveryDraftInput, string, string) (domaindelivery.DeliveryDraft, error) {
+	return domaindelivery.DeliveryDraft{}, apperrors.ErrUnsupportedOperation
+}
+func (stubRepository) WithDeliveryDraftConfirmation(context.Context, string, func(context.Context, domaindelivery.DeliveryDraft, *domaindelivery.DeliveryDraftConfirmResult) (domaindelivery.DeliveryDraftConfirmResult, error)) (domaindelivery.DeliveryDraftConfirmResult, error) {
+	return domaindelivery.DeliveryDraftConfirmResult{}, apperrors.ErrUnsupportedOperation
+}
+func (stubRepository) GetDeliveryDraftConfirmation(context.Context, string) (domaindelivery.DeliveryDraftConfirmResult, error) {
+	return domaindelivery.DeliveryDraftConfirmResult{}, apperrors.ErrNotFound
+}
+func (r *draftRepository) WithDeliveryDraftConfirmation(ctx context.Context, _ string, apply func(context.Context, domaindelivery.DeliveryDraft, *domaindelivery.DeliveryDraftConfirmResult) (domaindelivery.DeliveryDraftConfirmResult, error)) (domaindelivery.DeliveryDraftConfirmResult, error) {
+	if r.updateErr != nil {
+		return domaindelivery.DeliveryDraftConfirmResult{}, r.updateErr
+	}
+	result, err := apply(ctx, r.draft, r.confirmationReceipt)
+	if err != nil {
+		return result, err
+	}
+	if r.confirmationReceipt == nil {
+		r.updateCount++
+		r.draft = result.Draft
+		r.confirmationReceipt = &result
+	}
+	return result, nil
+}
+func (r *draftRepository) GetDeliveryDraftConfirmation(context.Context, string) (domaindelivery.DeliveryDraftConfirmResult, error) {
+	if r.confirmationReceipt == nil {
+		return domaindelivery.DeliveryDraftConfirmResult{}, apperrors.ErrNotFound
+	}
+	return *r.confirmationReceipt, nil
+}
+
+func (r *draftRepository) FindDeliveryDraftCreation(_ context.Context, actor, key, digest string) (domaindelivery.DeliveryDraft, error) {
+	if r.creationReceipt == nil || actor != r.creationActor || key != r.creationKey {
+		return domaindelivery.DeliveryDraft{}, apperrors.ErrNotFound
+	}
+	if digest != r.creationDigest {
+		return domaindelivery.DeliveryDraft{}, apperrors.ErrConflict
+	}
+	return *r.creationReceipt, nil
+}
+func (r *draftRepository) CreateDeliveryDraftIdempotent(ctx context.Context, input domaindelivery.DeliveryDraftInput, actor, digest string) (domaindelivery.DeliveryDraft, error) {
+	draft, err := r.CreateDeliveryDraft(ctx, input, actor)
+	if err == nil {
+		r.creationReceipt = &draft
+		r.creationDigest = digest
+		r.creationActor = actor
+		r.creationKey = input.IdempotencyKey
+	}
+	return draft, err
 }

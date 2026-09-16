@@ -17,6 +17,9 @@ func (d *Direct) RestartDeployment(ctx context.Context, clusterID, namespace, na
 	if err != nil {
 		return err
 	}
+	if err := validateResourceMutation(item); err != nil {
+		return err
+	}
 	setRestartAnnotation(&item.Spec.Template.Annotations)
 	_, err = bundle.Typed.AppsV1().Deployments(namespace).Update(queryCtx, item, metav1.UpdateOptions{})
 	return err
@@ -30,6 +33,9 @@ func (d *Direct) ScaleDeployment(ctx context.Context, clusterID, namespace, name
 	defer cancel()
 	item, err := bundle.Typed.AppsV1().Deployments(namespace).Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
+		return err
+	}
+	if err := validateResourceMutation(item); err != nil {
 		return err
 	}
 	item.Spec.Replicas = &replicas
@@ -47,6 +53,9 @@ func (d *Direct) RestartStatefulSet(ctx context.Context, clusterID, namespace, n
 	if err != nil {
 		return err
 	}
+	if err := validateResourceMutation(item); err != nil {
+		return err
+	}
 	setRestartAnnotation(&item.Spec.Template.Annotations)
 	_, err = bundle.Typed.AppsV1().StatefulSets(namespace).Update(queryCtx, item, metav1.UpdateOptions{})
 	return err
@@ -62,6 +71,9 @@ func (d *Direct) ScaleStatefulSet(ctx context.Context, clusterID, namespace, nam
 	if err != nil {
 		return err
 	}
+	if err := validateResourceMutation(item); err != nil {
+		return err
+	}
 	item.Spec.Replicas = &replicas
 	_, err = bundle.Typed.AppsV1().StatefulSets(namespace).Update(queryCtx, item, metav1.UpdateOptions{})
 	return err
@@ -75,6 +87,9 @@ func (d *Direct) RestartDaemonSet(ctx context.Context, clusterID, namespace, nam
 	defer cancel()
 	item, err := bundle.Typed.AppsV1().DaemonSets(namespace).Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
+		return err
+	}
+	if err := validateResourceMutation(item); err != nil {
 		return err
 	}
 	setRestartAnnotation(&item.Spec.Template.Annotations)

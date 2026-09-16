@@ -202,20 +202,24 @@ func (r *Repository) ListOutposts(ctx context.Context, filter domainprovider.Out
 	var builder strings.Builder
 	args := make([]any, 0)
 	builder.WriteString(`
-		SELECT id, name, mode, endpoint, token_hash, status, version, last_seen_at, metadata,
-		       created_by, updated_by, created_at, updated_at
-		FROM identity_outposts
+		SELECT o.id, o.name, o.mode, o.endpoint, o.token_hash, o.status, o.version, o.last_seen_at, o.metadata,
+		       o.created_by, o.updated_by, o.created_at, o.updated_at,
+		       o.forward_auth_url, o.claimed_agent_id, o.protocol_version, o.runtime_version,
+		       COALESCE(v.configuration_version, 0), o.applied_configuration_version,
+		       o.configuration_expires_at, o.last_heartbeat_at, o.runtime_status, o.runtime_reason
+		FROM identity_outposts o
+		LEFT JOIN identity_outpost_runtime_versions v ON v.outpost_id = o.id
 		WHERE 1 = 1
 	`)
 	if strings.TrimSpace(filter.Mode) != "" {
-		builder.WriteString(` AND mode = ?`)
+		builder.WriteString(` AND o.mode = ?`)
 		args = append(args, strings.TrimSpace(filter.Mode))
 	}
 	if strings.TrimSpace(filter.Status) != "" {
-		builder.WriteString(` AND status = ?`)
+		builder.WriteString(` AND o.status = ?`)
 		args = append(args, strings.TrimSpace(filter.Status))
 	}
-	builder.WriteString(` ORDER BY name ASC, id ASC`)
+	builder.WriteString(` ORDER BY o.name ASC, o.id ASC`)
 	if filter.Limit > 0 {
 		builder.WriteString(` LIMIT ?`)
 		args = append(args, filter.Limit)
@@ -242,10 +246,14 @@ func (r *Repository) ListOutposts(ctx context.Context, filter domainprovider.Out
 
 func (r *Repository) GetOutpost(ctx context.Context, outpostID string) (domainprovider.Outpost, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, mode, endpoint, token_hash, status, version, last_seen_at, metadata,
-		       created_by, updated_by, created_at, updated_at
-		FROM identity_outposts
-		WHERE id = ?
+		SELECT o.id, o.name, o.mode, o.endpoint, o.token_hash, o.status, o.version, o.last_seen_at, o.metadata,
+		       o.created_by, o.updated_by, o.created_at, o.updated_at,
+		       o.forward_auth_url, o.claimed_agent_id, o.protocol_version, o.runtime_version,
+		       COALESCE(v.configuration_version, 0), o.applied_configuration_version,
+		       o.configuration_expires_at, o.last_heartbeat_at, o.runtime_status, o.runtime_reason
+		FROM identity_outposts o
+		LEFT JOIN identity_outpost_runtime_versions v ON v.outpost_id = o.id
+		WHERE o.id = ?
 		LIMIT 1
 	`, strings.TrimSpace(outpostID)).Row()
 	item, err := scanOutpost(row)
@@ -266,12 +274,12 @@ func (r *Repository) CreateOutpost(ctx context.Context, item domainprovider.Outp
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO identity_outposts (
 			id, name, mode, endpoint, token_hash, status, version, last_seen_at, metadata,
-			created_by, updated_by, created_at, updated_at
+			created_by, updated_by, created_at, updated_at, forward_auth_url
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?)
 	`, item.ID, item.Name, item.Mode, nullableString(item.Endpoint), nullableString(item.TokenHash),
 		item.Status, nullableString(item.Version), item.LastSeenAt, metadata,
-		item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt, nullableString(item.ForwardAuthURL)).Error; err != nil {
 		return domainprovider.Outpost{}, err
 	}
 	return r.GetOutpost(ctx, item.ID)
@@ -284,11 +292,11 @@ func (r *Repository) UpdateOutpost(ctx context.Context, item domainprovider.Outp
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE identity_outposts
-		SET name = ?, mode = ?, endpoint = ?, token_hash = ?, status = ?, version = ?,
-		    last_seen_at = ?, metadata = ?::jsonb, updated_by = ?, updated_at = ?
+		SET name = ?, mode = ?, endpoint = ?, forward_auth_url = ?,
+		    metadata = ?::jsonb, updated_by = ?, updated_at = ?
 		WHERE id = ?
-	`, item.Name, item.Mode, nullableString(item.Endpoint), nullableString(item.TokenHash), item.Status,
-		nullableString(item.Version), item.LastSeenAt, metadata, item.UpdatedBy, item.UpdatedAt, item.ID)
+	`, item.Name, item.Mode, nullableString(item.Endpoint), nullableString(item.ForwardAuthURL),
+		metadata, item.UpdatedBy, item.UpdatedAt, item.ID)
 	if result.Error != nil {
 		return domainprovider.Outpost{}, result.Error
 	}
@@ -816,6 +824,8 @@ func scanOutpost(row scanner) (domainprovider.Outpost, error) {
 	var item domainprovider.Outpost
 	var endpoint, tokenHash, version sql.NullString
 	var lastSeenAt sql.NullTime
+	var forwardAuthURL, claimedAgentID, protocolVersion, runtimeVersion sql.NullString
+	var configurationExpiresAt, lastHeartbeatAt sql.NullTime
 	var metadataRaw []byte
 	if err := row.Scan(
 		&item.ID,
@@ -831,6 +841,16 @@ func scanOutpost(row scanner) (domainprovider.Outpost, error) {
 		&item.UpdatedBy,
 		&item.CreatedAt,
 		&item.UpdatedAt,
+		&forwardAuthURL,
+		&claimedAgentID,
+		&protocolVersion,
+		&runtimeVersion,
+		&item.ConfigurationVersion,
+		&item.AppliedConfigurationVersion,
+		&configurationExpiresAt,
+		&lastHeartbeatAt,
+		&item.RuntimeStatus,
+		&item.RuntimeReason,
 	); err != nil {
 		return domainprovider.Outpost{}, err
 	}
@@ -845,6 +865,16 @@ func scanOutpost(row scanner) (domainprovider.Outpost, error) {
 	}
 	if lastSeenAt.Valid {
 		item.LastSeenAt = &lastSeenAt.Time
+	}
+	item.ForwardAuthURL = forwardAuthURL.String
+	item.ClaimedAgentID = claimedAgentID.String
+	item.ProtocolVersion = protocolVersion.String
+	item.RuntimeVersion = runtimeVersion.String
+	if configurationExpiresAt.Valid {
+		item.ConfigurationExpiresAt = &configurationExpiresAt.Time
+	}
+	if lastHeartbeatAt.Valid {
+		item.LastHeartbeatAt = &lastHeartbeatAt.Time
 	}
 	if err := unmarshalJSON(metadataRaw, &item.Metadata, true); err != nil {
 		return domainprovider.Outpost{}, fmt.Errorf("decode outpost metadata: %w", err)

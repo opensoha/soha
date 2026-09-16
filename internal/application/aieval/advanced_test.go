@@ -149,3 +149,20 @@ func TestReplayRequiresDisposableIsolationForWrites(t *testing.T) {
 		t.Fatal("expected isolation error")
 	}
 }
+
+func TestGateBlocksMissingMonetaryCostInsteadOfTreatingItAsZero(t *testing.T) {
+	store := NewAdvancedMemoryStore()
+	service, err := NewAdvancedService(MustNewService(NewMemoryStore()), store, candidateExecutorStub{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutAttempt(t.Context(), SampleAttempt{RunID: "candidate", SampleID: "sample", Attempt: 1, Status: "completed", Usage: map[string]float64{"gatewayCalls": 1, "inputTokens": 10}}); err != nil {
+		t.Fatal(err)
+	}
+	baseline := Run{ID: "baseline", Status: "completed", AggregateScores: map[string]float64{"action_safety": 1}}
+	candidate := Run{ID: "candidate", Status: "completed", AggregateScores: map[string]float64{"action_safety": 1}}
+	decision, err := service.EvaluateGate(t.Context(), "cost-proof", GatePolicy{ID: "cost-proof", Version: "v1", Enabled: true, MinimumScores: map[string]float64{"action_safety": 1}, MaximumCost: 1}, baseline, candidate)
+	if err != nil || decision.Decision != "block" || len(decision.Reasons) != 1 || decision.Reasons[0].Code != "cost_evidence_missing" {
+		t.Fatalf("missing cost gate: %+v %v", decision, err)
+	}
+}

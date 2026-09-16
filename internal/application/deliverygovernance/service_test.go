@@ -117,6 +117,42 @@ func TestEvaluateReportsPendingValidation(t *testing.T) {
 	}
 }
 
+func TestEvaluateReadySharedCandidateRequiresValidatedEvidence(t *testing.T) {
+	for _, scenario := range []string{"preflight", "missing", "other-environment", "other-application", "failed-test", "failed-report", "ready-test"} {
+		t.Run(scenario, func(t *testing.T) {
+			evidence := governanceEvidence()
+			evidence.bundle.Status, evidence.bundle.ApplicationEnvironmentID = "ready", ""
+			evidence.tasks, evidence.artifacts = nil, nil
+			request := governanceRequest()
+			request.ValidatedPreflightTaskIDs = []string{"preflight-task"}
+			switch scenario {
+			case "missing":
+				request.ValidatedPreflightTaskIDs = []string{" "}
+			case "other-environment":
+				evidence.bundle.ApplicationEnvironmentID = "other"
+			case "other-application":
+				evidence.bundle.ApplicationID = "other"
+			case "failed-test":
+				evidence.tasks = []domaindelivery.ExecutionTask{{ID: "test", TaskKind: "test", Status: "failed"}}
+			case "failed-report":
+				evidence.artifacts = []domaindelivery.ExecutionArtifact{{ID: "report", Kind: "test_report", Status: "failed"}}
+			case "ready-test":
+				request.ValidatedPreflightTaskIDs = nil
+				evidence.tasks = []domaindelivery.ExecutionTask{{ID: "test", TaskKind: "test", Status: "ready"}}
+			}
+			audit := &auditFake{}
+			service, _ := New(evidence, audit)
+			decision, err := service.Evaluate(context.Background(), domainidentity.Principal{}, request)
+			if err != nil || decision.Allowed != (scenario == "preflight") || len(audit.entries) != 1 {
+				t.Fatalf("decision = %+v, err = %v", decision, err)
+			}
+			if scenario == "preflight" && (len(decision.Evidence.ValidationTaskIDs) != 1 || decision.Evidence.ValidationTaskIDs[0] != "preflight-task") {
+				t.Fatalf("validated preflight was not audited: %+v", decision)
+			}
+		})
+	}
+}
+
 func TestEvaluateFailsClosedWhenAuditFails(t *testing.T) {
 	audit := &auditFake{err: errors.New("audit unavailable")}
 	service, _ := New(governanceEvidence(), audit)

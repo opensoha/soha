@@ -71,12 +71,16 @@ func (*OAuthProvider) requestToken(ctx context.Context, config appsystemintegrat
 	if timeout <= 0 {
 		timeout = 15 * time.Second
 	}
-	resp, err := (&http.Client{Timeout: timeout}).Do(req)
+	client := config.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return appsystemintegration.OAuthToken{}, fmt.Errorf("%w: gitlab oauth request failed", apperrors.ErrClusterUnready)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= http.StatusBadRequest {
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return appsystemintegration.OAuthToken{}, fmt.Errorf("%w: gitlab oauth request returned status %d", apperrors.ErrClusterUnready, resp.StatusCode)
 	}
 	var response struct {

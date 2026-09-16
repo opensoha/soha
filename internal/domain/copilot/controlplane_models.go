@@ -104,13 +104,21 @@ type WorkbenchDataSource struct {
 	ValidationMessage string `json:"validationMessage,omitempty"`
 }
 
+type WorkbenchModelOption struct {
+	PublicModel      string   `json:"publicModel"`
+	ReasoningEfforts []string `json:"reasoningEfforts"`
+}
+
 type WorkbenchCatalog struct {
-	Adapters         []domainmcp.Adapter        `json:"adapters"`
-	DataSources      []WorkbenchDataSource      `json:"dataSources"`
-	AnalysisProfiles []WorkbenchAnalysisProfile `json:"analysisProfiles"`
-	SkillsRegistry   []WorkbenchSkill           `json:"skillsRegistry,omitempty"`
-	AgentProviders   []AgentProvider            `json:"agentProviders,omitempty"`
-	Capabilities     []AgentCapability          `json:"capabilities,omitempty"`
-	ToolBindings     []AgentToolBinding         `json:"toolBindings,omitempty"`
-	SkillBindings    []AgentSkillBinding        `json:"skillBindings,omitempty"`
+	ModelOptions       []WorkbenchModelOption     `json:"modelOptions,omitempty"`
+	DefaultPublicModel string                     `json:"defaultPublicModel,omitempty"`
+	ModelOptionsError  string                     `json:"modelOptionsError,omitempty"`
+	Adapters           []domainmcp.Adapter        `json:"adapters"`
+	DataSources        []WorkbenchDataSource      `json:"dataSources"`
+	AnalysisProfiles   []WorkbenchAnalysisProfile `json:"analysisProfiles"`
+	SkillsRegistry     []WorkbenchSkill           `json:"skillsRegistry,omitempty"`
+	AgentProviders     []AgentProvider            `json:"agentProviders,omitempty"`
+	Capabilities       []AgentCapability          `json:"capabilities,omitempty"`
+	ToolBindings       []AgentToolBinding         `json:"toolBindings,omitempty"`
+	SkillBindings      []AgentSkillBinding        `json:"skillBindings,omitempty"`
 }

@@ -1,5 +1,7 @@
 package dto
 
+import "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+
 import domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 
 type CreateCopilotSessionRequest struct {
@@ -33,6 +35,9 @@ type SendCopilotMessageRequest struct {
 }
 
 type WorkbenchSendMessageStreamRequest struct {
+	ContextSelection *domaincopilot.ContextSelection          `json:"contextSelection"`
+	KnowledgeContext *domaincopilot.KnowledgeContextConfig    `json:"knowledgeContext"`
+	ModelPreferences *domaincopilot.WorkbenchModelPreferences `json:"modelPreferences"`
 	Content          string                                   `json:"content"`
 	Mode             string                                   `json:"mode"`
 	AgentProviderID  string                                   `json:"agentProviderId"`
@@ -151,6 +156,12 @@ type AutomationPolicyRequest struct {
 }
 
 type CreateInspectionTaskRequest struct {
+	ExpectedRevision int64                               `json:"expectedRevision,omitempty"`
+	CapabilityPlan   *sohaapi.CapabilityPlan             `json:"capabilityPlan,omitempty"`
+	Trigger          *sohaapi.WorkbenchInspectionTrigger `json:"trigger,omitempty"`
+	AIClientID       string                              `json:"aiClientId,omitempty"`
+	SkillID          string                              `json:"skillId,omitempty"`
+
 	ID              string         `json:"id"`
 	Title           string         `json:"title"`
 	ScopeType       string         `json:"scopeType"`

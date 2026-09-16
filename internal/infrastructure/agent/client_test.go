@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -14,9 +15,55 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/yamux"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
+
+func TestHelmMutationPreservesAgentConflict(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte("private provider details"))
+	}))
+	defer server.Close()
+	client := &Client{baseURL: server.URL, httpClient: server.Client()}
+	err := client.DeleteHelmRelease(context.Background(), "test", "app")
+	if !errors.Is(err, apperrors.ErrConflict) || strings.Contains(err.Error(), "private provider details") {
+		t.Fatalf("conflict = %v", err)
+	}
+	_, err = client.PrepareHelmDelivery(context.Background(), sohaapi.HelmExecutionTaskPayload{})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("prepare conflict = %v", err)
+	}
+	_, err = client.ExecuteHelmDelivery(context.Background(), sohaapi.HelmExecutionTaskPayload{Action: sohaapi.Observe})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("observe conflict = %v", err)
+	}
+}
+
+func TestHelmDeliveryRejectsOlderAgentWithoutEndpoints(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	client := &Client{baseURL: server.URL, httpClient: server.Client()}
+	_, err := client.PrepareHelmDelivery(context.Background(), sohaapi.HelmExecutionTaskPayload{})
+	if !errors.Is(err, apperrors.ErrClusterUnready) {
+		t.Fatalf("old Agent prepare = %v, want unavailable", err)
+	}
+	for _, action := range []sohaapi.HelmExecutionTaskPayloadAction{sohaapi.Preflight, sohaapi.Observe} {
+		_, err = client.ExecuteHelmDelivery(context.Background(), sohaapi.HelmExecutionTaskPayload{Action: action})
+		if !errors.Is(err, apperrors.ErrClusterUnready) {
+			t.Fatalf("old Agent %s = %v, want unavailable", action, err)
+		}
+	}
+	if strings.Join(paths, ",") != "/api/v1/platform/helm/delivery/prepare,/api/v1/platform/helm/delivery/preflight,/api/v1/platform/helm/delivery/observe" {
+		t.Fatalf("unexpected fallback requests: %v", paths)
+	}
+}
 
 type yamuxListener struct{ session *yamux.Session }
 
@@ -260,11 +307,11 @@ func resourceYAMLTestHandler(t *testing.T, seen *[]string) http.HandlerFunc {
 		switch r.Method + " " + r.URL.Path {
 		case "GET /api/v1/platform/resources/yaml":
 			handleResourceYAMLGet(t, w, r)
-		case "PUT /api/v1/platform/resources/yaml":
+		case "PUT /api/v1/platform/ownership-v2/resources/yaml":
 			handleResourceYAMLApply(t, w, r)
-		case "POST /api/v1/platform/resources/yaml/preflight":
+		case "POST /api/v1/platform/ownership-v2/resources/yaml/preflight":
 			handleResourceYAMLPreflight(t, w, r)
-		case "DELETE /api/v1/platform/resources":
+		case "DELETE /api/v1/platform/ownership-v2/resources":
 			handleResourceDelete(t, w, r)
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
@@ -409,13 +456,13 @@ func customResourceTestHandler(t *testing.T, seen *[]string) http.HandlerFunc {
 		switch r.Method + " " + r.URL.Path {
 		case "POST /api/v1/platform/extensions/custom-resources/list":
 			handleCustomResourceList(t, w, r)
-		case "POST /api/v1/platform/extensions/custom-resources":
+		case "POST /api/v1/platform/ownership-v2/extensions/custom-resources":
 			handleCustomResourceCreate(t, w, r)
 		case "POST /api/v1/platform/extensions/custom-resources/yaml":
 			handleCustomResourceYAML(t, w, r, false)
-		case "PUT /api/v1/platform/extensions/custom-resources/yaml":
+		case "PUT /api/v1/platform/ownership-v2/extensions/custom-resources/yaml":
 			handleCustomResourceYAML(t, w, r, true)
-		case "DELETE /api/v1/platform/extensions/custom-resources":
+		case "POST /api/v1/platform/ownership-v2/extensions/custom-resources/delete-observed":
 			handleCustomResourceDelete(t, w, r)
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
@@ -454,7 +501,7 @@ func handleCustomResourceYAML(t *testing.T, w http.ResponseWriter, r *http.Reque
 
 func handleCustomResourceDelete(t *testing.T, w http.ResponseWriter, r *http.Request) {
 	var req customResourceYAMLRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name != "sample" || req.Definition.Kind != "Widget" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name != "sample" || req.Definition.Kind != "Widget" || req.ExpectedUID != "observed-uid" {
 		t.Fatalf("unexpected delete request: %#v error=%v", req, err)
 	}
 	w.WriteHeader(http.StatusOK)
@@ -609,11 +656,32 @@ func TestClientCustomResourceMethodsUseAgentPlatformEndpoints(t *testing.T) {
 	if _, err := client.ApplyCustomResourceYAML(context.Background(), definition, "platform", "sample", "kind: Widget\nmetadata:\n  name: sample\n"); err != nil {
 		t.Fatalf("ApplyCustomResourceYAML() error = %v", err)
 	}
-	if err := client.DeleteCustomResource(context.Background(), definition, "platform", "sample"); err != nil {
+	if err := client.DeleteCustomResource(context.Background(), definition, "platform", "sample", "observed-uid"); err != nil {
 		t.Fatalf("DeleteCustomResource() error = %v", err)
 	}
 	if len(seen) != 5 {
 		t.Fatalf("request count = %d, want 5: %#v", len(seen), seen)
+	}
+}
+
+func TestCustomResourceDeleteRejectsOldAgentWithoutFallback(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/platform/ownership-v2/extensions/custom-resources/delete-observed" {
+			t.Errorf("unsafe fallback request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
+		Summary: domaincluster.Summary{ID: "old-agent"}, Metadata: map[string]any{"endpoint": server.URL},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.DeleteCustomResource(t.Context(), domainresource.CRDResourceDefinition{}, "test", "periodic", "observed-uid"); err == nil || requests != 1 {
+		t.Fatalf("old Agent deletion must fail closed: requests=%d, err=%v", requests, err)
 	}
 }
 
@@ -657,5 +725,40 @@ func TestClientHelmMutationMethodsUseAgentPlatformEndpoints(t *testing.T) {
 	}
 	if len(seen) != 3 {
 		t.Fatalf("request count = %d, want 3: %#v", len(seen), seen)
+	}
+}
+
+func TestNativeMutationsRejectOldAgentWithoutFallback(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/platform/ownership-v2/") {
+			t.Errorf("unprotected request: %s", r.URL.Path)
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+	client := &Client{baseURL: server.URL, httpClient: server.Client()}
+	actions := []func() error{
+		func() error { return client.RestartDeployment(t.Context(), "test", "app") },
+		func() error { return client.ScaleStatefulSet(t.Context(), "test", "app", 2) },
+		func() error { return client.RollbackDeployment(t.Context(), "test", "app", "1") },
+		func() error {
+			_, _, err := client.UpdateDeploymentImage(t.Context(), "test", "app", "web", "image")
+			return err
+		},
+		func() error {
+			_, err := client.ApplyResourceYAML(t.Context(), "test", "Service", "app", "{}")
+			return err
+		},
+		func() error { return client.DeleteResource(t.Context(), "test", "Service", "app") },
+	}
+	for _, action := range actions {
+		if err := action(); !errors.Is(err, apperrors.ErrUnsupportedOperation) {
+			t.Fatalf("old Agent result: %v", err)
+		}
+	}
+	if requests != len(actions) {
+		t.Fatalf("unexpected fallback requests: %d", requests)
 	}
 }

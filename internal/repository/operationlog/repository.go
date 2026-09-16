@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"strings"
 	"time"
 
@@ -29,7 +30,7 @@ func (r *Repository) Create(ctx context.Context, entry domainoperation.Entry) er
 	if err != nil {
 		return fmt.Errorf("marshal operation metadata: %w", err)
 	}
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO operation_logs (
 			id, actor_id, actor_name, operation_type, target_scope, result, summary, request_path,
 			request_method, request_id, source_ip, metadata, created_at
@@ -129,7 +130,7 @@ func (r *Repository) List(ctx context.Context, filter domainoperation.Filter) ([
 	query += "\n\t\tORDER BY created_at DESC\n\t\tLIMIT ?"
 	args = append(args, filter.Limit)
 
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query operation logs: %w", err)
 	}
@@ -199,7 +200,7 @@ func (r *Repository) Summary(ctx context.Context, filter domainoperation.Filter,
 		args = append(args, *filter.To)
 	}
 
-	row := r.db.WithContext(ctx).Raw(query, args...).Row()
+	row := dbtx.DB(ctx, r.db).Raw(query, args...).Row()
 	var summary domainoperation.Summary
 	var oldest sql.NullTime
 	var newest sql.NullTime

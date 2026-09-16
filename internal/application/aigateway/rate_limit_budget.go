@@ -144,7 +144,8 @@ func (s *Service) enforceGatewayInvocationLimit(ctx context.Context, principal d
 	if err != nil {
 		return err
 	}
-	if count < limit.Limit {
+	queued, _ := ctx.Value(queuedAuthorizationKey{}).(bool)
+	if count < limit.Limit || queued && count == limit.Limit {
 		return nil
 	}
 	return fmt.Errorf("%w: AI Gateway %s policy %s exceeded for %s (%d/%d accepted calls in %s)", apperrors.ErrAccessDenied, limit.Kind, strings.TrimSpace(limit.PolicyID), toolName, count, limit.Limit, limit.WindowLabel)

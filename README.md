@@ -214,8 +214,6 @@ make dev-web
 make build
 make test
 make deploy-image
-make remote-dev-sync
-make remote-dev-status
 ```
 
 ## Deployment
@@ -236,22 +234,7 @@ Soha runs one process per container. The default process serves the management A
 reuses the existing `opensoha` PostgreSQL database, `soha-config` Secret, and
 `soha-data` PVC.
 
-To mirror the current local working trees, install DevSpace and keep this command
-running:
-
-```bash
-make remote-dev-sync
-```
-
-DevSpace uploads local tracked, untracked, and uncommitted source changes from
-`soha`, `soha-web`, and `soha-contracts` without building an image. Backend build
-inputs trigger an automatic rebuild; Vite handles frontend HMR. `Ctrl-C` stops
-further uploads, restores the Helm workload, and removes the temporary development
-Deployment. The stable Pod remains warm while local sync is active. If the terminal
-is forcibly terminated before cleanup runs, use `make remote-dev-down`; run the sync
-command again to resume.
-
-To develop from pushed branches or refs instead of local files:
+To develop from pushed branches or refs:
 
 ```bash
 make remote-dev-up \
@@ -260,10 +243,10 @@ make remote-dev-up \
   REMOTE_DEV_CONTRACTS_REF=my-branch
 ```
 
-The Git mode polls those refs inside the cluster. Local and Git source modes are
-mutually exclusive, so Git resets cannot overwrite local DevSpace changes.
-Because either mode changes the Helm Deployment replica count and the existing
-Service selector, restore the release before running a Helm upgrade:
+The workload polls those refs inside the cluster. Backend source changes trigger
+an automatic rebuild; Vite handles frontend HMR. This workflow changes the Helm
+Deployment replica count and the existing Service selector, so restore the release
+before running a Helm upgrade:
 
 ```bash
 make remote-dev-status

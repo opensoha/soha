@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"strings"
 	"time"
 
@@ -33,7 +34,7 @@ func (r *Repository) Create(ctx context.Context, entry domainaudit.Entry) error 
 	if err != nil {
 		return fmt.Errorf("marshal audit metadata: %w", err)
 	}
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO audit_logs (
 			id, actor_id, actor_name, roles, teams, cluster_id, namespace, resource_kind,
 			resource_name, action, result, summary, request_path, request_method,
@@ -149,7 +150,7 @@ func (r *Repository) List(ctx context.Context, filter domainaudit.Filter) ([]dom
 	query += "\n\t\tORDER BY created_at DESC\n\t\tLIMIT ?"
 	args = append(args, filter.Limit)
 
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query audit logs: %w", err)
 	}
@@ -241,7 +242,7 @@ func (r *Repository) Summary(ctx context.Context, filter domainaudit.Filter, ret
 		args = append(args, *filter.To)
 	}
 
-	row := r.db.WithContext(ctx).Raw(query, args...).Row()
+	row := dbtx.DB(ctx, r.db).Raw(query, args...).Row()
 	var summary domainaudit.Summary
 	var oldest sql.NullTime
 	var newest sql.NullTime

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
@@ -149,6 +150,9 @@ func (d *Direct) CreateCustomResourceYAML(ctx context.Context, clusterID string,
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
+	if err := validateResourceMutation(item); err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
@@ -194,21 +198,14 @@ func (d *Direct) ApplyCustomResourceYAML(ctx context.Context, clusterID string, 
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	resource := customResourceInterface(bundle.Dynamic, definition, effectiveNamespace)
-	if item.GetResourceVersion() == "" {
-		current, err := resource.Get(queryCtx, name, metav1.GetOptions{})
-		if err != nil {
-			return domainresource.ResourceYAMLView{}, err
-		}
-		item.SetResourceVersion(current.GetResourceVersion())
-	}
-	updated, err := resource.Update(queryCtx, item, metav1.UpdateOptions{})
+	updated, err := contractruntime.UpdateManifest(queryCtx, resource, item)
 	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
+		return domainresource.ResourceYAMLView{}, resourceMutationError(err)
 	}
 	return renderCustomResource(definition.Kind, updated)
 }
 
-func (d *Direct) DeleteCustomResource(ctx context.Context, clusterID string, definition domainresource.CRDResourceDefinition, namespace, name string) error {
+func (d *Direct) DeleteCustomResource(ctx context.Context, clusterID string, definition domainresource.CRDResourceDefinition, namespace, name, expectedUID string) error {
 	effectiveNamespace, err := customResourceNamespace(definition, namespace)
 	if err != nil {
 		return err
@@ -219,7 +216,7 @@ func (d *Direct) DeleteCustomResource(ctx context.Context, clusterID string, def
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return customResourceInterface(bundle.Dynamic, definition, effectiveNamespace).Delete(queryCtx, name, metav1.DeleteOptions{})
+	return resourceMutationError(contractruntime.DeleteManifest(queryCtx, customResourceInterface(bundle.Dynamic, definition, effectiveNamespace), name, expectedUID))
 }
 
 func (d *Direct) listCustomResourcesAcrossNamespaces(ctx context.Context, clusterID string, definition domainresource.CRDResourceDefinition) ([]unstructured.Unstructured, error) {
@@ -345,6 +342,7 @@ func mapCustomResources(items []unstructured.Unstructured, definition domainreso
 			apiVersion = definition.Group + "/" + definition.Version
 		}
 		views = append(views, domainresource.CustomResourceView{
+			UID: string(item.GetUID()), Generation: item.GetGeneration(), DeletingAt: customResourceDeletingAt(item.GetDeletionTimestamp()), Finalizers: item.GetFinalizers(),
 			APIVersion: apiVersion, Kind: definition.Kind, Name: item.GetName(), Namespace: item.GetNamespace(),
 			Labels: item.GetLabels(), CreatedAt: item.GetCreationTimestamp().Time.UTC().Format(time.RFC3339),
 			AgeSeconds: secondsSince(item.GetCreationTimestamp().Time),
@@ -357,6 +355,7 @@ func mapPartialCustomResources(items []metav1.PartialObjectMetadata, definition 
 	views := make([]domainresource.CustomResourceView, 0, len(items))
 	for _, item := range items {
 		views = append(views, domainresource.CustomResourceView{
+			UID: string(item.UID), Generation: item.Generation, DeletingAt: customResourceDeletingAt(item.DeletionTimestamp), Finalizers: item.Finalizers,
 			APIVersion: definition.Group + "/" + definition.Version,
 			Kind:       definition.Kind,
 			Name:       item.Name,
@@ -367,6 +366,13 @@ func mapPartialCustomResources(items []metav1.PartialObjectMetadata, definition 
 		})
 	}
 	return views
+}
+
+func customResourceDeletingAt(value *metav1.Time) string {
+	if value == nil {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
 }
 
 func parseCRDDefinition(item unstructured.Unstructured) (domainresource.CRDResourceDefinition, error) {

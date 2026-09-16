@@ -499,7 +499,7 @@
     {
       "method": "DELETE",
       "path": "/api/v1/clusters/:clusterID/extensions/crds/:crdName/resources/:name",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"strings"
 
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
@@ -24,12 +25,12 @@ func (r *Repository) List(ctx context.Context, filter domainmanifest.Filter) (do
 		return domainmanifest.Page{Items: []domainmanifest.Package{}, Page: page, PageSize: pageSize}, nil
 	}
 	var total int
-	if err := r.db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM manifest_packages WHERE archived_at IS NULL`+where, args...).Scan(&total).Error; err != nil {
+	if err := dbtx.DB(ctx, r.db).Raw(`SELECT COUNT(*) FROM manifest_packages WHERE archived_at IS NULL`+where, args...).Scan(&total).Error; err != nil {
 		return domainmanifest.Page{}, fmt.Errorf("count manifest packages: %w", err)
 	}
 	query := `SELECT id, name, description, application_id, COALESCE(service_id, ''), business_line_id, renderer, status, current_revision, files, bindings, created_by, updated_by, created_at, updated_at FROM manifest_packages WHERE archived_at IS NULL` + where + ` ORDER BY updated_at DESC LIMIT ? OFFSET ?`
 	queryArgs := append(append([]any{}, args...), pageSize, (page-1)*pageSize)
-	rows, err := r.db.WithContext(ctx).Raw(query, queryArgs...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, queryArgs...).Rows()
 	if err != nil {
 		return domainmanifest.Page{}, fmt.Errorf("list manifest packages: %w", err)
 	}
@@ -102,7 +103,7 @@ func normalizePage(filter domainmanifest.Filter) (int, int) {
 }
 
 func (r *Repository) Get(ctx context.Context, id string) (domainmanifest.Package, error) {
-	row := r.db.WithContext(ctx).Raw(`SELECT id, name, description, application_id, COALESCE(service_id, ''), business_line_id, renderer, status, current_revision, files, bindings, created_by, updated_by, created_at, updated_at FROM manifest_packages WHERE id = ? AND archived_at IS NULL LIMIT 1`, id).Row()
+	row := dbtx.DB(ctx, r.db).Raw(`SELECT id, name, description, application_id, COALESCE(service_id, ''), business_line_id, renderer, status, current_revision, files, bindings, created_by, updated_by, created_at, updated_at FROM manifest_packages WHERE id = ? AND archived_at IS NULL LIMIT 1`, id).Row()
 	item, err := scanPackageRow(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domainmanifest.Package{}, apperrors.ErrNotFound
@@ -115,7 +116,7 @@ func (r *Repository) Create(ctx context.Context, item domainmanifest.Package) (d
 	if err != nil {
 		return domainmanifest.Package{}, err
 	}
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`INSERT INTO manifest_packages (id, name, description, application_id, service_id, business_line_id, renderer, status, current_revision, files, bindings, created_by, updated_by, created_at, updated_at) VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`, item.ID, item.Name, item.Description, item.ApplicationID, item.ServiceID, item.BusinessLineID, item.Renderer, item.Status, item.CurrentRevision, files, bindings, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return err
 		}
@@ -132,12 +133,21 @@ func (r *Repository) Update(ctx context.Context, id string, item domainmanifest.
 	if err != nil {
 		return domainmanifest.Package{}, err
 	}
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Exec(`UPDATE manifest_packages SET name=?, description=?, application_id=?, service_id=NULLIF(?, ''), business_line_id=?, renderer=?, status=?, files=?::jsonb, bindings=?::jsonb, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL`, item.Name, item.Description, item.ApplicationID, item.ServiceID, item.BusinessLineID, item.Renderer, item.Status, files, bindings, item.UpdatedBy, item.UpdatedAt, id)
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		statement := `UPDATE manifest_packages SET name=?, description=?, application_id=?, service_id=NULLIF(?, ''), business_line_id=?, renderer=?, status=?, files=?::jsonb, bindings=?::jsonb, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL`
+		args := []any{item.Name, item.Description, item.ApplicationID, item.ServiceID, item.BusinessLineID, item.Renderer, item.Status, files, bindings, item.UpdatedBy, item.UpdatedAt, id}
+		if item.ExpectedUpdatedAt != nil {
+			statement += " AND updated_at=?"
+			args = append(args, *item.ExpectedUpdatedAt)
+		}
+		result := tx.Exec(statement, args...)
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
+			if item.ExpectedUpdatedAt != nil {
+				return apperrors.ErrConflict
+			}
 			return apperrors.ErrNotFound
 		}
 		return syncLegacyBindingRelations(tx, id, item.Bindings, item.UpdatedAt)
@@ -149,7 +159,7 @@ func (r *Repository) Update(ctx context.Context, id string, item domainmanifest.
 }
 
 func (r *Repository) Delete(ctx context.Context, id string) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		result := tx.Exec(`DELETE FROM manifest_packages WHERE id = ? AND archived_at IS NULL AND current_revision = 0`, id)
 		if result.Error != nil {
 			return result.Error
@@ -173,16 +183,16 @@ func (r *Repository) Publish(ctx context.Context, item domainmanifest.Package, r
 	if err != nil {
 		return domainmanifest.Package{}, err
 	}
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`INSERT INTO manifest_revisions (id, package_id, version, digest, note, files, bindings, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)`, revision.ID, revision.PackageID, revision.Version, revision.Digest, revision.Note, files, bindings, revision.CreatedBy, revision.CreatedAt).Error; err != nil {
-			return err
-		}
-		result := tx.Exec(`UPDATE manifest_packages SET status=?, current_revision=?, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL`, item.Status, item.CurrentRevision, item.UpdatedBy, item.UpdatedAt, item.ID)
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		result := tx.Exec(`UPDATE manifest_packages SET status=?, current_revision=?, updated_by=?, updated_at=? WHERE id=? AND archived_at IS NULL AND current_revision=? AND updated_at=?`, item.Status, item.CurrentRevision, item.UpdatedBy, item.UpdatedAt, item.ID, revision.Version-1, item.ExpectedUpdatedAt)
 		if result.Error != nil {
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
-			return apperrors.ErrNotFound
+			return apperrors.ErrConflict
+		}
+		if err := tx.Exec(`INSERT INTO manifest_revisions (id, package_id, version, digest, note, files, bindings, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)`, revision.ID, revision.PackageID, revision.Version, revision.Digest, revision.Note, files, bindings, revision.CreatedBy, revision.CreatedAt).Error; err != nil {
+			return err
 		}
 		return nil
 	})
@@ -193,7 +203,7 @@ func (r *Repository) Publish(ctx context.Context, item domainmanifest.Package, r
 }
 
 func (r *Repository) ListRevisions(ctx context.Context, packageID string) ([]domainmanifest.Revision, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`SELECT id, package_id, version, digest, note, files, bindings, created_by, created_at FROM manifest_revisions WHERE package_id=? ORDER BY version DESC`, packageID).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(`SELECT id, package_id, version, digest, note, files, bindings, created_by, created_at FROM manifest_revisions WHERE package_id=? ORDER BY version DESC`, packageID).Rows()
 	if err != nil {
 		return nil, err
 	}

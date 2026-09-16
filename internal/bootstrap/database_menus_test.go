@@ -225,6 +225,30 @@ func TestDefaultDeliveryMenuSeedsRemoveRedundantWorkflowLists(t *testing.T) {
 	}
 }
 
+func TestWorkflowCenterReplacesDeliveryBatchMenuSeeds(t *testing.T) {
+	found := false
+	for _, item := range defaultMenuSeeds() {
+		if item.ID == "delivery-workflows" || item.ID == "delivery-batches" {
+			t.Fatalf("obsolete delivery menu is still seeded: %#v", item)
+		}
+		if item.ID == "release-board" {
+			found = item.Path == "/release-board" && item.LabelZH == "工作流中心" && item.Enabled
+		}
+	}
+	if !found {
+		t.Fatal("workflow center menu is missing")
+	}
+	for _, id := range []string{"delivery-workflows", "delivery-batches"} {
+		found = false
+		for _, obsoleteID := range obsoleteMenuIDsForCleanup() {
+			found = found || obsoleteID == id
+		}
+		if !found {
+			t.Fatalf("obsolete delivery menu is not cleaned: %s", id)
+		}
+	}
+}
+
 func TestInternalWorkbenchOverviewSeedUsesCanonicalPath(t *testing.T) {
 	paths := map[string]string{}
 	for _, item := range builtinMenuSeeds {

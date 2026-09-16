@@ -168,12 +168,46 @@ func (a *KubeVirtAdapter) CreateVM(ctx context.Context, connection Connection, i
 	object := BuildKubeVirtVM(input)
 	object.SetNamespace(namespace)
 	created, err := bundle.Dynamic.Resource(kubeVirtVMGVR).Namespace(namespace).Create(ctx, object, metav1.CreateOptions{})
+	if apierrors.IsAlreadyExists(err) && input.OperationID != "" {
+		created, err = bundle.Dynamic.Resource(kubeVirtVMGVR).Namespace(namespace).Get(ctx, input.Name, metav1.GetOptions{})
+		if err == nil && (created.GetAnnotations()["soha.io/creation-operation"] != input.OperationID || created.GetDeletionTimestamp() != nil) {
+			return VM{}, invalidf("existing virtual machine does not belong to this creation operation")
+		}
+	}
 	if err != nil {
 		return VM{}, err
 	}
 	vm := vmFromUnstructured(created)
 	a.enrichCreatedVM(ctx, bundle.Dynamic, namespace, input, &vm)
 	return vm, nil
+}
+
+func (a *KubeVirtAdapter) PrepareVMCreate(_ context.Context, connection Connection, input CreateVMInput) (CreateVMInput, error) {
+	if input.Namespace == "" {
+		input.Namespace = namespaceOrDefault(connection, "default")
+	}
+	return input, nil
+}
+
+func (a *KubeVirtAdapter) ObserveVMCreation(ctx context.Context, connection Connection, input CreateVMInput) (VM, bool, error) {
+	if input.OperationID == "" || input.Namespace == "" || input.Name == "" {
+		return VM{}, false, invalidf("creation observation requires a frozen provider identity")
+	}
+	bundle, err := a.bundle(ctx, connection)
+	if err != nil {
+		return VM{}, false, err
+	}
+	object, err := bundle.Dynamic.Resource(kubeVirtVMGVR).Namespace(input.Namespace).Get(ctx, input.Name, metav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return VM{}, false, nil
+	}
+	if err != nil {
+		return VM{}, false, err
+	}
+	if object.GetAnnotations()["soha.io/creation-operation"] != input.OperationID || object.GetDeletionTimestamp() != nil {
+		return VM{}, false, invalidf("observed VM does not belong to the creation operation or is being deleted")
+	}
+	return vmFromUnstructured(object), true, nil
 }
 
 func (a *KubeVirtAdapter) PowerAction(ctx context.Context, connection Connection, vm VM, action PowerAction) (PowerActionResult, error) {
@@ -302,6 +336,9 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 	if architecture := kubeVirtArchitecture(input.Architecture); architecture != "" {
 		_ = unstructured.SetNestedField(spec, architecture, "template", "spec", "architecture")
 	}
+	if input.CapacityReserved {
+		_ = unstructured.SetNestedField(spec, strconv.Itoa(input.CPU), "template", "spec", "domain", "resources", "requests", "cpu")
+	}
 	storageClass := stringOption(input.ProviderParams, "storageClass")
 	dataVolumeName := firstNonEmpty(stringOption(input.ProviderParams, "dataVolumeName"), input.Name+"-rootdisk")
 	accessModes := kubeVirtDataVolumeAccessModes(input.ProviderParams)
@@ -354,7 +391,7 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 	}
 	_ = unstructured.SetNestedSlice(spec, disks, "template", "spec", "domain", "devices", "disks")
 	_ = unstructured.SetNestedSlice(spec, volumes, "template", "spec", "volumes")
-	return &unstructured.Unstructured{Object: map[string]any{
+	object := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "kubevirt.io/v1",
 		"kind":       "VirtualMachine",
 		"metadata": map[string]any{
@@ -364,6 +401,10 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 		},
 		"spec": spec,
 	}}
+	if input.OperationID != "" {
+		object.SetAnnotations(map[string]string{"soha.io/creation-operation": input.OperationID})
+	}
+	return object
 }
 
 func kubeVirtNetworkSpec(input CreateVMInput) ([]any, []any) {

@@ -143,7 +143,7 @@ func (c *CustomResources) ApplyCRDResourceYAML(ctx context.Context, principal do
 	return updated, nil
 }
 
-func (c *CustomResources) DeleteCRDResource(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, name string) error {
+func (c *CustomResources) DeleteCRDResource(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace, name, expectedUID string) error {
 	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
 	if err != nil {
 		return err
@@ -159,12 +159,12 @@ func (c *CustomResources) DeleteCRDResource(ctx context.Context, principal domai
 	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionDelete); err != nil {
 		return err
 	}
-	source, err := c.deleteCustomResource(ctx, connection, definition, effectiveNamespace, name)
+	source, err := c.deleteCustomResource(ctx, connection, definition, effectiveNamespace, name, expectedUID)
 	if err != nil {
 		_ = c.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
 		return err
 	}
-	summary := "deleted custom resource"
+	summary := "requested custom resource deletion; finalizers may still be pending"
 	if source == "agent" {
 		summary += " via agent"
 	}
@@ -258,19 +258,19 @@ func (c *CustomResources) applyCustomResourceYAML(ctx context.Context, connectio
 	return item, "live", err
 }
 
-func (c *CustomResources) deleteCustomResource(ctx context.Context, connection domaincluster.Connection, definition crdResourceDefinition, namespace, name string) (string, error) {
+func (c *CustomResources) deleteCustomResource(ctx context.Context, connection domaincluster.Connection, definition crdResourceDefinition, namespace, name, expectedUID string) (string, error) {
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
 		client, err := c.customResourceAgentClient(connection)
 		if err != nil {
 			return "agent", err
 		}
-		return "agent", wrapAgentResourceError(client.DeleteCustomResource(ctx, definition.AgentDefinition(), namespace, name))
+		return "agent", wrapAgentResourceError(client.DeleteCustomResource(ctx, definition.AgentDefinition(), namespace, name, expectedUID))
 	}
 	direct, err := c.directCustomResources()
 	if err != nil {
 		return "live", err
 	}
-	return "live", direct.DeleteCustomResource(ctx, connection.Summary.ID, definition.AgentDefinition(), namespace, name)
+	return "live", direct.DeleteCustomResource(ctx, connection.Summary.ID, definition.AgentDefinition(), namespace, name, expectedUID)
 }
 
 func (c *CustomResources) resolveCRDResourceDefinition(ctx context.Context, connection domaincluster.Connection, crdName string) (crdResourceDefinition, error) {

@@ -45,8 +45,6 @@ spec:
           env:
             - name: HOME
               value: /workspace/.home/source-sync
-            - name: SYNC_MODE
-              value: git
             - name: SYNC_INTERVAL_SECONDS
               value: "3"
             - name: SOHA_REPOSITORY

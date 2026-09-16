@@ -309,6 +309,42 @@ func TestDefaultRunnerClaimIncludesHostProvision(t *testing.T) {
 	}
 }
 
+func TestIdleHostBoundPollRefreshesOnlyItsHeartbeat(t *testing.T) {
+	for _, mode := range []string{"bound", "legacy", "wrong-worker", "wrong-host"} {
+		t.Run(mode, func(t *testing.T) {
+			repo := newMemoryDockerRepo()
+			stale := time.Now().Add(-10 * time.Minute)
+			repo.hosts["host"] = domaindocker.Host{ID: "host", Status: "pending", LastHeartbeatAt: &stale}
+			service := New(repo, dockerTestPermissions(), nil)
+			input := domaindocker.OperationClaimInput{WorkerID: "host", AgentID: "agent", HostIDs: []string{"host"}}
+			if mode != "legacy" {
+				input.Authorization = domaindocker.RunnerAuthorization{HostID: "host", AgentID: "agent"}
+			}
+			switch mode {
+			case "wrong-worker":
+				input.WorkerID = "foreign-worker"
+			case "wrong-host":
+				input.HostIDs = []string{"foreign-host"}
+			}
+			_, err := service.ClaimOperation(context.Background(), input)
+			want := apperrors.ErrNotFound
+			if mode == "wrong-worker" || mode == "wrong-host" {
+				want = apperrors.ErrAccessDenied
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("idle claim: %v", err)
+			}
+			host := repo.hosts["host"]
+			if host.LastHeartbeatAt.After(stale) != (mode == "bound") {
+				t.Fatalf("heartbeat authentication mismatch: %+v", host)
+			}
+			if host.Status != "pending" || host.DockerVersion != "" || host.ComposeVersion != "" || len(repo.operations) != 0 {
+				t.Fatalf("idle poll fabricated runtime readiness or work: %+v", host)
+			}
+		})
+	}
+}
+
 func TestHostSyncRequiresMatchingHostCredential(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "docker-host", Status: "pending"}
@@ -1180,7 +1216,7 @@ func TestCancelHostProvisionCancelsVirtualizationTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CancelOperation() error = %v", err)
 	}
-	if canceled.Status != OperationStatusCanceled || canceled.FinishedAt == nil {
+	if canceled.Status != OperationStatusCanceling || canceled.FinishedAt != nil {
 		t.Fatalf("canceled operation = %#v", canceled)
 	}
 	if len(provisioner.canceledIDs) != 1 || provisioner.canceledIDs[0] != "vm-task-1" {
@@ -1191,6 +1227,30 @@ func TestCancelHostProvisionCancelsVirtualizationTask(t *testing.T) {
 	}
 	if canceled.Result["virtualizationTaskStatus"] != OperationStatusCanceled {
 		t.Fatalf("canceled operation result = %#v", canceled.Result)
+	}
+	unknown, err := service.GetOperation(context.Background(), dockerTestPrincipal(), operation.ID)
+	if err != nil || unknown.Status != OperationStatusCanceling || unknown.Result["cancellationAcknowledged"] == true {
+		t.Fatalf("legacy VM cancellation prematurely acknowledged: %+v %v", unknown, err)
+	}
+	task := provisioner.tasks["vm-task-1"]
+	task.VMID = "retained-vm"
+	task.Result["cancellationConfirmed"] = true
+	provisioner.tasks[task.ID] = task
+	confirmed, err := service.GetOperation(context.Background(), dockerTestPrincipal(), operation.ID)
+	if err != nil || confirmed.Status != OperationStatusCanceled || confirmed.Result["cancellationAcknowledged"] != true || repo.hosts[operation.HostID].VMID != "retained-vm" {
+		t.Fatalf("VM cancellation receipt not propagated: %+v %v", confirmed, err)
+	}
+}
+
+func TestHostProvisionVMReceiptDoesNotAcknowledgeActiveRunnerCancellation(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	provisioner := &captureHostProvisioner{tasks: map[string]HostProvisionTask{"vm-task": {ID: "vm-task", Status: OperationStatusCompleted}}}
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner))
+	item := domaindocker.Operation{ID: "operation", OperationKind: OperationKindHostProvision, Status: OperationStatusCanceling, ClaimedByWorkerID: "agent", Payload: map[string]any{"virtualizationTaskId": "vm-task"}}
+	repo.operations[item.ID] = item
+	service.reconcileHostProvisionOperation(context.Background(), provisioner, item)
+	if stored := repo.operations[item.ID]; stored.Status != OperationStatusCanceling || stored.Result["cancellationAcknowledged"] == true {
+		t.Fatalf("VM completion acknowledged a still-active runner: %+v", stored)
 	}
 }
 
@@ -1221,6 +1281,14 @@ func TestRetryHostProvisionRetriesVirtualizationTask(t *testing.T) {
 	if failed := repo.operations[operation.ID]; failed.Status != OperationStatusFailed {
 		t.Fatalf("operation before retry = %#v", failed)
 	}
+	provisioner.retryErr = apperrors.ErrConflict
+	if _, err := service.RetryOperation(context.Background(), dockerTestPrincipal(), operation.ID); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("VM retry rejection was hidden: %v", err)
+	}
+	if repo.operations[operation.ID].Status != OperationStatusFailed {
+		t.Fatal("parent enqueued despite rejected VM retry")
+	}
+	provisioner.retryErr = nil
 
 	retried, err := service.RetryOperation(context.Background(), dockerTestPrincipal(), operation.ID)
 	if err != nil {
@@ -1292,6 +1360,7 @@ func (c *captureDockerAudit) Record(_ context.Context, entry domainaudit.Entry) 
 }
 
 type captureHostProvisioner struct {
+	retryErr    error
 	input       HostProvisionInput
 	tasks       map[string]HostProvisionTask
 	canceledIDs []string
@@ -1332,6 +1401,9 @@ func (c *captureHostProvisioner) CancelProvisionTask(_ context.Context, _ domain
 }
 
 func (c *captureHostProvisioner) RetryProvisionTask(_ context.Context, _ domainidentity.Principal, taskID string) (HostProvisionTask, error) {
+	if c.retryErr != nil {
+		return HostProvisionTask{}, c.retryErr
+	}
 	task, err := c.GetProvisionTask(context.Background(), taskID)
 	if err != nil {
 		return HostProvisionTask{}, err
@@ -1344,6 +1416,8 @@ func (c *captureHostProvisioner) RetryProvisionTask(_ context.Context, _ domaini
 }
 
 type memoryDockerRepo struct {
+	projectReceipts     map[string]domaindocker.Project
+	projectDigests      map[string]string
 	installMu           sync.Mutex
 	hosts               map[string]domaindocker.Host
 	projects            map[string]domaindocker.Project
@@ -1460,6 +1534,17 @@ func (r *memoryDockerRepo) UpdateHost(_ context.Context, id string, input domain
 	return item, nil
 }
 
+func (r *memoryDockerRepo) HeartbeatHost(_ context.Context, id, agentID string) error {
+	item, ok := r.hosts[id]
+	if !ok {
+		return apperrors.ErrNotFound
+	}
+	now := time.Now().UTC()
+	item.AgentID, item.LastHeartbeatAt = agentID, &now
+	r.hosts[id] = item
+	return nil
+}
+
 func (r *memoryDockerRepo) TouchHostRuntime(_ context.Context, id string, input domaindocker.HostInput) (domaindocker.Host, error) {
 	item, ok := r.hosts[id]
 	if !ok {
@@ -1531,7 +1616,7 @@ func (r *memoryDockerRepo) GetProject(_ context.Context, id string) (domaindocke
 }
 
 func (r *memoryDockerRepo) CreateProject(_ context.Context, input domaindocker.ProjectInput) (domaindocker.Project, error) {
-	item := domaindocker.Project{ID: nextDockerID("project", len(r.projects)), HostID: input.HostID, Name: input.Name, Slug: firstNonEmpty(input.Slug, input.Name), SourceKind: input.SourceKind, ComposeContent: input.ComposeContent, EnvContent: input.EnvContent, Status: firstNonEmpty(input.Status, "draft"), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	item := domaindocker.Project{ID: firstNonEmpty(input.ID, nextDockerID("project", len(r.projects))), HostID: input.HostID, Name: input.Name, Slug: firstNonEmpty(input.Slug, input.Name), SourceKind: input.SourceKind, ComposeContent: input.ComposeContent, EnvContent: input.EnvContent, Status: firstNonEmpty(input.Status, "draft"), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	r.projects[item.ID] = item
 	return item, nil
 }
@@ -1782,7 +1867,10 @@ func (r *memoryDockerRepo) CreateOperation(_ context.Context, input domaindocker
 	if r.failCreateOperation != nil {
 		return domaindocker.Operation{}, r.failCreateOperation
 	}
-	item := domaindocker.Operation{ID: nextDockerID("operation", len(r.operations)), HostID: input.HostID, ProjectID: input.ProjectID, ServiceID: input.ServiceID, OperationKind: input.OperationKind, Status: firstNonEmpty(input.Status, "queued"), Payload: input.Payload, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	item := domaindocker.Operation{ID: firstNonEmpty(input.ID, nextDockerID("operation", len(r.operations))), HostID: input.HostID, ProjectID: input.ProjectID, ServiceID: input.ServiceID, OperationKind: input.OperationKind, Status: firstNonEmpty(input.Status, "queued"), RequestedBy: input.RequestedBy, ExecutionAuthorization: input.ExecutionAuthorization, Payload: input.Payload, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	if _, exists := r.operations[item.ID]; exists {
+		return domaindocker.Operation{}, apperrors.ErrConflict
+	}
 	r.operations[item.ID] = item
 	return item, nil
 }
@@ -1972,4 +2060,96 @@ func cloneDockerMap[T any](items map[string]T) map[string]T {
 		out[key] = value
 	}
 	return out
+}
+
+func TestDockerCancellationWaitsForAuthenticatedRunnerAcknowledgment(t *testing.T) {
+	for _, outcome := range []string{OperationStatusCanceled, OperationStatusCompleted} {
+		t.Run(outcome, func(t *testing.T) {
+			ctx := context.Background()
+			repo := newMemoryDockerRepo()
+			service := New(repo, dockerTestPermissions(), nil)
+			operation, err := repo.CreateOperation(ctx, domaindocker.OperationInput{OperationKind: OperationKindProjectDeploy, Status: OperationStatusQueued})
+			if err != nil {
+				t.Fatal(err)
+			}
+			claimed, err := service.ClaimOperation(ctx, domaindocker.OperationClaimInput{WorkerID: "worker-1", CallbackTokenSupported: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			stopping, err := service.CancelOperation(ctx, dockerTestPrincipal(), operation.ID)
+			if err != nil || stopping.Status != OperationStatusCanceling || stopping.FinishedAt != nil || stopping.OperationState.Terminal || stopping.OperationState.Retryable {
+				t.Fatalf("cancel completed before runner stopped: %+v %v", stopping.OperationState, err)
+			}
+			callback := domaindocker.OperationCallbackInput{OperationID: operation.ID, WorkerID: "worker-1", CallbackToken: claimed.CallbackToken, Status: OperationStatusRunning}
+			observed, err := service.RecordOperationCallback(ctx, callback)
+			if err != nil || observed.Status != OperationStatusCanceling {
+				t.Fatalf("heartbeat cleared stop: %s %v", observed.Status, err)
+			}
+			callback.Status = OperationStatusCanceled
+			if _, err := service.RecordOperationCallback(ctx, callback); !errors.Is(err, apperrors.ErrConflict) {
+				t.Fatalf("unacknowledged cancellation accepted: %v", err)
+			}
+			callback.CancellationAcknowledged, callback.CallbackToken = true, "wrong-attempt"
+			if _, err := service.RecordOperationCallback(ctx, callback); !errors.Is(err, apperrors.ErrAccessDenied) {
+				t.Fatalf("wrong attempt acknowledged cancellation: %v", err)
+			}
+			callback.Status, callback.CallbackToken = outcome, claimed.CallbackToken
+			finished, err := service.RecordOperationCallback(ctx, callback)
+			if err != nil || finished.Status != outcome || !finished.OperationState.Terminal || finished.FinishedAt == nil {
+				t.Fatalf("runner outcome was not retained: %s %v", finished.Status, err)
+			}
+			if outcome == OperationStatusCanceled && finished.Result["cancellationAcknowledged"] != true {
+				t.Fatal("missing cancellation evidence")
+			}
+		})
+	}
+}
+
+func TestDockerUnclaimedCancellationFencesExecution(t *testing.T) {
+	ctx := context.Background()
+	repo := newMemoryDockerRepo()
+	service := New(repo, dockerTestPermissions(), nil)
+	operation, err := repo.CreateOperation(ctx, domaindocker.OperationInput{OperationKind: OperationKindProjectDeploy, Status: OperationStatusQueued})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := service.CancelOperation(ctx, dockerTestPrincipal(), operation.ID)
+	if err != nil || stopped.Status != OperationStatusCanceled || stopped.Result["cancellationAcknowledged"] != true {
+		t.Fatalf("unclaimed operation did not stop: %s %v", stopped.Status, err)
+	}
+	if _, err := service.ClaimOperation(ctx, domaindocker.OperationClaimInput{WorkerID: "worker-1"}); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("canceled work was claimed: %v", err)
+	}
+}
+
+func (r *memoryDockerRepo) FindProjectCreation(_ context.Context, id, digest string) (domaindocker.Project, error) {
+	item, ok := r.projectReceipts[id]
+	if !ok {
+		return item, apperrors.ErrNotFound
+	}
+	if r.projectDigests[id] != digest {
+		return domaindocker.Project{}, apperrors.ErrConflict
+	}
+	return item, nil
+}
+func (r *memoryDockerRepo) CreateProjectIdempotent(ctx context.Context, input domaindocker.ProjectInput, digest string, services []string) (domaindocker.Project, error) {
+	if item, err := r.FindProjectCreation(ctx, input.ID, digest); !errors.Is(err, apperrors.ErrNotFound) {
+		return item, err
+	}
+	item, err := r.CreateProject(ctx, input)
+	if err != nil {
+		return item, err
+	}
+	for _, name := range services {
+		if _, err := r.UpsertService(ctx, domaindocker.ServiceInput{ProjectID: item.ID, HostID: item.HostID, Name: name, Status: "defined"}); err != nil {
+			return item, err
+		}
+	}
+	if r.projectReceipts == nil {
+		r.projectReceipts = map[string]domaindocker.Project{}
+		r.projectDigests = map[string]string{}
+	}
+	receipt := domaindocker.Project{ID: item.ID, HostID: item.HostID, Name: item.Name, Slug: item.Slug, Status: item.Status, SourceKind: item.SourceKind, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
+	r.projectReceipts[input.ID], r.projectDigests[input.ID] = receipt, digest
+	return receipt, nil
 }

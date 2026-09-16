@@ -20,11 +20,14 @@ type testRoleReader struct{}
 
 func (testRoleReader) ListRolePermissions(context.Context) (map[string][]string, error) {
 	return map[string][]string{
+		"editor": {appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryApplicationsUpdate},
 		"admin": {
 			appaccess.PermDeliveryApplicationsView,
 			appaccess.PermDeliveryApplicationsUpdate,
 			appaccess.PermDeliveryApplicationsDelete,
 			appaccess.PermDeliveryReleasesTrigger,
+			appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "preflight"),
+			appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "trigger"),
 		},
 	}, nil
 }
@@ -81,6 +84,12 @@ func testPrincipal() domainidentity.Principal {
 }
 
 type testApplications struct{}
+
+type templateTestApplications struct{ testApplications }
+
+func (templateTestApplications) GetService(_ context.Context, _ domainidentity.Principal, applicationID, serviceID string) (domainapp.Service, error) {
+	return domainapp.Service{ID: serviceID, ApplicationID: applicationID, DeploymentTemplate: &domaincatalog.DeploymentTemplateBinding{TemplateID: "http", Version: 1, ManifestPackageID: "config"}}, nil
+}
 
 func (testApplications) List(context.Context, domainidentity.Principal, domainapp.Filter) ([]domainapp.App, error) {
 	return []domainapp.App{{ID: "payments", Key: "payments", Group: "commerce", BusinessLineID: "finance"}}, nil
@@ -141,6 +150,29 @@ func (p *testRevisionPromoter) PromoteRevision(_ context.Context, _ domainidenti
 	p.calls++
 	p.revision = revision
 	return p.err
+}
+
+func TestTemplateConfigurationUpdateRequiresCurrentVersion(t *testing.T) {
+	now := time.Now().UTC()
+	existing := domainmanifest.Package{ID: "config", ApplicationID: "payments", ServiceID: "payments-api", UpdatedAt: now}
+	repository := &testRepository{item: existing}
+	service := newTestService(repository, testAuthorizer{})
+	service.applications = templateTestApplications{}
+	input := domainmanifest.Input{Name: "API configuration", ApplicationID: "payments", ServiceID: "payments-api", Renderer: domainmanifest.RendererRaw,
+		Files: []domainmanifest.File{{Path: "config.yaml", Content: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: api\n"}},
+	}
+	if _, err := service.Update(context.Background(), testPrincipal(), existing.ID, input); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("missing version: %v", err)
+	}
+	stale := now.Add(-time.Second)
+	input.ExpectedUpdatedAt = &stale
+	if _, err := service.Update(context.Background(), testPrincipal(), existing.ID, input); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("stale version: %v", err)
+	}
+	input.ExpectedUpdatedAt = &now
+	if _, err := service.Update(context.Background(), testPrincipal(), existing.ID, input); err != nil {
+		t.Fatalf("current version: %v", err)
+	}
 }
 
 func TestCreateAndPublishManifestPackage(t *testing.T) {
@@ -393,5 +425,46 @@ func TestNormalizeBindingRequiresExplicitPolicies(t *testing.T) {
 	}
 	if item.Overlay == nil {
 		t.Fatal("normalizeBindingInput() overlay = nil, want empty object")
+	}
+}
+
+func TestSaveConfigurationRevisionDoesNotExecuteAndRejectsStaleDraft(t *testing.T) {
+	repository := &testRepository{}
+	service := newTestService(repository, testAuthorizer{})
+	promoter := &testRevisionPromoter{}
+	service.SetRevisionPromoter(promoter)
+	principal := domainidentity.Principal{UserID: "editor", Roles: []string{"editor"}}
+	created, err := service.Create(context.Background(), principal, domainmanifest.Input{
+		Name: "Service configuration", ApplicationID: "payments", Renderer: domainmanifest.RendererRaw,
+		Files: []domainmanifest.File{{Path: "config.yaml", Content: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: api\n"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := service.SaveRevision(context.Background(), principal, created.ID, domainmanifest.RevisionInput{ExpectedUpdatedAt: created.UpdatedAt})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.CurrentRevision != 1 || saved.Status != domainmanifest.StatusPublished || len(repository.revisions) != 1 || promoter.calls != 0 {
+		t.Fatalf("configuration save: revision=%d revisions=%d executions=%d", saved.CurrentRevision, len(repository.revisions), promoter.calls)
+	}
+	if _, err := service.SaveRevision(context.Background(), principal, created.ID, domainmanifest.RevisionInput{ExpectedUpdatedAt: saved.UpdatedAt}); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.revisions) != 1 {
+		t.Fatal("saved identical configuration twice")
+	}
+	if _, err := service.SaveRevision(context.Background(), principal, created.ID, domainmanifest.RevisionInput{ExpectedUpdatedAt: created.UpdatedAt}); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("stale draft: %v", err)
+	}
+	if _, err := service.SaveRevision(context.Background(), principal, created.ID, domainmanifest.RevisionInput{}); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("missing token: %v", err)
+	}
+	service.authorizer = testAuthorizer{deny: true}
+	if _, err := service.SaveRevision(context.Background(), principal, created.ID, domainmanifest.RevisionInput{ExpectedUpdatedAt: saved.UpdatedAt}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("scope denied: %v", err)
+	}
+	if promoter.calls != 0 {
+		t.Fatal("configuration save triggered execution")
 	}
 }

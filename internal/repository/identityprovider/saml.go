@@ -15,43 +15,37 @@ import (
 )
 
 func (r *Repository) CreateSAMLProvider(ctx context.Context, provider domainprovider.Provider, serviceProvider domainprovider.SAMLServiceProvider, key domainprovider.SAMLSigningKey) (domainprovider.Provider, error) {
-	transaction := r.db.WithContext(ctx).Begin()
-	if transaction.Error != nil {
-		return domainprovider.Provider{}, transaction.Error
-	}
-	repository := &Repository{db: transaction}
-	created, err := repository.CreateProvider(ctx, provider)
-	if err == nil {
-		err = repository.UpsertSAMLServiceProvider(ctx, serviceProvider)
-	}
-	if err == nil {
-		err = repository.CreateSAMLSigningKey(ctx, key)
-	}
+	var created domainprovider.Provider
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repository := &Repository{db: tx}
+		var err error
+		created, err = repository.CreateProvider(ctx, provider)
+		if err != nil {
+			return err
+		}
+		if err := repository.UpsertSAMLServiceProvider(ctx, serviceProvider); err != nil {
+			return err
+		}
+		return repository.CreateSAMLSigningKey(ctx, key)
+	})
 	if err != nil {
-		_ = transaction.Rollback().Error
-		return domainprovider.Provider{}, err
-	}
-	if err := transaction.Commit().Error; err != nil {
 		return domainprovider.Provider{}, err
 	}
 	return created, nil
 }
 
 func (r *Repository) UpdateSAMLProvider(ctx context.Context, provider domainprovider.Provider, serviceProvider domainprovider.SAMLServiceProvider) (domainprovider.Provider, error) {
-	transaction := r.db.WithContext(ctx).Begin()
-	if transaction.Error != nil {
-		return domainprovider.Provider{}, transaction.Error
-	}
-	repository := &Repository{db: transaction}
-	updated, err := repository.UpdateProvider(ctx, provider)
-	if err == nil {
-		err = repository.UpsertSAMLServiceProvider(ctx, serviceProvider)
-	}
+	var updated domainprovider.Provider
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		repository := &Repository{db: tx}
+		var err error
+		updated, err = repository.UpdateProvider(ctx, provider)
+		if err != nil {
+			return err
+		}
+		return repository.UpsertSAMLServiceProvider(ctx, serviceProvider)
+	})
 	if err != nil {
-		_ = transaction.Rollback().Error
-		return domainprovider.Provider{}, err
-	}
-	if err := transaction.Commit().Error; err != nil {
 		return domainprovider.Provider{}, err
 	}
 	return updated, nil

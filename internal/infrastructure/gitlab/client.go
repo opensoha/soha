@@ -25,13 +25,14 @@ type Client struct {
 }
 
 type Options struct {
-	BaseURL string
-	Token   string
-	Bearer  bool
-	GroupID string
-	PerPage int
-	Timeout time.Duration
-	Enabled bool
+	HTTPClient *http.Client
+	BaseURL    string
+	Token      string
+	Bearer     bool
+	GroupID    string
+	PerPage    int
+	Timeout    time.Duration
+	Enabled    bool
 }
 
 func NewWithOptions(options Options) *Client {
@@ -43,13 +44,17 @@ func NewWithOptions(options Options) *Client {
 	if perPage <= 0 {
 		perPage = 50
 	}
+	client := options.HTTPClient
+	if client == nil {
+		client = &http.Client{Timeout: timeout}
+	}
 	return &Client{
 		baseURL: strings.TrimRight(strings.TrimSpace(options.BaseURL), "/"),
 		token:   strings.TrimSpace(options.Token),
 		bearer:  options.Bearer,
 		groupID: strings.TrimSpace(options.GroupID),
 		perPage: perPage,
-		http:    &http.Client{Timeout: timeout},
+		http:    client,
 		enabled: options.Enabled,
 	}
 }
@@ -183,20 +188,10 @@ func (c *Client) get(ctx context.Context, path string, params url.Values, out an
 }
 
 func (c *Client) getWithHeaders(ctx context.Context, path string, params url.Values, out any) (http.Header, error) {
-	target := c.baseURL + path
-	if encoded := params.Encode(); encoded != "" {
-		target += "?" + encoded
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	req, err := c.request(ctx, path, params)
 	if err != nil {
-		return nil, fmt.Errorf("build gitlab request: %w", err)
+		return nil, err
 	}
-	if c.bearer {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	} else {
-		req.Header.Set("PRIVATE-TOKEN", c.token)
-	}
-	req.Header.Set("Accept", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)

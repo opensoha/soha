@@ -142,6 +142,7 @@ func TestCreateBindingMaintainsLegacyProjection(t *testing.T) {
 	item := domainmanifest.EnvironmentBinding{
 		ID: "binding-1", PackageID: "manifest-1", ApplicationEnvironmentID: "payments-dev",
 		EnvironmentKey: "dev", ClusterID: "dev-1", Namespace: "payments", Overlay: map[string]string{"image": "v2"},
+		Kustomize:   &domainmanifest.KustomizeOptions{EntryPath: "overlays/dev"},
 		DriftPolicy: domainmanifest.DriftPolicyReport, DeletionPolicy: domainmanifest.DeletionPolicyOrphan,
 		Enabled: true, Version: 1, CreatedAt: now, UpdatedAt: now,
 	}
@@ -149,25 +150,25 @@ func TestCreateBindingMaintainsLegacyProjection(t *testing.T) {
 	mock.ExpectExec(`INSERT INTO manifest_bindings`).
 		WithArgs(item.ID, item.PackageID, item.ApplicationEnvironmentID, item.EnvironmentKey, item.ClusterID,
 			item.Namespace, `{"image":"v2"}`, "", "", item.DriftPolicy, item.DeletionPolicy,
-			item.Enabled, item.Version, item.CreatedAt, item.UpdatedAt).
+			item.Enabled, item.Version, item.CreatedAt, item.UpdatedAt, `{"entryPath":"overlays/dev"}`, `null`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec(`UPDATE manifest_packages package`).WithArgs(item.PackageID).
+	mock.ExpectExec(`UPDATE manifest_packages package`).WithArgs(item.PackageID, item.PackageID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	mock.ExpectQuery(`FROM manifest_bindings`).WithArgs(item.ID).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "package_id", "application_environment_id", "environment_key", "cluster_id", "namespace",
 			"overlay", "rollout_strategy_id", "verification_policy_id", "drift_policy", "deletion_policy",
-			"enabled", "version", "created_at", "updated_at",
+			"enabled", "version", "created_at", "updated_at", "kustomize", "template_parameters",
 		}).AddRow(item.ID, item.PackageID, item.ApplicationEnvironmentID, item.EnvironmentKey, item.ClusterID,
 			item.Namespace, `{"image":"v2"}`, "", "", item.DriftPolicy, item.DeletionPolicy,
-			item.Enabled, item.Version, item.CreatedAt, item.UpdatedAt))
+			item.Enabled, item.Version, item.CreatedAt, item.UpdatedAt, `{"entryPath":"overlays/dev"}`, `{}`))
 
 	created, err := repository.CreateBinding(context.Background(), item)
 	if err != nil {
 		t.Fatalf("CreateBinding() error = %v", err)
 	}
-	if created.ID != item.ID || created.Overlay["image"] != "v2" {
+	if created.ID != item.ID || created.Overlay["image"] != "v2" || created.Kustomize == nil || created.Kustomize.EntryPath != "overlays/dev" {
 		t.Fatalf("CreateBinding() = %#v, want persisted binding", created)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -197,11 +198,11 @@ func TestCreatePackageMaintainsRelationalBindings(t *testing.T) {
 			item.Status, item.CurrentRevision, files, bindings, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`INSERT INTO manifest_bindings`).
-		WithArgs("binding-1", "manifest-1", "payments-dev", "dev", "dev-1", "payments", `{"image":"v2"}`, now, now).
+		WithArgs("binding-1", "manifest-1", "payments-dev", "dev", "dev-1", "payments", `{"image":"v2"}`, now, now, "null", "null").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`DELETE FROM manifest_bindings WHERE package_id = \$1 AND id NOT IN \(\$2\)`).
 		WithArgs("manifest-1", "binding-1").WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectExec(`UPDATE manifest_packages package`).WithArgs("manifest-1").
+	mock.ExpectExec(`UPDATE manifest_packages package`).WithArgs("manifest-1", "manifest-1").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	mock.ExpectQuery(`SELECT id, name, description.*FROM manifest_packages`).WithArgs("manifest-1").

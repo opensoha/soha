@@ -245,6 +245,13 @@ type DeviceFilter struct {
 }
 
 type Gateway struct {
+	Region                     string     `json:"region"`
+	ProviderCode               string     `json:"providerCode"`
+	ProviderName               string     `json:"providerName"`
+	SelectionPriority          int        `json:"selectionPriority"`
+	AcceptNewConnections       bool       `json:"acceptNewConnections"`
+	MaxSessions                int        `json:"maxSessions"`
+	ProbeURL                   string     `json:"probeURL,omitempty"`
 	ID                         string     `json:"id"`
 	RuntimeID                  string     `json:"runtimeId"`
 	SiteID                     string     `json:"siteId"`
@@ -271,6 +278,13 @@ type Gateway struct {
 }
 
 type GatewayInput struct {
+	Region                     *string
+	ProviderCode               *string
+	ProviderName               *string
+	SelectionPriority          *int
+	AcceptNewConnections       *bool
+	MaxSessions                *int
+	ProbeURL                   *string
 	RuntimeID                  string
 	SiteID                     string
 	Name                       string

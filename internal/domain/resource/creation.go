@@ -52,6 +52,7 @@ type ResourceCreateScopeDecision struct {
 }
 
 type ResourceCreateRef struct {
+	UID        string `json:"uid,omitempty"`
 	APIVersion string `json:"apiVersion"`
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
@@ -109,6 +110,7 @@ type ResourceCreateExecutionDocument struct {
 }
 
 type ResourceCreateExecution struct {
+	ClusterID   string                            `json:"clusterId,omitempty"`
 	OperationID string                            `json:"operationId"`
 	ContentHash string                            `json:"contentHash"`
 	Status      string                            `json:"status"`

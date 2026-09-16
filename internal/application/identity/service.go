@@ -117,8 +117,10 @@ type EphemeralTokenStore interface {
 
 type GatewayTokenRepository interface {
 	GetPersonalAccessTokenByHash(context.Context, string) (domainaigateway.PersonalAccessToken, error)
+	GetPersonalAccessTokenByID(context.Context, string) (domainaigateway.PersonalAccessToken, error)
 	TouchPersonalAccessToken(context.Context, string, time.Time) error
 	GetServiceAccountTokenByHash(context.Context, string) (domainaigateway.ServiceAccountToken, error)
+	GetServiceAccountTokenByID(context.Context, string) (domainaigateway.ServiceAccountToken, error)
 	TouchServiceAccountToken(context.Context, string, time.Time) error
 	GetServiceAccount(context.Context, string) (domainaigateway.ServiceAccount, error)
 }
@@ -578,17 +580,22 @@ func (s *Service) parsePersonalAccessToken(ctx context.Context, token string) (d
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: personal access token not found", apperrors.ErrUnauthorized)
 	}
+	return s.personalAccessTokenPrincipal(ctx, item)
+}
+
+func (s *Service) personalAccessTokenPrincipal(ctx context.Context, item domainaigateway.PersonalAccessToken) (domainidentity.Principal, domainidentity.AccessContext, error) {
 	if item.RevokedAt != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: personal access token revoked", apperrors.ErrUnauthorized)
 	}
 	if item.ExpiresAt != nil && item.ExpiresAt.Before(time.Now().UTC()) {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: personal access token expired", apperrors.ErrUnauthorized)
 	}
-	principal, err := s.loadPrincipal(ctx, item.UserID)
+	principal, err := s.CurrentPrincipal(ctx, item.UserID)
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
 	}
 	principal.PermissionKeys = append([]string(nil), item.PermissionKeys...)
+	principal.AccessTokenID = item.ID
 	_ = s.gateway.TouchPersonalAccessToken(ctx, item.ID, time.Now().UTC())
 	return principal, domainidentity.AccessContext{
 		TokenID:     item.ID,
@@ -610,6 +617,10 @@ func (s *Service) parseServiceAccountToken(ctx context.Context, token string) (d
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: service account token not found", apperrors.ErrUnauthorized)
 	}
+	return s.serviceAccountTokenPrincipal(ctx, item)
+}
+
+func (s *Service) serviceAccountTokenPrincipal(ctx context.Context, item domainaigateway.ServiceAccountToken) (domainidentity.Principal, domainidentity.AccessContext, error) {
 	if item.RevokedAt != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: service account token revoked", apperrors.ErrUnauthorized)
 	}
@@ -624,6 +635,7 @@ func (s *Service) parseServiceAccountToken(ctx context.Context, token string) (d
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: service account is not active", apperrors.ErrUnauthorized)
 	}
 	principal := domainidentity.Principal{
+		AccessTokenID:  item.ID,
 		UserID:         "service_account:" + account.ID,
 		UserName:       account.Name,
 		Roles:          append([]string(nil), account.RoleIDs...),
@@ -714,6 +726,10 @@ func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) CurrentPrincipal(ctx context.Context, userID string) (domainidentity.Principal, error) {
+	user, err := s.accounts.GetByID(ctx, userID)
+	if err != nil || user.Status != "active" {
+		return domainidentity.Principal{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
+	}
 	return s.loadPrincipal(ctx, userID)
 }
 

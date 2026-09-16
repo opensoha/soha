@@ -3,6 +3,7 @@ package virtualization
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,102 @@ import (
 type recordingPVESnippetWriter struct {
 	calls []pveSnippetWriteCall
 	err   error
+}
+
+func TestPVECreatePreparationIsReadOnlyAndFreezesDefaults(t *testing.T) {
+	reads := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api2/json/cluster/nextid" {
+			t.Errorf("unexpected preparation side effect: %s %s", r.Method, r.URL.Path)
+		}
+		reads++
+		writePVEAny(w, "701")
+	}))
+	defer server.Close()
+	adapter := NewPVEAdapter(server.Client())
+	connection := Connection{Endpoint: server.URL, Options: map[string]any{"defaultNode": "node-a", "defaultStorage": "disk-a", "defaultBridge": "bridge-a"}}
+	input, err := adapter.PrepareVMCreate(context.Background(), connection, CreateVMInput{Name: "stable", CloudInit: "#cloud-config"})
+	if err != nil || input.Node != "node-a" || input.ProviderParams["vmid"] != "701" || input.ProviderParams["storage"] != "disk-a" {
+		t.Fatalf("preparation: %+v %v", input, err)
+	}
+	connection.Options = map[string]any{"defaultNode": "node-b", "defaultStorage": "disk-b"}
+	replayed, err := adapter.PrepareVMCreate(context.Background(), connection, input)
+	if err != nil || replayed.Node != "node-a" || replayed.ProviderParams["storage"] != "disk-a" || reads != 1 {
+		t.Fatalf("identity changed: %+v %v reads=%d", replayed, err, reads)
+	}
+}
+
+func TestPVECreateRecoversOnlyOwnedUnlockedIdentity(t *testing.T) {
+	for _, scenario := range []string{"owned", "foreign", "locked"} {
+		t.Run(scenario, func(t *testing.T) {
+			writes := 0
+			server := pveRecoveryTestServer(t, scenario, &writes)
+			defer server.Close()
+			input := CreateVMInput{OperationID: "original", Name: "stable", Node: "node-a", ProviderParams: map[string]any{"vmid": "701"}}
+			vm, err := NewPVEAdapter(server.Client()).CreateVM(context.Background(), Connection{Endpoint: server.URL}, input)
+			if scenario == "owned" && (err != nil || vm.ID != "701") {
+				t.Fatalf("recovery: %+v %v", vm, err)
+			}
+			if scenario != "owned" && err == nil {
+				t.Fatal("accepted foreign or unfinished VM")
+			}
+			observed, found, err := NewPVEAdapter(server.Client()).ObserveVMCreation(context.Background(), Connection{Endpoint: server.URL}, input)
+			if scenario == "owned" && (err != nil || !found || observed.ID != "701") {
+				t.Fatalf("observation failed: %+v %t %v", observed, found, err)
+			}
+			if scenario != "owned" && (found || err == nil) {
+				t.Fatal("observation accepted foreign or locked VM")
+			}
+			if writes != 0 {
+				t.Fatalf("unexpected writes %d", writes)
+			}
+			if pveCreatePayload(pveCreatePlan{input: input, vmid: "701"})["description"] != "soha-operation:original" {
+				t.Fatal("create payload lacks owner")
+			}
+		})
+	}
+}
+
+func pveRecoveryTestServer(t *testing.T, scenario string, writes *int) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			(*writes)++
+			http.Error(w, "unexpected write", 500)
+			return
+		}
+		switch r.URL.Path {
+		case "/api2/json/nodes/node-a/qemu":
+			writePVEData(w, []map[string]any{{"vmid": 701}})
+		case "/api2/json/nodes/node-a/qemu/701/config":
+			config := map[string]any{"name": "stable", "description": "soha-operation:original"}
+			if scenario == "foreign" {
+				config["description"] = "someone else"
+			}
+			if scenario == "locked" {
+				config["lock"] = "clone"
+			}
+			writePVEAny(w, config)
+		case "/api2/json/nodes/node-a/qemu/701/status/current":
+			writePVEAny(w, map[string]any{"name": "stable", "status": "stopped"})
+		default:
+			t.Errorf("unexpected lookup %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func TestPVEDurableCreationRetainsPartialResource(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		t.Error("durable creation launched cleanup outside its worker context")
+		http.Error(w, "unexpected cleanup", 500)
+	}))
+	defer server.Close()
+	adapter := NewPVEAdapter(server.Client())
+	cause := errors.New("configuration failed")
+	if err := adapter.compensateFailedPVECreate(context.Background(), Connection{Endpoint: server.URL}, pveCreatePlan{input: CreateVMInput{OperationID: "task"}}, cause); !errors.Is(err, cause) {
+		t.Fatal(err)
+	}
 }
 
 type pveSnippetWriteCall struct {

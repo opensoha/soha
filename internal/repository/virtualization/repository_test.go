@@ -135,7 +135,7 @@ func TestUpdateTaskFencesClaimedWorkerAttempt(t *testing.T) {
 		t.Fatalf("gorm.Open() error = %v", err)
 	}
 	repo := New(db)
-	mock.ExpectExec(`(?s)UPDATE virtualization_tasks.*WHERE id = \$12 AND updated_at = \$13 AND claimed_by_worker_id = \$14 AND attempt_count = \$15 AND status = 'running'`).
+	mock.ExpectExec(`(?s)UPDATE virtualization_tasks.*SET vm_id = \$1.*WHERE id = \$13 AND updated_at = \$14 AND claimed_by_worker_id = \$15 AND attempt_count = \$16 AND status IN \('running', 'canceling'\)`).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	_, err = repo.UpdateTask(context.Background(), domainvirtualization.Task{

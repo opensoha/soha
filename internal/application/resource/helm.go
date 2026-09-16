@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -176,8 +177,8 @@ func (h *Helm) GetHelmReleaseDetail(ctx context.Context, principal domainidentit
 		}
 		source = "live"
 	}
-	item.AllowedActions = stringifyActions(decision.AllowedActions)
-	item.ValuesEditable = helmReleaseValuesEditable(connection, decision)
+	item.AllowedActions = helmReleaseAllowedActions(item.AllowedActions, decision)
+	item.ValuesEditable = helmReleaseValuesEditable(connection, decision) && slices.Contains(item.AllowedActions, "update")
 	item.ValuesDiffEnabled = true
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionView), "success", fmt.Sprintf("viewed helm release detail via %s in namespace %s", source, displayNamespace(namespace)))
 	return item, nil
@@ -213,7 +214,7 @@ func (h *Helm) ListHelmReleaseHistory(ctx context.Context, principal domainident
 		source = "live"
 	}
 	for index := range items {
-		items[index].AllowedActions = stringifyActions(decision.AllowedActions)
+		items[index].AllowedActions = helmReleaseAllowedActions(items[index].AllowedActions, decision)
 	}
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionView), "success", fmt.Sprintf("listed helm release history via %s in namespace %s", source, displayNamespace(namespace)))
 	return items, nil
@@ -251,8 +252,8 @@ func (h *Helm) GetHelmReleaseValues(ctx context.Context, principal domainidentit
 		}
 		source = "live"
 	}
-	item.AllowedActions = stringifyActions(decision.AllowedActions)
-	item.Editable = helmReleaseValuesEditable(connection, decision)
+	item.AllowedActions = helmReleaseAllowedActions(item.AllowedActions, decision)
+	item.Editable = helmReleaseValuesEditable(connection, decision) && slices.Contains(item.AllowedActions, "update")
 	item.DiffEnabled = true
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionView), "success", fmt.Sprintf("viewed helm release values via %s in namespace %s", source, displayNamespace(namespace)))
 	return item, nil
@@ -285,8 +286,8 @@ func (h *Helm) UpdateHelmReleaseValues(ctx context.Context, principal domainiden
 			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 			return domainresource.HelmValuesView{}, err
 		}
-		item.AllowedActions = stringifyActions(decision.AllowedActions)
-		item.Editable = helmReleaseValuesEditable(connection, decision)
+		item.AllowedActions = helmReleaseAllowedActions(item.AllowedActions, decision)
+		item.Editable = helmReleaseValuesEditable(connection, decision) && slices.Contains(item.AllowedActions, "update")
 		item.DiffEnabled = true
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "success", "updated helm release values via agent")
 		s.recordOperation(ctx, principal, "platform.helm_release.values_update", connection.Summary.ID, namespace, "HelmRelease", name, "updated helm release values via agent", map[string]any{
@@ -302,8 +303,8 @@ func (h *Helm) UpdateHelmReleaseValues(ctx context.Context, principal domainiden
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return domainresource.HelmValuesView{}, err
 	}
-	item.AllowedActions = stringifyActions(decision.AllowedActions)
-	item.Editable = helmReleaseValuesEditable(connection, decision)
+	item.AllowedActions = helmReleaseAllowedActions(item.AllowedActions, decision)
+	item.Editable = helmReleaseValuesEditable(connection, decision) && slices.Contains(item.AllowedActions, "update")
 	item.DiffEnabled = true
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "success", "updated helm release values")
 	s.recordOperation(ctx, principal, "platform.helm_release.values_update", connection.Summary.ID, namespace, "HelmRelease", name, "updated helm release values", map[string]any{
@@ -748,4 +749,18 @@ func firstNonEmptyHelm(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func helmReleaseAllowedActions(runtime []string, decision domainaccess.Decision) []string {
+	authorized := stringifyActions(decision.AllowedActions)
+	if runtime == nil {
+		return authorized
+	}
+	result := make([]string, 0, len(runtime))
+	for _, action := range runtime {
+		if slices.Contains(authorized, action) {
+			result = append(result, action)
+		}
+	}
+	return result
 }

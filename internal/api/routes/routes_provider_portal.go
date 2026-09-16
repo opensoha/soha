@@ -23,6 +23,7 @@ func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
 
 	protected.GET("/identity/applications", deps.ProviderPortal.ListIdentityApplications)
 	protected.POST("/identity/applications", deps.ProviderPortal.CreateIdentityApplication)
+	protected.POST("/identity/applications/onboard", deps.ProviderPortal.OnboardIdentityApplication)
 	protected.GET("/identity/applications/:applicationID", deps.ProviderPortal.GetIdentityApplication)
 	protected.PUT("/identity/applications/:applicationID", deps.ProviderPortal.UpdateIdentityApplication)
 	protected.PATCH("/identity/applications/:applicationID", deps.ProviderPortal.UpdateIdentityApplication)
@@ -38,6 +39,8 @@ func registerProviderPortalRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/identity/providers", deps.ProviderPortal.ListIdentityProviders)
 	protected.POST("/identity/providers", deps.ProviderPortal.CreateIdentityProvider)
 	protected.GET("/identity/providers/:providerID", deps.ProviderPortal.GetIdentityProvider)
+	protected.GET("/identity/providers/:providerID/setup", deps.ProviderPortal.GetIdentityProviderSetup)
+	protected.GET("/identity/providers/:providerID/users/:userID/metadata", deps.ProviderPortal.GetIdentityProviderUserMetadata)
 	protected.PUT("/identity/providers/:providerID", deps.ProviderPortal.UpdateIdentityProvider)
 	protected.PATCH("/identity/providers/:providerID", deps.ProviderPortal.UpdateIdentityProvider)
 	protected.DELETE("/identity/providers/:providerID", deps.ProviderPortal.DeleteIdentityProvider)

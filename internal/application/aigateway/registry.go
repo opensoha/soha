@@ -23,6 +23,26 @@ type ToolCapabilityInvoker interface {
 	InvokeTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error)
 }
 
+// ToolTaskReferenceProvider projects an owning domain's existing execution record.
+// Implementations must not restore fields removed from visibleOutput by policy.
+// A reference never grants permission to invoke its status capability.
+type ToolTaskReferenceProvider interface {
+	TaskReference(tool domainaigateway.ToolCapability, output, visibleOutput any) *domainaigateway.CapabilityTaskRef
+}
+
+func (r *capabilityRegistry) TaskReference(tool domainaigateway.ToolCapability, output, visibleOutput any) *domainaigateway.CapabilityTaskRef {
+	for _, provider := range r.providers {
+		if !providerHasTool(provider, tool.Name) {
+			continue
+		}
+		if tasks, ok := provider.(ToolTaskReferenceProvider); ok {
+			return tasks.TaskReference(tool, output, visibleOutput)
+		}
+		return nil
+	}
+	return nil
+}
+
 type ResourceCapabilityRefs struct {
 	Resource string
 	Tools    []string
@@ -34,10 +54,11 @@ type capabilityRegistry struct {
 	providers []CapabilityProvider
 }
 
-type staticCapabilityProvider struct{}
+// BuiltinCapabilityProvider supplies the legacy catalog during explicit startup registration.
+type BuiltinCapabilityProvider struct{}
 
 func newDefaultCapabilityRegistry() *capabilityRegistry {
-	return newCapabilityRegistry(staticCapabilityProvider{})
+	return newCapabilityRegistry(BuiltinCapabilityProvider{})
 }
 
 func newCapabilityRegistry(providers ...CapabilityProvider) *capabilityRegistry {
@@ -60,8 +81,14 @@ func (r *capabilityRegistry) AddProviders(providers ...CapabilityProvider) {
 
 func (r *capabilityRegistry) Tools() []domainaigateway.ToolCapability {
 	out := make([]domainaigateway.ToolCapability, 0)
+	seen := map[string]bool{}
 	for _, provider := range r.providers {
-		out = append(out, provider.Tools()...)
+		for _, tool := range provider.Tools() {
+			if !seen[tool.Name] {
+				out = append(out, tool)
+				seen[tool.Name] = true
+			}
+		}
 	}
 	return out
 }
@@ -84,8 +111,14 @@ func (r *capabilityRegistry) Prompts() []domainaigateway.PromptCapability {
 
 func (r *capabilityRegistry) Skills() []domainaigateway.SkillCapability {
 	out := make([]domainaigateway.SkillCapability, 0)
+	seen := map[string]bool{}
 	for _, provider := range r.providers {
-		out = append(out, provider.Skills()...)
+		for _, skill := range provider.Skills() {
+			if !seen[skill.ID] {
+				out = append(out, skill)
+				seen[skill.ID] = true
+			}
+		}
 	}
 	return out
 }
@@ -175,9 +208,12 @@ func (r *capabilityRegistry) SkillByID(id string) (domainaigateway.SkillCapabili
 
 func (r *capabilityRegistry) InvokeTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, bool, error) {
 	for _, provider := range r.providers {
-		invoker, ok := provider.(ToolCapabilityInvoker)
-		if !ok || !providerHasTool(provider, tool.Name) {
+		if !providerHasTool(provider, tool.Name) {
 			continue
+		}
+		invoker, ok := provider.(ToolCapabilityInvoker)
+		if !ok {
+			return nil, nil, false, nil
 		}
 		output, relatedIDs, err := invoker.InvokeTool(ctx, principal, tool, input)
 		return output, relatedIDs, true, err
@@ -185,23 +221,23 @@ func (r *capabilityRegistry) InvokeTool(ctx context.Context, principal domainide
 	return nil, nil, false, nil
 }
 
-func (staticCapabilityProvider) Tools() []domainaigateway.ToolCapability {
+func (BuiltinCapabilityProvider) Tools() []domainaigateway.ToolCapability {
 	return defaultTools()
 }
 
-func (staticCapabilityProvider) Resources() []domainaigateway.ResourceCapability {
+func (BuiltinCapabilityProvider) Resources() []domainaigateway.ResourceCapability {
 	return defaultResources()
 }
 
-func (staticCapabilityProvider) Prompts() []domainaigateway.PromptCapability {
+func (BuiltinCapabilityProvider) Prompts() []domainaigateway.PromptCapability {
 	return defaultPrompts()
 }
 
-func (staticCapabilityProvider) Skills() []domainaigateway.SkillCapability {
+func (BuiltinCapabilityProvider) Skills() []domainaigateway.SkillCapability {
 	return defaultSkills()
 }
 
-func (staticCapabilityProvider) ResourceCapabilityRefs() []ResourceCapabilityRefs {
+func (BuiltinCapabilityProvider) ResourceCapabilityRefs() []ResourceCapabilityRefs {
 	return defaultResourceCapabilityRefs()
 }
 
@@ -212,6 +248,7 @@ func defaultResourceCapabilityRefs() []ResourceCapabilityRefs {
 			Tools: []string{
 				"delivery.applications.list",
 				"delivery.applications.detail",
+				"delivery.repositories.analyze",
 				"delivery.onboarding.analyze_repo",
 				"delivery.standards.dockerfile.generate",
 				"delivery.standards.dockerfile.validate",

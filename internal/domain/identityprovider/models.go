@@ -75,6 +75,7 @@ type ProviderFilter struct {
 }
 
 type OIDCClient struct {
+	GrantTypes                   []string  `json:"grantTypes"`
 	ID                           string    `json:"id"`
 	ProviderID                   string    `json:"providerId"`
 	ClientID                     string    `json:"clientId"`
@@ -98,6 +99,7 @@ type OIDCClient struct {
 }
 
 type OIDCClientInput struct {
+	GrantTypes             []string `json:"grantTypes"`
 	ProviderID             string   `json:"providerId"`
 	ClientID               string   `json:"clientId"`
 	ClientType             string   `json:"clientType"`
@@ -126,29 +128,48 @@ type OIDCClientSecretReveal struct {
 }
 
 type Outpost struct {
-	ID         string         `json:"id"`
-	Name       string         `json:"name"`
-	Mode       string         `json:"mode"`
-	Endpoint   string         `json:"endpoint,omitempty"`
-	Token      string         `json:"token,omitempty"`
-	TokenHash  string         `json:"-"`
-	Status     string         `json:"status"`
-	Version    string         `json:"version,omitempty"`
-	LastSeenAt *time.Time     `json:"lastSeenAt,omitempty"`
-	Metadata   map[string]any `json:"metadata,omitempty"`
-	CreatedBy  string         `json:"createdBy,omitempty"`
-	UpdatedBy  string         `json:"updatedBy,omitempty"`
-	CreatedAt  time.Time      `json:"createdAt"`
-	UpdatedAt  time.Time      `json:"updatedAt"`
+	Deployment                  *OutpostDeployment `json:"deployment,omitempty"`
+	ID                          string             `json:"id"`
+	Name                        string             `json:"name"`
+	Mode                        string             `json:"mode"`
+	Endpoint                    string             `json:"endpoint,omitempty"`
+	ForwardAuthURL              string             `json:"forwardAuthUrl,omitempty"`
+	Token                       string             `json:"token,omitempty"`
+	TokenHash                   string             `json:"-"`
+	Status                      string             `json:"status"`
+	Version                     string             `json:"version,omitempty"`
+	LastSeenAt                  *time.Time         `json:"lastSeenAt,omitempty"`
+	ConfigurationVersion        int64              `json:"configurationVersion"`
+	AppliedConfigurationVersion int64              `json:"appliedConfigurationVersion"`
+	ConfigurationExpiresAt      *time.Time         `json:"configurationExpiresAt,omitempty"`
+	RuntimeStatus               string             `json:"runtimeStatus"`
+	RuntimeReason               string             `json:"runtimeReason,omitempty"`
+	ClaimedAgentID              string             `json:"claimedAgentId,omitempty"`
+	ProtocolVersion             string             `json:"protocolVersion,omitempty"`
+	RuntimeVersion              string             `json:"runtimeVersion,omitempty"`
+	LastHeartbeatAt             *time.Time         `json:"lastHeartbeatAt,omitempty"`
+	Metadata                    map[string]any     `json:"metadata,omitempty"`
+	CreatedBy                   string             `json:"createdBy,omitempty"`
+	UpdatedBy                   string             `json:"updatedBy,omitempty"`
+	CreatedAt                   time.Time          `json:"createdAt"`
+	UpdatedAt                   time.Time          `json:"updatedAt"`
+}
+
+type OutpostDeployment struct {
+	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
+	ProtocolVersion string `json:"protocolVersion"`
+	TrustKeyID      string `json:"trustKeyId,omitempty"`
+	TrustPublicKey  string `json:"trustPublicKey,omitempty"`
 }
 
 type OutpostInput struct {
-	Name     string         `json:"name"`
-	Mode     string         `json:"mode"`
-	Endpoint string         `json:"endpoint"`
-	Status   string         `json:"status"`
-	Version  string         `json:"version"`
-	Metadata map[string]any `json:"metadata"`
+	Name           string         `json:"name"`
+	Mode           string         `json:"mode"`
+	Endpoint       string         `json:"endpoint"`
+	ForwardAuthURL string         `json:"forwardAuthUrl"`
+	Status         string         `json:"status"`
+	Version        string         `json:"version"`
+	Metadata       map[string]any `json:"metadata"`
 }
 
 type OutpostFilter struct {
@@ -509,6 +530,9 @@ type Repository interface {
 	GetOutpost(context.Context, string) (Outpost, error)
 	CreateOutpost(context.Context, Outpost) (Outpost, error)
 	UpdateOutpost(context.Context, Outpost) (Outpost, error)
+	RecordOutpostClaim(context.Context, Outpost) (Outpost, error)
+	RecordOutpostHeartbeat(context.Context, Outpost) (Outpost, error)
+	RotateOutpostToken(context.Context, Outpost) (Outpost, error)
 	DeleteOutpost(context.Context, string) error
 	ListOIDCClients(context.Context, string) ([]OIDCClient, error)
 	GetOIDCClient(context.Context, string) (OIDCClient, error)

@@ -23,6 +23,8 @@ type dockerHostProvisioner struct {
 
 func (p dockerHostProvisioner) ProvisionDockerHost(ctx context.Context, principal domainidentity.Principal, input appdocker.HostProvisionInput) (appdocker.HostProvisionTask, error) {
 	task, err := p.virtualization.CreateVM(ctx, principal, appvirtualization.CreateVMInput{
+		RequireCapacity:   input.RequireCapacity,
+		IdempotencyKey:    input.IdempotencyKey,
 		ConnectionID:      input.ConnectionID,
 		Name:              input.Name,
 		Architecture:      input.Architecture,

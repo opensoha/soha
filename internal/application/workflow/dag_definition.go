@@ -13,7 +13,7 @@ func parseDAGWorkflowDefinition(definition map[string]any) (dagWorkflowDefinitio
 	if mode == "" {
 		mode = "release_dag"
 	}
-	if mode != "release_dag" && mode != "delivery_dag" {
+	if mode != "release_dag" && mode != "delivery_dag" && mode != domainworkflow.ScopeDeliveryBatch {
 		return dagWorkflowDefinition{}, false
 	}
 	nodeItems, ok := toMapSlice(definition["nodes"])
@@ -25,6 +25,8 @@ func parseDAGWorkflowDefinition(definition map[string]any) (dagWorkflowDefinitio
 	for _, item := range nodeItems {
 		fanOut := toConfigMap(item["fanOut"])
 		nodes = append(nodes, dagWorkflowNode{
+			TargetID:            mapString(item, "targetId"),
+			Stage:               mapString(item, "stage"),
 			ID:                  strings.TrimSpace(fmt.Sprint(item["id"])),
 			Name:                strings.TrimSpace(fmt.Sprint(item["name"])),
 			Type:                strings.TrimSpace(fmt.Sprint(item["type"])),

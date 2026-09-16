@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
@@ -70,11 +71,11 @@ func (g *Git) Execute(ctx context.Context, payload domainmanifest.TaskPayload) (
 	if err != nil {
 		return domainmanifest.TaskResult{}, err
 	}
-	files, _, err := readManifestRepositoryFiles(checkout, payload.Path, payload.IncludePatterns, payload.ExcludePatterns)
+	files, _, err := readManifestRepositoryFiles(checkout, payload.Path, payload.IncludePatterns, payload.ExcludePatterns, payload.Renderer)
 	if err != nil {
 		return domainmanifest.TaskResult{}, err
 	}
-	canonicalDigest, err := validateSyncedManifestFiles(files, payload.Renderer)
+	canonicalDigest, err := validateSyncedManifestFiles(files, payload.Renderer, payload.KustomizeEntries...)
 	if err != nil {
 		return domainmanifest.TaskResult{}, err
 	}
@@ -145,7 +146,8 @@ func prepareGitCredentialEnvironment(repository domainapp.SourceRepository, cred
 			return nil, fmt.Errorf("manifest SSH repository credential has no private key")
 		}
 		keyPath := filepath.Join(workspace, "git-identity")
-		if err := os.WriteFile(keyPath, []byte(privateKey), 0o600); err != nil {
+		// OpenSSH requires the final newline that credential normalization trims.
+		if err := os.WriteFile(keyPath, []byte(privateKey+"\n"), 0o600); err != nil {
 			return nil, fmt.Errorf("create Git SSH identity: %w", err)
 		}
 		sshCommand := "ssh -o BatchMode=yes -o IdentitiesOnly=yes -i " + strconv.Quote(keyPath)
@@ -171,7 +173,7 @@ func firstGitCredential(credentials map[string]string, keys ...string) string {
 	return ""
 }
 
-func validateSyncedManifestFiles(files []domainmanifest.File, renderer string) (string, error) {
+func validateSyncedManifestFiles(files []domainmanifest.File, renderer string, entries ...string) (string, error) {
 	prepared, err := prepareFiles(files, nil)
 	if err != nil {
 		return "", err
@@ -180,7 +182,25 @@ func validateSyncedManifestFiles(files []domainmanifest.File, renderer string) (
 	switch renderer {
 	case domainmanifest.RendererRaw:
 	case domainmanifest.RendererKustomize:
-		inputs, err = renderKustomize(prepared)
+		if len(entries) == 0 {
+			entries = []string{"."}
+		}
+		for _, entry := range entries {
+			inputs, err = renderKustomize(prepared, &domainmanifest.KustomizeOptions{EntryPath: entry}, "")
+			if err != nil {
+				return "", err
+			}
+			if _, _, err := decodeDocuments(inputs, "default"); err != nil {
+				return "", err
+			}
+		}
+		// All selected inputs contribute, including unused overlays and generator
+		// files, so a configuration-only change cannot be discarded by sync.
+		digest := sha256.New()
+		for _, file := range prepared {
+			_, _ = digest.Write([]byte(file.path + "\x00" + file.content + "\x00"))
+		}
+		return hex.EncodeToString(digest.Sum(nil)), nil
 	default:
 		return "", fmt.Errorf("unsupported manifest renderer %q", renderer)
 	}
@@ -238,18 +258,22 @@ func checkoutManifestRepository(ctx context.Context, payload domainmanifest.Task
 	return strings.TrimSpace(commit), strings.TrimSpace(tree), nil
 }
 
-func readManifestRepositoryFiles(checkout, sourcePath string, includes, excludes []string) ([]domainmanifest.File, string, error) {
-	root := filepath.Join(checkout, filepath.FromSlash(strings.TrimSpace(sourcePath)))
-	resolvedRoot, err := filepath.Abs(root)
+func readManifestRepositoryFiles(checkout, sourcePath string, includes, excludes []string, renderers ...string) ([]domainmanifest.File, string, error) {
+	resolvedCheckout, err := filepath.EvalSymlinks(checkout)
 	if err != nil {
 		return nil, "", err
 	}
-	resolvedCheckout, err := filepath.Abs(checkout)
+	resolvedCheckout, err = filepath.Abs(resolvedCheckout)
 	if err != nil {
 		return nil, "", err
 	}
+	resolvedRoot := filepath.Join(resolvedCheckout, filepath.FromSlash(strings.TrimSpace(sourcePath)))
 	if resolvedRoot != resolvedCheckout && !strings.HasPrefix(resolvedRoot, resolvedCheckout+string(filepath.Separator)) {
 		return nil, "", fmt.Errorf("manifest source path escapes repository root")
+	}
+	realRoot, err := filepath.EvalSymlinks(resolvedRoot)
+	if err != nil || realRoot != resolvedRoot {
+		return nil, "", fmt.Errorf("manifest source path must not contain a symbolic link")
 	}
 	info, err := os.Stat(resolvedRoot)
 	if err != nil || !info.IsDir() {
@@ -257,14 +281,17 @@ func readManifestRepositoryFiles(checkout, sourcePath string, includes, excludes
 	}
 	if len(includes) == 0 {
 		includes = []string{"**/*.yaml", "**/*.yml", "*.yaml", "*.yml"}
+		if len(renderers) > 0 && renderers[0] == domainmanifest.RendererKustomize {
+			includes = []string{"*", "**/*"}
+		}
 	}
-	reader := manifestRepositoryFileReader{root: resolvedRoot, includes: includes, excludes: excludes, files: make([]domainmanifest.File, 0)}
+	reader := manifestRepositoryFileReader{root: resolvedRoot, includes: includes, excludes: excludes, files: make([]domainmanifest.File, 0), allowText: len(renderers) > 0 && renderers[0] == domainmanifest.RendererKustomize}
 	err = filepath.WalkDir(resolvedRoot, reader.visit)
 	if err != nil {
 		return nil, "", err
 	}
 	if len(reader.files) == 0 {
-		return nil, "", fmt.Errorf("manifest source did not select any YAML files")
+		return nil, "", fmt.Errorf("manifest source did not select any files")
 	}
 	sort.Slice(reader.files, func(i, j int) bool { return reader.files[i].Path < reader.files[j].Path })
 	hash := sha256.New()
@@ -283,6 +310,7 @@ type manifestRepositoryFileReader struct {
 	excludes   []string
 	files      []domainmanifest.File
 	totalBytes int
+	allowText  bool
 }
 
 func (r *manifestRepositoryFileReader) visit(filePath string, entry fs.DirEntry, walkErr error) error {
@@ -293,6 +321,9 @@ func (r *manifestRepositoryFileReader) visit(filePath string, entry fs.DirEntry,
 		return fmt.Errorf("manifest source contains a symbolic link")
 	}
 	if entry.IsDir() {
+		if entry.Name() == ".git" {
+			return filepath.SkipDir
+		}
 		return nil
 	}
 	relative, err := filepath.Rel(r.root, filePath)
@@ -303,13 +334,32 @@ func (r *manifestRepositoryFileReader) visit(filePath string, entry fs.DirEntry,
 	if !manifestGlobSetMatches(relative, r.includes) || manifestGlobSetMatches(relative, r.excludes) {
 		return nil
 	}
+	return r.readFile(relative, entry)
+}
+
+func (r *manifestRepositoryFileReader) readFile(relative string, entry fs.DirEntry) error {
 	extension := strings.ToLower(filepath.Ext(relative))
-	if extension != ".yaml" && extension != ".yml" {
+	if !r.allowText && extension != ".yaml" && extension != ".yml" {
 		return fmt.Errorf("manifest include pattern selected non-YAML file %q", relative)
 	}
-	content, err := os.ReadFile(filePath)
+	info, err := entry.Info()
 	if err != nil {
 		return err
+	}
+	if !info.Mode().IsRegular() || info.Size() > 1<<20 || int64(r.totalBytes)+info.Size() > gitMaxBytes || len(r.files) >= gitMaxFiles {
+		return fmt.Errorf("manifest source exceeds the bounded file or byte limit, or contains a non-regular file")
+	}
+	root, err := os.OpenRoot(r.root)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	content, err := root.ReadFile(relative)
+	if err != nil {
+		return err
+	}
+	if !utf8.Valid(content) || strings.ContainsRune(string(content), '\x00') {
+		return fmt.Errorf("manifest input %s must be UTF-8 text", relative)
 	}
 	r.totalBytes += len(content)
 	if len(r.files)+1 > gitMaxFiles || r.totalBytes > gitMaxBytes {

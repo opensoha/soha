@@ -70,6 +70,9 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 		monitoring.POST("/integrations/alerts/webhook", deps.Monitoring.IngestWebhook)
 		monitoring.POST("/integrations/alerts/:integrationID/webhook", deps.Monitoring.IngestIntegrationWebhook)
 	}
+	if deps.DeliveryTriggers != nil {
+		v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "delivery")).POST("/delivery/triggers/:triggerID/webhook", limits.Middleware("delivery-trigger-webhook", 120, time.Minute, func(c *gin.Context) string { return c.Param("triggerID") }), deps.DeliveryTriggers.Webhook)
+	}
 	if deps.Delivery != nil {
 		v1.GET("/delivery/execution-tasks/:taskID/runner-status", deps.Delivery.GetExecutionTaskRunnerStatus)
 		v1.POST("/delivery/execution-callbacks", deps.Delivery.RecordExecutionCallback)

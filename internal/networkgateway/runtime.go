@@ -29,6 +29,7 @@ type Telemetry interface {
 }
 
 type RuntimeStatus struct {
+	desired              *networkprotocol.ConfigurationDesired
 	Status               string
 	ConfigurationVersion int
 	PolicyVersion        int
@@ -60,6 +61,8 @@ type Runtime struct {
 	terminalReason       string
 	disabled             bool
 	pending              *networkprotocol.ConfigurationApplied
+	probe                *networkprotocol.VPNProbeConfiguration
+	desired              *networkprotocol.ConfigurationDesired
 }
 
 func NewRuntime(runtimeID string, control Control, applier ConfigurationApplier, telemetry Telemetry, pollInterval, heartbeatInterval, maxClockSkew time.Duration, logger *slog.Logger) (*Runtime, error) {
@@ -201,6 +204,8 @@ func (r *Runtime) handleKnownVersion(desired networkprotocol.ConfigurationDesire
 	}
 	if desired.ConfigurationVersion == currentVersion && currentVersion > 0 {
 		r.mu.Lock()
+		r.probe = desired.VPNProbe
+		r.desired = &desired
 		r.validUntil, r.status, r.diagnostic, r.disabled = desired.ValidUntil, "healthy", "", false
 		r.mu.Unlock()
 		return true, nil
@@ -212,6 +217,8 @@ func (r *Runtime) recordOutcome(desired networkprotocol.ConfigurationDesired, ou
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if outcome.Status == "applied" {
+		r.probe = desired.VPNProbe
+		r.desired = &desired
 		r.configurationVersion, r.attemptedVersion, r.policyVersion, r.validUntil = desired.ConfigurationVersion, desired.ConfigurationVersion, desired.PolicyVersion, desired.ValidUntil
 		r.status, r.diagnostic, r.disabled = "healthy", "", false
 		r.terminalReason = ""
@@ -306,7 +313,11 @@ func (r *Runtime) Status() RuntimeStatus {
 	if r.diagnostic != "" {
 		diagnostics = append(diagnostics, r.diagnostic)
 	}
-	return RuntimeStatus{Status: r.status, ConfigurationVersion: r.configurationVersion, PolicyVersion: r.policyVersion, UptimeSeconds: max(0, int64(r.now().UTC().Sub(r.startedAt)/time.Second)), Diagnostics: diagnostics}
+	var desired *networkprotocol.ConfigurationDesired
+	if !r.disabled && r.validUntil.After(r.now().UTC()) {
+		desired = r.desired
+	}
+	return RuntimeStatus{desired: desired, Status: r.status, ConfigurationVersion: r.configurationVersion, PolicyVersion: r.policyVersion, UptimeSeconds: max(0, int64(r.now().UTC().Sub(r.startedAt)/time.Second)), Diagnostics: diagnostics}
 }
 
 func (r *Runtime) Handler() http.Handler {

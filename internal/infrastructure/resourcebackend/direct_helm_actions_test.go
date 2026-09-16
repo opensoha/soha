@@ -2,8 +2,10 @@ package resourcebackend
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -12,6 +14,25 @@ import (
 	helmreleasepkg "helm.sh/helm/v4/pkg/release/v1"
 	"helm.sh/helm/v4/pkg/storage/driver"
 )
+
+func TestHelmOwnedReleaseReadViewsExcludeLegacyMutations(t *testing.T) {
+	for _, owned := range []bool{false, true} {
+		labels := map[string]string{}
+		if owned {
+			labels["soha-delivery-owner"] = "service"
+		}
+		release := &helmreleasepkg.Release{Name: "app", Namespace: "dev", Version: 1, Labels: labels}
+		detail := mapSDKHelmReleaseDetail(release)
+		if detail.Labels["soha-delivery-owner"] != labels["soha-delivery-owner"] {
+			t.Fatal("release ownership disappeared from detail")
+		}
+		for _, actions := range [][]string{detail.AllowedActions, mapSDKHelmReleaseHistory(release).AllowedActions, mapHelmRelease("app", "dev", labels, time.Now()).AllowedActions} {
+			if owned && !slices.Equal(actions, []string{"view"}) || !owned && actions != nil {
+				t.Fatalf("owned=%v actions=%v", owned, actions)
+			}
+		}
+	}
+}
 
 func TestMapHelmChartInstallResultIncludesManifestResources(t *testing.T) {
 	t.Parallel()

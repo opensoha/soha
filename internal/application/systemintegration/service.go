@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"regexp"
 	"slices"
@@ -47,7 +48,7 @@ type SourceAdapter interface {
 }
 
 type SourceAdapterFactory interface {
-	Build(domain.Integration, map[string]string) (SourceAdapter, error)
+	Build(domain.Integration, map[string]string, *http.Client) (SourceAdapter, error)
 }
 
 type ConnectionTester interface {
@@ -357,7 +358,7 @@ func (s *Service) encryptCredentialInputs(inputs []sohaapi.SystemIntegrationCred
 }
 
 func (s *Service) sourceAdapter(ctx context.Context, id string, requireEnabled bool) (domain.Integration, SourceAdapter, error) {
-	item, credentials, err := s.sourceCredentials(ctx, id, requireEnabled)
+	item, credentials, client, err := s.sourceCredentials(ctx, id, requireEnabled)
 	if err != nil {
 		return domain.Integration{}, nil, err
 	}
@@ -365,7 +366,7 @@ func (s *Service) sourceAdapter(ctx context.Context, id string, requireEnabled b
 	if factory == nil {
 		return domain.Integration{}, nil, fmt.Errorf("%w: source provider is unsupported", apperrors.ErrInvalidArgument)
 	}
-	adapter, err := factory.Build(item, credentials)
+	adapter, err := factory.Build(item, credentials, client)
 	if err != nil {
 		return domain.Integration{}, nil, err
 	}
@@ -375,27 +376,37 @@ func (s *Service) sourceAdapter(ctx context.Context, id string, requireEnabled b
 // ResolveSourceCredentials is the internal execution-time boundary for source
 // credentials. Callers must not persist the returned plaintext values.
 func (s *Service) ResolveSourceCredentials(ctx context.Context, id string) (map[string]string, error) {
-	_, credentials, err := s.sourceCredentials(ctx, strings.TrimSpace(id), true)
+	_, credentials, client, err := s.sourceCredentials(ctx, strings.TrimSpace(id), true)
+	if client != nil {
+		client.CloseIdleConnections()
+	}
 	return credentials, err
 }
 
-func (s *Service) sourceCredentials(ctx context.Context, id string, requireEnabled bool) (domain.Integration, map[string]string, error) {
+func (s *Service) sourceCredentials(ctx context.Context, id string, requireEnabled bool) (domain.Integration, map[string]string, *http.Client, error) {
 	item, err := s.repo.Get(ctx, id)
 	if err != nil {
-		return domain.Integration{}, nil, err
+		return domain.Integration{}, nil, nil, err
 	}
 	if item.Category != domain.CategorySourceControl || (requireEnabled && !item.Enabled) {
-		return domain.Integration{}, nil, fmt.Errorf("%w: source connection is unavailable", apperrors.ErrAccessDenied)
+		return domain.Integration{}, nil, nil, fmt.Errorf("%w: source connection is unavailable", apperrors.ErrAccessDenied)
+	}
+	client, err := sourceConnectionHTTPClient(ctx, item)
+	if err != nil {
+		return domain.Integration{}, nil, nil, err
 	}
 	credentials, err := s.decryptCredentials(ctx, item.ID)
 	if err != nil {
-		return domain.Integration{}, nil, err
+		return domain.Integration{}, nil, client, err
 	}
-	item, credentials, err = s.refreshOAuthCredentials(ctx, item, credentials)
+	item, credentials, err = s.refreshOAuthCredentials(ctx, item, credentials, client)
 	if err != nil {
-		return domain.Integration{}, nil, err
+		if client != nil {
+			client.CloseIdleConnections()
+		}
+		return domain.Integration{}, nil, client, err
 	}
-	return item, credentials, nil
+	return item, credentials, client, nil
 }
 
 func (s *Service) decryptCredentials(ctx context.Context, id string) (map[string]string, error) {
@@ -507,6 +518,9 @@ func validateProviderConfiguration(category, providerType string, enabled bool, 
 	parsed, err := url.Parse(baseURL)
 	if baseURL == "" || err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 		return fmt.Errorf("%w: gitlab base_url must be an HTTP(S) URL", apperrors.ErrInvalidArgument)
+	}
+	if _, _, err := sourceGitAllowlist(config); err != nil {
+		return err
 	}
 	if value := config["per_page"]; value != "" {
 		parsedValue, err := strconv.Atoi(value)

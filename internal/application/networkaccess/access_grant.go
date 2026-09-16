@@ -170,30 +170,34 @@ func (s *AccessGrantService) Revoke(ctx context.Context, principal domainidentit
 }
 
 func (s *AccessGrantService) authorizeResources(ctx context.Context, subjectID string, input AccessGrantInput) (domainnetworkaccess.PolicySnapshot, error) {
-	subject, err := s.policy.GetSubject(ctx, subjectID)
+	return authorizeNetworkResources(ctx, s.policy, subjectID, input)
+}
+
+func authorizeNetworkResources(ctx context.Context, policy AccessGrantPolicyStore, subjectID string, input AccessGrantInput) (domainnetworkaccess.PolicySnapshot, error) {
+	subject, err := policy.GetSubject(ctx, subjectID)
 	if err != nil {
 		return domainnetworkaccess.PolicySnapshot{}, err
 	}
-	device, err := s.policy.GetDevice(ctx, input.DeviceID)
+	device, err := policy.GetDevice(ctx, input.DeviceID)
 	if err != nil {
 		return domainnetworkaccess.PolicySnapshot{}, err
 	}
-	site, err := s.policy.GetSite(ctx, input.SiteID)
+	site, err := policy.GetSite(ctx, input.SiteID)
 	if err != nil {
 		return domainnetworkaccess.PolicySnapshot{}, err
 	}
-	space, err := s.policy.GetSpace(ctx, input.NetworkSpaceID)
+	space, err := policy.GetSpace(ctx, input.NetworkSpaceID)
 	if err != nil {
 		return domainnetworkaccess.PolicySnapshot{}, err
 	}
-	snapshot, err := s.policy.GetPolicySnapshot(ctx)
+	snapshot, err := policy.GetPolicySnapshot(ctx)
 	if err != nil {
 		return domainnetworkaccess.PolicySnapshot{}, err
 	}
 	wantNetworkLease := input.Mode == domainnetworkaccess.ModeExternalVPNZTNA
 	accessProfile := ""
 	for _, resourceID := range input.ResourceIDs {
-		resource, err := s.policy.GetResource(ctx, resourceID)
+		resource, err := policy.GetResource(ctx, resourceID)
 		if err != nil {
 			return domainnetworkaccess.PolicySnapshot{}, err
 		}

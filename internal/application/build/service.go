@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -37,7 +38,7 @@ type ApplicationReader interface {
 }
 
 type BuildTemplateReader interface {
-	GetBuildTemplate(context.Context, string) (domaincatalog.BuildTemplate, error)
+	GetBuildTemplateVersion(context.Context, string, int64) (domaincatalog.BuildTemplate, error)
 }
 
 type ExecutionPlane interface {
@@ -60,11 +61,16 @@ type Service struct {
 	repo       BuildRepository
 	apps       ApplicationReader
 	templates  BuildTemplateReader
+	refs       RepositoryRefResolver
 	execution  ExecutionPlane
 	authorizer domainaccess.Authorizer
 	events     EventWriter
 	audit      AuditRecorder
 	operations OperationRecorder
+	buildpacks BuildpacksCapabilityReader
+	secrets    BuildSecretPinner
+	pipelines  ExternalPipelinePreparer
+	registries BuildImageRegistry
 }
 
 func New(repo BuildRepository, apps ApplicationReader, templates BuildTemplateReader, execution ExecutionPlane, authorizer domainaccess.Authorizer, events EventWriter, audit AuditRecorder, operations OperationRecorder) *Service {
@@ -94,29 +100,49 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, b
 }
 
 func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principal, input domainbuild.TriggerInput) (domainbuild.Record, error) {
+	app, prepared, err := s.prepareTrigger(ctx, principal, input)
+	if err != nil {
+		return domainbuild.Record{}, err
+	}
+	if prepared.SourceType == string(domainapp.BuildSourceTypeBuildpacks) || prepared.SourceType == string(domainapp.BuildSourceTypeExternalPipeline) {
+		prepared, err = s.freezePrepared(ctx, prepared)
+		if err != nil {
+			return domainbuild.Record{}, err
+		}
+	}
+	return s.triggerPrepared(ctx, principal, app, prepared)
+}
+
+func (s *Service) prepareTrigger(ctx context.Context, principal domainidentity.Principal, input domainbuild.TriggerInput) (domainapp.App, domainbuild.Prepared, error) {
 	if input.ApplicationID == "" {
-		return domainbuild.Record{}, fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
+		return domainapp.App{}, domainbuild.Prepared{}, fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
 	}
 	if input.RefType == "" {
 		input.RefType = "branch"
 	}
 	if input.RefName == "" {
-		return domainbuild.Record{}, fmt.Errorf("%w: refName is required", apperrors.ErrInvalidArgument)
+		return domainapp.App{}, domainbuild.Prepared{}, fmt.Errorf("%w: refName is required", apperrors.ErrInvalidArgument)
 	}
 	input.RefType = strings.ToLower(strings.TrimSpace(input.RefType))
-	if input.RefType != "branch" && input.RefType != "tag" && input.RefType != "commit" {
-		return domainbuild.Record{}, fmt.Errorf("%w: refType must be branch, tag, or commit", apperrors.ErrInvalidArgument)
+	if !slices.Contains([]string{"branch", "tag", "commit"}, input.RefType) {
+		return domainapp.App{}, domainbuild.Prepared{}, fmt.Errorf("%w: refType must be branch, tag, or commit", apperrors.ErrInvalidArgument)
 	}
 	repositoryRefs, err := normalizeRepositoryRefs(input.RepositoryRefs)
 	if err != nil {
-		return domainbuild.Record{}, err
+		return domainapp.App{}, domainbuild.Prepared{}, err
 	}
 	input.RepositoryRefs = repositoryRefs
 	app, err := s.apps.Get(ctx, input.ApplicationID)
 	if err != nil {
-		return domainbuild.Record{}, err
+		return domainapp.App{}, domainbuild.Prepared{}, err
 	}
 	buildSource := resolveBuildSource(app, input.BuildSourceID)
+	if input.BuildSourceID != "" && (buildSource == nil || buildSource.ID != input.BuildSourceID) {
+		return domainapp.App{}, domainbuild.Prepared{}, fmt.Errorf("%w: selected build source does not exist", apperrors.ErrInvalidArgument)
+	}
+	if buildSource != nil {
+		input.BuildSourceID = buildSource.ID
+	}
 	effectiveImageTag := strings.TrimSpace(input.ImageTag)
 	if effectiveImageTag == "" {
 		if buildSource != nil && strings.TrimSpace(buildSource.DefaultTag) != "" {
@@ -127,15 +153,39 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	}
 	imageRef := resolveBuildImageRefForSource(app, buildSource, effectiveImageTag)
 	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app.ID); err != nil {
-		return domainbuild.Record{}, err
+		return domainapp.App{}, domainbuild.Prepared{}, err
+	}
+	if err := s.validateServiceBuild(ctx, &input, buildSource, imageRef); err != nil {
+		return domainapp.App{}, domainbuild.Prepared{}, err
+	}
+	if err := s.validateExternalPipeline(ctx, principal, buildSource, imageRef); err != nil {
+		return domainapp.App{}, domainbuild.Prepared{}, err
 	}
 	metadata, err := s.buildTriggerMetadata(ctx, app, buildSource, input, effectiveImageTag, imageRef)
 	if err != nil {
-		return domainbuild.Record{}, err
+		return domainapp.App{}, domainbuild.Prepared{}, err
 	}
 	metadata["serviceId"] = strings.TrimSpace(input.ServiceID)
 	metadata["repositoryId"] = strings.TrimSpace(input.RepositoryID)
 	metadata["resolvedCommit"] = strings.TrimSpace(input.ResolvedCommit)
+	metadata["applicationId"] = app.ID
+	if _, err := s.buildSecretContext(ctx, principal, metadata); err != nil {
+		return domainapp.App{}, domainbuild.Prepared{}, err
+	}
+	input.Variables = metadataMap(metadata, "variables")
+	return app, domainbuild.Prepared{Input: input, ImageTag: effectiveImageTag, ImageRef: imageRef,
+		SourceType: resolveSourceType(buildSource), ProviderKind: firstNonEmptyString(metadataString(metadata, "buildpacksProviderKind"), resolveBuildProviderKind(buildSource)), Metadata: metadata}, nil
+}
+
+func (s *Service) triggerPrepared(ctx context.Context, principal domainidentity.Principal, app domainapp.App, prepared domainbuild.Prepared) (domainbuild.Record, error) {
+	input, metadata := prepared.Input, prepared.Metadata
+	if input.TriggeredByWorkflowRunID != "" {
+		metadata["workflowRunId"] = input.TriggeredByWorkflowRunID
+	}
+	ctx, err := s.buildSecretContext(ctx, principal, metadata)
+	if err != nil {
+		return domainbuild.Record{}, err
+	}
 	record, err := s.repo.Create(ctx, input, metadata)
 	if err != nil {
 		return domainbuild.Record{}, err
@@ -143,15 +193,11 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if s.execution == nil {
 		return s.failRecord(ctx, record, "execution plane is not configured")
 	}
+	metadata["buildRecordId"] = record.ID
 	bundle, task, execErr := s.execution.StartBuildExecution(ctx, execution.BuildPlan{
-		ApplicationID:            app.ID,
-		ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
-		Version:                  effectiveImageTag,
-		SourceType:               resolveSourceType(buildSource),
-		ProviderKind:             resolveBuildProviderKind(buildSource),
-		TargetKind:               "k8s_workload",
-		ArtifactRef:              imageRef,
-		Metadata:                 metadata,
+		ApplicationID: input.ApplicationID, ApplicationEnvironmentID: input.ApplicationEnvironmentID,
+		Version: prepared.ImageTag, SourceType: prepared.SourceType, ProviderKind: prepared.ProviderKind,
+		TargetKind: "k8s_workload", ArtifactRef: prepared.ImageRef, Metadata: metadata,
 	})
 	if execErr != nil {
 		failed, _ := s.failRecord(ctx, record, execErr.Error())
@@ -203,7 +249,9 @@ func (s *Service) buildTriggerMetadata(ctx context.Context, app domainapp.App, b
 		"imageDigest": "pending",
 		"image":       imageRef,
 	}
-	appendBuildSourceMetadata(ctx, s.templates, buildSource, metadata)
+	if err := appendBuildSourceMetadata(ctx, s.templates, buildSource, metadata); err != nil {
+		return nil, err
+	}
 	workspace, err := s.buildExecutionWorkspace(ctx, app, buildSource, input)
 	if err != nil {
 		return nil, err
@@ -212,8 +260,17 @@ func (s *Service) buildTriggerMetadata(ctx context.Context, app domainapp.App, b
 		metadata["workspace"] = workspace
 	}
 	metadata["runtime"] = buildExecutionRuntime(buildSource, metadata)
-	if commands := buildExecutionCommands(buildSource, metadata, imageRef); len(commands) > 0 {
+	commands, err := buildExecutionCommands(buildSource, metadata, imageRef)
+	if err != nil {
+		return nil, err
+	}
+	if len(commands) > 0 {
 		metadata["commands"] = commands
+	}
+	if buildSource != nil && buildSource.Type == domainapp.BuildSourceTypeBuildpacks {
+		if err := s.prepareBuildpacks(ctx, app.ID, buildSource, metadata); err != nil {
+			return nil, err
+		}
 	}
 	return metadata, nil
 }
@@ -271,12 +328,16 @@ func resolveBuildProviderKind(source *domainapp.BuildSource) string {
 	if source == nil {
 		return "k8s_job_runner"
 	}
-	if configured := strings.TrimSpace(fmt.Sprint(source.Config["providerKind"])); configured != "" {
+	if source.Type == domainapp.BuildSourceTypeBuildpacks {
+		return "buildpacks_runner"
+	}
+	if source.Type == domainapp.BuildSourceTypeExternalPipeline {
+		return domainbuild.ExternalPipelineProvider
+	}
+	if configured := configString(source, "providerKind"); configured != "" {
 		return configured
 	}
 	switch source.Type {
-	case domainapp.BuildSourceTypeExternalPipeline:
-		return "external_pipeline_adapter"
 	case domainapp.BuildSourceTypePlatformTemplate:
 		return "k8s_job_runner"
 	default:
@@ -402,24 +463,32 @@ func resolveBuildImageRefForSource(app domainapp.App, source *domainapp.BuildSou
 	return fmt.Sprintf("%s:%s", base, strings.TrimSpace(imageTag))
 }
 
-func appendBuildSourceMetadata(ctx context.Context, templates BuildTemplateReader, source *domainapp.BuildSource, metadata map[string]any) {
+func appendBuildSourceMetadata(ctx context.Context, templates BuildTemplateReader, source *domainapp.BuildSource, metadata map[string]any) error {
 	if source == nil {
-		return
+		return nil
 	}
 	metadata["buildSourceName"] = source.Name
 	metadata["buildSourceType"] = string(source.Type)
 	metadata["buildSourceConfig"] = source.Config
-	if source.Type != domainapp.BuildSourceTypePlatformTemplate || templates == nil {
-		return
+	if source.Type != domainapp.BuildSourceTypePlatformTemplate {
+		return nil
 	}
-	templateID := strings.TrimSpace(fmt.Sprint(source.Config["buildTemplateId"]))
-	if templateID == "" {
-		return
+	if templates == nil {
+		return fmt.Errorf("%w: build template catalog is unavailable", apperrors.ErrInvalidArgument)
 	}
-	template, err := templates.GetBuildTemplate(ctx, templateID)
+	templateID, version, err := domaincatalog.BuildTemplateReference(source.Config)
 	if err != nil {
-		return
+		return err
 	}
+	if version < 1 {
+		return fmt.Errorf("%w: save a published build template version before building", apperrors.ErrInvalidArgument)
+	}
+	template, err := templates.GetBuildTemplateVersion(ctx, templateID, version)
+	if err != nil {
+		return fmt.Errorf("read pinned build template: %w", err)
+	}
+	metadata["buildTemplateVersion"] = version
+	metadata["buildTemplateContentDigest"] = template.ContentDigest
 	metadata["buildTemplateId"] = template.ID
 	metadata["buildTemplateKey"] = template.Key
 	metadata["buildTemplateName"] = template.Name
@@ -428,43 +497,24 @@ func appendBuildSourceMetadata(ctx context.Context, templates BuildTemplateReade
 	metadata["buildTemplateVariableSchema"] = template.VariableSchema
 	metadata["buildTemplateDefaultVariables"] = template.DefaultVariables
 	metadata["buildTemplateDockerfileTemplate"] = template.DockerfileTemplate
+	return nil
 }
 
-func buildExecutionCommands(source *domainapp.BuildSource, metadata map[string]any, imageRef string) []string {
+func buildExecutionCommands(source *domainapp.BuildSource, metadata map[string]any, imageRef string) ([]string, error) {
 	if source == nil {
-		return nil
+		return nil, nil
 	}
 	switch source.Type {
+	case domainapp.BuildSourceTypeBuildpacks:
+		return nil, nil
 	case domainapp.BuildSourceTypePlatformTemplate:
 		return platformTemplateExecutionCommands(source, metadata, imageRef)
 	case domainapp.BuildSourceTypeExternalPipeline:
-		return externalPipelineExecutionCommands(source)
+		_, err := domainapp.ExternalPipelineConfiguration(source.Config)
+		return nil, err
 	default:
-		return containerBuildExecutionCommands(source, imageRef, metadataMap(metadata, "buildArgs"))
+		return containerBuildExecutionCommands(source, imageRef, metadataMap(metadata, "buildArgs")), nil
 	}
-}
-
-func platformTemplateExecutionCommands(source *domainapp.BuildSource, metadata map[string]any, imageRef string) []string {
-	if raw, ok := metadata["buildTemplateCommands"].([]string); ok && len(raw) > 0 {
-		return renderCommands(raw, source, imageRef)
-	}
-	raw, ok := metadata["buildTemplateCommands"].([]any)
-	if !ok || len(raw) == 0 {
-		return nil
-	}
-	return renderCommands(nonEmptyStrings(raw), source, imageRef)
-}
-
-func externalPipelineExecutionCommands(source *domainapp.BuildSource) []string {
-	value, ok := source.Config["triggerConfig"].(map[string]any)
-	if !ok {
-		return nil
-	}
-	commands, ok := value["commands"].([]any)
-	if !ok {
-		return nil
-	}
-	return nonEmptyStrings(commands)
 }
 
 func nonEmptyStrings(items []any) []string {
@@ -478,15 +528,15 @@ func nonEmptyStrings(items []any) []string {
 }
 
 func containerBuildExecutionCommands(source *domainapp.BuildSource, imageRef string, buildArgs map[string]any) []string {
-	contextDir := strings.TrimSpace(fmt.Sprint(source.Config["contextDir"]))
+	contextDir := configString(source, "contextDir")
 	if contextDir == "" {
 		contextDir = "."
 	}
-	dockerfilePath := strings.TrimSpace(fmt.Sprint(source.Config["dockerfilePath"]))
+	dockerfilePath := configString(source, "dockerfilePath")
 	if dockerfilePath == "" {
 		dockerfilePath = "Dockerfile"
 	}
-	builderKind := strings.TrimSpace(fmt.Sprint(source.Config["builderKind"]))
+	builderKind := configString(source, "builderKind")
 	if builderKind == "" {
 		builderKind = "docker"
 	}
@@ -527,24 +577,6 @@ func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
-func renderCommands(commands []string, source *domainapp.BuildSource, imageRef string) []string {
-	items := make([]string, 0, len(commands))
-	contextDir := strings.TrimSpace(fmt.Sprint(source.Config["contextDir"]))
-	if contextDir == "" {
-		contextDir = "."
-	}
-	for _, command := range commands {
-		value := strings.TrimSpace(command)
-		if value == "" {
-			continue
-		}
-		value = strings.ReplaceAll(value, "{{IMAGE_REF}}", imageRef)
-		value = strings.ReplaceAll(value, "{{CONTEXT_DIR}}", contextDir)
-		items = append(items, value)
-	}
-	return items
-}
-
 func (s *Service) buildExecutionWorkspace(ctx context.Context, app domainapp.App, source *domainapp.BuildSource, input domainbuild.TriggerInput) (map[string]any, error) {
 	workspace := map[string]any{}
 	workspacePath := firstNonEmptyString(
@@ -569,7 +601,7 @@ func (s *Service) buildExecutionWorkspace(ctx context.Context, app domainapp.App
 	); len(artifactFiles) > 0 {
 		workspace["artifactFiles"] = artifactFiles
 	}
-	if resolveBuildProviderKind(source) != "external_pipeline_adapter" {
+	if source == nil || source.Type != domainapp.BuildSourceTypeExternalPipeline {
 		workspace["artifactFiles"] = appendUniqueString(valueStringSlice(workspace["artifactFiles"]), ".soha-image-digest")
 	}
 	checkoutEnabled := source != nil && source.Type != domainapp.BuildSourceTypeExternalPipeline
@@ -742,9 +774,9 @@ func buildRepositoryBindings(source *domainapp.BuildSource) []buildRepositoryBin
 			continue
 		}
 		bindings = append(bindings, buildRepositoryBinding{
-			RepositoryID:         strings.TrimSpace(fmt.Sprint(value["repositoryId"])),
-			CheckoutPath:         strings.TrimSpace(fmt.Sprint(value["checkoutPath"])),
-			DefaultBranch:        strings.TrimSpace(fmt.Sprint(value["defaultBranch"])),
+			RepositoryID:         metadataString(value, "repositoryId"),
+			CheckoutPath:         metadataString(value, "checkoutPath"),
+			DefaultBranch:        metadataString(value, "defaultBranch"),
 			AllowCommitSelection: boolValue(value["allowCommitSelection"], false),
 			Submodules:           boolValue(value["submodules"], false),
 			Explicit:             true,
@@ -891,22 +923,22 @@ func buildExecutionRuntime(source *domainapp.BuildSource, metadata map[string]an
 	}
 	switch resolveBuildProviderKind(source) {
 	case "k8s_job_runner":
-		if strings.TrimSpace(fmt.Sprint(runtime["image"])) == "" {
+		if metadataString(runtime, "image") == "" {
 			runtime["image"] = "gcr.io/kaniko-project/executor:v1.23.2-debug"
 		}
-		if strings.TrimSpace(fmt.Sprint(runtime["checkoutImage"])) == "" {
-			runtime["checkoutImage"] = "alpine/git:2.47.0"
+		if metadataString(runtime, "checkoutImage") == "" {
+			runtime["checkoutImage"] = "alpine/git:2.47.2"
 		}
 	default:
-		if strings.TrimSpace(fmt.Sprint(runtime["image"])) == "" {
+		if metadataString(runtime, "image") == "" {
 			runtime["image"] = "alpine:3.20"
 		}
 	}
 	if workspace, ok := metadata["workspace"].(map[string]any); ok {
-		if value := strings.TrimSpace(fmt.Sprint(workspace["commandDir"])); value != "" {
+		if value := metadataString(workspace, "commandDir"); value != "" {
 			runtime["commandDir"] = value
 		}
-		if value := strings.TrimSpace(fmt.Sprint(workspace["path"])); value != "" {
+		if value := metadataString(workspace, "path"); value != "" {
 			runtime["workspacePath"] = value
 		}
 	}
@@ -923,10 +955,10 @@ func resolveRepositoryURL(app domainapp.App, source *domainapp.BuildSource) stri
 }
 
 func configString(source *domainapp.BuildSource, key string) string {
-	if source == nil || len(source.Config) == 0 {
+	if source == nil {
 		return ""
 	}
-	return strings.TrimSpace(fmt.Sprint(source.Config[key]))
+	return metadataString(source.Config, key)
 }
 
 func configStringSlice(source *domainapp.BuildSource, key string) []string {
@@ -937,7 +969,7 @@ func configStringSlice(source *domainapp.BuildSource, key string) []string {
 }
 
 func metadataString(metadata map[string]any, key string) string {
-	if len(metadata) == 0 {
+	if metadata[key] == nil {
 		return ""
 	}
 	return strings.TrimSpace(fmt.Sprint(metadata[key]))

@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
@@ -52,6 +53,16 @@ type VirtualizationVMService interface {
 
 type VirtualizationPlanningService interface {
 	PlanVMCreate(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainoperation.Plan, error)
+	CheckCapacity(context.Context, domainidentity.Principal, sohaapi.VirtualizationCapacityInput) (sohaapi.VirtualizationCapacityResult, error)
+}
+
+type VirtualizationWorkerPoolService interface {
+	GetWorkerPool(context.Context, domainidentity.Principal, string) (sohaapi.VirtualizationWorkerPool, error)
+	ListWorkerPools(context.Context, domainidentity.Principal, string) ([]sohaapi.VirtualizationWorkerPool, error)
+	SaveWorkerPool(context.Context, domainidentity.Principal, string, sohaapi.VirtualizationWorkerPoolInput) (sohaapi.VirtualizationWorkerPool, error)
+	DeleteWorkerPool(context.Context, domainidentity.Principal, string, int) error
+	CreateWorker(context.Context, domainidentity.Principal, string, sohaapi.VirtualizationWorkerCreateInput) (domainvirtualization.Task, error)
+	AssessWorkerReadiness(context.Context, domainidentity.Principal, string) (sohaapi.CapabilityAssessment, error)
 }
 
 type VirtualizationImageService interface {
@@ -103,6 +114,7 @@ type VirtualizationServices struct {
 	Operations  VirtualizationOperationService
 	Runtime     VirtualizationRuntimeService
 	Planning    VirtualizationPlanningService
+	WorkerPools VirtualizationWorkerPoolService
 }
 
 type VirtualizationHandler struct {
@@ -114,13 +126,15 @@ type VirtualizationHandler struct {
 	operations  VirtualizationOperationService
 	runtime     VirtualizationRuntimeService
 	planning    VirtualizationPlanningService
+	workerPools VirtualizationWorkerPoolService
 }
 
 func NewVirtualizationHandler(service VirtualizationService) *VirtualizationHandler {
 	planning, _ := any(service).(VirtualizationPlanningService)
+	workerPools, _ := any(service).(VirtualizationWorkerPoolService)
 	return NewVirtualizationHandlerWithServices(VirtualizationServices{
 		Connections: service, Sync: service, VMs: service,
-		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: planning,
+		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: planning, WorkerPools: workerPools,
 	})
 }
 
@@ -129,7 +143,8 @@ func NewVirtualizationHandlerWithServices(services VirtualizationServices) *Virt
 		connections: services.Connections, sync: services.Sync,
 		vms: services.VMs, images: services.Images, flavors: services.Flavors,
 		operations: services.Operations, runtime: services.Runtime,
-		planning: services.Planning,
+		planning:    services.Planning,
+		workerPools: services.WorkerPools,
 	}
 }
 
@@ -287,6 +302,24 @@ func (h *VirtualizationHandler) PlanVMCreate(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, plan)
+}
+
+func (h *VirtualizationHandler) CheckCapacity(c *gin.Context) {
+	if h.planning == nil {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "unavailable", "virtualization planning is unavailable")
+		return
+	}
+	var input sohaapi.VirtualizationCapacityInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid capacity request")
+		return
+	}
+	result, err := h.planning.CheckCapacity(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), input)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, result)
 }
 
 func (h *VirtualizationHandler) GetVM(c *gin.Context) {

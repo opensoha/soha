@@ -256,6 +256,12 @@ func (r *Repository) TouchCredential(ctx context.Context, credentialID string, n
 func (r *Repository) EnsureConfiguration(ctx context.Context, runtimeID string, snapshot domainnetworkruntime.PolicySnapshot, now, expiresAt time.Time) (domainnetworkruntime.Configuration, error) {
 	var result domainnetworkruntime.Configuration
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWireGuardMutations(tx); err != nil {
+			return err
+		}
+		if err := revokeInvalidManagedSessions(tx, runtimeID, now); err != nil {
+			return err
+		}
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-runtime:"+runtimeID).Error; err != nil {
 			return err
 		}
@@ -265,7 +271,11 @@ func (r *Repository) EnsureConfiguration(ctx context.Context, runtimeID string, 
 			if profileErr != nil {
 				return profileErr
 			}
-			if sameMihomoRevision(latest.Desired.Mihomo, profile) {
+			current, err := configurationLeasesCurrent(tx, latest.Desired, now)
+			if err != nil {
+				return err
+			}
+			if current && sameMihomoRevision(latest.Desired.Mihomo, profile) {
 				result = latest
 				return nil
 			}
@@ -300,6 +310,9 @@ func sameMihomoRevision(desired *networkprotocol.MihomoConfiguration, profile *d
 
 func (r *Repository) ApplyConfiguration(ctx context.Context, runtimeID string, applied networkprotocol.ConfigurationApplied, now time.Time) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext('network-wireguard-mutations'))`).Error; err != nil {
+			return err
+		}
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-runtime:"+runtimeID).Error; err != nil {
 			return err
 		}
@@ -316,9 +329,12 @@ func (r *Repository) ApplyConfiguration(ctx context.Context, runtimeID string, a
 			}
 			return apperrors.NewBusiness(apperrors.ErrConflict, "configuration_ack_conflict", "The configuration was already acknowledged differently.", "该配置已使用不同结果确认。")
 		}
-		return tx.Model(&configurationRow{}).
+		if err := tx.Model(&configurationRow{}).
 			Where("tenant_id = 'default' AND workspace_id = 'default' AND runtime_id = ? AND configuration_version = ?", runtimeID, applied.ConfigurationVersion).
-			Updates(map[string]any{"apply_status": applied.Status, "readback_hash": applied.ReadbackHash, "reason_code": nullString(applied.ReasonCode), "applied_at": now}).Error
+			Updates(map[string]any{"apply_status": applied.Status, "readback_hash": applied.ReadbackHash, "reason_code": nullString(applied.ReasonCode), "applied_at": now}).Error; err != nil {
+			return err
+		}
+		return recordManagedVPNApply(tx, runtimeID, applied, now)
 	})
 }
 
@@ -365,6 +381,9 @@ func lockRenewalSession(tx *gorm.DB, runtimeID string, request networkprotocol.L
 	}
 	if !renewableSession(session.Status) || !session.ValidUntil.After(now) {
 		return sessionRow{}, "", apperrors.NewBusiness(apperrors.ErrGone, "network_session_inactive", "The network session is no longer renewable.", "网络会话已不可续租。")
+	}
+	if err := validateManagedRenewal(tx, runtimeID, request.SessionID, now); err != nil {
+		return sessionRow{}, "", err
 	}
 	if !currentRenewalState(tx, session, request, policyVersion) {
 		return sessionRow{}, "", apperrors.NewBusiness(apperrors.ErrConflict, "stale_session_state", "The session policy, posture or configuration is stale.", "会话策略、设备状态或配置已过期。")
@@ -554,7 +573,9 @@ func insertDesiredConfiguration(tx *gorm.DB, runtimeID string, desired networkpr
 		return domainnetworkruntime.Configuration{}, err
 	}
 	desired.ConfigurationVersion = version
-	desired.ValidUntil = desired.ValidUntil.UTC()
+	// PostgreSQL timestamps retain microseconds; hash and store the same instant
+	// in the JSON payload so a later envelope readback cannot disagree.
+	desired.ValidUntil = desired.ValidUntil.UTC().Truncate(time.Microsecond)
 	payload, err := json.Marshal(desired)
 	if err != nil {
 		return domainnetworkruntime.Configuration{}, err

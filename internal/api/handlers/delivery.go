@@ -109,7 +109,13 @@ type DeliveryService interface {
 	DeliveryRunnerService
 }
 
+type DeliveryAgentAuthenticator interface {
+	AuthenticateAgentExecution(context.Context, string, string) error
+}
+
 type DeliveryServices struct {
+	Helm         DeliveryHelmService
+	Agents       DeliveryAgentAuthenticator
 	Applications DeliveryApplicationService
 	Releases     DeliveryReleaseService
 	Imports      DeliveryKubernetesImportService
@@ -123,6 +129,8 @@ type DeliveryServices struct {
 }
 
 type DeliveryHandler struct {
+	helm         DeliveryHelmService
+	agents       DeliveryAgentAuthenticator
 	applications DeliveryApplicationService
 	releases     DeliveryReleaseService
 	imports      DeliveryKubernetesImportService
@@ -149,6 +157,8 @@ func NewDeliveryHandlerWithRunnerKeys(service DeliveryService, keys keyring.Ring
 
 func NewDeliveryHandlerWithServices(services DeliveryServices, keys keyring.Ring) *DeliveryHandler {
 	return &DeliveryHandler{
+		helm:         services.Helm,
+		agents:       services.Agents,
 		applications: services.Applications, releases: services.Releases, executions: services.Executions,
 		imports: services.Imports, runtime: services.Runtime, blueprints: services.Blueprints, drafts: services.Drafts,
 		actions: services.Actions, runner: services.Runner, logs: services.Logs, runnerKeys: keys,
@@ -672,16 +682,18 @@ func (h *DeliveryHandler) RecordExecutionCallback(c *gin.Context) {
 }
 
 func (h *DeliveryHandler) ClaimExecutionTask(c *gin.Context) {
-	if !authorizeDeliveryRunnerKeys(c, h.runnerKeys) {
-		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid runner token")
-		return
-	}
 	var req dto.ClaimExecutionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid execution claim payload")
 		return
 	}
-	item, err := h.runner.ClaimExecutionTask(c.Request.Context(), req.ProviderKinds, req.AgentID, req.RuntimeEndpoint)
+	providers := h.authorizedExecutionProviders(c, req.ProviderKinds)
+	if len(providers) == 0 {
+		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "no authorized execution providers")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	item, err := h.runner.ClaimExecutionTask(c.Request.Context(), providers, req.AgentID, req.RuntimeEndpoint)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			c.Status(http.StatusNoContent)
@@ -698,46 +710,11 @@ func decodeDeliveryBlueprintRequest(c *gin.Context) (domaindelivery.DeliveryBlue
 	if err := c.ShouldBindJSON(&req); err != nil {
 		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid delivery blueprint payload")
 	}
-	draft := domaindelivery.BlueprintApplicationDraft{}
-	if err := remarshal(req.ApplicationDraft, &draft); err != nil {
-		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid applicationDraft payload")
+	var input domaindelivery.DeliveryBlueprintInput
+	if err := remarshal(req, &input); err != nil {
+		return input, errors.New("invalid delivery blueprint payload")
 	}
-	services := []domaindelivery.DeliveryDraftService{}
-	if err := remarshal(req.Services, &services); err != nil {
-		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid services payload")
-	}
-	buildSources := []domainapp.BuildSourceInput{}
-	if err := remarshal(req.BuildSources, &buildSources); err != nil {
-		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid buildSources payload")
-	}
-	environmentBindings := []domaindelivery.BlueprintEnvironmentBindingTemplate{}
-	if err := remarshal(req.EnvironmentBindings, &environmentBindings); err != nil {
-		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid environmentBindings payload")
-	}
-	files := make([]domaindelivery.BlueprintFileTemplate, 0, len(req.Files))
-	for _, item := range req.Files {
-		files = append(files, domaindelivery.BlueprintFileTemplate{
-			Path:     item.Path,
-			Kind:     item.Kind,
-			Content:  item.Content,
-			Required: item.Required,
-			Purpose:  item.Purpose,
-		})
-	}
-	return domaindelivery.DeliveryBlueprintInput{
-		ID:                  req.ID,
-		Key:                 req.Key,
-		Name:                req.Name,
-		Description:         req.Description,
-		ApplicationDraft:    draft,
-		Services:            services,
-		BuildSources:        buildSources,
-		EnvironmentBindings: environmentBindings,
-		Files:               files,
-		ExecutionHints:      req.ExecutionHints,
-		PostCreateActions:   req.PostCreateActions,
-		Enabled:             req.Enabled,
-	}, nil
+	return input, nil
 }
 
 func decodeDeliveryDraftRequest(c *gin.Context) (domaindelivery.DeliveryDraftInput, error) {
@@ -772,6 +749,7 @@ func decodeDeliveryDraftRequest(c *gin.Context) (domaindelivery.DeliveryDraftInp
 		})
 	}
 	return domaindelivery.DeliveryDraftInput{
+		IdempotencyKey:      req.IdempotencyKey,
 		ID:                  req.ID,
 		Source:              req.Source,
 		ApplicationDraft:    draft,
@@ -785,7 +763,17 @@ func decodeDeliveryDraftRequest(c *gin.Context) (domaindelivery.DeliveryDraftInp
 }
 
 func deliveryPlanInputFromRequest(req dto.DeliveryPlanRequest) domaindelivery.DeliveryPlanInput {
+	manifestRevision := 0
+	if req.ManifestRevision != nil {
+		manifestRevision = *req.ManifestRevision
+	}
+	helmRevision := 0
+	if req.HelmRevision != nil {
+		helmRevision = *req.HelmRevision
+	}
 	return domaindelivery.DeliveryPlanInput{
+		ManifestRevision:         manifestRevision,
+		HelmRevision:             helmRevision,
 		ID:                       req.ID,
 		Source:                   req.Source,
 		ApplicationID:            req.ApplicationID,

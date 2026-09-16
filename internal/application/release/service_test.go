@@ -294,3 +294,27 @@ func TestResolveTargetRejectsObserveOnlyTarget(t *testing.T) {
 		t.Fatalf("resolveTarget() error = %v, want ErrInvalidArgument", err)
 	}
 }
+
+func TestTriggerKustomizeRequiresManifestDeliveryPlan(t *testing.T) {
+	for _, executor := range []string{"k8s_job_runner", "manifest_ssa"} {
+		t.Run(executor, func(t *testing.T) {
+			repo := &stubReleaseRepository{}
+			service := &Service{
+				repo: repo, apps: &stubReleaseApps{}, resolver: &stubReleaseResolver{},
+				permissions: releasePermissions("developer", appaccess.PermDeliveryReleasesTrigger),
+				bindings: stubReleaseBindings{binding: domaincatalog.ApplicationEnvironment{Targets: []domaincatalog.ReleaseTarget{{
+					ID: "target", ClusterID: "cluster-ok", Namespace: "payments", TargetKind: "kustomize_overlay", ExecutorKind: executor,
+					WorkloadKind: "Deployment", WorkloadName: "payments", Enabled: true,
+					Metadata: map[string]any{"commands": []any{"kubectl apply -k ."}},
+				}}}},
+			}
+			_, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, domainrelease.TriggerInput{
+				ApplicationID: "app-ok", ApplicationEnvironmentID: "binding-1", ClusterID: "cluster-ok", Namespace: "payments",
+				DeploymentName: "payments", ImageTag: "v2",
+			})
+			if !errors.Is(err, apperrors.ErrInvalidArgument) || !strings.Contains(err.Error(), "交付计划") || repo.createCalls != 0 {
+				t.Fatalf("legacy trigger must reject before execution/persistence: error=%v writes=%d", err, repo.createCalls)
+			}
+		})
+	}
+}

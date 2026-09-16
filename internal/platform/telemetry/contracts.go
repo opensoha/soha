@@ -104,13 +104,14 @@ type MetricScope struct {
 }
 
 type MetricRangeQuery struct {
-	Scope      MetricScope
-	MetricKey  string
-	Expression string
-	Legend     string
-	TimeFrom   time.Time
-	TimeTo     time.Time
-	Step       time.Duration
+	RequireEvidence bool
+	Scope           MetricScope
+	MetricKey       string
+	Expression      string
+	Legend          string
+	TimeFrom        time.Time
+	TimeTo          time.Time
+	Step            time.Duration
 }
 
 type MetricPoint struct {
@@ -119,11 +120,15 @@ type MetricPoint struct {
 }
 
 type MetricSeries struct {
-	Key    string        `json:"key"`
-	Label  string        `json:"label"`
-	Unit   string        `json:"unit,omitempty"`
-	Points []MetricPoint `json:"points"`
-	Latest float64       `json:"latest"`
+	// SourceTimes contains timestamp(raw_metric) values at the query steps,
+	// distinct from PromQL evaluation timestamps. It stays inside the domain.
+	SourceTimes []MetricPoint `json:"-"`
+	Lookback    time.Duration `json:"-"`
+	Key         string        `json:"key"`
+	Label       string        `json:"label"`
+	Unit        string        `json:"unit,omitempty"`
+	Points      []MetricPoint `json:"points"`
+	Latest      float64       `json:"latest"`
 }
 
 type MetricAnomalySummary struct {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -149,4 +150,59 @@ func (s *stubDockerRunnerOperationService) GetOperationForRunner(context.Context
 
 func (s *stubDockerRunnerOperationService) RecordOperationCallback(context.Context, domaindocker.OperationCallbackInput) (domaindocker.Operation, error) {
 	return s.item, s.err
+}
+
+type helmClaimAuthenticator struct{}
+
+func (helmClaimAuthenticator) AuthenticateAgentExecution(_ context.Context, clusterID, token string) error {
+	if clusterID == "one" && token == "cluster-token" {
+		return nil
+	}
+	return apperrors.ErrUnauthorized
+}
+
+type capturedHelmClaim struct {
+	stubDeliveryRunnerService
+	providers []string
+}
+
+func (s *capturedHelmClaim) ClaimExecutionTask(_ context.Context, providers []string, _, _ string) (domaindelivery.ExecutionTask, error) {
+	s.providers = providers
+	return domaindelivery.ExecutionTask{ID: "claimed"}, nil
+}
+
+func TestHelmClaimConfidentialInputsRequireClusterCredentials(t *testing.T) {
+	for _, test := range []struct {
+		name, token     string
+		providers, want []string
+		duplicate       bool
+	}{
+		{name: "general credential", token: "runner-token", providers: []string{"helm_direct", "helm_agent.one", "ci_agent_runner"}, want: []string{"ci_agent_runner"}},
+		{name: "cluster credential", token: "cluster-token", providers: []string{"helm_direct", "helm_agent.one", "helm_agent.two", "manifest_agent.one", "manifest_agent_v3.one", "manifest_agent_v3.two", "ci_agent_runner"}, want: []string{"helm_agent.one", "manifest_agent.one", "manifest_agent_v3.one"}},
+		{name: "wrong credential", token: "wrong", providers: []string{"helm_agent.one"}},
+		{name: "direct forbidden", token: "runner-token", providers: []string{"helm_direct"}},
+		{name: "duplicate authorization", token: "cluster-token", providers: []string{"helm_agent.one"}, duplicate: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := &capturedHelmClaim{}
+			h := NewDeliveryHandlerWithServices(DeliveryServices{Runner: service, Agents: helmClaimAuthenticator{}}, legacyRunnerKeyring("runner-token"))
+			body, _ := json.Marshal(map[string]any{"agentId": "arbitrary-untrusted-name", "providerKinds": test.providers})
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, "/claim", strings.NewReader(string(body)))
+			c.Request.Header.Set("Authorization", "Bearer "+test.token)
+			c.Request.Header.Set("Content-Type", "application/json")
+			if test.duplicate {
+				c.Request.Header.Add("Authorization", "Bearer cluster-token")
+			}
+			h.ClaimExecutionTask(c)
+			wantStatus := http.StatusAccepted
+			if test.want == nil {
+				wantStatus = http.StatusUnauthorized
+			}
+			if w.Code != wantStatus || !reflect.DeepEqual(service.providers, test.want) {
+				t.Fatalf("status=%d providers=%v want=%v", w.Code, service.providers, test.want)
+			}
+		})
+	}
 }

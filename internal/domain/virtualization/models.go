@@ -235,7 +235,7 @@ func BuildOperationState(task Task, now time.Time) *OperationState {
 		timeoutSeconds = defaultOperationStateTimeoutSeconds
 	}
 	terminal := operationStatusTerminal(status)
-	heartbeatRequired := status == "running"
+	heartbeatRequired := status == "running" || status == "canceling"
 	heartbeatReference := operationHeartbeatReference(task)
 	nextDeadline := time.Time{}
 	heartbeatStale := false
@@ -254,6 +254,9 @@ func BuildOperationState(task Task, now time.Time) *OperationState {
 		HeartbeatStale:        heartbeatStale,
 		ClaimedByWorkerID:     strings.TrimSpace(task.ClaimedByWorkerID),
 		RecommendedNextAction: operationRecommendedNextAction(status, heartbeatStale),
+	}
+	if status == "canceling" {
+		state.RecommendedNextAction = "wait for provider outcome; retain the resource reservation while effects are unknown"
 	}
 	if task.LastHeartbeatAt != nil && !task.LastHeartbeatAt.IsZero() {
 		state.LastHeartbeatAt = task.LastHeartbeatAt.UTC()
@@ -297,7 +300,7 @@ func operationPhase(status string) string {
 	switch strings.TrimSpace(status) {
 	case "queued":
 		return "pending"
-	case "running":
+	case "running", "canceling":
 		return "running"
 	case "completed":
 		return "succeeded"
@@ -345,19 +348,21 @@ func firstNonEmptyTaskResultString(result map[string]any, keys ...string) string
 }
 
 type TaskFilter struct {
-	Provider     string
-	ConnectionID string
-	VMID         string
-	Status       string
-	Statuses     []string
-	Abnormal     bool
-	Pending      bool
-	TaskKind     string
-	TaskKinds    []string
-	Search       string
-	Page         int
-	PageSize     int
-	Limit        int
+	// ReconcileBefore is internal: visit oldest unchanged tasks first.
+	ReconcileBefore *time.Time
+	Provider        string
+	ConnectionID    string
+	VMID            string
+	Status          string
+	Statuses        []string
+	Abnormal        bool
+	Pending         bool
+	TaskKind        string
+	TaskKinds       []string
+	Search          string
+	Page            int
+	PageSize        int
+	Limit           int
 }
 
 type TaskLog struct {

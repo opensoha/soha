@@ -2,7 +2,6 @@
 set -eu
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-local_overlay="$script_dir/../remote-dev-local"
 context="${KUBE_CONTEXT:-kubernetes-admin@kubernetes}"
 namespace="opensoha"
 base_url="${BASE_URL:-https://ops.popicorns.com}"
@@ -100,7 +99,6 @@ configure_web_host() {
 }
 
 activate() {
-	keep_stable="${1:-false}"
 	k rollout status deployment/soha-dev --timeout=20m
 
 	switch_service dev
@@ -108,33 +106,15 @@ activate() {
 		switch_service stable
 		return 1
 	fi
-	if [ "$keep_stable" != true ]; then
-		if ! k scale deployment/soha --replicas=0 >/dev/null; then
-			switch_service stable
-			return 1
-		fi
-		if ! verify_external; then
-			restore_stable
-			return 1
-		fi
+	if ! k scale deployment/soha --replicas=0 >/dev/null; then
+		switch_service stable
+		return 1
+	fi
+	if ! verify_external; then
+		restore_stable
+		return 1
 	fi
 	printf 'remote development is active at %s\n' "$base_url"
-}
-
-wait_for_local_pod() {
-	attempts=120
-	selector='app.kubernetes.io/name=soha-dev,app.kubernetes.io/instance=soha,app.kubernetes.io/component=app'
-	while [ "$attempts" -gt 0 ]; do
-		pod="$(k get pods -l "$selector" --field-selector=status.phase=Running --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1].metadata.name}' 2>/dev/null || true)"
-		if [ -n "$pod" ] && k exec "$pod" -c source-sync -- sh -c '[ "${SYNC_MODE:-git}" = local ]' >/dev/null 2>&1; then
-			printf '%s\n' "$pod"
-			return 0
-		fi
-		attempts=$((attempts - 1))
-		sleep 1
-	done
-	printf 'local source sync pod did not start\n' >&2
-	return 1
 }
 
 up() {
@@ -147,19 +127,6 @@ up() {
 		SOHA_CONTRACTS_REF="$contracts_ref" >/dev/null
 	configure_web_host
 	activate
-}
-
-prepare_local() {
-	preflight
-	restore_stable >&2
-	kubectl --context "$context" --namespace "$namespace" apply -k "$local_overlay" >&2
-	configure_web_host
-	wait_for_local_pod
-}
-
-activate_local() {
-	preflight
-	activate true
 }
 
 down() {
@@ -185,10 +152,8 @@ logs() {
 
 case "${1:-}" in
 	up) up ;;
-	prepare-local) prepare_local ;;
-	activate-local) activate_local ;;
 	down) down ;;
 	status) status ;;
 	logs) logs ;;
-	*) printf 'usage: %s {up|prepare-local|activate-local|down|status|logs}\n' "$0" >&2; exit 2 ;;
+	*) printf 'usage: %s {up|down|status|logs}\n' "$0" >&2; exit 2 ;;
 esac

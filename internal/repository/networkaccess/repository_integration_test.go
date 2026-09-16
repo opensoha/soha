@@ -46,7 +46,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 		t.Fatalf("create migration staging directory: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(migrationDir) })
-	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql"} {
+	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql", "0077_network_vpn_selection.sql"} {
 		contents, err := os.ReadFile(filepath.Join(migrationSource, name)) // #nosec G304 -- fixed migration names from the repository fixture list.
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -70,6 +70,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	scenario.checkDevicePostureAndMihomo(t)
 	scenario.checkPolicy(t)
 	scenario.checkSnapshot(t)
+	scenario.checkVPNDocuments(t)
 	scenario.checkGatewayStatusAndDuplicateSite(t)
 }
 

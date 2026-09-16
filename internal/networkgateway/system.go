@@ -701,3 +701,11 @@ func (execCommands) Run(ctx context.Context, stdin []byte, path string, args ...
 	}
 	return output, nil
 }
+
+func (s *linuxSystem) VPNPeerCounters(interfaceName string) ([]wgtypes.Peer, error) {
+	device, err := s.wg.Device(interfaceName)
+	if err != nil {
+		return nil, err
+	}
+	return device.Peers, nil
+}

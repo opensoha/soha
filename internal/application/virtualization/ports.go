@@ -55,6 +55,9 @@ type FlavorRepository interface {
 
 type TaskRepository interface {
 	CreateTask(context.Context, domainvirtualization.Task) (domainvirtualization.Task, error)
+	CreateTaskWithCapacity(context.Context, domainvirtualization.Task, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.Task, error)
+	RetryTaskWithCapacity(context.Context, domainvirtualization.Task, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.Task, error)
+	SelectCapacity(context.Context, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.CapacityNode, domainvirtualization.CapacityStorage, error)
 	UpdateTask(context.Context, domainvirtualization.Task) (domainvirtualization.Task, error)
 	UpdateTaskResult(context.Context, string, map[string]any) error
 	GetTask(context.Context, string) (domainvirtualization.Task, error)

@@ -434,6 +434,7 @@ func testCreateManifest(kind, namespace string, namespaced bool) domainresource.
 }
 
 type creationDirectStub struct {
+	createdContent  string
 	manifests       []domainresource.ResolvedCreateManifest
 	dryRunCalls     int
 	createCalls     int
@@ -465,7 +466,7 @@ func (s *creationDirectStub) CreateResolvedManifest(_ context.Context, _ string,
 		}
 		return domainresource.ResourceYAMLView{}, errors.New("provider create failed")
 	}
-	return domainresource.ResourceYAMLView{Kind: manifest.Ref.Kind, Name: manifest.Ref.Name, Namespace: namespace}, nil
+	return domainresource.ResourceYAMLView{Kind: manifest.Ref.Kind, Name: manifest.Ref.Name, Namespace: namespace, Content: s.createdContent}, nil
 }
 
 type recordingCreateAuthorizer struct {

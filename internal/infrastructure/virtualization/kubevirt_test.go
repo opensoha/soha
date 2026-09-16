@@ -25,6 +25,53 @@ type stubBundleProvider struct {
 	err    error
 }
 
+func TestKubeVirtCreateRetryRequiresOriginalOwner(t *testing.T) {
+	ctx := context.Background()
+	input := CreateVMInput{OperationID: "task-original", Name: "stable", Namespace: "apps", CPU: 2, Memory: "2Gi", SourceMode: "container_disk", BootImage: "image@sha256:abc"}
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), kubeVirtTestListKinds())
+	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Dynamic: client}})
+	connection := Connection{ClusterID: "cluster", Options: map[string]any{"namespace": "apps"}}
+	first, err := adapter.CreateVM(ctx, connection, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := adapter.CreateVM(ctx, connection, input)
+	if err != nil || first.Name != second.Name {
+		t.Fatalf("same task did not recover: %+v %v", second, err)
+	}
+	list, _ := client.Resource(kubeVirtVMGVR).Namespace("apps").List(ctx, metav1.ListOptions{})
+	if len(list.Items) != 1 {
+		t.Fatalf("duplicate VM: %d", len(list.Items))
+	}
+	client.ClearActions()
+	observed, found, err := adapter.ObserveVMCreation(ctx, connection, input)
+	if err != nil || !found || observed.Name != input.Name {
+		t.Fatalf("original VM observation failed: %+v %t %v", observed, found, err)
+	}
+	for _, action := range client.Actions() {
+		if action.GetVerb() != "get" {
+			t.Fatalf("observation performed %s", action.GetVerb())
+		}
+	}
+	input.OperationID = "other-task"
+	if _, found, err := adapter.ObserveVMCreation(ctx, connection, input); err == nil || found {
+		t.Fatal("observed another operation's VM as owned")
+	}
+	if _, err := adapter.CreateVM(ctx, connection, input); err == nil {
+		t.Fatal("adopted VM from another operation")
+	}
+	input.OperationID = "task-original"
+	item := list.Items[0]
+	now := metav1.Now()
+	item.SetDeletionTimestamp(&now)
+	if _, err := client.Resource(kubeVirtVMGVR).Namespace("apps").Update(ctx, &item, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := adapter.CreateVM(ctx, connection, input); err == nil {
+		t.Fatal("adopted a deleting VM")
+	}
+}
+
 func (s stubBundleProvider) Bundle(context.Context, string) (*kubeinfra.Bundle, error) {
 	return s.bundle, s.err
 }

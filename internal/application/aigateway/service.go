@@ -180,6 +180,7 @@ type VirtualizationOperationsService interface {
 }
 
 type DockerOperationsService interface {
+	GetOperation(context.Context, domainidentity.Principal, string) (domaindocker.Operation, error)
 	PlanQuickCreateHost(context.Context, domainidentity.Principal, domaindocker.QuickCreateHostInput) (domainoperation.Plan, error)
 	QuickCreateHost(context.Context, domainidentity.Principal, domaindocker.QuickCreateHostInput) (domaindocker.Operation, error)
 	PlanProjectDeploy(context.Context, domainidentity.Principal, string, domaindocker.ProjectDeployInput) (domainoperation.Plan, error)
@@ -202,9 +203,11 @@ type ComputeReadService interface {
 }
 
 type Service struct {
-	permissions *appaccess.PermissionResolver
-	audit       AuditRecorder
-	operations  OperationRecorder
+	permissions     *appaccess.PermissionResolver
+	identity        CurrentPrincipalReader
+	audit           AuditRecorder
+	operations      OperationRecorder
+	capabilityGuard CapabilityApprovalGuard
 
 	personalTokens  PersonalAccessTokenRepository
 	serviceAccounts ServiceAccountRepository
@@ -251,6 +254,7 @@ func NewWithDeps(deps ServiceDeps) *Service {
 	credentials := newRelayCredentialCodec(relayConfig)
 	service := &Service{
 		permissions:      deps.Permissions,
+		identity:         deps.Identity,
 		audit:            deps.Audit,
 		personalTokens:   deps.PersonalTokens,
 		serviceAccounts:  deps.ServiceAccounts,

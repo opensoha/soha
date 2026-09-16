@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"time"
 
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
@@ -37,6 +38,14 @@ type dagScheduler struct {
 	workerCount int
 	queueSize   int
 	workers     sync.WaitGroup
+	poll        func(context.Context) (dagRunTask, bool)
+	pollEvery   time.Duration
+}
+
+func (s *dagScheduler) configurePoll(poll func(context.Context) (dagRunTask, bool), every time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.poll, s.pollEvery = poll, every
 }
 
 func (s *dagScheduler) configure(workerCount, queueSize int) {
@@ -84,6 +93,14 @@ func (s *dagScheduler) start(ctx context.Context, consume func(context.Context, 
 
 func (s *dagScheduler) runWorker(ctx context.Context, consume func(context.Context, dagRunTask)) {
 	defer s.workers.Done()
+	s.mu.Lock()
+	every := s.pollEvery
+	s.mu.Unlock()
+	if every <= 0 {
+		every = time.Second
+	}
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -91,6 +108,15 @@ func (s *dagScheduler) runWorker(ctx context.Context, consume func(context.Conte
 		case task := <-s.queue:
 			if consume != nil {
 				consume(ctx, task)
+			}
+		case <-ticker.C:
+			s.mu.Lock()
+			poll := s.poll
+			s.mu.Unlock()
+			if poll != nil && consume != nil {
+				if task, ok := poll(ctx); ok {
+					consume(ctx, task)
+				}
 			}
 		}
 	}

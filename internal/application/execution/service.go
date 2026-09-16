@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,26 +18,54 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	domainsecret "github.com/opensoha/soha/internal/domain/secret"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type Repository interface {
-	domaindelivery.Repository
+	ListReleaseBundles(context.Context, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error)
+	GetReleaseBundle(context.Context, string) (domaindelivery.ReleaseBundle, error)
+	CreateReleaseBundle(context.Context, domaindelivery.ReleaseBundle) (domaindelivery.ReleaseBundle, error)
+	UpdateReleaseBundle(context.Context, domaindelivery.ReleaseBundle) (domaindelivery.ReleaseBundle, error)
+
+	ListExecutionTasks(context.Context, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error)
+	GetExecutionTask(context.Context, string) (domaindelivery.ExecutionTask, error)
+	GetExecutionTaskByCallbackToken(context.Context, string) (domaindelivery.ExecutionTask, error)
+	ClaimExecutionTask(context.Context, []string, string, string) (domaindelivery.ExecutionTask, error)
+	CreateExecutionTask(context.Context, domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error)
+	UpdateExecutionTask(context.Context, domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error)
+	ListExecutionLogs(context.Context, string, int) ([]domaindelivery.ExecutionLog, error)
+	CreateExecutionLog(context.Context, domaindelivery.ExecutionLog) error
+	CreateExecutionCallback(context.Context, domaindelivery.ExecutionCallback) error
+	ListExecutionArtifacts(context.Context, string) ([]domaindelivery.ExecutionArtifact, error)
+	ListExecutionArtifactsByBundle(context.Context, string) ([]domaindelivery.ExecutionArtifact, error)
+	UpsertExecutionArtifact(context.Context, domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error)
 }
 
 type Service struct {
-	repo          Repository
-	builds        BuildRecordRepository
-	releases      ReleaseRecordRepository
-	clusters      ClusterRuntime
-	jobConfigMu   sync.RWMutex
-	jobConfig     JobRuntimeOptions
-	runnerToken   string
-	permissions   *appaccess.PermissionResolver
-	secretLeases  SecretLeaseService
-	workflowSink  WorkflowExecutionTaskSink
-	resultSinksMu sync.RWMutex
-	resultSinks   []ExecutionTaskSink
+	repo            Repository
+	builds          BuildRecordRepository
+	releases        ReleaseRecordRepository
+	clusters        ClusterRuntime
+	jobConfigMu     sync.RWMutex
+	jobConfig       JobRuntimeOptions
+	runnerToken     string
+	permissions     *appaccess.PermissionResolver
+	secretLeases    SecretLeaseService
+	payloadHydrator ExecutionTaskHydrator
+	workflowSink    WorkflowExecutionTaskSink
+	resultSinksMu   sync.RWMutex
+	resultSinks     []ExecutionTaskSink
+	pipelines       ExternalPipelineResolver
+	pipelineImages  BuildImageVerifier
+}
+
+type ExecutionTaskHydrator interface {
+	HydrateExecutionTask(context.Context, domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error)
+}
+
+func (s *Service) SetExecutionTaskHydrator(hydrator ExecutionTaskHydrator) {
+	s.payloadHydrator = hydrator
 }
 
 type SecretLeaseService interface {
@@ -77,7 +106,7 @@ func New(repo Repository, builds BuildRecordRepository, releases ReleaseRecordRe
 		jobImage = "alpine:3.20"
 	}
 	if strings.TrimSpace(jobGitImage) == "" {
-		jobGitImage = "alpine/git:2.47.0"
+		jobGitImage = "alpine/git:2.47.2"
 	}
 	if jobTTLSeconds <= 0 {
 		jobTTLSeconds = 3600
@@ -102,7 +131,7 @@ func (s *Service) SetJobRuntimeOptions(options JobRuntimeOptions) {
 		options.Image = "alpine:3.20"
 	}
 	if strings.TrimSpace(options.GitImage) == "" {
-		options.GitImage = "alpine/git:2.47.0"
+		options.GitImage = "alpine/git:2.47.2"
 	}
 	if options.TTLSeconds <= 0 {
 		options.TTLSeconds = 3600
@@ -188,6 +217,15 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 		}
 		task.SecretLease, err = s.secretLeases.IssueLease(ctx, task.SecretPrincipal, task.SecretRefs, task.SecretTarget, "execution_task", task.ID, strings.TrimSpace(agentID))
 	}
+	if err == nil && s.payloadHydrator != nil {
+		var hydrated domaindelivery.ExecutionTask
+		hydrated, err = s.payloadHydrator.HydrateExecutionTask(ctx, task)
+		if err != nil {
+			_, _ = s.RecordCallback(context.WithoutCancel(ctx), domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: "failed", Payload: map[string]any{"error": "execution authorization or frozen preparation is no longer available", "helm": map[string]any{"stopped": true}}})
+			return domaindelivery.ExecutionTask{}, err
+		}
+		task = hydrated
+	}
 	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
@@ -247,6 +285,9 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if domaindelivery.RequiresStopConfirmation(task) {
+		return s.cancelDeliveryTask(ctx, task.ID, firstNonEmpty(input.Reason, "canceled from control plane"))
+	}
 	if !isCancelableTaskStatus(task.Status) {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: task %s cannot be canceled from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
 	}
@@ -266,7 +307,7 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 	task.LastHeartbeatAt = &now
 	task.FinishedAt = &now
 	task.UpdatedAt = now
-	updated, err := s.repo.UpdateExecutionTask(ctx, task)
+	updated, err := s.updateExecutionTask(ctx, task)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
@@ -284,11 +325,7 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 	_ = s.stopK8sJobExecution(ctx, updated, reason)
 	_ = s.stopRemoteRuntimeTask(ctx, updated.ID, updated.Result, reason)
 	if strings.TrimSpace(updated.ReleaseBundleID) != "" {
-		bundle, bundleErr := s.repo.GetReleaseBundle(ctx, updated.ReleaseBundleID)
-		if bundleErr == nil {
-			applyTaskResultToBundle(&bundle, updated, now)
-			_, _ = s.repo.UpdateReleaseBundle(ctx, bundle)
-		}
+		_ = s.updateTaskReleaseBundle(ctx, updated, now)
 	}
 	_ = s.persistArtifacts(ctx, updated)
 	switch updated.TaskKind {
@@ -326,6 +363,9 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if domaindelivery.RequiresStopConfirmation(task) {
+		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: retry delivery targets in a new batch to preserve their execution history", apperrors.ErrInvalidArgument)
+	}
 	if !isRetryableTaskStatus(task.Status) {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: task %s cannot be retried from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
 	}
@@ -351,7 +391,7 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	}
 	task.UpdatedAt = now
 	_ = s.stopK8sJobExecution(ctx, task, "retry")
-	updated, err := s.repo.UpdateExecutionTask(ctx, task)
+	updated, err := s.updateExecutionTask(ctx, task)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
@@ -389,6 +429,16 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
 }
 
+func buildExecutionTimeout(plan BuildPlan) int {
+	if strings.HasPrefix(plan.ProviderKind, "buildpacks_runner.") {
+		seconds, err := strconv.Atoi(valueAsString(plan.Metadata["buildTimeoutSeconds"]))
+		if err == nil && seconds > 0 && seconds <= 3600 {
+			return seconds
+		}
+	}
+	return 300
+}
+
 func (s *Service) StartBuildExecution(ctx context.Context, plan BuildPlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
 	bundle, err := s.repo.CreateReleaseBundle(ctx, domaindelivery.ReleaseBundle{
 		ID:                       "bundle:" + uuid.NewString(),
@@ -418,7 +468,7 @@ func (s *Service) StartBuildExecution(ctx context.Context, plan BuildPlan) (doma
 		LockKey:                  bundle.ApplicationID + ":build",
 		MaxRetries:               1,
 		AttemptCount:             0,
-		TimeoutSeconds:           300,
+		TimeoutSeconds:           buildExecutionTimeout(plan),
 		CallbackToken:            uuid.NewString(),
 		Payload:                  ensureMap(plan.Metadata),
 		Result:                   map[string]any{},
@@ -436,34 +486,16 @@ func (s *Service) StartBuildExecution(ctx context.Context, plan BuildPlan) (doma
 }
 
 func (s *Service) CompleteBuildExecution(ctx context.Context, bundleID, taskID, artifactRef, artifactDigest string, result map[string]any) error {
-	bundle, err := s.repo.GetReleaseBundle(ctx, bundleID)
-	if err != nil {
-		return err
-	}
-	bundle.Status = "ready"
-	bundle.ArtifactRef = strings.TrimSpace(artifactRef)
-	bundle.ArtifactDigest = strings.TrimSpace(artifactDigest)
-	bundle.Metadata = mergeMaps(bundle.Metadata, result)
-	bundle.UpdatedAt = time.Now().UTC()
-	if _, err := s.repo.UpdateReleaseBundle(ctx, bundle); err != nil {
-		return err
-	}
 	task, err := s.repo.GetExecutionTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC()
-	task.Status = "completed"
-	task.AttemptCount = maxInt(task.AttemptCount, 1)
-	task.StartedAt = &now
-	task.FinishedAt = &now
-	task.Result = mergeMaps(task.Result, result)
-	task.UpdatedAt = now
-	updated, err := s.repo.UpdateExecutionTask(ctx, task)
-	if err != nil {
-		return err
+	if task.TaskKind != "build" || task.ReleaseBundleID != bundleID {
+		return fmt.Errorf("%w: build task does not belong to the selected bundle", apperrors.ErrInvalidArgument)
 	}
-	return s.syncBuildRecord(ctx, updated)
+	result = mergeMaps(mergeMaps(map[string]any{}, result), map[string]any{"image": artifactRef, "imageDigest": artifactDigest})
+	_, err = s.RecordCallback(ctx, domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: "completed", Payload: result})
+	return err
 }
 
 func (s *Service) StartReleaseExecution(ctx context.Context, plan ReleasePlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {
@@ -542,7 +574,7 @@ func (s *Service) CompleteReleaseExecution(ctx context.Context, bundleID, taskID
 	task.FinishedAt = &now
 	task.Result = mergeMaps(task.Result, result)
 	task.UpdatedAt = now
-	updated, err := s.repo.UpdateExecutionTask(ctx, task)
+	updated, err := s.updateExecutionTask(ctx, task)
 	if err != nil {
 		return err
 	}
@@ -562,6 +594,13 @@ func (s *Service) CompleteReleaseExecution(ctx context.Context, bundleID, taskID
 
 func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.ExecutionCallbackInput) (domaindelivery.ExecutionTask, error) {
 	task, err := s.repo.GetExecutionTaskByCallbackToken(ctx, strings.TrimSpace(input.CallbackToken))
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	if task.ProviderKind == domainbuild.ExternalPipelineProvider {
+		return task, fmt.Errorf("%w: external CI tasks are reconciled through their source connection", apperrors.ErrAccessDenied)
+	}
+	input, err = normalizeHelmCallback(task, input)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
@@ -588,20 +627,16 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 	task.AttemptCount = maxInt(task.AttemptCount, 1)
 	task.Result = mergeMaps(task.Result, ensureMap(input.Payload))
 	task.LastHeartbeatAt = &now
-	if task.Status == "completed" || task.Status == "failed" {
+	if isStrictTerminalTaskStatus(task.Status) {
 		task.FinishedAt = &now
 	}
 	task.UpdatedAt = now
-	updated, err := s.repo.UpdateExecutionTask(ctx, task)
+	updated, err := s.updateExecutionTask(ctx, task)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
-	if strings.TrimSpace(updated.ReleaseBundleID) != "" && (updated.Status == "completed" || updated.Status == "failed") {
-		bundle, bundleErr := s.repo.GetReleaseBundle(ctx, updated.ReleaseBundleID)
-		if bundleErr == nil {
-			applyTaskResultToBundle(&bundle, updated, now)
-			_, _ = s.repo.UpdateReleaseBundle(ctx, bundle)
-		}
+	if strings.TrimSpace(updated.ReleaseBundleID) != "" && isStrictTerminalTaskStatus(updated.Status) {
+		_ = s.updateTaskReleaseBundle(ctx, updated, now)
 	}
 	_ = s.persistArtifacts(ctx, updated)
 	switch updated.TaskKind {
@@ -674,7 +709,7 @@ func (s *Service) monitorLoop(ctx context.Context) {
 }
 
 func (s *Service) recoverStaleTasks(ctx context.Context, now time.Time) error {
-	for _, status := range []string{"dispatching", "running"} {
+	for _, status := range []string{"queued", "dispatching", "running", "canceling"} {
 		tasks, err := s.repo.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{
 			Status: status,
 			Limit:  200,
@@ -683,6 +718,24 @@ func (s *Service) recoverStaleTasks(ctx context.Context, now time.Time) error {
 			return err
 		}
 		for _, task := range tasks {
+			if task.ProviderKind == domainbuild.ExternalPipelineProvider {
+				_, _ = s.reconcileExternalPipeline(ctx, task, now)
+				continue
+			}
+			if status == "canceling" {
+				_, _ = s.cancelDeliveryTask(ctx, task.ID, valueAsString(task.Result["cancelReason"]))
+				continue
+			}
+			if status == "queued" {
+				if task.Payload["workflowScope"] == domainworkflow.ScopeDeliveryBatch && task.ProviderKind == "k8s_job_runner" {
+					_, _ = s.dispatchExecutionTask(ctx, task)
+				}
+				continue
+			}
+			if task.Payload["workflowScope"] == domainworkflow.ScopeDeliveryBatch && task.ProviderKind == "k8s_job_runner" {
+				_, _ = s.reconcileK8sJobExecution(ctx, task, now)
+				continue
+			}
 			if handled, reconcileErr := s.reconcileK8sJobExecution(ctx, task, now); reconcileErr == nil && handled {
 				continue
 			}
@@ -749,6 +802,10 @@ func (s *Service) notifyWorkflowExecutionTaskResult(ctx context.Context, task do
 }
 
 func (s *Service) markTaskTimedOut(ctx context.Context, task domaindelivery.ExecutionTask, now time.Time) error {
+	if domaindelivery.RequiresStopConfirmation(task) {
+		_, err := s.cancelDeliveryTask(ctx, task.ID, "executor heartbeat timed out; waiting for confirmed stop")
+		return err
+	}
 	timeoutPayload := map[string]any{
 		"error":               fmt.Sprintf("execution task timed out after %d seconds without heartbeat", effectiveTimeoutSeconds(task)),
 		"timeoutSeconds":      effectiveTimeoutSeconds(task),
@@ -773,16 +830,12 @@ func (s *Service) markTaskTimedOut(ctx context.Context, task domaindelivery.Exec
 	task.Result = mergeMaps(task.Result, timeoutPayload)
 	task.FinishedAt = &now
 	task.UpdatedAt = now
-	updated, err := s.repo.UpdateExecutionTask(ctx, task)
+	updated, err := s.updateExecutionTask(ctx, task)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(updated.ReleaseBundleID) != "" {
-		bundle, bundleErr := s.repo.GetReleaseBundle(ctx, updated.ReleaseBundleID)
-		if bundleErr == nil {
-			applyTaskResultToBundle(&bundle, updated, now)
-			_, _ = s.repo.UpdateReleaseBundle(ctx, bundle)
-		}
+		_ = s.updateTaskReleaseBundle(ctx, updated, now)
 	}
 	_ = s.persistArtifacts(ctx, updated)
 	switch updated.TaskKind {
@@ -832,7 +885,7 @@ func (s *Service) persistArtifacts(ctx context.Context, task domaindelivery.Exec
 		artifact.ReleaseBundleID = task.ReleaseBundleID
 		artifact.ApplicationID = task.ApplicationID
 		artifact.ApplicationEnvironmentID = task.ApplicationEnvironmentID
-		if strings.TrimSpace(artifact.Status) == "" {
+		if task.TaskKind == "build" || strings.TrimSpace(artifact.Status) == "" {
 			artifact.Status = task.Status
 		}
 		if _, err := s.repo.UpsertExecutionArtifact(ctx, artifact); err != nil {
@@ -886,8 +939,24 @@ func maxInt(values ...int) int {
 
 func (s *Service) dispatchExecutionTask(ctx context.Context, task domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
 	now := time.Now().UTC()
-	switch strings.TrimSpace(task.ProviderKind) {
-	case "ci_agent_runner", "external_pipeline_adapter":
+	if task.Payload["workflowScope"] == domainworkflow.ScopeDeliveryBatch {
+		current, err := s.repo.GetExecutionTask(ctx, task.ID)
+		if err != nil {
+			return task, err
+		}
+		task = current
+		if task.Status != "queued" && task.Status != "dispatching" {
+			return task, nil
+		}
+	}
+	providerKind := strings.TrimSpace(task.ProviderKind)
+	if strings.HasPrefix(providerKind, "buildpacks_runner.") {
+		providerKind = "buildpacks_runner"
+	}
+	switch providerKind {
+	case domainbuild.ExternalPipelineProvider:
+		return s.dispatchExternalPipeline(ctx, task)
+	case "ci_agent_runner", "external_pipeline_adapter", "buildpacks_runner":
 		_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
 			ID:              uuid.NewString(),
 			ExecutionTaskID: task.ID,
@@ -900,6 +969,9 @@ func (s *Service) dispatchExecutionTask(ctx context.Context, task domaindelivery
 	case "k8s_job_runner":
 		if reason := s.k8sJobRunnerDisabledReason(task); reason != "" {
 			return s.markTaskProviderDisabled(ctx, task, now, reason)
+		}
+		if task.Payload["workflowScope"] == domainworkflow.ScopeDeliveryBatch {
+			return s.dispatchDeliveryJob(ctx, task, now)
 		}
 		if handled, updated, err := s.dispatchK8sJobExecution(ctx, task, now); handled {
 			return updated, err
@@ -940,16 +1012,12 @@ func (s *Service) markTaskProviderDisabled(ctx context.Context, task domaindeliv
 		"providerKind":        strings.TrimSpace(task.ProviderKind),
 		"error":               message,
 	})
-	updated, err := s.repo.UpdateExecutionTask(ctx, task)
+	updated, err := s.updateExecutionTask(ctx, task)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
 	if strings.TrimSpace(updated.ReleaseBundleID) != "" {
-		bundleItem, bundleErr := s.repo.GetReleaseBundle(ctx, updated.ReleaseBundleID)
-		if bundleErr == nil {
-			applyTaskResultToBundle(&bundleItem, updated, now)
-			_, _ = s.repo.UpdateReleaseBundle(ctx, bundleItem)
-		}
+		_ = s.updateTaskReleaseBundle(ctx, updated, now)
 	}
 	_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
 		ID:              uuid.NewString(),
@@ -998,6 +1066,7 @@ func (s *Service) dispatchK8sJobExecution(ctx context.Context, task domaindelive
 		DefaultImage:    jobConfig.Image,
 		DefaultGitImage: jobConfig.GitImage,
 		TTLSeconds:      jobConfig.TTLSeconds,
+		TimeoutSeconds:  effectiveTimeoutSeconds(task),
 	})
 	if err != nil {
 		return false, domaindelivery.ExecutionTask{}, err
@@ -1012,7 +1081,7 @@ func (s *Service) dispatchK8sJobExecution(ctx context.Context, task domaindelive
 		"k8sJobName":      created.Name,
 		"k8sJobStatus":    "running",
 	})
-	updated, err := s.repo.UpdateExecutionTask(ctx, task)
+	updated, err := s.updateExecutionTask(ctx, task)
 	if err != nil {
 		return true, domaindelivery.ExecutionTask{}, err
 	}
@@ -1039,9 +1108,17 @@ func (s *Service) reconcileK8sJobExecution(ctx context.Context, task domaindeliv
 	if clusterID == "" || namespace == "" || jobName == "" {
 		return false, nil
 	}
-	inspection, err := s.clusters.InspectExecutionJob(ctx, ExecutionJobRef{ClusterID: clusterID, Namespace: namespace, Name: jobName})
+	ref := ExecutionJobRef{ClusterID: clusterID, Namespace: namespace, Name: jobName}
+	if task.Payload["workflowScope"] == domainworkflow.ScopeDeliveryBatch {
+		ref.TaskID = task.ID
+	}
+	inspection, err := s.clusters.InspectExecutionJob(ctx, ref)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
+			if task.Payload["workflowScope"] == domainworkflow.ScopeDeliveryBatch && task.Status == "dispatching" {
+				_, err := s.dispatchExecutionTask(ctx, task)
+				return true, err
+			}
 			return true, s.markTaskFailed(ctx, task, now, fmt.Sprintf("execution Job %s/%s was not found", namespace, jobName))
 		}
 		return true, err
@@ -1054,17 +1131,14 @@ func (s *Service) reconcileK8sJobExecution(ctx context.Context, task domaindeliv
 		task.Result = mergeMaps(task.Result, map[string]any{
 			"k8sJobStatus":   "completed",
 			"jobCompletedAt": now.Format(time.RFC3339),
+			"imageDigest":    inspection.ImageDigest,
 		})
-		updated, updateErr := s.repo.UpdateExecutionTask(ctx, task)
+		updated, updateErr := s.updateExecutionTask(ctx, task)
 		if updateErr != nil {
 			return true, updateErr
 		}
 		if strings.TrimSpace(updated.ReleaseBundleID) != "" {
-			bundleItem, bundleErr := s.repo.GetReleaseBundle(ctx, updated.ReleaseBundleID)
-			if bundleErr == nil {
-				applyTaskResultToBundle(&bundleItem, updated, now)
-				_, _ = s.repo.UpdateReleaseBundle(ctx, bundleItem)
-			}
+			_ = s.updateTaskReleaseBundle(ctx, updated, now)
 		}
 		_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
 			ID:              uuid.NewString(),
@@ -1083,14 +1157,24 @@ func (s *Service) reconcileK8sJobExecution(ctx context.Context, task domaindeliv
 	}
 	if inspection.State == ExecutionJobFailed {
 		s.persistExecutionJobLogs(ctx, task.ID, "error", inspection.Logs, now)
+		if inspection.FailureReason == "DeadlineExceeded" {
+			return true, s.markTaskFailed(ctx, task, now, executionTimeoutMessage(task))
+		}
 		return true, s.markTaskFailed(ctx, task, now, fmt.Sprintf("k8s_job_runner Job %s/%s failed", namespace, jobName))
+	}
+	if deliveryTaskExecutionExpired(task, now) {
+		_, err := s.cancelDeliveryTask(ctx, task.ID, executionTimeoutReason)
+		return true, err
+	}
+	if task.Status == "dispatching" {
+		task.Status = "running"
 	}
 	task.LastHeartbeatAt = &now
 	task.UpdatedAt = now
 	task.Result = mergeMaps(task.Result, map[string]any{
 		"k8sJobStatus": "running",
 	})
-	_, _ = s.repo.UpdateExecutionTask(ctx, task)
+	_, _ = s.updateExecutionTask(ctx, task)
 	return true, nil
 }
 
@@ -1129,16 +1213,12 @@ func (s *Service) markTaskFailed(ctx context.Context, task domaindelivery.Execut
 		"executionTaskStatus": "failed",
 		"error":               message,
 	})
-	updated, err := s.repo.UpdateExecutionTask(ctx, task)
+	updated, err := s.updateExecutionTask(ctx, task)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(updated.ReleaseBundleID) != "" {
-		bundleItem, bundleErr := s.repo.GetReleaseBundle(ctx, updated.ReleaseBundleID)
-		if bundleErr == nil {
-			applyTaskResultToBundle(&bundleItem, updated, now)
-			_, _ = s.repo.UpdateReleaseBundle(ctx, bundleItem)
-		}
+		_ = s.updateTaskReleaseBundle(ctx, updated, now)
 	}
 	_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
 		ID:              uuid.NewString(),
@@ -1241,6 +1321,9 @@ func (s *Service) syncBuildRecord(ctx context.Context, task domaindelivery.Execu
 	}
 	record.Status = mapTaskStatusToBuildStatus(task.Status)
 	record.Metadata = mergeMaps(record.Metadata, task.Result)
+	if task.TaskKind == "build" {
+		record.Metadata = mergeMaps(record.Metadata, buildResultWithProvenance(task))
+	}
 	record.Metadata["executionTaskStatus"] = task.Status
 	if strings.TrimSpace(task.ReleaseBundleID) != "" {
 		record.Metadata["releaseBundleId"] = task.ReleaseBundleID
@@ -1313,11 +1396,27 @@ func mapTaskStatusToReleaseStatus(status string) string {
 	}
 }
 
-func applyTaskResultToBundle(bundle *domaindelivery.ReleaseBundle, task domaindelivery.ExecutionTask, now time.Time) {
-	if bundle == nil {
-		return
+func (s *Service) updateTaskReleaseBundle(ctx context.Context, task domaindelivery.ExecutionTask, now time.Time) error {
+	bundle, err := s.repo.GetReleaseBundle(ctx, task.ReleaseBundleID)
+	if err != nil {
+		return err
+	}
+	if !applyTaskResultToBundle(&bundle, task, now) {
+		return nil
+	}
+	_, err = s.repo.UpdateReleaseBundle(ctx, bundle)
+	return err
+}
+
+func applyTaskResultToBundle(bundle *domaindelivery.ReleaseBundle, task domaindelivery.ExecutionTask, now time.Time) bool {
+	// Helm consumes an immutable build bundle; operation outcomes belong to its task.
+	if bundle == nil || strings.HasPrefix(task.TaskKind, "helm_") {
+		return false
 	}
 	bundle.Metadata = mergeMaps(bundle.Metadata, task.Result)
+	if task.TaskKind == "build" {
+		bundle.Metadata = mergeMaps(bundle.Metadata, buildResultWithProvenance(task))
+	}
 	switch strings.TrimSpace(task.TaskKind) {
 	case "build":
 		switch strings.TrimSpace(task.Status) {
@@ -1343,6 +1442,7 @@ func applyTaskResultToBundle(bundle *domaindelivery.ReleaseBundle, task domainde
 		}
 	}
 	bundle.UpdatedAt = now
+	return true
 }
 
 func prepareBundleForRetry(bundle *domaindelivery.ReleaseBundle, task domaindelivery.ExecutionTask, reason string, now time.Time) {

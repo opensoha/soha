@@ -51,7 +51,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 		t.Fatalf("create migration staging directory: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(migrationDir) })
-	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql"} {
+	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql", "0077_network_vpn_selection.sql"} {
 		contents, err := os.ReadFile(filepath.Join(migrationSource, name)) // #nosec G304 -- fixed migration names from the repository fixture list.
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -77,6 +77,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	scenario.checkConfigurationContracts(t)
 	scenario.checkSavedVPNState(t)
 	scenario.applyConfiguration(t)
+	scenario.checkManagedDashboard(t)
 	scenario.checkMihomoRevision(t)
 	scenario.seedPostureSession(t)
 	scenario.checkPostureRenewal(t)
@@ -88,6 +89,9 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	scenario.expireNASCommand(t)
 	scenario.renewVPN(t)
 	scenario.revokeVPN(t)
+	if err := scenario.store.DB().Exec(`UPDATE network_vpn_documents SET published_configuration=jsonb_set(published_configuration,'{enabled}','false') WHERE id=?`, "vpn-profile-"+scenario.suffix).Error; err != nil {
+		t.Fatal(err)
+	}
 	scenario.prepareVPNZTNA(t)
 	scenario.consumeVPNZTNA(t)
 	scenario.checkAndRevokeVPNZTNA(t)
@@ -197,11 +201,15 @@ func (s *runtimeRepositoryScenario) enrollFirstEndpoint(t *testing.T) {
 	if s.err != nil || len(items) == 0 {
 		t.Fatalf("ListEnrollments() = %#v, %v", items, s.err)
 	}
-	credential1, configuration1, err := s.repository.ConsumeEnrollment(s.ctx, consumption(first, s.suffix+"-certificate-1", s.now), s.snapshot, s.now.Add(5*time.Minute))
+	credential1, configuration1, err := s.repository.ConsumeEnrollment(s.ctx, consumption(first, s.suffix+"-certificate-1", s.now), s.snapshot, s.now.Add(5*time.Minute+423*time.Nanosecond))
 	s.credential1 = credential1
 	s.err = err
 	if s.err != nil || s.credential1.Generation != 1 || s.credential1.WireGuardPublicKey == "" || configuration1.ConfigurationVersion != 1 || configuration1.Desired.AccessProfile != "onboarding" || len(configuration1.Desired.NetworkLeases) != 0 {
 		t.Fatalf("ConsumeEnrollment(first) = credential %#v, configuration %#v, %v", s.credential1, configuration1, s.err)
+	}
+	loadedConfiguration, err := s.repository.EnsureConfiguration(s.ctx, s.runtimeID, s.snapshot, s.now.Add(time.Second), s.now.Add(5*time.Minute))
+	if err != nil || !loadedConfiguration.Desired.ValidUntil.Equal(loadedConfiguration.ValidUntil) || loadedConfiguration.ValidUntil.Nanosecond()%1000 != 0 {
+		t.Fatalf("configuration validity changed after PostgreSQL round trip: payload=%s envelope=%s error=%v", loadedConfiguration.Desired.ValidUntil, loadedConfiguration.ValidUntil, err)
 	}
 }
 
@@ -322,6 +330,7 @@ func (s *runtimeRepositoryScenario) connectVPN(t *testing.T) {
 		GatewayID: s.gatewayID, GatewayRuntimeID: s.gatewayRuntimeID, GatewayCredentialID: s.gatewayCredential.ID,
 		EndpointPublicKey: s.credential2.WireGuardPublicKey, ValidUntil: s.connectedAt.Add(4 * time.Minute), CreatedAt: s.connectedAt,
 	}
+	s.makeManagedConnection(t, &connection)
 	s.connection = connection
 	vpnResult, err := s.repository.SaveVPNConnection(s.ctx, s.connection, s.snapshot)
 	s.vpnResult = vpnResult
@@ -364,6 +373,9 @@ func (s *runtimeRepositoryScenario) checkGatewayConfiguration(t *testing.T) {
 func (s *runtimeRepositoryScenario) checkConfigurationContracts(t *testing.T) {
 	t.Helper()
 	for runtime, configuration := range map[string]domainnetworkruntime.Configuration{s.runtimeID: s.endpointConfiguration, s.gatewayRuntimeID: s.gatewayConfiguration} {
+		if !configuration.Desired.ValidUntil.Equal(configuration.ValidUntil) {
+			t.Fatalf("runtime %s validity differs after PostgreSQL round trip: payload=%s envelope=%s", runtime, configuration.Desired.ValidUntil, configuration.ValidUntil)
+		}
 		payload, err := json.Marshal(configuration.Desired)
 		if err != nil {
 			t.Fatal(err)
@@ -675,6 +687,7 @@ func (s *runtimeRepositoryScenario) revokeVPN(t *testing.T) {
 func (s *runtimeRepositoryScenario) prepareVPNZTNA(t *testing.T) {
 	t.Helper()
 	ztnaConnection := s.connection
+	ztnaConnection.Managed = nil
 	s.ztnaConnection = ztnaConnection
 	s.ztnaConnection.RequestID = "vpn-connect-ztna-" + s.suffix
 	s.ztnaConnection.RequestHash = digest(s.ztnaConnection.RequestID)
@@ -737,6 +750,7 @@ func (s *runtimeRepositoryScenario) checkAndRevokeVPNZTNA(t *testing.T) {
 func (s *runtimeRepositoryScenario) connectDirectZTNA(t *testing.T) {
 	t.Helper()
 	directConnection := s.connection
+	directConnection.Managed = nil
 	s.directConnection = directConnection
 	s.directConnection.RequestID = "direct-ztna-" + s.suffix
 	s.directConnection.RequestHash = digest(s.directConnection.RequestID)
@@ -774,6 +788,7 @@ func (s *runtimeRepositoryScenario) checkDirectZTNA(t *testing.T) {
 func (s *runtimeRepositoryScenario) rotateEndpoint(t *testing.T) {
 	t.Helper()
 	endpointRotationConnection := s.connection
+	endpointRotationConnection.Managed = nil
 	s.endpointRotationConnection = endpointRotationConnection
 	s.endpointRotationConnection.RequestID = "vpn-connect-before-endpoint-rotation-" + s.suffix
 	s.endpointRotationConnection.RequestHash = digest(s.endpointRotationConnection.RequestID)

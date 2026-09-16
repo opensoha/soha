@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -151,8 +152,18 @@ func (s *Service) ListInspectionTasks(ctx context.Context, principal domainident
 	return s.inspectionTasks.ListInspectionTasks(ctx, principal.UserID, 50)
 }
 
+func (s *Service) GetInspectionTask(ctx context.Context, principal domainidentity.Principal, id string) (domaincopilot.InspectionTask, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
+		return domaincopilot.InspectionTask{}, err
+	}
+	return s.inspectionTasks.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(id))
+}
+
 func (s *Service) CreateInspectionTask(ctx context.Context, principal domainidentity.Principal, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermObserveAIInspectionManage, "create")); err != nil {
+		return domaincopilot.InspectionTask{}, err
+	}
+	if err := s.validateInspectionRegistration(ctx, principal, &input); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
 	title := strings.TrimSpace(input.Title)
@@ -164,18 +175,21 @@ func (s *Service) CreateInspectionTask(ctx context.Context, principal domainiden
 		scopeType = "platform"
 	}
 	task := domaincopilot.InspectionTask{
-		ID:              normalizeInspectionID(input.ID, title),
-		Title:           title,
-		ScopeType:       scopeType,
-		ClusterID:       strings.TrimSpace(input.ClusterID),
-		Namespace:       strings.TrimSpace(input.Namespace),
-		Checks:          normalizeChecks(input.Checks),
-		Enabled:         input.Enabled,
-		IntervalMinutes: normalizeInterval(input.IntervalMinutes),
-		Metadata:        metadataWithLocale(defaultInspectionMetadata(input.Metadata), locale),
-		CreatedBy:       principal.UserID,
-		CreatedAt:       time.Now().UTC(),
-		UpdatedAt:       time.Now().UTC(),
+		InspectionCapability: input.InspectionCapability,
+		ExecutionTokenID:     principal.AccessTokenID,
+		Revision:             1,
+		ID:                   normalizeInspectionID(input.ID, title),
+		Title:                title,
+		ScopeType:            scopeType,
+		ClusterID:            strings.TrimSpace(input.ClusterID),
+		Namespace:            strings.TrimSpace(input.Namespace),
+		Checks:               inspectionInputChecks(input),
+		Enabled:              input.Enabled,
+		IntervalMinutes:      normalizeInterval(input.IntervalMinutes),
+		Metadata:             metadataWithLocale(defaultInspectionMetadata(input.Metadata), locale),
+		CreatedBy:            principal.UserID,
+		CreatedAt:            time.Now().UTC(),
+		UpdatedAt:            time.Now().UTC(),
 	}
 	return s.inspectionTasks.CreateInspectionTask(ctx, task)
 }
@@ -188,6 +202,15 @@ func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainiden
 	if err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
+	if task.CapabilityPlan != nil && input.ExpectedRevision != task.Revision {
+		return domaincopilot.InspectionTask{}, fmt.Errorf("%w: inspection revision required", aperrors.ErrConflict)
+	}
+	// Disabling a registration remains possible after tools or permissions change.
+	if task.CapabilityPlan != nil && !input.Enabled && (input.CapabilityPlan == nil || reflect.DeepEqual(task.InspectionCapability, input.InspectionCapability)) {
+		input.InspectionCapability = task.InspectionCapability
+	} else if err := s.validateInspectionRegistration(ctx, principal, &input); err != nil {
+		return domaincopilot.InspectionTask{}, err
+	}
 	title := strings.TrimSpace(input.Title)
 	if title == "" {
 		title = task.Title
@@ -197,14 +220,17 @@ func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainiden
 		scopeType = task.ScopeType
 	}
 	payload := domaincopilot.InspectionTaskInput{
-		Title:           title,
-		ScopeType:       scopeType,
-		ClusterID:       strings.TrimSpace(input.ClusterID),
-		Namespace:       strings.TrimSpace(input.Namespace),
-		Checks:          normalizeChecks(input.Checks),
-		Enabled:         input.Enabled,
-		IntervalMinutes: normalizeInterval(input.IntervalMinutes),
-		Metadata:        metadataWithLocale(defaultInspectionMetadata(input.Metadata), locale),
+		InspectionCapability: input.InspectionCapability,
+		ExpectedRevision:     input.ExpectedRevision,
+		ExecutionTokenID:     principal.AccessTokenID,
+		Title:                title,
+		ScopeType:            scopeType,
+		ClusterID:            strings.TrimSpace(input.ClusterID),
+		Namespace:            strings.TrimSpace(input.Namespace),
+		Checks:               inspectionInputChecks(input),
+		Enabled:              input.Enabled,
+		IntervalMinutes:      normalizeInterval(input.IntervalMinutes),
+		Metadata:             metadataWithLocale(defaultInspectionMetadata(input.Metadata), locale),
 	}
 	return s.inspectionTasks.UpdateInspectionTask(ctx, principal.UserID, task.ID, payload)
 }
@@ -527,72 +553,68 @@ func (s *Service) CreateInspectionTaskFromSession(ctx context.Context, principal
 }
 
 func (s *Service) runDueInspectionTasks(ctx context.Context) (int, error) {
-	tasks, err := s.inspectionTasks.ListDueInspectionTasks(ctx, time.Now().UTC(), 20)
+	store, ok := s.inspectionTasks.(InspectionTriggerStore)
+	if !ok {
+		return 0, fmt.Errorf("inspection trigger storage unavailable")
+	}
+	if err := store.QueueDueInspectionRuns(ctx, time.Now().UTC(), 20); err != nil {
+		return 0, err
+	}
+	ids, err := store.PendingInspectionRunIDs(ctx, 20)
 	if err != nil {
 		return 0, err
 	}
-	if len(tasks) == 0 {
-		return 0, nil
+	workers := int(s.inspectionParallelism.Load())
+	if workers < 1 {
+		workers = 1
 	}
-
-	parallelism := int(s.inspectionParallelism.Load())
-	if parallelism <= 0 {
-		parallelism = 1
+	if workers > len(ids) {
+		workers = len(ids)
 	}
-	if parallelism > len(tasks) {
-		parallelism = len(tasks)
+	jobs := make(chan string, len(ids))
+	for _, id := range ids {
+		jobs <- id
 	}
-
-	jobs := make(chan domaincopilot.InspectionTask)
-	errCh := make(chan error, len(tasks)*2)
+	close(jobs)
+	errs := make(chan error, len(ids))
 	var wait sync.WaitGroup
-
-	for i := 0; i < parallelism; i++ {
+	for range workers {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			for task := range jobs {
-				if _, err := s.executeInspection(ctx, systemPrincipal(), task, "system:inspection", localeFromInspectionMetadata(task.Metadata, "")); err != nil {
-					s.logWarnCtx(ctx, "copilot inspection task failed", zap.String("event", "copilot.inspection.task_failed"),
-						zap.String("task_id", task.ID), zap.String("error", redaction.LogText(err.Error(), 2048)))
-					errCh <- err
-					continue
+			for id := range jobs {
+				if ctx.Err() != nil {
+					errs <- ctx.Err()
+					return
 				}
-				if err := s.inspectionTasks.TouchInspectionTaskRun(ctx, task.ID, time.Now().UTC()); err != nil {
-					s.logWarnCtx(ctx, "copilot inspection task touch failed", zap.String("event", "copilot.inspection.task_touch_failed"),
-						zap.String("task_id", task.ID), zap.String("error", redaction.LogText(err.Error(), 2048)))
-					errCh <- err
-				}
+				errs <- s.dispatchInspectionRun(ctx, store, id)
 			}
 		}()
 	}
-
-	for _, task := range tasks {
-		select {
-		case <-ctx.Done():
-			close(jobs)
-			wait.Wait()
-			close(errCh)
-			cycleErr := ctx.Err()
-			for err := range errCh {
-				cycleErr = errors.Join(cycleErr, err)
-			}
-			return len(tasks), cycleErr
-		case jobs <- task:
-		}
-	}
-	close(jobs)
 	wait.Wait()
-	close(errCh)
-
+	close(errs)
 	var cycleErr error
-	for err := range errCh {
+	for err := range errs {
 		cycleErr = errors.Join(cycleErr, err)
 	}
-	return len(tasks), cycleErr
+	return len(ids), cycleErr
 }
 
-func (s *Service) executeInspection(ctx context.Context, principal domainidentity.Principal, task domaincopilot.InspectionTask, triggeredBy, locale string) (domaincopilot.InspectionRun, error) {
+func (s *Service) dispatchInspectionRun(ctx context.Context, store InspectionTriggerStore, id string) error {
+	runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var registration domaincopilot.InspectionTask
+	run, err := store.WithInspectionRun(runCtx, id, func(ctx context.Context, task domaincopilot.InspectionTask, run domaincopilot.InspectionRun) (domaincopilot.InspectionRun, error) {
+		registration = task
+		return s.handoffInspectionRun(ctx, task, run)
+	})
+	if err == nil && registration.ID != "" && registration.CapabilityPlan == nil && run.Status == "completed" {
+		_ = s.syncInspectionSuggestionSession(runCtx, registration, run)
+	}
+	return err
+}
+
+func (s *Service) buildInspectionRun(ctx context.Context, principal domainidentity.Principal, task domaincopilot.InspectionTask, triggeredBy, locale string) domaincopilot.InspectionRun {
 	startedAt := time.Now().UTC()
 	if s.metrics != nil {
 		s.metrics.RecordStart(runtimeobs.ComponentCopilotInspection, task.ID, 0, 1)
@@ -621,6 +643,15 @@ func (s *Service) executeInspection(ctx context.Context, principal domainidentit
 		CompletedAt: &completedAt,
 		CreatedAt:   startedAt,
 	}
+	return run
+}
+
+func (s *Service) executeInspection(ctx context.Context, principal domainidentity.Principal, task domaincopilot.InspectionTask, triggeredBy, locale string) (domaincopilot.InspectionRun, error) {
+	if task.CapabilityPlan != nil {
+		return domaincopilot.InspectionRun{}, fmt.Errorf("%w: capability inspections require an idempotency key and registration revision", aperrors.ErrInvalidArgument)
+	}
+	run := s.buildInspectionRun(ctx, principal, task, triggeredBy, locale)
+	startedAt, findings := run.StartedAt, run.Findings
 	savedRun, err := s.inspectionRuns.CreateInspectionRun(ctx, run)
 	if err != nil {
 		if s.metrics != nil {
@@ -1100,4 +1131,11 @@ func formatInspectionSuggestionMessage(task domaincopilot.InspectionTask, run do
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func inspectionInputChecks(input domaincopilot.InspectionTaskInput) []string {
+	if input.CapabilityPlan != nil {
+		return nil
+	}
+	return normalizeChecks(input.Checks)
 }

@@ -125,3 +125,20 @@ func TestAgentInstallationMigratesLegacyHTTPConnection(t *testing.T) {
 		t.Fatalf("sourceRef = %q, want %q", repo.connection.SourceRef, agentReverseSessionTransport)
 	}
 }
+
+func TestAgentExecutionAuthenticationBindsClusterCredentialAcrossTransports(t *testing.T) {
+	for _, transport := range []string{"http", agentReverseSessionTransport} {
+		repo := &stubRepository{connection: domaincluster.Connection{Summary: domaincluster.Summary{ID: "cluster", ConnectionMode: domaincluster.ConnectionModeAgent}, Metadata: map[string]any{"transport": transport, "token": "cluster-token"}}}
+		s := newTestService(t, repo)
+		if err := s.AuthenticateAgentExecution(context.Background(), "cluster", "cluster-token"); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.AuthenticateAgentExecution(context.Background(), "cluster", "another-cluster-token"); !errors.Is(err, apperrors.ErrUnauthorized) {
+			t.Fatalf("wrong credential accepted: %v", err)
+		}
+		repo.connection.Summary.ConnectionMode = domaincluster.ConnectionModeDirectKubeconfig
+		if err := s.AuthenticateAgentExecution(context.Background(), "cluster", "cluster-token"); err == nil {
+			t.Fatal("Direct connection accepted Agent execution")
+		}
+	}
+}

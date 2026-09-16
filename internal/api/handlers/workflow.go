@@ -13,7 +13,7 @@ import (
 )
 
 type WorkflowService interface {
-	List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error)
+	List(context.Context, domainidentity.Principal, string, string, int) ([]domainworkflow.Run, error)
 	Get(context.Context, domainidentity.Principal, string) (domainworkflow.Run, error)
 	Trigger(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
 	Approve(context.Context, domainidentity.Principal, string, string) (domainworkflow.Run, error)
@@ -30,7 +30,7 @@ func NewWorkflowHandler(service WorkflowService) *WorkflowHandler {
 
 func (h *WorkflowHandler) List(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.List(c.Request.Context(), principal, c.Query("applicationId"), parseLimit(c.Query("limit"), 50))
+	items, err := h.service.List(c.Request.Context(), principal, c.Query("applicationId"), c.Query("applicationEnvironmentId"), parseLimit(c.Query("limit"), 50))
 	if err != nil {
 		writeError(c, err)
 		return

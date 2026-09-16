@@ -62,6 +62,8 @@ type Request struct {
 	RequiresApproval         bool
 	ApprovalStatus           string
 	AIStatus                 string
+	// Supplied only after the owning runtime revalidates the plan's frozen resources and preflight result.
+	ValidatedPreflightTaskIDs []string
 }
 
 type Decision struct {
@@ -123,10 +125,10 @@ func (s *Service) evaluateCandidate(ctx context.Context, decision *Decision, req
 	if err != nil {
 		return fmt.Errorf("get release bundle evidence: %w", err)
 	}
-	if strings.TrimSpace(bundle.ApplicationID) != strings.TrimSpace(req.ApplicationID) || strings.TrimSpace(bundle.ApplicationEnvironmentID) != strings.TrimSpace(req.ApplicationEnvironmentID) {
+	if strings.TrimSpace(bundle.ApplicationID) != strings.TrimSpace(req.ApplicationID) || strings.TrimSpace(bundle.ApplicationEnvironmentID) != "" && strings.TrimSpace(bundle.ApplicationEnvironmentID) != strings.TrimSpace(req.ApplicationEnvironmentID) {
 		decision.block("release bundle scope does not match delivery plan")
 	}
-	if !isCompletedStatus(bundle.Status) {
+	if !isCompletedStatus(bundle.Status) && !strings.EqualFold(strings.TrimSpace(bundle.Status), "ready") {
 		decision.block(fmt.Sprintf("release bundle is not complete: %s", firstNonEmpty(bundle.Status, "unknown")))
 	}
 	decision.Evidence.CandidateDigest = strings.TrimSpace(bundle.ArtifactDigest)
@@ -134,11 +136,39 @@ func (s *Service) evaluateCandidate(ctx context.Context, decision *Decision, req
 		decision.block("release bundle has no immutable artifact digest")
 	}
 
+	if err := s.evaluateValidationTasks(ctx, decision, req); err != nil {
+		return err
+	}
+
+	artifacts, err := s.evidence.ListArtifacts(ctx, domaindelivery.ArtifactFilter{ReleaseBundleID: req.ReleaseBundleID, Limit: 500})
+	if err != nil {
+		return fmt.Errorf("list release validation artifacts: %w", err)
+	}
+	for _, artifact := range artifacts {
+		if !isValidationArtifact(artifact.Kind) {
+			continue
+		}
+		if artifact.ID != "" {
+			decision.Evidence.ArtifactIDs = append(decision.Evidence.ArtifactIDs, artifact.ID)
+		}
+		if isArtifactFailure(artifact) {
+			decision.block(fmt.Sprintf("validation artifact %s reports failure", firstNonEmpty(artifact.Name, artifact.ID, artifact.Kind)))
+		}
+	}
+	return nil
+}
+
+func (s *Service) evaluateValidationTasks(ctx context.Context, decision *Decision, req Request) error {
 	tasks, err := s.evidence.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ReleaseBundleID: req.ReleaseBundleID, Limit: 500})
 	if err != nil {
 		return fmt.Errorf("list release validation tasks: %w", err)
 	}
-	validationCount := 0
+	for _, id := range req.ValidatedPreflightTaskIDs {
+		if strings.TrimSpace(id) != "" {
+			decision.Evidence.ValidationTaskIDs = appendReason(decision.Evidence.ValidationTaskIDs, id)
+		}
+	}
+	validationCount := len(decision.Evidence.ValidationTaskIDs)
 	for _, task := range tasks {
 		if !isValidationTask(task.TaskKind) {
 			continue
@@ -163,21 +193,6 @@ func (s *Service) evaluateCandidate(ctx context.Context, decision *Decision, req
 		decision.block("no completed validation task is attached to the release bundle")
 	}
 
-	artifacts, err := s.evidence.ListArtifacts(ctx, domaindelivery.ArtifactFilter{ReleaseBundleID: req.ReleaseBundleID, Limit: 500})
-	if err != nil {
-		return fmt.Errorf("list release validation artifacts: %w", err)
-	}
-	for _, artifact := range artifacts {
-		if !isValidationArtifact(artifact.Kind) {
-			continue
-		}
-		if artifact.ID != "" {
-			decision.Evidence.ArtifactIDs = append(decision.Evidence.ArtifactIDs, artifact.ID)
-		}
-		if isArtifactFailure(artifact) {
-			decision.block(fmt.Sprintf("validation artifact %s reports failure", firstNonEmpty(artifact.Name, artifact.ID, artifact.Kind)))
-		}
-	}
 	return nil
 }
 

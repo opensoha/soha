@@ -10,8 +10,11 @@ import (
 	"time"
 
 	accessapp "github.com/opensoha/soha/internal/application/access"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	catalogrepo "github.com/opensoha/soha/internal/repository/catalog"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -71,7 +74,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-09-04-proxy-workbench"
+const bootstrapSeedVersion = "2026-09-14-execution-history"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -105,6 +108,9 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 			return err
 		}
 		if err := seedDeliveryCatalog(ctx, tx); err != nil {
+			return err
+		}
+		if err := seedDeploymentTemplates(ctx, tx); err != nil {
 			return err
 		}
 		if err := seedWorkflowTemplates(ctx, tx); err != nil {
@@ -506,8 +512,10 @@ func seedDeliveryCatalog(ctx context.Context, db *gorm.DB) error {
 }
 
 func seedWorkflowTemplates(ctx context.Context, db *gorm.DB) error {
-	now := time.Now().UTC()
-	definition, _ := json.Marshal(map[string]any{
+	if err := seedDeliveryRecipes(ctx, db); err != nil {
+		return err
+	}
+	definition := map[string]any{
 		"schemaVersion": 2,
 		"mode":          "release_dag",
 		"nodes": []map[string]any{
@@ -574,19 +582,23 @@ func seedWorkflowTemplates(ctx context.Context, db *gorm.DB) error {
 			{"id": "edge-verify-notify", "source": "verify", "target": "notify", "condition": "success"},
 			{"id": "edge-rollback-notify", "source": "rollback", "target": "notify", "condition": "always"},
 		},
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext('soha-default-workflow-template'))`).Error; err != nil {
+			return err
+		}
+		repo := catalogrepo.New(tx)
+		if _, err := repo.GetWorkflowTemplate(ctx, "wf-build-release-verify"); err == nil {
+			return nil
+		} else if !errors.Is(err, apperrors.ErrNotFound) {
+			return err
+		}
+		_, err := repo.CreateWorkflowTemplate(ctx, domaincatalog.WorkflowTemplateInput{
+			ID: "wf-build-release-verify", Key: "build-release-verify", Name: "Build Release Verify",
+			Description: "默认的构建-发布-校验模板", Category: "default", Definition: definition, Enabled: true,
+		})
+		return err
 	})
-	return db.WithContext(ctx).Exec(`
-		INSERT INTO workflow_templates (id, template_key, name, description, category, definition, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (id) DO UPDATE SET
-			template_key = EXCLUDED.template_key,
-			name = EXCLUDED.name,
-			description = EXCLUDED.description,
-			category = EXCLUDED.category,
-			definition = EXCLUDED.definition,
-			enabled = EXCLUDED.enabled,
-			updated_at = EXCLUDED.updated_at
-	`, "wf-build-release-verify", "build-release-verify", "Build Release Verify", "默认的构建-发布-校验模板", "default", string(definition), true, now, now).Error
 }
 
 func seedClusters(ctx context.Context, db *gorm.DB, clusters []cfgpkg.ClusterConfig) error {

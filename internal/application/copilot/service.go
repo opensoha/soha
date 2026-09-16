@@ -86,6 +86,7 @@ type AgentRunStore interface {
 	GetAgentRun(context.Context, string, string) (domaincopilot.AgentRun, error)
 	CreateAgentRun(context.Context, domaincopilot.AgentRun) (domaincopilot.AgentRun, error)
 	ClaimAgentRun(context.Context, domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error)
+	BeginAgentToolCall(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error)
 	UpdateAgentRunCallback(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error)
 	CancelAgentRun(context.Context, domaincopilot.AgentRunCancelInput) (domaincopilot.AgentRun, error)
 }
@@ -170,6 +171,10 @@ type WorkbenchModelInvoker interface {
 	InvokeWorkbenchModel(context.Context, domainidentity.Principal, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error)
 }
 
+type AgentPrincipalResolver interface {
+	CurrentPrincipal(context.Context, string) (domainidentity.Principal, error)
+}
+
 type WorkbenchModelStreamInvoker interface {
 	InvokeWorkbenchModelStream(context.Context, domainidentity.Principal, appaigateway.WorkbenchRelayRequest, func(appaigateway.WorkbenchRelayStreamDelta) bool) (appaigateway.WorkbenchRelayResponse, error)
 }
@@ -210,6 +215,11 @@ type recentMessageRepository interface {
 }
 
 type Service struct {
+	inspectionRuntimeMu sync.RWMutex
+	inspectionPlanner   InspectionCapabilityPlanner
+	inspectionExecutor  InspectionCapabilityExecutor
+
+	chatMemory            chatMemoryReader
 	sessions              SessionStore
 	messages              MessageStore
 	dataSources           DataSourceStore
@@ -234,6 +244,7 @@ type Service struct {
 	settings              AISettingsResolver
 	workbenchInvoker      WorkbenchModelInvoker
 	permissions           *appaccess.PermissionResolver
+	agentPrincipals       AgentPrincipalResolver
 	logger                *zap.Logger
 	metrics               *runtimeobs.Registry
 	inspectionParallelism atomic.Int64
@@ -282,6 +293,7 @@ type Dependencies struct {
 	Releases           ReleaseReader
 	Settings           AISettingsResolver
 	Permissions        *appaccess.PermissionResolver
+	AgentPrincipals    AgentPrincipalResolver
 }
 
 func WithTelemetryBackends(logs LogTelemetry, metrics MetricTelemetry, traces TraceTelemetry) Option {
@@ -337,6 +349,7 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 		releases:           deps.Releases,
 		settings:           deps.Settings,
 		permissions:        deps.Permissions,
+		agentPrincipals:    deps.AgentPrincipals,
 		logs:               unavailableTelemetry{},
 		metricTelemetry:    unavailableTelemetry{},
 		traceTelemetry:     unavailableTelemetry{},
@@ -484,7 +497,11 @@ func (s *Service) ListSessions(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return nil, err
 	}
-	return s.sessions.ListSessions(ctx, principal.UserID, 20)
+	items, err := s.sessions.ListSessions(ctx, principal.UserID, 20)
+	if err != nil {
+		return nil, err
+	}
+	return s.sessionActivities(ctx, principal, items), nil
 }
 
 func (s *Service) ListAnalysisRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error) {
@@ -555,7 +572,7 @@ func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Pr
 	if strings.TrimSpace(summary) != "" {
 		metadata.Summary = strings.TrimSpace(summary)
 	}
-	if len(tags) > 0 {
+	if tags != nil {
 		metadata.Tags = normalizeStringList(tags)
 	}
 	if scope != nil {
@@ -618,6 +635,9 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, sessionMeta domaincopilot.SessionMetadata, content, locale string) (domaincopilot.SessionMessageEnvelope, error) {
+	if normalizeSessionMode(sessionMeta.Mode) == "general" && s.shouldUseExternalAgent(sessionMeta.AgentProviderID) {
+		return s.queueAgentChatMessage(ctx, principal, session, sessionMeta, content, locale)
+	}
 	locale = detectMessageLocale(content, locale)
 	userMessage, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
@@ -645,11 +665,12 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 		if contextErr != nil {
 			return domaincopilot.SessionMessageEnvelope{}, contextErr
 		}
-		reply = s.generateReply(ctx, principal, session.ID, sessionMeta.Mode, providerMessages, locale)
+		reply = s.generateReply(ctx, principal, session.ID, sessionMeta.Mode, providerMessages, locale, sessionMeta.ModelPreferences)
 		if contextMeta != nil {
 			sessionPatch["contextEnvelope"] = contextMeta
 		}
 	}
+	reply = safeChatReply(reply, locale)
 	assistantMetadata := map[string]any{
 		"mode":              sessionMeta.Mode,
 		"source":            reply.Source,
@@ -677,7 +698,7 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 	assistantMessage, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: session.ID,
-		Role:      "assistant",
+		Role:      chatReplyRole(reply),
 		Content:   reply.Content,
 		Metadata:  assistantMetadata,
 		CreatedAt: time.Now().UTC(),
@@ -1174,7 +1195,7 @@ func (s *Service) listRecentMessages(ctx context.Context, sessionID string, limi
 	return messages[len(messages)-limit:], nil
 }
 
-func (s *Service) generateReply(ctx context.Context, principal domainidentity.Principal, sessionID, mode string, messages []chatProviderMessage, locale string) chatReply {
+func (s *Service) generateReply(ctx context.Context, principal domainidentity.Principal, sessionID, mode string, messages []chatProviderMessage, locale string, preferences domaincopilot.WorkbenchModelPreferences) chatReply {
 	workbenchModel, err := s.resolveAIWorkbenchSettings(ctx)
 	if err != nil {
 		return chatReply{
@@ -1185,6 +1206,10 @@ func (s *Service) generateReply(ctx context.Context, principal domainidentity.Pr
 			Source: "model-unconfigured",
 			Error:  err.Error(),
 		}
+	}
+	if preferences.PublicModel != "" {
+		workbenchModel.DefaultPublicModel = preferences.PublicModel
+		workbenchModel.DefaultRouteID = ""
 	}
 	if !workbenchModel.Enabled || (strings.TrimSpace(workbenchModel.DefaultPublicModel) == "" && strings.TrimSpace(workbenchModel.DefaultRouteID) == "") {
 		return chatReply{
@@ -1207,12 +1232,13 @@ func (s *Service) generateReply(ctx context.Context, principal domainidentity.Pr
 		}
 	}
 	resp, err := s.workbenchInvoker.InvokeWorkbenchModel(ctx, principal, appaigateway.WorkbenchRelayRequest{
-		PublicModel: workbenchModel.DefaultPublicModel,
-		RouteID:     workbenchModel.DefaultRouteID,
-		Endpoint:    workbenchModel.DefaultEndpoint,
-		Messages:    mapWorkbenchRelayMessages(messages),
-		SessionID:   sessionID,
-		Mode:        normalizeSessionMode(mode),
+		ReasoningEffort: preferences.ReasoningEffort,
+		PublicModel:     workbenchModel.DefaultPublicModel,
+		RouteID:         workbenchModel.DefaultRouteID,
+		Endpoint:        workbenchModel.DefaultEndpoint,
+		Messages:        mapWorkbenchRelayMessages(messages),
+		SessionID:       sessionID,
+		Mode:            normalizeSessionMode(mode),
 	})
 	if err != nil {
 		return chatReply{
@@ -1234,7 +1260,7 @@ func (s *Service) generateReply(ctx context.Context, principal domainidentity.Pr
 	}
 }
 
-func (s *Service) generateReplyStream(ctx context.Context, principal domainidentity.Principal, sessionID, mode string, messages []chatProviderMessage, locale string, onDelta func(string) bool) chatReply {
+func (s *Service) generateReplyStream(ctx context.Context, principal domainidentity.Principal, sessionID, mode string, messages []chatProviderMessage, locale string, preferences domaincopilot.WorkbenchModelPreferences, onDelta func(string) bool) chatReply {
 	workbenchModel, err := s.resolveAIWorkbenchSettings(ctx)
 	if err != nil {
 		return chatReply{
@@ -1245,6 +1271,10 @@ func (s *Service) generateReplyStream(ctx context.Context, principal domainident
 			Source: "model-unconfigured",
 			Error:  err.Error(),
 		}
+	}
+	if preferences.PublicModel != "" {
+		workbenchModel.DefaultPublicModel = preferences.PublicModel
+		workbenchModel.DefaultRouteID = ""
 	}
 	if !workbenchModel.Enabled || (strings.TrimSpace(workbenchModel.DefaultPublicModel) == "" && strings.TrimSpace(workbenchModel.DefaultRouteID) == "") {
 		return chatReply{
@@ -1258,15 +1288,16 @@ func (s *Service) generateReplyStream(ctx context.Context, principal domainident
 	}
 	streamInvoker, ok := s.workbenchInvoker.(WorkbenchModelStreamInvoker)
 	if !ok || streamInvoker == nil {
-		return s.generateReply(ctx, principal, sessionID, mode, messages, locale)
+		return s.generateReply(ctx, principal, sessionID, mode, messages, locale, preferences)
 	}
 	resp, err := streamInvoker.InvokeWorkbenchModelStream(ctx, principal, appaigateway.WorkbenchRelayRequest{
-		PublicModel: workbenchModel.DefaultPublicModel,
-		RouteID:     workbenchModel.DefaultRouteID,
-		Endpoint:    workbenchModel.DefaultEndpoint,
-		Messages:    mapWorkbenchRelayMessages(messages),
-		SessionID:   sessionID,
-		Mode:        normalizeSessionMode(mode),
+		ReasoningEffort: preferences.ReasoningEffort,
+		PublicModel:     workbenchModel.DefaultPublicModel,
+		RouteID:         workbenchModel.DefaultRouteID,
+		Endpoint:        workbenchModel.DefaultEndpoint,
+		Messages:        mapWorkbenchRelayMessages(messages),
+		SessionID:       sessionID,
+		Mode:            normalizeSessionMode(mode),
 	}, func(delta appaigateway.WorkbenchRelayStreamDelta) bool {
 		if delta.ContentDelta == "" {
 			return true

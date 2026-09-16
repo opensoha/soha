@@ -125,3 +125,7 @@ CI also runs `golangci-lint v2.9.0` with only-new-issues semantics on pull reque
 - Menus, module status, route visibility, and permission keys are aligned when API surface changes affect navigation.
 - Production complexity stays at or below 20, consumer capability interfaces stay small, and dependency boundary tests remain green.
 - Affected packages are tested, the applicable full Go gate passes, and contracts or public docs are updated when behavior changed.
+
+### Plugin runtime version
+
+`make dev-api`, `make build`, and the release workflow inject the Git release version into plugin compatibility checks. Standalone Docker builds must pass `--build-arg SOHA_BUILD_VERSION=<semver>`; direct Go builds use `-ldflags="-X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=<semver>"`. Unversioned builds keep the original 0.1.0 compatibility baseline.

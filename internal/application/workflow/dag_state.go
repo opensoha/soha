@@ -129,6 +129,9 @@ func isRollbackDAGNode(nodeType string) bool {
 }
 
 func resolveDAGNodeReadiness(definition dagWorkflowDefinition, node dagWorkflowNode, incoming []dagWorkflowEdge, statuses map[string]string) (ready bool, skipped bool) {
+	if definition.Mode == domainworkflow.ScopeDeliveryBatch || definition.Mode == domainworkflow.ScopeCapabilityTask {
+		return deliveryNodeReadiness(incoming, statuses)
+	}
 	if len(incoming) == 0 {
 		return true, false
 	}
@@ -168,10 +171,12 @@ func initializeNodeRuns(definition dagWorkflowDefinition) map[string]dagNodeRun 
 	items := make(map[string]dagNodeRun, len(definition.Nodes))
 	for _, node := range definition.Nodes {
 		items[node.ID] = dagNodeRun{
-			NodeID: node.ID,
-			Name:   node.Name,
-			Type:   node.Type,
-			Status: "pending",
+			TargetID: node.TargetID,
+			Stage:    node.Stage,
+			NodeID:   node.ID,
+			Name:     node.Name,
+			Type:     node.Type,
+			Status:   "pending",
 		}
 	}
 	return items

@@ -44,7 +44,7 @@ metadata:
 `); err != nil {
 		t.Fatalf("ApplyCRDResourceYAML() error = %v", err)
 	}
-	if err := service.CustomResources().DeleteCRDResource(context.Background(), principal, "agent-cluster", "widgets.example.com", "platform", "sample"); err != nil {
+	if err := service.CustomResources().DeleteCRDResource(context.Background(), principal, "agent-cluster", "widgets.example.com", "platform", "sample", ""); err != nil {
 		t.Fatalf("DeleteCRDResource() error = %v", err)
 	}
 	if len(seen) != 6 {
@@ -83,7 +83,7 @@ func newAgentCRDTestServer(t *testing.T, seen *[]string) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(map[string]any{"items": []map[string]any{
 				{"apiVersion": "example.com/v1", "kind": "Widget", "name": "sample", "namespace": "platform"},
 			}})
-		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/platform/extensions/custom-resources/yaml":
+		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/platform/ownership-v2/extensions/custom-resources/yaml":
 			var req struct {
 				Definition domainresource.CRDResourceDefinition `json:"definition"`
 				Namespace  string                               `json:"namespace"`
@@ -102,7 +102,7 @@ func newAgentCRDTestServer(t *testing.T, seen *[]string) *httptest.Server {
 				"namespace": "platform",
 				"content":   req.Content,
 			}})
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/platform/extensions/custom-resources":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/platform/ownership-v2/extensions/custom-resources/delete-observed":
 			var req struct {
 				Definition domainresource.CRDResourceDefinition `json:"definition"`
 				Namespace  string                               `json:"namespace"`

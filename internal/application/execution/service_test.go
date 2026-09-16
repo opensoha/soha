@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type executionTaskSinkSpy struct {
@@ -258,7 +260,7 @@ func TestRecordCallbackCompletesBuildAndBackfillsBundleAndBuildRecord(t *testing
 		Payload:         map[string]any{},
 		Result:          map[string]any{},
 		Artifacts: []domaindelivery.ExecutionArtifact{
-			{ID: "artifact-1", Kind: "image", Name: "app", Ref: "registry.example/app:v1", Digest: "sha256:abc"},
+			{ID: "artifact-1", Kind: "image", Name: "app", Ref: "registry.example/app:v1", Digest: "sha256:" + strings.Repeat("a", 64)},
 		},
 		CreatedAt: now.Add(-time.Minute),
 		UpdatedAt: now.Add(-time.Minute),
@@ -277,7 +279,7 @@ func TestRecordCallbackCompletesBuildAndBackfillsBundleAndBuildRecord(t *testing
 		Status:        "completed",
 		Payload: map[string]any{
 			"image":       "registry.example/app:v1",
-			"imageDigest": "sha256:abc",
+			"imageDigest": "sha256:" + strings.Repeat("a", 64),
 			"logs":        []any{"build complete"},
 		},
 	})
@@ -291,7 +293,7 @@ func TestRecordCallbackCompletesBuildAndBackfillsBundleAndBuildRecord(t *testing
 	if bundle.Status != "ready" {
 		t.Fatalf("bundle status = %q, want ready", bundle.Status)
 	}
-	if bundle.ArtifactRef != "registry.example/app:v1" || bundle.ArtifactDigest != "sha256:abc" {
+	if bundle.ArtifactRef != "registry.example/app:v1" || bundle.ArtifactDigest != "sha256:"+strings.Repeat("a", 64) {
 		t.Fatalf("bundle artifact = %q/%q", bundle.ArtifactRef, bundle.ArtifactDigest)
 	}
 	build := builds.records["task-1"]
@@ -607,6 +609,18 @@ func TestRetryExecutionTaskRotatesCallbackTokenAndQueuesRunnerTask(t *testing.T)
 	}
 }
 
+func TestRetryExecutionTaskPreservesDeliveryBatchHistory(t *testing.T) {
+	repo := newExecutionRepoFake()
+	repo.tasks["batch-task"] = domaindelivery.ExecutionTask{ID: "batch-task", Status: "failed", CallbackToken: "original", Payload: map[string]any{"workflowScope": "delivery_batch"}}
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+	if _, err := service.RetryExecutionTask(context.Background(), "batch-task", domaindelivery.ExecutionTaskActionInput{}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("batch task allowed destructive retry: %v", err)
+	}
+	if repo.tasks["batch-task"].Status != "failed" || repo.tasks["batch-task"].CallbackToken != "original" {
+		t.Fatal("batch task history changed")
+	}
+}
+
 func TestStartBuildExecutionMarksDisabledK8sJobRunnerFailed(t *testing.T) {
 	repo := newExecutionRepoFake()
 	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
@@ -637,6 +651,27 @@ func TestStartBuildExecutionMarksDisabledK8sJobRunnerFailed(t *testing.T) {
 	}
 	if !repo.hasLogContaining("provider is disabled") {
 		t.Fatalf("provider disabled log was not recorded: %#v", repo.logs)
+	}
+}
+
+func TestBuildExecutionPreservesRunnerBudgetWithLegacyFallback(t *testing.T) {
+	for _, test := range []struct {
+		provider string
+		budget   any
+		want     int
+	}{
+		{"buildpacks_runner.dedicated", float64(900), 900},
+		{"buildpacks_runner.dedicated", nil, 300},
+		{"buildpacks_runner.dedicated", -1, 300},
+		{"buildpacks_runner.dedicated", 3601, 300},
+		{"k8s_job_runner", 900, 300},
+	} {
+		repo := newExecutionRepoFake()
+		service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+		_, task, err := service.StartBuildExecution(context.Background(), BuildPlan{ApplicationID: "app", ProviderKind: test.provider, Metadata: map[string]any{"buildTimeoutSeconds": test.budget}})
+		if err != nil || task.TimeoutSeconds != test.want || repo.tasks[task.ID].TimeoutSeconds != test.want {
+			t.Fatalf("provider %s budget %v: timeout = %d, error = %v", test.provider, test.budget, task.TimeoutSeconds, err)
+		}
 	}
 }
 

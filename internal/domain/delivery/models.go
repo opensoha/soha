@@ -3,8 +3,11 @@ package delivery
 import (
 	"context"
 	"fmt"
+	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"strings"
 	"time"
+
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
@@ -62,6 +65,7 @@ type BlueprintFileTemplate struct {
 }
 
 type BlueprintApplicationDraft struct {
+	ExpectedVersion     *int64         `json:"expectedVersion,omitempty"`
 	ID                  string         `json:"id,omitempty"`
 	Name                string         `json:"name"`
 	Key                 string         `json:"key"`
@@ -139,20 +143,22 @@ const (
 )
 
 type DeliveryDraftService struct {
-	ID                  string                            `json:"id,omitempty"`
-	Key                 string                            `json:"key"`
-	Name                string                            `json:"name"`
-	Description         string                            `json:"description,omitempty"`
-	ServiceKind         domainapp.ServiceKind             `json:"serviceKind"`
-	OwnerTeam           string                            `json:"ownerTeam,omitempty"`
-	RepositoryProvider  string                            `json:"repositoryProvider,omitempty"`
-	RepositoryProjectID string                            `json:"repositoryProjectId,omitempty"`
-	RepositoryPath      string                            `json:"repositoryPath,omitempty"`
-	DefaultBranch       string                            `json:"defaultBranch,omitempty"`
-	BuildSourceID       string                            `json:"buildSourceId,omitempty"`
-	Enabled             bool                              `json:"enabled"`
-	Metadata            map[string]any                    `json:"metadata,omitempty"`
-	Containers          []domainapp.ServiceContainerInput `json:"containers,omitempty"`
+	ExpectedVersion     *int64                                   `json:"expectedVersion,omitempty"`
+	ID                  string                                   `json:"id,omitempty"`
+	Key                 string                                   `json:"key"`
+	Name                string                                   `json:"name"`
+	Description         string                                   `json:"description,omitempty"`
+	ServiceKind         domainapp.ServiceKind                    `json:"serviceKind"`
+	OwnerTeam           string                                   `json:"ownerTeam,omitempty"`
+	RepositoryProvider  string                                   `json:"repositoryProvider,omitempty"`
+	RepositoryProjectID string                                   `json:"repositoryProjectId,omitempty"`
+	RepositoryPath      string                                   `json:"repositoryPath,omitempty"`
+	DefaultBranch       string                                   `json:"defaultBranch,omitempty"`
+	BuildSourceID       string                                   `json:"buildSourceId,omitempty"`
+	DeploymentTemplate  *domaincatalog.DeploymentTemplateBinding `json:"deploymentTemplate,omitempty"`
+	Enabled             bool                                     `json:"enabled"`
+	Metadata            map[string]any                           `json:"metadata,omitempty"`
+	Containers          []domainapp.ServiceContainerInput        `json:"containers,omitempty"`
 }
 
 type DeliveryDraft struct {
@@ -173,6 +179,7 @@ type DeliveryDraft struct {
 }
 
 type DeliveryDraftInput struct {
+	IdempotencyKey      string                                `json:"idempotencyKey,omitempty"`
 	ID                  string                                `json:"id"`
 	Source              string                                `json:"source"`
 	ApplicationDraft    BlueprintApplicationDraft             `json:"applicationDraft"`
@@ -248,6 +255,12 @@ type ExecutionTask struct {
 	UpdatedAt                time.Time                `json:"updatedAt"`
 }
 
+// RequiresStopConfirmation covers delivery operations whose side effects may
+// continue after a cancellation request reaches the control plane.
+func RequiresStopConfirmation(task ExecutionTask) bool {
+	return task.Payload["workflowScope"] == "delivery_batch" || strings.HasPrefix(task.TaskKind, "helm_") || task.ProviderKind == "external_pipeline.gitlab"
+}
+
 type OperationState struct {
 	Phase                  string    `json:"phase"`
 	Status                 string    `json:"status"`
@@ -269,6 +282,8 @@ type OperationState struct {
 }
 
 type ExecutionTaskFilter struct {
+	QueueKey                 string
+	TaskKinds                []string
 	ApplicationID            string
 	ApplicationEnvironmentID string
 	ReleaseBundleID          string
@@ -483,22 +498,27 @@ const (
 )
 
 type ApplicationDeliveryActionInput struct {
-	Action                   ApplicationDeliveryActionKind `json:"action"`
-	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
-	TargetID                 string                        `json:"targetId,omitempty"`
-	TargetIDs                []string                      `json:"targetIds,omitempty"`
-	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
-	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
-	RefType                  string                        `json:"refType,omitempty"`
-	RefName                  string                        `json:"refName,omitempty"`
-	RepositoryRefs           []domainbuild.RepositoryRef   `json:"repositoryRefs,omitempty"`
-	ImageTag                 string                        `json:"imageTag,omitempty"`
-	ReleaseName              string                        `json:"releaseName,omitempty"`
-	ContainerName            string                        `json:"containerName,omitempty"`
-	ValuesContent            string                        `json:"valuesContent,omitempty"`
-	Variables                map[string]any                `json:"variables,omitempty"`
-	BuildArgs                map[string]any                `json:"buildArgs,omitempty"`
-	ApprovalGranted          bool                          `json:"-"`
+	DockerSnapshots          []sohaapi.DockerDeliverySnapshot  `json:"-"`
+	DockerPrepared           map[string]string                 `json:"-"`
+	HelmSnapshots            []sohaapi.HelmDeliverySnapshot    `json:"-"`
+	HelmPreparedCiphertext   string                            `json:"-"`
+	ManifestSnapshots        []domainmanifest.DeliverySnapshot `json:"-"`
+	Action                   ApplicationDeliveryActionKind     `json:"action"`
+	ApplicationEnvironmentID string                            `json:"applicationEnvironmentId"`
+	TargetID                 string                            `json:"targetId,omitempty"`
+	TargetIDs                []string                          `json:"targetIds,omitempty"`
+	BuildSourceID            string                            `json:"buildSourceId,omitempty"`
+	ReleaseBundleID          string                            `json:"releaseBundleId,omitempty"`
+	RefType                  string                            `json:"refType,omitempty"`
+	RefName                  string                            `json:"refName,omitempty"`
+	RepositoryRefs           []domainbuild.RepositoryRef       `json:"repositoryRefs,omitempty"`
+	ImageTag                 string                            `json:"imageTag,omitempty"`
+	ReleaseName              string                            `json:"releaseName,omitempty"`
+	ContainerName            string                            `json:"containerName,omitempty"`
+	ValuesContent            string                            `json:"valuesContent,omitempty"`
+	Variables                map[string]any                    `json:"variables,omitempty"`
+	BuildArgs                map[string]any                    `json:"buildArgs,omitempty"`
+	ApprovalGranted          bool                              `json:"-"`
 }
 
 type ApplicationDeliveryActionRelatedIDs struct {
@@ -511,6 +531,8 @@ type ApplicationDeliveryActionRelatedIDs struct {
 }
 
 type ApplicationDeliveryActionResult struct {
+	DockerOperationIDs       []string                            `json:"dockerOperationIds,omitempty"`
+	ManifestDeployments      []domainmanifest.Deployment         `json:"manifestDeployments,omitempty"`
 	Action                   ApplicationDeliveryActionKind       `json:"action"`
 	ApplicationID            string                              `json:"applicationId"`
 	ApplicationEnvironmentID string                              `json:"applicationEnvironmentId"`
@@ -540,62 +562,78 @@ type DeliveryPlanApprovalInput struct {
 }
 
 type DeliveryPlan struct {
-	ID                       string                        `json:"id"`
-	Source                   string                        `json:"source"`
-	Status                   string                        `json:"status"`
-	ApplicationID            string                        `json:"applicationId"`
-	ApplicationName          string                        `json:"applicationName,omitempty"`
-	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
-	EnvironmentKey           string                        `json:"environmentKey,omitempty"`
-	Action                   ApplicationDeliveryActionKind `json:"action"`
-	TargetID                 string                        `json:"targetId,omitempty"`
-	TargetIDs                []string                      `json:"targetIds,omitempty"`
-	TargetSummary            string                        `json:"targetSummary,omitempty"`
-	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
-	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
-	RefType                  string                        `json:"refType,omitempty"`
-	RefName                  string                        `json:"refName,omitempty"`
-	ImageTag                 string                        `json:"imageTag,omitempty"`
-	ReleaseName              string                        `json:"releaseName,omitempty"`
-	ContainerName            string                        `json:"containerName,omitempty"`
-	Reason                   string                        `json:"reason,omitempty"`
-	RiskLevel                string                        `json:"riskLevel,omitempty"`
-	RequiresApproval         bool                          `json:"requiresApproval"`
-	Impact                   map[string]any                `json:"impact,omitempty"`
-	RollbackStrategy         string                        `json:"rollbackStrategy,omitempty"`
-	Variables                map[string]any                `json:"variables,omitempty"`
-	BuildArgs                map[string]any                `json:"buildArgs,omitempty"`
-	CreatedBy                string                        `json:"createdBy,omitempty"`
-	ConfirmedAt              *time.Time                    `json:"confirmedAt,omitempty"`
-	CreatedAt                time.Time                     `json:"createdAt"`
-	UpdatedAt                time.Time                     `json:"updatedAt"`
+	DockerSnapshots          []sohaapi.DockerDeliverySnapshot  `json:"dockerSnapshots,omitempty"`
+	DockerPrepared           map[string]string                 `json:"-"`
+	HelmSnapshots            []sohaapi.HelmDeliverySnapshot    `json:"helmSnapshots,omitempty"`
+	HelmPreparedCiphertext   string                            `json:"-"`
+	ExpectedUpdatedAt        *time.Time                        `json:"-"`
+	ManifestSnapshots        []domainmanifest.DeliverySnapshot `json:"manifestSnapshots,omitempty"`
+	ID                       string                            `json:"id"`
+	Source                   string                            `json:"source"`
+	Status                   string                            `json:"status"`
+	ApplicationID            string                            `json:"applicationId"`
+	ApplicationName          string                            `json:"applicationName,omitempty"`
+	ApplicationEnvironmentID string                            `json:"applicationEnvironmentId"`
+	EnvironmentKey           string                            `json:"environmentKey,omitempty"`
+	Action                   ApplicationDeliveryActionKind     `json:"action"`
+	TargetID                 string                            `json:"targetId,omitempty"`
+	TargetIDs                []string                          `json:"targetIds,omitempty"`
+	TargetSummary            string                            `json:"targetSummary,omitempty"`
+	BuildSourceID            string                            `json:"buildSourceId,omitempty"`
+	ReleaseBundleID          string                            `json:"releaseBundleId,omitempty"`
+	RefType                  string                            `json:"refType,omitempty"`
+	RefName                  string                            `json:"refName,omitempty"`
+	ImageTag                 string                            `json:"imageTag,omitempty"`
+	ReleaseName              string                            `json:"releaseName,omitempty"`
+	ContainerName            string                            `json:"containerName,omitempty"`
+	Reason                   string                            `json:"reason,omitempty"`
+	RiskLevel                string                            `json:"riskLevel,omitempty"`
+	RequiresApproval         bool                              `json:"requiresApproval"`
+	Impact                   map[string]any                    `json:"impact,omitempty"`
+	RollbackStrategy         string                            `json:"rollbackStrategy,omitempty"`
+	Variables                map[string]any                    `json:"variables,omitempty"`
+	BuildArgs                map[string]any                    `json:"buildArgs,omitempty"`
+	CreatedBy                string                            `json:"createdBy,omitempty"`
+	ConfirmedAt              *time.Time                        `json:"confirmedAt,omitempty"`
+	CreatedAt                time.Time                         `json:"createdAt"`
+	UpdatedAt                time.Time                         `json:"updatedAt"`
 }
 
 type DeliveryPlanInput struct {
-	ID                       string                        `json:"id"`
-	Source                   string                        `json:"source"`
-	ApplicationID            string                        `json:"applicationId"`
-	ApplicationName          string                        `json:"applicationName,omitempty"`
-	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
-	EnvironmentKey           string                        `json:"environmentKey,omitempty"`
-	Action                   ApplicationDeliveryActionKind `json:"action"`
-	TargetID                 string                        `json:"targetId,omitempty"`
-	TargetIDs                []string                      `json:"targetIds,omitempty"`
-	TargetSummary            string                        `json:"targetSummary,omitempty"`
-	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
-	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
-	RefType                  string                        `json:"refType,omitempty"`
-	RefName                  string                        `json:"refName,omitempty"`
-	ImageTag                 string                        `json:"imageTag,omitempty"`
-	ReleaseName              string                        `json:"releaseName,omitempty"`
-	ContainerName            string                        `json:"containerName,omitempty"`
-	Reason                   string                        `json:"reason,omitempty"`
-	RiskLevel                string                        `json:"riskLevel,omitempty"`
-	RequiresApproval         bool                          `json:"requiresApproval"`
-	Impact                   map[string]any                `json:"impact,omitempty"`
-	RollbackStrategy         string                        `json:"rollbackStrategy,omitempty"`
-	Variables                map[string]any                `json:"variables,omitempty"`
-	BuildArgs                map[string]any                `json:"buildArgs,omitempty"`
+	FrozenDockerCiphertext   string                            `json:"-"`
+	DockerSnapshots          []sohaapi.DockerDeliverySnapshot  `json:"-"`
+	DockerPrepared           map[string]string                 `json:"-"`
+	FrozenHelmCiphertext     string                            `json:"-"`
+	HelmImagePlaceholders    map[string]string                 `json:"-"`
+	HelmRevision             int                               `json:"helmRevision,omitempty"`
+	HelmSnapshots            []sohaapi.HelmDeliverySnapshot    `json:"-"`
+	HelmPreparedCiphertext   string                            `json:"-"`
+	ManifestRevision         int                               `json:"manifestRevision,omitempty"`
+	ManifestSnapshots        []domainmanifest.DeliverySnapshot `json:"-"`
+	ID                       string                            `json:"id"`
+	Source                   string                            `json:"source"`
+	ApplicationID            string                            `json:"applicationId"`
+	ApplicationName          string                            `json:"applicationName,omitempty"`
+	ApplicationEnvironmentID string                            `json:"applicationEnvironmentId"`
+	EnvironmentKey           string                            `json:"environmentKey,omitempty"`
+	Action                   ApplicationDeliveryActionKind     `json:"action"`
+	TargetID                 string                            `json:"targetId,omitempty"`
+	TargetIDs                []string                          `json:"targetIds,omitempty"`
+	TargetSummary            string                            `json:"targetSummary,omitempty"`
+	BuildSourceID            string                            `json:"buildSourceId,omitempty"`
+	ReleaseBundleID          string                            `json:"releaseBundleId,omitempty"`
+	RefType                  string                            `json:"refType,omitempty"`
+	RefName                  string                            `json:"refName,omitempty"`
+	ImageTag                 string                            `json:"imageTag,omitempty"`
+	ReleaseName              string                            `json:"releaseName,omitempty"`
+	ContainerName            string                            `json:"containerName,omitempty"`
+	Reason                   string                            `json:"reason,omitempty"`
+	RiskLevel                string                            `json:"riskLevel,omitempty"`
+	RequiresApproval         bool                              `json:"requiresApproval"`
+	Impact                   map[string]any                    `json:"impact,omitempty"`
+	RollbackStrategy         string                            `json:"rollbackStrategy,omitempty"`
+	Variables                map[string]any                    `json:"variables,omitempty"`
+	BuildArgs                map[string]any                    `json:"buildArgs,omitempty"`
 }
 
 type DeliveryPlanConfirmResult struct {
@@ -671,6 +709,7 @@ type ApplicationRuntimeSummary struct {
 }
 
 type ApplicationRuntimeEnvironment struct {
+	ManifestDeployments      []domainmanifest.Deployment    `json:"manifestDeployments,omitempty"`
 	ApplicationEnvironmentID string                         `json:"applicationEnvironmentId"`
 	EnvironmentID            string                         `json:"environmentId"`
 	EnvironmentName          string                         `json:"environmentName,omitempty"`
@@ -796,6 +835,10 @@ type Repository interface {
 	UpdateDeliveryBlueprint(context.Context, string, DeliveryBlueprintInput) (DeliveryBlueprint, error)
 
 	CreateDeliveryDraft(context.Context, DeliveryDraftInput, string) (DeliveryDraft, error)
+	FindDeliveryDraftCreation(context.Context, string, string, string) (DeliveryDraft, error)
+	CreateDeliveryDraftIdempotent(context.Context, DeliveryDraftInput, string, string) (DeliveryDraft, error)
+	WithDeliveryDraftConfirmation(context.Context, string, func(context.Context, DeliveryDraft, *DeliveryDraftConfirmResult) (DeliveryDraftConfirmResult, error)) (DeliveryDraftConfirmResult, error)
+	GetDeliveryDraftConfirmation(context.Context, string) (DeliveryDraftConfirmResult, error)
 	GetDeliveryDraft(context.Context, string) (DeliveryDraft, error)
 	UpdateDeliveryDraft(context.Context, DeliveryDraft) (DeliveryDraft, error)
 

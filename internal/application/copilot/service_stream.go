@@ -21,7 +21,12 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 	if err != nil {
 		return domaincopilot.WorkbenchStreamResult{}, err
 	}
+	session, err = s.persistWorkbenchModelPreferences(ctx, principal, session, input)
+	if err != nil {
+		return domaincopilot.WorkbenchStreamResult{}, err
+	}
 	metadata := parseSessionMetadata(session.Metadata)
+
 	if nextMetadata, changed := applyGlobalAssistantInput(metadata, input); changed {
 		metadata = nextMetadata
 		session.Metadata = sessionMetadataMap(metadata)
@@ -32,9 +37,13 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 		}
 	}
 	mode := normalizeSessionMode(firstNonEmpty(input.Mode, metadata.Mode))
+	if mode != "general" && input.ContextSelection != nil {
+		return domaincopilot.WorkbenchStreamResult{}, fmt.Errorf("%w: context references are supported in general chat", apperrors.ErrUnsupportedOperation)
+	}
 	providerID := normalizeAgentProviderID(firstNonEmpty(input.AgentProviderID, metadata.AgentProviderID, agentProviderInternal))
 	effectiveToolset := narrowWorkbenchToolset(metadata.Toolset, input.Toolset, input.ScopeOverrides, metadata.Scope)
 	effectiveMetadata := metadata
+	effectiveMetadata.RequestContext = input.ContextSelection
 	effectiveMetadata.Mode = mode
 	effectiveMetadata.AgentProviderID = providerID
 	effectiveMetadata.Toolset = effectiveToolset
@@ -120,6 +129,17 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) streamGeneralWorkbenchMessage(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, metadata domaincopilot.SessionMetadata, input domaincopilot.WorkbenchSendMessageInput, locale string) (domaincopilot.WorkbenchStreamResult, error) {
+	if s.shouldUseExternalAgent(metadata.AgentProviderID) {
+		envelope, err := s.queueAgentChatMessage(ctx, principal, session, metadata, input.Content, locale)
+		if err != nil {
+			return domaincopilot.WorkbenchStreamResult{}, err
+		}
+		emitExternalAgentQueued(input.EventSink, envelope)
+		if input.EventSink != nil {
+			return domaincopilot.WorkbenchStreamResult{Envelope: envelope}, nil
+		}
+		return domaincopilot.WorkbenchStreamResult{Envelope: envelope, Events: streamEventsFromEnvelope(session.ID, envelope, time.Now().UTC(), "queued")}, nil
+	}
 	if input.EventSink == nil {
 		envelope, err := s.sendMessageWithSessionConfig(ctx, principal, session, metadata, input.Content, locale)
 		if err != nil {
@@ -162,7 +182,7 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 	if contextErr != nil {
 		return domaincopilot.SessionMessageEnvelope{}, contextErr
 	}
-	reply := s.generateReplyStream(ctx, principal, session.ID, sessionMeta.Mode, providerMessages, locale, func(delta string) bool {
+	reply := s.generateReplyStream(ctx, principal, session.ID, sessionMeta.Mode, providerMessages, locale, sessionMeta.ModelPreferences, func(delta string) bool {
 		if delta == "" {
 			return true
 		}
@@ -173,6 +193,7 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 			ContentDelta: delta,
 		})
 	})
+	reply = safeChatReply(reply, locale)
 	if reply.Source == "model-cancelled" {
 		eventSink(domaincopilot.WorkbenchStreamEvent{
 			Type:         "agent.status",
@@ -184,7 +205,7 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 			Messages: []domaincopilot.Message{userMessage},
 		}, nil
 	}
-	if !emittedDelta && strings.TrimSpace(reply.Content) != "" {
+	if !chatReplyFailed(reply) && !emittedDelta && strings.TrimSpace(reply.Content) != "" {
 		eventSink(domaincopilot.WorkbenchStreamEvent{
 			Type:         "message.delta",
 			Role:         "assistant",
@@ -215,13 +236,19 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 	assistantMessage, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: session.ID,
-		Role:      "assistant",
+		Role:      chatReplyRole(reply),
 		Content:   reply.Content,
 		Metadata:  assistantMetadata,
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
+	}
+	if chatReplyFailed(reply) {
+		retryable := true
+		eventSink(domaincopilot.WorkbenchStreamEvent{Type: "error", Code: "model_unavailable", Message: reply.Content, Retryable: &retryable})
+		eventSink(domaincopilot.WorkbenchStreamEvent{Type: "agent.status", ProviderID: agentProviderInternal, ProviderKind: "internal", Status: "failed"})
+		return domaincopilot.SessionMessageEnvelope{Messages: []domaincopilot.Message{userMessage, assistantMessage}}, nil
 	}
 	eventSink(domaincopilot.WorkbenchStreamEvent{
 		Type:      "message.done",
@@ -597,4 +624,32 @@ func analysisToolIdentity(mode string) (string, string) {
 	default:
 		return "platform-native.v1", "root_cause.analysis"
 	}
+}
+
+func validWorkbenchReasoningEffort(value string) bool {
+	switch value {
+	case "", "auto", "low", "medium", "high":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Service) persistWorkbenchModelPreferences(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, input domaincopilot.WorkbenchSendMessageInput) (domaincopilot.Session, error) {
+	if input.ModelPreferences == nil {
+		return session, nil
+	}
+	metadata := parseSessionMetadata(session.Metadata)
+	preferences := *input.ModelPreferences
+	preferences.PublicModel = strings.TrimSpace(preferences.PublicModel)
+	if len(preferences.PublicModel) > 200 || !validWorkbenchReasoningEffort(preferences.ReasoningEffort) {
+		return domaincopilot.Session{}, fmt.Errorf("%w: invalid model preferences", apperrors.ErrInvalidArgument)
+	}
+	if normalizeSessionMode(firstNonEmpty(input.Mode, metadata.Mode)) != "general" || normalizeAgentProviderID(firstNonEmpty(input.AgentProviderID, metadata.AgentProviderID)) != agentProviderInternal {
+		return domaincopilot.Session{}, fmt.Errorf("%w: model preferences require internal chat", apperrors.ErrInvalidArgument)
+	}
+	metadata.ModelPreferences = preferences
+	session.Metadata = sessionMetadataMap(metadata)
+	session.UpdatedAt = time.Now().UTC()
+	return s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
 }

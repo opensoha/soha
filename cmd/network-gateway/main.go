@@ -81,10 +81,12 @@ func runGateway(config networkgateway.Config, privateKey [32]byte, control *netw
 		if err != nil {
 			return fail(err)
 		}
-		telemetry, err = networkgateway.NewTelemetryClient(config.IngestURL, config.RuntimeID, client, schemas)
+		metrics, err := networkgateway.NewTelemetryClient(config.IngestURL, config.RuntimeID, client, schemas)
 		if err != nil {
 			return fail(err)
 		}
+		metrics.SetVPNPeerCounters(system.VPNPeerCounters)
+		telemetry = metrics
 	}
 	runtime, err := networkgateway.NewRuntime(config.RuntimeID, control, executor, telemetry, config.PollInterval, config.HeartbeatInterval, config.MaxClockSkew, logger)
 	if err != nil {
@@ -96,7 +98,20 @@ func runGateway(config networkgateway.Config, privateKey [32]byte, control *netw
 	defer stop()
 	defer cancel()
 	runtimeErr := make(chan error, 1)
-	healthErr := make(chan error, 1)
+	healthErr := make(chan error, 2)
+	probe, err := config.ProbeServer(runtime)
+	if err != nil {
+		return fail(err)
+	}
+	if probe != nil {
+		go func() {
+			err := probe.ListenAndServeTLS("", "")
+			if errors.Is(err, http.ErrServerClosed) {
+				err = nil
+			}
+			healthErr <- err
+		}()
+	}
 	go func() { runtimeErr <- runtime.Run(ctx) }()
 	go func() {
 		err := health.ListenAndServe()
@@ -118,6 +133,9 @@ func runGateway(config networkgateway.Config, privateKey [32]byte, control *netw
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	shutdownErr := errors.Join(executor.Disable(shutdownCtx), health.Shutdown(shutdownCtx))
+	if probe != nil {
+		shutdownErr = errors.Join(shutdownErr, probe.Shutdown(shutdownCtx))
+	}
 	if failure != nil {
 		logger.Error("network gateway exited with error", "event", "network_gateway.run.failed", "error", redaction.LogText(failure.Error(), 2048))
 	}

@@ -11,6 +11,8 @@ func registerDeliveryRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depen
 	registerDeliveryCatalogRoutes(protected, deps)
 	registerDeliveryApplicationRoutes(protected, deps)
 	registerDeliveryExecutionRoutes(protected, deps)
+	registerDeliveryBatchRoutes(protected, deps)
+	registerDeliveryTriggerRoutes(protected, deps)
 }
 
 func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
@@ -21,6 +23,7 @@ func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.DELETE("/delivery/manifest-packages/:manifestPackageID", deps.Manifests.Delete)
 	protected.POST("/delivery/manifest-packages/:manifestPackageID/publish", deps.Manifests.Publish)
 	protected.GET("/delivery/manifest-packages/:manifestPackageID/revisions", deps.Manifests.ListRevisions)
+	protected.POST("/delivery/manifest-packages/:manifestPackageID/revisions", deps.Manifests.SaveRevision)
 	protected.GET("/delivery/manifest-packages/:manifestPackageID/source", deps.ManifestSources.Get)
 	protected.PUT("/delivery/manifest-packages/:manifestPackageID/source", deps.ManifestSources.Update)
 	protected.POST("/delivery/manifest-packages/:manifestPackageID/render", deps.ManifestSources.Render)
@@ -60,6 +63,8 @@ func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/delivery/release-bundles/:bundleID/artifacts", deps.Delivery.ListReleaseBundleArtifacts)
 	protected.GET("/delivery/execution-tasks", deps.Delivery.ListExecutionTasks)
 	protected.GET("/delivery/execution-tasks/:taskID", deps.Delivery.GetExecutionTask)
+	protected.GET("/delivery/execution-tasks/:taskID/rollout", deps.ManifestDeployments.GetTaskRollout)
+	protected.POST("/delivery/execution-tasks/:taskID/rollout", deps.ManifestDeployments.ControlTaskRollout)
 	protected.GET("/delivery/execution-tasks/:taskID/logs", deps.Delivery.ListExecutionLogs)
 	protected.GET("/delivery/execution-tasks/:taskID/artifacts", deps.Delivery.ListExecutionArtifacts)
 	protected.POST("/delivery/execution-tasks/:taskID/cancel", deps.Delivery.CancelExecutionTask)
@@ -80,26 +85,66 @@ func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
 }
 
 func registerDeliveryCatalogRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerTemplateSourceRoutes(protected, deps)
+	protected.POST("/delivery/documents/preview", deps.DeliveryDocuments.Preview)
+	protected.POST("/delivery/documents/imports/:previewID/apply", deps.DeliveryDocuments.Apply)
+	protected.GET("/delivery/documents/:kind/:objectID/export", deps.DeliveryDocuments.Export)
 	protected.GET("/delivery/environments", deps.Catalog.ListEnvironments)
 	protected.POST("/application-environments", deps.Catalog.CreateApplicationEnvironment)
 	protected.PUT("/application-environments/:applicationEnvironmentID", deps.Catalog.UpdateApplicationEnvironment)
 	protected.DELETE("/application-environments/:applicationEnvironmentID", deps.Catalog.DeleteApplicationEnvironment)
+	protected.GET("/deployment-templates", deps.DeploymentTemplates.List)
+	protected.POST("/deployment-templates", deps.DeploymentTemplates.Save)
+	protected.GET("/deployment-templates/:deploymentTemplateID", deps.DeploymentTemplates.Get)
+	protected.PUT("/deployment-templates/:deploymentTemplateID", deps.DeploymentTemplates.Save)
+	protected.DELETE("/deployment-templates/:deploymentTemplateID", deps.DeploymentTemplates.Deprecate)
+	protected.GET("/deployment-templates/:deploymentTemplateID/versions", deps.DeploymentTemplates.Versions)
+	protected.GET("/deployment-templates/:deploymentTemplateID/versions/:version", deps.DeploymentTemplates.Version)
+	protected.POST("/deployment-templates/:deploymentTemplateID/publish", deps.DeploymentTemplates.Publish)
+	protected.POST("/applications/:applicationID/deployment-template-preview", deps.DeploymentTemplates.Preview)
 	protected.GET("/build-templates", deps.Catalog.ListBuildTemplates)
 	protected.GET("/build-templates/:buildTemplateID/usage", deps.Catalog.GetBuildTemplateUsage)
 	protected.POST("/build-templates", deps.Catalog.CreateBuildTemplate)
 	protected.PUT("/build-templates/:buildTemplateID", deps.Catalog.UpdateBuildTemplate)
 	protected.DELETE("/build-templates/:buildTemplateID", deps.Catalog.DeleteBuildTemplate)
 	protected.GET("/workflow-templates", deps.Catalog.ListWorkflowTemplates)
+	protected.GET("/delivery/workflow-catalog", deps.Catalog.ListWorkflowCatalog)
+	protected.GET("/delivery/execution-history", deps.Workflows.ListExecutionHistory)
 	protected.GET("/workflow-templates/:workflowTemplateID/usage", deps.Catalog.GetWorkflowTemplateUsage)
 	protected.POST("/workflow-templates", deps.Catalog.CreateWorkflowTemplate)
 	protected.PUT("/workflow-templates/:workflowTemplateID", deps.Catalog.UpdateWorkflowTemplate)
 	protected.DELETE("/workflow-templates/:workflowTemplateID", deps.Catalog.DeleteWorkflowTemplate)
+	protected.GET("/build-templates/:buildTemplateID", deps.TemplateVersions.GetBuildTemplate)
+	protected.GET("/build-templates/:buildTemplateID/versions", deps.TemplateVersions.ListBuildTemplateVersions)
+	protected.GET("/build-templates/:buildTemplateID/versions/:version", deps.TemplateVersions.GetBuildTemplateVersion)
+	protected.POST("/build-templates/:buildTemplateID/publish", deps.TemplateVersions.PublishBuildTemplate)
+	protected.GET("/workflow-templates/:workflowTemplateID", deps.TemplateVersions.GetWorkflowTemplate)
+	protected.GET("/workflow-templates/:workflowTemplateID/versions", deps.TemplateVersions.ListWorkflowTemplateVersions)
+	protected.GET("/workflow-templates/:workflowTemplateID/versions/:version", deps.TemplateVersions.GetWorkflowTemplateVersion)
+	protected.POST("/workflow-templates/:workflowTemplateID/publish", deps.TemplateVersions.PublishWorkflowTemplate)
+}
+
+func registerTemplateSourceRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.GET("/delivery/template-sources", deps.TemplateSources.List)
+	protected.POST("/delivery/template-sources", deps.TemplateSources.Save)
+	protected.GET("/delivery/template-sources/:sourceID", deps.TemplateSources.Get)
+	protected.PUT("/delivery/template-sources/:sourceID", deps.TemplateSources.Save)
+	protected.DELETE("/delivery/template-sources/:sourceID", deps.TemplateSources.Remove)
+	protected.GET("/delivery/template-sources/:sourceID/objects", deps.TemplateSources.Objects)
+	protected.POST("/delivery/template-sources/:sourceID/sync", deps.TemplateSources.Sync)
+	protected.GET("/delivery/template-sources/:sourceID/sync-runs", deps.TemplateSources.Runs)
+	protected.GET("/delivery/template-sources/:sourceID/sync-runs/:runID", deps.TemplateSources.Run)
+	protected.POST("/delivery/template-sources/:sourceID/sync-runs/:runID/apply", deps.TemplateSources.Apply)
+	protected.POST("/delivery/template-sources/:sourceID/objects/:kind/:objectID/detach", deps.TemplateSources.Remove)
+	protected.GET("/delivery/documents/:kind/:objectID/source", deps.TemplateSources.SourceInfo)
 }
 
 func registerDeliveryApplicationRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/applications", deps.Applications.ListApplications)
 	protected.POST("/applications", deps.Applications.CreateApplication)
 	protected.GET("/applications/:applicationID", deps.Applications.GetApplication)
+	protected.POST("/applications/:applicationID/repository-analysis", deps.Applications.AnalyzeRepository)
+	protected.POST("/applications/:applicationID/helm-chart", deps.Delivery.InspectApplicationHelmChart)
 	protected.GET("/applications/:applicationID/detail", deps.Delivery.GetApplicationDetail)
 	protected.GET("/applications/:applicationID/runtime", deps.Delivery.GetApplicationRuntimeDetail)
 	protected.PUT("/applications/:applicationID/application-environments/:applicationEnvironmentID/workflow", deps.Catalog.SaveApplicationWorkflow)
@@ -119,6 +164,7 @@ func registerDeliveryApplicationRoutes(protected gin.IRoutes, deps Dependencies)
 
 func registerDeliveryExecutionRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/builds", deps.Builds.ListBuilds)
+	protected.GET("/applications/:applicationID/buildpacks-capability", deps.Builds.BuildpacksCapability)
 	protected.GET("/builds/:buildID", deps.Builds.GetBuild)
 	protected.POST("/builds/trigger", deps.Builds.TriggerBuild)
 	protected.GET("/workflows", deps.Workflows.List)
@@ -143,4 +189,23 @@ func registerDeliveryExecutionRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/repositories/:repositoryID", deps.Applications.GetRepository)
 	protected.PUT("/repositories/:repositoryID", deps.Applications.UpdateRepository)
 	protected.DELETE("/repositories/:repositoryID", deps.Applications.DeleteRepository)
+}
+
+func registerDeliveryBatchRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.GET("/delivery-workflows", deps.DeliveryBatches.ListWorkflows)
+	protected.POST("/delivery-workflows", deps.DeliveryBatches.CreateWorkflow)
+	protected.GET("/delivery-workflows/:deliveryWorkflowID", deps.DeliveryBatches.GetWorkflow)
+	protected.PUT("/delivery-workflows/:deliveryWorkflowID", deps.DeliveryBatches.UpdateWorkflow)
+	protected.GET("/delivery-batches", deps.DeliveryBatches.ListBatches)
+	protected.POST("/delivery-batches", deps.DeliveryBatches.CreateBatch)
+	protected.GET("/delivery-batches/:deliveryBatchID", deps.DeliveryBatches.GetBatch)
+	protected.POST("/delivery-batches/:deliveryBatchID/cancel", deps.DeliveryBatches.CancelBatch)
+}
+
+func registerDeliveryTriggerRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.GET("/delivery/triggers", deps.DeliveryTriggers.List)
+	protected.POST("/delivery/triggers", deps.DeliveryTriggers.Save)
+	protected.GET("/delivery/triggers/:triggerID", deps.DeliveryTriggers.Get)
+	protected.PUT("/delivery/triggers/:triggerID", deps.DeliveryTriggers.Save)
+	protected.GET("/delivery/triggers/:triggerID/events", deps.DeliveryTriggers.Events)
 }

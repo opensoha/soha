@@ -57,50 +57,41 @@ func (r *Repository) MihomoSubscription(ctx context.Context, credentialID, profi
 }
 
 func (r *Repository) ActiveVPNGateway(ctx context.Context, siteID, requestedGatewayID string, now time.Time) (domainnetworkaccess.Gateway, domainnetworkruntime.Credential, error) {
-	var targetGatewayID string
-	err := r.db.WithContext(ctx).Raw(`SELECT id FROM network_access_gateways
-		WHERE tenant_id = 'default' AND workspace_id = 'default' AND site_id = ? AND administrative_status = 'active' AND runtime_id IS NOT NULL
-		ORDER BY id LIMIT 1`, siteID).Row().Scan(&targetGatewayID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, fmt.Errorf("%w: active VPN gateway not found", apperrors.ErrNotFound)
-	}
-	if err != nil {
-		return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, err
-	}
 	gatewayID := requestedGatewayID
 	if gatewayID == "" {
-		gatewayID = targetGatewayID
-	}
-	var runtimeID, selectedRoot, targetRoot string
-	err = r.db.WithContext(ctx).Raw(`SELECT runtime_id, COALESCE(hub_gateway_id, id) FROM network_access_gateways
-		WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND administrative_status = 'active' AND runtime_id IS NOT NULL`, gatewayID).
-		Row().Scan(&runtimeID, &selectedRoot)
-	if errors.Is(err, sql.ErrNoRows) {
-		return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, fmt.Errorf("%w: requested VPN gateway not found", apperrors.ErrNotFound)
-	}
-	if err != nil {
-		return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, err
-	}
-	err = r.db.WithContext(ctx).Raw(`SELECT COALESCE(hub_gateway_id, id) FROM network_access_gateways
-		WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? AND administrative_status = 'active'`, targetGatewayID).
-		Row().Scan(&targetRoot)
-	if err != nil || selectedRoot != targetRoot {
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		err := r.db.WithContext(ctx).Raw(`SELECT id FROM network_access_gateways
+			WHERE tenant_id = 'default' AND workspace_id = 'default' AND site_id = ? AND administrative_status = 'active' AND runtime_id IS NOT NULL
+			ORDER BY id LIMIT 1`, siteID).Row().Scan(&gatewayID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, apperrors.ErrNotFound
+		}
+		if err != nil {
 			return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, err
 		}
-		return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, fmt.Errorf("%w: requested VPN gateway is outside the target topology", apperrors.ErrNotFound)
 	}
 	gateway, err := networkaccessrepo.New(r.db).GetGateway(ctx, gatewayID)
 	if err != nil {
-		return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, err
+		return gateway, domainnetworkruntime.Credential{}, err
+	}
+	if gateway.AdministrativeStatus != domainnetworkaccess.StatusActive || gateway.RuntimeID == "" {
+		return gateway, domainnetworkruntime.Credential{}, apperrors.ErrNotFound
+	}
+	local, err := gatewayRuntimeByID(r.db.WithContext(ctx), gateway.ID)
+	if err != nil {
+		return gateway, domainnetworkruntime.Credential{}, err
+	}
+	if reachable, err := gatewayReachesSite(r.db.WithContext(ctx), local, siteID); err != nil {
+		return gateway, domainnetworkruntime.Credential{}, err
+	} else if !reachable {
+		return gateway, domainnetworkruntime.Credential{}, apperrors.ErrNotFound
 	}
 	var credential credentialRow
-	err = r.db.WithContext(ctx).Where("tenant_id = 'default' AND workspace_id = 'default' AND runtime_id = ? AND runtime_kind = 'gateway' AND status = ? AND not_before <= ? AND expires_at > ?", runtimeID, domainnetworkruntime.CredentialActive, now, now).Order("generation DESC").First(&credential).Error
+	err = r.db.WithContext(ctx).Where("tenant_id = 'default' AND workspace_id = 'default' AND runtime_id = ? AND runtime_kind = 'gateway' AND status = 'active' AND not_before <= ? AND expires_at > ?", gateway.RuntimeID, now, now).Order("generation DESC").First(&credential).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, fmt.Errorf("%w: active VPN gateway credential not found", apperrors.ErrNotFound)
+		return gateway, domainnetworkruntime.Credential{}, apperrors.ErrNotFound
 	}
 	if err != nil {
-		return domainnetworkaccess.Gateway{}, domainnetworkruntime.Credential{}, err
+		return gateway, domainnetworkruntime.Credential{}, err
 	}
 	return gateway, credential.domain(), nil
 }
@@ -135,6 +126,9 @@ func (r *Repository) SaveVPNConnection(ctx context.Context, connection domainnet
 			return err
 		}
 		result = vpnConnectResult(connection, networkLeases, resourceLeases, configurationVersion)
+		if err := consumeManagedVPNIntent(tx, connection, result); err != nil {
+			return err
+		}
 		return insertVPNRequest(tx, connection, result)
 	})
 	return result, err
@@ -179,6 +173,19 @@ func beginVPNRequest(tx *gorm.DB, connection domainnetworkruntime.VPNConnection,
 }
 
 func prepareVPNConnection(tx *gorm.DB, connection *domainnetworkruntime.VPNConnection) (vpnConnectionState, bool, error) {
+	if connection.Managed == nil {
+		required, err := requiresManagedVPN(tx, connection.SubjectID, connection.DeviceID)
+		if err != nil {
+			return vpnConnectionState{}, false, err
+		}
+		if required {
+			return vpnConnectionState{}, false, apperrors.NewBusiness(apperrors.ErrAccessDenied, "managed_vpn_required", "Use the assigned managed VPN profile.", "请使用组织分配的受管 VPN 连接方案。")
+		}
+	}
+
+	if err := lockManagedVPNIntent(tx, *connection); err != nil {
+		return vpnConnectionState{}, false, err
+	}
 	if err := lockVPNRuntimes(tx, *connection); err != nil {
 		return vpnConnectionState{}, false, err
 	}
@@ -187,7 +194,10 @@ func prepareVPNConnection(tx *gorm.DB, connection *domainnetworkruntime.VPNConne
 		return vpnConnectionState{}, false, err
 	}
 	state := vpnConnectionState{endpointCredential: endpointCredential, gateway: gateway, gatewayCredential: gatewayCredential, space: space}
-	if connection.Mode != domainnetworkaccess.ModeExternalVPN {
+	if err := lockVPNCapacity(tx, *connection); err != nil {
+		return vpnConnectionState{}, false, err
+	}
+	if connection.Mode != domainnetworkaccess.ModeExternalVPN && connection.Managed == nil {
 		grant, err := lockAccessGrant(tx, *connection)
 		if err != nil {
 			return vpnConnectionState{}, false, err
@@ -210,7 +220,19 @@ func prepareVPNConnection(tx *gorm.DB, connection *domainnetworkruntime.VPNConne
 		return vpnConnectionState{}, false, err
 	}
 	state.address, err = allocateOverlayAddress(overlay, used)
-	return state, err != nil, nil
+	if err != nil {
+		return state, true, nil
+	}
+	if connection.Managed != nil {
+		state.grant, err = createManagedVPNGrant(tx, connection)
+		if err != nil {
+			return vpnConnectionState{}, false, err
+		}
+		if state.grant != nil {
+			connection.ValidUntil = minTime(connection.ValidUntil, state.grant.ExpiresAt)
+		}
+	}
+	return state, false, nil
 }
 
 func lockVPNRuntimes(tx *gorm.DB, connection domainnetworkruntime.VPNConnection) error {
@@ -281,6 +303,11 @@ func buildVPNLeases(connection *domainnetworkruntime.VPNConnection, space domain
 func persistVPNConnection(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, snapshot domainnetworkruntime.PolicySnapshot, state vpnConnectionState, networkLeases []networkprotocol.NetworkLease, resourceLeases []networkprotocol.ResourceLease) (int, error) {
 	if err := insertVPNSession(tx, connection); err != nil {
 		return 0, err
+	}
+	if m := connection.Managed; m != nil {
+		if err := tx.Exec(`UPDATE network_runtime_sessions SET vpn_profile_id = ?, vpn_profile_revision = ?, vpn_decision_id = ?, vpn_selection = ? WHERE id = ?`, m.Intent.ProfileID, m.Intent.ProfileRevision, m.Decision.ID, m.Intent.Selection, connection.SessionID).Error; err != nil {
+			return 0, err
+		}
 	}
 	for _, lease := range networkLeases {
 		if err := insertNetworkLease(tx, lease); err != nil {
@@ -805,21 +832,18 @@ func lockVPNSpace(tx *gorm.DB, connection domainnetworkruntime.VPNConnection, ga
 }
 
 func gatewayReachesSite(tx *gorm.DB, gateway gatewayRuntimeRow, siteID string) (bool, error) {
-	var targetRoot string
-	err := tx.Raw(`SELECT COALESCE(hub_gateway_id, id) FROM network_access_gateways
-		WHERE tenant_id = 'default' AND workspace_id = 'default' AND site_id = ? AND administrative_status = 'active' LIMIT 1`, siteID).
-		Row().Scan(&targetRoot)
-	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+	if gateway.SiteID == siteID {
+		return true, nil
 	}
-	if err != nil {
-		return false, err
-	}
-	selectedRoot := gateway.ID
+	root := gateway.ID
 	if gateway.HubGatewayID != "" {
-		selectedRoot = gateway.HubGatewayID
+		root = gateway.HubGatewayID
 	}
-	return selectedRoot == targetRoot, nil
+	var reachable bool
+	err := tx.Raw(`SELECT EXISTS (SELECT 1 FROM network_access_gateways
+		WHERE tenant_id = 'default' AND workspace_id = 'default' AND site_id = ? AND administrative_status = 'active'
+		AND COALESCE(hub_gateway_id, id) = ?)`, siteID, root).Row().Scan(&reachable)
+	return reachable, err
 }
 
 func normalizeVPNInputError(err error, name string) error {
@@ -980,6 +1004,7 @@ func insertVPNRequest(tx *gorm.DB, connection domainnetworkruntime.VPNConnection
 }
 
 type vpnPeerState struct {
+	VPNProfileID  string
 	SessionID     string
 	RuntimeID     string
 	DeviceID      string
@@ -1348,7 +1373,11 @@ func gatewayVPNDesired(tx *gorm.DB, gateway gatewayRuntimeRow, credential creden
 		if err != nil {
 			return networkprotocol.ConfigurationDesired{}, err
 		}
-		wireGuard.Peers = append(wireGuard.Peers, networkprotocol.WireGuardPeer{RuntimeID: peer.RuntimeID, DeviceID: peer.DeviceID, PublicKey: peer.PublicKey, AllowedIPs: []string{peer.Address}, PersistentKeepaliveSeconds: 0})
+		endpointPeer := networkprotocol.WireGuardPeer{RuntimeID: peer.RuntimeID, DeviceID: peer.DeviceID, PublicKey: peer.PublicKey, AllowedIPs: []string{peer.Address}, PersistentKeepaliveSeconds: 0}
+		if gatewayPeerMetricsEnabled(credential, peer.VPNProfileID) {
+			endpointPeer.SessionID, endpointPeer.VPNProfileID = peer.SessionID, peer.VPNProfileID
+		}
+		wireGuard.Peers = append(wireGuard.Peers, endpointPeer)
 		wireGuard.Routes = append(wireGuard.Routes, peer.Address)
 		desired.NetworkLeases = append(desired.NetworkLeases, peerNetworkLeases...)
 		desired.ResourceLeases = append(desired.ResourceLeases, peerResourceLeases...)
@@ -1445,7 +1474,7 @@ func routesCoverAll(routes, destinations []string) bool {
 }
 
 func activeVPNPeers(tx *gorm.DB, gatewayID string, now time.Time) ([]vpnPeerState, error) {
-	rows, err := tx.Raw(`SELECT p.session_id, p.runtime_id, p.device_id, p.public_key, p.overlay_address::text, s.access_profile
+	rows, err := tx.Raw(`SELECT p.session_id, p.runtime_id, p.device_id, p.public_key, p.overlay_address::text, s.access_profile, COALESCE(s.vpn_profile_id, '')
 		FROM network_wireguard_peers p JOIN network_runtime_sessions s ON s.id = p.session_id
 		WHERE p.tenant_id = 'default' AND p.workspace_id = 'default' AND p.gateway_id = ? AND p.status = 'active' AND p.expires_at > ?
 		AND s.status IN ('pending', 'active', 'restricted', 'quarantine') AND s.valid_until > ?
@@ -1457,7 +1486,7 @@ func activeVPNPeers(tx *gorm.DB, gatewayID string, now time.Time) ([]vpnPeerStat
 	peers := []vpnPeerState{}
 	for rows.Next() {
 		var peer vpnPeerState
-		if err := rows.Scan(&peer.SessionID, &peer.RuntimeID, &peer.DeviceID, &peer.PublicKey, &peer.Address, &peer.AccessProfile); err != nil {
+		if err := rows.Scan(&peer.SessionID, &peer.RuntimeID, &peer.DeviceID, &peer.PublicKey, &peer.Address, &peer.AccessProfile, &peer.VPNProfileID); err != nil {
 			return nil, err
 		}
 		peers = append(peers, peer)
@@ -1698,4 +1727,8 @@ func leaseFirewallRules(source string, networkLeases []networkprotocol.NetworkLe
 func firewallRuleID(effect, source, destination, leaseID string) string {
 	digest := sha256.Sum256([]byte(effect + "\n" + source + "\n" + destination + "\n" + leaseID))
 	return fmt.Sprintf("wg-%s-%x", effect, digest[:12])
+}
+
+func gatewayPeerMetricsEnabled(credential credentialRow, profileID string) bool {
+	return credentialHasCapability(credential, networkprotocol.CapabilityVPNMetrics) && profileID != ""
 }

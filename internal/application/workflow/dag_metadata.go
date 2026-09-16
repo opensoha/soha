@@ -19,7 +19,7 @@ var gatewayApprovalWorkflowMetadataKeys = []string{
 
 func workflowMetadataMode(metadata map[string]any) string {
 	mode := strings.TrimSpace(fmt.Sprint(metadata["mode"]))
-	if mode == "delivery_dag" {
+	if mode == "delivery_dag" || mode == domainworkflow.ScopeDeliveryBatch {
 		return mode
 	}
 	return "release_dag"

@@ -209,12 +209,7 @@ type customResourceListRequest struct {
 	Namespace  string                               `json:"namespace"`
 }
 
-type customResourceYAMLRequest struct {
-	Definition domainresource.CRDResourceDefinition `json:"definition"`
-	Namespace  string                               `json:"namespace"`
-	Name       string                               `json:"name,omitempty"`
-	Content    string                               `json:"content,omitempty"`
-}
+type customResourceYAMLRequest = domainresource.CustomResourceYAMLRequest
 
 type helmReleaseValuesRequest struct {
 	Content string `json:"content"`
@@ -622,7 +617,7 @@ func (c *Client) ListDeploymentRolloutHistory(ctx context.Context, namespace, na
 }
 
 func (c *Client) RollbackDeployment(ctx context.Context, namespace, name, revision string) error {
-	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/deployments/rollback", rollbackDeploymentRequest{
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/actions/deployments/rollback", rollbackDeploymentRequest{
 		Namespace: namespace,
 		Name:      name,
 		Revision:  revision,
@@ -1643,7 +1638,7 @@ func (c *Client) ApplyResourceYAML(ctx context.Context, namespace, kind, name, c
 	var payload struct {
 		Data domainresource.ResourceYAMLView `json:"data"`
 	}
-	err := c.request(ctx, http.MethodPut, "/api/v1/platform/resources/yaml", resourceYAMLRequest{
+	err := c.request(ctx, http.MethodPut, "/api/v1/platform/ownership-v2/resources/yaml", resourceYAMLRequest{
 		Namespace: namespace,
 		Kind:      kind,
 		Name:      name,
@@ -1662,7 +1657,7 @@ func (c *Client) DryRunResourceYAML(ctx context.Context, namespace, kind, name, 
 			Analysis domainresource.ResourceUpdateAnalysis `json:"analysis"`
 		} `json:"data"`
 	}
-	err := c.request(ctx, http.MethodPost, "/api/v1/platform/resources/yaml/preflight", resourceYAMLRequest{
+	err := c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/resources/yaml/preflight", resourceYAMLRequest{
 		Namespace: namespace,
 		Kind:      kind,
 		Name:      name,
@@ -1738,7 +1733,7 @@ func (c *Client) SubscribeResourceEvents(ctx context.Context, namespace string, 
 }
 
 func (c *Client) DeleteResource(ctx context.Context, namespace, kind, name string) error {
-	return c.request(ctx, http.MethodDelete, "/api/v1/platform/resources", deleteResourceRequest{
+	return c.request(ctx, http.MethodDelete, "/api/v1/platform/ownership-v2/resources", deleteResourceRequest{
 		Namespace: namespace,
 		Kind:      kind,
 		Name:      name,
@@ -1763,7 +1758,7 @@ func (c *Client) CreateCustomResourceYAML(ctx context.Context, definition domain
 	var payload struct {
 		Data domainresource.ResourceYAMLView `json:"data"`
 	}
-	err := c.request(ctx, http.MethodPost, "/api/v1/platform/extensions/custom-resources", customResourceYAMLRequest{
+	err := c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/extensions/custom-resources", customResourceYAMLRequest{
 		Definition: definition,
 		Namespace:  namespace,
 		Content:    content,
@@ -1793,7 +1788,7 @@ func (c *Client) ApplyCustomResourceYAML(ctx context.Context, definition domainr
 	var payload struct {
 		Data domainresource.ResourceYAMLView `json:"data"`
 	}
-	err := c.request(ctx, http.MethodPut, "/api/v1/platform/extensions/custom-resources/yaml", customResourceYAMLRequest{
+	err := c.request(ctx, http.MethodPut, "/api/v1/platform/ownership-v2/extensions/custom-resources/yaml", customResourceYAMLRequest{
 		Definition: definition,
 		Namespace:  namespace,
 		Name:       name,
@@ -1805,11 +1800,12 @@ func (c *Client) ApplyCustomResourceYAML(ctx context.Context, definition domainr
 	return payload.Data, nil
 }
 
-func (c *Client) DeleteCustomResource(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace, name string) error {
-	return c.request(ctx, http.MethodDelete, "/api/v1/platform/extensions/custom-resources", customResourceYAMLRequest{
-		Definition: definition,
-		Namespace:  namespace,
-		Name:       name,
+func (c *Client) DeleteCustomResource(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace, name, expectedUID string) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/extensions/custom-resources/delete-observed", customResourceYAMLRequest{
+		ExpectedUID: expectedUID,
+		Definition:  definition,
+		Namespace:   namespace,
+		Name:        name,
 	}, nil)
 }
 
@@ -1937,23 +1933,23 @@ func agentPortForwardTunnelClosed(err error) bool {
 }
 
 func (c *Client) RestartDeployment(ctx context.Context, namespace, name string) error {
-	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/deployments/restart", restartDeploymentRequest{Namespace: namespace, Name: name}, nil)
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/actions/deployments/restart", restartDeploymentRequest{Namespace: namespace, Name: name}, nil)
 }
 
 func (c *Client) ScaleDeployment(ctx context.Context, namespace, name string, replicas int32) error {
-	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/deployments/scale", scaleDeploymentRequest{Namespace: namespace, Name: name, Replicas: replicas}, nil)
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/actions/deployments/scale", scaleDeploymentRequest{Namespace: namespace, Name: name, Replicas: replicas}, nil)
 }
 
 func (c *Client) RestartStatefulSet(ctx context.Context, namespace, name string) error {
-	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/statefulsets/restart", restartStatefulSetRequest{Namespace: namespace, Name: name}, nil)
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/actions/statefulsets/restart", restartStatefulSetRequest{Namespace: namespace, Name: name}, nil)
 }
 
 func (c *Client) ScaleStatefulSet(ctx context.Context, namespace, name string, replicas int32) error {
-	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/statefulsets/scale", scaleStatefulSetRequest{Namespace: namespace, Name: name, Replicas: replicas}, nil)
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/actions/statefulsets/scale", scaleStatefulSetRequest{Namespace: namespace, Name: name, Replicas: replicas}, nil)
 }
 
 func (c *Client) RestartDaemonSet(ctx context.Context, namespace, name string) error {
-	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/daemonsets/restart", restartDaemonSetRequest{Namespace: namespace, Name: name}, nil)
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/actions/daemonsets/restart", restartDaemonSetRequest{Namespace: namespace, Name: name}, nil)
 }
 
 func (c *Client) UpdateDeploymentImage(ctx context.Context, namespace, name, containerName, image string) (string, string, error) {
@@ -1963,7 +1959,7 @@ func (c *Client) UpdateDeploymentImage(ctx context.Context, namespace, name, con
 			PreviousImage string `json:"previousImage"`
 		} `json:"data"`
 	}
-	err := c.request(ctx, http.MethodPost, "/api/v1/platform/actions/deployments/image", updateDeploymentImageRequest{
+	err := c.request(ctx, http.MethodPost, "/api/v1/platform/ownership-v2/actions/deployments/image", updateDeploymentImageRequest{
 		Namespace:     namespace,
 		Name:          name,
 		ContainerName: containerName,
@@ -2007,6 +2003,12 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		return fmt.Errorf("execute agent request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed) && strings.HasPrefix(path, "/api/v1/platform/ownership-v2/") {
+		return fmt.Errorf("%w: upgrade the Agent to support ownership-protected resource mutations", apperrors.ErrUnsupportedOperation)
+	}
+	if resp.StatusCode == http.StatusConflict {
+		return fmt.Errorf("%w: agent resource state conflicts with this operation", apperrors.ErrConflict)
+	}
 	if resp.StatusCode >= http.StatusBadRequest {
 		return fmt.Errorf("agent request failed with status %d", resp.StatusCode)
 	}

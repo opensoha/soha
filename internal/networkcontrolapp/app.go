@@ -16,6 +16,7 @@ import (
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	loggerinfra "github.com/opensoha/soha/internal/infrastructure/logger"
 	"github.com/opensoha/soha/internal/networkidentity"
+	"github.com/opensoha/soha/internal/networkingestquery"
 	"github.com/opensoha/soha/internal/networkprotocol"
 	networkruntimerepository "github.com/opensoha/soha/internal/repository/networkruntime"
 	runtimeconfigrepository "github.com/opensoha/soha/internal/repository/runtimeconfig"
@@ -63,10 +64,14 @@ func New(ctx context.Context) (*App, error) {
 	if err != nil {
 		return fail(err)
 	}
+	probeReader, err := newVPNProbeReader(cfg.IngestQuery)
+	if err != nil {
+		return fail(err)
+	}
 	service, err := app.New(networkruntimerepository.New(store.DB()), schemas, app.Options{
 		MaxClockSkew: cfg.MaxClockSkew, ConfigurationTTL: cfg.ConfigurationTTL, LeaseTTL: cfg.LeaseTTL,
-		CredentialEncryptionKeys: cfg.CredentialEncryptionKeys,
-		LoadRuntimeConfig:        runtimeconfigrepository.New(store.DB()).LoadState,
+		CredentialEncryptionKeys: cfg.CredentialEncryptionKeys, VPNProbes: probeReader,
+		LoadRuntimeConfig: runtimeconfigrepository.New(store.DB()).LoadState,
 	})
 	if err != nil {
 		return fail(err)
@@ -140,4 +145,21 @@ func (a *App) refreshLoop(ctx context.Context, failed bool) {
 			failed = err != nil
 		}
 	}
+}
+
+func newVPNProbeReader(cfg config.NetworkIngestQueryConfig) (app.VPNProbeReader, error) {
+	if !cfg.Configured() {
+		return nil, nil
+	}
+	tlsConfig, err := networkidentity.LoadClientTLS(cfg.CertFile, cfg.KeyFile, cfg.CAFile, cfg.ServerName)
+	if err != nil {
+		return nil, err
+	}
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("default HTTP transport is not configurable")
+	}
+	clone := transport.Clone()
+	clone.TLSClientConfig = tlsConfig
+	return networkingestquery.New(cfg.URL, &http.Client{Transport: clone, Timeout: cfg.Timeout}, cfg.MaxResponseBytes)
 }

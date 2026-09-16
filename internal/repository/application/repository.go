@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"strings"
 	"time"
 
@@ -26,6 +27,16 @@ func New(db *gorm.DB) *Repository {
 }
 
 func (r *Repository) List(ctx context.Context, filter domainapp.Filter) ([]domainapp.App, error) {
+	var items []domainapp.App
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		var err error
+		items, err = New(tx).list(ctx, filter)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return items, err
+}
+
+func (r *Repository) list(ctx context.Context, filter domainapp.Filter) ([]domainapp.App, error) {
 	limit := filter.Limit
 	if limit <= 0 {
 		limit = 100
@@ -33,7 +44,16 @@ func (r *Repository) List(ctx context.Context, filter domainapp.Filter) ([]domai
 	query := `
 		SELECT id, name, app_key, app_group, business_line_id, language, description, owner_team, repository_provider,
 			repository_project_id, repository_path, default_branch, default_tag, build_image, build_context_dir,
-			dockerfile_path, enabled, metadata, created_at, updated_at
+			dockerfile_path, enabled, metadata, created_at, updated_at, version,
+			COALESCE((SELECT json_agg(json_build_object(
+				'id', b.id, 'name', b.source_name, 'type', b.source_type,
+				'enabled', b.enabled, 'isDefault', b.is_default,
+				'buildImage', b.build_image, 'defaultTag', b.default_tag,
+				'config', b.config, 'createdAt', b.created_at, 'updatedAt', b.updated_at
+			) ORDER BY b.is_default DESC, b.created_at ASC)
+			FROM application_build_sources b WHERE b.application_id = applications.id), '[]'::json),
+			COALESCE((SELECT json_agg(ar.repository_id ORDER BY ar.repository_id)
+			FROM application_repositories ar WHERE ar.application_id = applications.id), '[]'::json)
 		FROM applications
 	`
 	args := []any{}
@@ -44,7 +64,7 @@ func (r *Repository) List(ctx context.Context, filter domainapp.Filter) ([]domai
 	}
 	query += ` ORDER BY app_group ASC, name ASC, id ASC LIMIT ?`
 	args = append(args, limit)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query applications: %w", err)
 	}
@@ -56,21 +76,32 @@ func (r *Repository) List(ctx context.Context, filter domainapp.Filter) ([]domai
 		if err != nil {
 			return nil, err
 		}
-		item.BuildSources, err = r.listBuildSources(ctx, item.ID, item)
-		if err != nil {
-			return nil, err
-		}
-		item.RepositoryIDs, _ = r.listApplicationRepositoryIDs(ctx, item.ID)
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (r *Repository) Get(ctx context.Context, applicationID string) (domainapp.App, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	var item domainapp.App
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		var err error
+		item, err = New(tx).get(ctx, applicationID)
+		return err
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	return item, err
+}
+
+func (r *Repository) get(ctx context.Context, applicationID string) (domainapp.App, error) {
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, name, app_key, app_group, business_line_id, language, description, owner_team, repository_provider,
 			repository_project_id, repository_path, default_branch, default_tag, build_image, build_context_dir,
-			dockerfile_path, enabled, metadata, created_at, updated_at
+			dockerfile_path, enabled, metadata, created_at, updated_at, version
 		FROM applications
 		WHERE id = ?
 		LIMIT 1
@@ -83,8 +114,8 @@ func (r *Repository) Get(ctx context.Context, applicationID string) (domainapp.A
 	if err != nil {
 		return domainapp.App{}, err
 	}
-	item.RepositoryIDs, _ = r.listApplicationRepositoryIDs(ctx, item.ID)
-	return item, nil
+	item.RepositoryIDs, err = r.listApplicationRepositoryIDs(ctx, item.ID)
+	return item, err
 }
 
 func (r *Repository) Create(ctx context.Context, input domainapp.UpsertInput) (domainapp.App, error) {
@@ -94,7 +125,7 @@ func (r *Repository) Create(ctx context.Context, input domainapp.UpsertInput) (d
 	if err != nil {
 		return domainapp.App{}, fmt.Errorf("marshal application metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
 			INSERT INTO applications (
 				id, name, app_key, app_group, language, description, owner_team, repository_provider, repository_project_id,
@@ -108,7 +139,10 @@ func (r *Repository) Create(ctx context.Context, input domainapp.UpsertInput) (d
 		if err := replaceBuildSourcesTx(tx, item.ID, resolveBuildSources(item, input.BuildSources), item.CreatedAt); err != nil {
 			return err
 		}
-		return replaceApplicationRepositoriesTx(tx, item.ID, input.RepositoryIDs)
+		if err := replaceApplicationRepositoriesTx(tx, item.ID, input.RepositoryIDs); err != nil {
+			return err
+		}
+		return tx.Raw(`SELECT version, updated_at FROM applications WHERE id = ?`, item.ID).Row().Scan(&item.Version, &item.UpdatedAt)
 	}); err != nil {
 		return domainapp.App{}, err
 	}
@@ -123,38 +157,41 @@ func (r *Repository) Update(ctx context.Context, applicationID string, input dom
 	if err != nil {
 		return domainapp.App{}, fmt.Errorf("marshal application metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Exec(`
+	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		err := tx.Raw(`
 			UPDATE applications
 			SET name = ?, app_key = ?, app_group = ?, language = ?, description = ?, owner_team = ?, repository_provider = ?, business_line_id = ?, repository_project_id = ?,
-				repository_path = ?, default_branch = ?, default_tag = ?, build_image = ?, build_context_dir = ?, dockerfile_path = ?, enabled = ?, metadata = ?, updated_at = ?
-			WHERE id = ?
+				repository_path = ?, default_branch = ?, default_tag = ?, build_image = ?, build_context_dir = ?, dockerfile_path = ?, enabled = ?, metadata = ?, updated_at = ?, version = version + 1
+			WHERE id = ? AND (?::bigint IS NULL OR version = ?)
+			RETURNING created_at
 		`, item.Name, item.Key, item.Group, item.Language, nullableString(item.Description), nullableString(item.OwnerTeam), nullableString(item.RepositoryProvider),
 			nullableString(item.BusinessLineID),
 			nullableString(item.RepositoryProjectID), nullableString(item.RepositoryPath), nullableString(item.DefaultBranch), nullableString(item.DefaultTag),
-			nullableString(item.BuildImage), nullableString(item.BuildContextDir), nullableString(item.DockerfilePath), item.Enabled, string(metadata), item.UpdatedAt, item.ID)
-		if result.Error != nil {
-			return fmt.Errorf("update application: %w", result.Error)
-		}
-		if result.RowsAffected == 0 {
+			nullableString(item.BuildImage), nullableString(item.BuildContextDir), nullableString(item.DockerfilePath), item.Enabled, string(metadata), item.UpdatedAt, item.ID, input.ExpectedVersion, input.ExpectedVersion).Row().Scan(&item.CreatedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			if input.ExpectedVersion != nil {
+				return apperrors.NewBusiness(apperrors.ErrConflict, "application_version_conflict", "Application configuration changed; reload and merge your changes.", "应用配置已被其他人修改，请重新加载并合并修改。")
+			}
 			return ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("update application: %w", err)
 		}
 		if err := replaceBuildSourcesTx(tx, item.ID, resolveBuildSources(item, input.BuildSources), item.UpdatedAt); err != nil {
 			return err
 		}
-		return replaceApplicationRepositoriesTx(tx, item.ID, input.RepositoryIDs)
+		if err := replaceApplicationRepositoriesTx(tx, item.ID, input.RepositoryIDs); err != nil {
+			return err
+		}
+		return tx.Raw(`SELECT version, updated_at FROM applications WHERE id = ?`, item.ID).Row().Scan(&item.Version, &item.UpdatedAt)
 	}); err != nil {
 		return domainapp.App{}, err
-	}
-	createdAt := fetchCreatedAt(ctx, r.db, item.ID)
-	if !createdAt.IsZero() {
-		item.CreatedAt = createdAt
 	}
 	return item, nil
 }
 
 func (r *Repository) Delete(ctx context.Context, applicationID string) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM applications WHERE id = ?`, strings.TrimSpace(applicationID))
+	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM applications WHERE id = ?`, strings.TrimSpace(applicationID))
 	if result.Error != nil {
 		return fmt.Errorf("delete application: %w", result.Error)
 	}
@@ -165,9 +202,9 @@ func (r *Repository) Delete(ctx context.Context, applicationID string) error {
 }
 
 func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]domainapp.Service, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider,
-			repository_id, repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
+			repository_id, repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at, version, deployment_template
 		FROM application_services
 		WHERE application_id = ?
 		ORDER BY enabled DESC, service_key ASC, id ASC
@@ -193,9 +230,9 @@ func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]
 }
 
 func (r *Repository) GetService(ctx context.Context, applicationID, serviceID string) (domainapp.Service, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider,
-			repository_id, repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
+			repository_id, repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at, version, deployment_template
 		FROM application_services
 		WHERE application_id = ? AND id = ?
 		LIMIT 1
@@ -214,7 +251,7 @@ func (r *Repository) GetService(ctx context.Context, applicationID, serviceID st
 func (r *Repository) CreateService(ctx context.Context, applicationID string, input domainapp.ServiceInput) (domainapp.Service, error) {
 	now := time.Now().UTC()
 	item := normalizeServiceInput(strings.TrimSpace(applicationID), input, now)
-	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if err := insertServiceTx(tx, item); err != nil {
 			return err
 		}
@@ -229,7 +266,14 @@ func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID
 	now := time.Now().UTC()
 	item := normalizeServiceInput(strings.TrimSpace(applicationID), input, now)
 	item.ID = strings.TrimSpace(serviceID)
-	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := lockServiceUpdate(tx, &item, input); err != nil {
+			return err
+		}
+		deploymentTemplate, err := json.Marshal(item.DeploymentTemplate)
+		if err != nil {
+			return err
+		}
 		metadata, err := json.Marshal(item.Metadata)
 		if err != nil {
 			return fmt.Errorf("marshal application service metadata: %w", err)
@@ -237,11 +281,11 @@ func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID
 		result := tx.Exec(`
 			UPDATE application_services
 			SET service_key = ?, service_name = ?, description = ?, service_kind = ?, owner_team = ?, repository_provider = ?, repository_id = ?,
-				repository_project_id = ?, repository_path = ?, default_branch = ?, build_source_id = ?, enabled = ?, metadata = ?, updated_at = ?
+				repository_project_id = ?, repository_path = ?, default_branch = ?, build_source_id = ?, enabled = ?, metadata = ?, updated_at = ?, version = ?, deployment_template = ?::jsonb
 			WHERE application_id = ? AND id = ?
 		`, item.Key, item.Name, nullableString(item.Description), string(item.ServiceKind), nullableString(item.OwnerTeam), nullableString(item.RepositoryProvider), nullableString(item.RepositoryID),
 			nullableString(item.RepositoryProjectID), nullableString(item.RepositoryPath), nullableString(item.DefaultBranch), nullableString(item.BuildSourceID),
-			item.Enabled, string(metadata), item.UpdatedAt, item.ApplicationID, item.ID)
+			item.Enabled, string(metadata), item.UpdatedAt, item.Version, string(deploymentTemplate), item.ApplicationID, item.ID)
 		if result.Error != nil {
 			return fmt.Errorf("update application service: %w", result.Error)
 		}
@@ -256,7 +300,7 @@ func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID
 }
 
 func (r *Repository) DeleteService(ctx context.Context, applicationID, serviceID string) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM application_services WHERE application_id = ? AND id = ?`, strings.TrimSpace(applicationID), strings.TrimSpace(serviceID))
+	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM application_services WHERE application_id = ? AND id = ?`, strings.TrimSpace(applicationID), strings.TrimSpace(serviceID))
 	if result.Error != nil {
 		return fmt.Errorf("delete application service: %w", result.Error)
 	}
@@ -279,9 +323,10 @@ func scanApp(rows *sql.Rows) (domainapp.App, error) {
 	var buildImage sql.NullString
 	var buildContextDir sql.NullString
 	var dockerfilePath sql.NullString
-	var metadata []byte
+	var metadata, buildSources, repositoryIDs []byte
 	if err := rows.Scan(&item.ID, &item.Name, &item.Key, &item.Group, &businessLineID, &item.Language, &description, &ownerTeam, &repositoryProvider, &repositoryProjectID,
-		&repositoryPath, &defaultBranch, &defaultTag, &buildImage, &buildContextDir, &dockerfilePath, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&repositoryPath, &defaultBranch, &defaultTag, &buildImage, &buildContextDir, &dockerfilePath, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt, &item.Version,
+		&buildSources, &repositoryIDs); err != nil {
 		return domainapp.App{}, fmt.Errorf("scan application: %w", err)
 	}
 	item.BusinessLineID = businessLineID.String
@@ -292,11 +337,27 @@ func scanApp(rows *sql.Rows) (domainapp.App, error) {
 	if item.Metadata == nil {
 		item.Metadata = map[string]any{}
 	}
+	if err := json.Unmarshal(buildSources, &item.BuildSources); err != nil {
+		return domainapp.App{}, fmt.Errorf("decode application build sources: %w", err)
+	}
+	for i := range item.BuildSources {
+		if item.BuildSources[i].Config == nil {
+			item.BuildSources[i].Config = map[string]any{}
+		}
+	}
+	if len(item.BuildSources) == 0 {
+		if legacy := legacyBuildSource(item); legacy != nil {
+			item.BuildSources = []domainapp.BuildSource{*legacy}
+		}
+	}
+	if err := json.Unmarshal(repositoryIDs, &item.RepositoryIDs); err != nil {
+		return domainapp.App{}, fmt.Errorf("decode application repositories: %w", err)
+	}
 	return item, nil
 }
 
 func (r *Repository) listBuildSources(ctx context.Context, applicationID string, app domainapp.App) ([]domainapp.BuildSource, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, source_name, source_type, enabled, is_default, build_image, default_tag, config, created_at, updated_at
 		FROM application_build_sources
 		WHERE application_id = ?
@@ -319,7 +380,6 @@ func (r *Repository) listBuildSources(ctx context.Context, applicationID string,
 		return items, rows.Err()
 	}
 	if legacy := legacyBuildSource(app); legacy != nil {
-		r.migrateLegacyBuildSource(ctx, applicationID, *legacy)
 		return []domainapp.BuildSource{*legacy}, nil
 	}
 	return items, rows.Err()
@@ -340,7 +400,7 @@ func scanAppRow(row *sql.Row) (domainapp.App, error) {
 	var dockerfilePath sql.NullString
 	var metadata []byte
 	if err := row.Scan(&item.ID, &item.Name, &item.Key, &item.Group, &businessLineID, &item.Language, &description, &ownerTeam, &repositoryProvider, &repositoryProjectID,
-		&repositoryPath, &defaultBranch, &defaultTag, &buildImage, &buildContextDir, &dockerfilePath, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&repositoryPath, &defaultBranch, &defaultTag, &buildImage, &buildContextDir, &dockerfilePath, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt, &item.Version); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domainapp.App{}, ErrNotFound
 		}
@@ -387,9 +447,9 @@ func scanService(rows *sql.Rows) (domainapp.Service, error) {
 	var defaultBranch sql.NullString
 	var buildSourceID sql.NullString
 	var serviceKind string
-	var metadata []byte
+	var metadata, deploymentTemplate []byte
 	if err := rows.Scan(&item.ID, &item.ApplicationID, &item.Key, &item.Name, &description, &serviceKind, &ownerTeam, &repositoryProvider, &repositoryID,
-		&repositoryProjectID, &repositoryPath, &defaultBranch, &buildSourceID, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&repositoryProjectID, &repositoryPath, &defaultBranch, &buildSourceID, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt, &item.Version, &deploymentTemplate); err != nil {
 		return domainapp.Service{}, fmt.Errorf("scan application service: %w", err)
 	}
 	item.Description = description.String
@@ -407,6 +467,11 @@ func scanService(rows *sql.Rows) (domainapp.Service, error) {
 	if item.Metadata == nil {
 		item.Metadata = map[string]any{}
 	}
+	if len(deploymentTemplate) > 0 {
+		if err := json.Unmarshal(deploymentTemplate, &item.DeploymentTemplate); err != nil {
+			return item, fmt.Errorf("decode service deployment template: %w", err)
+		}
+	}
 	return item, nil
 }
 
@@ -421,9 +486,9 @@ func scanServiceRow(row *sql.Row) (domainapp.Service, error) {
 	var defaultBranch sql.NullString
 	var buildSourceID sql.NullString
 	var serviceKind string
-	var metadata []byte
+	var metadata, deploymentTemplate []byte
 	if err := row.Scan(&item.ID, &item.ApplicationID, &item.Key, &item.Name, &description, &serviceKind, &ownerTeam, &repositoryProvider, &repositoryID,
-		&repositoryProjectID, &repositoryPath, &defaultBranch, &buildSourceID, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&repositoryProjectID, &repositoryPath, &defaultBranch, &buildSourceID, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt, &item.Version, &deploymentTemplate); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domainapp.Service{}, ErrNotFound
 		}
@@ -443,6 +508,11 @@ func scanServiceRow(row *sql.Row) (domainapp.Service, error) {
 	}
 	if item.Metadata == nil {
 		item.Metadata = map[string]any{}
+	}
+	if len(deploymentTemplate) > 0 {
+		if err := json.Unmarshal(deploymentTemplate, &item.DeploymentTemplate); err != nil {
+			return item, fmt.Errorf("decode service deployment template: %w", err)
+		}
 	}
 	return item, nil
 }
@@ -556,14 +626,6 @@ func nullableString(value string) any {
 	return strings.TrimSpace(value)
 }
 
-func fetchCreatedAt(ctx context.Context, db *gorm.DB, applicationID string) time.Time {
-	var createdAt time.Time
-	if err := db.WithContext(ctx).Raw(`SELECT created_at FROM applications WHERE id = ?`, applicationID).Row().Scan(&createdAt); err != nil {
-		return time.Time{}
-	}
-	return createdAt
-}
-
 func resolveBuildSources(app domainapp.App, inputs []domainapp.BuildSourceInput) []domainapp.BuildSource {
 	if len(inputs) == 0 {
 		if legacy := legacyBuildSource(app); legacy != nil {
@@ -638,22 +700,6 @@ func legacyBuildSource(app domainapp.App) *domainapp.BuildSource {
 	}
 }
 
-func (r *Repository) migrateLegacyBuildSource(ctx context.Context, applicationID string, source domainapp.BuildSource) {
-	if r == nil || strings.TrimSpace(applicationID) == "" || strings.TrimSpace(source.ID) == "" {
-		return
-	}
-	config, err := json.Marshal(source.Config)
-	if err != nil {
-		return
-	}
-	_ = r.db.WithContext(ctx).Exec(`
-		INSERT INTO application_build_sources (
-			id, application_id, source_name, source_type, enabled, is_default, build_image, default_tag, config, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT (id) DO NOTHING
-	`, source.ID, strings.TrimSpace(applicationID), source.Name, string(source.Type), source.Enabled, source.IsDefault, nullableString(source.BuildImage), nullableString(source.DefaultTag), string(config), source.CreatedAt, source.UpdatedAt).Error
-}
-
 func replaceBuildSourcesTx(tx *gorm.DB, applicationID string, items []domainapp.BuildSource, now time.Time) error {
 	if err := tx.Exec(`DELETE FROM application_build_sources WHERE application_id = ?`, applicationID).Error; err != nil {
 		return fmt.Errorf("delete application build sources: %w", err)
@@ -674,7 +720,7 @@ func replaceBuildSourcesTx(tx *gorm.DB, applicationID string, items []domainapp.
 }
 
 func (r *Repository) listServiceContainers(ctx context.Context, serviceID string) ([]domainapp.ServiceContainer, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, service_id, container_name, image_repository, default_tag_template, dockerfile_path, build_context_dir,
 			runtime_ports, env_schema, resource_profile, health_check, metadata, created_at, updated_at
 		FROM application_service_containers
@@ -711,6 +757,8 @@ func normalizeServiceInput(applicationID string, input domainapp.ServiceInput, n
 		serviceKind = domainapp.ServiceKindKubernetesWorkload
 	}
 	item := domainapp.Service{
+		Version:             1,
+		DeploymentTemplate:  input.DeploymentTemplate,
 		ID:                  id,
 		ApplicationID:       strings.TrimSpace(applicationID),
 		Key:                 strings.TrimSpace(input.Key),
@@ -781,14 +829,18 @@ func insertServiceTx(tx *gorm.DB, item domainapp.Service) error {
 	if err != nil {
 		return fmt.Errorf("marshal application service metadata: %w", err)
 	}
+	deploymentTemplate, err := json.Marshal(item.DeploymentTemplate)
+	if err != nil {
+		return fmt.Errorf("marshal service deployment template: %w", err)
+	}
 	if err := tx.Exec(`
 		INSERT INTO application_services (
 			id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider, repository_id,
-			repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at, deployment_template
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
 	`, item.ID, item.ApplicationID, item.Key, item.Name, nullableString(item.Description), string(item.ServiceKind), nullableString(item.OwnerTeam), nullableString(item.RepositoryProvider), nullableString(item.RepositoryID),
 		nullableString(item.RepositoryProjectID), nullableString(item.RepositoryPath), nullableString(item.DefaultBranch), nullableString(item.BuildSourceID),
-		item.Enabled, string(metadata), item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		item.Enabled, string(metadata), item.CreatedAt, item.UpdatedAt, string(deploymentTemplate)).Error; err != nil {
 		return fmt.Errorf("create application service: %w", err)
 	}
 	return nil
@@ -843,7 +895,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func (r *Repository) listApplicationRepositoryIDs(ctx context.Context, applicationID string) ([]string, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`SELECT repository_id FROM application_repositories WHERE application_id = ? ORDER BY repository_id`, strings.TrimSpace(applicationID)).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(`SELECT repository_id FROM application_repositories WHERE application_id = ? ORDER BY repository_id`, strings.TrimSpace(applicationID)).Rows()
 	if err != nil {
 		return nil, err
 	}

@@ -2,20 +2,7 @@
 set -eu
 
 interval="${SYNC_INTERVAL_SECONDS:-3}"
-mode="${SYNC_MODE:-git}"
 mkdir -p /workspace/.sync
-
-case "$mode" in
-	local)
-		mkdir -p /workspace/soha /workspace/soha-web /workspace/soha-contracts
-		printf 'local source sync mode; waiting for DevSpace\n'
-		while :; do
-			sleep 3600
-		done
-		;;
-	git) ;;
-	*) printf 'unknown source sync mode: %s\n' "$mode" >&2; exit 2 ;;
-esac
 
 sync_repository() {
 	name="$1"

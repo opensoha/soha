@@ -125,6 +125,7 @@ type RuntimeConfig struct {
 	ExecutionRunnerToken          string        `mapstructure:"execution_runner_token"`
 	ExecutionRunnerKeys           keyring.Ring  `mapstructure:"-"`
 	ExecutionJobClusterID         string        `mapstructure:"execution_job_cluster_id"`
+	BuildpacksRunnerEndpoint      string        `mapstructure:"buildpacks_runner_endpoint"`
 	ExecutionJobNamespace         string        `mapstructure:"execution_job_namespace"`
 	ExecutionJobImage             string        `mapstructure:"execution_job_image"`
 	ExecutionJobGitImage          string        `mapstructure:"execution_job_git_image"`
@@ -786,9 +787,10 @@ var configDefaults = []struct {
 	{"runtime.virtualization_sync_concurrency", 1},
 	{"runtime.execution_runner_token", defaultSystemSecret},
 	{"runtime.execution_job_cluster_id", ""},
+	{"runtime.buildpacks_runner_endpoint", ""},
 	{"runtime.execution_job_namespace", "soha-system"},
 	{"runtime.execution_job_image", "alpine:3.20"},
-	{"runtime.execution_job_git_image", "alpine/git:2.47.0"},
+	{"runtime.execution_job_git_image", "alpine/git:2.47.2"},
 	{"runtime.execution_job_ttl_seconds", 3600},
 	{"database.driver", "postgres"},
 	{"database.host", "localhost"},

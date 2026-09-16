@@ -3,10 +3,12 @@ package resourcebackend
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -38,6 +40,9 @@ func (d *Direct) CreateResourceYAML(ctx context.Context, clusterID, namespace, k
 	}
 	if strings.TrimSpace(item.GetName()) == "" {
 		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.name is required", apperrors.ErrInvalidArgument)
+	}
+	if err := validateResourceMutation(item); err != nil {
+		return domainresource.ResourceYAMLView{}, err
 	}
 	gvr, namespaceScoped, err := resourceGVRForKind(kind)
 	if err != nil {
@@ -99,6 +104,9 @@ func (d *Direct) GetResourceYAML(ctx context.Context, clusterID, namespace, kind
 }
 
 func (d *Direct) DeleteResource(ctx context.Context, clusterID, namespace, kind, name string) error {
+	if strings.EqualFold(kind, "Pod") {
+		return d.DeletePod(ctx, clusterID, namespace, name)
+	}
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return err
@@ -109,7 +117,7 @@ func (d *Direct) DeleteResource(ctx context.Context, clusterID, namespace, kind,
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	return dynamicResource(bundle.Dynamic, gvr, namespaceScoped, namespace).Delete(queryCtx, name, metav1.DeleteOptions{})
+	return resourceMutationError(contractruntime.DeleteManifest(queryCtx, dynamicResource(bundle.Dynamic, gvr, namespaceScoped, namespace), name, ""))
 }
 
 func (d *Direct) ApplyResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
@@ -163,9 +171,12 @@ func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, ki
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
 	}
+	if err := validateResourceMutation(current); err != nil {
+		return domainresource.ResourceYAMLView{}, domainresource.ResourceUpdateAnalysis{}, err
+	}
 	item.SetAPIVersion(gvr.GroupVersion().String())
-	item.SetResourceVersion("")
-	unstructured.RemoveNestedField(item.Object, "metadata", "uid")
+	item.SetResourceVersion(current.GetResourceVersion())
+	item.SetUID(current.GetUID())
 	unstructured.RemoveNestedField(item.Object, "metadata", "managedFields")
 	unstructured.RemoveNestedField(item.Object, "metadata", "creationTimestamp")
 	unstructured.RemoveNestedField(item.Object, "metadata", "generation")
@@ -195,6 +206,13 @@ func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, ki
 	return domainresource.ResourceYAMLView{
 		Kind: kind, Name: name, Namespace: item.GetNamespace(), Content: string(rendered),
 	}, analysis, nil
+}
+
+func validateResourceMutation(object metav1.Object) error {
+	if err := contractruntime.ValidateDirectManifestOwner(object); err != nil {
+		return fmt.Errorf("%w: %v", apperrors.ErrConflict, err)
+	}
+	return nil
 }
 
 func dynamicResource(client dynamic.Interface, gvr schema.GroupVersionResource, namespaced bool, namespace string) dynamic.ResourceInterface {
@@ -263,3 +281,10 @@ func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) 
 }
 
 var _ appresource.DirectGenericResource = (*Direct)(nil)
+
+func resourceMutationError(err error) error {
+	if errors.Is(err, contractruntime.ErrResourceOwnership) {
+		return fmt.Errorf("%w: %v", apperrors.ErrConflict, err)
+	}
+	return err
+}

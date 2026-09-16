@@ -107,6 +107,9 @@ func (d *Direct) RollbackDeployment(ctx context.Context, clusterID, namespace, n
 	if err != nil {
 		return err
 	}
+	if err := validateResourceMutation(deployment); err != nil {
+		return err
+	}
 	replicaSets, err := bundle.Typed.AppsV1().ReplicaSets(namespace).List(queryCtx, metav1.ListOptions{})
 	if err != nil {
 		return err
@@ -309,6 +312,9 @@ func (d *Direct) SetCronJobSuspend(ctx context.Context, clusterID, namespace, na
 	defer cancel()
 	item, err := bundle.Typed.BatchV1().CronJobs(namespace).Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
+		return domainresource.CronJobDetailView{}, err
+	}
+	if err := validateResourceMutation(item); err != nil {
 		return domainresource.CronJobDetailView{}, err
 	}
 	item.Spec.Suspend = &suspend

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opensoha/soha-contracts/helmrelease"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
@@ -92,7 +93,7 @@ func mapHelmRelease(name, namespace string, labels map[string]string, createdAt 
 		Name: releaseName, Namespace: namespace, Revision: revision, Status: status,
 		Chart:         strings.TrimSpace(labels["helm.sh/chart"]),
 		AppVersion:    strings.TrimSpace(labels["app.kubernetes.io/version"]),
-		StorageDriver: "secret", AgeSeconds: secondsSince(createdAt),
+		StorageDriver: "secret", AgeSeconds: secondsSince(createdAt), AllowedActions: helmrelease.LegacyAllowedActions(labels),
 	}
 }
 

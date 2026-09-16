@@ -15,6 +15,7 @@ import (
 )
 
 type dagRunExecutor struct {
+	delivery               *Service
 	nodes                  *dagExecutor
 	metrics                *runtimeobs.Registry
 	updateRunFunc          func(context.Context, domainworkflow.Run) domainworkflow.Run
@@ -26,6 +27,7 @@ type dagRunExecutor struct {
 
 func newDAGRunExecutor(service *Service) *dagRunExecutor {
 	return &dagRunExecutor{
+		delivery:               service,
 		nodes:                  newDAGExecutor(service),
 		metrics:                service.metrics,
 		updateRunFunc:          service.updateRun,
@@ -75,6 +77,14 @@ type dagRunState struct {
 }
 
 func (e *dagRunExecutor) run(ctx context.Context, principal domainidentity.Principal, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, definition dagWorkflowDefinition, run domainworkflow.Run) {
+	if run.Scope == domainworkflow.ScopeCapabilityTask {
+		e.delivery.runCapabilityTick(ctx, run)
+		return
+	}
+	if run.Scope == domainworkflow.ScopeDeliveryBatch {
+		e.runDeliveryTick(ctx, run)
+		return
+	}
 	state := newDAGRunState(principal, app, input, binding, definition, run)
 	e.start(ctx, state)
 
@@ -186,7 +196,7 @@ func (s *dagRunState) collectReadyNodes() ([]dagWorkflowNode, bool) {
 		if !isReady {
 			continue
 		}
-		if shouldStopDAGNodeAfterFailure(s.definition, node.ID, s.stopFailureSources) {
+		if s.definition.Mode != domainworkflow.ScopeDeliveryBatch && shouldStopDAGNodeAfterFailure(s.definition, node.ID, s.stopFailureSources) {
 			s.skipNode(node, "stopped after failure policy", map[string]any{"reason": "failure_policy_stop"})
 			progressed = true
 			continue
@@ -242,7 +252,9 @@ func (s *dagRunState) markNodesRunning(nodes []dagWorkflowNode) {
 	for _, node := range nodes {
 		entry := s.nodeRuns[node.ID]
 		entry.Status = "running"
-		entry.StartedAt = time.Now().UTC().Format(time.RFC3339)
+		if entry.StartedAt == "" {
+			entry.StartedAt = time.Now().UTC().Format(time.RFC3339)
+		}
 		s.nodeRuns[node.ID] = entry
 		appendDAGNodeEvent(&s.run, node.ID, "node_started", entry.Status, "", nil)
 	}
@@ -251,9 +263,16 @@ func (s *dagRunState) markNodesRunning(nodes []dagWorkflowNode) {
 func (s *dagRunState) applyResults(results []dagExecutionResult) {
 	for _, result := range results {
 		entry := s.nodeRuns[result.nodeID]
+		if result.nodeRun != nil {
+			entry = *result.nodeRun
+		}
 		entry.Status = result.status
 		entry.Summary = result.summary
-		entry.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+		if s.definition.Mode != domainworkflow.ScopeDeliveryBatch || deliveryNodeTerminal(entry.Status) {
+			entry.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+		} else {
+			entry.FinishedAt = ""
+		}
 		s.nodeRuns[result.nodeID] = entry
 		s.statuses[result.nodeID] = result.status
 		recordDAGNodeOutputs(&s.run, result.nodeID, metadataDAGExecutionResult(result))

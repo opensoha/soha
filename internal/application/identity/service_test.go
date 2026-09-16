@@ -26,6 +26,21 @@ import (
 	"golang.org/x/oauth2"
 )
 
+func TestCurrentPrincipalRejectsDisabledAccount(t *testing.T) {
+	store := newLoginMappingUserRepo()
+	store.usersByID["reader"] = userrepo.User{ID: "reader", Username: "reader", Status: "active"}
+	service := newTestServiceWithUserStore(store)
+	if principal, err := service.CurrentPrincipal(context.Background(), "reader"); err != nil || principal.UserID != "reader" {
+		t.Fatalf("active principal: %+v, %v", principal, err)
+	}
+	user := store.usersByID["reader"]
+	user.Status = "disabled"
+	store.usersByID["reader"] = user
+	if _, err := service.CurrentPrincipal(context.Background(), "reader"); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("disabled account: %v", err)
+	}
+}
+
 func TestJWTKeyringSignsWithKidAndVerifiesPreviousKeys(t *testing.T) {
 	t.Parallel()
 
@@ -1319,11 +1334,19 @@ func (r *loginMappingUserRepo) GetPersonalAccessTokenByHash(context.Context, str
 	return domainaigateway.PersonalAccessToken{}, userrepo.ErrNotFound
 }
 
+func (r *loginMappingUserRepo) GetPersonalAccessTokenByID(context.Context, string) (domainaigateway.PersonalAccessToken, error) {
+	return domainaigateway.PersonalAccessToken{}, userrepo.ErrNotFound
+}
+
 func (r *loginMappingUserRepo) TouchPersonalAccessToken(context.Context, string, time.Time) error {
 	return nil
 }
 
 func (r *loginMappingUserRepo) GetServiceAccountTokenByHash(context.Context, string) (domainaigateway.ServiceAccountToken, error) {
+	return domainaigateway.ServiceAccountToken{}, userrepo.ErrNotFound
+}
+
+func (r *loginMappingUserRepo) GetServiceAccountTokenByID(context.Context, string) (domainaigateway.ServiceAccountToken, error) {
 	return domainaigateway.ServiceAccountToken{}, userrepo.ErrNotFound
 }
 

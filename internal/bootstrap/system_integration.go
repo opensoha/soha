@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +13,7 @@ import (
 
 type gitLabSourceAdapterFactory struct{}
 
-func (gitLabSourceAdapterFactory) Build(item domain.Integration, credentials map[string]string) (appsystemintegration.SourceAdapter, error) {
+func (gitLabSourceAdapterFactory) Build(item domain.Integration, credentials map[string]string, client *http.Client) (appsystemintegration.SourceAdapter, error) {
 	config := integrationConfiguration(item)
 	perPage, _ := strconv.Atoi(config["per_page"])
 	timeout, _ := time.ParseDuration(config["timeout"])
@@ -25,7 +26,7 @@ func (gitLabSourceAdapterFactory) Build(item domain.Integration, credentials map
 		// The service applies the enabled gate for normal source operations. Keep
 		// the adapter active so administrators can test a disabled connection.
 		Enabled: true, BaseURL: config["base_url"], Token: token, Bearer: oauthMode,
-		GroupID: config["group_id"], PerPage: perPage, Timeout: timeout,
+		GroupID: config["group_id"], PerPage: perPage, Timeout: timeout, HTTPClient: client,
 	}), nil
 }
 

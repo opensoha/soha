@@ -21,17 +21,18 @@ type MutualTLSConfig struct {
 }
 
 type NetworkControlConfig struct {
-	HTTP                     HTTPConfig      `mapstructure:"http"`
-	Logger                   LoggerConfig    `mapstructure:"logger"`
-	Database                 DatabaseConfig  `mapstructure:"database"`
-	TLS                      MutualTLSConfig `mapstructure:"tls"`
-	SnapshotRefreshInterval  time.Duration   `mapstructure:"snapshot_refresh_interval"`
-	MaxBodyBytes             int64           `mapstructure:"max_body_bytes"`
-	RequestsPerMinute        int             `mapstructure:"requests_per_minute"`
-	MaxClockSkew             time.Duration   `mapstructure:"max_clock_skew"`
-	ConfigurationTTL         time.Duration   `mapstructure:"configuration_ttl"`
-	LeaseTTL                 time.Duration   `mapstructure:"lease_ttl"`
-	CredentialEncryptionKeys keyring.Ring    `mapstructure:"-"`
+	IngestQuery              NetworkIngestQueryConfig `mapstructure:"ingest_query"`
+	HTTP                     HTTPConfig               `mapstructure:"http"`
+	Logger                   LoggerConfig             `mapstructure:"logger"`
+	Database                 DatabaseConfig           `mapstructure:"database"`
+	TLS                      MutualTLSConfig          `mapstructure:"tls"`
+	SnapshotRefreshInterval  time.Duration            `mapstructure:"snapshot_refresh_interval"`
+	MaxBodyBytes             int64                    `mapstructure:"max_body_bytes"`
+	RequestsPerMinute        int                      `mapstructure:"requests_per_minute"`
+	MaxClockSkew             time.Duration            `mapstructure:"max_clock_skew"`
+	ConfigurationTTL         time.Duration            `mapstructure:"configuration_ttl"`
+	LeaseTTL                 time.Duration            `mapstructure:"lease_ttl"`
+	CredentialEncryptionKeys keyring.Ring             `mapstructure:"-"`
 }
 
 type IngestConfig struct {
@@ -103,6 +104,9 @@ func loadNetworkRuntimeConfig() (networkRuntimeConfig, error) {
 
 func (c NetworkControlConfig) Validate() error {
 	problems := validateRuntimeConfig("network_control", c.HTTP, c.Logger, c.Database, c.TLS)
+	if err := c.IngestQuery.Validate(); err != nil {
+		problems = append(problems, "network_control.ingest_query: "+err.Error())
+	}
 	if c.SnapshotRefreshInterval <= 0 {
 		problems = append(problems, "network_control.snapshot_refresh_interval must be positive")
 	}
@@ -145,6 +149,9 @@ func (c IngestConfig) Validate() error {
 }
 
 func (c *networkRuntimeConfig) expandEnv() {
+	for _, value := range []*string{&c.NetworkControl.IngestQuery.URL, &c.NetworkControl.IngestQuery.CAFile, &c.NetworkControl.IngestQuery.CertFile, &c.NetworkControl.IngestQuery.KeyFile, &c.NetworkControl.IngestQuery.ServerName} {
+		*value = os.ExpandEnv(*value)
+	}
 	c.Security.CredentialEncryptionKey = os.ExpandEnv(c.Security.CredentialEncryptionKey)
 	for _, item := range []struct {
 		database *DatabaseConfig
@@ -243,6 +250,11 @@ func setNetworkRuntimeDefaults(v *viper.Viper) {
 	v.SetDefault("network_control.max_clock_skew", "5m")
 	v.SetDefault("network_control.configuration_ttl", "5m")
 	v.SetDefault("network_control.lease_ttl", "5m")
+	for _, key := range []string{"url", "ca_file", "cert_file", "key_file", "server_name"} {
+		v.SetDefault("network_control.ingest_query."+key, "")
+	}
+	v.SetDefault("network_control.ingest_query.timeout", "2s")
+	v.SetDefault("network_control.ingest_query.max_response_bytes", 1<<20)
 	v.SetDefault("security.credential_encryption_key", defaultSystemSecret)
 	v.SetDefault("ingest.max_body_bytes", 8<<20)
 	v.SetDefault("ingest.max_events_per_batch", 1000)

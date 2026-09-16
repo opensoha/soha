@@ -150,6 +150,7 @@ type LLMRelayConfig struct {
 
 type ServiceDeps struct {
 	Permissions *appaccess.PermissionResolver
+	Identity    CurrentPrincipalReader
 	Audit       AuditRecorder
 
 	PersonalTokens  PersonalAccessTokenRepository
@@ -167,6 +168,10 @@ type ServiceDeps struct {
 	RateLimitBackend RateLimitBackend
 	RelayConfig      LLMRelayConfig
 	HTTPClient       *http.Client
+}
+
+type CurrentPrincipalReader interface {
+	CurrentPrincipal(context.Context, string) (domainidentity.Principal, error)
 }
 
 type SecretReferenceResolver interface {

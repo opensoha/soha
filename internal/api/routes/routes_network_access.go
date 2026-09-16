@@ -3,6 +3,7 @@ package routes
 import "github.com/gin-gonic/gin"
 
 func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerNetworkVPNRoutes(protected, deps)
 	if deps.NetworkAccess == nil {
 		return
 	}

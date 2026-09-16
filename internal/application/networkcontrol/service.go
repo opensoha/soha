@@ -55,6 +55,7 @@ type Store interface {
 }
 
 type Options struct {
+	VPNProbes                VPNProbeReader
 	MaxClockSkew             time.Duration
 	ConfigurationTTL         time.Duration
 	LeaseTTL                 time.Duration
@@ -158,7 +159,8 @@ func (s *Service) Enroll(ctx context.Context, identity networkidentity.Identity,
 }
 
 func (s *Service) Configuration(ctx context.Context, identity networkidentity.Identity) (networkprotocol.RuntimeMessage, error) {
-	if _, err := s.authenticate(ctx, identity); err != nil {
+	credential, err := s.authenticate(ctx, identity)
+	if err != nil {
 		return networkprotocol.RuntimeMessage{}, err
 	}
 	snapshot, err := s.CurrentSnapshot()
@@ -171,6 +173,9 @@ func (s *Service) Configuration(ctx context.Context, identity networkidentity.Id
 		return networkprotocol.RuntimeMessage{}, err
 	}
 	desired := configuration.Desired
+	if err := s.configureVPNProbe(ctx, credential, &desired); err != nil {
+		return networkprotocol.RuntimeMessage{}, err
+	}
 	desired.RuntimeIntervals, err = s.runtimeIntervals(ctx)
 	if err != nil {
 		return networkprotocol.RuntimeMessage{}, err

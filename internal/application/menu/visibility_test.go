@@ -7,9 +7,25 @@ import (
 	domainmenu "github.com/opensoha/soha/internal/domain/menu"
 )
 
+func TestApplicationLoginRecordsRequireAuditAndInternalWorkbenchPermissions(t *testing.T) {
+	item := domainmenu.Record{ID: "identity-login-records", Path: "/identity/login-records"}
+	for _, auditPermission := range []string{appaccess.PermIdentityAuditView, appaccess.PermSystemAuditView} {
+		if isVisibleByPermissions(item, []string{auditPermission}) {
+			t.Fatal("application login records must require the internal workbench entry")
+		}
+		if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchSecurityView, auditPermission}) {
+			t.Fatalf("login records unavailable with audit permission %s", auditPermission)
+		}
+	}
+	if isVisibleByPermissions(item, []string{appaccess.PermWorkbenchSecurityView, appaccess.PermIdentityApplicationsView}) {
+		t.Fatal("application visibility must not grant audit access")
+	}
+}
+
 func TestApplicationMenusRequireDeliveryWorkbenchEntry(t *testing.T) {
 	for _, item := range []domainmenu.Record{
 		{ID: "builds", Path: "/applications"},
+		{ID: "release-board", Path: "/release-board"},
 		{ID: "delivery-manifest-library", Path: "/delivery/manifests"},
 	} {
 		if isVisibleByPermissions(item, []string{appaccess.PermDeliveryApplicationsView}) {
@@ -17,6 +33,21 @@ func TestApplicationMenusRequireDeliveryWorkbenchEntry(t *testing.T) {
 		}
 		if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchDeliveryView, appaccess.PermDeliveryApplicationsView}) {
 			t.Fatalf("%s should be visible when entry and page permissions are both present", item.ID)
+		}
+	}
+}
+
+func TestDeliveryBatchMenusRequireWorkflowAndWorkbenchPermissions(t *testing.T) {
+	for _, item := range []domainmenu.Record{
+		{ID: "delivery-workflows", Path: "/delivery/workflows"},
+		{ID: "delivery-batches", Path: "/delivery/batches"},
+	} {
+		if isVisibleByPermissions(item, []string{appaccess.PermDeliveryWorkflowsView}) ||
+			isVisibleByPermissions(item, []string{appaccess.PermWorkbenchDeliveryView, appaccess.PermDeliveryApplicationsView}) {
+			t.Fatalf("%s bypassed delivery workflow permissions", item.ID)
+		}
+		if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchDeliveryView, appaccess.PermDeliveryWorkflowsView}) {
+			t.Fatalf("%s unavailable to delivery workflow reader", item.ID)
 		}
 	}
 }

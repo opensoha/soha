@@ -40,6 +40,11 @@ type Dependencies struct {
 	Monitoring          *apiHandlers.MonitoringHandler
 	Observability       *apiHandlers.ObservabilityHandler
 	Catalog             *apiHandlers.CatalogHandler
+	DeploymentTemplates *apiHandlers.DeploymentTemplateHandler
+	DeliveryDocuments   *apiHandlers.DeliveryDocumentHandler
+	TemplateSources     *apiHandlers.TemplateSourceHandler
+	DeliveryTriggers    *apiHandlers.DeliveryTriggerHandler
+	TemplateVersions    *apiHandlers.TemplateVersionHandler
 	Delivery            *apiHandlers.DeliveryHandler
 	Manifests           *apiHandlers.ManifestHandler
 	ManifestSources     *apiHandlers.ManifestSourceHandler
@@ -48,6 +53,7 @@ type Dependencies struct {
 	ManifestIntents     *apiHandlers.ManifestIntentHandler
 	Applications        *apiHandlers.ApplicationHandler
 	Builds              *apiHandlers.BuildHandler
+	DeliveryBatches     *apiHandlers.DeliveryBatchHandler
 	Workflows           *apiHandlers.WorkflowHandler
 	Registries          *apiHandlers.RegistryHandler
 	Releases            *apiHandlers.ReleaseHandler
@@ -65,6 +71,7 @@ type Dependencies struct {
 	Virtualization      *apiHandlers.VirtualizationHandler
 	Docker              *apiHandlers.DockerHandler
 	NetworkAccess       *apiHandlers.NetworkAccessHandler
+	NetworkVPN          *apiHandlers.NetworkVPNHandler
 	Access              *accesshandler.Handler
 	DirectorySync       *directorysynchandler.Handler
 	ScopeGrants         *accesshandler.ScopeGrantHandler

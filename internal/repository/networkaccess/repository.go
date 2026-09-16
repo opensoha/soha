@@ -24,7 +24,8 @@ const gatewayColumns = `g.id, COALESCE(g.runtime_id, ''), g.site_id, g.name, g.a
 	COALESCE((SELECT c.wireguard_public_key FROM network_runtime_credentials AS c
 		WHERE c.tenant_id = g.tenant_id AND c.workspace_id = g.workspace_id AND c.runtime_id = g.runtime_id
 		  AND c.runtime_kind = 'gateway' AND c.status = 'active' ORDER BY c.generation DESC LIMIT 1), ''),
-	g.version, g.capabilities, g.policy_version, g.applied_at, g.last_heartbeat_at, g.created_at, g.updated_at`
+	g.version, g.capabilities, g.policy_version, g.applied_at, g.last_heartbeat_at, g.created_at, g.updated_at,
+	g.region, g.provider_code, g.provider_name, g.selection_priority, g.accept_new_connections, g.max_sessions, g.probe_url`
 
 const deviceColumns = `id, owner_user_id, name, hostname, platform, device_type, ownership_type,
 	COALESCE(site_id, ''), status, posture_status, posture_version, credential_generation, last_seen_at,
@@ -263,11 +264,11 @@ func (r *Repository) CreateGateway(ctx context.Context, item domainnetworkaccess
 		}
 		return tx.Exec(`INSERT INTO network_access_gateways
 			(id, runtime_id, site_id, name, administrative_status, status, public_endpoint_host, public_endpoint_port,
-			 overlay_cidr, routing_mode, mtu, persistent_keepalive_seconds, dns_servers, hub_gateway_id, advertised_cidrs, capabilities, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::cidr, ?, ?, ?, ?::jsonb, NULLIF(?, ''), ?::jsonb, '[]'::jsonb, ?, ?)`,
+			 overlay_cidr, routing_mode, mtu, persistent_keepalive_seconds, dns_servers, hub_gateway_id, advertised_cidrs, capabilities, created_at, updated_at, region, provider_code, provider_name, selection_priority, accept_new_connections, max_sessions, probe_url)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::cidr, ?, ?, ?, ?::jsonb, NULLIF(?, ''), ?::jsonb, '[]'::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			item.ID, item.RuntimeID, item.SiteID, item.Name, item.AdministrativeStatus, item.Status,
 			item.PublicEndpointHost, item.PublicEndpointPort, item.OverlayCIDR, item.RoutingMode, item.MTU,
-			item.PersistentKeepaliveSeconds, string(dnsServers), item.HubGatewayID, string(advertisedCIDRs), item.CreatedAt, item.UpdatedAt).Error
+			item.PersistentKeepaliveSeconds, string(dnsServers), item.HubGatewayID, string(advertisedCIDRs), item.CreatedAt, item.UpdatedAt, item.Region, item.ProviderCode, item.ProviderName, item.SelectionPriority, item.AcceptNewConnections, item.MaxSessions, item.ProbeURL).Error
 	})
 	if err != nil {
 		return domainnetworkaccess.Gateway{}, normalizeDatabaseError(err)
@@ -295,11 +296,14 @@ func (r *Repository) UpdateGateway(ctx context.Context, id string, input domainn
 		}
 		return mutationError(tx.Exec(`UPDATE network_access_gateways SET runtime_id = ?, site_id = ?, name = ?, administrative_status = ?,
 			public_endpoint_host = ?, public_endpoint_port = ?, overlay_cidr = ?::cidr, routing_mode = ?, mtu = ?,
-			persistent_keepalive_seconds = ?, dns_servers = ?::jsonb, hub_gateway_id = NULLIF(?, ''), advertised_cidrs = ?::jsonb, updated_at = ?
+			persistent_keepalive_seconds = ?, dns_servers = ?::jsonb, hub_gateway_id = NULLIF(?, ''), advertised_cidrs = ?::jsonb, updated_at = ?,
+			region = COALESCE(?, region), provider_code = COALESCE(?, provider_code), provider_name = COALESCE(?, provider_name),
+			selection_priority = COALESCE(?, selection_priority), accept_new_connections = COALESCE(?, accept_new_connections),
+			max_sessions = COALESCE(?, max_sessions), probe_url = COALESCE(?, probe_url)
 			WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`,
 			input.RuntimeID, input.SiteID, input.Name, input.AdministrativeStatus, input.PublicEndpointHost,
 			input.PublicEndpointPort, input.OverlayCIDR, input.RoutingMode, input.MTU,
-			input.PersistentKeepaliveSeconds, string(dnsServers), input.HubGatewayID, string(advertisedCIDRs), updatedAt, id), "network gateway")
+			input.PersistentKeepaliveSeconds, string(dnsServers), input.HubGatewayID, string(advertisedCIDRs), updatedAt, input.Region, input.ProviderCode, input.ProviderName, input.SelectionPriority, input.AcceptNewConnections, input.MaxSessions, input.ProbeURL, id), "network gateway")
 	})
 	if err != nil {
 		return domainnetworkaccess.Gateway{}, normalizeDatabaseError(err)
@@ -690,7 +694,8 @@ func scanGateway(row scanner) (domainnetworkaccess.Gateway, error) {
 	if err := row.Scan(&item.ID, &item.RuntimeID, &item.SiteID, &item.Name, &item.AdministrativeStatus, &item.Status,
 		&item.PublicEndpointHost, &item.PublicEndpointPort, &item.OverlayCIDR, &item.RoutingMode, &item.MTU,
 		&item.PersistentKeepaliveSeconds, &dnsServers, &item.HubGatewayID, &advertisedCIDRs, &item.WireGuardPublicKey, &item.Version, &capabilities,
-		&item.PolicyVersion, &item.AppliedAt, &item.LastHeartbeatAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		&item.PolicyVersion, &item.AppliedAt, &item.LastHeartbeatAt, &item.CreatedAt, &item.UpdatedAt,
+		&item.Region, &item.ProviderCode, &item.ProviderName, &item.SelectionPriority, &item.AcceptNewConnections, &item.MaxSessions, &item.ProbeURL); err != nil {
 		return item, err
 	}
 	if err := json.Unmarshal(dnsServers, &item.DNSServers); err != nil {

@@ -127,6 +127,7 @@ type AIGatewayService interface {
 }
 
 type AIGatewayHandler struct {
+	aiGatewayTaskHandler
 	aiGatewayCapabilityHandler
 	aiGatewayPersonalTokenHandler
 	aiGatewayServiceAccountHandler
@@ -154,6 +155,8 @@ func NewAIGatewayHandler(service AIGatewayService) *AIGatewayHandler {
 }
 
 type AIGatewayServices struct {
+	Plans              AIGatewayPlanService
+	Tasks              AIGatewayTaskService
 	Capabilities       AIGatewayCapabilityService
 	PersonalTokens     AIGatewayPersonalTokenService
 	ServiceAccounts    AIGatewayServiceAccountService
@@ -189,6 +192,7 @@ type aiGatewayRelayHandler struct{ service AIGatewayRelayService }
 
 func NewAIGatewayHandlerWithServices(services AIGatewayServices) *AIGatewayHandler {
 	return &AIGatewayHandler{
+		aiGatewayTaskHandler:               aiGatewayTaskHandler{plans: services.Plans, tasks: services.Tasks},
 		aiGatewayCapabilityHandler:         aiGatewayCapabilityHandler{service: services.Capabilities},
 		aiGatewayPersonalTokenHandler:      aiGatewayPersonalTokenHandler{service: services.PersonalTokens},
 		aiGatewayServiceAccountHandler:     aiGatewayServiceAccountHandler{service: services.ServiceAccounts},
@@ -206,9 +210,19 @@ func NewAIGatewayHandlerWithServices(services AIGatewayServices) *AIGatewayHandl
 }
 
 func (h *aiGatewayCapabilityHandler) Capabilities(c *gin.Context) {
+	limit := 0
+	if raw := c.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 100 {
+			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid capability limit")
+			return
+		}
+		limit = parsed
+	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	accessCtx := apiMiddleware.AccessContextFromContext(c)
 	item, err := h.service.Capabilities(c.Request.Context(), principal, domainaigateway.ManifestRequest{
+		Query: c.Query("query"), ToolDomain: c.Query("toolDomain"), Action: c.Query("action"), ResourceKind: c.Query("resourceKind"), Limit: limit, Cursor: c.Query("cursor"),
 		AIClientID:   firstNonEmpty(c.Query("aiClientId"), firstHeaderValue(c, "X-Soha-AI-Client-ID", "X-AI-Client-ID")),
 		AIClientName: firstNonEmpty(c.Query("aiClientName"), firstHeaderValue(c, "X-Soha-AI-Client", "X-AI-Client")),
 		SkillID:      firstNonEmpty(c.Query("skillId"), firstHeaderValue(c, "X-Soha-Skill-ID", "X-Skill-ID")),

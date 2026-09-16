@@ -100,13 +100,13 @@ func (r *Repository) UpdateDocument(ctx context.Context, batchID string, documen
 	document.Error = truncateUTF8(document.Error, maxErrorSummaryBytes)
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE platform_resource_creation_documents AS document
-		SET api_version = ?, kind = ?, resource_name = ?, namespace = ?, namespaced = ?,
+		SET api_version = ?, kind = ?, resource_name = ?, namespace = ?, namespaced = ?, resource_uid = ?,
 			status = ?, error_code = ?, error_summary = ?, updated_at = ?
 		FROM platform_resource_creation_batches AS batch
 		WHERE document.batch_id = batch.id AND batch.id = ? AND document.document_index = ?
 			AND batch.status = 'running' AND document.status = 'not_started'
 	`, document.Resource.APIVersion, document.Resource.Kind, document.Resource.Name,
-		document.Resource.Namespace, document.Resource.Namespaced, document.Status,
+		document.Resource.Namespace, document.Resource.Namespaced, document.Resource.UID, document.Status,
 		document.ErrorCode, document.Error, time.Now().UTC(), batchID, document.Index)
 	if result.Error != nil {
 		return fmt.Errorf("update resource creation document: %w", result.Error)
@@ -178,6 +178,7 @@ func validateClaim(actorID, clusterID, idempotencyKey, contentHash string, docum
 func normalizeInitialDocuments(documents []domainresource.ResourceCreateExecutionDocument) []domainresource.ResourceCreateExecutionDocument {
 	result := make([]domainresource.ResourceCreateExecutionDocument, len(documents))
 	for index, document := range documents {
+		document.Resource.UID = ""
 		document.Status = "not_started"
 		document.ErrorCode = ""
 		document.Error = ""
@@ -239,7 +240,7 @@ func scanBatchWithDocuments(ctx context.Context, db *gorm.DB, row rowScanner) (d
 		batch.FinishedAt = &value
 	}
 	rows, err := db.WithContext(ctx).Raw(`
-		SELECT document_index, api_version, kind, resource_name, namespace, namespaced,
+		SELECT document_index, api_version, kind, resource_name, namespace, namespaced, resource_uid,
 			status, error_code, error_summary
 		FROM platform_resource_creation_documents
 		WHERE batch_id = ?
@@ -253,7 +254,7 @@ func scanBatchWithDocuments(ctx context.Context, db *gorm.DB, row rowScanner) (d
 	for rows.Next() {
 		var document domainresource.ResourceCreateExecutionDocument
 		if err := rows.Scan(&document.Index, &document.Resource.APIVersion, &document.Resource.Kind,
-			&document.Resource.Name, &document.Resource.Namespace, &document.Resource.Namespaced,
+			&document.Resource.Name, &document.Resource.Namespace, &document.Resource.Namespaced, &document.Resource.UID,
 			&document.Status, &document.ErrorCode, &document.Error); err != nil {
 			return domainresource.ResourceCreateBatch{}, fmt.Errorf("scan resource creation document: %w", err)
 		}

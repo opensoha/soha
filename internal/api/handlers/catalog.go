@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opensoha/soha/internal/api/dto"
@@ -42,6 +43,35 @@ type CatalogService interface {
 	ApplicationEnvironmentService
 	BuildTemplateService
 	WorkflowTemplateService
+}
+
+type WorkflowCatalogService interface {
+	ListWorkflowCatalog(context.Context, domainidentity.Principal, domaincatalog.WorkflowCatalogFilter) (domaincatalog.WorkflowCatalogPage, error)
+}
+
+func (h *CatalogHandler) ListWorkflowCatalog(c *gin.Context) {
+	filter := domaincatalog.WorkflowCatalogFilter{Kind: c.Query("kind"), ApplicationID: c.Query("applicationId"), EnvironmentID: c.Query("environmentId"), Search: c.Query("search"), Limit: 12}
+	for key, value := range map[string]*int{"offset": &filter.Offset, "limit": &filter.Limit} {
+		if raw, present := c.GetQuery(key); present {
+			parsed, err := strconv.Atoi(raw)
+			if err != nil || parsed < 0 || (key == "limit" && (parsed < 1 || parsed > 200)) {
+				apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid workflow catalog pagination")
+				return
+			}
+			*value = parsed
+		}
+	}
+	service, ok := h.environments.(WorkflowCatalogService)
+	if !ok {
+		apiresponse.Error(c, http.StatusServiceUnavailable, "unavailable", "workflow catalog is unavailable")
+		return
+	}
+	page, err := service.ListWorkflowCatalog(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), filter)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, page)
 }
 
 type CatalogHandler struct {
@@ -141,10 +171,11 @@ func (h *CatalogHandler) SaveApplicationWorkflow(c *gin.Context) {
 		c.Param("applicationID"),
 		c.Param("applicationEnvironmentID"),
 		domaincatalog.ApplicationWorkflowInput{
-			Name:        req.Name,
-			Description: req.Description,
-			Definition:  req.Definition,
-			Enabled:     req.Enabled,
+			ExpectedRevision: req.ExpectedRevision,
+			Name:             req.Name,
+			Description:      req.Description,
+			Definition:       req.Definition,
+			Enabled:          req.Enabled,
 		},
 	)
 	if err != nil {
@@ -206,6 +237,8 @@ func (h *CatalogHandler) UpdateBuildTemplate(c *gin.Context) {
 
 func buildTemplateInput(req dto.BuildTemplateRequest) domaincatalog.BuildTemplateInput {
 	return domaincatalog.BuildTemplateInput{
+		CopiedFrom:       req.CopiedFrom,
+		ExpectedRevision: req.ExpectedRevision, Publish: req.Publish,
 		ID:                 req.ID,
 		Key:                req.Key,
 		Name:               req.Name,
@@ -256,13 +289,16 @@ func (h *CatalogHandler) CreateWorkflowTemplate(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.workflows.CreateWorkflowTemplate(c.Request.Context(), principal, domaincatalog.WorkflowTemplateInput{
-		ID:          req.ID,
-		Key:         req.Key,
-		Name:        req.Name,
-		Description: req.Description,
-		Category:    req.Category,
-		Definition:  req.Definition,
-		Enabled:     req.Enabled,
+		CopiedFrom:       req.CopiedFrom,
+		ExpectedRevision: req.ExpectedRevision,
+		Publish:          req.Publish,
+		ID:               req.ID,
+		Key:              req.Key,
+		Name:             req.Name,
+		Description:      req.Description,
+		Category:         req.Category,
+		Definition:       req.Definition,
+		Enabled:          req.Enabled,
 	})
 	if err != nil {
 		writeError(c, err)
@@ -279,13 +315,16 @@ func (h *CatalogHandler) UpdateWorkflowTemplate(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.workflows.UpdateWorkflowTemplate(c.Request.Context(), principal, c.Param("workflowTemplateID"), domaincatalog.WorkflowTemplateInput{
-		ID:          req.ID,
-		Key:         req.Key,
-		Name:        req.Name,
-		Description: req.Description,
-		Category:    req.Category,
-		Definition:  req.Definition,
-		Enabled:     req.Enabled,
+		CopiedFrom:       req.CopiedFrom,
+		ExpectedRevision: req.ExpectedRevision,
+		Publish:          req.Publish,
+		ID:               req.ID,
+		Key:              req.Key,
+		Name:             req.Name,
+		Description:      req.Description,
+		Category:         req.Category,
+		Definition:       req.Definition,
+		Enabled:          req.Enabled,
 	})
 	if err != nil {
 		writeError(c, err)
@@ -307,6 +346,8 @@ func mapApplicationEnvironmentInput(req dto.ApplicationEnvironmentRequest) domai
 	targets := make([]domaincatalog.ReleaseTargetInput, 0, len(req.Targets))
 	for _, item := range req.Targets {
 		targets = append(targets, domaincatalog.ReleaseTargetInput{
+			Helm:          item.Helm,
+			Docker:        item.Docker,
 			ID:            item.ID,
 			ClusterID:     item.ClusterID,
 			Namespace:     item.Namespace,
@@ -324,17 +365,19 @@ func mapApplicationEnvironmentInput(req dto.ApplicationEnvironmentRequest) domai
 		})
 	}
 	return domaincatalog.ApplicationEnvironmentInput{
-		ID:                 req.ID,
-		ApplicationID:      req.ApplicationID,
-		EnvironmentID:      req.EnvironmentID,
-		Alias:              req.Alias,
-		ClusterID:          req.ClusterID,
-		Namespace:          req.Namespace,
-		RegistryID:         req.RegistryID,
-		StrategyProfileID:  req.StrategyProfileID,
-		PromotionPolicyID:  req.PromotionPolicyID,
-		ArtifactPolicyID:   req.ArtifactPolicyID,
-		WorkflowTemplateID: req.WorkflowTemplateID,
+		ExpectedUpdatedAt:       req.ExpectedUpdatedAt,
+		ID:                      req.ID,
+		ApplicationID:           req.ApplicationID,
+		EnvironmentID:           req.EnvironmentID,
+		Alias:                   req.Alias,
+		ClusterID:               req.ClusterID,
+		Namespace:               req.Namespace,
+		RegistryID:              req.RegistryID,
+		StrategyProfileID:       req.StrategyProfileID,
+		PromotionPolicyID:       req.PromotionPolicyID,
+		ArtifactPolicyID:        req.ArtifactPolicyID,
+		WorkflowTemplateID:      req.WorkflowTemplateID,
+		WorkflowTemplateVersion: req.WorkflowTemplateVersion,
 		BuildPolicy: domaincatalog.BuildPolicy{
 			SourceID:         req.BuildPolicy.SourceID,
 			RefType:          req.BuildPolicy.RefType,

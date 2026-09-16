@@ -1,38 +1,47 @@
 package dto
 
+import (
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"time"
+)
+
 type ReleaseTargetRequest struct {
-	ID            string         `json:"id"`
-	ClusterID     string         `json:"clusterId"`
-	Namespace     string         `json:"namespace"`
-	TargetKind    string         `json:"targetKind"`
-	ExecutorKind  string         `json:"executorKind"`
-	GroupKey      string         `json:"groupKey"`
-	WaveKey       string         `json:"waveKey"`
-	RegionKey     string         `json:"regionKey"`
-	ConfigRef     string         `json:"configRef"`
-	WorkloadKind  string         `json:"workloadKind"`
-	WorkloadName  string         `json:"workloadName"`
-	ContainerName string         `json:"containerName"`
-	Metadata      map[string]any `json:"metadata"`
-	Enabled       bool           `json:"enabled"`
+	Docker        *sohaapi.DockerDeliveryConfiguration `json:"docker,omitempty"`
+	Helm          *sohaapi.HelmDeliveryConfiguration   `json:"helm,omitempty"`
+	ID            string                               `json:"id"`
+	ClusterID     string                               `json:"clusterId"`
+	Namespace     string                               `json:"namespace"`
+	TargetKind    string                               `json:"targetKind"`
+	ExecutorKind  string                               `json:"executorKind"`
+	GroupKey      string                               `json:"groupKey"`
+	WaveKey       string                               `json:"waveKey"`
+	RegionKey     string                               `json:"regionKey"`
+	ConfigRef     string                               `json:"configRef"`
+	WorkloadKind  string                               `json:"workloadKind"`
+	WorkloadName  string                               `json:"workloadName"`
+	ContainerName string                               `json:"containerName"`
+	Metadata      map[string]any                       `json:"metadata"`
+	Enabled       bool                                 `json:"enabled"`
 }
 
 type ApplicationEnvironmentRequest struct {
-	ID                 string                  `json:"id"`
-	ApplicationID      string                  `json:"applicationId"`
-	EnvironmentID      string                  `json:"environmentId"`
-	Alias              string                  `json:"alias"`
-	ClusterID          string                  `json:"clusterId"`
-	Namespace          string                  `json:"namespace"`
-	RegistryID         string                  `json:"registryId"`
-	StrategyProfileID  string                  `json:"strategyProfileId"`
-	PromotionPolicyID  string                  `json:"promotionPolicyId"`
-	ArtifactPolicyID   string                  `json:"artifactPolicyId"`
-	WorkflowTemplateID string                  `json:"workflowTemplateId"`
-	BuildPolicy        BuildPolicyRequest      `json:"buildPolicy"`
-	ReleasePolicy      ReleasePolicyRequest    `json:"releasePolicy"`
-	ResourceSelector   ResourceSelectorRequest `json:"resourceSelector"`
-	Targets            []ReleaseTargetRequest  `json:"targets"`
+	ExpectedUpdatedAt       *time.Time              `json:"expectedUpdatedAt,omitempty"`
+	WorkflowTemplateVersion int64                   `json:"workflowTemplateVersion,omitempty" binding:"min=0"`
+	ID                      string                  `json:"id"`
+	ApplicationID           string                  `json:"applicationId"`
+	EnvironmentID           string                  `json:"environmentId"`
+	Alias                   string                  `json:"alias"`
+	ClusterID               string                  `json:"clusterId"`
+	Namespace               string                  `json:"namespace"`
+	RegistryID              string                  `json:"registryId"`
+	StrategyProfileID       string                  `json:"strategyProfileId"`
+	PromotionPolicyID       string                  `json:"promotionPolicyId"`
+	ArtifactPolicyID        string                  `json:"artifactPolicyId"`
+	WorkflowTemplateID      string                  `json:"workflowTemplateId"`
+	BuildPolicy             BuildPolicyRequest      `json:"buildPolicy"`
+	ReleasePolicy           ReleasePolicyRequest    `json:"releasePolicy"`
+	ResourceSelector        ResourceSelectorRequest `json:"resourceSelector"`
+	Targets                 []ReleaseTargetRequest  `json:"targets"`
 }
 
 type ResourceSelectorRequest struct {
@@ -59,31 +68,38 @@ type ReleasePolicyRequest struct {
 }
 
 type BuildTemplateRequest struct {
-	ID                 string         `json:"id"`
-	Key                string         `json:"key"`
-	Name               string         `json:"name"`
-	Description        string         `json:"description"`
-	BuilderKind        string         `json:"builderKind"`
-	DockerfileTemplate string         `json:"dockerfileTemplate"`
-	BuildCommands      []string       `json:"buildCommands"`
-	VariableSchema     map[string]any `json:"variableSchema"`
-	DefaultVariables   map[string]any `json:"defaultVariables"`
-	Enabled            bool           `json:"enabled"`
+	CopiedFrom         *sohaapi.TemplateCopyOrigin `json:"copiedFrom,omitempty"`
+	ExpectedRevision   *int64                      `json:"expectedRevision,omitempty" binding:"omitempty,min=1"`
+	Publish            *bool                       `json:"publish,omitempty"`
+	ID                 string                      `json:"id"`
+	Key                string                      `json:"key"`
+	Name               string                      `json:"name"`
+	Description        string                      `json:"description"`
+	BuilderKind        string                      `json:"builderKind"`
+	DockerfileTemplate string                      `json:"dockerfileTemplate"`
+	BuildCommands      []string                    `json:"buildCommands"`
+	VariableSchema     map[string]any              `json:"variableSchema"`
+	DefaultVariables   map[string]any              `json:"defaultVariables"`
+	Enabled            bool                        `json:"enabled"`
 }
 
 type WorkflowTemplateRequest struct {
-	ID          string         `json:"id"`
-	Key         string         `json:"key"`
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Category    string         `json:"category"`
-	Definition  map[string]any `json:"definition"`
-	Enabled     bool           `json:"enabled"`
+	CopiedFrom       *sohaapi.TemplateCopyOrigin `json:"copiedFrom,omitempty"`
+	ExpectedRevision *int64                      `json:"expectedRevision,omitempty" binding:"omitempty,min=1"`
+	Publish          *bool                       `json:"publish,omitempty"`
+	ID               string                      `json:"id"`
+	Key              string                      `json:"key"`
+	Name             string                      `json:"name"`
+	Description      string                      `json:"description"`
+	Category         string                      `json:"category"`
+	Definition       map[string]any              `json:"definition"`
+	Enabled          bool                        `json:"enabled"`
 }
 
 type ApplicationWorkflowRequest struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Definition  map[string]any `json:"definition"`
-	Enabled     bool           `json:"enabled"`
+	ExpectedRevision *int64         `json:"expectedRevision,omitempty" binding:"omitempty,min=1"`
+	Name             string         `json:"name"`
+	Description      string         `json:"description"`
+	Definition       map[string]any `json:"definition"`
+	Enabled          bool           `json:"enabled"`
 }

@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"time"
+
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 )
 
 type BuildSourceType string
@@ -11,6 +13,7 @@ const (
 	BuildSourceTypeRepoDockerfile   BuildSourceType = "repo_dockerfile"
 	BuildSourceTypePlatformTemplate BuildSourceType = "platform_build_template"
 	BuildSourceTypeExternalPipeline BuildSourceType = "external_pipeline"
+	BuildSourceTypeBuildpacks       BuildSourceType = "repo_buildpacks"
 )
 
 type BuildSource struct {
@@ -78,45 +81,50 @@ type ServiceContainerInput struct {
 }
 
 type Service struct {
-	ID                  string             `json:"id"`
-	ApplicationID       string             `json:"applicationId"`
-	Key                 string             `json:"key"`
-	Name                string             `json:"name"`
-	Description         string             `json:"description,omitempty"`
-	ServiceKind         ServiceKind        `json:"serviceKind"`
-	OwnerTeam           string             `json:"ownerTeam,omitempty"`
-	RepositoryProvider  string             `json:"repositoryProvider,omitempty"`
-	RepositoryID        string             `json:"repositoryId,omitempty"`
-	RepositoryProjectID string             `json:"repositoryProjectId,omitempty"`
-	RepositoryPath      string             `json:"repositoryPath,omitempty"`
-	DefaultBranch       string             `json:"defaultBranch,omitempty"`
-	BuildSourceID       string             `json:"buildSourceId,omitempty"`
-	Enabled             bool               `json:"enabled"`
-	Metadata            map[string]any     `json:"metadata,omitempty"`
-	Containers          []ServiceContainer `json:"containers,omitempty"`
-	CreatedAt           time.Time          `json:"createdAt"`
-	UpdatedAt           time.Time          `json:"updatedAt"`
+	Version             int64                                    `json:"version"`
+	DeploymentTemplate  *domaincatalog.DeploymentTemplateBinding `json:"deploymentTemplate,omitempty"`
+	ID                  string                                   `json:"id"`
+	ApplicationID       string                                   `json:"applicationId"`
+	Key                 string                                   `json:"key"`
+	Name                string                                   `json:"name"`
+	Description         string                                   `json:"description,omitempty"`
+	ServiceKind         ServiceKind                              `json:"serviceKind"`
+	OwnerTeam           string                                   `json:"ownerTeam,omitempty"`
+	RepositoryProvider  string                                   `json:"repositoryProvider,omitempty"`
+	RepositoryID        string                                   `json:"repositoryId,omitempty"`
+	RepositoryProjectID string                                   `json:"repositoryProjectId,omitempty"`
+	RepositoryPath      string                                   `json:"repositoryPath,omitempty"`
+	DefaultBranch       string                                   `json:"defaultBranch,omitempty"`
+	BuildSourceID       string                                   `json:"buildSourceId,omitempty"`
+	Enabled             bool                                     `json:"enabled"`
+	Metadata            map[string]any                           `json:"metadata,omitempty"`
+	Containers          []ServiceContainer                       `json:"containers,omitempty"`
+	CreatedAt           time.Time                                `json:"createdAt"`
+	UpdatedAt           time.Time                                `json:"updatedAt"`
 }
 
 type ServiceInput struct {
-	ID                  string                  `json:"id"`
-	Key                 string                  `json:"key"`
-	Name                string                  `json:"name"`
-	Description         string                  `json:"description,omitempty"`
-	ServiceKind         ServiceKind             `json:"serviceKind"`
-	OwnerTeam           string                  `json:"ownerTeam,omitempty"`
-	RepositoryProvider  string                  `json:"repositoryProvider,omitempty"`
-	RepositoryID        string                  `json:"repositoryId,omitempty"`
-	RepositoryProjectID string                  `json:"repositoryProjectId,omitempty"`
-	RepositoryPath      string                  `json:"repositoryPath,omitempty"`
-	DefaultBranch       string                  `json:"defaultBranch,omitempty"`
-	BuildSourceID       string                  `json:"buildSourceId,omitempty"`
-	Enabled             bool                    `json:"enabled"`
-	Metadata            map[string]any          `json:"metadata,omitempty"`
-	Containers          []ServiceContainerInput `json:"containers,omitempty"`
+	ExpectedVersion     *int64                                   `json:"expectedVersion,omitempty"`
+	DeploymentTemplate  *domaincatalog.DeploymentTemplateBinding `json:"deploymentTemplate,omitempty"`
+	ID                  string                                   `json:"id"`
+	Key                 string                                   `json:"key"`
+	Name                string                                   `json:"name"`
+	Description         string                                   `json:"description,omitempty"`
+	ServiceKind         ServiceKind                              `json:"serviceKind"`
+	OwnerTeam           string                                   `json:"ownerTeam,omitempty"`
+	RepositoryProvider  string                                   `json:"repositoryProvider,omitempty"`
+	RepositoryID        string                                   `json:"repositoryId,omitempty"`
+	RepositoryProjectID string                                   `json:"repositoryProjectId,omitempty"`
+	RepositoryPath      string                                   `json:"repositoryPath,omitempty"`
+	DefaultBranch       string                                   `json:"defaultBranch,omitempty"`
+	BuildSourceID       string                                   `json:"buildSourceId,omitempty"`
+	Enabled             bool                                     `json:"enabled"`
+	Metadata            map[string]any                           `json:"metadata,omitempty"`
+	Containers          []ServiceContainerInput                  `json:"containers,omitempty"`
 }
 
 type App struct {
+	Version             int64          `json:"version"`
 	ID                  string         `json:"id"`
 	Name                string         `json:"name"`
 	Key                 string         `json:"key"`
@@ -143,6 +151,7 @@ type App struct {
 }
 
 type UpsertInput struct {
+	ExpectedVersion     *int64             `json:"expectedVersion,omitempty"`
 	ID                  string             `json:"id"`
 	Name                string             `json:"name"`
 	Key                 string             `json:"key"`
@@ -187,30 +196,34 @@ type GitReference struct {
 }
 
 type SourceRepository struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Provider        string    `json:"provider"`
-	URL             string    `json:"url"`
-	Protocol        string    `json:"protocol"`
-	GitLabProjectID string    `json:"gitlabProjectId,omitempty"`
-	Path            string    `json:"path,omitempty"`
-	CredentialRef   string    `json:"credentialRef,omitempty"`
-	DefaultBranch   string    `json:"defaultBranch,omitempty"`
-	ApplicationIDs  []string  `json:"applicationIds,omitempty"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	SourceConnectionID   string    `json:"sourceConnectionId,omitempty"`
+	ProviderRepositoryID string    `json:"providerRepositoryId,omitempty"`
+	ID                   string    `json:"id"`
+	Name                 string    `json:"name"`
+	Provider             string    `json:"provider"`
+	URL                  string    `json:"url"`
+	Protocol             string    `json:"protocol"`
+	GitLabProjectID      string    `json:"gitlabProjectId,omitempty"`
+	Path                 string    `json:"path,omitempty"`
+	CredentialRef        string    `json:"credentialRef,omitempty"`
+	DefaultBranch        string    `json:"defaultBranch,omitempty"`
+	ApplicationIDs       []string  `json:"applicationIds,omitempty"`
+	CreatedAt            time.Time `json:"createdAt"`
+	UpdatedAt            time.Time `json:"updatedAt"`
 }
 
 type SourceRepositoryInput struct {
-	Name            string   `json:"name"`
-	Provider        string   `json:"provider"`
-	URL             string   `json:"url"`
-	Protocol        string   `json:"protocol"`
-	GitLabProjectID string   `json:"gitlabProjectId,omitempty"`
-	Path            string   `json:"path,omitempty"`
-	CredentialRef   string   `json:"credentialRef,omitempty"`
-	DefaultBranch   string   `json:"defaultBranch,omitempty"`
-	ApplicationIDs  []string `json:"applicationIds,omitempty"`
+	SourceConnectionID   string   `json:"sourceConnectionId,omitempty"`
+	ProviderRepositoryID string   `json:"providerRepositoryId,omitempty"`
+	Name                 string   `json:"name"`
+	Provider             string   `json:"provider"`
+	URL                  string   `json:"url"`
+	Protocol             string   `json:"protocol"`
+	GitLabProjectID      string   `json:"gitlabProjectId,omitempty"`
+	Path                 string   `json:"path,omitempty"`
+	CredentialRef        string   `json:"credentialRef,omitempty"`
+	DefaultBranch        string   `json:"defaultBranch,omitempty"`
+	ApplicationIDs       []string `json:"applicationIds,omitempty"`
 }
 
 type SourceRepositoryFilter struct {

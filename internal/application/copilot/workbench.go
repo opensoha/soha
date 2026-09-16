@@ -50,6 +50,7 @@ func normalizeStringList(items []string) []string {
 
 func sessionMetadataMap(metadata domaincopilot.SessionMetadata) map[string]any {
 	return map[string]any{
+		"modelPreferences": metadata.ModelPreferences,
 		"mode":             metadata.Mode,
 		"status":           metadata.Status,
 		"agentProviderId":  metadata.AgentProviderID,
@@ -70,6 +71,7 @@ func parseSessionMetadata(input map[string]any) domaincopilot.SessionMetadata {
 	if input == nil {
 		return metadata
 	}
+	decodeStructuredValue(input["modelPreferences"], &metadata.ModelPreferences)
 	metadata.Mode = stringValue(input["mode"])
 	metadata.Status = stringValue(input["status"])
 	metadata.AgentProviderID = stringValue(input["agentProviderId"])

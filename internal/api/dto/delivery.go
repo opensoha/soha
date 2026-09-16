@@ -1,5 +1,7 @@
 package dto
 
+import sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+
 type BuildRepositoryRefRequest struct {
 	RepositoryID string `json:"repositoryId"`
 	RefType      string `json:"refType"`
@@ -47,22 +49,10 @@ type DeliveryBlueprintFileRequest struct {
 	Purpose  string `json:"purpose"`
 }
 
-type DeliveryBlueprintRequest struct {
-	ID                  string                         `json:"id"`
-	Key                 string                         `json:"key"`
-	Name                string                         `json:"name"`
-	Description         string                         `json:"description"`
-	ApplicationDraft    map[string]any                 `json:"applicationDraft"`
-	Services            []map[string]any               `json:"services"`
-	BuildSources        []map[string]any               `json:"buildSources"`
-	EnvironmentBindings []map[string]any               `json:"environmentBindings"`
-	Files               []DeliveryBlueprintFileRequest `json:"files"`
-	ExecutionHints      map[string]any                 `json:"executionHints"`
-	PostCreateActions   []string                       `json:"postCreateActions"`
-	Enabled             bool                           `json:"enabled"`
-}
+type DeliveryBlueprintRequest = sohaapi.DeliveryBlueprintInput
 
 type DeliveryDraftRequest struct {
+	IdempotencyKey      string                         `json:"idempotencyKey" binding:"omitempty,min=8,max=128"`
 	ID                  string                         `json:"id"`
 	Source              string                         `json:"source"`
 	ApplicationDraft    map[string]any                 `json:"applicationDraft"`
@@ -75,6 +65,8 @@ type DeliveryDraftRequest struct {
 }
 
 type DeliveryPlanRequest struct {
+	ManifestRevision         *int           `json:"manifestRevision" binding:"omitempty,min=1"`
+	HelmRevision             *int           `json:"helmRevision" binding:"omitempty,min=1"`
 	ID                       string         `json:"id"`
 	Source                   string         `json:"source"`
 	ApplicationID            string         `json:"applicationId"`

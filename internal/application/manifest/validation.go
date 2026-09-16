@@ -32,7 +32,7 @@ func normalizeFiles(input []domainmanifest.File) ([]domainmanifest.File, error) 
 	totalBytes := 0
 	for _, file := range input {
 		filePath := strings.TrimSpace(file.Path)
-		if filePath == "" || path.IsAbs(filePath) || filePath == "." || strings.HasPrefix(path.Clean(filePath), "../") {
+		if filePath == "" || path.IsAbs(filePath) || filePath == "." || path.Clean(filePath) == ".." || strings.HasPrefix(path.Clean(filePath), "../") || strings.ContainsAny(filePath, ":\\\x00") {
 			return nil, fmt.Errorf("%w: invalid manifest file path", apperrors.ErrInvalidArgument)
 		}
 		filePath = path.Clean(filePath)
@@ -77,6 +77,9 @@ func normalizeBindings(input []domainmanifest.Binding) ([]domainmanifest.Binding
 		if len(binding.Overlay) > maxManifestOverlayKeys {
 			return nil, fmt.Errorf("%w: binding %d overlay exceeds %d entries", apperrors.ErrInvalidArgument, index+1, maxManifestOverlayKeys)
 		}
+		if err := binding.Kustomize.Validate(); err != nil {
+			return nil, fmt.Errorf("%w: binding %d: %v", apperrors.ErrInvalidArgument, index+1, err)
+		}
 		if _, exists := seenIDs[binding.ID]; exists {
 			return nil, fmt.Errorf("%w: duplicate binding id %s", apperrors.ErrInvalidArgument, binding.ID)
 		}
@@ -99,7 +102,12 @@ func validateRenderableFiles(item domainmanifest.Package) error {
 	foundKustomization := false
 	for _, file := range item.Files {
 		entry := item.Renderer == domainmanifest.RendererKustomize && isKustomizationPath(file.Path)
-		documents, err := validateYAMLDocuments(file, item.Renderer == domainmanifest.RendererRaw || entry)
+		if item.Renderer == domainmanifest.RendererKustomize && !entry {
+			// Native Kustomize resolves and validates resource/patch inputs at render
+			// time; generator data may be arbitrary text, including empty files.
+			continue
+		}
+		documents, err := validateYAMLDocuments(file, item.Renderer == domainmanifest.RendererRaw)
 		if err != nil {
 			return err
 		}
@@ -132,26 +140,23 @@ func validateYAMLDocuments(file domainmanifest.File, requireKubernetesObject boo
 			continue
 		}
 		documents++
-		if !requireKubernetesObject {
-			continue
-		}
 		var object map[string]any
 		if err := document.Decode(&object); err != nil {
 			return 0, fmt.Errorf("%w: YAML document in %s must be an object", apperrors.ErrInvalidArgument, file.Path)
 		}
 		apiVersion, _ := object["apiVersion"].(string)
 		kind, _ := object["kind"].(string)
-		if strings.TrimSpace(apiVersion) == "" || strings.TrimSpace(kind) == "" {
+		if requireKubernetesObject && (strings.TrimSpace(apiVersion) == "" || strings.TrimSpace(kind) == "") {
 			return 0, fmt.Errorf("%w: YAML document in %s requires apiVersion and kind", apperrors.ErrInvalidArgument, file.Path)
 		}
-		if isKustomizationPath(file.Path) && !strings.EqualFold(kind, "Kustomization") {
-			return 0, fmt.Errorf("%w: %s must declare kind Kustomization", apperrors.ErrInvalidArgument, file.Path)
+		if !requireKubernetesObject && kind != "" && kind != "Kustomization" && kind != "Component" {
+			return 0, fmt.Errorf("%w: %s must declare kind Kustomization or Component", apperrors.ErrInvalidArgument, file.Path)
 		}
 	}
 	return documents, nil
 }
 
 func isKustomizationPath(filePath string) bool {
-	base := strings.ToLower(path.Base(filePath))
-	return base == "kustomization.yaml" || base == "kustomization.yml"
+	base := path.Base(filePath)
+	return base == "kustomization.yaml" || base == "kustomization.yml" || base == "Kustomization"
 }

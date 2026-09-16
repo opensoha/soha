@@ -2,7 +2,9 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -71,7 +73,9 @@ func TestClaimOperationUpdatesSelectedOperation(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "host_id", "project_id", "service_id", "operation_kind", "status", "requested_by", "claimed_by_worker_id",
 			"callback_token", "attempt_count", "max_retries", "timeout_seconds", "payload", "result", "started_at", "last_heartbeat_at", "finished_at", "created_at", "updated_at",
-		}).AddRow("operation-1", "host-1", "project-1", "", "project_deploy", "queued", "user-1", "", "", 0, 1, 1800, []byte(`{}`), []byte(`{}`), nil, nil, nil, now, now))
+		}).AddRow("operation-1", "host-1", "project-1", "", "project_deploy", "queued", "user-1", "", "", 0, 1, 1800, []byte(`{"executionAuthorizationCredential":"private-proof","action":"deploy"}`), []byte(`{}`), nil, nil, nil, now, now))
+	mock.ExpectExec(`SELECT pg_advisory_xact_lock`).WithArgs("docker-project:project-1").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`SELECT COUNT\(\*\) FROM docker_operations WHERE project_id`).WithArgs("project-1", "operation-1").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	mock.ExpectExec(`UPDATE docker_operations[\s\S]+WHERE id = \$[0-9]+ AND`).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
@@ -82,6 +86,11 @@ func TestClaimOperationUpdatesSelectedOperation(t *testing.T) {
 	}
 	if claimed.ID != "operation-1" || claimed.Status != "running" || claimed.ClaimedByWorkerID != "worker-1" || claimed.CallbackToken != "callback-token" {
 		t.Fatalf("ClaimOperation() = %#v", claimed)
+	}
+	raw, _ := json.Marshal(claimed)
+	stored, err := marshalOperationPayload(claimed)
+	if err != nil || claimed.ExecutionAuthorization != "private-proof" || strings.Contains(string(raw), "private-proof") || !strings.Contains(string(stored), "private-proof") {
+		t.Fatalf("private proof not preserved across claim: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

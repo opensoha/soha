@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/opensoha/soha/internal/networkidentity"
+	"github.com/opensoha/soha/internal/networkprotocol"
 	"github.com/opensoha/soha/internal/platform/securefile"
 )
 
@@ -34,6 +35,10 @@ type Config struct {
 	NFTPath                 string
 	EgressInterface         string
 	HealthAddress           string
+	ProbeAddress            string
+	ProbeCertFile           string
+	ProbeKeyFile            string
+	ProbeCAFile             string
 	PollInterval            time.Duration
 	HeartbeatInterval       time.Duration
 	RequestTimeout          time.Duration
@@ -45,6 +50,7 @@ type Config struct {
 
 func LoadConfig() (Config, error) {
 	config := Config{
+		ProbeAddress: os.Getenv("SOHA_NETWORK_GATEWAY_PROBE_ADDR"), ProbeCertFile: os.Getenv("SOHA_NETWORK_GATEWAY_PROBE_CERT_FILE"), ProbeKeyFile: os.Getenv("SOHA_NETWORK_GATEWAY_PROBE_KEY_FILE"), ProbeCAFile: os.Getenv("SOHA_NETWORK_GATEWAY_PROBE_CA_FILE"),
 		RuntimeID: os.Getenv("SOHA_NETWORK_GATEWAY_RUNTIME_ID"), DeviceID: os.Getenv("SOHA_NETWORK_GATEWAY_DEVICE_ID"),
 		ControlURL: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_URL"), ControlCAFile: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_CA_FILE"),
 		ControlCertFile: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_CERT_FILE"), ControlKeyFile: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_KEY_FILE"), ControlServerName: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME"),
@@ -83,6 +89,9 @@ func (c Config) Validate() error {
 		return err
 	}
 	if err := c.validateSystemConfig(); err != nil {
+		return err
+	}
+	if err := c.validateProbeConfig(); err != nil {
 		return err
 	}
 	return c.validateIngestConfig()
@@ -189,7 +198,14 @@ func (c Config) Enrollment(privateKeyPublic, devicePublicKey, clientVersion stri
 	if len(token) < 32 || strings.ContainsAny(token, "\r\n\t ") {
 		return Enrollment{}, fmt.Errorf("gateway enrollment token is invalid")
 	}
-	return Enrollment{EnrollmentID: c.EnrollmentID, ChallengeID: c.EnrollmentChallengeID, DeviceID: c.DeviceID, DevicePublicKey: devicePublicKey, WireGuardPublicKey: privateKeyPublic, ClientVersion: clientVersion, Token: token}, nil
+	capabilities := []string{}
+	if c.IngestURL != "" {
+		capabilities = append(capabilities, networkprotocol.CapabilityVPNMetrics)
+	}
+	if c.ProbeAddress != "" {
+		capabilities = append(capabilities, networkprotocol.CapabilityVPNProbe)
+	}
+	return Enrollment{Capabilities: capabilities, EnrollmentID: c.EnrollmentID, ChallengeID: c.EnrollmentChallengeID, DeviceID: c.DeviceID, DevicePublicKey: devicePublicKey, WireGuardPublicKey: privateKeyPublic, ClientVersion: clientVersion, Token: token}, nil
 }
 
 func rejectRedirect(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

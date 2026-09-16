@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appdocker "github.com/opensoha/soha/internal/application/docker"
+	"github.com/opensoha/soha/internal/application/sourceanalysis"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
@@ -24,6 +27,15 @@ import (
 )
 
 func (s *Service) InvokeTool(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest) (domainaigateway.ToolInvocationResult, error) {
+	return s.invokeTool(ctx, principal, input, false)
+}
+
+// RequestToolApproval performs the normal authorization checks but cannot execute a mutation.
+func (s *Service) RequestToolApproval(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest) (domainaigateway.ToolInvocationResult, error) {
+	return s.invokeTool(ctx, principal, input, true)
+}
+
+func (s *Service) invokeTool(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, approvalOnly bool) (domainaigateway.ToolInvocationResult, error) {
 	toolName := strings.TrimSpace(input.ToolName)
 	tool, ok := s.toolByName(toolName)
 	if !ok {
@@ -37,7 +49,16 @@ func (s *Service) InvokeTool(ctx context.Context, principal domainidentity.Princ
 		_ = s.recordToolAudit(ctx, principal, input, tool, "deny", err.Error(), nil)
 		return domainaigateway.ToolInvocationResult{}, err
 	}
-	invocationScope := standardGatewayScope(input.Input, nil)
+	if err := validateCapabilityVersion(tool, input.CapabilityVersion); err != nil {
+		_ = s.recordToolAudit(ctx, principal, input, tool, "deny", err.Error(), nil)
+		return domainaigateway.ToolInvocationResult{}, err
+	}
+	ctx, err := s.resolveCapabilityScopeContext(ctx, principal, tool, input.Input)
+	if err != nil {
+		_ = s.recordToolAudit(ctx, principal, input, tool, "deny", err.Error(), nil)
+		return domainaigateway.ToolInvocationResult{}, err
+	}
+	invocationScope := capabilityGatewayScope(tool, input.Input)
 	grantRequiresApproval, err := s.authorizeToolGrant(ctx, principal, input.AIClientID, tool, invocationScope)
 	if err != nil {
 		_ = s.recordToolAudit(ctx, principal, input, tool, "deny", err.Error(), nil)
@@ -48,11 +69,23 @@ func (s *Service) InvokeTool(ctx context.Context, principal domainidentity.Princ
 		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", err.Error(), nil, redactionSummary)
 		return domainaigateway.ToolInvocationResult{}, err
 	}
+	if err := s.preserveCapabilityScope(ctx, principal, tool, input.Input, policyInput); err != nil {
+		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", err.Error(), nil, redactionSummary)
+		return domainaigateway.ToolInvocationResult{}, err
+	}
 	input.Input = policyInput
-	if grantRequiresApproval {
+	if err := validateCapabilityInput(tool, input.Input); err != nil {
+		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", err.Error(), nil, redactionSummary)
+		return domainaigateway.ToolInvocationResult{}, err
+	}
+	if (grantRequiresApproval || approvalOnly) && !decision.requiresApproval() {
+		reason := "matching MCP tool grant requires approval"
+		if approvalOnly {
+			reason = "conversation change requires human approval"
+		}
 		decision = mergeGatewayRiskDecision(decision, gatewayRiskDecision{
 			Strategy: gatewayRiskRequireApproval,
-			Reason:   "matching MCP tool grant requires approval",
+			Reason:   reason,
 		})
 		tool.RequiresApproval = true
 	}
@@ -65,15 +98,27 @@ func (s *Service) InvokeTool(ctx context.Context, principal domainidentity.Princ
 		return domainaigateway.ToolInvocationResult{}, err
 	}
 	if decision.shouldHoldExecution() {
+		if observing, _ := ctx.Value(capabilityObservationKey{}).(bool); observing {
+			// A durable poll cannot replace the child's task reference with a
+			// new read approval. Preserve the child and resume after access changes.
+			_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", "domain task observation requires updated access", nil, redactionSummary)
+			return domainaigateway.ToolInvocationResult{}, fmt.Errorf("%w: domain task observation is held by policy", apperrors.ErrConflict)
+		}
 		return s.holdToolInvocation(ctx, principal, input, tool, decision, redactionSummary)
 	}
 
+	ctx = withGatewayExecutionAuthorization(ctx, principal, tool, input, "", decision)
+	return s.executeToolInvocation(ctx, principal, input, tool, invocationScope, redactionSummary)
+}
+
+func (s *Service) executeToolInvocation(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, tool domainaigateway.ToolCapability, invocationScope map[string]string, redactionSummary gatewayRedactionAuditSummary) (domainaigateway.ToolInvocationResult, error) {
 	output, relatedIDs, err := s.invokeGatewayTool(ctx, principal, tool, input.Input, input.SecretRefs, input.SessionID)
 	if err != nil {
 		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "failure", err.Error(), relatedIDs, redactionSummary)
 		return domainaigateway.ToolInvocationResult{}, err
 	}
 	var outputRedactionSummary gatewayRedactionAuditSummary
+	rawOutput := output
 	output, outputRedactionSummary, err = s.sanitizeToolOutputByAccessPolicy(ctx, principal, input.AIClientID, input.SkillID, tool, invocationScope, output)
 	redactionSummary.merge(outputRedactionSummary)
 	if err != nil {
@@ -89,13 +134,16 @@ func (s *Service) InvokeTool(ctx context.Context, principal domainidentity.Princ
 	addGatewayRedactionAuditMetadata(audit, redactionSummary)
 	addGatewayUsageAuditMetadata(audit, usageSummary)
 	return domainaigateway.ToolInvocationResult{
-		ToolName:         tool.Name,
-		RiskLevel:        tool.RiskLevel,
-		RequiresApproval: tool.RequiresApproval,
-		Result:           "success",
-		Output:           output,
-		RelatedIDs:       relatedIDs,
-		Audit:            audit,
+		CapabilityVersion: tool.Version,
+		Task:              s.gatewayRegistry().TaskReference(tool, rawOutput, output),
+		Assessment:        visibleCapabilityAssessment(tool, output),
+		ToolName:          tool.Name,
+		RiskLevel:         tool.RiskLevel,
+		RequiresApproval:  tool.RequiresApproval,
+		Result:            "success",
+		Output:            output,
+		RelatedIDs:        relatedIDs,
+		Audit:             audit,
 	}, nil
 }
 func (s *Service) ReadResource(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ResourceReadRequest) (domainaigateway.ResourceReadResult, error) {
@@ -244,6 +292,9 @@ func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentit
 		ctx = domainsecret.WithValues(ctx, values)
 		ctx = domainsecret.WithExecutionContext(ctx, domainsecret.ExecutionContext{References: pinned, Principal: principal, Target: target})
 	}
+	if output, relatedIDs, handled, err := s.gatewayRegistry().InvokeTool(ctx, principal, tool, input); handled {
+		return output, relatedIDs, err
+	}
 	switch {
 	case strings.HasPrefix(tool.Name, "network_access."):
 		return s.invokeNetworkAccessTool(ctx, principal, sessionID, tool.Name, input)
@@ -262,10 +313,6 @@ func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentit
 	case strings.HasPrefix(tool.Name, "gateway."):
 		return s.invokeGatewayGovernanceTool(ctx, principal, tool, input)
 	default:
-		output, relatedIDs, handled, err := s.gatewayRegistry().InvokeTool(ctx, principal, tool, input)
-		if handled {
-			return output, relatedIDs, err
-		}
 		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
 	}
 }
@@ -338,6 +385,7 @@ func (s *Service) invokeVirtualizationTool(ctx context.Context, principal domain
 }
 
 func (s *Service) invokeDockerTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	ctx = withDockerScopeCheck(ctx, toolName)
 	if s.docker == nil {
 		return nil, nil, fmt.Errorf("%w: Docker gateway service is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -349,6 +397,15 @@ func (s *Service) invokeDockerTool(ctx context.Context, principal domainidentity
 		}
 		plan, err := s.docker.PlanQuickCreateHost(ctx, principal, req)
 		return plan, map[string]any{"target": plan.Target, "inputHash": plan.InputHash}, err
+	case "docker.projects.runtime.assess", "docker.operations.cancel":
+		return s.invokeDockerTaskControl(ctx, principal, toolName, input)
+	case "docker.operations.get":
+		id, _ := input["operationId"].(string)
+		if strings.TrimSpace(id) == "" {
+			return nil, nil, fmt.Errorf("%w: operationId is required", apperrors.ErrInvalidArgument)
+		}
+		item, err := s.docker.GetOperation(ctx, principal, id)
+		return item, map[string]any{"operationId": item.ID}, err
 	case "docker.hosts.quick_create.trigger":
 		var req struct {
 			domaindocker.QuickCreateHostInput
@@ -407,6 +464,42 @@ func (s *Service) invokeDockerTool(ctx context.Context, principal domainidentity
 	}
 }
 
+func (s *Service) invokeDockerTaskControl(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
+	switch toolName {
+	case "docker.projects.runtime.assess":
+		service, ok := s.docker.(interface {
+			AssessProject(context.Context, domainidentity.Principal, appdocker.ProjectAssessmentInput) (domainaigateway.CapabilityAssessment, error)
+		})
+		if !ok {
+			return nil, nil, apperrors.ErrUnsupportedOperation
+		}
+		var req appdocker.ProjectAssessmentInput
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		result, err := service.AssessProject(ctx, principal, req)
+		return result, map[string]any{"projectId": req.ProjectID}, err
+	case "docker.operations.cancel":
+		service, ok := s.docker.(interface {
+			CancelOperationIdempotent(context.Context, domainidentity.Principal, string, appdocker.OperationMutationInput) (domaindocker.Operation, error)
+		})
+		if !ok {
+			return nil, nil, apperrors.ErrUnsupportedOperation
+		}
+		var req struct {
+			OperationID string `json:"operationId"`
+			appdocker.OperationMutationInput
+		}
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		item, err := service.CancelOperationIdempotent(ctx, principal, req.OperationID, req.OperationMutationInput)
+		return item, map[string]any{"operationId": item.ID}, err
+	default:
+		return nil, nil, apperrors.ErrUnsupportedOperation
+	}
+}
+
 func requireGatewayIdempotencyKey(key string) error {
 	if strings.TrimSpace(key) == "" {
 		return fmt.Errorf("%w: idempotencyKey is required", apperrors.ErrInvalidArgument)
@@ -418,6 +511,8 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
 	}
 	switch tool.Name {
+	case "delivery.deployment_templates.list", "delivery.deployment_templates.version", "delivery.deployment_templates.preview":
+		return s.invokeDeploymentTemplateTool(ctx, principal, tool.Name, input)
 	case "delivery.onboarding.analyze_repo",
 		"delivery.standards.dockerfile.generate",
 		"delivery.standards.dockerfile.validate",
@@ -437,7 +532,7 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		"delivery.plans.create",
 		"delivery.plans.confirm":
 		return s.invokeDeliveryWorkflowTool(ctx, principal, tool.Name, input)
-	case "delivery.applications.list",
+	case "delivery.repositories.analyze", "delivery.applications.list",
 		"delivery.applications.detail",
 		"delivery.applications.create",
 		"delivery.application_environments.list",
@@ -519,7 +614,7 @@ func (s *Service) invokeDeliveryPlanningTool(ctx context.Context, principal doma
 
 func (s *Service) invokeDeliveryApplicationTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
 	switch toolName {
-	case "delivery.applications.list",
+	case "delivery.repositories.analyze", "delivery.applications.list",
 		"delivery.applications.detail",
 		"delivery.applications.create",
 		"delivery.application_environments.list",
@@ -534,6 +629,9 @@ func (s *Service) invokeDeliveryApplicationTool(ctx context.Context, principal d
 
 func (s *Service) invokeDeliveryApplicationCoreTool(ctx context.Context, principal domainidentity.Principal, toolName string, input map[string]any) (any, map[string]any, error) {
 	switch toolName {
+	case "delivery.repositories.analyze":
+		return s.analyzeDeliveryRepository(ctx, principal, input)
+
 	case "delivery.applications.list":
 		var req struct {
 			Search string `json:"search"`
@@ -3295,85 +3393,34 @@ func executionTaskSucceeded(status string) bool {
 		return false
 	}
 }
-func inferDeliveryLanguage(files []string) string {
-	lower := make([]string, 0, len(files))
-	for _, file := range files {
-		lower = append(lower, strings.ToLower(strings.TrimSpace(file)))
-	}
-	if slices.Contains(lower, "go.mod") || hasFileSuffix(lower, ".go") {
-		return "go"
-	}
-	if slices.Contains(lower, "package.json") {
-		return "node"
-	}
-	if slices.Contains(lower, "pyproject.toml") || slices.Contains(lower, "requirements.txt") || hasFileSuffix(lower, ".py") {
-		return "python"
-	}
-	if slices.Contains(lower, "pom.xml") || slices.Contains(lower, "build.gradle") || slices.Contains(lower, "build.gradle.kts") {
-		return "java"
-	}
-	if slices.Contains(lower, "cargo.toml") || hasFileSuffix(lower, ".rs") {
-		return "rust"
-	}
-	return "unknown"
-}
-func inferDeliveryFramework(files []string, language string) string {
-	language = strings.ToLower(strings.TrimSpace(language))
-	lower := make([]string, 0, len(files))
-	for _, file := range files {
-		lower = append(lower, strings.ToLower(strings.TrimSpace(file)))
-	}
-	switch {
-	case language == "node" && slices.Contains(lower, "next.config.js"):
-		return "nextjs"
-	case language == "node" && slices.Contains(lower, "vite.config.ts"):
-		return "vite"
-	case language == "go":
-		return "go-http"
-	case language == "python" && slices.Contains(lower, "manage.py"):
-		return "django"
-	case language == "python":
-		return "python-web"
-	case language == "java" && slices.Contains(lower, "pom.xml"):
-		return "spring-boot"
-	default:
-		return ""
-	}
-}
-func inferDeliveryPackageManager(files []string, language string) string {
-	lower := make([]string, 0, len(files))
-	for _, file := range files {
-		lower = append(lower, strings.ToLower(strings.TrimSpace(file)))
-	}
-	switch {
-	case slices.Contains(lower, "pnpm-lock.yaml"):
-		return "pnpm"
-	case slices.Contains(lower, "yarn.lock"):
-		return "yarn"
-	case slices.Contains(lower, "package-lock.json") || strings.EqualFold(language, "node"):
-		return "npm"
-	case slices.Contains(lower, "go.mod") || strings.EqualFold(language, "go"):
-		return "go"
-	case slices.Contains(lower, "poetry.lock"):
-		return "poetry"
-	case slices.Contains(lower, "requirements.txt") || strings.EqualFold(language, "python"):
-		return "pip"
-	case slices.Contains(lower, "pom.xml"):
-		return "maven"
-	case slices.Contains(lower, "build.gradle") || slices.Contains(lower, "build.gradle.kts"):
-		return "gradle"
-	default:
-		return ""
-	}
-}
-func hasFileSuffix(files []string, suffix string) bool {
-	for _, file := range files {
-		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(file)), suffix) {
-			return true
+func onboardingMetadataCandidate(files []string, language string) sohaapi.RepositoryAnalysisCandidate {
+	metadata := make(map[string]string)
+	for _, name := range sourceanalysis.CandidateFiles {
+		if slices.Contains(files, name) {
+			metadata[name] = ""
 		}
 	}
-	return false
+	result := sourceanalysis.Identify(".", metadata)
+	for _, candidate := range result.Candidates {
+		if candidate.Language == language {
+			return candidate
+		}
+	}
+	if len(result.Candidates) == 1 && language == "" {
+		return result.Candidates[0]
+	}
+	return sohaapi.RepositoryAnalysisCandidate{}
 }
+func inferDeliveryLanguage(files []string) string {
+	return firstNonEmpty(onboardingMetadataCandidate(files, "").Language, "unknown")
+}
+func inferDeliveryFramework(files []string, language string) string {
+	return onboardingMetadataCandidate(files, language).Framework
+}
+func inferDeliveryPackageManager(files []string, language string) string {
+	return onboardingMetadataCandidate(files, language).PackageManager
+}
+
 func deliveryNameFromRepository(repositoryPath string) string {
 	repositoryPath = strings.Trim(strings.TrimSpace(repositoryPath), "/")
 	if repositoryPath == "" {

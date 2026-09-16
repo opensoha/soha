@@ -281,7 +281,7 @@ func (h *ApplicationHandler) DeleteRepository(c *gin.Context) {
 }
 
 func mapSourceRepositoryInput(req dto.UpsertSourceRepositoryRequest) domainapp.SourceRepositoryInput {
-	return domainapp.SourceRepositoryInput{Name: req.Name, Provider: req.Provider, URL: req.URL, Protocol: req.Protocol, GitLabProjectID: req.GitLabProjectID, Path: req.Path, CredentialRef: req.CredentialRef, DefaultBranch: req.DefaultBranch, ApplicationIDs: req.ApplicationIDs}
+	return domainapp.SourceRepositoryInput{SourceConnectionID: req.SourceConnectionID, ProviderRepositoryID: req.ProviderRepositoryID, Name: req.Name, Provider: req.Provider, URL: req.URL, Protocol: req.Protocol, GitLabProjectID: req.GitLabProjectID, Path: req.Path, CredentialRef: req.CredentialRef, DefaultBranch: req.DefaultBranch, ApplicationIDs: req.ApplicationIDs}
 }
 
 func mapApplicationInput(req dto.UpsertApplicationRequest) domainapp.UpsertInput {
@@ -299,6 +299,7 @@ func mapApplicationInput(req dto.UpsertApplicationRequest) domainapp.UpsertInput
 		})
 	}
 	return domainapp.UpsertInput{
+		ExpectedVersion:     req.ExpectedVersion,
 		ID:                  req.ID,
 		Name:                req.Name,
 		Key:                 req.Key,
@@ -340,6 +341,8 @@ func mapApplicationServiceInput(req dto.UpsertApplicationServiceRequest) domaina
 		})
 	}
 	return domainapp.ServiceInput{
+		ExpectedVersion:     req.ExpectedVersion,
+		DeploymentTemplate:  req.DeploymentTemplate,
 		ID:                  req.ID,
 		Key:                 req.Key,
 		Name:                req.Name,

@@ -2,8 +2,11 @@ package executionbackend
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 type clusterManager interface {
@@ -53,6 +57,12 @@ func (c *Clusters) CreateExecutionJob(ctx context.Context, clusterID string, req
 		return appexecution.ExecutionJobRef{}, err
 	}
 	created, err := bundle.Typed.BatchV1().Jobs(namespace).Create(ctx, &job, metav1.CreateOptions{})
+	if k8serrors.IsAlreadyExists(err) && request.Name != "" {
+		created, err = bundle.Typed.BatchV1().Jobs(namespace).Get(ctx, job.Name, metav1.GetOptions{})
+		if err == nil && (created.Annotations["soha.io/execution-task"] != request.TaskID || created.Annotations["soha.io/execution-request"] != job.Annotations["soha.io/execution-request"]) {
+			return appexecution.ExecutionJobRef{}, fmt.Errorf("%w: execution Job identity or frozen input differs", apperrors.ErrConflict)
+		}
+	}
 	if err != nil {
 		return appexecution.ExecutionJobRef{}, err
 	}
@@ -60,6 +70,7 @@ func (c *Clusters) CreateExecutionJob(ctx context.Context, clusterID string, req
 		ClusterID: strings.TrimSpace(clusterID),
 		Namespace: created.Namespace,
 		Name:      created.Name,
+		TaskID:    request.TaskID,
 	}, nil
 }
 
@@ -76,15 +87,32 @@ func (c *Clusters) InspectExecutionJob(ctx context.Context, ref appexecution.Exe
 		return appexecution.ExecutionJobInspection{}, err
 	}
 	inspection := appexecution.ExecutionJobInspection{State: appexecution.ExecutionJobRunning}
+	if ref.TaskID != "" && job.Annotations["soha.io/execution-task"] != ref.TaskID {
+		return inspection, fmt.Errorf("%w: execution Job belongs to another task", apperrors.ErrConflict)
+	}
 	switch {
+	case ref.TaskID != "":
+		inspection.State = deliveryJobTerminalState(job)
 	case job.Status.Succeeded > 0:
 		inspection.State = appexecution.ExecutionJobSucceeded
 	case job.Status.Failed > 0:
 		inspection.State = appexecution.ExecutionJobFailed
-	default:
+	}
+	for _, condition := range job.Status.Conditions {
+		if condition.Type == batchv1.JobFailed && condition.Status == corev1.ConditionTrue {
+			inspection.State, inspection.FailureReason = appexecution.ExecutionJobFailed, condition.Reason
+		}
+	}
+	if inspection.State == appexecution.ExecutionJobRunning {
 		return inspection, nil
 	}
 	inspection.Logs, _ = executionJobLogs(ctx, bundle, ref.Namespace, ref.Name)
+	if inspection.State == appexecution.ExecutionJobSucceeded {
+		inspection.ImageDigest, err = executionJobDigest(ctx, bundle, job)
+		if err != nil {
+			return inspection, err
+		}
+	}
 	return inspection, nil
 }
 
@@ -124,6 +152,9 @@ func ensureNamespaceExists(ctx context.Context, bundle *k8sinfra.Bundle, namespa
 	_, err := bundle.Typed.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: namespace},
 	}, metav1.CreateOptions{})
+	if k8serrors.IsAlreadyExists(err) {
+		return nil
+	}
 	return err
 }
 
@@ -136,8 +167,26 @@ func buildExecutionJob(request appexecution.ExecutionJobRequest) (batchv1.Job, e
 	workspace := request.Workspace
 	checkouts := checkoutValues(workspace)
 	jobName := buildExecutionJobName(request.TaskID)
+	if request.Name != "" {
+		jobName = request.Name
+	}
+	if len(validation.IsDNS1123Label(jobName)) != 0 {
+		return batchv1.Job{}, fmt.Errorf("%w: invalid execution Job name", apperrors.ErrInvalidArgument)
+	}
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		return batchv1.Job{}, err
+	}
+	requestDigest := sha256.Sum256(encoded)
+	identity := map[string]string{"soha.io/execution-task": request.TaskID, "soha.io/execution-request": fmt.Sprintf("%x", requestDigest)}
+	taskLabel := strings.TrimPrefix(appexecution.DeliveryJobName(request.TaskID), "soha-exec-")
 	shell := firstNonEmpty(stringValue(runtime["shell"]), "/bin/sh")
 	script := "set -e\n" + strings.Join(commands, "\n")
+	if request.TaskKind == "build" {
+		// The same build artifact file is consumed by the Agent runner. The
+		// kubelet retains the termination message even when log reads fail.
+		script += "\nif [ -f .soha-image-digest ]; then head -c 1024 .soha-image-digest > /dev/termination-log; fi"
+	}
 	workingDir := "/workspace"
 	if commandDir := stringValue(runtime["commandDir"]); commandDir != "" && commandDir != "." {
 		var err error
@@ -186,29 +235,63 @@ func buildExecutionJob(request appexecution.ExecutionJobRequest) (batchv1.Job, e
 		return batchv1.Job{}, fmt.Errorf("%w: execution job TTL is too large", apperrors.ErrInvalidArgument)
 	}
 	ttl := int32(ttlSeconds) //nolint:gosec // bounded by the MaxInt32 check above
+	ttlPointer := &ttl
+	if request.Retain {
+		// Batch recovery must observe a finished Job before it can be removed.
+		ttlPointer = nil
+	}
 	backoff := int32(0)
+	deadline := int64(request.TimeoutSeconds)
+	if deadline <= 0 {
+		deadline = 300
+	}
 	return batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
-			Namespace: strings.TrimSpace(request.Namespace),
+			Name:        jobName,
+			Namespace:   strings.TrimSpace(request.Namespace),
+			Annotations: identity,
 			Labels: map[string]string{
 				"app.kubernetes.io/managed-by": "soha",
-				"soha.io/execution-task":       request.TaskID,
+				"soha.io/execution-task":       taskLabel,
 				"soha.io/task-kind":            request.TaskKind,
 			},
 		},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoff,
-			TTLSecondsAfterFinished: &ttl,
+			ActiveDeadlineSeconds:   &deadline,
+			TTLSecondsAfterFinished: ttlPointer,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{
 					"app.kubernetes.io/managed-by": "soha",
-					"soha.io/execution-task":       request.TaskID,
+					"soha.io/execution-task":       taskLabel,
 				}},
 				Spec: podSpec,
 			},
 		},
 	}, nil
+}
+
+var jobDigestPattern = regexp.MustCompile(`^(?:[^\s@]+@)?(sha256:[a-fA-F0-9]{64})$`)
+
+func executionJobDigest(ctx context.Context, bundle *k8sinfra.Bundle, job *batchv1.Job) (string, error) {
+	pods, err := bundle.Typed.CoreV1().Pods(job.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "job-name=" + job.Name})
+	if err != nil {
+		return "", err
+	}
+	for _, pod := range pods.Items {
+		if !metav1.IsControlledBy(&pod, job) {
+			continue
+		}
+		for _, status := range pod.Status.ContainerStatuses {
+			if status.Name == "runner" && status.State.Terminated != nil && status.State.Terminated.ExitCode == 0 {
+				match := jobDigestPattern.FindStringSubmatch(strings.TrimSpace(status.State.Terminated.Message))
+				if len(match) == 2 {
+					return strings.ToLower(match[1]), nil
+				}
+			}
+		}
+	}
+	return "", nil
 }
 
 func executionJobLogs(ctx context.Context, bundle *k8sinfra.Bundle, namespace, jobName string) ([]appexecution.ExecutionJobLog, error) {

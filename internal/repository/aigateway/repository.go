@@ -104,6 +104,14 @@ func (r *Repository) TouchPersonalAccessToken(ctx context.Context, tokenID strin
 	`, at, time.Now().UTC(), tokenID).Error
 }
 
+func (r *Repository) GetPersonalAccessTokenByID(ctx context.Context, tokenID string) (domainaigateway.PersonalAccessToken, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, user_id, name, token_hash, token_prefix, scopes, permission_keys, metadata, expires_at, last_used_at, revoked_at, created_by, created_at, updated_at
+		FROM personal_access_tokens WHERE id = ? LIMIT 1
+	`, tokenID).Row()
+	return scanPersonalAccessToken(row)
+}
+
 func (r *Repository) RevokePersonalAccessToken(ctx context.Context, userID, tokenID string) error {
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE personal_access_tokens
@@ -217,6 +225,14 @@ func (r *Repository) TouchServiceAccountToken(ctx context.Context, tokenID strin
 		SET last_used_at = ?, updated_at = ?
 		WHERE id = ?
 	`, at, time.Now().UTC(), tokenID).Error
+}
+
+func (r *Repository) GetServiceAccountTokenByID(ctx context.Context, tokenID string) (domainaigateway.ServiceAccountToken, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, service_account_id, name, token_hash, token_prefix, scopes, permission_keys, metadata, expires_at, last_used_at, revoked_at, created_by, created_at, updated_at
+		FROM service_account_tokens WHERE id = ? LIMIT 1
+	`, tokenID).Row()
+	return scanServiceAccountToken(row)
 }
 
 func (r *Repository) RevokeServiceAccountToken(ctx context.Context, tokenID string) error {

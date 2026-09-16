@@ -23,12 +23,15 @@ COPY --from=contracts . ./soha-contracts
 COPY . ./soha
 
 FROM go-source AS go-build
+ARG GOMAXPROCS=4
+ENV GOMAXPROCS=$GOMAXPROCS
+ARG SOHA_BUILD_VERSION=0.1.0
 ARG TARGETOS=linux
 ARG TARGETARCH
 RUN test -f soha/internal/staticassets/web/dist/index.html
 RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
     cd soha && \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags embedassets -trimpath -ldflags="-s -w" -o /out/soha ./cmd/server && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -tags embedassets -trimpath -ldflags="-s -w -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=${SOHA_BUILD_VERSION}" -o /out/soha ./cmd/server && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/network-control ./cmd/network-control && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/ingest ./cmd/ingest && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/radius-adapter ./cmd/radius-adapter

@@ -6,6 +6,8 @@ ROOT_COMPOSE_FILE ?= $(DEPLOY_DIR)/docker-compose.yaml
 APP_DOCKERFILE ?= $(DEPLOY_DIR)/Dockerfile
 IMAGE_REPOSITORY ?= ghcr.io/opensoha/soha
 IMAGE_TAG ?= local
+SOHA_BUILD_VERSION ?= $(shell (git describe --tags --abbrev=0 2>/dev/null || echo v0.1.0) | sed s/^v//)
+SOHA_VERSION_LDFLAGS = -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=$(SOHA_BUILD_VERSION)
 GOPROXY ?= https://proxy.golang.org,direct
 SOHA_WEB_DIR ?= ../soha-web
 SOHA_CONTRACTS_DIR ?= $(abspath ../soha-contracts)
@@ -19,7 +21,7 @@ REMOTE_DEV_CONTRACTS_REF ?= main
 ROOT_COMPOSE = $(COMPOSE) -f $(ROOT_COMPOSE_FILE)
 IMAGE_BUILD_TAGS = -t $(IMAGE_REPOSITORY):$(IMAGE_TAG)
 
-.PHONY: help init init-go init-db dev dev-api dev-web remote-dev-check remote-dev-up remote-dev-sync remote-dev-down remote-dev-status remote-dev-logs build build-web clean deploy-image test lint complexity-check complexity-report
+.PHONY: help init init-go init-db dev dev-api dev-web remote-dev-check remote-dev-up remote-dev-down remote-dev-status remote-dev-logs build build-web clean deploy-image test lint complexity-check complexity-report
 
 help: ## Show available make targets.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -42,7 +44,7 @@ init-db: ## Start local PostgreSQL from deploy/docker-compose.yaml.
 		printf " done\n"
 
 dev-api: ## Run the Go API server locally.
-	go run ./cmd/server
+	go run -ldflags="$(SOHA_VERSION_LDFLAGS)" ./cmd/server
 
 dev-web: ## Run the Vite frontend locally.
 	@test -d "$(SOHA_WEB_DIR)" || (echo "Missing $(SOHA_WEB_DIR). Clone github.com/opensoha/soha-web or set SOHA_WEB_DIR." >&2; exit 1)
@@ -56,16 +58,11 @@ dev: init-db ## Start local API and frontend development servers.
 	wait $$api_pid $$web_pid
 
 remote-dev-check: ## Validate the remote development scripts and Kustomize manifest.
-	sh -n deploy/remote-dev/source-sync.sh deploy/remote-dev/backend.sh deploy/remote-dev/web.sh deploy/remote-dev/manage.sh deploy/remote-dev/local-sync.sh
+	sh -n deploy/remote-dev/source-sync.sh deploy/remote-dev/backend.sh deploy/remote-dev/web.sh deploy/remote-dev/manage.sh
 	kubectl kustomize deploy/remote-dev >/dev/null
-	kubectl kustomize deploy/remote-dev-local >/dev/null
 
 remote-dev-up: remote-dev-check ## Route ops.popicorns.com to pushed development refs.
 	@KUBE_CONTEXT="$(REMOTE_DEV_CONTEXT)" BASE_URL="$(REMOTE_DEV_URL)" SOHA_REF="$(REMOTE_DEV_SOHA_REF)" SOHA_WEB_REF="$(REMOTE_DEV_WEB_REF)" SOHA_CONTRACTS_REF="$(REMOTE_DEV_CONTRACTS_REF)" sh deploy/remote-dev/manage.sh up
-
-remote-dev-sync: remote-dev-check ## Mirror local source files into ops.popicorns.com with DevSpace.
-	@command -v devspace >/dev/null || { echo "DevSpace is required: https://www.devspace.sh/docs/getting-started/installation" >&2; exit 1; }
-	@KUBE_CONTEXT="$(REMOTE_DEV_CONTEXT)" BASE_URL="$(REMOTE_DEV_URL)" sh deploy/remote-dev/local-sync.sh
 
 remote-dev-down: ## Restore the Helm deployment behind ops.popicorns.com.
 	@KUBE_CONTEXT="$(REMOTE_DEV_CONTEXT)" BASE_URL="$(REMOTE_DEV_URL)" sh deploy/remote-dev/manage.sh down
@@ -85,12 +82,12 @@ build-web: ## Build the frontend artifact from soha-web and stage it for embeddi
 	cp -R $(SOHA_WEB_DIR)/dist/. $(WEB_DIST_DIR)/
 
 build: build-web ## Build the management, network-control, and ingest binaries.
-	CGO_ENABLED=0 go build -tags embedassets -o bin/soha ./cmd/server
+	CGO_ENABLED=0 go build -tags embedassets -ldflags="$(SOHA_VERSION_LDFLAGS)" -o bin/soha ./cmd/server
 	CGO_ENABLED=0 go build -o bin/network-control ./cmd/network-control
 	CGO_ENABLED=0 go build -o bin/ingest ./cmd/ingest
 
 deploy-image: build-web ## Build the application and network runtime image.
-	docker build --build-arg GOPROXY=$(GOPROXY) --build-context contracts=$(SOHA_CONTRACTS_DIR) -f $(APP_DOCKERFILE) $(IMAGE_BUILD_TAGS) .
+	docker build --build-arg SOHA_BUILD_VERSION=$(SOHA_BUILD_VERSION) --build-arg GOPROXY=$(GOPROXY) --build-context contracts=$(SOHA_CONTRACTS_DIR) -f $(APP_DOCKERFILE) $(IMAGE_BUILD_TAGS) .
 
 # Test
 test: ## Run Go tests.

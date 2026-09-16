@@ -3,6 +3,8 @@ package catalog
 import (
 	"context"
 	"time"
+
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 )
 
 type BuildPolicy struct {
@@ -43,85 +45,96 @@ type Environment struct {
 }
 
 type ReleaseTarget struct {
-	ID                       string         `json:"id"`
-	ApplicationEnvironmentID string         `json:"applicationEnvironmentId"`
-	ClusterID                string         `json:"clusterId"`
-	Namespace                string         `json:"namespace"`
-	TargetKind               string         `json:"targetKind,omitempty"`
-	ExecutorKind             string         `json:"executorKind,omitempty"`
-	GroupKey                 string         `json:"groupKey,omitempty"`
-	WaveKey                  string         `json:"waveKey,omitempty"`
-	RegionKey                string         `json:"regionKey,omitempty"`
-	ConfigRef                string         `json:"configRef,omitempty"`
-	WorkloadKind             string         `json:"workloadKind"`
-	WorkloadName             string         `json:"workloadName"`
-	ContainerName            string         `json:"containerName,omitempty"`
-	Metadata                 map[string]any `json:"metadata,omitempty"`
-	Enabled                  bool           `json:"enabled"`
-	CreatedAt                time.Time      `json:"createdAt"`
-	UpdatedAt                time.Time      `json:"updatedAt"`
+	Docker                   *sohaapi.DockerDeliveryConfiguration `json:"docker,omitempty"`
+	Helm                     *sohaapi.HelmDeliveryConfiguration   `json:"helm,omitempty"`
+	ID                       string                               `json:"id"`
+	ApplicationEnvironmentID string                               `json:"applicationEnvironmentId"`
+	ClusterID                string                               `json:"clusterId"`
+	Namespace                string                               `json:"namespace"`
+	TargetKind               string                               `json:"targetKind,omitempty"`
+	ExecutorKind             string                               `json:"executorKind,omitempty"`
+	GroupKey                 string                               `json:"groupKey,omitempty"`
+	WaveKey                  string                               `json:"waveKey,omitempty"`
+	RegionKey                string                               `json:"regionKey,omitempty"`
+	ConfigRef                string                               `json:"configRef,omitempty"`
+	WorkloadKind             string                               `json:"workloadKind"`
+	WorkloadName             string                               `json:"workloadName"`
+	ContainerName            string                               `json:"containerName,omitempty"`
+	Metadata                 map[string]any                       `json:"metadata,omitempty"`
+	Enabled                  bool                                 `json:"enabled"`
+	CreatedAt                time.Time                            `json:"createdAt"`
+	UpdatedAt                time.Time                            `json:"updatedAt"`
 }
 
 type ReleaseTargetInput struct {
-	ID            string         `json:"id"`
-	ClusterID     string         `json:"clusterId"`
-	Namespace     string         `json:"namespace"`
-	TargetKind    string         `json:"targetKind,omitempty"`
-	ExecutorKind  string         `json:"executorKind,omitempty"`
-	GroupKey      string         `json:"groupKey,omitempty"`
-	WaveKey       string         `json:"waveKey,omitempty"`
-	RegionKey     string         `json:"regionKey,omitempty"`
-	ConfigRef     string         `json:"configRef,omitempty"`
-	WorkloadKind  string         `json:"workloadKind"`
-	WorkloadName  string         `json:"workloadName"`
-	ContainerName string         `json:"containerName,omitempty"`
-	Metadata      map[string]any `json:"metadata,omitempty"`
-	Enabled       bool           `json:"enabled"`
+	Docker        *sohaapi.DockerDeliveryConfiguration `json:"docker,omitempty"`
+	Helm          *sohaapi.HelmDeliveryConfiguration   `json:"helm,omitempty"`
+	ID            string                               `json:"id"`
+	ClusterID     string                               `json:"clusterId"`
+	Namespace     string                               `json:"namespace"`
+	TargetKind    string                               `json:"targetKind,omitempty"`
+	ExecutorKind  string                               `json:"executorKind,omitempty"`
+	GroupKey      string                               `json:"groupKey,omitempty"`
+	WaveKey       string                               `json:"waveKey,omitempty"`
+	RegionKey     string                               `json:"regionKey,omitempty"`
+	ConfigRef     string                               `json:"configRef,omitempty"`
+	WorkloadKind  string                               `json:"workloadKind"`
+	WorkloadName  string                               `json:"workloadName"`
+	ContainerName string                               `json:"containerName,omitempty"`
+	Metadata      map[string]any                       `json:"metadata,omitempty"`
+	Enabled       bool                                 `json:"enabled"`
 }
 
 type ApplicationEnvironment struct {
-	ID                 string            `json:"id"`
-	ApplicationID      string            `json:"applicationId"`
-	BusinessLineID     string            `json:"businessLineId,omitempty"`
-	ApplicationGroup   string            `json:"applicationGroup,omitempty"`
-	EnvironmentID      string            `json:"environmentId"`
-	EnvironmentKey     string            `json:"environmentKey,omitempty"`
-	Alias              string            `json:"alias,omitempty"`
-	ClusterID          string            `json:"clusterId,omitempty"`
-	Namespace          string            `json:"namespace,omitempty"`
-	RegistryID         string            `json:"registryId,omitempty"`
-	StrategyProfileID  string            `json:"strategyProfileId,omitempty"`
-	PromotionPolicyID  string            `json:"promotionPolicyId,omitempty"`
-	ArtifactPolicyID   string            `json:"artifactPolicyId,omitempty"`
-	WorkflowTemplateID string            `json:"workflowTemplateId,omitempty"`
-	WorkflowTemplate   *WorkflowTemplate `json:"workflowTemplate,omitempty"`
-	BuildPolicy        BuildPolicy       `json:"buildPolicy,omitempty"`
-	ReleasePolicy      ReleasePolicy     `json:"releasePolicy,omitempty"`
-	ResourceSelector   ResourceSelector  `json:"resourceSelector,omitempty"`
-	Targets            []ReleaseTarget   `json:"targets,omitempty"`
-	CreatedAt          time.Time         `json:"createdAt"`
-	UpdatedAt          time.Time         `json:"updatedAt"`
+	WorkflowTemplateVersion int64             `json:"workflowTemplateVersion,omitempty"`
+	ID                      string            `json:"id"`
+	ApplicationID           string            `json:"applicationId"`
+	BusinessLineID          string            `json:"businessLineId,omitempty"`
+	ApplicationGroup        string            `json:"applicationGroup,omitempty"`
+	EnvironmentID           string            `json:"environmentId"`
+	EnvironmentKey          string            `json:"environmentKey,omitempty"`
+	Alias                   string            `json:"alias,omitempty"`
+	ClusterID               string            `json:"clusterId,omitempty"`
+	Namespace               string            `json:"namespace,omitempty"`
+	RegistryID              string            `json:"registryId,omitempty"`
+	StrategyProfileID       string            `json:"strategyProfileId,omitempty"`
+	PromotionPolicyID       string            `json:"promotionPolicyId,omitempty"`
+	ArtifactPolicyID        string            `json:"artifactPolicyId,omitempty"`
+	WorkflowTemplateID      string            `json:"workflowTemplateId,omitempty"`
+	WorkflowTemplate        *WorkflowTemplate `json:"workflowTemplate,omitempty"`
+	BuildPolicy             BuildPolicy       `json:"buildPolicy,omitempty"`
+	ReleasePolicy           ReleasePolicy     `json:"releasePolicy,omitempty"`
+	ResourceSelector        ResourceSelector  `json:"resourceSelector,omitempty"`
+	Targets                 []ReleaseTarget   `json:"targets,omitempty"`
+	CreatedAt               time.Time         `json:"createdAt"`
+	UpdatedAt               time.Time         `json:"updatedAt"`
 }
 
 type ApplicationEnvironmentInput struct {
-	ID                 string               `json:"id"`
-	ApplicationID      string               `json:"applicationId"`
-	EnvironmentID      string               `json:"environmentId"`
-	Alias              string               `json:"alias,omitempty"`
-	ClusterID          string               `json:"clusterId,omitempty"`
-	Namespace          string               `json:"namespace,omitempty"`
-	RegistryID         string               `json:"registryId,omitempty"`
-	StrategyProfileID  string               `json:"strategyProfileId,omitempty"`
-	PromotionPolicyID  string               `json:"promotionPolicyId,omitempty"`
-	ArtifactPolicyID   string               `json:"artifactPolicyId,omitempty"`
-	WorkflowTemplateID string               `json:"workflowTemplateId,omitempty"`
-	BuildPolicy        BuildPolicy          `json:"buildPolicy,omitempty"`
-	ReleasePolicy      ReleasePolicy        `json:"releasePolicy,omitempty"`
-	ResourceSelector   ResourceSelector     `json:"resourceSelector,omitempty"`
-	Targets            []ReleaseTargetInput `json:"targets,omitempty"`
+	ExpectedUpdatedAt       *time.Time           `json:"expectedUpdatedAt,omitempty"`
+	WorkflowTemplateVersion int64                `json:"workflowTemplateVersion,omitempty"`
+	ID                      string               `json:"id"`
+	ApplicationID           string               `json:"applicationId"`
+	EnvironmentID           string               `json:"environmentId"`
+	Alias                   string               `json:"alias,omitempty"`
+	ClusterID               string               `json:"clusterId,omitempty"`
+	Namespace               string               `json:"namespace,omitempty"`
+	RegistryID              string               `json:"registryId,omitempty"`
+	StrategyProfileID       string               `json:"strategyProfileId,omitempty"`
+	PromotionPolicyID       string               `json:"promotionPolicyId,omitempty"`
+	ArtifactPolicyID        string               `json:"artifactPolicyId,omitempty"`
+	WorkflowTemplateID      string               `json:"workflowTemplateId,omitempty"`
+	BuildPolicy             BuildPolicy          `json:"buildPolicy,omitempty"`
+	ReleasePolicy           ReleasePolicy        `json:"releasePolicy,omitempty"`
+	ResourceSelector        ResourceSelector     `json:"resourceSelector,omitempty"`
+	Targets                 []ReleaseTargetInput `json:"targets,omitempty"`
 }
 
 type BuildTemplate struct {
+	Revision           int64          `json:"revision"`
+	PublishedVersion   int64          `json:"publishedVersion"`
+	PublicationState   string         `json:"publicationState"`
+	ContentDigest      string         `json:"contentDigest,omitempty"`
 	ID                 string         `json:"id"`
 	Key                string         `json:"key"`
 	Name               string         `json:"name"`
@@ -136,46 +149,59 @@ type BuildTemplate struct {
 	UpdatedAt          time.Time      `json:"updatedAt"`
 }
 
+type TemplateCopyOrigin = sohaapi.TemplateCopyOrigin
+
 type BuildTemplateInput struct {
-	ID                 string         `json:"id"`
-	Key                string         `json:"key"`
-	Name               string         `json:"name"`
-	Description        string         `json:"description,omitempty"`
-	BuilderKind        string         `json:"builderKind,omitempty"`
-	DockerfileTemplate string         `json:"dockerfileTemplate,omitempty"`
-	BuildCommands      []string       `json:"buildCommands,omitempty"`
-	VariableSchema     map[string]any `json:"variableSchema,omitempty"`
-	DefaultVariables   map[string]any `json:"defaultVariables,omitempty"`
-	Enabled            bool           `json:"enabled"`
+	CopiedFrom         *TemplateCopyOrigin `json:"copiedFrom,omitempty"`
+	ExpectedRevision   *int64              `json:"expectedRevision,omitempty"`
+	Publish            *bool               `json:"publish,omitempty"`
+	ID                 string              `json:"id"`
+	Key                string              `json:"key"`
+	Name               string              `json:"name"`
+	Description        string              `json:"description,omitempty"`
+	BuilderKind        string              `json:"builderKind,omitempty"`
+	DockerfileTemplate string              `json:"dockerfileTemplate,omitempty"`
+	BuildCommands      []string            `json:"buildCommands,omitempty"`
+	VariableSchema     map[string]any      `json:"variableSchema,omitempty"`
+	DefaultVariables   map[string]any      `json:"defaultVariables,omitempty"`
+	Enabled            bool                `json:"enabled"`
 }
 
 type WorkflowTemplate struct {
-	ID          string         `json:"id"`
-	Key         string         `json:"key"`
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Category    string         `json:"category,omitempty"`
-	Definition  map[string]any `json:"definition,omitempty"`
-	Enabled     bool           `json:"enabled"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
+	Revision         int64          `json:"revision"`
+	PublishedVersion int64          `json:"publishedVersion"`
+	PublicationState string         `json:"publicationState"`
+	ContentDigest    string         `json:"contentDigest,omitempty"`
+	ID               string         `json:"id"`
+	Key              string         `json:"key"`
+	Name             string         `json:"name"`
+	Description      string         `json:"description,omitempty"`
+	Category         string         `json:"category,omitempty"`
+	Definition       map[string]any `json:"definition,omitempty"`
+	Enabled          bool           `json:"enabled"`
+	CreatedAt        time.Time      `json:"createdAt"`
+	UpdatedAt        time.Time      `json:"updatedAt"`
 }
 
 type WorkflowTemplateInput struct {
-	ID          string         `json:"id"`
-	Key         string         `json:"key"`
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Category    string         `json:"category,omitempty"`
-	Definition  map[string]any `json:"definition,omitempty"`
-	Enabled     bool           `json:"enabled"`
+	CopiedFrom       *TemplateCopyOrigin `json:"copiedFrom,omitempty"`
+	ExpectedRevision *int64              `json:"expectedRevision,omitempty"`
+	Publish          *bool               `json:"publish,omitempty"`
+	ID               string              `json:"id"`
+	Key              string              `json:"key"`
+	Name             string              `json:"name"`
+	Description      string              `json:"description,omitempty"`
+	Category         string              `json:"category,omitempty"`
+	Definition       map[string]any      `json:"definition,omitempty"`
+	Enabled          bool                `json:"enabled"`
 }
 
 type ApplicationWorkflowInput struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Definition  map[string]any `json:"definition"`
-	Enabled     bool           `json:"enabled"`
+	ExpectedRevision *int64         `json:"expectedRevision,omitempty"`
+	Name             string         `json:"name"`
+	Description      string         `json:"description,omitempty"`
+	Definition       map[string]any `json:"definition"`
+	Enabled          bool           `json:"enabled"`
 }
 
 type TemplateUsageKind string
@@ -251,6 +277,7 @@ type TemplateUsageSummary struct {
 }
 
 type Repository interface {
+	TemplateVersionRepository
 	ListEnvironments(context.Context) ([]Environment, error)
 
 	ListApplicationEnvironments(context.Context) ([]ApplicationEnvironment, error)
@@ -271,4 +298,14 @@ type Repository interface {
 	UpdateWorkflowTemplate(context.Context, string, WorkflowTemplateInput) (WorkflowTemplate, error)
 	DeleteWorkflowTemplate(context.Context, string) error
 	SaveApplicationWorkflow(context.Context, string, string, WorkflowTemplateInput) (WorkflowTemplate, error)
+}
+
+// Published versions remain readable after their catalog entry is deprecated.
+type TemplateVersionRepository interface {
+	ListBuildTemplateVersions(context.Context, string) ([]BuildTemplate, error)
+	GetBuildTemplateVersion(context.Context, string, int64) (BuildTemplate, error)
+	PublishBuildTemplate(context.Context, string, int64) (BuildTemplate, error)
+	ListWorkflowTemplateVersions(context.Context, string) ([]WorkflowTemplate, error)
+	GetWorkflowTemplateVersion(context.Context, string, int64) (WorkflowTemplate, error)
+	PublishWorkflowTemplate(context.Context, string, int64) (WorkflowTemplate, error)
 }

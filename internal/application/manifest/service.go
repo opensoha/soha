@@ -53,15 +53,16 @@ type ClusterReader interface {
 }
 
 type Service struct {
-	repository   domainmanifest.Repository
-	applications ApplicationReader
-	environments EnvironmentReader
-	clusters     ClusterReader
-	authorizer   domainaccess.Authorizer
-	permissions  *appaccess.PermissionResolver
-	audit        AuditRecorder
-	operations   OperationRecorder
-	promoter     RevisionPromoter
+	deploymentTemplates DeploymentTemplateReader
+	repository          domainmanifest.Repository
+	applications        ApplicationReader
+	environments        EnvironmentReader
+	clusters            ClusterReader
+	authorizer          domainaccess.Authorizer
+	permissions         *appaccess.PermissionResolver
+	audit               AuditRecorder
+	operations          OperationRecorder
+	promoter            RevisionPromoter
 }
 
 func New(repository domainmanifest.Repository, applications ApplicationReader, environments EnvironmentReader, clusters ClusterReader, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder) *Service {
@@ -160,9 +161,25 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	if _, err := s.authorizePackage(ctx, principal, domainaccess.ActionUpdate, existing); err != nil {
 		return domainmanifest.Package{}, err
 	}
+	if err := s.validateTemplateDraftVersion(ctx, principal, existing, input); err != nil {
+		return domainmanifest.Package{}, err
+	}
 	item, err := normalizeInput(input)
 	if err != nil {
 		return domainmanifest.Package{}, err
+	}
+	item.ID = existing.ID
+	// Older clients omit environment template parameters; preserve the persisted values.
+	for index := range item.Bindings {
+		if item.Bindings[index].TemplateParameters != nil {
+			continue
+		}
+		for _, previous := range existing.Bindings {
+			if previous.ID == item.Bindings[index].ID {
+				item.Bindings[index].TemplateParameters = previous.TemplateParameters
+				break
+			}
+		}
 	}
 	if sourceReader, ok := s.repository.(interface {
 		GetSource(context.Context, string) (domainmanifest.Source, error)
@@ -183,6 +200,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	if err := s.validateBindings(ctx, principal, domainaccess.ActionUpdate, &item, app); err != nil {
 		return domainmanifest.Package{}, err
 	}
+	item.ExpectedUpdatedAt = &existing.UpdatedAt
 	item.ID = existing.ID
 	item.Status = domainmanifest.StatusDraft
 	item.CurrentRevision = existing.CurrentRevision
@@ -238,10 +256,55 @@ func (s *Service) Publish(ctx context.Context, principal domainidentity.Principa
 	if err := validateRenderableFiles(item); err != nil {
 		return domainmanifest.Package{}, err
 	}
-	if item.Status == domainmanifest.StatusPublished && item.CurrentRevision > 0 && s.promoter != nil {
-		if err := s.promoter.PromoteRevision(ctx, principal, item, item.CurrentRevision); err != nil {
-			return item, fmt.Errorf("promote manifest revision v%d: %w", item.CurrentRevision, err)
+	published, err := s.saveRevision(ctx, principal, item, note)
+	if err != nil {
+		return domainmanifest.Package{}, err
+	}
+	s.record(ctx, principal, "delivery.manifest.publish", published, fmt.Sprintf("published manifest revision v%d", published.CurrentRevision))
+	if s.promoter != nil {
+		if err := s.promoter.PromoteRevision(ctx, principal, published, published.CurrentRevision); err != nil {
+			return published, fmt.Errorf("promote manifest revision v%d: %w", published.CurrentRevision, err)
 		}
+	}
+	return published, nil
+}
+
+// SaveRevision persists configuration only. Release authorization, final plans
+// and execution remain at the explicit delivery entry points.
+func (s *Service) SaveRevision(ctx context.Context, principal domainidentity.Principal, packageID string, input domainmanifest.RevisionInput) (domainmanifest.Package, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
+		return domainmanifest.Package{}, err
+	}
+	item, err := s.get(ctx, packageID)
+	if err != nil {
+		return domainmanifest.Package{}, err
+	}
+	app, err := s.authorizePackage(ctx, principal, domainaccess.ActionUpdate, item)
+	if err != nil {
+		return domainmanifest.Package{}, err
+	}
+	if input.ExpectedUpdatedAt.IsZero() || !input.ExpectedUpdatedAt.Equal(item.UpdatedAt) {
+		return domainmanifest.Package{}, fmt.Errorf("%w: manifest configuration changed; reload before saving its revision", apperrors.ErrConflict)
+	}
+	if len(input.Note) > 4096 {
+		return domainmanifest.Package{}, fmt.Errorf("%w: revision note exceeds 4096 bytes", apperrors.ErrInvalidArgument)
+	}
+	if err := s.validateBindings(ctx, principal, domainaccess.ActionUpdate, &item, app); err != nil {
+		return domainmanifest.Package{}, err
+	}
+	if err := validateRenderableFiles(item); err != nil {
+		return domainmanifest.Package{}, err
+	}
+	saved, err := s.saveRevision(ctx, principal, item, input.Note)
+	if err != nil {
+		return domainmanifest.Package{}, err
+	}
+	s.record(ctx, principal, "delivery.manifest.revision.save", saved, fmt.Sprintf("saved manifest configuration v%d", saved.CurrentRevision))
+	return saved, nil
+}
+
+func (s *Service) saveRevision(ctx context.Context, principal domainidentity.Principal, item domainmanifest.Package, note string) (domainmanifest.Package, error) {
+	if item.Status == domainmanifest.StatusPublished && item.CurrentRevision > 0 {
 		return item, nil
 	}
 	payload, err := json.Marshal(struct {
@@ -257,21 +320,13 @@ func (s *Service) Publish(ctx context.Context, principal domainidentity.Principa
 		Digest: hex.EncodeToString(sum[:]), Note: strings.TrimSpace(note), Files: item.Files,
 		Bindings: item.Bindings, CreatedBy: principal.UserID, CreatedAt: time.Now().UTC(),
 	}
+	expected := item.UpdatedAt
+	item.ExpectedUpdatedAt = &expected
 	item.Status = domainmanifest.StatusPublished
 	item.CurrentRevision = revision.Version
 	item.UpdatedBy = principal.UserID
 	item.UpdatedAt = revision.CreatedAt
-	published, err := s.repository.Publish(ctx, item, revision)
-	if err != nil {
-		return domainmanifest.Package{}, err
-	}
-	s.record(ctx, principal, "delivery.manifest.publish", published, fmt.Sprintf("published manifest revision v%d", revision.Version))
-	if s.promoter != nil {
-		if err := s.promoter.PromoteRevision(ctx, principal, published, revision.Version); err != nil {
-			return published, fmt.Errorf("promote manifest revision v%d: %w", revision.Version, err)
-		}
-	}
-	return published, nil
+	return s.repository.Publish(ctx, item, revision)
 }
 
 func (s *Service) ListRevisions(ctx context.Context, principal domainidentity.Principal, packageID string) ([]domainmanifest.Revision, error) {
@@ -378,6 +433,10 @@ func (s *Service) validateBindings(ctx context.Context, principal domainidentity
 		if err := s.authorizeManifest(ctx, principal, action, *item, app, &cluster, binding.EnvironmentKey, binding.Namespace); err != nil {
 			return err
 		}
+		if err := s.validateTemplateParameters(ctx, principal, *item, binding.TemplateParameters); err != nil {
+			return err
+		}
+
 	}
 	return nil
 }

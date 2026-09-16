@@ -53,6 +53,8 @@ func NewRouter(service Service, ready ReadyStore, options Options) (*gin.Engine,
 	router.POST("/api/ingest/v1/events:batch", handler.ingest)
 	router.POST("/api/ingest/v1/radius/accounting", handler.radiusAccounting)
 	router.GET("/api/ingest/v1/query/summary", handler.summary)
+	router.GET("/api/ingest/v1/query/vpn/probe", handler.vpnProbe)
+	router.POST("/api/ingest/v1/query/vpn/metrics", handler.vpnMetrics)
 	return router, nil
 }
 

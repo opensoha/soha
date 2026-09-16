@@ -129,7 +129,7 @@ func applyExecutionJobRuntimeConfig(service *appexecution.Service, snapshot appr
 		ClusterID:  snapshot.String(appruntimeconfig.KeyExecutionJobClusterID, ""),
 		Namespace:  snapshot.String(appruntimeconfig.KeyExecutionJobNamespace, "soha-system"),
 		Image:      snapshot.String(appruntimeconfig.KeyExecutionJobImage, "alpine:3.20"),
-		GitImage:   snapshot.String(appruntimeconfig.KeyExecutionJobGitImage, "alpine/git:2.47.0"),
+		GitImage:   snapshot.String(appruntimeconfig.KeyExecutionJobGitImage, "alpine/git:2.47.2"),
 		TTLSeconds: snapshot.Int(appruntimeconfig.KeyExecutionJobTTLSeconds, 3600),
 	})
 }

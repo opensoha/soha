@@ -49,8 +49,6 @@ func (h *Helm) ListHelmReleases(ctx context.Context, principal domainidentity.Pr
 }
 func populateAllowedActionsHelmReleases(items []domainresource.HelmReleaseView, decision domainaccess.Decision) {
 	for i := range items {
-		if len(items[i].AllowedActions) == 0 {
-			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
-		}
+		items[i].AllowedActions = helmReleaseAllowedActions(items[i].AllowedActions, decision)
 	}
 }

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
@@ -21,6 +23,7 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/keyring"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"go.uber.org/zap"
@@ -35,7 +38,7 @@ const (
 )
 
 type Repository interface {
-	List(context.Context, string, int) ([]domainworkflow.Run, error)
+	List(context.Context, string, string, int) ([]domainworkflow.Run, error)
 	Get(context.Context, string) (domainworkflow.Run, error)
 	Create(context.Context, domainworkflow.Run) (domainworkflow.Run, error)
 	Update(context.Context, domainworkflow.Run) (domainworkflow.Run, error)
@@ -101,24 +104,30 @@ type ExecutionTaskStore interface {
 }
 
 type Service struct {
-	repo        Repository
-	apps        ApplicationReader
-	authorizer  domainaccess.Authorizer
-	permissions *appaccess.PermissionResolver
-	catalog     CatalogReader
-	builds      BuildExecutor
-	releases    ReleaseExecutor
-	resources   ResourceExecutor
-	alerts      AlertMutator
-	artifacts   ArtifactStore
-	taskStore   ExecutionTaskStore
-	httpClient  *http.Client
-	logger      *zap.Logger
-	metrics     *runtimeobs.Registry
+	gatewayMu                 sync.RWMutex
+	gatewayKeys               keyring.Ring
+	authorizeGatewayExecution func(context.Context, domainidentity.Principal, domainaigateway.ExecutionAuthorization) error
+	repo                      Repository
+	apps                      ApplicationReader
+	authorizer                domainaccess.Authorizer
+	permissions               *appaccess.PermissionResolver
+	catalog                   CatalogReader
+	builds                    BuildExecutor
+	releases                  ReleaseExecutor
+	resources                 ResourceExecutor
+	alerts                    AlertMutator
+	artifacts                 ArtifactStore
+	taskStore                 ExecutionTaskStore
+	httpClient                *http.Client
+	logger                    *zap.Logger
+	metrics                   *runtimeobs.Registry
 
-	scheduler        dagScheduler
-	executorSettings dagExecutorSettings
-	runState         runStateStore
+	scheduler          dagScheduler
+	executorSettings   dagExecutorSettings
+	runState           runStateStore
+	capabilityRuntime  CapabilityRuntime
+	deliveryRuntime    DeliveryRuntime
+	deliveryPrincipals DeliveryPrincipalReader
 }
 
 type workflowPruner interface {
@@ -213,11 +222,11 @@ func (s *Service) enqueueDAGRun(ctx context.Context, task dagRunTask) error {
 	return err
 }
 
-func (s *Service) List(ctx context.Context, principal domainidentity.Principal, applicationID string, limit int) ([]domainworkflow.Run, error) {
+func (s *Service) List(ctx context.Context, principal domainidentity.Principal, applicationID, applicationEnvironmentID string, limit int) ([]domainworkflow.Run, error) {
 	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsView); err != nil {
 		return nil, err
 	}
-	items, err := s.repo.List(ctx, strings.TrimSpace(applicationID), limit)
+	items, err := s.repo.List(ctx, strings.TrimSpace(applicationID), strings.TrimSpace(applicationEnvironmentID), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -257,6 +266,9 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, w
 	item, err := s.repo.Get(ctx, strings.TrimSpace(workflowRunID))
 	if err != nil {
 		return domainworkflow.Run{}, err
+	}
+	if item.Scope != "" && item.Scope != "application" {
+		return domainworkflow.Run{}, fmt.Errorf("%w: use the scoped delivery batch endpoint", apperrors.ErrNotFound)
 	}
 	app, err := s.apps.Get(ctx, item.ApplicationID)
 	if err != nil {
@@ -538,6 +550,11 @@ func (s *Service) RecordExecutionTaskResult(ctx context.Context, task domaindeli
 	run, err := s.repo.Get(ctx, runID)
 	if err != nil {
 		return err
+	}
+	switch run.Scope {
+	case domainworkflow.ScopeDeliveryBatch, domainworkflow.ScopeCapabilityTask:
+		// Managed nodes reconcile their task under the current Run lease.
+		return nil
 	}
 	definition, ok := definitionFromRunMetadata(run)
 	if !ok {

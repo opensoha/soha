@@ -99,6 +99,12 @@ func registerAIGatewayManagementRoutes(protected gin.IRoutes, deps Dependencies)
 	}
 
 	protected.GET("/ai-gateway/capabilities", deps.AIGateway.Capabilities)
+	protected.POST("/ai-gateway/plans/validate", deps.AIGateway.ValidateCapabilityPlan)
+	protected.POST("/ai-gateway/tasks", deps.AIGateway.CreateCapabilityTask)
+	protected.GET("/ai-gateway/tasks", deps.AIGateway.ListCapabilityTasks)
+	protected.GET("/ai-gateway/tasks/:taskId", deps.AIGateway.GetCapabilityTask)
+	protected.POST("/ai-gateway/tasks/:taskId/cancel", deps.AIGateway.CancelCapabilityTask)
+	protected.POST("/ai-gateway/tasks/:taskId/resume", deps.AIGateway.ResumeCapabilityTask)
 	protected.POST("/ai-gateway/tools/:toolName/invoke", deps.AIGateway.InvokeTool)
 	protected.POST("/ai-gateway/resources/read", deps.AIGateway.ReadResource)
 	protected.POST("/ai-gateway/prompts/get", deps.AIGateway.GetPrompt)

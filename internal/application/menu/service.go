@@ -140,7 +140,7 @@ func (s *Service) moduleAvailable(item domainmenu.Record) bool {
 }
 
 func isDeliveryMenuPath(menuPath string) bool {
-	for _, prefix := range []string{"/applications", "/application-environments", "/build-templates", "/delivery", "/workflow-templates", "/release-board", "/workflows", "/releases", "/registries"} {
+	for _, prefix := range []string{"/applications", "/application-environments", "/build-templates", "/deployment-templates", "/delivery", "/workflow-templates", "/release-board", "/workflows", "/releases", "/registries"} {
 		if strings.HasPrefix(menuPath, prefix) {
 			return true
 		}

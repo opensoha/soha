@@ -66,6 +66,10 @@ type Asset struct {
 }
 
 type AdapterCreateVMInput struct {
+	// OperationID is assigned by the durable task worker, never by API callers.
+	OperationID      string
+	WorkerSystemUUID string
+	CapacityReserved bool
 	Name             string
 	Architecture     string
 	Namespace        string
@@ -83,6 +87,18 @@ type AdapterCreateVMInput struct {
 	ProviderParams   map[string]any
 	Disks            []AdapterDiskChange
 	Networks         []AdapterNetworkChange
+}
+
+// VMCreatePreparer freezes provider defaults and identity using read-only calls.
+// The worker persists the result before calling CreateVM.
+type VMCreatePreparer interface {
+	PrepareVMCreate(context.Context, AdapterConnection, AdapterCreateVMInput) (AdapterCreateVMInput, error)
+}
+
+// VMCreationObserver only reads the original, owned VM. An absent or locked VM
+// is inconclusive: a previously dispatched provider request may still finish.
+type VMCreationObserver interface {
+	ObserveVMCreation(context.Context, AdapterConnection, AdapterCreateVMInput) (AdapterVM, bool, error)
 }
 
 type AdapterVM struct {

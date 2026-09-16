@@ -106,6 +106,7 @@ type ConfigurationDesired struct {
 	RuntimeIntervals     *RuntimeIntervals       `json:"runtimeIntervals,omitempty"`
 	WireGuard            *WireGuardConfiguration `json:"wireguard,omitempty"`
 	Mihomo               *MihomoConfiguration    `json:"mihomo,omitempty"`
+	VPNProbe             *VPNProbeConfiguration  `json:"vpnProbe,omitempty"`
 }
 
 type RuntimeIntervals struct {
@@ -152,6 +153,8 @@ type MihomoSubscription struct {
 }
 
 type WireGuardPeer struct {
+	SessionID                  string   `json:"sessionId,omitempty"`
+	VPNProfileID               string   `json:"vpnProfileId,omitempty"`
 	RuntimeID                  string   `json:"runtimeId"`
 	DeviceID                   string   `json:"deviceId,omitempty"`
 	PublicKey                  string   `json:"publicKey"`
@@ -415,6 +418,12 @@ func validateIngestEvent(producerKind string, event IngestEvent, index int, now 
 		return validateFlowAggregate(event, index)
 	case EventProxyFlowAggregate:
 		return validateProxyFlowAggregate(event, index)
+	case EventVPNProbeBatch:
+		return validateVPNProbeBatch(event)
+	case EventVPNTunnelStats:
+		return validateVPNTunnelStats(event)
+	case EventVPNGatewayHealth:
+		return validateVPNGatewayHealth(event)
 	default:
 		return nil
 	}
@@ -470,9 +479,9 @@ func EventHash(raw json.RawMessage) (string, error) {
 func eventAllowed(producerKind, eventType string) bool {
 	switch producerKind {
 	case "endpoint":
-		return eventType == EventHeartbeat || eventType == EventConnectionSummary || eventType == EventProxyFlowAggregate
+		return eventType == EventHeartbeat || eventType == EventConnectionSummary || eventType == EventProxyFlowAggregate || eventType == EventVPNProbeBatch
 	case "gateway":
-		return eventType == EventHeartbeat || eventType == EventFlowAggregate || eventType == EventConnectionSummary
+		return eventType == EventHeartbeat || eventType == EventFlowAggregate || eventType == EventConnectionSummary || eventType == EventVPNTunnelStats || eventType == EventVPNGatewayHealth
 	case "freeradius":
 		return eventType == EventRadiusAccounting
 	case "network-control":

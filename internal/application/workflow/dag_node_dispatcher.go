@@ -14,6 +14,7 @@ type dagNodeDispatcher struct {
 	planner   dagPlanner
 	registry  *dagNodeHandlerRegistry
 	artifacts ArtifactStore
+	delivery  *Service
 }
 
 func newDAGNodeDispatcher(service *Service) *dagNodeDispatcher {
@@ -31,6 +32,7 @@ func newDAGNodeDispatcher(service *Service) *dagNodeDispatcher {
 			httpClient: service.httpClient,
 		}),
 		artifacts: service.artifacts,
+		delivery:  service,
 	}
 }
 
@@ -46,6 +48,9 @@ func (d *dagNodeDispatcher) execute(
 ) dagExecutionResult {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if run.Scope == domainworkflow.ScopeDeliveryBatch {
+		return d.delivery.executeDeliveryNode(ctx, node, run)
 	}
 	resolvedInputs := d.planner.resolveInputs(node, app, input, binding, artifactState)
 	resolvedSelectors, selectorErr := d.planner.resolveSelectors(ctx, app, input, binding, node)

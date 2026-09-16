@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"strings"
 	"time"
 
@@ -16,7 +17,7 @@ func (r *Repository) ListRepositories(ctx context.Context, filter domainapp.Sour
 	if limit <= 0 {
 		limit = 100
 	}
-	query := `SELECT id, name, provider, url, protocol, gitlab_project_id, path, credential_ref, default_branch, created_at, updated_at FROM repositories`
+	query := `SELECT id, name, provider, url, protocol, gitlab_project_id, path, credential_ref, default_branch, source_connection_id, provider_repository_id, created_at, updated_at FROM repositories`
 	args := []any{}
 	where := []string{}
 	if filter.ApplicationID != "" {
@@ -33,7 +34,7 @@ func (r *Repository) ListRepositories(ctx context.Context, filter domainapp.Sour
 	}
 	query += " ORDER BY name ASC, id ASC LIMIT ?"
 	args = append(args, limit)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query repositories: %w", err)
 	}
@@ -41,11 +42,12 @@ func (r *Repository) ListRepositories(ctx context.Context, filter domainapp.Sour
 	items := make([]domainapp.SourceRepository, 0, limit)
 	for rows.Next() {
 		var item domainapp.SourceRepository
-		var projectID, path, credential, branch *string
-		if err := rows.Scan(&item.ID, &item.Name, &item.Provider, &item.URL, &item.Protocol, &projectID, &path, &credential, &branch, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		var projectID, path, credential, branch, connectionID, providerID *string
+		if err := rows.Scan(&item.ID, &item.Name, &item.Provider, &item.URL, &item.Protocol, &projectID, &path, &credential, &branch, &connectionID, &providerID, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan repository: %w", err)
 		}
 		item.GitLabProjectID, item.Path, item.CredentialRef, item.DefaultBranch = value(projectID), value(path), value(credential), value(branch)
+		item.SourceConnectionID, item.ProviderRepositoryID = value(connectionID), value(providerID)
 		item.ApplicationIDs, _ = r.listRepositoryApplicationIDs(ctx, item.ID)
 		items = append(items, item)
 	}
@@ -54,12 +56,13 @@ func (r *Repository) ListRepositories(ctx context.Context, filter domainapp.Sour
 
 func (r *Repository) GetRepository(ctx context.Context, id string) (domainapp.SourceRepository, error) {
 	var item domainapp.SourceRepository
-	var projectID, path, credential, branch *string
-	err := r.db.WithContext(ctx).Raw(`SELECT id,name,provider,url,protocol,gitlab_project_id,path,credential_ref,default_branch,created_at,updated_at FROM repositories WHERE id=? LIMIT 1`, strings.TrimSpace(id)).Row().Scan(&item.ID, &item.Name, &item.Provider, &item.URL, &item.Protocol, &projectID, &path, &credential, &branch, &item.CreatedAt, &item.UpdatedAt)
+	var projectID, path, credential, branch, connectionID, providerID *string
+	err := dbtx.DB(ctx, r.db).Raw(`SELECT id,name,provider,url,protocol,gitlab_project_id,path,credential_ref,default_branch,source_connection_id,provider_repository_id,created_at,updated_at FROM repositories WHERE id=? LIMIT 1`, strings.TrimSpace(id)).Row().Scan(&item.ID, &item.Name, &item.Provider, &item.URL, &item.Protocol, &projectID, &path, &credential, &branch, &connectionID, &providerID, &item.CreatedAt, &item.UpdatedAt)
 	if err != nil {
 		return domainapp.SourceRepository{}, ErrNotFound
 	}
 	item.GitLabProjectID, item.Path, item.CredentialRef, item.DefaultBranch = value(projectID), value(path), value(credential), value(branch)
+	item.SourceConnectionID, item.ProviderRepositoryID = value(connectionID), value(providerID)
 	item.ApplicationIDs, _ = r.listRepositoryApplicationIDs(ctx, item.ID)
 	return item, nil
 }
@@ -70,8 +73,8 @@ func (r *Repository) CreateRepository(ctx context.Context, input domainapp.Sourc
 	if item.ID == "" {
 		item.ID = uuid.NewString()
 	}
-	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`INSERT INTO repositories (id,name,provider,url,protocol,gitlab_project_id,path,credential_ref,default_branch,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, item.ID, item.Name, item.Provider, item.URL, item.Protocol, nullableString(item.GitLabProjectID), nullableString(item.Path), nullableString(item.CredentialRef), nullableString(item.DefaultBranch), item.CreatedAt, item.UpdatedAt).Error; err != nil {
+	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`INSERT INTO repositories (id,name,provider,url,protocol,gitlab_project_id,path,credential_ref,default_branch,source_connection_id,provider_repository_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`, item.ID, item.Name, item.Provider, item.URL, item.Protocol, nullableString(item.GitLabProjectID), nullableString(item.Path), nullableString(item.CredentialRef), nullableString(item.DefaultBranch), nullableString(item.SourceConnectionID), nullableString(item.ProviderRepositoryID), item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return err
 		}
 		return replaceRepositoryApplicationsTx(tx, item.ID, input.ApplicationIDs)
@@ -85,8 +88,8 @@ func (r *Repository) UpdateRepository(ctx context.Context, id string, input doma
 	now := time.Now().UTC()
 	item := sourceRepositoryFromInput(input, now)
 	item.ID = strings.TrimSpace(id)
-	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Exec(`UPDATE repositories SET name=?,provider=?,url=?,protocol=?,gitlab_project_id=?,path=?,credential_ref=?,default_branch=?,updated_at=? WHERE id=?`, item.Name, item.Provider, item.URL, item.Protocol, nullableString(item.GitLabProjectID), nullableString(item.Path), nullableString(item.CredentialRef), nullableString(item.DefaultBranch), item.UpdatedAt, item.ID)
+	if err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		result := tx.Exec(`UPDATE repositories SET name=?,provider=?,url=?,protocol=?,gitlab_project_id=?,path=?,credential_ref=?,default_branch=?,source_connection_id=?,provider_repository_id=?,updated_at=? WHERE id=?`, item.Name, item.Provider, item.URL, item.Protocol, nullableString(item.GitLabProjectID), nullableString(item.Path), nullableString(item.CredentialRef), nullableString(item.DefaultBranch), nullableString(item.SourceConnectionID), nullableString(item.ProviderRepositoryID), item.UpdatedAt, item.ID)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -101,7 +104,7 @@ func (r *Repository) UpdateRepository(ctx context.Context, id string, input doma
 }
 
 func (r *Repository) DeleteRepository(ctx context.Context, id string) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM repositories WHERE id=?`, strings.TrimSpace(id))
+	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM repositories WHERE id=?`, strings.TrimSpace(id))
 	if result.Error != nil {
 		return fmt.Errorf("delete repository: %w", result.Error)
 	}
@@ -112,7 +115,7 @@ func (r *Repository) DeleteRepository(ctx context.Context, id string) error {
 }
 
 func sourceRepositoryFromInput(input domainapp.SourceRepositoryInput, now time.Time) domainapp.SourceRepository {
-	return domainapp.SourceRepository{Name: strings.TrimSpace(input.Name), Provider: strings.ToLower(strings.TrimSpace(input.Provider)), URL: strings.TrimSpace(input.URL), Protocol: strings.ToLower(strings.TrimSpace(input.Protocol)), GitLabProjectID: strings.TrimSpace(input.GitLabProjectID), Path: strings.TrimSpace(input.Path), CredentialRef: strings.TrimSpace(input.CredentialRef), DefaultBranch: strings.TrimSpace(input.DefaultBranch), ApplicationIDs: input.ApplicationIDs, CreatedAt: now, UpdatedAt: now}
+	return domainapp.SourceRepository{SourceConnectionID: strings.TrimSpace(input.SourceConnectionID), ProviderRepositoryID: strings.TrimSpace(input.ProviderRepositoryID), Name: strings.TrimSpace(input.Name), Provider: strings.ToLower(strings.TrimSpace(input.Provider)), URL: strings.TrimSpace(input.URL), Protocol: strings.ToLower(strings.TrimSpace(input.Protocol)), GitLabProjectID: strings.TrimSpace(input.GitLabProjectID), Path: strings.TrimSpace(input.Path), CredentialRef: strings.TrimSpace(input.CredentialRef), DefaultBranch: strings.TrimSpace(input.DefaultBranch), ApplicationIDs: input.ApplicationIDs, CreatedAt: now, UpdatedAt: now}
 }
 func value(v *string) string {
 	if v == nil {
@@ -122,7 +125,7 @@ func value(v *string) string {
 }
 
 func (r *Repository) listRepositoryApplicationIDs(ctx context.Context, repositoryID string) ([]string, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`SELECT application_id FROM application_repositories WHERE repository_id = ? ORDER BY application_id`, repositoryID).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(`SELECT application_id FROM application_repositories WHERE repository_id = ? ORDER BY application_id`, repositoryID).Rows()
 	if err != nil {
 		return nil, err
 	}

@@ -81,6 +81,15 @@ func newTestServiceWithRelay(permissions *appaccess.PermissionResolver, audit Au
 		LLMRelay:    relayRepo,
 	}
 	if repo != nil {
+		// Existing fixtures model unchanged actor membership unless a test overrides it.
+		deps.Identity = approvalPrincipalFunc(func(_ context.Context, id string) (domainidentity.Principal, error) {
+			for _, request := range repo.approvalRequests {
+				if request.ActorID == id {
+					return approvalRequestPrincipal(request), nil
+				}
+			}
+			return domainidentity.Principal{}, apperrors.ErrUnauthorized
+		})
 		deps.PersonalTokens = repo
 		deps.ServiceAccounts = repo
 		deps.Clients = repo

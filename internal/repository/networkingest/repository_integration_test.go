@@ -47,6 +47,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	checkGatewayIngest(t, ctx, store, repository, producerID, now)
 	checkRADIUSIngest(t, ctx, store, repository, now)
 	checkProxyIngest(t, ctx, repository, now)
+	checkVPNIngest(t, ctx, store, repository, now)
 }
 
 func checkGatewayIngest(t *testing.T, ctx context.Context, store *dbstore.Store, repository *networkingestrepo.Repository, producerID string, now time.Time) {

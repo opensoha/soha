@@ -1,6 +1,10 @@
 package execution
 
-import "context"
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+)
 
 type ClusterCatalog interface {
 	ClusterIDs() []string
@@ -17,8 +21,14 @@ type ClusterRuntime interface {
 	JobRuntime
 }
 
+type DeliveryJobStopRuntime interface {
+	StopDeliveryJob(context.Context, string, ExecutionJobRequest) (ExecutionJobInspection, error)
+}
+
 type ExecutionJobRequest struct {
 	TaskID          string
+	Name            string
+	Retain          bool
 	TaskKind        string
 	Namespace       string
 	Commands        []string
@@ -27,12 +37,14 @@ type ExecutionJobRequest struct {
 	DefaultImage    string
 	DefaultGitImage string
 	TTLSeconds      int
+	TimeoutSeconds  int `json:",omitempty"`
 }
 
 type ExecutionJobRef struct {
 	ClusterID string
 	Namespace string
 	Name      string
+	TaskID    string
 }
 
 type ExecutionJobState string
@@ -41,6 +53,7 @@ const (
 	ExecutionJobRunning   ExecutionJobState = "running"
 	ExecutionJobSucceeded ExecutionJobState = "succeeded"
 	ExecutionJobFailed    ExecutionJobState = "failed"
+	ExecutionJobCanceled  ExecutionJobState = "canceled"
 )
 
 type ExecutionJobLog struct {
@@ -50,6 +63,14 @@ type ExecutionJobLog struct {
 }
 
 type ExecutionJobInspection struct {
-	State ExecutionJobState
-	Logs  []ExecutionJobLog
+	State         ExecutionJobState
+	Logs          []ExecutionJobLog
+	ImageDigest   string
+	FailureReason string
+}
+
+func DeliveryJobName(taskID string) string {
+	// Delivery attempts use distinct Task IDs and never retry a historical task.
+	digest := sha256.Sum256([]byte(taskID))
+	return fmt.Sprintf("soha-exec-%x", digest[:20])
 }

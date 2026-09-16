@@ -69,8 +69,20 @@ const (
 	PermDeliveryApplicationEnvManage       = "delivery.application-environments.manage"
 	PermDeliveryWorkflowTemplatesView      = "delivery.workflow-templates.view"
 	PermDeliveryWorkflowTemplatesManage    = "delivery.workflow-templates.manage"
+	PermDeliveryDeploymentTemplatesView    = "delivery.deployment-templates.view"
+	PermDeliveryDeploymentTemplatesCreate  = "delivery.deployment-templates.create"
+	PermDeliveryDeploymentTemplatesUpdate  = "delivery.deployment-templates.update"
+	PermDeliveryDeploymentTemplatesDelete  = "delivery.deployment-templates.delete"
 	PermDeliveryBuildTemplatesView         = "delivery.build-templates.view"
 	PermDeliveryBuildTemplatesManage       = "delivery.build-templates.manage"
+	PermDeliveryTriggersView               = "delivery.triggers.view"
+	PermDeliveryTriggersCreate             = "delivery.triggers.create"
+	PermDeliveryTriggersUpdate             = "delivery.triggers.update"
+	PermDeliveryTemplateSourcesView        = "delivery.template-sources.view"
+	PermDeliveryTemplateSourcesCreate      = "delivery.template-sources.create"
+	PermDeliveryTemplateSourcesUpdate      = "delivery.template-sources.update"
+	PermDeliveryTemplateSourcesDelete      = "delivery.template-sources.delete"
+	PermDeliveryTemplateSourcesSync        = "delivery.template-sources.sync"
 	PermDeliveryBuildsTrigger              = "delivery.builds.trigger"
 	PermDeliveryReleaseBundlesView         = "delivery.release-bundles.view"
 	PermDeliveryExecutionTasksView         = "delivery.execution-tasks.view"
@@ -346,8 +358,20 @@ var allPermissionKeySet = []string{
 	PermDeliveryApplicationEnvManage,
 	PermDeliveryWorkflowTemplatesView,
 	PermDeliveryWorkflowTemplatesManage,
+	PermDeliveryDeploymentTemplatesView,
 	PermDeliveryBuildTemplatesView,
+	PermDeliveryDeploymentTemplatesCreate,
+	PermDeliveryDeploymentTemplatesUpdate,
+	PermDeliveryDeploymentTemplatesDelete,
 	PermDeliveryBuildTemplatesManage,
+	PermDeliveryTriggersView,
+	PermDeliveryTemplateSourcesView,
+	PermDeliveryTriggersCreate,
+	PermDeliveryTriggersUpdate,
+	PermDeliveryTemplateSourcesCreate,
+	PermDeliveryTemplateSourcesUpdate,
+	PermDeliveryTemplateSourcesDelete,
+	PermDeliveryTemplateSourcesSync,
 	PermDeliveryBuildsTrigger,
 	PermDeliveryReleaseBundlesView,
 	PermDeliveryExecutionTasksView,
@@ -610,6 +634,14 @@ func pluralPermissionResource(kind string) string {
 }
 
 var opsRolePermissionKeys = []string{
+	PermDeliveryTriggersView,
+	PermDeliveryTemplateSourcesView,
+	PermDeliveryTriggersCreate,
+	PermDeliveryTriggersUpdate,
+	PermDeliveryTemplateSourcesCreate,
+	PermDeliveryTemplateSourcesUpdate,
+	PermDeliveryTemplateSourcesDelete,
+	PermDeliveryTemplateSourcesSync,
 	PermWorkbenchAIView,
 	PermWorkbenchComputeView,
 	PermWorkbenchDeliveryView,
@@ -651,7 +683,11 @@ var opsRolePermissionKeys = []string{
 	PermDeliveryApplicationEnvManage,
 	PermDeliveryWorkflowTemplatesView,
 	PermDeliveryWorkflowTemplatesManage,
+	PermDeliveryDeploymentTemplatesView,
 	PermDeliveryBuildTemplatesView,
+	PermDeliveryDeploymentTemplatesCreate,
+	PermDeliveryDeploymentTemplatesUpdate,
+	PermDeliveryDeploymentTemplatesDelete,
 	PermDeliveryBuildTemplatesManage,
 	PermDeliveryBuildsTrigger,
 	PermDeliveryReleaseBundlesView,
@@ -771,6 +807,8 @@ var opsRolePermissionKeys = []string{
 	PermSettingsRuntimeConfigView,
 }
 var developerRolePermissionKeys = []string{
+	PermDeliveryTriggersView,
+	PermDeliveryTemplateSourcesView,
 	PermWorkbenchAIView,
 	PermWorkbenchComputeView,
 	PermWorkbenchDeliveryView,
@@ -823,6 +861,7 @@ var developerRolePermissionKeys = []string{
 	PermDeliveryApplicationServicesView,
 	PermDeliveryApplicationEnvView,
 	PermDeliveryWorkflowTemplatesView,
+	PermDeliveryDeploymentTemplatesView,
 	PermDeliveryBuildTemplatesView,
 	PermDeliveryBuildsTrigger,
 	PermDeliveryReleaseBundlesView,

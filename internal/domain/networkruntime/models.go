@@ -187,6 +187,7 @@ type NASAuthorization struct {
 }
 
 type VPNConnection struct {
+	Managed              *ManagedVPNConnection
 	RequestID            string
 	RequestHash          string
 	RuntimeID            string

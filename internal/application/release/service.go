@@ -349,6 +349,9 @@ func (s *Service) prepareReleaseTrigger(ctx context.Context, principal domainide
 	if err := s.authorize(ctx, principal, connection.Summary.ID, input.Namespace, resourceKind, input.DeploymentName, app.BusinessLineID, app.Group, input.ApplicationID, domainaccess.ActionTrigger); err != nil {
 		return preparedReleaseTrigger{}, err
 	}
+	if resolveReleaseTargetKind(target) == "kustomize_overlay" || target.ExecutorKind == "manifest_ssa" {
+		return preparedReleaseTrigger{}, fmt.Errorf("%w: Kustomize 发布需要关联资源包并通过应用交付计划预检和确认；旧命令目标请先迁移", apperrors.ErrInvalidArgument)
+	}
 	return preparedReleaseTrigger{app: app, target: target, connection: connection}, nil
 }
 
@@ -610,7 +613,7 @@ func buildReleaseExecutionRuntime(target domaincatalog.ReleaseTarget) map[string
 		if strings.TrimSpace(fmt.Sprint(runtime["image"])) == "" {
 			runtime["image"] = "alpine/helm:3.16.1"
 		}
-	case "kustomize_overlay", "k8s_workload":
+	case "k8s_workload":
 		if strings.TrimSpace(fmt.Sprint(runtime["image"])) == "" {
 			runtime["image"] = "bitnami/kubectl:1.31"
 		}
@@ -731,18 +734,6 @@ func buildReleaseExecutionCommands(target domaincatalog.ReleaseTarget, image str
 			command += " --set image.repository=" + image
 		}
 		return []string{command}
-	case "kustomize_overlay":
-		base := firstNonEmpty(strings.TrimSpace(fmt.Sprint(target.Metadata["basePath"])), ".")
-		overlay := firstNonEmpty(strings.TrimSpace(fmt.Sprint(target.Metadata["overlayPath"])), strings.TrimSpace(target.ConfigRef), base)
-		output := "/tmp/" + strings.ReplaceAll(target.WorkloadName, "/", "-") + ".yaml"
-		build := fmt.Sprintf("kustomize build %s", overlay)
-		if namespace := strings.TrimSpace(target.Namespace); namespace != "" {
-			build += " --load-restrictor LoadRestrictionsNone"
-		}
-		return []string{
-			fmt.Sprintf("%s > %s", build, output),
-			fmt.Sprintf("kubectl apply -f %s", output),
-		}
 	default:
 		return nil
 	}

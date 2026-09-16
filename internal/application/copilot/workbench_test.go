@@ -800,6 +800,9 @@ func TestSendMessageGeneralModeIgnoresLegacyProviderConfig(t *testing.T) {
 		t.Fatalf("expected user and assistant messages to be persisted, got %#v", repo.createdMessages)
 	}
 	assistant := repo.createdMessages[1]
+	if assistant.Role != "system" {
+		t.Fatalf("model failure must be a system message, got %q", assistant.Role)
+	}
 	if assistant.Metadata["source"] != "model-unconfigured" {
 		t.Fatalf("legacy settings provider must not be used, got metadata %#v", assistant.Metadata)
 	}
@@ -834,8 +837,11 @@ func TestSendMessageGeneralModeReportsMissingModelProvider(t *testing.T) {
 		t.Fatalf("expected user and assistant messages, got %#v", envelope.Messages)
 	}
 	assistant := envelope.Messages[1]
-	if !strings.Contains(assistant.Content, "没有可用的 AI Workbench 默认模型") {
+	if assistant.Content != "模型暂不可用，请检查模型配置或稍后重试。" {
 		t.Fatalf("expected explicit missing workbench model message, got %q", assistant.Content)
+	}
+	if assistant.Role != "system" {
+		t.Fatalf("model failure must be a system message, got %q", assistant.Role)
 	}
 	if assistant.Metadata["source"] != "model-unconfigured" {
 		t.Fatalf("expected model-unconfigured metadata, got %#v", assistant.Metadata)
@@ -3515,8 +3521,8 @@ type agentRuntimeCallbackTestRepository struct {
 	callback                 domaincopilot.AgentRunCallbackInput
 }
 
-func (r *agentRuntimeCallbackTestRepository) GetAgentRun(_ context.Context, _, runID string) (domaincopilot.AgentRun, error) {
-	if r.agentRun.ID == runID {
+func (r *agentRuntimeCallbackTestRepository) GetAgentRun(_ context.Context, createdBy, runID string) (domaincopilot.AgentRun, error) {
+	if r.agentRun.ID == runID && (createdBy == "" || r.agentRun.CreatedBy == createdBy) {
 		return r.agentRun, nil
 	}
 	return domaincopilot.AgentRun{}, apperrors.ErrNotFound
@@ -3533,6 +3539,10 @@ func (r *agentRuntimeCallbackTestRepository) GetRootCauseRun(_ context.Context, 
 func (r *agentRuntimeCallbackTestRepository) UpdateRootCauseRun(_ context.Context, run domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error) {
 	r.rootCauseRun = run
 	return run, nil
+}
+
+func (r *agentRuntimeCallbackTestRepository) BeginAgentToolCall(ctx context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	return r.UpdateAgentRunCallback(ctx, input)
 }
 
 func (r *agentRuntimeCallbackTestRepository) UpdateAgentRunCallback(_ context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
@@ -3554,7 +3564,9 @@ func (r *agentRuntimeCallbackTestRepository) UpdateAgentRunCallback(_ context.Co
 		r.agentRun.Output["workbenchEvents"] = mergeAgentRuntimeTestWorkbenchEvents(r.agentRun.Output["workbenchEvents"], events)
 	}
 	r.agentRun.ToolExecutions = mergeAgentRuntimeTestToolExecutions(r.agentRun.ToolExecutions, input.ToolExecutions)
-	r.agentRun.AnalysisArtifacts = input.AnalysisArtifacts
+	if len(input.AnalysisArtifacts) > 0 {
+		r.agentRun.AnalysisArtifacts = input.AnalysisArtifacts
+	}
 	r.agentRun.ClaimedByAgentID = input.AgentID
 	r.agentRun.ExternalRunID = input.ExternalRunID
 	r.agentRun.ErrorMessage = input.ErrorMessage
@@ -4082,13 +4094,13 @@ func (r *inspectionAuthzTestRepository) ListAgentRuns(_ context.Context, filter 
 	return items, nil
 }
 
-func (r *inspectionAuthzTestRepository) GetAgentRun(_ context.Context, _ string, runID string) (domaincopilot.AgentRun, error) {
+func (r *inspectionAuthzTestRepository) GetAgentRun(_ context.Context, createdBy string, runID string) (domaincopilot.AgentRun, error) {
 	for _, run := range r.agentRuns {
-		if run.ID == runID {
+		if run.ID == runID && (createdBy == "" || run.CreatedBy == createdBy) {
 			return run, nil
 		}
 	}
-	return domaincopilot.AgentRun{}, nil
+	return domaincopilot.AgentRun{}, apperrors.ErrNotFound
 }
 
 func (r *inspectionAuthzTestRepository) CreateAgentRun(_ context.Context, run domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
@@ -4113,6 +4125,10 @@ func (r *inspectionAuthzTestRepository) ClaimAgentRun(_ context.Context, input d
 	return domaincopilot.AgentRun{}, apperrors.ErrNotFound
 }
 
+func (r *inspectionAuthzTestRepository) BeginAgentToolCall(ctx context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	return r.UpdateAgentRunCallback(ctx, input)
+}
+
 func (r *inspectionAuthzTestRepository) UpdateAgentRunCallback(_ context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
 	input = domaincopilot.SanitizeAgentRunCallbackInput(input)
 	now := time.Now().UTC()
@@ -4130,8 +4146,10 @@ func (r *inspectionAuthzTestRepository) UpdateAgentRunCallback(_ context.Context
 		}
 		r.agentRuns[index].Status = status
 		r.agentRuns[index].Output = mergeAgentRunCallbackPayload(r.agentRuns[index].Output, input.Payload)
-		r.agentRuns[index].ToolExecutions = input.ToolExecutions
-		r.agentRuns[index].AnalysisArtifacts = input.AnalysisArtifacts
+		r.agentRuns[index].ToolExecutions = mergeAgentRuntimeTestToolExecutions(r.agentRuns[index].ToolExecutions, input.ToolExecutions)
+		if len(input.AnalysisArtifacts) > 0 {
+			r.agentRuns[index].AnalysisArtifacts = input.AnalysisArtifacts
+		}
 		r.agentRuns[index].ClaimedByAgentID = input.AgentID
 		r.agentRuns[index].ExternalRunID = input.ExternalRunID
 		r.agentRuns[index].ErrorMessage = input.ErrorMessage

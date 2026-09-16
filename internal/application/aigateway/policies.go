@@ -76,11 +76,15 @@ func (s *Service) authorizeToolGrant(ctx context.Context, principal domainidenti
 	if err != nil {
 		return false, err
 	}
-	allowed, requiresApproval, reason := toolAllowedByGrantsForInvocation(tool, grants, permissionKeys, invocationScope)
-	if allowed {
-		return requiresApproval, nil
+	requiresApproval := false
+	for _, scope := range capabilityInvocationScopes(ctx, tool.Name, invocationScope) {
+		allowed, approval, reason := toolAllowedByGrantsForInvocation(tool, grants, permissionKeys, scope)
+		if !allowed {
+			return false, fmt.Errorf("%w: AI Gateway tool grant rejected %s: %s", apperrors.ErrAccessDenied, tool.Name, reason)
+		}
+		requiresApproval = requiresApproval || approval
 	}
-	return false, fmt.Errorf("%w: AI Gateway tool grant rejected %s: %s", apperrors.ErrAccessDenied, tool.Name, reason)
+	return requiresApproval, nil
 }
 func (s *Service) filterToolsByGrants(ctx context.Context, principal domainidentity.Principal, aiClientID string, tools []domainaigateway.ToolCapability, permissionKeys []string) ([]domainaigateway.ToolCapability, int, error) {
 	grants, err := s.activeToolGrants(ctx, principal, aiClientID)
@@ -164,9 +168,9 @@ func (s *Service) authorizeAccessPolicy(ctx context.Context, principal domainide
 	if len(policies) == 0 {
 		return decision, toolInput, redactionSummary, nil
 	}
-	allowed, policyDecision, reason := toolAllowedByAccessPoliciesForInvocationWithSkills(*tool, policies, skillID, invocationScope, s.gatewaySkills())
-	if !allowed {
-		return decision, toolInput, redactionSummary, fmt.Errorf("%w: AI Gateway access policy rejected %s: %s", apperrors.ErrAccessDenied, tool.Name, reason)
+	policyDecision, err := s.evaluateCapabilityScopePolicies(ctx, *tool, policies, skillID, invocationScope)
+	if err != nil {
+		return decision, toolInput, redactionSummary, err
 	}
 	nextInput, redactionSummary, err := s.enforceAccessPolicyConditions(ctx, principal, aiClientID, skillID, *tool, invocationScope, policies, toolInput)
 	if err != nil {
@@ -189,6 +193,9 @@ func (s *Service) sanitizeToolOutputByAccessPolicy(ctx context.Context, principa
 	if len(policies) == 0 {
 		return output, summary, nil
 	}
+	if _, err := s.evaluateCapabilityScopePolicies(ctx, tool, policies, skillID, invocationScope); err != nil {
+		return nil, summary, err
+	}
 	out := output
 	for _, policy := range policies {
 		if grantEffect(policy.Effect) != "allow" || len(policy.Conditions) == 0 {
@@ -197,7 +204,7 @@ func (s *Service) sanitizeToolOutputByAccessPolicy(ctx context.Context, principa
 		if !accessPolicyToolSelectorsMatchWithSkills(policy, tool, skillID, s.gatewaySkills()) {
 			continue
 		}
-		if !gatewayResourceScopeMatches(policy.ResourceScopes, invocationScope) {
+		if !anyCapabilityScopeMatches(ctx, tool.Name, invocationScope, policy.ResourceScopes) {
 			continue
 		}
 		nextOutput, policySummary, err := enforceGatewayOutputRedactionPolicyCondition(policy, tool, out)
@@ -220,7 +227,7 @@ func (s *Service) enforceAccessPolicyConditions(ctx context.Context, principal d
 		if !accessPolicyToolSelectorsMatchWithSkills(policy, tool, skillID, s.gatewaySkills()) {
 			continue
 		}
-		if !gatewayResourceScopeMatches(policy.ResourceScopes, invocationScope) {
+		if !anyCapabilityScopeMatches(ctx, tool.Name, invocationScope, policy.ResourceScopes) {
 			continue
 		}
 		rateLimits = append(rateLimits, gatewayRateLimitRules(policy.Conditions, policy.ID)...)
@@ -242,6 +249,9 @@ func (s *Service) enforceAccessPolicyConditions(ctx context.Context, principal d
 		out = nextInput
 	}
 	for _, limit := range rateLimits {
+		if queued, _ := ctx.Value(queuedAuthorizationKey{}).(bool); queued {
+			continue
+		}
 		if err := s.enforceGatewayInvocationLimit(ctx, principal, aiClientID, tool.Name, limit); err != nil {
 			return out, redactionSummary, err
 		}
@@ -1661,7 +1671,7 @@ func gatewayResourceScopeMatches(resourceScopes map[string]any, invocationScope 
 		return true
 	}
 	hasConstraint := false
-	for _, item := range gatewayScopeAliases() {
+	for _, item := range gatewayPolicyScopeAliases(resourceScopes) {
 		allowedValues := gatewayResourceScopeValues(resourceScopes, item.aliases...)
 		if len(allowedValues) == 0 {
 			continue
@@ -1681,7 +1691,7 @@ func gatewayResourceScopesConstrained(resourceScopes map[string]any) bool {
 	if len(resourceScopes) == 0 {
 		return false
 	}
-	for _, item := range gatewayScopeAliases() {
+	for _, item := range gatewayPolicyScopeAliases(resourceScopes) {
 		for _, value := range gatewayResourceScopeValues(resourceScopes, item.aliases...) {
 			value = strings.TrimSpace(value)
 			if value != "" && value != "*" {
@@ -1770,5 +1780,30 @@ func gatewayScopeAliases() []gatewayScopeAlias {
 		{key: "subjectUserId", aliases: []string{"subjectUserId", "subjectUserID", "subjectId", "subjectID"}},
 		{key: "siteId", aliases: []string{"siteId", "siteID"}},
 		{key: "networkResourceId", aliases: []string{"networkResourceId", "networkResourceID", "resourceId", "resourceID"}},
+		{key: "hostId", aliases: []string{"hostId", "dockerHostId", "dockerHost"}},
+		{key: "projectId", aliases: []string{"projectId", "dockerProject"}},
+		{key: "serviceId", aliases: []string{"serviceId", "dockerService"}},
+		{key: "connectionId", aliases: []string{"connectionId", "virtualizationConnectionId", "virtualizationConnection"}},
+		{key: "vmId", aliases: []string{"vmId", "vmID", "virtualMachine"}},
+		{key: "operationId", aliases: []string{"operationId", "dockerOperation", "afterOperationId"}},
 	}
+}
+
+// Registered capability semantics may introduce scope dimensions without adding
+// a central domain switch. Unknown policy constraints still fail closed when the
+// capability has not supplied that scope; they are never silently ignored.
+func gatewayPolicyScopeAliases(scopes map[string]any) []gatewayScopeAlias {
+	aliases := gatewayScopeAliases()
+	known := map[string]bool{}
+	for _, item := range aliases {
+		for _, name := range item.aliases {
+			known[name] = true
+		}
+	}
+	for key := range scopes {
+		if !known[key] {
+			aliases = append(aliases, gatewayScopeAlias{key: key, aliases: []string{key}})
+		}
+	}
+	return aliases
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ type OAuthProviderConfig struct {
 	ClientSecret string
 	RedirectURI  string
 	Timeout      time.Duration
+	HTTPClient   *http.Client
 }
 
 type OAuthToken struct {
@@ -123,6 +125,13 @@ func (s *Service) CompleteOAuth(ctx context.Context, input OAuthCallbackInput) (
 	if strings.TrimSpace(input.Code) == "" {
 		return "", fmt.Errorf("%w: oauth authorization code is required", apperrors.ErrInvalidArgument)
 	}
+	config.HTTPClient, err = sourceConnectionHTTPClient(ctx, item)
+	if err != nil {
+		return "", err
+	}
+	if config.HTTPClient != nil {
+		defer config.HTTPClient.CloseIdleConnections()
+	}
 	token, err := provider.Exchange(ctx, config, strings.TrimSpace(input.Code))
 	if err != nil {
 		_ = s.repo.UpdateHealth(ctx, item.ID, domain.HealthUnhealthy, "oauth token exchange failed", s.now().UTC())
@@ -136,7 +145,7 @@ func (s *Service) CompleteOAuth(ctx context.Context, input OAuthCallbackInput) (
 	return oauthReturnURL(state.ReturnURI, item.ID, "success"), nil
 }
 
-func (s *Service) refreshOAuthCredentials(ctx context.Context, item domain.Integration, credentials map[string]string) (domain.Integration, map[string]string, error) {
+func (s *Service) refreshOAuthCredentials(ctx context.Context, item domain.Integration, credentials map[string]string, clients ...*http.Client) (domain.Integration, map[string]string, error) {
 	configValues := configurationMap(item.Configuration)
 	if normalizedGitLabAuthMode(configValues) != gitLabAuthModeOAuth {
 		return item, credentials, nil
@@ -153,6 +162,9 @@ func (s *Service) refreshOAuthCredentials(ctx context.Context, item domain.Integ
 	providerConfig, provider, err := s.oauthProvider(item, credentials)
 	if err != nil {
 		return domain.Integration{}, nil, err
+	}
+	if len(clients) > 0 {
+		providerConfig.HTTPClient = clients[0]
 	}
 	token, err := provider.Refresh(ctx, providerConfig, refreshToken)
 	if err != nil {

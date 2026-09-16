@@ -103,6 +103,7 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "ai-workbench-knowledge", ParentID: "ai-workbench", Path: "/ai-workbench/knowledge", LabelZH: "Knowledge Center", LabelEN: "Knowledge Center", IconKey: "book", Section: "ai-interaction", SortOrder: 20, Enabled: true},
 	{ID: "ai-workbench-knowledge-pipelines", ParentID: "ai-workbench", Path: "/ai-workbench/knowledge-pipelines", LabelZH: "Knowledge Pipelines", LabelEN: "Knowledge Pipelines", IconKey: "book", Section: "ai-interaction", SortOrder: 25, Enabled: true},
 	{ID: "ai-workbench-inspection", ParentID: "ai-workbench", Path: "/ai-workbench/inspection", LabelZH: "巡检与自动化", LabelEN: "Inspection & Automation", IconKey: "inspect", Section: "ai-interaction", SortOrder: 30, Enabled: true},
+	{ID: "ai-workbench-tasks", ParentID: "ai-workbench", Path: "/ai-workbench/tasks", LabelZH: "目标任务", LabelEN: "Goal Tasks", IconKey: "history", Section: "ai-interaction", SortOrder: 35, Enabled: true},
 	{ID: "ai-workbench-agent-runs", ParentID: "ai-workbench", Path: "/ai-workbench/agent-runs", LabelZH: "Agent Runs", LabelEN: "Agent Runs", IconKey: "history", Section: "ai-interaction", SortOrder: 40, Enabled: true},
 	{ID: "ai-workbench-evaluations", ParentID: "ai-workbench", Path: "/ai-workbench/evaluations", LabelZH: "Evaluation", LabelEN: "Evaluation", IconKey: "inspect", Section: "ai-interaction", SortOrder: 50, Enabled: true},
 	{ID: "ai-workbench-evaluation-lifecycle", ParentID: "ai-workbench", Path: "/ai-workbench/evaluation-lifecycle", LabelZH: "Evaluation Lifecycle", LabelEN: "Evaluation Lifecycle", IconKey: "inspect", Section: "ai-interaction", SortOrder: 55, Enabled: true},
@@ -142,13 +143,15 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "delivery-overview", Path: "/delivery/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "delivery", SortOrder: 15, Enabled: true},
 	{ID: "delivery-onboarding", Path: "/delivery/onboarding", LabelZH: "应用接入", LabelEN: "Application Onboarding", IconKey: "code", Section: "delivery", SortOrder: 20, Enabled: true},
 	{ID: "delivery-manifest-library", Path: "/delivery/manifests", LabelZH: "应用清单库", LabelEN: "Manifest Library", IconKey: "code", Section: "delivery", SortOrder: 25, Enabled: true},
-	{ID: "release-board", Path: "/release-board", LabelZH: "构建发布", LabelEN: "Build & Release", IconKey: "activity", Section: "delivery", SortOrder: 30, Enabled: true},
+	{ID: "release-board", Path: "/release-board", LabelZH: "工作流中心", LabelEN: "Workflow Center", IconKey: "activity", Section: "delivery", SortOrder: 30, Enabled: true},
 	{ID: "delivery-testing", Path: "/delivery/testing", LabelZH: "测试验证", LabelEN: "Testing & Verification", IconKey: "shield", Section: "delivery", SortOrder: 40, Enabled: true},
 	{ID: "delivery-analysis", Path: "/delivery/analysis", LabelZH: "问题分析", LabelEN: "Issue Analysis", IconKey: "inspect", Section: "delivery", SortOrder: 50, Enabled: true},
+	{ID: "execution-history", Path: "/execution-history", LabelZH: "执行记录", LabelEN: "Execution History", IconKey: "history", Section: "delivery-records", SortOrder: 5, Enabled: true},
 	{ID: "release-bundles", Path: "/delivery/release-bundles", LabelZH: "版本包", LabelEN: "Release Bundles", IconKey: "clipboard-list", Section: "delivery-records", SortOrder: 10, Enabled: true},
 	{ID: "releases", Path: "/releases", LabelZH: "发布记录", LabelEN: "Release Records", IconKey: "file-clock", Section: "delivery-records", SortOrder: 40, Enabled: true},
 	{ID: "delivery-blueprints", Path: "/delivery/blueprints", LabelZH: "应用接入模板", LabelEN: "Onboarding Templates", IconKey: "puzzle", Section: "delivery-platform", SortOrder: 10, Enabled: true},
 	{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 20, Enabled: true},
+	{ID: "deployment-templates", Path: "/deployment-templates", LabelZH: "部署模板", LabelEN: "Deployment Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 25, Enabled: true},
 	{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "sync", Section: "delivery-platform", SortOrder: 30, Enabled: true},
 	{ID: "delivery-environment-directory", Path: "/delivery/environments", LabelZH: "环境目录", LabelEN: "Environment Directory", IconKey: "cluster", Section: "delivery-platform", SortOrder: 40, Enabled: true},
 	{ID: "identity", Path: "/internal-workbench", LabelZH: "内网工作台", LabelEN: "Internal Workbench", IconKey: "shield", Section: "admin", SortOrder: 220, Enabled: true},
@@ -167,12 +170,16 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "network-access-sessions", ParentID: "identity", Path: "/network-access/sessions", LabelZH: "会话", LabelEN: "Sessions", IconKey: "activity", Section: "vpn", SortOrder: 80, Enabled: true},
 	{ID: "network-access-enrollments", ParentID: "identity", Path: "/network-access/enrollments", LabelZH: "运行时注册", LabelEN: "Runtime Enrollment", IconKey: "key", Section: "vpn", SortOrder: 90, Enabled: true},
 	{ID: "network-access-telemetry", ParentID: "identity", Path: "/network-access/telemetry", LabelZH: "遥测", LabelEN: "Telemetry", IconKey: "gauge", Section: "vpn", SortOrder: 100, Enabled: true},
+	{ID: "network-access-vpn-profiles", ParentID: "identity", Path: "/network-access/vpn/profiles", LabelZH: "VPN 连接方案", LabelEN: "VPN Profiles", IconKey: "network", Section: "vpn", SortOrder: 110, Enabled: true},
+	{ID: "network-access-vpn-selection-policies", ParentID: "identity", Path: "/network-access/vpn/selection-policies", LabelZH: "VPN Auto 策略", LabelEN: "VPN Auto Policies", IconKey: "network", Section: "vpn", SortOrder: 120, Enabled: true},
+	{ID: "network-access-vpn-dashboard", ParentID: "identity", Path: "/network-access/vpn/dashboard", LabelZH: "VPN Dashboard", LabelEN: "VPN Dashboard", IconKey: "network", Section: "vpn", SortOrder: 130, Enabled: true},
 	{ID: "network-access-mihomo-profiles", ParentID: "identity", Path: "/network-access/mihomo-profiles", LabelZH: "代理隧道", LabelEN: "Proxy Tunnels", IconKey: "link", Section: "proxy", SortOrder: 10, Enabled: true},
 	{ID: "network-access-proxy-overview", ParentID: "identity", Path: "/network-access/proxy-overview", LabelZH: "流量概览", LabelEN: "Traffic Overview", IconKey: "gauge", Section: "proxy", SortOrder: 20, Enabled: true},
 	{ID: "network-access-proxy-connections", ParentID: "identity", Path: "/network-access/proxy-connections", LabelZH: "用户连接", LabelEN: "User Connections", IconKey: "users", Section: "proxy", SortOrder: 30, Enabled: true},
 	{ID: "identity-applications", ParentID: "identity", Path: "/identity/applications", LabelZH: "应用目录", LabelEN: "Applications", IconKey: "blocks", Section: "provider", SortOrder: 10, Enabled: true},
-	{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "Provider", LabelEN: "Providers", IconKey: "shield", Section: "provider", SortOrder: 20, Enabled: true},
-	{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "Outpost", LabelEN: "Outposts", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true},
+	{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "认证接入", LabelEN: "Authentication", IconKey: "shield", Section: "provider", SortOrder: 20, Enabled: true},
+	{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "接入节点", LabelEN: "Access Nodes", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true},
+	{ID: "identity-login-records", ParentID: "identity", Path: "/identity/login-records", LabelZH: "登录记录", LabelEN: "Login Records", IconKey: "file-clock", Section: "provider", SortOrder: 40, Enabled: true},
 	{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 227, Enabled: true},
 	{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "operations", SortOrder: 30, Enabled: true},
 	{ID: "access-users", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "user", Section: "users", SortOrder: 10, Enabled: true},
@@ -243,6 +250,8 @@ func obsoleteMenuIDsForCleanup() []string {
 		"application-management",
 		"execution-tasks",
 		"workflows",
+		"delivery-workflows",
+		"delivery-batches",
 		"compute-workbench-tasks",
 		"compute-workbench-tasks-all",
 		"compute-workbench-access",
@@ -406,7 +415,8 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 		{id: "builds", section: "delivery", sortOrder: 10, labelZH: "应用中心", labelEN: "Application Center", oldZH: "应用中心", oldEN: "Applications", oldIconKey: "blocks", iconKey: "blocks"},
 		{id: "delivery-overview", section: "delivery", sortOrder: 15, labelZH: "总览", labelEN: "Overview", oldZH: "总览", oldEN: "Overview", oldIconKey: "gauge", iconKey: "gauge"},
 		{id: "delivery-onboarding", section: "delivery", sortOrder: 20, labelZH: "应用接入", labelEN: "Application Onboarding", oldZH: "应用接入", oldEN: "Application Onboarding", oldIconKey: "code", iconKey: "code"},
-		{id: "release-board", section: "delivery", sortOrder: 30, labelZH: "构建发布", labelEN: "Build & Release", oldZH: "发布看板", oldEN: "Release Board", oldIconKey: "activity", iconKey: "activity"},
+		{id: "release-board", section: "delivery", sortOrder: 30, labelZH: "工作流中心", labelEN: "Workflow Center", oldZH: "发布看板", oldEN: "Release Board", oldIconKey: "activity", iconKey: "activity"},
+		{id: "release-board", section: "delivery", sortOrder: 30, labelZH: "工作流中心", labelEN: "Workflow Center", oldZH: "构建发布", oldEN: "Build & Release", oldIconKey: "activity", iconKey: "activity"},
 		{id: "delivery-testing", section: "delivery", sortOrder: 40, labelZH: "测试验证", labelEN: "Testing & Verification", oldZH: "测试验证", oldEN: "Testing & Verification", oldIconKey: "shield", iconKey: "shield"},
 		{id: "delivery-analysis", section: "delivery", sortOrder: 50, labelZH: "问题分析", labelEN: "Issue Analysis", oldZH: "问题分析", oldEN: "Issue Analysis", oldIconKey: "activity", iconKey: "inspect"},
 		{id: "release-bundles", section: "delivery-records", sortOrder: 10, labelZH: "版本包", labelEN: "Release Bundles", oldZH: "版本包", oldEN: "Release Bundles", oldIconKey: "blocks", iconKey: "clipboard-list"},
@@ -733,8 +743,11 @@ func disabledModuleMenuIDs(items []menuSeed, modules cfgpkg.ModulesConfig) []str
 
 func isDeliveryMenuSeed(item menuSeed) bool {
 	return strings.HasPrefix(item.Path, "/applications") ||
+		strings.HasPrefix(item.Path, "/delivery/workflows") ||
+		strings.HasPrefix(item.Path, "/delivery/batches") ||
 		strings.HasPrefix(item.Path, "/application-environments") ||
 		strings.HasPrefix(item.Path, "/build-templates") ||
+		strings.HasPrefix(item.Path, "/deployment-templates") ||
 		strings.HasPrefix(item.Path, "/delivery/onboarding") ||
 		strings.HasPrefix(item.Path, "/delivery/manifests") ||
 		strings.HasPrefix(item.Path, "/delivery/testing") ||
@@ -744,6 +757,7 @@ func isDeliveryMenuSeed(item menuSeed) bool {
 		strings.HasPrefix(item.Path, "/delivery/release-bundles") ||
 		strings.HasPrefix(item.Path, "/workflow-templates") ||
 		strings.HasPrefix(item.Path, "/release-board") ||
+		strings.HasPrefix(item.Path, "/execution-history") ||
 		strings.HasPrefix(item.Path, "/releases") ||
 		strings.HasPrefix(item.Path, "/registries")
 }

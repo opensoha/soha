@@ -635,3 +635,14 @@ func waitProxyDone(t *testing.T, done <-chan struct{}) {
 		t.Fatal("timed out waiting for websocket proxy to stop")
 	}
 }
+
+func TestMapOperationDoesNotExposeEncryptedBootstrap(t *testing.T) {
+	result := mapOperation(domainvirtualization.Task{ID: "task", Payload: map[string]any{"cloudInitCredential": "sealed-test-value", "cloudInitConfigured": true}})
+	payload, ok := result["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("payload type = %T, want map[string]any", result["payload"])
+	}
+	if payload["cloudInitCredential"] != nil || payload["cloudInitConfigured"] != true {
+		t.Fatalf("bootstrap envelope escaped: %#v", payload)
+	}
+}

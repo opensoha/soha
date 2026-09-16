@@ -26,6 +26,13 @@ func registerComputeRoutes(protected gin.IRoutes, deps Dependencies) {
 }
 
 func registerVirtualizationRoutes(protected gin.IRoutes, deps Dependencies) {
+	protected.GET("/virtualization/worker-pools", deps.Virtualization.ListWorkerPools)
+	protected.GET("/virtualization/worker-pools/:id", deps.Virtualization.GetWorkerPool)
+	protected.PUT("/virtualization/worker-pools/:id", deps.Virtualization.SaveWorkerPool)
+	protected.DELETE("/virtualization/worker-pools/:id", deps.Virtualization.DeleteWorkerPool)
+	protected.POST("/virtualization/worker-pools/:id/nodes", deps.Virtualization.CreateWorker)
+	protected.GET("/virtualization/operations/:taskID/worker-readiness", deps.Virtualization.AssessWorkerReadiness)
+	protected.POST("/virtualization/capacity/check", deps.Virtualization.CheckCapacity)
 
 	protected.GET("/virtualization/clusters", deps.Virtualization.ListConnections)
 	protected.POST("/virtualization/clusters", deps.Virtualization.CreateConnection)
@@ -144,6 +151,7 @@ func registerCopilotRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 	protected.POST("/copilot/global-assistant/events", deps.Copilot.RecordGlobalAssistantEvent)
 	protected.GET("/copilot/inspection-tasks", deps.Copilot.ListInspectionTasks)
 	protected.POST("/copilot/inspection-tasks", deps.Copilot.CreateInspectionTask)
+	protected.GET("/copilot/inspection-tasks/:taskID", deps.Copilot.GetInspectionTask)
 	protected.PUT("/copilot/inspection-tasks/:taskID", deps.Copilot.UpdateInspectionTask)
 	protected.DELETE("/copilot/inspection-tasks/:taskID", deps.Copilot.DeleteInspectionTask)
 	protected.GET("/copilot/inspection-runs", deps.Copilot.ListInspectionRuns)

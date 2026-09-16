@@ -385,7 +385,7 @@ func (s *Service) CreateGateway(ctx context.Context, principal domainidentity.Pr
 		return domainnetworkaccess.Gateway{}, err
 	}
 	now := time.Now().UTC()
-	item, err := s.store.CreateGateway(ctx, domainnetworkaccess.Gateway{
+	item, err := s.store.CreateGateway(ctx, gatewayWithSelection(domainnetworkaccess.Gateway{
 		ID: uuid.NewString(), RuntimeID: input.RuntimeID, SiteID: input.SiteID, Name: input.Name,
 		AdministrativeStatus: input.AdministrativeStatus, Status: domainnetworkaccess.GatewayOffline,
 		PublicEndpointHost: input.PublicEndpointHost, PublicEndpointPort: input.PublicEndpointPort,
@@ -393,7 +393,7 @@ func (s *Service) CreateGateway(ctx context.Context, principal domainidentity.Pr
 		HubGatewayID: input.HubGatewayID, AdvertisedCIDRs: input.AdvertisedCIDRs,
 		PersistentKeepaliveSeconds: input.PersistentKeepaliveSeconds, DNSServers: input.DNSServers,
 		Capabilities: []string{}, CreatedAt: now, UpdatedAt: now,
-	})
+	}, input))
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.gateways.create", "NetworkGateway", item.ID, item.Name)
 	}

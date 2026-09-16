@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func TestStreamMessageAssignsMonotonicSequences(t *testing.T) {
@@ -119,7 +120,7 @@ func TestStreamMessageDoesNotExposeInternalError(t *testing.T) {
 	if len(events) != 2 || events[0].Type != "error" {
 		t.Fatalf("events = %#v, want public error and failed status", events)
 	}
-	if events[0].Message != "copilot stream failed" {
+	if events[0].Message != "助手请求失败，请稍后重试。" {
 		t.Fatalf("public error = %q", events[0].Message)
 	}
 }
@@ -228,4 +229,20 @@ func hasEventType(events []domaincopilot.WorkbenchStreamEvent, eventType string)
 		}
 	}
 	return false
+}
+
+func TestStreamMessagePassesModelPreferences(t *testing.T) {
+	service := &streamHandlerService{}
+	performStreamMessageRequest(t, service, `{"content":"hi","mode":"general","modelPreferences":{"publicModel":"selected","reasoningEffort":"high"}}`)
+	prefs := service.inputs[0].ModelPreferences
+	if prefs == nil || prefs.PublicModel != "selected" || prefs.ReasoningEffort != "high" {
+		t.Fatalf("preferences lost: %+v", prefs)
+	}
+}
+
+func TestStreamMessageExplainsUnavailableContext(t *testing.T) {
+	event := publicWorkbenchStreamError(apperrors.ErrNotFound)
+	if event.Code != "context_unavailable" || !strings.Contains(event.Message, "移除") || event.Retryable == nil || *event.Retryable {
+		t.Fatalf("unavailable context recovery: %+v", event)
+	}
 }
