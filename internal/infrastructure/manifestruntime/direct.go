@@ -9,6 +9,9 @@ import (
 	"strings"
 	"time"
 
+	contractresource "github.com/opensoha/soha-contracts/resource"
+	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
+
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -16,7 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/restmapper"
 )
@@ -46,6 +48,8 @@ func (d *Direct) Execute(ctx context.Context, payload domainmanifest.TaskPayload
 		return applyDocuments(ctx, bundle.Dynamic, mapper, payload)
 	case domainmanifest.TaskActionObserve, domainmanifest.TaskActionAdopt:
 		return observeDocuments(ctx, bundle.Dynamic, mapper, payload)
+	case domainmanifest.TaskActionRolloutControl:
+		return executeRolloutDocuments(ctx, bundle.Dynamic, payload)
 	default:
 		return domainmanifest.TaskResult{}, fmt.Errorf("unsupported manifest action %q", payload.Action)
 	}
@@ -64,6 +68,12 @@ func directMapper(bundle *k8sinfra.Bundle) (restMapper, error) {
 }
 
 func preflightDocuments(ctx context.Context, client dynamic.Interface, mapper restMapper, payload domainmanifest.TaskPayload) (domainmanifest.TaskResult, error) {
+	if isRolloutTask(payload) {
+		return executeRolloutDocuments(ctx, client, payload)
+	}
+	if isGitOpsTask(payload) {
+		return executeGitOpsDocuments(ctx, client, mapper, payload)
+	}
 	diagnostics := make([]domainmanifest.Diagnostic, 0)
 	for _, document := range payload.Documents {
 		_, _, err := patchDocument(ctx, client, mapper, payload, document, true)
@@ -80,6 +90,12 @@ func preflightDocuments(ctx context.Context, client dynamic.Interface, mapper re
 }
 
 func applyDocuments(ctx context.Context, client dynamic.Interface, mapper restMapper, payload domainmanifest.TaskPayload) (domainmanifest.TaskResult, error) {
+	if isRolloutTask(payload) {
+		return executeRolloutDocuments(ctx, client, payload)
+	}
+	if isGitOpsTask(payload) {
+		return executeGitOpsDocuments(ctx, client, mapper, payload)
+	}
 	diagnostics := make([]domainmanifest.Diagnostic, 0)
 	inventory := make([]domainmanifest.ResourceInventory, 0, len(payload.Documents))
 	for _, document := range payload.Documents {
@@ -97,6 +113,12 @@ func applyDocuments(ctx context.Context, client dynamic.Interface, mapper restMa
 }
 
 func observeDocuments(ctx context.Context, client dynamic.Interface, mapper restMapper, payload domainmanifest.TaskPayload) (domainmanifest.TaskResult, error) {
+	if isRolloutTask(payload) {
+		return executeRolloutDocuments(ctx, client, payload)
+	}
+	if isGitOpsTask(payload) {
+		return executeGitOpsDocuments(ctx, client, mapper, payload)
+	}
 	diagnostics := make([]domainmanifest.Diagnostic, 0)
 	inventory := make([]domainmanifest.ResourceInventory, 0, len(payload.Documents))
 	driftResources := make([]domainmanifest.DriftResource, 0)
@@ -114,7 +136,12 @@ func observeDocuments(ctx context.Context, client dynamic.Interface, mapper rest
 			diagnostics = append(diagnostics, runtimeDiagnostic("observe", document, getErr))
 			continue
 		}
-		inventory = append(inventory, inventoryItem(payload, document, desired, live))
+		item := inventoryItem(payload, document, desired, live)
+		item.Health, getErr = resourceruntime.ManifestHealth(ctx, client, live)
+		if getErr != nil {
+			diagnostics = append(diagnostics, runtimeDiagnostic("observe", document, getErr))
+		}
+		inventory = append(inventory, item)
 		fields := diffDesiredFields(desired.Object, live.Object, "")
 		if len(fields) > 0 {
 			driftResources = append(driftResources, domainmanifest.DriftResource{APIVersion: document.APIVersion, Kind: document.Kind, Namespace: document.Namespace, Name: document.Name, Fields: fields})
@@ -134,10 +161,6 @@ func patchDocument(ctx context.Context, client dynamic.Interface, mapper restMap
 	if err != nil {
 		return nil, nil, err
 	}
-	body, err := json.Marshal(desired.Object)
-	if err != nil {
-		return nil, nil, err
-	}
 	force := payload.ForceConflicts
 	options := metav1.PatchOptions{FieldManager: firstString(payload.FieldManager, "opensoha-delivery/v1"), Force: &force}
 	if dryRun {
@@ -145,7 +168,7 @@ func patchDocument(ctx context.Context, client dynamic.Interface, mapper restMap
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, manifestRuntimeTimeout)
 	defer cancel()
-	applied, err := resourceInterface(client, mapping, document.Namespace).Patch(queryCtx, document.Name, types.ApplyPatchType, body, options)
+	applied, err := resourceruntime.ApplyManifest(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, options)
 	return applied, desired, err
 }
 
@@ -155,6 +178,10 @@ func prepareRuntimeDocument(mapper restMapper, payload domainmanifest.TaskPayloa
 		return nil, nil, fmt.Errorf("decode rendered document: %w", err)
 	}
 	desired := &unstructured.Unstructured{Object: object}
+	digest := sha256.Sum256([]byte(document.Content))
+	if desired.GetAPIVersion() != document.APIVersion || desired.GetKind() != document.Kind || desired.GetNamespace() != document.Namespace || desired.GetName() != document.Name || !strings.EqualFold(document.ContentDigest, hex.EncodeToString(digest[:])) {
+		return nil, nil, fmt.Errorf("rendered document identity or digest does not match content")
+	}
 	gvk := desired.GroupVersionKind()
 	mapping, err := mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
@@ -180,12 +207,20 @@ func resourceInterface(client dynamic.Interface, mapping *meta.RESTMapping, name
 func inventoryItem(payload domainmanifest.TaskPayload, document domainmanifest.RenderedDocument, desired, live *unstructured.Unstructured) domainmanifest.ResourceInventory {
 	projected := projectDesired(desired.Object, live.Object)
 	observedDigest := digestObject(projected)
-	return domainmanifest.ResourceInventory{
+	item := domainmanifest.ResourceInventory{
 		DeploymentID: payload.DeploymentID, Generation: payload.Generation, APIVersion: document.APIVersion,
 		Kind: document.Kind, Namespace: live.GetNamespace(), Name: live.GetName(), UID: string(live.GetUID()),
 		ResourceVersion: live.GetResourceVersion(), DesiredObjectDigest: document.ContentDigest,
 		ObservedObjectDigest: observedDigest, Health: resourceHealth(live), LastObservedAt: time.Now().UTC(),
+		ResourceGeneration: live.GetGeneration(), Finalizers: live.GetFinalizers(),
 	}
+	if generation, found, err := unstructured.NestedInt64(live.Object, "status", "observedGeneration"); err == nil && found && generation >= 0 {
+		item.ObservedResourceGeneration = &generation
+	}
+	if deletingAt := live.GetDeletionTimestamp(); deletingAt != nil {
+		item.DeletingAt = &deletingAt.Time
+	}
+	return item
 }
 
 func projectDesired(desired, observed map[string]any) map[string]any {
@@ -289,34 +324,7 @@ func resourceHealth(item *unstructured.Unstructured) string {
 	if item == nil {
 		return "unknown"
 	}
-	conditions, found, _ := unstructured.NestedSlice(item.Object, "status", "conditions")
-	if !found {
-		if requiresManifestHealthCondition(item.GetKind()) {
-			return "progressing"
-		}
-		return "healthy"
-	}
-	for _, raw := range conditions {
-		condition, _ := raw.(map[string]any)
-		status := strings.EqualFold(fmt.Sprint(condition["status"]), "true")
-		conditionType := strings.ToLower(fmt.Sprint(condition["type"]))
-		if status && (conditionType == "available" || conditionType == "ready" || conditionType == "complete" || conditionType == "established") {
-			return "healthy"
-		}
-		if status && (conditionType == "failed" || conditionType == "degraded") {
-			return "degraded"
-		}
-	}
-	return "progressing"
-}
-
-func requiresManifestHealthCondition(kind string) bool {
-	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "deployment", "statefulset", "daemonset", "job", "pod":
-		return true
-	default:
-		return false
-	}
+	return contractresource.ManifestHealth(item.Object)
 }
 
 func firstString(values ...string) string {

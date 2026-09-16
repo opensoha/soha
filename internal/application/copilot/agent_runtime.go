@@ -103,7 +103,7 @@ func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilo
 	input.Payload = normalizeAgentRunCallbackProviderUsage(input.Payload)
 	input.AnalysisArtifacts = normalizeAgentRunCallbackProviderUsageArtifacts(input.AnalysisArtifacts, input.Payload)
 	if agentRunCallbackProducesArtifact(input.Status) && len(input.AnalysisArtifacts) == 0 {
-		if current, err := s.agentRuns.GetAgentRun(ctx, "", input.RunID); err == nil {
+		if current, err := s.agentRuns.GetAgentRun(ctx, "", input.RunID); err == nil && current.CapabilityID != "general" {
 			synthetic := current
 			synthetic.Output = mergeAgentRunCallbackPayload(current.Output, input.Payload)
 			if len(input.ToolExecutions) > 0 {
@@ -122,11 +122,16 @@ func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilo
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
+	if agentRunStatusTerminal(updated.Status) {
+		if err := s.cancelChatSpecialist(ctx, updated); err != nil {
+			return domaincopilot.AgentRun{}, err
+		}
+	}
 	if agentRunStatusTerminal(updated.Status) && s.secretLeases != nil {
 		_ = s.secretLeases.RevokeSubjectLeases(ctx, "agent_run", updated.ID)
 	}
 	if agentRunCallbackShouldPersistMessage(updated) {
-		if len(updated.AnalysisArtifacts) == 0 {
+		if len(updated.AnalysisArtifacts) == 0 && updated.CapabilityID != "general" {
 			updated.AnalysisArtifacts = []domaincopilot.AnalysisArtifact{s.synthesizeAgentArtifact(updated)}
 		}
 		if strings.TrimSpace(updated.RootCauseRunID) != "" {
@@ -147,6 +152,9 @@ func (s *Service) CancelAgentRun(ctx context.Context, principal domainidentity.P
 	if runID == "" {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: runId is required", aperrors.ErrInvalidArgument)
 	}
+	if _, err := s.agentRuns.GetAgentRun(ctx, principal.UserID, runID); err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
 	canceled, err := s.agentRuns.CancelAgentRun(ctx, domaincopilot.AgentRunCancelInput{
 		RunID:       runID,
 		RequestedBy: firstNonEmpty(principal.UserID, principal.UserName, "unknown"),
@@ -155,6 +163,13 @@ func (s *Service) CancelAgentRun(ctx context.Context, principal domainidentity.P
 	if err == nil && s.secretLeases != nil {
 		_ = s.secretLeases.RevokeSubjectLeases(ctx, "agent_run", canceled.ID)
 	}
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	if err := s.cancelChatSpecialist(ctx, canceled); err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	canceled, err = s.waitForAgentCancellation(ctx, canceled)
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
@@ -188,22 +203,52 @@ func (s *Service) RecordAgentToolCall(ctx context.Context, input domaincopilot.A
 	if !ok {
 		return domaincopilot.AgentToolCallResult{}, fmt.Errorf("%w: tool binding is not allowed for this agent run", aperrors.ErrAccessDenied)
 	}
-	toolExecution, output, _ := s.executeAgentToolBinding(ctx, run, binding, input)
+	if run.CapabilityID == "general" {
+		run, err = s.authorizeChatAgentTool(ctx, run, binding)
+		if err != nil {
+			s.recordAgentToolAudit(ctx, run, binding, input, domaincopilot.ToolExecution{Status: "denied"})
+			return domaincopilot.AgentToolCallResult{}, err
+		}
+	}
+	toolID := "tool:" + uuid.NewString()
+	if run.CapabilityID == "general" {
+		started := domaincopilot.ToolExecution{ID: toolID, AdapterID: binding.AdapterID, ToolName: binding.ToolName, Status: "running", StartedAt: time.Now().UTC()}
+		var reserved domaincopilot.AgentRun
+		reserved, err = s.agentRuns.BeginAgentToolCall(ctx, domaincopilot.AgentRunCallbackInput{RunID: run.ID, CallbackToken: run.CallbackToken, AgentID: input.AgentID, Status: domaincopilot.AgentRunStatusRunning, ToolExecutions: []domaincopilot.ToolExecution{started}, Events: chatToolEvents(run, started, "tool.started")})
+		if err != nil {
+			return domaincopilot.AgentToolCallResult{}, err
+		}
+		reserved.Input = run.Input
+		run = reserved
+	}
+	toolExecution, output, _ := s.executeAgentToolBinding(ctx, run, binding, input, toolID)
+	artifacts := run.AnalysisArtifacts
+	var artifactEvents []domaincopilot.WorkbenchStreamEvent
+	if artifact, ok := output["_artifact"].(domaincopilot.AnalysisArtifact); ok {
+		delete(output, "_artifact")
+		artifacts = append(append([]domaincopilot.AnalysisArtifact{}, artifacts...), artifact)
+		artifactEvents = []domaincopilot.WorkbenchStreamEvent{{Type: "artifact.updated", ID: artifact.RunID + ":created", Artifact: &artifact, RunID: run.ID, MessageID: run.ID + ":reply"}}
+	}
 	s.recordAgentToolAudit(ctx, run, binding, input, toolExecution)
-	nextExecutions := append(append([]domaincopilot.ToolExecution{}, run.ToolExecutions...), toolExecution)
+	nextExecutions := []domaincopilot.ToolExecution{toolExecution}
 	updated, persistErr := s.agentRuns.UpdateAgentRunCallback(ctx, domaincopilot.AgentRunCallbackInput{
-		RunID:          run.ID,
-		CallbackToken:  run.CallbackToken,
-		AgentID:        input.AgentID,
-		Status:         domaincopilot.AgentRunStatusRunning,
-		Payload:        map[string]any{"lastToolCallId": toolExecution.ID, "lastToolCallName": toolExecution.ToolName, "lastToolCallStatus": toolExecution.Status},
-		ToolExecutions: nextExecutions,
+		RunID:             run.ID,
+		CallbackToken:     run.CallbackToken,
+		AgentID:           input.AgentID,
+		Status:            domaincopilot.AgentRunStatusRunning,
+		Payload:           map[string]any{"lastToolCallId": toolExecution.ID, "lastToolCallName": toolExecution.ToolName, "lastToolCallStatus": toolExecution.Status},
+		ToolExecutions:    nextExecutions,
+		AnalysisArtifacts: artifacts,
+		Events:            append(chatToolEvents(run, toolExecution, "tool.completed"), artifactEvents...),
 	})
 	if persistErr == nil {
 		run = updated
 	}
 	if persistErr != nil {
 		return domaincopilot.AgentToolCallResult{}, persistErr
+	}
+	if run.Status != domaincopilot.AgentRunStatusRunning {
+		return domaincopilot.AgentToolCallResult{}, fmt.Errorf("%w: tool run is no longer active", aperrors.ErrAccessDenied)
 	}
 	return domaincopilot.AgentToolCallResult{RunID: run.ID, ToolExecution: toolExecution, Output: output}, nil
 }
@@ -241,13 +286,12 @@ func (s *Service) sweepAgentRunTimeouts(ctx context.Context) (int, error) {
 			payload["lastHeartbeatAt"] = run.LastHeartbeatAt.UTC().Format(time.RFC3339)
 		}
 		_, callbackErr := s.RecordAgentRunCallback(ctx, domaincopilot.AgentRunCallbackInput{
-			RunID:             run.ID,
-			CallbackToken:     run.CallbackToken,
-			AgentID:           firstNonEmpty(strings.TrimSpace(run.ClaimedByAgentID), "soha-control-plane"),
-			Status:            domaincopilot.AgentRunStatusCallbackTimeout,
-			Payload:           payload,
-			AnalysisArtifacts: []domaincopilot.AnalysisArtifact{s.synthesizeAgentArtifact(agentRunWithOutput(run, payload))},
-			ErrorMessage:      stringValue(payload["error"]),
+			RunID:         run.ID,
+			CallbackToken: run.CallbackToken,
+			AgentID:       firstNonEmpty(strings.TrimSpace(run.ClaimedByAgentID), "soha-control-plane"),
+			Status:        domaincopilot.AgentRunStatusCallbackTimeout,
+			Payload:       payload,
+			ErrorMessage:  stringValue(payload["error"]),
 		})
 		if callbackErr != nil {
 			s.logWarnCtx(ctx, "copilot agent runtime timeout callback failed",
@@ -942,6 +986,10 @@ func resolveAgentToolBinding(run domaincopilot.AgentRun, input domaincopilot.Age
 }
 
 func agentToolBindingReadOnly(binding domaincopilot.AgentToolBinding) bool {
+	// Static conversation drafts never execute or apply their generated content.
+	if binding.ToolKind == "internal_api" && (binding.ToolName == "artifact.preview" || binding.ToolName == "change.request" || binding.ToolName == "agent.delegate") {
+		return true
+	}
 	if strings.TrimSpace(binding.ToolKind) == "" {
 		return false
 	}
@@ -952,7 +1000,7 @@ func agentToolBindingReadOnly(binding domaincopilot.AgentToolBinding) bool {
 	return strings.Contains(name, ".list") || strings.Contains(name, ".query") || strings.Contains(name, ".resolve") || strings.Contains(name, ".snapshot") || strings.Contains(name, ".read")
 }
 
-func (s *Service) executeAgentToolBinding(ctx context.Context, run domaincopilot.AgentRun, binding domaincopilot.AgentToolBinding, input domaincopilot.AgentToolCallInput) (domaincopilot.ToolExecution, map[string]any, error) {
+func (s *Service) executeAgentToolBinding(ctx context.Context, run domaincopilot.AgentRun, binding domaincopilot.AgentToolBinding, input domaincopilot.AgentToolCallInput, toolID string) (domaincopilot.ToolExecution, map[string]any, error) {
 	startedAt := time.Now().UTC()
 	output, err := s.executeAgentToolBindingOutput(ctx, run, binding, input.Input)
 	completedAt := time.Now().UTC()
@@ -973,9 +1021,14 @@ func (s *Service) executeAgentToolBinding(ctx context.Context, run domaincopilot
 	if output == nil {
 		output = map[string]any{}
 	}
+	for key, value := range mapValue(output["relatedIds"]) {
+		if _, exists := relatedIDs[key]; !exists {
+			relatedIDs[key] = value
+		}
+	}
 	output["relatedIds"] = relatedIDs
 	toolExecution := domaincopilot.ToolExecution{
-		ID:          "tool:" + uuid.NewString(),
+		ID:          toolID,
 		AdapterID:   firstNonEmpty(binding.AdapterID, binding.ToolKind),
 		ToolName:    firstNonEmpty(binding.ToolName, binding.ID),
 		Status:      status,
@@ -1026,6 +1079,9 @@ func (s *Service) recordAgentToolAudit(ctx context.Context, run domaincopilot.Ag
 }
 
 func (s *Service) executeAgentToolBindingOutput(ctx context.Context, run domaincopilot.AgentRun, binding domaincopilot.AgentToolBinding, input map[string]any) (map[string]any, error) {
+	if run.CapabilityID == "general" {
+		return s.executeChatAgentTool(ctx, run, binding, input)
+	}
 	switch strings.TrimSpace(binding.ToolName) {
 	case "logs.query":
 		return s.executeAgentLogsTool(ctx, run, input)
@@ -1494,6 +1550,41 @@ func minPositive(value, maxValue int) int {
 	return value
 }
 
+func (s *Service) authorizeChatAgentTool(ctx context.Context, run domaincopilot.AgentRun, binding domaincopilot.AgentToolBinding) (domaincopilot.AgentRun, error) {
+	denied := fmt.Errorf("%w: agent tool authorization is no longer valid", aperrors.ErrAccessDenied)
+	if run.ParentRunID != "" {
+		parent, err := s.agentRuns.GetAgentRun(ctx, run.CreatedBy, run.ParentRunID)
+		if err != nil || parent.Status != domaincopilot.AgentRunStatusRunning || !time.Now().Before(parent.QueuedAt.Add(time.Duration(parent.TimeoutSeconds)*time.Second)) {
+			return run, denied
+		}
+	}
+	ceiling, err := agentToolPrincipal(run)
+	if err != nil || s.agentPrincipals == nil || run.CreatedBy == "" || ceiling.UserID != run.CreatedBy || binding.PermissionKey == "" || run.Status != domaincopilot.AgentRunStatusRunning || run.ClaimedByAgentID == "" || len(run.ToolExecutions) >= 8 {
+		return run, denied
+	}
+	principal, err := s.agentPrincipals.CurrentPrincipal(ctx, run.CreatedBy)
+	if err != nil || principal.UserID != run.CreatedBy {
+		return run, denied
+	}
+	// Current membership determines access; the submitted request remains its ceiling.
+	principal.PermissionKeys = ceiling.PermissionKeys
+	keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil || !slices.Contains(keys, binding.PermissionKey) {
+		return run, denied
+	}
+	input := make(map[string]any, len(run.Input))
+	for key, value := range run.Input {
+		input[key] = value
+	}
+	input["_sohaPrincipal"] = map[string]any{
+		"userId": principal.UserID, "userName": principal.UserName,
+		"roles": principal.Roles, "teams": principal.Teams,
+		"projects": principal.Projects, "tags": principal.Tags, "permissionKeys": keys,
+	}
+	run.Input = input
+	return run, nil
+}
+
 func agentToolPrincipal(run domaincopilot.AgentRun) (domainidentity.Principal, error) {
 	snapshot, ok := run.Input["_sohaPrincipal"].(map[string]any)
 	if !ok {
@@ -1886,6 +1977,15 @@ func optionalAgentTime(value *time.Time) string {
 }
 
 func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.Principal, input domaincopilot.AgentRunInput) (domaincopilot.AgentRun, error) {
+	run, err := s.buildAgentRun(ctx, principal, input)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	created, err := s.agentRuns.CreateAgentRun(ctx, run)
+	return domaincopilot.WithOperationState(created, time.Now().UTC()), err
+}
+
+func (s *Service) buildAgentRun(ctx context.Context, principal domainidentity.Principal, input domaincopilot.AgentRunInput) (domaincopilot.AgentRun, error) {
 	provider := s.resolveAgentProvider(input.ProviderID)
 	if !provider.Enabled {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: agent provider %s is disabled", aperrors.ErrInvalidArgument, provider.ID)
@@ -1893,6 +1993,13 @@ func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.P
 	capabilityID := strings.TrimSpace(input.CapabilityID)
 	if capabilityID == "" {
 		capabilityID = "root_cause"
+	}
+	if capabilityID == "general" {
+		var err error
+		provider, err = s.chatProvider(provider.ID)
+		if err != nil {
+			return domaincopilot.AgentRun{}, err
+		}
 	}
 	timeoutSeconds := input.TimeoutSeconds
 	if timeoutSeconds <= 0 {
@@ -1906,6 +2013,9 @@ func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
+	if capabilityID == "general" && !slices.ContainsFunc(toolBindings, func(binding domaincopilot.AgentToolBinding) bool { return binding.ToolKind == "mcp" }) {
+		toolBindings = slices.DeleteFunc(toolBindings, func(binding domaincopilot.AgentToolBinding) bool { return binding.ToolName == "agent.delegate" })
+	}
 	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
@@ -1913,6 +2023,13 @@ func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.P
 	runInput := make(map[string]any, len(input.Input)+1)
 	for key, value := range input.Input {
 		runInput[key] = value
+	}
+	delete(runInput, "_sohaParentRunId")
+	if input.ParentRunID != "" {
+		runInput["_sohaParentRunId"] = input.ParentRunID
+	}
+	if capabilityID == "general" {
+		runInput["_sohaProvider"] = map[string]any{"providerVersion": provider.Config["providerVersion"], "catalogRevision": provider.Config["catalogRevision"], "pluginId": provider.Config["pluginId"], "pluginVersion": provider.Config["pluginVersion"]}
 	}
 	runInput["_sohaPrincipal"] = map[string]any{
 		"userId":         principal.UserID,
@@ -1953,11 +2070,7 @@ func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.P
 	if run.CreatedBy == "" {
 		run.CreatedBy = automationRootCauseCreatedBy
 	}
-	created, err := s.agentRuns.CreateAgentRun(ctx, run)
-	if err != nil {
-		return domaincopilot.AgentRun{}, err
-	}
-	return domaincopilot.WithOperationState(created, time.Now().UTC()), nil
+	return domaincopilot.WithOperationState(run, time.Now().UTC()), nil
 }
 
 func (s *Service) RecordGatewayAnalysisArtifact(ctx context.Context, principal domainidentity.Principal, input domaincopilot.GatewayAnalysisArtifactInput) (domaincopilot.AgentRun, error) {
@@ -2262,6 +2375,14 @@ func (s *Service) agentProviderCatalog() []domaincopilot.AgentProvider {
 		capabilityIDs = append(capabilityIDs, capability.ID)
 	}
 	for index := range configured {
+		if status := configured[index].RuntimeStatus; status != nil {
+			copy := *status
+			configured[index].RuntimeStatus = &copy
+			if copy.State == "ready" && (copy.LastHeartbeatAt == nil || time.Since(*copy.LastHeartbeatAt) > 2*time.Minute || copy.LastHeartbeatAt.After(time.Now().Add(time.Minute))) {
+				copy.State = "stale"
+				copy.Reason = "Agent 运行器心跳已过期"
+			}
+		}
 		if len(configured[index].Capabilities) == 0 {
 			configured[index].Capabilities = append([]string(nil), capabilityIDs...)
 		}
@@ -2542,6 +2663,12 @@ func decodeStructuredValue(value any, target any) bool {
 }
 
 func (s *Service) persistAgentRunMessage(ctx context.Context, run domaincopilot.AgentRun) error {
+	if run.ParentRunID != "" {
+		return nil
+	}
+	if run.CapabilityID == "general" {
+		return s.persistAgentChatMessage(ctx, run)
+	}
 	artifacts := run.AnalysisArtifacts
 	if len(artifacts) == 0 {
 		artifacts = []domaincopilot.AnalysisArtifact{s.synthesizeAgentArtifact(run)}

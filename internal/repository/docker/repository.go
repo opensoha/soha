@@ -11,7 +11,10 @@ import (
 
 	"github.com/google/uuid"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
+	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
 )
 
@@ -50,7 +53,7 @@ func (r *Repository) CountHosts(ctx context.Context, filter domaindocker.HostFil
 }
 
 func (r *Repository) GetHost(ctx context.Context, id string) (domaindocker.Host, error) {
-	row := r.db.WithContext(ctx).Raw(hostSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(hostSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
 	return scanHostRow(row)
 }
 
@@ -64,7 +67,7 @@ func (r *Repository) CreateHost(ctx context.Context, input domaindocker.HostInpu
 	if err != nil {
 		return domaindocker.Host{}, fmt.Errorf("marshal docker host config: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO docker_hosts (
 			id, name, status, endpoint, agent_id, agent_version, docker_version, compose_version,
 			architecture, environment, owner, team, virtualization_connection_id, vm_id, vm_name, ip_address,
@@ -93,7 +96,7 @@ func (r *Repository) UpdateHost(ctx context.Context, id string, input domaindock
 	if err != nil {
 		return domaindocker.Host{}, fmt.Errorf("marshal docker host config: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE docker_hosts
 		SET name = ?, status = ?, endpoint = ?, agent_id = ?, agent_version = ?, docker_version = ?,
 			compose_version = ?, architecture = ?, environment = ?, owner = ?, team = ?, virtualization_connection_id = ?,
@@ -112,6 +115,20 @@ func (r *Repository) UpdateHost(ctx context.Context, id string, input domaindock
 		return domaindocker.Host{}, ErrNotFound
 	}
 	return item, nil
+}
+
+func (r *Repository) HeartbeatHost(ctx context.Context, id, agentID string) error {
+	// Polling proves the enrolled Agent is alive; it does not change readiness,
+	// Docker inventory or user configuration. Preflight still checks the daemon.
+	now := time.Now().UTC()
+	result := dbtx.DB(ctx, r.db).Exec(`UPDATE docker_hosts SET agent_id = ?, last_heartbeat_at = ?, updated_at = ? WHERE id = ?`, agentID, now, now, id)
+	if result.Error != nil {
+		return fmt.Errorf("heartbeat Docker host: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *Repository) TouchHostRuntime(ctx context.Context, id string, input domaindocker.HostInput) (domaindocker.Host, error) {
@@ -163,7 +180,7 @@ func (r *Repository) TouchHostRuntime(ctx context.Context, id string, input doma
 	if err != nil {
 		return domaindocker.Host{}, fmt.Errorf("marshal docker host config: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE docker_hosts
 		SET status = ?, endpoint = ?, agent_id = ?, agent_version = ?, docker_version = ?, compose_version = ?,
 			architecture = ?, ip_address = ?, vm_id = ?, vm_name = ?, labels = ?::jsonb, config = ?::jsonb, last_heartbeat_at = ?, updated_at = ?
@@ -201,7 +218,7 @@ func (r *Repository) CountProjects(ctx context.Context, filter domaindocker.Proj
 }
 
 func (r *Repository) GetProject(ctx context.Context, id string) (domaindocker.Project, error) {
-	row := r.db.WithContext(ctx).Raw(projectSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(projectSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
 	return scanProjectRow(row)
 }
 
@@ -215,7 +232,7 @@ func (r *Repository) CreateProject(ctx context.Context, input domaindocker.Proje
 	if err != nil {
 		return domaindocker.Project{}, fmt.Errorf("marshal docker project config: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO docker_projects (
 			id, host_id, name, slug, description, environment, owner, team, source_kind, source_ref,
 			compose_content, env_content, status, desired_state, template_id, ttl_seconds, expires_at,
@@ -243,7 +260,7 @@ func (r *Repository) UpdateProject(ctx context.Context, id string, input domaind
 	if err != nil {
 		return domaindocker.Project{}, fmt.Errorf("marshal docker project config: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE docker_projects
 		SET host_id = ?, name = ?, slug = ?, description = ?, environment = ?, owner = ?, team = ?,
 			source_kind = ?, source_ref = ?, compose_content = ?, env_content = ?, status = ?, desired_state = ?,
@@ -278,7 +295,7 @@ func (r *Repository) UpdateProjectRuntime(ctx context.Context, id string, status
 		args = append(args, lastDeployedAt)
 	}
 	args = append(args, strings.TrimSpace(id))
-	result := r.db.WithContext(ctx).Exec("UPDATE docker_projects SET "+strings.Join(fields, ", ")+" WHERE id = ?", args...)
+	result := dbtx.DB(ctx, r.db).Exec("UPDATE docker_projects SET "+strings.Join(fields, ", ")+" WHERE id = ?", args...)
 	if result.Error != nil {
 		return domaindocker.Project{}, fmt.Errorf("update docker project runtime: %w", result.Error)
 	}
@@ -308,7 +325,7 @@ func (r *Repository) CountServices(ctx context.Context, filter domaindocker.Serv
 }
 
 func (r *Repository) GetService(ctx context.Context, id string) (domaindocker.Service, error) {
-	row := r.db.WithContext(ctx).Raw(serviceSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(serviceSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
 	return scanServiceRow(row)
 }
 
@@ -318,7 +335,7 @@ func (r *Repository) UpsertService(ctx context.Context, input domaindocker.Servi
 	if err != nil {
 		return domaindocker.Service{}, fmt.Errorf("marshal docker service config: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO docker_services (
 			id, project_id, host_id, name, image, status, container_id, restart_count, cpu_percent,
 			memory_bytes, network_rx_bytes, network_tx_bytes, config, last_seen_at, created_at, updated_at
@@ -368,7 +385,7 @@ func (r *Repository) CountPortMappings(ctx context.Context, filter domaindocker.
 }
 
 func (r *Repository) GetPortMapping(ctx context.Context, id string) (domaindocker.PortMapping, error) {
-	row := r.db.WithContext(ctx).Raw(portMappingSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(portMappingSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
 	return scanPortMappingRow(row)
 }
 
@@ -378,7 +395,7 @@ func (r *Repository) CreatePortMapping(ctx context.Context, input domaindocker.P
 	if err != nil {
 		return domaindocker.PortMapping{}, fmt.Errorf("marshal docker port mapping config: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO docker_port_mappings (
 			id, host_id, project_id, service_id, name, host_ip, host_port, container_port, protocol,
 			exposure_scope, status, domain_name, domain_scheme, domain_tls_enabled, access_url, owner, expires_at,
@@ -401,7 +418,7 @@ func (r *Repository) UpdatePortMapping(ctx context.Context, id string, input dom
 	if err != nil {
 		return domaindocker.PortMapping{}, fmt.Errorf("marshal docker port mapping config: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE docker_port_mappings
 		SET host_id = ?, project_id = ?, service_id = ?, name = ?, host_ip = ?, host_port = ?,
 			container_port = ?, protocol = ?, exposure_scope = ?, status = ?, domain_name = ?,
@@ -427,7 +444,7 @@ func (r *Repository) DeletePortMapping(ctx context.Context, id string) error {
 
 func (r *Repository) CreateContainerStart(ctx context.Context, input domaindocker.ContainerStartCreateInput) (domaindocker.ContainerStartCreateResult, error) {
 	var result domaindocker.ContainerStartCreateResult
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		txRepo := &Repository{db: tx}
 		project, err := txRepo.CreateProject(ctx, input.Project)
 		if err != nil {
@@ -502,7 +519,7 @@ func (r *Repository) CountTemplates(ctx context.Context, filter domaindocker.Tem
 }
 
 func (r *Repository) GetTemplate(ctx context.Context, id string) (domaindocker.Template, error) {
-	row := r.db.WithContext(ctx).Raw(templateSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(templateSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
 	return scanTemplateRow(row)
 }
 
@@ -512,7 +529,7 @@ func (r *Repository) CreateTemplate(ctx context.Context, input domaindocker.Temp
 	if err != nil {
 		return domaindocker.Template{}, fmt.Errorf("marshal docker template variables: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO docker_templates (id, name, description, template_kind, compose_content, env_content, variables, enabled, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)
 	`, item.ID, item.Name, nullableString(item.Description), item.TemplateKind, nullableString(item.ComposeContent),
@@ -530,7 +547,7 @@ func (r *Repository) UpdateTemplate(ctx context.Context, id string, input domain
 	if err != nil {
 		return domaindocker.Template{}, fmt.Errorf("marshal docker template variables: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE docker_templates
 		SET name = ?, description = ?, template_kind = ?, compose_content = ?, env_content = ?,
 			variables = ?::jsonb, enabled = ?, updated_at = ?
@@ -552,14 +569,29 @@ func (r *Repository) DeleteTemplate(ctx context.Context, id string) error {
 
 func (r *Repository) CreateOperation(ctx context.Context, input domaindocker.OperationInput) (domaindocker.Operation, error) {
 	item := operationFromInput(input)
-	if err := insertOperation(r.db.WithContext(ctx), item); err != nil {
+	if item.Payload["deliveryPlanId"] != nil {
+		if _, ok := domainworkflow.NodeExecutionFrom(ctx); !ok {
+			return item, apperrors.ErrConflict
+		}
+		item.MaxRetries = 0
+		err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+			applicationID, _ := item.Payload["applicationId"].(string)
+			environmentID, _ := item.Payload["applicationEnvironmentId"].(string)
+			if err := repoworkflow.LockDeliveryNode(ctx, tx, applicationID, environmentID); err != nil {
+				return err
+			}
+			return insertOperation(tx, item)
+		})
+		return item, err
+	}
+	if err := insertOperation(dbtx.DB(ctx, r.db), item); err != nil {
 		return domaindocker.Operation{}, err
 	}
 	return item, nil
 }
 
 func insertOperation(db *gorm.DB, item domaindocker.Operation) error {
-	payload, err := marshalJSON(item.Payload)
+	payload, err := marshalOperationPayload(item)
 	if err != nil {
 		return fmt.Errorf("marshal docker operation payload: %w", err)
 	}
@@ -584,7 +616,7 @@ func insertOperation(db *gorm.DB, item domaindocker.Operation) error {
 
 func (r *Repository) UpdateOperation(ctx context.Context, item domaindocker.Operation) (domaindocker.Operation, error) {
 	expectedUpdatedAt := item.UpdatedAt
-	payload, err := marshalJSON(item.Payload)
+	payload, err := marshalOperationPayload(item)
 	if err != nil {
 		return domaindocker.Operation{}, fmt.Errorf("marshal docker operation payload: %w", err)
 	}
@@ -593,7 +625,7 @@ func (r *Repository) UpdateOperation(ctx context.Context, item domaindocker.Oper
 		return domaindocker.Operation{}, fmt.Errorf("marshal docker operation result: %w", err)
 	}
 	item.UpdatedAt = time.Now().UTC()
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE docker_operations
 		SET host_id = ?, project_id = ?, service_id = ?, operation_kind = ?, status = ?, requested_by = ?,
 			claimed_by_worker_id = ?, callback_token = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
@@ -621,8 +653,14 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 		now = time.Now().UTC()
 	}
 	var task domaindocker.Operation
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		clauses := []string{claimableOperationClause()}
+		clauses = append(clauses, `(project_id IS NULL OR NOT EXISTS (
+			SELECT 1 FROM docker_operations active WHERE active.project_id = docker_operations.project_id
+			AND active.id <> docker_operations.id AND active.status IN ('running', 'canceling')))`)
+		if callbackToken == "" {
+			clauses = append(clauses, "COALESCE(payload->>'deliveryPlanId', '') = ''")
+		}
 		args := []any{}
 		if values := compactStrings(hostIDs); len(values) > 0 {
 			clauses = append(clauses, fmt.Sprintf("host_id IN (%s)", placeholders(len(values))))
@@ -655,6 +693,9 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 		if closeErr := rows.Close(); closeErr != nil {
 			return fmt.Errorf("close claimed docker operation rows: %w", closeErr)
 		}
+		if err := lockOperationDispatch(ctx, tx, item); err != nil {
+			return err
+		}
 		item.Status = "running"
 		item.ClaimedByWorkerID = workerID
 		item.CallbackToken = strings.TrimSpace(callbackToken)
@@ -668,7 +709,7 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 			"claimedByAgentId":  strings.TrimSpace(agentID),
 			"claimedAt":         now.Format(time.RFC3339),
 		})
-		payload, marshalErr := marshalJSON(item.Payload)
+		payload, marshalErr := marshalOperationPayload(item)
 		if marshalErr != nil {
 			return fmt.Errorf("marshal claimed docker operation payload: %w", marshalErr)
 		}
@@ -701,8 +742,31 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 	return task, nil
 }
 
+func lockOperationDispatch(ctx context.Context, tx *gorm.DB, item domaindocker.Operation) error {
+	if item.ProjectID != "" {
+		// Queue rows differ, but Compose actions share one project workspace.
+		// Lock the project before the second check to serialize concurrent claims.
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "docker-project:"+item.ProjectID).Error; err != nil {
+			return err
+		}
+		var active int64
+		if err := tx.Raw(`SELECT COUNT(*) FROM docker_operations WHERE project_id = ? AND id <> ? AND status IN ('running', 'canceling')`, item.ProjectID, item.ID).Scan(&active).Error; err != nil {
+			return err
+		}
+		if active != 0 {
+			return ErrNotFound
+		}
+	}
+	if item.Payload["deliveryPlanId"] != nil {
+		if err := repoworkflow.LockDeliveryDispatch(ctx, tx, item.Payload); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *Repository) GetOperation(ctx context.Context, id string) (domaindocker.Operation, error) {
-	row := r.db.WithContext(ctx).Raw(operationSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(operationSelect()+" WHERE id = ? LIMIT 1", strings.TrimSpace(id)).Row()
 	return scanOperationRow(row)
 }
 
@@ -717,7 +781,7 @@ func (r *Repository) ListOperations(ctx context.Context, filter domaindocker.Ope
 }
 
 func queryList[T any](ctx context.Context, db *gorm.DB, query string, args []any, capacity int, contextMessage string, scan func(scanner) (T, error)) ([]T, error) {
-	rows, err := db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", contextMessage, err)
 	}
@@ -749,7 +813,7 @@ func (r *Repository) CreateOperationLog(ctx context.Context, item domaindocker.O
 	if err != nil {
 		return fmt.Errorf("marshal docker operation log payload: %w", err)
 	}
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO docker_operation_logs (id, operation_id, log_level, message, payload, created_at)
 		VALUES (?, ?, ?, ?, ?::jsonb, ?)
 	`, item.ID, item.OperationID, item.LogLevel, item.Message, string(payload), item.CreatedAt).Error
@@ -757,7 +821,7 @@ func (r *Repository) CreateOperationLog(ctx context.Context, item domaindocker.O
 
 func (r *Repository) ListOperationLogs(ctx context.Context, operationID string, limit int) ([]domaindocker.OperationLog, error) {
 	normalized := normalizedLimit(limit)
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, operation_id, log_level, message, payload, created_at
 		FROM docker_operation_logs
 		WHERE operation_id = ?
@@ -985,19 +1049,20 @@ func operationFromInput(input domaindocker.OperationInput) domaindocker.Operatio
 		id = uuid.NewString()
 	}
 	return domaindocker.Operation{
-		ID:             id,
-		HostID:         strings.TrimSpace(input.HostID),
-		ProjectID:      strings.TrimSpace(input.ProjectID),
-		ServiceID:      strings.TrimSpace(input.ServiceID),
-		OperationKind:  strings.TrimSpace(input.OperationKind),
-		Status:         status,
-		RequestedBy:    strings.TrimSpace(input.RequestedBy),
-		MaxRetries:     maxRetries,
-		TimeoutSeconds: timeoutSeconds,
-		Payload:        ensureMap(input.Payload),
-		Result:         ensureMap(input.Result),
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:                     id,
+		HostID:                 strings.TrimSpace(input.HostID),
+		ProjectID:              strings.TrimSpace(input.ProjectID),
+		ServiceID:              strings.TrimSpace(input.ServiceID),
+		OperationKind:          strings.TrimSpace(input.OperationKind),
+		Status:                 status,
+		RequestedBy:            strings.TrimSpace(input.RequestedBy),
+		ExecutionAuthorization: input.ExecutionAuthorization,
+		MaxRetries:             maxRetries,
+		TimeoutSeconds:         timeoutSeconds,
+		Payload:                ensureMap(input.Payload),
+		Result:                 ensureMap(input.Result),
+		CreatedAt:              now,
+		UpdatedAt:              now,
 	}
 }
 
@@ -1130,6 +1195,8 @@ func scanOperation(rows scanner) (domaindocker.Operation, error) {
 		return domaindocker.Operation{}, fmt.Errorf("scan docker operation: %w", err)
 	}
 	unmarshalMap(payload, &item.Payload)
+	item.ExecutionAuthorization, _ = item.Payload["executionAuthorizationCredential"].(string)
+	delete(item.Payload, "executionAuthorizationCredential")
 	unmarshalMap(result, &item.Result)
 	return item, nil
 }
@@ -1192,7 +1259,7 @@ func claimableOperationClause() string {
 }
 
 func (r *Repository) getServiceByProjectName(ctx context.Context, projectID, name string) (domaindocker.Service, error) {
-	row := r.db.WithContext(ctx).Raw(serviceSelect()+" WHERE project_id = ? AND name = ? LIMIT 1", strings.TrimSpace(projectID), strings.TrimSpace(name)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(serviceSelect()+" WHERE project_id = ? AND name = ? LIMIT 1", strings.TrimSpace(projectID), strings.TrimSpace(name)).Row()
 	return scanServiceRow(row)
 }
 
@@ -1201,7 +1268,7 @@ func (r *Repository) deleteByID(ctx context.Context, tableName, id, label string
 	if err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
-	result := r.db.WithContext(ctx).Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", tableName), strings.TrimSpace(id))
+	result := dbtx.DB(ctx, r.db).Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", tableName), strings.TrimSpace(id))
 	if result.Error != nil {
 		return fmt.Errorf("%s: %w", label, result.Error)
 	}
@@ -1219,7 +1286,7 @@ func (r *Repository) count(ctx context.Context, tableName string, clauses []stri
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
 	query = appendWhere(query, clauses)
 	var total int
-	if err := r.db.WithContext(ctx).Raw(query, args...).Row().Scan(&total); err != nil {
+	if err := dbtx.DB(ctx, r.db).Raw(query, args...).Row().Scan(&total); err != nil {
 		return 0, fmt.Errorf("count %s: %w", tableName, err)
 	}
 	return total, nil
@@ -1434,7 +1501,7 @@ func fetchCreatedAt(ctx context.Context, db *gorm.DB, tableName, id string) time
 		return time.Now().UTC()
 	}
 	var createdAt time.Time
-	if err := db.WithContext(ctx).Raw(fmt.Sprintf("SELECT created_at FROM %s WHERE id = ?", tableName), strings.TrimSpace(id)).Row().Scan(&createdAt); err != nil {
+	if err := dbtx.DB(ctx, db).Raw(fmt.Sprintf("SELECT created_at FROM %s WHERE id = ?", tableName), strings.TrimSpace(id)).Row().Scan(&createdAt); err != nil {
 		return time.Now().UTC()
 	}
 	return createdAt
@@ -1558,4 +1625,19 @@ func slugify(value string) string {
 		return "docker-project"
 	}
 	return out
+}
+
+// Private execution evidence stays in the existing durable payload, but never
+// enters public operation JSON or an Agent command payload.
+func marshalOperationPayload(item domaindocker.Operation) ([]byte, error) {
+	payload := make(map[string]any, len(item.Payload)+1)
+	for key, value := range item.Payload {
+		if key != "executionAuthorizationCredential" {
+			payload[key] = value
+		}
+	}
+	if item.ExecutionAuthorization != "" {
+		payload["executionAuthorizationCredential"] = item.ExecutionAuthorization
+	}
+	return marshalJSON(payload)
 }

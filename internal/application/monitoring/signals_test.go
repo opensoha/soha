@@ -37,7 +37,7 @@ type stubMetricTelemetry struct {
 func (s *stubMetricTelemetry) RangeQuery(_ context.Context, _ string, _ string, _ map[string]any, query telemetry.MetricRangeQuery) ([]telemetry.MetricSeries, map[string]any, error) {
 	s.called = true
 	s.query = query
-	return []telemetry.MetricSeries{{Key: "cpu_usage", Label: "CPU", Latest: 0.5}}, nil, nil
+	return []telemetry.MetricSeries{{Key: "cpu_usage", Label: "CPU", Latest: 0.5, Points: []telemetry.MetricPoint{{Timestamp: query.TimeTo, Value: 0.5}}}}, nil, nil
 }
 
 func (s *stubMetricTelemetry) Analyze(context.Context, string, string, map[string]any, telemetry.MetricRangeQuery) (telemetry.MetricAnomalySummary, error) {

@@ -1,15 +1,19 @@
 package manifest
 
-import "time"
+import (
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"time"
+)
 
 const (
-	TaskActionPreflight = "preflight"
-	TaskActionApply     = "apply"
-	TaskActionObserve   = "observe"
-	TaskActionRepair    = "repair"
-	TaskActionAdopt     = "adopt"
-	TaskActionRollback  = "rollback"
-	TaskActionSync      = "sync"
+	TaskActionPreflight      = "preflight"
+	TaskActionApply          = "apply"
+	TaskActionObserve        = "observe"
+	TaskActionRepair         = "repair"
+	TaskActionAdopt          = "adopt"
+	TaskActionRollback       = "rollback"
+	TaskActionSync           = "sync"
+	TaskActionRolloutControl = "rollout_control"
 
 	TaskKindPreflight = "manifest_preflight"
 	TaskKindApply     = "manifest_apply"
@@ -62,13 +66,15 @@ type Diagnostic struct {
 }
 
 type RenderResult struct {
-	PackageID      string             `json:"packageId"`
-	BindingID      string             `json:"bindingId"`
-	Revision       int                `json:"revision"`
-	Renderer       string             `json:"renderer"`
-	RenderedDigest string             `json:"renderedDigest"`
-	Documents      []RenderedDocument `json:"documents"`
-	Diagnostics    []Diagnostic       `json:"diagnostics"`
+	PackageID       string             `json:"packageId"`
+	BindingID       string             `json:"bindingId"`
+	Revision        int                `json:"revision"`
+	Renderer        string             `json:"renderer"`
+	RenderedDigest  string             `json:"renderedDigest"`
+	InputDigest     string             `json:"inputDigest"`
+	RendererVersion string             `json:"rendererVersion"`
+	Documents       []RenderedDocument `json:"documents"`
+	Diagnostics     []Diagnostic       `json:"diagnostics"`
 }
 
 type PreflightResult struct {
@@ -103,49 +109,53 @@ type DriftReport struct {
 }
 
 type TaskPayload struct {
-	Action          string              `json:"action"`
-	PackageID       string              `json:"packageId"`
-	BindingID       string              `json:"bindingId,omitempty"`
-	DeploymentID    string              `json:"deploymentId,omitempty"`
-	SourceID        string              `json:"sourceId,omitempty"`
-	Generation      int64               `json:"generation"`
-	Revision        int                 `json:"revision,omitempty"`
-	RenderedDigest  string              `json:"renderedDigest,omitempty"`
-	ClusterID       string              `json:"clusterId,omitempty"`
-	Namespace       string              `json:"namespace,omitempty"`
-	FieldManager    string              `json:"fieldManager,omitempty"`
-	ForceConflicts  bool                `json:"forceConflicts"`
-	IdempotencyKey  string              `json:"idempotencyKey"`
-	Documents       []RenderedDocument  `json:"documents,omitempty"`
-	Inventory       []ResourceInventory `json:"inventory,omitempty"`
-	RepositoryID    string              `json:"repositoryId,omitempty"`
-	RepositoryURL   string              `json:"repositoryUrl,omitempty"`
-	Renderer        string              `json:"renderer,omitempty"`
-	RefType         string              `json:"refType,omitempty"`
-	RefValue        string              `json:"refValue,omitempty"`
-	Path            string              `json:"path,omitempty"`
-	IncludePatterns []string            `json:"includePatterns,omitempty"`
-	ExcludePatterns []string            `json:"excludePatterns,omitempty"`
-	RequestedCommit string              `json:"requestedCommit,omitempty"`
-	RequestedBy     string              `json:"requestedBy,omitempty"`
+	RolloutControl   *sohaapi.ProgressiveRolloutControlInput `json:"rolloutControl,omitempty"`
+	GitOpsDocuments  []RenderedDocument                      `json:"gitOpsDocuments,omitempty"`
+	Action           string                                  `json:"action"`
+	PackageID        string                                  `json:"packageId"`
+	BindingID        string                                  `json:"bindingId,omitempty"`
+	DeploymentID     string                                  `json:"deploymentId,omitempty"`
+	SourceID         string                                  `json:"sourceId,omitempty"`
+	Generation       int64                                   `json:"generation"`
+	Revision         int                                     `json:"revision,omitempty"`
+	RenderedDigest   string                                  `json:"renderedDigest,omitempty"`
+	ClusterID        string                                  `json:"clusterId,omitempty"`
+	Namespace        string                                  `json:"namespace,omitempty"`
+	FieldManager     string                                  `json:"fieldManager,omitempty"`
+	ForceConflicts   bool                                    `json:"forceConflicts"`
+	IdempotencyKey   string                                  `json:"idempotencyKey"`
+	Documents        []RenderedDocument                      `json:"documents,omitempty"`
+	Inventory        []ResourceInventory                     `json:"inventory,omitempty"`
+	RepositoryID     string                                  `json:"repositoryId,omitempty"`
+	RepositoryURL    string                                  `json:"repositoryUrl,omitempty"`
+	Renderer         string                                  `json:"renderer,omitempty"`
+	KustomizeEntries []string                                `json:"kustomizeEntries,omitempty"`
+	RefType          string                                  `json:"refType,omitempty"`
+	RefValue         string                                  `json:"refValue,omitempty"`
+	Path             string                                  `json:"path,omitempty"`
+	IncludePatterns  []string                                `json:"includePatterns,omitempty"`
+	ExcludePatterns  []string                                `json:"excludePatterns,omitempty"`
+	RequestedCommit  string                                  `json:"requestedCommit,omitempty"`
+	RequestedBy      string                                  `json:"requestedBy,omitempty"`
 }
 
 type TaskResult struct {
-	Action          string              `json:"action"`
-	DeploymentID    string              `json:"deploymentId,omitempty"`
-	Generation      int64               `json:"generation"`
-	Stale           bool                `json:"stale"`
-	RenderedDigest  string              `json:"renderedDigest,omitempty"`
-	Preflight       *PreflightResult    `json:"preflight,omitempty"`
-	Diagnostics     []Diagnostic        `json:"diagnostics"`
-	Inventory       []ResourceInventory `json:"inventory"`
-	Drift           *DriftReport        `json:"drift,omitempty"`
-	AdoptedFiles    []File              `json:"adoptedFiles,omitempty"`
-	EvidenceRefs    []string            `json:"evidenceRefs,omitempty"`
-	ResolvedCommit  string              `json:"resolvedCommit,omitempty"`
-	TreeDigest      string              `json:"treeDigest,omitempty"`
-	CanonicalDigest string              `json:"canonicalDigest,omitempty"`
-	SyncedFiles     []File              `json:"syncedFiles,omitempty"`
+	Rollout         *sohaapi.ProgressiveRolloutStatus `json:"rollout,omitempty"`
+	Action          string                            `json:"action"`
+	DeploymentID    string                            `json:"deploymentId,omitempty"`
+	Generation      int64                             `json:"generation"`
+	Stale           bool                              `json:"stale"`
+	RenderedDigest  string                            `json:"renderedDigest,omitempty"`
+	Preflight       *PreflightResult                  `json:"preflight,omitempty"`
+	Diagnostics     []Diagnostic                      `json:"diagnostics"`
+	Inventory       []ResourceInventory               `json:"inventory"`
+	Drift           *DriftReport                      `json:"drift,omitempty"`
+	AdoptedFiles    []File                            `json:"adoptedFiles,omitempty"`
+	EvidenceRefs    []string                          `json:"evidenceRefs,omitempty"`
+	ResolvedCommit  string                            `json:"resolvedCommit,omitempty"`
+	TreeDigest      string                            `json:"treeDigest,omitempty"`
+	CanonicalDigest string                            `json:"canonicalDigest,omitempty"`
+	SyncedFiles     []File                            `json:"syncedFiles,omitempty"`
 }
 
 type OperationRun struct {

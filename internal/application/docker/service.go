@@ -15,10 +15,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -43,6 +45,7 @@ const (
 	OperationStatusCompleted    = "completed"
 	OperationStatusFailed       = "failed"
 	OperationStatusCanceled     = "canceled"
+	OperationStatusCanceling    = "canceling"
 	OperationStatusTimeout      = "callback_timeout"
 	HostStatusVMReady           = "vm_ready"
 	HostStatusWaitingAgent      = "provisioned_waiting_agent"
@@ -71,6 +74,8 @@ type LogStreamTicketIssuer interface {
 }
 
 type HostProvisionInput struct {
+	RequireCapacity   bool
+	IdempotencyKey    string
 	ConnectionID      string
 	Name              string
 	Architecture      string
@@ -154,17 +159,25 @@ func WithComposeSourceFetcher(fetcher ComposeSourceFetcher) Option {
 	return func(s *Service) { s.composeSourceFetcher = fetcher }
 }
 
+func WithAtomicHostCreation(apply func(context.Context, string, func(context.Context) error) error) Option {
+	return func(s *Service) { s.atomicHostCreation = apply }
+}
+
 type Service struct {
-	repo                     Repository
-	permissions              *appaccess.PermissionResolver
-	operations               OperationRecorder
-	audit                    AuditRecorder
-	logStreamTickets         LogStreamTicketIssuer
-	hostProvisioner          HostProvisioner
-	runtimeBearerToken       string
-	credentialEncryptionKeys keyring.Ring
-	accessURL                AccessURLResolver
-	composeSourceFetcher     ComposeSourceFetcher
+	executionMu               sync.RWMutex
+	executionPrincipals       func(context.Context, string, string) (domainidentity.Principal, error)
+	authorizeGatewayExecution func(context.Context, domainidentity.Principal, domainaigateway.ExecutionAuthorization) error
+	repo                      Repository
+	permissions               *appaccess.PermissionResolver
+	operations                OperationRecorder
+	audit                     AuditRecorder
+	logStreamTickets          LogStreamTicketIssuer
+	hostProvisioner           HostProvisioner
+	runtimeBearerToken        string
+	credentialEncryptionKeys  keyring.Ring
+	accessURL                 AccessURLResolver
+	composeSourceFetcher      ComposeSourceFetcher
+	atomicHostCreation        func(context.Context, string, func(context.Context) error) error
 }
 
 func New(repo Repository, permissions *appaccess.PermissionResolver, operations OperationRecorder, opts ...Option) *Service {
@@ -267,6 +280,9 @@ func (s *Service) PlanQuickCreateHost(ctx context.Context, principal domainident
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
+	if err := domaindocker.CheckScope(ctx, map[string]string{"resourceKind": "docker.host", "virtualizationConnectionId": input.VirtualizationConnectionID}); err != nil {
+		return domainoperation.Plan{}, err
+	}
 	_, inputHash, err := idempotency.Derive("docker.host.quick_create.plan", "", "plan", input)
 	if err != nil {
 		return domainoperation.Plan{}, fmt.Errorf("hash Docker host quick-create plan: %w", err)
@@ -291,6 +307,29 @@ func (s *Service) PlanQuickCreateHost(ctx context.Context, principal domainident
 }
 
 func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.QuickCreateHostInput) (_ domaindocker.Operation, retErr error) {
+	if s.atomicHostCreation == nil {
+		if input.RequireCapacity {
+			return domaindocker.Operation{}, fmt.Errorf("%w: atomic Docker host creation is unavailable", apperrors.ErrConflict)
+		}
+		return s.quickCreateHost(ctx, principal, input)
+	}
+	key := firstNonEmpty(principal.UserID, principal.UserName) + "/" + input.IdempotencyKey
+	if input.IdempotencyKey == "" {
+		key = uuid.NewString()
+	}
+	var created domaindocker.Operation
+	err := s.atomicHostCreation(ctx, key, func(txCtx context.Context) error {
+		var err error
+		created, err = s.quickCreateHost(txCtx, principal, input)
+		return err
+	})
+	if err != nil {
+		s.recordMutationFailure(ctx, principal, "docker.host.provision.enqueue", "", input.Name, err, nil)
+	}
+	return created, err
+}
+
+func (s *Service) quickCreateHost(ctx context.Context, principal domainidentity.Principal, input domaindocker.QuickCreateHostInput) (_ domaindocker.Operation, retErr error) {
 	defer func() {
 		s.recordMutationFailure(ctx, principal, "docker.host.provision.enqueue", "", input.Name, retErr, nil)
 	}()
@@ -308,12 +347,12 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 	if existing, found, err := s.findClaimedOperation(ctx, claim); err != nil || found {
 		return existing, err
 	}
-	hostID := ""
-	if claim.id != "" {
-		hostID, _, err = idempotency.Derive("docker.host.quick_create.host", firstNonEmpty(principal.UserID, principal.UserName), input.IdempotencyKey, input)
-		if err != nil {
-			return domaindocker.Operation{}, fmt.Errorf("derive Docker host identity: %w", err)
-		}
+	hostID, err := quickCreateHostIdentity(principal, input)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if err := domaindocker.CheckScope(ctx, map[string]string{"resourceKind": "docker.host", "hostId": hostID, "virtualizationConnectionId": input.VirtualizationConnectionID}); err != nil {
+		return domaindocker.Operation{}, err
 	}
 	hostConfig := mergeMap(input.Config, map[string]any{})
 	if claim.inputHash != "" {
@@ -344,7 +383,10 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 		return domaindocker.Operation{}, err
 	}
 	if vmTask != nil {
-		host = s.attachQuickCreateTask(ctx, host, hostConfig, *vmTask)
+		host, err = s.attachQuickCreateTask(ctx, host, hostConfig, *vmTask)
+		if err != nil {
+			return domaindocker.Operation{}, err
+		}
 	}
 	payload := map[string]any{
 		"hostId": host.ID, "hostName": host.Name,
@@ -370,6 +412,14 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 	}
 	s.recordOperation(ctx, principal, "docker.host.provision.enqueue", host.ID, host.Name, "success", "enqueued docker host provisioning", map[string]any{"operationId": task.ID})
 	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func quickCreateHostIdentity(principal domainidentity.Principal, input domaindocker.QuickCreateHostInput) (string, error) {
+	if input.IdempotencyKey == "" {
+		return "", nil
+	}
+	id, _, err := idempotency.Derive("docker.host.quick_create.host", firstNonEmpty(principal.UserID, principal.UserName), input.IdempotencyKey, input)
+	return id, err
 }
 
 func (s *Service) prepareQuickCreateHost(input domaindocker.QuickCreateHostInput) (domaindocker.QuickCreateHostInput, string, error) {
@@ -399,6 +449,7 @@ func (s *Service) provisionQuickCreateHost(ctx context.Context, principal domain
 		providerParams["dockerHostId"] = host.ID
 	}
 	task, err := s.hostProvisioner.ProvisionDockerHost(ctx, principal, HostProvisionInput{
+		RequireCapacity: input.RequireCapacity, IdempotencyKey: "docker-host/" + host.ID,
 		ConnectionID: strings.TrimSpace(input.VirtualizationConnectionID), Name: strings.TrimSpace(input.Name), Architecture: architecture,
 		CPU: input.CPUCoreCount, MemoryMiB: bytesToMiB(input.MemoryBytes), DiskGiB: bytesToGiB(input.DiskBytes),
 		BootImageID: strings.TrimSpace(input.ImageID), ImageID: strings.TrimSpace(input.ImageID), FlavorID: strings.TrimSpace(input.FlavorID),
@@ -411,7 +462,7 @@ func (s *Service) provisionQuickCreateHost(ctx context.Context, principal domain
 	return &task, nil
 }
 
-func (s *Service) attachQuickCreateTask(ctx context.Context, host domaindocker.Host, config map[string]any, task HostProvisionTask) domaindocker.Host {
+func (s *Service) attachQuickCreateTask(ctx context.Context, host domaindocker.Host, config map[string]any, task HostProvisionTask) (domaindocker.Host, error) {
 	config = mergeMap(config, map[string]any{"virtualizationTaskId": task.ID, "virtualizationTaskStatus": task.Status, "virtualizationProvider": task.Provider})
 	updated, err := s.repo.UpdateHost(ctx, host.ID, domaindocker.HostInput{
 		Name: host.Name, Status: host.Status, Environment: host.Environment, Owner: host.Owner, Team: host.Team,
@@ -420,9 +471,9 @@ func (s *Service) attachQuickCreateTask(ctx context.Context, host domaindocker.H
 		AvailablePortStart: host.AvailablePortStart, AvailablePortEnd: host.AvailablePortEnd, Labels: host.Labels, Config: config,
 	})
 	if err != nil {
-		return host
+		return host, err
 	}
-	return updated
+	return updated, nil
 }
 
 func (s *Service) markQuickCreateOperationRunning(ctx context.Context, operation domaindocker.Operation, task HostProvisionTask) (domaindocker.Operation, error) {
@@ -468,6 +519,9 @@ func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Pr
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "create")); err != nil {
 		return domaindocker.Project{}, err
 	}
+	if input.IdempotencyKey != "" {
+		return s.createProjectIdempotent(ctx, principal, input)
+	}
 	if err := s.resolveRemoteCompose(ctx, &input); err != nil {
 		return domaindocker.Project{}, err
 	}
@@ -489,6 +543,9 @@ func (s *Service) CreateProject(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) UpdateProject(ctx context.Context, principal domainidentity.Principal, id string, input domaindocker.ProjectInput) (_ domaindocker.Project, retErr error) {
+	if input.IdempotencyKey != "" {
+		return domaindocker.Project{}, fmt.Errorf("%w: idempotencyKey is only supported for creation", apperrors.ErrInvalidArgument)
+	}
 	defer func() { s.recordMutationFailure(ctx, principal, "docker.project.update", id, input.Name, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerProjectsManage, "update")); err != nil {
 		return domaindocker.Project{}, err
@@ -566,6 +623,9 @@ func (s *Service) DeployProject(ctx context.Context, principal domainidentity.Pr
 func (s *Service) prepareProjectDeploy(ctx context.Context, id, action string) (domaindocker.Project, string, error) {
 	project, err := s.repo.GetProject(ctx, id)
 	if err != nil {
+		return domaindocker.Project{}, "", err
+	}
+	if err := checkProjectScope(ctx, project); err != nil {
 		return domaindocker.Project{}, "", err
 	}
 	normalizedAction := strings.TrimSpace(action)
@@ -809,12 +869,14 @@ func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Pr
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
-	payload := map[string]any{"action": normalizedAction, "serviceName": service.Name}
-	if project, projectErr := s.repo.GetProject(ctx, service.ProjectID); projectErr == nil {
-		payload["composeContent"] = project.ComposeContent
-		payload["envContent"] = project.EnvContent
-		payload["projectSlug"] = project.Slug
+	project, err := s.repo.GetProject(ctx, service.ProjectID)
+	if err != nil {
+		return domaindocker.Operation{}, err
 	}
+	if err := checkServiceProject(ctx, service, project); err != nil {
+		return domaindocker.Operation{}, err
+	}
+	payload := map[string]any{"action": normalizedAction, "serviceName": service.Name, "composeContent": project.ComposeContent, "envContent": project.EnvContent, "projectSlug": project.Slug}
 	task, err := s.enqueueIdempotentOperation(ctx, "docker.service.action:"+service.ID, principal, input.IdempotencyKey, input, OperationKindServiceAction, service.HostID, service.ProjectID, service.ID, payload)
 	if err != nil {
 		return domaindocker.Operation{}, err
@@ -976,10 +1038,22 @@ func (s *Service) GetOperation(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorize(ctx, principal, appaccess.PermDockerOperationsView); err != nil {
 		return domaindocker.Operation{}, err
 	}
-	s.reconcileHostProvisionOperations(ctx)
 	item, err := s.repo.GetOperation(ctx, id)
 	if err != nil {
 		return domaindocker.Operation{}, err
+	}
+	if err := domaindocker.CheckScope(ctx, operationScope(item)); err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if reader, ok := s.hostProvisioner.(HostProvisionTaskReader); ok && reader != nil && item.OperationKind == OperationKindHostProvision && !operationTerminal(item.Status) {
+		s.reconcileHostProvisionOperation(ctx, reader, item)
+		item, err = s.repo.GetOperation(ctx, id)
+		if err != nil {
+			return domaindocker.Operation{}, err
+		}
+		if err := domaindocker.CheckScope(ctx, operationScope(item)); err != nil {
+			return domaindocker.Operation{}, err
+		}
 	}
 	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 }
@@ -1000,24 +1074,36 @@ func (s *Service) CancelOperationIdempotent(ctx context.Context, principal domai
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "cancel")); err != nil {
 		return domaindocker.Operation{}, err
 	}
+	return s.cancelOperation(ctx, principal, id, input)
+}
+
+func (s *Service) cancelOperation(ctx context.Context, principal domainidentity.Principal, id string, input OperationMutationInput) (domaindocker.Operation, error) {
 	item, err := s.repo.GetOperation(ctx, id)
 	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if err := domaindocker.CheckScope(ctx, operationScope(item)); err != nil {
 		return domaindocker.Operation{}, err
 	}
 	receiptID, inputHash, replayed, err := dockerOperationMutationReceipt(item.Payload, "docker.operation.cancel/"+item.ID, principal, input)
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
-	if replayed {
+	if replayed || item.Status == OperationStatusCanceling {
 		return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 	}
 	if !slices.Contains([]string{OperationStatusQueued, OperationStatusRunning}, item.Status) {
 		return domaindocker.Operation{}, fmt.Errorf("%w: operation is not cancelable", apperrors.ErrInvalidArgument)
 	}
 	now := time.Now().UTC()
-	item.Status = OperationStatusCanceled
-	item.FinishedAt = &now
-	item.Result = mergeMap(item.Result, map[string]any{"canceledBy": principal.UserID})
+	unclaimed := item.Status == OperationStatusQueued && item.ClaimedByWorkerID == "" && stringValue(item.Payload, "virtualizationTaskId") == ""
+	item.Status, item.FinishedAt = OperationStatusCanceling, nil
+	item.Result = mergeMap(item.Result, map[string]any{"canceledBy": principal.UserID, "cancellationRequestedAt": now.Format(time.RFC3339)})
+	if unclaimed {
+		// The optimistic update fences a simultaneous claim. No executor ran.
+		item.Status, item.FinishedAt = OperationStatusCanceled, &now
+		item.Result["cancellationAcknowledged"] = true
+	}
 	if reason := strings.TrimSpace(input.Reason); reason != "" {
 		item.Result["cancelReason"] = reason
 	}
@@ -1039,8 +1125,8 @@ func (s *Service) CancelOperationIdempotent(ctx context.Context, principal domai
 		logMetadata["reason"] = reason
 		operationMetadata["reason"] = reason
 	}
-	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "warn", Message: "operation canceled by control plane", Payload: logMetadata})
-	s.recordOperation(ctx, principal, "docker.operation.cancel", updated.ID, updated.OperationKind, "success", "canceled docker operation", operationMetadata)
+	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "warn", Message: "operation cancellation requested by control plane", Payload: logMetadata})
+	s.recordOperation(ctx, principal, "docker.operation.cancel", updated.ID, updated.OperationKind, "success", "requested docker operation cancellation", operationMetadata)
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
 }
 
@@ -1053,8 +1139,24 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "retry")); err != nil {
 		return domaindocker.Operation{}, err
 	}
+	if s.atomicHostCreation == nil {
+		return s.retryOperation(ctx, principal, id, input)
+	}
+	var result domaindocker.Operation
+	err := s.atomicHostCreation(ctx, "retry/"+id, func(txCtx context.Context) error {
+		var err error
+		result, err = s.retryOperation(txCtx, principal, id, input)
+		return err
+	})
+	return result, err
+}
+
+func (s *Service) retryOperation(ctx context.Context, principal domainidentity.Principal, id string, input OperationMutationInput) (domaindocker.Operation, error) {
 	item, err := s.repo.GetOperation(ctx, id)
 	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	if err := domaindocker.CheckScope(ctx, operationScope(item)); err != nil {
 		return domaindocker.Operation{}, err
 	}
 	receiptID, inputHash, replayed, err := dockerOperationMutationReceipt(item.Payload, "docker.operation.retry/"+item.ID, principal, input)
@@ -1073,6 +1175,9 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 	if item.AttemptCount > item.MaxRetries {
 		return domaindocker.Operation{}, fmt.Errorf("%w: operation retry limit reached", apperrors.ErrInvalidArgument)
 	}
+	if err := s.authorizeQueuedOperation(ctx, item); err != nil {
+		return domaindocker.Operation{}, err
+	}
 	item.Status = OperationStatusQueued
 	item.ClaimedByWorkerID = ""
 	item.CallbackToken = ""
@@ -1080,6 +1185,8 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 	item.LastHeartbeatAt = nil
 	item.FinishedAt = nil
 	item.Result = mergeMap(item.Result, map[string]any{"retriedBy": principal.UserID})
+	delete(item.Result, "cancellationAcknowledged")
+	delete(item.Result, "cancellationRequestedAt")
 	if reason := strings.TrimSpace(input.Reason); reason != "" {
 		item.Result["retryReason"] = reason
 	}
@@ -1087,6 +1194,10 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 		item.Payload = map[string]any{}
 	}
 	idempotency.RecordReceipt(item.Payload, receiptID, inputHash)
+	item, err = s.retryLinkedHostProvisionTask(ctx, principal, item)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
 	updated, err := s.repo.UpdateOperation(ctx, item)
 	if err != nil {
 		if replay, ok := s.replayedDockerOperationMutation(ctx, item.ID, "docker.operation.retry/"+item.ID, principal, input); ok {
@@ -1094,7 +1205,6 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 		}
 		return domaindocker.Operation{}, err
 	}
-	updated = s.retryLinkedHostProvisionTask(ctx, principal, updated)
 	logMetadata := map[string]any{"userId": principal.UserID}
 	operationMetadata := map[string]any{"operationId": updated.ID}
 	if reason := strings.TrimSpace(input.Reason); reason != "" {
@@ -1135,6 +1245,9 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 		input.WorkerID = input.Authorization.HostID
 		input.AgentID = input.Authorization.AgentID
 		input.HostIDs = []string{input.Authorization.HostID}
+		if err := s.repo.HeartbeatHost(ctx, input.Authorization.HostID, input.Authorization.AgentID); err != nil {
+			return domaindocker.Operation{}, err
+		}
 	}
 	workerID := firstNonEmpty(input.WorkerID, input.AgentID)
 	principal := runnerPrincipal(workerID)
@@ -1172,6 +1285,12 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
+	if err := s.authorizeQueuedOperation(ctx, item); err != nil {
+		if saveErr := s.denyClaimedOperation(ctx, item); saveErr != nil {
+			return domaindocker.Operation{}, saveErr
+		}
+		return domaindocker.Operation{}, err
+	}
 	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
 		ID:          uuid.NewString(),
 		OperationID: item.ID,
@@ -1193,6 +1312,10 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 		})
 	}
 	s.recordOperation(ctx, principal, "docker.operation.claim", item.ID, item.OperationKind, "success", "claimed docker operation", map[string]any{"attemptCount": item.AttemptCount})
+	item, err = s.hydrateDeliveryOperation(item)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
 	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 }
 
@@ -1203,6 +1326,10 @@ func (s *Service) GetOperationForRunner(ctx context.Context, id string, authoriz
 		return domaindocker.Operation{}, err
 	}
 	if err := authorizeRunnerOperation(item, authorization); err != nil {
+		return domaindocker.Operation{}, err
+	}
+	item, err = s.stopUnauthorizedOperation(ctx, item)
+	if err != nil {
 		return domaindocker.Operation{}, err
 	}
 	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
@@ -1217,39 +1344,22 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
-	if err := authorizeRunnerOperation(item, input.Authorization); err != nil {
-		return domaindocker.Operation{}, err
-	}
-	workerID := strings.TrimSpace(input.WorkerID)
-	if input.Authorization.HostBound() && workerID != input.Authorization.HostID {
-		return domaindocker.Operation{}, fmt.Errorf("%w: Docker runner credential is bound to another worker", apperrors.ErrAccessDenied)
-	}
-	if workerID == "" {
-		return domaindocker.Operation{}, fmt.Errorf("%w: docker worker id is required", apperrors.ErrInvalidArgument)
-	}
-	claimedBy := strings.TrimSpace(item.ClaimedByWorkerID)
-	if claimedBy == "" {
-		return domaindocker.Operation{}, fmt.Errorf("%w: docker operation must be claimed before callback", apperrors.ErrAccessDenied)
-	}
-	if claimedBy != workerID {
-		return domaindocker.Operation{}, fmt.Errorf("%w: docker operation is claimed by another worker", apperrors.ErrAccessDenied)
-	}
-	if item.CallbackToken != "" && subtle.ConstantTimeCompare([]byte(item.CallbackToken), []byte(strings.TrimSpace(input.CallbackToken))) != 1 {
-		return domaindocker.Operation{}, fmt.Errorf("%w: invalid docker operation callback token", apperrors.ErrAccessDenied)
-	}
-	status := strings.TrimSpace(input.Status)
-	if status == "" {
-		status = OperationStatusRunning
-	}
-	if !validCallbackStatus(status) {
-		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported docker callback status %s", apperrors.ErrInvalidArgument, status)
-	}
-	if err := validateRuntimeEndpoint(stringValue(input.Payload, "endpoint")); err != nil {
+	workerID, status, err := validateDockerOperationCallback(item, input)
+	if err != nil {
 		return domaindocker.Operation{}, err
 	}
 	if operationTerminal(item.Status) {
 		s.recordOperation(ctx, principal, "docker.operation.callback", item.ID, item.OperationKind, "success", "accepted idempotent docker operation callback", map[string]any{"callbackStatus": status, "idempotent": true})
 		return domaindocker.WithOperationState(item, time.Now().UTC()), nil
+	}
+	if item.Status == OperationStatusCanceling && status == OperationStatusCanceled && !input.CancellationAcknowledged {
+		return domaindocker.Operation{}, fmt.Errorf("%w: runner must acknowledge stopped commands before cancellation completes", apperrors.ErrConflict)
+	}
+	if status == OperationStatusRunning {
+		item, err = s.stopUnauthorizedOperation(ctx, item)
+		if err != nil {
+			return domaindocker.Operation{}, err
+		}
 	}
 	now := time.Now().UTC()
 	item.ClaimedByWorkerID = workerID
@@ -1259,8 +1369,13 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 		callbackPayload["hostProvisionStage"] = hostProvisionStageForCallbackStatus(status)
 	}
 	item.Result = mergeMap(item.Result, callbackPayload)
+	if input.CancellationAcknowledged && status == OperationStatusCanceled {
+		item.Result["cancellationAcknowledged"] = true
+	}
 	if status == OperationStatusRunning {
-		item.Status = OperationStatusRunning
+		if item.Status != OperationStatusCanceling {
+			item.Status = OperationStatusRunning
+		}
 	} else {
 		item.Status = status
 		item.FinishedAt = &now
@@ -1363,6 +1478,9 @@ func (s *Service) findClaimedOperation(ctx context.Context, claim operationClaim
 	if !idempotency.Matches(item.Payload, claim.inputHash) {
 		return domaindocker.Operation{}, false, fmt.Errorf("%w: Idempotency-Key is already bound to different input", apperrors.ErrConflict)
 	}
+	if err := domaindocker.CheckScope(ctx, operationScope(item)); err != nil {
+		return domaindocker.Operation{}, false, err
+	}
 	return domaindocker.WithOperationState(item, time.Now().UTC()), true, nil
 }
 
@@ -1378,20 +1496,28 @@ func (s *Service) enqueueIdempotentOperation(ctx context.Context, scope string, 
 }
 
 func (s *Service) enqueueClaimedOperation(ctx context.Context, principal domainidentity.Principal, kind, hostID, projectID, serviceID string, payload map[string]any, claim operationClaim) (domaindocker.Operation, error) {
+	if err := domaindocker.CheckScope(ctx, operationScope(domaindocker.Operation{ID: claim.id, HostID: hostID, ProjectID: projectID, ServiceID: serviceID, Payload: payload})); err != nil {
+		return domaindocker.Operation{}, err
+	}
 	if claim.inputHash != "" {
 		payload = mergeMap(payload, map[string]any{idempotency.PayloadHashKey: claim.inputHash})
 	}
+	authorization, err := s.sealOperationAuthorization(ctx, principal)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
 	task, err := s.repo.CreateOperation(ctx, domaindocker.OperationInput{
-		ID:             claim.id,
-		HostID:         hostID,
-		ProjectID:      projectID,
-		ServiceID:      serviceID,
-		OperationKind:  kind,
-		Status:         OperationStatusQueued,
-		RequestedBy:    firstNonEmpty(principal.UserID, principal.UserName),
-		MaxRetries:     defaultOperationMaxRetries,
-		TimeoutSeconds: defaultOperationTimeout,
-		Payload:        payload,
+		ExecutionAuthorization: authorization,
+		ID:                     claim.id,
+		HostID:                 hostID,
+		ProjectID:              projectID,
+		ServiceID:              serviceID,
+		OperationKind:          kind,
+		Status:                 OperationStatusQueued,
+		RequestedBy:            firstNonEmpty(principal.UserID, principal.UserName),
+		MaxRetries:             defaultOperationMaxRetries,
+		TimeoutSeconds:         defaultOperationTimeout,
+		Payload:                payload,
 	})
 	if err != nil {
 		if existing, found, lookupErr := s.findClaimedOperation(ctx, claim); found || lookupErr != nil {
@@ -1466,7 +1592,7 @@ func (s *Service) touchHostFromCallback(ctx context.Context, hostID, workerID, o
 }
 
 func (s *Service) applyCallbackRuntimeState(ctx context.Context, item domaindocker.Operation, status string, payload map[string]any) {
-	if status == OperationStatusRunning {
+	if status == OperationStatusRunning || stringValue(item.Payload, "action") == "validate" {
 		return
 	}
 	s.applyPortMappingRuntimeState(ctx, item, status)
@@ -1573,28 +1699,17 @@ func (s *Service) cancelLinkedHostProvisionTask(ctx context.Context, principal d
 	return item
 }
 
-func (s *Service) retryLinkedHostProvisionTask(ctx context.Context, principal domainidentity.Principal, item domaindocker.Operation) domaindocker.Operation {
+func (s *Service) retryLinkedHostProvisionTask(ctx context.Context, principal domainidentity.Principal, item domaindocker.Operation) (domaindocker.Operation, error) {
 	if item.OperationKind != OperationKindHostProvision {
-		return item
-	}
-	controller, ok := s.hostProvisioner.(HostProvisionTaskController)
-	if !ok || controller == nil {
-		return item
+		return item, nil
 	}
 	taskID := stringValue(item.Payload, "virtualizationTaskId")
 	if taskID == "" {
-		return item
+		return item, nil
 	}
-	task, err := controller.RetryProvisionTask(ctx, principal, taskID)
+	task, err := s.resumeHostProvisionTask(ctx, principal, taskID)
 	if err != nil {
-		_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
-			ID:          uuid.NewString(),
-			OperationID: item.ID,
-			LogLevel:    "warn",
-			Message:     "failed to retry linked virtualization task",
-			Payload:     map[string]any{"virtualizationTaskId": taskID, "error": err.Error()},
-		})
-		return item
+		return item, err
 	}
 	item.Payload = mergeMap(item.Payload, map[string]any{
 		"virtualizationTaskId": task.ID,
@@ -1604,9 +1719,7 @@ func (s *Service) retryLinkedHostProvisionTask(ctx context.Context, principal do
 		"virtualizationTaskStatus": task.Status,
 		"virtualizationProvider":   task.Provider,
 	})
-	if updated, updateErr := s.repo.UpdateOperation(ctx, item); updateErr == nil {
-		item = updated
-	}
+	item.Result["hostProvisionStage"] = "vm_retrying"
 	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
 		ID:          uuid.NewString(),
 		OperationID: item.ID,
@@ -1614,7 +1727,26 @@ func (s *Service) retryLinkedHostProvisionTask(ctx context.Context, principal do
 		Message:     "linked virtualization task retry queued",
 		Payload:     map[string]any{"virtualizationTaskId": task.ID, "status": task.Status},
 	})
-	return item
+	return item, nil
+}
+
+func (s *Service) resumeHostProvisionTask(ctx context.Context, principal domainidentity.Principal, id string) (HostProvisionTask, error) {
+	reader, ok := s.hostProvisioner.(HostProvisionTaskReader)
+	if !ok || reader == nil {
+		return HostProvisionTask{}, fmt.Errorf("%w: VM provision task reader is unavailable", apperrors.ErrConflict)
+	}
+	task, err := reader.GetProvisionTask(ctx, id)
+	if err != nil {
+		return task, err
+	}
+	if slices.Contains([]string{OperationStatusCompleted, OperationStatusQueued, OperationStatusRunning}, task.Status) {
+		return task, nil
+	}
+	controller, ok := s.hostProvisioner.(HostProvisionTaskController)
+	if !ok || controller == nil {
+		return task, fmt.Errorf("%w: VM provision task controller is unavailable", apperrors.ErrConflict)
+	}
+	return controller.RetryProvisionTask(ctx, principal, id)
 }
 
 func (s *Service) reconcileHostProvisionOperations(ctx context.Context) {
@@ -1624,7 +1756,7 @@ func (s *Service) reconcileHostProvisionOperations(ctx context.Context) {
 	}
 	items, err := s.repo.ListOperations(ctx, domaindocker.OperationFilter{
 		OperationKind: OperationKindHostProvision,
-		Statuses:      []string{OperationStatusQueued, OperationStatusRunning},
+		Statuses:      []string{OperationStatusQueued, OperationStatusRunning, OperationStatusCanceling},
 		Limit:         100,
 	})
 	if err != nil {
@@ -1636,7 +1768,7 @@ func (s *Service) reconcileHostProvisionOperations(ctx context.Context) {
 }
 
 func (s *Service) reconcileHostProvisionOperation(ctx context.Context, reader HostProvisionTaskReader, item domaindocker.Operation) {
-	if item.OperationKind != OperationKindHostProvision || operationTerminal(item.Status) {
+	if item.OperationKind != OperationKindHostProvision || operationTerminal(item.Status) || item.ClaimedByWorkerID != "" {
 		return
 	}
 	taskID := stringValue(item.Payload, "virtualizationTaskId")
@@ -1668,6 +1800,10 @@ func (s *Service) reconcileHostProvisionOperation(ctx context.Context, reader Ho
 	})
 	if item.StartedAt == nil {
 		item.StartedAt = &now
+	}
+	if item.Status == OperationStatusCanceling || status == OperationStatusCanceling {
+		s.reconcileCanceledHostProvision(ctx, item, task)
+		return
 	}
 	switch status {
 	case OperationStatusCompleted:
@@ -1722,6 +1858,25 @@ func (s *Service) reconcileHostProvisionOperation(ctx context.Context, reader Ho
 		item.LastHeartbeatAt = &now
 		item.Result = mergeMap(item.Result, map[string]any{"message": "waiting for virtualization VM provision", "hostProvisionStage": "vm_creating"})
 		_, _ = s.repo.UpdateOperation(ctx, item)
+	}
+}
+
+func (s *Service) reconcileCanceledHostProvision(ctx context.Context, item domaindocker.Operation, task HostProvisionTask) {
+	item.Status, item.FinishedAt = OperationStatusCanceling, nil
+	item.Result = mergeMap(item.Result, map[string]any{"message": "waiting for virtualization creation cancellation", "hostProvisionStage": "vm_canceling"})
+	// A completed VM can be retained when cancellation arrives after creation.
+	// Legacy canceled tasks without a provider acknowledgment remain unknown.
+	confirmed := task.Status == OperationStatusCompleted || task.Status == OperationStatusCanceled && task.Result["cancellationConfirmed"] == true
+	if confirmed {
+		now := time.Now().UTC()
+		item.Status, item.FinishedAt = OperationStatusCanceled, &now
+		item.Result["cancellationAcknowledged"] = true
+		item.Result["hostProvisionStage"] = "vm_canceled"
+		item.Result["message"] = "host provisioning canceled; provider resources are retained"
+	}
+	updated, err := s.repo.UpdateOperation(ctx, item)
+	if err == nil && confirmed {
+		s.touchProvisionedDockerHost(ctx, updated, task, "degraded")
 	}
 }
 
@@ -2693,7 +2848,7 @@ func projectStatusForOperation(item domaindocker.Operation, callbackStatus strin
 	}
 	action := stringValue(item.Payload, "action")
 	switch action {
-	case "deploy", "redeploy", "start", "restart":
+	case "deploy", "redeploy", "delivery_deploy", "start", "restart":
 		return "running", "running"
 	case "stop":
 		return "stopped", "stopped"
@@ -3079,4 +3234,38 @@ func NormalizeSlug(value string) string {
 		return "docker-project"
 	}
 	return value
+}
+
+func validateDockerOperationCallback(item domaindocker.Operation, input domaindocker.OperationCallbackInput) (string, string, error) {
+	if err := authorizeRunnerOperation(item, input.Authorization); err != nil {
+		return "", "", err
+	}
+	workerID := strings.TrimSpace(input.WorkerID)
+	if input.Authorization.HostBound() && workerID != input.Authorization.HostID {
+		return "", "", fmt.Errorf("%w: Docker runner credential is bound to another worker", apperrors.ErrAccessDenied)
+	}
+	if workerID == "" {
+		return "", "", fmt.Errorf("%w: docker worker id is required", apperrors.ErrInvalidArgument)
+	}
+	claimedBy := strings.TrimSpace(item.ClaimedByWorkerID)
+	if claimedBy == "" {
+		return "", "", fmt.Errorf("%w: docker operation must be claimed before callback", apperrors.ErrAccessDenied)
+	}
+	if claimedBy != workerID {
+		return "", "", fmt.Errorf("%w: docker operation is claimed by another worker", apperrors.ErrAccessDenied)
+	}
+	if item.CallbackToken != "" && subtle.ConstantTimeCompare([]byte(item.CallbackToken), []byte(strings.TrimSpace(input.CallbackToken))) != 1 {
+		return "", "", fmt.Errorf("%w: invalid docker operation callback token", apperrors.ErrAccessDenied)
+	}
+	status := strings.TrimSpace(input.Status)
+	if status == "" {
+		status = OperationStatusRunning
+	}
+	if !validCallbackStatus(status) {
+		return "", "", fmt.Errorf("%w: unsupported docker callback status %s", apperrors.ErrInvalidArgument, status)
+	}
+	if err := validateRuntimeEndpoint(stringValue(input.Payload, "endpoint")); err != nil {
+		return "", "", err
+	}
+	return workerID, status, nil
 }

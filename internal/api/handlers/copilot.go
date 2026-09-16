@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"context"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opensoha/soha/internal/api/dto"
@@ -76,6 +78,7 @@ type CopilotAgentRunService interface {
 }
 
 type CopilotInspectionTaskService interface {
+	GetInspectionTask(context.Context, domainidentity.Principal, string) (domaincopilot.InspectionTask, error)
 	ListInspectionTasks(context.Context, domainidentity.Principal) ([]domaincopilot.InspectionTask, error)
 	CreateInspectionTask(context.Context, domainidentity.Principal, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
 	UpdateInspectionTask(context.Context, domainidentity.Principal, string, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
@@ -85,6 +88,7 @@ type CopilotInspectionTaskService interface {
 type CopilotInspectionRunService interface {
 	ListInspectionRuns(context.Context, domainidentity.Principal, domaincopilot.InspectionRunFilter) ([]domaincopilot.InspectionRun, error)
 	ExecuteInspectionTask(context.Context, domainidentity.Principal, string, string) (domaincopilot.InspectionRun, error)
+	ExecuteRegisteredInspection(context.Context, domainidentity.Principal, string, string, int64) (domaincopilot.InspectionRun, error)
 	CreateSessionFromInspectionRun(context.Context, domainidentity.Principal, string, string) (domaincopilot.Session, error)
 	CreateInspectionTaskFromSession(context.Context, domainidentity.Principal, string, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
 }
@@ -721,6 +725,15 @@ func (h *copilotInspectionTaskHandler) ListInspectionTasks(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *copilotInspectionTaskHandler) GetInspectionTask(c *gin.Context) {
+	item, err := h.service.GetInspectionTask(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *copilotInspectionTaskHandler) CreateInspectionTask(c *gin.Context) {
 	var req dto.CreateInspectionTaskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -779,7 +792,18 @@ func (h *copilotInspectionRunHandler) ListInspectionRuns(c *gin.Context) {
 
 func (h *copilotInspectionRunHandler) ExecuteInspectionTask(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.ExecuteInspectionTask(c.Request.Context(), principal, c.Param("taskID"), localeFromRequest(c.GetHeader("Accept-Language")))
+	var item domaincopilot.InspectionRun
+	var err error
+	if c.Query("idempotencyKey") != "" || c.Query("expectedRevision") != "" {
+		revision, parseErr := strconv.ParseInt(c.Query("expectedRevision"), 10, 64)
+		if parseErr != nil || revision < 1 {
+			writeError(c, apperrors.ErrInvalidArgument)
+			return
+		}
+		item, err = h.service.ExecuteRegisteredInspection(c.Request.Context(), principal, c.Param("taskID"), c.Query("idempotencyKey"), revision)
+	} else {
+		item, err = h.service.ExecuteInspectionTask(c.Request.Context(), principal, c.Param("taskID"), localeFromRequest(c.GetHeader("Accept-Language")))
+	}
 	if err != nil {
 		writeError(c, err)
 		return
@@ -814,15 +838,17 @@ func (h *copilotInspectionRunHandler) CreateInspectionTaskFromSession(c *gin.Con
 
 func inspectionTaskInput(req dto.CreateInspectionTaskRequest) domaincopilot.InspectionTaskInput {
 	return domaincopilot.InspectionTaskInput{
-		ID:              req.ID,
-		Title:           req.Title,
-		ScopeType:       req.ScopeType,
-		ClusterID:       req.ClusterID,
-		Namespace:       req.Namespace,
-		Checks:          req.Checks,
-		Enabled:         req.Enabled,
-		IntervalMinutes: req.IntervalMinutes,
-		Metadata:        req.Metadata,
+		ExpectedRevision:     req.ExpectedRevision,
+		InspectionCapability: domaincopilot.InspectionCapability{CapabilityPlan: req.CapabilityPlan, Trigger: req.Trigger, AIClientID: req.AIClientID, SkillID: req.SkillID},
+		ID:                   req.ID,
+		Title:                req.Title,
+		ScopeType:            req.ScopeType,
+		ClusterID:            req.ClusterID,
+		Namespace:            req.Namespace,
+		Checks:               req.Checks,
+		Enabled:              req.Enabled,
+		IntervalMinutes:      req.IntervalMinutes,
+		Metadata:             req.Metadata,
 	}
 }
 

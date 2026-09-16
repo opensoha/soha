@@ -32,13 +32,15 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	repo        domaincatalog.Repository
-	authorizer  domainaccess.Authorizer
-	apps        ApplicationReader
-	permissions *appaccess.PermissionResolver
-	audit       AuditRecorder
-	operations  OperationRecorder
-	runtime     TemplateUsageRuntimeReaders
+	deploymentTemplates DeploymentTemplateRepository
+	deploymentRenderer  DeploymentTemplateRenderer
+	repo                domaincatalog.Repository
+	authorizer          domainaccess.Authorizer
+	apps                ApplicationReader
+	permissions         *appaccess.PermissionResolver
+	audit               AuditRecorder
+	operations          OperationRecorder
+	runtime             TemplateUsageRuntimeReaders
 }
 
 type catalogLookupRepository interface {
@@ -56,7 +58,7 @@ type BuildRuntimeReader interface {
 }
 
 type WorkflowRuntimeReader interface {
-	List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error)
+	List(context.Context, domainidentity.Principal, string, string, int) ([]domainworkflow.Run, error)
 }
 
 type ReleaseRuntimeReader interface {
@@ -155,6 +157,12 @@ func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal do
 	if err := s.validateApplicationEnvironmentWorkflow(ctx, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
+	if err := validateHelmTargets(input.Targets, nil); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateDockerTargets(input.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
 	item, err := s.repo.CreateApplicationEnvironment(ctx, input)
 	if err == nil {
 		s.recordWriteLogs(ctx, principal, "delivery.application_environment.create", "ApplicationEnvironment", item.ID, item.ID, "created application environment binding")
@@ -180,6 +188,12 @@ func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal do
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	if err := s.validateApplicationEnvironmentWorkflow(ctx, input); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateHelmTargets(input.Targets, current.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateDockerTargets(input.Targets); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	item, err := s.repo.UpdateApplicationEnvironment(ctx, id, input)
@@ -229,12 +243,16 @@ func (s *Service) CreateBuildTemplate(ctx context.Context, principal domainident
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.BuildTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
-	if len(input.BuildCommands) == 0 {
-		return domaincatalog.BuildTemplate{}, fmt.Errorf("%w: buildCommands are required", apperrors.ErrInvalidArgument)
+	if err := validateBuildTemplateInput(input); err != nil {
+		return domaincatalog.BuildTemplate{}, err
+	}
+	origin, err := s.templateCopyAudit(ctx, principal, "BuildTemplate", "", input.CopiedFrom)
+	if err != nil {
+		return domaincatalog.BuildTemplate{}, err
 	}
 	item, err := s.repo.CreateBuildTemplate(ctx, input)
 	if err == nil {
-		s.recordWriteLogs(ctx, principal, "delivery.build_template.create", "BuildTemplate", item.ID, item.Name, "created build template")
+		s.recordWriteLogDetails(ctx, principal, "delivery.build_template.create", "BuildTemplate", item.ID, item.Name, "created build template", origin)
 	}
 	return item, err
 }
@@ -243,12 +261,15 @@ func (s *Service) UpdateBuildTemplate(ctx context.Context, principal domainident
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryBuildTemplatesManage, "update")); err != nil {
 		return domaincatalog.BuildTemplate{}, err
 	}
+	if input.CopiedFrom != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("%w: copiedFrom is create-only", apperrors.ErrInvalidArgument)
+	}
 	input = normalizeBuildTemplateInput(input)
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.BuildTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
-	if len(input.BuildCommands) == 0 {
-		return domaincatalog.BuildTemplate{}, fmt.Errorf("%w: buildCommands are required", apperrors.ErrInvalidArgument)
+	if err := validateBuildTemplateInput(input); err != nil {
+		return domaincatalog.BuildTemplate{}, err
 	}
 	beforeUsage := s.mustBuildTemplateUsage(ctx, principal, strings.TrimSpace(id))
 	item, err := s.repo.UpdateBuildTemplate(ctx, id, input)
@@ -310,9 +331,13 @@ func (s *Service) CreateWorkflowTemplate(ctx context.Context, principal domainid
 	if err := validateWorkflowTemplateDefinition(input.Definition); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
 	}
+	origin, err := s.templateCopyAudit(ctx, principal, "WorkflowTemplate", "", input.CopiedFrom)
+	if err != nil {
+		return domaincatalog.WorkflowTemplate{}, err
+	}
 	item, err := s.repo.CreateWorkflowTemplate(ctx, input)
 	if err == nil {
-		s.recordWriteLogs(ctx, principal, "delivery.workflow_template.create", "WorkflowTemplate", item.ID, item.Name, "created workflow template")
+		s.recordWriteLogDetails(ctx, principal, "delivery.workflow_template.create", "WorkflowTemplate", item.ID, item.Name, "created workflow template", origin)
 	}
 	return item, err
 }
@@ -323,6 +348,9 @@ func (s *Service) UpdateWorkflowTemplate(ctx context.Context, principal domainid
 	}
 	if err := s.rejectApplicationWorkflowTemplate(ctx, id); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
+	}
+	if input.CopiedFrom != nil {
+		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: copiedFrom is create-only", apperrors.ErrInvalidArgument)
 	}
 	input = normalizeWorkflowTemplateInput(input)
 	if isApplicationWorkflowCategory(input.Category) {
@@ -375,21 +403,23 @@ func (s *Service) SaveApplicationWorkflow(ctx context.Context, principal domaini
 	if err := s.authorizeApplicationEnvironment(ctx, principal, domainaccess.ActionUpdate, current); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := validateWorkflowTemplateDefinition(input.Definition); err != nil {
+	if err := validateApplicationWorkflowDefinition(input.Definition); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	template, err := s.repo.SaveApplicationWorkflow(ctx, applicationID, bindingID, domaincatalog.WorkflowTemplateInput{
-		Key:         "app-" + bindingID,
-		Name:        strings.TrimSpace(input.Name),
-		Description: strings.TrimSpace(input.Description),
-		Category:    "application:" + applicationID,
-		Definition:  input.Definition,
-		Enabled:     input.Enabled,
+		ExpectedRevision: input.ExpectedRevision,
+		Key:              "app-" + bindingID,
+		Name:             strings.TrimSpace(input.Name),
+		Description:      strings.TrimSpace(input.Description),
+		Category:         "application:" + applicationID,
+		Definition:       input.Definition,
+		Enabled:          input.Enabled,
 	})
 	if err != nil {
 		return domaincatalog.ApplicationEnvironment{}, normalizeRepoError(err)
 	}
 	current.WorkflowTemplateID = template.ID
+	current.WorkflowTemplateVersion = template.PublishedVersion
 	current.WorkflowTemplate = &template
 	if !template.UpdatedAt.IsZero() {
 		current.UpdatedAt = template.UpdatedAt
@@ -459,6 +489,16 @@ func normalizeBuildTemplateInput(input domaincatalog.BuildTemplateInput) domainc
 		input.DefaultVariables = map[string]any{}
 	}
 	return input
+}
+
+func validateBuildTemplateInput(input domaincatalog.BuildTemplateInput) error {
+	if len(input.BuildCommands) == 0 && strings.TrimSpace(input.DockerfileTemplate) == "" {
+		return fmt.Errorf("%w: a Dockerfile template or build commands are required", apperrors.ErrInvalidArgument)
+	}
+	if _, err := domaincatalog.BuildVariables(input.VariableSchema, input.DefaultVariables, nil, false); err != nil {
+		return fmt.Errorf("%w: %s", apperrors.ErrInvalidArgument, err)
+	}
+	return nil
 }
 
 func defaultReleaseFlowDefinition() map[string]any {
@@ -533,10 +573,21 @@ func defaultReleaseFlowDefinition() map[string]any {
 }
 
 func validateWorkflowTemplateDefinition(definition map[string]any) error {
+	if definition["mode"] != "delivery_batch" {
+		return validateApplicationWorkflowDefinition(definition)
+	}
+	if _, err := domaincatalog.ParseDeliveryRecipe(definition); err != nil {
+		return fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err)
+	}
+	return nil
+}
+
+func validateApplicationWorkflowDefinition(definition map[string]any) error {
 	if len(definition) == 0 {
 		return nil
 	}
 	mode := strings.TrimSpace(fmt.Sprint(definition["mode"]))
+
 	if mode != "" && mode != "release_dag" && mode != "delivery_dag" {
 		return fmt.Errorf("%w: unsupported workflow definition mode %s", apperrors.ErrInvalidArgument, mode)
 	}
@@ -585,6 +636,14 @@ func (s *Service) recordWriteLogs(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) recordTemplateWriteLogs(ctx context.Context, principal domainidentity.Principal, operationType, resourceKind, targetID, targetLabel, summary string, usageSnapshot map[string]any) {
+	details := map[string]any{}
+	if usageSnapshot != nil {
+		details["usageSnapshot"] = usageSnapshot
+	}
+	s.recordWriteLogDetails(ctx, principal, operationType, resourceKind, targetID, targetLabel, summary, details)
+}
+
+func (s *Service) recordWriteLogDetails(ctx context.Context, principal domainidentity.Principal, operationType, resourceKind, targetID, targetLabel, summary string, details map[string]any) {
 	meta := requestctx.FromContext(ctx)
 	auditMetadata := map[string]any{
 		"targetId": targetID,
@@ -593,9 +652,9 @@ func (s *Service) recordTemplateWriteLogs(ctx context.Context, principal domaini
 	operationMetadata := map[string]any{
 		"targetId": targetID,
 	}
-	if usageSnapshot != nil {
-		auditMetadata["usageSnapshot"] = usageSnapshot
-		operationMetadata["usageSnapshot"] = usageSnapshot
+	for key, value := range details {
+		auditMetadata[key] = value
+		operationMetadata[key] = value
 	}
 	if s.audit != nil {
 		_ = s.audit.Record(ctx, domainaudit.Entry{
@@ -1050,7 +1109,7 @@ func (s *Service) collectWorkflowUsage(ctx context.Context, principal domainiden
 	if s.runtime.Workflows == nil {
 		return
 	}
-	workflows, err := s.runtime.Workflows.List(ctx, principal, appID, 20)
+	workflows, err := s.runtime.Workflows.List(ctx, principal, appID, "", 20)
 	if err != nil {
 		return
 	}

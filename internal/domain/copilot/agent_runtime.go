@@ -1,7 +1,9 @@
 package copilot
 
 import (
+	"encoding/json"
 	"fmt"
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"regexp"
 	"strings"
 	"time"
@@ -93,6 +95,8 @@ type AgentCapability struct {
 }
 
 type AgentRun struct {
+	ParentRunID        string                     `json:"parentRunId,omitempty" gorm:"-"`
+	Chat               *sohaapi.AgentChatInput    `json:"chat,omitempty" gorm:"-"`
 	ID                 string                     `json:"id"`
 	ProviderID         string                     `json:"providerId"`
 	ProviderKind       string                     `json:"providerKind"`
@@ -284,7 +288,16 @@ func SanitizeWorkbenchStreamEvents(events []WorkbenchStreamEvent) []WorkbenchStr
 }
 
 func WithOperationState(run AgentRun, now time.Time) AgentRun {
+	run.ParentRunID, _ = run.Input["_sohaParentRunId"].(string)
 	run.OperationState = BuildOperationState(run, now)
+	if run.CapabilityID == "general" && run.Chat == nil {
+		if data, err := json.Marshal(run.Input["chat"]); err == nil {
+			var chat sohaapi.AgentChatInput
+			if json.Unmarshal(data, &chat) == nil && chat.Question != "" {
+				run.Chat = &chat
+			}
+		}
+	}
 	return run
 }
 
@@ -787,6 +800,7 @@ func firstNonEmptyString(values ...string) string {
 }
 
 type AgentRunInput struct {
+	ParentRunID    string              `json:"-"`
 	ProviderID     string              `json:"providerId,omitempty"`
 	CapabilityID   string              `json:"capabilityId"`
 	SkillIDs       []string            `json:"skillIds,omitempty"`

@@ -33,6 +33,7 @@ type ResourceCreation struct {
 	risk       resourceCreateRiskPolicy
 	operations CreationOperationStore
 	batches    ResourceCreationBatchRepository
+	yaml       *GenericResources
 }
 
 func (s *ResourceCreation) PreflightCreate(ctx context.Context, principal domainidentity.Principal, clusterID string, request domainresource.ResourceCreateRequest) (domainresource.ResourceCreatePreflight, error) {
@@ -179,7 +180,7 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	}
 	operationID := uuid.NewString()
 	result := domainresource.ResourceCreateExecution{
-		OperationID: operationID, ContentHash: preflight.ContentHash, Status: "running",
+		OperationID: operationID, ClusterID: clusterID, ContentHash: preflight.ContentHash, Status: "running",
 		Documents: make([]domainresource.ResourceCreateExecutionDocument, len(manifests)),
 	}
 	for index, manifest := range manifests {
@@ -217,6 +218,7 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 		result.Documents[index].Status = "succeeded"
 		result.Documents[index].Resource.Name = created.Name
 		result.Documents[index].Resource.Namespace = created.Namespace
+		result.Documents[index].Resource.UID = resourceCreateResponseUID(created.Content)
 		_ = s.recordAudit(ctx, principal, clusterID, created.Namespace, created.Kind, created.Name, string(domainaccess.ActionCreate), "success", "created resource from manifest")
 		s.recordCreateChild(ctx, principal, clusterID, request.RequestID, operationID, result.Documents[index])
 		if persistErr := s.updateCreateBatchDocument(ctx, result.OperationID, result.Documents[index]); persistErr != nil {
@@ -266,6 +268,9 @@ func (s *ResourceCreation) findExistingCreateBatch(ctx context.Context, principa
 	contentHash := hashResourceCreateRequest(request)
 	if batch.ContentHash != contentHash {
 		return domainresource.ResourceCreateExecution{}, false, fmt.Errorf("%w: idempotency key is already bound to different content", apperrors.ErrConflict)
+	}
+	if err := s.authorizeCreateBatch(ctx, principal, clusterID, batch); err != nil {
+		return domainresource.ResourceCreateExecution{}, false, err
 	}
 	return executionFromResourceCreateBatch(batch), true, nil
 }
@@ -461,7 +466,7 @@ func executionFromResourceCreateBatch(batch domainresource.ResourceCreateBatch) 
 			}
 		}
 	}
-	return domainresource.ResourceCreateExecution{OperationID: batch.ID, ContentHash: batch.ContentHash, Status: status, Documents: batch.Documents}
+	return domainresource.ResourceCreateExecution{OperationID: batch.ID, ClusterID: batch.ClusterID, ContentHash: batch.ContentHash, Status: status, Documents: batch.Documents}
 }
 
 func (s *ResourceCreation) updateCreateBatchDocument(ctx context.Context, batchID string, document domainresource.ResourceCreateExecutionDocument) error {

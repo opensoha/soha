@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/opensoha/soha-contracts/helmrelease"
+	helmruntime "github.com/opensoha/soha-contracts/helmrelease/runtime"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -111,7 +112,7 @@ func (d *Direct) GetHelmReleaseValues(ctx context.Context, clusterID, namespace,
 	return domainresource.HelmValuesView{
 		Name: strings.TrimSpace(releaseV1.Name), Namespace: strings.TrimSpace(releaseV1.Namespace),
 		Revision: strconv.Itoa(releaseV1.Version), Content: content, Original: content,
-		Editable: false, DiffEnabled: true,
+		Editable: false, DiffEnabled: true, AllowedActions: helmrelease.LegacyAllowedActions(releaseV1.Labels),
 	}, nil
 }
 
@@ -157,6 +158,9 @@ func (d *Direct) rollbackHelmRelease(ctx context.Context, clusterID, namespace, 
 		return domainresource.HelmReleaseDetailView{}, err
 	}
 	rollback := action.NewRollback(actionConfig)
+	if err := helmruntime.RequireUnmanaged(actionConfig, name); err != nil {
+		return domainresource.HelmReleaseDetailView{}, helmDeliveryError(err)
+	}
 	rollback.Version = input.Revision
 	rollback.Timeout = time.Duration(input.TimeoutSeconds) * time.Second
 	rollback.WaitForJobs = input.Wait
@@ -196,6 +200,9 @@ func (d *Direct) UpdateHelmReleaseValues(ctx context.Context, clusterID, namespa
 	if currentV1 == nil || currentV1.Chart == nil {
 		return domainresource.HelmValuesView{}, fmt.Errorf("%w: helm release %s has no chart payload", apperrors.ErrClusterUnready, name)
 	}
+	if currentV1.Labels["soha-delivery-owner"] != "" {
+		return domainresource.HelmValuesView{}, fmt.Errorf("%w: update this service's Helm configuration through a delivery plan", apperrors.ErrConflict)
+	}
 	upgrader := action.NewUpgrade(actionConfig)
 	upgrader.Namespace = namespace
 	upgrader.ResetValues = true
@@ -226,6 +233,9 @@ func (d *Direct) DeleteHelmRelease(ctx context.Context, clusterID, namespace, na
 		return err
 	}
 	uninstaller := action.NewUninstall(actionConfig)
+	if err := helmruntime.RequireUnmanaged(actionConfig, name); err != nil {
+		return helmDeliveryError(err)
+	}
 	uninstaller.WaitStrategy = kube.LegacyStrategy
 	uninstaller.Timeout = directHelmTimeoutSeconds * time.Second
 	if _, err := uninstaller.Run(name); err != nil {

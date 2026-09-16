@@ -683,6 +683,9 @@ func gatewayInput(input sohaapi.NetworkGatewayInput) domainnetworkaccess.Gateway
 		advertisedCIDRs[index] = string(input.AdvertisedCidrs[index])
 	}
 	return domainnetworkaccess.GatewayInput{
+		Region: input.Region, ProviderCode: input.ProviderCode, ProviderName: input.ProviderName,
+		SelectionPriority: input.SelectionPriority, AcceptNewConnections: input.AcceptNewConnections,
+		MaxSessions: input.MaxSessions, ProbeURL: input.ProbeURL,
 		RuntimeID: input.RuntimeID, SiteID: input.SiteID, Name: input.Name, AdministrativeStatus: string(input.AdministrativeStatus),
 		PublicEndpointHost: input.PublicEndpointHost, PublicEndpointPort: input.PublicEndpointPort,
 		OverlayCIDR: input.OverlayCidr, RoutingMode: string(input.RoutingMode), HubGatewayID: input.HubGatewayID,

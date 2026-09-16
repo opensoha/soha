@@ -74,6 +74,7 @@ type SourceInput struct {
 }
 
 type EnvironmentBinding struct {
+	TemplateParameters       map[string]any    `json:"templateParameters,omitempty"`
 	ID                       string            `json:"id"`
 	PackageID                string            `json:"packageId"`
 	ApplicationEnvironmentID string            `json:"applicationEnvironmentId"`
@@ -81,6 +82,7 @@ type EnvironmentBinding struct {
 	ClusterID                string            `json:"clusterId"`
 	Namespace                string            `json:"namespace"`
 	Overlay                  map[string]string `json:"overlay"`
+	Kustomize                *KustomizeOptions `json:"kustomize,omitempty"`
 	RolloutStrategyID        string            `json:"rolloutStrategyId,omitempty"`
 	VerificationPolicyID     string            `json:"verificationPolicyId,omitempty"`
 	DriftPolicy              string            `json:"driftPolicy"`
@@ -92,10 +94,12 @@ type EnvironmentBinding struct {
 }
 
 type BindingInput struct {
+	TemplateParameters       map[string]any    `json:"templateParameters,omitempty"`
 	ApplicationEnvironmentID string            `json:"applicationEnvironmentId"`
 	ClusterID                string            `json:"clusterId"`
 	Namespace                string            `json:"namespace"`
 	Overlay                  map[string]string `json:"overlay,omitempty"`
+	Kustomize                *KustomizeOptions `json:"kustomize,omitempty"`
 	RolloutStrategyID        string            `json:"rolloutStrategyId,omitempty"`
 	VerificationPolicyID     string            `json:"verificationPolicyId,omitempty"`
 	DriftPolicy              string            `json:"driftPolicy"`
@@ -119,26 +123,31 @@ type Condition struct {
 }
 
 type ResourceInventory struct {
-	DeploymentID         string    `json:"deploymentId"`
-	Generation           int64     `json:"generation"`
-	APIVersion           string    `json:"apiVersion"`
-	Kind                 string    `json:"kind"`
-	Namespace            string    `json:"namespace"`
-	Name                 string    `json:"name"`
-	UID                  string    `json:"uid,omitempty"`
-	ResourceVersion      string    `json:"resourceVersion,omitempty"`
-	DesiredObjectDigest  string    `json:"desiredObjectDigest"`
-	ObservedObjectDigest string    `json:"observedObjectDigest"`
-	Health               string    `json:"health"`
-	LastObservedAt       time.Time `json:"lastObservedAt"`
+	DeploymentID               string     `json:"deploymentId"`
+	Generation                 int64      `json:"generation"`
+	APIVersion                 string     `json:"apiVersion"`
+	Kind                       string     `json:"kind"`
+	Namespace                  string     `json:"namespace"`
+	Name                       string     `json:"name"`
+	UID                        string     `json:"uid,omitempty"`
+	ResourceVersion            string     `json:"resourceVersion,omitempty"`
+	ResourceGeneration         int64      `json:"resourceGeneration,omitempty"`
+	ObservedResourceGeneration *int64     `json:"observedResourceGeneration,omitempty"`
+	DeletingAt                 *time.Time `json:"deletingAt,omitempty"`
+	Finalizers                 []string   `json:"finalizers,omitempty"`
+	DesiredObjectDigest        string     `json:"desiredObjectDigest"`
+	ObservedObjectDigest       string     `json:"observedObjectDigest"`
+	Health                     string     `json:"health"`
+	LastObservedAt             time.Time  `json:"lastObservedAt"`
 }
 
 type DeploymentSpec struct {
-	DesiredRevision int    `json:"desiredRevision"`
-	DesiredDigest   string `json:"desiredDigest"`
-	ReconcilePolicy string `json:"reconcilePolicy"`
-	DriftPolicy     string `json:"driftPolicy"`
-	DeletionPolicy  string `json:"deletionPolicy"`
+	DeliverySnapshot *DeliverySnapshot `json:"deliverySnapshot,omitempty"`
+	DesiredRevision  int               `json:"desiredRevision"`
+	DesiredDigest    string            `json:"desiredDigest"`
+	ReconcilePolicy  string            `json:"reconcilePolicy"`
+	DriftPolicy      string            `json:"driftPolicy"`
+	DeletionPolicy   string            `json:"deletionPolicy"`
 }
 
 type DeploymentStatus struct {

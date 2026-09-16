@@ -9,9 +9,10 @@ const (
 )
 
 type (
-	CRDResourceDefinition = contractsresource.CRDResourceDefinition
-	NamespaceView         = contractsresource.NamespaceView
-	NamespaceUpsertInput  = contractsresource.NamespaceUpsertInput
+	CRDResourceDefinition     = contractsresource.CRDResourceDefinition
+	CustomResourceYAMLRequest = contractsresource.CustomResourceYAMLRequest
+	NamespaceView             = contractsresource.NamespaceView
+	NamespaceUpsertInput      = contractsresource.NamespaceUpsertInput
 
 	PodView                       = contractsresource.PodView
 	PodDetailView                 = contractsresource.PodDetailView

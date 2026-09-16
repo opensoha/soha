@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,6 +44,9 @@ func (d prometheusDriver) RangeQuery(ctx context.Context, sourceID string, confi
 	}
 	endpoint, _ := config["endpoint"].(string)
 	clusterLabel := stringValue(config["clusterLabel"], "cluster")
+	if !prometheusLabelName.MatchString(clusterLabel) {
+		return nil, nil, fmt.Errorf("invalid Prometheus cluster label")
+	}
 	stepSeconds := intValue(config["stepSeconds"], 60)
 	if query.Step <= 0 {
 		query.Step = time.Duration(stepSeconds) * time.Second
@@ -53,6 +58,9 @@ func (d prometheusDriver) RangeQuery(ctx context.Context, sourceID string, confi
 		query.TimeFrom = query.TimeTo.Add(-60 * time.Minute)
 	}
 	if strings.TrimSpace(query.Expression) != "" {
+		if query.RequireEvidence {
+			return nil, nil, fmt.Errorf("sample evidence requires a registered metric definition")
+		}
 		return d.queryExpression(ctx, sourceID, endpoint, stringValue(config["bearerToken"], ""), query)
 	}
 
@@ -69,27 +77,39 @@ func (d prometheusDriver) RangeQuery(ctx context.Context, sourceID string, confi
 
 	series := make([]Series, 0, len(selected))
 	for _, definition := range selected {
-		points, latest, err := d.queryRangeSeries(ctx, endpoint, stringValue(config["bearerToken"], ""), definition.Query, query.TimeFrom, query.TimeTo, query.Step)
+		points, latest, err := d.queryRangeSeries(ctx, endpoint, stringValue(config["bearerToken"], ""), definition.Query, query.TimeFrom, query.TimeTo, query.Step, query.RequireEvidence)
 		if err != nil {
 			return nil, nil, err
 		}
-		series = append(series, Series{
-			Key:    definition.Key,
-			Label:  definition.Label,
-			Unit:   definition.Unit,
-			Points: points,
-			Latest: latest,
-		})
+		item := Series{
+			Key:      definition.Key,
+			Label:    definition.Label,
+			Unit:     definition.Unit,
+			Points:   points,
+			Latest:   latest,
+			Lookback: definition.Lookback,
+		}
+		if query.RequireEvidence {
+			item.SourceTimes, _, err = d.queryRangeSeries(ctx, endpoint, stringValue(config["bearerToken"], ""), "min(timestamp("+definition.SourceSelector+"))", query.TimeFrom, query.TimeTo, query.Step, true)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		series = append(series, item)
+	}
+	queryCount := len(selected)
+	if query.RequireEvidence {
+		queryCount *= 2
 	}
 	return series, map[string]any{
 		"backendType": "prometheus",
 		"sourceId":    sourceID,
-		"queryCount":  len(selected),
+		"queryCount":  queryCount,
 	}, nil
 }
 
 func (d prometheusDriver) queryExpression(ctx context.Context, sourceID, endpoint, bearerToken string, query RangeQuery) ([]Series, map[string]any, error) {
-	results, err := d.queryRangeResults(ctx, endpoint, bearerToken, strings.TrimSpace(query.Expression), query.TimeFrom, query.TimeTo, query.Step)
+	results, err := d.queryRangeResults(ctx, endpoint, bearerToken, strings.TrimSpace(query.Expression), query.TimeFrom, query.TimeTo, query.Step, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -111,40 +131,48 @@ func (d prometheusDriver) queryExpression(ctx context.Context, sourceID, endpoin
 }
 
 type metricDefinition struct {
-	Key   string
-	Label string
-	Unit  string
-	Query string
+	Key            string
+	Label          string
+	Unit           string
+	Query          string
+	SourceSelector string
+	Lookback       time.Duration
 }
+
+var prometheusLabelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 func metricDefinitions(scope Scope, clusterLabel string) []metricDefinition {
 	filter := []string{}
 	if scope.Namespace != "" {
-		filter = append(filter, fmt.Sprintf(`namespace="%s"`, scope.Namespace))
+		filter = append(filter, "namespace="+strconv.Quote(scope.Namespace))
 	}
 	if scope.Workload != "" {
-		filter = append(filter, fmt.Sprintf(`pod=~"%s-.*"`, regexpEscape(scope.Workload)))
+		filter = append(filter, "pod=~"+strconv.Quote(regexp.QuoteMeta(scope.Workload)+"-.*"))
 	}
 	if scope.ClusterID != "" && clusterLabel != "" {
-		filter = append(filter, fmt.Sprintf(`%s="%s"`, clusterLabel, scope.ClusterID))
+		filter = append(filter, clusterLabel+"="+strconv.Quote(scope.ClusterID))
 	}
-	selector := strings.Join(filter, ",")
-	if selector != "" {
-		selector = "{" + selector + "}"
-	} else {
-		selector = "{}"
+	if scope.Service != "" {
+		filter = append(filter, "service="+strconv.Quote(scope.Service))
 	}
+	selector := func(metric string, extra ...string) string {
+		return metric + "{" + strings.Join(append(append([]string{}, filter...), extra...), ",") + "}"
+	}
+	cpu, memory, restarts := selector("container_cpu_usage_seconds_total"), selector("container_memory_working_set_bytes"), selector("kube_pod_container_status_restarts_total")
+	requests, errors := selector("http_requests_total", `status=~"[1-5][0-9][0-9]"`), selector("http_requests_total", `status=~"5[0-9][0-9]"`)
+	latency := selector("http_request_duration_seconds_bucket")
+	requestRate := "sum(rate(" + requests + "[5m]))"
 	return []metricDefinition{
-		{Key: "cpu_usage", Label: "CPU Usage", Unit: "cores", Query: fmt.Sprintf(`sum(rate(container_cpu_usage_seconds_total%s[5m]))`, selector)},
-		{Key: "memory_usage", Label: "Memory Usage", Unit: "bytes", Query: fmt.Sprintf(`sum(container_memory_working_set_bytes%s)`, selector)},
-		{Key: "restart_rate", Label: "Restart Rate", Unit: "count", Query: fmt.Sprintf(`sum(increase(kube_pod_container_status_restarts_total%s[15m]))`, selector)},
-		{Key: "error_rate", Label: "Error Rate", Unit: "ratio", Query: fmt.Sprintf(`sum(rate(http_requests_total%s[5m]))`, selector)},
-		{Key: "latency_p95", Label: "Latency P95", Unit: "seconds", Query: fmt.Sprintf(`histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket%s[5m])) by (le))`, selector)},
+		{Key: "cpu_usage", Label: "CPU Usage", Unit: "cores", Query: "sum(rate(" + cpu + "[5m]))", SourceSelector: cpu, Lookback: 5 * time.Minute},
+		{Key: "memory_usage", Label: "Memory Usage", Unit: "bytes", Query: "sum(" + memory + ")", SourceSelector: memory},
+		{Key: "restart_rate", Label: "Restart Rate", Unit: "count", Query: "sum(increase(" + restarts + "[15m]))", SourceSelector: restarts, Lookback: 15 * time.Minute},
+		{Key: "error_rate", Label: "Error Rate", Unit: "ratio", Query: "(sum(rate(" + errors + "[5m])) or (0 * " + requestRate + ")) / " + requestRate, SourceSelector: requests, Lookback: 5 * time.Minute},
+		{Key: "latency_p95", Label: "Latency P95", Unit: "seconds", Query: "histogram_quantile(0.95, sum(rate(" + latency + "[5m])) by (le))", SourceSelector: latency, Lookback: 5 * time.Minute},
 	}
 }
 
-func (d prometheusDriver) queryRangeSeries(ctx context.Context, endpoint, bearerToken, query string, timeFrom, timeTo time.Time, step time.Duration) ([]Point, float64, error) {
-	results, err := d.queryRangeResults(ctx, endpoint, bearerToken, query, timeFrom, timeTo, step)
+func (d prometheusDriver) queryRangeSeries(ctx context.Context, endpoint, bearerToken, query string, timeFrom, timeTo time.Time, step time.Duration, requireComplete bool) ([]Point, float64, error) {
+	results, err := d.queryRangeResults(ctx, endpoint, bearerToken, query, timeFrom, timeTo, step, requireComplete)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -163,7 +191,7 @@ type prometheusRangeResult struct {
 	Latest float64
 }
 
-func (d prometheusDriver) queryRangeResults(ctx context.Context, endpoint, bearerToken, query string, timeFrom, timeTo time.Time, step time.Duration) ([]prometheusRangeResult, error) {
+func (d prometheusDriver) queryRangeResults(ctx context.Context, endpoint, bearerToken, query string, timeFrom, timeTo time.Time, step time.Duration, requireComplete bool) ([]prometheusRangeResult, error) {
 	queryURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(endpoint), "/") + "/api/v1/query_range")
 	if err != nil {
 		return nil, err
@@ -199,13 +227,18 @@ func (d prometheusDriver) queryRangeResults(ctx context.Context, endpoint, beare
 				Values [][]any           `json:"values"`
 			} `json:"result"`
 		} `json:"data"`
-		Error string `json:"error"`
+		Error    string   `json:"error"`
+		Warnings []string `json:"warnings"`
+		Infos    []string `json:"infos"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return nil, err
 	}
 	if payload.Error != "" {
 		return nil, errors.New(payload.Error)
+	}
+	if payload.Status != "success" || requireComplete && (len(payload.Warnings) > 0 || len(payload.Infos) > 0) {
+		return nil, fmt.Errorf("prometheus response is incomplete")
 	}
 	results := make([]prometheusRangeResult, 0, len(payload.Data.Result))
 	for _, result := range payload.Data.Result {
@@ -267,18 +300,19 @@ func metricSeriesLabel(template string, labels map[string]string, fallback strin
 }
 
 func asFloat(value any) (float64, bool) {
+	var number float64
+	var err error
 	switch current := value.(type) {
 	case float64:
-		return current, true
+		number = current
 	case string:
-		number, err := strconv.ParseFloat(current, 64)
-		return number, err == nil
+		number, err = strconv.ParseFloat(current, 64)
 	case json.Number:
-		number, err := current.Float64()
-		return number, err == nil
+		number, err = current.Float64()
 	default:
 		return 0, false
 	}
+	return number, err == nil && !math.IsNaN(number) && !math.IsInf(number, 0)
 }
 
 func stringValue(value any, fallback string) string {
@@ -302,9 +336,4 @@ func intValue(value any, fallback int) int {
 		}
 	}
 	return fallback
-}
-
-func regexpEscape(value string) string {
-	replacer := strings.NewReplacer(".", "\\.", "-", "\\-", "_", "\\_")
-	return replacer.Replace(value)
 }

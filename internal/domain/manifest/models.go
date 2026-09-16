@@ -19,42 +19,46 @@ type File struct {
 }
 
 type Binding struct {
+	TemplateParameters       map[string]any    `json:"templateParameters,omitempty"`
 	ID                       string            `json:"id"`
 	ApplicationEnvironmentID string            `json:"applicationEnvironmentId"`
 	EnvironmentKey           string            `json:"environmentKey"`
 	ClusterID                string            `json:"clusterId"`
 	Namespace                string            `json:"namespace"`
 	Overlay                  map[string]string `json:"overlay,omitempty"`
+	Kustomize                *KustomizeOptions `json:"kustomize,omitempty"`
 	Status                   string            `json:"status"`
 }
 
 type Package struct {
-	ID              string    `json:"id"`
-	Name            string    `json:"name"`
-	Description     string    `json:"description,omitempty"`
-	ApplicationID   string    `json:"applicationId"`
-	ServiceID       string    `json:"serviceId,omitempty"`
-	BusinessLineID  string    `json:"businessLineId,omitempty"`
-	Renderer        string    `json:"renderer"`
-	Status          string    `json:"status"`
-	CurrentRevision int       `json:"currentRevision"`
-	Files           []File    `json:"files"`
-	Bindings        []Binding `json:"bindings"`
-	CreatedBy       string    `json:"createdBy,omitempty"`
-	UpdatedBy       string    `json:"updatedBy,omitempty"`
-	CreatedAt       time.Time `json:"createdAt"`
-	UpdatedAt       time.Time `json:"updatedAt"`
+	ExpectedUpdatedAt *time.Time `json:"-"`
+	ID                string     `json:"id"`
+	Name              string     `json:"name"`
+	Description       string     `json:"description,omitempty"`
+	ApplicationID     string     `json:"applicationId"`
+	ServiceID         string     `json:"serviceId,omitempty"`
+	BusinessLineID    string     `json:"businessLineId,omitempty"`
+	Renderer          string     `json:"renderer"`
+	Status            string     `json:"status"`
+	CurrentRevision   int        `json:"currentRevision"`
+	Files             []File     `json:"files"`
+	Bindings          []Binding  `json:"bindings"`
+	CreatedBy         string     `json:"createdBy,omitempty"`
+	UpdatedBy         string     `json:"updatedBy,omitempty"`
+	CreatedAt         time.Time  `json:"createdAt"`
+	UpdatedAt         time.Time  `json:"updatedAt"`
 }
 
 type Input struct {
-	Name           string    `json:"name"`
-	Description    string    `json:"description,omitempty"`
-	ApplicationID  string    `json:"applicationId"`
-	ServiceID      string    `json:"serviceId,omitempty"`
-	BusinessLineID string    `json:"businessLineId,omitempty"`
-	Renderer       string    `json:"renderer"`
-	Files          []File    `json:"files"`
-	Bindings       []Binding `json:"bindings"`
+	ExpectedUpdatedAt *time.Time `json:"expectedUpdatedAt,omitempty"`
+	Name              string     `json:"name"`
+	Description       string     `json:"description,omitempty"`
+	ApplicationID     string     `json:"applicationId"`
+	ServiceID         string     `json:"serviceId,omitempty"`
+	BusinessLineID    string     `json:"businessLineId,omitempty"`
+	Renderer          string     `json:"renderer"`
+	Files             []File     `json:"files"`
+	Bindings          []Binding  `json:"bindings"`
 }
 
 type Filter struct {
@@ -74,6 +78,11 @@ type Page struct {
 	Total    int       `json:"total"`
 	Page     int       `json:"page"`
 	PageSize int       `json:"pageSize"`
+}
+
+type RevisionInput struct {
+	ExpectedUpdatedAt time.Time `json:"expectedUpdatedAt"`
+	Note              string    `json:"note,omitempty"`
 }
 
 type Revision struct {

@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -58,7 +60,7 @@ func (r *Repository) UpdateConnection(ctx context.Context, id string, input doma
 }
 
 func (r *Repository) DeleteConnection(ctx context.Context, id string) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM virtualization_connections WHERE id = ?`, strings.TrimSpace(id))
+	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM virtualization_connections WHERE id = ?`, strings.TrimSpace(id))
 	if result.Error != nil {
 		return fmt.Errorf("delete virtualization connection: %w", result.Error)
 	}
@@ -69,7 +71,7 @@ func (r *Repository) DeleteConnection(ctx context.Context, id string) error {
 }
 
 func (r *Repository) GetConnection(ctx context.Context, id string) (domainvirtualization.Connection, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, provider, name, endpoint, kubernetes_cluster_id, default_namespace, enabled, verify_tls,
 		       encrypted_credential, config, health, last_synced_at, created_at, updated_at
 		FROM virtualization_connections
@@ -92,7 +94,7 @@ func (r *Repository) ListConnections(ctx context.Context, filter domainvirtualiz
 	}
 	query += " ORDER BY updated_at DESC LIMIT ? OFFSET ?"
 	args = append(args, limit, offset)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization connections: %w", err)
 	}
@@ -116,7 +118,7 @@ func (r *Repository) CountConnections(ctx context.Context, filter domainvirtuali
 
 func (r *Repository) CountDockerHostsByConnection(ctx context.Context, connectionID string) (int, error) {
 	var total int
-	if err := r.db.WithContext(ctx).Raw(`
+	if err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT COUNT(*)
 		FROM docker_hosts
 		WHERE virtualization_connection_id = ?
@@ -132,7 +134,7 @@ func (r *Repository) MarkDockerHostsUnavailableByConnection(ctx context.Context,
 		return nil
 	}
 	now := time.Now().UTC()
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
 			UPDATE docker_operations
 			SET status = 'canceled',
@@ -180,7 +182,7 @@ func (r *Repository) MarkDockerHostsUnavailableByVM(ctx context.Context, vmID st
 		return nil
 	}
 	now := time.Now().UTC()
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
 			UPDATE docker_operations
 			SET status = 'canceled',
@@ -252,7 +254,7 @@ func (r *Repository) UpsertVM(ctx context.Context, item domainvirtualization.VM)
 	if err != nil {
 		return domainvirtualization.VM{}, fmt.Errorf("marshal virtualization vm raw: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO virtualization_vms (
 			id, provider, connection_id, external_id, name, namespace, status, power_state, node_name,
 			image_id, flavor_id, ip_addresses, labels, config, raw, last_seen_at, created_at, updated_at
@@ -293,7 +295,7 @@ func (r *Repository) UpsertVM(ctx context.Context, item domainvirtualization.VM)
 }
 
 func (r *Repository) GetVM(ctx context.Context, id string) (domainvirtualization.VM, error) {
-	row := r.db.WithContext(ctx).Raw(vmSelect()+` WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(vmSelect()+` WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Row()
 	return scanVMRow(row)
 }
 
@@ -304,7 +306,7 @@ func (r *Repository) ListVMs(ctx context.Context, filter domainvirtualization.VM
 	}
 	clauses, extraArgs := vmExtraClauses(filter)
 	query, args = injectExtraClauses(query, args, clauses, extraArgs)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	return scanVMList(rows, err, limit)
 }
 
@@ -339,7 +341,7 @@ func (r *Repository) UpsertImage(ctx context.Context, item domainvirtualization.
 	if err != nil {
 		return domainvirtualization.Image{}, fmt.Errorf("marshal virtualization image raw: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO virtualization_images (id, provider, connection_id, external_id, name, status, os_type, architecture, size_bytes, config, raw, last_seen_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (provider, connection_id, external_id) DO UPDATE SET
@@ -365,7 +367,7 @@ func (r *Repository) ListImages(ctx context.Context, filter domainvirtualization
 	}
 	extraClauses, extraArgs := imageExtraClauses(filter)
 	query, args = injectExtraClauses(query, args, extraClauses, extraArgs)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization images: %w", err)
 	}
@@ -382,7 +384,7 @@ func (r *Repository) ListImages(ctx context.Context, filter domainvirtualization
 }
 
 func (r *Repository) GetImage(ctx context.Context, id string) (domainvirtualization.Image, error) {
-	row := r.db.WithContext(ctx).Raw(imageSelect()+` WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(imageSelect()+` WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Row()
 	return scanImageRow(row)
 }
 
@@ -419,7 +421,7 @@ func (r *Repository) UpsertFlavor(ctx context.Context, item domainvirtualization
 	}
 	connectionID := strings.TrimSpace(item.ConnectionID)
 	if connectionID == "" {
-		if err := r.db.WithContext(ctx).Exec(`
+		if err := dbtx.DB(ctx, r.db).Exec(`
 			INSERT INTO virtualization_flavors (id, provider, connection_id, external_id, name, status, cpu_cores, memory_mb, disk_gb, config, raw, last_seen_at, created_at, updated_at)
 			VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT (provider, external_id) WHERE connection_id IS NULL DO UPDATE SET
@@ -437,7 +439,7 @@ func (r *Repository) UpsertFlavor(ctx context.Context, item domainvirtualization
 		}
 		return r.getFlavorByExternalKey(ctx, item.Provider, "", item.ExternalID)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO virtualization_flavors (id, provider, connection_id, external_id, name, status, cpu_cores, memory_mb, disk_gb, config, raw, last_seen_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (provider, connection_id, external_id) WHERE connection_id IS NOT NULL DO UPDATE SET
@@ -457,7 +459,7 @@ func (r *Repository) UpsertFlavor(ctx context.Context, item domainvirtualization
 }
 
 func (r *Repository) GetFlavor(ctx context.Context, id string) (domainvirtualization.Flavor, error) {
-	row := r.db.WithContext(ctx).Raw(flavorSelect()+` WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(flavorSelect()+` WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Row()
 	return scanFlavorRow(row)
 }
 
@@ -466,7 +468,7 @@ func (r *Repository) ListFlavors(ctx context.Context, filter domainvirtualizatio
 	if err != nil {
 		return nil, err
 	}
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization flavors: %w", err)
 	}
@@ -508,7 +510,7 @@ func (r *Repository) CreateTask(ctx context.Context, item domainvirtualization.T
 	if err != nil {
 		return domainvirtualization.Task{}, fmt.Errorf("marshal virtualization task result: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO virtualization_tasks (
 			id, provider, connection_id, vm_id, task_kind, status, requested_by, claimed_by_worker_id,
 			attempt_count, max_retries, timeout_seconds, payload, result, started_at, last_heartbeat_at,
@@ -521,6 +523,13 @@ func (r *Repository) CreateTask(ctx context.Context, item domainvirtualization.T
 }
 
 func (r *Repository) UpdateTask(ctx context.Context, item domainvirtualization.Task) (domainvirtualization.Task, error) {
+	if item.TaskKind == "vm_create" && item.Status == "queued" && item.Payload["requireCapacity"] == true {
+		return r.retryReservedTask(ctx, item)
+	}
+	return r.updateTask(ctx, item)
+}
+
+func (r *Repository) updateTask(ctx context.Context, item domainvirtualization.Task) (domainvirtualization.Task, error) {
 	expectedUpdatedAt := item.UpdatedAt
 	if item.MaxRetries == 0 {
 		item.MaxRetries = 1
@@ -539,16 +548,36 @@ func (r *Repository) UpdateTask(ctx context.Context, item domainvirtualization.T
 	}
 	query := `
 		UPDATE virtualization_tasks
-		SET status = ?, claimed_by_worker_id = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
+		SET vm_id = ?, status = ?, claimed_by_worker_id = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
 		    result = ?, payload = ?, started_at = ?, last_heartbeat_at = ?, finished_at = ?, updated_at = ?
 		WHERE id = ? AND updated_at = ?`
-	args := []any{item.Status, nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries, item.TimeoutSeconds, string(resultPayload), string(payload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt, item.UpdatedAt, item.ID, expectedUpdatedAt}
+	args := []any{nullableString(item.VMID), item.Status, nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries, item.TimeoutSeconds, string(resultPayload), string(payload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt, item.UpdatedAt, item.ID, expectedUpdatedAt}
 	if strings.TrimSpace(item.ClaimedByWorkerID) != "" {
-		query += ` AND claimed_by_worker_id = ? AND attempt_count = ? AND status = 'running'`
-		args = append(args, strings.TrimSpace(item.ClaimedByWorkerID), item.AttemptCount)
+		query += ` AND claimed_by_worker_id = ? AND attempt_count = ?`
+		if item.Payload["workerPoolId"] != nil && item.Result["workerBootstrapRevoked"] == true {
+			// A worker's token cleanup receipt may arrive after its terminal
+			// result. Keep the same status, worker, attempt and timestamp fence.
+			query += ` AND (status IN ('running','canceling') OR status = ?)`
+			args = append(args, strings.TrimSpace(item.ClaimedByWorkerID), item.AttemptCount, item.Status)
+		} else {
+			if item.Status == "running" {
+				query += ` AND status = 'running'`
+			} else if item.TaskKind == "vm_create" && item.Status == "canceling" {
+				query += ` AND status IN ('running', 'canceling', 'failed', 'callback_timeout')`
+			} else if item.TaskKind == "vm_create" && (item.Status == "completed" || item.Status == "canceled") {
+				query += ` AND status IN ('running', 'canceling', 'callback_timeout')`
+			} else {
+				query += ` AND status IN ('running', 'canceling')`
+			}
+			args = append(args, strings.TrimSpace(item.ClaimedByWorkerID), item.AttemptCount)
+		}
 	}
-	result := r.db.WithContext(ctx).Exec(query, args...)
+	result := dbtx.DB(ctx, r.db).Exec(query, args...)
 	if result.Error != nil {
+		var pgError *pgconn.PgError
+		if errors.As(result.Error, &pgError) && pgError.Code == "23505" && pgError.ConstraintName == "virtualization_task_provider_identity" {
+			return domainvirtualization.Task{}, errors.Join(apperrors.ErrConflict, domainvirtualization.ErrProviderIdentityClaimed)
+		}
 		return domainvirtualization.Task{}, fmt.Errorf("update virtualization task: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
@@ -562,7 +591,7 @@ func (r *Repository) UpdateTaskResult(ctx context.Context, id string, taskResult
 	if err != nil {
 		return fmt.Errorf("marshal virtualization task result: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE virtualization_tasks
 		SET result = ?, updated_at = ?
 		WHERE id = ?
@@ -578,7 +607,7 @@ func (r *Repository) UpdateTaskResult(ctx context.Context, id string, taskResult
 
 func (r *Repository) ClaimTask(ctx context.Context, workerID string, now time.Time) (domainvirtualization.Task, error) {
 	task := domainvirtualization.Task{}
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		row := tx.Raw(taskSelect() + `
 			WHERE status = 'queued'
 			ORDER BY created_at ASC
@@ -635,7 +664,7 @@ func (r *Repository) ClaimTask(ctx context.Context, workerID string, now time.Ti
 }
 
 func (r *Repository) HeartbeatTask(ctx context.Context, taskID string, workerID string, now time.Time) error {
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE virtualization_tasks
 		SET last_heartbeat_at = ?, updated_at = ?
 		WHERE id = ? AND claimed_by_worker_id = ? AND status = 'running'
@@ -650,7 +679,7 @@ func (r *Repository) HeartbeatTask(ctx context.Context, taskID string, workerID 
 }
 
 func (r *Repository) GetTask(ctx context.Context, id string) (domainvirtualization.Task, error) {
-	row := r.db.WithContext(ctx).Raw(taskSelect()+` WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Row()
+	row := dbtx.DB(ctx, r.db).Raw(taskSelect()+` WHERE id = ? LIMIT 1`, strings.TrimSpace(id)).Row()
 	return scanTaskRow(row)
 }
 
@@ -661,9 +690,13 @@ func (r *Repository) ListTasks(ctx context.Context, filter domainvirtualization.
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ")
 	}
-	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	if filter.ReconcileBefore != nil {
+		query += " ORDER BY updated_at ASC, id ASC LIMIT ? OFFSET ?"
+	} else {
+		query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	}
 	args = append(args, limit, offset)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization tasks: %w", err)
 	}
@@ -686,7 +719,7 @@ func (r *Repository) CountTasks(ctx context.Context, filter domainvirtualization
 
 func (r *Repository) ListTimedOutTasks(ctx context.Context, now time.Time, limit int) ([]domainvirtualization.Task, error) {
 	limit = normalizedLimit(limit)
-	rows, err := r.db.WithContext(ctx).Raw(taskSelect()+`
+	rows, err := dbtx.DB(ctx, r.db).Raw(taskSelect()+`
 		WHERE status = 'running'
 		  AND COALESCE(last_heartbeat_at, started_at, created_at) + (timeout_seconds || ' seconds')::interval < ?
 		ORDER BY COALESCE(last_heartbeat_at, started_at, created_at) ASC
@@ -718,7 +751,7 @@ func (r *Repository) CreateTaskLog(ctx context.Context, item domainvirtualizatio
 	if err != nil {
 		return fmt.Errorf("marshal virtualization task log payload: %w", err)
 	}
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO virtualization_task_logs (id, task_id, log_level, message, payload, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, item.ID, item.TaskID, item.LogLevel, item.Message, string(payload), item.CreatedAt).Error
@@ -726,7 +759,7 @@ func (r *Repository) CreateTaskLog(ctx context.Context, item domainvirtualizatio
 
 func (r *Repository) ListTaskLogs(ctx context.Context, taskID string, limit int) ([]domainvirtualization.TaskLog, error) {
 	limit = normalizedLimit(limit)
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, task_id, log_level, message, payload, created_at
 		FROM virtualization_task_logs
 		WHERE task_id = ?
@@ -762,14 +795,14 @@ func (r *Repository) saveConnection(ctx context.Context, item domainvirtualizati
 		return fmt.Errorf("marshal virtualization connection health: %w", err)
 	}
 	if create {
-		return r.db.WithContext(ctx).Exec(`
+		return dbtx.DB(ctx, r.db).Exec(`
 			INSERT INTO virtualization_connections (
 				id, provider, name, endpoint, kubernetes_cluster_id, default_namespace, enabled, verify_tls,
 				encrypted_credential, config, health, last_synced_at, created_at, updated_at
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, item.ID, item.Provider, item.Name, nullableString(item.Endpoint), nullableString(item.KubernetesClusterID), nullableString(item.DefaultNamespace), item.Enabled, item.VerifyTLS, string(credential), string(config), string(health), item.LastSyncedAt, item.CreatedAt, item.UpdatedAt).Error
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE virtualization_connections
 		SET provider = ?, name = ?, endpoint = ?, kubernetes_cluster_id = ?, default_namespace = ?, enabled = ?,
 		    verify_tls = ?, encrypted_credential = ?, config = ?, health = ?, updated_at = ?
@@ -792,13 +825,13 @@ func (r *Repository) UpdateConnectionHealth(ctx context.Context, id string, heal
 	now := time.Now().UTC()
 	var result *gorm.DB
 	if lastSyncedAt != nil {
-		result = r.db.WithContext(ctx).Exec(`
+		result = dbtx.DB(ctx, r.db).Exec(`
 			UPDATE virtualization_connections
 			SET health = ?, last_synced_at = ?, updated_at = ?
 			WHERE id = ?
 		`, string(payload), *lastSyncedAt, now, strings.TrimSpace(id))
 	} else {
-		result = r.db.WithContext(ctx).Exec(`
+		result = dbtx.DB(ctx, r.db).Exec(`
 			UPDATE virtualization_connections
 			SET health = ?, updated_at = ?
 			WHERE id = ?
@@ -835,7 +868,7 @@ func (r *Repository) markAssetsStale(ctx context.Context, tableName, provider, c
 		SET status = 'stale', updated_at = ?
 		WHERE provider = ? AND connection_id = ? AND last_seen_at < ? AND status <> 'deleted'
 	`, tableName)
-	if err := r.db.WithContext(ctx).Exec(query, time.Now().UTC(), strings.TrimSpace(provider), strings.TrimSpace(connectionID), seenBefore).Error; err != nil {
+	if err := dbtx.DB(ctx, r.db).Exec(query, time.Now().UTC(), strings.TrimSpace(provider), strings.TrimSpace(connectionID), seenBefore).Error; err != nil {
 		return fmt.Errorf("mark %s stale: %w", tableName, err)
 	}
 	return nil
@@ -922,21 +955,21 @@ func taskSelect() string {
 }
 
 func (r *Repository) getVMByExternalKey(ctx context.Context, provider, connectionID, externalID string) (domainvirtualization.VM, error) {
-	row := r.db.WithContext(ctx).Raw(vmSelect()+` WHERE provider = ? AND connection_id = ? AND external_id = ? LIMIT 1`, provider, connectionID, externalID).Row()
+	row := dbtx.DB(ctx, r.db).Raw(vmSelect()+` WHERE provider = ? AND connection_id = ? AND external_id = ? LIMIT 1`, provider, connectionID, externalID).Row()
 	return scanVMRow(row)
 }
 
 func (r *Repository) getImageByExternalKey(ctx context.Context, provider, connectionID, externalID string) (domainvirtualization.Image, error) {
-	row := r.db.WithContext(ctx).Raw(imageSelect()+` WHERE provider = ? AND connection_id = ? AND external_id = ? LIMIT 1`, provider, connectionID, externalID).Row()
+	row := dbtx.DB(ctx, r.db).Raw(imageSelect()+` WHERE provider = ? AND connection_id = ? AND external_id = ? LIMIT 1`, provider, connectionID, externalID).Row()
 	return scanImageRow(row)
 }
 
 func (r *Repository) getFlavorByExternalKey(ctx context.Context, provider, connectionID, externalID string) (domainvirtualization.Flavor, error) {
 	if strings.TrimSpace(connectionID) == "" {
-		row := r.db.WithContext(ctx).Raw(flavorSelect()+` WHERE provider = ? AND connection_id IS NULL AND external_id = ? LIMIT 1`, provider, externalID).Row()
+		row := dbtx.DB(ctx, r.db).Raw(flavorSelect()+` WHERE provider = ? AND connection_id IS NULL AND external_id = ? LIMIT 1`, provider, externalID).Row()
 		return scanFlavorRow(row)
 	}
-	row := r.db.WithContext(ctx).Raw(flavorSelect()+` WHERE provider = ? AND connection_id = ? AND external_id = ? LIMIT 1`, provider, connectionID, externalID).Row()
+	row := dbtx.DB(ctx, r.db).Raw(flavorSelect()+` WHERE provider = ? AND connection_id = ? AND external_id = ? LIMIT 1`, provider, connectionID, externalID).Row()
 	return scanFlavorRow(row)
 }
 
@@ -1260,6 +1293,10 @@ func imageExtraClauses(filter domainvirtualization.ImageFilter) ([]string, []any
 func taskClauses(filter domainvirtualization.TaskFilter) ([]string, []any) {
 	args := []any{}
 	clauses := []string{}
+	if filter.ReconcileBefore != nil {
+		clauses = append(clauses, "updated_at < ?")
+		args = append(args, *filter.ReconcileBefore)
+	}
 	if value := strings.TrimSpace(filter.Provider); value != "" {
 		clauses = append(clauses, "provider = ?")
 		args = append(args, value)
@@ -1361,7 +1398,7 @@ func (r *Repository) count(ctx context.Context, tableName string, clauses []stri
 		query += " WHERE " + strings.Join(clauses, " AND ")
 	}
 	var total int
-	if err := r.db.WithContext(ctx).Raw(query, args...).Row().Scan(&total); err != nil {
+	if err := dbtx.DB(ctx, r.db).Raw(query, args...).Row().Scan(&total); err != nil {
 		return 0, fmt.Errorf("count %s: %w", tableName, err)
 	}
 	return total, nil

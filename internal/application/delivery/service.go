@@ -59,7 +59,7 @@ type BuildReader interface {
 }
 
 type WorkflowReader interface {
-	List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error)
+	List(context.Context, domainidentity.Principal, string, string, int) ([]domainworkflow.Run, error)
 	Get(context.Context, domainidentity.Principal, string) (domainworkflow.Run, error)
 	Trigger(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
 	TriggerValidation(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
@@ -146,6 +146,9 @@ type Service struct {
 	logs              LogRuntime
 	logTickets        LogStreamTicketIssuer
 	manifestPackages  ManifestPackageWriter
+	manifestDelivery  ManifestDelivery
+	docker            DockerDelivery
+	helm              HelmDeliveryDependencies
 }
 
 func uniqueStrings(values []string) []string {
@@ -189,6 +192,10 @@ func (s *Service) SetRecorders(audit AuditRecorder, operations OperationRecorder
 
 func (s *Service) SetManifestPackages(writer ManifestPackageWriter) {
 	s.manifestPackages = writer
+}
+
+func (s *Service) SetManifestDelivery(runtime ManifestDelivery) {
+	s.manifestDelivery = runtime
 }
 
 func (s *Service) SetGovernance(service *deliverygovernance.Service) {
@@ -277,7 +284,11 @@ func (s *Service) GetApplicationRuntimeDetail(ctx context.Context, principal dom
 	for index, binding := range applicationBindings {
 		group.Go(func() {
 			environment := envByID[binding.EnvironmentID]
-			workloads, workloadsErr := s.listRuntimeWorkloadsForBinding(ctx, principal, app, binding, bundles, tasks, builds, workflows, releases)
+			runtimeBinding, manifestDeployments, workloadsErr := s.manifestRuntimeBinding(ctx, principal, binding)
+			var workloads []domaindelivery.ApplicationRuntimeWorkload
+			if workloadsErr == nil {
+				workloads, workloadsErr = s.listRuntimeWorkloadsForBinding(ctx, principal, app, runtimeBinding, bundles, tasks, builds, workflows, releases)
+			}
 			if workloadsErr != nil && !errors.Is(workloadsErr, apperrors.ErrClusterUnready) && !errors.Is(workloadsErr, context.DeadlineExceeded) {
 				errs[index] = workloadsErr
 				return
@@ -297,6 +308,7 @@ func (s *Service) GetApplicationRuntimeDetail(ctx context.Context, principal dom
 				ResourceSelector:         binding.ResourceSelector,
 				Targets:                  binding.Targets,
 				Workloads:                workloads,
+				ManifestDeployments:      manifestDeployments,
 			}
 		})
 	}
@@ -340,7 +352,11 @@ func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, princ
 			break
 		}
 	}
-	workloads, err := s.listRuntimeWorkloadsForBinding(ctx, principal, app, binding, bundles, tasks, builds, workflows, releases)
+	runtimeBinding, _, err := s.manifestRuntimeBinding(ctx, principal, binding)
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	workloads, err := s.listRuntimeWorkloadsForBinding(ctx, principal, app, runtimeBinding, bundles, tasks, builds, workflows, releases)
 	if err != nil {
 		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
 	}
@@ -463,7 +479,7 @@ func (s *Service) ListReleaseBoard(ctx context.Context, principal domainidentity
 		tasks, _ := s.repository.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: app.ID, Limit: 20})
 		tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
 		builds, _ := s.builds.List(ctx, principal, domainbuild.Filter{ApplicationID: app.ID, Limit: 20})
-		workflows, _ := s.workflows.List(ctx, principal, app.ID, 20)
+		workflows, _ := s.workflows.List(ctx, principal, app.ID, "", 20)
 		releases, _ := s.releases.List(ctx, principal, domainrelease.Filter{ApplicationID: app.ID, Limit: 20})
 		environment := envByID[binding.EnvironmentID]
 		items = append(items, domaindelivery.ReleaseBoardEntry{
@@ -896,7 +912,7 @@ func (s *Service) BootstrapApplicationFromBlueprint(ctx context.Context, princip
 	if err := validateDeliveryServices(spec.Services); err != nil {
 		return domaindelivery.BlueprintBootstrapResult{}, err
 	}
-	draft, err := s.repository.CreateDeliveryDraft(ctx, domaindelivery.DeliveryDraftInput{
+	draft, err := s.CreateDeliveryDraft(ctx, principal, domaindelivery.DeliveryDraftInput{
 		Source:              domaindelivery.DeliveryDraftSourceBlueprint,
 		ApplicationDraft:    spec.ApplicationDraft,
 		Services:            spec.Services,
@@ -905,10 +921,11 @@ func (s *Service) BootstrapApplicationFromBlueprint(ctx context.Context, princip
 		Files:               spec.Files,
 		ExecutionHints:      spec.ExecutionHints,
 		PostCreateActions:   spec.PostCreateActions,
-	}, principal.UserID)
+	})
 	if err != nil {
 		return domaindelivery.BlueprintBootstrapResult{}, err
 	}
+	spec.ApplicationDraft = draft.ApplicationDraft
 	return domaindelivery.BlueprintBootstrapResult{
 		Draft: draft,
 		Spec:  spec,
@@ -919,13 +936,70 @@ func (s *Service) CreateDeliveryDraft(ctx context.Context, principal domainident
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
 		return domaindelivery.DeliveryDraft{}, err
 	}
-	if strings.TrimSpace(input.ApplicationDraft.Name) == "" || strings.TrimSpace(input.ApplicationDraft.Key) == "" {
-		return domaindelivery.DeliveryDraft{}, fmt.Errorf("%w: delivery draft application name and key are required", apperrors.ErrInvalidArgument)
-	}
-	if err := validateDeliveryServices(input.Services); err != nil {
+	digest, err := deliveryDraftCreationDigest(input)
+	if err != nil {
 		return domaindelivery.DeliveryDraft{}, err
 	}
+	if input.IdempotencyKey != "" {
+		if principal.UserID == "" {
+			return domaindelivery.DeliveryDraft{}, apperrors.ErrUnauthorized
+		}
+		existing, err := s.repository.FindDeliveryDraftCreation(ctx, principal.UserID, input.IdempotencyKey, digest)
+		if err == nil {
+			return existing, domaindelivery.CheckDraftScope(ctx, existing)
+		}
+		if !errors.Is(err, apperrors.ErrNotFound) {
+			return domaindelivery.DeliveryDraft{}, err
+		}
+	}
+	input, err = s.PrepareDeliveryDraft(ctx, principal, input)
+	if err != nil {
+		return domaindelivery.DeliveryDraft{}, err
+	}
+	if err := domaindelivery.CheckDraftScope(ctx, domaindelivery.DeliveryDraft{ApplicationDraft: input.ApplicationDraft, EnvironmentBindings: input.EnvironmentBindings}); err != nil { return domaindelivery.DeliveryDraft{}, err }
+	if input.IdempotencyKey != "" {
+		return s.repository.CreateDeliveryDraftIdempotent(ctx, input, principal.UserID, digest)
+	}
 	return s.repository.CreateDeliveryDraft(ctx, input, principal.UserID)
+}
+
+// PrepareDeliveryDraft resolves the same application and environment references
+// used at creation without persisting a draft or applying platform objects.
+func (s *Service) PrepareDeliveryDraft(ctx context.Context, principal domainidentity.Principal, input domaindelivery.DeliveryDraftInput) (domaindelivery.DeliveryDraftInput, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
+		return input, err
+	}
+	if strings.TrimSpace(input.ApplicationDraft.Name) == "" || strings.TrimSpace(input.ApplicationDraft.Key) == "" {
+		return input, fmt.Errorf("%w: delivery draft application name and key are required", apperrors.ErrInvalidArgument)
+	}
+	if err := validateDeliveryServices(input.Services); err != nil {
+		return input, err
+	}
+	if err := s.captureApplicationVersion(ctx, principal, &input.ApplicationDraft); err != nil {
+		return input, err
+	}
+	if len(input.EnvironmentBindings) > 0 {
+		environments, err := s.catalog.ListEnvironments(ctx, principal)
+		if err != nil {
+			return input, err
+		}
+		input.EnvironmentBindings = append([]domaindelivery.BlueprintEnvironmentBindingTemplate(nil), input.EnvironmentBindings...)
+		for i, binding := range input.EnvironmentBindings {
+			if binding.EnvironmentID != "" {
+				continue
+			}
+			for _, environment := range environments {
+				if environment.Key == binding.EnvironmentKey {
+					input.EnvironmentBindings[i].EnvironmentID = environment.ID
+					break
+				}
+			}
+			if input.EnvironmentBindings[i].EnvironmentID == "" {
+				return input, fmt.Errorf("%w: draft environment is unavailable", apperrors.ErrInvalidArgument)
+			}
+		}
+	}
+	return input, nil
 }
 
 func (s *Service) GetDeliveryDraft(ctx context.Context, principal domainidentity.Principal, draftID string) (domaindelivery.DeliveryDraft, error) {
@@ -939,55 +1013,37 @@ func (s *Service) ConfirmDeliveryDraft(ctx context.Context, principal domainiden
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
 		return domaindelivery.DeliveryDraftConfirmResult{}, err
 	}
-	draft, err := s.repository.GetDeliveryDraft(ctx, strings.TrimSpace(draftID))
-	if err != nil {
-		return domaindelivery.DeliveryDraftConfirmResult{}, err
-	}
-	switch draft.Status {
-	case domaindelivery.DeliveryDraftStatusConfirmed:
-		return domaindelivery.DeliveryDraftConfirmResult{}, fmt.Errorf("%w: delivery draft is already confirmed", apperrors.ErrInvalidArgument)
-	case domaindelivery.DeliveryDraftStatusConfirming:
-		return domaindelivery.DeliveryDraftConfirmResult{}, fmt.Errorf("%w: delivery draft is already being confirmed", apperrors.ErrInvalidArgument)
-	case domaindelivery.DeliveryDraftStatusDraft:
-	default:
-		return domaindelivery.DeliveryDraftConfirmResult{}, fmt.Errorf("%w: delivery draft status %s cannot be confirmed", apperrors.ErrInvalidArgument, draft.Status)
-	}
-	if err := validateDeliveryServices(draft.Services); err != nil {
-		return domaindelivery.DeliveryDraftConfirmResult{}, err
-	}
-	now := time.Now().UTC()
-	draft.Status = domaindelivery.DeliveryDraftStatusConfirming
-	draft.UpdatedAt = now
-	draft, err = s.repository.UpdateDeliveryDraft(ctx, draft)
-	if err != nil {
-		return domaindelivery.DeliveryDraftConfirmResult{}, err
-	}
-	spec := renderedSpecFromDraft(draft)
-	app, services, bindings, err := s.applyRenderedDeliverySpec(ctx, principal, spec)
-	if err != nil {
-		return domaindelivery.DeliveryDraftConfirmResult{}, s.restoreDeliveryDraftConfirmFailure(ctx, draft, err)
-	}
-	if err := s.ensureManifestSeed(ctx, principal, app, bindings, spec); err != nil {
-		return domaindelivery.DeliveryDraftConfirmResult{}, s.restoreDeliveryDraftConfirmFailure(ctx, draft, fmt.Errorf("application changes retained; retry confirmation: %w", err))
-	}
-	now = time.Now().UTC()
-	draft.Status = domaindelivery.DeliveryDraftStatusConfirmed
-	draft.ConfirmedAt = &now
-	draft.UpdatedAt = now
-	draft, err = s.repository.UpdateDeliveryDraft(ctx, draft)
-	if err != nil {
-		return domaindelivery.DeliveryDraftConfirmResult{}, err
-	}
-	return domaindelivery.DeliveryDraftConfirmResult{
-		Draft:               draft,
-		Application:         app,
-		Services:            services,
-		EnvironmentBindings: bindings,
-		Spec:                spec,
-	}, nil
+	return s.repository.WithDeliveryDraftConfirmation(ctx, strings.TrimSpace(draftID), func(ctx context.Context, draft domaindelivery.DeliveryDraft, receipt *domaindelivery.DeliveryDraftConfirmResult) (domaindelivery.DeliveryDraftConfirmResult, error) {
+		if err := domaindelivery.CheckDraftScope(ctx, draft); err != nil { return domaindelivery.DeliveryDraftConfirmResult{}, err }
+		if receipt != nil {
+			return *receipt, s.authorizeDraftReceipt(ctx, principal, *receipt)
+		}
+		if draft.Status != domaindelivery.DeliveryDraftStatusDraft {
+			return domaindelivery.DeliveryDraftConfirmResult{}, fmt.Errorf("%w: draft has no replayable confirmation receipt", apperrors.ErrConflict)
+		}
+		spec := renderedSpecFromDraft(draft)
+		app, services, bindings, err := s.applyRenderedDeliverySpec(ctx, principal, spec)
+		if err != nil {
+			return domaindelivery.DeliveryDraftConfirmResult{}, err
+		}
+		if err := s.ensureManifestSeed(ctx, principal, app, bindings, spec); err != nil {
+			return domaindelivery.DeliveryDraftConfirmResult{}, err
+		}
+		now := time.Now().UTC()
+		draft.ApplicationDraft.ID, draft.ApplicationDraft.ExpectedVersion = app.ID, &app.Version
+		draft.Status, draft.ConfirmedAt, draft.UpdatedAt = domaindelivery.DeliveryDraftStatusConfirmed, &now, now
+		return domaindelivery.DeliveryDraftConfirmResult{Draft: draft, Application: app, Services: services, EnvironmentBindings: bindings, Spec: spec}, nil
+	})
 }
 
 func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidentity.Principal, input domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error) {
+	if input.Source == domainworkflow.ScopeDeliveryBatch {
+		node, ok := domainworkflow.NodeExecutionFrom(ctx)
+		if !ok || node.Stage != "plan" {
+			return domaindelivery.DeliveryPlan{}, apperrors.ErrConflict
+		}
+		input.ID = node.ResourceID("plan")
+	}
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsView); err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
@@ -1029,7 +1085,27 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 	planInput.RequiresApproval = requiresApproval
 	planInput.Impact = deliveryPlanImpact(app, binding, environment, firstTarget(targets), planInput)
 	planInput.RollbackStrategy = deliveryPlanRollbackStrategy(action, binding)
-	return s.repository.CreateDeliveryPlan(ctx, planInput, principal.UserID)
+	planInput.ID = firstNonEmpty(strings.TrimSpace(planInput.ID), uuid.NewString())
+	planInput.ManifestSnapshots, err = s.prepareManifestDelivery(ctx, principal, app.ID, binding.ID, targets, planInput)
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	planInput.HelmSnapshots, planInput.HelmPreparedCiphertext, err = s.prepareHelmDelivery(ctx, principal, binding, targets, planInput)
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	planInput.DockerSnapshots, planInput.DockerPrepared, err = s.prepareDockerDelivery(ctx, principal, binding, targets, planInput)
+	if err != nil { return domaindelivery.DeliveryPlan{}, err }
+	if planInput.HelmRevision > 0 && len(planInput.HelmSnapshots) == 1 {
+		planInput.ReleaseBundleID = planInput.HelmSnapshots[0].ReleaseBundleID
+		planInput.Impact["helmRevision"] = planInput.HelmRevision
+	}
+	plan, err := s.repository.CreateDeliveryPlan(ctx, planInput, principal.UserID)
+	if err == nil {
+		err = s.ensureHelmPreflights(ctx, principal, plan)
+	}
+	if err == nil { err = s.ensureDockerPreflights(ctx, principal, plan) }
+	return plan, err
 }
 
 func (s *Service) GetDeliveryPlan(ctx context.Context, principal domainidentity.Principal, planID string) (domaindelivery.DeliveryPlan, error) {
@@ -1054,18 +1130,20 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 	if err := s.authorizeRuntimeScope(ctx, principal, plan.ApplicationID, plan.ApplicationEnvironmentID); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
-	switch plan.Status {
-	case domaindelivery.DeliveryPlanStatusConfirmed:
-		return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery plan is already confirmed", apperrors.ErrInvalidArgument)
-	case domaindelivery.DeliveryPlanStatusConfirming:
-		return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery plan is already being confirmed", apperrors.ErrInvalidArgument)
-	case domaindelivery.DeliveryPlanStatusWaitingApproval:
-		return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery plan is waiting for approval", apperrors.ErrInvalidArgument)
-	case domaindelivery.DeliveryPlanStatusDraft:
-	default:
-		return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery plan status %s cannot be confirmed", apperrors.ErrInvalidArgument, plan.Status)
+	if err := requireBatchPlanWorker(ctx, plan); err != nil {
+		return domaindelivery.DeliveryPlanConfirmResult{}, err
+	}
+	if plan.Source == domainworkflow.ScopeDeliveryBatch && plan.Status == domaindelivery.DeliveryPlanStatusConfirmed {
+		return domaindelivery.DeliveryPlanConfirmResult{Plan: plan}, nil
 	}
 	if err := s.authorizeApplicationDeliveryAction(ctx, principal, plan.ApplicationEnvironmentID, plan.Action); err != nil {
+		return domaindelivery.DeliveryPlanConfirmResult{}, err
+	}
+	if result, recovered, err := s.recoverHelmPlanConfirmation(ctx, plan); recovered || err != nil {
+		return result, err
+	}
+	if result, recovered, err := s.recoverDockerPlanConfirmation(ctx, principal, plan); recovered || err != nil { return result, err }
+	if err := validateDeliveryPlanConfirmStatus(plan); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
 	if plan.RequiresApproval && !deliveryPlanApprovalGranted(plan) {
@@ -1079,18 +1157,8 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 		s.recordDeliveryPlanApproval(ctx, principal, updated, "requested", "")
 		return domaindelivery.DeliveryPlanConfirmResult{Plan: updated}, nil
 	}
-	if s.governance != nil && strings.TrimSpace(plan.ReleaseBundleID) != "" && deliveryPlanRequiresValidation(plan) {
-		decision, gateErr := s.governance.Evaluate(ctx, principal, deliverygovernance.Request{
-			PlanID: plan.ID, ApplicationID: plan.ApplicationID, ApplicationEnvironmentID: plan.ApplicationEnvironmentID,
-			Action: string(plan.Action), ReleaseBundleID: plan.ReleaseBundleID, RequiresValidation: true,
-			RequiresApproval: plan.RequiresApproval, ApprovalStatus: approvalStatus(plan), AIStatus: "available",
-		})
-		if gateErr != nil {
-			return domaindelivery.DeliveryPlanConfirmResult{}, gateErr
-		}
-		if !decision.Allowed {
-			return domaindelivery.DeliveryPlanConfirmResult{}, fmt.Errorf("%w: delivery governance %s: %s", apperrors.ErrInvalidArgument, decision.Status, strings.Join(decision.Reasons, "; "))
-		}
+	if err := s.validateDeliveryPlanGovernance(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
 	now := time.Now().UTC()
 	plan.Status = domaindelivery.DeliveryPlanStatusConfirming
@@ -1117,6 +1185,31 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 	}, nil
 }
 
+func validateDeliveryPlanConfirmStatus(plan domaindelivery.DeliveryPlan) error {
+	if plan.Status == domaindelivery.DeliveryPlanStatusDraft || (plan.Source == domainworkflow.ScopeDeliveryBatch || standaloneHelmDeployPlan(plan)) && plan.Status == domaindelivery.DeliveryPlanStatusConfirming {
+		return nil
+	}
+	return fmt.Errorf("%w: delivery plan status %s cannot be confirmed", apperrors.ErrInvalidArgument, plan.Status)
+}
+
+func (s *Service) validateDeliveryPlanGovernance(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan) error {
+	if s.governance == nil || strings.TrimSpace(plan.ReleaseBundleID) == "" || !deliveryPlanRequiresValidation(plan) {
+		return nil
+	}
+	request, err := s.deliveryGovernanceRequest(ctx, principal, plan)
+	if err != nil {
+		return err
+	}
+	decision, err := s.governance.Evaluate(ctx, principal, request)
+	if err != nil {
+		return err
+	}
+	if !decision.Allowed {
+		return fmt.Errorf("%w: delivery governance %s: %s", apperrors.ErrInvalidArgument, decision.Status, strings.Join(decision.Reasons, "; "))
+	}
+	return nil
+}
+
 func deliveryPlanRequiresValidation(plan domaindelivery.DeliveryPlan) bool {
 	if value, ok := plan.Impact["requiresValidation"].(bool); ok {
 		return value
@@ -1125,8 +1218,13 @@ func deliveryPlanRequiresValidation(plan domaindelivery.DeliveryPlan) bool {
 }
 
 func approvalStatus(plan domaindelivery.DeliveryPlan) string {
-	if deliveryPlanApprovalGranted(plan) {
-		return "approved"
+	history, _ := plan.Impact["approval"].([]any)
+	if len(history) > 0 {
+		decision, _ := history[len(history)-1].(map[string]any)
+		status, _ := decision["status"].(string)
+		if status == "approved" || status == "rejected" {
+			return status
+		}
 	}
 	return "pending"
 }
@@ -1188,6 +1286,19 @@ func deliveryPlanApprovalGranted(plan domaindelivery.DeliveryPlan) bool {
 	return strings.EqualFold(strings.TrimSpace(fmt.Sprint(decision["status"])), "approved")
 }
 
+// GetConfirmedDeliveryPlan is used by native controls of an existing execution.
+// It retains the plan reader's application/environment authorization.
+func (s *Service) GetConfirmedDeliveryPlan(ctx context.Context, principal domainidentity.Principal, planID string) (domaindelivery.DeliveryPlan, error) {
+	plan, err := s.GetDeliveryPlan(ctx, principal, planID)
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	if plan.Status != domaindelivery.DeliveryPlanStatusConfirmed || plan.RequiresApproval && !deliveryPlanApprovalGranted(plan) {
+		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: execution requires its confirmed approved delivery plan", apperrors.ErrConflict)
+	}
+	return plan, nil
+}
+
 func (s *Service) authorizeDeliveryPlanApprover(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan) error {
 	binding, err := s.catalog.AuthorizeApplicationEnvironmentPermission(ctx, principal, plan.ApplicationEnvironmentID, appaccess.PermDeliveryApplicationEnvApprove)
 	if err != nil {
@@ -1215,15 +1326,6 @@ func (s *Service) recordDeliveryPlanApproval(ctx context.Context, principal doma
 	if s.operations != nil {
 		_ = s.operations.Record(ctx, operationentry.New(ctx, principal, "delivery.plan.approval", map[string]any{"resourceKind": "DeliveryPlan", "planId": plan.ID}, "success", "delivery plan approval "+status, metadata))
 	}
-}
-
-func (s *Service) restoreDeliveryDraftConfirmFailure(ctx context.Context, draft domaindelivery.DeliveryDraft, cause error) error {
-	draft.Status = domaindelivery.DeliveryDraftStatusDraft
-	draft.UpdatedAt = time.Now().UTC()
-	if _, err := s.repository.UpdateDeliveryDraft(ctx, draft); err != nil {
-		return errors.Join(cause, fmt.Errorf("restore delivery draft confirmation state: %w", err))
-	}
-	return cause
 }
 
 func (s *Service) restoreDeliveryPlanConfirmFailure(ctx context.Context, plan domaindelivery.DeliveryPlan, cause error) error {
@@ -1273,6 +1375,13 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 		Target:                   firstTarget(targets),
 		Targets:                  targets,
 	}
+	if err := s.validateManifestDelivery(ctx, principal, app.ID, binding.ID, targets, input); err != nil {
+		return result, err
+	}
+	if err := s.validateHelmDelivery(ctx, principal, targets, input); err != nil {
+		return result, err
+	}
+	if err := s.validateDockerDelivery(ctx, principal, targets, input); err != nil { return result, err }
 	return s.executeApplicationDeliveryAction(ctx, principal, app, binding, targets, input, result)
 }
 
@@ -1295,17 +1404,7 @@ func (s *Service) executeApplicationDeliveryAction(
 		result.Build = &buildRecord
 		applyBuildRelatedIDs(&result, buildRecord)
 	case domaindelivery.ApplicationDeliveryActionDeploy:
-		for _, target := range targets {
-			releaseRecord, releaseErr := s.triggerApplicationRelease(ctx, principal, app, binding, target, input)
-			if releaseErr != nil {
-				return result, releaseErr
-			}
-			result.Releases = append(result.Releases, releaseRecord)
-			if result.Release == nil {
-				result.Release = &result.Releases[0]
-			}
-			applyReleaseRelatedIDs(&result, releaseRecord)
-		}
+		return s.executeApplicationDeploy(ctx, principal, app, binding, targets, input, result)
 	case domaindelivery.ApplicationDeliveryActionWorkflow:
 		for _, target := range targets {
 			run, runErr := s.workflows.Trigger(ctx, principal, workflowInputForDeliveryAction(app, binding, &target, input, action, false))
@@ -1349,6 +1448,37 @@ func (s *Service) executeApplicationDeliveryAction(
 		}
 	default:
 		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: unsupported application delivery action %q", apperrors.ErrInvalidArgument, action)
+	}
+	return result, nil
+}
+
+func (s *Service) executeApplicationDeploy(ctx context.Context, principal domainidentity.Principal, app domainapp.App, binding domaincatalog.ApplicationEnvironment, targets []domaincatalog.ReleaseTarget, input domaindelivery.ApplicationDeliveryActionInput, result domaindelivery.ApplicationDeliveryActionResult) (domaindelivery.ApplicationDeliveryActionResult, error) {
+	for _, target := range targets {
+		if target.Docker != nil {
+			if err := s.applyDockerDelivery(ctx, principal, target.ID, input, &result); err != nil { return result, err }
+			continue
+		}
+		if target.Helm != nil {
+			if err := s.applyHelmDelivery(ctx, principal, target.ID, input, &result); err != nil {
+				return result, err
+			}
+			continue
+		}
+		if target.ExecutorKind == "manifest_ssa" {
+			if err := s.applyManifestDelivery(ctx, principal, target.ID, input.ManifestSnapshots, &result); err != nil {
+				return result, err
+			}
+			continue
+		}
+		releaseRecord, err := s.triggerApplicationRelease(ctx, principal, app, binding, target, input)
+		if err != nil {
+			return result, err
+		}
+		result.Releases = append(result.Releases, releaseRecord)
+		if result.Release == nil {
+			result.Release = &result.Releases[0]
+		}
+		applyReleaseRelatedIDs(&result, releaseRecord)
 	}
 	return result, nil
 }
@@ -1999,7 +2129,7 @@ func (s *Service) deliveryBlueprintRuntimeSummary(ctx context.Context, principal
 				})
 			}
 		}
-		if workflows, err := s.workflows.List(ctx, principal, app.ID, 20); err == nil {
+		if workflows, err := s.workflows.List(ctx, principal, app.ID, "", 20); err == nil {
 			for _, run := range workflows {
 				collector.add("workflow", run.ID, run.Status, parseDeliveryTemplateUsageTime(run.UpdatedAt, run.CreatedAt), map[string]any{
 					"applicationId":            run.ApplicationID,
@@ -2227,6 +2357,10 @@ func templateUsageAuditChangeSnapshot(before, after *domaincatalog.TemplateUsage
 
 func deliveryActionInputFromPlan(plan domaindelivery.DeliveryPlan) domaindelivery.ApplicationDeliveryActionInput {
 	return domaindelivery.ApplicationDeliveryActionInput{
+		DockerSnapshots: plan.DockerSnapshots, DockerPrepared: plan.DockerPrepared,
+		ManifestSnapshots:        plan.ManifestSnapshots,
+		HelmSnapshots:            plan.HelmSnapshots,
+		HelmPreparedCiphertext:   plan.HelmPreparedCiphertext,
 		Action:                   plan.Action,
 		ApplicationEnvironmentID: plan.ApplicationEnvironmentID,
 		TargetID:                 plan.TargetID,
@@ -2602,7 +2736,7 @@ func (s *Service) loadDeliveryContext(ctx context.Context, principal domainident
 	group.Go(func() {
 		builds, errs[4] = s.builds.List(ctx, principal, domainbuild.Filter{ApplicationID: applicationID, Limit: 20})
 	})
-	group.Go(func() { workflows, errs[5] = s.workflows.List(ctx, principal, applicationID, 20) })
+	group.Go(func() { workflows, errs[5] = s.workflows.List(ctx, principal, applicationID, "", 20) })
 	group.Go(func() {
 		releases, errs[6] = s.releases.List(ctx, principal, domainrelease.Filter{ApplicationID: applicationID, Limit: 20})
 	})
@@ -2863,7 +2997,11 @@ func (s *Service) listRuntimeWorkloadsForBinding(
 			return nil, err
 		}
 		for _, item := range items {
-			if len(binding.ResourceSelector.MatchLabels) > 0 {
+			if target.ExecutorKind == "manifest_inventory" {
+				if item.Name != target.WorkloadName {
+					continue
+				}
+			} else if len(binding.ResourceSelector.MatchLabels) > 0 {
 				if !selectorMatchesLabels(binding.ResourceSelector.MatchLabels, item.Labels) {
 					continue
 				}
@@ -2881,6 +3019,7 @@ func (s *Service) listRuntimeWorkloadsForBinding(
 				Namespace:                namespace,
 				WorkloadKind:             "Deployment",
 				WorkloadName:             item.Name,
+				ServiceID:                metadataString(target.Metadata, "serviceId"),
 				Labels:                   item.Labels,
 				DesiredReplicas:          item.DesiredReplicas,
 				ReadyReplicas:            item.ReadyReplicas,
@@ -2959,6 +3098,7 @@ func renderedSpecFromDraft(draft domaindelivery.DeliveryDraft) domaindelivery.Re
 
 func applicationInputFromDraft(draft domaindelivery.BlueprintApplicationDraft, buildSources []domainapp.BuildSourceInput) domainapp.UpsertInput {
 	return domainapp.UpsertInput{
+		ExpectedVersion:     draft.ExpectedVersion,
 		ID:                  strings.TrimSpace(draft.ID),
 		Name:                strings.TrimSpace(draft.Name),
 		Key:                 strings.TrimSpace(draft.Key),
@@ -2983,6 +3123,16 @@ func applicationInputFromDraft(draft domaindelivery.BlueprintApplicationDraft, b
 
 func (s *Service) upsertApplication(ctx context.Context, principal domainidentity.Principal, input domainapp.UpsertInput) (domainapp.App, error) {
 	if strings.TrimSpace(input.ID) != "" {
+		if input.ExpectedVersion == nil || *input.ExpectedVersion < 1 {
+			return domainapp.App{}, fmt.Errorf("%w: recreate the delivery draft to capture the application configuration version", apperrors.ErrConflict)
+		}
+		existing, err := s.applications.Get(ctx, principal, input.ID)
+		if err != nil {
+			return domainapp.App{}, err
+		}
+		// Drafts do not edit repository associations. Keep them while the CAS
+		// still compares the version originally captured in the draft.
+		input.RepositoryIDs = existing.RepositoryIDs
 		return s.applications.Update(ctx, principal, input.ID, input)
 	}
 	items, err := s.applications.List(ctx, principal, domainapp.Filter{Limit: 200})
@@ -2991,7 +3141,7 @@ func (s *Service) upsertApplication(ctx context.Context, principal domainidentit
 	}
 	for _, item := range items {
 		if strings.TrimSpace(item.Key) == strings.TrimSpace(input.Key) {
-			return s.applications.Update(ctx, principal, item.ID, input)
+			return domainapp.App{}, fmt.Errorf("%w: application already exists; recreate the delivery draft", apperrors.ErrConflict)
 		}
 	}
 	return s.applications.Create(ctx, principal, input)
@@ -3008,11 +3158,11 @@ func (s *Service) applyRenderedDeliverySpec(ctx context.Context, principal domai
 	}
 	services, err := s.upsertApplicationServices(ctx, principal, app.ID, spec.Services)
 	if err != nil {
-		return domainapp.App{}, nil, nil, err
+		return app, nil, nil, err
 	}
 	bindings, err := s.upsertEnvironmentBindings(ctx, principal, app, spec)
 	if err != nil {
-		return domainapp.App{}, nil, nil, err
+		return app, services, nil, err
 	}
 	return app, services, bindings, nil
 }
@@ -3098,6 +3248,9 @@ func manifestSeedBindings(environments []domaincatalog.ApplicationEnvironment) [
 func validateDeliveryServices(services []domaindelivery.DeliveryDraftService) error {
 	seen := make(map[string]struct{}, len(services))
 	for _, service := range services {
+		if service.ExpectedVersion != nil && *service.ExpectedVersion < 1 {
+			return fmt.Errorf("%w: service expectedVersion must be positive", apperrors.ErrInvalidArgument)
+		}
 		key := strings.TrimSpace(service.Key)
 		if key == "" {
 			return fmt.Errorf("%w: delivery service key is required", apperrors.ErrInvalidArgument)
@@ -3164,6 +3317,7 @@ func serviceInputFromDraft(draft domaindelivery.DeliveryDraftService) domainapp.
 		serviceKind = domainapp.ServiceKindKubernetesWorkload
 	}
 	return domainapp.ServiceInput{
+		ExpectedVersion:     draft.ExpectedVersion,
 		ID:                  strings.TrimSpace(draft.ID),
 		Key:                 strings.TrimSpace(draft.Key),
 		Name:                strings.TrimSpace(draft.Name),
@@ -3175,6 +3329,7 @@ func serviceInputFromDraft(draft domaindelivery.DeliveryDraftService) domainapp.
 		RepositoryPath:      strings.TrimSpace(draft.RepositoryPath),
 		DefaultBranch:       strings.TrimSpace(draft.DefaultBranch),
 		BuildSourceID:       strings.TrimSpace(draft.BuildSourceID),
+		DeploymentTemplate:  draft.DeploymentTemplate,
 		Enabled:             draft.Enabled,
 		Metadata:            ensureMap(draft.Metadata),
 		Containers:          draft.Containers,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -14,14 +15,26 @@ import (
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 )
 
 func (s *Service) holdToolInvocation(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, tool domainaigateway.ToolCapability, decision gatewayRiskDecision, redactionSummary gatewayRedactionAuditSummary) (domainaigateway.ToolInvocationResult, error) {
 	trackingID := uuid.NewString()
+	if node, ok := capabilityExecutionFrom(ctx); ok && node.Scope == domainworkflow.ScopeCapabilityTask {
+		trackingID = capabilityApprovalID(input.RequestID)
+	}
 	result := decision.result()
 	relatedIDs := gatewayHoldRelatedIDs(trackingID, decision)
+	// Keep the discovered contract fixed even for callers that did not send a version.
+	relatedIDs["capabilityVersion"] = tool.Version
+	if node, ok := capabilityExecutionFrom(ctx); ok && node.Scope == domainworkflow.ScopeCapabilityTask {
+		relatedIDs["capabilityTaskId"], relatedIDs["capabilityNodeId"] = node.RunID, node.NodeID
+		if cancellation, _ := ctx.Value(capabilityCancellationKey{}).(bool); cancellation {
+			relatedIDs["capabilityCancellation"] = true
+		}
+	}
 
 	summary := gatewayHoldSummary(tool, decision)
 	var expiresAt *time.Time
@@ -42,10 +55,11 @@ func (s *Service) holdToolInvocation(ctx context.Context, principal domainidenti
 	}
 	addGatewayRedactionAuditMetadata(audit, redactionSummary)
 	return domainaigateway.ToolInvocationResult{
-		ToolName:         tool.Name,
-		RiskLevel:        tool.RiskLevel,
-		RequiresApproval: decision.requiresApproval(),
-		Result:           result,
+		CapabilityVersion: tool.Version,
+		ToolName:          tool.Name,
+		RiskLevel:         tool.RiskLevel,
+		RequiresApproval:  decision.requiresApproval(),
+		Result:            result,
 		Output: map[string]any{
 			"status":        result,
 			"toolName":      tool.Name,
@@ -55,7 +69,7 @@ func (s *Service) holdToolInvocation(ctx context.Context, principal domainidenti
 			"message":       summary,
 			"dryRun":        decision.Strategy == gatewayRiskDryRunOnly,
 			"nextAction":    gatewayHoldNextAction(decision),
-			"resourceScope": gatewayAuditScope(input.Input, nil),
+			"resourceScope": resolvedCapabilityAuditScope(ctx, tool, input.Input, nil),
 			"expiresAt":     expiresAt,
 		},
 		RelatedIDs: relatedIDs,
@@ -115,7 +129,7 @@ func (s *Service) createToolApprovalRequest(ctx context.Context, principal domai
 		ToolName:          tool.Name,
 		RiskLevel:         tool.RiskLevel,
 		RequiresApproval:  true,
-		ResourceScope:     gatewayAuditScope(input.Input, nil),
+		ResourceScope:     resolvedCapabilityAuditScope(ctx, tool, input.Input, nil),
 		ToolInput:         sanitizeGatewayMap(input.Input),
 		SecretRefs:        cloneSecretRefs(input.SecretRefs),
 		RelatedIDs:        relatedIDs,
@@ -126,6 +140,13 @@ func (s *Service) createToolApprovalRequest(ctx context.Context, principal domai
 		ExpiresAt:         expiresAt,
 		CreatedAt:         now,
 		UpdatedAt:         now,
+	}
+	if node, ok := capabilityExecutionFrom(ctx); ok && node.Scope == domainworkflow.ScopeCapabilityTask {
+		if existing, found, err := s.capabilityNodeApproval(ctx, input); err != nil {
+			return nil, nil, err
+		} else if found {
+			return existing.RelatedIDs, existing.ExpiresAt, nil
+		}
 	}
 	created, err := repo.CreateApprovalRequest(ctx, request)
 	if err != nil {
@@ -334,7 +355,9 @@ func (s *Service) resolveApprovalRequest(ctx context.Context, principal domainid
 	}
 	switch action {
 	case "approve":
-		return s.approveApprovalRequest(ctx, principal, request, input)
+		return s.withCapabilityApproval(ctx, request, func(ctx context.Context) (domainaigateway.ApprovalDecisionResult, error) {
+			return s.approveApprovalRequest(ctx, principal, request, input)
+		})
 	case "reject", "cancel":
 		if isAIClientRegistrationApprovalRequest(request) {
 			return s.rejectOrCancelAIClientRegistrationApproval(ctx, principal, request, action, input)
@@ -374,6 +397,11 @@ func (s *Service) approveApprovalRequest(ctx context.Context, principal domainid
 		return domainaigateway.ApprovalDecisionResult{}, err
 	}
 	_ = s.recordApprovalDecisionAudit(ctx, principal, approved, "ai_gateway.approval.approve", "approved", "AI Gateway approval request approved")
+	return s.executeApprovedCapability(ctx, principal, approved)
+}
+
+func (s *Service) executeApprovedCapability(ctx context.Context, principal domainidentity.Principal, approved domainaigateway.ApprovalRequest) (domainaigateway.ApprovalDecisionResult, error) {
+	request := approved
 	tool, ok := s.toolByName(request.ToolName)
 	if !ok {
 		failed, failErr := s.finalizeApprovedApprovalRequest(ctx, principal, approved, "failed", "AI Gateway approved tool is no longer available", request.RelatedIDs, map[string]any{"error": "unknown tool"})
@@ -382,14 +410,27 @@ func (s *Service) approveApprovalRequest(ctx context.Context, principal domainid
 		}
 		return domainaigateway.ApprovalDecisionResult{Request: failed}, fmt.Errorf("%w: unknown AI Gateway tool %s", apperrors.ErrInvalidArgument, request.ToolName)
 	}
-	replayPrincipal := approvalRequestPrincipal(request)
+	replayPrincipal, err := s.currentApprovalPrincipal(ctx, request)
+	if err != nil {
+		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
+	}
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, replayPrincipal, appaccess.PermAIGatewayInvoke); err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
 	if err := s.authorizeTool(ctx, replayPrincipal, tool); err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
-	invocationScope := standardGatewayScope(request.ToolInput, nil)
+	if err := validateApprovedCapability(tool, request); err != nil {
+		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
+	}
+	ctx, err = s.resolveCapabilityScopeContext(ctx, replayPrincipal, tool, request.ToolInput)
+	if err != nil {
+		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
+	}
+	if !matchesApprovedCapabilityScopes(ctx, tool.Name, request.ResourceScope) {
+		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, fmt.Errorf("%w: resolved resource scopes changed or were not recorded; submit a new approval request", apperrors.ErrConflict))
+	}
+	invocationScope := capabilityGatewayScope(tool, request.ToolInput)
 	if _, err := s.authorizeToolGrant(ctx, replayPrincipal, request.AIClientID, tool, invocationScope); err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
@@ -397,7 +438,9 @@ func (s *Service) approveApprovalRequest(ctx context.Context, principal domainid
 	if err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
-	request.ToolInput = policyInput
+	if !reflect.DeepEqual(request.ToolInput, policyInput) {
+		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, fmt.Errorf("%w: current policy changed approved arguments; submit a new approval request", apperrors.ErrAccessDenied))
+	}
 	if decision.Strategy == gatewayRiskDeny || decision.Strategy == gatewayRiskDryRunOnly {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, fmt.Errorf("%w: current AI Gateway policy blocks approved request", apperrors.ErrAccessDenied))
 	}
@@ -405,11 +448,13 @@ func (s *Service) approveApprovalRequest(ctx context.Context, principal domainid
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
 	request.ToolInput = gatewayApprovalReplayInput(request)
+	ctx = withGatewayExecutionAuthorization(ctx, replayPrincipal, tool, domainaigateway.ToolInvocationRequest{ToolName: request.ToolName, Input: request.ToolInput, SecretRefs: request.SecretRefs, AIClientID: request.AIClientID, SkillID: request.SkillID, RequestID: request.RequestID}, request.ID, decision)
 	output, relatedIDs, err := s.invokeGatewayTool(ctx, replayPrincipal, tool, request.ToolInput, request.SecretRefs, request.ActorSessionID)
 	if err != nil {
 		return s.failApprovedApprovalRequest(ctx, principal, approved, tool, err)
 	}
 	var outputRedactionSummary gatewayRedactionAuditSummary
+	rawOutput := output
 	output, outputRedactionSummary, err = s.sanitizeToolOutputByAccessPolicy(ctx, replayPrincipal, request.AIClientID, request.SkillID, tool, invocationScope, output)
 	redactionSummary.merge(outputRedactionSummary)
 	if err != nil {
@@ -426,13 +471,16 @@ func (s *Service) approveApprovalRequest(ctx context.Context, principal domainid
 	addGatewayRedactionAuditMetadata(audit, redactionSummary)
 	addGatewayUsageAuditMetadata(audit, usageSummary)
 	invocation := domainaigateway.ToolInvocationResult{
-		ToolName:         tool.Name,
-		RiskLevel:        tool.RiskLevel,
-		RequiresApproval: false,
-		Result:           "success",
-		Output:           output,
-		RelatedIDs:       relatedIDs,
-		Audit:            audit,
+		CapabilityVersion: tool.Version,
+		Task:              s.gatewayRegistry().TaskReference(tool, rawOutput, output),
+		Assessment:        visibleCapabilityAssessment(tool, output),
+		ToolName:          tool.Name,
+		RiskLevel:         tool.RiskLevel,
+		RequiresApproval:  false,
+		Result:            "success",
+		Output:            output,
+		RelatedIDs:        relatedIDs,
+		Audit:             audit,
 	}
 	updated, err := s.finalizeApprovedApprovalRequest(ctx, principal, approved, "executed", "AI Gateway approval request executed through owning service", relatedIDs, output)
 	if err != nil {

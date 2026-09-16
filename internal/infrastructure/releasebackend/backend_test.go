@@ -43,7 +43,7 @@ func TestDirectRuntimeUpdateDeploymentImage(t *testing.T) {
 		{name: "named container", containerName: "sidecar", wantName: "sidecar", wantPrevious: "sidecar:v1"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			client := fake.NewSimpleClientset(testDeployment())
+			client := fake.NewClientset(testDeployment())
 			runtime := NewDirectRuntime(fakeReleaseClusterManager{bundle: &k8sinfra.Bundle{Typed: client}})
 
 			name, previous, err := runtime.UpdateDeploymentImage(context.Background(), "cluster-a", "apps", "api", test.containerName, "release:v2")
@@ -67,10 +67,26 @@ func TestDirectRuntimeUpdateDeploymentImage(t *testing.T) {
 }
 
 func TestDirectRuntimeUpdateDeploymentImageReturnsNotFound(t *testing.T) {
-	runtime := NewDirectRuntime(fakeReleaseClusterManager{bundle: &k8sinfra.Bundle{Typed: fake.NewSimpleClientset()}})
+	runtime := NewDirectRuntime(fakeReleaseClusterManager{bundle: &k8sinfra.Bundle{Typed: fake.NewClientset()}})
 	_, _, err := runtime.UpdateDeploymentImage(context.Background(), "cluster-a", "apps", "missing", "", "release:v2")
 	if !k8serrors.IsNotFound(err) {
 		t.Fatalf("UpdateDeploymentImage() error = %v, want Kubernetes NotFound", err)
+	}
+}
+
+func TestDirectRuntimeImageUpdateRejectsGitOpsOwner(t *testing.T) {
+	deployment := testDeployment()
+	deployment.Annotations = map[string]string{"argocd.argoproj.io/tracking-id": "root:apps/Deployment:apps/api"}
+	client := fake.NewClientset(deployment)
+	runtime := NewDirectRuntime(fakeReleaseClusterManager{bundle: &k8sinfra.Bundle{Typed: client}})
+	_, _, err := runtime.UpdateDeploymentImage(context.Background(), "cluster-a", "apps", "api", "app", "release:v2")
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("update: %v", err)
+	}
+	for _, action := range client.Actions() {
+		if action.GetVerb() != "get" {
+			t.Fatalf("unexpected write: %s", action.GetVerb())
+		}
 	}
 }
 

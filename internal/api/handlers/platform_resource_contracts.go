@@ -246,7 +246,7 @@ type CRDReader interface {
 type CRDEditor interface {
 	CreateCRDResourceFromYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	ApplyCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
-	DeleteCRDResource(context.Context, domainidentity.Principal, string, string, string, string) error
+	DeleteCRDResource(context.Context, domainidentity.Principal, string, string, string, string, string) error
 }
 
 type HelmCatalogService interface {

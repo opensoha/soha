@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
@@ -16,6 +17,7 @@ type BuildService interface {
 	List(context.Context, domainidentity.Principal, domainbuild.Filter) ([]domainbuild.Record, error)
 	Get(context.Context, domainidentity.Principal, string) (domainbuild.Record, error)
 	Trigger(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error)
+	BuildpacksCapability(context.Context, domainidentity.Principal, string) (sohaapi.BuildpacksCapability, error)
 }
 
 type BuildHandler struct {
@@ -26,10 +28,20 @@ func NewBuildHandler(service BuildService) *BuildHandler {
 	return &BuildHandler{service: service}
 }
 
+func (h *BuildHandler) BuildpacksCapability(c *gin.Context) {
+	item, err := h.service.BuildpacksCapability(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("applicationID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *BuildHandler) ListBuilds(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.List(c.Request.Context(), principal, domainbuild.Filter{
 		ApplicationID: c.Query("applicationId"),
+		BuildSourceID: c.Query("buildSourceId"),
 		Limit:         parseLimit(c.Query("limit"), 50),
 	})
 	if err != nil {
@@ -64,6 +76,7 @@ func (h *BuildHandler) TriggerBuild(c *gin.Context) {
 		BuildSourceID:            req.BuildSourceID,
 		RefType:                  req.RefType,
 		RefName:                  req.RefName,
+		RepositoryRefs:           req.RepositoryRefs,
 		ImageTag:                 req.ImageTag,
 		BuildArgs:                req.BuildArgs,
 		Variables:                req.Variables,

@@ -41,7 +41,11 @@ func TestOpenAPICapabilitiesMatchLiveMCPToolCatalog(t *testing.T) {
 		mcpToolName      string
 		permissionKeys   []string
 	})
-	for _, tool := range defaultTools() {
+	vmProvider, err := NewVirtualizationCapabilityProvider(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range newCapabilityRegistry(vmProvider, BuiltinCapabilityProvider{}).Tools() {
 		tools[tool.Name] = struct {
 			riskLevel        string
 			requiresApproval bool

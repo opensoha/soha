@@ -150,10 +150,11 @@ func (s *Service) SAMLSSO(ctx context.Context, issuer, providerID, sessionID str
 	if err := repository.ConsumeSAMLReplayKey(ctx, provider.ID, "request", request.ID, time.Now().UTC().Add(10*time.Minute)); err != nil {
 		return SAMLSSOResult{}, fmt.Errorf("%w: SAML AuthnRequest was already consumed", apperrors.ErrUnauthorized)
 	}
+	sessionIndex := firstNonEmpty(sessionID, uuid.NewString())
 	response, err := s.saml.SignResponse(material, SAMLResponseInput{
 		RequestID: request.ID, SPEntityID: request.Issuer, ACSURL: request.ACSURL,
 		NameID: samlNameID(principal, serviceProvider.NameIDFormat), NameIDFormat: serviceProvider.NameIDFormat,
-		SessionIndex: firstNonEmpty(sessionID, uuid.NewString()), AuthnInstant: time.Now().UTC(),
+		SessionIndex: sessionIndex, AuthnInstant: time.Now().UTC(),
 		Attributes: samlAttributes(principal, serviceProvider.AttributeMappings),
 	})
 	if err != nil {
@@ -161,7 +162,7 @@ func (s *Service) SAMLSSO(ctx context.Context, issuer, providerID, sessionID str
 	}
 	encoded := base64.StdEncoding.EncodeToString(response)
 	form := []byte(`<!doctype html><html><body><form method="post" action="` + html.EscapeString(request.ACSURL) + `"><input type="hidden" name="SAMLResponse" value="` + html.EscapeString(encoded) + `"><input type="hidden" name="RelayState" value="` + html.EscapeString(request.RelayState) + `"></form><script>document.forms[0].submit()</script></body></html>`)
-	s.recordAudit(ctx, principal, "identity.saml.sso", "success", provider, domainprovider.OIDCClient{}, map[string]any{"applicationId": application.ID, "spEntityId": request.Issuer})
+	s.recordAudit(ctx, principal, "identity.saml.sso", "success", provider, domainprovider.OIDCClient{}, map[string]any{"applicationId": application.ID, "spEntityId": request.Issuer, "sessionId": sessionIndex, "platformSessionId": sessionID})
 	return SAMLSSOResult{ACSURL: request.ACSURL, HTML: form}, nil
 }
 

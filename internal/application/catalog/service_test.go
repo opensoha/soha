@@ -216,7 +216,7 @@ type stubCatalogWorkflowRuntimeReader struct {
 	items []domainworkflow.Run
 }
 
-func (s stubCatalogWorkflowRuntimeReader) List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error) {
+func (s stubCatalogWorkflowRuntimeReader) List(context.Context, domainidentity.Principal, string, string, int) ([]domainworkflow.Run, error) {
 	return s.items, nil
 }
 
@@ -777,4 +777,54 @@ func accessServiceForCatalogTests(grants []domainscopegrant.Record, environments
 			applicationEnvironments: applicationEnvironments,
 		},
 	)
+}
+
+func (s *stubCatalogRepository) ListBuildTemplateVersions(context.Context, string) ([]domaincatalog.BuildTemplate, error) {
+	return nil, apperrors.ErrNotFound
+}
+func (s *stubCatalogRepository) GetBuildTemplateVersion(context.Context, string, int64) (domaincatalog.BuildTemplate, error) {
+	return domaincatalog.BuildTemplate{}, apperrors.ErrNotFound
+}
+func (s *stubCatalogRepository) PublishBuildTemplate(context.Context, string, int64) (domaincatalog.BuildTemplate, error) {
+	return domaincatalog.BuildTemplate{}, apperrors.ErrNotFound
+}
+
+func (s *stubCatalogRepository) ListWorkflowTemplateVersions(context.Context, string) ([]domaincatalog.WorkflowTemplate, error) {
+	return nil, apperrors.ErrNotFound
+}
+func (s *stubCatalogRepository) GetWorkflowTemplateVersion(context.Context, string, int64) (domaincatalog.WorkflowTemplate, error) {
+	return domaincatalog.WorkflowTemplate{}, apperrors.ErrNotFound
+}
+func (s *stubCatalogRepository) PublishWorkflowTemplate(context.Context, string, int64) (domaincatalog.WorkflowTemplate, error) {
+	return domaincatalog.WorkflowTemplate{}, apperrors.ErrNotFound
+}
+
+func TestPublishedWorkflowVersionsKeepPrivateApplicationBoundary(t *testing.T) {
+	repo := &stubCatalogRepository{workflowTemplates: map[string]domaincatalog.WorkflowTemplate{"private": {ID: "private", Category: "application:app-1"}}}
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesView, appaccess.PermDeliveryWorkflowTemplatesManage), nil, nil)
+	principal := domainidentity.Principal{Roles: []string{"admin"}}
+	if _, err := service.GetWorkflowTemplate(context.Background(), principal, "private"); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("private head leaked: %v", err)
+	}
+	if _, err := service.ListWorkflowTemplateVersions(context.Background(), principal, "private"); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("private history leaked: %v", err)
+	}
+	if _, err := service.GetWorkflowTemplateVersion(context.Background(), principal, "private", 1); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("private snapshot leaked: %v", err)
+	}
+	if _, err := service.PublishWorkflowTemplate(context.Background(), principal, "private", 1); !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("private publication allowed: %v", err)
+	}
+}
+
+func TestDeliveryRecipeRejectsSkippedGovernanceStages(t *testing.T) {
+	for _, input := range domaincatalog.BuiltinDeliveryRecipes() {
+		if err := validateWorkflowTemplateDefinition(input.Definition); err != nil {
+			t.Fatal(err)
+		}
+		input.Definition["stages"] = []string{"build", "deploy", "health"}
+		if err := validateWorkflowTemplateDefinition(input.Definition); err == nil {
+			t.Fatal("recipe without final plan accepted")
+		}
+	}
 }

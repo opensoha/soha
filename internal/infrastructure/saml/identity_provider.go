@@ -67,7 +67,7 @@ func NewIdentityProvider(config IdentityProviderConfig) (*IdentityProvider, erro
 func (idp *IdentityProvider) MetadataXML() ([]byte, error) {
 	metadata := idp.provider.Metadata()
 	if len(metadata.IDPSSODescriptors) > 0 {
-		descriptor := &metadata.IDPSSODescriptors[0].SSODescriptor.RoleDescriptor
+		descriptor := &metadata.IDPSSODescriptors[0].RoleDescriptor
 		for _, certificate := range idp.additionalSigningCertificates {
 			if certificate == nil {
 				continue

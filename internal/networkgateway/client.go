@@ -27,6 +27,7 @@ type Enrollment struct {
 	DevicePublicKey    string
 	WireGuardPublicKey string
 	ClientVersion      string
+	Capabilities       []string
 	Token              string
 }
 
@@ -89,7 +90,7 @@ func (c *ControlClient) Enroll(ctx context.Context, enrollment Enrollment) (netw
 	if err := validateGatewayEnrollment(enrollment); err != nil {
 		return networkprotocol.EnrollmentResult{}, err
 	}
-	payload := networkprotocol.EnrollmentRequest{EnrollmentID: enrollment.EnrollmentID, ChallengeID: enrollment.ChallengeID, DeviceID: enrollment.DeviceID, DevicePublicKey: enrollment.DevicePublicKey, WireGuardPublicKey: enrollment.WireGuardPublicKey, Platform: "linux", ClientVersion: enrollment.ClientVersion, Capabilities: []string{"wireguard"}}
+	payload := networkprotocol.EnrollmentRequest{EnrollmentID: enrollment.EnrollmentID, ChallengeID: enrollment.ChallengeID, DeviceID: enrollment.DeviceID, DevicePublicKey: enrollment.DevicePublicKey, WireGuardPublicKey: enrollment.WireGuardPublicKey, Platform: "linux", ClientVersion: enrollment.ClientVersion, Capabilities: append([]string{"wireguard"}, enrollment.Capabilities...)}
 	_, raw, err := c.runtimeMessage(networkprotocol.MessageEnrollmentRequest, payload)
 	if err != nil {
 		return networkprotocol.EnrollmentResult{}, err
@@ -188,12 +189,14 @@ func (c *ControlClient) post(ctx context.Context, endpoint string, raw []byte, a
 }
 
 type TelemetryClient struct {
-	origin    string
-	runtimeID string
-	http      *http.Client
-	schemas   *networkprotocol.Schemas
-	sequence  atomic.Int64
-	now       func() time.Time
+	peerCounters func(string) ([]wgtypes.Peer, error)
+	previous     map[string]vpnCounterSample
+	origin       string
+	runtimeID    string
+	http         *http.Client
+	schemas      *networkprotocol.Schemas
+	sequence     atomic.Int64
+	now          func() time.Time
 }
 
 func NewTelemetryClient(origin, runtimeID string, client *http.Client, schemas *networkprotocol.Schemas) (*TelemetryClient, error) {
@@ -216,7 +219,22 @@ func (c *TelemetryClient) Heartbeat(ctx context.Context, status RuntimeStatus) e
 	if err != nil {
 		return err
 	}
-	batch := networkprotocol.IngestBatch{SchemaVersion: networkprotocol.IngestSchemaVersion, BatchID: uuid.NewString(), ProducerID: c.runtimeID, ProducerKind: "gateway", SentAt: now, Events: []networkprotocol.IngestEvent{{ID: uuid.NewString(), Type: networkprotocol.EventHeartbeat, Sequence: c.sequence.Add(1), OccurredAt: now, Payload: payload}}}
+	events := []networkprotocol.IngestEvent{{ID: uuid.NewString(), Type: networkprotocol.EventHeartbeat, Sequence: c.sequence.Add(1), OccurredAt: now, Payload: payload}}
+	metrics, err := c.vpnEvents(status, now)
+	if err != nil {
+		return err
+	}
+	events = append(events, metrics...)
+	for start := 0; start < len(events); start += 256 {
+		if err := c.sendEvents(ctx, events[start:min(start+256, len(events))], now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *TelemetryClient) sendEvents(ctx context.Context, events []networkprotocol.IngestEvent, now time.Time) error {
+	batch := networkprotocol.IngestBatch{SchemaVersion: networkprotocol.IngestSchemaVersion, BatchID: uuid.NewString(), ProducerID: c.runtimeID, ProducerKind: "gateway", SentAt: now, Events: events}
 	raw, err := json.Marshal(batch)
 	if err != nil {
 		return err

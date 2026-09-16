@@ -3,6 +3,8 @@ package copilot
 import (
 	"context"
 	"time"
+
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 )
 
 type SessionScope struct {
@@ -61,22 +63,31 @@ type AnalysisRunRef struct {
 	CreatedAt string `json:"createdAt,omitempty"`
 }
 
+type WorkbenchModelPreferences struct {
+	PublicModel     string `json:"publicModel,omitempty"`
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+}
+
 type SessionMetadata struct {
-	Mode             string                 `json:"mode,omitempty"`
-	Status           string                 `json:"status,omitempty"`
-	AgentProviderID  string                 `json:"agentProviderId,omitempty"`
-	Scope            SessionScope           `json:"scope,omitempty"`
-	PinnedContext    map[string]any         `json:"pinnedContext,omitempty"`
-	Toolset          SessionToolset         `json:"toolset,omitempty"`
-	AnalysisRunRefs  []AnalysisRunRef       `json:"analysisRunRefs,omitempty"`
-	Summary          string                 `json:"summary,omitempty"`
-	Tags             []string               `json:"tags,omitempty"`
-	ArchivedAt       string                 `json:"archivedAt,omitempty"`
-	Source           string                 `json:"source,omitempty"`
-	KnowledgeContext KnowledgeContextConfig `json:"knowledgeContext,omitempty"`
+	// RequestContext is transient and must never become a session preference.
+	RequestContext   *ContextSelection         `json:"-"`
+	ModelPreferences WorkbenchModelPreferences `json:"modelPreferences,omitempty"`
+	Mode             string                    `json:"mode,omitempty"`
+	Status           string                    `json:"status,omitempty"`
+	AgentProviderID  string                    `json:"agentProviderId,omitempty"`
+	Scope            SessionScope              `json:"scope,omitempty"`
+	PinnedContext    map[string]any            `json:"pinnedContext,omitempty"`
+	Toolset          SessionToolset            `json:"toolset,omitempty"`
+	AnalysisRunRefs  []AnalysisRunRef          `json:"analysisRunRefs,omitempty"`
+	Summary          string                    `json:"summary,omitempty"`
+	Tags             []string                  `json:"tags,omitempty"`
+	ArchivedAt       string                    `json:"archivedAt,omitempty"`
+	Source           string                    `json:"source,omitempty"`
+	KnowledgeContext KnowledgeContextConfig    `json:"knowledgeContext,omitempty"`
 }
 
 type Session struct {
+	Activity  string         `json:"activity,omitempty" gorm:"-"`
 	ID        string         `json:"id"`
 	Title     string         `json:"title"`
 	CreatedBy string         `json:"createdBy"`
@@ -156,6 +167,8 @@ type SessionMessageEnvelope struct {
 }
 
 type WorkbenchSendMessageInput struct {
+	ContextSelection *ContextSelection          `json:"contextSelection,omitempty"`
+	ModelPreferences *WorkbenchModelPreferences `json:"modelPreferences,omitempty"`
 	Content          string                     `json:"content"`
 	Mode             string                     `json:"mode,omitempty"`
 	AgentProviderID  string                     `json:"agentProviderId,omitempty"`
@@ -325,7 +338,19 @@ type RootCauseHypothesis struct {
 	Recommendations []string `json:"recommendations,omitempty"`
 }
 
+// InspectionCapability is a registered plan, not an alternative workflow language.
+type InspectionCapability struct {
+	CapabilityPlan *sohaapi.CapabilityPlan             `json:"capabilityPlan,omitempty"`
+	Trigger        *sohaapi.WorkbenchInspectionTrigger `json:"trigger,omitempty"`
+	AIClientID     string                              `json:"aiClientId,omitempty"`
+	SkillID        string                              `json:"skillId,omitempty"`
+}
+
 type InspectionTask struct {
+	InspectionCapability
+	Revision         int64  `json:"revision"`
+	ExecutionTokenID string `json:"-"`
+
 	ID              string         `json:"id"`
 	Title           string         `json:"title"`
 	ScopeType       string         `json:"scopeType"`
@@ -342,6 +367,10 @@ type InspectionTask struct {
 }
 
 type InspectionTaskInput struct {
+	InspectionCapability
+	ExpectedRevision int64  `json:"expectedRevision,omitempty"`
+	ExecutionTokenID string `json:"-"`
+
 	ID              string         `json:"id"`
 	Title           string         `json:"title"`
 	ScopeType       string         `json:"scopeType"`

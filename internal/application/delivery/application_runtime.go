@@ -101,6 +101,14 @@ func runtimeWorkloadHealth(workload domaindelivery.ApplicationRuntimeWorkload) s
 }
 
 func runtimeServiceForWorkload(workload domaindelivery.ApplicationRuntimeWorkload, services []domainapp.Service) *domainapp.Service {
+	if workload.ServiceID != "" {
+		for _, service := range services {
+			if service.ID == workload.ServiceID {
+				return &service
+			}
+		}
+		return nil
+	}
 	candidates := []string{
 		workload.Labels["serviceId"],
 		workload.Labels["service"],

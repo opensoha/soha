@@ -66,7 +66,12 @@ func (a *PVEAdapter) pveVMConfig(ctx context.Context, connection Connection, nod
 }
 
 func isPVEDiskID(id string) bool {
-	return strings.HasPrefix(id, "scsi") || strings.HasPrefix(id, "sata") || strings.HasPrefix(id, "virtio") || strings.HasPrefix(id, "ide")
+	for _, bus := range []string{"scsi", "sata", "virtio", "ide"} {
+		if suffix, ok := strings.CutPrefix(id, bus); ok && suffix != "" {
+			return strings.IndexFunc(suffix, func(r rune) bool { return r < '0' || r > '9' }) == -1
+		}
+	}
+	return false
 }
 func pveConfigOption(value, key string) string {
 	for _, part := range strings.Split(value, ",") {
@@ -459,10 +464,117 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 	if err != nil {
 		return VM{}, err
 	}
+	existing := false
+	if input.OperationID != "" {
+		existing, err = a.ownedPVECreate(ctx, connection, plan)
+		if err != nil {
+			return VM{}, err
+		}
+	}
+	if !existing && input.CapacityReserved {
+		if err := a.checkPVECloneCapacity(ctx, connection, input); err != nil {
+			return VM{}, err
+		}
+	}
+	plan.cicustom, err = a.ensurePVECICustom(ctx, connection, plan.node, plan.vmid, input)
+	if err != nil {
+		return VM{}, err
+	}
+	if existing {
+		return a.resumePVECreate(ctx, connection, plan)
+	}
 	if input.SourceMode == "template_clone" || input.SourceMode == "vm_clone" || input.TemplateID != "" {
 		return a.createPVEClone(ctx, connection, plan)
 	}
 	return a.createPVENative(ctx, connection, plan)
+}
+
+func (a *PVEAdapter) PrepareVMCreate(ctx context.Context, connection Connection, input CreateVMInput) (CreateVMInput, error) {
+	input.Node = firstNonEmpty(input.Node, stringOptionValue(connection.Options, "defaultNode"))
+	if input.Node == "" || input.Name == "" {
+		return input, invalidf("node and VM name are required")
+	}
+	params := make(map[string]any, len(input.ProviderParams)+3)
+	for key, value := range input.ProviderParams {
+		params[key] = value
+	}
+	params["storage"] = firstNonEmpty(stringFromAny(params["storage"]), stringOptionValue(connection.Options, "defaultStorage"))
+	params["bridge"] = firstNonEmpty(stringFromAny(params["bridge"]), stringOptionValue(connection.Options, "defaultBridge"))
+	vmid := firstNonEmpty(stringFromAny(params["vmid"]), stringOptionValue(connection.Options, "vmid"), stringOptionValue(connection.Options, "nextVmid"))
+	if vmid == "" {
+		var err error
+		vmid, err = a.nextVMID(ctx, connection)
+		if err != nil {
+			return input, err
+		}
+	}
+	params["vmid"] = vmid
+	input.ProviderParams = params
+	return input, nil
+}
+
+func pveCreationOwner(input CreateVMInput) string {
+	return "soha-operation:" + input.OperationID
+}
+
+func (a *PVEAdapter) ObserveVMCreation(ctx context.Context, connection Connection, input CreateVMInput) (VM, bool, error) {
+	vmid := stringFromAny(input.ProviderParams["vmid"])
+	if input.OperationID == "" || input.Node == "" || vmid == "" {
+		return VM{}, false, invalidf("creation observation requires a frozen provider identity")
+	}
+	owned, err := a.ownedPVECreate(ctx, connection, pveCreatePlan{input: input, node: input.Node, vmid: vmid})
+	if err != nil || !owned {
+		return VM{}, false, err
+	}
+	vm, err := a.fetchVM(ctx, connection, input.Node, vmid, input.Name)
+	return vm, err == nil, err
+}
+
+func (a *PVEAdapter) ownedPVECreate(ctx context.Context, connection Connection, plan pveCreatePlan) (bool, error) {
+	var list pveDataEnvelope
+	if err := a.do(ctx, connection, http.MethodGet, "/nodes/"+url.PathEscape(plan.node)+"/qemu", nil, &list); err != nil {
+		return false, err
+	}
+	for _, vm := range list.Data {
+		if stringFromAny(vm["vmid"]) != plan.vmid {
+			continue
+		}
+		config, err := a.pveVMConfig(ctx, connection, plan.node, plan.vmid)
+		if err != nil {
+			return false, err
+		}
+		if stringFromAny(config["description"]) != pveCreationOwner(plan.input) || stringFromAny(config["name"]) != plan.input.Name {
+			return false, invalidf("existing PVE VMID does not belong to this creation operation")
+		}
+		if stringFromAny(config["lock"]) != "" {
+			return false, fmt.Errorf("PVE creation is still locked; retain the original identity and retry observation")
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func (a *PVEAdapter) resumePVECreate(ctx context.Context, connection Connection, plan pveCreatePlan) (VM, error) {
+	if plan.input.SourceMode == "template_clone" || plan.input.SourceMode == "vm_clone" || plan.input.TemplateID != "" {
+		if plan.input.DiskSize != "" {
+			if _, err := a.resizePVEClonedDisk(ctx, connection, plan.node, plan.vmid, "scsi0", plan.input.DiskSize); err != nil {
+				return VM{}, err
+			}
+		}
+		if _, err := a.configurePVECloneCloudInit(ctx, connection, plan); err != nil {
+			return VM{}, err
+		}
+	}
+	current, err := a.fetchVM(ctx, connection, plan.node, plan.vmid, "")
+	if err != nil {
+		return VM{}, err
+	}
+	if plan.input.StartAfterCreate && current.Status != "running" {
+		if _, err := a.startPVEAfterCreate(ctx, connection, plan); err != nil {
+			return VM{}, err
+		}
+	}
+	return a.finishPVECreate(ctx, connection, plan, nil)
 }
 
 type pveCreatePlan struct {
@@ -512,11 +624,6 @@ func (a *PVEAdapter) preparePVECreate(
 		}
 		plan.vmid = vmid
 	}
-	cicustom, err := a.ensurePVECICustom(ctx, connection, plan.node, plan.vmid, input)
-	if err != nil {
-		return pveCreatePlan{}, err
-	}
-	plan.cicustom = cicustom
 	return plan, nil
 }
 
@@ -530,6 +637,9 @@ func (a *PVEAdapter) createPVEClone(
 		return VM{}, invalidf("clone source is required")
 	}
 	payload := map[string]any{"newid": plan.vmid, "name": plan.input.Name}
+	if plan.input.OperationID != "" {
+		payload["description"] = pveCreationOwner(plan.input)
+	}
 	if plan.storage != "" {
 		payload["storage"] = plan.storage
 	}
@@ -625,6 +735,11 @@ func (a *PVEAdapter) createPVENative(
 }
 
 func (a *PVEAdapter) compensateFailedPVECreate(ctx context.Context, connection Connection, plan pveCreatePlan, cause error) error {
+	// Durable creation retains partial resources for the same operation's retry.
+	// Never launch an unfenced delete after its worker context has expired.
+	if plan.input.OperationID != "" {
+		return cause
+	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pveTaskTimeout(connection))
 	defer cancel()
 	current, err := a.fetchVM(cleanupCtx, connection, plan.node, plan.vmid, "")
@@ -643,6 +758,9 @@ func (a *PVEAdapter) compensateFailedPVECreate(ctx context.Context, connection C
 
 func pveCreatePayload(plan pveCreatePlan) map[string]any {
 	payload := map[string]any{"name": plan.input.Name, "vmid": plan.vmid}
+	if plan.input.OperationID != "" {
+		payload["description"] = pveCreationOwner(plan.input)
+	}
 	if plan.input.CPU > 0 {
 		payload["cores"] = plan.input.CPU
 	}
@@ -972,8 +1090,12 @@ func (a *PVEAdapter) ensurePVECICustom(ctx context.Context, connection Connectio
 
 func pveCloudInitConfigPayload(input CreateVMInput, cicustom string, providerBridge string) map[string]any {
 	payload := map[string]any{}
+	if input.WorkerSystemUUID != "" && input.WorkerSystemUUID == input.OperationID {
+		payload["smbios1"] = "uuid=" + input.WorkerSystemUUID
+	}
 	if input.CPU > 0 {
 		payload["cores"] = input.CPU
+		payload["sockets"] = 1
 	}
 	if memoryMB := normalizePVEMemoryMB(input.Memory); memoryMB > 0 {
 		payload["memory"] = memoryMB

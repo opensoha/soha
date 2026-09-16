@@ -2,10 +2,12 @@ package copilot
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"sort"
 	"strings"
 	"time"
@@ -883,6 +885,9 @@ func (r *Repository) ClaimAgentRun(ctx context.Context, input domaincopilot.Agen
 		if scanErr != nil {
 			return scanErr
 		}
+		if closeErr := rows.Close(); closeErr != nil {
+			return fmt.Errorf("close claimed ai agent run cursor: %w", closeErr)
+		}
 		result := tx.Exec(`
 			UPDATE ai_agent_runs
 			SET status = ?, claimed_by_agent_id = ?, started_at = COALESCE(started_at, ?), last_heartbeat_at = ?, updated_at = ?
@@ -909,18 +914,22 @@ func (r *Repository) ClaimAgentRun(ctx context.Context, input domaincopilot.Agen
 }
 
 func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	return r.withLockedAgentRun(ctx, input.RunID, func(repo *Repository, current domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
+		return repo.updateAgentRunCallback(ctx, current, input)
+	})
+}
+
+func (r *Repository) updateAgentRunCallback(ctx context.Context, current domaincopilot.AgentRun, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
 	input = domaincopilot.SanitizeAgentRunCallbackInput(input)
-	current, err := r.GetAgentRun(ctx, "", input.RunID)
-	if err != nil {
-		return domaincopilot.AgentRun{}, err
-	}
 	if strings.TrimSpace(current.CallbackToken) == "" || strings.TrimSpace(current.CallbackToken) != strings.TrimSpace(input.CallbackToken) {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: invalid ai agent callback token", apperrors.ErrAccessDenied)
 	}
 	if agentRunTerminal(current.Status) {
 		current.CallbackTransition = domaincopilot.AgentRunCallbackTransitionNoopTerminal
-		return current, nil
+		return r.acknowledgeAgentCancellation(ctx, current, input)
 	}
+	delete(input.Payload, "cancellationPending")
+	delete(input.Payload, "cancellationAcknowledgedAt")
 	status := normalizeAgentRunStatus(input.Status)
 	if status == "" {
 		status = domaincopilot.AgentRunStatusRunning
@@ -933,6 +942,9 @@ func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincop
 		output["workbenchEvents"] = mergeAgentRunWorkbenchEventSnapshot(output["workbenchEvents"], events, maxAgentRunWorkbenchEvents)
 	}
 	toolExecutions := mergeAgentRunToolExecutions(current.ToolExecutions, input.ToolExecutions)
+	if agentRunTerminal(status) {
+		toolExecutions = finishInterruptedAgentTools(toolExecutions, now)
+	}
 	analysisArtifacts := mergeAgentRunAnalysisArtifacts(current.AnalysisArtifacts, input.AnalysisArtifacts)
 	outputBytes, err := json.Marshal(output)
 	if err != nil {
@@ -982,10 +994,12 @@ func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincop
 }
 
 func (r *Repository) CancelAgentRun(ctx context.Context, input domaincopilot.AgentRunCancelInput) (domaincopilot.AgentRun, error) {
-	current, err := r.GetAgentRun(ctx, "", input.RunID)
-	if err != nil {
-		return domaincopilot.AgentRun{}, err
-	}
+	return r.withLockedAgentRun(ctx, input.RunID, func(repo *Repository, current domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
+		return repo.cancelAgentRun(ctx, current, input)
+	})
+}
+
+func (r *Repository) cancelAgentRun(ctx context.Context, current domaincopilot.AgentRun, input domaincopilot.AgentRunCancelInput) (domaincopilot.AgentRun, error) {
 	if agentRunTerminal(current.Status) {
 		return current, nil
 	}
@@ -1001,9 +1015,18 @@ func (r *Repository) CancelAgentRun(ctx context.Context, input domaincopilot.Age
 		"canceledBy":     requestedBy,
 		"canceledAt":     now.Format(time.RFC3339),
 	})
+	output["cancellationPending"] = current.ClaimedByAgentID != ""
+	delete(output, "cancellationAcknowledgedAt")
+	if current.ClaimedByAgentID == "" {
+		output["cancellationAcknowledgedAt"] = now.Format(time.RFC3339Nano)
+	}
 	outputBytes, err := json.Marshal(output)
 	if err != nil {
 		return domaincopilot.AgentRun{}, fmt.Errorf("marshal canceled agent run output: %w", err)
+	}
+	toolBytes, err := json.Marshal(finishInterruptedAgentTools(current.ToolExecutions, now))
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
 	}
 	errorMessage := strings.TrimSpace(current.ErrorMessage)
 	if errorMessage == "" {
@@ -1011,9 +1034,9 @@ func (r *Repository) CancelAgentRun(ctx context.Context, input domaincopilot.Age
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE ai_agent_runs
-		SET status = ?, output = ?, error_message = ?, completed_at = ?, updated_at = ?
+		SET status = ?, output = ?, tool_executions = ?, error_message = ?, completed_at = ?, updated_at = ?
 		WHERE id = ? AND status NOT IN (?, ?, ?, ?)
-	`, domaincopilot.AgentRunStatusCanceled, string(outputBytes), errorMessage, now, now, strings.TrimSpace(input.RunID), domaincopilot.AgentRunStatusCompleted, domaincopilot.AgentRunStatusFailed, domaincopilot.AgentRunStatusCanceled, domaincopilot.AgentRunStatusCallbackTimeout)
+	`, domaincopilot.AgentRunStatusCanceled, string(outputBytes), string(toolBytes), errorMessage, now, now, strings.TrimSpace(input.RunID), domaincopilot.AgentRunStatusCompleted, domaincopilot.AgentRunStatusFailed, domaincopilot.AgentRunStatusCanceled, domaincopilot.AgentRunStatusCallbackTimeout)
 	if result.Error != nil {
 		return domaincopilot.AgentRun{}, fmt.Errorf("cancel ai agent run: %w", result.Error)
 	}
@@ -1031,8 +1054,8 @@ func (r *Repository) ListInspectionTasks(ctx context.Context, createdBy string, 
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, title, scope_type, cluster_id, namespace, checks, enabled, interval_minutes, metadata, created_by, last_run_at, created_at, updated_at
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
+		SELECT id, title, scope_type, cluster_id, namespace, checks, enabled, interval_minutes, metadata, created_by, last_run_at, created_at, updated_at, capability_config, revision, execution_token_id
 		FROM ai_inspection_tasks
 		WHERE created_by = ?
 		ORDER BY updated_at DESC, created_at DESC
@@ -1054,8 +1077,8 @@ func (r *Repository) ListInspectionTasks(ctx context.Context, createdBy string, 
 }
 
 func (r *Repository) GetInspectionTask(ctx context.Context, createdBy, taskID string) (domaincopilot.InspectionTask, error) {
-	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, title, scope_type, cluster_id, namespace, checks, enabled, interval_minutes, metadata, created_by, last_run_at, created_at, updated_at
+	row := dbtx.DB(ctx, r.db).Raw(`
+		SELECT id, title, scope_type, cluster_id, namespace, checks, enabled, interval_minutes, metadata, created_by, last_run_at, created_at, updated_at, capability_config, revision, execution_token_id
 		FROM ai_inspection_tasks
 		WHERE created_by = ? AND id = ?
 		LIMIT 1
@@ -1067,8 +1090,8 @@ func (r *Repository) ListDueInspectionTasks(ctx context.Context, now time.Time, 
 	if limit <= 0 {
 		limit = 20
 	}
-	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, title, scope_type, cluster_id, namespace, checks, enabled, interval_minutes, metadata, created_by, last_run_at, created_at, updated_at
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
+		SELECT id, title, scope_type, cluster_id, namespace, checks, enabled, interval_minutes, metadata, created_by, last_run_at, created_at, updated_at, capability_config, revision, execution_token_id
 		FROM ai_inspection_tasks
 		WHERE enabled = TRUE
 		  AND interval_minutes > 0
@@ -1114,6 +1137,11 @@ func (r *Repository) ListDueInspectionTasks(ctx context.Context, now time.Time, 
 }
 
 func (r *Repository) CreateInspectionTask(ctx context.Context, task domaincopilot.InspectionTask) (domaincopilot.InspectionTask, error) {
+	config, err := json.Marshal(task.InspectionCapability)
+	if err != nil {
+		return task, err
+	}
+	task.Revision = 1
 	checks, err := json.Marshal(task.Checks)
 	if err != nil {
 		return domaincopilot.InspectionTask{}, fmt.Errorf("marshal inspection checks: %w", err)
@@ -1122,17 +1150,26 @@ func (r *Repository) CreateInspectionTask(ctx context.Context, task domaincopilo
 	if err != nil {
 		return domaincopilot.InspectionTask{}, fmt.Errorf("marshal inspection task metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO ai_inspection_tasks (
-			id, title, scope_type, cluster_id, namespace, checks, enabled, interval_minutes, metadata, created_by, last_run_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, task.ID, task.Title, task.ScopeType, nullableString(task.ClusterID), nullableString(task.Namespace), string(checks), task.Enabled, task.IntervalMinutes, string(metadata), task.CreatedBy, task.LastRunAt, task.CreatedAt, task.UpdatedAt).Error; err != nil {
+			id, title, scope_type, cluster_id, namespace, checks, enabled, interval_minutes, metadata, created_by, last_run_at, created_at, updated_at, capability_config, revision, execution_token_id
+		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, 1, ?)
+         ON CONFLICT (id) DO NOTHING
+	`, task.ID, task.Title, task.ScopeType, nullableString(task.ClusterID), nullableString(task.Namespace), string(checks), task.Enabled, task.IntervalMinutes, string(metadata), task.CreatedBy, task.LastRunAt, task.CreatedAt, task.UpdatedAt, string(config), task.ExecutionTokenID)
+	if err := result.Error; err != nil {
 		return domaincopilot.InspectionTask{}, fmt.Errorf("create inspection task: %w", err)
+	}
+	if result.RowsAffected == 0 {
+		return domaincopilot.InspectionTask{}, fmt.Errorf("%w: inspection ID already exists; read the original registration", apperrors.ErrConflict)
 	}
 	return task, nil
 }
 
 func (r *Repository) UpdateInspectionTask(ctx context.Context, createdBy, taskID string, input domaincopilot.InspectionTaskInput) (domaincopilot.InspectionTask, error) {
+	config, err := json.Marshal(input.InspectionCapability)
+	if err != nil {
+		return domaincopilot.InspectionTask{}, err
+	}
 	checks, err := json.Marshal(input.Checks)
 	if err != nil {
 		return domaincopilot.InspectionTask{}, fmt.Errorf("marshal inspection checks: %w", err)
@@ -1141,36 +1178,42 @@ func (r *Repository) UpdateInspectionTask(ctx context.Context, createdBy, taskID
 	if err != nil {
 		return domaincopilot.InspectionTask{}, fmt.Errorf("marshal inspection task metadata: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE ai_inspection_tasks
-		SET title = ?, scope_type = ?, cluster_id = ?, namespace = ?, checks = ?, enabled = ?, interval_minutes = ?, metadata = ?, updated_at = ?
-		WHERE created_by = ? AND id = ?
-	`, input.Title, input.ScopeType, nullableString(input.ClusterID), nullableString(input.Namespace), string(checks), input.Enabled, input.IntervalMinutes, string(metadata), time.Now().UTC(), createdBy, taskID)
+		SET title = ?, scope_type = ?, cluster_id = ?, namespace = ?, checks = ?, enabled = ?, interval_minutes = ?, metadata = ?, updated_at = ?, capability_config = ?::jsonb, revision = revision + 1, execution_token_id = ?
+        WHERE created_by = ? AND id = ? AND (revision = ? OR (? = 0 AND capability_config->'capabilityPlan' IS NULL AND ?::jsonb->'capabilityPlan' IS NULL))
+	`, input.Title, input.ScopeType, nullableString(input.ClusterID), nullableString(input.Namespace), string(checks), input.Enabled, input.IntervalMinutes, string(metadata), time.Now().UTC(), string(config), input.ExecutionTokenID, createdBy, taskID, input.ExpectedRevision, input.ExpectedRevision, string(config))
 	if result.Error != nil {
 		return domaincopilot.InspectionTask{}, fmt.Errorf("update inspection task: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaincopilot.InspectionTask{}, copilotNotFound("inspection task", taskID)
+		return domaincopilot.InspectionTask{}, fmt.Errorf("%w: inspection registration changed or unavailable", apperrors.ErrConflict)
 	}
 	return r.GetInspectionTask(ctx, createdBy, taskID)
 }
 
 func (r *Repository) DeleteInspectionTask(ctx context.Context, createdBy, taskID string) error {
-	result := r.db.WithContext(ctx).Exec(`
-		DELETE FROM ai_inspection_tasks
-		WHERE created_by = ? AND id = ?
-	`, createdBy, taskID)
-	if result.Error != nil {
-		return fmt.Errorf("delete inspection task: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return copilotNotFound("inspection task", taskID)
-	}
-	return nil
+	return dbtx.Within(ctx, r.db, func(ctx context.Context) error {
+		db := dbtx.DB(ctx, r.db)
+		task, err := scanInspectionTaskRow(db.Raw(`SELECT `+inspectionTaskColumns+` FROM ai_inspection_tasks WHERE created_by=? AND id=? FOR UPDATE`, createdBy, taskID).Row(), taskID)
+		if err != nil {
+			return err
+		}
+		if task.CapabilityPlan != nil {
+			var history bool
+			if err := db.Raw(`SELECT EXISTS(SELECT 1 FROM ai_inspection_runs WHERE task_id=?)`, taskID).Scan(&history).Error; err != nil {
+				return err
+			}
+			if history {
+				return fmt.Errorf("%w: disable registrations with execution history instead of deleting them", apperrors.ErrConflict)
+			}
+		}
+		return db.Exec(`DELETE FROM ai_inspection_tasks WHERE created_by=? AND id=?`, createdBy, taskID).Error
+	})
 }
 
 func (r *Repository) TouchInspectionTaskRun(ctx context.Context, taskID string, runAt time.Time) error {
-	return r.db.WithContext(ctx).Exec(`
+	return dbtx.DB(ctx, r.db).Exec(`
 		UPDATE ai_inspection_tasks
 		SET last_run_at = ?, updated_at = ?
 		WHERE id = ?
@@ -1196,7 +1239,7 @@ func (r *Repository) ListInspectionRuns(ctx context.Context, createdBy string, f
 		args = append(args, filter.TaskID)
 	}
 	query += ` ORDER BY r.created_at DESC`
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query inspection runs: %w", err)
 	}
@@ -1233,7 +1276,7 @@ func (r *Repository) CreateInspectionRun(ctx context.Context, run domaincopilot.
 	if err != nil {
 		return domaincopilot.InspectionRun{}, fmt.Errorf("marshal inspection report: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO ai_inspection_runs (
 			id, task_id, triggered_by, status, severity, summary, findings, report, started_at, completed_at, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1773,6 +1816,7 @@ func decodeAgentRunFields(item *domaincopilot.AgentRun, skillIDs []byte, session
 	}
 	if len(input) > 0 {
 		_ = json.Unmarshal(input, &item.Input)
+		item.ParentRunID, _ = item.Input["_sohaParentRunId"].(string)
 	}
 	if len(output) > 0 {
 		_ = json.Unmarshal(output, &item.Output)
@@ -1808,13 +1852,17 @@ func decodeAgentRunFields(item *domaincopilot.AgentRun, skillIDs []byte, session
 
 func scanInspectionTask(rows *sql.Rows) (domaincopilot.InspectionTask, error) {
 	var item domaincopilot.InspectionTask
+	var config []byte
 	var checks []byte
 	var metadata []byte
 	var clusterID sql.NullString
 	var namespace sql.NullString
 	var lastRunAt sql.NullTime
-	if err := rows.Scan(&item.ID, &item.Title, &item.ScopeType, &clusterID, &namespace, &checks, &item.Enabled, &item.IntervalMinutes, &metadata, &item.CreatedBy, &lastRunAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := rows.Scan(&item.ID, &item.Title, &item.ScopeType, &clusterID, &namespace, &checks, &item.Enabled, &item.IntervalMinutes, &metadata, &item.CreatedBy, &lastRunAt, &item.CreatedAt, &item.UpdatedAt, &config, &item.Revision, &item.ExecutionTokenID); err != nil {
 		return domaincopilot.InspectionTask{}, fmt.Errorf("scan inspection task: %w", err)
+	}
+	if err := json.Unmarshal(config, &item.InspectionCapability); err != nil {
+		return item, fmt.Errorf("decode inspection capability: %w", err)
 	}
 	if clusterID.Valid {
 		item.ClusterID = clusterID.String
@@ -1837,16 +1885,20 @@ func scanInspectionTask(rows *sql.Rows) (domaincopilot.InspectionTask, error) {
 
 func scanInspectionTaskRow(row *sql.Row, taskID string) (domaincopilot.InspectionTask, error) {
 	var item domaincopilot.InspectionTask
+	var config []byte
 	var checks []byte
 	var metadata []byte
 	var clusterID sql.NullString
 	var namespace sql.NullString
 	var lastRunAt sql.NullTime
-	if err := row.Scan(&item.ID, &item.Title, &item.ScopeType, &clusterID, &namespace, &checks, &item.Enabled, &item.IntervalMinutes, &metadata, &item.CreatedBy, &lastRunAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.Title, &item.ScopeType, &clusterID, &namespace, &checks, &item.Enabled, &item.IntervalMinutes, &metadata, &item.CreatedBy, &lastRunAt, &item.CreatedAt, &item.UpdatedAt, &config, &item.Revision, &item.ExecutionTokenID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaincopilot.InspectionTask{}, copilotNotFound("inspection task", taskID)
 		}
 		return domaincopilot.InspectionTask{}, fmt.Errorf("scan inspection task row: %w", err)
+	}
+	if err := json.Unmarshal(config, &item.InspectionCapability); err != nil {
+		return item, fmt.Errorf("decode inspection capability: %w", err)
 	}
 	if clusterID.Valid {
 		item.ClusterID = clusterID.String
@@ -2016,7 +2068,12 @@ func normalizeAgentRunCallbackEvents(run domaincopilot.AgentRun, events []domain
 		} else {
 			eventRunID = strings.TrimSpace(run.ID)
 		}
-		event.ID = ""
+		if id := strings.TrimSpace(event.ID); id != "" && len(id) <= 160 {
+			digest := sha256.Sum256([]byte(run.ID + "\x00" + id))
+			event.ID = fmt.Sprintf("evt:%x", digest[:16])
+		} else {
+			event.ID = ""
+		}
 		event.SessionID = sessionID
 		event.RunID = eventRunID
 		event.Sequence = 0
@@ -2040,23 +2097,33 @@ func normalizeAgentRunCallbackEvents(run domaincopilot.AgentRun, events []domain
 
 func mergeAgentRunWorkbenchEventSnapshot(current any, patch []domaincopilot.WorkbenchStreamEvent, limit int) []domaincopilot.WorkbenchStreamEvent {
 	merged := workbenchEventsFromRepositoryValue(current)
-	merged = append(merged, patch...)
+	seen := make(map[string]bool, len(merged)+len(patch))
+	nextSequence := 0
+	for _, event := range merged {
+		seen[event.ID] = true
+		nextSequence = max(nextSequence, event.Sequence)
+	}
+	for _, event := range patch {
+		if event.ID != "" && seen[event.ID] {
+			continue
+		}
+		nextSequence++
+		event.Sequence = nextSequence
+		if event.ID == "" {
+			anchor := firstNonEmptyRepositoryString(event.RunID, event.SessionID, "agent-run")
+			event.ID = fmt.Sprintf("evt:%s:%06d", anchor, nextSequence)
+		}
+		if event.CreatedAt.IsZero() {
+			event.CreatedAt = time.Now().UTC()
+		}
+		seen[event.ID] = true
+		merged = append(merged, event)
+	}
 	if limit <= 0 {
 		limit = maxAgentRunWorkbenchEvents
 	}
 	if len(merged) > limit {
 		merged = merged[len(merged)-limit:]
-	}
-	for index := range merged {
-		sequence := index + 1
-		merged[index].Sequence = sequence
-		if strings.TrimSpace(merged[index].ID) == "" {
-			anchor := firstNonEmptyRepositoryString(merged[index].SessionID, merged[index].RunID, "agent-run")
-			merged[index].ID = fmt.Sprintf("evt:%s:%06d", anchor, sequence)
-		}
-		if merged[index].CreatedAt.IsZero() {
-			merged[index].CreatedAt = time.Now().UTC()
-		}
 	}
 	return merged
 }

@@ -3,6 +3,7 @@ package aigateway
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -347,15 +348,17 @@ func (s *Service) recordToolAuditWithMetadata(ctx context.Context, principal dom
 		return nil
 	}
 	metadata := map[string]any{
-		"aiClientId":       strings.TrimSpace(input.AIClientID),
-		"aiClientName":     strings.TrimSpace(input.AIClientName),
-		"skillId":          strings.TrimSpace(input.SkillID),
-		"toolName":         tool.Name,
-		"mcpAdapterId":     tool.MCPAdapterID,
-		"mcpToolName":      tool.MCPToolName,
-		"riskLevel":        tool.RiskLevel,
-		"requiresApproval": tool.RequiresApproval,
-		"relatedIds":       relatedIDs,
+		"aiClientId":                 strings.TrimSpace(input.AIClientID),
+		"aiClientName":               strings.TrimSpace(input.AIClientName),
+		"skillId":                    strings.TrimSpace(input.SkillID),
+		"toolName":                   tool.Name,
+		"mcpAdapterId":               tool.MCPAdapterID,
+		"mcpToolName":                tool.MCPToolName,
+		"riskLevel":                  tool.RiskLevel,
+		"requiresApproval":           tool.RequiresApproval,
+		"capabilityVersion":          tool.Version,
+		"requestedCapabilityVersion": input.CapabilityVersion,
+		"relatedIds":                 relatedIDs,
 	}
 	addGatewayApprovalLinkMetadata(metadata, relatedIDs)
 	addGatewayRedactionAuditMetadata(metadata, redactionSummary)
@@ -400,13 +403,15 @@ func (s *Service) recordToolOperation(ctx context.Context, principal domainident
 		targetScope[key] = value
 	}
 	metadata := map[string]any{
-		"aiClientId":       strings.TrimSpace(input.AIClientID),
-		"aiClientName":     strings.TrimSpace(input.AIClientName),
-		"skillId":          strings.TrimSpace(input.SkillID),
-		"toolName":         tool.Name,
-		"riskLevel":        tool.RiskLevel,
-		"requiresApproval": tool.RequiresApproval,
-		"relatedIds":       relatedIDs,
+		"aiClientId":                 strings.TrimSpace(input.AIClientID),
+		"aiClientName":               strings.TrimSpace(input.AIClientName),
+		"skillId":                    strings.TrimSpace(input.SkillID),
+		"toolName":                   tool.Name,
+		"riskLevel":                  tool.RiskLevel,
+		"requiresApproval":           tool.RequiresApproval,
+		"capabilityVersion":          tool.Version,
+		"requestedCapabilityVersion": input.CapabilityVersion,
+		"relatedIds":                 relatedIDs,
 	}
 	addGatewayApprovalLinkMetadata(metadata, relatedIDs)
 	addGatewayRedactionAuditMetadata(metadata, redactionSummary)
@@ -440,10 +445,12 @@ func (s *Service) recordGatewayToolAuditLog(ctx context.Context, principal domai
 	}
 	actorType, actorID := gatewaySubject(principal)
 	metadata := map[string]any{
-		"mcpAdapterId":     tool.MCPAdapterID,
-		"mcpToolName":      tool.MCPToolName,
-		"requiresApproval": tool.RequiresApproval,
-		"relatedIds":       relatedIDs,
+		"mcpAdapterId":               tool.MCPAdapterID,
+		"mcpToolName":                tool.MCPToolName,
+		"requiresApproval":           tool.RequiresApproval,
+		"capabilityVersion":          tool.Version,
+		"requestedCapabilityVersion": input.CapabilityVersion,
+		"relatedIds":                 relatedIDs,
 	}
 	addGatewayApprovalLinkMetadata(metadata, relatedIDs)
 	addGatewayRedactionAuditMetadata(metadata, redactionSummary)
@@ -458,7 +465,7 @@ func (s *Service) recordGatewayToolAuditLog(ctx context.Context, principal domai
 		SkillID:       strings.TrimSpace(input.SkillID),
 		ToolName:      tool.Name,
 		RiskLevel:     tool.RiskLevel,
-		ResourceScope: gatewayAuditScope(input.Input, relatedIDs),
+		ResourceScope: resolvedCapabilityAuditScope(ctx, tool, input.Input, relatedIDs),
 		Action:        "ai_gateway.tool.invoke",
 		Result:        result,
 		Summary:       summary,
@@ -727,4 +734,32 @@ func filterEventsForDiagnosis(items []domainresource.ClusterEventView, podName, 
 		}
 	}
 	return out
+}
+
+// Additional scopes come only from registered semantic paths, not arbitrary
+// caller metadata. Existing aliases remain the compatibility vocabulary.
+func capabilityGatewayScope(tool domainaigateway.ToolCapability, input map[string]any) map[string]string {
+	scope := standardGatewayScope(input, nil)
+	for _, semantic := range tool.InputSemantics {
+		for key, path := range semantic.ScopePaths {
+			value, exists := capabilityPointerGet(input, path)
+			text, ok := value.(string)
+			if !exists || !ok || strings.TrimSpace(text) == "" {
+				continue
+			}
+			canonical := key
+			for _, alias := range gatewayScopeAliases() {
+				if slices.Contains(alias.aliases, key) {
+					canonical = alias.key
+					break
+				}
+			}
+			if previous, exists := scope[canonical]; exists && previous != text {
+				scope[canonical] = ""
+			} else {
+				scope[canonical] = text
+			}
+		}
+	}
+	return scope
 }

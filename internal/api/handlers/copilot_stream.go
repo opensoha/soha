@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"net/http"
 	"time"
 
@@ -52,6 +54,9 @@ func (h *copilotStreamHandler) StreamMessage(c *gin.Context) {
 
 	principal := apiMiddleware.PrincipalFromContext(c)
 	result, err := h.service.StreamMessage(c.Request.Context(), principal, sessionID, domaincopilot.WorkbenchSendMessageInput{
+		ModelPreferences: req.ModelPreferences,
+		KnowledgeContext: req.KnowledgeContext,
+		ContextSelection: req.ContextSelection,
 		Content:          req.Content,
 		Mode:             req.Mode,
 		AgentProviderID:  req.AgentProviderID,
@@ -65,8 +70,7 @@ func (h *copilotStreamHandler) StreamMessage(c *gin.Context) {
 	}, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		_ = c.Error(err)
-		retryable := false
-		emit(domaincopilot.WorkbenchStreamEvent{Type: "error", Message: "copilot stream failed", Retryable: &retryable})
+		emit(publicWorkbenchStreamError(err))
 		emit(domaincopilot.WorkbenchStreamEvent{Type: "agent.status", ProviderID: "internal", ProviderKind: "internal", Status: "failed"})
 		return
 	}
@@ -91,4 +95,21 @@ func workbenchStreamToolsetFromMap(input map[string]any) domaincopilot.SessionTo
 		return domaincopilot.SessionToolset{}
 	}
 	return toolset
+}
+
+func publicWorkbenchStreamError(err error) domaincopilot.WorkbenchStreamEvent {
+	code, message, retryable := "agent_failed", "助手请求失败，请稍后重试。", false
+	switch {
+	case errors.Is(err, apperrors.ErrAccessDenied):
+		code, message, retryable = "access_denied", "当前账号无权执行此操作。", false
+	case errors.Is(err, apperrors.ErrNotFound):
+		code, message, retryable = "context_unavailable", "引用的背景或资源已不可用，请移除后重新发送。", false
+	case errors.Is(err, apperrors.ErrInvalidArgument):
+		code, message, retryable = "invalid_argument", "请求参数无效，请检查助手和输入内容。", false
+	case errors.Is(err, apperrors.ErrUnsupportedOperation):
+		code, message, retryable = "agent_unsupported", "所选助手不支持当前任务。", false
+	case errors.Is(err, apperrors.ErrClusterUnready):
+		code, message, retryable = "agent_unavailable", "助手暂不可用，请检查插件配置和运行器状态。", true
+	}
+	return domaincopilot.WorkbenchStreamEvent{Type: "error", Code: code, Message: message, Retryable: &retryable}
 }

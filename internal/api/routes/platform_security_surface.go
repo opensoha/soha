@@ -56,6 +56,7 @@ func isReadOnlyPOST(method, path string) bool {
 		strings.HasSuffix(path, "/network-access/conflicts/analyze") ||
 		strings.HasSuffix(path, "/network-access/sessions/:sessionID/actions/plan") ||
 		strings.HasSuffix(path, "/observability/logging/preflight") ||
+		path == "/api/v1/ai-gateway/plans/validate" ||
 		strings.HasSuffix(path, "/logs/query") ||
 		strings.HasSuffix(path, "/logs/stream-ticket") ||
 		(strings.Contains(path, "/observability/dashboards/") && strings.HasSuffix(path, "/query")))
@@ -200,6 +201,21 @@ func companionMutationSecuritySurface(_ string, path string) (nonPlatformMutatio
 }
 
 func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if strings.HasPrefix(path, "/api/v1/delivery/triggers") && !strings.HasSuffix(path, "/webhook") {
+		permission := appaccess.PermDeliveryTriggersCreate
+		if method == "PUT" {
+			permission = appaccess.PermDeliveryTriggersUpdate
+		}
+		return nonPlatformMutationEntry("DeliveryTrigger", nonPlatformMutationAction(method, path), permission, true), true
+	}
+	if strings.HasPrefix(path, "/api/v1/delivery/template-sources") {
+		return templateSourceMutationSecuritySurface(method, path)
+	}
+	if method == "POST" && (path == "/api/v1/delivery/documents/preview" || path == "/api/v1/delivery/documents/imports/:previewID/apply") {
+		// The application service resolves create/update permission for each kind
+		// and checks every Workflow target; this representative key is not a gate.
+		return nonPlatformMutationSecuritySurfaceEntry{ResourceKind: "DeliveryDocumentImport", Action: "import", PermissionKey: appaccess.PermDeliveryWorkflowsTrigger, DynamicPermission: true, ScopeRequired: true}, true
+	}
 	for _, rule := range deliveryMutationRules {
 		if !rule.matches(method, path) {
 			continue
@@ -215,6 +231,21 @@ func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		return nonPlatformMutationEntry(rule.resourceKind, action, permission, rule.scopeRequired), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
+}
+
+func templateSourceMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	permission := map[string]string{"POST": appaccess.PermDeliveryTemplateSourcesCreate, "PUT": appaccess.PermDeliveryTemplateSourcesUpdate, "DELETE": appaccess.PermDeliveryTemplateSourcesDelete}[method]
+	action := nonPlatformMutationAction(method, path)
+	if method == "POST" && (strings.HasSuffix(path, "/sync") || strings.HasSuffix(path, "/apply")) {
+		permission, action = appaccess.PermDeliveryTemplateSourcesSync, "sync"
+	}
+	if method == "POST" && strings.HasSuffix(path, "/detach") {
+		permission, action = appaccess.PermDeliveryTemplateSourcesUpdate, "detach"
+	}
+	if permission == "" {
+		return nonPlatformMutationSecuritySurfaceEntry{}, false
+	}
+	return nonPlatformMutationEntry("DeliveryTemplateSource", action, permission, true), true
 }
 
 type deliveryMutationRule struct {
@@ -236,6 +267,11 @@ func (r deliveryMutationRule) matches(method, path string) bool {
 }
 
 var deliveryMutationRules = []deliveryMutationRule{
+	{method: "POST", prefix: "/api/v1/applications/", suffix: "/deployment-template-preview", resourceKind: "Application", action: "view", permission: appaccess.PermDeliveryApplicationsView, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/deployment-templates/", suffix: "/publish", resourceKind: "DeploymentTemplate", action: "publish", permission: appaccess.PermDeliveryDeploymentTemplatesUpdate},
+	{method: "POST", prefix: "/api/v1/deployment-templates", resourceKind: "DeploymentTemplate", action: "create", permission: appaccess.PermDeliveryDeploymentTemplatesCreate},
+	{method: "PUT", prefix: "/api/v1/deployment-templates/", resourceKind: "DeploymentTemplate", action: "update", permission: appaccess.PermDeliveryDeploymentTemplatesUpdate},
+	{method: "DELETE", prefix: "/api/v1/deployment-templates/", resourceKind: "DeploymentTemplate", action: "delete", permission: appaccess.PermDeliveryDeploymentTemplatesDelete},
 	{method: "POST", prefix: "/api/v1/delivery/manifest-deployments/", suffix: "/repair", resourceKind: "ManifestDeployment", action: "repair", permission: appaccess.PermDeliveryManifestDriftRepair, scopeRequired: true},
 	{method: "POST", prefix: "/api/v1/delivery/manifest-deployments/", suffix: "/adopt", resourceKind: "ManifestDeployment", action: "adopt", permission: appaccess.PermDeliveryManifestDriftAdopt, scopeRequired: true},
 	{method: "POST", prefix: "/api/v1/delivery/manifest-deployments/", resourceKind: "ManifestDeployment", action: "trigger", permission: appaccess.PermDeliveryManifestDeploymentsManage, scopeRequired: true},
@@ -252,18 +288,26 @@ var deliveryMutationRules = []deliveryMutationRule{
 	{method: "DELETE", prefix: "/api/v1/delivery/manifest-packages/", resourceKind: "ManifestPackage", permission: appaccess.PermDeliveryApplicationsDelete, scopeRequired: true},
 	{prefix: "/api/v1/delivery/manifest-packages", resourceKind: "ManifestPackage", permission: appaccess.PermDeliveryApplicationsUpdate, scopeRequired: true},
 	{prefix: "/api/v1/repositories", resourceKind: "Repository", permission: appaccess.PermDeliveryRegistriesManage},
+	{method: "POST", prefix: "/api/v1/applications/", suffix: "/helm-chart", resourceKind: "Application", action: "view", permission: appaccess.PermDeliveryApplicationsView, scopeRequired: true},
+	{method: "GET", prefix: "/api/v1/applications/", suffix: "/buildpacks-capability", resourceKind: "Application", action: "view", permission: appaccess.PermDeliveryApplicationsView, scopeRequired: true},
 	{prefix: "/api/v1/applications/", contains: "/services", resourceKind: "ApplicationService", permission: appaccess.PermDeliveryApplicationServicesManage, scopeRequired: true},
 	{prefix: "/api/v1/applications", resourceKind: "Application", scopeRequired: true, applicationPermission: true},
 	{prefix: "/api/v1/application-environments", resourceKind: "ApplicationEnvironment", permission: appaccess.PermDeliveryApplicationEnvManage, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/build-templates/", suffix: "/publish", resourceKind: "BuildTemplate", action: "publish", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryBuildTemplatesManage, "update"), scopeRequired: true},
 	{prefix: "/api/v1/build-templates", resourceKind: "BuildTemplate", permission: appaccess.PermDeliveryBuildTemplatesManage, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/workflow-templates/", suffix: "/publish", resourceKind: "WorkflowTemplate", action: "publish", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryWorkflowTemplatesManage, "update"), scopeRequired: true},
 	{prefix: "/api/v1/workflow-templates", resourceKind: "WorkflowTemplate", permission: appaccess.PermDeliveryWorkflowTemplatesManage, scopeRequired: true},
 	{prefix: "/api/v1/builds/trigger", resourceKind: "Build", action: "trigger", permission: appaccess.PermDeliveryBuildsTrigger, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery-batches/", suffix: "/cancel", resourceKind: "DeliveryBatch", action: "cancel", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery-batches", resourceKind: "DeliveryBatch", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
+	{prefix: "/api/v1/delivery-workflows", resourceKind: "DeliveryWorkflow", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
 	{prefix: "/api/v1/workflows/trigger", resourceKind: "Workflow", action: "trigger", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
 	{prefix: "/api/v1/workflows/", suffix: "/approve", resourceKind: "WorkflowApproval", action: "approve", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
 	{prefix: "/api/v1/workflows/", suffix: "/reject", resourceKind: "WorkflowApproval", action: "reject", permission: appaccess.PermDeliveryWorkflowsTrigger, scopeRequired: true},
 	{prefix: "/api/v1/registries", resourceKind: "RegistryConnection", permission: appaccess.PermDeliveryRegistriesManage},
 	{prefix: "/api/v1/releases/trigger", resourceKind: "Release", action: "trigger", permission: appaccess.PermDeliveryReleasesTrigger, scopeRequired: true},
 	{prefix: "/api/v1/delivery/execution-tasks/", suffix: "/cancel", resourceKind: "ExecutionTask", action: "cancel", permission: appaccess.PermDeliveryExecutionTasksManage, scopeRequired: true},
+	{method: "POST", prefix: "/api/v1/delivery/execution-tasks/", suffix: "/rollout", resourceKind: "ManifestDeployment", action: "trigger", permission: appaccess.PermDeliveryManifestDeploymentsManage, scopeRequired: true},
 	{prefix: "/api/v1/delivery/execution-tasks/", suffix: "/retry", resourceKind: "ExecutionTask", action: "retry", permission: appaccess.PermDeliveryExecutionTasksManage, scopeRequired: true},
 	{prefix: "/api/v1/delivery/blueprints", contains: "/render-spec", resourceKind: "DeliveryBlueprint", action: "render", permission: appaccess.PermDeliveryApplicationsCreate, scopeRequired: true},
 	{prefix: "/api/v1/delivery/blueprints", contains: "/bootstrap-application", resourceKind: "DeliveryBlueprint", action: "bootstrap", permission: appaccess.PermDeliveryApplicationsCreate, scopeRequired: true},
@@ -340,6 +384,12 @@ func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 			permissionKey = appaccess.ManagedActionPermission(appaccess.PermVirtualizationSyncManage, action)
 		}
 		return nonPlatformMutationEntry("VirtualizationCluster", action, permissionKey, false), true
+	case path == "/api/v1/virtualization/capacity/check":
+		return nonPlatformMutationEntry("VirtualizationCapacity", "check", appaccess.PermVirtualizationVMsView, false), true
+	case strings.HasPrefix(path, "/api/v1/virtualization/worker-pools"):
+		entry := nonPlatformMutationEntry("VirtualizationWorkerPool", nonPlatformMutationAction(method, path), appaccess.PermVirtualizationClustersManage, false)
+		entry.DynamicPermission = true
+		return entry, true
 	case path == "/api/v1/virtualization/vms/plan":
 		return nonPlatformMutationEntry("VirtualMachinePlan", "plan", appaccess.PermVirtualizationVMsView, false), true
 	case path == "/api/v1/virtualization/vms":
@@ -489,6 +539,8 @@ func aiGatewayMutationSecuritySurface(method, path string) (nonPlatformMutationS
 		return nonPlatformMutationEntry("AIGatewayLLMRelayInvocation", "invoke", appaccess.PermAIGatewayRelayInvoke, true), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/relay/"):
 		return nonPlatformMutationEntry("AIGatewayLLMRelay", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayRelayManage, false), true
+	case path == "/api/v1/ai-gateway/tasks" || strings.HasPrefix(path, "/api/v1/ai-gateway/tasks/"):
+		return nonPlatformMutationEntry("AIGatewayCapabilityTask", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayInvoke, true), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/tools/"):
 		return nonPlatformMutationEntry("AIGatewayToolInvocation", "invoke", appaccess.PermAIGatewayInvoke, true), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/resources/read"):

@@ -13,6 +13,7 @@ import (
 var ErrNotFound = fmt.Errorf("memory record not found: %w", apperrors.ErrNotFound)
 
 type Record struct {
+	PolicyID   string     `json:"policyId,omitempty"`
 	ID         string     `json:"id"`
 	OwnerType  string     `json:"ownerType"`
 	OwnerID    string     `json:"ownerId"`
@@ -120,6 +121,7 @@ func (s *Service) PutRecord(ctx context.Context, record Record, policy Policy) (
 	if record.ExpiresAt.Before(now) || record.ExpiresAt.After(now.Add(policy.MaximumTTL)) {
 		return Record{}, fmt.Errorf("%w: memory expiry is outside policy", apperrors.ErrInvalidArgument)
 	}
+	record.PolicyID = policy.ID
 	record.Status = "active"
 	record.CreatedAt = now
 	if err := s.store.PutRecord(ctx, cloneRecord(record)); err != nil {

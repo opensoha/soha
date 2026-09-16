@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/url"
 	"strings"
 	"testing"
@@ -77,7 +78,7 @@ func (a *captureSourceAdapter) ListCommits(_ context.Context, _ string, search s
 
 type captureSourceFactory struct{ adapter SourceAdapter }
 
-func (f captureSourceFactory) Build(domain.Integration, map[string]string) (SourceAdapter, error) {
+func (f captureSourceFactory) Build(domain.Integration, map[string]string, *http.Client) (SourceAdapter, error) {
 	return f.adapter, nil
 }
 

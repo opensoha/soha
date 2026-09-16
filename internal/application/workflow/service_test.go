@@ -42,7 +42,7 @@ type stubWorkflowRepository struct {
 	approvals   []domainworkflow.Approval
 }
 
-func (r *stubWorkflowRepository) List(context.Context, string, int) ([]domainworkflow.Run, error) {
+func (r *stubWorkflowRepository) List(context.Context, string, string, int) ([]domainworkflow.Run, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return cloneWorkflowRuns(r.items), nil
@@ -426,7 +426,7 @@ func TestListPrunesStaleApplications(t *testing.T) {
 		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsView}}}),
 	}
 
-	items, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, "", 50)
+	items, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, "", "", 50)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -464,7 +464,7 @@ func TestListFiltersRunsOutsideApplicationEnvironmentScope(t *testing.T) {
 		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsView}}}),
 	}
 
-	items, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, "", 50)
+	items, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, "", "", 50)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}

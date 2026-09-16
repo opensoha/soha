@@ -3,6 +3,7 @@ package copilot
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -141,7 +142,7 @@ func TestMergeAgentRunWorkbenchEventsNormalizesFiltersAndLimits(t *testing.T) {
 		t.Fatalf("expected oldest event to be trimmed, got %#v", merged)
 	}
 	for index, event := range merged {
-		if event.Sequence != index+1 || event.SessionID != "session-1" || event.ID == "" || event.CreatedAt.IsZero() {
+		if event.Sequence != index+8 || event.SessionID != "session-1" || event.ID == "" || event.CreatedAt.IsZero() {
 			t.Fatalf("event[%d] not normalized: %#v", index, event)
 		}
 		if event.RunID == "other-run" {
@@ -188,7 +189,7 @@ func TestAgentRunCallbackPayloadWorkbenchEventsAreReservedAndNormalized(t *testi
 	if len(normalized) != 1 {
 		t.Fatalf("expected only the agent run event to survive, got %#v", normalized)
 	}
-	if normalized[0].ID != "" || normalized[0].Sequence != 0 || !normalized[0].CreatedAt.Equal(now) || normalized[0].SessionID != "session-1" {
+	if (normalized[0].ID == "" || normalized[0].ID == "runner-custom-id") || normalized[0].Sequence != 0 || !normalized[0].CreatedAt.Equal(now) || normalized[0].SessionID != "session-1" {
 		t.Fatalf("payload event was not normalized before snapshot merge: %#v", normalized[0])
 	}
 	merged := mergeAgentRunWorkbenchEventSnapshot([]domaincopilot.WorkbenchStreamEvent{{
@@ -199,7 +200,7 @@ func TestAgentRunCallbackPayloadWorkbenchEventsAreReservedAndNormalized(t *testi
 		Sequence:  7,
 		CreatedAt: now.Add(-time.Minute),
 	}}, normalized, 1)
-	if len(merged) != 1 || merged[0].ID == "runner-custom-id" || merged[0].Sequence != 1 || merged[0].Content != "valid agent event" {
+	if len(merged) != 1 || merged[0].ID == "runner-custom-id" || merged[0].Sequence != 8 || merged[0].Content != "valid agent event" {
 		t.Fatalf("snapshot did not rewrite/cap payload events: %#v", merged)
 	}
 }
@@ -207,7 +208,7 @@ func TestAgentRunCallbackPayloadWorkbenchEventsAreReservedAndNormalized(t *testi
 func TestCancelAgentRunUpdatesNonTerminalRun(t *testing.T) {
 	repo, mock := newAgentRunRepository(t)
 	queuedAt := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
-	expectGetAgentRun(mock, domaincopilot.AgentRun{
+	expectLockedAgentRun(mock, domaincopilot.AgentRun{
 		ID:             "agent:cancel",
 		ProviderID:     "hermes",
 		ProviderKind:   "hermes",
@@ -220,9 +221,10 @@ func TestCancelAgentRunUpdatesNonTerminalRun(t *testing.T) {
 		CreatedAt:      queuedAt,
 		UpdatedAt:      queuedAt,
 	})
-	mock.ExpectExec(`(?s)UPDATE ai_agent_runs\s+SET status = \$1, output = \$2, error_message = \$3, completed_at = \$4, updated_at = \$5\s+WHERE id = \$6 AND status NOT IN \(\$7, \$8, \$9, \$10\)`).
+	mock.ExpectExec(`(?s)UPDATE ai_agent_runs\s+SET status = \$1, output = \$2, tool_executions = \$3, error_message = \$4, completed_at = \$5, updated_at = \$6\s+WHERE id = \$7 AND status NOT IN \(\$8, \$9, \$10, \$11\)`).
 		WithArgs(
 			domaincopilot.AgentRunStatusCanceled,
+			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
 			"operator canceled",
 			sqlmock.AnyArg(),
@@ -251,6 +253,7 @@ func TestCancelAgentRunUpdatesNonTerminalRun(t *testing.T) {
 		UpdatedAt:      queuedAt,
 	})
 
+	mock.ExpectCommit()
 	run, err := repo.CancelAgentRun(context.Background(), domaincopilot.AgentRunCancelInput{
 		RunID:       "agent:cancel",
 		RequestedBy: "user-1",
@@ -270,7 +273,7 @@ func TestCancelAgentRunUpdatesNonTerminalRun(t *testing.T) {
 func TestUpdateAgentRunCallbackIgnoresLateCallbackForTerminalRun(t *testing.T) {
 	repo, mock := newAgentRunRepository(t)
 	completedAt := time.Date(2026, 6, 12, 10, 3, 0, 0, time.UTC)
-	expectGetAgentRun(mock, domaincopilot.AgentRun{
+	expectLockedAgentRun(mock, domaincopilot.AgentRun{
 		ID:             "agent:late",
 		ProviderID:     "hermes",
 		ProviderKind:   "hermes",
@@ -287,6 +290,7 @@ func TestUpdateAgentRunCallbackIgnoresLateCallbackForTerminalRun(t *testing.T) {
 		UpdatedAt:      completedAt,
 	})
 
+	mock.ExpectCommit()
 	run, err := repo.UpdateAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "agent:late",
 		CallbackToken: "callback-token",
@@ -321,8 +325,10 @@ func newAgentRunRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {
 	return New(db), mock
 }
 
-func expectGetAgentRun(mock sqlmock.Sqlmock, run domaincopilot.AgentRun) {
-	rows := sqlmock.NewRows([]string{
+func agentRunRows(run domaincopilot.AgentRun) *sqlmock.Rows {
+	tools, _ := json.Marshal(run.ToolExecutions)
+	artifacts, _ := json.Marshal(run.AnalysisArtifacts)
+	return sqlmock.NewRows([]string{
 		"id",
 		"provider_id",
 		"provider_kind",
@@ -370,8 +376,8 @@ func expectGetAgentRun(mock sqlmock.Sqlmock, run domaincopilot.AgentRun) {
 		`[]`,
 		mustJSON(run.Input),
 		mustJSON(run.Output),
-		`[]`,
-		`[]`,
+		string(tools),
+		string(artifacts),
 		run.CallbackToken,
 		`[]`,
 		`{}`,
@@ -387,6 +393,15 @@ func expectGetAgentRun(mock sqlmock.Sqlmock, run domaincopilot.AgentRun) {
 		run.CreatedAt,
 		run.UpdatedAt,
 	)
+}
+
+func expectLockedAgentRun(mock sqlmock.Sqlmock, run domaincopilot.AgentRun) {
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT .*FROM ai_agent_runs\s+WHERE id = \$1 FOR UPDATE`).WithArgs(run.ID).WillReturnRows(agentRunRows(run))
+}
+
+func expectGetAgentRun(mock sqlmock.Sqlmock, run domaincopilot.AgentRun) {
+	rows := agentRunRows(run)
 	mock.ExpectQuery(`(?s)SELECT id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,\s+tool_executions, analysis_artifacts, callback_token, secret_refs, secret_principal, secret_target, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,\s+queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at\s+FROM ai_agent_runs\s+WHERE id = \$1 LIMIT 1`).
 		WithArgs(run.ID).
 		WillReturnRows(rows)
@@ -415,4 +430,55 @@ func mustJSON(value map[string]any) string {
 		panic(err)
 	}
 	return string(bytes)
+}
+
+func TestAgentStreamRetriesDoNotDuplicateDeltasAndSequencesSurviveTrimming(t *testing.T) {
+	run := domaincopilot.AgentRun{ID: "run-1", SessionID: "session-1"}
+	patch := normalizeAgentRunCallbackEvents(run, []domaincopilot.WorkbenchStreamEvent{{ID: "delta-1", Type: "message.delta", ContentDelta: "hello"}}, time.Now())
+	if patch[0].ID == "delta-1" {
+		t.Fatal("runner event ID was not namespaced")
+	}
+	events := mergeAgentRunWorkbenchEventSnapshot(nil, patch, 1)
+	events = mergeAgentRunWorkbenchEventSnapshot(events, patch, 1)
+	if len(events) != 1 || events[0].Sequence != 1 {
+		t.Fatalf("duplicate retry: %+v", events)
+	}
+	next := normalizeAgentRunCallbackEvents(run, []domaincopilot.WorkbenchStreamEvent{{ID: "delta-2", Type: "message.delta", ContentDelta: "world"}}, time.Now())
+	events = mergeAgentRunWorkbenchEventSnapshot(events, next, 1)
+	if len(events) != 1 || events[0].Sequence != 2 {
+		t.Fatalf("sequence restarted: %+v", events)
+	}
+}
+
+func TestClaimAgentRunClosesCursorBeforeUpdating(t *testing.T) {
+	closeFailure := errors.New("cursor close failed")
+	for _, closeErr := range []error{nil, closeFailure} {
+		name := "success"
+		if closeErr != nil {
+			name = "close failure prevents update"
+		}
+		t.Run(name, func(t *testing.T) {
+			repo, mock := newAgentRunRepository(t)
+			run := domaincopilot.AgentRun{ID: "agent:claim", ProviderID: "hermes-api", ProviderKind: "hermes-api", CapabilityID: "general", Status: domaincopilot.AgentRunStatusQueued, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+			mock.ExpectBegin()
+			mock.ExpectQuery(`(?s)FROM ai_agent_runs.*FOR UPDATE SKIP LOCKED`).WithArgs(domaincopilot.AgentRunStatusQueued, "hermes-api").WillReturnRows(agentRunRows(run).CloseError(closeErr)).RowsWillBeClosed()
+			if closeErr == nil {
+				mock.ExpectExec(`UPDATE ai_agent_runs`).WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectCommit()
+			} else {
+				mock.ExpectRollback()
+			}
+			claimed, err := repo.ClaimAgentRun(context.Background(), domaincopilot.AgentRunClaimInput{AgentID: "runner", ProviderIDs: []string{"hermes-api"}})
+			if closeErr != nil {
+				if !errors.Is(err, closeErr) {
+					t.Fatalf("error=%v, want close error", err)
+				}
+			} else if err != nil || claimed.ClaimedByAgentID != "runner" || claimed.Status != domaincopilot.AgentRunStatusRunning {
+				t.Fatalf("claim=%+v, err=%v", claimed, err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }

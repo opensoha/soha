@@ -16,11 +16,12 @@ import (
 const ProviderCatalogSchemaVersion = "opensoha.dev/agent-provider-catalog/v1"
 
 type ProviderCatalog struct {
-	SchemaVersion string               `json:"schemaVersion"`
-	Revision      uint64               `json:"revision"`
-	Digest        string               `json:"digest"`
-	CreatedAt     time.Time            `json:"createdAt"`
-	Providers     []ProviderDefinition `json:"providers"`
+	RuntimeStatuses map[string]RunnerProviderStatus `json:"-"`
+	SchemaVersion   string                          `json:"schemaVersion"`
+	Revision        uint64                          `json:"revision"`
+	Digest          string                          `json:"digest"`
+	CreatedAt       time.Time                       `json:"createdAt"`
+	Providers       []ProviderDefinition            `json:"providers"`
 }
 
 type ProviderDefinition struct {

@@ -110,13 +110,16 @@ func TestAdvancedHandlerResolvesExecutorProfileID(t *testing.T) {
 	if err := advanced.PutExecutorProfile(t.Context(), profile); err != nil {
 		t.Fatal(err)
 	}
-	rec := httptest.NewRecorder()
+	rec := &deadlineRecorder{ResponseRecorder: httptest.NewRecorder(), deadline: time.Now()}
 	ctx, _ := gin.CreateTestContext(rec)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/ai/evaluations/runs/run/execute", strings.NewReader(`{"executorProfileId":"profile"}`))
 	ctx.Request.Header.Set("Content-Type", "application/json")
 	ctx.Params = gin.Params{{Key: "runID", Value: "run"}}
 	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
 	handler.executeRun(ctx)
+	if !rec.deadline.IsZero() {
+		t.Fatal("long evaluation kept the ordinary HTTP write deadline")
+	}
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -139,5 +142,45 @@ func TestAdvancedHandlerTranslatesMemoryPolicyForm(t *testing.T) {
 	}
 	if policy.DefaultTTL != 30*24*time.Hour || !policy.ExplicitWriteOnly || !policy.Enabled {
 		t.Fatalf("policy=%#v", policy)
+	}
+}
+
+type privateChatFeedbackStub struct{}
+
+func (privateChatFeedbackStub) ChatFeedbackReference(_ context.Context, principal domainidentity.Principal, session, message string) (string, error) {
+	if principal.UserID != "owner" || session != "session" || message != "message" {
+		return "", apperrors.ErrAccessDenied
+	}
+	return "agent:owned", nil
+}
+func TestChatFeedbackKeepsOnlyVerifiedOwnerScopedReference(t *testing.T) {
+	handler, _, advanced, _ := newAdvancedHandlerForTest(t)
+	handler.WithChatFeedback(privateChatFeedbackStub{})
+	body := `{"id":"ignored","traceRef":"forged","sessionId":"session","messageId":"message","disposition":"accepted","redactedInput":"private input","redactedOutput":"private reply"}`
+	for _, owner := range []string{"other", "owner"} {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodPost, "/ai/evaluations/feedback", strings.NewReader(body))
+		ctx.Request.Header.Set("Content-Type", "application/json")
+		ctx.Set("principal", domainidentity.Principal{UserID: owner})
+		handler.putFeedback(ctx)
+		if owner == "other" && recorder.Code != http.StatusForbidden {
+			t.Fatalf("foreign reference status: %d", recorder.Code)
+		}
+		if owner == "owner" && recorder.Code != http.StatusCreated {
+			t.Fatalf("owned feedback: %d %s", recorder.Code, recorder.Body.String())
+		}
+	}
+	records, err := advanced.ListFeedback(t.Context())
+	if err != nil || len(records) != 1 || records[0].TraceRef != "agent:owned" || records[0].RedactedInput != "" || records[0].RedactedOutput != "" || !strings.HasPrefix(records[0].ID, "chat-feedback:") {
+		t.Fatalf("private feedback: %+v %v", records, err)
+	}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/ai/evaluations/feedback", nil)
+	ctx.Set("principal", domainidentity.Principal{UserID: "other"})
+	handler.listFeedback(ctx)
+	if strings.Contains(recorder.Body.String(), "agent:owned") {
+		t.Fatal("another user saw private feedback")
 	}
 }

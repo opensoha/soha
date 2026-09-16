@@ -17,24 +17,28 @@ type Repository struct {
 	db *gorm.DB
 }
 
+const workflowColumns = `id, application_id, workflow_name, cluster_id, namespace, deployment_name, status, steps, metadata, created_at, updated_at,
+    scope, COALESCE(delivery_batch_id, ''), version, lease_owner, lease_until, fencing_token, stop_reason, stop_summary`
+
 func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) List(ctx context.Context, applicationID string, limit int) ([]domainworkflow.Run, error) {
-	if limit <= 0 {
+func (r *Repository) List(ctx context.Context, applicationID, applicationEnvironmentID string, limit int) ([]domainworkflow.Run, error) {
+	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	query := `
-		SELECT id, application_id, workflow_name, cluster_id, namespace, deployment_name, status, steps, metadata, created_at, updated_at
-		FROM workflow_runs
-	`
+	query := `SELECT ` + workflowColumns + ` FROM workflow_runs WHERE scope = 'application'`
 	args := []any{}
 	if applicationID != "" {
-		query += ` WHERE application_id = ?`
+		query += ` AND application_id = ?`
 		args = append(args, applicationID)
 	}
-	query += ` ORDER BY created_at DESC LIMIT ?`
+	if applicationEnvironmentID != "" {
+		query += ` AND metadata->>'bindingId' = ?`
+		args = append(args, applicationEnvironmentID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
 	args = append(args, limit)
 	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {
@@ -53,9 +57,7 @@ func (r *Repository) List(ctx context.Context, applicationID string, limit int) 
 }
 
 func (r *Repository) Get(ctx context.Context, runID string) (domainworkflow.Run, error) {
-	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, application_id, workflow_name, cluster_id, namespace, deployment_name, status, steps, metadata, created_at, updated_at
-		FROM workflow_runs
+	row := r.db.WithContext(ctx).Raw(`SELECT `+workflowColumns+` FROM workflow_runs
 		WHERE id = ?
 		LIMIT 1
 	`, runID).Row()
@@ -63,38 +65,56 @@ func (r *Repository) Get(ctx context.Context, runID string) (domainworkflow.Run,
 }
 
 func (r *Repository) Create(ctx context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
-	item.Metadata = persistWorkflowMetadata(item.Metadata, item.NodeRuns)
+	if item.Scope != "" && item.Scope != domainworkflow.ScopeApplication {
+		return domainworkflow.Run{}, fmt.Errorf("%w: batch runs require atomic batch creation", apperrors.ErrInvalidArgument)
+	}
+	return r.createRun(ctx, item)
+}
+
+func (r *Repository) createRun(ctx context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
+	if item.Scope == "" {
+		item.Scope = domainworkflow.ScopeApplication
+	}
+	item.Version = 1
+	storedMetadata := persistWorkflowMetadata(item.Metadata, item.NodeRuns, item.GatewayAuthorization)
 	steps, err := json.Marshal(item.Steps)
 	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("marshal workflow steps: %w", err)
 	}
-	metadata, err := json.Marshal(item.Metadata)
+	metadata, err := json.Marshal(storedMetadata)
+	item.Metadata = storedMetadata
+	delete(item.Metadata, "gatewayAuthorizationCredential")
 	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("marshal workflow metadata: %w", err)
 	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO workflow_runs (id, application_id, workflow_name, cluster_id, namespace, deployment_name, status, steps, metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.ApplicationID, item.WorkflowName, nullable(item.ClusterID), nullable(item.Namespace), nullable(item.DeploymentName), item.Status, string(steps), string(metadata), parseTime(item.CreatedAt), parseTime(item.UpdatedAt)).Error; err != nil {
+		INSERT INTO workflow_runs (id, application_id, workflow_name, cluster_id, namespace, deployment_name, status, steps, metadata, created_at, updated_at, scope, delivery_batch_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.ApplicationID, item.WorkflowName, nullable(item.ClusterID), nullable(item.Namespace), nullable(item.DeploymentName), item.Status, string(steps), string(metadata), parseTime(item.CreatedAt), parseTime(item.UpdatedAt), item.Scope, nullable(item.DeliveryBatchID)).Error; err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("create workflow run: %w", err)
 	}
 	return item, nil
 }
 
 func (r *Repository) Update(ctx context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
-	item.Metadata = persistWorkflowMetadata(item.Metadata, item.NodeRuns)
+	if item.Scope != "" && item.Scope != domainworkflow.ScopeApplication {
+		return domainworkflow.Run{}, fmt.Errorf("%w: batch runs require a current execution lease", apperrors.ErrConflict)
+	}
+	storedMetadata := persistWorkflowMetadata(item.Metadata, item.NodeRuns, item.GatewayAuthorization)
 	steps, err := json.Marshal(item.Steps)
 	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("marshal workflow steps: %w", err)
 	}
-	metadata, err := json.Marshal(item.Metadata)
+	metadata, err := json.Marshal(storedMetadata)
+	item.Metadata = storedMetadata
+	delete(item.Metadata, "gatewayAuthorizationCredential")
 	if err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("marshal workflow metadata: %w", err)
 	}
 	if err := r.db.WithContext(ctx).Exec(`
 		UPDATE workflow_runs
 		SET status = ?, steps = ?, metadata = ?, updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND scope = 'application'
 	`, item.Status, string(steps), string(metadata), parseTime(item.UpdatedAt), item.ID).Error; err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("update workflow run: %w", err)
 	}
@@ -122,7 +142,7 @@ func (r *Repository) DeleteByIDs(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	if err := r.db.WithContext(ctx).Exec(`DELETE FROM workflow_runs WHERE id IN ?`, ids).Error; err != nil {
+	if err := r.db.WithContext(ctx).Exec(`DELETE FROM workflow_runs WHERE id IN ? AND scope = 'application'`, ids).Error; err != nil {
 		return fmt.Errorf("delete workflow runs: %w", err)
 	}
 	return nil
@@ -137,7 +157,7 @@ func scanWorkflow(rows *sql.Rows) (domainworkflow.Run, error) {
 	var metadata []byte
 	var createdAt time.Time
 	var updatedAt time.Time
-	if err := rows.Scan(&item.ID, &item.ApplicationID, &item.WorkflowName, &clusterID, &namespace, &deploymentName, &item.Status, &steps, &metadata, &createdAt, &updatedAt); err != nil {
+	if err := rows.Scan(&item.ID, &item.ApplicationID, &item.WorkflowName, &clusterID, &namespace, &deploymentName, &item.Status, &steps, &metadata, &createdAt, &updatedAt, &item.Scope, &item.DeliveryBatchID, &item.Version, &item.LeaseOwner, &item.LeaseUntil, &item.FencingToken, &item.StopReason, &item.StopSummary); err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("scan workflow run: %w", err)
 	}
 	if clusterID.Valid {
@@ -155,6 +175,8 @@ func scanWorkflow(rows *sql.Rows) (domainworkflow.Run, error) {
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &item.Metadata)
 	}
+	item.GatewayAuthorization, _ = item.Metadata["gatewayAuthorizationCredential"].(string)
+	delete(item.Metadata, "gatewayAuthorizationCredential")
 	item.NodeRuns = extractWorkflowNodeRuns(item.Metadata)
 	item.CreatedAt = createdAt.Format(time.RFC3339)
 	item.UpdatedAt = updatedAt.Format(time.RFC3339)
@@ -170,7 +192,7 @@ func scanWorkflowRow(row *sql.Row) (domainworkflow.Run, error) {
 	var metadata []byte
 	var createdAt time.Time
 	var updatedAt time.Time
-	if err := row.Scan(&item.ID, &item.ApplicationID, &item.WorkflowName, &clusterID, &namespace, &deploymentName, &item.Status, &steps, &metadata, &createdAt, &updatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.ApplicationID, &item.WorkflowName, &clusterID, &namespace, &deploymentName, &item.Status, &steps, &metadata, &createdAt, &updatedAt, &item.Scope, &item.DeliveryBatchID, &item.Version, &item.LeaseOwner, &item.LeaseUntil, &item.FencingToken, &item.StopReason, &item.StopSummary); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domainworkflow.Run{}, fmt.Errorf("%w: workflow run not found", apperrors.ErrNotFound)
 		}
@@ -191,16 +213,22 @@ func scanWorkflowRow(row *sql.Row) (domainworkflow.Run, error) {
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &item.Metadata)
 	}
+	item.GatewayAuthorization, _ = item.Metadata["gatewayAuthorizationCredential"].(string)
+	delete(item.Metadata, "gatewayAuthorizationCredential")
 	item.NodeRuns = extractWorkflowNodeRuns(item.Metadata)
 	item.CreatedAt = createdAt.Format(time.RFC3339)
 	item.UpdatedAt = updatedAt.Format(time.RFC3339)
 	return item, nil
 }
 
-func persistWorkflowMetadata(metadata map[string]any, nodeRuns []domainworkflow.NodeRun) map[string]any {
+func persistWorkflowMetadata(metadata map[string]any, nodeRuns []domainworkflow.NodeRun, gatewayAuthorization string) map[string]any {
 	next := make(map[string]any, len(metadata)+2)
 	for key, value := range metadata {
 		next[key] = value
+	}
+	delete(next, "gatewayAuthorizationCredential")
+	if gatewayAuthorization != "" {
+		next["gatewayAuthorizationCredential"] = gatewayAuthorization
 	}
 	if len(nodeRuns) > 0 {
 		next["nodeRuns"] = nodeRuns
@@ -225,21 +253,13 @@ func extractWorkflowNodeRuns(metadata map[string]any) []domainworkflow.NodeRun {
 	case []domainworkflow.NodeRun:
 		return append([]domainworkflow.NodeRun(nil), value...)
 	case []any:
-		items := make([]domainworkflow.NodeRun, 0, len(value))
-		for _, entry := range value {
-			valueMap, ok := entry.(map[string]any)
-			if !ok {
-				continue
-			}
-			items = append(items, domainworkflow.NodeRun{
-				NodeID:     stringValue(valueMap["nodeId"]),
-				Name:       stringValue(valueMap["name"]),
-				Type:       stringValue(valueMap["type"]),
-				Status:     stringValue(valueMap["status"]),
-				Summary:    stringValue(valueMap["summary"]),
-				StartedAt:  stringValue(valueMap["startedAt"]),
-				FinishedAt: stringValue(valueMap["finishedAt"]),
-			})
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return nil
+		}
+		var items []domainworkflow.NodeRun
+		if err := json.Unmarshal(encoded, &items); err != nil {
+			return nil
 		}
 		return items
 	default:

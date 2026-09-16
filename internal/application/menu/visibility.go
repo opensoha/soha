@@ -42,9 +42,10 @@ var platformWorkbenchMenuPrefixes = []string{
 }
 
 var deliveryWorkbenchMenuPrefixes = []string{
-	"/applications", "/application-environments", "/build-templates", "/delivery/overview", "/delivery/onboarding",
+	"/delivery/workflows", "/delivery/batches",
+	"/applications", "/application-environments", "/build-templates", "/deployment-templates", "/delivery/overview", "/delivery/onboarding",
 	"/delivery/manifests", "/delivery/testing", "/delivery/analysis", "/delivery/blueprints", "/delivery/release-bundles",
-	"/delivery/execution-tasks", "/workflow-templates", "/release-board", "/workflows", "/releases", "/registries",
+	"/delivery/execution-tasks", "/workflow-templates", "/release-board", "/execution-history", "/workflows", "/releases", "/registries",
 }
 
 func hasMenuPathPrefix(path string, prefixes []string) bool {
@@ -99,14 +100,18 @@ func coreDeliveryMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryExecutionTasksView, appaccess.PermDeliveryReleaseBoardView}}, true
 	case "delivery-analysis":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryExecutionTasksView, appaccess.PermDeliveryReleaseBoardView, appaccess.PermDeliveryReleaseBundlesView}}, true
+	case "deployment-templates":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryDeploymentTemplatesView}}, true
 	case "build-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryBuildTemplatesView}}, true
 	case "release-bundles":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBundlesView}}, true
 	case "workflow-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowTemplatesView}}, true
-	case "release-board":
+	case "delivery-workflows", "delivery-batches":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowsView}}, true
+	case "release-board", "execution-history":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowsView, appaccess.PermDeliveryApplicationsView}}, true
 	case "application-environments", "delivery-environment-directory":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationEnvView}}, true
 	case "releases":
@@ -193,6 +198,8 @@ func aiWorkbenchCapabilityMenuRule(id string) (visibilityRule, bool) {
 		}}, true
 	case "ai-workbench-chat", "ai-workbench-companion", "ai-workbench-investigation":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
+	case "ai-workbench-tasks":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayInvoke}}, true
 	case "ai-workbench-agent-providers":
 		return visibilityRule{permissions: []string{appaccess.PermAIAgentProvidersView}}, true
 	case "ai-workbench-provider-fleet":
@@ -343,7 +350,14 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermNetworkAccessEnrollmentsView,
 			appaccess.PermNetworkAccessAccessGrantsView,
 			appaccess.PermNetworkAccessPolicyView,
+			"network_access.vpn_profiles.view", "network_access.vpn_selection_policies.view", "network_access.vpn_dashboard.view",
 		}}, true
+	case "network-access-vpn-profiles":
+		return visibilityRule{permissions: []string{"network_access.vpn_profiles.view"}}, true
+	case "network-access-vpn-selection-policies":
+		return visibilityRule{permissions: []string{"network_access.vpn_selection_policies.view"}}, true
+	case "network-access-vpn-dashboard":
+		return visibilityRule{permissions: []string{"network_access.vpn_dashboard.view"}}, true
 	case "network-access-devices":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessEndpointDevicesView}}, true
 	case "network-access-user-admission", "network-access-sites", "network-access-ssids", "network-access-wifi", "network-access-wired", "network-access-nas-bindings", "network-access-site-profile-bindings", "network-access-sessions":
@@ -392,6 +406,7 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 			appaccess.PermIdentityOutpostsView,
 			appaccess.PermIdentityPoliciesView,
 			appaccess.PermIdentityAuditView,
+			appaccess.PermSystemAuditView,
 			appaccess.PermNetworkAccessEndpointDevicesView,
 			appaccess.PermNetworkAccessSitesView,
 			appaccess.PermNetworkAccessSpacesView,
@@ -405,14 +420,10 @@ func identitySystemMenuRule(id string) (visibilityRule, bool) {
 		}}, true
 	case "identity-software":
 		return visibilityRule{permissions: []string{appaccess.PermSoftwarePackageView}}, true
-	case "identity-applications":
-		return visibilityRule{permissions: []string{appaccess.PermIdentityApplicationsView}}, true
-	case "identity-providers":
-		return visibilityRule{permissions: []string{appaccess.PermIdentityProvidersView}}, true
-	case "identity-outposts":
-		return visibilityRule{permissions: []string{appaccess.PermIdentityOutpostsView}}, true
-	case "identity-policies":
-		return visibilityRule{permissions: []string{appaccess.PermIdentityPoliciesView}}, true
+	case "identity-applications", "identity-providers", "identity-outposts", "identity-policies":
+		return visibilityRule{permissions: []string{"identity." + strings.TrimPrefix(id, "identity-") + ".view"}}, true
+	case "identity-login-records":
+		return visibilityRule{permissions: []string{appaccess.PermIdentityAuditView, appaccess.PermSystemAuditView}}, true
 	case "system-online-users":
 		return visibilityRule{permissions: []string{appaccess.PermSystemOnlineUsersView}}, true
 	case "announcements":

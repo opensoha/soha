@@ -13,6 +13,8 @@ type Principal struct {
 	Projects       []string `json:"projects"`
 	Tags           []string `json:"tags"`
 	PermissionKeys []string `json:"permissionKeys,omitempty"`
+	// AccessTokenID retains revocation and permission limits across async execution.
+	AccessTokenID string `json:"-"`
 }
 
 // User is the persistence-neutral identity record used by authentication services.

@@ -2,8 +2,6 @@ package application
 
 import (
 	"context"
-	"database/sql/driver"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -21,7 +19,7 @@ func TestErrNotFoundWrapsAppErrorSentinel(t *testing.T) {
 	}
 }
 
-func TestListBuildSourcesMigratesLegacyBuildSource(t *testing.T) {
+func TestListBuildSourcesProjectsLegacyWithoutWriting(t *testing.T) {
 	repo, mock := newApplicationRepository(t)
 	app := domainapp.App{
 		ID:              "app-1",
@@ -38,25 +36,6 @@ func TestListBuildSourcesMigratesLegacyBuildSource(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "source_name", "source_type", "enabled", "is_default", "build_image", "default_tag", "config", "created_at", "updated_at",
 		}))
-	mock.ExpectExec(legacyBuildSourcesInsertPattern()).
-		WithArgs(
-			"default:app-1",
-			"app-1",
-			"Repository Dockerfile",
-			string(domainapp.BuildSourceTypeRepoDockerfile),
-			true,
-			true,
-			"registry.local/demo",
-			nil,
-			jsonContains{
-				"builderKind":    "docker",
-				"contextDir":     "./src",
-				"dockerfilePath": "Dockerfile",
-			},
-			sqlmock.AnyArg(),
-			sqlmock.AnyArg(),
-		).
-		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	items, err := repo.listBuildSources(context.Background(), app.ID, app)
 	if err != nil {
@@ -114,34 +93,6 @@ func TestListBuildSourcesUsesExistingRowsWithoutMigration(t *testing.T) {
 
 func legacyBuildSourcesSelectPattern() string {
 	return `(?s)^SELECT\s+id,\s+source_name,\s+source_type,\s+enabled,\s+is_default,\s+build_image,\s+default_tag,\s+config,\s+created_at,\s+updated_at\s+FROM\s+application_build_sources\s+WHERE\s+application_id\s+=\s+\$1\s+ORDER\s+BY\s+is_default\s+DESC,\s+created_at\s+ASC$`
-}
-
-func legacyBuildSourcesInsertPattern() string {
-	return `(?s)^INSERT\s+INTO\s+application_build_sources\s*\(\s*id,\s*application_id,\s*source_name,\s*source_type,\s*enabled,\s*is_default,\s*build_image,\s*default_tag,\s*config,\s*created_at,\s*updated_at\s*\)\s*VALUES\s*\(\s*\$1,\s*\$2,\s*\$3,\s*\$4,\s*\$5,\s*\$6,\s*\$7,\s*\$8,\s*\$9,\s*\$10,\s*\$11\s*\)\s*ON\s+CONFLICT\s*\(id\)\s+DO\s+NOTHING$`
-}
-
-type jsonContains map[string]any
-
-func (j jsonContains) Match(v driver.Value) bool {
-	var raw []byte
-	switch typed := v.(type) {
-	case string:
-		raw = []byte(typed)
-	case []byte:
-		raw = typed
-	default:
-		return false
-	}
-	var got map[string]any
-	if err := json.Unmarshal(raw, &got); err != nil {
-		return false
-	}
-	for key, want := range j {
-		if got[key] != want {
-			return false
-		}
-	}
-	return true
 }
 
 func newApplicationRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {

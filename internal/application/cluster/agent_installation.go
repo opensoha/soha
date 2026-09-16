@@ -103,6 +103,14 @@ func (s *Service) RenderAgentInstallation(ctx context.Context, ticket string) ([
 }
 
 func (s *Service) AuthenticateAgentSession(ctx context.Context, clusterID, token string) error {
+	return s.authenticateAgent(ctx, clusterID, token, true)
+}
+
+func (s *Service) AuthenticateAgentExecution(ctx context.Context, clusterID, token string) error {
+	return s.authenticateAgent(ctx, clusterID, token, false)
+}
+
+func (s *Service) authenticateAgent(ctx context.Context, clusterID, token string, reverse bool) error {
 	if s.repo == nil {
 		return fmt.Errorf("%w: cluster repository is required", apperrors.ErrInvalidArgument)
 	}
@@ -110,8 +118,8 @@ func (s *Service) AuthenticateAgentSession(ctx context.Context, clusterID, token
 	if err != nil {
 		return err
 	}
-	if connection.Summary.ConnectionMode != domaincluster.ConnectionModeAgent || metadataString(connection.Metadata, "transport") != agentReverseSessionTransport {
-		return fmt.Errorf("%w: cluster does not accept reverse Agent sessions", apperrors.ErrConflict)
+	if connection.Summary.ConnectionMode != domaincluster.ConnectionModeAgent || reverse && metadataString(connection.Metadata, "transport") != agentReverseSessionTransport {
+		return fmt.Errorf("%w: cluster does not accept this Agent connection", apperrors.ErrConflict)
 	}
 	expected := strings.TrimSpace(metadataString(connection.Metadata, "token"))
 	provided := strings.TrimSpace(token)

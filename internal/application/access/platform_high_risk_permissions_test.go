@@ -5,6 +5,7 @@ import "testing"
 func TestDefaultRolePermissionsForHighRiskKubernetesResources(t *testing.T) {
 	SetRolePermissionMatrix(nil)
 	permissions := []string{
+		PlatformActionPermission("", "Node", "create"),
 		PermPlatformRBACManage,
 		PermPlatformRBACEscalate,
 		PermPlatformRBACBind,

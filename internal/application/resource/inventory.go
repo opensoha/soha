@@ -18,6 +18,17 @@ func (i *Inventory) directInventory() (DirectInventory, error) {
 	return i.direct, nil
 }
 
+// Worker supply shares the workbench's current cluster metadata, ABAC and scope
+// grants. The provider adapter must not become an alternate authorization path.
+func (i *Inventory) AuthorizeWorkerSupply(ctx context.Context, principal domainidentity.Principal, clusterID string, mutate bool) error {
+	action := domainaccess.ActionView
+	if mutate {
+		action = domainaccess.ActionCreate
+	}
+	_, _, err := i.authorize(ctx, principal, clusterID, "", "Node", action)
+	return err
+}
+
 func (i *Inventory) ListNamespaces(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.NamespaceView, error) {
 	connection, decision, err := i.authorize(ctx, principal, clusterID, "", "Namespace", domainaccess.ActionList)
 	if err != nil {

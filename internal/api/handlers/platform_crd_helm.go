@@ -78,8 +78,15 @@ func (h *crdResourceHandler) ApplyCRDResourceYAML(c *gin.Context) {
 }
 func (h *crdResourceHandler) DeleteCRDResource(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	namespace := c.Query("namespace")
-	if err := h.editor.DeleteCRDResource(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name")); err != nil {
+	var query struct {
+		Namespace   string `form:"namespace"`
+		ExpectedUID string `form:"expectedUid" binding:"omitempty,max=128"`
+	}
+	if err := c.ShouldBindQuery(&query); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid deletion identity")
+		return
+	}
+	if err := h.editor.DeleteCRDResource(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), query.Namespace, c.Param("name"), query.ExpectedUID); err != nil {
 		writeError(c, err)
 		return
 	}

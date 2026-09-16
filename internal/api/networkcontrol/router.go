@@ -83,6 +83,10 @@ func (h *handler) action(c *gin.Context) {
 		h.revoke(c)
 	case "/vpn:connect":
 		h.connectVPN(c)
+	case "/vpn:prepare-managed":
+		h.managedVPN(c, true)
+	case "/vpn:connect-managed":
+		h.managedVPN(c, false)
 	case "/nas:authorize":
 		h.authorizeNAS(c)
 	case "/radius:post-auth":

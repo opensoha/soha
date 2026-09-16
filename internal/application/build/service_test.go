@@ -2,6 +2,7 @@ package build
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -9,8 +10,10 @@ import (
 	execution "github.com/opensoha/soha/internal/application/execution"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func TestContainerBuildExecutionCommandsPushAndPersistDigest(t *testing.T) {
@@ -170,6 +173,11 @@ func (r *buildRepoFake) Update(_ context.Context, item domainbuild.Record) (doma
 type buildAppFake struct {
 	app          domainapp.App
 	repositories map[string]domainapp.SourceRepository
+	service      domainapp.Service
+}
+
+func (r buildAppFake) GetService(context.Context, string, string) (domainapp.Service, error) {
+	return r.service, nil
 }
 
 func (r buildAppFake) Get(context.Context, string) (domainapp.App, error) { return r.app, nil }
@@ -198,6 +206,15 @@ func TestTriggerLinksBuildToQueuedExecutionTask(t *testing.T) {
 	}
 }
 
+func TestWorkflowBuildPersistsParentBeforeExecution(t *testing.T) {
+	repo := &buildRepoFake{}
+	service := New(repo, buildAppFake{app: domainapp.App{ID: "app-1", DefaultTag: "v1", BuildImage: "registry.example/api"}}, nil, executionFake{}, nil, nil, nil, nil)
+	record, err := service.Trigger(context.Background(), domainidentity.Principal{}, domainbuild.TriggerInput{ApplicationID: "app-1", RefType: "branch", RefName: "main", TriggeredByWorkflowRunID: "workflow-1"})
+	if err != nil || record.Metadata["workflowRunId"] != "workflow-1" {
+		t.Fatalf("workflow association missing: %+v %v", record, err)
+	}
+}
+
 func TestExecuteDoesNotForgeCompletedBuild(t *testing.T) {
 	repo := &buildRepoFake{}
 	service := New(repo, buildAppFake{app: domainapp.App{ID: "app-1", Name: "api", DefaultBranch: "main", DefaultTag: "v1", BuildImage: "registry.example/api"}}, nil, executionFake{}, nil, nil, nil, nil)
@@ -210,6 +227,69 @@ func TestExecuteDoesNotForgeCompletedBuild(t *testing.T) {
 	}
 }
 
+func TestServiceBuildChecksBoundSourceAndContainerOutputBeforeCreatingRecords(t *testing.T) {
+	for _, wrong := range []string{"", "application", "source", "output"} {
+		t.Run(wrong, func(t *testing.T) {
+			source := domainapp.BuildSource{ID: "source", BuildImage: "registry.example/api"}
+			component := domainapp.Service{ID: "api", ApplicationID: "app-1", BuildSourceID: "source", Containers: []domainapp.ServiceContainer{{Name: "main", ImageRepository: "registry.example/api"}}}
+			switch wrong {
+			case "application":
+				component.ApplicationID = "other"
+			case "source":
+				component.BuildSourceID = "other"
+			case "output":
+				component.Containers[0].ImageRepository = "registry.example/other"
+			}
+			repo := &buildRepoFake{}
+			s := New(repo, buildAppFake{app: domainapp.App{ID: "app-1", DefaultTag: "v1", BuildSources: []domainapp.BuildSource{source}}, service: component}, nil, executionFake{}, nil, nil, nil, nil)
+			_, err := s.Trigger(context.Background(), domainidentity.Principal{}, domainbuild.TriggerInput{ApplicationID: "app-1", ServiceID: "api", BuildSourceID: "source", RefName: "main"})
+			if (err == nil) != (wrong == "") || (repo.record.ID != "") != (wrong == "") {
+				t.Fatalf("service build validation = %v, record %s", err, repo.record.ID)
+			}
+		})
+	}
+}
+
 func structTriggerInput(ref string) domainbuild.TriggerInput {
 	return domainbuild.TriggerInput{RefType: "branch", RefName: ref}
+}
+
+type buildTemplateVersionFake struct{ requested int64 }
+
+func (f *buildTemplateVersionFake) GetBuildTemplateVersion(_ context.Context, id string, version int64) (domaincatalog.BuildTemplate, error) {
+	f.requested = version
+	if version != 2 {
+		return domaincatalog.BuildTemplate{}, apperrors.ErrNotFound
+	}
+	return domaincatalog.BuildTemplate{ID: id, PublishedVersion: 2, BuildCommands: []string{"echo pinned"}, ContentDigest: "sha256:pinned"}, nil
+}
+
+func TestTriggerRequiresPinnedBuildTemplateBeforeCreatingExecution(t *testing.T) {
+	for _, version := range []any{nil, 1, 1.5, "2", 2} {
+		t.Run(fmt.Sprint(version), func(t *testing.T) {
+			config := map[string]any{"buildTemplateId": "template-1"}
+			if version != nil {
+				config["buildTemplateVersion"] = version
+			}
+			app := domainapp.App{ID: "app-1", Name: "api", BuildSources: []domainapp.BuildSource{{ID: "source-1", IsDefault: true, Type: domainapp.BuildSourceTypePlatformTemplate, Config: config}}}
+			repo, templates := &buildRepoFake{}, &buildTemplateVersionFake{}
+			service := New(repo, buildAppFake{app: app}, templates, executionFake{}, nil, nil, nil, nil)
+			record, err := service.Trigger(context.Background(), domainidentity.Principal{}, domainbuild.TriggerInput{ApplicationID: app.ID, RefName: "main"})
+			if version != 2 {
+				if err == nil || repo.record.ID != "" {
+					t.Fatalf("invalid reference created execution: %#v, %v", repo.record, err)
+				}
+				if version == 1 && !errors.Is(err, apperrors.ErrNotFound) {
+					t.Fatalf("lookup error was swallowed: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if templates.requested != 2 || record.Metadata["buildTemplateVersion"] != int64(2) || record.Metadata["buildTemplateContentDigest"] != "sha256:pinned" {
+				t.Fatalf("unpinned build: %#v", record.Metadata)
+			}
+		})
+	}
 }

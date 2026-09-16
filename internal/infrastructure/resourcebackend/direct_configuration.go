@@ -59,6 +59,9 @@ func (d *Direct) UpdateConfigMapData(ctx context.Context, clusterID, namespace, 
 	if err != nil {
 		return domainresource.ConfigMapDetailView{}, err
 	}
+	if err := validateResourceMutation(item); err != nil {
+		return domainresource.ConfigMapDetailView{}, err
+	}
 	decoded := make(map[string][]byte, len(binaryData))
 	for key, value := range binaryData {
 		raw, err := base64.StdEncoding.DecodeString(value)
@@ -97,6 +100,9 @@ func (d *Direct) UpdateSecretData(ctx context.Context, clusterID, namespace, nam
 	defer cancel()
 	item, err := bundle.Typed.CoreV1().Secrets(namespace).Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
+		return domainresource.SecretDetailView{}, err
+	}
+	if err := validateResourceMutation(item); err != nil {
 		return domainresource.SecretDetailView{}, err
 	}
 	item.Data = nil

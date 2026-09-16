@@ -25,7 +25,12 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
+type ChatFeedbackReader interface {
+	ChatFeedbackReference(context.Context, domainidentity.Principal, string, string) (string, error)
+}
+
 type AIAdvancedHandler struct {
+	chatFeedback   ChatFeedbackReader
 	evaluation     *appaieval.AdvancedService
 	runs           *appaieval.Service
 	memory         *appmemory.Service
@@ -59,6 +64,11 @@ func NewAIAdvancedHandler(evaluation *appaieval.AdvancedService, runs *appaieval
 		h.features = maps.Clone(featureSets[0])
 		h.strictFeatures = true
 	}
+	return h
+}
+
+func (h *AIAdvancedHandler) WithChatFeedback(reader ChatFeedbackReader) *AIAdvancedHandler {
+	h.chatFeedback = reader
 	return h
 }
 
@@ -170,7 +180,13 @@ func (h *AIAdvancedHandler) executeRun(c *gin.Context) {
 		writeAdvancedError(c, err)
 		return
 	}
-	item, err := h.evaluation.ExecuteRun(c, apiMiddleware.PrincipalFromContext(c), c.Param("runID"), profile)
+	if err := clearResponseWriteDeadline(c); err != nil {
+		writeAdvancedError(c, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Minute)
+	defer cancel()
+	item, err := h.evaluation.ExecuteRun(ctx, apiMiddleware.PrincipalFromContext(c), c.Param("runID"), profile)
 	writeAdvancedItem(c, http.StatusAccepted, item, err)
 }
 func (h *AIAdvancedHandler) listAttempts(c *gin.Context) {
@@ -338,7 +354,15 @@ func (h *AIAdvancedHandler) listFeedback(c *gin.Context) {
 		return
 	}
 	items, err := h.evaluation.ListFeedback(c)
-	writeAdvancedItems(c, items, err)
+	sum := sha256.Sum256([]byte(apiMiddleware.PrincipalFromContext(c).UserID))
+	scope := "sha256:" + hex.EncodeToString(sum[:])
+	visible := make([]appaieval.FeedbackSample, 0, len(items))
+	for _, item := range items {
+		if !strings.HasPrefix(item.ID, "chat-feedback:") || item.ScopeHash == scope {
+			visible = append(visible, item)
+		}
+	}
+	writeAdvancedItems(c, visible, err)
 }
 func (h *AIAdvancedHandler) putFeedback(c *gin.Context) {
 	if !h.allowed(c, appaccess.PermAIEvaluationsFeedbackCurate) {
@@ -347,6 +371,8 @@ func (h *AIAdvancedHandler) putFeedback(c *gin.Context) {
 	var input struct {
 		appaieval.FeedbackSample
 		Disposition string `json:"disposition"`
+		SessionID   string `json:"sessionId"`
+		MessageID   string `json:"messageId"`
 	}
 	if c.ShouldBindJSON(&input) != nil {
 		writeAdvancedError(c, fmt.Errorf("%w: invalid feedback sample", apperrors.ErrInvalidArgument))
@@ -359,6 +385,25 @@ func (h *AIAdvancedHandler) putFeedback(c *gin.Context) {
 	if sample.ScopeHash == "" {
 		sum := sha256.Sum256([]byte(apiMiddleware.PrincipalFromContext(c).UserID))
 		sample.ScopeHash = "sha256:" + hex.EncodeToString(sum[:])
+	}
+	if input.SessionID != "" || input.MessageID != "" {
+		if h.chatFeedback == nil || input.SessionID == "" || input.MessageID == "" {
+			writeAdvancedError(c, fmt.Errorf("%w: session and message feedback reference required", apperrors.ErrInvalidArgument))
+			return
+		}
+		principal := apiMiddleware.PrincipalFromContext(c)
+		trace, err := h.chatFeedback.ChatFeedbackReference(c, principal, input.SessionID, input.MessageID)
+		if err != nil {
+			writeAdvancedError(c, err)
+			return
+		}
+		identity := sha256.Sum256([]byte(principal.UserID + "\x00" + input.SessionID + "\x00" + input.MessageID))
+		owner := sha256.Sum256([]byte(principal.UserID))
+		sample.ID, sample.TraceRef, sample.ScopeHash = "chat-feedback:"+hex.EncodeToString(identity[:]), trace, "sha256:"+hex.EncodeToString(owner[:])
+		sample.RedactedInput, sample.RedactedOutput, sample.DatasetRef, sample.LicenseRef = "", "", "", "private-reference-only"
+	} else if strings.HasPrefix(sample.ID, "chat-feedback:") {
+		writeAdvancedError(c, apperrors.ErrAccessDenied)
+		return
 	}
 	if err := h.evaluation.PutFeedback(c, sample); err != nil {
 		writeAdvancedError(c, err)
@@ -416,7 +461,8 @@ func (h *AIAdvancedHandler) listMemory(c *gin.Context) {
 	if ownerID == "" {
 		ownerID = principal.UserID
 	}
-	if ownerType == "user" && ownerID != principal.UserID && !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIMemoryManage, "update")) {
+	if ownerType != "user" || ownerID != principal.UserID {
+		apiresponse.Error(c, http.StatusForbidden, "forbidden", "only your own personal memory is supported")
 		return
 	}
 	items, err := h.memory.ListRecords(c, ownerType, ownerID)
@@ -436,7 +482,7 @@ func (h *AIAdvancedHandler) putMemory(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if input.Record.OwnerType == "user" && input.Record.OwnerID != principal.UserID {
+	if input.Record.OwnerType != "user" || input.Record.OwnerID != principal.UserID {
 		apiresponse.Error(c, http.StatusForbidden, "forbidden", "cannot write another user's memory")
 		return
 	}
@@ -458,7 +504,7 @@ func (h *AIAdvancedHandler) deleteMemory(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if item.OwnerType == "user" && item.OwnerID != principal.UserID {
+	if item.OwnerType != "user" || item.OwnerID != principal.UserID {
 		apiresponse.Error(c, http.StatusForbidden, "forbidden", "cannot delete another user's memory")
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	apprelease "github.com/opensoha/soha/internal/application/release"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
@@ -41,6 +42,9 @@ func (r *DirectRuntime) UpdateDeploymentImage(ctx context.Context, clusterID, na
 	deployment, err := bundle.Typed.AppsV1().Deployments(namespace).Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
 		return "", "", err
+	}
+	if err := contractruntime.ValidateDirectManifestOwner(deployment); err != nil {
+		return "", "", fmt.Errorf("%w: %v", apperrors.ErrConflict, err)
 	}
 	resolvedContainer, previousImage, err := mutateDeploymentImage(deployment, containerName, image)
 	if err != nil {

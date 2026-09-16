@@ -99,6 +99,7 @@ WITH scoped AS (
     SELECT producer_id, event_type, occurred_at, sequence, payload
     FROM public.network_ingest_events
     WHERE occurred_at >= ? AND occurred_at < ? AND (? = '' OR producer_id = ?)
+      AND event_type NOT LIKE 'vpn.%'
 ), latest_proxy AS (
     SELECT DISTINCT ON (producer_id)
         (payload ->> 'activeConnections')::bigint AS active_connections

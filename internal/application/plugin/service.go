@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
+
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -21,7 +23,6 @@ import (
 )
 
 const (
-	currentSohaVersion  = "0.1.0"
 	statusInstalled     = "installed"
 	statusPendingConfig = "pending_config"
 	statusEnabled       = "enabled"
@@ -29,6 +30,10 @@ const (
 	statusFailed        = "failed"
 	statusDeprecated    = "deprecated"
 )
+
+// currentSohaVersion is injected by the build/release linker flags.
+// Unversioned direct go builds retain the original compatibility baseline.
+var currentSohaVersion = "0.1.0"
 
 var supportedPluginTypes = []string{
 	"skill",
@@ -302,7 +307,7 @@ func (s *Service) Enable(ctx context.Context, principal domainidentity.Principal
 		return domainplugin.InstalledPlugin{}, err
 	}
 	now := time.Now().UTC()
-	if manifestConfigReady(item.Manifest, item.ConfiguredSecretRefs) {
+	if manifestConfigReady(item.Manifest, item.ConfiguredSecretRefs, item.Metadata) {
 		item.Status = statusEnabled
 		item.EnabledAt = &now
 		item.DisabledAt = nil
@@ -319,7 +324,7 @@ func (s *Service) Enable(ctx context.Context, principal domainidentity.Principal
 			item.Metadata = map[string]any{}
 		}
 		item.Metadata["configured"] = false
-		item.Metadata["reconcileError"] = "required secret refs are missing"
+		item.Metadata["reconcileError"] = "required plugin configuration is missing or invalid"
 	}
 	item.UpdatedAt = now
 	item, err = s.repo.UpsertInstalled(ctx, item)
@@ -402,11 +407,11 @@ func (s *Service) Upgrade(ctx context.Context, principal domainidentity.Principa
 	current.Metadata["permissionModel"] = "requested-only"
 	current.Metadata["sourceId"] = resolved.SourceID
 	current.Metadata["marketplaceUrl"] = resolved.MarketplaceURL
-	current.Metadata["configured"] = manifestConfigReady(manifest, current.ConfiguredSecretRefs)
-	if current.Status == statusEnabled && !manifestConfigReady(manifest, current.ConfiguredSecretRefs) {
+	current.Metadata["configured"] = manifestConfigReady(manifest, current.ConfiguredSecretRefs, current.Metadata)
+	if current.Status == statusEnabled && !manifestConfigReady(manifest, current.ConfiguredSecretRefs, current.Metadata) {
 		current.Status = statusPendingConfig
 		current.EnabledAt = nil
-		current.Metadata["reconcileError"] = "required secret refs are missing"
+		current.Metadata["reconcileError"] = "required plugin configuration is missing or invalid"
 	}
 	item, err := s.repo.UpsertInstalled(ctx, current)
 	if err != nil {
@@ -467,7 +472,7 @@ func (s *Service) Configure(ctx context.Context, principal domainidentity.Princi
 	now := time.Now().UTC()
 	if input.Enabled != nil {
 		if *input.Enabled {
-			if manifestConfigReady(item.Manifest, item.ConfiguredSecretRefs) {
+			if manifestConfigReady(item.Manifest, item.ConfiguredSecretRefs, item.Metadata) {
 				item.Status = statusEnabled
 				item.EnabledAt = &now
 				item.DisabledAt = nil
@@ -484,7 +489,7 @@ func (s *Service) Configure(ctx context.Context, principal domainidentity.Princi
 					item.Metadata = map[string]any{}
 				}
 				item.Metadata["configured"] = false
-				item.Metadata["reconcileError"] = "required secret refs are missing"
+				item.Metadata["reconcileError"] = "required plugin configuration is missing or invalid"
 			}
 		} else {
 			item.Status = statusDisabled
@@ -493,7 +498,12 @@ func (s *Service) Configure(ctx context.Context, principal domainidentity.Princi
 		}
 	}
 	if item.Metadata != nil {
-		item.Metadata["configured"] = manifestConfigReady(item.Manifest, item.ConfiguredSecretRefs)
+		item.Metadata["configured"] = manifestConfigReady(item.Manifest, item.ConfiguredSecretRefs, item.Metadata)
+		if item.Status == statusEnabled && item.Metadata["configured"] == false {
+			item.Status = statusPendingConfig
+			item.EnabledAt = nil
+			item.Metadata["reconcileError"] = "required plugin configuration is missing or invalid"
+		}
 	}
 	item.UpdatedAt = now
 	item, err = s.repo.UpsertInstalled(ctx, item)
@@ -672,7 +682,7 @@ func (s *Service) reconcileItem(item domainplugin.InstalledPlugin) {
 		s.extensions.UnregisterPlugin(item.ID)
 		return
 	}
-	s.extensions.RegisterPlugin(item, manifestConfigReady(item.Manifest, item.ConfiguredSecretRefs))
+	s.extensions.RegisterPlugin(item, manifestConfigReady(item.Manifest, item.ConfiguredSecretRefs, item.Metadata))
 }
 
 func (s *Service) resolveInstallManifest(ctx context.Context, input domainplugin.PluginInstallRequest) (ResolvedManifest, error) {
@@ -791,7 +801,7 @@ func validateManifest(manifest domainplugin.PluginManifest) error {
 	} else if manifest.CompanionPack != nil {
 		return fmt.Errorf("%w: companionPack is only valid for companion-pack plugins", apperrors.ErrInvalidArgument)
 	}
-	if err := validateCompatibility(manifest.Compatibility); err != nil {
+	if err := validateCompatibility(manifest.Compatibility, currentSohaVersion); err != nil {
 		return err
 	}
 	if err := validateRuntime(manifest.Runtime); err != nil {
@@ -850,21 +860,17 @@ func integrityStatus(manifest domainplugin.PluginManifest) string {
 	return firstNonEmpty(manifest.Integrity.Status, "declared")
 }
 
-func validateCompatibility(compatibility *domainplugin.PluginCompatibility) error {
+func validateCompatibility(compatibility *domainplugin.PluginCompatibility, version string) error {
 	if compatibility == nil || strings.TrimSpace(compatibility.Soha) == "" {
 		return nil
 	}
-	fields := strings.Fields(compatibility.Soha)
-	if len(fields) == 0 {
-		fields = []string{compatibility.Soha}
+	constraint, err := semver.NewConstraint(compatibility.Soha)
+	if err != nil {
+		return fmt.Errorf("%w: invalid plugin soha version constraint", apperrors.ErrInvalidArgument)
 	}
-	for _, field := range fields {
-		if strings.HasPrefix(field, ">=") {
-			minVersion := strings.TrimPrefix(field, ">=")
-			if compareSemver(currentSohaVersion, minVersion) < 0 {
-				return fmt.Errorf("%w: plugin requires soha %s", apperrors.ErrInvalidArgument, compatibility.Soha)
-			}
-		}
+	current, err := semver.NewVersion(version)
+	if err != nil || !constraint.Check(current) {
+		return fmt.Errorf("%w: plugin requires soha %s (running %s)", apperrors.ErrInvalidArgument, compatibility.Soha, version)
 	}
 	return nil
 }
@@ -929,7 +935,14 @@ func validateExtensionPointIDs(manifest domainplugin.PluginManifest) error {
 	return nil
 }
 
-func manifestConfigReady(manifest domainplugin.PluginManifest, secretRefs map[string]string) bool {
+func manifestConfigReady(manifest domainplugin.PluginManifest, secretRefs map[string]string, metadata ...map[string]any) bool {
+	var configuration map[string]any
+	if len(metadata) > 0 {
+		configuration = metadata[0]
+	}
+	if !agentProviderEndpointsReady(manifest, configuration) {
+		return false
+	}
 	if manifest.Secrets == nil {
 		return true
 	}
@@ -969,54 +982,6 @@ func matchesMarketplaceFilter(item domainplugin.MarketplacePlugin, filter domain
 		return false
 	}
 	return true
-}
-
-func compareSemver(left, right string) int {
-	leftParts := parseSemver(left)
-	rightParts := parseSemver(right)
-	for i := 0; i < len(leftParts); i++ {
-		if leftParts[i] < rightParts[i] {
-			return -1
-		}
-		if leftParts[i] > rightParts[i] {
-			return 1
-		}
-	}
-	return 0
-}
-
-func parseSemver(value string) [3]int {
-	var out [3]int
-	value = strings.Trim(strings.TrimSpace(value), "v")
-	parts := strings.Split(value, ".")
-	for i := range out {
-		if i >= len(parts) {
-			break
-		}
-		part := parts[i]
-		for j, r := range part {
-			if r < '0' || r > '9' {
-				part = part[:j]
-				break
-			}
-		}
-		var parsed int
-		for _, r := range part {
-			if r < '0' || r > '9' {
-				break
-			}
-			parsed = parsed*10 + int(r-'0')
-		}
-		switch i {
-		case 0:
-			out[0] = parsed
-		case 1:
-			out[1] = parsed
-		case 2:
-			out[2] = parsed
-		}
-	}
-	return out
 }
 
 func normalizeStringMap(values map[string]string) map[string]string {

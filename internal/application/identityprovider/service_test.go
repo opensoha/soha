@@ -22,6 +22,18 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func TestProtocolAuditCorrelatesApplicationAndPlatformSession(t *testing.T) {
+	audit := &oidcSecretAuditRecorder{}
+	service := &Service{audit: audit}
+	service.recordAudit(context.Background(), domainidentity.Principal{UserID: "user"}, "oidc.token", "success",
+		domainprovider.Provider{ID: "provider", ApplicationID: "application", Type: "oidc"},
+		domainprovider.OIDCClient{ClientID: "client"}, map[string]any{"sessionId": "oidc-session", "platformSessionId": "platform-session"})
+	metadata := audit.entries[0].Metadata
+	if metadata["applicationId"] != "application" || metadata["providerId"] != "provider" || metadata["platformSessionId"] != "platform-session" || metadata["sessionId"] != "oidc-session" {
+		t.Fatalf("protocol audit correlation = %#v", metadata)
+	}
+}
+
 func TestServiceOIDCAuthorizationCodeFlow(t *testing.T) {
 	ctx := context.Background()
 	repo := newMemoryRepo(t)
@@ -1281,7 +1293,8 @@ func TestSAMLSSORejectsReplayedAuthnRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := NewWithEncryptionKeys(repo, &memoryUsers{}, nil, nil, encryptionKeys)
+	audit := &oidcSecretAuditRecorder{}
+	service := NewWithEncryptionKeys(repo, &memoryUsers{}, nil, audit, encryptionKeys)
 	key, err := service.generateSAMLSigningKey(repo.provider.ID, now)
 	if err != nil {
 		t.Fatal(err)
@@ -1297,6 +1310,9 @@ func TestSAMLSSORejectsReplayedAuthnRequest(t *testing.T) {
 	}
 	if _, err := service.SAMLSSO(ctx, "https://soha.example", repo.provider.ID, "session-1", principal, input); !errors.Is(err, apperrors.ErrUnauthorized) {
 		t.Fatalf("replayed SAML SSO error = %v, want unauthorized", err)
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Metadata["applicationId"] != repo.app.ID || audit.entries[0].Metadata["sessionId"] != "session-1" || audit.entries[0].Metadata["platformSessionId"] != "session-1" {
+		t.Fatalf("SAML audit lost session association or recorded replay as success: %#v", audit.entries)
 	}
 }
 
@@ -2044,6 +2060,7 @@ func (r *memoryRepo) allProviders() []domainprovider.Provider {
 func (r *memoryRepo) ListOutposts(context.Context, domainprovider.OutpostFilter) ([]domainprovider.Outpost, error) {
 	items := make([]domainprovider.Outpost, 0, len(r.outposts))
 	for _, item := range r.outposts {
+		item.ConfigurationVersion = r.outpostVersions[item.ID]
 		items = append(items, item)
 	}
 	return items, nil
@@ -2054,6 +2071,7 @@ func (r *memoryRepo) GetOutpost(_ context.Context, outpostID string) (domainprov
 	if !ok {
 		return domainprovider.Outpost{}, apperrors.ErrNotFound
 	}
+	item.ConfigurationVersion = r.outpostVersions[item.ID]
 	return item, nil
 }
 
@@ -2063,11 +2081,77 @@ func (r *memoryRepo) CreateOutpost(_ context.Context, item domainprovider.Outpos
 }
 
 func (r *memoryRepo) UpdateOutpost(_ context.Context, item domainprovider.Outpost) (domainprovider.Outpost, error) {
-	if _, ok := r.outposts[item.ID]; !ok {
+	current, ok := r.outposts[item.ID]
+	if !ok {
 		return domainprovider.Outpost{}, apperrors.ErrNotFound
 	}
-	r.outposts[item.ID] = item
-	return item, nil
+	current.Name, current.Mode = item.Name, item.Mode
+	current.Endpoint, current.ForwardAuthURL = item.Endpoint, item.ForwardAuthURL
+	current.Metadata, current.UpdatedBy, current.UpdatedAt = item.Metadata, item.UpdatedBy, item.UpdatedAt
+	r.outposts[item.ID] = current
+	return r.GetOutpost(context.Background(), item.ID)
+}
+
+func (r *memoryRepo) RecordOutpostClaim(ctx context.Context, item domainprovider.Outpost) (domainprovider.Outpost, error) {
+	current, err := r.GetOutpost(ctx, item.ID)
+	if err != nil {
+		return domainprovider.Outpost{}, err
+	}
+	if current.TokenHash != item.TokenHash {
+		return domainprovider.Outpost{}, apperrors.ErrAccessDenied
+	}
+	current.Status = domainprovider.OutpostStatusOnline
+	current.LastSeenAt, current.UpdatedAt = item.LastSeenAt, item.UpdatedAt
+	current.ClaimedAgentID, current.ProtocolVersion = item.ClaimedAgentID, item.ProtocolVersion
+	if item.Version != "" {
+		current.Version = item.Version
+	}
+	if item.RuntimeVersion != "" {
+		current.RuntimeVersion = item.RuntimeVersion
+	}
+	if item.Metadata != nil {
+		current.Metadata = item.Metadata
+	}
+	r.outposts[item.ID] = current
+	return current, nil
+}
+
+func (r *memoryRepo) RecordOutpostHeartbeat(ctx context.Context, item domainprovider.Outpost) (domainprovider.Outpost, error) {
+	current, err := r.GetOutpost(ctx, item.ID)
+	if err != nil {
+		return domainprovider.Outpost{}, err
+	}
+	if current.TokenHash != item.TokenHash {
+		return domainprovider.Outpost{}, apperrors.ErrAccessDenied
+	}
+	current.Status, current.RuntimeStatus, current.RuntimeReason = item.Status, item.RuntimeStatus, item.RuntimeReason
+	current.LastSeenAt, current.LastHeartbeatAt, current.UpdatedAt = item.LastSeenAt, item.LastHeartbeatAt, item.UpdatedAt
+	current.AppliedConfigurationVersion, current.ConfigurationExpiresAt = item.AppliedConfigurationVersion, item.ConfigurationExpiresAt
+	if item.Version != "" {
+		current.Version = item.Version
+	}
+	if item.RuntimeVersion != "" {
+		current.RuntimeVersion = item.RuntimeVersion
+	}
+	if item.Metadata != nil {
+		current.Metadata = item.Metadata
+	}
+	r.outposts[item.ID] = current
+	return current, nil
+}
+
+func (r *memoryRepo) RotateOutpostToken(ctx context.Context, item domainprovider.Outpost) (domainprovider.Outpost, error) {
+	current, err := r.GetOutpost(ctx, item.ID)
+	if err != nil {
+		return domainprovider.Outpost{}, err
+	}
+	current.TokenHash, current.UpdatedBy, current.UpdatedAt = item.TokenHash, item.UpdatedBy, item.UpdatedAt
+	current.Status, current.RuntimeStatus, current.RuntimeReason = domainprovider.OutpostStatusOffline, "unavailable", ""
+	current.ClaimedAgentID, current.ProtocolVersion, current.RuntimeVersion = "", "", ""
+	current.LastHeartbeatAt, current.ConfigurationExpiresAt = nil, nil
+	current.AppliedConfigurationVersion = 0
+	r.outposts[item.ID] = current
+	return current, nil
 }
 
 func (r *memoryRepo) DeleteOutpost(_ context.Context, outpostID string) error {

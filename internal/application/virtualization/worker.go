@@ -2,6 +2,7 @@ package virtualization
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
@@ -29,6 +31,7 @@ func (s *Service) runWorker(ctx context.Context) {
 
 func (s *Service) runOnce(ctx context.Context) {
 	s.sweepTimedOutTasks(ctx)
+	s.reconcileCanceledCreations(ctx)
 	s.updateWorkerQueueDepth(ctx)
 	for {
 		if ctx.Err() != nil {
@@ -46,6 +49,7 @@ func (s *Service) executeTask(ctx context.Context, task domainvirtualization.Tas
 	if taskTerminal(task.Status) || task.Status != TaskStatusRunning {
 		return
 	}
+	defer s.finishWorkerBootstrap(ctx, task)
 	startedAt := time.Now()
 	s.recordWorkerStart(task)
 	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "task started"})
@@ -54,6 +58,11 @@ func (s *Service) executeTask(ctx context.Context, task domainvirtualization.Tas
 	defer func() {
 		s.recordWorkerFinish(task, startedAt, outcome, taskErr)
 	}()
+	if err := s.authorizeQueuedVMTask(ctx, task); err != nil {
+		outcome, taskErr = runtimeobs.OutcomeFailed, err
+		s.failTask(ctx, task, err)
+		return
+	}
 	switch task.TaskKind {
 	case TaskKindAssetSync:
 		outcome, taskErr = s.executeAssetSync(ctx, task)
@@ -157,8 +166,17 @@ func (s *Service) executeAssetSync(ctx context.Context, task domainvirtualizatio
 }
 
 func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization.Task) (string, error) {
+	deadline := time.Now().Add(time.Duration(effectiveTimeoutSeconds(task)) * time.Second)
+	if task.StartedAt != nil {
+		deadline = task.StartedAt.Add(time.Duration(effectiveTimeoutSeconds(task)) * time.Second)
+	}
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 	if s.taskCanceled(ctx, task.ID) {
 		return runtimeobs.OutcomeCanceled, nil
+	}
+	if isWorkerCreation(task) && task.VMID != "" && payloadString(task.Result, "providerEffect") == "created" {
+		return s.executeWorkerReadiness(ctx, task)
 	}
 	connection, err := s.connections.GetConnection(ctx, task.ConnectionID)
 	if err != nil {
@@ -170,32 +188,124 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 		s.failTask(ctx, task, err)
 		return runtimeobs.OutcomeFailed, err
 	}
-	input := adapterCreateVMInput(task.Payload)
-	vm, err := adapter.CreateVM(ctx, adapterConnection, input)
+	if err := checkVMCreateConnection(task, connection); err != nil {
+		s.failTask(ctx, task, err)
+		return runtimeobs.OutcomeFailed, err
+	}
+	vm, preparedTask, err := s.createOrObserveVM(ctx, task, connection, adapterConnection, adapter)
+	if preparedTask.ID != "" {
+		task = preparedTask
+	}
 	if err != nil {
 		s.failTask(ctx, task, err)
 		return runtimeobs.OutcomeFailed, err
 	}
-	if s.taskCanceled(ctx, task.ID) {
-		return runtimeobs.OutcomeCanceled, nil
-	}
+	persistCtx, persistCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer persistCancel()
 	vmRecord, ipAddresses, endpoint := createdVMRecord(connection, task.Payload, vm)
-	stored, err := s.vms.UpsertVM(ctx, vmRecord)
+	stored, err := s.vms.UpsertVM(persistCtx, vmRecord)
 	if err != nil {
 		s.failTask(ctx, task, err)
 		return runtimeobs.OutcomeFailed, err
 	}
 	populateVMCreateTaskResult(&task, stored, vm, ipAddresses, endpoint)
-	s.completeTask(ctx, task)
+	if err := s.finishVMCreate(persistCtx, task); err != nil {
+		return runtimeobs.OutcomeFailed, err
+	}
+	if isWorkerCreation(task) {
+		return s.executeWorkerReadiness(ctx, task)
+	}
 	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine created"})
 	s.recordOperation(ctx, s.workerPrincipal, "virtualization.worker.vm_create", stored.ID, stored.Name, TaskStatusSucceeded, "virtual machine creation completed", map[string]any{"taskId": task.ID})
 	return runtimeobs.OutcomeSucceeded, nil
 }
 
+func vmCreateConnectionIdentity(connection domainvirtualization.Connection) string {
+	encoded, _ := json.Marshal([]any{connection.ID, connection.Provider, connection.Endpoint, connection.KubernetesClusterID, connection.DefaultNamespace, connection.Config})
+	return fmt.Sprintf("%x", sha256.Sum256(encoded))
+}
+
+func checkVMCreateConnection(task domainvirtualization.Task, connection domainvirtualization.Connection) error {
+	if !connection.Enabled {
+		return fmt.Errorf("%w: virtualization connection is disabled", apperrors.ErrConflict)
+	}
+	if frozen := payloadString(task.Payload, "providerConnectionIdentity"); frozen != "" && frozen != vmCreateConnectionIdentity(connection) {
+		return fmt.Errorf("%w: connection changed after provider identity was frozen", apperrors.ErrConflict)
+	}
+	if task.AttemptCount > 1 && !boolValue(task.Payload, "providerIdentityPrepared") && vmCreateMayHaveDispatched(task) {
+		return fmt.Errorf("%w: legacy creation has no frozen provider identity; inspect its provider result before creating another VM", apperrors.ErrConflict)
+	}
+	return nil
+}
+
+func vmCreateMayHaveDispatched(task domainvirtualization.Task) bool {
+	return task.TaskKind == TaskKindVMCreate && (boolValue(task.Payload, "providerDispatchStarted") || payloadInt(task.Payload, "creationVersion") < 2 && (task.AttemptCount > 0 || task.StartedAt != nil || task.ClaimedByWorkerID != ""))
+}
+
+func (s *Service) checkpointVMCreate(ctx context.Context, task domainvirtualization.Task, input domainvirtualization.AdapterCreateVMInput, connectionIdentity string) (domainvirtualization.Task, error) {
+	current, err := s.tasks.GetTask(ctx, task.ID)
+	if err != nil {
+		return task, err
+	}
+	if current.Status != TaskStatusRunning || current.ClaimedByWorkerID != task.ClaimedByWorkerID || current.AttemptCount != task.AttemptCount {
+		return task, apperrors.ErrConflict
+	}
+	current.Payload = cloneMap(current.Payload)
+	current.Payload["node"], current.Payload["namespace"] = input.Node, input.Namespace
+	current.Payload["providerParams"] = input.ProviderParams
+	current.Payload["providerIdentityPrepared"] = true
+	current.Payload["providerConnectionIdentity"] = connectionIdentity
+	current.Payload["providerDispatchStarted"] = true
+	current.Result = cloneMap(current.Result)
+	delete(current.Result, "providerAttemptFinished")
+	delete(current.Result, "cancellationConfirmed")
+	if deadline, ok := ctx.Deadline(); ok {
+		current.Payload["providerAttemptDeadline"] = deadline.UTC().Format(time.RFC3339Nano)
+	}
+	return s.tasks.UpdateTask(ctx, current)
+}
+
+func (s *Service) finishVMCreate(ctx context.Context, task domainvirtualization.Task) error {
+	// A provider may finish after cancellation or a timeout. Keep its resource
+	// receipt, but never let an older attempt overwrite a newer worker's result.
+	current, err := s.tasks.GetTask(ctx, task.ID)
+	if err != nil {
+		return err
+	}
+	if current.ClaimedByWorkerID != task.ClaimedByWorkerID || current.AttemptCount != task.AttemptCount {
+		return apperrors.ErrConflict
+	}
+	if current.Status != TaskStatusRunning && current.Status != TaskStatusCanceling && current.Status != TaskStatusTimeout {
+		return apperrors.ErrConflict
+	}
+	current.VMID = task.VMID
+	current.Result = mergeMaps(current.Result, task.Result)
+	current.Result["providerEffect"] = "created"
+	current.Result["providerAttemptFinished"] = true
+	wasCanceling := current.Status == TaskStatusCanceling
+	current.Status = TaskStatusSucceeded
+	if wasCanceling {
+		current.Status = TaskStatusCanceled
+		current.Result["cancellationConfirmed"] = true
+	}
+	now := time.Now().UTC()
+	current.FinishedAt = &now
+	if isWorkerCreation(current) {
+		current.Status, current.FinishedAt = TaskStatusRunning, nil
+		if wasCanceling {
+			current.Status = TaskStatusCanceling
+		}
+		delete(current.Result, "cancellationConfirmed")
+	}
+	_, err = s.tasks.UpdateTask(context.WithoutCancel(ctx), current)
+	return err
+}
+
 func adapterCreateVMInput(payload map[string]any) domainvirtualization.AdapterCreateVMInput {
 	sourceRef := firstNonEmpty(payloadString(payload, "sourceId"), payloadString(payload, "imageId"), payloadString(payload, "bootImageId"))
 	input := domainvirtualization.AdapterCreateVMInput{
-		Name: payloadString(payload, "name"), Architecture: payloadString(payload, "architecture"), Namespace: payloadString(payload, "namespace"), Node: payloadString(payload, "node"),
+		CapacityReserved: boolValue(payload, "capacityReserved"),
+		Name:             payloadString(payload, "name"), Architecture: payloadString(payload, "architecture"), Namespace: payloadString(payload, "namespace"), Node: payloadString(payload, "node"),
 		CPU: payloadInt(payload, "cpu"), Memory: memoryString(payloadInt(payload, "memoryMiB")), BootImage: sourceRef, DiskSize: diskString(payloadInt(payload, "diskGiB")),
 		Network: payloadString(payload, "network"), CloudInit: payloadString(payload, "cloudInit"), StartAfterCreate: boolValue(payload, "startAfterCreate"),
 		TemplateID: payloadString(payload, "templateId"), SourceMode: payloadString(payload, "sourceMode"), SourceRef: sourceRef, ProviderParams: mapValue(payload, "providerParams"),
@@ -402,9 +512,17 @@ func (s *Service) recordWorkerFinish(task domainvirtualization.Task, startedAt t
 }
 
 func (s *Service) failTask(ctx context.Context, task domainvirtualization.Task, err error) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
 	current, getErr := s.tasks.GetTask(ctx, task.ID)
 	if getErr == nil && current.Status == TaskStatusCanceled {
 		return
+	}
+	if getErr == nil && (current.ClaimedByWorkerID != task.ClaimedByWorkerID || current.AttemptCount != task.AttemptCount) {
+		return
+	}
+	if getErr == nil {
+		task = current
 	}
 	message := "task failed"
 	if err != nil {
@@ -413,7 +531,8 @@ func (s *Service) failTask(ctx context.Context, task domainvirtualization.Task, 
 	now := time.Now().UTC()
 	task.Status = TaskStatusFailed
 	task.FinishedAt = &now
-	task.Result = map[string]any{"error": message}
+	task.Result = mergeMaps(task.Result, map[string]any{"error": message})
+	applyVMCreationFailure(&task, current)
 	if details, ok := domainvirtualization.AdapterErrorDetails(err); ok {
 		task.Result["failureReason"] = details.Reason
 		task.Result["reason"] = details.Reason
@@ -436,6 +555,25 @@ func (s *Service) failTask(ctx context.Context, task domainvirtualization.Task, 
 	s.recordOperation(ctx, s.workerPrincipal, "virtualization.worker."+task.TaskKind, task.ConnectionID, task.TaskKind, result, "virtualization worker task failed", map[string]any{"taskId": task.ID, "error": message})
 }
 
+func applyVMCreationFailure(task *domainvirtualization.Task, previous domainvirtualization.Task) {
+	if task.TaskKind != TaskKindVMCreate {
+		return
+	}
+	if previous.Status == TaskStatusCanceling {
+		task.Status, task.FinishedAt = TaskStatusCanceling, nil
+	}
+	if !boolValue(task.Payload, "providerDispatchStarted") {
+		if payloadInt(task.Payload, "creationVersion") == 2 {
+			task.Result["providerEffect"] = "not_started"
+		}
+		return
+	}
+	if payloadString(task.Result, "providerEffect") != "created" {
+		task.Result["providerEffect"] = "unknown"
+	}
+	task.Result["providerAttemptFinished"] = true
+}
+
 func (s *Service) sweepTimedOutTasks(ctx context.Context) {
 	tasks, err := s.taskQueue.ListTimedOutTasks(ctx, time.Now().UTC(), 50)
 	if err != nil {
@@ -445,11 +583,11 @@ func (s *Service) sweepTimedOutTasks(ctx context.Context) {
 		now := time.Now().UTC()
 		task.Status = TaskStatusTimeout
 		task.FinishedAt = &now
-		task.Result = map[string]any{
+		task.Result = mergeMaps(task.Result, map[string]any{
 			"error":          fmt.Sprintf("virtualization task timed out after %d seconds", effectiveTimeoutSeconds(task)),
 			"timeoutSeconds": effectiveTimeoutSeconds(task),
 			"timedOutAt":     now.Format(time.RFC3339),
-		}
+		})
 		_, _ = s.tasks.UpdateTask(ctx, task)
 		_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "warn", Message: fmt.Sprintf("task timed out after %d seconds", effectiveTimeoutSeconds(task))})
 		s.recordOperation(ctx, s.workerPrincipal, "virtualization.worker.timeout", task.ID, task.TaskKind, TaskStatusTimeout, "virtualization worker task timed out", map[string]any{"taskId": task.ID})
@@ -461,7 +599,7 @@ func (s *Service) taskCanceled(ctx context.Context, taskID string) bool {
 	if err != nil {
 		return false
 	}
-	return task.Status == TaskStatusCanceled
+	return task.Status == TaskStatusCanceled || task.Status == TaskStatusCanceling
 }
 
 func (s *Service) markConnectionAssetsStale(ctx context.Context, connection domainvirtualization.Connection, seenBefore time.Time) {
@@ -733,4 +871,21 @@ func powerStateAfterAction(action domainvirtualization.PowerAction, fallback str
 	default:
 		return fallback
 	}
+}
+
+func (s *Service) authorizeQueuedVMTask(ctx context.Context, task domainvirtualization.Task) error {
+	if task.TaskKind != TaskKindVMCreate && task.TaskKind != TaskKindVMAction {
+		return nil
+	}
+	if s.executionPrincipals == nil {
+		return fmt.Errorf("%w: VM execution identity resolver is unavailable", apperrors.ErrAccessDenied)
+	}
+	principal, err := s.executionPrincipals.CurrentExecutionPrincipal(ctx, firstNonEmpty(payloadString(task.Payload, "executionActorId"), task.RequestedBy), payloadString(task.Payload, "executionTokenId"))
+	if err != nil {
+		return fmt.Errorf("%w: VM execution identity is no longer authorized", apperrors.ErrAccessDenied)
+	}
+	if err := s.authorizeVMRetry(ctx, principal, task); err != nil {
+		return err
+	}
+	return s.checkQueuedGatewayAuthorization(ctx, principal, task)
 }

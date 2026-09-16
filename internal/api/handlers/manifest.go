@@ -19,6 +19,7 @@ type ManifestService interface {
 	Update(context.Context, domainidentity.Principal, string, domainmanifest.Input) (domainmanifest.Package, error)
 	Delete(context.Context, domainidentity.Principal, string) error
 	Publish(context.Context, domainidentity.Principal, string, string) (domainmanifest.Package, error)
+	SaveRevision(context.Context, domainidentity.Principal, string, domainmanifest.RevisionInput) (domainmanifest.Package, error)
 	ListRevisions(context.Context, domainidentity.Principal, string) ([]domainmanifest.Revision, error)
 }
 
@@ -108,4 +109,18 @@ func (h *ManifestHandler) ListRevisions(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *ManifestHandler) SaveRevision(c *gin.Context) {
+	var input domainmanifest.RevisionInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid configuration revision payload")
+		return
+	}
+	item, err := h.service.SaveRevision(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("manifestPackageID"), input)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }

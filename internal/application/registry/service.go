@@ -173,9 +173,15 @@ func scrubConnections(items []domainregistry.Connection) []domainregistry.Connec
 func scrubConnection(item domainregistry.Connection) domainregistry.Connection {
 	secret := strings.TrimSpace(item.Secret)
 	item.Secret = ""
+	metadata := item.Metadata
 	item.Metadata = map[string]any{
 		"secretConfigured": secret != "",
 		"secretStorage":    string(secretcrypto.SecretStorageLabel(secret)),
+	}
+	for _, key := range []string{"allowedCIDRs", "caCertificate", "authEndpoint"} {
+		if value, ok := metadata[key].(string); ok {
+			item.Metadata[key] = value
+		}
 	}
 	return item
 }

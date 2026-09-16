@@ -300,6 +300,9 @@ func validateGatewayInput(input domainnetworkaccess.GatewayInput) error {
 	if err := validateIPv4CIDRs("advertisedCidrs", input.AdvertisedCIDRs, true); err != nil {
 		return err
 	}
+	if err := validateGatewaySelection(input); err != nil {
+		return err
+	}
 	return validateGatewayDNS(input.DNSServers)
 }
 

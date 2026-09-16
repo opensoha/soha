@@ -141,7 +141,7 @@ func NewProviderControlPlane(reconciler *ProviderReconciler, permissions Provide
 		}
 	}
 	if service.observer != nil {
-		service.observer.ApplyProviderCatalog(cloneProviderCatalog(service.catalog))
+		service.publishWorkbenchCatalogLocked()
 	}
 	service.started = true
 	return service, nil
@@ -197,6 +197,7 @@ func (s *ProviderControlPlane) Acknowledge(input RegistryAcknowledgement) (Regis
 	}
 	s.acks[input.RunnerID] = input
 	s.pruneAcknowledgementsLocked()
+	s.publishWorkbenchCatalogLocked()
 	return cloneRegistryAcknowledgement(input), nil
 }
 
@@ -316,7 +317,7 @@ func (s *ProviderControlPlane) reconcileLocked() error {
 	}
 	s.catalog = cloneProviderCatalog(next)
 	if changed && s.observer != nil && s.started {
-		s.observer.ApplyProviderCatalog(cloneProviderCatalog(next))
+		s.publishWorkbenchCatalogLocked()
 	}
 	return nil
 }

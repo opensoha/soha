@@ -28,6 +28,9 @@ func (s *Service) loadDAGApprovalState(ctx context.Context, principal domainiden
 	if err != nil {
 		return dagApprovalState{}, err
 	}
+	if run.Scope != "" && run.Scope != "application" {
+		return dagApprovalState{}, fmt.Errorf("%w: approve the delivery target and its final plan", apperrors.ErrInvalidArgument)
+	}
 	app, err := s.apps.Get(ctx, run.ApplicationID)
 	if err != nil {
 		return dagApprovalState{}, err

@@ -2,6 +2,7 @@ package memory
 
 import (
 	"context"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"slices"
 	"sort"
 	"sync"
@@ -21,6 +22,9 @@ func NewMemoryStore() *MemoryStore {
 func (s *MemoryStore) PutRecord(_ context.Context, record Record) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if existing, ok := s.records[record.ID]; ok && (existing.OwnerType != record.OwnerType || existing.OwnerID != record.OwnerID) {
+		return apperrors.ErrAccessDenied
+	}
 	s.records[record.ID] = cloneRecord(record)
 	return nil
 }

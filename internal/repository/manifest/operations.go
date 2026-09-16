@@ -10,14 +10,38 @@ import (
 
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	repodelivery "github.com/opensoha/soha/internal/repository/delivery"
+	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
 )
 
 func (r *Repository) SetDesiredRevision(ctx context.Context, next domainmanifest.Deployment, expectedGeneration int64) (domainmanifest.Deployment, error) {
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	snapshot, err := json.Marshal(next.Spec.DeliverySnapshot)
+	if err != nil {
+		return domainmanifest.Deployment{}, fmt.Errorf("encode delivery snapshot: %w", err)
+	}
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if next.Spec.DeliverySnapshot != nil {
+			if err := lockBatchDeployment(ctx, tx, *next.Spec.DeliverySnapshot); err != nil {
+				return err
+			}
+		}
+		clusterID, err := lockManifestTarget(ctx, tx, next.BindingID)
+		if err != nil {
+			return err
+		}
+		if next.Spec.DeliverySnapshot != nil {
+			if err := checkManifestResourceOwners(tx, clusterID, next.BindingID, next.Spec.DeliverySnapshot.Documents, next.Spec.DeliverySnapshot.GitOpsDocuments); err != nil {
+				return err
+			}
+			if err := lockDeliverySnapshot(tx, *next.Spec.DeliverySnapshot); err != nil {
+				return err
+			}
+		}
 		var currentGeneration int64
-		err := tx.Raw(`SELECT generation FROM manifest_deployments WHERE binding_id = ? FOR UPDATE`, next.BindingID).Row().Scan(&currentGeneration)
+		err = tx.Raw(`SELECT generation FROM manifest_deployments WHERE binding_id = ? FOR UPDATE`, next.BindingID).Row().Scan(&currentGeneration)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			if expectedGeneration != 0 {
@@ -32,10 +56,10 @@ func (r *Repository) SetDesiredRevision(ctx context.Context, next domainmanifest
 			result := tx.Exec(`
 				UPDATE manifest_deployments
 				SET desired_revision = ?, desired_digest = ?, reconcile_policy = ?, drift_policy = ?,
-					deletion_policy = ?, generation = generation + 1, updated_at = ?
+					deletion_policy = ?, delivery_snapshot = ?::jsonb, generation = generation + 1, updated_at = ?
 				WHERE binding_id = ? AND generation = ?
 			`, next.Spec.DesiredRevision, next.Spec.DesiredDigest, next.Spec.ReconcilePolicy,
-				next.Spec.DriftPolicy, next.Spec.DeletionPolicy, next.UpdatedAt, next.BindingID, expectedGeneration)
+				next.Spec.DriftPolicy, next.Spec.DeletionPolicy, string(snapshot), next.UpdatedAt, next.BindingID, expectedGeneration)
 			if result.Error != nil {
 				return result.Error
 			}
@@ -51,21 +75,40 @@ func (r *Repository) SetDesiredRevision(ctx context.Context, next domainmanifest
 	})
 	if err != nil {
 		if errors.Is(err, apperrors.ErrConflict) {
-			return domainmanifest.Deployment{}, fmt.Errorf("%w: manifest deployment generation changed", apperrors.ErrConflict)
+			return domainmanifest.Deployment{}, fmt.Errorf("manifest desired revision conflict: %w", err)
 		}
 		return domainmanifest.Deployment{}, fmt.Errorf("set manifest desired revision: %w", err)
 	}
 	return r.GetDeploymentByBinding(ctx, next.BindingID)
 }
 
+func lockBatchDeployment(ctx context.Context, tx *gorm.DB, snapshot domainmanifest.DeliverySnapshot) error {
+	plan, err := repodelivery.New(tx).GetDeliveryPlan(ctx, snapshot.DeliveryPlanID)
+	node, worker := domainworkflow.NodeExecutionFrom(ctx)
+	if !worker && (errors.Is(err, apperrors.ErrNotFound) || err == nil && plan.Source != domainworkflow.ScopeDeliveryBatch) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !worker || node.Stage != "deploy" || plan.Source != domainworkflow.ScopeDeliveryBatch || plan.Status != domaindelivery.DeliveryPlanStatusConfirming || plan.Impact["workflowRunId"] != node.RunID || plan.Impact["workflowTargetId"] != node.TargetID {
+		return fmt.Errorf("%w: batch deployment requires its current delivery worker", apperrors.ErrConflict)
+	}
+	return repoworkflow.LockDeliveryNode(ctx, tx, plan.ApplicationID, plan.ApplicationEnvironmentID)
+}
+
 func insertDeployment(tx *gorm.DB, item domainmanifest.Deployment) error {
+	snapshot, err := json.Marshal(item.Spec.DeliverySnapshot)
+	if err != nil {
+		return fmt.Errorf("encode delivery snapshot: %w", err)
+	}
 	if err := tx.Exec(`
 		INSERT INTO manifest_deployments (
 			id, package_id, binding_id, generation, desired_revision, desired_digest,
-			reconcile_policy, drift_policy, deletion_policy, created_at, updated_at
-		) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
+			reconcile_policy, drift_policy, deletion_policy, delivery_snapshot, created_at, updated_at
+		) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
 	`, item.ID, item.PackageID, item.BindingID, item.Spec.DesiredRevision, item.Spec.DesiredDigest,
-		item.Spec.ReconcilePolicy, item.Spec.DriftPolicy, item.Spec.DeletionPolicy,
+		item.Spec.ReconcilePolicy, item.Spec.DriftPolicy, item.Spec.DeletionPolicy, string(snapshot),
 		item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return err
 	}
@@ -73,6 +116,33 @@ func insertDeployment(tx *gorm.DB, item domainmanifest.Deployment) error {
 		INSERT INTO manifest_deployment_status (deployment_id, observed_generation, phase)
 		VALUES (?, 0, 'pending')
 	`, item.ID).Error
+}
+
+func lockDeliverySnapshot(tx *gorm.DB, snapshot domainmanifest.DeliverySnapshot) error {
+	var id string
+	err := tx.Raw(`
+		SELECT binding.id FROM manifest_bindings binding
+		JOIN manifest_packages package ON package.id = binding.package_id
+		WHERE binding.id = ? AND binding.version = ? AND binding.enabled = TRUE
+		  AND binding.package_id = ? AND binding.application_environment_id = ?
+		  AND binding.cluster_id = ? AND binding.namespace = ?
+		  AND package.updated_at = ? AND package.archived_at IS NULL
+		FOR SHARE OF package, binding
+	`, snapshot.BindingID, snapshot.BindingVersion, snapshot.PackageID, snapshot.ApplicationEnvironmentID,
+		snapshot.ClusterID, snapshot.Namespace, snapshot.PackageUpdatedAt).Row().Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("%w: Manifest inputs changed", apperrors.ErrConflict)
+	}
+	return err
+}
+
+func (r *Repository) GetRevisionSourceCommit(ctx context.Context, packageID string, revision int) (string, error) {
+	var commit string
+	err := r.db.WithContext(ctx).Raw(`SELECT resolved_commit FROM manifest_sync_runs WHERE package_id = ? AND revision = ? AND status = 'succeeded' ORDER BY created_at DESC LIMIT 1`, packageID, revision).Row().Scan(&commit)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return commit, err
 }
 
 func (r *Repository) GetDeploymentByBinding(ctx context.Context, bindingID string) (domainmanifest.Deployment, error) {
@@ -90,42 +160,43 @@ func (r *Repository) GetDeploymentByBinding(ctx context.Context, bindingID strin
 }
 
 func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest.OperationRun, task domaindelivery.ExecutionTask) (string, bool, error) {
-	payload, err := json.Marshal(task.Payload)
-	if err != nil {
-		return "", false, fmt.Errorf("encode manifest task payload: %w", err)
-	}
-	result, err := json.Marshal(task.Result)
-	if err != nil {
-		return "", false, fmt.Errorf("encode manifest task result: %w", err)
-	}
 	created := false
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`
-			INSERT INTO execution_tasks (
-				id, release_bundle_id, application_id, application_environment_id,
-				task_kind, provider_kind, target_kind, status, queue_key, lock_key,
-				max_retries, attempt_count, timeout_seconds, callback_token,
-				payload, result, created_at, updated_at
-			) VALUES (?, NULL, ?, NULLIF(?, ''), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
-		`, task.ID, task.ApplicationID, task.ApplicationEnvironmentID, task.TaskKind,
-			task.ProviderKind, task.TargetKind, task.Status, task.QueueKey, task.LockKey,
-			task.MaxRetries, task.AttemptCount, task.TimeoutSeconds, task.CallbackToken,
-			string(payload), string(result), task.CreatedAt, task.UpdatedAt).Error; err != nil {
+	var taskID string
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if _, ok := domainworkflow.NodeExecutionFrom(ctx); ok {
+			if err := repoworkflow.LockDeliveryNode(ctx, tx, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
+				return err
+			}
+		}
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "manifest-operation:"+run.IdempotencyKey).Error; err != nil {
 			return err
 		}
-		insert := tx.Exec(`
+		err := tx.Raw(`SELECT execution_task_id FROM manifest_operation_runs WHERE idempotency_key = ?`, run.IdempotencyKey).Row().Scan(&taskID)
+		if err == nil {
+			if node, ok := domainworkflow.NodeExecutionFrom(ctx); ok && node.ResourceID("task") != taskID {
+				return fmt.Errorf("%w: manifest operation belongs to another delivery node", apperrors.ErrConflict)
+			}
+			return nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err := lockManifestOperation(ctx, tx, run, task); err != nil {
+			return err
+		}
+		stored, err := repodelivery.New(tx).CreateExecutionTask(ctx, task)
+		if err != nil {
+			return err
+		}
+		taskID = stored.ID
+		if err := tx.Exec(`
 			INSERT INTO manifest_operation_runs (
 				id, package_id, binding_id, deployment_id, generation, action,
 				idempotency_key, execution_task_id, created_at
 			) VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)
-			ON CONFLICT (idempotency_key) DO NOTHING
 		`, run.ID, run.PackageID, run.BindingID, run.DeploymentID, run.Generation,
-			run.Action, run.IdempotencyKey, run.ExecutionTaskID, run.CreatedAt)
-		if insert.Error != nil {
-			return insert.Error
-		}
-		if insert.RowsAffected == 0 {
-			return tx.Exec(`DELETE FROM execution_tasks WHERE id = ?`, task.ID).Error
+			run.Action, run.IdempotencyKey, taskID, run.CreatedAt).Error; err != nil {
+			return err
 		}
 		created = true
 		return nil
@@ -133,14 +204,7 @@ func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest
 	if err != nil {
 		return "", false, fmt.Errorf("create manifest operation task: %w", err)
 	}
-	if created {
-		return task.ID, true, nil
-	}
-	var existingTaskID string
-	if err := r.db.WithContext(ctx).Raw(`SELECT execution_task_id FROM manifest_operation_runs WHERE idempotency_key = ?`, run.IdempotencyKey).Row().Scan(&existingTaskID); err != nil {
-		return "", false, fmt.Errorf("load existing manifest operation task: %w", err)
-	}
-	return existingTaskID, false, nil
+	return taskID, created, nil
 }
 
 func (r *Repository) UpdateDeploymentStatus(ctx context.Context, deploymentID string, generation int64, status domainmanifest.DeploymentStatus) error {
@@ -204,14 +268,24 @@ func replaceInventory(tx *gorm.DB, deploymentID string, generation int64, items 
 		return err
 	}
 	for _, item := range items {
+		finalizers := item.Finalizers
+		if finalizers == nil {
+			finalizers = []string{}
+		}
+		encodedFinalizers, err := json.Marshal(finalizers)
+		if err != nil {
+			return err
+		}
 		if err := tx.Exec(`
 			INSERT INTO manifest_resource_inventory (
 				deployment_id, generation, api_version, kind, namespace, name, uid,
-				resource_version, desired_object_digest, observed_object_digest, health, last_observed_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				resource_version, desired_object_digest, observed_object_digest, health, last_observed_at,
+				resource_generation, observed_resource_generation, deleting_at, finalizers
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
 		`, deploymentID, generation, item.APIVersion, item.Kind, item.Namespace, item.Name,
 			item.UID, item.ResourceVersion, item.DesiredObjectDigest, item.ObservedObjectDigest,
-			item.Health, item.LastObservedAt).Error; err != nil {
+			item.Health, item.LastObservedAt, item.ResourceGeneration, item.ObservedResourceGeneration,
+			item.DeletingAt, string(encodedFinalizers)).Error; err != nil {
 			return err
 		}
 	}
@@ -227,7 +301,8 @@ func (r *Repository) ListContinuousDeployments(ctx context.Context, limit int) (
 		FROM manifest_deployments deployment
 		JOIN manifest_deployment_status status ON status.deployment_id = deployment.id
 		WHERE deployment.reconcile_policy = 'continuous'
-			AND (status.last_reconciled_at IS NULL OR status.last_reconciled_at <= NOW() - INTERVAL '60 seconds')
+			AND (status.last_reconciled_at IS NULL OR status.last_reconciled_at <= NOW() -
+				CASE WHEN status.phase = 'reconciling' THEN INTERVAL '10 seconds' ELSE INTERVAL '60 seconds' END)
 			AND NOT EXISTS (
 				SELECT 1 FROM manifest_operation_runs run
 				JOIN execution_tasks task ON task.id = run.execution_task_id

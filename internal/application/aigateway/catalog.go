@@ -7,6 +7,41 @@ import (
 
 var defaultToolCatalog = []domainaigateway.ToolCapability{
 	{
+		Name: "delivery.deployment_templates.list", Title: "List Deployment Templates",
+		Description: "List deployment template drafts and their current published versions. Existing services keep their pinned versions.",
+		Domain:      "delivery", Action: "list", RiskLevel: domainaigateway.RiskLevelRead,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryDeploymentTemplatesView},
+		MCPAdapterID:   "delivery.v1", MCPToolName: "delivery.deployment_templates.list",
+		InputSchema: gatewayObjectSchema(nil, map[string]any{}),
+	},
+	{
+		Name: "delivery.deployment_templates.version", Title: "Read Deployment Template Version",
+		Description: "Read one immutable published deployment template version, including its parameter schema and defaults.",
+		Domain:      "delivery", Action: "get", RiskLevel: domainaigateway.RiskLevelRead,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryDeploymentTemplatesView},
+		MCPAdapterID:   "delivery.v1", MCPToolName: "delivery.deployment_templates.version",
+		InputSchema: gatewayObjectSchema([]string{"templateId", "version"}, map[string]any{
+			"templateId": gatewayStringSchema("Deployment template id."),
+			"version":    map[string]any{"type": "integer", "minimum": 1},
+		}),
+	},
+	{
+		Name: "delivery.deployment_templates.preview", Title: "Preview Service Deployment Configuration",
+		Description: "Validate service parameters and environment overrides against a fixed template version, and preview configuration with placeholder artifacts. Does not build, save or deploy.",
+		Domain:      "delivery", Action: "preview", RiskLevel: domainaigateway.RiskLevelAnalyze,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryDeploymentTemplatesView, appaccess.PermDeliveryApplicationsView},
+		RequiredScopes: []string{"application"}, MCPAdapterID: "delivery.v1", MCPToolName: "delivery.deployment_templates.preview",
+		InputSchema: gatewayObjectSchema([]string{"applicationId", "templateId", "version", "serviceKey", "parameters"}, map[string]any{
+			"applicationId":            gatewayStringSchema("Application receiving the service."),
+			"templateId":               gatewayStringSchema("Deployment template id."),
+			"version":                  map[string]any{"type": "integer", "minimum": 1},
+			"serviceKey":               gatewayStringSchema("Kubernetes-compatible service key."),
+			"applicationEnvironmentId": gatewayStringSchema("Optional application environment binding; its namespace is resolved by the server."),
+			"parameters":               gatewayFreeformObjectSchema("Typed values validated against the selected template parameter schema; secrets must be references."),
+			"overrides":                gatewayFreeformObjectSchema("Only parameters declared as environment-overridable by the template are accepted."),
+		}),
+	},
+	{
 		Name:           "network_access.mihomo_profiles.list",
 		Title:          "List Mihomo Profiles",
 		Description:    "List endpoint mihomo profile metadata without subscription credentials.",
@@ -272,6 +307,22 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		MCPToolName:    "delivery.applications.detail",
 		InputSchema:    gatewayObjectSchema([]string{"applicationId"}, gatewayApplicationIDProperties()),
 	},
+	{
+		Name:        "delivery.repositories.analyze",
+		Title:       "Analyze Application Repository",
+		Description: "Read bounded repository metadata at a resolved commit using the application's authorized source connection. Returns the same static suggestions and evidence as the Web UI; does not execute repository scripts or change build settings.",
+		Domain:      "delivery", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+		RequiredScopes: []string{"application"}, MCPAdapterID: "delivery.v1", MCPToolName: "delivery.repositories.analyze",
+		InputSchema: gatewayObjectSchema([]string{"applicationId", "repositoryId", "refType", "refName"}, map[string]any{
+			"applicationId": gatewayStringSchema("Authorized application ID."),
+			"repositoryId":  gatewayStringSchema("Stored repository associated with the application."),
+			"refType":       map[string]any{"type": "string", "enum": []string{"branch", "tag", "commit"}},
+			"refName":       gatewayStringSchema("Branch, tag, or full commit ID."),
+			"projectPath":   gatewayStringSchema("Repository-relative project directory, defaults to '.'; traversal is rejected."),
+		}),
+	},
+
 	{
 		Name:             "delivery.applications.create",
 		Title:            "Create Application",
@@ -1258,41 +1309,87 @@ var operationsToolCatalog = []domainaigateway.ToolCapability{
 	},
 	{
 		Name: "docker.hosts.quick_create.plan", Title: "Plan Docker Host Quick Create", Description: "Validate and summarize Docker host provisioning without side effects.",
+		Version: "1", Execution: &domainaigateway.ToolExecutionContract{Mode: "sync", Idempotent: true},
 		Domain: "docker", Action: "plan", RiskLevel: domainaigateway.RiskLevelAnalyze,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerHostsView, appaccess.PermVirtualizationVMsView}, RequiredScopes: []string{"virtualizationConnection", "dockerHost"},
 		MCPAdapterID: "docker.v1", MCPToolName: "docker.hosts.quick_create.plan", InputSchema: gatewayObjectSchema([]string{"name"}, gatewayDockerQuickCreateProperties()),
 	},
 	{
 		Name: "docker.hosts.quick_create.trigger", Title: "Trigger Docker Host Quick Create", Description: "Provision a Docker host through the durable Docker operation queue.",
+		Version: "1", Execution: &domainaigateway.ToolExecutionContract{Mode: "async", Idempotent: true, IdempotencyKeyField: "idempotencyKey", TaskKind: "docker.operation", StatusTool: "docker.operations.get", CancelTool: "docker.operations.cancel", RecoveryMode: "original_call", Checks: []domainaigateway.CapabilityCheckReference{{Purpose: "precondition", ToolName: "docker.hosts.quick_create.plan", CapabilityVersion: "1"}, {Purpose: "availability", ToolName: "virtualization.capacity.check", CapabilityVersion: "1"}}},
 		Domain: "docker", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.ManagedActionPermission(appaccess.PermDockerHostsManage, "create"), appaccess.PermVirtualizationVMsCreate}, RequiredScopes: []string{"virtualizationConnection", "dockerHost"},
 		MCPAdapterID: "docker.v1", MCPToolName: "docker.hosts.quick_create.trigger", InputSchema: gatewayObjectSchema([]string{"name", "idempotencyKey"}, gatewayDockerQuickCreateProperties()),
 	},
 	{
 		Name: "docker.projects.deploy.plan", Title: "Plan Docker Project Deploy", Description: "Validate and summarize a Docker Compose project action without side effects.",
+		Version: "1", Execution: &domainaigateway.ToolExecutionContract{Mode: "sync", Idempotent: true},
 		Domain: "docker", Action: "plan", RiskLevel: domainaigateway.RiskLevelAnalyze,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerProjectsView, appaccess.PermDockerTemplatesView}, RequiredScopes: []string{"dockerHost", "dockerProject"},
 		MCPAdapterID: "docker.v1", MCPToolName: "docker.projects.deploy.plan", InputSchema: gatewayObjectSchema([]string{"projectId"}, gatewayDockerProjectDeployProperties()),
+		InputSemantics: []domainaigateway.CapabilityValueSemantic{{Path: "/projectId", Kind: "docker.project"}},
 	},
 	{
 		Name: "docker.projects.deploy.trigger", Title: "Trigger Docker Project Deploy", Description: "Run a Docker Compose project action through the durable operation queue.",
+		Version: "1", Execution: &domainaigateway.ToolExecutionContract{Mode: "async", Idempotent: true, IdempotencyKeyField: "idempotencyKey", TaskKind: "docker.operation", StatusTool: "docker.operations.get", CancelTool: "docker.operations.cancel", RecoveryMode: "original_call", Checks: []domainaigateway.CapabilityCheckReference{{Purpose: "precondition", ToolName: "docker.projects.deploy.plan", CapabilityVersion: "1"}, {Purpose: "verification", ToolName: "docker.projects.runtime.assess", CapabilityVersion: "1"}}},
 		Domain: "docker", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerProjectsDeploy}, RequiredScopes: []string{"dockerHost", "dockerProject"},
 		MCPAdapterID: "docker.v1", MCPToolName: "docker.projects.deploy.trigger", InputSchema: gatewayObjectSchema([]string{"projectId", "idempotencyKey"}, gatewayDockerProjectDeployProperties()),
+		InputSemantics: []domainaigateway.CapabilityValueSemantic{{Path: "/projectId", Kind: "docker.project"}},
 	},
 	{
 		Name: "docker.services.action.trigger", Title: "Trigger Docker Service Action", Description: "Run a typed Docker service action through the durable operation queue.",
+		Version: "1", Execution: &domainaigateway.ToolExecutionContract{Mode: "async", Idempotent: true, IdempotencyKeyField: "idempotencyKey", TaskKind: "docker.operation", StatusTool: "docker.operations.get", CancelTool: "docker.operations.cancel", RecoveryMode: "original_call"},
 		Domain: "docker", Action: "execute", RiskLevel: domainaigateway.RiskLevelExecute, RequiresApproval: true,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke}, RequiredScopes: []string{"dockerHost", "dockerService"},
 		MCPAdapterID: "docker.v1", MCPToolName: "docker.services.action.trigger", InputSchema: gatewayObjectSchema([]string{"serviceId", "action", "idempotencyKey"}, map[string]any{
 			"serviceId": gatewayStringSchema("Docker service id."), "action": gatewayStringSchema("Typed Docker service action."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
 		}),
+		InputSemantics: []domainaigateway.CapabilityValueSemantic{{Path: "/serviceId", Kind: "docker.service"}},
+	},
+	{
+		Name: "docker.operations.get", Title: "Get Docker Operation", Description: "Read a durable Docker operation after submission or reconnect. Completion describes the operation, not application reachability.",
+		Version: "1", Execution: &domainaigateway.ToolExecutionContract{Mode: "sync", Idempotent: true, TaskKind: "docker.operation", StatusTool: "docker.operations.get", CancelTool: "docker.operations.cancel"},
+		Domain: "docker", Action: "get", RiskLevel: domainaigateway.RiskLevelRead,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerOperationsView}, RequiredScopes: []string{"dockerOperation"},
+		MCPAdapterID: "docker.v1", MCPToolName: "docker.operations.get",
+		InputSchema:    gatewayObjectSchema([]string{"operationId"}, map[string]any{"operationId": gatewayStringSchema("Durable Docker operation id.")}),
+		InputSemantics: []domainaigateway.CapabilityValueSemantic{{Path: "/operationId", Kind: "docker.operation"}},
+	},
+	{
+		Name: "docker.projects.runtime.assess", Title: "Assess Docker Runtime", Description: "Check expected running services using fresh runner inventory observed after a specific deployment. Missing or stale evidence is inconclusive; this does not test application reachability.",
+		Version: "1", Execution: &domainaigateway.ToolExecutionContract{Mode: "sync", Idempotent: true}, ProducesAssessment: true,
+		Domain: "docker", Action: "assess", RiskLevel: domainaigateway.RiskLevelRead,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDockerProjectsView, appaccess.PermDockerServicesView, appaccess.PermDockerOperationsView}, RequiredScopes: []string{"dockerProject", "dockerOperation"},
+		MCPAdapterID: "docker.v1", MCPToolName: "docker.projects.runtime.assess",
+		InputSchema: gatewayObjectSchema([]string{"projectId", "afterOperationId", "expectedServices"}, map[string]any{
+			"projectId": gatewayStringSchema("Docker project id."), "afterOperationId": gatewayStringSchema("Completed deployment operation id."),
+			"expectedServices": map[string]any{"type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 200}},
+			"maxAgeSeconds":    map[string]any{"type": "integer", "minimum": 1, "maximum": 600, "default": 120},
+		}),
+		InputSemantics: []domainaigateway.CapabilityValueSemantic{{Path: "/projectId", Kind: "docker.project"}, {Path: "/afterOperationId", Kind: "docker.operation"}},
+		Effects:        []string{"assess deployment runtime"},
+	},
+	{
+		Name: "docker.operations.cancel", Title: "Cancel Docker Operation", Description: "Request cancellation of a durable Docker operation. Inspect the owning domain status for effects that already occurred.",
+		Version: "1", Execution: &domainaigateway.ToolExecutionContract{Mode: "async", Idempotent: true, IdempotencyKeyField: "idempotencyKey", TaskKind: "docker.operation", StatusTool: "docker.operations.get", CancelTool: "docker.operations.cancel"},
+		Domain: "docker", Action: "cancel", RiskLevel: domainaigateway.RiskLevelExecute,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.ManagedActionPermission(appaccess.PermDockerOperationsManage, "cancel")}, RequiredScopes: []string{"dockerOperation"},
+		MCPAdapterID: "docker.v1", MCPToolName: "docker.operations.cancel",
+		InputSchema:    gatewayObjectSchema([]string{"operationId", "idempotencyKey"}, map[string]any{"operationId": gatewayStringSchema("Docker operation id."), "idempotencyKey": gatewayStringSchema("Stable cancellation request key."), "reason": gatewayStringSchema("Cancellation reason.")}),
+		InputSemantics: []domainaigateway.CapabilityValueSemantic{{Path: "/operationId", Kind: "docker.operation"}},
 	},
 }
 
 func defaultTools() []domainaigateway.ToolCapability {
 	tools := append([]domainaigateway.ToolCapability(nil), defaultToolCatalog...)
-	return append(tools, operationsToolCatalog...)
+	tools = append(tools, operationsToolCatalog...)
+	for i := range tools {
+		if tools[i].Execution != nil && tools[i].Execution.TaskKind == "docker.operation" {
+			tools[i].OutputSemantics = []domainaigateway.CapabilityValueSemantic{{Path: "/id", Kind: "docker.operation"}, {Path: "/hostId", Kind: "docker.host"}, {Path: "/projectId", Kind: "docker.project"}, {Path: "/serviceId", Kind: "docker.service"}}
+		}
+	}
+	return tools
 }
 
 func defaultResources() []domainaigateway.ResourceCapability {
@@ -1438,7 +1535,8 @@ func gatewayObjectSchema(required []string, properties map[string]any) map[strin
 
 func gatewayVMCreateProperties() map[string]any {
 	return map[string]any{
-		"connectionId": gatewayStringSchema("Virtualization connection id."), "name": gatewayStringSchema("Virtual machine name."),
+		"requireCapacity": map[string]any{"type": "boolean", "description": "Require provider inventory and atomic CPU, memory and storage reservation."},
+		"connectionId":    gatewayStringSchema("Virtualization connection id."), "name": gatewayStringSchema("Virtual machine name."),
 		"architecture": gatewayStringSchema("CPU architecture."), "imageId": gatewayStringSchema("Image id."), "flavorId": gatewayStringSchema("Flavor id."),
 		"cpu": gatewayIntegerSchema("CPU count."), "memoryMiB": gatewayIntegerSchema("Memory in MiB."), "diskGiB": gatewayIntegerSchema("Disk size in GiB."),
 		"network": gatewayStringSchema("Provider network."), "cloudInit": gatewayStringSchema("Sensitive cloud-init content."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
@@ -1447,7 +1545,8 @@ func gatewayVMCreateProperties() map[string]any {
 
 func gatewayDockerQuickCreateProperties() map[string]any {
 	return map[string]any{
-		"name": gatewayStringSchema("Docker host name."), "virtualizationConnectionId": gatewayStringSchema("Optional virtualization connection id."),
+		"requireCapacity": map[string]any{"type": "boolean", "description": "Require provider capacity reservation for the backing VM."},
+		"name":            gatewayStringSchema("Docker host name."), "virtualizationConnectionId": gatewayStringSchema("Optional virtualization connection id."),
 		"vmTemplateId": gatewayStringSchema("Optional VM template id."), "flavorId": gatewayStringSchema("Optional flavor id."), "imageId": gatewayStringSchema("Optional image id."),
 		"architecture": gatewayStringSchema("CPU architecture."), "cloudInit": gatewayStringSchema("Sensitive cloud-init content."), "idempotencyKey": gatewayStringSchema("Stable caller request key."),
 	}
@@ -1852,7 +1951,7 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Name:           "Delivery Developer",
 			Category:       "delivery",
 			Description:    "Application onboarding, delivery context review, and self-service build/deploy/rollback workflow for AI coding tools.",
-			CapabilityRefs: []string{"delivery.applications.list", "delivery.applications.detail", "delivery.applications.create", "delivery.onboarding.analyze_repo", "delivery.standards.dockerfile.generate", "delivery.standards.dockerfile.validate", "delivery.standards.helm.generate", "delivery.standards.k8s.validate", "delivery.spec.render", "delivery.application.bootstrap", "delivery.drafts.create", "delivery.drafts.confirm", "delivery.application_environments.list", "delivery.application_services.list", "delivery.build_sources.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release.plan", "delivery.plans.create", "delivery.plans.confirm", "delivery.release_context.diff", "delivery.rollback.context", "delivery.actions.trigger"},
+			CapabilityRefs: []string{"delivery.applications.list", "delivery.applications.detail", "delivery.repositories.analyze", "delivery.applications.create", "delivery.onboarding.analyze_repo", "delivery.standards.dockerfile.generate", "delivery.standards.dockerfile.validate", "delivery.standards.helm.generate", "delivery.standards.k8s.validate", "delivery.spec.render", "delivery.application.bootstrap", "delivery.drafts.create", "delivery.drafts.confirm", "delivery.application_environments.list", "delivery.application_services.list", "delivery.build_sources.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release.plan", "delivery.plans.create", "delivery.plans.confirm", "delivery.release_context.diff", "delivery.rollback.context", "delivery.actions.trigger", "delivery.workflows.create", "delivery.workflows.get", "delivery.batches.create", "delivery.batches.get", "delivery.batches.cancel"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
 			RequiredScopes: []string{"businessLine", "application", "environment"},
 		},
@@ -1897,16 +1996,16 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Name:           "Docker Runtime Operator",
 			Category:       "platform",
 			Description:    "Approval-bound Docker host, Compose project, and service operations.",
-			CapabilityRefs: []string{"docker.hosts.quick_create.plan", "docker.hosts.quick_create.trigger", "docker.projects.deploy.plan", "docker.projects.deploy.trigger", "docker.services.action.trigger"},
+			CapabilityRefs: []string{"docker.hosts.quick_create.plan", "docker.hosts.quick_create.trigger", "docker.projects.deploy.plan", "docker.projects.deploy.trigger", "docker.services.action.trigger", "docker.operations.get"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke},
-			RequiredScopes: []string{"virtualizationConnection", "dockerHost", "dockerProject", "dockerService"},
+			RequiredScopes: []string{"virtualizationConnection", "dockerHost", "dockerProject", "dockerService", "dockerOperation"},
 		},
 		{
 			ID:             "virtualization-operator",
 			Name:           "Virtualization Operator",
 			Category:       "platform",
 			Description:    "Approval-bound virtual machine planning, creation, and typed lifecycle operations.",
-			CapabilityRefs: []string{"virtualization.vms.create.plan", "virtualization.vms.create.trigger", "virtualization.vms.action.trigger"},
+			CapabilityRefs: []string{"virtualization.capacity.check", "virtualization.vms.create.plan", "virtualization.vms.create.trigger", "virtualization.vms.action.trigger", "virtualization.operations.get", "virtualization.operations.cancel", "virtualization.operations.retry"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke},
 			RequiredScopes: []string{"virtualizationConnection", "vm"},
 		},

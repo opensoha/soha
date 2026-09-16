@@ -218,6 +218,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		risk:           NewHighRiskResourcePolicy(deps.Permissions),
 		operations:     deps.CreationOperations,
 		batches:        deps.CreationBatches,
+		yaml:           genericResources,
 	}
 	workloads := &Workloads{
 		resourceAccess: access, metricsSupport: metrics,

@@ -25,6 +25,8 @@ type dagExecutionResult struct {
 	artifacts map[string]any
 	selectors map[string]any
 	events    []map[string]any
+	nodeRun   *domainworkflow.NodeRun
+	err       error
 }
 
 type dagNodeRun = domainworkflow.NodeRun

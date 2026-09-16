@@ -10,6 +10,7 @@ import (
 	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -46,8 +47,9 @@ func TestClustersCreateExecutionJob(t *testing.T) {
 		Runtime:         map[string]any{"image": "golang:1.24", "commandDir": "services/api"},
 		Workspace:       map[string]any{"checkout": map[string]any{"repositoryURL": "https://example.invalid/repo.git", "refName": "main"}},
 		DefaultImage:    "alpine:3.20",
-		DefaultGitImage: "alpine/git:2.47.0",
+		DefaultGitImage: "alpine/git:2.47.2",
 		TTLSeconds:      120,
+		TimeoutSeconds:  45,
 	})
 	if err != nil {
 		t.Fatalf("CreateExecutionJob() error = %v", err)
@@ -65,11 +67,22 @@ func TestClustersCreateExecutionJob(t *testing.T) {
 	if got := job.Spec.Template.Spec.Containers[0]; got.Image != "golang:1.24" || got.WorkingDir != "/workspace/services/api" || !strings.Contains(got.Command[2], "go test ./...") {
 		t.Fatalf("runner container = %#v", got)
 	}
-	if len(job.Spec.Template.Spec.InitContainers) != 1 || job.Spec.Template.Spec.InitContainers[0].Image != "alpine/git:2.47.0" {
+	if len(job.Spec.Template.Spec.InitContainers) != 1 || job.Spec.Template.Spec.InitContainers[0].Image != "alpine/git:2.47.2" {
 		t.Fatalf("checkout containers = %#v", job.Spec.Template.Spec.InitContainers)
 	}
 	if job.Spec.TTLSecondsAfterFinished == nil || *job.Spec.TTLSecondsAfterFinished != 120 {
 		t.Fatalf("TTLSecondsAfterFinished = %#v", job.Spec.TTLSecondsAfterFinished)
+	}
+	if job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != 45 {
+		t.Fatalf("execution deadline = %#v", job.Spec.ActiveDeadlineSeconds)
+	}
+	job.Status.Conditions = []batchv1.JobCondition{{Type: batchv1.JobFailed, Status: corev1.ConditionTrue, Reason: "DeadlineExceeded"}}
+	if _, err := client.BatchV1().Jobs(job.Namespace).UpdateStatus(context.Background(), job, metav1.UpdateOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := backend.InspectExecutionJob(context.Background(), ref)
+	if err != nil || inspection.State != appexecution.ExecutionJobFailed || inspection.FailureReason != "DeadlineExceeded" {
+		t.Fatalf("deadline result = %#v, %v", inspection, err)
 	}
 }
 
@@ -84,13 +97,16 @@ func TestBuildExecutionJobChecksOutMultipleRepositories(t *testing.T) {
 			map[string]any{"repositoryURL": "https://example.invalid/lib.git", "checkoutPath": "shared/lib", "refType": "tag", "refName": "v1.0.0", "submodules": true},
 		}},
 		DefaultImage:    "alpine:3.20",
-		DefaultGitImage: "alpine/git:2.47.0",
+		DefaultGitImage: "alpine/git:2.47.2",
 	})
 	if err != nil {
 		t.Fatalf("buildExecutionJob() error = %v", err)
 	}
 	if len(job.Spec.Template.Spec.InitContainers) != 1 {
 		t.Fatalf("init containers = %#v", job.Spec.Template.Spec.InitContainers)
+	}
+	if job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != 300 {
+		t.Fatalf("default execution deadline = %#v", job.Spec.ActiveDeadlineSeconds)
 	}
 	script := job.Spec.Template.Spec.InitContainers[0].Command[2]
 	for _, expected := range []string{

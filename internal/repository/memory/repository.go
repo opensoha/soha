@@ -9,6 +9,7 @@ import (
 	"time"
 
 	appmemory "github.com/opensoha/soha/internal/application/memory"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
@@ -21,8 +22,12 @@ func (r *Repository) PutRecord(ctx context.Context, record appmemory.Record) err
 	if err != nil {
 		return fmt.Errorf("encode memory record: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`INSERT INTO ai_memory_records(id,owner_type,owner_id,scope_hash,status,expires_at,payload,created_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET owner_type=EXCLUDED.owner_type,owner_id=EXCLUDED.owner_id,scope_hash=EXCLUDED.scope_hash,status=EXCLUDED.status,expires_at=EXCLUDED.expires_at,payload=EXCLUDED.payload,deleted_at=EXCLUDED.deleted_at`, record.ID, record.OwnerType, record.OwnerID, record.ScopeHash, record.Status, record.ExpiresAt, payload, record.CreatedAt, record.DeletedAt).Error; err != nil {
-		return fmt.Errorf("put memory record: %w", err)
+	result := r.db.WithContext(ctx).Exec(`INSERT INTO ai_memory_records(id,owner_type,owner_id,scope_hash,status,expires_at,payload,created_at,deleted_at) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET scope_hash=EXCLUDED.scope_hash,status=EXCLUDED.status,expires_at=EXCLUDED.expires_at,payload=EXCLUDED.payload,deleted_at=EXCLUDED.deleted_at WHERE ai_memory_records.owner_type=EXCLUDED.owner_type AND ai_memory_records.owner_id=EXCLUDED.owner_id`, record.ID, record.OwnerType, record.OwnerID, record.ScopeHash, record.Status, record.ExpiresAt, payload, record.CreatedAt, record.DeletedAt)
+	if result.Error != nil {
+		return fmt.Errorf("put memory record: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return apperrors.ErrAccessDenied
 	}
 	return nil
 }

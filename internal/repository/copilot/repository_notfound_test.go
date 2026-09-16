@@ -55,7 +55,7 @@ func TestRepositoryUpdateAgentRunCallbackWrapsErrNotFound(t *testing.T) {
 	repo, mock := newAgentRunRepository(t)
 	now := time.Date(2026, 6, 21, 12, 0, 0, 0, time.UTC)
 
-	expectGetAgentRun(mock, domaincopilot.AgentRun{
+	expectLockedAgentRun(mock, domaincopilot.AgentRun{
 		ID:            "missing-run",
 		ProviderID:    "hermes",
 		ProviderKind:  "hermes",
@@ -98,6 +98,7 @@ func TestRepositoryUpdateAgentRunCallbackWrapsErrNotFound(t *testing.T) {
 		UpdatedAt:     now,
 	})
 
+	mock.ExpectRollback()
 	_, err := repo.UpdateAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "missing-run",
 		CallbackToken: "callback-token",

@@ -513,7 +513,7 @@ func TestOperationReadsAreScopedByTaskKindPermission(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			principal := domainidentity.Principal{UserID: test.name, Roles: []string{test.name}}
 			permissions := appaccess.NewPermissionResolver(testRoleReader{matrix: map[string][]string{test.name: {test.permission}}})
-			service := MustNew(testDependencies(repo), map[string]Adapter{ProviderKubeVirt: fakeAdapter{}, ProviderPVE: fakeAdapter{}}, permissions, &captureOperations{}, Options{CredentialEncryptionKey: "test-secret"})
+			service := MustNew(testDependencies(repo), map[string]Adapter{ProviderKubeVirt: fakeAdapter{}, ProviderPVE: fakeAdapter{}}, permissions, &captureOperations{}, Options{CredentialEncryptionKey: "test-secret", ExecutionPrincipals: testExecutionPrincipals{}})
 
 			items, err := service.ListOperations(context.Background(), principal, domainvirtualization.TaskFilter{})
 			if err != nil || len(items) != 1 || items[0].ID != test.visibleID {
@@ -1329,7 +1329,7 @@ func newTestService(repo *memoryRepo, ops *captureOperations, adapter Adapter) *
 	return MustNew(testDependencies(repo), map[string]Adapter{
 		ProviderKubeVirt: adapter,
 		ProviderPVE:      adapter,
-	}, testPermissions(), ops, Options{CredentialEncryptionKey: "test-secret"})
+	}, testPermissions(), ops, Options{CredentialEncryptionKey: "test-secret", ExecutionPrincipals: testExecutionPrincipals{}})
 }
 
 func testDependencies(repo *memoryRepo) Dependencies {
@@ -1857,6 +1857,18 @@ func (r *memoryRepo) UpdateTask(_ context.Context, item domainvirtualization.Tas
 	return item, nil
 }
 
+func (r *memoryRepo) CreateTaskWithCapacity(context.Context, domainvirtualization.Task, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.Task, error) {
+	return domainvirtualization.Task{}, errors.New("capacity reservation tests require the PostgreSQL repository")
+}
+
+func (r *memoryRepo) RetryTaskWithCapacity(context.Context, domainvirtualization.Task, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.Task, error) {
+	return domainvirtualization.Task{}, errors.New("capacity admission requires PostgreSQL")
+}
+
+func (r *memoryRepo) SelectCapacity(context.Context, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.CapacityNode, domainvirtualization.CapacityStorage, error) {
+	return domainvirtualization.CapacityNode{}, domainvirtualization.CapacityStorage{}, errors.New("capacity selection requires PostgreSQL")
+}
+
 func (r *memoryRepo) UpdateTaskResult(_ context.Context, id string, result map[string]any) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -2057,3 +2069,9 @@ var errMemoryNotFound = fmt.Errorf("%w: not found", apperrors.ErrNotFound)
 type testingError string
 
 func (e testingError) Error() string { return string(e) }
+
+type testExecutionPrincipals struct{}
+
+func (testExecutionPrincipals) CurrentExecutionPrincipal(context.Context, string, string) (domainidentity.Principal, error) {
+	return testPrincipal(), nil
+}

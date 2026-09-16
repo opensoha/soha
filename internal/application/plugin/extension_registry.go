@@ -186,6 +186,6 @@ func extensionRecord(
 		RuntimeMode:    runtimeMode,
 		Status:         item.Status,
 		Configured:     configured,
-		Metadata:       contribution.Metadata,
+		Metadata:       configuredAgentProviderMetadata(point, contribution.Metadata, item.Metadata),
 	}
 }

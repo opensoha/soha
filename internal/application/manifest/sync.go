@@ -93,6 +93,16 @@ func (s *DeclarativeService) queueSync(ctx context.Context, item domainmanifest.
 		IncludePatterns: source.IncludePatterns, ExcludePatterns: source.ExcludePatterns,
 		RequestedCommit: strings.TrimSpace(input.RequestedCommit), RequestedBy: actor,
 	}
+	if item.Renderer == domainmanifest.RendererKustomize {
+		for _, binding := range item.Bindings {
+			entry := "."
+			if binding.Kustomize != nil && binding.Kustomize.EntryPath != "" {
+				entry = binding.Kustomize.EntryPath
+			}
+			payload.KustomizeEntries = append(payload.KustomizeEntries, entry)
+		}
+		payload.KustomizeEntries = normalizeStringList(payload.KustomizeEntries)
+	}
 	now := time.Now().UTC()
 	task := domaindelivery.ExecutionTask{
 		ID: "task:" + uuid.NewString(), ApplicationID: item.ApplicationID,
@@ -188,6 +198,9 @@ func (s *DeclarativeService) promoteRevision(ctx context.Context, item domainman
 		expectedGeneration := int64(0)
 		deployment, getErr := s.repository.GetDeploymentByBinding(ctx, binding.ID)
 		if getErr == nil {
+			if deployment.Spec.DeliverySnapshot != nil {
+				continue
+			}
 			expectedGeneration = deployment.Generation
 		} else if !errors.Is(getErr, apperrors.ErrNotFound) {
 			return getErr

@@ -57,18 +57,23 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	repo         Repository
-	repositories RepositoryCatalog
-	gitlab       GitLabClient
-	authorizer   domainaccess.Authorizer
-	permissions  *appaccess.PermissionResolver
-	audit        AuditRecorder
-	operations   OperationRecorder
+	analyzer            RepositoryAnalyzer
+	deploymentTemplates DeploymentTemplateReader
+	deploymentPackages  DeploymentPackageReader
+	templates           BuildTemplateReader
+	repo                Repository
+	repositories        RepositoryCatalog
+	gitlab              GitLabClient
+	authorizer          domainaccess.Authorizer
+	permissions         *appaccess.PermissionResolver
+	audit               AuditRecorder
+	operations          OperationRecorder
 }
 
 func New(repo Repository, gitlab GitLabClient, authorizer domainaccess.Authorizer, audit AuditRecorder, operations OperationRecorder) *Service {
 	service := &Service{repo: repo, gitlab: gitlab, authorizer: authorizer, audit: audit, operations: operations}
 	service.repositories, _ = repo.(RepositoryCatalog)
+	service.analyzer, _ = gitlab.(RepositoryAnalyzer)
 	return service
 }
 
@@ -114,6 +119,12 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "Application", input.Name, input.Key, input.BusinessLineID, input.Group, input.ID); err != nil {
 		return domainapp.App{}, err
 	}
+	if err := s.authorizeRepositoryAssociations(ctx, principal, input.RepositoryIDs, nil); err != nil {
+		return domainapp.App{}, err
+	}
+	if err := s.pinBuildTemplates(ctx, &input, domainapp.App{}); err != nil {
+		return domainapp.App{}, err
+	}
 	item, err := s.repo.Create(ctx, input)
 	if err != nil {
 		return domainapp.App{}, normalizeRepoError(err)
@@ -128,6 +139,24 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 		return domainapp.App{}, err
 	}
 	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "Application", input.Name, input.Key, input.BusinessLineID, input.Group, strings.TrimSpace(applicationID)); err != nil {
+		return domainapp.App{}, err
+	}
+	current, err := s.repo.Get(ctx, strings.TrimSpace(applicationID))
+	if err != nil {
+		return domainapp.App{}, normalizeRepoError(err)
+	}
+	if current.Name != input.Name || current.Key != input.Key || current.BusinessLineID != input.BusinessLineID || current.Group != input.Group {
+		if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "Application", current.Name, current.Key, current.BusinessLineID, current.Group, current.ID); err != nil {
+			return domainapp.App{}, err
+		}
+	}
+	if input.ExpectedVersion == nil {
+		input.ExpectedVersion = &current.Version
+	}
+	if err := s.authorizeRepositoryAssociations(ctx, principal, input.RepositoryIDs, current.RepositoryIDs); err != nil {
+		return domainapp.App{}, err
+	}
+	if err := s.pinBuildTemplates(ctx, &input, current); err != nil {
 		return domainapp.App{}, err
 	}
 	item, err := s.repo.Update(ctx, strings.TrimSpace(applicationID), input)
@@ -201,6 +230,12 @@ func (s *Service) CreateService(ctx context.Context, principal domainidentity.Pr
 	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
 		return domainapp.Service{}, err
 	}
+	if input.ExpectedVersion != nil {
+		return domainapp.Service{}, fmt.Errorf("%w: new service has no expectedVersion", apperrors.ErrInvalidArgument)
+	}
+	if err := s.prepareServiceDeploymentTemplate(ctx, principal, app.ID, "", &input); err != nil {
+		return domainapp.Service{}, err
+	}
 	item, err := s.repo.CreateService(ctx, app.ID, input)
 	if err != nil {
 		return domainapp.Service{}, normalizeRepoError(err)
@@ -222,6 +257,9 @@ func (s *Service) UpdateService(ctx context.Context, principal domainidentity.Pr
 		return domainapp.Service{}, err
 	}
 	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
+		return domainapp.Service{}, err
+	}
+	if err := s.prepareServiceDeploymentTemplate(ctx, principal, app.ID, strings.TrimSpace(serviceID), &input); err != nil {
 		return domainapp.Service{}, err
 	}
 	item, err := s.repo.UpdateService(ctx, app.ID, strings.TrimSpace(serviceID), input)
@@ -356,6 +394,9 @@ func (s *Service) CreateRepository(ctx context.Context, principal domainidentity
 	if s.repositories == nil {
 		return domainapp.SourceRepository{}, fmt.Errorf("%w: repository catalog is unavailable", apperrors.ErrInvalidArgument)
 	}
+	if err := s.validateRepositoryBindingChange(ctx, principal, input, domainapp.SourceRepository{}); err != nil {
+		return domainapp.SourceRepository{}, err
+	}
 	item, err := s.repositories.CreateRepository(ctx, input)
 	if err == nil {
 		_ = s.recordAudit(ctx, principal, "", "Repository", item.Name, string(domainaccess.ActionCreate), "success", "created repository")
@@ -373,6 +414,13 @@ func (s *Service) UpdateRepository(ctx context.Context, principal domainidentity
 	if s.repositories == nil {
 		return domainapp.SourceRepository{}, fmt.Errorf("%w: repository catalog is unavailable", apperrors.ErrInvalidArgument)
 	}
+	current, err := s.repositories.GetRepository(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainapp.SourceRepository{}, normalizeRepoError(err)
+	}
+	if err := s.validateRepositoryBindingChange(ctx, principal, input, current); err != nil {
+		return domainapp.SourceRepository{}, err
+	}
 	return s.repositories.UpdateRepository(ctx, strings.TrimSpace(id), input)
 }
 
@@ -387,6 +435,10 @@ func (s *Service) DeleteRepository(ctx context.Context, principal domainidentity
 }
 
 func validateSourceRepositoryInput(input domainapp.SourceRepositoryInput) error {
+	if (input.SourceConnectionID == "") != (input.ProviderRepositoryID == "") || len(input.SourceConnectionID) > 200 || len(input.ProviderRepositoryID) > 512 || strings.TrimSpace(input.SourceConnectionID) != input.SourceConnectionID || strings.TrimSpace(input.ProviderRepositoryID) != input.ProviderRepositoryID {
+		return fmt.Errorf("%w: source connection and provider repository identifiers must be supplied together", apperrors.ErrInvalidArgument)
+	}
+
 	if strings.TrimSpace(input.Name) == "" {
 		return fmt.Errorf("%w: repository name is required", apperrors.ErrInvalidArgument)
 	}
@@ -417,6 +469,9 @@ func validateSourceRepositoryInput(input domainapp.SourceRepositoryInput) error 
 }
 
 func validateInput(input domainapp.UpsertInput) error {
+	if input.ExpectedVersion != nil && *input.ExpectedVersion < 1 {
+		return fmt.Errorf("%w: expectedVersion must be positive", apperrors.ErrInvalidArgument)
+	}
 	if strings.TrimSpace(input.Name) == "" {
 		return fmt.Errorf("%w: application name is required", apperrors.ErrInvalidArgument)
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"time"
 
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
@@ -24,19 +25,88 @@ const (
 )
 
 type ToolCapability struct {
-	Name             string         `json:"name"`
-	Title            string         `json:"title"`
-	Description      string         `json:"description"`
-	Domain           string         `json:"domain"`
-	Action           string         `json:"action"`
-	RiskLevel        RiskLevel      `json:"riskLevel"`
-	PermissionKeys   []string       `json:"permissionKeys"`
-	RequiredScopes   []string       `json:"requiredScopes,omitempty"`
-	MCPAdapterID     string         `json:"mcpAdapterId,omitempty"`
-	MCPToolName      string         `json:"mcpToolName,omitempty"`
-	RequiresApproval bool           `json:"requiresApproval"`
-	InputSchema      map[string]any `json:"inputSchema,omitempty"`
-	OutputSchema     map[string]any `json:"outputSchema,omitempty"`
+	Name               string                    `json:"name"`
+	Title              string                    `json:"title"`
+	Description        string                    `json:"description"`
+	Domain             string                    `json:"domain"`
+	Action             string                    `json:"action"`
+	RiskLevel          RiskLevel                 `json:"riskLevel"`
+	PermissionKeys     []string                  `json:"permissionKeys"`
+	RequiredScopes     []string                  `json:"requiredScopes,omitempty"`
+	MCPAdapterID       string                    `json:"mcpAdapterId,omitempty"`
+	MCPToolName        string                    `json:"mcpToolName,omitempty"`
+	RequiresApproval   bool                      `json:"requiresApproval"`
+	InputSchema        map[string]any            `json:"inputSchema,omitempty"`
+	OutputSchema       map[string]any            `json:"outputSchema,omitempty"`
+	Version            string                    `json:"version,omitempty"`
+	Execution          *ToolExecutionContract    `json:"execution,omitempty"`
+	InputSemantics     []CapabilityValueSemantic `json:"inputSemantics,omitempty"`
+	OutputSemantics    []CapabilityValueSemantic `json:"outputSemantics,omitempty"`
+	Effects            []string                  `json:"effects,omitempty"`
+	ProducesAssessment bool                      `json:"producesAssessment,omitempty"`
+}
+
+type CapabilityValueSemantic = sohaapi.CapabilityValueSemantic
+type CapabilityCheckReference = sohaapi.CapabilityCheckReference
+type CapabilityPlan = sohaapi.CapabilityPlan
+type CapabilityPlanStep = sohaapi.CapabilityPlanStep
+type CapabilityPlanValidation = sohaapi.CapabilityPlanValidation
+type CapabilityPlanIssue = sohaapi.CapabilityPlanIssue
+type CapabilityTaskInput = sohaapi.CapabilityTaskInput
+type CapabilityInputBinding = sohaapi.CapabilityInputBinding
+type CapabilityTaskRevisionInput = sohaapi.CapabilityTaskRevisionInput
+type CapabilityAssessment = sohaapi.CapabilityAssessment
+type CapabilityEvidence = sohaapi.CapabilityEvidence
+type CapabilityResourceRef = sohaapi.CapabilityResourceRef
+
+type ToolExecutionContract struct {
+	Checks              []CapabilityCheckReference `json:"checks,omitempty"`
+	RecoveryMode        string                     `json:"recoveryMode,omitempty"`
+	Mode                string                     `json:"mode"`
+	Idempotent          bool                       `json:"idempotent"`
+	IdempotencyKeyField string                     `json:"idempotencyKeyField,omitempty"`
+	TaskKind            string                     `json:"taskKind,omitempty"`
+	StatusTool          string                     `json:"statusTool,omitempty"`
+	CancelTool          string                     `json:"cancelTool,omitempty"`
+}
+
+type CapabilityCall struct {
+	ToolName          string            `json:"toolName"`
+	CapabilityVersion string            `json:"capabilityVersion,omitempty"`
+	Input             map[string]any    `json:"input"`
+	SecretRefs        map[string]string `json:"secretRefs,omitempty"`
+}
+
+// CapabilityTaskRef points to a record owned and persisted by a domain service.
+type CapabilityTaskRef struct {
+	Kind       string          `json:"kind"`
+	ID         string          `json:"id"`
+	Status     string          `json:"status"`
+	Terminal   bool            `json:"terminal"`
+	StatusCall CapabilityCall  `json:"statusCall"`
+	CancelCall *CapabilityCall `json:"cancelCall,omitempty"`
+	Outcome    string          `json:"outcome,omitempty"`
+}
+
+type CapabilityTask struct {
+	ID          string                `json:"id"`
+	Version     int64                 `json:"version"`
+	PlanVersion int                   `json:"planVersion"`
+	Status      string                `json:"status"`
+	CreatedBy   string                `json:"createdBy"`
+	Plan        CapabilityPlan        `json:"plan"`
+	Nodes       []CapabilityTaskNode  `json:"nodes"`
+	Assessment  *CapabilityAssessment `json:"assessment,omitempty"`
+	CreatedAt   time.Time             `json:"createdAt"`
+	UpdatedAt   time.Time             `json:"updatedAt"`
+}
+
+type CapabilityTaskNode struct {
+	ApprovalRequestID string                `json:"approvalRequestId,omitempty"`
+	ID                string                `json:"id"`
+	Status            string                `json:"status"`
+	Summary           string                `json:"summary,omitempty"`
+	Invocation        *ToolInvocationResult `json:"invocation,omitempty"`
 }
 
 type ResourceCapability struct {
@@ -87,17 +157,19 @@ type CallerContext struct {
 }
 
 type Manifest struct {
-	Name           string                   `json:"name"`
-	Version        string                   `json:"version"`
-	GeneratedAt    time.Time                `json:"generatedAt"`
-	Principal      domainidentity.Principal `json:"principal"`
-	Caller         CallerContext            `json:"caller"`
-	PermissionKeys []string                 `json:"permissionKeys"`
-	Tools          []ToolCapability         `json:"tools"`
-	Resources      []ResourceCapability     `json:"resources,omitempty"`
-	Prompts        []PromptCapability       `json:"prompts,omitempty"`
-	Skills         []SkillCapability        `json:"skills,omitempty"`
-	Summary        ManifestSummary          `json:"summary"`
+	Name            string                   `json:"name"`
+	Version         string                   `json:"version"`
+	GeneratedAt     time.Time                `json:"generatedAt"`
+	Principal       domainidentity.Principal `json:"principal"`
+	Caller          CallerContext            `json:"caller"`
+	PermissionKeys  []string                 `json:"permissionKeys"`
+	Tools           []ToolCapability         `json:"tools"`
+	Resources       []ResourceCapability     `json:"resources,omitempty"`
+	Prompts         []PromptCapability       `json:"prompts,omitempty"`
+	Skills          []SkillCapability        `json:"skills,omitempty"`
+	Summary         ManifestSummary          `json:"summary"`
+	CatalogRevision string                   `json:"catalogRevision,omitempty"`
+	NextCursor      string                   `json:"nextCursor,omitempty"`
 }
 
 type ManifestRequest struct {
@@ -110,27 +182,37 @@ type ManifestRequest struct {
 	SubjectType  string
 	SubjectID    string
 	Source       string
+	Query        string
+	ToolDomain   string
+	Action       string
+	ResourceKind string
+	Limit        int
+	Cursor       string
 }
 
 type ToolInvocationRequest struct {
-	ToolName     string            `json:"toolName"`
-	Input        map[string]any    `json:"input,omitempty"`
-	SecretRefs   map[string]string `json:"secretRefs,omitempty"`
-	AIClientID   string            `json:"aiClientId,omitempty"`
-	AIClientName string            `json:"aiClientName,omitempty"`
-	SkillID      string            `json:"skillId,omitempty"`
-	RequestID    string            `json:"requestId,omitempty"`
-	SessionID    string            `json:"-"`
+	CapabilityVersion string            `json:"capabilityVersion,omitempty"`
+	ToolName          string            `json:"toolName"`
+	Input             map[string]any    `json:"input,omitempty"`
+	SecretRefs        map[string]string `json:"secretRefs,omitempty"`
+	AIClientID        string            `json:"aiClientId,omitempty"`
+	AIClientName      string            `json:"aiClientName,omitempty"`
+	SkillID           string            `json:"skillId,omitempty"`
+	RequestID         string            `json:"requestId,omitempty"`
+	SessionID         string            `json:"-"`
 }
 
 type ToolInvocationResult struct {
-	ToolName         string         `json:"toolName"`
-	RiskLevel        RiskLevel      `json:"riskLevel"`
-	RequiresApproval bool           `json:"requiresApproval"`
-	Result           string         `json:"result"`
-	Output           any            `json:"output,omitempty"`
-	RelatedIDs       map[string]any `json:"relatedIds,omitempty"`
-	Audit            map[string]any `json:"audit,omitempty"`
+	CapabilityVersion string                `json:"capabilityVersion,omitempty"`
+	Task              *CapabilityTaskRef    `json:"task,omitempty"`
+	Assessment        *CapabilityAssessment `json:"assessment,omitempty"`
+	ToolName          string                `json:"toolName"`
+	RiskLevel         RiskLevel             `json:"riskLevel"`
+	RequiresApproval  bool                  `json:"requiresApproval"`
+	Result            string                `json:"result"`
+	Output            any                   `json:"output,omitempty"`
+	RelatedIDs        map[string]any        `json:"relatedIds,omitempty"`
+	Audit             map[string]any        `json:"audit,omitempty"`
 }
 
 type ResourceReadRequest struct {

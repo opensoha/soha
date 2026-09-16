@@ -9,7 +9,9 @@ import (
 	"time"
 
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
 )
 
@@ -23,19 +25,23 @@ func New(db *gorm.DB) *Repository {
 
 func (r *Repository) List(ctx context.Context, filter domainbuild.Filter) ([]domainbuild.Record, error) {
 	limit := filter.Limit
-	if limit <= 0 {
+	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
 	query := `
 		SELECT id, project_id, source_system, status, metadata, started_at, finished_at, created_at
-		FROM build_records
+		FROM build_records WHERE TRUE
 	`
 	args := []any{}
 	if filter.ApplicationID != "" {
-		query += ` WHERE project_id = ?`
+		query += ` AND project_id = ?`
 		args = append(args, filter.ApplicationID)
 	}
-	query += ` ORDER BY created_at DESC LIMIT ?`
+	if filter.BuildSourceID != "" {
+		query += ` AND COALESCE(NULLIF(metadata->>'buildSourceId', ''), 'default:' || project_id) = ?`
+		args = append(args, filter.BuildSourceID)
+	}
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
 	args = append(args, limit)
 	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {
@@ -55,11 +61,35 @@ func (r *Repository) List(ctx context.Context, filter domainbuild.Filter) ([]dom
 }
 
 func (r *Repository) Create(ctx context.Context, input domainbuild.TriggerInput, metadata map[string]any) (domainbuild.Record, error) {
+	if node, ok := domainworkflow.NodeExecutionFrom(ctx); ok {
+		var record domainbuild.Record
+		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := repoworkflow.LockDeliveryNode(ctx, tx, input.ApplicationID, input.ApplicationEnvironmentID); err != nil {
+				return err
+			}
+			repo := New(tx)
+			existing, err := repo.Get(ctx, node.ResourceID("build"))
+			if err == nil {
+				record = existing
+				return nil
+			}
+			if !errors.Is(err, apperrors.ErrNotFound) {
+				return err
+			}
+			record, err = repo.create(ctx, input, node.Metadata(metadata), node.ResourceID("build"))
+			return err
+		})
+		return record, err
+	}
+	return r.create(ctx, input, metadata, fmt.Sprintf("build:%s:%d", input.ApplicationID, time.Now().UTC().UnixNano()))
+}
+
+func (r *Repository) create(ctx context.Context, input domainbuild.TriggerInput, metadata map[string]any, id string) (domainbuild.Record, error) {
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
 	record := domainbuild.Record{
-		ID:            fmt.Sprintf("build:%s:%d", input.ApplicationID, time.Now().UTC().UnixNano()),
+		ID:            id,
 		ApplicationID: input.ApplicationID,
 		SourceSystem:  "manual",
 		Status:        "queued",

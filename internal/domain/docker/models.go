@@ -164,6 +164,7 @@ type Project struct {
 }
 
 type ProjectInput struct {
+	IdempotencyKey string         `json:"idempotencyKey,omitempty"`
 	ID             string         `json:"id,omitempty"`
 	HostID         string         `json:"hostId"`
 	Name           string         `json:"name"`
@@ -392,26 +393,27 @@ type TemplateFilter struct {
 }
 
 type Operation struct {
-	ID                string          `json:"id"`
-	HostID            string          `json:"hostId,omitempty"`
-	ProjectID         string          `json:"projectId,omitempty"`
-	ServiceID         string          `json:"serviceId,omitempty"`
-	OperationKind     string          `json:"operationKind"`
-	Status            string          `json:"status"`
-	RequestedBy       string          `json:"requestedBy,omitempty"`
-	ClaimedByWorkerID string          `json:"claimedByWorkerId,omitempty"`
-	CallbackToken     string          `json:"-"`
-	AttemptCount      int             `json:"attemptCount"`
-	MaxRetries        int             `json:"maxRetries"`
-	TimeoutSeconds    int             `json:"timeoutSeconds"`
-	Payload           map[string]any  `json:"payload,omitempty"`
-	Result            map[string]any  `json:"result,omitempty"`
-	OperationState    *OperationState `json:"operationState,omitempty" gorm:"-"`
-	StartedAt         *time.Time      `json:"startedAt,omitempty"`
-	LastHeartbeatAt   *time.Time      `json:"lastHeartbeatAt,omitempty"`
-	FinishedAt        *time.Time      `json:"finishedAt,omitempty"`
-	CreatedAt         time.Time       `json:"createdAt"`
-	UpdatedAt         time.Time       `json:"updatedAt"`
+	ExecutionAuthorization string          `json:"-"`
+	ID                     string          `json:"id"`
+	HostID                 string          `json:"hostId,omitempty"`
+	ProjectID              string          `json:"projectId,omitempty"`
+	ServiceID              string          `json:"serviceId,omitempty"`
+	OperationKind          string          `json:"operationKind"`
+	Status                 string          `json:"status"`
+	RequestedBy            string          `json:"requestedBy,omitempty"`
+	ClaimedByWorkerID      string          `json:"claimedByWorkerId,omitempty"`
+	CallbackToken          string          `json:"-"`
+	AttemptCount           int             `json:"attemptCount"`
+	MaxRetries             int             `json:"maxRetries"`
+	TimeoutSeconds         int             `json:"timeoutSeconds"`
+	Payload                map[string]any  `json:"payload,omitempty"`
+	Result                 map[string]any  `json:"result,omitempty"`
+	OperationState         *OperationState `json:"operationState,omitempty" gorm:"-"`
+	StartedAt              *time.Time      `json:"startedAt,omitempty"`
+	LastHeartbeatAt        *time.Time      `json:"lastHeartbeatAt,omitempty"`
+	FinishedAt             *time.Time      `json:"finishedAt,omitempty"`
+	CreatedAt              time.Time       `json:"createdAt"`
+	UpdatedAt              time.Time       `json:"updatedAt"`
 }
 
 type OperationState struct {
@@ -454,7 +456,7 @@ func BuildOperationState(operation Operation, now time.Time) *OperationState {
 		timeoutSeconds = defaultOperationStateTimeoutSeconds
 	}
 	terminal := operationStatusTerminal(status)
-	heartbeatRequired := status == "running"
+	heartbeatRequired := status == "running" || status == "canceling"
 	heartbeatReference := operationHeartbeatReference(operation)
 	nextDeadline := time.Time{}
 	heartbeatStale := false
@@ -518,6 +520,8 @@ func operationPhase(status string) string {
 		return "pending"
 	case "running":
 		return "running"
+	case "canceling":
+		return "canceling"
 	case "completed":
 		return "succeeded"
 	case "failed", "callback_timeout":
@@ -540,6 +544,8 @@ func operationRecommendedNextAction(status string, heartbeatStale bool) string {
 		return "wait_for_heartbeat"
 	case "failed", "callback_timeout":
 		return "inspect_failure_or_retry"
+	case "canceling":
+		return "wait_for_cancellation_acknowledgment"
 	case "canceled":
 		return "retry_or_close"
 	case "completed":
@@ -564,17 +570,18 @@ func firstNonEmptyOperationResultString(result map[string]any, keys ...string) s
 }
 
 type OperationInput struct {
-	ID             string         `json:"id,omitempty"`
-	HostID         string         `json:"hostId,omitempty"`
-	ProjectID      string         `json:"projectId,omitempty"`
-	ServiceID      string         `json:"serviceId,omitempty"`
-	OperationKind  string         `json:"operationKind"`
-	Status         string         `json:"status,omitempty"`
-	RequestedBy    string         `json:"requestedBy,omitempty"`
-	MaxRetries     int            `json:"maxRetries,omitempty"`
-	TimeoutSeconds int            `json:"timeoutSeconds,omitempty"`
-	Payload        map[string]any `json:"payload,omitempty"`
-	Result         map[string]any `json:"result,omitempty"`
+	ExecutionAuthorization string         `json:"-"`
+	ID                     string         `json:"id,omitempty"`
+	HostID                 string         `json:"hostId,omitempty"`
+	ProjectID              string         `json:"projectId,omitempty"`
+	ServiceID              string         `json:"serviceId,omitempty"`
+	OperationKind          string         `json:"operationKind"`
+	Status                 string         `json:"status,omitempty"`
+	RequestedBy            string         `json:"requestedBy,omitempty"`
+	MaxRetries             int            `json:"maxRetries,omitempty"`
+	TimeoutSeconds         int            `json:"timeoutSeconds,omitempty"`
+	Payload                map[string]any `json:"payload,omitempty"`
+	Result                 map[string]any `json:"result,omitempty"`
 }
 
 type OperationFilter struct {
@@ -602,13 +609,14 @@ type OperationClaimInput struct {
 }
 
 type OperationCallbackInput struct {
-	OperationID   string              `json:"operationId"`
-	WorkerID      string              `json:"workerId"`
-	CallbackToken string              `json:"callbackToken,omitempty"`
-	Status        string              `json:"status"`
-	Payload       map[string]any      `json:"payload,omitempty"`
-	Logs          []string            `json:"logs,omitempty"`
-	Authorization RunnerAuthorization `json:"-"`
+	CancellationAcknowledged bool                `json:"cancellationAcknowledged,omitempty"`
+	OperationID              string              `json:"operationId"`
+	WorkerID                 string              `json:"workerId"`
+	CallbackToken            string              `json:"callbackToken,omitempty"`
+	Status                   string              `json:"status"`
+	Payload                  map[string]any      `json:"payload,omitempty"`
+	Logs                     []string            `json:"logs,omitempty"`
+	Authorization            RunnerAuthorization `json:"-"`
 }
 
 type OperationLog struct {
@@ -637,6 +645,7 @@ type ContainerStartCreateResult struct {
 }
 
 type QuickCreateHostInput struct {
+	RequireCapacity            bool           `json:"requireCapacity,omitempty"`
 	Name                       string         `json:"name"`
 	Environment                string         `json:"environment,omitempty"`
 	Owner                      string         `json:"owner,omitempty"`
@@ -745,6 +754,8 @@ type Repository interface {
 	CountProjects(context.Context, ProjectFilter) (int, error)
 	GetProject(context.Context, string) (Project, error)
 	CreateProject(context.Context, ProjectInput) (Project, error)
+	FindProjectCreation(context.Context, string, string) (Project, error)
+	CreateProjectIdempotent(context.Context, ProjectInput, string, []string) (Project, error)
 	UpdateProject(context.Context, string, ProjectInput) (Project, error)
 	DeleteProject(context.Context, string) error
 
@@ -785,4 +796,5 @@ type Repository interface {
 	ListOperationLogs(context.Context, string, int) ([]OperationLog, error)
 	UpdateProjectRuntime(context.Context, string, string, string, *time.Time) (Project, error)
 	TouchHostRuntime(context.Context, string, HostInput) (Host, error)
+	HeartbeatHost(context.Context, string, string) error
 }

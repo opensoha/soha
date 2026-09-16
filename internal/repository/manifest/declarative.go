@@ -130,16 +130,24 @@ func (r *Repository) CreateBinding(ctx context.Context, item domainmanifest.Envi
 	if err != nil {
 		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode manifest binding overlay: %w", err)
 	}
+	kustomize, err := json.Marshal(item.Kustomize)
+	if err != nil {
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode manifest binding kustomize: %w", err)
+	}
+	templateParameters, err := json.Marshal(item.TemplateParameters)
+	if err != nil {
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode template parameters: %w", err)
+	}
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
 			INSERT INTO manifest_bindings (
 				id, package_id, application_environment_id, environment_key, cluster_id, namespace,
 				overlay, rollout_strategy_id, verification_policy_id, drift_policy, deletion_policy,
-				enabled, version, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?)
+				enabled, version, created_at, updated_at, kustomize, template_parameters
+			) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?::jsonb, 'null'::jsonb), COALESCE(NULLIF(?::jsonb, 'null'::jsonb), '{}'::jsonb))
 		`, item.ID, item.PackageID, item.ApplicationEnvironmentID, item.EnvironmentKey, item.ClusterID,
 			item.Namespace, string(overlay), item.RolloutStrategyID, item.VerificationPolicyID,
-			item.DriftPolicy, item.DeletionPolicy, item.Enabled, item.Version, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			item.DriftPolicy, item.DeletionPolicy, item.Enabled, item.Version, item.CreatedAt, item.UpdatedAt, string(kustomize), string(templateParameters)).Error; err != nil {
 			return err
 		}
 		return syncBindingProjection(tx, item.PackageID)
@@ -155,16 +163,24 @@ func (r *Repository) UpdateBinding(ctx context.Context, item domainmanifest.Envi
 	if err != nil {
 		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode manifest binding overlay: %w", err)
 	}
+	kustomize, err := json.Marshal(item.Kustomize)
+	if err != nil {
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode manifest binding kustomize: %w", err)
+	}
+	templateParameters, err := json.Marshal(item.TemplateParameters)
+	if err != nil {
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("encode template parameters: %w", err)
+	}
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Exec(`
 			UPDATE manifest_bindings
 			SET application_environment_id = ?, environment_key = ?, cluster_id = ?, namespace = ?,
 				overlay = ?::jsonb, rollout_strategy_id = ?, verification_policy_id = ?, drift_policy = ?,
-				deletion_policy = ?, enabled = ?, version = version + 1, updated_at = ?
+				deletion_policy = ?, enabled = ?, version = version + 1, updated_at = ?, kustomize = NULLIF(?::jsonb, 'null'::jsonb), template_parameters = COALESCE(NULLIF(?::jsonb, 'null'::jsonb), template_parameters)
 			WHERE id = ? AND version = ?
 		`, item.ApplicationEnvironmentID, item.EnvironmentKey, item.ClusterID, item.Namespace, string(overlay),
 			item.RolloutStrategyID, item.VerificationPolicyID, item.DriftPolicy, item.DeletionPolicy,
-			item.Enabled, item.UpdatedAt, item.ID, expectedVersion)
+			item.Enabled, item.UpdatedAt, string(kustomize), string(templateParameters), item.ID, expectedVersion)
 		if result.Error != nil {
 			return result.Error
 		}
@@ -204,16 +220,16 @@ func (r *Repository) DeleteBinding(ctx context.Context, bindingID string) error 
 
 const bindingSelect = `SELECT id, package_id, application_environment_id, environment_key, cluster_id, namespace,
 	overlay, rollout_strategy_id, verification_policy_id, drift_policy, deletion_policy, enabled, version,
-	created_at, updated_at FROM manifest_bindings`
+	created_at, updated_at, COALESCE(kustomize, 'null'::jsonb), template_parameters FROM manifest_bindings`
 
 func scanEnvironmentBinding(source scanner) (domainmanifest.EnvironmentBinding, error) {
 	var item domainmanifest.EnvironmentBinding
-	var overlay []byte
+	var overlay, kustomize, templateParameters []byte
 	if err := source.Scan(
 		&item.ID, &item.PackageID, &item.ApplicationEnvironmentID, &item.EnvironmentKey,
 		&item.ClusterID, &item.Namespace, &overlay, &item.RolloutStrategyID,
 		&item.VerificationPolicyID, &item.DriftPolicy, &item.DeletionPolicy, &item.Enabled,
-		&item.Version, &item.CreatedAt, &item.UpdatedAt,
+		&item.Version, &item.CreatedAt, &item.UpdatedAt, &kustomize, &templateParameters,
 	); err != nil {
 		return domainmanifest.EnvironmentBinding{}, err
 	}
@@ -223,27 +239,37 @@ func scanEnvironmentBinding(source scanner) (domainmanifest.EnvironmentBinding, 
 	if item.Overlay == nil {
 		item.Overlay = map[string]string{}
 	}
+	if err := json.Unmarshal(kustomize, &item.Kustomize); err != nil {
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("decode manifest binding kustomize: %w", err)
+	}
+	if err := json.Unmarshal(templateParameters, &item.TemplateParameters); err != nil {
+		return item, fmt.Errorf("decode template parameters: %w", err)
+	}
 	return item, nil
 }
 
 func syncBindingProjection(tx *gorm.DB, packageID string) error {
 	return tx.Exec(`
 		UPDATE manifest_packages package
-		SET bindings = COALESCE((
-			SELECT jsonb_agg(jsonb_build_object(
+		SET bindings = projection.bindings,
+			status = CASE WHEN package.bindings IS DISTINCT FROM projection.bindings THEN 'draft' ELSE package.status END,
+			updated_at = GREATEST(clock_timestamp(), package.updated_at + INTERVAL '1 microsecond')
+		FROM (SELECT COALESCE(jsonb_agg(jsonb_build_object(
 				'id', binding.id,
 				'applicationEnvironmentId', binding.application_environment_id,
 				'environmentKey', binding.environment_key,
 				'clusterId', binding.cluster_id,
 				'namespace', binding.namespace,
 				'overlay', binding.overlay,
+				'kustomize', binding.kustomize,
+                'templateParameters', binding.template_parameters,
 				'status', 'not_deployed'
-			) ORDER BY binding.created_at, binding.id)
+			) ORDER BY binding.created_at, binding.id), '[]'::jsonb) AS bindings
 			FROM manifest_bindings binding
-			WHERE binding.package_id = package.id
-		), '[]'::jsonb), updated_at = CURRENT_TIMESTAMP
+			WHERE binding.package_id = ?
+		) projection
 		WHERE package.id = ?
-	`, packageID).Error
+	`, packageID, packageID).Error
 }
 
 func syncLegacyBindingRelations(tx *gorm.DB, packageID string, bindings []domainmanifest.Binding, updatedAt time.Time) error {
@@ -257,32 +283,42 @@ func syncLegacyBindingRelations(tx *gorm.DB, packageID string, bindings []domain
 		if err != nil {
 			return fmt.Errorf("encode legacy manifest binding overlay: %w", err)
 		}
+		kustomize, err := json.Marshal(binding.Kustomize)
+		if err != nil {
+			return fmt.Errorf("encode legacy manifest binding kustomize: %w", err)
+		}
+		parameters, err := json.Marshal(binding.TemplateParameters)
+		if err != nil {
+			return err
+		}
 		result := tx.Exec(`
 			INSERT INTO manifest_bindings (
 				id, package_id, application_environment_id, environment_key, cluster_id, namespace,
-				overlay, drift_policy, deletion_policy, enabled, version, created_at, updated_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, 'report', 'orphan', true, 1, ?, ?)
+				overlay, drift_policy, deletion_policy, enabled, version, created_at, updated_at, kustomize, template_parameters
+			) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, 'report', 'orphan', true, 1, ?, ?, NULLIF(?::jsonb, 'null'::jsonb), COALESCE(NULLIF(?::jsonb, 'null'::jsonb), '{}'::jsonb))
 			ON CONFLICT (id) DO UPDATE SET
 				application_environment_id = EXCLUDED.application_environment_id,
 				environment_key = EXCLUDED.environment_key,
 				cluster_id = EXCLUDED.cluster_id,
 				namespace = EXCLUDED.namespace,
 				overlay = EXCLUDED.overlay,
+				kustomize = EXCLUDED.kustomize,
+                template_parameters = EXCLUDED.template_parameters,
 				version = manifest_bindings.version + CASE WHEN
 					(manifest_bindings.application_environment_id, manifest_bindings.environment_key,
-						manifest_bindings.cluster_id, manifest_bindings.namespace, manifest_bindings.overlay)
+						manifest_bindings.cluster_id, manifest_bindings.namespace, manifest_bindings.overlay, manifest_bindings.kustomize, manifest_bindings.template_parameters)
 					IS DISTINCT FROM (EXCLUDED.application_environment_id, EXCLUDED.environment_key,
-						EXCLUDED.cluster_id, EXCLUDED.namespace, EXCLUDED.overlay)
+						EXCLUDED.cluster_id, EXCLUDED.namespace, EXCLUDED.overlay, EXCLUDED.kustomize, EXCLUDED.template_parameters)
 					THEN 1 ELSE 0 END,
 				updated_at = CASE WHEN
 					(manifest_bindings.application_environment_id, manifest_bindings.environment_key,
-						manifest_bindings.cluster_id, manifest_bindings.namespace, manifest_bindings.overlay)
+						manifest_bindings.cluster_id, manifest_bindings.namespace, manifest_bindings.overlay, manifest_bindings.kustomize, manifest_bindings.template_parameters)
 					IS DISTINCT FROM (EXCLUDED.application_environment_id, EXCLUDED.environment_key,
-						EXCLUDED.cluster_id, EXCLUDED.namespace, EXCLUDED.overlay)
+						EXCLUDED.cluster_id, EXCLUDED.namespace, EXCLUDED.overlay, EXCLUDED.kustomize, EXCLUDED.template_parameters)
 					THEN EXCLUDED.updated_at ELSE manifest_bindings.updated_at END
 			WHERE manifest_bindings.package_id = EXCLUDED.package_id
 		`, binding.ID, packageID, binding.ApplicationEnvironmentID, binding.EnvironmentKey, binding.ClusterID,
-			binding.Namespace, string(encodedOverlay), updatedAt, updatedAt)
+			binding.Namespace, string(encodedOverlay), updatedAt, updatedAt, string(kustomize), string(parameters))
 		if result.Error != nil {
 			return result.Error
 		}
@@ -318,6 +354,7 @@ func (r *Repository) ListDeployments(ctx context.Context, filter domainmanifest.
 	if err != nil {
 		return domainmanifest.DeploymentPage{}, fmt.Errorf("list manifest deployments: %w", err)
 	}
+	defer func() { _ = rows.Close() }()
 	items := make([]domainmanifest.Deployment, 0, pageSize)
 	for rows.Next() {
 		item, scanErr := scanDeployment(rows)
@@ -370,7 +407,7 @@ const deploymentSelectQuery = `SELECT deployment.id, deployment.package_id, depl
 	COALESCE(status.phase, 'pending'), status.last_reconciled_at,
 	COALESCE(status.last_execution_task_id, ''), COALESCE(status.drift, '{}'::jsonb),
 	COALESCE(status.last_error_code, ''), COALESCE(status.last_error_message, ''),
-	deployment.created_at, deployment.updated_at` + deploymentJoins
+	deployment.created_at, deployment.updated_at, deployment.delivery_snapshot` + deploymentJoins
 
 const deploymentCountQuery = `SELECT COUNT(*)` + deploymentJoins
 
@@ -422,6 +459,7 @@ func normalizeDeploymentPage(page, pageSize int) (int, int) {
 func scanDeployment(source scanner) (domainmanifest.Deployment, error) {
 	var item domainmanifest.Deployment
 	var drift []byte
+	var snapshot []byte
 	if err := source.Scan(
 		&item.ID, &item.PackageID, &item.BindingID, &item.Generation,
 		&item.Spec.DesiredRevision, &item.Spec.DesiredDigest, &item.Spec.ReconcilePolicy,
@@ -429,11 +467,16 @@ func scanDeployment(source scanner) (domainmanifest.Deployment, error) {
 		&item.Status.AppliedRevision, &item.Status.AppliedDigest, &item.Status.LastKnownGoodRevision,
 		&item.Status.Phase, &item.Status.LastReconciledAt, &item.Status.LastExecutionTaskID, &drift,
 		&item.Status.LastErrorCode,
-		&item.Status.LastErrorMessage, &item.CreatedAt, &item.UpdatedAt,
+		&item.Status.LastErrorMessage, &item.CreatedAt, &item.UpdatedAt, &snapshot,
 	); err != nil {
 		return domainmanifest.Deployment{}, err
 	}
 	item.Status.Conditions = []domainmanifest.Condition{}
+	if len(snapshot) > 0 {
+		if err := json.Unmarshal(snapshot, &item.Spec.DeliverySnapshot); err != nil {
+			return domainmanifest.Deployment{}, fmt.Errorf("decode delivery snapshot: %w", err)
+		}
+	}
 	item.Status.Inventory = []domainmanifest.ResourceInventory{}
 	if len(drift) > 0 && string(drift) != "{}" {
 		var report domainmanifest.DriftReport
@@ -486,7 +529,8 @@ func (r *Repository) listConditions(ctx context.Context, deploymentID string) ([
 func (r *Repository) listInventory(ctx context.Context, deploymentID string, generation int64) ([]domainmanifest.ResourceInventory, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT deployment_id, generation, api_version, kind, namespace, name, uid, resource_version,
-			desired_object_digest, observed_object_digest, health, last_observed_at
+			desired_object_digest, observed_object_digest, health, last_observed_at,
+			resource_generation, observed_resource_generation, deleting_at, finalizers
 		FROM manifest_resource_inventory
 		WHERE deployment_id = ? AND generation = ?
 		ORDER BY api_version, kind, namespace, name
@@ -498,12 +542,17 @@ func (r *Repository) listInventory(ctx context.Context, deploymentID string, gen
 	items := make([]domainmanifest.ResourceInventory, 0)
 	for rows.Next() {
 		var item domainmanifest.ResourceInventory
+		var finalizers []byte
 		if err := rows.Scan(
 			&item.DeploymentID, &item.Generation, &item.APIVersion, &item.Kind, &item.Namespace,
 			&item.Name, &item.UID, &item.ResourceVersion, &item.DesiredObjectDigest,
 			&item.ObservedObjectDigest, &item.Health, &item.LastObservedAt,
+			&item.ResourceGeneration, &item.ObservedResourceGeneration, &item.DeletingAt, &finalizers,
 		); err != nil {
 			return nil, err
+		}
+		if err := json.Unmarshal(finalizers, &item.Finalizers); err != nil {
+			return nil, fmt.Errorf("decode manifest resource finalizers: %w", err)
 		}
 		items = append(items, item)
 	}

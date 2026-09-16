@@ -1032,6 +1032,8 @@ func routeTestDependencies() Dependencies {
 		Applications:       &apiHandlers.ApplicationHandler{},
 		Builds:             &apiHandlers.BuildHandler{},
 		Workflows:          &apiHandlers.WorkflowHandler{},
+		DeliveryBatches:    &apiHandlers.DeliveryBatchHandler{},
+		DeliveryTriggers:   &apiHandlers.DeliveryTriggerHandler{},
 		Registries:         &apiHandlers.RegistryHandler{},
 		Releases:           &apiHandlers.ReleaseHandler{},
 		Copilot:            &apiHandlers.CopilotHandler{},

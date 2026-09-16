@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	"regexp"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -48,5 +50,25 @@ func TestRepositoryQueriesWrapErrNotFound(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestDefinitionFilterPrecedesBuildLimit(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB, PreferSimpleProtocol: true}), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := `SELECT id, project_id, source_system, status, metadata, started_at, finished_at, created_at FROM build_records WHERE TRUE AND project_id = $1 AND COALESCE(NULLIF(metadata->>'buildSourceId', ''), 'default:' || project_id) = $2 ORDER BY created_at DESC, id DESC LIMIT $3`
+	mock.ExpectQuery(regexp.QuoteMeta(query)).WithArgs("app", "default:app", 10).WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	if _, err := New(db).List(context.Background(), domainbuild.Filter{ApplicationID: "app", BuildSourceID: "default:app", Limit: 10}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

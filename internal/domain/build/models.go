@@ -32,6 +32,18 @@ type TriggerInput struct {
 	ResolvedCommit           string          `json:"resolvedCommit,omitempty"`
 }
 
+// Prepared is a server-owned build intent persisted inside a delivery snapshot.
+// It is never accepted as an HTTP trigger input.
+type Prepared struct {
+	Input        TriggerInput   `json:"input"`
+	ImageTag     string         `json:"imageTag"`
+	ImageRef     string         `json:"imageRef"`
+	SourceType   string         `json:"sourceType"`
+	ProviderKind string         `json:"providerKind"`
+	Metadata     map[string]any `json:"metadata"`
+	Fingerprint  string         `json:"fingerprint"`
+}
+
 type RepositoryRef struct {
 	RepositoryID string `json:"repositoryId"`
 	RefType      string `json:"refType"`
@@ -39,6 +51,7 @@ type RepositoryRef struct {
 }
 
 type Filter struct {
+	BuildSourceID string
 	ApplicationID string
 	Limit         int
 }

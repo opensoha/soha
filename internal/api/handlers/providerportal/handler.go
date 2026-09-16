@@ -100,6 +100,8 @@ type ProviderService interface {
 	CreateProvider(context.Context, domainidentity.Principal, domainprovider.ProviderInput) (domainprovider.Provider, error)
 	UpdateProvider(context.Context, domainidentity.Principal, string, domainprovider.ProviderInput) (domainprovider.Provider, error)
 	DeleteProvider(context.Context, domainidentity.Principal, string) error
+	GetProviderSetup(context.Context, domainidentity.Principal, string, string) (sohaapi.IdentityProviderSetup, error)
+	GetProviderUserMetadata(context.Context, domainidentity.Principal, string, string, string) (sohaapi.IdentityProviderUserMetadata, error)
 }
 
 type OutpostService interface {
@@ -140,6 +142,7 @@ type Services struct {
 	PortalInteractor       PortalInteractor
 	BrowserHandoffs        BrowserHandoffIssuer
 	Applications           ApplicationService
+	ApplicationOnboarding  ApplicationOnboardingService
 	Policies               PolicyService
 	Providers              ProviderService
 	Outposts               OutpostService
@@ -156,6 +159,7 @@ type Services struct {
 type Handler struct {
 	portalHandler
 	applicationHandler
+	applicationOnboardingHandler
 	policyHandler
 	providerHandler
 	outpostHandler
@@ -184,7 +188,8 @@ type policyHandler struct {
 }
 
 type providerHandler struct {
-	service ProviderService
+	service   ProviderService
+	accessURL interface{ AccessURL() string }
 }
 
 type outpostHandler struct {
@@ -231,8 +236,9 @@ func New(services Services) *Handler {
 			accessURL:       services.AccessURL,
 		},
 		applicationHandler:            applicationHandler{service: services.Applications},
+		applicationOnboardingHandler:  applicationOnboardingHandler{service: services.ApplicationOnboarding},
 		policyHandler:                 policyHandler{service: services.Policies},
-		providerHandler:               providerHandler{service: services.Providers},
+		providerHandler:               providerHandler{service: services.Providers, accessURL: services.AccessURL},
 		outpostHandler:                outpostHandler{service: services.Outposts},
 		oidcClientHandler:             oidcClientHandler{service: services.OIDCClients},
 		oidcHandler:                   oidcHandler{service: services.OIDC, logout: services.OIDCLogout, accessURL: services.AccessURL},

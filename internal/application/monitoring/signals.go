@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -124,7 +125,7 @@ func (s *Service) QueryMetrics(ctx context.Context, principal domainidentity.Pri
 	}
 	observedAt := time.Now().UTC()
 	state := "success"
-	if len(series) == 0 {
+	if !slices.ContainsFunc(series, func(item telemetry.MetricSeries) bool { return len(item.Points) > 0 }) {
 		state = "empty"
 	}
 	return MetricQueryResult{

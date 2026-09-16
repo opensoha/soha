@@ -33,6 +33,7 @@ func mapSDKHelmReleaseDetail(release *helmreleasev1.Release) domainresource.Helm
 		Name: strings.TrimSpace(release.Name), Namespace: strings.TrimSpace(release.Namespace),
 		Revision: strconv.Itoa(release.Version), ChartName: chartName, ChartVersion: chartVersion,
 		AppVersion: appVersion, StorageDriver: "secret", Description: description,
+		Labels: cloneHelmStringMap(release.Labels), AllowedActions: helmrelease.LegacyAllowedActions(release.Labels),
 		Annotations: annotations, ValuesEditable: false, ValuesDiffEnabled: true,
 	}
 	if chartName != "" {
@@ -65,7 +66,7 @@ func mapSDKHelmReleaseHistory(release *helmreleasev1.Release) domainresource.Hel
 	}
 	item := domainresource.HelmReleaseHistoryView{
 		Name: strings.TrimSpace(release.Name), Namespace: strings.TrimSpace(release.Namespace),
-		Revision: strconv.Itoa(release.Version),
+		Revision: strconv.Itoa(release.Version), AllowedActions: helmrelease.LegacyAllowedActions(release.Labels),
 	}
 	if release.Chart != nil && release.Chart.Metadata != nil {
 		item.ChartVersion = strings.TrimSpace(release.Chart.Metadata.Version)

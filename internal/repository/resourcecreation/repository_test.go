@@ -106,7 +106,7 @@ func TestUpdateDocumentPersistsSanitizedChildResult(t *testing.T) {
 	document.ErrorCode = "resource_already_exists"
 	document.Error = strings.Repeat("x", maxErrorSummaryBytes+100)
 	mock.ExpectExec(`UPDATE platform_resource_creation_documents AS document`).
-		WithArgs("v1", "ConfigMap", "settings", "minio", true, "failed", "resource_already_exists", strings.Repeat("x", maxErrorSummaryBytes), sqlmock.AnyArg(), "batch-1", 0).
+		WithArgs("v1", "ConfigMap", "settings", "minio", true, "", "failed", "resource_already_exists", strings.Repeat("x", maxErrorSummaryBytes), sqlmock.AnyArg(), "batch-1", 0).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	if err := repository.UpdateDocument(context.Background(), "batch-1", document); err != nil {
@@ -123,7 +123,7 @@ func TestUpdateDocumentRejectsDifferentSecondTerminalResult(t *testing.T) {
 	document.ErrorCode = "resource_create_failed"
 	document.Error = "timeout"
 	mock.ExpectExec(`UPDATE platform_resource_creation_documents AS document`).
-		WithArgs("v1", "ConfigMap", "settings", "minio", true, "failed", "resource_create_failed", "timeout", sqlmock.AnyArg(), "batch-1", 0).
+		WithArgs("v1", "ConfigMap", "settings", "minio", true, "", "failed", "resource_create_failed", "timeout", sqlmock.AnyArg(), "batch-1", 0).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	expectBatchByID(mock, now, domainresource.ResourceCreateBatchRunning)
 	expectDocuments(mock, "batch-1", "succeeded")
@@ -222,8 +222,8 @@ func batchRows(now time.Time, status domainresource.ResourceCreateBatchStatus, h
 func expectDocuments(mock sqlmock.Sqlmock, batchID, status string) {
 	mock.ExpectQuery(`SELECT document_index, api_version, kind, resource_name, namespace, namespaced,`).
 		WithArgs(batchID).
-		WillReturnRows(sqlmock.NewRows([]string{"document_index", "api_version", "kind", "resource_name", "namespace", "namespaced", "status", "error_code", "error_summary"}).
-			AddRow(0, "v1", "ConfigMap", "settings", "minio", true, status, "", ""))
+		WillReturnRows(sqlmock.NewRows([]string{"document_index", "api_version", "kind", "resource_name", "namespace", "namespaced", "resource_uid", "status", "error_code", "error_summary"}).
+			AddRow(0, "v1", "ConfigMap", "settings", "minio", true, "", status, "", ""))
 }
 
 func newRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {

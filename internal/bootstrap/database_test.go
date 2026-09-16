@@ -475,6 +475,8 @@ func TestDockerHostProvisionerPreservesCallerPermissions(t *testing.T) {
 	virtualization := &captureDockerProvisionVirtualization{}
 	provisioner := dockerHostProvisioner{virtualization: virtualization}
 	input := appdockerHostProvisionInput("conn-pve")
+	input.RequireCapacity = true
+	input.IdempotencyKey = "docker-host/stable-host"
 	input.ProviderParams = map[string]any{"node": "pve-a", "sourceMode": "vm_clone"}
 	principal := domainidentity.Principal{
 		UserID:         "docker-operator",
@@ -501,6 +503,9 @@ func TestDockerHostProvisionerPreservesCallerPermissions(t *testing.T) {
 	if virtualization.createInput.Node != "pve-a" || virtualization.createInput.SourceMode != "vm_clone" {
 		t.Fatalf("clone source routing = %#v", virtualization.createInput)
 	}
+	if !virtualization.createInput.RequireCapacity || virtualization.createInput.IdempotencyKey != input.IdempotencyKey {
+		t.Fatalf("capacity or idempotency lost: %+v", virtualization.createInput)
+	}
 
 	if _, err := provisioner.CancelProvisionTask(context.Background(), principal, "task-1"); err != nil {
 		t.Fatalf("CancelProvisionTask() error = %v", err)
@@ -522,6 +527,7 @@ func TestDefaultMenuSeedsIncludeUnifiedAIWorkbench(t *testing.T) {
 		"ai-workbench-companion":       {path: "/ai-workbench/companion", section: "ai-interaction"},
 		"ai-workbench-knowledge":       {path: "/ai-workbench/knowledge", section: "ai-interaction"},
 		"ai-workbench-inspection":      {path: "/ai-workbench/inspection", section: "ai-interaction"},
+		"ai-workbench-tasks":           {path: "/ai-workbench/tasks", section: "ai-interaction"},
 		"ai-workbench-agent-runs":      {path: "/ai-workbench/agent-runs", section: "ai-interaction"},
 		"ai-workbench-evaluations":     {path: "/ai-workbench/evaluations", section: "ai-interaction"},
 		"ai-workbench-context":         {path: "/ai-workbench/context", section: "ai-engineering"},
@@ -640,6 +646,7 @@ func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
 		"identity-applications":          {section: "provider", sortOrder: 10},
 		"identity-providers":             {section: "provider", sortOrder: 20},
 		"identity-outposts":              {section: "provider", sortOrder: 30},
+		"identity-login-records":         {section: "provider", sortOrder: 40},
 		"settings-source-control":        {section: "integrations", sortOrder: 10},
 		"settings-secrets":               {section: "integrations", sortOrder: 20},
 		"menus":                          {section: "users", sortOrder: 50},

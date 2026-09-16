@@ -34,6 +34,8 @@ type ManifestBindingService interface {
 }
 
 type ManifestDeploymentService interface {
+	GetTaskRollout(context.Context, domainidentity.Principal, string) (sohaapi.ProgressiveRolloutStatus, error)
+	ControlTaskRollout(context.Context, domainidentity.Principal, string, sohaapi.ProgressiveRolloutControlInput) (sohaapi.ProgressiveRolloutStatus, error)
 	ListDeployments(context.Context, domainidentity.Principal, domainmanifest.DeploymentFilter) (domainmanifest.DeploymentPage, error)
 	GetDeployment(context.Context, domainidentity.Principal, string) (domainmanifest.Deployment, error)
 	Reconcile(context.Context, domainidentity.Principal, string, string, domainmanifest.ActionInput) (appmanifest.DeploymentActionResult, error)
@@ -206,8 +208,10 @@ func (h *ManifestBindingHandler) Update(c *gin.Context) {
 	}
 	item, err := h.service.UpdateBinding(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("manifestBindingID"), domainmanifest.BindingUpdateInput{
 		BindingInput: domainmanifest.BindingInput{
+			TemplateParameters:       manifestTemplateParametersInput(request.TemplateParameters),
 			ApplicationEnvironmentID: request.ApplicationEnvironmentID, ClusterID: request.ClusterID,
 			Namespace: request.Namespace, Overlay: request.Overlay, RolloutStrategyID: request.RolloutStrategyID,
+			Kustomize:            manifestKustomizeInput(request.Kustomize),
 			VerificationPolicyID: request.VerificationPolicyID, DriftPolicy: string(request.DriftPolicy),
 			DeletionPolicy: string(request.DeletionPolicy), Enabled: request.Enabled,
 		},
@@ -271,6 +275,29 @@ func (h *ManifestDeploymentHandler) Get(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, manifestDeploymentDTO(item))
+}
+
+func (h *ManifestDeploymentHandler) GetTaskRollout(c *gin.Context) {
+	state, err := h.service.GetTaskRollout(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, state)
+}
+
+func (h *ManifestDeploymentHandler) ControlTaskRollout(c *gin.Context) {
+	var input sohaapi.ProgressiveRolloutControlInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid rollout control payload")
+		return
+	}
+	state, err := h.service.ControlTaskRollout(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("taskID"), input)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, state)
 }
 
 func (h *ManifestDeploymentHandler) Reconcile(c *gin.Context) {
@@ -378,8 +405,10 @@ func (h *ManifestIntentHandler) decide(c *gin.Context, decision string) {
 
 func bindingInput(request sohaapi.ManifestBindingInput) domainmanifest.BindingInput {
 	return domainmanifest.BindingInput{
+		TemplateParameters:       manifestTemplateParametersInput(request.TemplateParameters),
 		ApplicationEnvironmentID: request.ApplicationEnvironmentID, ClusterID: request.ClusterID,
 		Namespace: request.Namespace, Overlay: request.Overlay, RolloutStrategyID: request.RolloutStrategyID,
+		Kustomize:            manifestKustomizeInput(request.Kustomize),
 		VerificationPolicyID: request.VerificationPolicyID, DriftPolicy: string(request.DriftPolicy),
 		DeletionPolicy: string(request.DeletionPolicy), Enabled: request.Enabled,
 	}
@@ -401,13 +430,37 @@ func manifestSourceDTO(item domainmanifest.Source) sohaapi.ManifestSource {
 
 func manifestBindingDTO(item domainmanifest.EnvironmentBinding) sohaapi.ManifestBinding {
 	return sohaapi.ManifestBinding{
-		ID: item.ID, PackageID: item.PackageID, ApplicationEnvironmentID: item.ApplicationEnvironmentID,
+		TemplateParameters: manifestTemplateParametersDTO(item.TemplateParameters),
+		ID:                 item.ID, PackageID: item.PackageID, ApplicationEnvironmentID: item.ApplicationEnvironmentID,
 		EnvironmentKey: item.EnvironmentKey, ClusterID: item.ClusterID, Namespace: item.Namespace,
 		Overlay: item.Overlay, RolloutStrategyID: item.RolloutStrategyID,
+		Kustomize:            manifestKustomizeDTO(item.Kustomize),
 		VerificationPolicyID: item.VerificationPolicyID, DriftPolicy: sohaapi.ManifestDriftPolicy(item.DriftPolicy),
 		DeletionPolicy: sohaapi.ManifestDeletionPolicy(item.DeletionPolicy), Enabled: item.Enabled,
 		Version: item.Version, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
 	}
+}
+
+func manifestKustomizeInput(input *sohaapi.ManifestKustomizeOptions) *domainmanifest.KustomizeOptions {
+	if input == nil {
+		return nil
+	}
+	result := &domainmanifest.KustomizeOptions{EntryPath: input.EntryPath}
+	for _, image := range input.Images {
+		result.Images = append(result.Images, domainmanifest.KustomizeImage{Name: image.Name, NewName: image.NewName, Digest: image.Digest})
+	}
+	return result
+}
+
+func manifestKustomizeDTO(input *domainmanifest.KustomizeOptions) *sohaapi.ManifestKustomizeOptions {
+	if input == nil {
+		return nil
+	}
+	result := &sohaapi.ManifestKustomizeOptions{EntryPath: input.EntryPath}
+	for _, image := range input.Images {
+		result.Images = append(result.Images, sohaapi.ManifestKustomizeImage{Name: image.Name, NewName: image.NewName, Digest: image.Digest})
+	}
+	return result
 }
 
 func manifestDeploymentDTO(item domainmanifest.Deployment) sohaapi.ManifestDeployment {
@@ -426,7 +479,9 @@ func manifestDeploymentDTO(item domainmanifest.Deployment) sohaapi.ManifestDeplo
 			Kind: resource.Kind, Namespace: resource.Namespace, Name: resource.Name, UID: resource.UID,
 			ResourceVersion: resource.ResourceVersion, DesiredObjectDigest: resource.DesiredObjectDigest,
 			ObservedObjectDigest: resource.ObservedObjectDigest, Health: resource.Health,
-			LastObservedAt: resource.LastObservedAt,
+			LastObservedAt: resource.LastObservedAt, ResourceGeneration: resource.ResourceGeneration,
+			ObservedResourceGeneration: resource.ObservedResourceGeneration,
+			DeletingAt:                 resource.DeletingAt, Finalizers: resource.Finalizers,
 		})
 	}
 	return sohaapi.ManifestDeployment{
@@ -478,4 +533,19 @@ func manifestDriftDTO(item *domainmanifest.DriftReport) *sohaapi.ManifestDriftRe
 		}{APIVersion: resource.APIVersion, Fields: fields, Kind: resource.Kind, Name: resource.Name, Namespace: resource.Namespace})
 	}
 	return &sohaapi.ManifestDriftReport{Drifted: item.Drifted, ObservedAt: item.ObservedAt, AgeSeconds: item.AgeSeconds, Resources: resources, EvidenceRefs: item.EvidenceRefs}
+}
+
+func manifestTemplateParametersInput(values *sohaapi.TemplateParameterValues) map[string]any {
+	if values == nil {
+		return nil
+	}
+	return map[string]any(*values)
+}
+
+func manifestTemplateParametersDTO(values map[string]any) *sohaapi.TemplateParameterValues {
+	if values == nil {
+		return nil
+	}
+	result := sohaapi.TemplateParameterValues(values)
+	return &result
 }

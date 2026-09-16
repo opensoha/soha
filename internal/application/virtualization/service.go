@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
@@ -41,6 +42,7 @@ const (
 	TaskStatusSucceeded = "completed"
 	TaskStatusFailed    = "failed"
 	TaskStatusCanceled  = "canceled"
+	TaskStatusCanceling = "canceling"
 	TaskStatusTimeout   = "callback_timeout"
 
 	defaultTaskMaxRetries     = 1
@@ -61,35 +63,48 @@ type AuditRecorder interface {
 }
 
 type Service struct {
-	connections        ConnectionReader
-	connectionWriter   ConnectionWriter
-	dockerLinks        DockerLinkRepository
-	vms                VMRepository
-	images             ImageRepository
-	flavors            FlavorRepository
-	tasks              TaskRepository
-	taskQueue          TaskQueueRepository
-	taskLogs           TaskLogRepository
-	adapters           map[string]Adapter
-	permissions        *appaccess.PermissionResolver
-	operations         OperationRecorder
-	audit              AuditRecorder
-	credentialKey      string
-	credentialKeys     keyring.Ring
-	workerInterval     time.Duration
-	syncConcurrency    int
-	startupSyncEnabled bool
-	workerMu           sync.Mutex
-	workerCancel       context.CancelFunc
-	workerDone         chan struct{}
-	running            bool
-	workerID           string
-	workerPrincipal    domainidentity.Principal
-	metrics            *runtimeobs.Registry
-	secretProvider     CredentialProvider
+	connections               ConnectionReader
+	connectionWriter          ConnectionWriter
+	dockerLinks               DockerLinkRepository
+	vms                       VMRepository
+	images                    ImageRepository
+	flavors                   FlavorRepository
+	tasks                     TaskRepository
+	taskQueue                 TaskQueueRepository
+	taskLogs                  TaskLogRepository
+	adapters                  map[string]Adapter
+	permissions               *appaccess.PermissionResolver
+	operations                OperationRecorder
+	audit                     AuditRecorder
+	credentialKey             string
+	credentialKeys            keyring.Ring
+	workerInterval            time.Duration
+	syncConcurrency           int
+	startupSyncEnabled        bool
+	workerMu                  sync.Mutex
+	workerCancel              context.CancelFunc
+	workerDone                chan struct{}
+	running                   bool
+	workerID                  string
+	workerPrincipal           domainidentity.Principal
+	metrics                   *runtimeobs.Registry
+	secretProvider            CredentialProvider
+	executionPrincipals       ExecutionPrincipalReader
+	workerPools               WorkerPoolRepository
+	workerRuntime             *WorkerRuntime
+	authorizeWorkerCluster    func(context.Context, domainidentity.Principal, string, bool) error
+	authorizeGatewayExecution func(context.Context, domainidentity.Principal, domainaigateway.ExecutionAuthorization) error
+}
+
+type ExecutionPrincipalReader interface {
+	CurrentExecutionPrincipal(context.Context, string, string) (domainidentity.Principal, error)
 }
 
 type Options struct {
+	AuthorizeWorkerCluster   func(context.Context, domainidentity.Principal, string, bool) error
+	WorkerPools              WorkerPoolRepository
+	WorkerRuntime            *WorkerRuntime
+	ExecutionPrincipals      ExecutionPrincipalReader
 	CredentialEncryptionKey  string
 	CredentialEncryptionKeys keyring.Ring
 	StartupSyncEnabled       bool
@@ -119,6 +134,7 @@ type ConnectionInput struct {
 }
 
 type CreateVMInput struct {
+	RequireCapacity   bool           `json:"requireCapacity,omitempty"`
 	ConnectionID      string         `json:"connectionId"`
 	Name              string         `json:"name"`
 	Architecture      string         `json:"architecture,omitempty"`
@@ -240,26 +256,30 @@ func New(deps Dependencies, adapters map[string]Adapter, permissions *appaccess.
 		syncConcurrency = 1
 	}
 	return &Service{
-		connections:        deps.Connections,
-		connectionWriter:   deps.ConnectionWriter,
-		dockerLinks:        deps.DockerLinks,
-		vms:                deps.VMs,
-		images:             deps.Images,
-		flavors:            deps.Flavors,
-		tasks:              deps.Tasks,
-		taskQueue:          deps.TaskQueue,
-		taskLogs:           deps.TaskLogs,
-		adapters:           normalized,
-		permissions:        permissions,
-		operations:         operations,
-		audit:              opts.Audit,
-		credentialKey:      strings.TrimSpace(opts.CredentialEncryptionKey),
-		credentialKeys:     opts.CredentialEncryptionKeys,
-		workerInterval:     interval,
-		syncConcurrency:    syncConcurrency,
-		startupSyncEnabled: opts.StartupSyncEnabled,
-		secretProvider:     opts.CredentialProvider,
-		workerID:           "virtualization-worker-" + uuid.NewString(),
+		connections:            deps.Connections,
+		executionPrincipals:    opts.ExecutionPrincipals,
+		workerPools:            opts.WorkerPools,
+		workerRuntime:          opts.WorkerRuntime,
+		authorizeWorkerCluster: opts.AuthorizeWorkerCluster,
+		connectionWriter:       deps.ConnectionWriter,
+		dockerLinks:            deps.DockerLinks,
+		vms:                    deps.VMs,
+		images:                 deps.Images,
+		flavors:                deps.Flavors,
+		tasks:                  deps.Tasks,
+		taskQueue:              deps.TaskQueue,
+		taskLogs:               deps.TaskLogs,
+		adapters:               normalized,
+		permissions:            permissions,
+		operations:             operations,
+		audit:                  opts.Audit,
+		credentialKey:          strings.TrimSpace(opts.CredentialEncryptionKey),
+		credentialKeys:         opts.CredentialEncryptionKeys,
+		workerInterval:         interval,
+		syncConcurrency:        syncConcurrency,
+		startupSyncEnabled:     opts.StartupSyncEnabled,
+		secretProvider:         opts.CredentialProvider,
+		workerID:               "virtualization-worker-" + uuid.NewString(),
 		workerPrincipal: domainidentity.Principal{
 			UserID:   "system",
 			UserName: "System",
@@ -719,6 +739,9 @@ func (s *Service) PlanVMCreate(ctx context.Context, principal domainidentity.Pri
 	if err != nil {
 		return domainoperation.Plan{}, err
 	}
+	if err := domainvirtualization.CheckScope(ctx, connectionCapabilityScope(prepared.connection, prepared.input.Namespace)); err != nil {
+		return domainoperation.Plan{}, err
+	}
 	_, inputHash, err := idempotency.Derive("virtualization.vm.create.plan", "", "plan", prepared.input)
 	if err != nil {
 		return domainoperation.Plan{}, fmt.Errorf("hash virtual machine create plan: %w", err)
@@ -745,6 +768,10 @@ func (s *Service) PlanVMCreate(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Principal, input CreateVMInput) (_ domainvirtualization.Task, retErr error) {
+	return s.createVM(ctx, principal, input, nil)
+}
+
+func (s *Service) createVM(ctx context.Context, principal domainidentity.Principal, input CreateVMInput, worker *workerCreation) (_ domainvirtualization.Task, retErr error) {
 	defer func() {
 		s.recordMutationFailure(ctx, principal, "virtualization.vm.create.enqueue", input.ConnectionID, input.Name, retErr, nil)
 	}()
@@ -755,35 +782,57 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 	if err != nil {
 		return domainvirtualization.Task{}, err
 	}
+	scope := connectionCapabilityScope(prepared.connection, prepared.input.Namespace)
+	if worker != nil {
+		if worker.pool.Identity.ConnectionIdentity != vmCreateConnectionIdentity(prepared.connection) {
+			return domainvirtualization.Task{}, apperrors.ErrConflict
+		}
+		scope = workerPoolScope(worker.pool)
+	}
+	if err := domainvirtualization.CheckScope(ctx, scope); err != nil {
+		return domainvirtualization.Task{}, err
+	}
 	input = prepared.input
 	connection, imageID, image, sourceRef := prepared.connection, prepared.imageID, prepared.image, prepared.sourceRef
 	payload := map[string]any{
-		"name":             input.Name,
-		"architecture":     input.Architecture,
-		"namespace":        input.Namespace,
-		"node":             input.Node,
-		"flavorId":         input.FlavorID,
-		"cpu":              input.CPU,
-		"memoryMiB":        input.MemoryMiB,
-		"bootImageId":      input.BootImageID,
-		"imageId":          imageID,
-		"sourceMode":       firstNonEmpty(input.SourceMode, sourceModeForProvider(connection.Provider, input.TemplateID, image)),
-		"sourceId":         firstNonEmpty(sourceRef, strings.TrimSpace(input.SourceID)),
-		"diskGiB":          input.DiskGiB,
-		"network":          input.Network,
-		"cloudInit":        input.CloudInit,
-		"startAfterCreate": input.StartAfterCreate,
-		"templateId":       input.TemplateID,
-		"providerParams":   input.ProviderParams,
-		"providerExtra":    input.ProviderExtraJSON,
-		"disks":            input.Disks,
-		"networks":         input.Networks,
+		"providerConnectionIdentity": vmCreateConnectionIdentity(connection),
+		"providerSourceId":           domainvirtualization.CapacitySourceID(domainvirtualization.AdapterConnection{Provider: connection.Provider, Endpoint: connection.Endpoint, ClusterID: connection.KubernetesClusterID, Options: connection.Config}),
+		"providerIdentityDynamic":    connection.Provider == ProviderPVE && firstNonEmpty(stringValue(input.ProviderParams, "vmid"), stringValue(connection.Config, "vmid"), stringValue(connection.Config, "nextVmid")) == "",
+		"requireCapacity":            input.RequireCapacity,
+		"creationVersion":            2,
+		"name":                       input.Name,
+		"architecture":               input.Architecture,
+		"namespace":                  input.Namespace,
+		"node":                       input.Node,
+		"flavorId":                   input.FlavorID,
+		"cpu":                        input.CPU,
+		"memoryMiB":                  input.MemoryMiB,
+		"bootImageId":                input.BootImageID,
+		"imageId":                    imageID,
+		"sourceMode":                 firstNonEmpty(input.SourceMode, sourceModeForProvider(connection.Provider, input.TemplateID, image)),
+		"sourceId":                   firstNonEmpty(sourceRef, strings.TrimSpace(input.SourceID)),
+		"diskGiB":                    input.DiskGiB,
+		"network":                    input.Network,
+		"startAfterCreate":           input.StartAfterCreate,
+		"templateId":                 input.TemplateID,
+		"providerParams":             input.ProviderParams,
+		"providerExtra":              input.ProviderExtraJSON,
+		"disks":                      input.Disks,
+		"networks":                   input.Networks,
 	}
-	task, err := s.createTaskIdempotently(ctx, "virtualization.vm.create", principal, input.IdempotencyKey, input, domainvirtualization.Task{
+	if err := s.sealVMBootstrap(payload, input.CloudInit); err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	task := domainvirtualization.Task{
 		Provider: connection.Provider, ConnectionID: connection.ID, TaskKind: TaskKindVMCreate,
 		Status: TaskStatusQueued, RequestedBy: principal.UserID, MaxRetries: defaultTaskMaxRetries,
 		TimeoutSeconds: defaultTaskTimeoutSeconds, Payload: payload,
-	})
+	}
+	if worker != nil {
+		task, err = s.saveWorkerCreation(ctx, principal, task, *worker)
+	} else {
+		task, err = s.createTaskIdempotently(ctx, "virtualization.vm.create", principal, input.IdempotencyKey, input, task)
+	}
 	if err != nil {
 		return domainvirtualization.Task{}, err
 	}
@@ -804,6 +853,10 @@ func (s *Service) prepareVMCreate(ctx context.Context, input CreateVMInput) (pre
 		return preparedVMCreate{}, err
 	}
 	input.Architecture = architecture
+	input.ConnectionID, input.Name = connection.ID, strings.TrimSpace(input.Name)
+	if connection.Provider == ProviderKubeVirt {
+		input.Namespace = connectionCapabilityScope(connection, strings.TrimSpace(input.Namespace))["namespace"]
+	}
 	flavor := domainvirtualization.Flavor{}
 	if strings.TrimSpace(input.FlavorID) != "" {
 		flavor, err = s.flavors.GetFlavor(ctx, strings.TrimSpace(input.FlavorID))
@@ -914,9 +967,18 @@ func vmActionPermission(action domainvirtualization.PowerAction) string {
 }
 
 func (s *Service) createTaskIdempotently(ctx context.Context, scope string, principal domainidentity.Principal, key string, input any, task domainvirtualization.Task) (domainvirtualization.Task, error) {
+	if task.TaskKind == TaskKindVMCreate || task.TaskKind == TaskKindVMAction {
+		if task.Payload == nil {
+			task.Payload = map[string]any{}
+		}
+		task.Payload["executionActorId"], task.Payload["executionTokenId"] = principal.UserID, principal.AccessTokenID
+		if err := s.sealGatewayExecution(ctx, task.Payload); err != nil {
+			return domainvirtualization.Task{}, err
+		}
+	}
 	key = strings.TrimSpace(key)
 	if key == "" {
-		return s.tasks.CreateTask(ctx, task)
+		return s.createTaskWithAdmission(ctx, task)
 	}
 	id, inputHash, err := idempotentTaskIdentity(scope, principal, key, input)
 	if err != nil {
@@ -927,7 +989,7 @@ func (s *Service) createTaskIdempotently(ctx context.Context, scope string, prin
 	}
 	task.ID = id
 	task.Payload[idempotency.PayloadHashKey] = inputHash
-	created, err := s.tasks.CreateTask(ctx, task)
+	created, err := s.createTaskWithAdmission(ctx, task)
 	if err == nil {
 		return created, nil
 	}
@@ -1140,7 +1202,15 @@ func (s *Service) ListOperations(ctx context.Context, principal domainidentity.P
 		return []domainvirtualization.Task{}, nil
 	}
 	items, err := s.tasks.ListTasks(ctx, filter)
-	return domainvirtualization.WithOperationStates(items, time.Now().UTC()), err
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range items {
+		if err := s.authorizeWorkerTaskRead(ctx, principal, item); err != nil {
+			return nil, err
+		}
+	}
+	return domainvirtualization.WithOperationStates(items, time.Now().UTC()), nil
 }
 
 func (s *Service) ListOperationsPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.TaskFilter) (domainvirtualization.Page[domainvirtualization.Task], error) {
@@ -1156,6 +1226,11 @@ func (s *Service) ListOperationsPage(ctx context.Context, principal domainidenti
 	items, err := s.tasks.ListTasks(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Task]{}, err
+	}
+	for _, item := range items {
+		if err := s.authorizeWorkerTaskRead(ctx, principal, item); err != nil {
+			return domainvirtualization.Page[domainvirtualization.Task]{}, err
+		}
 	}
 	items = domainvirtualization.WithOperationStates(items, time.Now().UTC())
 	total, err := s.tasks.CountTasks(ctx, filter)
@@ -1176,6 +1251,12 @@ func (s *Service) GetOperation(ctx context.Context, principal domainidentity.Pri
 	}
 	if !operationTaskKindVisible(canOperations, canSync, item.TaskKind) {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization task is not visible", apperrors.ErrAccessDenied)
+	}
+	if err := s.authorizeWorkerTaskRead(ctx, principal, item); err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	if err := domainvirtualization.CheckScope(ctx, taskCapabilityScope(item)); err != nil {
+		return domainvirtualization.Task{}, err
 	}
 	return domainvirtualization.WithOperationState(item, time.Now().UTC()), nil
 }
@@ -1252,6 +1333,12 @@ func (s *Service) CancelOperationIdempotent(ctx context.Context, principal domai
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
+	if err := s.authorizeWorkerTaskRead(ctx, principal, task); err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	if err := domainvirtualization.CheckScope(ctx, taskCapabilityScope(task)); err != nil {
+		return domainvirtualization.Task{}, err
+	}
 	receiptID, inputHash, replayed, err := operationMutationReceipt(task.Payload, "virtualization.operation.cancel/"+task.ID, principal, input)
 	if err != nil {
 		return domainvirtualization.Task{}, err
@@ -1259,16 +1346,21 @@ func (s *Service) CancelOperationIdempotent(ctx context.Context, principal domai
 	if replayed {
 		return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 	}
-	if !isCancelableTaskStatus(task.Status) {
+	if !isCancelableTaskStatus(task.Status) && !cancelableFailedCreation(task) {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization operation %s cannot be canceled from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
 	}
 	now := time.Now().UTC()
 	task.Status = TaskStatusCanceled
 	task.FinishedAt = &now
+	if vmCreateMayHaveDispatched(task) || isWorkerCreation(task) && payloadString(task.Payload, "workerBootstrapDeadline") != "" {
+		task.Status = TaskStatusCanceling
+		task.FinishedAt = nil
+	}
 	task.Result = mergeMaps(task.Result, map[string]any{
-		"message":    "operation canceled",
-		"canceledBy": principal.UserID,
-		"canceledAt": now.Format(time.RFC3339),
+		"message":               "cancellation requested; provider effects are retained",
+		"canceledBy":            principal.UserID,
+		"canceledAt":            now.Format(time.RFC3339),
+		"cancellationConfirmed": task.Status == TaskStatusCanceled,
 	})
 	if reason := strings.TrimSpace(input.Reason); reason != "" {
 		task.Result["cancelReason"] = reason
@@ -1310,6 +1402,12 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 	if err != nil {
 		return domainvirtualization.Task{}, mapNotFound(err)
 	}
+	if err := domainvirtualization.CheckScope(ctx, taskCapabilityScope(task)); err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	if err := s.authorizeVMRetry(ctx, principal, task); err != nil {
+		return domainvirtualization.Task{}, err
+	}
 	receiptID, inputHash, replayed, err := operationMutationReceipt(task.Payload, "virtualization.operation.retry/"+task.ID, principal, input)
 	if err != nil {
 		return domainvirtualization.Task{}, err
@@ -1319,6 +1417,9 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 	}
 	if !isRetryableTaskStatus(task.Status) {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization operation %s cannot be retried from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
+	}
+	if task.TaskKind == TaskKindVMCreate && payloadString(task.Result, "providerEffect") == "created" && !isWorkerCreation(task) {
+		return domainvirtualization.Task{}, fmt.Errorf("%w: VM creation already has a provider receipt; use the existing VM", apperrors.ErrConflict)
 	}
 	if task.MaxRetries == 0 {
 		task.MaxRetries = defaultTaskMaxRetries
@@ -1336,14 +1437,20 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 		"retriedBy": principal.UserID,
 		"retriedAt": time.Now().UTC().Format(time.RFC3339),
 	})
+	delete(task.Result, "providerAttemptFinished")
+	delete(task.Result, "cancellationConfirmed")
 	if reason := strings.TrimSpace(input.Reason); reason != "" {
 		task.Result["retryReason"] = reason
 	}
 	if task.Payload == nil {
 		task.Payload = map[string]any{}
 	}
+	task.Payload["executionActorId"], task.Payload["executionTokenId"] = principal.UserID, principal.AccessTokenID
+	if err := s.prepareRetryAuthorization(ctx, principal, &task); err != nil {
+		return domainvirtualization.Task{}, err
+	}
 	idempotency.RecordReceipt(task.Payload, receiptID, inputHash)
-	updated, err := s.tasks.UpdateTask(ctx, task)
+	updated, err := s.retryTaskWithAdmission(ctx, task)
 	if err != nil {
 		if replay, ok := s.replayedOperationMutation(ctx, task.ID, "virtualization.operation.retry/"+task.ID, principal, input); ok {
 			return replay, nil
@@ -2456,7 +2563,11 @@ func taskTerminal(status string) bool {
 }
 
 func isCancelableTaskStatus(status string) bool {
-	return slices.Contains([]string{TaskStatusQueued, TaskStatusRunning}, strings.TrimSpace(status))
+	return slices.Contains([]string{TaskStatusQueued, TaskStatusRunning, TaskStatusCanceling}, strings.TrimSpace(status))
+}
+
+func cancelableFailedCreation(task domainvirtualization.Task) bool {
+	return vmCreateMayHaveDispatched(task) && (task.Status == TaskStatusFailed || task.Status == TaskStatusTimeout)
 }
 
 func isRetryableTaskStatus(status string) bool {

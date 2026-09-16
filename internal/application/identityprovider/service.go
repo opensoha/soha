@@ -78,6 +78,17 @@ type Service struct {
 	saml                SAMLIdentityProviderRuntime
 	outpostSigningKeyID string
 	outpostSigningKey   ed25519.PrivateKey
+	publicAccessURL     func() string
+}
+
+func (s *Service) SetPublicAccessURL(accessURL func() string) { s.publicAccessURL = accessURL }
+
+// ForTransaction reuses protocol validation and secret handling with transaction-scoped
+// persistence and an audit recorder that is flushed only after commit.
+func (s *Service) ForTransaction(repo domainprovider.Repository, audit AuditRecorder) *Service {
+	copy := *s
+	copy.repo, copy.audit = repo, audit
+	return &copy
 }
 
 func (s *Service) SetOutpostSigningKey(keyID string, key ed25519.PrivateKey) {
@@ -261,8 +272,9 @@ func (s *Service) Authorize(ctx context.Context, issuer string, principal domain
 		return domainprovider.AuthorizeResult{}, fmt.Errorf("create authorization code: %w", err)
 	}
 	s.recordAudit(ctx, principal, "oidc.authorize", "success", provider, client, map[string]any{
-		"redirectUri": redirectURI,
-		"scopes":      scopes,
+		"redirectUri":       redirectURI,
+		"scopes":            scopes,
+		"platformSessionId": strings.TrimSpace(input.PlatformSessionID),
 	})
 	return domainprovider.AuthorizeResult{
 		RedirectURI:  redirectURI,
@@ -380,7 +392,9 @@ func (s *Service) tokenAuthorizationCode(ctx context.Context, issuer string, inp
 	}
 	response.RefreshToken = refreshTokenValue
 	s.recordAudit(ctx, principal, "oidc.token", "success", provider, client, map[string]any{
-		"scopes": code.Scopes,
+		"scopes":            code.Scopes,
+		"sessionId":         sessionID,
+		"platformSessionId": metadataStringFromMap(code.Metadata, "platformSessionId"),
 	})
 	return response, nil
 }
@@ -451,7 +465,7 @@ func (s *Service) tokenRefresh(ctx context.Context, issuer string, input domainp
 		return domainprovider.TokenResponse{}, err
 	}
 	response.RefreshToken = nextValue
-	s.recordAudit(ctx, principal, "oidc.token.refresh", "success", provider, client, map[string]any{"sessionId": session.ID})
+	s.recordAudit(ctx, principal, "oidc.token.refresh", "success", provider, client, map[string]any{"sessionId": session.ID, "platformSessionId": session.PlatformSessionID})
 	return response, nil
 }
 
@@ -706,7 +720,7 @@ func (s *Service) ProxyAuth(ctx context.Context, principal domainidentity.Princi
 	if strings.TrimSpace(principal.UserID) == "" {
 		result.Decision = domainprovider.ProxyDecisionLogin
 		result.Reason = "authentication required"
-		result.LoginURL = proxyLoginURL(originalURL)
+		result.LoginURL = s.proxyLoginURL(provider.ID, originalURL)
 		s.recordAudit(ctx, principal, "proxy.login", "denied", provider, domainprovider.OIDCClient{}, map[string]any{
 			"applicationId": application.ID,
 			"originalUrl":   originalURL,
@@ -915,14 +929,26 @@ func (s *Service) ListOutposts(ctx context.Context, principal domainidentity.Pri
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityOutpostsView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListOutposts(ctx, filter)
+	items, err := s.repo.ListOutposts(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	for i := range items {
+		items[i] = s.outpostManagementView(items[i], now)
+	}
+	return items, nil
 }
 
 func (s *Service) GetOutpost(ctx context.Context, principal domainidentity.Principal, outpostID string) (domainprovider.Outpost, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermIdentityOutpostsView); err != nil {
 		return domainprovider.Outpost{}, err
 	}
-	return s.repo.GetOutpost(ctx, outpostID)
+	item, err := s.repo.GetOutpost(ctx, outpostID)
+	if err != nil {
+		return domainprovider.Outpost{}, err
+	}
+	return s.outpostManagementView(item, time.Now().UTC()), nil
 }
 
 func (s *Service) CreateOutpost(ctx context.Context, principal domainidentity.Principal, input domainprovider.OutpostInput) (domainprovider.Outpost, error) {
@@ -948,7 +974,7 @@ func (s *Service) CreateOutpost(ctx context.Context, principal domainidentity.Pr
 		"mode":   created.Mode,
 		"status": created.Status,
 	})
-	return created, nil
+	return s.outpostManagementView(created, now), nil
 }
 
 func (s *Service) UpdateOutpost(ctx context.Context, principal domainidentity.Principal, outpostID string, input domainprovider.OutpostInput) (domainprovider.Outpost, error) {
@@ -976,7 +1002,7 @@ func (s *Service) UpdateOutpost(ctx context.Context, principal domainidentity.Pr
 		"mode":   updated.Mode,
 		"status": updated.Status,
 	})
-	return updated, nil
+	return s.outpostManagementView(updated, now), nil
 }
 
 func (s *Service) DeleteOutpost(ctx context.Context, principal domainidentity.Principal, outpostID string) error {
@@ -1011,13 +1037,13 @@ func (s *Service) RotateOutpostToken(ctx context.Context, principal domainidenti
 	outpost.TokenHash = hashToken(token)
 	outpost.UpdatedBy = principal.UserID
 	outpost.UpdatedAt = time.Now().UTC()
-	updated, err := s.repo.UpdateOutpost(ctx, outpost)
+	updated, err := s.repo.RotateOutpostToken(ctx, outpost)
 	if err != nil {
 		return domainprovider.Outpost{}, err
 	}
 	updated.Token = token
 	s.recordAudit(ctx, principal, "identity.outpost.token.rotate", "success", domainprovider.Provider{ID: updated.ID, Type: "outpost"}, domainprovider.OIDCClient{}, nil)
-	return updated, nil
+	return s.outpostManagementView(updated, outpost.UpdatedAt), nil
 }
 
 func (s *Service) ClaimOutpost(ctx context.Context, input domainprovider.OutpostClaimInput) (domainprovider.OutpostClaimResult, error) {
@@ -1029,13 +1055,12 @@ func (s *Service) ClaimOutpost(ctx context.Context, input domainprovider.Outpost
 	outpost.Status = domainprovider.OutpostStatusOnline
 	outpost.LastSeenAt = &now
 	outpost.UpdatedAt = now
+	outpost.ClaimedAgentID = outpost.ID
 	if version := strings.TrimSpace(input.Version); version != "" {
 		outpost.Version = version
 	}
-	if input.Metadata != nil {
-		outpost.Metadata = input.Metadata
-	}
-	updated, err := s.repo.UpdateOutpost(ctx, outpost)
+	outpost.Metadata = input.Metadata
+	updated, err := s.repo.RecordOutpostClaim(ctx, outpost)
 	if err != nil {
 		return domainprovider.OutpostClaimResult{}, err
 	}
@@ -1074,14 +1099,15 @@ func (s *Service) HeartbeatOutpost(ctx context.Context, outpostID string, input 
 	}
 	outpost.Status = status
 	outpost.LastSeenAt = &now
+	outpost.LastHeartbeatAt = &now
 	outpost.UpdatedAt = now
+	outpost.RuntimeStatus = runtimeStatusFromLegacyOutpostStatus(status)
+	outpost.RuntimeReason = "legacy_runtime"
 	if version := strings.TrimSpace(input.Version); version != "" {
 		outpost.Version = version
 	}
-	if input.Metadata != nil {
-		outpost.Metadata = input.Metadata
-	}
-	updated, err := s.repo.UpdateOutpost(ctx, outpost)
+	outpost.Metadata = input.Metadata
+	updated, err := s.repo.RecordOutpostHeartbeat(ctx, outpost)
 	if err != nil {
 		return domainprovider.OutpostHeartbeatResult{}, err
 	}
@@ -2125,8 +2151,8 @@ func validateSAMLProviderConfig(config map[string]any) error {
 
 func outpostFromInput(outpostID string, input domainprovider.OutpostInput, principal domainidentity.Principal, now time.Time) (domainprovider.Outpost, error) {
 	name := strings.TrimSpace(input.Name)
-	if name == "" {
-		return domainprovider.Outpost{}, fmt.Errorf("%w: outpost name is required", apperrors.ErrInvalidArgument)
+	if name == "" || len([]rune(name)) > 200 {
+		return domainprovider.Outpost{}, fmt.Errorf("%w: outpost name must contain 1 to 200 characters", apperrors.ErrInvalidArgument)
 	}
 	mode := strings.ToLower(strings.TrimSpace(input.Mode))
 	if mode == "" {
@@ -2137,14 +2163,17 @@ func outpostFromInput(outpostID string, input domainprovider.OutpostInput, princ
 	default:
 		return domainprovider.Outpost{}, fmt.Errorf("%w: unsupported outpost mode", apperrors.ErrInvalidArgument)
 	}
-	status := strings.ToLower(strings.TrimSpace(input.Status))
-	if status == "" {
-		status = domainprovider.OutpostStatusOffline
-	}
-	switch status {
-	case domainprovider.OutpostStatusOnline, domainprovider.OutpostStatusOffline, domainprovider.OutpostStatusDegraded:
+	// Legacy management fields remain accepted, but only node callbacks may
+	// supply runtime observations. They never initialize an online node.
+	switch strings.ToLower(strings.TrimSpace(input.Status)) {
+	case "", "active", "draft", "enabled", "disabled", "maintenance",
+		domainprovider.OutpostStatusOnline, domainprovider.OutpostStatusOffline, domainprovider.OutpostStatusDegraded:
 	default:
 		return domainprovider.Outpost{}, fmt.Errorf("%w: unsupported outpost status", apperrors.ErrInvalidArgument)
+	}
+	forwardAuthURL, err := normalizeOutpostForwardAuthURL(input.ForwardAuthURL)
+	if err != nil {
+		return domainprovider.Outpost{}, err
 	}
 	metadata := input.Metadata
 	if metadata == nil {
@@ -2154,17 +2183,18 @@ func outpostFromInput(outpostID string, input domainprovider.OutpostInput, princ
 		outpostID = uuid.NewString()
 	}
 	return domainprovider.Outpost{
-		ID:        outpostID,
-		Name:      name,
-		Mode:      mode,
-		Endpoint:  strings.TrimSpace(input.Endpoint),
-		Status:    status,
-		Version:   strings.TrimSpace(input.Version),
-		Metadata:  metadata,
-		CreatedBy: actorID(principal),
-		UpdatedBy: actorID(principal),
-		CreatedAt: now,
-		UpdatedAt: now,
+		ID:             outpostID,
+		Name:           name,
+		Mode:           mode,
+		Endpoint:       strings.TrimSpace(input.Endpoint),
+		ForwardAuthURL: forwardAuthURL,
+		Status:         domainprovider.OutpostStatusOffline,
+		RuntimeStatus:  "unavailable",
+		Metadata:       metadata,
+		CreatedBy:      actorID(principal),
+		UpdatedBy:      actorID(principal),
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}, nil
 }
 
@@ -2192,10 +2222,7 @@ func oidcClientFromInput(clientID string, input domainprovider.OIDCClientInput, 
 	if err != nil {
 		return domainprovider.OIDCClient{}, err
 	}
-	clientType := strings.ToLower(strings.TrimSpace(input.ClientType))
-	if clientType == "" {
-		clientType = domainprovider.OIDCClientTypeConfidential
-	}
+	clientType := strings.ToLower(firstNonEmpty(input.ClientType, domainprovider.OIDCClientTypeConfidential))
 	if clientType != domainprovider.OIDCClientTypePublic && clientType != domainprovider.OIDCClientTypeConfidential {
 		return domainprovider.OIDCClient{}, fmt.Errorf("%w: unsupported oidc client type", apperrors.ErrInvalidArgument)
 	}
@@ -2203,6 +2230,9 @@ func oidcClientFromInput(clientID string, input domainprovider.OIDCClientInput, 
 		return domainprovider.OIDCClient{}, fmt.Errorf("%w: public clients must require PKCE", apperrors.ErrInvalidArgument)
 	}
 	scopes := normalizeAllowedScopes(input.AllowedScopes)
+	if input.AllowedGrantTypes == nil {
+		input.AllowedGrantTypes = input.GrantTypes
+	}
 	grantTypes, err := normalizeOIDCClientGrantTypes(input.AllowedGrantTypes)
 	if err != nil {
 		return domainprovider.OIDCClient{}, err
@@ -2437,12 +2467,16 @@ func validateReverseProxyUpstream(value string) (string, error) {
 	return parsed.String(), nil
 }
 
-func proxyLoginURL(originalURL string) string {
+func (s *Service) proxyLoginURL(providerID, originalURL string) string {
 	target := strings.TrimSpace(originalURL)
 	if target == "" {
 		target = "/portal"
 	}
-	return "/api/v1/provider/proxy/start?return_to=" + url.QueryEscape(target)
+	base := ""
+	if s.publicAccessURL != nil {
+		base, _ = normalizeOutpostForwardAuthURL(s.publicAccessURL())
+	}
+	return strings.TrimRight(base, "/") + "/api/v1/provider/proxy/start?provider_id=" + url.QueryEscape(providerID) + "&return_to=" + url.QueryEscape(target)
 }
 
 func proxyHostMatches(provider domainprovider.Provider, application domainportal.Application, requestHost string) bool {
@@ -2743,6 +2777,9 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 	}
 	metadata["providerId"] = provider.ID
 	metadata["providerType"] = provider.Type
+	if provider.ApplicationID != "" {
+		metadata["applicationId"] = provider.ApplicationID
+	}
 	if client.ClientID != "" {
 		metadata["clientId"] = client.ClientID
 	}

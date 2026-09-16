@@ -12,13 +12,16 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domaindocument "github.com/opensoha/soha/internal/domain/deliverydocument"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type DeclarativeRepository interface {
+	GetRevisionSourceCommit(context.Context, string, int) (string, error)
 	GetSource(context.Context, string) (domainmanifest.Source, error)
 	UpdateSource(context.Context, string, domainmanifest.SourceInput) (domainmanifest.Source, error)
 	ListBindings(context.Context, string) ([]domainmanifest.EnvironmentBinding, error)
@@ -49,6 +52,10 @@ type SourceRepositoryReader interface {
 	GetRepository(context.Context, string) (domainapp.SourceRepository, error)
 }
 
+type DeliveryGitReader interface {
+	ReadDeliveryDocuments(context.Context, domainapp.SourceRepository, domaindocument.Source) (domaindocument.GitDocuments, error)
+}
+
 type ManifestRenderer interface {
 	Render(context.Context, domainmanifest.Package, domainmanifest.EnvironmentBinding, []domainmanifest.File, int) (domainmanifest.RenderResult, error)
 }
@@ -63,27 +70,41 @@ type ManifestTaskRuntime interface {
 	GetExecutionTaskInternal(context.Context, string) (domaindelivery.ExecutionTask, error)
 }
 
+type DeliveryTaskReader interface {
+	GetExecutionTask(context.Context, domainidentity.Principal, string) (domaindelivery.ExecutionTask, error)
+	GetConfirmedDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlan, error)
+}
+
 type DeclarativeRuntimeDependencies struct {
-	Renderer ManifestRenderer
-	Direct   ManifestRuntime
-	Git      ManifestRuntime
-	Tasks    ManifestTaskRuntime
-	Sources  SourceRepositoryReader
+	Delivery    DeliveryTaskReader
+	Agents      func(domaincluster.Connection) (ManifestRuntime, error)
+	DeliveryGit DeliveryGitReader
+	Renderer    ManifestRenderer
+	Direct      ManifestRuntime
+	Git         ManifestRuntime
+	Tasks       ManifestTaskRuntime
+	Sources     SourceRepositoryReader
 }
 
 type DeclarativeService struct {
-	base       *Service
-	repository DeclarativeRepository
-	renderer   ManifestRenderer
-	direct     ManifestRuntime
-	git        ManifestRuntime
-	tasks      ManifestTaskRuntime
-	sources    SourceRepositoryReader
+	delivery    DeliveryTaskReader
+	agents      func(domaincluster.Connection) (ManifestRuntime, error)
+	deliveryGit DeliveryGitReader
+	base        *Service
+	repository  DeclarativeRepository
+	renderer    ManifestRenderer
+	direct      ManifestRuntime
+	git         ManifestRuntime
+	tasks       ManifestTaskRuntime
+	sources     SourceRepositoryReader
 }
 
 func NewDeclarative(base *Service, repository DeclarativeRepository, runtime ...DeclarativeRuntimeDependencies) *DeclarativeService {
 	service := &DeclarativeService{base: base, repository: repository}
 	if len(runtime) > 0 {
+		service.delivery = runtime[0].Delivery
+		service.agents = runtime[0].Agents
+		service.deliveryGit = runtime[0].DeliveryGit
 		service.renderer = runtime[0].Renderer
 		service.direct = runtime[0].Direct
 		service.git = runtime[0].Git
@@ -180,6 +201,9 @@ func (s *DeclarativeService) UpdateBinding(ctx context.Context, principal domain
 	if err != nil {
 		return domainmanifest.EnvironmentBinding{}, err
 	}
+	if input.TemplateParameters == nil {
+		input.TemplateParameters = existing.TemplateParameters
+	}
 	binding, err := normalizeBindingInput(input.BindingInput)
 	if err != nil {
 		return domainmanifest.EnvironmentBinding{}, err
@@ -266,13 +290,14 @@ func (s *DeclarativeService) validateBinding(ctx context.Context, principal doma
 	legacy := domainmanifest.Binding{
 		ID: binding.ID, ApplicationEnvironmentID: binding.ApplicationEnvironmentID,
 		ClusterID: binding.ClusterID, Namespace: binding.Namespace, Overlay: binding.Overlay,
+		Kustomize: binding.Kustomize,
 	}
 	item.Bindings = []domainmanifest.Binding{legacy}
 	if err := s.base.validateBindings(ctx, principal, action, &item, app); err != nil {
 		return err
 	}
 	binding.EnvironmentKey = item.Bindings[0].EnvironmentKey
-	return nil
+	return s.base.validateTemplateParameters(ctx, principal, item, binding.TemplateParameters)
 }
 
 func normalizeSourceInput(input domainmanifest.SourceInput) (domainmanifest.SourceInput, error) {
@@ -335,9 +360,11 @@ func normalizeGitSyncedSource(input domainmanifest.SourceInput) (domainmanifest.
 
 func normalizeBindingInput(input domainmanifest.BindingInput) (domainmanifest.EnvironmentBinding, error) {
 	item := domainmanifest.EnvironmentBinding{
+		TemplateParameters:       input.TemplateParameters,
 		ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
 		ClusterID:                strings.TrimSpace(input.ClusterID), Namespace: strings.TrimSpace(input.Namespace),
 		Overlay: input.Overlay, RolloutStrategyID: strings.TrimSpace(input.RolloutStrategyID),
+		Kustomize:            input.Kustomize,
 		VerificationPolicyID: strings.TrimSpace(input.VerificationPolicyID),
 		DriftPolicy:          strings.TrimSpace(input.DriftPolicy), DeletionPolicy: strings.TrimSpace(input.DeletionPolicy),
 		Enabled: input.Enabled,
@@ -353,6 +380,9 @@ func normalizeBindingInput(input domainmanifest.BindingInput) (domainmanifest.En
 	}
 	if item.Overlay == nil {
 		item.Overlay = map[string]string{}
+	}
+	if err := item.Kustomize.Validate(); err != nil {
+		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err)
 	}
 	return item, nil
 }

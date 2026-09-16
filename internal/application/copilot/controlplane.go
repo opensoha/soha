@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
@@ -37,6 +38,7 @@ func (s *Service) GetWorkbenchCatalog(ctx context.Context, principal domainident
 		AgentProviders:   s.agentProviderCatalog(),
 		Capabilities:     defaultAgentCapabilities(),
 	}
+	s.addWorkbenchModels(ctx, principal, &catalog)
 	catalog.ToolBindings = flattenToolBindings(catalog.Capabilities)
 	catalog.SkillBindings = flattenSkillBindings(catalog.Capabilities)
 	if s.mcpRegistry != nil {
@@ -442,4 +444,30 @@ func normalizeAutomationAnalysisKinds(items []string) ([]string, error) {
 		out = append(out, "root_cause")
 	}
 	return out, nil
+}
+
+type workbenchModelCatalog interface {
+	ListWorkbenchModels(context.Context, domainidentity.Principal, string) ([]appaigateway.WorkbenchModelOption, error)
+}
+
+func (s *Service) addWorkbenchModels(ctx context.Context, principal domainidentity.Principal, catalog *domaincopilot.WorkbenchCatalog) {
+	settings, err := s.resolveAIWorkbenchSettings(ctx)
+	if err != nil || !settings.Enabled {
+		catalog.ModelOptionsError = "模型设置不可用"
+		return
+	}
+	catalog.DefaultPublicModel = settings.DefaultPublicModel
+	reader, ok := s.workbenchInvoker.(workbenchModelCatalog)
+	if !ok {
+		catalog.ModelOptionsError = "模型目录不可用"
+		return
+	}
+	models, err := reader.ListWorkbenchModels(ctx, principal, settings.DefaultEndpoint)
+	if err != nil {
+		catalog.ModelOptionsError = "模型目录不可用"
+		return
+	}
+	for _, model := range models {
+		catalog.ModelOptions = append(catalog.ModelOptions, domaincopilot.WorkbenchModelOption{PublicModel: model.PublicModel, ReasoningEfforts: model.ReasoningEfforts})
+	}
 }

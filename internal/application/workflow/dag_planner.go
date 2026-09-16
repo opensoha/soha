@@ -16,6 +16,8 @@ type dagPlanner struct {
 }
 
 type dagWorkflowNode struct {
+	TargetID            string
+	Stage               string
 	ID                  string
 	Name                string
 	Type                string

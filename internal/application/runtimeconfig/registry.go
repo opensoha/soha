@@ -166,7 +166,7 @@ func NewRegistry(options RegistryOptions) *Registry {
 		stringDefinition(KeyExecutionJobClusterID, "执行任务", "默认执行集群", "执行任务未指定集群时使用的集群 ID", sohaapi.RuntimeConfigApplyModeHot, "", options.ExecutionJobClusterID, false),
 		stringDefinition(KeyExecutionJobNamespace, "执行任务", "执行命名空间", "Kubernetes 执行任务使用的命名空间", sohaapi.RuntimeConfigApplyModeHot, "soha-system", options.ExecutionJobNamespace, true),
 		stringDefinition(KeyExecutionJobImage, "执行任务", "默认执行镜像", "普通执行步骤使用的默认容器镜像", sohaapi.RuntimeConfigApplyModeHot, "alpine:3.20", options.ExecutionJobImage, true),
-		stringDefinition(KeyExecutionJobGitImage, "执行任务", "Git 执行镜像", "Git 操作步骤使用的默认容器镜像", sohaapi.RuntimeConfigApplyModeHot, "alpine/git:2.47.0", options.ExecutionJobGitImage, true),
+		stringDefinition(KeyExecutionJobGitImage, "执行任务", "Git 执行镜像", "Git 操作步骤使用的默认容器镜像", sohaapi.RuntimeConfigApplyModeHot, "alpine/git:2.47.2", options.ExecutionJobGitImage, true),
 		integerDefinition(KeyExecutionJobTTLSeconds, "执行任务", "任务保留时间", "Kubernetes Job 完成后的保留秒数", sohaapi.RuntimeConfigApplyModeHot, 3600, options.ExecutionJobTTLSeconds, 1, 604800),
 		durationDefinition(KeyMCPDefaultTimeout, "连接", "MCP 默认超时", "连接 Agent 与 MCP 服务时使用的默认请求超时", sohaapi.RuntimeConfigApplyModeHot, 10*time.Second, options.MCPDefaultTimeout),
 		durationDefinition(KeyAIGatewayDefaultTimeout, "AI Gateway", "默认请求超时", "非流式中继请求的总超时时间", sohaapi.RuntimeConfigApplyModeRestart, 120*time.Second, options.AIGatewayDefaultTimeout),

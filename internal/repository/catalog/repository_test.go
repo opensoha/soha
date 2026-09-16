@@ -45,14 +45,15 @@ func TestNormalizeApplicationEnvironmentInputPreservesEnvironmentDefaults(t *tes
 func TestSaveApplicationWorkflowCommitsTemplateAndBindingTogether(t *testing.T) {
 	repo, mock := newCatalogRepository(t)
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT workflow_template_id\s+FROM application_environments`).
+	mock.ExpectQuery(`SELECT workflow_template_id, workflow_template_version FROM application_environments`).
 		WithArgs("binding-1", "app-1").
-		WillReturnRows(sqlmock.NewRows([]string{"workflow_template_id"}).AddRow(nil))
-	mock.ExpectExec(`INSERT INTO workflow_templates`).
-		WithArgs(sqlmock.AnyArg(), "app-binding-1", "Release", nil, "application:app-1", sqlmock.AnyArg(), true, sqlmock.AnyArg(), sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+		WillReturnRows(sqlmock.NewRows([]string{"workflow_template_id", "workflow_template_version"}).AddRow(nil, int64(0)))
+	mock.ExpectExec(`SAVEPOINT`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`INSERT INTO catalog_template_versions`).WillReturnRows(sqlmock.NewRows([]string{"content_digest"}).AddRow("sha256:test"))
+	mock.ExpectExec(`INSERT INTO delivery_document_provenance`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`INSERT INTO "workflow_templates"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE application_environments`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), "binding-1", "app-1").
+		WithArgs(sqlmock.AnyArg(), int64(1), sqlmock.AnyArg(), "binding-1", "app-1").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
@@ -76,11 +77,13 @@ func TestSaveApplicationWorkflowCommitsTemplateAndBindingTogether(t *testing.T) 
 func TestSaveApplicationWorkflowRollsBackWhenBindingFails(t *testing.T) {
 	repo, mock := newCatalogRepository(t)
 	mock.ExpectBegin()
-	mock.ExpectQuery(`SELECT workflow_template_id\s+FROM application_environments`).
+	mock.ExpectQuery(`SELECT workflow_template_id, workflow_template_version FROM application_environments`).
 		WithArgs("binding-1", "app-1").
-		WillReturnRows(sqlmock.NewRows([]string{"workflow_template_id"}).AddRow(nil))
-	mock.ExpectExec(`INSERT INTO workflow_templates`).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+		WillReturnRows(sqlmock.NewRows([]string{"workflow_template_id", "workflow_template_version"}).AddRow(nil, int64(0)))
+	mock.ExpectExec(`SAVEPOINT`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`INSERT INTO catalog_template_versions`).WillReturnRows(sqlmock.NewRows([]string{"content_digest"}).AddRow("sha256:test"))
+	mock.ExpectExec(`INSERT INTO delivery_document_provenance`).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`INSERT INTO "workflow_templates"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`UPDATE application_environments`).
 		WillReturnError(errors.New("binding write failed"))
 	mock.ExpectRollback()

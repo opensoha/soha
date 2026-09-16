@@ -60,18 +60,24 @@ func (s *Service) Capabilities(ctx context.Context, principal domainidentity.Pri
 	prompts, bindingDeniedPrompts := filterPromptsBySkillBindingsWithCapabilities(prompts, bindings, input.SkillID, s.gatewayResources(), s.gatewayResourceCapabilityRefs(), s.gatewaySkills())
 	deniedPrompts += bindingDeniedPrompts
 	deniedCount := deniedTools + deniedResources + deniedPrompts + deniedSkills
+	tools, revision, nextCursor, err := discoverCapabilities(tools, input)
+	if err != nil {
+		return domainaigateway.Manifest{}, err
+	}
 
 	manifest := domainaigateway.Manifest{
-		Name:           "soha AI Gateway",
-		Version:        manifestVersion,
-		GeneratedAt:    time.Now().UTC(),
-		Principal:      principal,
-		Caller:         callerContext(input),
-		PermissionKeys: permissionKeys,
-		Tools:          tools,
-		Resources:      resources,
-		Prompts:        prompts,
-		Skills:         skills,
+		Name:            "soha AI Gateway",
+		Version:         manifestVersion,
+		CatalogRevision: revision,
+		NextCursor:      nextCursor,
+		GeneratedAt:     time.Now().UTC(),
+		Principal:       principal,
+		Caller:          callerContext(input),
+		PermissionKeys:  permissionKeys,
+		Tools:           tools,
+		Resources:       resources,
+		Prompts:         prompts,
+		Skills:          skills,
 		Summary: domainaigateway.ManifestSummary{
 			ToolCount:     len(tools),
 			ResourceCount: len(resources),

@@ -58,7 +58,11 @@ func (c *Client) CreateResolvedManifest(ctx context.Context, operationID, cluste
 		return domainresource.ResourceYAMLView{}, fmt.Errorf("agent resource create returned no successful result")
 	}
 	ref := payload.Data.Items[0].ResourceRef
-	return domainresource.ResourceYAMLView{Kind: ref.Kind, Name: ref.Name, Namespace: ref.Namespace}, nil
+	content, err := yaml.Marshal(map[string]any{"apiVersion": ref.APIVersion, "kind": ref.Kind, "metadata": map[string]any{"name": ref.Name, "namespace": ref.Namespace, "uid": ref.UID}})
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	return domainresource.ResourceYAMLView{Kind: ref.Kind, Name: ref.Name, Namespace: ref.Namespace, Content: string(content)}, nil
 }
 
 func agentCreateDocument(clusterID string, manifest domainresource.ResolvedCreateManifest) (sohaapi.KubernetesResourceAgentCreateDocument, error) {

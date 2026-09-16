@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"strings"
 	"time"
 
@@ -13,7 +14,9 @@ import (
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainsecret "github.com/opensoha/soha/internal/domain/secret"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
 	"gorm.io/gorm"
 )
 
@@ -34,7 +37,7 @@ func New(db *gorm.DB) *Repository {
 
 func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error) {
 	result := domaindelivery.KubernetesServiceImportResult{OwnershipMode: input.OwnershipMode}
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		// ponytail: namespace-scoped serialization; narrow to per-resource locks if import throughput demands it.
 		lockKey := "soha:kubernetes-import:" + input.ClusterID + ":" + input.Namespace
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, lockKey).Error; err != nil {
@@ -81,7 +84,7 @@ func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaind
 
 func (r *Repository) ImportHelmReleases(ctx context.Context, input domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error) {
 	result := domaindelivery.HelmReleaseImportResult{OwnershipMode: input.OwnershipMode}
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		// ponytail: namespace-scoped serialization; narrow to per-release locks if import throughput demands it.
 		lockKey := "soha:helm-import:" + input.ClusterID + ":" + input.Namespace
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, lockKey).Error; err != nil {
@@ -390,7 +393,7 @@ func (r *Repository) ListReleaseBundles(ctx context.Context, filter domaindelive
 	}
 	query += ` ORDER BY created_at DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query release bundles: %w", err)
 	}
@@ -408,7 +411,7 @@ func (r *Repository) ListReleaseBundles(ctx context.Context, filter domaindelive
 }
 
 func (r *Repository) GetReleaseBundle(ctx context.Context, id string) (domaindelivery.ReleaseBundle, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, application_id, application_environment_id, version, source_type, status, artifact_ref, artifact_digest, metadata, created_at, updated_at
 		FROM release_bundles
 		WHERE id = ?
@@ -418,11 +421,18 @@ func (r *Repository) GetReleaseBundle(ctx context.Context, id string) (domaindel
 }
 
 func (r *Repository) CreateReleaseBundle(ctx context.Context, item domaindelivery.ReleaseBundle) (domaindelivery.ReleaseBundle, error) {
+	if _, ok := domainworkflow.NodeExecutionFrom(ctx); ok {
+		return r.createDeliveryBundle(ctx, item)
+	}
+	return r.createReleaseBundle(ctx, item)
+}
+
+func (r *Repository) createReleaseBundle(ctx context.Context, item domaindelivery.ReleaseBundle) (domaindelivery.ReleaseBundle, error) {
 	payload, err := json.Marshal(item.Metadata)
 	if err != nil {
 		return domaindelivery.ReleaseBundle{}, fmt.Errorf("marshal release bundle metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO release_bundles (id, application_id, application_environment_id, version, source_type, status, artifact_ref, artifact_digest, metadata, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, item.ID, item.ApplicationID, nullableString(item.ApplicationEnvironmentID), item.Version, item.SourceType, item.Status, nullableString(item.ArtifactRef), nullableString(item.ArtifactDigest), string(payload), item.CreatedAt, item.UpdatedAt).Error; err != nil {
@@ -436,7 +446,7 @@ func (r *Repository) UpdateReleaseBundle(ctx context.Context, item domaindeliver
 	if err != nil {
 		return domaindelivery.ReleaseBundle{}, fmt.Errorf("marshal release bundle metadata: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE release_bundles
 		SET status = ?, artifact_ref = ?, artifact_digest = ?, metadata = ?, updated_at = ?
 		WHERE id = ?
@@ -462,6 +472,10 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 	`
 	args := []any{}
 	clauses := make([]string, 0, 5)
+	if value := strings.TrimSpace(filter.QueueKey); value != "" {
+		clauses = append(clauses, "queue_key = ?")
+		args = append(args, value)
+	}
 	if value := strings.TrimSpace(filter.ApplicationID); value != "" {
 		clauses = append(clauses, "application_id = ?")
 		args = append(args, value)
@@ -478,6 +492,10 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 		clauses = append(clauses, "status = ?")
 		args = append(args, value)
 	}
+	if len(filter.TaskKinds) > 0 {
+		clauses = append(clauses, "task_kind IN ?")
+		args = append(args, filter.TaskKinds)
+	}
 	if value := strings.TrimSpace(filter.ProviderKind); value != "" {
 		clauses = append(clauses, "provider_kind = ?")
 		args = append(args, value)
@@ -487,7 +505,7 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 	}
 	query += ` ORDER BY created_at DESC LIMIT ?`
 	args = append(args, limit)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query execution tasks: %w", err)
 	}
@@ -505,7 +523,7 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 }
 
 func (r *Repository) GetExecutionTask(ctx context.Context, id string) (domaindelivery.ExecutionTask, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
@@ -516,7 +534,7 @@ func (r *Repository) GetExecutionTask(ctx context.Context, id string) (domaindel
 }
 
 func (r *Repository) GetExecutionTaskByCallbackToken(ctx context.Context, token string) (domaindelivery.ExecutionTask, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
@@ -532,12 +550,17 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 	}
 
 	var task domaindelivery.ExecutionTask
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		row := tx.Raw(`
 			SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 			       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 			FROM execution_tasks
 			WHERE status = 'queued' AND provider_kind IN ?
+			  AND provider_kind NOT LIKE 'external_pipeline.%'
+			  AND (COALESCE(payload->>'workflowScope', '') <> 'delivery_batch' OR EXISTS (
+				SELECT 1 FROM workflow_runs wr WHERE wr.id = execution_tasks.payload->>'workflowRunId'
+				AND wr.scope = 'delivery_batch' AND wr.stop_reason = ''
+				AND wr.status NOT IN ('completed', 'partially_completed', 'failed', 'canceled', 'canceling')))
 			ORDER BY created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
@@ -545,6 +568,9 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 		item, scanErr := scanExecutionTaskRow(row)
 		if scanErr != nil {
 			return fmt.Errorf("claim execution task query: %w", scanErr)
+		}
+		if err := repoworkflow.LockDeliveryDispatch(ctx, tx, item.Payload); err != nil {
+			return err
 		}
 		now := time.Now().UTC()
 		item.Status = "dispatching"
@@ -589,6 +615,19 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 }
 
 func (r *Repository) CreateExecutionTask(ctx context.Context, item domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
+	if _, ok := domainworkflow.NodeExecutionFrom(ctx); ok {
+		return r.createDeliveryTask(ctx, item)
+	}
+	if err := r.rejectUnscopedDeliveryTask(ctx, item); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	if item.TaskKind == "helm_apply" {
+		return r.createHelmTask(ctx, item)
+	}
+	return r.createExecutionTask(ctx, item)
+}
+
+func (r *Repository) createExecutionTask(ctx context.Context, item domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
 	if execution, ok := domainsecret.ExecutionContextFrom(ctx); ok {
 		item.SecretRefs = execution.References
 		item.SecretPrincipal = execution.Principal
@@ -614,7 +653,7 @@ func (r *Repository) CreateExecutionTask(ctx context.Context, item domaindeliver
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task result: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO execution_tasks (id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key, max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, item.ID, nullableString(item.ReleaseBundleID), item.ApplicationID, nullableString(item.ApplicationEnvironmentID), item.TaskKind, item.ProviderKind, item.TargetKind, item.Status, nullableString(item.QueueKey), nullableString(item.LockKey), item.MaxRetries, item.AttemptCount, item.TimeoutSeconds, nullableString(item.CallbackToken), nullableString(item.ClaimedByAgentID), nullableString(item.RuntimeEndpoint), nullableString(item.RuntimeClusterID), nullableString(item.StopTransport), string(secretRefs), string(secretPrincipal), string(secretTarget), string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.LastRuntimeSeenAt, item.FinishedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
@@ -624,6 +663,13 @@ func (r *Repository) CreateExecutionTask(ctx context.Context, item domaindeliver
 }
 
 func (r *Repository) UpdateExecutionTask(ctx context.Context, item domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
+	if domaindelivery.RequiresStopConfirmation(item) {
+		return r.updateDeliveryTask(ctx, item)
+	}
+	return r.updateExecutionTask(ctx, item, false)
+}
+
+func (r *Repository) updateExecutionTask(ctx context.Context, item domaindelivery.ExecutionTask, deliveryLocked bool) (domaindelivery.ExecutionTask, error) {
 	payload, err := json.Marshal(item.Payload)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task payload: %w", err)
@@ -632,11 +678,14 @@ func (r *Repository) UpdateExecutionTask(ctx context.Context, item domaindeliver
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task result: %w", err)
 	}
-	res := r.db.WithContext(ctx).Exec(`
+	query := `
 		UPDATE execution_tasks
 		SET status = ?, max_retries = ?, attempt_count = ?, timeout_seconds = ?, callback_token = ?, claimed_by_agent_id = ?, runtime_endpoint = ?, runtime_cluster_id = ?, stop_transport = ?, payload = ?, result = ?, started_at = ?, last_heartbeat_at = ?, last_runtime_seen_at = ?, finished_at = ?, updated_at = ?
-		WHERE id = ?
-	`, item.Status, item.MaxRetries, item.AttemptCount, item.TimeoutSeconds, nullableString(item.CallbackToken), nullableString(item.ClaimedByAgentID), nullableString(item.RuntimeEndpoint), nullableString(item.RuntimeClusterID), nullableString(item.StopTransport), string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.LastRuntimeSeenAt, item.FinishedAt, item.UpdatedAt, item.ID)
+		WHERE id = ?`
+	if !deliveryLocked {
+		query += ` AND COALESCE(payload->>'workflowScope', '') <> 'delivery_batch'`
+	}
+	res := dbtx.DB(ctx, r.db).Exec(query, item.Status, item.MaxRetries, item.AttemptCount, item.TimeoutSeconds, nullableString(item.CallbackToken), nullableString(item.ClaimedByAgentID), nullableString(item.RuntimeEndpoint), nullableString(item.RuntimeClusterID), nullableString(item.StopTransport), string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.LastRuntimeSeenAt, item.FinishedAt, item.UpdatedAt, item.ID)
 	if res.Error != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("update execution task: %w", res.Error)
 	}
@@ -651,7 +700,7 @@ func (r *Repository) CreateExecutionLog(ctx context.Context, item domaindelivery
 	if err != nil {
 		return fmt.Errorf("marshal execution log metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO execution_logs (id, execution_task_id, log_level, message, metadata, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, item.ID, item.ExecutionTaskID, item.LogLevel, item.Message, string(payload), item.CreatedAt).Error; err != nil {
@@ -664,7 +713,7 @@ func (r *Repository) ListExecutionLogs(ctx context.Context, taskID string, limit
 	if limit <= 0 {
 		limit = 200
 	}
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, execution_task_id, log_level, message, metadata, created_at
 		FROM execution_logs
 		WHERE execution_task_id = ?
@@ -692,7 +741,7 @@ func (r *Repository) CreateExecutionCallback(ctx context.Context, item domaindel
 	if err != nil {
 		return fmt.Errorf("marshal execution callback payload: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO execution_callbacks (id, execution_task_id, provider_kind, status, payload, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`, item.ID, item.ExecutionTaskID, item.ProviderKind, item.Status, string(payload), item.CreatedAt).Error; err != nil {
@@ -754,7 +803,7 @@ func (r *Repository) ListArtifacts(ctx context.Context, filter domaindelivery.Ar
 	}
 	query += " ORDER BY created_at ASC LIMIT ?"
 	args = append(args, limit)
-	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query execution artifacts: %w", err)
 	}
@@ -791,7 +840,7 @@ func (r *Repository) UpsertExecutionArtifact(ctx context.Context, item domaindel
 	if err != nil {
 		return domaindelivery.ExecutionArtifact{}, fmt.Errorf("marshal execution artifact metadata: %w", err)
 	}
-	if err := r.db.WithContext(ctx).Exec(`
+	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO execution_artifacts (id, execution_task_id, release_bundle_id, workflow_run_id, workflow_node_id, application_id, application_environment_id, artifact_kind, name, ref, digest, path, status, size_bytes, metadata, retention_until, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
@@ -818,7 +867,7 @@ func (r *Repository) UpsertExecutionArtifact(ctx context.Context, item domaindel
 }
 
 func (r *Repository) ListDeliveryBlueprints(ctx context.Context) ([]domaindelivery.DeliveryBlueprint, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, blueprint_key, name, description, application_draft, services, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at
 		FROM delivery_blueprints
 		ORDER BY created_at DESC
@@ -840,7 +889,7 @@ func (r *Repository) ListDeliveryBlueprints(ctx context.Context) ([]domaindelive
 }
 
 func (r *Repository) GetDeliveryBlueprint(ctx context.Context, id string) (domaindelivery.DeliveryBlueprint, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, blueprint_key, name, description, application_draft, services, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at
 		FROM delivery_blueprints
 		WHERE id = ?
@@ -900,7 +949,7 @@ func (r *Repository) saveDeliveryBlueprint(ctx context.Context, item domaindeliv
 		return fmt.Errorf("marshal delivery blueprint post-create actions: %w", err)
 	}
 	if create {
-		if err := r.db.WithContext(ctx).Exec(`
+		if err := dbtx.DB(ctx, r.db).Exec(`
 			INSERT INTO delivery_blueprints (id, blueprint_key, name, description, application_draft, services, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, item.ID, item.Key, item.Name, nullableString(item.Description), string(applicationDraft), string(services), string(buildSources), string(environmentBindings), string(fileTemplates), string(executionHints), string(postCreateActions), item.Enabled, item.CreatedAt, item.UpdatedAt).Error; err != nil {
@@ -908,7 +957,7 @@ func (r *Repository) saveDeliveryBlueprint(ctx context.Context, item domaindeliv
 		}
 		return nil
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE delivery_blueprints
 		SET blueprint_key = ?, name = ?, description = ?, application_draft = ?, services = ?, build_sources = ?, environment_bindings = ?, file_templates = ?, execution_hints = ?, post_create_actions = ?, enabled = ?, updated_at = ?
 		WHERE id = ?
@@ -931,7 +980,7 @@ func (r *Repository) CreateDeliveryDraft(ctx context.Context, input domaindelive
 }
 
 func (r *Repository) GetDeliveryDraft(ctx context.Context, id string) (domaindelivery.DeliveryDraft, error) {
-	row := r.db.WithContext(ctx).Raw(`
+	row := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, source, status, application_draft, services, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, created_by, confirmed_at, created_at, updated_at
 		FROM delivery_drafts
 		WHERE id = ?
@@ -988,7 +1037,7 @@ func (r *Repository) saveDeliveryDraft(ctx context.Context, item domaindelivery.
 		return fmt.Errorf("marshal delivery draft post-create actions: %w", err)
 	}
 	if create {
-		if err := r.db.WithContext(ctx).Exec(`
+		if err := dbtx.DB(ctx, r.db).Exec(`
 			INSERT INTO delivery_drafts (id, source, status, application_draft, services, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, created_by, confirmed_at, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, item.ID, item.Source, item.Status, string(applicationDraft), string(services), string(buildSources), string(environmentBindings), string(fileTemplates), string(executionHints), string(postCreateActions), nullableString(item.CreatedBy), item.ConfirmedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
@@ -996,10 +1045,10 @@ func (r *Repository) saveDeliveryDraft(ctx context.Context, item domaindelivery.
 		}
 		return nil
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE delivery_drafts
 		SET source = ?, status = ?, application_draft = ?, services = ?, build_sources = ?, environment_bindings = ?, file_templates = ?, execution_hints = ?, post_create_actions = ?, created_by = ?, confirmed_at = ?, updated_at = ?
-		WHERE id = ?
+		WHERE id = ? AND confirmation_receipt IS NULL
 	`, item.Source, item.Status, string(applicationDraft), string(services), string(buildSources), string(environmentBindings), string(fileTemplates), string(executionHints), string(postCreateActions), nullableString(item.CreatedBy), item.ConfirmedAt, item.UpdatedAt, item.ID)
 	if result.Error != nil {
 		return fmt.Errorf("update delivery draft: %w", result.Error)
@@ -1011,6 +1060,12 @@ func (r *Repository) saveDeliveryDraft(ctx context.Context, item domaindelivery.
 }
 
 func (r *Repository) CreateDeliveryPlan(ctx context.Context, input domaindelivery.DeliveryPlanInput, createdBy string) (domaindelivery.DeliveryPlan, error) {
+	if _, ok := domainworkflow.NodeExecutionFrom(ctx); ok {
+		return r.createBatchPlan(ctx, input, createdBy)
+	}
+	if input.Source == domainworkflow.ScopeDeliveryBatch {
+		return domaindelivery.DeliveryPlan{}, apperrors.ErrConflict
+	}
 	item := normalizeDeliveryPlanInput(input, createdBy)
 	if err := r.saveDeliveryPlan(ctx, item, true); err != nil {
 		return domaindelivery.DeliveryPlan{}, err
@@ -1019,16 +1074,24 @@ func (r *Repository) CreateDeliveryPlan(ctx context.Context, input domaindeliver
 }
 
 func (r *Repository) GetDeliveryPlan(ctx context.Context, id string) (domaindelivery.DeliveryPlan, error) {
-	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, created_by, confirmed_at, created_at, updated_at
+	row := dbtx.DB(ctx, r.db).Raw(`
+		SELECT id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at
 		FROM delivery_plans
 		WHERE id = ?
 		LIMIT 1
 	`, strings.TrimSpace(id)).Row()
-	return scanDeliveryPlanRow(row)
+	item, err := scanDeliveryPlanRow(row)
+	if err == nil {
+		stamp := item.UpdatedAt
+		item.ExpectedUpdatedAt = &stamp
+	}
+	return item, err
 }
 
 func (r *Repository) UpdateDeliveryPlan(ctx context.Context, item domaindelivery.DeliveryPlan) (domaindelivery.DeliveryPlan, error) {
+	if item.Source == domainworkflow.ScopeDeliveryBatch {
+		return r.updateBatchPlan(ctx, item)
+	}
 	item.ID = strings.TrimSpace(item.ID)
 	if item.ID == "" {
 		return domaindelivery.DeliveryPlan{}, ErrNotFound
@@ -1063,20 +1126,36 @@ func (r *Repository) saveDeliveryPlan(ctx context.Context, item domaindelivery.D
 	if err != nil {
 		return fmt.Errorf("marshal delivery plan target ids: %w", err)
 	}
+	snapshots, err := json.Marshal(item.ManifestSnapshots)
+	if err != nil {
+		return fmt.Errorf("marshal delivery snapshots: %w", err)
+	}
+	dockerSnapshots, err := json.Marshal(item.DockerSnapshots)
+	if err != nil {
+		return err
+	}
+	dockerPrepared, err := json.Marshal(item.DockerPrepared)
+	if err != nil {
+		return err
+	}
+	helmSnapshots, err := json.Marshal(item.HelmSnapshots)
+	if err != nil {
+		return fmt.Errorf("marshal Helm delivery snapshots: %w", err)
+	}
 	if create {
-		if err := r.db.WithContext(ctx).Exec(`
-			INSERT INTO delivery_plans (id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, created_by, confirmed_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, item.ID, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), nullableString(item.CreatedBy), item.ConfirmedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		if err := dbtx.DB(ctx, r.db).Exec(`
+			INSERT INTO delivery_plans (id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)
+		`, item.ID, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return fmt.Errorf("create delivery plan: %w", err)
 		}
 		return nil
 	}
-	result := r.db.WithContext(ctx).Exec(`
+	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE delivery_plans
-		SET source = ?, status = ?, application_id = ?, application_name = ?, application_environment_id = ?, environment_key = ?, action = ?, target_id = ?, target_ids = ?, target_summary = ?, build_source_id = ?, release_bundle_id = ?, ref_type = ?, ref_name = ?, image_tag = ?, release_name = ?, container_name = ?, reason = ?, risk_level = ?, requires_approval = ?, impact = ?, rollback_strategy = ?, variables = ?, build_args = ?, created_by = ?, confirmed_at = ?, updated_at = ?
-		WHERE id = ?
-	`, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), nullableString(item.CreatedBy), item.ConfirmedAt, item.UpdatedAt, item.ID)
+		SET source = ?, status = ?, application_id = ?, application_name = ?, application_environment_id = ?, environment_key = ?, action = ?, target_id = ?, target_ids = ?, target_summary = ?, build_source_id = ?, release_bundle_id = ?, ref_type = ?, ref_name = ?, image_tag = ?, release_name = ?, container_name = ?, reason = ?, risk_level = ?, requires_approval = ?, impact = ?, rollback_strategy = ?, variables = ?, build_args = ?, manifest_snapshots = ?::jsonb, helm_snapshots = ?::jsonb, helm_prepared_ciphertext = ?, docker_snapshots = ?::jsonb, docker_prepared = ?::jsonb, created_by = ?, confirmed_at = ?, updated_at = ?
+		WHERE id = ? AND (source <> 'delivery_batch' OR ? = 'delivery_batch')
+	`, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.UpdatedAt, item.ID, item.Source)
 	if result.Error != nil {
 		return fmt.Errorf("update delivery plan: %w", result.Error)
 	}
@@ -1428,9 +1507,12 @@ func scanDeliveryPlanRow(row *sql.Row) (domaindelivery.DeliveryPlan, error) {
 	var impact []byte
 	var variables []byte
 	var buildArgs []byte
+	var snapshots []byte
+	var dockerSnapshots, dockerPrepared []byte
+	var helmSnapshots []byte
 	var createdBy sql.NullString
 	var confirmedAt sql.NullTime
-	if err := row.Scan(&item.ID, &item.Source, &item.Status, &item.ApplicationID, &applicationName, &item.ApplicationEnvironmentID, &environmentKey, &item.Action, &targetID, &targetIDs, &targetSummary, &buildSourceID, &releaseBundleID, &refType, &refName, &imageTag, &releaseName, &containerName, &reason, &riskLevel, &item.RequiresApproval, &impact, &rollbackStrategy, &variables, &buildArgs, &createdBy, &confirmedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.Source, &item.Status, &item.ApplicationID, &applicationName, &item.ApplicationEnvironmentID, &environmentKey, &item.Action, &targetID, &targetIDs, &targetSummary, &buildSourceID, &releaseBundleID, &refType, &refName, &imageTag, &releaseName, &containerName, &reason, &riskLevel, &item.RequiresApproval, &impact, &rollbackStrategy, &variables, &buildArgs, &snapshots, &helmSnapshots, &item.HelmPreparedCiphertext, &dockerSnapshots, &dockerPrepared, &createdBy, &confirmedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaindelivery.DeliveryPlan{}, ErrNotFound
 		}
@@ -1459,6 +1541,18 @@ func scanDeliveryPlanRow(row *sql.Row) (domaindelivery.DeliveryPlan, error) {
 	_ = json.Unmarshal(impact, &item.Impact)
 	_ = json.Unmarshal(variables, &item.Variables)
 	_ = json.Unmarshal(buildArgs, &item.BuildArgs)
+	if err := json.Unmarshal(snapshots, &item.ManifestSnapshots); err != nil {
+		return domaindelivery.DeliveryPlan{}, fmt.Errorf("decode delivery snapshots: %w", err)
+	}
+	if err := json.Unmarshal(dockerSnapshots, &item.DockerSnapshots); err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal(dockerPrepared, &item.DockerPrepared); err != nil {
+		return item, err
+	}
+	if err := json.Unmarshal(helmSnapshots, &item.HelmSnapshots); err != nil {
+		return domaindelivery.DeliveryPlan{}, fmt.Errorf("decode Helm delivery snapshots: %w", err)
+	}
 	if item.Impact == nil {
 		item.Impact = map[string]any{}
 	}
@@ -1582,6 +1676,8 @@ func normalizeDeliveryServices(input []domaindelivery.DeliveryDraftService) []do
 			metadata = map[string]any{}
 		}
 		services = append(services, domaindelivery.DeliveryDraftService{
+			ExpectedVersion:     service.ExpectedVersion,
+			DeploymentTemplate:  service.DeploymentTemplate,
 			ID:                  strings.TrimSpace(service.ID),
 			Key:                 strings.TrimSpace(service.Key),
 			Name:                strings.TrimSpace(service.Name),
@@ -1667,7 +1763,11 @@ func normalizeDeliveryPlanInput(input domaindelivery.DeliveryPlanInput, createdB
 		buildArgs = map[string]any{}
 	}
 	return domaindelivery.DeliveryPlan{
-		ID:                       id,
+		ID:                id,
+		ManifestSnapshots: input.ManifestSnapshots,
+		HelmSnapshots:     input.HelmSnapshots,
+		DockerSnapshots:   input.DockerSnapshots, DockerPrepared: input.DockerPrepared,
+		HelmPreparedCiphertext:   input.HelmPreparedCiphertext,
 		Source:                   source,
 		Status:                   domaindelivery.DeliveryPlanStatusDraft,
 		ApplicationID:            strings.TrimSpace(input.ApplicationID),
@@ -1714,7 +1814,7 @@ func nullableTime(value *time.Time) any {
 
 func fetchCreatedAt(ctx context.Context, db *gorm.DB, tableName, id string) time.Time {
 	var createdAt time.Time
-	if err := db.WithContext(ctx).Raw(fmt.Sprintf(`SELECT created_at FROM %s WHERE id = ?`, tableName), id).Row().Scan(&createdAt); err != nil {
+	if err := dbtx.DB(ctx, db).Raw(fmt.Sprintf(`SELECT created_at FROM %s WHERE id = ?`, tableName), id).Row().Scan(&createdAt); err != nil {
 		return time.Time{}
 	}
 	return createdAt

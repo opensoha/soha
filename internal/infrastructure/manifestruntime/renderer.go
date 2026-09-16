@@ -10,15 +10,13 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"runtime/debug"
 	"sort"
 	"strings"
 
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	kyaml "k8s.io/apimachinery/pkg/util/yaml"
-	"sigs.k8s.io/kustomize/api/krusty"
-	kustomizetypes "sigs.k8s.io/kustomize/api/types"
-	"sigs.k8s.io/kustomize/kyaml/filesys"
 )
 
 const (
@@ -30,7 +28,10 @@ type Renderer struct{}
 
 func NewRenderer() *Renderer { return &Renderer{} }
 
-func (*Renderer) Render(_ context.Context, item domainmanifest.Package, binding domainmanifest.EnvironmentBinding, files []domainmanifest.File, revision int) (domainmanifest.RenderResult, error) {
+func (*Renderer) Render(ctx context.Context, item domainmanifest.Package, binding domainmanifest.EnvironmentBinding, files []domainmanifest.File, revision int) (domainmanifest.RenderResult, error) {
+	if err := ctx.Err(); err != nil {
+		return domainmanifest.RenderResult{}, err
+	}
 	if len(files) == 0 {
 		return domainmanifest.RenderResult{}, fmt.Errorf("%w: manifest files are required", apperrors.ErrInvalidArgument)
 	}
@@ -43,7 +44,7 @@ func (*Renderer) Render(_ context.Context, item domainmanifest.Package, binding 
 	case domainmanifest.RendererRaw:
 		inputs = prepared
 	case domainmanifest.RendererKustomize:
-		inputs, err = renderKustomize(prepared)
+		inputs, err = renderKustomize(prepared, binding.Kustomize, binding.Namespace)
 	default:
 		err = fmt.Errorf("%w: unsupported manifest renderer %q", apperrors.ErrInvalidArgument, item.Renderer)
 	}
@@ -54,6 +55,14 @@ func (*Renderer) Render(_ context.Context, item domainmanifest.Package, binding 
 	if err != nil {
 		return domainmanifest.RenderResult{}, err
 	}
+	if item.Renderer == domainmanifest.RendererKustomize {
+		if err := verifyKustomizeImages(documents, binding.Kustomize); err != nil {
+			return domainmanifest.RenderResult{}, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return domainmanifest.RenderResult{}, err
+	}
 	sort.SliceStable(documents, func(i, j int) bool {
 		return documentKey(documents[i]) < documentKey(documents[j])
 	})
@@ -61,10 +70,27 @@ func (*Renderer) Render(_ context.Context, item domainmanifest.Package, binding 
 		documents[index].Index = index
 	}
 	digest := digestDocuments(documents)
+	inputDigest, err := domainmanifest.RenderInputDigest(item.Renderer, binding, files)
+	if err != nil {
+		return domainmanifest.RenderResult{}, fmt.Errorf("digest render input: %w", err)
+	}
 	return domainmanifest.RenderResult{
 		PackageID: item.ID, BindingID: binding.ID, Revision: revision, Renderer: item.Renderer,
+		InputDigest: inputDigest, RendererVersion: rendererVersion(item.Renderer),
 		RenderedDigest: digest, Documents: documents, Diagnostics: diagnostics,
 	}, nil
+}
+
+func rendererVersion(renderer string) string {
+	version := renderer + "/v1"
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, dependency := range info.Deps {
+			if strings.HasPrefix(dependency.Path, "sigs.k8s.io/kustomize/") {
+				version += ";" + dependency.Path + "@" + dependency.Version
+			}
+		}
+	}
+	return version
 }
 
 type documentInput struct {
@@ -73,12 +99,15 @@ type documentInput struct {
 }
 
 func prepareFiles(files []domainmanifest.File, overlay map[string]string) ([]documentInput, error) {
+	if len(files) > 100 {
+		return nil, fmt.Errorf("%w: manifest package cannot contain more than 100 files", apperrors.ErrInvalidArgument)
+	}
 	items := make([]documentInput, 0, len(files))
 	total := 0
 	seen := make(map[string]struct{}, len(files))
 	for _, file := range files {
 		name := path.Clean(strings.TrimSpace(file.Path))
-		if name == "." || path.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") {
+		if name == "." || path.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") || strings.ContainsAny(name, ":\\\x00") {
 			return nil, fmt.Errorf("%w: manifest file path escapes package root", apperrors.ErrInvalidArgument)
 		}
 		if _, ok := seen[name]; ok {
@@ -106,26 +135,6 @@ func applyOverlay(content string, overlay map[string]string) string {
 		content = strings.ReplaceAll(content, "${"+key+"}", overlay[key])
 	}
 	return content
-}
-
-func renderKustomize(files []documentInput) ([]documentInput, error) {
-	fs := filesys.MakeFsInMemory()
-	for _, file := range files {
-		if err := fs.WriteFile(path.Join("workspace", file.path), []byte(file.content)); err != nil {
-			return nil, fmt.Errorf("write kustomize input %s: %w", file.path, err)
-		}
-	}
-	options := krusty.MakeDefaultOptions()
-	options.LoadRestrictions = kustomizetypes.LoadRestrictionsRootOnly
-	result, err := krusty.MakeKustomizer(options).Run(fs, "workspace")
-	if err != nil {
-		return nil, fmt.Errorf("%w: kustomize render failed: %v", apperrors.ErrInvalidArgument, err)
-	}
-	content, err := result.AsYaml()
-	if err != nil {
-		return nil, fmt.Errorf("encode kustomize output: %w", err)
-	}
-	return []documentInput{{path: "kustomization.yaml", content: string(content)}}, nil
 }
 
 func decodeDocuments(inputs []documentInput, targetNamespace string) ([]domainmanifest.RenderedDocument, []domainmanifest.Diagnostic, error) {

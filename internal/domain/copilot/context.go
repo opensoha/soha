@@ -3,8 +3,13 @@ package copilot
 import (
 	"time"
 
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domainknowledge "github.com/opensoha/soha/internal/domain/knowledge"
 )
+
+type ContextSelection = sohaapi.WorkbenchContextSelection
+type ContextReference = sohaapi.WorkbenchContextReference
+type TextAttachment = sohaapi.WorkbenchTextAttachment
 
 type KnowledgeContextConfig struct {
 	Enabled          bool     `json:"enabled"`
@@ -102,6 +107,7 @@ type ContextEnvelope struct {
 	Environment    ContextEnvironment         `json:"environment,omitempty"`
 	Budgets        ContextBudgets             `json:"budgets"`
 	BudgetUsage    ContextBudgetUsage         `json:"budgetUsage"`
+	Truncations    []string                   `json:"truncations,omitempty"`
 	PolicySnapshot ContextPolicySnapshot      `json:"policySnapshot"`
 	ContentHash    string                     `json:"contentHash"`
 	CreatedAt      time.Time                  `json:"createdAt"`

@@ -177,7 +177,7 @@ func mapResourceCreateExecution(clusterID string, result domainresource.Resource
 		if document.Status == "succeeded" {
 			item.ResourceRef = &sohaapi.KubernetesResourceRef{
 				APIVersion: document.Resource.APIVersion, ClusterID: clusterID, Kind: document.Resource.Kind,
-				Name: document.Resource.Name, Namespace: document.Resource.Namespace, ScopeMode: resourceScopeMode(document.Resource.Namespaced),
+				Name: document.Resource.Name, Namespace: document.Resource.Namespace, ScopeMode: resourceScopeMode(document.Resource.Namespaced), UID: document.Resource.UID,
 			}
 		}
 		if document.ErrorCode != "" {

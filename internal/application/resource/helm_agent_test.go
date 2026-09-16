@@ -5,12 +5,30 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
 )
+
+func TestAgentHelmOwnedReleaseReadsRemainReadOnly(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"name": "edge", "namespace": "platform", "allowedActions": []string{"view"}, "editable": true, "valuesEditable": true}})
+	}))
+	defer server.Close()
+	service := New(Dependencies{Agents: testAgentClients(agentinfra.NewRegistry(0)), Connections: stubConnectionResolver{connection: agentConnection(server.URL)}, Authorizer: allowAllResourceAuthorizer{}, Permissions: allowRuntimePermission{}, Audit: noopResourceAuditRecorder{}})
+	principal := domainidentity.Principal{UserID: "user-1"}
+	detail, err := service.Helm().GetHelmReleaseDetail(context.Background(), principal, "agent-cluster", "platform", "edge")
+	if err != nil || detail.ValuesEditable || !slices.Equal(detail.AllowedActions, []string{"view"}) {
+		t.Fatalf("owned detail regained mutation permission: %+v %v", detail, err)
+	}
+	values, err := service.Helm().GetHelmReleaseValues(context.Background(), principal, "agent-cluster", "platform", "edge", "")
+	if err != nil || values.Editable || !slices.Equal(values.AllowedActions, []string{"view"}) {
+		t.Fatalf("owned values regained mutation permission: %+v %v", values, err)
+	}
+}
 
 func TestAgentHelmMutationsDelegateToAgent(t *testing.T) {
 	var seen []string

@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
+	"sort"
 	"strings"
 
 	"github.com/google/uuid"
@@ -29,18 +31,20 @@ type WorkbenchRelayMessage struct {
 }
 
 type WorkbenchRelayRequest struct {
-	PublicModel string
-	RouteID     string
-	Endpoint    string
-	Messages    []WorkbenchRelayMessage
-	SessionID   string
-	AgentRunID  string
-	AnalysisID  string
-	Mode        string
-	Metadata    map[string]any
+	ReasoningEffort string
+	PublicModel     string
+	RouteID         string
+	Endpoint        string
+	Messages        []WorkbenchRelayMessage
+	SessionID       string
+	AgentRunID      string
+	AnalysisID      string
+	Mode            string
+	Metadata        map[string]any
 }
 
 type WorkbenchRelayResponse struct {
+	Usage        map[string]float64
 	Content      string
 	PublicModel  string
 	RouteID      string
@@ -74,7 +78,11 @@ func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainiden
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
-	body, err := workbenchRelayRequestBody(endpoint, publicModel, input.Messages, false)
+	efforts := workbenchReasoningEfforts(endpoint, selections)
+	if input.ReasoningEffort != "" && input.ReasoningEffort != "auto" && !slices.Contains(efforts, input.ReasoningEffort) {
+		return WorkbenchRelayResponse{}, fmt.Errorf("%w: reasoning effort is not supported by this model route", apperrors.ErrInvalidArgument)
+	}
+	body, err := workbenchRelayRequestBody(endpoint, publicModel, input.Messages, false, input.ReasoningEffort, len(efforts) > 0)
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
@@ -105,6 +113,7 @@ func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainiden
 	}
 	return WorkbenchRelayResponse{
 		Content:      content,
+		Usage:        workbenchReportedUsage(writer.body.Bytes()),
 		PublicModel:  publicModel,
 		RouteID:      selections[0].route.ID,
 		UpstreamID:   selections[0].upstream.ID,
@@ -134,7 +143,11 @@ func (s *Service) InvokeWorkbenchModelStream(ctx context.Context, principal doma
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
-	body, err := workbenchRelayRequestBody(endpoint, publicModel, input.Messages, true)
+	efforts := workbenchReasoningEfforts(endpoint, selections)
+	if input.ReasoningEffort != "" && input.ReasoningEffort != "auto" && !slices.Contains(efforts, input.ReasoningEffort) {
+		return WorkbenchRelayResponse{}, fmt.Errorf("%w: reasoning effort is not supported by this model route", apperrors.ErrInvalidArgument)
+	}
+	body, err := workbenchRelayRequestBody(endpoint, publicModel, input.Messages, true, input.ReasoningEffort, len(efforts) > 0)
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
@@ -328,38 +341,83 @@ func workbenchRelayAccessContext(principal domainidentity.Principal, input Workb
 	}
 }
 
-func workbenchRelayRequestBody(endpoint, publicModel string, messages []WorkbenchRelayMessage, stream bool) ([]byte, error) {
+func workbenchRelayRequestBody(endpoint, publicModel string, messages []WorkbenchRelayMessage, stream bool, effort string, reasoning bool) ([]byte, error) {
+	payload := map[string]any{"model": publicModel, "stream": stream}
+	if !reasoning {
+		payload["temperature"] = 0.2
+	}
 	switch endpoint {
 	case "chat/completions":
-		return json.Marshal(map[string]any{
-			"model":       publicModel,
-			"messages":    workbenchOpenAIMessages(messages),
-			"temperature": 0.2,
-			"stream":      stream,
-		})
+		payload["messages"] = workbenchOpenAIMessages(messages)
+		if effort != "" && effort != "auto" {
+			payload["reasoning_effort"] = effort
+		}
 	case "responses":
-		return json.Marshal(map[string]any{
-			"model":       publicModel,
-			"input":       workbenchResponsesInput(messages),
-			"temperature": 0.2,
-			"stream":      stream,
-		})
+		payload["input"] = workbenchResponsesInput(messages)
+		if effort != "" && effort != "auto" {
+			payload["reasoning"] = map[string]string{"effort": effort}
+		}
 	case "messages":
 		system, chatMessages := workbenchAnthropicMessages(messages)
-		payload := map[string]any{
-			"model":       publicModel,
-			"messages":    chatMessages,
-			"max_tokens":  1024,
-			"temperature": 0.2,
-			"stream":      stream,
-		}
+		payload["messages"] = chatMessages
+		payload["max_tokens"] = 1024
 		if system != "" {
 			payload["system"] = system
 		}
-		return json.Marshal(payload)
 	default:
 		return nil, fmt.Errorf("%w: workbench relay endpoint %s is not supported", apperrors.ErrInvalidArgument, endpoint)
 	}
+	return json.Marshal(payload)
+}
+
+type WorkbenchModelOption struct {
+	PublicModel      string
+	ReasoningEfforts []string
+}
+
+func (s *Service) ListWorkbenchModels(ctx context.Context, principal domainidentity.Principal, endpoint string) ([]WorkbenchModelOption, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return nil, err
+	}
+	if !s.relayConfig.Enabled || s.llmRelayRepository() == nil {
+		return nil, fmt.Errorf("%w: relay is unavailable", apperrors.ErrNotFound)
+	}
+	routes, err := s.llmRelayRepository().ListLLMModelRoutes(ctx, domainaigateway.LLMModelRouteFilter{})
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	options := []WorkbenchModelOption{}
+	endpoint = normalizeWorkbenchRelayEndpoint(endpoint)
+	for _, route := range routes {
+		if !route.Enabled || route.PublicModel == "" || seen[route.PublicModel] {
+			continue
+		}
+		seen[route.PublicModel] = true
+		_, selections, selectionErr := s.workbenchRelaySelections(ctx, principal, route.PublicModel, "", endpoint)
+		if selectionErr != nil {
+			continue
+		}
+		options = append(options, WorkbenchModelOption{PublicModel: route.PublicModel, ReasoningEfforts: workbenchReasoningEfforts(endpoint, selections)})
+	}
+	sort.Slice(options, func(i, j int) bool { return options[i].PublicModel < options[j].PublicModel })
+	return options, nil
+}
+
+// Only capabilities shared by every fallback can be promised to the caller.
+func workbenchReasoningEfforts(endpoint string, selections []relaySelection) []string {
+	efforts := []string{"low", "medium", "high"}
+	if endpoint == "messages" || len(selections) == 0 {
+		return []string{}
+	}
+	for _, selection := range selections {
+		if !relayProviderUsesOpenAIWireProtocol(selection.upstream.ProviderKind) || relayTransformPlanForRoute(selection.route, workbenchRelayProviderForEndpoint(endpoint)).enabled {
+			return []string{}
+		}
+		declared := gatewayConditionStringList(selection.route.Metadata, "reasoningEfforts")
+		efforts = slices.DeleteFunc(efforts, func(effort string) bool { return !slices.Contains(declared, effort) })
+	}
+	return efforts
 }
 
 func workbenchOpenAIMessages(messages []WorkbenchRelayMessage) []map[string]string {
@@ -636,4 +694,12 @@ func workbenchResponsesResponseText(payload map[string]any) string {
 		}
 	}
 	return builder.String()
+}
+
+func workbenchReportedUsage(body []byte) map[string]float64 {
+	usage := relayUsageFromBody(body)
+	if !relayUsageHasTokens(usage) {
+		return nil
+	}
+	return map[string]float64{"inputTokens": float64(usage.promptTokens), "outputTokens": float64(usage.completionTokens), "totalTokens": float64(usage.totalTokens), "cachedInputTokens": float64(usage.cachedReadTokens), "reasoningTokens": float64(usage.reasoningTokens)}
 }

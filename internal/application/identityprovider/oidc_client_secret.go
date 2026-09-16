@@ -84,6 +84,7 @@ func oidcClientsForResponse(items []domainprovider.OIDCClient) []domainprovider.
 }
 
 func oidcClientForResponse(item domainprovider.OIDCClient) domainprovider.OIDCClient {
+	item.GrantTypes = append([]string{}, item.AllowedGrantTypes...)
 	item.ClientSecretAvailable = oidcClientSecretMaterialAvailable(item)
 	return item
 }

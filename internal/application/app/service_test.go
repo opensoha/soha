@@ -168,6 +168,19 @@ func TestUpdateApplicationUsesUpdateActionForScopeAuthorization(t *testing.T) {
 	}
 }
 
+func TestUpdateApplicationCannotMoveAnUnauthorizedOriginalScope(t *testing.T) {
+	repo := &captureAppRepository{items: map[string]domainapp.App{"app-1": {ID: "app-1", Name: "Payments", Key: "payments", BusinessLineID: "private", Version: 1}}}
+	authorizer := appaccess.New(policy.NewEngine(), nil, appScopeGrantReader{items: []domainscopegrant.Record{{ID: "grant", SubjectType: "user", SubjectID: "user-1", BusinessLineID: "retail", Role: "ops", Effect: "allow", Enabled: true}}}, nil)
+	service := New(repo, nil, authorizer, nil, nil)
+	_, err := service.Update(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"ops"}}, "app-1", validAppInput("payments"))
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("moving a resource from an unauthorized scope: %v", err)
+	}
+	if repo.items["app-1"].BusinessLineID != "private" {
+		t.Fatal("denied scope update was persisted")
+	}
+}
+
 func TestCreateApplicationAllowsMatchingCreateScopeGrant(t *testing.T) {
 	repo := &captureAppRepository{}
 	authorizer := appaccess.New(policy.NewEngine(), nil, appScopeGrantReader{items: []domainscopegrant.Record{

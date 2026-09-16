@@ -467,7 +467,7 @@ type CustomResourceMutationAgent interface {
 	CreateCustomResourceYAML(context.Context, domainresource.CRDResourceDefinition, string, string) (domainresource.ResourceYAMLView, error)
 	GetCustomResourceYAML(context.Context, domainresource.CRDResourceDefinition, string, string) (domainresource.ResourceYAMLView, error)
 	ApplyCustomResourceYAML(context.Context, domainresource.CRDResourceDefinition, string, string, string) (domainresource.ResourceYAMLView, error)
-	DeleteCustomResource(context.Context, domainresource.CRDResourceDefinition, string, string) error
+	DeleteCustomResource(context.Context, domainresource.CRDResourceDefinition, string, string, string) error
 }
 
 type CustomResourceAgent interface {
@@ -482,7 +482,7 @@ type DirectCustomResource interface {
 	CreateCustomResourceYAML(context.Context, string, domainresource.CRDResourceDefinition, string, string) (domainresource.ResourceYAMLView, error)
 	GetCustomResourceYAML(context.Context, string, domainresource.CRDResourceDefinition, string, string) (domainresource.ResourceYAMLView, error)
 	ApplyCustomResourceYAML(context.Context, string, domainresource.CRDResourceDefinition, string, string, string) (domainresource.ResourceYAMLView, error)
-	DeleteCustomResource(context.Context, string, domainresource.CRDResourceDefinition, string, string) error
+	DeleteCustomResource(context.Context, string, domainresource.CRDResourceDefinition, string, string, string) error
 }
 
 type GenericResourceAgent interface {
