@@ -47,13 +47,7 @@ func TestDeliveryDraftAtomicReceiptsWithPostgres(t *testing.T) {
 	const actor = "draft-receipt-test"
 	draft := createDraftConcurrently(t, ctx, repo, input, actor)
 	t.Cleanup(func() { _ = store.DB().Exec(`DELETE FROM delivery_drafts WHERE id = ?`, draft.ID).Error })
-	stored, err := repo.GetDeliveryDraft(ctx, draft.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stored.Services) != 1 || !reflect.DeepEqual(stored.Services[0].DeploymentTemplate, template) || stored.Services[0].ExpectedVersion == nil || *stored.Services[0].ExpectedVersion != serviceVersion {
-		t.Fatalf("persisted draft lost service template or version: %+v", stored.Services)
-	}
+	verifyDraftServiceRoundTrip(t, ctx, repo, draft.ID, input.Services[0])
 	if _, err := repo.CreateDeliveryDraftIdempotent(ctx, input, actor, "changed"); !errors.Is(err, apperrors.ErrConflict) {
 		t.Fatalf("changed input reused key: %v", err)
 	}
@@ -120,6 +114,17 @@ func TestDeliveryDraftAtomicReceiptsWithPostgres(t *testing.T) {
 		t.Fatalf("concurrent confirmation applied %d times after one rollback", applies.Load())
 	}
 	verifyDraftReceiptAfterEdit(t, ctx, store, repo, appID, draft.ID, actor, input.IdempotencyKey)
+}
+
+func verifyDraftServiceRoundTrip(t *testing.T, ctx context.Context, repo *deliveryrepo.Repository, draftID string, want domaindelivery.DeliveryDraftService) {
+	t.Helper()
+	stored, err := repo.GetDeliveryDraft(ctx, draftID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored.Services) != 1 || !reflect.DeepEqual(stored.Services[0].DeploymentTemplate, want.DeploymentTemplate) || !reflect.DeepEqual(stored.Services[0].ExpectedVersion, want.ExpectedVersion) {
+		t.Fatalf("persisted draft lost service template or version: %+v", stored.Services)
+	}
 }
 
 func createDraftConcurrently(t *testing.T, ctx context.Context, repo *deliveryrepo.Repository, input domaindelivery.DeliveryDraftInput, actor string) domaindelivery.DeliveryDraft {
