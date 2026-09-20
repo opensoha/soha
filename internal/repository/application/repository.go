@@ -190,17 +190,6 @@ func (r *Repository) Update(ctx context.Context, applicationID string, input dom
 	return item, nil
 }
 
-func (r *Repository) Delete(ctx context.Context, applicationID string) error {
-	result := dbtx.DB(ctx, r.db).Exec(`DELETE FROM applications WHERE id = ?`, strings.TrimSpace(applicationID))
-	if result.Error != nil {
-		return fmt.Errorf("delete application: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]domainapp.Service, error) {
 	rows, err := dbtx.DB(ctx, r.db).Raw(`
 		SELECT id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider,

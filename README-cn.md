@@ -156,6 +156,8 @@ make init
 
 该命令会安装 Go 依赖，并从 `deploy/docker-compose.yaml` 启动本地 PostgreSQL 服务。前端依赖由 sibling 仓库 `../soha-web` 自己管理。
 
+MinIO 的 S3 API 为 `http://127.0.0.1:9000`，控制台为 `http://127.0.0.1:9001`，数据持久化到 `opensoha-minio-data`。本地默认凭据为 `minioadmin` / `minioadmin`；通过环境变量或不提交 Git 的 `deploy/.env` 设置 `SOHA_MINIO_ROOT_USER`、`SOHA_MINIO_ROOT_PASSWORD`，可沿用已有凭据。暴露到回环地址以外前必须更换默认凭据。使用 `docker compose -f deploy/docker-compose.yaml up -d minio` 单独启动；`make init` 和 `make dev` 不启动 MinIO。
+
 Compose 栈使用 `pgvector/pgvector:0.8.5-pg18-trixie`，当前基于 PostgreSQL 18.4，并与标准 PostgreSQL 18.4 镜像使用相同 Debian 代际；默认启用 `vector`、`pg_trgm` 并 preload `pg_stat_statements`。命名卷挂载到 `/var/lib/postgresql`，以匹配 PostgreSQL 18 的默认数据目录布局。只有同样提供这些扩展且 libc collation 版本兼容的 PostgreSQL 18 镜像才能通过 `SOHA_POSTGRES_IMAGE` 覆盖。由 PostgreSQL 16 创建的本地数据卷不能只改镜像标签后直接复用；可丢弃的本地数据卷请重建，需要保留的数据请通过 `pg_dump`/`pg_restore` 或 `pg_upgrade` 迁移。
 
 ### 启动 API 和控制台
@@ -216,7 +218,7 @@ make deploy-image
 Soha 每个容器只运行一个进程。默认进程提供管理 API 和内嵌 SPA；独立的 `network-control`、`ingest` 与特权隔离的 `network-gateway` 工作负载，使实时授权、高频遥测和 WireGuard 数据面都不与管理服务共用进程。文档由 `soha-docs` 独立发布，并通过配置的文档 URL 链接。
 
 - [deploy/Dockerfile](./deploy/Dockerfile): 多阶段镜像构建
-- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): 包含 PostgreSQL 与可选 Hermes runner 服务的本地栈
+- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): 包含 PostgreSQL、MinIO 与可选 Hermes runner 服务的本地栈
 - [configs/config.yaml](./configs/config.yaml): 默认应用配置
 - [deploy/deployment.yaml](./deploy/deployment.yaml): 原生 Kubernetes 清单基线
 - [deploy/network-runtime.yaml](./deploy/network-runtime.yaml): 独立的 network-control、ingest、ingest PostgreSQL 与 WireGuard gateway 工作负载

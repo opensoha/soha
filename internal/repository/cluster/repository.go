@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
@@ -115,24 +116,55 @@ func (r *Repository) UpdateRegistration(ctx context.Context, connection domaincl
 }
 
 func (r *Repository) Delete(ctx context.Context, clusterID string) error {
-	tx := r.db.WithContext(ctx).Begin()
-	if tx.Error != nil {
-		return tx.Error
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Lock the parent before checking references so concurrent FK writers wait.
+		var id string
+		if err := tx.Raw(`SELECT id FROM clusters WHERE id = ? FOR UPDATE`, clusterID).Row().Scan(&id); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if err := requireClusterUnused(tx, clusterID); err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM cluster_credentials_meta WHERE cluster_id = ?`, clusterID).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`DELETE FROM clusters WHERE id = ?`, clusterID).Error
+	})
+	var constraint *pgconn.PgError
+	if errors.As(err, &constraint) && constraint.Code == "23503" {
+		return apperrors.NewBusiness(apperrors.ErrConflict, "cluster_in_use",
+			"The cluster is still referenced; remove its associations before deleting it.",
+			"集群仍被其他资源引用，请先解除关联后再删除。")
 	}
-	if err := tx.Exec(`DELETE FROM cluster_credentials_meta WHERE cluster_id = ?`, clusterID).Error; err != nil {
-		tx.Rollback()
+	return err
+}
+
+func requireClusterUnused(tx *gorm.DB, clusterID string) error {
+	var reference string
+	err := tx.Raw(`
+		SELECT a.name || ' / ' || e.environment_id
+		FROM application_environments e JOIN applications a ON a.id = e.application_id
+		WHERE e.cluster_id = ? OR EXISTS (
+			SELECT 1 FROM release_targets t WHERE t.application_environment_id = e.id AND t.cluster_id = ?
+		) OR EXISTS (
+			SELECT 1 FROM manifest_bindings b WHERE b.application_environment_id = e.id AND b.cluster_id = ?
+		)
+		UNION ALL
+		SELECT 'worker pool / ' || id::text FROM virtualization_worker_pools WHERE cluster_id = ?
+		LIMIT 1
+	`, clusterID, clusterID, clusterID, clusterID).Row().Scan(&reference)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
 		return err
 	}
-	result := tx.Exec(`DELETE FROM clusters WHERE id = ?`, clusterID)
-	if result.Error != nil {
-		tx.Rollback()
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		tx.Rollback()
-		return ErrNotFound
-	}
-	return tx.Commit().Error
+	return apperrors.NewBusiness(apperrors.ErrConflict, "cluster_in_use",
+		fmt.Sprintf("The cluster is used by %s; remove the association before deleting it.", reference),
+		fmt.Sprintf("集群仍被 %s 使用，请先解除关联后再删除。", reference))
 }
 
 func (r *Repository) saveRegistration(ctx context.Context, connection domaincluster.Connection) error {

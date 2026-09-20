@@ -10,4 +10,6 @@ soha-contracts
 soha-web
 
 # Local runtime keys and shared secrets are never build inputs.
+.env
+**/.env
 deploy/network-runtime-tls

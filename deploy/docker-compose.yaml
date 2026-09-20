@@ -26,6 +26,25 @@ services:
       timeout: 5s
       retries: 20
 
+  minio:
+    image: ${SOHA_MINIO_IMAGE:-quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e}
+    container_name: ${SOHA_MINIO_CONTAINER_NAME:-opensoha-minio}
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${SOHA_MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${SOHA_MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "${SOHA_MINIO_BIND:-127.0.0.1}:${SOHA_MINIO_PORT:-9000}:9000"
+      - "${SOHA_MINIO_BIND:-127.0.0.1}:${SOHA_MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - opensoha-minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   ingest-postgres:
     image: ${SOHA_POSTGRES_IMAGE:-pgvector/pgvector:0.8.5-pg18-trixie}
     profiles:
@@ -557,6 +576,8 @@ volumes:
     name: ${SOHA_DATA_VOLUME:-soha-data}
   soha-postgres-data:
     name: ${SOHA_POSTGRES_VOLUME:-soha-postgres-data}
+  opensoha-minio-data:
+    name: ${SOHA_MINIO_VOLUME:-opensoha-minio-data}
   soha-ingest-postgres-data:
     name: ${SOHA_INGEST_POSTGRES_VOLUME:-soha-ingest-postgres-data}
   soha-radius-adapter-data:

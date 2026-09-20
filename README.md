@@ -157,6 +157,8 @@ different database or administrator credentials.
 
 This installs Go dependencies, then starts the local PostgreSQL service from `deploy/docker-compose.yaml`. Frontend dependencies are managed in the sibling `../soha-web` repository.
 
+MinIO exposes its S3 API at `http://127.0.0.1:9000` and console at `http://127.0.0.1:9001`, with persistent data in `opensoha-minio-data`. Its local defaults are `minioadmin` / `minioadmin`; override `SOHA_MINIO_ROOT_USER` and `SOHA_MINIO_ROOT_PASSWORD` in the environment or an untracked `deploy/.env` to preserve existing credentials. Change these defaults before exposing MinIO beyond loopback. Start it separately with `docker compose -f deploy/docker-compose.yaml up -d minio`; `make init` and `make dev` do not start MinIO.
+
 The compose stack uses `pgvector/pgvector:0.8.5-pg18-trixie`, currently based on PostgreSQL 18.4 and the same Debian generation as the standard PostgreSQL 18.4 image, enables `vector` and `pg_trgm`, and preloads `pg_stat_statements`. It mounts the named volume at `/var/lib/postgresql`, which is required for PostgreSQL 18's default data directory layout. Override the image with `SOHA_POSTGRES_IMAGE` only with a PostgreSQL 18 image that provides these extensions and a compatible libc collation version. Existing local volumes created by PostgreSQL 16 cannot be reused by changing only the image tag; recreate disposable volumes or migrate data with `pg_dump`/`pg_restore` or `pg_upgrade`.
 
 ### Start the API and console
@@ -221,7 +223,7 @@ make deploy-image
 Soha runs one process per container. The default process serves the management API and embedded SPA; independent `network-control`, `ingest`, and privileged `network-gateway` workloads keep realtime authorization, high-frequency telemetry, and the WireGuard data plane outside the management-server process. Documentation is published from `soha-docs` and linked through the configured docs URL.
 
 - [deploy/Dockerfile](./deploy/Dockerfile): multi-stage image build
-- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local stack with PostgreSQL and optional Hermes runner services
+- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local stack with PostgreSQL, MinIO, and optional Hermes runner services
 - [configs/config.yaml](./configs/config.yaml): default application config
 - [deploy/deployment.yaml](./deploy/deployment.yaml): raw Kubernetes manifest baseline
 - [deploy/network-runtime.yaml](./deploy/network-runtime.yaml): independent network-control, ingest, ingest PostgreSQL, and WireGuard gateway workloads
