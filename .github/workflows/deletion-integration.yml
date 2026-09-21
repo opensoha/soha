@@ -21,7 +21,7 @@ jobs:
           POSTGRES_USER: pgsql
           POSTGRES_PASSWORD: test-only
         ports:
-          - 5432:5432
+          - 5432/tcp
         options: >-
           --health-cmd "pg_isready -U pgsql -d soha"
           --health-interval 5s
@@ -36,10 +36,12 @@ jobs:
       - name: Run actual PostgreSQL deletion scenarios
         env:
           GOWORK: "off"
-          SOHA_APPLICATION_TEST_POSTGRES_PORT: "5432"
+          SOHA_APPLICATION_TEST_POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
         shell: bash
         run: |
           set -euo pipefail
+          test -n "$SOHA_APPLICATION_TEST_POSTGRES_PORT"
+          git rev-parse HEAD
           go test -json -count=1 -race -timeout=10m \
             -run '^TestApplicationAndClusterDeletionWithPostgres$' \
             ./internal/repository/application | tee deletion-test.json
