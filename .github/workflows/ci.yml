@@ -5,6 +5,13 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      latest_siblings:
+        description: 'Explicit latest-branch integration instead of the fixed sibling build inputs'
+        type: boolean
+        default: false
+        required: true
 
 jobs:
   verify:
@@ -19,13 +26,24 @@ jobs:
         with:
           repository: opensoha/soha-contracts
           path: soha-contracts
+          ref: ${{ inputs.latest_siblings && 'main' || '616b900b06f28d3f037e44c4d835c4828fc82060' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Checkout web
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-web
           path: soha-web
+          ref: ${{ inputs.latest_siblings && 'main' || '816ec0fb82e6e804f0f66d47d3446a7b5baeabc1' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
+      - name: Record actual source combination
+        env:
+          MODE: ${{ inputs.latest_siblings && 'latest integration' || 'fixed build inputs' }}
+        run: |
+          printf '### Source combination (%s)\n' "$MODE" >> "$GITHUB_STEP_SUMMARY"
+          for repo in soha soha-contracts soha-web; do
+            printf '%s: `%s`\n' "$repo" "$(git -C "$repo" rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          done
+          printf 'Package/Go dependencies remain owned by their checked-in manifests and locks.\n' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-node@v6
         with:
           node-version: "22"
