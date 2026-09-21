@@ -1,0 +1,66 @@
+name: deletion-integration
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-deletion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.5-pg18-trixie
+        env:
+          POSTGRES_DB: soha
+          POSTGRES_USER: pgsql
+          POSTGRES_PASSWORD: test-only
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U pgsql -d soha"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Run actual PostgreSQL deletion scenarios
+        env:
+          GOWORK: "off"
+          SOHA_APPLICATION_TEST_POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SOHA_APPLICATION_TEST_POSTGRES_PORT"
+          git rev-parse HEAD
+          go test -json -count=1 -race -timeout=10m \
+            -run '^TestApplicationAndClusterDeletionWithPostgres$' \
+            ./internal/repository/application | tee deletion-test.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          events = [json.loads(line) for line in Path('deletion-test.json').read_text().splitlines() if line.strip()]
+          name = 'TestApplicationAndClusterDeletionWithPostgres'
+          scoped = [e for e in events if e.get('Test') == name or e.get('Test', '').startswith(name + '/')]
+          if not any(e.get('Test') == name and e.get('Action') == 'pass' for e in scoped):
+              raise SystemExit('Required PostgreSQL deletion test did not pass or did not execute')
+          if any(e.get('Action') in ('skip', 'fail') for e in scoped):
+              raise SystemExit('A required PostgreSQL deletion scenario was skipped or failed')
+          print('Verified: required deletion test executed without skipped scenarios')
+          PY
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: postgres-deletion-test
+          path: deletion-test.json
+          if-no-files-found: warn
