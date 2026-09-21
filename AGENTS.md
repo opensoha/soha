@@ -2,7 +2,17 @@
 
 - 本仓负责 Go 核心控制平面、Server API 和原始 Docker/Kubernetes 部署；必须可脱离 `soha-cloud` 独立运行。
 - 在 OpenSoha 多仓工作区中读取 `../AGENTS.md` 一次；独立克隆时使用本仓规则，不要求初始化相邻仓库或规划工具。
-- 后端实现或审查使用 [soha-backend](.agents/skills/soha-backend/SKILL.md)，部署变更使用 [soha-deploy](.agents/skills/soha-deploy/SKILL.md)，只读取当前任务相关内容。
+- 后端实现或实质审查前读取 [soha-backend](.agents/skills/soha-backend/SKILL.md)，部署变更读取 [soha-deploy](.agents/skills/soha-deploy/SKILL.md)，以及技能为本次变更指定的参考；不只依赖自动匹配，已读未变化内容可复用。
 - 公开协议以 `soha-contracts` 为源；Web 源码归属 `soha-web`，本仓消费构建产物，不手改嵌入生成物。
 - Go 改动先验证受影响包；主入口为 `GOWORK=off go test ./...`。架构、契约、依赖、部署或发布变更执行适用的完整门禁，命令和版本以 [CI](.github/workflows/ci.yml) 与仓库脚本为准。
 - 文档和技能改动只检查内容、链接与差异。已通过的检查在相关代码和环境未变化时复用；保留用户未提交改动。
+
+## 变更与验收边界
+
+- 修改前明确业务能力、数据/状态所有者、公开行为、受影响调用者和验证入口。工作台是能力组合，不据菜单、文件大小或代码行数拆仓；保留单 go.mod 模块化单体和已有执行平面边界。
+- 当前代码与测试用于核实现状，不自动证明符合有效需求。规范、契约与实现冲突时说明依据，不复制旧实现的历史偏差。
+- 普通修复默认不修改全局权限、共享服务默认值或公开契约；必要的共享变更先列实际消费者，扩大相关回归，不顺手重构无关模块。
+- 删除、取消、重试等操作明确数据所有权、状态转换及副作用；跨域协调走已有能力接口，保留事务、授权、审计和迟到回调保护，不创建万能生命周期框架。
+- 关键数据库回归不能以跳过代替验收。应用/集群删除使用 [独立 PostgreSQL 集成检查](.github/workflows/application-deletion-integration.yml)，该检查要求目标测试实际运行、通过且无跳过子测试；本地仅连接可丢弃的隔离测试库，不使用开发或生产业务数据库。
+- 证据记录 Core/Web/contracts/Agent 的相关实际提交或产物版本、命令、环境和 pass/fail/skip/not-run。固定组合验证与最新分支集成分开记录；普通 go test、mock 或构建成功不等于真实数据库、Provider 或发布验收通过。
+- 保留既有 CI 门禁；不能靠改写测试预期、放宽权限、忽略失败或静默修改兼容基线取得通过。公开行为变化按 contracts → 受影响 consumer 的方向处理。
