@@ -27,7 +27,7 @@ type ComputeService interface {
 	ListProviders(context.Context, domainidentity.Principal, appcompute.ProviderFilter) (sohaapi.ComputeProviderListEnvelope, error)
 	ListProviderInstances(context.Context, domainidentity.Principal, appcompute.ProviderInstanceFilter) (sohaapi.ComputeProviderInstanceListEnvelope, error)
 	GetProviderInstance(context.Context, domainidentity.Principal, string, string, string) (sohaapi.ComputeProviderInstance, error)
-	CheckProviderInstanceHealth(context.Context, domainidentity.Principal, string, string, string, string, sohaapi.ComputeProviderReadRequest) (sohaapi.ComputeTaskView, error)
+	CheckProviderInstanceHealth(context.Context, domainidentity.Principal, string, string, string, sohaapi.ComputeProviderReadRequest) (sohaapi.ConnectionCheckResult, error)
 	DiscoverProviderInstance(context.Context, domainidentity.Principal, string, string, string, string, sohaapi.ComputeProviderDiscoverRequest) (sohaapi.ComputeTaskView, error)
 	GetResource(context.Context, domainidentity.Principal, string, string, string) (map[string]any, error)
 	ListResourceRelations(context.Context, domainidentity.Principal, string, string, string, string, int) (sohaapi.ComputeResourceRelations, error)
@@ -120,19 +120,19 @@ func (h *ComputeHandler) GetProviderInstance(c *gin.Context) {
 
 func (h *ComputeHandler) CheckProviderInstanceHealth(c *gin.Context) {
 	var input sohaapi.ComputeProviderReadRequest
-	h.mutateProviderInstance(c, &input, func(key string) (sohaapi.ComputeTaskView, error) {
-		return h.service.CheckProviderInstanceHealth(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("domain"), c.Param("providerKey"), c.Param("instanceRef"), key, input)
+	mutateProviderInstance(c, &input, http.StatusOK, func(_ string) (sohaapi.ConnectionCheckResult, error) {
+		return h.service.CheckProviderInstanceHealth(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("domain"), c.Param("providerKey"), c.Param("instanceRef"), input)
 	})
 }
 
 func (h *ComputeHandler) DiscoverProviderInstance(c *gin.Context) {
 	var input sohaapi.ComputeProviderDiscoverRequest
-	h.mutateProviderInstance(c, &input, func(key string) (sohaapi.ComputeTaskView, error) {
+	mutateProviderInstance(c, &input, http.StatusAccepted, func(key string) (sohaapi.ComputeTaskView, error) {
 		return h.service.DiscoverProviderInstance(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("domain"), c.Param("providerKey"), c.Param("instanceRef"), key, input)
 	})
 }
 
-func (h *ComputeHandler) mutateProviderInstance(c *gin.Context, input any, invoke func(string) (sohaapi.ComputeTaskView, error)) {
+func mutateProviderInstance[T any](c *gin.Context, input any, status int, invoke func(string) (T, error)) {
 	if !validComputeProviderDomain(c) {
 		return
 	}
@@ -149,7 +149,7 @@ func (h *ComputeHandler) mutateProviderInstance(c *gin.Context, input any, invok
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusAccepted, item)
+	apiresponse.Item(c, status, item)
 }
 
 func (h *ComputeHandler) GetResource(c *gin.Context) {

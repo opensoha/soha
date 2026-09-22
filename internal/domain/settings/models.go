@@ -89,13 +89,15 @@ type AISettings struct {
 }
 
 type BrandingSettings struct {
-	AppTitle         string `json:"appTitle"`
-	SidebarTitle     string `json:"sidebarTitle"`
-	Slogan           string `json:"slogan"`
-	LoginLogoURL     string `json:"loginLogoUrl"`
-	ExpandedLogoURL  string `json:"expandedLogoUrl"`
-	CollapsedLogoURL string `json:"collapsedLogoUrl"`
-	FaviconURL       string `json:"faviconUrl"`
+	AppTitle             string `json:"appTitle"`
+	SidebarTitle         string `json:"sidebarTitle"`
+	Slogan               string `json:"slogan"`
+	LoginLogoURL         string `json:"loginLogoUrl"`
+	ExpandedLogoURL      string `json:"expandedLogoUrl"`
+	CollapsedLogoURL     string `json:"collapsedLogoUrl"`
+	DarkExpandedLogoURL  string `json:"darkExpandedLogoUrl,omitempty"`
+	DarkCollapsedLogoURL string `json:"darkCollapsedLogoUrl,omitempty"`
+	FaviconURL           string `json:"faviconUrl"`
 }
 
 type Store interface {

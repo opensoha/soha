@@ -320,22 +320,23 @@ func TestCreatePVECredentialRequiresEncryptionKey(t *testing.T) {
 	}
 }
 
-func TestConnectionHealthIdempotencySkipsRepeatedProviderCall(t *testing.T) {
+func TestConnectionHealthAlwaysProbesWithoutCreatingTasks(t *testing.T) {
 	repo := newMemoryRepo()
 	repo.connections["connection-1"] = domainvirtualization.Connection{ID: "connection-1", Provider: ProviderPVE, Name: "PVE", Enabled: true}
+	repo.tasks["historical-check"] = domainvirtualization.Task{ID: "historical-check", TaskKind: TaskKindConnectionTest, Status: TaskStatusSucceeded}
 	adapter := &countingAdapter{}
-	service := newTestService(repo, &captureOperations{}, adapter)
-
-	first, err := service.TestConnectionIdempotent(context.Background(), testPrincipal(), "connection-1", "connection-health-1")
-	if err != nil {
-		t.Fatal(err)
+	operations := &captureOperations{}
+	service := newTestService(repo, operations, adapter)
+	for range 2 {
+		if _, err := service.TestConnection(context.Background(), testPrincipal(), "connection-1"); err != nil {
+			t.Fatal(err)
+		}
 	}
-	second, err := service.TestConnectionIdempotent(context.Background(), testPrincipal(), "connection-1", "connection-health-1")
-	if err != nil {
-		t.Fatal(err)
+	if adapter.testCalls != 2 || len(repo.tasks) != 1 || repo.tasks["historical-check"].ID == "" || len(repo.logs) != 0 {
+		t.Fatalf("provider calls=%d tasks=%v logs=%v", adapter.testCalls, repo.tasks, repo.logs)
 	}
-	if first.ID != second.ID || adapter.testCalls != 1 {
-		t.Fatalf("tasks = %q/%q, provider calls = %d", first.ID, second.ID, adapter.testCalls)
+	if len(operations.entries) != 2 || !operations.has("virtualization.connection.test") {
+		t.Fatalf("missing operation history: %v", operations.entries)
 	}
 }
 
@@ -727,6 +728,31 @@ func TestWorkerAssetSyncPersistsConnectionHealthAndMarksStale(t *testing.T) {
 	}
 	if repo.vms["stale-vm"].Status != "stale" {
 		t.Fatalf("stale vm status = %q, want stale", repo.vms["stale-vm"].Status)
+	}
+}
+
+func TestConnectionCheckHistoryCannotBeRetried(t *testing.T) {
+	for _, status := range []string{TaskStatusFailed, TaskStatusCanceled, TaskStatusTimeout} {
+		t.Run(status, func(t *testing.T) {
+			repo := newMemoryRepo()
+			service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+			task, err := repo.CreateTask(context.Background(), domainvirtualization.Task{
+				Provider: ProviderPVE, TaskKind: TaskKindConnectionTest, Status: status,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.RetryOperation(context.Background(), testPrincipal(), task.ID); !errors.Is(err, apperrors.ErrInvalidArgument) {
+				t.Fatalf("retry error = %v, want invalid argument", err)
+			}
+			history, err := service.GetOperation(context.Background(), testPrincipal(), task.ID)
+			if err != nil || history.Status != status || history.OperationState.Retryable || history.OperationState.RecommendedNextAction != "inspect_result" {
+				t.Fatalf("history = %#v, err = %v", history, err)
+			}
+			if len(repo.tasks) != 1 || len(repo.logs[task.ID]) != 0 {
+				t.Fatalf("retry changed history or wrote logs: tasks=%d logs=%d", len(repo.tasks), len(repo.logs[task.ID]))
+			}
+		})
 	}
 }
 
@@ -2074,4 +2100,46 @@ type testExecutionPrincipals struct{}
 
 func (testExecutionPrincipals) CurrentExecutionPrincipal(context.Context, string, string) (domainidentity.Principal, error) {
 	return testPrincipal(), nil
+}
+
+type connectionHealthAdapter struct {
+	fakeAdapter
+	result infravirtualization.ConnectionTestResult
+	err    error
+}
+
+func (a connectionHealthAdapter) TestConnection(context.Context, infravirtualization.Connection) (infravirtualization.ConnectionTestResult, error) {
+	return a.result, a.err
+}
+func TestConnectionReturnsHealthWithoutTaskRecords(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result infravirtualization.ConnectionTestResult
+		err    error
+		status string
+	}{
+		{name: "healthy", result: infravirtualization.ConnectionTestResult{Healthy: true, Status: "healthy"}, status: "healthy"},
+		{name: "degraded without transport error", result: infravirtualization.ConnectionTestResult{Status: "degraded", Message: "CRD unavailable"}, status: "degraded"},
+		{name: "transport error", err: errors.New("connection refused"), status: "unavailable"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newMemoryRepo()
+			repo.connections["connection-1"] = domainvirtualization.Connection{ID: "connection-1", Provider: ProviderPVE, Enabled: true}
+			operations := &captureOperations{}
+			service := newTestService(repo, operations, connectionHealthAdapter{result: tc.result, err: tc.err})
+			result, err := service.TestConnection(context.Background(), testPrincipal(), "connection-1")
+			if err != nil || result.Status != tc.status || result.CheckedAt.IsZero() || result.Healthy != (tc.result.Healthy && tc.err == nil) {
+				t.Fatalf("result=%#v error=%v", result, err)
+			}
+			if len(repo.tasks) != 0 || len(repo.logs) != 0 {
+				t.Fatalf("check created task records: tasks=%v logs=%v", repo.tasks, repo.logs)
+			}
+			if repo.connections["connection-1"].Health["healthy"] != result.Healthy || !operations.has("virtualization.connection.test") {
+				t.Fatal("missing persisted health or operation log")
+			}
+			if tc.err != nil && result.Message != tc.err.Error() {
+				t.Fatalf("failure reason lost: %q", result.Message)
+			}
+		})
+	}
 }

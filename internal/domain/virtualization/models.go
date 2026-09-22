@@ -258,6 +258,12 @@ func BuildOperationState(task Task, now time.Time) *OperationState {
 	if status == "canceling" {
 		state.RecommendedNextAction = "wait for provider outcome; retain the resource reservation while effects are unknown"
 	}
+	if task.TaskKind == "connection_test" {
+		state.Retryable = false
+		if terminal {
+			state.RecommendedNextAction = "inspect_result"
+		}
+	}
 	if task.LastHeartbeatAt != nil && !task.LastHeartbeatAt.IsZero() {
 		state.LastHeartbeatAt = task.LastHeartbeatAt.UTC()
 	}

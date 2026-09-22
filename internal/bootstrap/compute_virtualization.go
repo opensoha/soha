@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appcompute "github.com/opensoha/soha/internal/application/compute"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -11,8 +12,8 @@ import (
 
 type computeVirtualizationController struct{ service *appvirtualization.Service }
 
-func (c computeVirtualizationController) TestConnectionIdempotent(ctx context.Context, principal domainidentity.Principal, id, key string) (domainvirtualization.Task, error) {
-	return c.service.TestConnectionIdempotent(ctx, principal, id, key)
+func (c computeVirtualizationController) TestConnection(ctx context.Context, principal domainidentity.Principal, id string) (sohaapi.ConnectionCheckResult, error) {
+	return c.service.TestConnection(ctx, principal, id)
 }
 
 func (c computeVirtualizationController) SyncConnectionIdempotent(ctx context.Context, principal domainidentity.Principal, id, key string) (domainvirtualization.Task, error) {

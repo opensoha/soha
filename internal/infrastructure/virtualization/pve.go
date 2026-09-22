@@ -120,6 +120,11 @@ func (a *PVEAdapter) TestConnection(ctx context.Context, connection Connection) 
 }
 
 func (a *PVEAdapter) SyncAssets(ctx context.Context, connection Connection) (AssetSyncResult, error) {
+	// Keep the ticket local to this scan; never mutate or persist the saved credential.
+	connection, err := a.authenticatedConnection(ctx, connection)
+	if err != nil {
+		return AssetSyncResult{Health: pveAssetHealthFromError(err)}, nil
+	}
 	var nodes pveDataEnvelope
 	if err := a.do(ctx, connection, http.MethodGet, "/nodes", nil, &nodes); err != nil {
 		return AssetSyncResult{Health: pveAssetHealthFromError(err)}, nil
@@ -134,13 +139,21 @@ func (a *PVEAdapter) SyncAssets(ctx context.Context, connection Connection) (Ass
 		if syncTypes["node"] {
 			assets = append(assets, Asset{Type: "node", Name: nodeName, Status: stringFromMap(node, "status")})
 		}
-		assets = append(assets, a.pveNetworkAssets(ctx, connection, nodeName, syncTypes)...)
+		networkAssets, err := a.pveNetworkAssets(ctx, connection, nodeName, syncTypes)
+		if err != nil {
+			return AssetSyncResult{Health: pveAssetHealthFromError(err), Assets: assets}, nil
+		}
+		assets = append(assets, networkAssets...)
 		qemuAssets, err := a.pveQEMUAssets(ctx, connection, nodeName, syncTypes)
 		if err != nil {
 			return AssetSyncResult{Health: pveAssetHealthFromError(err), Assets: assets}, nil
 		}
 		assets = append(assets, qemuAssets...)
-		assets = append(assets, a.pveStorageAssets(ctx, connection, nodeName, syncTypes)...)
+		storageAssets, err := a.pveStorageAssets(ctx, connection, nodeName, syncTypes)
+		if err != nil {
+			return AssetSyncResult{Health: pveAssetHealthFromError(err), Assets: assets}, nil
+		}
+		assets = append(assets, storageAssets...)
 	}
 	return AssetSyncResult{Health: AssetHealth{Status: "healthy"}, Assets: assets}, nil
 }
@@ -150,14 +163,14 @@ func (a *PVEAdapter) pveNetworkAssets(
 	connection Connection,
 	nodeName string,
 	syncTypes map[string]bool,
-) []Asset {
+) ([]Asset, error) {
 	if !syncTypes["network"] {
-		return nil
+		return nil, nil
 	}
 	var networks pveDataEnvelope
 	endpoint := fmt.Sprintf("/nodes/%s/network", url.PathEscape(nodeName))
 	if err := a.do(ctx, connection, http.MethodGet, endpoint, nil, &networks); err != nil {
-		return nil
+		return nil, err
 	}
 	assets := make([]Asset, 0, len(networks.Data))
 	for _, item := range networks.Data {
@@ -165,7 +178,7 @@ func (a *PVEAdapter) pveNetworkAssets(
 			assets = append(assets, asset)
 		}
 	}
-	return assets
+	return assets, nil
 }
 
 func pveNetworkAsset(nodeName string, item map[string]any) (Asset, bool) {
@@ -229,7 +242,7 @@ func (a *PVEAdapter) enrichPVESyncedQEMUAsset(ctx context.Context, connection Co
 		addPVEVMConfigMetadata(asset.Metadata, asset.Name, config)
 	}
 	ips := pveStaticIPs(config)
-	if strings.EqualFold(asset.Status, "running") {
+	if strings.EqualFold(asset.Status, "running") && (err != nil || pveGuestAgentEnabled(config["agent"])) {
 		ips = append(ips, a.fetchPVEGuestAgentIPs(ctx, connection, asset.Node, vmid)...)
 	}
 	ips = uniqueNonEmptyStrings(ips)
@@ -349,14 +362,14 @@ func (a *PVEAdapter) pveStorageAssets(
 	connection Connection,
 	nodeName string,
 	syncTypes map[string]bool,
-) []Asset {
+) ([]Asset, error) {
 	if !pveStorageSyncEnabled(syncTypes) {
-		return nil
+		return nil, nil
 	}
 	var storages pveDataEnvelope
 	endpoint := fmt.Sprintf("/nodes/%s/storage", url.PathEscape(nodeName))
 	if err := a.do(ctx, connection, http.MethodGet, endpoint, nil, &storages); err != nil {
-		return nil
+		return nil, err
 	}
 	assets := make([]Asset, 0)
 	for _, item := range storages.Data {
@@ -364,11 +377,13 @@ func (a *PVEAdapter) pveStorageAssets(
 		if syncTypes["storage"] {
 			assets = append(assets, pveStorageAsset(nodeName, storageName, item))
 		}
-		assets = append(assets, a.pveStorageContentAssets(
-			ctx, connection, nodeName, storageName, item, syncTypes,
-		)...)
+		contentAssets, err := a.pveStorageContentAssets(ctx, connection, nodeName, storageName, item, syncTypes)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, contentAssets...)
 	}
-	return assets
+	return assets, nil
 }
 
 func pveStorageSyncEnabled(syncTypes map[string]bool) bool {
@@ -398,16 +413,16 @@ func (a *PVEAdapter) pveStorageContentAssets(
 	nodeName, storageName string,
 	storage map[string]any,
 	syncTypes map[string]bool,
-) []Asset {
+) ([]Asset, error) {
 	if storageName == "" || !pveStorageSupportsContent(storage) {
-		return nil
+		return nil, nil
 	}
 	var content pveDataEnvelope
 	endpoint := fmt.Sprintf(
 		"/nodes/%s/storage/%s/content", url.PathEscape(nodeName), url.PathEscape(storageName),
 	)
 	if err := a.do(ctx, connection, http.MethodGet, endpoint, nil, &content); err != nil {
-		return nil
+		return nil, err
 	}
 	assets := make([]Asset, 0, len(content.Data))
 	for _, item := range content.Data {
@@ -415,7 +430,7 @@ func (a *PVEAdapter) pveStorageContentAssets(
 			assets = append(assets, asset)
 		}
 	}
-	return assets
+	return assets, nil
 }
 
 func pveStorageContentAsset(
@@ -1841,24 +1856,29 @@ func applyPVEAuth(req *http.Request, credential map[string]any) {
 }
 
 func (a *PVEAdapter) applyPVEAuth(ctx context.Context, req *http.Request, connection Connection) error {
+	connection, err := a.authenticatedConnection(ctx, connection)
+	if err != nil {
+		return err
+	}
+	applyPVEAuth(req, connection.Credential)
+	return nil
+}
+
+func (a *PVEAdapter) authenticatedConnection(ctx context.Context, connection Connection) (Connection, error) {
 	if pveHasReusableAuth(connection.Credential) {
-		applyPVEAuth(req, connection.Credential)
-		return nil
+		return connection, nil
 	}
 	username := stringFromAny(connection.Credential["username"])
 	password := stringFromAny(connection.Credential["password"])
 	if username == "" || password == "" {
-		return nil
+		return connection, nil
 	}
 	ticket, csrf, err := a.loginPVE(ctx, connection, username, password)
 	if err != nil {
-		return err
+		return connection, err
 	}
-	req.AddCookie(&http.Cookie{Name: "PVEAuthCookie", Value: ticket})
-	if csrf != "" {
-		req.Header.Set("CSRFPreventionToken", csrf)
-	}
-	return nil
+	connection.Credential = map[string]any{"ticket": ticket, "csrfToken": csrf}
+	return connection, nil
 }
 
 func pveHasReusableAuth(credential map[string]any) bool {

@@ -57,7 +57,7 @@ func (s *Service) IssueProjectLogStreamTicket(ctx context.Context, principal dom
 	if err != nil {
 		return domainidentity.StreamTicket{}, err
 	}
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "logs")); err != nil {
 		return domainidentity.StreamTicket{}, err
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, query.Selector.DockerService)
@@ -83,7 +83,7 @@ func (s *Service) StreamProjectLogEventsFromTicket(ctx context.Context, principa
 	if err != nil {
 		return err
 	}
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "logs")); err != nil {
 		return err
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, query.Selector.DockerService)

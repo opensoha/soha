@@ -13,6 +13,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -22,6 +23,22 @@ import (
 type streamTaskUpdatesStubService struct {
 	VirtualizationService
 	calls int
+}
+
+func TestOperationAllowedActionsExcludeDirectCheckRetry(t *testing.T) {
+	for _, kind := range []string{"connection_test", "asset_sync", "vm_action"} {
+		for _, status := range []string{"failed", "canceled", "callback_timeout"} {
+			item := domainvirtualization.Task{TaskKind: kind, Status: status}
+			actions := operationAllowedActions(item)
+			if kind == "connection_test" {
+				if len(actions) != 0 {
+					t.Fatalf("direct check %s actions = %v", status, actions)
+				}
+			} else if len(actions) != 1 || actions[0] != "retry" {
+				t.Fatalf("async %s/%s actions = %v", kind, status, actions)
+			}
+		}
+	}
 }
 
 func (s *streamTaskUpdatesStubService) GetOperation(_ context.Context, _ domainidentity.Principal, _ string) (domainvirtualization.Task, error) {
@@ -644,5 +661,29 @@ func TestMapOperationDoesNotExposeEncryptedBootstrap(t *testing.T) {
 	}
 	if payload["cloudInitCredential"] != nil || payload["cloudInitConfigured"] != true {
 		t.Fatalf("bootstrap envelope escaped: %#v", payload)
+	}
+}
+
+type connectionTestStub struct {
+	VirtualizationService
+	status string
+}
+
+func (s *connectionTestStub) TestConnection(context.Context, domainidentity.Principal, string) (sohaapi.ConnectionCheckResult, error) {
+	return sohaapi.ConnectionCheckResult{Status: s.status, Healthy: s.status == "healthy", Message: "probe result", CheckedAt: time.Now().UTC()}, nil
+}
+func TestConnectionReturnsCompletedResult(t *testing.T) {
+	for _, status := range []string{"healthy", "unavailable"} {
+		t.Run(status, func(t *testing.T) {
+			handler := NewVirtualizationHandler(&connectionTestStub{status: status})
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/virtualization/clusters/connection-1/test", nil)
+			ctx.Params = gin.Params{{Key: "id", Value: "connection-1"}}
+			handler.TestConnection(ctx)
+			if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), `"id":`) || !strings.Contains(recorder.Body.String(), `"healthy":`) || !strings.Contains(recorder.Body.String(), `"status":"`+status+`"`) || !strings.Contains(recorder.Body.String(), "probe result") {
+				t.Fatalf("response = %d %s", recorder.Code, recorder.Body.String())
+			}
+		})
 	}
 }

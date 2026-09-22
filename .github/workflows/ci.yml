@@ -26,14 +26,14 @@ jobs:
         with:
           repository: opensoha/soha-contracts
           path: soha-contracts
-          ref: ${{ inputs.latest_siblings && 'main' || '616b900b06f28d3f037e44c4d835c4828fc82060' }}
+          ref: ${{ inputs.latest_siblings && 'main' || 'aac4bc87d3fdc0c9528e723c7b3f8648af0bc6ea' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Checkout web
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-web
           path: soha-web
-          ref: ${{ inputs.latest_siblings && 'main' || '816ec0fb82e6e804f0f66d47d3446a7b5baeabc1' }}
+          ref: ${{ inputs.latest_siblings && 'main' || '6cae4ed723a3356dba3457ef84f1d9af5114fbeb' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Record actual source combination
         env:
@@ -112,6 +112,7 @@ jobs:
         working-directory: soha
         run: |
           docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test -t ghcr.io/opensoha/soha:local .
+          docker build --build-context contracts=../soha-contracts --target network-gateway-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-network-gateway:test .
           docker build --target radius-eap-test-runtime -f deploy/Dockerfile -t ghcr.io/opensoha/soha-radius-eap-test:test .
       - name: Verify container storage permissions
         run: >-

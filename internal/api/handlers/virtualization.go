@@ -33,7 +33,7 @@ type VirtualizationConnectionService interface {
 	UpdateConnection(context.Context, domainidentity.Principal, string, appvirtualization.ConnectionInput) (domainvirtualization.Connection, error)
 	GetConnectionDeleteDependencies(context.Context, domainidentity.Principal, string) (domainvirtualization.ConnectionDeleteDependencies, error)
 	DeleteConnection(context.Context, domainidentity.Principal, string, appvirtualization.DeleteConnectionOptions) error
-	TestConnection(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
+	TestConnection(context.Context, domainidentity.Principal, string) (sohaapi.ConnectionCheckResult, error)
 }
 
 type VirtualizationSyncService interface {
@@ -208,12 +208,12 @@ func (h *VirtualizationHandler) GetConnectionDeleteDependencies(c *gin.Context) 
 }
 
 func (h *VirtualizationHandler) TestConnection(c *gin.Context) {
-	task, err := h.connections.TestConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	result, err := h.connections.TestConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusAccepted, mapOperation(task))
+	apiresponse.Item(c, http.StatusOK, result)
 }
 
 func (h *VirtualizationHandler) SyncConnection(c *gin.Context) {
@@ -984,13 +984,12 @@ func virtualizationConfiguredFlag(key string, value any) bool {
 }
 
 func operationAllowedActions(item domainvirtualization.Task) []string {
-	switch item.Status {
-	case "queued", "running":
+	state := domainvirtualization.BuildOperationState(item, time.Now().UTC())
+	if state.Cancelable {
 		return []string{"cancel"}
-	case "failed", "canceled", "callback_timeout":
-		if item.MaxRetries == 0 || item.AttemptCount <= item.MaxRetries {
-			return []string{"retry"}
-		}
+	}
+	if state.Retryable && (item.MaxRetries == 0 || item.AttemptCount <= item.MaxRetries) {
+		return []string{"retry"}
 	}
 	return []string{}
 }

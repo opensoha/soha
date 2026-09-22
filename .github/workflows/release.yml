@@ -9,11 +9,11 @@ on:
       web_ref:
         description: "soha-web release tag to embed"
         required: true
-        default: "v0.1.7"
+        default: "v0.1.8"
       contracts_ref:
-        description: "soha-contracts tag or commit to consume as the release module"
-        required: true
-        default: "v0.1.15"
+        description: "Optional assertion of the contracts version pinned in go.mod"
+        required: false
+        default: ""
       web_sha256:
         description: "Optional expected sha256 for the soha-web dist tarball; checked against the release checksum asset when provided"
         required: false
@@ -27,8 +27,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      WEB_REF: ${{ inputs.web_ref || 'v0.1.7' }}
-      CONTRACTS_REF: ${{ inputs.contracts_ref || 'v0.1.15' }}
+      WEB_REF: ${{ inputs.web_ref || 'v0.1.8' }}
+      CONTRACTS_REF: ${{ inputs.contracts_ref }}
       WEB_SHA256: ${{ inputs.web_sha256 }}
     steps:
       - name: Checkout soha
@@ -52,18 +52,19 @@ jobs:
         run: |
           release_version="$(git describe --tags --abbrev=0)"
           echo "SOHA_BUILD_VERSION=${release_version#v}" >> "$GITHUB_ENV"
-      - name: Configure private module access
-        env:
-          GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
-        run: |
-          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
-          go env -w GOPRIVATE=github.com/opensoha/*
-      - name: Pin contracts module
+      - name: Verify pinned contracts module
         working-directory: soha
         run: |
-          test -n "${CONTRACTS_REF}"
-          GOWORK=off go get "github.com/opensoha/soha-contracts@${CONTRACTS_REF}"
-          GOWORK=off go mod tidy
+          set -euo pipefail
+          reviewed_ref="$(GOWORK=off go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts)"
+          [[ "${reviewed_ref}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          if [ -n "${CONTRACTS_REF}" ] && [ "${CONTRACTS_REF}" != "${reviewed_ref}" ]; then
+            echo "contracts input differs from the reviewed go.mod dependency" >&2
+            exit 1
+          fi
+          echo "CONTRACTS_REF=${reviewed_ref}" >> "$GITHUB_ENV"
+          GOWORK=off go mod download
+          GOWORK=off go mod verify
           GOWORK=off go list -m github.com/opensoha/soha-contracts | tee ../soha-contracts-module.txt
       - name: Stage pinned contracts build context
         working-directory: soha
@@ -112,6 +113,9 @@ jobs:
           GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w -X github.com/opensoha/soha/internal/application/plugin.currentSohaVersion=${SOHA_BUILD_VERSION}" -o ../soha-linux-amd64 ./cmd/server
           cd ..
           sha256sum soha-linux-amd64 > soha-linux-amd64.sha256
+      - name: Set up QEMU
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         if: startsWith(github.ref, 'refs/tags/v')
         uses: docker/setup-buildx-action@v3
@@ -137,6 +141,20 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           build-args: |
             SOHA_BUILD_VERSION=${{ env.SOHA_BUILD_VERSION }}
+          build-contexts: |
+            contracts=./contracts-build-context
+      - name: Publish network gateway image to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v6
+        with:
+          context: soha
+          file: soha/deploy/Dockerfile
+          target: network-gateway-runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/opensoha/soha-network-gateway:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           build-contexts: |
             contracts=./contracts-build-context
       - name: Generate release manifest

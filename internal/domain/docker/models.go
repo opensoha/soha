@@ -476,6 +476,12 @@ func BuildOperationState(operation Operation, now time.Time) *OperationState {
 		ClaimedByWorkerID:     strings.TrimSpace(operation.ClaimedByWorkerID),
 		RecommendedNextAction: operationRecommendedNextAction(status, heartbeatStale),
 	}
+	if operation.OperationKind == "port_reserve" || (operation.OperationKind == "service_action" && firstNonEmptyOperationResultString(operation.Payload, "action") == "logs") {
+		state.Retryable = false
+		if terminal {
+			state.RecommendedNextAction = "inspect_result"
+		}
+	}
 	if operation.LastHeartbeatAt != nil && !operation.LastHeartbeatAt.IsZero() {
 		state.LastHeartbeatAt = operation.LastHeartbeatAt.UTC()
 	}

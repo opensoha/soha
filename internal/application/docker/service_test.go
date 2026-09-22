@@ -55,6 +55,51 @@ func TestEmptyOperationClaimDoesNotRecordFailure(t *testing.T) {
 	}
 }
 
+func TestCreatePortMappingSavesWithoutQueueingRuntimeWork(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		denied  bool
+		port    int
+		wantErr error
+	}{
+		{name: "saved", port: 18080},
+		{name: "invalid", port: 70000, wantErr: apperrors.ErrInvalidArgument},
+		{name: "denied", denied: true, port: 18080, wantErr: apperrors.ErrAccessDenied},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newMemoryDockerRepo()
+			repo.operations["historical"] = domaindocker.Operation{ID: "historical", OperationKind: OperationKindPortReserve}
+			audit := &captureDockerAudit{}
+			evidence := &captureDockerOperations{}
+			service := New(repo, dockerTestPermissions(), evidence, WithAudit(audit))
+			principal := dockerTestPrincipal()
+			if tc.denied {
+				principal.Roles = []string{"viewer"}
+			}
+			item, err := service.CreatePortMapping(context.Background(), principal, domaindocker.PortMappingInput{HostID: "host-1", Name: "web", HostPort: tc.port, ContainerPort: 80})
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tc.wantErr)
+			}
+			if tc.wantErr == nil {
+				if item.ID == "" || item.Protocol != "tcp" || len(repo.ports) != 1 {
+					t.Fatalf("saved port = %#v", item)
+				}
+				if len(audit.entries) != 1 || audit.entries[0].Result != "success" || len(evidence.entries) != 1 {
+					t.Fatalf("missing creation evidence")
+				}
+				if _, err := service.CreatePortMapping(context.Background(), principal, domaindocker.PortMappingInput{HostID: "host-1", HostPort: tc.port, ContainerPort: 80}); !errors.Is(err, apperrors.ErrInvalidArgument) {
+					t.Fatalf("duplicate error = %v", err)
+				}
+			} else if len(repo.ports) != 0 {
+				t.Fatal("rejected port persisted")
+			}
+			if len(repo.operations) != 1 || repo.operations["historical"].ID != "historical" {
+				t.Fatalf("runtime operations changed: %#v", repo.operations)
+			}
+		})
+	}
+}
+
 func TestCreateProjectUpsertsServicesFromCompose(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online"}
@@ -208,6 +253,45 @@ func TestRunnerRetryRotatesCallbackTokenAndRejectsStaleAttempt(t *testing.T) {
 	}
 	if _, err := service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{OperationID: operation.ID, WorkerID: "worker-1", CallbackToken: second.CallbackToken, Status: OperationStatusCompleted}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDirectOperationHistoryCannotBeRetried(t *testing.T) {
+	for _, kind := range []string{OperationKindPortReserve, OperationKindServiceAction} {
+		for _, status := range []string{OperationStatusFailed, OperationStatusCanceled, OperationStatusTimeout} {
+			t.Run(kind+"/"+status, func(t *testing.T) {
+				repo := newMemoryDockerRepo()
+				service := New(repo, dockerTestPermissions(), nil)
+				operation, err := repo.CreateOperation(context.Background(), domaindocker.OperationInput{
+					OperationKind: kind, Status: status, Payload: map[string]any{"action": "logs"},
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := service.RetryOperation(context.Background(), dockerTestPrincipal(), operation.ID); !errors.Is(err, apperrors.ErrInvalidArgument) {
+					t.Fatalf("retry error = %v, want invalid argument", err)
+				}
+				history, err := service.GetOperation(context.Background(), dockerTestPrincipal(), operation.ID)
+				if err != nil || history.Status != status || history.OperationState.Retryable || history.OperationState.RecommendedNextAction != "inspect_result" {
+					t.Fatalf("history = %#v, err = %v", history, err)
+				}
+				if len(repo.operations) != 1 || len(repo.logs[operation.ID]) != 0 {
+					t.Fatalf("retry changed history or wrote logs: operations=%d logs=%d", len(repo.operations), len(repo.logs[operation.ID]))
+				}
+			})
+		}
+	}
+}
+
+func TestServiceLogsCannotEnqueueAnOperation(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	service := New(repo, dockerTestPermissions(), nil)
+	_, err := service.ServiceAction(context.Background(), dockerTestPrincipal(), "service-1", domaindocker.ServiceActionInput{Action: " logs "})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) || !strings.Contains(err.Error(), "/logs/query") {
+		t.Fatalf("log action error = %v, want direct-query guidance", err)
+	}
+	if len(repo.operations) != 0 || len(repo.logs) != 0 {
+		t.Fatalf("log read created tasks or logs: operations=%d logs=%d", len(repo.operations), len(repo.logs))
 	}
 }
 

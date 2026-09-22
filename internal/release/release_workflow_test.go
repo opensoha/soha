@@ -13,16 +13,20 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 
 	required := []string{
 		"contracts_ref:",
-		"WEB_REF: ${{ inputs.web_ref || 'v0.1.7' }}",
-		"CONTRACTS_REF: ${{ inputs.contracts_ref || 'v0.1.15' }}",
+		"WEB_REF: ${{ inputs.web_ref || 'v0.1.8' }}",
+		"CONTRACTS_REF: ${{ inputs.contracts_ref }}",
 		"WEB_SHA256: ${{ inputs.web_sha256 }}",
-		"go get \"github.com/opensoha/soha-contracts@${CONTRACTS_REF}\"",
+		"go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts",
+		"contracts input differs from the reviewed go.mod dependency",
+		"GOWORK=off go mod verify",
 		"go list -m github.com/opensoha/soha-contracts",
 		"go list -m -f '{{.Dir}}' github.com/opensoha/soha-contracts",
 		"GOWORK=off go test ./...",
 		"GOWORK=off CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build",
 		"contracts-build-context",
 		"contracts=./contracts-build-context",
+		"target: network-gateway-runtime",
+		"ghcr.io/opensoha/soha-network-gateway:${{ github.ref_name }}",
 		"soha-web-dist-${WEB_REF}.tar.gz.sha256",
 		"soha-web-dist.sha256",
 		"sha256sum -c -",
@@ -46,6 +50,10 @@ func TestReleaseWorkflowDoesNotUseSiblingContractsCheckout(t *testing.T) {
 	workflow := readReleaseWorkflow(t)
 
 	disallowed := []string{
+		"go get",
+		"go mod tidy",
+		"inputs.contracts_ref ||",
+		"go env -w GOPRIVATE",
 		"repository: opensoha/soha-contracts",
 		"path: soha-contracts",
 		"../soha-contracts/",

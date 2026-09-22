@@ -188,6 +188,30 @@ func TestBrandingSettingsPersistSlogan(t *testing.T) {
 	}
 }
 
+func TestBrandingDarkLogosRoundTripAndClear(t *testing.T) {
+	store := &captureSettingsStore{}
+	service := New(store, appaccess.NewPermissionResolver(settingsPermissionReader{}), nil, nil)
+	principal := domainidentity.Principal{UserID: "admin", Roles: []string{"admin"}}
+	ctx := context.Background()
+	input := domainsettings.BrandingSettings{
+		ExpandedLogoURL: "/light.svg", CollapsedLogoURL: "/compact.svg",
+		DarkExpandedLogoURL: " /dark.svg ", DarkCollapsedLogoURL: " /dark-compact.svg ",
+	}
+	if _, err := service.UpdateBrandingSettings(ctx, principal, input); err != nil {
+		t.Fatal(err)
+	}
+	// The public login bootstrap must receive the persisted variants too.
+	item, err := service.ResolveBrandingSettings(ctx)
+	if err != nil || item.DarkExpandedLogoURL != "/dark.svg" || item.DarkCollapsedLogoURL != "/dark-compact.svg" {
+		t.Fatalf("persisted dark logos = %#v, err = %v", item, err)
+	}
+	input.DarkExpandedLogoURL, input.DarkCollapsedLogoURL = "", ""
+	item, err = service.UpdateBrandingSettings(ctx, principal, input)
+	if err != nil || item.DarkExpandedLogoURL != "" || item.DarkCollapsedLogoURL != "" || item.ExpandedLogoURL != "/light.svg" || item.CollapsedLogoURL != "/compact.svg" {
+		t.Fatalf("cleared dark logos = %#v, err = %v", item, err)
+	}
+}
+
 func TestLoginProviderSecretsAreRedactedAndPreserved(t *testing.T) {
 	store := &captureSettingsStore{values: map[string]capturedSetting{
 		domainsettings.IdentityLoginProvidersSettingKey: {value: map[string]any{

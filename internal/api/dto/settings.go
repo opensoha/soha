@@ -70,11 +70,13 @@ type AISkillSettings struct {
 }
 
 type UpdateBrandingSettingsRequest struct {
-	AppTitle         string `json:"appTitle"`
-	SidebarTitle     string `json:"sidebarTitle"`
-	Slogan           string `json:"slogan"`
-	LoginLogoURL     string `json:"loginLogoUrl"`
-	ExpandedLogoURL  string `json:"expandedLogoUrl"`
-	CollapsedLogoURL string `json:"collapsedLogoUrl"`
-	FaviconURL       string `json:"faviconUrl"`
+	AppTitle             string `json:"appTitle"`
+	SidebarTitle         string `json:"sidebarTitle"`
+	Slogan               string `json:"slogan"`
+	LoginLogoURL         string `json:"loginLogoUrl"`
+	ExpandedLogoURL      string `json:"expandedLogoUrl"`
+	CollapsedLogoURL     string `json:"collapsedLogoUrl"`
+	DarkExpandedLogoURL  string `json:"darkExpandedLogoUrl"`
+	DarkCollapsedLogoURL string `json:"darkCollapsedLogoUrl"`
+	FaviconURL           string `json:"faviconUrl"`
 }

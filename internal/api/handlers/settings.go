@@ -248,13 +248,15 @@ func (h *SettingsHandler) UpdateBrandingSettings(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.branding.UpdateBrandingSettings(c.Request.Context(), principal, domainsettings.BrandingSettings{
-		AppTitle:         req.AppTitle,
-		SidebarTitle:     req.SidebarTitle,
-		Slogan:           req.Slogan,
-		LoginLogoURL:     req.LoginLogoURL,
-		ExpandedLogoURL:  req.ExpandedLogoURL,
-		CollapsedLogoURL: req.CollapsedLogoURL,
-		FaviconURL:       req.FaviconURL,
+		AppTitle:             req.AppTitle,
+		SidebarTitle:         req.SidebarTitle,
+		Slogan:               req.Slogan,
+		LoginLogoURL:         req.LoginLogoURL,
+		ExpandedLogoURL:      req.ExpandedLogoURL,
+		CollapsedLogoURL:     req.CollapsedLogoURL,
+		DarkExpandedLogoURL:  req.DarkExpandedLogoURL,
+		DarkCollapsedLogoURL: req.DarkCollapsedLogoURL,
+		FaviconURL:           req.FaviconURL,
 	})
 	if err != nil {
 		writeError(c, err)
