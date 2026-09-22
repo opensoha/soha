@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
@@ -438,85 +439,56 @@ func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity
 	return nil
 }
 
-func (s *Service) TestConnection(ctx context.Context, principal domainidentity.Principal, id string) (_ domainvirtualization.Task, retErr error) {
-	return s.TestConnectionIdempotent(ctx, principal, id, "")
-}
-
-func (s *Service) TestConnectionIdempotent(ctx context.Context, principal domainidentity.Principal, id, idempotencyKey string) (_ domainvirtualization.Task, retErr error) {
+func (s *Service) TestConnection(ctx context.Context, principal domainidentity.Principal, id string) (_ sohaapi.ConnectionCheckResult, retErr error) {
 	defer func() { s.recordMutationFailure(ctx, principal, "virtualization.connection.test", id, id, retErr, nil) }()
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermVirtualizationClustersManage, "test")); err != nil {
-		return domainvirtualization.Task{}, err
+		return sohaapi.ConnectionCheckResult{}, err
 	}
 	connection, err := s.connections.GetConnection(ctx, strings.TrimSpace(id))
 	if err != nil {
-		return domainvirtualization.Task{}, mapNotFound(err)
-	}
-	idempotencyInput := map[string]any{"connectionId": connection.ID}
-	if existing, found, err := s.existingIdempotentTask(ctx, "virtualization.connection.test", principal, idempotencyKey, idempotencyInput); err != nil {
-		return domainvirtualization.Task{}, err
-	} else if found {
-		return domainvirtualization.WithOperationState(existing, time.Now().UTC()), nil
+		return sohaapi.ConnectionCheckResult{}, mapNotFound(err)
 	}
 	adapterConnection, err := s.adapterConnection(ctx, connection)
 	if err != nil {
-		return domainvirtualization.Task{}, err
+		return sohaapi.ConnectionCheckResult{}, err
 	}
 	adapter, err := s.adapterFor(connection.Provider)
 	if err != nil {
-		return domainvirtualization.Task{}, err
+		return sohaapi.ConnectionCheckResult{}, err
 	}
-	result, err := adapter.TestConnection(ctx, adapterConnection)
+	probe, err := adapter.TestConnection(ctx, adapterConnection)
+	result := sohaapi.ConnectionCheckResult{
+		Healthy:    probe.Healthy && err == nil,
+		Status:     probe.Status,
+		Message:    probe.Message,
+		Reason:     probe.Reason,
+		NextAction: probe.NextAction,
+		HTTPStatus: probe.HTTPStatus,
+		CheckedAt:  time.Now().UTC(),
+	}
 	status := TaskStatusSucceeded
-	message := result.Message
-	if err != nil {
+	if !result.Healthy {
 		status = TaskStatusFailed
-		message = err.Error()
 	}
-	now := time.Now().UTC()
+	result.Status = firstNonEmpty(result.Status, status)
+	if err != nil {
+		result.Status = "unavailable"
+		result.Message = err.Error()
+	}
 	health := map[string]any{
-		"status":     firstNonEmpty(result.Status, status),
+		"status":     result.Status,
 		"healthy":    result.Healthy,
-		"message":    message,
+		"message":    result.Message,
 		"reason":     result.Reason,
 		"nextAction": result.NextAction,
 		"httpStatus": result.HTTPStatus,
-		"checkedAt":  now.Format(time.RFC3339),
+		"checkedAt":  result.CheckedAt.Format(time.RFC3339),
 	}
-	if err != nil {
-		health["status"] = "unavailable"
+	if _, err := s.connectionWriter.UpdateConnectionHealth(ctx, connection.ID, health, nil); err != nil {
+		return sohaapi.ConnectionCheckResult{}, err
 	}
-	_, _ = s.connectionWriter.UpdateConnectionHealth(ctx, connection.ID, health, nil)
-	task, createErr := s.createTaskIdempotently(ctx, "virtualization.connection.test", principal, idempotencyKey, idempotencyInput, domainvirtualization.Task{
-		Provider:     connection.Provider,
-		ConnectionID: connection.ID,
-		TaskKind:     TaskKindConnectionTest,
-		Status:       status,
-		RequestedBy:  principal.UserID,
-		Payload:      map[string]any{"connectionId": connection.ID},
-		Result: map[string]any{
-			"healthy":    result.Healthy,
-			"status":     firstNonEmpty(result.Status, status),
-			"message":    message,
-			"reason":     result.Reason,
-			"nextAction": result.NextAction,
-			"httpStatus": result.HTTPStatus,
-		},
-		StartedAt:  &now,
-		FinishedAt: &now,
-	})
-	if createErr != nil {
-		return domainvirtualization.Task{}, createErr
-	}
-	level := "info"
-	if status == TaskStatusFailed {
-		level = "error"
-	}
-	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: level, Message: firstNonEmpty(message, "connection test completed")})
-	s.recordOperation(ctx, principal, "virtualization.connection.test", connection.ID, connection.Name, status, "tested virtualization connection", map[string]any{"taskId": task.ID})
-	if err != nil {
-		return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
-	}
-	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
+	s.recordOperation(ctx, principal, "virtualization.connection.test", connection.ID, connection.Name, status, "tested virtualization connection", health)
+	return result, nil
 }
 
 func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.Principal, id string) (_ domainvirtualization.Task, retErr error) {
@@ -1415,8 +1387,8 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 	if replayed {
 		return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 	}
-	if !isRetryableTaskStatus(task.Status) {
-		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization operation %s cannot be retried from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
+	if !domainvirtualization.BuildOperationState(task, time.Now().UTC()).Retryable {
+		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization operation %s (%s) cannot be retried from status %s", apperrors.ErrInvalidArgument, task.ID, task.TaskKind, task.Status)
 	}
 	if task.TaskKind == TaskKindVMCreate && payloadString(task.Result, "providerEffect") == "created" && !isWorkerCreation(task) {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: VM creation already has a provider receipt; use the existing VM", apperrors.ErrConflict)
@@ -2568,10 +2540,6 @@ func isCancelableTaskStatus(status string) bool {
 
 func cancelableFailedCreation(task domainvirtualization.Task) bool {
 	return vmCreateMayHaveDispatched(task) && (task.Status == TaskStatusFailed || task.Status == TaskStatusTimeout)
-}
-
-func isRetryableTaskStatus(status string) bool {
-	return slices.Contains([]string{TaskStatusFailed, TaskStatusCanceled, TaskStatusTimeout}, strings.TrimSpace(status))
 }
 
 func isUnsupported(err error) bool {

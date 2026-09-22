@@ -82,7 +82,7 @@ func (s *Service) GetProjectLogs(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) getProjectLogs(ctx context.Context, principal domainidentity.Principal, projectID, serviceName string, tailLines int, sinceSeconds int64) (domaindocker.ProjectRuntimeLogs, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "logs")); err != nil {
 		return domaindocker.ProjectRuntimeLogs{}, err
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, serviceName)
@@ -100,7 +100,7 @@ func (s *Service) StreamProjectLogs(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) streamProjectLogs(ctx context.Context, principal domainidentity.Principal, projectID, serviceName string, tailLines int, sinceSeconds int64, stdout io.Writer) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDockerServicesView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "logs")); err != nil {
 		return err
 	}
 	target, err := s.projectRuntimeTarget(ctx, projectID, serviceName)

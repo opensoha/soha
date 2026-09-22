@@ -349,9 +349,9 @@ docker compose -f deploy/docker-compose.yaml --profile network-access \
   network-gateway network-gateway-b network-gateway-c
 ```
 
-Raw Kubernetes uses the same process split. The raw manifests use `:local`
-images until a release containing the network runtimes is available; v0.1.7
-and v0.1.8 do not contain these binaries. Build both images from this checkout:
+Raw Kubernetes uses the same process split. The raw manifests pin the
+application and network-gateway images to `v0.1.9`, which includes the network
+runtimes. For local development, build both images from this checkout:
 
 ```bash
 make deploy-image
@@ -360,8 +360,9 @@ docker build --build-context contracts=../soha-contracts \
   -t ghcr.io/opensoha/soha-network-gateway:local .
 ```
 
-Load these images into every target cluster node, or push them to your own
-registry and replace both image references in `deploy/kustomization.yaml`.
+For local builds, load these images into every target cluster node and set both
+tags in `deploy/kustomization.yaml` to `local`, or push them to your own registry
+and replace both image references.
 Use the same application image for server, network-control, and ingest.
 Before `kubectl apply -k deploy`,
 create `soha-network-runtime-tls` in namespace `soha` with the keys named
@@ -402,7 +403,7 @@ docker run -d \
   -e SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_MONITORING_WEBHOOK_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY=soha-123456789012345678901234567890 \
-  ghcr.io/opensoha/soha:v0.1.7
+  ghcr.io/opensoha/soha:v0.1.9
 ```
 
 The `soha-data` volume persists companion data. Software packages require an enabled S3-compatible system integration and are not stored on the local application volume.
@@ -442,10 +443,10 @@ Recommended boundaries:
 Build the image:
 
 ```bash
-make deploy-image IMAGE_TAG=v0.1.7
+make deploy-image IMAGE_TAG=v0.1.9
 
 # When proxy.golang.org is unstable:
-make deploy-image IMAGE_TAG=v0.1.7 GOPROXY=https://goproxy.cn,direct
+make deploy-image IMAGE_TAG=v0.1.9 GOPROXY=https://goproxy.cn,direct
 ```
 
 Install with Helm:

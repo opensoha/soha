@@ -168,15 +168,19 @@ func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainid
 	input.LoginLogoURL = strings.TrimSpace(input.LoginLogoURL)
 	input.ExpandedLogoURL = strings.TrimSpace(input.ExpandedLogoURL)
 	input.CollapsedLogoURL = strings.TrimSpace(input.CollapsedLogoURL)
+	input.DarkExpandedLogoURL = strings.TrimSpace(input.DarkExpandedLogoURL)
+	input.DarkCollapsedLogoURL = strings.TrimSpace(input.DarkCollapsedLogoURL)
 	input.FaviconURL = strings.TrimSpace(input.FaviconURL)
 	value := map[string]any{
-		"appTitle":         input.AppTitle,
-		"sidebarTitle":     input.SidebarTitle,
-		"slogan":           input.Slogan,
-		"loginLogoUrl":     input.LoginLogoURL,
-		"expandedLogoUrl":  input.ExpandedLogoURL,
-		"collapsedLogoUrl": input.CollapsedLogoURL,
-		"faviconUrl":       input.FaviconURL,
+		"appTitle":             input.AppTitle,
+		"sidebarTitle":         input.SidebarTitle,
+		"slogan":               input.Slogan,
+		"loginLogoUrl":         input.LoginLogoURL,
+		"expandedLogoUrl":      input.ExpandedLogoURL,
+		"collapsedLogoUrl":     input.CollapsedLogoURL,
+		"darkExpandedLogoUrl":  input.DarkExpandedLogoURL,
+		"darkCollapsedLogoUrl": input.DarkCollapsedLogoURL,
+		"faviconUrl":           input.FaviconURL,
 	}
 	if err := s.store.Upsert(ctx, domainsettings.BrandingSettingKey, "branding", value, principal.UserID); err != nil {
 		return domainsettings.BrandingSettings{}, err
@@ -812,6 +816,10 @@ func (s *Service) brandingSettings(ctx context.Context) (domainsettings.Branding
 	if value, ok := raw["collapsedLogoUrl"].(string); ok && strings.TrimSpace(value) != "" {
 		item.CollapsedLogoURL = strings.TrimSpace(value)
 	}
+	darkExpanded, _ := raw["darkExpandedLogoUrl"].(string)
+	darkCollapsed, _ := raw["darkCollapsedLogoUrl"].(string)
+	item.DarkExpandedLogoURL = strings.TrimSpace(darkExpanded)
+	item.DarkCollapsedLogoURL = strings.TrimSpace(darkCollapsed)
 	if value, ok := raw["faviconUrl"].(string); ok && strings.TrimSpace(value) != "" {
 		item.FaviconURL = strings.TrimSpace(value)
 	}

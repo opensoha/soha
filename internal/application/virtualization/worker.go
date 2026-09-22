@@ -103,6 +103,19 @@ func (s *Service) executeAssetSync(ctx context.Context, task domainvirtualizatio
 	if s.taskCanceled(ctx, task.ID) {
 		return runtimeobs.OutcomeCanceled, nil
 	}
+	if status := firstNonEmpty(result.Health.Status, "healthy"); status != "healthy" {
+		_, _ = s.connectionWriter.UpdateConnectionHealth(ctx, connection.ID, map[string]any{
+			"status": status, "message": result.Health.Message, "reason": result.Health.Reason,
+			"nextAction": result.Health.NextAction, "httpStatus": result.Health.HTTPStatus,
+			"taskId": task.ID, "updatedAt": time.Now().UTC().Format(time.RFC3339),
+		}, nil)
+		err := &domainvirtualization.AdapterError{
+			Message: firstNonEmpty(result.Health.Message, "asset scan did not complete"),
+			Reason:  result.Health.Reason, HTTPStatus: result.Health.HTTPStatus, NextAction: result.Health.NextAction,
+		}
+		s.failTask(ctx, task, err)
+		return runtimeobs.OutcomeFailed, err
+	}
 	vmCount := 0
 	imageCount := 0
 	flavorCount := 0
@@ -159,7 +172,9 @@ func (s *Service) executeAssetSync(ctx context.Context, task domainvirtualizatio
 		"imageCount":  imageCount,
 		"flavorCount": flavorCount,
 	}
-	s.completeTask(ctx, task)
+	if outcome, err := s.completeTask(ctx, task); outcome != runtimeobs.OutcomeSucceeded {
+		return outcome, err
+	}
 	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: fmt.Sprintf("asset sync completed: %d assets", len(result.Assets))})
 	s.recordOperation(ctx, s.workerPrincipal, "virtualization.worker.asset_sync", connection.ID, connection.Name, TaskStatusSucceeded, "virtualization asset sync completed", map[string]any{"taskId": task.ID, "assetCount": len(result.Assets)})
 	return runtimeobs.OutcomeSucceeded, nil
@@ -408,7 +423,9 @@ func (s *Service) executeVMAction(ctx context.Context, task domainvirtualization
 			return runtimeobs.OutcomeFailed, err
 		}
 		task.Result = map[string]any{"accepted": result.Accepted, "action": "resize", "message": result.Message, "vmId": stored.ID}
-		s.completeTask(ctx, task)
+		if outcome, err := s.completeTask(ctx, task); outcome != runtimeobs.OutcomeSucceeded {
+			return outcome, err
+		}
 		_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine resize completed"})
 		return runtimeobs.OutcomeSucceeded, nil
 	}
@@ -458,7 +475,9 @@ func (s *Service) executeVMAction(ctx context.Context, task domainvirtualization
 	if result.UPID != "" {
 		task.Result["pveUpid"] = result.UPID
 	}
-	s.completeTask(ctx, task)
+	if outcome, err := s.completeTask(ctx, task); outcome != runtimeobs.OutcomeSucceeded {
+		return outcome, err
+	}
 	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine action completed"})
 	s.recordOperation(ctx, s.workerPrincipal, "virtualization.worker.vm_action", stored.ID, stored.Name, TaskStatusSucceeded, "virtual machine action completed", map[string]any{"taskId": task.ID, "action": string(action)})
 	return runtimeobs.OutcomeSucceeded, nil
@@ -472,15 +491,33 @@ func decodePayloadValue(value any, target any) {
 	_ = json.Unmarshal(encoded, target)
 }
 
-func (s *Service) completeTask(ctx context.Context, task domainvirtualization.Task) {
+func (s *Service) completeTask(ctx context.Context, task domainvirtualization.Task) (outcome string, err error) {
+	defer func() {
+		if err != nil {
+			_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "error", Message: "persist task completion: " + err.Error()})
+		}
+	}()
 	current, err := s.tasks.GetTask(ctx, task.ID)
-	if err == nil && current.Status == TaskStatusCanceled {
-		return
+	if err != nil {
+		return runtimeobs.OutcomeFailed, err
+	}
+	if current.ClaimedByWorkerID != task.ClaimedByWorkerID || current.AttemptCount != task.AttemptCount {
+		return runtimeobs.OutcomeFailed, apperrors.ErrConflict
+	}
+	if current.Status == TaskStatusCanceled {
+		return runtimeobs.OutcomeCanceled, nil
+	}
+	if current.Status != TaskStatusRunning {
+		return runtimeobs.OutcomeFailed, apperrors.ErrConflict
 	}
 	now := time.Now().UTC()
-	task.Status = TaskStatusSucceeded
-	task.FinishedAt = &now
-	_, _ = s.tasks.UpdateTask(ctx, task)
+	current.Result = mergeMaps(current.Result, task.Result)
+	current.Status = TaskStatusSucceeded
+	current.FinishedAt = &now
+	if _, err := s.tasks.UpdateTask(ctx, current); err != nil {
+		return runtimeobs.OutcomeFailed, err
+	}
+	return runtimeobs.OutcomeSucceeded, nil
 }
 
 func (s *Service) updateWorkerQueueDepth(ctx context.Context) {

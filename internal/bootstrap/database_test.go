@@ -446,6 +446,7 @@ func TestMonitoringWorkbenchLogMenuSeeds(t *testing.T) {
 		"monitoring-workbench-notifications":    {path: "/monitoring-workbench/notifications", section: "alerting"},
 		"monitoring-workbench-healing":          {path: "/monitoring-workbench/healing", section: "alerting"},
 		"monitoring-workbench-oncall":           {path: "/monitoring-workbench/oncall", section: "alerting"},
+		"monitoring-workbench-oncall-settings":  {path: "/monitoring-workbench/oncall/settings", section: "alerting"},
 		"monitoring-workbench-events":           {path: "/monitoring-workbench/events", section: "alerting"},
 	}
 	for _, item := range defaultMenuSeeds() {

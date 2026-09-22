@@ -23,7 +23,7 @@ require (
 	github.com/hashicorp/yamux v0.1.2
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/opensoha/soha-contracts v0.1.18
+	github.com/opensoha/soha-contracts v0.1.19
 	github.com/redis/go-redis/v9 v9.7.3
 	github.com/russellhaering/goxmldsig v1.6.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2

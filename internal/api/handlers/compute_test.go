@@ -41,10 +41,10 @@ func (*computeHandlerFake) ListProviderInstances(context.Context, domainidentity
 func (*computeHandlerFake) GetProviderInstance(context.Context, domainidentity.Principal, string, string, string) (sohaapi.ComputeProviderInstance, error) {
 	return sohaapi.ComputeProviderInstance{}, nil
 }
-func (f *computeHandlerFake) CheckProviderInstanceHealth(_ context.Context, _ domainidentity.Principal, _, _, _, key string, _ sohaapi.ComputeProviderReadRequest) (sohaapi.ComputeTaskView, error) {
-	f.idempotencyKey = key
-	return sohaapi.ComputeTaskView{ID: "task-1"}, nil
+func (*computeHandlerFake) CheckProviderInstanceHealth(context.Context, domainidentity.Principal, string, string, string, sohaapi.ComputeProviderReadRequest) (sohaapi.ConnectionCheckResult, error) {
+	return sohaapi.ConnectionCheckResult{Healthy: true, Status: "healthy", CheckedAt: time.Now().UTC()}, nil
 }
+
 func (*computeHandlerFake) DiscoverProviderInstance(context.Context, domainidentity.Principal, string, string, string, string, sohaapi.ComputeProviderDiscoverRequest) (sohaapi.ComputeTaskView, error) {
 	return sohaapi.ComputeTaskView{ID: "task-1"}, nil
 }
@@ -196,7 +196,7 @@ func TestComputeTaskStreamEmitsTerminalSnapshot(t *testing.T) {
 	}
 }
 
-func TestComputeProviderMutationRequiresAndForwardsIdempotencyKey(t *testing.T) {
+func TestComputeProviderHealthReturnsCheckAndValidatesCompatibilityHeader(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &computeHandlerFake{}
 	handler := NewComputeHandler(service)
@@ -208,7 +208,7 @@ func TestComputeProviderMutationRequiresAndForwardsIdempotencyKey(t *testing.T) 
 		status int
 	}{
 		{status: http.StatusBadRequest},
-		{key: "compute-health-1", status: http.StatusAccepted},
+		{key: "compute-health-1", status: http.StatusOK},
 	} {
 		recorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodPost, "/compute/provider-instances/virtualization/pve/connection-1/health-checks", strings.NewReader(`{"expectedGeneration":1}`))
@@ -218,8 +218,23 @@ func TestComputeProviderMutationRequiresAndForwardsIdempotencyKey(t *testing.T) 
 		if recorder.Code != test.status {
 			t.Fatalf("key %q status = %d, body = %s", test.key, recorder.Code, recorder.Body.String())
 		}
+		if test.status == http.StatusOK && (!strings.Contains(recorder.Body.String(), `"healthy":true`) || strings.Contains(recorder.Body.String(), `"id":`)) {
+			t.Fatalf("expected synchronous result, got %s", recorder.Body.String())
+		}
 	}
-	if service.idempotencyKey != "compute-health-1" {
-		t.Fatalf("idempotency key = %q", service.idempotencyKey)
+
+}
+
+func TestComputeProviderDiscoveryRemainsAsynchronous(t *testing.T) {
+	handler := NewComputeHandler(&computeHandlerFake{})
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/compute/provider-instances/virtualization/pve/connection-1/discoveries", strings.NewReader(`{"expectedGeneration":1}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Request.Header.Set("Idempotency-Key", "discover-1")
+	ctx.Params = gin.Params{{Key: "domain", Value: "virtualization"}, {Key: "providerKey", Value: "pve"}, {Key: "instanceRef", Value: "connection-1"}}
+	handler.DiscoverProviderInstance(ctx)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}
 }

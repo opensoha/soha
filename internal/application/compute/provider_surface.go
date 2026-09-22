@@ -255,19 +255,15 @@ func providerSnapshot(item sohaapi.ComputeProviderDescriptor) sohaapi.ComputePro
 	return sohaapi.ComputeProviderSnapshot{Domain: item.Domain, ProviderKey: item.ProviderKey, Source: item.Source, Version: item.Version, ContractVersion: item.ContractVersion, RuntimeMode: item.RuntimeMode, Generation: item.Generation}
 }
 
-func (s *Service) CheckProviderInstanceHealth(ctx context.Context, principal domainidentity.Principal, domain, providerKey, instanceRef, idempotencyKey string, input sohaapi.ComputeProviderReadRequest) (sohaapi.ComputeTaskView, error) {
+func (s *Service) CheckProviderInstanceHealth(ctx context.Context, principal domainidentity.Principal, domain, providerKey, instanceRef string, input sohaapi.ComputeProviderReadRequest) (sohaapi.ConnectionCheckResult, error) {
 	if err := validateProviderGeneration(input.ExpectedGeneration); err != nil {
-		return sohaapi.ComputeTaskView{}, err
+		return sohaapi.ConnectionCheckResult{}, err
 	}
 	connection, err := s.virtualizationProviderConnection(ctx, domain, providerKey, instanceRef, "health check")
 	if err != nil {
-		return sohaapi.ComputeTaskView{}, err
+		return sohaapi.ConnectionCheckResult{}, err
 	}
-	task, err := s.virtualizationControl.TestConnectionIdempotent(ctx, principal, connection.ID, idempotencyKey)
-	if err != nil {
-		return sohaapi.ComputeTaskView{}, err
-	}
-	return s.virtualizationTaskForPrincipal(ctx, principal, task)
+	return s.virtualizationControl.TestConnection(ctx, principal, connection.ID)
 }
 
 func (s *Service) DiscoverProviderInstance(ctx context.Context, principal domainidentity.Principal, domain, providerKey, instanceRef, idempotencyKey string, input sohaapi.ComputeProviderDiscoverRequest) (sohaapi.ComputeTaskView, error) {
@@ -658,7 +654,7 @@ func availableResourceActions(keys []string, ref sohaapi.ComputeResourceRef) []s
 		}
 	}
 	if ref.Domain == sohaapi.ComputeDomainContainerRuntime && ref.Kind == sohaapi.ComputeResourceKindService {
-		for _, action := range []string{"start", "stop", "restart", "logs"} {
+		for _, action := range []string{"start", "stop", "restart"} {
 			if has(keys, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, action)) {
 				actions = append(actions, action)
 			}
@@ -727,7 +723,6 @@ func dockerServiceActionVisible(keys []string) bool {
 		appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "start"),
 		appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "stop"),
 		appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "restart"),
-		appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "logs"),
 	)
 }
 

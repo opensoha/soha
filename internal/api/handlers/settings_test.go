@@ -16,6 +16,7 @@ type stubSettingsService struct {
 	ai                   domainsettings.AISettings
 	identity             domainsettings.IdentitySettings
 	updatedLocalPassword *bool
+	updatedBranding      *domainsettings.BrandingSettings
 }
 
 func (s stubSettingsService) GetIdentitySettings(context.Context, domainidentity.Principal) (domainsettings.IdentitySettings, error) {
@@ -49,8 +50,27 @@ func (s stubSettingsService) GetBrandingSettings(context.Context, domainidentity
 	return domainsettings.BrandingSettings{}, nil
 }
 
-func (s stubSettingsService) UpdateBrandingSettings(context.Context, domainidentity.Principal, domainsettings.BrandingSettings) (domainsettings.BrandingSettings, error) {
-	return domainsettings.BrandingSettings{}, nil
+func (s stubSettingsService) UpdateBrandingSettings(_ context.Context, _ domainidentity.Principal, input domainsettings.BrandingSettings) (domainsettings.BrandingSettings, error) {
+	if s.updatedBranding != nil {
+		*s.updatedBranding = input
+	}
+	return input, nil
+}
+
+func TestUpdateBrandingForwardsDarkLogoVariants(t *testing.T) {
+	var saved domainsettings.BrandingSettings
+	handler := NewSettingsHandler(stubSettingsService{updatedBranding: &saved}, nil)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPut, "/api/v1/settings/branding", strings.NewReader(`{"darkExpandedLogoUrl":"/dark.svg","darkCollapsedLogoUrl":"/dark-compact.svg"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	handler.UpdateBrandingSettings(ctx)
+	if recorder.Code != http.StatusOK || saved.DarkExpandedLogoURL != "/dark.svg" || saved.DarkCollapsedLogoURL != "/dark-compact.svg" {
+		t.Fatalf("status = %d, saved branding = %#v", recorder.Code, saved)
+	}
+	if !strings.Contains(recorder.Body.String(), `"darkExpandedLogoUrl":"/dark.svg"`) {
+		t.Fatalf("response missing dark logo: %s", recorder.Body.String())
+	}
 }
 
 func TestGetAISettingsDoesNotSerializeLegacyProviderFields(t *testing.T) {

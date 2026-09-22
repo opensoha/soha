@@ -859,7 +859,10 @@ func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Pr
 		s.recordMutationFailure(ctx, principal, "docker.service.action.enqueue", id, id, retErr, map[string]any{"action": input.Action})
 	}()
 	normalizedAction := strings.TrimSpace(input.Action)
-	if !slices.Contains([]string{"restart", "start", "stop", "logs"}, normalizedAction) {
+	if normalizedAction == "logs" {
+		return domaindocker.Operation{}, fmt.Errorf("%w: logs are read directly via /docker/projects/{projectID}/logs/query, not queued as a service action", apperrors.ErrInvalidArgument)
+	}
+	if !slices.Contains([]string{"restart", "start", "stop"}, normalizedAction) {
 		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported service action %s", apperrors.ErrInvalidArgument, normalizedAction)
 	}
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, normalizedAction)); err != nil {
@@ -915,12 +918,6 @@ func (s *Service) CreatePortMapping(ctx context.Context, principal domainidentit
 	if err != nil {
 		return domaindocker.PortMapping{}, err
 	}
-	_, _ = s.enqueueOperation(ctx, principal, OperationKindPortReserve, item.HostID, item.ProjectID, item.ServiceID, map[string]any{
-		"portMappingId": item.ID,
-		"hostPort":      item.HostPort,
-		"containerPort": item.ContainerPort,
-		"protocol":      item.Protocol,
-	})
 	s.recordOperation(ctx, principal, "docker.port.create", item.ID, item.Name, "success", "reserved docker port mapping", map[string]any{"hostPort": item.HostPort, "protocol": item.Protocol})
 	return item, nil
 }
@@ -1166,7 +1163,7 @@ func (s *Service) retryOperation(ctx context.Context, principal domainidentity.P
 	if replayed {
 		return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 	}
-	if !slices.Contains([]string{OperationStatusFailed, OperationStatusTimeout, OperationStatusCanceled}, item.Status) {
+	if !domaindocker.BuildOperationState(item, time.Now().UTC()).Retryable {
 		return domaindocker.Operation{}, fmt.Errorf("%w: operation is not retryable", apperrors.ErrInvalidArgument)
 	}
 	if item.MaxRetries == 0 {

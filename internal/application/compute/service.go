@@ -48,7 +48,7 @@ type RuntimeReader interface {
 }
 
 type VirtualizationProviderController interface {
-	TestConnectionIdempotent(context.Context, domainidentity.Principal, string, string) (domainvirtualization.Task, error)
+	TestConnection(context.Context, domainidentity.Principal, string) (sohaapi.ConnectionCheckResult, error)
 	SyncConnectionIdempotent(context.Context, domainidentity.Principal, string, string) (domainvirtualization.Task, error)
 	ExecuteVMAction(context.Context, domainidentity.Principal, string, VirtualizationActionInput) (domainvirtualization.Task, error)
 }

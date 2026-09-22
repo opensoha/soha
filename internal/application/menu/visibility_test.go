@@ -176,6 +176,7 @@ func TestCanonicalRouteMenusUseTheirRoutePermissions(t *testing.T) {
 		{id: "delivery-manifest-library", path: "/delivery/manifests", permission: appaccess.PermDeliveryApplicationsView},
 		{id: "release-board", path: "/release-board", permission: appaccess.PermDeliveryWorkflowsView},
 		{id: "monitoring-workbench-integrations", path: "/monitoring-workbench/integrations", permission: appaccess.PermObserveAlertIntegrationsView},
+		{id: "monitoring-workbench-oncall-settings", path: "/monitoring-workbench/oncall/settings", permission: appaccess.PermObserveOncallView},
 		{id: "docker-workbench-hosts", path: "/compute/runtimes/hosts", permission: appaccess.PermDockerHostsView},
 		{id: "docker-workbench-projects", path: "/compute/runtimes/projects", permission: appaccess.PermDockerProjectsView},
 		{id: "docker-workbench-templates", path: "/compute/runtimes/templates", permission: appaccess.PermDockerTemplatesView},

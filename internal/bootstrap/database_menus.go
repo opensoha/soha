@@ -95,6 +95,7 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "monitoring-workbench-notifications", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/notifications", LabelZH: "通知策略", LabelEN: "Notification Policies", IconKey: "bell", Section: "alerting", SortOrder: 73, Enabled: true},
 	{ID: "monitoring-workbench-healing", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/healing", LabelZH: "自愈中心", LabelEN: "Healing Center", IconKey: "activity", Section: "alerting", SortOrder: 74, Enabled: true},
 	{ID: "monitoring-workbench-oncall", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/oncall", LabelZH: "值班协同", LabelEN: "On-Call Coordination", IconKey: "users", Section: "alerting", SortOrder: 75, Enabled: true},
+	{ID: "monitoring-workbench-oncall-settings", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/oncall/settings", LabelZH: "值班设置", LabelEN: "On-Call Settings", IconKey: "settings", Section: "alerting", SortOrder: 75, Enabled: true},
 	{ID: "monitoring-workbench-events", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/events", LabelZH: "事件流", LabelEN: "Events", IconKey: "bell", Section: "alerting", SortOrder: 76, Enabled: true},
 	{ID: "ai-workbench", Path: "/ai-workbench", LabelZH: "AI工作台", LabelEN: "AI Workbench", IconKey: "bot", Section: "ops", SortOrder: 15, Enabled: true},
 	{ID: "ai-workbench-overview", ParentID: "ai-workbench", Path: "/ai-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true},

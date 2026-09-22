@@ -109,8 +109,8 @@ func (f *virtualizationFake) RetryOperation(_ context.Context, _ domainidentity.
 	f.retried = id
 	return f.GetTask(context.Background(), id)
 }
-func (f *virtualizationFake) TestConnectionIdempotent(context.Context, domainidentity.Principal, string, string) (domainvirtualization.Task, error) {
-	return domainvirtualization.Task{ID: "health-1", TaskKind: "connection_test", Status: "succeeded", CreatedAt: time.Now().UTC()}, nil
+func (f *virtualizationFake) TestConnection(context.Context, domainidentity.Principal, string) (sohaapi.ConnectionCheckResult, error) {
+	return sohaapi.ConnectionCheckResult{Healthy: true, Status: "healthy", CheckedAt: time.Now().UTC()}, nil
 }
 func (f *virtualizationFake) SyncConnectionIdempotent(context.Context, domainidentity.Principal, string, string) (domainvirtualization.Task, error) {
 	return domainvirtualization.Task{ID: "sync-1", TaskKind: "asset_sync", Status: "queued", CreatedAt: time.Now().UTC()}, nil
@@ -624,8 +624,20 @@ func TestProviderMutationsDelegateDurableTasks(t *testing.T) {
 		t.Fatalf("action = %#v, delegated = %#v, err = %v", item, virt.action, err)
 	}
 
-	_, err = service.CheckProviderInstanceHealth(context.Background(), testPrincipal(), "container_runtime", "docker", "host-1", "compute-health-1", sohaapi.ComputeProviderReadRequest{ExpectedGeneration: generation})
+	_, err = service.CheckProviderInstanceHealth(context.Background(), testPrincipal(), "container_runtime", "docker", "host-1", sohaapi.ComputeProviderReadRequest{ExpectedGeneration: generation})
 	if !errors.Is(err, apperrors.ErrUnsupportedOperation) {
 		t.Fatalf("Docker health error = %v", err)
+	}
+}
+
+func TestRuntimeLogPermissionDoesNotAdvertiseTaskActions(t *testing.T) {
+	ref := sohaapi.ComputeResourceRef{Domain: sohaapi.ComputeDomainContainerRuntime, Kind: sohaapi.ComputeResourceKindService}
+	keys := []string{appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "logs")}
+	if actions := availableResourceActions(keys, ref); len(actions) != 0 || dockerServiceActionVisible(keys) {
+		t.Fatalf("log read advertised write actions: %v", actions)
+	}
+	keys = append(keys, appaccess.ManagedActionPermission(appaccess.PermDockerServicesManage, "restart"))
+	if actions := availableResourceActions(keys, ref); len(actions) != 1 || actions[0] != "restart" || !dockerServiceActionVisible(keys) {
+		t.Fatalf("runtime mutation actions = %v", actions)
 	}
 }

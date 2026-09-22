@@ -4,17 +4,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
 	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func TestQueryProjectLogsNormalizesTimestampAndFilters(t *testing.T) {
@@ -193,4 +197,54 @@ func newDockerRuntimeProxyTestService(endpoint string) *Service {
 
 func dockerRuntimeProxyPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{UserID: "user-1", Roles: []string{"admin"}}
+}
+
+func TestRuntimeLogPermissionsAcrossReadAndStream(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if strings.HasSuffix(r.URL.Path, "/stream") {
+			_, _ = w.Write([]byte("web | ready\n"))
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":{"projectId":"project-1","serviceName":"web","content":"web | ready\n"}}`))
+	}))
+	defer server.Close()
+	for _, tc := range []struct {
+		name    string
+		keys    []string
+		allowed bool
+	}{
+		{name: "logs only", keys: []string{"docker.services.logs"}, allowed: true},
+		{name: "view only", keys: []string{"docker.services.view"}},
+		{name: "no permission"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := newDockerRuntimeProxyTestService(server.URL)
+			service.permissions = appaccess.NewPermissionResolver(dockerTestRoleReader{matrix: map[string][]string{"reader": tc.keys}})
+			issuer := &recordingDockerTicketIssuer{}
+			service.logStreamTickets = issuer
+			principal := domainidentity.Principal{UserID: "reader", Roles: []string{"reader"}}
+			query := domainresource.LogQuery{Selector: &domainresource.LogSourceSelector{DockerService: "web"}}
+			before := calls.Load()
+			_, readErr := service.GetProjectLogs(context.Background(), principal, "project-1", "web", 20)
+			_, queryErr := service.QueryProjectLogs(context.Background(), principal, "project-1", query)
+			_, ticketErr := service.IssueProjectLogStreamTicket(context.Background(), principal, domainidentity.AccessContext{TokenKind: "session_access"}, "project-1", query)
+			var out bytes.Buffer
+			streamErr := service.StreamProjectLogs(context.Background(), principal, "project-1", "web", 20, &out)
+			accessCtx := domainidentity.AccessContext{TokenKind: "stream_ticket", Metadata: map[string]any{dockerLogProjectMetadataKey: "project-1", dockerLogQueryMetadataKey: query}}
+			eventErr := service.StreamProjectLogEventsFromTicket(context.Background(), principal, accessCtx, "project-1", func(domainresource.LogStreamEvent) error { return nil })
+			for name, err := range map[string]error{"read": readErr, "query": queryErr, "ticket": ticketErr, "stream": streamErr, "events": eventErr} {
+				if tc.allowed && err != nil {
+					t.Fatalf("%s failed: %v", name, err)
+				}
+				if !tc.allowed && !errors.Is(err, apperrors.ErrAccessDenied) {
+					t.Fatalf("%s error=%v, want denied", name, err)
+				}
+			}
+			if !tc.allowed && (calls.Load() != before || issuer.request.Path != "") {
+				t.Fatal("denied log read reached runtime or issued ticket")
+			}
+		})
+	}
 }
