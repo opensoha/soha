@@ -476,7 +476,7 @@ replicas on the same values during a rollout.
 To copy the CLI into another image, use the tool image directly:
 
 ```Dockerfile
-COPY --from=yshanchui/soha-cli:v0.1.0 /usr/local/bin/soha /usr/local/bin/soha
+COPY --from=ghcr.io/opensoha/soha-cli:v0.1.8 /usr/local/bin/soha /usr/local/bin/soha
 ```
 
 Helm chart sources and Artifact Hub publishing live in `opensoha/soha-helm`.
