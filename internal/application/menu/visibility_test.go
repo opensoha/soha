@@ -508,8 +508,9 @@ func TestNetworkAccessLeafMenusRequireTheirOwnViewPermission(t *testing.T) {
 		{id: "network-access-access-grants", path: "/network-access/access-grants", permission: appaccess.PermNetworkAccessAccessGrantsView},
 		{id: "network-access-policy", path: "/network-access/policy", permission: appaccess.PermNetworkAccessPolicyView},
 		{id: "network-access-mihomo-profiles", path: "/network-access/mihomo-profiles", permission: appaccess.PermNetworkAccessMihomoProfilesView},
-		{id: "network-access-proxy-overview", path: "/network-access/proxy-overview", permission: appaccess.PermNetworkAccessTelemetryView},
-		{id: "network-access-proxy-connections", path: "/network-access/proxy-connections", permission: appaccess.PermNetworkAccessTelemetryView},
+		{id: "network-access-proxy-instances", path: "/network-access/proxy-instances", permission: appaccess.PermNetworkAccessProxyInstancesView},
+		{id: "network-access-proxy-overview", path: "/network-access/proxy-overview", permission: appaccess.PermNetworkAccessProxyInstancesView},
+		{id: "network-access-proxy-connections", path: "/network-access/proxy-connections", permission: appaccess.PermNetworkAccessProxyInstancesView},
 	}
 
 	for _, test := range tests {

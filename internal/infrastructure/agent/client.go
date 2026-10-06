@@ -18,6 +18,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/hashicorp/yamux"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -26,14 +27,16 @@ import (
 type Registry struct {
 	defaultTimeout atomic.Int64
 	sessionsMu     sync.RWMutex
+	closed         bool
 	sessions       map[string]*yamux.Session
+	transports     map[string]*http.Transport
 }
 
 func NewRegistry(defaultTimeout time.Duration) *Registry {
 	if defaultTimeout <= 0 {
 		defaultTimeout = 10 * time.Second
 	}
-	registry := &Registry{sessions: make(map[string]*yamux.Session)}
+	registry := &Registry{sessions: make(map[string]*yamux.Session), transports: make(map[string]*http.Transport)}
 	registry.SetDefaultTimeout(defaultTimeout)
 	return registry
 }
@@ -53,7 +56,13 @@ func (r *Registry) Attach(ctx context.Context, clusterID string, connection net.
 	}
 
 	r.sessionsMu.Lock()
+	if r.closed {
+		r.sessionsMu.Unlock()
+		_ = session.Close()
+		return fmt.Errorf("agent reverse registry is closed")
+	}
 	previous := r.sessions[clusterID]
+	r.closeReverseTransportLocked(clusterID)
 	r.sessions[clusterID] = session
 	r.sessionsMu.Unlock()
 	if previous != nil {
@@ -64,6 +73,7 @@ func (r *Registry) Attach(ctx context.Context, clusterID string, connection net.
 		r.sessionsMu.Lock()
 		if r.sessions[clusterID] == session {
 			delete(r.sessions, clusterID)
+			r.closeReverseTransportLocked(clusterID)
 		}
 		r.sessionsMu.Unlock()
 		_ = session.Close()
@@ -103,8 +113,12 @@ func (r *Registry) Open(ctx context.Context, clusterID string) (net.Conn, error)
 
 func (r *Registry) Close() error {
 	r.sessionsMu.Lock()
+	r.closed = true
 	sessions := r.sessions
 	r.sessions = make(map[string]*yamux.Session)
+	for clusterID := range r.transports {
+		r.closeReverseTransportLocked(clusterID)
+	}
 	r.sessionsMu.Unlock()
 	var combined error
 	for _, session := range sessions {
@@ -115,7 +129,12 @@ func (r *Registry) Close() error {
 
 func (r *Registry) SetDefaultTimeout(timeout time.Duration) {
 	if timeout > 0 {
+		r.sessionsMu.Lock()
 		r.defaultTimeout.Store(int64(timeout))
+		for clusterID := range r.transports {
+			r.closeReverseTransportLocked(clusterID)
+		}
+		r.sessionsMu.Unlock()
 	}
 }
 
@@ -235,13 +254,7 @@ func (r *Registry) ClientFor(connection domaincluster.Connection) (*Client, erro
 		dialContext := func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return r.Open(ctx, connection.Summary.ID)
 		}
-		transport := &http.Transport{
-			Proxy:                 nil,
-			DialContext:           dialContext,
-			MaxIdleConnsPerHost:   8,
-			IdleConnTimeout:       90 * time.Second,
-			ResponseHeaderTimeout: time.Duration(r.defaultTimeout.Load()),
-		}
+		transport := r.reverseTransport(connection.Summary.ID)
 		wsDialer := *websocket.DefaultDialer
 		wsDialer.NetDialContext = dialContext
 		return &Client{
@@ -944,6 +957,11 @@ func (c *Client) ListCRDs(ctx context.Context) ([]domainresource.CRDView, error)
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) DeleteCRDDefinition(ctx context.Context, name, expectedUID string) error {
+	path := fmt.Sprintf("/api/v1/platform/extensions/crds/%s?expectedUid=%s", url.PathEscape(name), url.QueryEscape(expectedUID))
+	return c.request(ctx, http.MethodDelete, path, nil, nil)
 }
 
 func (c *Client) ListHelmReleases(ctx context.Context, namespace string) ([]domainresource.HelmReleaseView, error) {
@@ -2003,14 +2021,8 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		return fmt.Errorf("execute agent request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed) && strings.HasPrefix(path, "/api/v1/platform/ownership-v2/") {
-		return fmt.Errorf("%w: upgrade the Agent to support ownership-protected resource mutations", apperrors.ErrUnsupportedOperation)
-	}
-	if resp.StatusCode == http.StatusConflict {
-		return fmt.Errorf("%w: agent resource state conflicts with this operation", apperrors.ErrConflict)
-	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("agent request failed with status %d", resp.StatusCode)
+	if err := agentResponseError(path, resp); err != nil {
+		return err
 	}
 	if out == nil {
 		return nil
@@ -2024,6 +2036,29 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 	}
 	if err := json.Unmarshal(response, out); err != nil {
 		return fmt.Errorf("decode agent response: %w", err)
+	}
+	return nil
+}
+
+func agentResponseError(path string, resp *http.Response) error {
+	if (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed) && (strings.HasPrefix(path, "/api/v1/platform/ownership-v2/") || strings.HasSuffix(path, "/custom-resources/access") || strings.HasSuffix(path, "/metrics/prometheus/query")) && !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+		return fmt.Errorf("%w: upgrade the Agent to support ownership-protected resource mutations", apperrors.ErrUnsupportedOperation)
+	}
+	switch resp.StatusCode {
+	case http.StatusBadRequest:
+		return fmt.Errorf("%w: Agent rejected invalid input or an immutable resource", apperrors.ErrInvalidArgument)
+	case http.StatusUnauthorized:
+		return fmt.Errorf("%w: Agent authentication failed", apperrors.ErrUnauthorized)
+	case http.StatusForbidden:
+		return fmt.Errorf("%w: Agent action policy or Kubernetes RBAC denied this operation", apperrors.ErrAccessDenied)
+	case http.StatusNotFound:
+		return fmt.Errorf("%w: Agent resource not found", apperrors.ErrNotFound)
+	}
+	if resp.StatusCode == http.StatusConflict {
+		return fmt.Errorf("%w: agent resource state conflicts with this operation", apperrors.ErrConflict)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("agent request failed with status %d", resp.StatusCode)
 	}
 	return nil
 }
@@ -2081,4 +2116,19 @@ func withNamespace(path, namespace string) string {
 		return path
 	}
 	return fmt.Sprintf("%s?namespace=%s", path, url.QueryEscape(namespace))
+}
+
+func (c *Client) CustomResourceActions(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace, name string) ([]string, error) {
+	var payload struct {
+		Data contractresource.CustomResourceAccess `json:"data"`
+	}
+	err := c.request(ctx, http.MethodPost, "/api/v1/platform/extensions/custom-resources/access", contractresource.CustomResourceAccessRequest{Definition: definition, Namespace: namespace, Name: name}, &payload)
+	return payload.Data.AllowedActions, err
+}
+func (c *Client) QueryPrometheus(ctx context.Context, query contractresource.PrometheusQuery) (json.RawMessage, error) {
+	var payload struct {
+		Data json.RawMessage `json:"data"`
+	}
+	err := c.request(ctx, http.MethodPost, "/api/v1/platform/metrics/prometheus/query", query, &payload)
+	return payload.Data, err
 }

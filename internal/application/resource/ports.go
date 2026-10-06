@@ -2,6 +2,8 @@ package resource
 
 import (
 	"context"
+	"encoding/json"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	"io"
 	"net"
 
@@ -27,7 +29,12 @@ type PodInteractiveAgent interface {
 	StreamPodTerminal(context.Context, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue) error
 }
 
+type PodMutationAgent interface {
+	DeletePod(context.Context, string, string) error
+}
+
 type PodAgent interface {
+	PodMutationAgent
 	PodReaderAgent
 	PodInteractiveAgent
 }
@@ -114,6 +121,7 @@ type JobAgent interface {
 }
 
 type CronJobAgent interface {
+	SetCronJobSuspend(context.Context, string, string, bool) (domainresource.CronJobDetailView, error)
 	ListCronJobs(context.Context, string) ([]domainresource.CronJobView, error)
 	GetCronJobDetail(context.Context, string, string) (domainresource.CronJobDetailView, error)
 	GetCronJobYAML(context.Context, string, string) (domainresource.ResourceYAMLView, error)
@@ -207,7 +215,15 @@ type DirectWorkloads interface {
 
 type WorkloadSnapshotBuilder func(string, domainresource.WorkloadSnapshotRequest) (domainresource.WorkloadSnapshot, error)
 
+type ConfigurationObjectMutationAgent interface {
+	UpdateConfigMapData(context.Context, string, string, map[string]string, map[string]string) (domainresource.ConfigMapDetailView, error)
+	UpdateSecretData(context.Context, string, string, map[string]string) (domainresource.SecretDetailView, error)
+}
+
 type ConfigurationObjectAgent interface {
+	GetConfigMapDetail(context.Context, string, string) (domainresource.ConfigMapDetailView, error)
+	GetSecretDetail(context.Context, string, string) (domainresource.SecretDetailView, error)
+	ListConfigReferences(context.Context, string, string, bool) ([]domainresource.ConfigReferenceView, error)
 	ListConfigMaps(context.Context, string) ([]domainresource.ConfigMapView, error)
 	ListSecrets(context.Context, string) ([]domainresource.SecretView, error)
 }
@@ -236,6 +252,7 @@ type NamespaceConfigurationAgent interface {
 }
 
 type ConfigurationAgent interface {
+	ConfigurationObjectMutationAgent
 	ConfigurationObjectAgent
 	ClusterClassAgent
 	AdmissionConfigurationAgent
@@ -438,7 +455,21 @@ type HelmAgent interface {
 	HelmReleaseMutationAgent
 }
 
+type NamespaceMutationAgent interface {
+	CreateNamespace(context.Context, domainresource.NamespaceUpsertInput) (domainresource.NamespaceView, error)
+	UpdateNamespace(context.Context, string, domainresource.NamespaceUpsertInput) (domainresource.NamespaceView, error)
+	DeleteNamespace(context.Context, string) error
+}
+type NodeMutationAgent interface {
+	UpdateNode(context.Context, string, domainresource.NodeUpdateInput) (domainresource.NodeDetailView, error)
+	SetNodeUnschedulable(context.Context, string, bool) error
+	DrainNode(context.Context, string, domainresource.NodeDrainInput) error
+	DeleteNode(context.Context, string) error
+}
 type InventoryAgent interface {
+	NamespaceMutationAgent
+	NodeMutationAgent
+	GetNodeYAML(context.Context, string) (domainresource.ResourceYAMLView, error)
 	ListNamespaces(context.Context) ([]domainresource.NamespaceView, error)
 	ListNodes(context.Context) ([]domainresource.NodeView, error)
 	GetNodeDetail(context.Context, string) (domainresource.NodeDetailView, error)
@@ -459,11 +490,13 @@ type DirectInventory interface {
 }
 
 type CustomResourceReaderAgent interface {
+	CustomResourceActions(context.Context, domainresource.CRDResourceDefinition, string, string) ([]string, error)
 	ListCRDs(context.Context) ([]domainresource.CRDView, error)
 	ListCustomResources(context.Context, domainresource.CRDResourceDefinition, string) ([]domainresource.CustomResourceView, error)
 }
 
 type CustomResourceMutationAgent interface {
+	DeleteCRDDefinition(context.Context, string, string) error
 	CreateCustomResourceYAML(context.Context, domainresource.CRDResourceDefinition, string, string) (domainresource.ResourceYAMLView, error)
 	GetCustomResourceYAML(context.Context, domainresource.CRDResourceDefinition, string, string) (domainresource.ResourceYAMLView, error)
 	ApplyCustomResourceYAML(context.Context, domainresource.CRDResourceDefinition, string, string, string) (domainresource.ResourceYAMLView, error)
@@ -476,6 +509,7 @@ type CustomResourceAgent interface {
 }
 
 type DirectCustomResource interface {
+	DeleteCRDDefinition(context.Context, string, string, string) error
 	ListCRDs(context.Context, string) ([]domainresource.CRDView, error)
 	ResolveCRD(context.Context, string, string) (domainresource.CRDResourceDefinition, error)
 	ListCustomResources(context.Context, string, domainresource.CRDResourceDefinition, string) ([]domainresource.CustomResourceView, error)
@@ -576,7 +610,12 @@ type AgentClientFactory[T any] func(domaincluster.Connection) (T, error)
 
 // AgentClients keeps agent protocol dependencies aligned with resource
 // capabilities instead of exposing the infrastructure client's full API.
+type PrometheusAgent interface {
+	QueryPrometheus(context.Context, contractresource.PrometheusQuery) (json.RawMessage, error)
+}
+
 type AgentClients struct {
+	Prometheus       AgentClientFactory[PrometheusAgent]
 	Workloads        AgentClientFactory[WorkloadAgent]
 	Logs             AgentClientFactory[LogAgent]
 	Configuration    AgentClientFactory[ConfigurationAgent]

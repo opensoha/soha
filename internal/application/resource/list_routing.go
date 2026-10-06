@@ -175,3 +175,8 @@ func routeModeValue[T any, A any, D any](connection domaincluster.Connection, ag
 	item, err := directCall(direct)
 	return item, "live", err
 }
+
+func routeModeError[A any, D any](connection domaincluster.Connection, agentFactory func(domaincluster.Connection) (A, error), directFactory func() (D, error), agentCall func(A) error, directCall func(D) error) error {
+	_, _, err := routeModeValue(connection, agentFactory, directFactory, func(a A) (struct{}, error) { return struct{}{}, agentCall(a) }, func(d D) (struct{}, error) { return struct{}{}, directCall(d) })
+	return err
+}

@@ -38,6 +38,7 @@ const (
 	EventFlowAggregate      = "network.flow.aggregate"
 	EventConnectionSummary  = "network.connection.summary"
 	EventProxyFlowAggregate = "proxy.flow.aggregate"
+	EventProxyRuntimeSample = "proxy.runtime.sample"
 )
 
 const RadiusAccountingSchemaVersion = "network-radius-accounting/v1alpha1"
@@ -355,6 +356,14 @@ type ProxyFlowAggregate struct {
 	ActiveConnections int64     `json:"activeConnections"`
 }
 
+type ProxyRuntimeSample struct {
+	Engine            string `json:"engine"`
+	UptimeSeconds     int64  `json:"uptimeSeconds"`
+	UploadTotal       int64  `json:"uploadTotal"`
+	DownloadTotal     int64  `json:"downloadTotal"`
+	ActiveConnections *int   `json:"activeConnections,omitempty"`
+}
+
 func DecodeRuntimeMessage(raw []byte) (RuntimeMessage, error) {
 	var message RuntimeMessage
 	err := json.Unmarshal(raw, &message)
@@ -418,6 +427,8 @@ func validateIngestEvent(producerKind string, event IngestEvent, index int, now 
 		return validateFlowAggregate(event, index)
 	case EventProxyFlowAggregate:
 		return validateProxyFlowAggregate(event, index)
+	case EventProxyRuntimeSample:
+		return validateProxyRuntimeSample(event)
 	case EventVPNProbeBatch:
 		return validateVPNProbeBatch(event)
 	case EventVPNTunnelStats:
@@ -427,6 +438,20 @@ func validateIngestEvent(producerKind string, event IngestEvent, index int, now 
 	default:
 		return nil
 	}
+}
+
+func validateProxyRuntimeSample(event IngestEvent) error {
+	var payload ProxyRuntimeSample
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return fmt.Errorf("decode proxy runtime sample: %w", err)
+	}
+	if (payload.Engine != "mihomo" && payload.Engine != "sing-box" && payload.Engine != "v2ray") ||
+		payload.UptimeSeconds < 0 || payload.UploadTotal < 0 || payload.DownloadTotal < 0 ||
+		payload.UploadTotal > 9007199254740991 || payload.DownloadTotal > 9007199254740991 ||
+		(payload.ActiveConnections != nil && (*payload.ActiveConnections < 0 || *payload.ActiveConnections > 1000000)) {
+		return fmt.Errorf("proxy runtime sample %q is invalid", event.ID)
+	}
+	return nil
 }
 
 func validateFlowAggregate(event IngestEvent, index int) error {
@@ -486,6 +511,8 @@ func eventAllowed(producerKind, eventType string) bool {
 		return eventType == EventRadiusAccounting
 	case "network-control":
 		return eventType == EventHeartbeat
+	case "proxy":
+		return eventType == EventProxyRuntimeSample
 	default:
 		return false
 	}

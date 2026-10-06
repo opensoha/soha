@@ -372,8 +372,10 @@ func networkAccessMenuRule(id string) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessGatewaysView}}, true
 	case "network-access-mihomo-profiles":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessMihomoProfilesView}}, true
-	case "network-access-telemetry", "network-access-proxy-overview", "network-access-proxy-connections":
+	case "network-access-telemetry":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessTelemetryView}}, true
+	case "network-access-proxy-instances", "network-access-proxy-overview", "network-access-proxy-connections":
+		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessProxyInstancesView}}, true
 	case "network-access-enrollments", "network-access-radius-services":
 		return visibilityRule{permissions: []string{appaccess.PermNetworkAccessEnrollmentsView}}, true
 	case "network-access-access-grants":

@@ -282,6 +282,15 @@ func defaultResourceCapabilityRefs() []ResourceCapabilityRefs {
 		{
 			Resource: "soha://k8s/runtime",
 			Tools: []string{
+				"k8s.crds.list",
+				"k8s.custom_resources.list",
+				"k8s.pods.metrics",
+				"k8s.deployments.metrics",
+				"k8s.namespaces.list",
+				"k8s.workloads.overview",
+				"k8s.configmaps.list",
+				"k8s.secrets.metadata",
+				"k8s.helm.releases.list",
 				"k8s.pods.list",
 				"k8s.pods.logs",
 				"k8s.pods.describe",

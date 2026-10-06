@@ -4,6 +4,16 @@ import "github.com/gin-gonic/gin"
 
 func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	registerNetworkVPNRoutes(protected, deps)
+	if deps.NetworkProxy != nil {
+		proxy := deps.NetworkProxy
+		protected.GET("/network-access/proxy-instances", proxy.List)
+		protected.POST("/network-access/proxy-instances", proxy.Create)
+		protected.GET("/network-access/proxy-instances/:instanceID", proxy.Get)
+		protected.PUT("/network-access/proxy-instances/:instanceID/configuration", proxy.UpdateConfiguration)
+		protected.GET("/network-access/proxy-instances/:instanceID/traffic", proxy.Traffic)
+		protected.GET("/network-access/proxy-instances/:instanceID/connections", proxy.Connections)
+		protected.POST("/network-access/proxy-instances/:instanceID/connections/:connectionID/close", proxy.Close)
+	}
 	if deps.NetworkAccess == nil {
 		return
 	}

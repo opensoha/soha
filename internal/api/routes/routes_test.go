@@ -776,6 +776,10 @@ func TestPlatformMutationSecuritySurfaceClassifiesHighRiskRoutes(t *testing.T) {
 			action:        "create",
 			capabilityKey: "helm.releases",
 		},
+		{
+			name: "cluster Agent upgrade", method: "POST", path: "/api/v1/clusters/:clusterID/agent-upgrade",
+			resourceKind: "Cluster", action: "update", capabilityKey: "cluster.inventory",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry, ok := platformMutationSecuritySurface(tc.method, tc.path)

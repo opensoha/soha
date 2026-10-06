@@ -12,6 +12,7 @@ import (
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainnetworkproxy "github.com/opensoha/soha/internal/domain/networkproxy"
 	domainnetworkruntime "github.com/opensoha/soha/internal/domain/networkruntime"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -20,6 +21,12 @@ import (
 type enrollmentStore struct {
 	items   map[string]domainnetworkruntime.EnrollmentChallenge
 	created domainnetworkruntime.EnrollmentChallenge
+}
+
+type enrollmentProxyStore struct{}
+
+func (enrollmentProxyStore) Get(_ context.Context, id string) (domainnetworkproxy.Instance, error) {
+	return domainnetworkproxy.Instance{ID: id}, nil
 }
 
 func (s *enrollmentStore) CreateEnrollment(_ context.Context, item domainnetworkruntime.EnrollmentChallenge) error {
@@ -82,7 +89,7 @@ func TestEnrollmentServiceCreatesOneTimeSecretWithoutLeakingDigest(t *testing.T)
 		appaccess.PermNetworkAccessEnrollmentsView,
 		appaccess.PermNetworkAccessEnrollmentsRevoke,
 	}})
-	service, err := NewEnrollmentService(store, permissions, audit, operations)
+	service, err := NewEnrollmentService(store, enrollmentProxyStore{}, permissions, audit, operations)
 	if err != nil {
 		t.Fatalf("NewEnrollmentService() error = %v", err)
 	}
@@ -132,7 +139,7 @@ func TestEnrollmentServiceCreatesOneTimeSecretWithoutLeakingDigest(t *testing.T)
 func TestEnrollmentServiceRejectsInvalidTTLAndRuntimeKind(t *testing.T) {
 	store := &enrollmentStore{}
 	permissions := appaccess.NewPermissionResolver(enrollmentRoleReader{"network-admin": {appaccess.PermNetworkAccessEnrollmentsCreate}})
-	service, err := NewEnrollmentService(store, permissions, &captureAudit{}, &enrollmentOperationCapture{})
+	service, err := NewEnrollmentService(store, enrollmentProxyStore{}, permissions, &captureAudit{}, &enrollmentOperationCapture{})
 	if err != nil {
 		t.Fatalf("NewEnrollmentService() error = %v", err)
 	}

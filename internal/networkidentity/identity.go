@@ -91,9 +91,9 @@ func MatchPublicKey(certificate *x509.Certificate, encoded string) error {
 func allowedKind(scope, kind string) bool {
 	switch scope {
 	case ScopeNetworkControl:
-		return kind == "endpoint" || kind == "gateway" || kind == "nas"
+		return kind == "endpoint" || kind == "gateway" || kind == "nas" || kind == "proxy"
 	case ScopeIngest:
-		return kind == "endpoint" || kind == "gateway" || kind == "freeradius" || kind == "network-control" || kind == "core"
+		return kind == "endpoint" || kind == "gateway" || kind == "freeradius" || kind == "network-control" || kind == "core" || kind == "proxy"
 	default:
 		return false
 	}

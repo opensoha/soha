@@ -283,7 +283,7 @@ func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) 
 var _ appresource.DirectGenericResource = (*Direct)(nil)
 
 func resourceMutationError(err error) error {
-	if errors.Is(err, contractruntime.ErrResourceOwnership) {
+	if errors.Is(err, contractruntime.ErrResourceOwnership) || apierrors.IsConflict(err) {
 		return fmt.Errorf("%w: %v", apperrors.ErrConflict, err)
 	}
 	return err

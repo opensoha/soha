@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
@@ -2293,7 +2294,15 @@ func (s *Service) filterAgentToolBindingsByPrincipal(ctx context.Context, princi
 		allowed[strings.TrimSpace(key)] = struct{}{}
 	}
 	out := make([]domaincopilot.AgentToolBinding, 0, len(bindings))
+	toolPermissions := map[string][]string{}
+	for _, tool := range (appaigateway.BuiltinCapabilityProvider{}).Tools() {
+		toolPermissions[tool.Name] = tool.PermissionKeys
+	}
 	for _, binding := range bindings {
+		if chatKubernetesReadTool(binding.ToolName) && !hasAgentToolPermissions(allowed, toolPermissions[binding.ToolName]) {
+			continue
+		}
+
 		permissionKey := strings.TrimSpace(binding.PermissionKey)
 		if permissionKey == "" {
 			out = append(out, binding)
@@ -2304,6 +2313,18 @@ func (s *Service) filterAgentToolBindingsByPrincipal(ctx context.Context, princi
 		}
 	}
 	return out, nil
+}
+
+func hasAgentToolPermissions(allowed map[string]struct{}, required []string) bool {
+	if len(required) == 0 {
+		return false
+	}
+	for _, key := range required {
+		if _, ok := allowed[key]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) agentSkillBindingsForRun(provider domaincopilot.AgentProvider, capabilityID string, skillIDs []string) []domaincopilot.AgentSkillBinding {

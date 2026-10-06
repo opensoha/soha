@@ -3,11 +3,14 @@
 bin
 node_modules
 tmp
+.tmp
 *.log
 go.work
 go.work.sum
 soha-contracts
 soha-web
+graphify-out
+coverage
 
 # Local runtime keys and shared secrets are never build inputs.
 .env

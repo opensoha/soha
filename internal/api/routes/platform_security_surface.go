@@ -123,6 +123,9 @@ func networkAccessMutationSecuritySurface(method, path string) (nonPlatformMutat
 	if !strings.HasPrefix(path, "/api/v1/network-access/") {
 		return nonPlatformMutationSecuritySurfaceEntry{}, false
 	}
+	if entry, ok := proxyMutationSecuritySurface(method, path); ok {
+		return entry, true
+	}
 	action := nonPlatformMutationAction(method, path)
 	switch {
 	case strings.HasPrefix(path, "/api/v1/network-access/devices/"):
@@ -154,6 +157,16 @@ func networkAccessMutationSecuritySurface(method, path string) (nonPlatformMutat
 	default:
 		return networkAccessPolicyMutationSecuritySurface(method, path)
 	}
+}
+
+func proxyMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if strings.HasPrefix(path, "/api/v1/network-access/proxy-instances/") && strings.HasSuffix(path, "/close") {
+		return nonPlatformMutationEntry("NetworkProxyConnection", "close", appaccess.PermNetworkAccessProxyConnectionsClose, false), true
+	}
+	if strings.HasPrefix(path, "/api/v1/network-access/proxy-instances") {
+		return nonPlatformMutationEntry("NetworkProxyInstance", nonPlatformMutationAction(method, path), networkAccessPermission(method, appaccess.PermNetworkAccessProxyInstancesCreate, appaccess.PermNetworkAccessProxyInstancesUpdate, ""), false), true
+	}
+	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }
 
 func networkAccessPolicyMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
@@ -765,7 +778,7 @@ func platformMutationAction(method, path string) string {
 
 func platformPathMutationAction(path string) string {
 	switch {
-	case strings.HasSuffix(path, "/agent-installation"):
+	case strings.HasSuffix(path, "/agent-installation"), strings.HasSuffix(path, "/agent-upgrade"):
 		return "update"
 	case strings.Contains(path, "/exec"):
 		return "exec"
@@ -844,7 +857,7 @@ func platformMutationCapabilityKey(path string) string {
 }
 
 func platformMutationResourceKind(path string) string {
-	if strings.HasSuffix(path, "/agent-installation") {
+	if strings.HasSuffix(path, "/agent-installation") || strings.HasSuffix(path, "/agent-upgrade") {
 		return "Cluster"
 	}
 	if path == "/api/v1/clusters" || strings.Contains(path, "/clusters/:clusterID") && !strings.Contains(path, "/clusters/:clusterID/") {

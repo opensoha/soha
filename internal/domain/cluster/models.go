@@ -7,6 +7,25 @@ import (
 
 type ConnectionMode string
 
+type AgentUpgradeStatus struct {
+	Version               string `json:"version"`
+	Image                 string `json:"image"`
+	RecommendedVersion    string `json:"recommendedVersion"`
+	RolloutStatus         string `json:"rolloutStatus"`
+	Message               string `json:"message"`
+	CanUpgrade            bool   `json:"canUpgrade"`
+	UpgradeDisabledReason string `json:"upgradeDisabledReason,omitempty"`
+}
+
+type AgentUpgradeInput struct {
+	Version string `json:"version" binding:"required,max=64"`
+}
+
+type AgentUpgradeResult struct {
+	PreviousImage string `json:"previousImage"`
+	TargetImage   string `json:"targetImage"`
+}
+
 const (
 	ConnectionModeDirectKubeconfig ConnectionMode = "direct_kubeconfig"
 	ConnectionModeAgent            ConnectionMode = "agent"
@@ -102,15 +121,16 @@ type CacheResourceDiagnostic struct {
 }
 
 type ConnectionDetail struct {
-	Mode                ConnectionMode `json:"mode"`
-	CredentialType      string         `json:"credentialType"`
-	SourceType          string         `json:"sourceType"`
-	SourceRef           string         `json:"sourceRef,omitempty"`
-	Context             string         `json:"context,omitempty"`
-	Endpoint            string         `json:"endpoint,omitempty"`
-	HasInlineKubeconfig bool           `json:"hasInlineKubeconfig"`
-	HasToken            bool           `json:"hasToken"`
-	UsesInformerCache   bool           `json:"usesInformerCache"`
+	CustomResourceRules []AgentCustomResourceRule `json:"customResourceRules,omitempty"`
+	Mode                ConnectionMode            `json:"mode"`
+	CredentialType      string                    `json:"credentialType"`
+	SourceType          string                    `json:"sourceType"`
+	SourceRef           string                    `json:"sourceRef,omitempty"`
+	Context             string                    `json:"context,omitempty"`
+	Endpoint            string                    `json:"endpoint,omitempty"`
+	HasInlineKubeconfig bool                      `json:"hasInlineKubeconfig"`
+	HasToken            bool                      `json:"hasToken"`
+	UsesInformerCache   bool                      `json:"usesInformerCache"`
 }
 
 type MonitoringDetail struct {
@@ -118,6 +138,7 @@ type MonitoringDetail struct {
 }
 
 type PrometheusDetail struct {
+	Transport      string `json:"transport,omitempty"`
 	BaseURL        string `json:"baseUrl,omitempty"`
 	ClusterLabel   string `json:"clusterLabel,omitempty"`
 	GrafanaBaseURL string `json:"grafanaBaseUrl,omitempty"`
@@ -140,39 +161,51 @@ type AgentInstallation struct {
 }
 
 type RegisterInput struct {
-	ID                     string            `json:"id"`
-	Name                   string            `json:"name"`
-	Region                 string            `json:"region"`
-	Environment            string            `json:"environment"`
-	Labels                 map[string]string `json:"labels,omitempty"`
-	ConnectionMode         ConnectionMode    `json:"connectionMode"`
-	Kubeconfig             string            `json:"kubeconfig,omitempty"`
-	Context                string            `json:"context,omitempty"`
-	AgentEndpoint          string            `json:"agentEndpoint,omitempty"`
-	AgentToken             string            `json:"agentToken,omitempty"`
-	PrometheusBaseURL      string            `json:"prometheusBaseUrl,omitempty"`
-	PrometheusBearerToken  string            `json:"prometheusBearerToken,omitempty"`
-	PrometheusClusterLabel string            `json:"prometheusClusterLabel,omitempty"`
-	GrafanaBaseURL         string            `json:"grafanaBaseUrl,omitempty"`
+	PrometheusTransport      string                    `json:"prometheusTransport,omitempty"`
+	AgentCustomResourceRules []AgentCustomResourceRule `json:"agentCustomResourceRules,omitempty"`
+	ID                       string                    `json:"id"`
+	Name                     string                    `json:"name"`
+	Region                   string                    `json:"region"`
+	Environment              string                    `json:"environment"`
+	Labels                   map[string]string         `json:"labels,omitempty"`
+	ConnectionMode           ConnectionMode            `json:"connectionMode"`
+	Kubeconfig               string                    `json:"kubeconfig,omitempty"`
+	Context                  string                    `json:"context,omitempty"`
+	AgentEndpoint            string                    `json:"agentEndpoint,omitempty"`
+	AgentToken               string                    `json:"agentToken,omitempty"`
+	PrometheusBaseURL        string                    `json:"prometheusBaseUrl,omitempty"`
+	PrometheusBearerToken    string                    `json:"prometheusBearerToken,omitempty"`
+	PrometheusClusterLabel   string                    `json:"prometheusClusterLabel,omitempty"`
+	GrafanaBaseURL           string                    `json:"grafanaBaseUrl,omitempty"`
 }
 
 type UpdateInput struct {
-	Name                   string            `json:"name"`
-	Region                 string            `json:"region"`
-	Environment            string            `json:"environment"`
-	Labels                 map[string]string `json:"labels,omitempty"`
-	ConnectionMode         ConnectionMode    `json:"connectionMode"`
-	Kubeconfig             string            `json:"kubeconfig,omitempty"`
-	Context                string            `json:"context,omitempty"`
-	AgentEndpoint          string            `json:"agentEndpoint,omitempty"`
-	AgentToken             string            `json:"agentToken,omitempty"`
-	PrometheusBaseURL      string            `json:"prometheusBaseUrl,omitempty"`
-	PrometheusBearerToken  string            `json:"prometheusBearerToken,omitempty"`
-	PrometheusClusterLabel string            `json:"prometheusClusterLabel,omitempty"`
-	GrafanaBaseURL         string            `json:"grafanaBaseUrl,omitempty"`
+	PrometheusTransport      string                    `json:"prometheusTransport,omitempty"`
+	AgentCustomResourceRules []AgentCustomResourceRule `json:"agentCustomResourceRules,omitempty"`
+	Name                     string                    `json:"name"`
+	Region                   string                    `json:"region"`
+	Environment              string                    `json:"environment"`
+	Labels                   map[string]string         `json:"labels,omitempty"`
+	ConnectionMode           ConnectionMode            `json:"connectionMode"`
+	Kubeconfig               string                    `json:"kubeconfig,omitempty"`
+	Context                  string                    `json:"context,omitempty"`
+	AgentEndpoint            string                    `json:"agentEndpoint,omitempty"`
+	AgentToken               string                    `json:"agentToken,omitempty"`
+	PrometheusBaseURL        string                    `json:"prometheusBaseUrl,omitempty"`
+	PrometheusBearerToken    string                    `json:"prometheusBearerToken,omitempty"`
+	PrometheusClusterLabel   string                    `json:"prometheusClusterLabel,omitempty"`
+	GrafanaBaseURL           string                    `json:"grafanaBaseUrl,omitempty"`
 }
 
 type Manager interface {
 	ListClusters(context.Context) ([]Summary, error)
 	GetCluster(context.Context, string) (Summary, error)
+}
+
+// AgentCustomResourceRule grants only named CRD API groups and resources.
+type AgentCustomResourceRule struct {
+	APIGroup   string   `json:"apiGroup"`
+	Resources  []string `json:"resources"`
+	Verbs      []string `json:"verbs"`
+	Namespaces []string `json:"namespaces,omitempty"`
 }

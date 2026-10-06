@@ -17,6 +17,7 @@ type captureStore struct {
 	events        []domainnetworkingest.Event
 	summary       domainnetworkingest.Summary
 	summaryFilter domainnetworkingest.SummaryFilter
+	sampleID      string
 }
 
 func (store *captureStore) Append(_ context.Context, events []domainnetworkingest.Event) (domainnetworkingest.Result, error) {
@@ -27,6 +28,37 @@ func (store *captureStore) Append(_ context.Context, events []domainnetworkinges
 func (store *captureStore) Summary(_ context.Context, filter domainnetworkingest.SummaryFilter) (domainnetworkingest.Summary, error) {
 	store.summaryFilter = filter
 	return store.summary, nil
+}
+
+func (store *captureStore) ProxyRuntimeSamples(_ context.Context, id string, _, _ time.Time) (domainnetworkingest.ProxyRuntimeSeries, error) {
+	store.sampleID = id
+	return domainnetworkingest.ProxyRuntimeSeries{InstanceID: id, Samples: []domainnetworkingest.ProxyRuntimeSample{}}, nil
+}
+
+func TestProxyRuntimeSamplesRequireCoreIdentityAndBoundedWindow(t *testing.T) {
+	schemas, err := networkprotocol.CompileSchemas()
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &captureStore{}
+	service, err := New(store, schemas, Options{MaxEventsPerBatch: 1000, MaxClockSkew: time.Minute, Retention: 7 * 24 * time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 27, 8, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	core := networkidentity.Identity{Scope: networkidentity.ScopeIngest, Kind: "core", ID: "soha-server"}
+	if _, err := service.ProxyRuntimeSamples(context.Background(), core, "proxy-1", now.Add(-time.Hour), now); err != nil || store.sampleID != "proxy-1" {
+		t.Fatalf("core sample query = %v, producer = %q", err, store.sampleID)
+	}
+	for _, identity := range []networkidentity.Identity{{Scope: networkidentity.ScopeIngest, Kind: "proxy", ID: "proxy-1"}, {Scope: networkidentity.ScopeNetworkControl, Kind: "core", ID: "soha-server"}} {
+		if _, err := service.ProxyRuntimeSamples(context.Background(), identity, "proxy-1", now.Add(-time.Hour), now); !errors.Is(err, apperrors.ErrUnauthorized) {
+			t.Fatalf("identity %+v: error = %v", identity, err)
+		}
+	}
+	if _, err := service.ProxyRuntimeSamples(context.Background(), core, "proxy-1", now.Add(-25*time.Hour), now); !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("unbounded sample query = %v", err)
+	}
 }
 
 func TestServiceSummaryAllowsOnlyDedicatedCoreReaderAndBoundsWindow(t *testing.T) {

@@ -183,6 +183,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/agent-upgrade",
+      "classification": "public"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/clusters/:clusterID/agent-upgrade",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/configmaps",
       "classification": "public"
     },
@@ -199,7 +209,7 @@
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/configuration/configmaps/:name/data",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -424,12 +434,12 @@
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/configuration/secrets/:name/data",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/configuration/secrets/:name/detail",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -484,6 +494,16 @@
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/extensions/crds",
+      "classification": "public"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/clusters/:clusterID/extensions/crds/:crdName",
+      "classification": "public"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/clusters/:clusterID/extensions/crds/:crdName/access",
       "classification": "public"
     },
     {
@@ -584,12 +604,12 @@
     {
       "method": "DELETE",
       "path": "/api/v1/clusters/:clusterID/infrastructure/nodes/:nodeName",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/infrastructure/nodes/:nodeName",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -599,22 +619,22 @@
     {
       "method": "POST",
       "path": "/api/v1/clusters/:clusterID/infrastructure/nodes/:nodeName/drain",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/infrastructure/nodes/:nodeName/schedulability",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
       "path": "/api/v1/clusters/:clusterID/infrastructure/nodes/:nodeName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/infrastructure/nodes/:nodeName/yaml",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "POST",
@@ -639,17 +659,17 @@
     {
       "method": "POST",
       "path": "/api/v1/clusters/:clusterID/namespaces",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "DELETE",
       "path": "/api/v1/clusters/:clusterID/namespaces/:namespaceName",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "PUT",
       "path": "/api/v1/clusters/:clusterID/namespaces/:namespaceName",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -1064,7 +1084,7 @@
     {
       "method": "POST",
       "path": "/api/v1/clusters/:clusterID/workloads/cronjobs/:cronJobName/suspend",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",
@@ -1204,7 +1224,7 @@
     {
       "method": "DELETE",
       "path": "/api/v1/clusters/:clusterID/workloads/pods/:podName",
-      "classification": "internal"
+      "classification": "public"
     },
     {
       "method": "GET",

@@ -22,10 +22,35 @@ import (
 const agentTunnelSubprotocol = "soha-agent-tunnel.v1"
 
 type AgentConnectionService interface {
+	GetAgentUpgradeStatus(context.Context, domainidentity.Principal, string) (domaincluster.AgentUpgradeStatus, error)
+	UpgradeAgent(context.Context, domainidentity.Principal, string, domaincluster.AgentUpgradeInput) (domaincluster.AgentUpgradeResult, error)
 	CreateAgentInstallation(context.Context, domainidentity.Principal, string) (domaincluster.AgentInstallation, error)
 	RenderAgentInstallation(context.Context, string) ([]byte, error)
 	AuthenticateAgentSession(context.Context, string, string) error
 	RefreshAgentSession(context.Context, string) error
+}
+
+func (h *AgentConnectionHandler) AgentUpgradeStatus(c *gin.Context) {
+	status, err := h.service.GetAgentUpgradeStatus(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, status)
+}
+
+func (h *AgentConnectionHandler) UpgradeAgent(c *gin.Context) {
+	var input domaincluster.AgentUpgradeInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "Agent version is required")
+		return
+	}
+	result, err := h.service.UpgradeAgent(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("clusterID"), input)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusAccepted, result)
 }
 
 type AgentSessionAccepter interface {

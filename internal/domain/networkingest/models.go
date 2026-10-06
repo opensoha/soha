@@ -72,3 +72,16 @@ type Summary struct {
 	Producers              []ProducerSummary  `json:"producers"`
 	ProxyFlows             []ProxyFlowSummary `json:"proxyFlows"`
 }
+
+type ProxyRuntimeSample struct {
+	ObservedAt        time.Time `json:"observedAt"`
+	UptimeSeconds     int64     `json:"uptimeSeconds"`
+	UploadTotal       int64     `json:"uploadTotal"`
+	DownloadTotal     int64     `json:"downloadTotal"`
+	ActiveConnections *int      `json:"activeConnections,omitempty"`
+}
+
+type ProxyRuntimeSeries struct {
+	InstanceID string               `json:"instanceId"`
+	Samples    []ProxyRuntimeSample `json:"samples"`
+}

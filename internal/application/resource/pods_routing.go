@@ -60,8 +60,8 @@ func (r agentPodRoute) GetPodDetail(ctx context.Context, namespace, name string)
 	return r.client.GetPodDetail(ctx, namespace, name)
 }
 
-func (agentPodRoute) DeletePod(context.Context, string, string) (bool, error) {
-	return true, unsupportedAgentOperation("pod deletion is not supported for agent-connected clusters yet")
+func (r agentPodRoute) DeletePod(ctx context.Context, namespace, name string) (bool, error) {
+	return true, wrapAgentResourceError(r.client.DeletePod(ctx, namespace, name))
 }
 
 func (r agentPodRoute) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
@@ -167,19 +167,8 @@ func (directPodRoute) RuntimeError(err error) error {
 }
 
 func (w *Workloads) routePods(connection domaincluster.Connection, clusterID string) (podRoute, error) {
-	return w.routePodsFor(connection, clusterID, true)
-}
-
-func (w *Workloads) routePodDeletion(connection domaincluster.Connection, clusterID string) (podRoute, error) {
-	return w.routePodsFor(connection, clusterID, false)
-}
-
-func (w *Workloads) routePodsFor(connection domaincluster.Connection, clusterID string, requireAgentClient bool) (podRoute, error) {
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		if !requireAgentClient {
-			return agentPodRoute{clusterID: connection.Summary.ID}, nil
-		}
 		client, err := w.workloadAgentClient(connection)
 		if err != nil {
 			return nil, err
@@ -191,4 +180,8 @@ func (w *Workloads) routePodsFor(connection domaincluster.Connection, clusterID 
 		}
 		return directPodRoute{backend: w.directPods, clusterID: clusterID}, nil
 	}
+}
+
+func (w *Workloads) routePodDeletion(connection domaincluster.Connection, clusterID string) (podRoute, error) {
+	return w.routePods(connection, clusterID)
 }

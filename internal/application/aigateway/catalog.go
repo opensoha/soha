@@ -771,6 +771,48 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Helm release namespace. Empty means all namespaces when allowed.")),
 	},
 	{
+		Name: "k8s.crds.list", Title: "List Custom Resource Definitions", Description: "List CRD metadata without schemas or custom-resource content.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformExtensionsView},
+		RequiredScopes: []string{"cluster"}, MCPAdapterID: "platform-native.v1", MCPToolName: "k8s.crds.list",
+		InputSchema: gatewayObjectSchema([]string{"clusterId"}, map[string]any{
+			"clusterId": gatewayStringSchema("Cluster id."),
+		}),
+	},
+	{
+		Name: "k8s.custom_resources.list", Title: "List Custom Resources", Description: "List custom-resource metadata using the existing scoped authorization and Agent CRD grants.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformExtensionsView},
+		RequiredScopes: []string{"cluster", "namespace"}, MCPAdapterID: "platform-native.v1", MCPToolName: "k8s.custom_resources.list",
+		InputSchema: gatewayObjectSchema([]string{"clusterId", "crdName"}, map[string]any{
+			"clusterId": gatewayStringSchema("Cluster id."),
+			"namespace": gatewayStringSchema("Namespace. Empty means all namespaces only when allowed."),
+			"crdName":   gatewayStringSchema("CRD name."),
+		}),
+	},
+	{
+		Name: "k8s.pods.metrics", Title: "Read Pod Metrics", Description: "Read bounded Pod metric series through the configured direct or Agent Prometheus route.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformPodsView},
+		RequiredScopes: []string{"cluster", "namespace", "pod", "timeRange"}, MCPAdapterID: "platform-native.v1", MCPToolName: "k8s.pods.metrics",
+		InputSchema: gatewayObjectSchema([]string{"clusterId", "namespace", "podName"}, map[string]any{
+			"clusterId":    gatewayStringSchema("Cluster id."),
+			"namespace":    gatewayStringSchema("Namespace. Empty means all namespaces only when allowed."),
+			"podName":      gatewayStringSchema("Pod name."),
+			"rangeMinutes": map[string]any{"type": "integer", "minimum": 1, "maximum": 1440, "description": "Range in minutes, defaults to 15."},
+			"stepSeconds":  map[string]any{"type": "integer", "minimum": 1, "maximum": 3600, "description": "Sample step in seconds, defaults to 60."},
+		}),
+	},
+	{
+		Name: "k8s.deployments.metrics", Title: "Read Deployment Metrics", Description: "Read bounded Deployment metric series through the configured direct or Agent Prometheus route.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
+		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformDeploymentView},
+		RequiredScopes: []string{"cluster", "namespace", "deployment", "timeRange"}, MCPAdapterID: "platform-native.v1", MCPToolName: "k8s.deployments.metrics",
+		InputSchema: gatewayObjectSchema([]string{"clusterId", "namespace", "deploymentName"}, map[string]any{
+			"clusterId":      gatewayStringSchema("Cluster id."),
+			"namespace":      gatewayStringSchema("Namespace. Empty means all namespaces only when allowed."),
+			"deploymentName": gatewayStringSchema("Deployment name."),
+			"rangeMinutes":   map[string]any{"type": "integer", "minimum": 1, "maximum": 1440, "description": "Range in minutes, defaults to 15."},
+			"stepSeconds":    map[string]any{"type": "integer", "minimum": 1, "maximum": 3600, "description": "Sample step in seconds, defaults to 60."},
+		}),
+	},
+	{
 		Name:           "k8s.pods.list",
 		Title:          "List Pods",
 		Description:    "List pods from the scoped Kubernetes workbench API.",

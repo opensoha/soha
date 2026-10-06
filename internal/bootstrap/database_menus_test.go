@@ -287,8 +287,9 @@ func TestNetworkAccessMenuSeedsLiveUnderInternalWorkbench(t *testing.T) {
 		"network-access-enrollments":           {parent: "identity", path: "/network-access/enrollments", section: "vpn", labelZH: "运行时注册", labelEN: "Runtime Enrollment", sort: 90},
 		"network-access-telemetry":             {parent: "identity", path: "/network-access/telemetry", section: "vpn", labelZH: "遥测", labelEN: "Telemetry", sort: 100},
 		"network-access-mihomo-profiles":       {parent: "identity", path: "/network-access/mihomo-profiles", section: "proxy", labelZH: "代理隧道", labelEN: "Proxy Tunnels", sort: 10},
+		"network-access-proxy-instances":        {parent: "identity", path: "/network-access/proxy-instances", section: "proxy", labelZH: "代理实例", labelEN: "Proxy Instances", sort: 15},
 		"network-access-proxy-overview":        {parent: "identity", path: "/network-access/proxy-overview", section: "proxy", labelZH: "流量概览", labelEN: "Traffic Overview", sort: 20},
-		"network-access-proxy-connections":     {parent: "identity", path: "/network-access/proxy-connections", section: "proxy", labelZH: "用户连接", labelEN: "User Connections", sort: 30},
+		"network-access-proxy-connections":     {parent: "identity", path: "/network-access/proxy-connections", section: "proxy", labelZH: "活动连接", labelEN: "Active Connections", sort: 30},
 	}
 
 	for _, item := range builtinMenuSeeds {

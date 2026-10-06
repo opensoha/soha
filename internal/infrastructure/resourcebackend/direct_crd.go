@@ -219,6 +219,16 @@ func (d *Direct) DeleteCustomResource(ctx context.Context, clusterID string, def
 	return resourceMutationError(contractruntime.DeleteManifest(queryCtx, customResourceInterface(bundle.Dynamic, definition, effectiveNamespace), name, expectedUID))
 }
 
+func (d *Direct) DeleteCRDDefinition(ctx context.Context, clusterID, name, expectedUID string) error {
+	bundle, err := d.directClients(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return resourceMutationError(contractruntime.DeleteManifest(queryCtx, bundle.Dynamic.Resource(crdGVR), name, expectedUID))
+}
+
 func (d *Direct) listCustomResourcesAcrossNamespaces(ctx context.Context, clusterID string, definition domainresource.CRDResourceDefinition) ([]unstructured.Unstructured, error) {
 	return listAcrossNamespaces(ctx, d, clusterID, 5*time.Second, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]unstructured.Unstructured, error) {
 		items, err := customResourceInterface(bundle.Dynamic, definition, namespace).List(queryCtx, metav1.ListOptions{})
@@ -254,6 +264,7 @@ func mapCRD(item unstructured.Unstructured) domainresource.CRDView {
 		}
 	}
 	view := domainresource.CRDView{
+		UID: string(item.GetUID()), DeletingAt: customResourceDeletingAt(item.GetDeletionTimestamp()),
 		Name: item.GetName(), Group: group, Scope: scope, Kind: kind, Plural: plural,
 		Versions: versions, CreatedAt: item.GetCreationTimestamp().Time.UTC().Format(time.RFC3339),
 		AgeSeconds: secondsSince(item.GetCreationTimestamp().Time),
@@ -284,6 +295,7 @@ func mapCRDMetadata(items []metav1.PartialObjectMetadata, resourceLists []*metav
 			continue
 		}
 		views = append(views, domainresource.CRDView{
+			UID: string(item.UID), DeletingAt: customResourceDeletingAt(item.DeletionTimestamp),
 			Name:       item.Name,
 			Group:      entry.group,
 			Scope:      entry.scope,

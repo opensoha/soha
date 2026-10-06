@@ -117,6 +117,7 @@ type PortForwards struct {
 // Runtime composes the capabilities used by workflow, delivery, Copilot, and
 // AI gateway runtime inspection without exposing the complete root service.
 type Runtime struct {
+	customResources *CustomResources
 	*Workloads
 	*Configuration
 	*Network
@@ -124,6 +125,19 @@ type Runtime struct {
 	*Helm
 	*Inventory
 	*Events
+}
+
+// Runtime exposes CRD summaries without exposing custom-resource mutations or YAML.
+func (r *Runtime) ListCRDs(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.CRDView, error) {
+	return r.customResources.ListCRDs(ctx, principal, clusterID)
+}
+
+func (r *Runtime) DeleteCRDDefinition(ctx context.Context, principal domainidentity.Principal, clusterID, name, expectedUID string) error {
+	return r.customResources.DeleteCRDDefinition(ctx, principal, clusterID, name, expectedUID)
+}
+
+func (r *Runtime) ListCRDResources(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace string) ([]domainresource.CustomResourceView, error) {
+	return r.customResources.ListCRDResources(ctx, principal, clusterID, crdName, namespace)
 }
 
 // Workloads returns the workload capability.
@@ -205,6 +219,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 	metrics := &metricsSupport{
 		resourceAccess: access,
 		resolver:       deps.Connections,
+		agent:          deps.Agents.Prometheus,
 		httpClient:     &http.Client{Timeout: 10 * time.Second},
 	}
 	genericResources := &GenericResources{
@@ -254,7 +269,8 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		creation:         creation,
 	}
 	service.runtime = &Runtime{
-		Workloads: workloads, Configuration: service.configuration, Network: network, Storage: service.storage,
+		customResources: service.customResources,
+		Workloads:       workloads, Configuration: service.configuration, Network: network, Storage: service.storage,
 		Helm: service.helm, Inventory: inventory, Events: service.events,
 	}
 	service.search = newResourceSearch(workloads, service.configuration, network, inventory)

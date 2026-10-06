@@ -3,9 +3,9 @@ package resource
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
-	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -92,19 +92,19 @@ func matchesAnyNamespaceSelector(selectors []string, labels map[string]string) b
 }
 
 func (i *Inventory) CreateNamespace(ctx context.Context, principal domainidentity.Principal, clusterID string, input domainresource.NamespaceUpsertInput) (domainresource.NamespaceView, error) {
+	input.Name = strings.TrimSpace(input.Name)
+	if input.Name == "" {
+		return domainresource.NamespaceView{}, fmt.Errorf("%w: namespace name is required", apperrors.ErrInvalidArgument)
+	}
 	connection, decision, err := i.authorize(ctx, principal, clusterID, input.Name, "Namespace", domainaccess.ActionCreate)
 	if err != nil {
 		return domainresource.NamespaceView{}, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.NamespaceView{}, i.unsupportedMutation(ctx, principal, connection, input.Name, "Namespace", input.Name, domainaccess.ActionCreate, "namespace creation is not supported for agent-connected clusters yet")
-	}
-	direct, err := i.directInventory()
-	if err != nil {
-		_ = i.recordAudit(ctx, principal, connection.Summary.ID, input.Name, "Namespace", input.Name, string(domainaccess.ActionCreate), "failure", err.Error())
-		return domainresource.NamespaceView{}, err
-	}
-	item, err := direct.CreateNamespace(ctx, clusterID, input)
+	item, _, err := routeModeValue(connection, i.inventoryAgentClient, i.directInventory,
+		func(a InventoryAgent) (domainresource.NamespaceView, error) { return a.CreateNamespace(ctx, input) },
+		func(d DirectInventory) (domainresource.NamespaceView, error) {
+			return d.CreateNamespace(ctx, clusterID, input)
+		})
 	if err != nil {
 		_ = i.recordAudit(ctx, principal, clusterID, input.Name, "Namespace", input.Name, string(domainaccess.ActionCreate), "failure", err.Error())
 		return domainresource.NamespaceView{}, err
@@ -120,15 +120,13 @@ func (i *Inventory) UpdateNamespace(ctx context.Context, principal domainidentit
 	if err != nil {
 		return domainresource.NamespaceView{}, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.NamespaceView{}, i.unsupportedMutation(ctx, principal, connection, namespace, "Namespace", namespace, domainaccess.ActionUpdate, "namespace update is not supported for agent-connected clusters yet")
-	}
-	direct, err := i.directInventory()
-	if err != nil {
-		_ = i.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Namespace", namespace, string(domainaccess.ActionUpdate), "failure", err.Error())
-		return domainresource.NamespaceView{}, err
-	}
-	item, err := direct.UpdateNamespace(ctx, clusterID, namespace, input)
+	item, _, err := routeModeValue(connection, i.inventoryAgentClient, i.directInventory,
+		func(a InventoryAgent) (domainresource.NamespaceView, error) {
+			return a.UpdateNamespace(ctx, namespace, input)
+		},
+		func(d DirectInventory) (domainresource.NamespaceView, error) {
+			return d.UpdateNamespace(ctx, clusterID, namespace, input)
+		})
 	if err != nil {
 		_ = i.recordAudit(ctx, principal, clusterID, namespace, "Namespace", namespace, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return domainresource.NamespaceView{}, err
@@ -144,15 +142,10 @@ func (i *Inventory) DeleteNamespace(ctx context.Context, principal domainidentit
 	if err != nil {
 		return err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return i.unsupportedMutation(ctx, principal, connection, namespace, "Namespace", namespace, domainaccess.ActionDelete, "namespace deletion is not supported for agent-connected clusters yet")
-	}
-	direct, err := i.directInventory()
-	if err != nil {
-		_ = i.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Namespace", namespace, string(domainaccess.ActionDelete), "failure", err.Error())
-		return err
-	}
-	if err := direct.DeleteNamespace(ctx, clusterID, namespace); err != nil {
+
+	if err := routeModeError(connection, i.inventoryAgentClient, i.directInventory,
+		func(a InventoryAgent) error { return a.DeleteNamespace(ctx, namespace) },
+		func(d DirectInventory) error { return d.DeleteNamespace(ctx, clusterID, namespace) }); err != nil {
 		_ = i.recordAudit(ctx, principal, clusterID, namespace, "Namespace", namespace, string(domainaccess.ActionDelete), "failure", err.Error())
 		return err
 	}
@@ -183,15 +176,13 @@ func (i *Inventory) UpdateNode(ctx context.Context, principal domainidentity.Pri
 	if err != nil {
 		return domainresource.NodeDetailView{}, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.NodeDetailView{}, i.unsupportedMutation(ctx, principal, connection, "", "Node", nodeName, domainaccess.ActionUpdate, "node mutation is not supported for agent-connected clusters yet")
-	}
-	direct, err := i.directInventory()
-	if err != nil {
-		_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "failure", err.Error())
-		return domainresource.NodeDetailView{}, err
-	}
-	item, err := direct.UpdateNode(ctx, clusterID, nodeName, input)
+	item, _, err := routeModeValue(connection, i.inventoryAgentClient, i.directInventory,
+		func(a InventoryAgent) (domainresource.NodeDetailView, error) {
+			return a.UpdateNode(ctx, nodeName, input)
+		},
+		func(d DirectInventory) (domainresource.NodeDetailView, error) {
+			return d.UpdateNode(ctx, clusterID, nodeName, input)
+		})
 	if err != nil {
 		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return domainresource.NodeDetailView{}, err
@@ -208,15 +199,10 @@ func (i *Inventory) SetNodeUnschedulable(ctx context.Context, principal domainid
 	if err != nil {
 		return err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return i.unsupportedMutation(ctx, principal, connection, "", "Node", nodeName, domainaccess.ActionUpdate, "node schedulability changes are not supported for agent-connected clusters yet")
-	}
-	direct, err := i.directInventory()
-	if err != nil {
-		_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "failure", err.Error())
-		return err
-	}
-	if err := direct.SetNodeUnschedulable(ctx, clusterID, nodeName, unschedulable); err != nil {
+
+	if err := routeModeError(connection, i.inventoryAgentClient, i.directInventory,
+		func(a InventoryAgent) error { return a.SetNodeUnschedulable(ctx, nodeName, unschedulable) },
+		func(d DirectInventory) error { return d.SetNodeUnschedulable(ctx, clusterID, nodeName, unschedulable) }); err != nil {
 		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return err
 	}
@@ -234,9 +220,7 @@ func (i *Inventory) DrainNode(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return i.unsupportedMutation(ctx, principal, connection, "", "Node", nodeName, domainaccess.ActionDrain, "node drain is not supported for agent-connected clusters yet")
-	}
+
 	if input.TimeoutSeconds == 0 {
 		input.TimeoutSeconds = 300
 	}
@@ -245,12 +229,9 @@ func (i *Inventory) DrainNode(ctx context.Context, principal domainidentity.Prin
 		_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", nodeName, string(domainaccess.ActionDrain), "failure", err.Error())
 		return err
 	}
-	direct, err := i.directInventory()
-	if err != nil {
-		_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", nodeName, string(domainaccess.ActionDrain), "failure", err.Error())
-		return err
-	}
-	if err := direct.DrainNode(ctx, clusterID, nodeName, input); err != nil {
+	if err := routeModeError(connection, i.inventoryAgentClient, i.directInventory,
+		func(a InventoryAgent) error { return a.DrainNode(ctx, nodeName, input) },
+		func(d DirectInventory) error { return d.DrainNode(ctx, clusterID, nodeName, input) }); err != nil {
 		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionDrain), "failure", err.Error())
 		return err
 	}
@@ -267,14 +248,11 @@ func (i *Inventory) GetNodeYAML(ctx context.Context, principal domainidentity.Pr
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.ResourceYAMLView{}, unsupportedAgentOperation("node yaml is not supported for agent-connected clusters yet")
-	}
-	direct, err := i.directInventory()
-	if err != nil {
-		return domainresource.ResourceYAMLView{}, err
-	}
-	item, err := direct.GetNodeYAML(ctx, clusterID, name)
+	item, _, err := routeModeValue(connection, i.inventoryAgentClient, i.directInventory,
+		func(a InventoryAgent) (domainresource.ResourceYAMLView, error) { return a.GetNodeYAML(ctx, name) },
+		func(d DirectInventory) (domainresource.ResourceYAMLView, error) {
+			return d.GetNodeYAML(ctx, clusterID, name)
+		})
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
@@ -291,15 +269,10 @@ func (i *Inventory) DeleteNode(ctx context.Context, principal domainidentity.Pri
 	if err != nil {
 		return err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return i.unsupportedMutation(ctx, principal, connection, "", "Node", nodeName, domainaccess.ActionDelete, "node deletion is not supported for agent-connected clusters yet")
-	}
-	direct, err := i.directInventory()
-	if err != nil {
-		_ = i.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", nodeName, string(domainaccess.ActionDelete), "failure", err.Error())
-		return err
-	}
-	if err := direct.DeleteNode(ctx, clusterID, nodeName); err != nil {
+
+	if err := routeModeError(connection, i.inventoryAgentClient, i.directInventory,
+		func(a InventoryAgent) error { return a.DeleteNode(ctx, nodeName) },
+		func(d DirectInventory) error { return d.DeleteNode(ctx, clusterID, nodeName) }); err != nil {
 		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionDelete), "failure", err.Error())
 		return err
 	}

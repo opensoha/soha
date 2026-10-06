@@ -54,10 +54,8 @@ func chatAgentToolBindings(metadata domaincopilot.SessionMetadata) []domaincopil
 		{ID: "agent.delegate", ToolKind: "internal_api", AdapterID: "conversation", ToolName: "agent.delegate", PermissionKey: appaccess.PermObserveAIChatUse},
 		{ID: "artifact.preview", ToolKind: "internal_api", AdapterID: "conversation", ToolName: "artifact.preview", PermissionKey: appaccess.PermObserveAIChatUse},
 		{ID: "change.request", ToolKind: "internal_api", AdapterID: "conversation", ToolName: "change.request", PermissionKey: appaccess.PermAIGatewayInvoke},
-		{ID: "k8s.workloads.overview", ToolKind: "mcp", AdapterID: "platform-native.v1", ToolName: "k8s.workloads.overview", PermissionKey: appaccess.PermPlatformWorkloadsOverviewView},
-		{ID: "k8s.nodes.detail", ToolKind: "mcp", AdapterID: "platform-native.v1", ToolName: "k8s.nodes.detail", PermissionKey: appaccess.PermPlatformNodesView},
-		{ID: "k8s.services.backends", ToolKind: "mcp", AdapterID: "platform-native.v1", ToolName: "k8s.services.backends", PermissionKey: appaccess.PlatformActionPermission("network", "Service", "view")},
 	}
+	bindings = append(bindings, chatKubernetesToolBindings()...)
 	if len(chatKnowledgeBaseIDs(metadata)) > 0 {
 		bindings = append(bindings, domaincopilot.AgentToolBinding{ID: "knowledge.search", ToolKind: "mcp", AdapterID: "knowledge.v1", ToolName: "knowledge.search", PermissionKey: appaccess.PermAIKnowledgeView})
 	}
@@ -95,13 +93,14 @@ func (s *Service) executeChatAgentTool(ctx context.Context, run domaincopilot.Ag
 			return nil, fmt.Errorf("%w: knowledge search requires selected bases and a bounded query", apperrors.ErrInvalidArgument)
 		}
 		arguments = map[string]any{"knowledgeBaseIds": ids, "query": query, "topK": minPositive(intCondition(input["limit"]), 5)}
-	case "k8s.workloads.overview", "k8s.nodes.detail", "k8s.services.backends":
+	default:
+		if !chatKubernetesReadTool(binding.ToolName) {
+			return nil, fmt.Errorf("%w: tool is not available to chat", apperrors.ErrAccessDenied)
+		}
 		arguments, err = chatResourceToolArguments(run, binding.ToolName, input)
 		if err != nil {
 			return nil, err
 		}
-	default:
-		return nil, fmt.Errorf("%w: tool is not available to chat", apperrors.ErrAccessDenied)
 	}
 	result, err := gateway.InvokeTool(ctx, principal, domainaigateway.ToolInvocationRequest{ToolName: binding.ToolName, SessionID: run.SessionID, Input: arguments})
 	if err != nil {
@@ -122,17 +121,12 @@ func (s *Service) executeChatAgentTool(ctx context.Context, run domaincopilot.Ag
 }
 
 func chatResourceToolArguments(run domaincopilot.AgentRun, toolName string, input map[string]any) (map[string]any, error) {
-	keys := []string{"clusterId", "namespace"}
-	if toolName == "k8s.nodes.detail" {
-		keys = []string{"clusterId", "nodeName"}
-	}
-	if toolName == "k8s.services.backends" {
-		keys = append(keys, "serviceName")
-	}
-	pinned := map[string]string{"clusterId": run.Scope.ClusterID, "namespace": run.Scope.Namespace, "serviceName": run.Scope.Service}
-	arguments := make(map[string]any, len(keys))
+	keys, options := chatResourceToolKeys(toolName)
+	pinned := map[string]string{"clusterId": run.Scope.ClusterID, "namespace": run.Scope.Namespace,
+		"serviceName": run.Scope.Service, "podName": run.Scope.Pod, "nodeName": run.Scope.Node, "deploymentName": run.Scope.Workload}
+	arguments := make(map[string]any, len(keys)+len(options))
 	for _, key := range keys {
-		requested := stringValue(input[key])
+		requested := strings.TrimSpace(stringValue(input[key]))
 		if pinned[key] != "" && requested != "" && pinned[key] != requested {
 			return nil, fmt.Errorf("%w: resource query exceeds the run scope", apperrors.ErrAccessDenied)
 		}
@@ -142,10 +136,93 @@ func chatResourceToolArguments(run domaincopilot.AgentRun, toolName string, inpu
 		}
 		arguments[key] = value
 	}
+	for _, key := range options {
+		if value, ok := input[key]; ok {
+			arguments[key] = value
+		}
+	}
+	if (toolName == "k8s.pods.metrics" || toolName == "k8s.deployments.metrics") && run.Scope.TimeRangeMinutes > 0 {
+		if intCondition(input["rangeMinutes"]) > run.Scope.TimeRangeMinutes {
+			return nil, fmt.Errorf("%w: metric query exceeds the run time range", apperrors.ErrAccessDenied)
+		}
+		if intCondition(input["rangeMinutes"]) == 0 {
+			arguments["rangeMinutes"] = min(15, run.Scope.TimeRangeMinutes)
+		}
+	}
 	if arguments["clusterId"] == "" {
 		return nil, fmt.Errorf("%w: cluster is required", apperrors.ErrInvalidArgument)
 	}
 	return arguments, nil
+}
+
+func chatResourceToolKeys(toolName string) ([]string, []string) {
+	keys := []string{"clusterId", "namespace"}
+	options := []string{}
+	switch toolName {
+	case "k8s.crds.list":
+		keys = []string{"clusterId"}
+	case "k8s.custom_resources.list":
+		keys = append(keys, "crdName")
+	case "k8s.nodes.detail":
+		keys = []string{"clusterId", "nodeName"}
+	case "k8s.pods.describe", "k8s.pods.logs", "k8s.pods.metrics":
+		keys = append(keys, "podName")
+		if toolName == "k8s.pods.logs" {
+			keys = append(keys, "container")
+			options = []string{"tailLines", "sinceSeconds", "previous"}
+		}
+	case "k8s.deployments.rollout_status", "k8s.deployments.events", "k8s.deployments.metrics":
+		keys = append(keys, "deploymentName")
+	case "k8s.services.backends", "k8s.routes.context":
+		keys = append(keys, "serviceName")
+	}
+	if toolName == "k8s.pods.metrics" || toolName == "k8s.deployments.metrics" {
+		options = append(options, "rangeMinutes", "stepSeconds")
+	}
+	if toolName == "k8s.events.list" || toolName == "k8s.deployments.events" {
+		options = append(options, "limit")
+	}
+	return keys, options
+}
+
+func chatKubernetesToolBindings() []domaincopilot.AgentToolBinding {
+	tools := []struct{ name, permission string }{
+		{"k8s.crds.list", appaccess.PermPlatformExtensionsView},
+		{"k8s.custom_resources.list", appaccess.PermPlatformExtensionsView},
+		{"k8s.pods.metrics", appaccess.PermPlatformPodsView},
+		{"k8s.deployments.metrics", appaccess.PermPlatformDeploymentView},
+		{"k8s.namespaces.list", appaccess.PermPlatformNamespacesView},
+		{"k8s.workloads.overview", appaccess.PermPlatformWorkloadsOverviewView},
+		{"k8s.configmaps.list", appaccess.PlatformActionPermission("configuration", "ConfigMap", "view")},
+		{"k8s.secrets.metadata", appaccess.PlatformActionPermission("configuration", "Secret", "view")},
+		{"k8s.helm.releases.list", appaccess.PermPlatformHelmView},
+		{"k8s.pods.list", appaccess.PermPlatformPodsView},
+		{"k8s.pods.logs", appaccess.PermPlatformPodsLogs},
+		{"k8s.pods.describe", appaccess.PermPlatformPodsView},
+		{"k8s.deployments.list", appaccess.PermPlatformDeploymentView},
+		{"k8s.deployments.rollout_status", appaccess.PermPlatformDeploymentView},
+		{"k8s.deployments.events", appaccess.PermObserveEventsView},
+		{"k8s.services.list", appaccess.PlatformActionPermission("network", "Service", "view")},
+		{"k8s.services.backends", appaccess.PlatformActionPermission("network", "Service", "view")},
+		{"k8s.routes.context", appaccess.PlatformActionPermission("network", "Ingress", "view")},
+		{"k8s.storage.context", appaccess.PlatformActionPermission("storage", "PersistentVolumeClaim", "view")},
+		{"k8s.nodes.detail", appaccess.PermPlatformNodesView},
+		{"k8s.events.list", appaccess.PermObserveEventsView},
+	}
+	bindings := make([]domaincopilot.AgentToolBinding, 0, len(tools))
+	for _, tool := range tools {
+		bindings = append(bindings, domaincopilot.AgentToolBinding{ID: tool.name, ToolKind: "mcp", AdapterID: "platform-native.v1", ToolName: tool.name, PermissionKey: tool.permission})
+	}
+	return bindings
+}
+
+func chatKubernetesReadTool(name string) bool {
+	for _, binding := range chatKubernetesToolBindings() {
+		if binding.ToolName == name {
+			return true
+		}
+	}
+	return false
 }
 
 func remainingChatToolEvidenceTokens(run domaincopilot.AgentRun) int {

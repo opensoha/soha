@@ -23,6 +23,7 @@ type Service interface {
 	Ingest(context.Context, networkidentity.Identity, []byte) (domainnetworkingest.Acknowledgement, error)
 	IngestRADIUS(context.Context, networkidentity.Identity, []byte) (domainnetworkingest.Acknowledgement, error)
 	Summary(context.Context, networkidentity.Identity, domainnetworkingest.SummaryFilter) (domainnetworkingest.Summary, error)
+	ProxyRuntimeSamples(context.Context, networkidentity.Identity, string, time.Time, time.Time) (domainnetworkingest.ProxyRuntimeSeries, error)
 }
 
 type ReadyStore interface {
@@ -53,9 +54,48 @@ func NewRouter(service Service, ready ReadyStore, options Options) (*gin.Engine,
 	router.POST("/api/ingest/v1/events:batch", handler.ingest)
 	router.POST("/api/ingest/v1/radius/accounting", handler.radiusAccounting)
 	router.GET("/api/ingest/v1/query/summary", handler.summary)
+	router.GET("/api/ingest/v1/query/proxy-runtime/samples", handler.proxyRuntimeSamples)
 	router.GET("/api/ingest/v1/query/vpn/probe", handler.vpnProbe)
 	router.POST("/api/ingest/v1/query/vpn/metrics", handler.vpnMetrics)
 	return router, nil
+}
+
+func (h *handler) proxyRuntimeSamples(c *gin.Context) {
+	identity, err := authenticatedIdentity(c.Request)
+	if err != nil {
+		apiresponse.Error(c, http.StatusUnauthorized, "client_certificate_required", "a verified network ingest client certificate is required")
+		return
+	}
+	if identity.Kind != "core" {
+		apiresponse.Error(c, http.StatusForbidden, "ingest_query_identity_required", "a dedicated core ingest-query identity is required")
+		return
+	}
+	allowed, retryAfter := h.limiter.Allow("query|"+identity.ID, h.options.RequestsPerMinute, time.Minute)
+	if !allowed {
+		c.Header("Retry-After", fmt.Sprint(retryAfter))
+		apiresponse.Error(c, http.StatusTooManyRequests, "rate_limited", "too many ingest queries")
+		return
+	}
+	var from, to time.Time
+	if raw := c.Query("from"); raw != "" {
+		from, err = time.Parse(time.RFC3339Nano, raw)
+	}
+	if err == nil {
+		if raw := c.Query("to"); raw != "" {
+			to, err = time.Parse(time.RFC3339Nano, raw)
+		}
+	}
+	if err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_ingest_query", "the telemetry query is invalid")
+		return
+	}
+	series, err := h.service.ProxyRuntimeSamples(c.Request.Context(), identity, c.Query("instanceId"), from, to)
+	if err != nil {
+		respondError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	apiresponse.JSON(c, http.StatusOK, gin.H{"data": series})
 }
 
 func (h *handler) summary(c *gin.Context) {

@@ -1,0 +1,61 @@
+name: quality-ocr-manual
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Approved exact base commit SHA
+        required: true
+        type: string
+      head:
+        description: Approved exact head commit SHA
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  review:
+    if: github.ref == 'refs/heads/main' && vars.SOHA_OCR_APPROVED_CODE_SHA != ''
+    environment: quality-ocr
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: trusted
+          ref: ${{ vars.SOHA_OCR_APPROVED_CODE_SHA }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify approved trusted code and data before checkout/install
+        working-directory: trusted
+        env:
+          BASE_SHA: ${{ inputs.base }}
+          HEAD_SHA: ${{ inputs.head }}
+          SOHA_OCR_APPROVED_CODE_SHA: ${{ vars.SOHA_OCR_APPROVED_CODE_SHA }}
+          SOHA_OCR_APPROVED_BASE: ${{ vars.SOHA_OCR_APPROVED_BASE }}
+          SOHA_OCR_APPROVED_HEAD: ${{ vars.SOHA_OCR_APPROVED_HEAD }}
+        run: python3 .agents/skills/soha-security/scripts/ocr.py ci-guard --base "$BASE_SHA" --head "$HEAD_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: artifact
+          ref: ${{ inputs.head }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build trusted fixed OCR image
+        working-directory: trusted
+        run: docker build -t opensoha-ocr:1.12.11 .agents/skills/soha-security/tools
+      - name: Review approved source; never execute head scripts
+        working-directory: trusted
+        env:
+          BASE_SHA: ${{ inputs.base }}
+          HEAD_SHA: ${{ inputs.head }}
+          SOHA_OCR_ENABLED: '1'
+          SOHA_OCR_APPROVAL_ID: ${{ vars.SOHA_OCR_APPROVAL_ID }}
+          SOHA_OCR_ALLOWED_HOST: ${{ vars.SOHA_OCR_ALLOWED_HOST }}
+          OCR_LLM_URL: ${{ vars.OCR_LLM_URL }}
+          OCR_LLM_MODEL: ${{ vars.OCR_LLM_MODEL }}
+          OCR_LLM_TOKEN: ${{ secrets.OCR_LLM_TOKEN }}
+        run: |
+          set -euo pipefail
+          OCR_IMAGE=$(docker image inspect opensoha-ocr:1.12.11 --format '{{.Id}}')
+          python3 .agents/skills/soha-security/scripts/ocr.py review --repo "$(realpath ../artifact)" --base "$BASE_SHA" --head "$HEAD_SHA" --image "$OCR_IMAGE" --output .tmp/quality/ocr-managed.json
+      # Review-only: no comments, branch writes or raw findings uploads.

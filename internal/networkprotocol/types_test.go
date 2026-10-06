@@ -76,6 +76,25 @@ func TestValidateIngestBatchAllowsEndpointProxyAggregateOnly(t *testing.T) {
 	}
 }
 
+func TestValidateIngestBatchRestrictsProxyRuntimeSamples(t *testing.T) {
+	now := time.Now().UTC()
+	batch := IngestBatch{SchemaVersion: IngestSchemaVersion, BatchID: "batch-1", ProducerID: "proxy-1", ProducerKind: "proxy", SentAt: now,
+		Events: []IngestEvent{{ID: "sample-1", Type: EventProxyRuntimeSample, Sequence: 1, OccurredAt: now,
+			Payload: []byte(`{"engine":"sing-box","uptimeSeconds":10,"uploadTotal":100,"downloadTotal":200,"activeConnections":1}`)}}}
+	if err := ValidateIngestBatch(batch, now, time.Minute, time.Hour, 10); err != nil {
+		t.Fatalf("valid proxy runtime sample = %v", err)
+	}
+	batch.ProducerKind = "endpoint"
+	if err := ValidateIngestBatch(batch, now, time.Minute, time.Hour, 10); err == nil {
+		t.Fatal("endpoint accepted server proxy runtime sample")
+	}
+	batch.ProducerKind = "proxy"
+	batch.Events[0].Payload = []byte(`{"engine":"sing-box","uptimeSeconds":10,"uploadTotal":-1,"downloadTotal":200}`)
+	if err := ValidateIngestBatch(batch, now, time.Minute, time.Hour, 10); err == nil {
+		t.Fatal("negative proxy sample total was accepted")
+	}
+}
+
 func TestEventHashIsCanonical(t *testing.T) {
 	left := json.RawMessage(`{"id":"e","type":"runtime.heartbeat","sequence":1,"occurredAt":"2026-09-02T08:00:00Z","payload":{"status":"healthy","configurationVersion":1,"policyVersion":1,"uptimeSeconds":2}}`)
 	right := json.RawMessage(`{ "payload": { "uptimeSeconds": 2, "policyVersion": 1, "configurationVersion": 1, "status": "healthy" }, "occurredAt": "2026-09-02T08:00:00Z", "sequence": 1, "type": "runtime.heartbeat", "id": "e" }`)

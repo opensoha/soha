@@ -69,6 +69,7 @@ type podIdentity struct {
 type metricsSupport struct {
 	*resourceAccess
 	resolver   ConnectionResolver
+	agent      AgentClientFactory[PrometheusAgent]
 	httpClient *http.Client
 }
 
@@ -96,6 +97,7 @@ func (w *Workloads) GetPodMetrics(ctx context.Context, principal domainidentity.
 		RangeMinutes: rangeMinutes,
 		StepSeconds:  stepSeconds,
 	}
+	ctx = context.WithValue(ctx, prometheusClusterKey{}, connection.Summary.ID)
 	settings := s.resolveClusterPrometheusSettings(ctx, connection.Summary.ID)
 	if rangeMinutes <= 0 {
 		rangeMinutes = settings.DefaultRangeMinutes
@@ -287,6 +289,7 @@ func (n *Network) listPodsBySelector(ctx context.Context, connection domainclust
 }
 
 func (s *metricsSupport) queryResourceMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name string, podNames []string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	ctx = context.WithValue(ctx, prometheusClusterKey{}, clusterID)
 	view := domainresource.ResourceMetricsView{
 		ResourceKind: kind,
 		ResourceName: name,
@@ -551,6 +554,7 @@ func podMetricsKey(namespace, name string) string {
 }
 
 func (s *metricsSupport) listPodUsageValues(ctx context.Context, settings domainsettings.PrometheusSettings, clusterID string, pods []podIdentity) (map[string]podUsageValue, error) {
+	ctx = context.WithValue(ctx, prometheusClusterKey{}, clusterID)
 	if len(pods) == 0 || !settings.Enabled || strings.TrimSpace(settings.BaseURL) == "" {
 		return nil, nil
 	}
@@ -775,7 +779,7 @@ func (s *metricsSupport) queryPrometheusRange(ctx context.Context, baseURL, bear
 	if strings.TrimSpace(bearerToken) != "" {
 		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
 	}
-	response, err := s.httpClient.Do(request)
+	response, err := s.doPrometheusRequest(ctx, request)
 	if err != nil {
 		return nil, 0, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 	}
@@ -846,7 +850,7 @@ func (s *metricsSupport) queryPrometheusInstantByPod(ctx context.Context, baseUR
 		request.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
 	}
 
-	response, err := s.httpClient.Do(request)
+	response, err := s.doPrometheusRequest(ctx, request)
 	if err != nil {
 		return nil, err
 	}

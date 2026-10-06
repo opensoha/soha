@@ -23,7 +23,9 @@ import (
 const (
 	agentReverseSessionTransport = "reverse_session"
 	agentInstallTicketTTL        = 15 * time.Minute
-	agentImage                   = "ghcr.io/opensoha/soha-agent:v0.1.6"
+	agentVersion                 = "v0.1.9"
+	agentImageRepository         = "ghcr.io/opensoha/soha-agent"
+	agentImage                   = agentImageRepository + ":" + agentVersion
 )
 
 var ErrAgentInstallationExpired = errors.New("agent installation expired")
@@ -212,10 +214,12 @@ func renderAgentManifest(connection domaincluster.Connection, accessURL string) 
 		"security": map[string]any{"allowed_actions": []string{
 			"platform.deployments.restart", "platform.deployments.scale", "platform.deployments.image", "platform.deployments.rollback",
 			"platform.statefulsets.restart", "platform.statefulsets.scale", "platform.daemonsets.restart",
+			"runtime.execution_tasks.cancel", "platform.pods.exec", "platform.nodes.drain", "platform.resources.apply", "platform.resources.create", "platform.resources.delete", "platform.custom_resources.list", "platform.custom_resources.create", "platform.custom_resources.apply", "platform.custom_resources.delete", "platform.port_forwards.create", "platform.port_forwards.tunnel", "platform.port_forwards.delete",
 		}},
-		"audit": map[string]any{"file_path": ""},
+		"prometheus": map[string]any{"base_url": metadataString(connection.Metadata, "prometheus_url"), "bearer_token": ""},
+		"audit":      map[string]any{"file_path": ""},
 		"control_plane": map[string]any{
-			"enabled": false, "base_url": strings.TrimRight(accessURL, "/"), "bearer_token": "", "agent_id": connection.Summary.ID,
+			"enabled": true, "provider_kinds": []string{}, "base_url": strings.TrimRight(accessURL, "/"), "bearer_token": "", "agent_id": connection.Summary.ID,
 			"runtime_endpoint": "http://127.0.0.1:18080",
 			"session":          map[string]any{"enabled": true, "reconnect_min": "1s", "reconnect_max": "30s", "handshake_timeout": "15s", "max_streams": 64},
 		},
@@ -229,7 +233,7 @@ func renderAgentManifest(connection domaincluster.Connection, accessURL string) 
 	}
 
 	readRules := []map[string]any{
-		{"apiGroups": []string{""}, "resources": []string{"configmaps", "endpoints", "events", "limitranges", "namespaces", "nodes", "persistentvolumeclaims", "persistentvolumes", "pods", "pods/log", "resourcequotas", "secrets", "serviceaccounts", "services"}, "verbs": []string{"get", "list", "watch"}},
+		{"apiGroups": []string{""}, "resources": []string{"configmaps", "endpoints", "events", "limitranges", "namespaces", "nodes", "persistentvolumeclaims", "persistentvolumes", "pods", "pods/log", "replicationcontrollers", "resourcequotas", "secrets", "serviceaccounts", "services"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "deployments/scale", "replicasets", "statefulsets", "statefulsets/scale"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"batch"}, "resources": []string{"cronjobs", "jobs"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"networking.k8s.io"}, "resources": []string{"ingressclasses", "ingresses", "networkpolicies"}, "verbs": []string{"get", "list", "watch"}},
@@ -247,24 +251,48 @@ func renderAgentManifest(connection domaincluster.Connection, accessURL string) 
 		{"apiGroups": []string{"metrics.k8s.io"}, "resources": []string{"nodes", "pods"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "deployments/scale", "statefulsets", "statefulsets/scale"}, "verbs": []string{"update", "patch"}},
 	}
+	readRules = append(readRules,
+		map[string]any{"apiGroups": []string{""}, "resources": []string{"configmaps", "limitranges", "namespaces", "nodes", "persistentvolumeclaims", "persistentvolumes", "pods", "replicationcontrollers", "resourcequotas", "secrets", "serviceaccounts", "services"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "replicasets", "statefulsets"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"batch"}, "resources": []string{"cronjobs", "jobs"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"networking.k8s.io"}, "resources": []string{"ingressclasses", "ingresses", "networkpolicies"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"autoscaling"}, "resources": []string{"horizontalpodautoscalers"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"policy"}, "resources": []string{"poddisruptionbudgets"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"admissionregistration.k8s.io"}, "resources": []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"node.k8s.io"}, "resources": []string{"runtimeclasses"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"rbac.authorization.k8s.io"}, "resources": []string{"clusterrolebindings", "clusterroles", "rolebindings", "roles"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"scheduling.k8s.io"}, "resources": []string{"priorityclasses"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"storage.k8s.io"}, "resources": []string{"storageclasses"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"apiextensions.k8s.io"}, "resources": []string{"customresourcedefinitions"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"coordination.k8s.io"}, "resources": []string{"leases"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{"gateway.networking.k8s.io"}, "resources": []string{"backendtlspolicies", "gatewayclasses", "gateways", "grpcroutes", "httproutes", "referencegrants", "tcproutes", "tlsroutes", "udproutes"}, "verbs": []string{"create", "update", "patch", "delete"}},
+		map[string]any{"apiGroups": []string{""}, "resources": []string{"pods/exec", "pods/portforward", "pods/eviction"}, "verbs": []string{"create"}},
+		map[string]any{"apiGroups": []string{"authorization.k8s.io"}, "resources": []string{"subjectaccessreviews", "selfsubjectaccessreviews"}, "verbs": []string{"create"}},
+	)
+	for _, rule := range customResourceRules(connection.Metadata) {
+		if len(rule.Namespaces) == 0 {
+			readRules = append(readRules, map[string]any{"apiGroups": []string{rule.APIGroup}, "resources": rule.Resources, "verbs": rule.Verbs})
+		}
+	}
 	objects := []map[string]any{
 		{"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "soha-agent"}},
 		{"apiVersion": "v1", "kind": "ServiceAccount", "metadata": map[string]any{"name": "soha-agent", "namespace": "soha-agent"}},
 		{"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRole", "metadata": map[string]any{"name": "soha-agent"}, "rules": readRules},
 		{"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "ClusterRoleBinding", "metadata": map[string]any{"name": "soha-agent"}, "roleRef": map[string]any{"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": "soha-agent"}, "subjects": []map[string]any{{"kind": "ServiceAccount", "name": "soha-agent", "namespace": "soha-agent"}}},
 		{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "soha-agent-config", "namespace": "soha-agent"}, "data": map[string]any{"agent.config.yaml": string(configData)}},
-		{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]any{"name": "soha-agent-secrets", "namespace": "soha-agent"}, "type": "Opaque", "stringData": map[string]any{"agent-bearer-token": token, "control-plane-bearer-token": token}},
+		{"apiVersion": "v1", "kind": "Secret", "metadata": map[string]any{"name": "soha-agent-secrets", "namespace": "soha-agent"}, "type": "Opaque", "stringData": map[string]any{"agent-bearer-token": token, "control-plane-bearer-token": token, "prometheus-bearer-token": metadataString(connection.Metadata, "prometheus_bearer_token")}},
 		{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": map[string]any{"name": "soha-agent", "namespace": "soha-agent"}, "spec": map[string]any{
 			"replicas": 1,
 			"selector": map[string]any{"matchLabels": map[string]any{"app.kubernetes.io/name": "soha-agent"}},
 			"template": map[string]any{
-				"metadata": map[string]any{"labels": map[string]any{"app.kubernetes.io/name": "soha-agent", "app.kubernetes.io/part-of": "opensoha"}},
+				"metadata": map[string]any{"annotations": map[string]any{"soha.io/config-checksum": fmt.Sprintf("%x", sha256.Sum256(append(configData, []byte(token+metadataString(connection.Metadata, "prometheus_bearer_token"))...)))}, "labels": map[string]any{"app.kubernetes.io/name": "soha-agent", "app.kubernetes.io/part-of": "opensoha"}},
 				"spec": map[string]any{"serviceAccountName": "soha-agent", "containers": []map[string]any{{
 					"name": "soha-agent", "image": agentImage, "imagePullPolicy": "IfNotPresent",
 					"ports": []map[string]any{{"name": "http", "containerPort": 18080}},
 					"env": []map[string]any{
 						{"name": "SOHA_AGENT_CONFIG_FILE", "value": "/etc/soha-agent/agent.config.yaml"},
 						{"name": "SOHA_AGENT_AUTH_BEARER_TOKEN", "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": "soha-agent-secrets", "key": "agent-bearer-token"}}},
+						{"name": "SOHA_AGENT_PROMETHEUS_BEARER_TOKEN", "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": "soha-agent-secrets", "key": "prometheus-bearer-token"}}},
 						{"name": "SOHA_AGENT_CONTROL_PLANE_BEARER_TOKEN", "valueFrom": map[string]any{"secretKeyRef": map[string]any{"name": "soha-agent-secrets", "key": "control-plane-bearer-token"}}},
 					},
 					"volumeMounts":   []map[string]any{{"name": "config", "mountPath": "/etc/soha-agent", "readOnly": true}},
@@ -274,6 +302,15 @@ func renderAgentManifest(connection domaincluster.Connection, accessURL string) 
 				}}, "volumes": []map[string]any{{"name": "config", "configMap": map[string]any{"name": "soha-agent-config"}}}},
 			},
 		}},
+	}
+	for index, rule := range customResourceRules(connection.Metadata) {
+		for _, namespace := range rule.Namespaces {
+			name := fmt.Sprintf("soha-agent-custom-%d", index)
+			objects = append(objects,
+				map[string]any{"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role", "metadata": map[string]any{"name": name, "namespace": namespace}, "rules": []map[string]any{{"apiGroups": []string{rule.APIGroup}, "resources": rule.Resources, "verbs": rule.Verbs}}},
+				map[string]any{"apiVersion": "rbac.authorization.k8s.io/v1", "kind": "RoleBinding", "metadata": map[string]any{"name": name, "namespace": namespace}, "roleRef": map[string]any{"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": name}, "subjects": []map[string]any{{"kind": "ServiceAccount", "name": "soha-agent", "namespace": "soha-agent"}}},
+			)
+		}
 	}
 	documents := make([]string, 0, len(objects))
 	for _, object := range objects {

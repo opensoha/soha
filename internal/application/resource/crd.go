@@ -3,8 +3,10 @@ package resource
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -27,6 +29,37 @@ func (c *CustomResources) ListCRDs(ctx context.Context, principal domainidentity
 	return items, nil
 }
 
+func (c *CustomResources) DeleteCRDDefinition(ctx context.Context, principal domainidentity.Principal, clusterID, name, expectedUID string) error {
+	if strings.TrimSpace(name) == "" || strings.TrimSpace(expectedUID) == "" || len(expectedUID) > 128 {
+		return fmt.Errorf("%w: CRD name and deletion identity are required", apperrors.ErrInvalidArgument)
+	}
+	connection, _, err := c.authorize(ctx, principal, clusterID, "", "CustomResourceDefinition", domainaccess.ActionDelete)
+	if err != nil {
+		return err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		var client CustomResourceAgent
+		client, err = c.customResourceAgentClient(connection)
+		if err == nil {
+			err = wrapAgentResourceError(client.DeleteCRDDefinition(ctx, name, expectedUID))
+		}
+	} else {
+		var direct DirectCustomResource
+		direct, err = c.directCustomResources()
+		if err == nil {
+			err = direct.DeleteCRDDefinition(ctx, connection.Summary.ID, name, expectedUID)
+		}
+	}
+	if err != nil {
+		_ = c.recordAudit(ctx, principal, clusterID, "", "CRD", name, string(domainaccess.ActionDelete), "failure", err.Error())
+		return err
+	}
+	summary := "requested CRD definition and instance deletion; finalizers may still be pending"
+	_ = c.recordAudit(ctx, principal, connection.Summary.ID, "", "CRD", name, string(domainaccess.ActionDelete), "success", summary)
+	c.recordOperation(ctx, principal, "platform.crd.delete", connection.Summary.ID, "", "CRD", name, summary, map[string]any{"crdName": name})
+	return nil
+}
+
 func (c *CustomResources) ListCRDResources(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace string) ([]domainresource.CustomResourceView, error) {
 	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionList)
 	if err != nil {
@@ -41,15 +74,34 @@ func (c *CustomResources) ListCRDResources(ctx context.Context, principal domain
 	if err != nil {
 		return nil, err
 	}
-	items, source, err := c.listCustomResources(ctx, connection, definition, namespace)
+	allowed := stringifyActions(decision.AllowedActions)
+	reviewActions := slices.Clone(allowed)
+	if !slices.Contains(reviewActions, string(domainaccess.ActionList)) {
+		reviewActions = append(reviewActions, string(domainaccess.ActionList))
+	}
+	broadActions, err := c.customResourceActions(ctx, connection, definition, authNamespace, "", reviewActions)
 	if err != nil {
 		return nil, err
 	}
-	for index := range items {
-		items[index].AllowedActions = stringifyActions(decision.AllowedActions)
+	var items []domainresource.CustomResourceView
+	source := "agent"
+	if !slices.Contains(broadActions, string(domainaccess.ActionList)) {
+		if authNamespace != "" || !definition.Namespaced || connection.Summary.ConnectionMode != domaincluster.ConnectionModeAgent {
+			return nil, apperrors.ErrAccessDenied
+		}
+		items, err = c.listGrantedCustomResourceNamespaces(ctx, principal, connection, definition, decision)
+	} else {
+		broadActions = slices.DeleteFunc(broadActions, func(action string) bool { return !slices.Contains(allowed, action) })
+		items, source, err = c.listCustomResources(ctx, connection, definition, authNamespace)
+		if err == nil {
+			if definition.Namespaced {
+				items = filterScopedNamespaceItems(items, decision, func(item domainresource.CustomResourceView) string { return item.Namespace })
+			}
+			err = c.populateCustomResourceListActions(ctx, connection, definition, items, allowed, map[string][]string{authNamespace: broadActions})
+		}
 	}
-	if definition.Namespaced {
-		items = filterScopedNamespaceItems(items, decision, func(item domainresource.CustomResourceView) string { return item.Namespace })
+	if err != nil {
+		return nil, err
 	}
 	_ = c.recordAudit(ctx, principal, connection.Summary.ID, authNamespace, definition.Kind, "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed custom resources for crd %s via %s", crdName, source))
 	return items, nil
@@ -69,6 +121,9 @@ func (c *CustomResources) CreateCRDResourceFromYAML(ctx context.Context, princip
 		return domainresource.ResourceYAMLView{}, err
 	}
 	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionCreate); err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	if err := c.requireCustomResourceAction(ctx, connection, definition, effectiveNamespace, "", domainaccess.ActionCreate); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
 	created, source, err := c.createCustomResource(ctx, connection, definition, effectiveNamespace, content)
@@ -101,6 +156,9 @@ func (c *CustomResources) GetCRDResourceYAML(ctx context.Context, principal doma
 	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionView); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
+	if err := c.requireCustomResourceAction(ctx, connection, definition, effectiveNamespace, name, domainaccess.ActionView); err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
 	item, source, err := c.getCustomResourceYAML(ctx, connection, definition, effectiveNamespace, name)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
@@ -127,6 +185,9 @@ func (c *CustomResources) ApplyCRDResourceYAML(ctx context.Context, principal do
 		return domainresource.ResourceYAMLView{}, err
 	}
 	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionUpdate); err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	if err := c.requireCustomResourceAction(ctx, connection, definition, effectiveNamespace, name, domainaccess.ActionUpdate); err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
 	updated, source, err := c.applyCustomResourceYAML(ctx, connection, definition, effectiveNamespace, name, content)
@@ -157,6 +218,9 @@ func (c *CustomResources) DeleteCRDResource(ctx context.Context, principal domai
 		return err
 	}
 	if _, _, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, effectiveNamespace, definition.Kind, domainaccess.ActionDelete); err != nil {
+		return err
+	}
+	if err := c.requireCustomResourceAction(ctx, connection, definition, effectiveNamespace, name, domainaccess.ActionDelete); err != nil {
 		return err
 	}
 	source, err := c.deleteCustomResource(ctx, connection, definition, effectiveNamespace, name, expectedUID)
@@ -309,9 +373,12 @@ func (c *CustomResources) directCustomResources() (DirectCustomResource, error) 
 }
 
 func populateAllowedActionsCRDs(items []domainresource.CRDView, decision domainaccess.Decision) {
+	allowed := stringifyActions(decision.AllowedActions)
 	for index := range items {
 		if len(items[index].AllowedActions) == 0 {
-			items[index].AllowedActions = stringifyActions(decision.AllowedActions)
+			items[index].AllowedActions = slices.Clone(allowed)
+		} else {
+			items[index].AllowedActions = slices.DeleteFunc(items[index].AllowedActions, func(action string) bool { return !slices.Contains(allowed, action) })
 		}
 	}
 }
@@ -429,4 +496,60 @@ func (c *CustomResources) authorizeCRDDefinitionAccess(ctx context.Context, prin
 
 func (c *CustomResources) authorizeCustomResourceAccess(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind string, action domainaccess.Action) (domaincluster.Connection, domainaccess.Decision, error) {
 	return c.authorizeResourceGroup(ctx, principal, clusterID, namespace, "extensions", kind, action)
+}
+
+func (c *CustomResources) customResourceActions(ctx context.Context, connection domaincluster.Connection, definition crdResourceDefinition, namespace, name string, allowed []string) ([]string, error) {
+	if connection.Summary.ConnectionMode != domaincluster.ConnectionModeAgent {
+		return allowed, nil
+	}
+	granted := configuredCustomResourceActions(connection, definition, namespace, allowed)
+	if len(granted) == 0 {
+		return []string{}, nil
+	}
+	client, err := c.customResourceAgentClient(connection)
+	if err != nil {
+		return nil, err
+	}
+	runtimeActions, err := client.CustomResourceActions(ctx, definition.AgentDefinition(), namespace, name)
+	if err != nil {
+		return nil, wrapAgentResourceError(err)
+	}
+	result := []string{}
+	for _, action := range granted {
+		if slices.Contains(runtimeActions, action) {
+			result = append(result, action)
+		}
+	}
+	return result, nil
+}
+func (c *CustomResources) GetCRDResourceAccess(ctx context.Context, principal domainidentity.Principal, clusterID, crdName, namespace string) (contractresource.CustomResourceAccess, error) {
+	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, clusterID, domainaccess.ActionView)
+	if err != nil {
+		return contractresource.CustomResourceAccess{}, err
+	}
+	definition, err := c.resolveCRDResourceDefinition(ctx, connection, crdName)
+	if err != nil {
+		return contractresource.CustomResourceAccess{}, err
+	}
+	ns := normalizeCustomResourceNamespace(namespace, definition.Namespaced)
+	_, decision, err := c.authorizeCustomResourceAccess(ctx, principal, clusterID, ns, definition.Kind, domainaccess.ActionView)
+	if err != nil {
+		return contractresource.CustomResourceAccess{}, err
+	}
+	actions, err := c.customResourceActions(ctx, connection, definition, ns, "", stringifyActions(decision.AllowedActions))
+	return contractresource.CustomResourceAccess{AllowedActions: actions}, err
+}
+
+func (c *CustomResources) requireCustomResourceAction(ctx context.Context, connection domaincluster.Connection, definition crdResourceDefinition, namespace, name string, action domainaccess.Action) error {
+	if connection.Summary.ConnectionMode != domaincluster.ConnectionModeAgent {
+		return nil
+	}
+	allowed, err := c.customResourceActions(ctx, connection, definition, namespace, name, []string{string(action)})
+	if err != nil {
+		return err
+	}
+	if !slices.Contains(allowed, string(action)) {
+		return fmt.Errorf("%w: custom resource access requires a saved Agent grant and Kubernetes RBAC", apperrors.ErrAccessDenied)
+	}
+	return nil
 }
