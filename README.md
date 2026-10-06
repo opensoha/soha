@@ -350,7 +350,7 @@ docker compose -f deploy/docker-compose.yaml --profile network-access \
 ```
 
 Raw Kubernetes uses the same process split. The raw manifests pin the
-application and network-gateway images to `v0.1.9`, which includes the network
+application and network-gateway images to `v0.1.10`, which includes the network
 runtimes. For local development, build both images from this checkout:
 
 ```bash
@@ -403,7 +403,7 @@ docker run -d \
   -e SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_MONITORING_WEBHOOK_TOKEN=soha-123456789012345678901234567890 \
   -e SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY=soha-123456789012345678901234567890 \
-  ghcr.io/opensoha/soha:v0.1.9
+  ghcr.io/opensoha/soha:v0.1.10
 ```
 
 The `soha-data` volume persists companion data. Software packages require an enabled S3-compatible system integration and are not stored on the local application volume.
@@ -443,10 +443,10 @@ Recommended boundaries:
 Build the image:
 
 ```bash
-make deploy-image IMAGE_TAG=v0.1.9
+make deploy-image IMAGE_TAG=v0.1.10
 
 # When proxy.golang.org is unstable:
-make deploy-image IMAGE_TAG=v0.1.9 GOPROXY=https://goproxy.cn,direct
+make deploy-image IMAGE_TAG=v0.1.10 GOPROXY=https://goproxy.cn,direct
 ```
 
 Install with Helm:
