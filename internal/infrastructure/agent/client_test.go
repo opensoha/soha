@@ -762,3 +762,59 @@ func TestNativeMutationsRejectOldAgentWithoutFallback(t *testing.T) {
 		t.Fatalf("unexpected fallback requests: %d", requests)
 	}
 }
+
+func TestBasicResourceErrorsDistinguishOldAgentFromMissingResource(t *testing.T) {
+	for _, test := range []struct {
+		name, contentType string
+		status            int
+		want              error
+	}{
+		{"older Agent", "text/plain", 404, apperrors.ErrUnsupportedOperation},
+		{"resource missing", "application/json", 404, apperrors.ErrNotFound},
+		{"Kubernetes RBAC", "application/json", 403, apperrors.ErrAccessDenied},
+		{"invalid data", "application/json", 400, apperrors.ErrInvalidArgument},
+		{"ownership conflict", "application/json", 409, apperrors.ErrConflict},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v1/platform/ownership-v2/configuration/secrets/auth/detail" || r.URL.Query().Get("namespace") != "team + one" {
+					t.Errorf("wrong request %s", r.URL)
+				}
+				w.Header().Set("Content-Type", test.contentType)
+				w.WriteHeader(test.status)
+				_, _ = w.Write([]byte(`{"error":"private-secret-value"}`))
+			}))
+			defer server.Close()
+			client := &Client{baseURL: server.URL, httpClient: server.Client()}
+			_, err := client.GetSecretDetail(context.Background(), "team + one", "auth")
+			if !errors.Is(err, test.want) || strings.Contains(err.Error(), "private-secret-value") {
+				t.Fatalf("classification: %v", err)
+			}
+		})
+	}
+}
+
+func TestDrainUsesLongRequestTimeoutWithoutChangingSharedClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/platform/ownership-v2/infrastructure/nodes/node/drain" {
+			t.Errorf("wrong path %s", r.URL.Path)
+		}
+		time.Sleep(25 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	httpClient := server.Client()
+	httpClient.Timeout = time.Millisecond
+	client := &Client{baseURL: server.URL, httpClient: httpClient}
+	if err := client.DrainNode(context.Background(), "node", domainresource.NodeDrainInput{TimeoutSeconds: 30}); err != nil {
+		t.Fatal(err)
+	}
+	if httpClient.Timeout != time.Millisecond {
+		t.Fatal("drain mutated the shared client timeout")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := client.DrainNode(ctx, "node", domainresource.NodeDrainInput{}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled drain: %v", err)
+	}
+}

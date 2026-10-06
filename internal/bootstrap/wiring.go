@@ -47,6 +47,7 @@ import (
 	appmonitoring "github.com/opensoha/soha/internal/application/monitoring"
 	appmultiagent "github.com/opensoha/soha/internal/application/multiagent"
 	appnetworkaccess "github.com/opensoha/soha/internal/application/networkaccess"
+	appnetworkproxy "github.com/opensoha/soha/internal/application/networkproxy"
 	appobservability "github.com/opensoha/soha/internal/application/observability"
 	appoperation "github.com/opensoha/soha/internal/application/operation"
 	appplugin "github.com/opensoha/soha/internal/application/plugin"
@@ -128,6 +129,7 @@ import (
 	menurepo "github.com/opensoha/soha/internal/repository/menu"
 	multiagentrepo "github.com/opensoha/soha/internal/repository/multiagent"
 	networkaccessrepo "github.com/opensoha/soha/internal/repository/networkaccess"
+	networkproxyrepo "github.com/opensoha/soha/internal/repository/networkproxy"
 	networkruntimerepo "github.com/opensoha/soha/internal/repository/networkruntime"
 	operationrepo "github.com/opensoha/soha/internal/repository/operationlog"
 	pluginrepo "github.com/opensoha/soha/internal/repository/plugin"
@@ -207,6 +209,7 @@ type repositories struct {
 	secretRepository            *secretrepo.Repository
 	networkAccessRepository     *networkaccessrepo.Repository
 	networkRuntimeRepository    *networkruntimerepo.Repository
+	networkProxyRepository      *networkproxyrepo.Repository
 }
 
 type coreServices struct {
@@ -231,6 +234,7 @@ type coreServices struct {
 	networkEnrollmentService     *appnetworkaccess.EnrollmentService
 	networkAccessGrantService    *appnetworkaccess.AccessGrantService
 	networkIngestQuery           apiHandlers.NetworkTelemetryService
+	networkProxyManagement       *appnetworkproxy.Management
 	clusterService               *appcluster.Service
 	resourceService              *appresource.Service
 	eventService                 *appevent.Service
@@ -439,6 +443,7 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 		secretRepository:            secretrepo.New(db),
 		networkAccessRepository:     networkaccessrepo.New(db),
 		networkRuntimeRepository:    networkruntimerepo.New(db),
+		networkProxyRepository:      networkproxyrepo.New(db),
 	}
 }
 
@@ -567,7 +572,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		infra.cancel()
 		return nil, fmt.Errorf("build network access service: %w", err)
 	}
-	networkEnrollmentService, err := appnetworkaccess.NewEnrollmentService(repos.networkRuntimeRepository, permissionResolver, auditService, operationService)
+	networkEnrollmentService, err := appnetworkaccess.NewEnrollmentService(repos.networkRuntimeRepository, repos.networkProxyRepository, permissionResolver, auditService, operationService)
 	if err != nil {
 		infra.cancel()
 		return nil, fmt.Errorf("build network enrollment service: %w", err)
@@ -582,25 +587,19 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		infra.cancel()
 		return nil, fmt.Errorf("build managed VPN service: %w", err)
 	}
-	var networkIngestQuery apiHandlers.NetworkTelemetryService
-	if cfg.NetworkIngestQuery.Configured() {
-		tlsConfig, err := networkidentity.LoadClientTLS(cfg.NetworkIngestQuery.CertFile, cfg.NetworkIngestQuery.KeyFile, cfg.NetworkIngestQuery.CAFile, cfg.NetworkIngestQuery.ServerName)
-		if err != nil {
-			infra.cancel()
-			return nil, fmt.Errorf("build network ingest query TLS: %w", err)
-		}
-		baseTransport, ok := http.DefaultTransport.(*http.Transport)
-		if !ok {
-			infra.cancel()
-			return nil, fmt.Errorf("default HTTP transport is not configurable")
-		}
-		transport := baseTransport.Clone()
-		transport.TLSClientConfig = tlsConfig
-		networkIngestQuery, err = networkingestquery.New(cfg.NetworkIngestQuery.URL, &http.Client{Transport: transport, Timeout: cfg.NetworkIngestQuery.Timeout}, cfg.NetworkIngestQuery.MaxResponseBytes)
-		if err != nil {
-			infra.cancel()
-			return nil, fmt.Errorf("build network ingest query client: %w", err)
-		}
+	networkIngestQuery, err := buildNetworkIngestQuery(cfg)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	var proxyTrafficReader appnetworkproxy.TrafficReader
+	if reader, ok := networkIngestQuery.(appnetworkproxy.TrafficReader); ok {
+		proxyTrafficReader = reader
+	}
+	networkProxyManagement, err := appnetworkproxy.NewManagement(repos.networkProxyRepository, proxyTrafficReader, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
+	if err != nil {
+		infra.cancel()
+		return nil, fmt.Errorf("build proxy management service: %w", err)
 	}
 	if metrics, ok := networkIngestQuery.(appnetworkaccess.VPNMetricsReader); ok {
 		networkVPNService.SetVPNMetricsReader(metrics)
@@ -687,6 +686,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		networkEnrollmentService:     networkEnrollmentService,
 		networkAccessGrantService:    networkAccessGrantService,
 		networkIngestQuery:           networkIngestQuery,
+		networkProxyManagement:       networkProxyManagement,
 		clusterService:               platformCore.cluster,
 		resourceService:              platformCore.resources,
 		eventService:                 platformCore.events,
@@ -710,6 +710,27 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		directorySyncService:         directorySyncService,
 		directorySyncConnectors:      directorySyncConnectors,
 	}, nil
+}
+
+func buildNetworkIngestQuery(cfg cfgpkg.Config) (apiHandlers.NetworkTelemetryService, error) {
+	if !cfg.NetworkIngestQuery.Configured() {
+		return nil, nil
+	}
+	tlsConfig, err := networkidentity.LoadClientTLS(cfg.NetworkIngestQuery.CertFile, cfg.NetworkIngestQuery.KeyFile, cfg.NetworkIngestQuery.CAFile, cfg.NetworkIngestQuery.ServerName)
+	if err != nil {
+		return nil, fmt.Errorf("build network ingest query TLS: %w", err)
+	}
+	baseTransport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, fmt.Errorf("default HTTP transport is not configurable")
+	}
+	transport := baseTransport.Clone()
+	transport.TLSClientConfig = tlsConfig
+	client, err := networkingestquery.New(cfg.NetworkIngestQuery.URL, &http.Client{Transport: transport, Timeout: cfg.NetworkIngestQuery.Timeout}, cfg.NetworkIngestQuery.MaxResponseBytes)
+	if err != nil {
+		return nil, fmt.Errorf("build network ingest query client: %w", err)
+	}
+	return client, nil
 }
 
 func newVaultKV2Reader(config cfgpkg.SecurityConfig) (appsecret.VaultKV2Reader, error) {
@@ -1457,6 +1478,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Virtualization: newVirtualizationHandler(delivery.virtualizationService),
 		Docker:         newDockerHandler(delivery.dockerService, cfg.Runtime.ExecutionRunnerKeys),
 		NetworkAccess:  apiHandlers.NewNetworkAccessHandler(core.networkAccessService, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery),
+		NetworkProxy:   apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement),
 		NetworkVPN:     apiHandlers.NewNetworkVPNHandler(core.networkVPNService),
 		Access: accesshandler.New(accesshandler.Services{
 			Users: core.accessConsoleService, Catalog: core.accessConsoleService,

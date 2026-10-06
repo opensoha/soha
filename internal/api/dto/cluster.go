@@ -1,36 +1,42 @@
 package dto
 
+import domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+
 type CreateClusterRequest struct {
-	ID                     string            `json:"id"`
-	Name                   string            `json:"name"`
-	Region                 string            `json:"region"`
-	Environment            string            `json:"environment"`
-	Labels                 map[string]string `json:"labels"`
-	ConnectionMode         string            `json:"connectionMode"`
-	Kubeconfig             string            `json:"kubeconfig"`
-	Context                string            `json:"context"`
-	AgentEndpoint          string            `json:"agentEndpoint"`
-	AgentToken             string            `json:"agentToken"`
-	PrometheusBaseURL      string            `json:"prometheusBaseUrl"`
-	PrometheusBearerToken  string            `json:"prometheusBearerToken"`
-	PrometheusClusterLabel string            `json:"prometheusClusterLabel"`
-	GrafanaBaseURL         string            `json:"grafanaBaseUrl"`
+	PrometheusTransport      string                                  `json:"prometheusTransport"`
+	AgentCustomResourceRules []domaincluster.AgentCustomResourceRule `json:"agentCustomResourceRules"`
+	ID                       string                                  `json:"id"`
+	Name                     string                                  `json:"name"`
+	Region                   string                                  `json:"region"`
+	Environment              string                                  `json:"environment"`
+	Labels                   map[string]string                       `json:"labels"`
+	ConnectionMode           string                                  `json:"connectionMode"`
+	Kubeconfig               string                                  `json:"kubeconfig"`
+	Context                  string                                  `json:"context"`
+	AgentEndpoint            string                                  `json:"agentEndpoint"`
+	AgentToken               string                                  `json:"agentToken"`
+	PrometheusBaseURL        string                                  `json:"prometheusBaseUrl"`
+	PrometheusBearerToken    string                                  `json:"prometheusBearerToken"`
+	PrometheusClusterLabel   string                                  `json:"prometheusClusterLabel"`
+	GrafanaBaseURL           string                                  `json:"grafanaBaseUrl"`
 }
 
 type UpdateClusterRequest struct {
-	Name                   string            `json:"name"`
-	Region                 string            `json:"region"`
-	Environment            string            `json:"environment"`
-	Labels                 map[string]string `json:"labels"`
-	ConnectionMode         string            `json:"connectionMode"`
-	Kubeconfig             string            `json:"kubeconfig"`
-	Context                string            `json:"context"`
-	AgentEndpoint          string            `json:"agentEndpoint"`
-	AgentToken             string            `json:"agentToken"`
-	PrometheusBaseURL      string            `json:"prometheusBaseUrl"`
-	PrometheusBearerToken  string            `json:"prometheusBearerToken"`
-	PrometheusClusterLabel string            `json:"prometheusClusterLabel"`
-	GrafanaBaseURL         string            `json:"grafanaBaseUrl"`
+	PrometheusTransport      string                                  `json:"prometheusTransport"`
+	AgentCustomResourceRules []domaincluster.AgentCustomResourceRule `json:"agentCustomResourceRules"`
+	Name                     string                                  `json:"name"`
+	Region                   string                                  `json:"region"`
+	Environment              string                                  `json:"environment"`
+	Labels                   map[string]string                       `json:"labels"`
+	ConnectionMode           string                                  `json:"connectionMode"`
+	Kubeconfig               string                                  `json:"kubeconfig"`
+	Context                  string                                  `json:"context"`
+	AgentEndpoint            string                                  `json:"agentEndpoint"`
+	AgentToken               string                                  `json:"agentToken"`
+	PrometheusBaseURL        string                                  `json:"prometheusBaseUrl"`
+	PrometheusBearerToken    string                                  `json:"prometheusBearerToken"`
+	PrometheusClusterLabel   string                                  `json:"prometheusClusterLabel"`
+	GrafanaBaseURL           string                                  `json:"grafanaBaseUrl"`
 }
 
 type NamespaceUpsertRequest struct {

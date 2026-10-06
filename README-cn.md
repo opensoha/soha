@@ -335,9 +335,8 @@ docker compose -f deploy/docker-compose.yaml --profile network-access \
   network-gateway network-gateway-b network-gateway-c
 ```
 
-原生 Kubernetes 使用同样的进程拆分。在包含网络运行时的发行镜像发布前，
-原始清单使用 `:local` 镜像；v0.1.7 和 v0.1.8 不包含这些新可执行文件。
-先从当前工作树构建两种镜像：
+原生 Kubernetes 使用同样的进程拆分。原始清单固定应用和网络网关镜像为
+`v0.1.10`，其中包含网络运行时。本地开发可以从当前工作树构建两种镜像：
 
 ```bash
 make deploy-image
@@ -346,8 +345,8 @@ docker build --build-context contracts=../soha-contracts \
   -t ghcr.io/opensoha/soha-network-gateway:local .
 ```
 
-将镜像导入每个目标集群节点，或推送到自有镜像仓库后替换
-`deploy/kustomization.yaml` 中两种镜像引用。server、network-control 和 ingest
+本地构建后，将镜像导入每个目标集群节点并将 `deploy/kustomization.yaml`
+中两个 tag 改为 `local`，或推送到自有镜像仓库后替换两种镜像引用。server、network-control 和 ingest
 必须使用同一应用镜像。执行 `kubectl apply -k deploy` 前，需在
 `soha` namespace 创建 `soha-network-runtime-tls`，并提供
 `deploy/network-runtime.yaml` 顶部列出的全部 key。证书必须覆盖实际 Service/

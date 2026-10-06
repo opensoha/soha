@@ -38,8 +38,12 @@ func registerPlatformClusterRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.DELETE("/clusters/:clusterID", deps.Platform.DeleteCluster)
 	protected.GET("/clusters/:clusterID/detail", deps.Platform.DescribeCluster)
 	if deps.AgentConnections != nil {
+		protected.GET("/clusters/:clusterID/agent-upgrade", deps.AgentConnections.AgentUpgradeStatus)
+		protected.POST("/clusters/:clusterID/agent-upgrade", deps.AgentConnections.UpgradeAgent)
 		protected.POST("/clusters/:clusterID/agent-installation", deps.AgentConnections.CreateInstallation)
 	} else {
+		protected.GET("/clusters/:clusterID/agent-upgrade", agentConnectionUnavailable)
+		protected.POST("/clusters/:clusterID/agent-upgrade", agentConnectionUnavailable)
 		protected.POST("/clusters/:clusterID/agent-installation", agentConnectionUnavailable)
 	}
 	protected.GET("/clusters/:clusterID/namespaces", deps.Platform.ListNamespaces)
@@ -209,6 +213,8 @@ func registerPlatformNetworkStorageRoutes(protected gin.IRoutes, deps Dependenci
 
 func registerPlatformExtensionRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/clusters/:clusterID/extensions/crds", deps.Platform.ListCRDs)
+	protected.DELETE("/clusters/:clusterID/extensions/crds/:crdName", deps.Platform.DeleteCRDDefinition)
+	protected.GET("/clusters/:clusterID/extensions/crds/:crdName/access", deps.Platform.GetCRDResourceAccess)
 	protected.GET("/clusters/:clusterID/extensions/crds/:crdName/resources", deps.Platform.ListCRDResources)
 	protected.POST("/clusters/:clusterID/extensions/crds/:crdName/resources", deps.Platform.CreateCRDResource)
 	protected.GET("/clusters/:clusterID/extensions/crds/:crdName/resources/:name/yaml", deps.Platform.GetCRDResourceYAML)

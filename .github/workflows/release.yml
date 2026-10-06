@@ -9,7 +9,7 @@ on:
       web_ref:
         description: "soha-web release tag to embed"
         required: true
-        default: "v0.1.8"
+        default: "v0.1.9"
       contracts_ref:
         description: "Optional assertion of the contracts version pinned in go.mod"
         required: false
@@ -27,7 +27,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      WEB_REF: ${{ inputs.web_ref || 'v0.1.8' }}
+      WEB_REF: ${{ inputs.web_ref || 'v0.1.9' }}
       CONTRACTS_REF: ${{ inputs.contracts_ref }}
       WEB_SHA256: ${{ inputs.web_sha256 }}
     steps:
@@ -153,6 +153,62 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/opensoha/soha-network-gateway:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-contexts: |
+            contracts=./contracts-build-context
+      - name: Publish proxy-mihomo image to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v6
+        with:
+          context: soha
+          file: soha/deploy/Dockerfile
+          target: proxy-runtime-mihomo
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/opensoha/soha-proxy-mihomo:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-contexts: |
+            contracts=./contracts-build-context
+      - name: Publish proxy-sing-box image to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v6
+        with:
+          context: soha
+          file: soha/deploy/Dockerfile
+          target: proxy-runtime-sing-box
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ghcr.io/opensoha/soha-proxy-sing-box:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-contexts: |
+            contracts=./contracts-build-context
+      - name: Publish proxy-v2ray image to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v6
+        with:
+          context: soha
+          file: soha/deploy/Dockerfile
+          target: proxy-runtime-v2ray
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/opensoha/soha-proxy-v2ray:${{ github.ref_name }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-contexts: |
+            contracts=./contracts-build-context
+      - name: Publish radius image to GHCR
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v6
+        with:
+          context: soha
+          file: soha/deploy/Dockerfile
+          target: radius-runtime
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/opensoha/soha-radius:${{ github.ref_name }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           build-contexts: |

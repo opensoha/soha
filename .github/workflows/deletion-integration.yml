@@ -28,11 +28,15 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: go.mod
           cache: true
+      - name: Dedicated lab guards without deployment or models
+        run: python3 -m unittest discover -s scripts -p 'test_quality_lab.py'
       - name: Run actual PostgreSQL deletion scenarios
         env:
           GOWORK: "off"
@@ -45,21 +49,20 @@ jobs:
           go test -json -count=1 -race -timeout=10m \
             -run '^TestApplicationAndClusterDeletionWithPostgres$' \
             ./internal/repository/application | tee deletion-test.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          events = [json.loads(line) for line in Path('deletion-test.json').read_text().splitlines() if line.strip()]
-          name = 'TestApplicationAndClusterDeletionWithPostgres'
-          scoped = [e for e in events if e.get('Test') == name or e.get('Test', '').startswith(name + '/')]
-          if not any(e.get('Test') == name and e.get('Action') == 'pass' for e in scoped):
-              raise SystemExit('Required PostgreSQL deletion test did not pass or did not execute')
-          if any(e.get('Action') in ('skip', 'fail') for e in scoped):
-              raise SystemExit('A required PostgreSQL deletion scenario was skipped or failed')
-          print('Verified: required deletion test executed without skipped scenarios')
-          PY
+          python3 scripts/check-go-test-evidence.py deletion-test.json --exit-code 0
+      - name: Evidence validator counterexamples
+        run: python3 -m unittest discover -s scripts -p 'test_go_test_evidence.py'
+      - name: OCR integrity counterexamples without models
+        run: python3 -m unittest discover -s .agents/skills/soha-security/scripts -p 'test_ocr.py'
+      - name: Build fixed OCR and validate actual rules without network/models
+        run: |
+          set -euo pipefail
+          docker build -t opensoha-ocr:1.12.11 .agents/skills/soha-security/tools
+          export SOHA_OCR_TEST_IMAGE=$(docker image inspect opensoha-ocr:1.12.11 --format '{{.Id}}')
+          python3 -m unittest discover -s .agents/skills/soha-security/scripts -p 'test_ocr_preview.py'
       - name: Upload test evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: postgres-deletion-test
           path: deletion-test.json

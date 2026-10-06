@@ -46,14 +46,13 @@ func (c *Configuration) GetConfigMapDetail(ctx context.Context, principal domain
 	if err != nil {
 		return domainresource.ConfigMapDetailView{}, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.ConfigMapDetailView{}, unsupportedAgentOperation("configmap detail is not supported for agent-connected clusters yet")
-	}
-	direct, err := c.directConfiguration()
-	if err != nil {
-		return domainresource.ConfigMapDetailView{}, err
-	}
-	item, err := direct.GetConfigMapDetail(ctx, clusterID, namespace, name)
+	item, _, err := routeModeValue(connection, c.configurationAgentClient, c.directConfiguration,
+		func(a ConfigurationAgent) (domainresource.ConfigMapDetailView, error) {
+			return a.GetConfigMapDetail(ctx, namespace, name)
+		},
+		func(d DirectConfiguration) (domainresource.ConfigMapDetailView, error) {
+			return d.GetConfigMapDetail(ctx, clusterID, namespace, name)
+		})
 	if err != nil {
 		return domainresource.ConfigMapDetailView{}, err
 	}
@@ -66,15 +65,13 @@ func (c *Configuration) UpdateConfigMapData(ctx context.Context, principal domai
 	if err != nil {
 		return domainresource.ConfigMapDetailView{}, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.ConfigMapDetailView{}, c.unsupportedMutation(ctx, principal, connection, namespace, "ConfigMap", name, domainaccess.ActionUpdate, "configmap data update is not supported for agent-connected clusters yet")
-	}
-	direct, err := c.directConfiguration()
-	if err != nil {
-		_ = c.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionUpdate), "failure", err.Error())
-		return domainresource.ConfigMapDetailView{}, err
-	}
-	item, err := direct.UpdateConfigMapData(ctx, clusterID, namespace, name, data, binaryData)
+	item, _, err := routeModeValue(connection, c.configurationAgentClient, c.directConfiguration,
+		func(a ConfigurationAgent) (domainresource.ConfigMapDetailView, error) {
+			return a.UpdateConfigMapData(ctx, namespace, name, data, binaryData)
+		},
+		func(d DirectConfiguration) (domainresource.ConfigMapDetailView, error) {
+			return d.UpdateConfigMapData(ctx, clusterID, namespace, name, data, binaryData)
+		})
 	if err != nil {
 		_ = c.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return domainresource.ConfigMapDetailView{}, err
@@ -92,14 +89,13 @@ func (c *Configuration) GetSecretDetail(ctx context.Context, principal domainide
 	if err := c.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformConfigurationSecretDataView); err != nil {
 		return domainresource.SecretDetailView{}, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.SecretDetailView{}, unsupportedAgentOperation("secret detail is not supported for agent-connected clusters yet")
-	}
-	direct, err := c.directConfiguration()
-	if err != nil {
-		return domainresource.SecretDetailView{}, err
-	}
-	item, err := direct.GetSecretDetail(ctx, clusterID, namespace, name)
+	item, _, err := routeModeValue(connection, c.configurationAgentClient, c.directConfiguration,
+		func(a ConfigurationAgent) (domainresource.SecretDetailView, error) {
+			return a.GetSecretDetail(ctx, namespace, name)
+		},
+		func(d DirectConfiguration) (domainresource.SecretDetailView, error) {
+			return d.GetSecretDetail(ctx, clusterID, namespace, name)
+		})
 	if err != nil {
 		return domainresource.SecretDetailView{}, err
 	}
@@ -112,15 +108,16 @@ func (c *Configuration) UpdateSecretData(ctx context.Context, principal domainid
 	if err != nil {
 		return domainresource.SecretDetailView{}, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.SecretDetailView{}, c.unsupportedMutation(ctx, principal, connection, namespace, "Secret", name, domainaccess.ActionUpdate, "secret data update is not supported for agent-connected clusters yet")
-	}
-	direct, err := c.directConfiguration()
-	if err != nil {
-		_ = c.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+	if err := c.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformConfigurationSecretDataView); err != nil {
 		return domainresource.SecretDetailView{}, err
 	}
-	item, err := direct.UpdateSecretData(ctx, clusterID, namespace, name, data)
+	item, _, err := routeModeValue(connection, c.configurationAgentClient, c.directConfiguration,
+		func(a ConfigurationAgent) (domainresource.SecretDetailView, error) {
+			return a.UpdateSecretData(ctx, namespace, name, data)
+		},
+		func(d DirectConfiguration) (domainresource.SecretDetailView, error) {
+			return d.UpdateSecretData(ctx, clusterID, namespace, name, data)
+		})
 	if err != nil {
 		_ = c.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionUpdate), "failure", err.Error())
 		return domainresource.SecretDetailView{}, err
@@ -140,23 +137,20 @@ func (c *Configuration) ListSecretReferences(ctx context.Context, principal doma
 
 func (c *Configuration) listConfigReferences(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, configMap bool) ([]domainresource.ConfigReferenceView, error) {
 	kind := "Secret"
-	unsupported := "secret references are not supported for agent-connected clusters yet"
 	if configMap {
 		kind = "ConfigMap"
-		unsupported = "configmap references are not supported for agent-connected clusters yet"
 	}
 	connection, _, err := c.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionView)
 	if err != nil {
 		return nil, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return nil, unsupportedAgentOperation(unsupported)
-	}
-	direct, err := c.directConfiguration()
-	if err != nil {
-		return nil, err
-	}
-	items, err := direct.ListConfigReferences(ctx, clusterID, namespace, name, configMap)
+	items, _, err := routeModeValue(connection, c.configurationAgentClient, c.directConfiguration,
+		func(a ConfigurationAgent) ([]domainresource.ConfigReferenceView, error) {
+			return a.ListConfigReferences(ctx, namespace, name, configMap)
+		},
+		func(d DirectConfiguration) ([]domainresource.ConfigReferenceView, error) {
+			return d.ListConfigReferences(ctx, clusterID, namespace, name, configMap)
+		})
 	if err != nil {
 		return nil, err
 	}

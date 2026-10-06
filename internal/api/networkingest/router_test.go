@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	domainnetworkingest "github.com/opensoha/soha/internal/domain/networkingest"
 	"github.com/opensoha/soha/internal/networkidentity"
@@ -22,6 +23,10 @@ type ingestServiceStub struct {
 
 func (service *ingestServiceStub) Summary(_ context.Context, _ networkidentity.Identity, filter domainnetworkingest.SummaryFilter) (domainnetworkingest.Summary, error) {
 	return domainnetworkingest.Summary{From: filter.From, To: filter.To, Producers: []domainnetworkingest.ProducerSummary{}, ProxyFlows: []domainnetworkingest.ProxyFlowSummary{}}, nil
+}
+
+func (service *ingestServiceStub) ProxyRuntimeSamples(_ context.Context, _ networkidentity.Identity, id string, _, _ time.Time) (domainnetworkingest.ProxyRuntimeSeries, error) {
+	return domainnetworkingest.ProxyRuntimeSeries{InstanceID: id, Samples: []domainnetworkingest.ProxyRuntimeSample{}}, nil
 }
 
 func (service *ingestServiceStub) IngestRADIUS(_ context.Context, identity networkidentity.Identity, raw []byte) (domainnetworkingest.Acknowledgement, error) {
@@ -106,6 +111,15 @@ func TestRouterRoutesFreeRADIUSAccounting(t *testing.T) {
 }
 
 func TestRouterSummaryRequiresDedicatedCoreCertificate(t *testing.T) {
+	testQueryRequiresCoreCertificate(t, "/api/ingest/v1/query/summary?from=2026-09-03T00%3A00%3A00Z&to=2026-09-03T01%3A00%3A00Z&limit=20", "endpoint")
+}
+
+func TestProxyRuntimeSampleQueryRequiresCoreCertificate(t *testing.T) {
+	testQueryRequiresCoreCertificate(t, "/api/ingest/v1/query/proxy-runtime/samples?instanceId=proxy-1", "proxy")
+}
+
+func testQueryRequiresCoreCertificate(t *testing.T, path, deniedKind string) {
+	t.Helper()
 	router, err := NewRouter(&ingestServiceStub{}, readyStoreStub{}, Options{MaxBodyBytes: 1024, RequestsPerMinute: 10})
 	if err != nil {
 		t.Fatal(err)
@@ -115,10 +129,10 @@ func TestRouterSummaryRequiresDedicatedCoreCertificate(t *testing.T) {
 		want int
 	}{
 		{want: http.StatusUnauthorized},
-		{kind: "endpoint", want: http.StatusForbidden},
+		{kind: deniedKind, want: http.StatusForbidden},
 		{kind: "core", want: http.StatusOK},
 	} {
-		request := httptest.NewRequest(http.MethodGet, "/api/ingest/v1/query/summary?from=2026-09-03T00%3A00%3A00Z&to=2026-09-03T01%3A00%3A00Z&limit=20", nil)
+		request := httptest.NewRequest(http.MethodGet, path, nil)
 		if item.kind != "" {
 			identityURI, _ := url.Parse("spiffe://opensoha.local/network-ingest/" + item.kind + "/reader-1")
 			certificate := &x509.Certificate{Raw: []byte("cert"), RawSubjectPublicKeyInfo: []byte("key"), URIs: []*url.URL{identityURI}}

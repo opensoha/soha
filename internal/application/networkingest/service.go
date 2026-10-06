@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,7 +18,10 @@ import (
 type Store interface {
 	Append(context.Context, []domainnetworkingest.Event) (domainnetworkingest.Result, error)
 	Summary(context.Context, domainnetworkingest.SummaryFilter) (domainnetworkingest.Summary, error)
+	ProxyRuntimeSamples(context.Context, string, time.Time, time.Time) (domainnetworkingest.ProxyRuntimeSeries, error)
 }
+
+var proxyInstanceID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
 
 type Options struct {
 	MaxEventsPerBatch int
@@ -152,4 +156,21 @@ func (s *Service) Summary(ctx context.Context, identity networkidentity.Identity
 		summary.ProxyFlows = []domainnetworkingest.ProxyFlowSummary{}
 	}
 	return summary, nil
+}
+
+func (s *Service) ProxyRuntimeSamples(ctx context.Context, identity networkidentity.Identity, instanceID string, from, to time.Time) (domainnetworkingest.ProxyRuntimeSeries, error) {
+	if identity.Scope != networkidentity.ScopeIngest || identity.Kind != "core" {
+		return domainnetworkingest.ProxyRuntimeSeries{}, apperrors.ErrUnauthorized
+	}
+	now := s.now().UTC()
+	if to.IsZero() {
+		to = now
+	}
+	if from.IsZero() {
+		from = to.Add(-time.Hour)
+	}
+	if !proxyInstanceID.MatchString(instanceID) || !to.After(from) || to.Sub(from) > 24*time.Hour || to.After(now.Add(s.options.MaxClockSkew)) {
+		return domainnetworkingest.ProxyRuntimeSeries{}, apperrors.ErrInvalidArgument
+	}
+	return s.store.ProxyRuntimeSamples(ctx, instanceID, from.UTC(), to.UTC())
 }

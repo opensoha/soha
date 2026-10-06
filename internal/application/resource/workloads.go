@@ -211,10 +211,13 @@ func (w *Workloads) SetCronJobSuspend(ctx context.Context, principal domainident
 	if err != nil {
 		return domainresource.CronJobDetailView{}, err
 	}
-	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.CronJobDetailView{}, w.unsupportedMutation(ctx, principal, connection, namespace, "CronJob", name, domainaccess.ActionSuspend, "cronjob suspend is not supported for agent-connected clusters yet")
-	}
-	item, err := w.direct.SetCronJobSuspend(ctx, clusterID, namespace, name, suspend)
+	item, _, err := routeModeValue(connection, w.workloadAgentClient, func() (DirectWorkloads, error) { return w.direct, nil },
+		func(a WorkloadAgent) (domainresource.CronJobDetailView, error) {
+			return a.SetCronJobSuspend(ctx, namespace, name, suspend)
+		},
+		func(d DirectWorkloads) (domainresource.CronJobDetailView, error) {
+			return d.SetCronJobSuspend(ctx, clusterID, namespace, name, suspend)
+		})
 	if err != nil {
 		_ = w.recordAudit(ctx, principal, connection.Summary.ID, namespace, "CronJob", name, string(domainaccess.ActionSuspend), "failure", err.Error())
 		return domainresource.CronJobDetailView{}, err

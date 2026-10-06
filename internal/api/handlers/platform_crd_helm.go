@@ -18,6 +18,21 @@ func (h *crdResourceHandler) ListCRDs(c *gin.Context) {
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
+
+func (h *crdResourceHandler) DeleteCRDDefinition(c *gin.Context) {
+	var query struct {
+		ExpectedUID string `form:"expectedUid" binding:"required,max=128"`
+	}
+	if err := c.ShouldBindQuery(&query); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid deletion identity")
+		return
+	}
+	if err := h.editor.DeleteCRDDefinition(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("clusterID"), c.Param("crdName"), query.ExpectedUID); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
 func (h *crdResourceHandler) ListCRDResources(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -233,4 +248,13 @@ func (h *helmReleaseResourceHandler) DeleteHelmRelease(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+func (h *crdResourceHandler) GetCRDResourceAccess(c *gin.Context) {
+	item, err := h.reader.GetCRDResourceAccess(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("clusterID"), c.Param("crdName"), c.Query("namespace"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }

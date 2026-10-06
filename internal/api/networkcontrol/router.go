@@ -44,6 +44,8 @@ type ReadyStore interface {
 type Options struct {
 	MaxBodyBytes      int64
 	RequestsPerMinute int
+	ProxyRuntime      ProxyRuntime
+	ProxySchemas      *networkprotocol.Schemas
 }
 
 type handler struct {
@@ -57,6 +59,9 @@ func NewRouter(service Service, ready ReadyStore, options Options) (*gin.Engine,
 	if service == nil || ready == nil || options.MaxBodyBytes <= 0 || options.RequestsPerMinute <= 0 {
 		return nil, fmt.Errorf("network control router dependencies and limits are required")
 	}
+	if options.ProxyRuntime != nil && options.ProxySchemas == nil {
+		return nil, fmt.Errorf("proxy runtime schema is required")
+	}
 	handler := &handler{service: service, ready: ready, options: options, limiter: apiMiddleware.NewBoundedRateLimiter(10_000)}
 	router := gin.New()
 	router.Use(gin.Recovery(), apiMiddleware.RequestID())
@@ -68,6 +73,14 @@ func NewRouter(service Service, ready ReadyStore, options Options) (*gin.Engine,
 	router.GET("/api/network-control/v1/runtimes/:runtimeID/nas-session-commands/next", handler.nextNASSessionCommand)
 	router.POST("/api/network-control/v1/runtimes/:runtimeID/*action", handler.action)
 	router.GET("/api/network-control/v1/snapshots/current", handler.snapshot)
+	if options.ProxyRuntime != nil {
+		router.GET("/api/network-control/v1/proxy-instances/:runtimeID/configuration", handler.proxyConfiguration)
+		router.POST("/api/network-control/v1/proxy-instances/:runtimeID/configuration:applied", handler.proxyApplied)
+		router.POST("/api/network-control/v1/proxy-instances/:runtimeID/observations", handler.proxyObservation)
+		router.POST("/api/network-control/v1/proxy-instances/:runtimeID/connections", handler.proxyConnections)
+		router.GET("/api/network-control/v1/proxy-instances/:runtimeID/close-commands/next", handler.proxyNextClose)
+		router.POST("/api/network-control/v1/proxy-instances/:runtimeID/close-commands/:commandID/result", handler.proxyCloseResult)
+	}
 	return router, nil
 }
 

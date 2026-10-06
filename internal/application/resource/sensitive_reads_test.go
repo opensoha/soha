@@ -35,6 +35,14 @@ func TestSensitiveReadsRequireDedicatedRuntimePermission(t *testing.T) {
 			},
 		},
 		{
+			name:    "secret data update response",
+			wantKey: appaccess.PermPlatformConfigurationSecretDataView,
+			call: func(ctx context.Context, principal domainidentity.Principal, access *resourceAccess) error {
+				_, err := (&Configuration{resourceAccess: access}).UpdateSecretData(ctx, principal, "cluster-a", "team-a", "registry", nil)
+				return err
+			},
+		},
+		{
 			name:    "secret yaml",
 			wantKey: appaccess.PermPlatformConfigurationSecretDataView,
 			call: func(ctx context.Context, principal domainidentity.Principal, access *resourceAccess) error {

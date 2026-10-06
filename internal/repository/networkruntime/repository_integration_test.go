@@ -51,7 +51,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 		t.Fatalf("create migration staging directory: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(migrationDir) })
-	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql", "0077_network_vpn_selection.sql"} {
+	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql", "0077_network_vpn_selection.sql", "0102_network_proxy_instances.sql"} {
 		contents, err := os.ReadFile(filepath.Join(migrationSource, name)) // #nosec G304 -- fixed migration names from the repository fixture list.
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -100,6 +100,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	scenario.rotateEndpoint(t)
 	scenario.rotateGateway(t)
 	scenario.checkPendingAndProxyOnly(t)
+	scenario.checkProxyEnrollmentWithoutWireGuardKey(t)
 }
 
 type runtimeRepositoryScenario struct {
@@ -891,6 +892,30 @@ func (s *runtimeRepositoryScenario) checkPendingAndProxyOnly(t *testing.T) {
 	s.err = err
 	if s.err != nil || mihomoOnlyConfiguration.Desired.WireGuard != nil || mihomoOnlyConfiguration.Desired.Mihomo == nil || mihomoOnlyConfiguration.Desired.Mihomo.Mode != domainnetworkaccess.MihomoModeAppSubscription {
 		t.Fatalf("mihomo-only configuration = %#v, %v", mihomoOnlyConfiguration, s.err)
+	}
+}
+
+func (s *runtimeRepositoryScenario) checkProxyEnrollmentWithoutWireGuardKey(t *testing.T) {
+	t.Helper()
+	runtimeID := "proxy-" + s.suffix
+	if err := s.store.Exec(s.ctx, `INSERT INTO public.network_proxy_instances (id, name, engine) VALUES ($1, $2, 'mihomo')`, runtimeID, "Proxy "+s.suffix); err != nil {
+		t.Fatalf("insert proxy instance: %v", err)
+	}
+	challenge := enrollment(s.suffix+"-proxy", runtimeID, runtimeID, s.subjectID, s.secondNow)
+	challenge.RuntimeKind = "proxy"
+	if err := s.repository.CreateEnrollment(s.ctx, challenge); err != nil {
+		t.Fatalf("CreateEnrollment(proxy): %v", err)
+	}
+	credentialInput := consumption(challenge, s.suffix+"-proxy-certificate", s.secondNow)
+	credentialInput.WireGuardPublicKey = ""
+	credentialInput.Capabilities = []string{"proxy"}
+	credential, configuration, err := s.repository.ConsumeEnrollment(s.ctx, credentialInput, s.snapshot, s.secondNow.Add(5*time.Minute))
+	if err != nil || credential.RuntimeKind != "proxy" || configuration.ConfigurationVersion != 0 {
+		t.Fatalf("ConsumeEnrollment(proxy) = credential %#v, configuration %#v, %v", credential, configuration, err)
+	}
+	var wireGuardKey *string
+	if err := s.store.SQLDB().QueryRowContext(s.ctx, `SELECT wireguard_public_key FROM public.network_runtime_credentials WHERE id = $1`, credential.ID).Scan(&wireGuardKey); err != nil || wireGuardKey != nil {
+		t.Fatalf("proxy wireguard_public_key = %v, %v; want NULL", wireGuardKey, err)
 	}
 }
 

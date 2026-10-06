@@ -847,6 +847,9 @@ func (s *Service) invokeDeliveryContextTool(ctx context.Context, principal domai
 }
 
 type kubernetesToolRequest struct {
+	CRDName        string `json:"crdName"`
+	RangeMinutes   int    `json:"rangeMinutes"`
+	StepSeconds    int    `json:"stepSeconds"`
 	ClusterID      string `json:"clusterId"`
 	Namespace      string `json:"namespace"`
 	PodName        string `json:"podName"`
@@ -881,6 +884,8 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 	}
 	related := map[string]any{"clusterId": req.ClusterID, "namespace": req.Namespace}
 	switch tool.Name {
+	case "k8s.crds.list", "k8s.custom_resources.list", "k8s.pods.metrics", "k8s.deployments.metrics":
+		return s.invokeKubernetesDiagnosticReadTool(ctx, principal, tool.Name, req, related)
 	case "k8s.namespaces.list", "k8s.workloads.overview", "k8s.configmaps.list", "k8s.secrets.metadata", "k8s.helm.releases.list":
 		return s.invokeKubernetesWorkbenchReadTool(ctx, principal, tool.Name, req, related)
 	case "k8s.pods.list", "k8s.pods.logs", "k8s.pods.describe":
@@ -904,6 +909,9 @@ func (s *Service) invokeKubernetesWorkbenchReadTool(ctx context.Context, princip
 	switch toolName {
 	case "k8s.namespaces.list":
 		items, err := resources.ListNamespaces(ctx, principal, req.ClusterID)
+		if req.Namespace != "" {
+			items = slices.DeleteFunc(items, func(item domainresource.NamespaceView) bool { return item.Name != req.Namespace })
+		}
 		related["count"] = len(items)
 		return items, related, err
 	case "k8s.workloads.overview":

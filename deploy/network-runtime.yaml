@@ -3,8 +3,8 @@
 # network-gateway-control.crt/key/ca.crt, network-gateway-ingest.crt/key/ca.crt,
 # and network-core-ingest-query.crt/key/ca.crt.
 # Keep private keys outside source control and issue certificates for the deployed service names.
-# Build and load the :local images described in README.md, or replace both image
-# references with tested builds. Released v0.1.7/v0.1.8 lack these runtime binaries.
+# Kustomize pins the application and gateway images to v0.1.10. For local builds,
+# load the :local images described in README.md and set both Kustomize tags to local.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

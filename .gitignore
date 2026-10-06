@@ -46,6 +46,10 @@ coverage.out
 # Test
 coverage/
 test-results/
+.tmp/quality/
+.tmp/quality-lab/
+scripts/__pycache__/
+.agents/skills/soha-security/scripts/__pycache__/
 
 # Air (Go hot reload)
 .air.toml

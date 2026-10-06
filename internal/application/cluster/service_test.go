@@ -118,6 +118,10 @@ func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 		PrometheusBearerToken:  "prom-token",
 		PrometheusClusterLabel: "k8s_cluster",
 		GrafanaBaseURL:         "http://grafana.internal:3000",
+		PrometheusTransport:    "agent",
+		AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{{
+			APIGroup: "example.io", Resources: []string{"widgets"}, Verbs: []string{"get", "list"}, Namespaces: []string{"apps"},
+		}},
 	})
 	if err != nil {
 		t.Fatalf("Update returned error: %v", err)
@@ -134,6 +138,25 @@ func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 	}
 	if got := repo.connection.Metadata["grafana_base_url"]; got != "http://grafana.internal:3000" {
 		t.Fatalf("grafana_base_url = %v, want %q", got, "http://grafana.internal:3000")
+	}
+	if prometheusTransport(repo.connection.Metadata) != "agent" || len(customResourceRules(repo.connection.Metadata)) != 1 {
+		t.Fatal("Agent transport and custom resource grant were not persisted")
+	}
+	_, err = service.Update(context.Background(), domainidentity.Principal{}, "cluster-1", domaincluster.UpdateInput{Name: "renamed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prometheusTransport(repo.connection.Metadata) != "agent" || len(customResourceRules(repo.connection.Metadata)) != 1 {
+		t.Fatal("partial update discarded Agent options")
+	}
+	_, err = service.Update(context.Background(), domainidentity.Principal{}, "cluster-1", domaincluster.UpdateInput{
+		Name: "renamed", PrometheusTransport: "direct", AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prometheusTransport(repo.connection.Metadata) != "direct" || len(customResourceRules(repo.connection.Metadata)) != 0 {
+		t.Fatal("explicit update did not switch transport and revoke grants")
 	}
 }
 

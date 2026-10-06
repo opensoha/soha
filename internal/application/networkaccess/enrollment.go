@@ -13,6 +13,7 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainnetworkproxy "github.com/opensoha/soha/internal/domain/networkproxy"
 	domainnetworkruntime "github.com/opensoha/soha/internal/domain/networkruntime"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
@@ -27,6 +28,10 @@ type EnrollmentStore interface {
 	RevokeEnrollment(context.Context, string, time.Time) error
 }
 
+type ProxyInstanceStore interface {
+	Get(context.Context, string) (domainnetworkproxy.Instance, error)
+}
+
 type EnrollmentInput struct {
 	RuntimeID   string
 	RuntimeKind string
@@ -37,21 +42,22 @@ type EnrollmentInput struct {
 
 type EnrollmentService struct {
 	store       EnrollmentStore
+	proxy       ProxyInstanceStore
 	permissions *appaccess.PermissionResolver
 	audit       AuditRecorder
 	operations  OperationRecorder
 	now         func() time.Time
 }
 
-func NewEnrollmentService(store EnrollmentStore, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder) (*EnrollmentService, error) {
+func NewEnrollmentService(store EnrollmentStore, proxy ProxyInstanceStore, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder) (*EnrollmentService, error) {
 	for name, dependency := range map[string]any{
-		"store": store, "permissions": permissions, "audit": audit, "operations": operations,
+		"store": store, "proxy": proxy, "permissions": permissions, "audit": audit, "operations": operations,
 	} {
 		if isNilDependency(dependency) {
 			return nil, fmt.Errorf("network enrollment service: %s dependency is required", name)
 		}
 	}
-	return &EnrollmentService{store: store, permissions: permissions, audit: audit, operations: operations, now: time.Now}, nil
+	return &EnrollmentService{store: store, proxy: proxy, permissions: permissions, audit: audit, operations: operations, now: time.Now}, nil
 }
 
 func (s *EnrollmentService) Create(ctx context.Context, principal domainidentity.Principal, input EnrollmentInput) (domainnetworkruntime.EnrollmentSecret, error) {
@@ -67,6 +73,11 @@ func (s *EnrollmentService) Create(ctx context.Context, principal domainidentity
 	}
 	if err := validateEnrollmentInput(principal, input); err != nil {
 		return domainnetworkruntime.EnrollmentSecret{}, err
+	}
+	if input.RuntimeKind == "proxy" {
+		if _, err := s.proxy.Get(ctx, input.RuntimeID); err != nil {
+			return domainnetworkruntime.EnrollmentSecret{}, err
+		}
 	}
 
 	random := make([]byte, 32)
@@ -150,9 +161,12 @@ func validateEnrollmentInput(principal domainidentity.Principal, input Enrollmen
 		}
 	}
 	switch input.RuntimeKind {
-	case "endpoint", "gateway", "nas":
+	case "endpoint", "gateway", "nas", "proxy":
 	default:
 		return invalid("runtimeKind is invalid")
+	}
+	if input.RuntimeKind == "proxy" && (input.DeviceID != input.RuntimeID || input.SubjectID != input.RuntimeID) {
+		return invalid("proxy enrollment must bind deviceId and subjectId to runtimeId")
 	}
 	if input.TTL < time.Minute || input.TTL > defaultEnrollmentTTL {
 		return invalid("ttlSeconds must be between 60 and 600")

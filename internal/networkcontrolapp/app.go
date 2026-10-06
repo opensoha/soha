@@ -12,12 +12,14 @@ import (
 
 	api "github.com/opensoha/soha/internal/api/networkcontrol"
 	app "github.com/opensoha/soha/internal/application/networkcontrol"
+	appnetworkproxy "github.com/opensoha/soha/internal/application/networkproxy"
 	config "github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	loggerinfra "github.com/opensoha/soha/internal/infrastructure/logger"
 	"github.com/opensoha/soha/internal/networkidentity"
 	"github.com/opensoha/soha/internal/networkingestquery"
 	"github.com/opensoha/soha/internal/networkprotocol"
+	networkproxyrepository "github.com/opensoha/soha/internal/repository/networkproxy"
 	networkruntimerepository "github.com/opensoha/soha/internal/repository/networkruntime"
 	runtimeconfigrepository "github.com/opensoha/soha/internal/repository/runtimeconfig"
 	"go.uber.org/zap"
@@ -28,6 +30,7 @@ type App struct {
 	server          *http.Server
 	store           *dbstore.Store
 	service         *app.Service
+	proxy           *appnetworkproxy.Runtime
 	refreshInterval time.Duration
 	stop            context.CancelFunc
 	closeOnce       sync.Once
@@ -68,7 +71,8 @@ func New(ctx context.Context) (*App, error) {
 	if err != nil {
 		return fail(err)
 	}
-	service, err := app.New(networkruntimerepository.New(store.DB()), schemas, app.Options{
+	runtimeRepository := networkruntimerepository.New(store.DB())
+	service, err := app.New(runtimeRepository, schemas, app.Options{
 		MaxClockSkew: cfg.MaxClockSkew, ConfigurationTTL: cfg.ConfigurationTTL, LeaseTTL: cfg.LeaseTTL,
 		CredentialEncryptionKeys: cfg.CredentialEncryptionKeys, VPNProbes: probeReader,
 		LoadRuntimeConfig: runtimeconfigrepository.New(store.DB()).LoadState,
@@ -76,7 +80,11 @@ func New(ctx context.Context) (*App, error) {
 	if err != nil {
 		return fail(err)
 	}
-	router, err := api.NewRouter(service, store, api.Options{MaxBodyBytes: cfg.MaxBodyBytes, RequestsPerMinute: cfg.RequestsPerMinute})
+	proxy, err := appnetworkproxy.NewRuntime(networkproxyrepository.New(store.DB()), runtimeRepository, cfg.CredentialEncryptionKeys)
+	if err != nil {
+		return fail(err)
+	}
+	router, err := api.NewRouter(service, store, api.Options{MaxBodyBytes: cfg.MaxBodyBytes, RequestsPerMinute: cfg.RequestsPerMinute, ProxyRuntime: proxy, ProxySchemas: schemas})
 	if err != nil {
 		return fail(err)
 	}
@@ -90,7 +98,7 @@ func New(ctx context.Context) (*App, error) {
 	}
 	refreshCtx, stop := context.WithCancel(context.Background())
 	application := &App{
-		Logger: logger, store: store, service: service, refreshInterval: cfg.SnapshotRefreshInterval, stop: stop,
+		Logger: logger, store: store, service: service, proxy: proxy, refreshInterval: cfg.SnapshotRefreshInterval, stop: stop,
 		server: &http.Server{
 			Addr: cfg.HTTP.Addr, Handler: router, TLSConfig: tlsConfig,
 			ReadHeaderTimeout: 5 * time.Second, ReadTimeout: cfg.HTTP.ReadTimeout,
@@ -99,7 +107,23 @@ func New(ctx context.Context) (*App, error) {
 		},
 	}
 	go application.refreshLoop(refreshCtx, initialRefreshFailed)
+	go application.proxyCleanupLoop(refreshCtx)
 	return application, nil
+}
+
+func (a *App) proxyCleanupLoop(ctx context.Context) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		if err := a.proxy.Cleanup(ctx); err != nil && ctx.Err() == nil {
+			a.Logger.Warn("proxy runtime retention cleanup failed", zap.Error(err))
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func (a *App) Run() error {

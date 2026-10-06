@@ -100,12 +100,25 @@ func (r *Repository) ConsumeEnrollment(ctx context.Context, consumption domainne
 		if err != nil {
 			return err
 		}
+		if enrollment.RuntimeKind == "proxy" {
+			result := tx.Exec(`UPDATE network_proxy_instances SET last_seen_at = NULL, last_sample_at = NULL,
+			    health = '', reason_code = '', capabilities = '[]'::jsonb, observed_revision = 0, updated_at = ?
+			    WHERE id = ? AND tenant_id = 'default' AND workspace_id = 'default'`, consumption.ConsumedAt, consumption.RuntimeID)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected != 1 {
+				return apperrors.ErrNotFound
+			}
+		}
 		if err := applyCredentialRotation(tx, previous, rotationReason, affectedRuntimeIDs, consumption); err != nil {
 			return err
 		}
-		configuration, err = refreshEnrollmentConfigurations(tx, affectedRuntimeIDs, consumption, snapshot, configurationExpiresAt)
-		if err != nil {
-			return err
+		if enrollment.RuntimeKind != "proxy" {
+			configuration, err = refreshEnrollmentConfigurations(tx, affectedRuntimeIDs, consumption, snapshot, configurationExpiresAt)
+			if err != nil {
+				return err
+			}
 		}
 		credential = row.domain()
 		return nil
@@ -184,7 +197,11 @@ func insertEnrollmentCredential(tx *gorm.DB, enrollment enrollmentRow, consumpti
 		Generation: generation, Capabilities: jsonDocument(capabilities),
 		Status: domainnetworkruntime.CredentialActive, NotBefore: consumption.NotBefore, ExpiresAt: consumption.ExpiresAt, CreatedAt: consumption.ConsumedAt,
 	}
-	if err := tx.Create(&row).Error; err != nil {
+	create := tx
+	if row.WireGuardPublicKey == "" {
+		create = create.Omit("WireGuardPublicKey")
+	}
+	if err := create.Create(&row).Error; err != nil {
 		return credentialRow{}, err
 	}
 	if err := tx.Model(&enrollment).Updates(map[string]any{"status": domainnetworkruntime.EnrollmentConsumed, "consumed_at": consumption.ConsumedAt}).Error; err != nil {

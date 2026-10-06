@@ -14,12 +14,14 @@ const (
 	runtimeSchemaURL          = "https://contracts.opensoha.dev/network/network-runtime-protocol.schema.json"
 	ingestSchemaURL           = "https://contracts.opensoha.dev/network/network-ingest-event.schema.json"
 	radiusAccountingSchemaURL = "https://contracts.opensoha.dev/network/network-radius-accounting.schema.json"
+	proxyRuntimeSchemaURL     = "https://contracts.opensoha.dev/network/proxy-runtime.schema.json"
 )
 
 type Schemas struct {
 	runtime          *jsonschema.Schema
 	ingest           *jsonschema.Schema
 	radiusAccounting *jsonschema.Schema
+	proxyRuntime     *jsonschema.Schema
 }
 
 func CompileSchemas() (*Schemas, error) {
@@ -35,7 +37,15 @@ func CompileSchemas() (*Schemas, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compile RADIUS accounting schema: %w", err)
 	}
-	return &Schemas{runtime: runtime, ingest: ingest, radiusAccounting: radiusAccounting}, nil
+	proxyRuntime, err := compileSchema(proxyRuntimeSchemaURL, contractsnetwork.ProxyRuntimeSchema())
+	if err != nil {
+		return nil, fmt.Errorf("compile proxy runtime schema: %w", err)
+	}
+	return &Schemas{runtime: runtime, ingest: ingest, radiusAccounting: radiusAccounting, proxyRuntime: proxyRuntime}, nil
+}
+
+func (s *Schemas) ValidateProxyRuntime(raw []byte) error {
+	return validateJSON(s.proxyRuntime, raw)
 }
 
 func (s *Schemas) ValidateRuntime(raw []byte) error {

@@ -159,6 +159,13 @@ type KubernetesWorkbenchReadService interface {
 	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
 }
 
+type KubernetesDiagnosticReadService interface {
+	ListCRDs(context.Context, domainidentity.Principal, string) ([]domainresource.CRDView, error)
+	ListCRDResources(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.CustomResourceView, error)
+	GetPodMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.PodMetricsView, error)
+	GetDeploymentMetrics(context.Context, domainidentity.Principal, string, string, string, int, int) (domainresource.ResourceMetricsView, error)
+}
+
 type KubernetesWorkloadSnapshotService interface {
 	GenerateWorkloadSnapshot(context.Context, domainidentity.Principal, string, domainresource.WorkloadSnapshotRequest) (domainresource.WorkloadSnapshot, error)
 }

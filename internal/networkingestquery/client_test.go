@@ -49,3 +49,33 @@ func TestClientRejectsRawDestinationFields(t *testing.T) {
 		t.Fatalf("Summary() error = %v, want service unavailable", err)
 	}
 }
+
+func TestProxyRuntimeSamplesValidateIdentityAndOrder(t *testing.T) {
+	from := time.Date(2026, 9, 27, 8, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+	responseBody := `{"data":{"instanceId":"proxy-1","samples":[{"observedAt":"2026-09-27T08:01:00Z","uptimeSeconds":60,"uploadTotal":10,"downloadTotal":20}]}}`
+	server := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/ingest/v1/query/proxy-runtime/samples" || request.URL.Query().Get("instanceId") != "proxy-1" {
+			t.Fatalf("unexpected sample query %s", request.URL.String())
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(writer, responseBody)
+	}))
+	defer server.Close()
+	client, err := New(server.URL, server.Client(), 1<<20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	samples, err := client.Samples(context.Background(), "proxy-1", from, to)
+	if err != nil || len(samples) != 1 || samples[0].DownloadTotal != 20 {
+		t.Fatalf("Samples() = %#v, %v", samples, err)
+	}
+	responseBody = `{"data":{"instanceId":"proxy-2","samples":[]}}`
+	if _, err := client.Samples(context.Background(), "proxy-1", from, to); !errors.Is(err, apperrors.ErrServiceUnavailable) {
+		t.Fatalf("mismatched producer error = %v", err)
+	}
+	responseBody = `{"data":{"instanceId":"proxy-1","samples":[{"observedAt":"2026-09-27T08:01:00Z","uptimeSeconds":60,"uploadTotal":10,"downloadTotal":20,"destination":"secret"}]}}`
+	if _, err := client.Samples(context.Background(), "proxy-1", from, to); !errors.Is(err, apperrors.ErrServiceUnavailable) {
+		t.Fatalf("unexpected detail field error = %v", err)
+	}
+}

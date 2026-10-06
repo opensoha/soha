@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	"io"
 
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -238,12 +239,14 @@ type ClusterRBACService interface {
 }
 
 type CRDReader interface {
+	GetCRDResourceAccess(context.Context, domainidentity.Principal, string, string, string) (contractresource.CustomResourceAccess, error)
 	ListCRDs(context.Context, domainidentity.Principal, string) ([]domainresource.CRDView, error)
 	ListCRDResources(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.CustomResourceView, error)
 	GetCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 }
 
 type CRDEditor interface {
+	DeleteCRDDefinition(context.Context, domainidentity.Principal, string, string, string) error
 	CreateCRDResourceFromYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	ApplyCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	DeleteCRDResource(context.Context, domainidentity.Principal, string, string, string, string, string) error

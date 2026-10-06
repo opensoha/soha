@@ -36,8 +36,7 @@ func (s *Service) delegateChatSpecialist(ctx context.Context, parent domaincopil
 	}
 	bindings := []domaincopilot.AgentToolBinding{}
 	for _, binding := range parent.ToolBindings {
-		switch binding.ToolName {
-		case "knowledge.search", "k8s.workloads.overview", "k8s.nodes.detail", "k8s.services.backends":
+		if binding.ToolName == "knowledge.search" || chatKubernetesReadTool(binding.ToolName) {
 			bindings = append(bindings, binding)
 		}
 	}

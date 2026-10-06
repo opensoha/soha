@@ -43,6 +43,42 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
     cd soha && \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/network-gateway ./cmd/network-gateway
 
+FROM go-source AS proxy-runtime-build
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
+    cd soha && \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/soha-proxy-runtime ./cmd/proxy-runtime
+
+FROM metacubex/mihomo:v1.19.30 AS proxy-runtime-mihomo
+COPY --from=proxy-runtime-build /out/soha-proxy-runtime /usr/local/bin/soha-proxy-runtime
+RUN mkdir -p /var/lib/soha-proxy-runtime && chmod 0700 /var/lib/soha-proxy-runtime
+ENV SOHA_PROXY_ENGINE=mihomo SOHA_PROXY_ENGINE_BINARY=/mihomo
+ENTRYPOINT ["/usr/local/bin/soha-proxy-runtime"]
+
+FROM ghcr.io/sagernet/sing-box:v1.14.2 AS proxy-runtime-sing-box
+COPY --from=proxy-runtime-build /out/soha-proxy-runtime /usr/local/bin/soha-proxy-runtime
+RUN mkdir -p /var/lib/soha-proxy-runtime && chmod 0700 /var/lib/soha-proxy-runtime
+ENV SOHA_PROXY_ENGINE=sing-box SOHA_PROXY_ENGINE_BINARY=/usr/local/bin/sing-box
+ENTRYPOINT ["/usr/local/bin/soha-proxy-runtime"]
+
+FROM --platform=linux/amd64 alpine:3.20 AS v2ray-archive
+RUN apk add --no-cache ca-certificates curl unzip
+RUN curl -fL --retry 3 --max-time 120 \
+      https://github.com/v2fly/v2ray-core/releases/download/v5.53.0/v2ray-linux-64.zip \
+      -o /tmp/v2ray.zip && \
+    echo '6bbb8aee65a57d0b12599b4b7c842b3ad0daca4436e661d94015c447cb31b4fa  /tmp/v2ray.zip' | sha256sum -c - && \
+    mkdir -p /out && unzip -q /tmp/v2ray.zip -d /out
+
+FROM --platform=linux/amd64 alpine:3.20 AS proxy-runtime-v2ray
+RUN apk add --no-cache ca-certificates
+COPY --from=v2ray-archive /out/v2ray /usr/local/bin/v2ray
+COPY --from=proxy-runtime-build /out/soha-proxy-runtime /usr/local/bin/soha-proxy-runtime
+RUN chmod 0755 /usr/local/bin/v2ray /usr/local/bin/soha-proxy-runtime && \
+    mkdir -p /var/lib/soha-proxy-runtime && chmod 0700 /var/lib/soha-proxy-runtime
+ENV SOHA_PROXY_ENGINE=v2ray SOHA_PROXY_ENGINE_BINARY=/usr/local/bin/v2ray
+ENTRYPOINT ["/usr/local/bin/soha-proxy-runtime"]
+
 FROM --platform=linux/amd64 freeradius/freeradius-server:3.2.10@sha256:cc7fd136e7b03e7b332d94297530318e824a4ecfedbce54562cced723e71e812 AS radius-runtime
 RUN rm -f /etc/freeradius/sites-enabled/default /etc/freeradius/sites-enabled/inner-tunnel /etc/freeradius/mods-enabled/eap
 COPY deploy/freeradius/default /etc/freeradius/sites-enabled/default

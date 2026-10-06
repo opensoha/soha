@@ -131,9 +131,15 @@ func (s *Service) Enroll(ctx context.Context, identity networkidentity.Identity,
 	if err := networkidentity.MatchPublicKey(identity.Certificate, payload.DevicePublicKey); err != nil {
 		return networkprotocol.RuntimeMessage{}, apperrors.NewBusiness(apperrors.ErrUnauthorized, "enrollment_public_key_mismatch", "The enrollment public key does not match the client certificate.", "注册公钥与客户端证书不匹配。")
 	}
-	snapshot, err := s.CurrentSnapshot()
-	if err != nil {
-		return networkprotocol.RuntimeMessage{}, err
+	if identity.Kind == "proxy" && (payload.DeviceID != identity.ID || len(payload.Capabilities) != 1 || payload.Capabilities[0] != "proxy-runtime-v1") {
+		return networkprotocol.RuntimeMessage{}, invalidRuntimeMessage()
+	}
+	var snapshot domainnetworkruntime.PolicySnapshot
+	if identity.Kind != "proxy" {
+		snapshot, err = s.CurrentSnapshot()
+		if err != nil {
+			return networkprotocol.RuntimeMessage{}, err
+		}
 	}
 	now := s.now().UTC()
 	tokenDigest := sha256.Sum256([]byte(strings.TrimSpace(token)))

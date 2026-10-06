@@ -14,6 +14,7 @@ import (
 	"time"
 
 	domainnetworkingest "github.com/opensoha/soha/internal/domain/networkingest"
+	domainnetworkproxy "github.com/opensoha/soha/internal/domain/networkproxy"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -82,6 +83,62 @@ func (client *Client) Summary(ctx context.Context, filter domainnetworkingest.Su
 		return domainnetworkingest.Summary{}, unavailable(fmt.Errorf("invalid aggregate response"))
 	}
 	return envelope.Data, nil
+}
+
+func (client *Client) Samples(ctx context.Context, instanceID string, from, to time.Time) ([]domainnetworkproxy.TrafficSample, error) {
+	query := url.Values{"instanceId": {instanceID}, "from": {from.UTC().Format(time.RFC3339Nano)}, "to": {to.UTC().Format(time.RFC3339Nano)}}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, client.origin+"/api/ingest/v1/query/proxy-runtime/samples?"+query.Encode(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	response, err := client.http.Do(request)
+	if err != nil {
+		return nil, unavailable(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		return nil, unavailable(fmt.Errorf("ingest returned HTTP %d", response.StatusCode))
+	}
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		return nil, unavailable(fmt.Errorf("ingest returned a non-JSON response"))
+	}
+	raw, err := io.ReadAll(io.LimitReader(response.Body, client.maxResponseBytes+1))
+	if err != nil || int64(len(raw)) > client.maxResponseBytes {
+		return nil, unavailable(fmt.Errorf("ingest sample response exceeds the configured limit"))
+	}
+	var envelope struct {
+		Data domainnetworkingest.ProxyRuntimeSeries `json:"data"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&envelope); err != nil || decoder.Decode(&struct{}{}) != io.EOF || validateProxySamples(envelope.Data, instanceID, from, to) != nil {
+		return nil, unavailable(fmt.Errorf("invalid proxy sample response"))
+	}
+	samples := make([]domainnetworkproxy.TrafficSample, 0, len(envelope.Data.Samples))
+	for _, item := range envelope.Data.Samples {
+		samples = append(samples, domainnetworkproxy.TrafficSample{ObservedAt: item.ObservedAt, UptimeSeconds: item.UptimeSeconds,
+			UploadTotal: item.UploadTotal, DownloadTotal: item.DownloadTotal, ActiveConnections: item.ActiveConnections})
+	}
+	return samples, nil
+}
+
+func validateProxySamples(series domainnetworkingest.ProxyRuntimeSeries, instanceID string, from, to time.Time) error {
+	if series.InstanceID != instanceID || series.Samples == nil || len(series.Samples) > 1440 {
+		return fmt.Errorf("invalid proxy sample series")
+	}
+	var previous time.Time
+	for _, sample := range series.Samples {
+		if sample.ObservedAt.Before(from) || sample.ObservedAt.After(to) || !sample.ObservedAt.After(previous) ||
+			sample.UptimeSeconds < 0 || sample.UploadTotal < 0 || sample.DownloadTotal < 0 ||
+			(sample.ActiveConnections != nil && (*sample.ActiveConnections < 0 || *sample.ActiveConnections > 1000000)) {
+			return fmt.Errorf("invalid proxy sample")
+		}
+		previous = sample.ObservedAt
+	}
+	return nil
 }
 
 func validateSummary(summary domainnetworkingest.Summary) error {

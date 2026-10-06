@@ -48,7 +48,7 @@ func TestAgentInstallationRendersReverseSessionManifestAndInvalidatesTicket(t *t
 		t.Fatalf("RenderAgentInstallation() error = %v", err)
 	}
 	text := string(manifest)
-	for _, expected := range []string{"kind: Deployment", "enabled: true", "kubeconfig: \"\"", "base_url: https://soha.example.com", "serviceaccounts", "endpointslices", "storageclasses", "priorityclasses", "runtimeclasses", "mutatingwebhookconfigurations", "gatewayclasses", agentImage} {
+	for _, expected := range []string{"kind: Deployment", "enabled: true", "kubeconfig: \"\"", "base_url: https://soha.example.com", "serviceaccounts", "endpointslices", "storageclasses", "priorityclasses", "runtimeclasses", "mutatingwebhookconfigurations", "gatewayclasses", "replicationcontrollers", "pods/eviction", "pods/portforward", "subjectaccessreviews", "platform.nodes.drain", "platform.resources.create", "platform.resources.apply", "platform.resources.delete", agentImage} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("manifest does not contain %q", expected)
 		}

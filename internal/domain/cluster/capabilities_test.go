@@ -8,9 +8,14 @@ func TestDefaultCapabilityMatrixDocumentsAgentGaps(t *testing.T) {
 	yamlApply := byKey["resource.yaml.apply"]
 	expectCapability(t, yamlApply.RiskLevel == CapabilityRiskMutate, "yaml apply risk = %q", yamlApply.RiskLevel)
 	expectCapability(t, yamlApply.RequiresApproval, "yaml apply should require approval")
-	expectCapability(t, yamlApply.Agent.Status == CapabilityStatusPartial, "agent yaml apply status = %q", yamlApply.Agent.Status)
-	expectCapability(t, yamlApply.Agent.Reason != "", "agent yaml apply reason is empty")
+	expectCapability(t, yamlApply.Agent.Status == CapabilityStatusAvailable, "agent yaml apply status = %q", yamlApply.Agent.Status)
+	expectCapability(t, yamlApply.Agent.Reason != "", "available yaml apply lacks its upgrade note")
 	expectCapability(t, len(yamlApply.Agent.Notes) > 0, "agent yaml apply notes are empty")
+
+	for _, key := range []string{"namespace.lifecycle", "workload.mutations", "resource.yaml.view", "configuration.inventory", "rbac.inventory", "storage.inventory"} {
+		entry := byKey[key]
+		expectCapability(t, entry.Agent.Status == CapabilityStatusAvailable, "%s is still unavailable", key)
+	}
 
 	helmReleases := byKey["helm.releases"]
 	expectCapability(t, helmReleases.Agent.Status == CapabilityStatusAvailable, "agent helm releases status = %q", helmReleases.Agent.Status)
@@ -31,7 +36,7 @@ func TestDefaultCapabilityMatrixDocumentsAgentGaps(t *testing.T) {
 	expectCapability(t, byKey["port.forward"].Agent.Status == CapabilityStatusAvailable, "agent port forward is unavailable")
 	metrics := byKey["metrics"]
 	expectCapability(t, metrics.Direct.Status == CapabilityStatusAvailable, "direct metrics status = %q", metrics.Direct.Status)
-	expectCapability(t, metrics.Agent.Status == CapabilityStatusPartial, "agent metrics status = %q", metrics.Agent.Status)
+	expectCapability(t, metrics.Agent.Status == CapabilityStatusAvailable, "agent metrics status = %q", metrics.Agent.Status)
 	expectCapability(t, metrics.Agent.Reason != "", "agent metrics reason is empty")
 	customResources := byKey["custom.resources"]
 	expectCapability(t, customResources.Agent.Status == CapabilityStatusPartial, "agent custom resources status = %q", customResources.Agent.Status)

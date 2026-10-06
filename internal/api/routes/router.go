@@ -71,6 +71,7 @@ type Dependencies struct {
 	Virtualization      *apiHandlers.VirtualizationHandler
 	Docker              *apiHandlers.DockerHandler
 	NetworkAccess       *apiHandlers.NetworkAccessHandler
+	NetworkProxy        *apiHandlers.NetworkProxyHandler
 	NetworkVPN          *apiHandlers.NetworkVPNHandler
 	Access              *accesshandler.Handler
 	DirectorySync       *directorysynchandler.Handler

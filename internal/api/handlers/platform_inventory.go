@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opensoha/soha/internal/api/dto"
@@ -28,20 +29,22 @@ func (h *clusterHandler) CreateCluster(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.Register(c.Request.Context(), principal, domaincluster.RegisterInput{
-		ID:                     req.ID,
-		Name:                   req.Name,
-		Region:                 req.Region,
-		Environment:            req.Environment,
-		Labels:                 req.Labels,
-		ConnectionMode:         domaincluster.ConnectionMode(req.ConnectionMode),
-		Kubeconfig:             req.Kubeconfig,
-		Context:                req.Context,
-		AgentEndpoint:          req.AgentEndpoint,
-		AgentToken:             req.AgentToken,
-		PrometheusBaseURL:      req.PrometheusBaseURL,
-		PrometheusBearerToken:  req.PrometheusBearerToken,
-		PrometheusClusterLabel: req.PrometheusClusterLabel,
-		GrafanaBaseURL:         req.GrafanaBaseURL,
+		ID:                       req.ID,
+		Name:                     req.Name,
+		Region:                   req.Region,
+		Environment:              req.Environment,
+		Labels:                   req.Labels,
+		ConnectionMode:           domaincluster.ConnectionMode(req.ConnectionMode),
+		Kubeconfig:               req.Kubeconfig,
+		Context:                  req.Context,
+		AgentEndpoint:            req.AgentEndpoint,
+		AgentToken:               req.AgentToken,
+		PrometheusTransport:      req.PrometheusTransport,
+		AgentCustomResourceRules: req.AgentCustomResourceRules,
+		PrometheusBaseURL:        req.PrometheusBaseURL,
+		PrometheusBearerToken:    req.PrometheusBearerToken,
+		PrometheusClusterLabel:   req.PrometheusClusterLabel,
+		GrafanaBaseURL:           req.GrafanaBaseURL,
 	})
 	if err != nil {
 		writeError(c, err)
@@ -75,19 +78,21 @@ func (h *clusterHandler) UpdateCluster(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.Update(c.Request.Context(), principal, c.Param("clusterID"), domaincluster.UpdateInput{
-		Name:                   req.Name,
-		Region:                 req.Region,
-		Environment:            req.Environment,
-		Labels:                 req.Labels,
-		ConnectionMode:         domaincluster.ConnectionMode(req.ConnectionMode),
-		Kubeconfig:             req.Kubeconfig,
-		Context:                req.Context,
-		AgentEndpoint:          req.AgentEndpoint,
-		AgentToken:             req.AgentToken,
-		PrometheusBaseURL:      req.PrometheusBaseURL,
-		PrometheusBearerToken:  req.PrometheusBearerToken,
-		PrometheusClusterLabel: req.PrometheusClusterLabel,
-		GrafanaBaseURL:         req.GrafanaBaseURL,
+		Name:                     req.Name,
+		Region:                   req.Region,
+		Environment:              req.Environment,
+		Labels:                   req.Labels,
+		ConnectionMode:           domaincluster.ConnectionMode(req.ConnectionMode),
+		Kubeconfig:               req.Kubeconfig,
+		Context:                  req.Context,
+		AgentEndpoint:            req.AgentEndpoint,
+		AgentToken:               req.AgentToken,
+		PrometheusTransport:      req.PrometheusTransport,
+		AgentCustomResourceRules: req.AgentCustomResourceRules,
+		PrometheusBaseURL:        req.PrometheusBaseURL,
+		PrometheusBearerToken:    req.PrometheusBearerToken,
+		PrometheusClusterLabel:   req.PrometheusClusterLabel,
+		GrafanaBaseURL:           req.GrafanaBaseURL,
 	})
 	if err != nil {
 		writeError(c, err)
@@ -239,6 +244,17 @@ func (h *nodeResourceHandler) DrainNode(c *gin.Context) {
 	var req dto.NodeDrainRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid node drain payload")
+		return
+	}
+	if req.TimeoutSeconds == 0 {
+		req.TimeoutSeconds = 300
+	}
+	if req.TimeoutSeconds < 30 || req.TimeoutSeconds > 1800 {
+		apiresponse.Error(c, 400, "invalid_argument", "drain timeoutSeconds must be between 30 and 1800")
+		return
+	}
+	if err := http.NewResponseController(c.Writer).SetWriteDeadline(time.Now().Add(time.Duration(req.TimeoutSeconds+15) * time.Second)); err != nil {
+		apiresponse.Error(c, 500, "internal_error", "unable to set drain response deadline")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)

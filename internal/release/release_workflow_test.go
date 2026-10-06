@@ -13,7 +13,7 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 
 	required := []string{
 		"contracts_ref:",
-		"WEB_REF: ${{ inputs.web_ref || 'v0.1.8' }}",
+		"WEB_REF: ${{ inputs.web_ref || 'v0.1.9' }}",
 		"CONTRACTS_REF: ${{ inputs.contracts_ref }}",
 		"WEB_SHA256: ${{ inputs.web_sha256 }}",
 		"go list -m -f '{{.Version}}' github.com/opensoha/soha-contracts",
@@ -26,6 +26,14 @@ func TestReleaseWorkflowUsesPinnedReleaseInputs(t *testing.T) {
 		"contracts-build-context",
 		"contracts=./contracts-build-context",
 		"target: network-gateway-runtime",
+		"target: proxy-runtime-mihomo",
+		"ghcr.io/opensoha/soha-proxy-mihomo:${{ github.ref_name }}",
+		"target: proxy-runtime-sing-box",
+		"ghcr.io/opensoha/soha-proxy-sing-box:${{ github.ref_name }}",
+		"target: proxy-runtime-v2ray",
+		"ghcr.io/opensoha/soha-proxy-v2ray:${{ github.ref_name }}",
+		"target: radius-runtime",
+		"ghcr.io/opensoha/soha-radius:${{ github.ref_name }}",
 		"ghcr.io/opensoha/soha-network-gateway:${{ github.ref_name }}",
 		"soha-web-dist-${WEB_REF}.tar.gz.sha256",
 		"soha-web-dist.sha256",

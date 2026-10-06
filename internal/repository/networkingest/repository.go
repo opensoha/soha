@@ -99,7 +99,7 @@ WITH scoped AS (
     SELECT producer_id, event_type, occurred_at, sequence, payload
     FROM public.network_ingest_events
     WHERE occurred_at >= ? AND occurred_at < ? AND (? = '' OR producer_id = ?)
-      AND event_type NOT LIKE 'vpn.%'
+      AND event_type NOT LIKE 'vpn.%' AND event_type <> 'proxy.runtime.sample'
 ), latest_proxy AS (
     SELECT DISTINCT ON (producer_id)
         (payload ->> 'activeConnections')::bigint AS active_connections
@@ -136,6 +136,7 @@ WHERE (? = '' OR state.producer_id = ?)
   AND EXISTS (
       SELECT 1 FROM public.network_ingest_events event
       WHERE event.producer_id = state.producer_id AND event.occurred_at >= ? AND event.occurred_at < ?
+        AND event.event_type <> 'proxy.runtime.sample'
   )
 ORDER BY state.last_seen_at DESC, state.producer_id
 LIMIT ?`, filter.ProducerID, filter.ProducerID, filter.From, filter.To, filter.Limit).Scan(&summary.Producers).Error; err != nil {
@@ -161,6 +162,24 @@ LIMIT ?`, filter.From, filter.To, filter.ProducerID, filter.ProducerID, filter.L
 		return domainnetworkingest.Summary{}, err
 	}
 	return summary, nil
+}
+
+func (r *Repository) ProxyRuntimeSamples(ctx context.Context, instanceID string, from, to time.Time) (domainnetworkingest.ProxyRuntimeSeries, error) {
+	series := domainnetworkingest.ProxyRuntimeSeries{InstanceID: instanceID, Samples: []domainnetworkingest.ProxyRuntimeSample{}}
+	err := r.db.WithContext(ctx).Raw(`
+SELECT observed_at, uptime_seconds, upload_total, download_total, active_connections FROM (
+    SELECT DISTINCT ON (date_trunc('minute', occurred_at))
+        occurred_at AS observed_at,
+        (payload ->> 'uptimeSeconds')::bigint AS uptime_seconds,
+        (payload ->> 'uploadTotal')::bigint AS upload_total,
+        (payload ->> 'downloadTotal')::bigint AS download_total,
+        (payload ->> 'activeConnections')::integer AS active_connections
+    FROM public.network_ingest_events
+    WHERE producer_kind = 'proxy' AND producer_id = ? AND event_type = 'proxy.runtime.sample'
+      AND occurred_at >= ? AND occurred_at <= ?
+    ORDER BY date_trunc('minute', occurred_at), occurred_at DESC, sequence DESC
+) minute_samples ORDER BY observed_at ASC LIMIT 1440`, instanceID, from, to).Scan(&series.Samples).Error
+	return series, err
 }
 
 type jsonDocument []byte

@@ -37,6 +37,7 @@ func (*Cache) CacheUnavailable(err error) bool {
 
 func NewAgentClients(registry *agentinfra.Registry) appresource.AgentClients {
 	return appresource.AgentClients{
+		Prometheus:       agentFactory[appresource.PrometheusAgent](registry),
 		Workloads:        agentFactory[appresource.WorkloadAgent](registry),
 		Logs:             agentFactory[appresource.LogAgent](registry),
 		Configuration:    agentFactory[appresource.ConfigurationAgent](registry),

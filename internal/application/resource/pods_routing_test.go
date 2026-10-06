@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -37,26 +38,29 @@ func TestPodRoutesPreserveRuntimeErrorSemantics(t *testing.T) {
 func TestAgentPodDeleteRequestsFailureAudit(t *testing.T) {
 	t.Parallel()
 
-	auditFailure, err := (agentPodRoute{}).DeletePod(t.Context(), "platform", "api-0")
+	auditFailure, err := (agentPodRoute{client: failedPodDeleteAgent{}}).DeletePod(t.Context(), "platform", "api-0")
 	if err == nil {
-		t.Fatal("DeletePod() error = nil, want unsupported operation")
+		t.Fatal("DeletePod() error = nil, want denied operation")
 	}
 	if !auditFailure {
-		t.Fatal("DeletePod() did not request a failure audit for the unsupported attempt")
+		t.Fatal("DeletePod() did not request a failure audit for the denied attempt")
 	}
 }
 
-func TestAgentPodDeleteRouteDoesNotResolveClient(t *testing.T) {
-	t.Parallel()
+type failedPodDeleteAgent struct{ PodAgent }
 
-	route, err := (&Workloads{}).routePodDeletion(domaincluster.Connection{
-		Summary: domaincluster.Summary{ID: "agent-cluster", ConnectionMode: domaincluster.ConnectionModeAgent},
-	}, "agent-cluster")
-	if err != nil {
-		t.Fatalf("routePodDeletion() error = %v, want nil without an agent client factory", err)
-	}
-	if route.Source() != "agent" {
-		t.Fatalf("route source = %q, want agent", route.Source())
+func (failedPodDeleteAgent) DeletePod(context.Context, string, string) error {
+	return apperrors.ErrAccessDenied
+}
+func TestAgentPodDeleteRouteResolvesClient(t *testing.T) {
+	called := false
+	w := &Workloads{agent: func(connection domaincluster.Connection) (WorkloadAgent, error) {
+		called = true
+		return nil, apperrors.ErrClusterUnready
+	}}
+	_, err := w.routePodDeletion(domaincluster.Connection{Summary: domaincluster.Summary{ID: "agent-cluster", ConnectionMode: domaincluster.ConnectionModeAgent}}, "agent-cluster")
+	if !called || !errors.Is(err, apperrors.ErrClusterUnready) {
+		t.Fatalf("client resolved=%v, err=%v", called, err)
 	}
 }
 
