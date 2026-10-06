@@ -9,7 +9,7 @@ on:
       web_ref:
         description: "soha-web release tag to embed"
         required: true
-        default: "v0.1.9"
+        default: "v0.1.10"
       contracts_ref:
         description: "Optional assertion of the contracts version pinned in go.mod"
         required: false
@@ -27,7 +27,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     env:
-      WEB_REF: ${{ inputs.web_ref || 'v0.1.9' }}
+      WEB_REF: ${{ inputs.web_ref || 'v0.1.10' }}
       CONTRACTS_REF: ${{ inputs.contracts_ref }}
       WEB_SHA256: ${{ inputs.web_sha256 }}
     steps:
