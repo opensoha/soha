@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	"golang.org/x/crypto/ssh"
 	"sigs.k8s.io/yaml"
 )
@@ -120,6 +121,11 @@ func (a *PVEAdapter) TestConnection(ctx context.Context, connection Connection) 
 }
 
 func (a *PVEAdapter) SyncAssets(ctx context.Context, connection Connection) (AssetSyncResult, error) {
+	// PVE VM status enumeration can exceed the ordinary ten-second request timeout.
+	adapter, client := *a, *a.client
+	client.Timeout = max(client.Timeout, 30*time.Second)
+	adapter.client = &client
+	a = &adapter
 	// Keep the ticket local to this scan; never mutate or persist the saved credential.
 	connection, err := a.authenticatedConnection(ctx, connection)
 	if err != nil {
@@ -189,6 +195,7 @@ func pveNetworkAsset(nodeName string, item map[string]any) (Asset, bool) {
 	networkType := firstNonEmpty(stringFromAny(item["type"]), stringFromAny(item["method"]))
 	active := boolFromAny(firstNonNil(item["active"], item["autostart"]))
 	metadata := map[string]string{
+		"uid":       fmt.Sprintf("node/%s/network/%s", url.PathEscape(nodeName), url.PathEscape(iface)),
 		"iface":     iface,
 		"network":   iface,
 		"type":      networkType,
@@ -237,6 +244,7 @@ func (a *PVEAdapter) pveQEMUAssets(
 
 func (a *PVEAdapter) enrichPVESyncedQEMUAsset(ctx context.Context, connection Connection, asset Asset) Asset {
 	vmid := asset.Metadata["vmid"]
+	asset.Metadata["rootDiskGiB"] = "0"
 	config, err := a.pveVMConfig(ctx, connection, asset.Node, vmid)
 	if err == nil {
 		addPVEVMConfigMetadata(asset.Metadata, asset.Name, config)
@@ -254,6 +262,10 @@ func (a *PVEAdapter) enrichPVESyncedQEMUAsset(ctx context.Context, connection Co
 }
 
 func addPVEVMConfigMetadata(metadata map[string]string, fallbackName string, config map[string]any) {
+	metadata["rootDiskGiB"] = "0"
+	if generation := pveVMGeneration(config); generation != "" {
+		metadata["providerGeneration"] = generation
+	}
 	metadata["hostname"] = firstNonEmpty(stringFromAny(config["name"]), fallbackName)
 	copyPVEConfigMetadata(metadata, config, "bios", "firmware")
 	copyPVEConfigMetadata(metadata, config, "machine", "machine")
@@ -272,6 +284,9 @@ func addPVEVMConfigMetadata(metadata map[string]string, fallbackName string, con
 		case isPVEDiskID(id) && pveConfigOption(value, "media") != "cdrom":
 			diskCount++
 			diskGiB += pveDiskSizeGiB(value)
+			if id == "scsi0" {
+				metadata["rootDiskGiB"] = strconv.Itoa(pveDiskSizeGiB(value))
+			}
 		case strings.HasPrefix(id, "net"):
 			networks = append(networks, pveConfigOption(value, "bridge"))
 		case strings.HasPrefix(id, "ipconfig"):
@@ -296,6 +311,15 @@ func addPVEVMConfigMetadata(metadata map[string]string, fallbackName string, con
 	}
 	metadata["cloudInitConfigured"] = strconv.FormatBool(cloudInitConfigured)
 	metadata["sshKeysConfigured"] = strconv.FormatBool(strings.TrimSpace(stringFromAny(config["sshkeys"])) != "")
+}
+
+func pveVMGeneration(config map[string]any) string {
+	identity := pveConfigOption(stringFromAny(config["smbios1"]), "uuid")
+	created := pveConfigOption(stringFromAny(config["meta"]), "ctime")
+	if identity == "" || created == "" {
+		return ""
+	}
+	return identity + "/" + created
 }
 
 func copyPVEConfigMetadata(metadata map[string]string, config map[string]any, source, target string) {
@@ -396,6 +420,7 @@ func pveStorageAsset(nodeName, storageName string, item map[string]any) Asset {
 	return Asset{
 		Type: "storage", Name: storageName, Node: nodeName, Status: stringFromMap(item, "type"),
 		Metadata: map[string]string{
+			"uid":     "node/" + url.PathEscape(nodeName) + "/storage/" + url.PathEscape(storageName),
 			"storage": storageName, "type": stringFromMap(item, "type"),
 			"content":          stringFromMap(item, "content"),
 			"supportsISO":      strconv.FormatBool(contentTypes["iso"]),
@@ -414,7 +439,9 @@ func (a *PVEAdapter) pveStorageContentAssets(
 	storage map[string]any,
 	syncTypes map[string]bool,
 ) ([]Asset, error) {
-	if storageName == "" || !pveStorageSupportsContent(storage) {
+	if storageName == "" || !pveStorageSupportsContent(storage) ||
+		(storage["enabled"] != nil && !boolFromAny(storage["enabled"])) ||
+		(storage["active"] != nil && !boolFromAny(storage["active"])) {
 		return nil, nil
 	}
 	var content pveDataEnvelope
@@ -570,7 +597,7 @@ func (a *PVEAdapter) ownedPVECreate(ctx context.Context, connection Connection, 
 }
 
 func (a *PVEAdapter) resumePVECreate(ctx context.Context, connection Connection, plan pveCreatePlan) (VM, error) {
-	if plan.input.SourceMode == "template_clone" || plan.input.SourceMode == "vm_clone" || plan.input.TemplateID != "" {
+	if plan.input.SourceMode == "template_clone" || plan.input.SourceMode == "vm_clone" || plan.input.SourceMode == "cloud_image" || plan.input.TemplateID != "" {
 		if plan.input.DiskSize != "" {
 			if _, err := a.resizePVEClonedDisk(ctx, connection, plan.node, plan.vmid, "scsi0", plan.input.DiskSize); err != nil {
 				return VM{}, err
@@ -610,6 +637,9 @@ func (a *PVEAdapter) preparePVECreate(
 	if input.Name == "" {
 		return pveCreatePlan{}, invalidf("vm name is required")
 	}
+	if len(input.Disks) > 0 && (input.TemplateID != "" || input.SourceMode == "template_clone" || input.SourceMode == "vm_clone") {
+		return pveCreatePlan{}, fmt.Errorf("%w: additional clone disks require a separate disk operation", ErrUnsupported)
+	}
 	plan := pveCreatePlan{input: input}
 	plan.node = input.Node
 	if plan.node == "" {
@@ -622,6 +652,15 @@ func (a *PVEAdapter) preparePVECreate(
 		stringFromAny(input.ProviderParams["storage"]),
 		stringOptionValue(connection.Options, "defaultStorage"),
 	)
+	reserved := map[string]any{"scsi0": "reserved root disk"}
+	if input.SourceMode == "cloud_image" || input.CloudInit != "" {
+		reserved["ide2"] = "reserved cloud-init disk"
+	}
+	if _, resizes, err := preparePVEDiskChanges(reserved, input.Disks, plan.storage); err != nil {
+		return pveCreatePlan{}, err
+	} else if len(resizes) > 0 {
+		return pveCreatePlan{}, invalidf("creation accepts only new additional disks")
+	}
 	plan.bridge = firstNonEmpty(
 		stringFromAny(input.ProviderParams["bridge"]),
 		stringOptionValue(connection.Options, "defaultBridge"),
@@ -638,6 +677,14 @@ func (a *PVEAdapter) preparePVECreate(
 			return pveCreatePlan{}, err
 		}
 		plan.vmid = vmid
+	}
+	if input.SourceMode == "cloud_image" {
+		if input.TemplateID != "" || plan.iso != "" || plan.storage == "" || input.DiskSize == "" {
+			return pveCreatePlan{}, invalidf("cloud image creation requires a root storage and size without an ISO or clone source")
+		}
+		if _, err := a.inspectPVECloudImage(ctx, connection, input); err != nil {
+			return pveCreatePlan{}, err
+		}
 	}
 	return plan, nil
 }
@@ -739,12 +786,20 @@ func (a *PVEAdapter) createPVENative(
 			retErr = a.compensateFailedPVECreate(ctx, connection, plan, retErr)
 		}
 	}()
+	resizeUPID := ""
+	if plan.input.SourceMode == "cloud_image" {
+		resizeUPID, err = a.resizePVEClonedDisk(ctx, connection, plan.node, plan.vmid, "scsi0", plan.input.DiskSize)
+		if err != nil {
+			return VM{}, err
+		}
+	}
 	startUPID, err := a.startPVEAfterCreate(ctx, connection, plan)
 	if err != nil {
 		return VM{}, err
 	}
 	return a.finishPVECreate(ctx, connection, plan, map[string]string{
 		"pveCreateUpid": createUPID,
+		"pveResizeUpid": resizeUPID,
 		"pveStartUpid":  startUPID,
 	})
 }
@@ -773,6 +828,9 @@ func (a *PVEAdapter) compensateFailedPVECreate(ctx context.Context, connection C
 
 func pveCreatePayload(plan pveCreatePlan) map[string]any {
 	payload := map[string]any{"name": plan.input.Name, "vmid": plan.vmid}
+	if plan.input.SystemUUID != "" && plan.input.SystemUUID == plan.input.OperationID {
+		payload["smbios1"] = "uuid=" + plan.input.SystemUUID
+	}
 	if plan.input.OperationID != "" {
 		payload["description"] = pveCreationOwner(plan.input)
 	}
@@ -790,6 +848,14 @@ func pveCreatePayload(plan pveCreatePlan) map[string]any {
 	}
 	addPVEDiskAndNetwork(payload, plan)
 	addPVECloudInitPayload(payload, plan)
+	if plan.input.SourceMode == "cloud_image" {
+		payload["scsi0"] = plan.storage + ":0,import-from=" + plan.input.SourceRef
+		payload["scsihw"], payload["boot"], payload["ide2"] = "virtio-scsi-pci", "order=scsi0", plan.storage+":cloudinit"
+		payload["agent"], payload["serial0"], payload["vga"] = 1, "socket", "serial0"
+		for key, value := range pveCloudInitConfigPayload(plan.input, plan.cicustom, plan.bridge) {
+			payload[key] = value
+		}
+	}
 	return payload
 }
 
@@ -813,7 +879,11 @@ func addPVEDiskAndNetwork(payload map[string]any, plan pveCreatePlan) {
 		id := firstNonEmpty(disk.ID, disk.Name, fmt.Sprintf("scsi%d", index+1))
 		storage := firstNonEmpty(disk.Storage, plan.storage)
 		if id != "" && storage != "" && disk.SizeGiB > 0 {
-			payload[id] = fmt.Sprintf("%s:%d", storage, disk.SizeGiB)
+			value := fmt.Sprintf("%s:%d", storage, disk.SizeGiB)
+			if disk.Serial != "" {
+				value += ",serial=" + disk.Serial
+			}
+			payload[id] = value
 		}
 	}
 	for index, network := range plan.input.Networks {
@@ -934,7 +1004,21 @@ func (a *PVEAdapter) ResizeVM(ctx context.Context, connection Connection, vm VM,
 	if vm.ID == "" || vm.Node == "" {
 		return PowerActionResult{}, invalidf("vm id and node are required")
 	}
-	payload := map[string]any{}
+	config, err := a.pveVMConfig(ctx, connection, vm.Node, vm.ID)
+	if err != nil {
+		return PowerActionResult{}, err
+	}
+	payload, resizes, err := preparePVEDiskChanges(config, input.Disks, stringOptionValue(connection.Options, "defaultStorage"))
+	if err != nil {
+		return PowerActionResult{}, pveResizePreflightError(err)
+	}
+	if len(payload) > 0 {
+		digest := stringFromAny(config["digest"])
+		if !pveConfigDigestPattern.MatchString(digest) {
+			return PowerActionResult{}, pveResizePreflightError(invalidf("current VM config digest is required before adding disks"))
+		}
+		payload["digest"] = digest
+	}
 	if input.CPU > 0 {
 		payload["cores"] = input.CPU
 	}
@@ -951,33 +1035,19 @@ func (a *PVEAdapter) ResizeVM(ctx context.Context, connection Connection, vm VM,
 			return PowerActionResult{}, err
 		}
 	}
-	config, configErr := a.pveVMConfig(ctx, connection, vm.Node, vm.ID)
-	if configErr != nil && (len(input.Disks) > 0 || len(input.Networks) > 0) {
-		return PowerActionResult{}, configErr
-	}
-	for _, disk := range input.Disks {
-		diskID := firstNonEmpty(disk.ID, disk.Name)
-		if diskID == "" && disk.Add {
-			diskID = nextPVEDeviceID(config, "scsi")
-		}
-		if diskID == "" {
-			return PowerActionResult{}, invalidf("disk id is required")
-		}
-		if disk.Add {
-			storage := firstNonEmpty(disk.Storage, stringOptionValue(connection.Options, "defaultStorage"))
-			if storage == "" {
-				return PowerActionResult{}, invalidf("storage is required for a new disk")
-			}
-			value := fmt.Sprintf("%s:%d", storage, disk.SizeGiB)
-			if _, err := a.doTaskAndWait(ctx, connection, vm.Node, http.MethodPut, fmt.Sprintf("/nodes/%s/qemu/%s/config", url.PathEscape(vm.Node), url.PathEscape(vm.ID)), map[string]any{diskID: value}); err != nil {
-				return PowerActionResult{}, err
-			}
-			config[diskID] = value
-		} else if _, err := a.resizePVEClonedDisk(ctx, connection, vm.Node, vm.ID, diskID, fmt.Sprintf("%dG", disk.SizeGiB)); err != nil {
+	for _, disk := range resizes {
+		if _, err := a.resizePVEClonedDisk(ctx, connection, vm.Node, vm.ID, disk.ID, fmt.Sprintf("%dG", disk.SizeGiB)); err != nil {
 			return PowerActionResult{}, err
 		}
 	}
-	for _, network := range input.Networks {
+	if err := a.addPVENetworks(ctx, connection, vm, config, input.Networks); err != nil {
+		return PowerActionResult{}, err
+	}
+	return PowerActionResult{Accepted: true, Action: "resize", Message: "virtual machine resources updated"}, nil
+}
+
+func (a *PVEAdapter) addPVENetworks(ctx context.Context, connection Connection, vm VM, config map[string]any, networks []domainvirtualization.AdapterNetworkChange) error {
+	for _, network := range networks {
 		if !network.Add {
 			continue
 		}
@@ -986,18 +1056,18 @@ func (a *PVEAdapter) ResizeVM(ctx context.Context, connection Connection, vm VM,
 			networkID = nextPVEDeviceID(config, "net")
 		}
 		if networkID == "" {
-			return PowerActionResult{}, invalidf("network interface id is required")
+			return invalidf("network interface id is required")
 		}
 		model := firstNonEmpty(network.Model, "virtio")
 		if network.Network == "" {
-			return PowerActionResult{}, invalidf("network bridge is required")
+			return invalidf("network bridge is required")
 		}
 		value := fmt.Sprintf("%s,bridge=%s", model, network.Network)
 		if _, err := a.doTaskAndWait(ctx, connection, vm.Node, http.MethodPut, fmt.Sprintf("/nodes/%s/qemu/%s/config", url.PathEscape(vm.Node), url.PathEscape(vm.ID)), map[string]any{networkID: value}); err != nil {
-			return PowerActionResult{}, err
+			return err
 		}
 	}
-	return PowerActionResult{Accepted: true, Action: "resize", Message: "virtual machine resources updated"}, nil
+	return nil
 }
 
 func (a *PVEAdapter) deletePVEVM(ctx context.Context, connection Connection, vm VM) (PowerActionResult, error) {
@@ -1105,6 +1175,9 @@ func (a *PVEAdapter) ensurePVECICustom(ctx context.Context, connection Connectio
 
 func pveCloudInitConfigPayload(input CreateVMInput, cicustom string, providerBridge string) map[string]any {
 	payload := map[string]any{}
+	if input.SystemUUID != "" && input.SystemUUID == input.OperationID {
+		payload["smbios1"] = "uuid=" + input.SystemUUID
+	}
 	if input.WorkerSystemUUID != "" && input.WorkerSystemUUID == input.OperationID {
 		payload["smbios1"] = "uuid=" + input.WorkerSystemUUID
 	}
@@ -1270,7 +1343,7 @@ func (a *PVEAdapter) uploadPVECloudInit(ctx context.Context, connection Connecti
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		err := classifyPVEHTTPError(resp.StatusCode, endpoint, raw)
-		if method == "auto" && isPVEErrorReason(err, "snippet_upload_unsupported") && pveCanWriteSnippetViaSSH(connection, input) {
+		if method == "auto" && isPVEErrorReason(err, "snippet_upload_unsupported") && pveCanWriteSnippetViaSSH(connection, node, input) {
 			return a.writePVECloudInitViaSSH(ctx, connection, node, storage, filename, content, input)
 		}
 		return "", err
@@ -1285,10 +1358,13 @@ func (a *PVEAdapter) writePVECloudInitViaSSH(ctx context.Context, connection Con
 	if a.snippetWriter == nil {
 		return "", pveSnippetWriteUnavailableError("pve snippet ssh writer is not configured")
 	}
-	if !pveCanWriteSnippetViaSSH(connection, input) {
+	if !pveCanWriteSnippetViaSSH(connection, node, input) {
 		return "", pveSnippetWriteUnavailableError("pve snippet ssh write requires username/password credentials")
 	}
 	if err := a.snippetWriter.WriteSnippet(ctx, connection, node, storage, filename, content, input); err != nil {
+		if isPVEErrorReason(err, "snippet_write_unavailable") {
+			return "", err
+		}
 		return "", &AdapterError{
 			Cause:      err,
 			Reason:     "snippet_write_failed",
@@ -1315,8 +1391,8 @@ func pveSnippetWriteMethod(connection Connection, input CreateVMInput) (string, 
 	}
 }
 
-func pveCanWriteSnippetViaSSH(connection Connection, input CreateVMInput) bool {
-	_, username, password, _, _, ok := pveSSHConfig(connection, input)
+func pveCanWriteSnippetViaSSH(connection Connection, node string, input CreateVMInput) bool {
+	_, username, password, _, _, ok := pveSSHConfig(connection, node, input)
 	return ok && username != "" && password != ""
 }
 
@@ -1324,7 +1400,7 @@ func pveSnippetWriteUnavailableError(message string) error {
 	return &AdapterError{
 		Reason:     "snippet_write_unavailable",
 		Message:    message,
-		NextAction: "use providerParams.cicustom with an existing PVE snippet or configure PVE SSH snippet write credentials",
+		NextAction: "use providerParams.cicustom with an existing PVE snippet or configure PVE SSH credentials and a trusted sshHostKeys entry for the selected node",
 	}
 }
 
@@ -1334,31 +1410,57 @@ func isPVEErrorReason(err error, reason string) bool {
 }
 
 func (pveSSHSnippetWriter) WriteSnippet(ctx context.Context, connection Connection, node string, storage string, filename string, content string, input CreateVMInput) error {
-	host, username, password, directory, port, ok := pveSSHConfig(connection, input)
+	_, _, _, directory, _, ok := pveSSHConfig(connection, node, input)
 	if !ok {
 		return pveSnippetWriteUnavailableError("pve snippet ssh write requires host, username, password, and snippet directory")
 	}
+	client, err := pveSSHClient(ctx, connection, node, input)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = client.Close() }()
+	stop := context.AfterFunc(ctx, func() { _ = client.Close() })
+	defer stop()
+	return writePVESnippetSession(ctx, client, directory, filename, content)
+}
+
+func pveSSHClient(ctx context.Context, connection Connection, node string, input CreateVMInput) (*ssh.Client, error) {
+	host, username, password, _, port, _ := pveSSHConfig(connection, node, input)
+	if host == "" || username == "" || password == "" {
+		return nil, pveSnippetWriteUnavailableError("PVE SSH credentials and selected node address are required")
+	}
+	hostKeyCallback, hostKeyAlgorithms, err := pveSSHHostKeyCallback(connection, node)
+	if err != nil {
+		return nil, err
+	}
 	timeout := pveSSHTimeout(connection, input)
 	config := &ssh.ClientConfig{
-		User: username,
-		Auth: []ssh.AuthMethod{ssh.Password(password)},
-		//nolint:gosec // optional fallback for operator-provided PVE hosts; deployments can prefer REST snippet upload or pre-created cicustom snippets
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-		Timeout:         timeout,
+		User:              username,
+		Auth:              []ssh.AuthMethod{ssh.Password(password)},
+		HostKeyCallback:   hostKeyCallback,
+		HostKeyAlgorithms: hostKeyAlgorithms,
+		Timeout:           timeout,
 	}
 	address := net.JoinHostPort(host, strconv.Itoa(port))
 	dialer := net.Dialer{Timeout: timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
-		return fmt.Errorf("dial pve ssh %s: %w", address, err)
+		return nil, fmt.Errorf("dial pve ssh %s: %w", address, err)
 	}
+	_ = conn.SetDeadline(time.Now().Add(timeout))
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
 	clientConn, chans, reqs, err := ssh.NewClientConn(conn, address, config)
 	if err != nil {
 		_ = conn.Close()
-		return fmt.Errorf("authenticate pve ssh %s: %w", address, err)
+		return nil, fmt.Errorf("authenticate pve ssh %s: %w", address, err)
 	}
+	_ = conn.SetDeadline(time.Time{})
 	client := ssh.NewClient(clientConn, chans, reqs)
-	defer func() { _ = client.Close() }()
+	return client, nil
+}
+
+func writePVESnippetSession(ctx context.Context, client *ssh.Client, directory, filename, content string) error {
 	session, err := client.NewSession()
 	if err != nil {
 		return fmt.Errorf("create pve ssh session: %w", err)
@@ -1398,14 +1500,28 @@ func (pveSSHSnippetWriter) WriteSnippet(ctx context.Context, connection Connecti
 func pveSSHWriteSnippetCommand(directory string, filename string) string {
 	target := path.Join(directory, filename)
 	tempTarget := target + ".tmp"
-	return fmt.Sprintf("mkdir -p %s && umask 077 && cat > %s && install -m 0644 %s %s && rm -f %s", shellQuote(directory), shellQuote(tempTarget), shellQuote(tempTarget), shellQuote(target), shellQuote(tempTarget))
+	// Retain the staging file for inspection without a provider-side deletion.
+	return fmt.Sprintf("mkdir -p %s && umask 077 && cat > %s && install -m 0644 %s %s", shellQuote(directory), shellQuote(tempTarget), shellQuote(tempTarget), shellQuote(target))
 }
 
-func pveSSHConfig(connection Connection, input CreateVMInput) (string, string, string, string, int, bool) {
+func pveSSHHostKeyCallback(connection Connection, node string) (ssh.HostKeyCallback, []string, error) {
+	keys, _ := connection.Options["sshHostKeys"].(map[string]any)
+	key, _, options, rest, err := ssh.ParseAuthorizedKey([]byte(stringFromAny(keys[node])))
+	if err != nil || len(options) != 0 || len(bytes.TrimSpace(rest)) != 0 {
+		return nil, nil, pveSnippetWriteUnavailableError("configure a trusted SSH public host key in connection config sshHostKeys for the selected PVE node")
+	}
+	algorithms := []string{key.Type()}
+	if key.Type() == ssh.KeyAlgoRSA {
+		algorithms = []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256}
+	}
+	return ssh.FixedHostKey(key), algorithms, nil
+}
+
+func pveSSHConfig(connection Connection, node string, input CreateVMInput) (string, string, string, string, int, bool) {
 	host := firstNonEmpty(
 		stringFromAny(input.ProviderParams["sshHost"]),
 		stringOptionValue(connection.Options, "sshHost"),
-		pveEndpointHost(connection.Endpoint),
+		strings.TrimSpace(node),
 	)
 	username := firstNonEmpty(
 		stringFromAny(input.ProviderParams["sshUsername"]),
@@ -1456,18 +1572,6 @@ func defaultPVESnippetDirectory(storage string) string {
 	default:
 		return "/mnt/pve/" + shellPathSegment(storage) + "/snippets"
 	}
-}
-
-func pveEndpointHost(endpoint string) string {
-	parsed, err := url.Parse(strings.TrimSpace(endpoint))
-	if err != nil {
-		return ""
-	}
-	host := parsed.Hostname()
-	if host != "" {
-		return host
-	}
-	return strings.TrimSpace(parsed.Host)
 }
 
 func pveSSHUsername(username string) string {
@@ -2211,6 +2315,14 @@ func (a *PVEAdapter) enrichPVEVM(ctx context.Context, connection Connection, nod
 		vm.Metadata = map[string]string{}
 	}
 	vm.Metadata["vmid"] = vmid
+	if input.SystemUUID != "" {
+		if config, err := a.pveVMConfig(ctx, connection, node, vmid); err == nil {
+			generation := pveVMGeneration(config)
+			if strings.HasPrefix(generation, input.SystemUUID+"/") {
+				vm.Metadata["providerGeneration"] = generation
+			}
+		}
+	}
 	for key, value := range metadata {
 		if strings.TrimSpace(value) != "" {
 			vm.Metadata[key] = strings.TrimSpace(value)

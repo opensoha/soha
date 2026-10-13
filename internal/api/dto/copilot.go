@@ -35,6 +35,9 @@ type SendCopilotMessageRequest struct {
 }
 
 type WorkbenchSendMessageStreamRequest struct {
+	AssistantTask    *domaincopilot.WorkbenchAssistantTask    `json:"assistantTask"`
+	RequestID        string                                   `json:"requestId"`
+	TaskIntent       *domaincopilot.TaskIntent                `json:"taskIntent"`
 	ContextSelection *domaincopilot.ContextSelection          `json:"contextSelection"`
 	KnowledgeContext *domaincopilot.KnowledgeContextConfig    `json:"knowledgeContext"`
 	ModelPreferences *domaincopilot.WorkbenchModelPreferences `json:"modelPreferences"`
@@ -171,4 +174,8 @@ type CreateInspectionTaskRequest struct {
 	Enabled         bool           `json:"enabled"`
 	IntervalMinutes int            `json:"intervalMinutes"`
 	Metadata        map[string]any `json:"metadata"`
+}
+
+type WorkbenchMainSessionRequest struct {
+	AgentProviderID string `json:"agentProviderId,omitempty" binding:"max=200"`
 }

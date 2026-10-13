@@ -50,6 +50,22 @@ func (s *Service) ToolInvocationScopes(ctx context.Context, principal domainiden
 		}
 	}
 	switch tool.Name {
+	case "virtualization.vm_ssh.preflight", "virtualization.vm_ssh.execute", "virtualization.vm_ssh.get", "virtualization.vm_ssh.cancel", "virtualization.vm_ssh.assess":
+		vmID := stringValue(input, "vmId")
+		if vmID == "" {
+			task, err := s.commandForOwner(ctx, principal, stringValue(input, "commandId"), true)
+			if err != nil {
+				return nil, err
+			}
+			vmID = stringValue(task.Payload, "vmId")
+		}
+		item, connection, err := s.accessVM(ctx, principal, vmID, vmConnectPermission)
+		if err != nil {
+			return nil, err
+		}
+		scope := connectionCapabilityScope(connection, item.Namespace)
+		scope["vmId"] = item.ID
+		return []map[string]string{scope}, nil
 	case "virtualization.worker_pools.list", "virtualization.worker_pools.get", "virtualization.workers.create", "virtualization.workers.assess":
 		return s.workerToolScopes(ctx, principal, tool.Name, input)
 	case "virtualization.capacity.check":

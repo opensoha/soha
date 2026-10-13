@@ -14,6 +14,18 @@ http:
     - http://localhost:*
     - http://127.0.0.1:*
 
+# Registration and liveness only; this does not enable personal VM execution.
+personal_guest:
+  enabled: false
+  addr: :8444
+  # Optional preparation capability; both values must be configured together.
+  endpoint: ""
+  issuer_key_file: ""
+  tls:
+    cert_file: ""
+    key_file: ""
+    client_ca_file: ""
+
 logger:
   level: info
   format: json

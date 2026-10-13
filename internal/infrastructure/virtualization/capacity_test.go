@@ -2,6 +2,7 @@ package virtualization
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -17,8 +18,30 @@ import (
 	typedfake "k8s.io/client-go/kubernetes/fake"
 )
 
-func TestPVECapacityUsesCommitmentsAndDeduplicatesSharedStorage(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func TestPVECapacityUsesRuntimeHeadroomAndDeduplicatesSharedStorage(t *testing.T) {
+	server := pveHeadroomTestServer(t)
+	defer server.Close()
+	snapshot, err := NewPVEAdapter(server.Client()).ObserveCapacity(context.Background(), Connection{Endpoint: server.URL}, CreateVMInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !snapshot.Complete || len(snapshot.Nodes) != 2 || snapshot.Nodes[0].CPU != 6 || snapshot.Nodes[0].MemoryMiB != 11264 {
+		t.Fatalf("runtime headroom was blocked by unallocated stopped guest configuration: %+v", snapshot)
+	}
+	if len(snapshot.Storage) != 1 || snapshot.Storage[0].AvailableGiB != 40 || len(snapshot.Storage[0].Nodes) != 2 {
+		t.Fatalf("shared or thin disk capacity incorrect: %+v", snapshot.Storage)
+	}
+	if len(snapshot.ObservedOperations) != 0 {
+		t.Fatalf("stopped VM released its pending running capacity: %+v", snapshot)
+	}
+	if snapshot.Nodes[0].ConfiguredCPU != 0 || snapshot.Nodes[1].ConfiguredCPU != 2 || snapshot.Nodes[1].ConfiguredMemoryMiB != 2048 {
+		t.Fatalf("resident configuration budget: %+v", snapshot.Nodes)
+	}
+}
+
+func pveHeadroomTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("inventory mutated provider")
 			http.Error(w, "unexpected", 500)
@@ -29,9 +52,9 @@ func TestPVECapacityUsesCommitmentsAndDeduplicatesSharedStorage(t *testing.T) {
 			writePVEAny(w, map[string]any{"/": map[string]any{"Sys.Audit": 1, "VM.Audit": 1, "Datastore.Audit": 1}})
 		case "/api2/json/cluster/resources":
 			writePVEData(w, []map[string]any{
-				{"type": "node", "node": "a", "status": "online", "maxcpu": 8, "maxmem": int64(16 << 30), "mem": int64(3 << 30)},
-				{"type": "node", "node": "b", "status": "online", "maxcpu": 8, "maxmem": int64(16 << 30), "mem": int64(2 << 30)},
-				{"type": "qemu", "node": "a", "vmid": 701, "status": "stopped", "maxcpu": 6, "maxmem": int64(12 << 30)},
+				{"type": "node", "node": "a", "status": "online", "cpu": 0.25, "maxcpu": 8, "maxmem": int64(16 << 30), "mem": int64(3 << 30)},
+				{"type": "node", "node": "b", "status": "online", "cpu": 0.5, "maxcpu": 8, "maxmem": int64(16 << 30), "mem": int64(2 << 30)},
+				{"type": "qemu", "node": "a", "vmid": 701, "status": "stopped", "maxcpu": 128, "maxmem": int64(128 << 30)},
 				{"type": "lxc", "node": "b", "vmid": 702, "status": "running", "maxcpu": 2, "maxmem": int64(2 << 30)},
 			})
 		case "/api2/json/nodes/a/storage", "/api2/json/nodes/b/storage":
@@ -40,6 +63,102 @@ func TestPVECapacityUsesCommitmentsAndDeduplicatesSharedStorage(t *testing.T) {
 			writePVEData(w, []map[string]any{{"size": int64(60 << 30)}})
 		case "/api2/json/nodes/a/qemu/701/config":
 			writePVEAny(w, map[string]any{"description": "soha-operation:original"})
+		case "/api2/json/nodes/b/lxc/702/config":
+			writePVEAny(w, map[string]any{"cores": 2, "memory": 2048, "hostname": "container"})
+		default:
+			t.Errorf("unexpected read %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+}
+
+func TestPVECapacityRejectsInvalidRuntimeMetrics(t *testing.T) {
+	for _, test := range []struct {
+		name, field string
+		value       any
+	}{
+		{"missing CPU use", "cpu", nil}, {"negative CPU use", "cpu", -0.1},
+		{"CPU use above one", "cpu", 1.1}, {"NaN CPU use", "cpu", math.NaN()},
+		{"infinite CPU use", "cpu", math.Inf(1)}, {"missing CPU count", "maxcpu", nil},
+		{"zero CPU count", "maxcpu", 0}, {"missing memory use", "mem", nil},
+		{"memory use exceeds total", "mem", int64(17 << 30)}, {"missing memory total", "maxmem", nil},
+		{"zero memory total", "maxmem", 0}, {"missing node name", "node", ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			node := map[string]any{"type": "node", "node": "a", "status": "online", "cpu": 0.25, "maxcpu": 8, "maxmem": int64(16 << 30), "mem": int64(3 << 30)}
+			node[test.field] = test.value
+			if _, err := pveCapacityNodes([]map[string]any{node}); err == nil {
+				t.Fatal("invalid runtime metrics became available capacity")
+			}
+		})
+	}
+}
+
+func TestPVECapacityRuntimePressureAndHostReserve(t *testing.T) {
+	for _, test := range []struct {
+		name                    string
+		cpu                     float64
+		total, used, wantMemory int64
+		wantCPU                 int64
+	}{
+		{"busy CPU", 0.99, 16 << 30, 3 << 30, 11264, 0},
+		{"host minimum reserve", 0, 16 << 30, 15 << 30, 0, 8},
+		{"host proportional reserve", 0.5, 100 << 30, 90 << 30, 5120, 4},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			nodes, err := pveCapacityNodes([]map[string]any{{"type": "node", "node": "a", "status": "online", "cpu": test.cpu, "maxcpu": 8, "maxmem": test.total, "mem": test.used}})
+			if err != nil || len(nodes) != 1 || nodes[0].CPU != test.wantCPU || nodes[0].MemoryMiB != test.wantMemory {
+				t.Fatalf("pressure/reserve mismatch: %+v %v", nodes, err)
+			}
+		})
+	}
+}
+
+func TestPVEVMCapacityObservationPreservesUnseenReservations(t *testing.T) {
+	for _, test := range []struct {
+		name, status   string
+		uptime, memory any
+		want           bool
+	}{
+		{"stopped", "stopped", 60, 4 << 30, false},
+		{"just started", "running", 29, 1 << 30, false},
+		{"missing usage", "running", 60, nil, false},
+		{"missing uptime", "running", nil, 1 << 30, false},
+		{"reported running usage", "running", 30, 1 << 30, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := pveVMCapacityObserved(map[string]any{"status": test.status, "uptime": test.uptime, "mem": test.memory}); got != test.want {
+				t.Fatalf("observed=%v want=%v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestPVECapacityAccountsOnlyReportedUnlockedRunningVMs(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("capacity observation wrote to provider")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		switch r.URL.Path {
+		case "/api2/json/access/permissions":
+			writePVEAny(w, map[string]any{"/": map[string]any{"Sys.Audit": 1, "VM.Audit": 1, "Datastore.Audit": 1}})
+		case "/api2/json/cluster/resources":
+			writePVEData(w, []map[string]any{
+				{"type": "node", "node": "a", "status": "online", "maxcpu": 8, "cpu": 0.5, "maxmem": int64(16 << 30), "mem": int64(3 << 30)},
+				{"type": "qemu", "node": "a", "vmid": 701, "status": "stopped", "uptime": 60, "mem": int64(1 << 30)},
+				{"type": "qemu", "node": "a", "vmid": 702, "status": "running", "uptime": 29, "mem": int64(1 << 30)},
+				{"type": "qemu", "node": "a", "vmid": 703, "status": "running", "uptime": 60},
+				{"type": "qemu", "node": "a", "vmid": 704, "status": "running", "uptime": 30, "mem": int64(1 << 30)},
+				{"type": "qemu", "node": "a", "vmid": 705, "status": "running", "uptime": 60, "mem": int64(1 << 30)},
+			})
+		case "/api2/json/nodes/a/storage":
+			writePVEData(w, []map[string]any{})
+		case "/api2/json/nodes/a/qemu/701/config", "/api2/json/nodes/a/qemu/702/config", "/api2/json/nodes/a/qemu/703/config", "/api2/json/nodes/a/qemu/704/config":
+			writePVEAny(w, map[string]any{"description": "soha-operation:original"})
+		case "/api2/json/nodes/a/qemu/705/config":
+			writePVEAny(w, map[string]any{"description": "soha-operation:locked", "lock": "create"})
 		default:
 			t.Errorf("unexpected read %s", r.URL.Path)
 			http.NotFound(w, r)
@@ -47,24 +166,8 @@ func TestPVECapacityUsesCommitmentsAndDeduplicatesSharedStorage(t *testing.T) {
 	}))
 	defer server.Close()
 	snapshot, err := NewPVEAdapter(server.Client()).ObserveCapacity(context.Background(), Connection{Endpoint: server.URL}, CreateVMInput{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !snapshot.Complete || len(snapshot.Nodes) != 2 || snapshot.Nodes[0].CPU != 2 || snapshot.Nodes[0].MemoryMiB != 3584 {
-		t.Fatalf("used utilization instead of stopped guest commitments: %+v", snapshot)
-	}
-	if len(snapshot.Storage) != 1 || snapshot.Storage[0].AvailableGiB != 40 || len(snapshot.Storage[0].Nodes) != 2 {
-		t.Fatalf("shared or thin disk capacity incorrect: %+v", snapshot.Storage)
-	}
-	if len(snapshot.ObservedOperations) != 1 || snapshot.ObservedOperations[0] != "original" {
-		t.Fatalf("owner observation lost: %+v", snapshot)
-	}
-}
-
-func TestPVECapacityRejectsMissingAllocationFields(t *testing.T) {
-	_, err := pveCapacityNodes([]map[string]any{{"type": "node", "node": "a", "status": "online", "maxcpu": 8, "maxmem": int64(16 << 30), "mem": int64(3 << 30)}, {"type": "qemu", "node": "a", "maxcpu": 2}}, 512)
-	if err == nil {
-		t.Fatal("partial guest inventory became available capacity")
+	if err != nil || len(snapshot.ObservedOperations) != 1 || snapshot.ObservedOperations[0] != "original" {
+		t.Fatalf("unseen/locked VM affected reservation accounting: %+v %v", snapshot, err)
 	}
 }
 

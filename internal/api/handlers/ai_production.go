@@ -1,13 +1,16 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
 	appaccess "github.com/opensoha/soha/internal/application/access"
@@ -146,12 +149,20 @@ func (h *AIProductionHandler) putEnvironmentTemplate(c *gin.Context) {
 	if !h.allowed(c, appaccess.ManagedActionPermission(appaccess.PermAIEnvironmentsManage, "create")) {
 		return
 	}
-	var input appaiproduction.EnvironmentTemplate
-	if c.ShouldBindJSON(&input) != nil {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 64<<10)
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	var body sohaapi.AIEnvironmentTemplateInput
+	if decoder.Decode(&body) != nil {
 		writeError(c, fmt.Errorf("%w: invalid environment template", apperrors.ErrInvalidArgument))
 		return
 	}
-	item, err := h.service.PutEnvironmentTemplate(c, input)
+	if decoder.Decode(new(any)) != io.EOF {
+		writeError(c, fmt.Errorf("%w: invalid environment template", apperrors.ErrInvalidArgument))
+		return
+	}
+	input := appaiproduction.EnvironmentTemplate{ID: body.ID, Name: body.Name, Backend: string(body.Backend), IsolationMode: string(body.IsolationMode), PersonalDocker: body.PersonalDocker, PersonalVM: body.PersonalVM, ResourcePolicy: body.ResourcePolicy, NetworkPolicy: body.NetworkPolicy}
+	item, err := h.service.PutEnvironmentTemplateForPrincipal(c, apiMiddleware.PrincipalFromContext(c), input)
 	writeProductionItem(c, http.StatusCreated, item, err)
 }
 func (h *AIProductionHandler) listEnvironmentLeases(c *gin.Context) {

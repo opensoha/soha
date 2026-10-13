@@ -2,6 +2,7 @@ package aigateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	domainai "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainop "github.com/opensoha/soha/internal/domain/operation"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 	domainvm "github.com/opensoha/soha/internal/domain/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -64,31 +66,8 @@ func NewVirtualizationCapabilityProvider(service VirtualizationCapabilityService
 		{Name: "virtualization.operations.cancel", Title: "Cancel VM Operation", Description: "Request cancellation of the original VM operation. Existing provider resources are retained; canceling remains unresolved until the provider effect is known.", Action: "cancel", RiskLevel: domainai.RiskLevelExecute, RequiresApproval: true, PermissionKeys: []string{appaccess.PermVirtualizationOperationsView, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "cancel")}, InputSchema: mutation},
 		{Name: "virtualization.operations.retry", Title: "Retry VM Operation", Description: "Retry the same operation identity. Undispatched capacity-backed creation requires fresh atomic admission; dispatched creation keeps its reservation and provider identity.", Action: "retry", RiskLevel: domainai.RiskLevelExecute, RequiresApproval: true, PermissionKeys: []string{appaccess.PermVirtualizationOperationsView, appaccess.ManagedActionPermission(appaccess.PermVirtualizationOperationsManage, "retry")}, InputSchema: mutation},
 	}
-	for i := range tools {
-		tool := &tools[i]
-		tool.Version, tool.Domain, tool.MCPAdapterID, tool.MCPToolName = "1", "virtualization", "virtualization.v1", tool.Name
-		tool.PermissionKeys = append([]string{appaccess.PermAIGatewayInvoke}, tool.PermissionKeys...)
-		tool.RequiredScopes = []string{"virtualizationConnection", "namespace", "vm"}
-		tool.Execution = &domainai.ToolExecutionContract{Mode: "sync", Idempotent: true}
-		if i >= 2 {
-			tool.Execution.TaskKind, tool.Execution.StatusTool, tool.Execution.CancelTool = "virtualization.operation", "virtualization.operations.get", "virtualization.operations.cancel"
-			tool.OutputSemantics = []domainai.CapabilityValueSemantic{{Path: "/id", Kind: "virtualization.operation"}, {Path: "/vmId", Kind: "virtualization.vm"}, {Path: "/connectionId", Kind: "virtualization.connection"}}
-		}
-		if i == 2 || i == 4 || i == 5 {
-			tool.Execution.Mode, tool.Execution.IdempotencyKeyField = "async", "idempotencyKey"
-			tool.Execution.RecoveryMode = "original_call"
-		}
-		if i <= 2 {
-			tool.InputSemantics = []domainai.CapabilityValueSemantic{{Path: "/connectionId", Kind: "virtualization.connection"}, {Path: "/node", Kind: "virtualization.node"}, {Path: "/namespace", Kind: "k8s.namespace"}}
-			if i != 0 {
-				tool.InputSemantics = append(tool.InputSemantics, domainai.CapabilityValueSemantic{Path: "/cloudInit", Kind: "secret"})
-			}
-		} else {
-			tool.InputSemantics = []domainai.CapabilityValueSemantic{{Path: "/operationId", Kind: "virtualization.operation"}}
-		}
-		if _, err := compileCapabilityInputSchema(tool.InputSchema); err != nil {
-			return nil, err
-		}
+	if err := configureVirtualizationTools(tools); err != nil {
+		return nil, err
 	}
 	tools[0].OutputSemantics = []domainai.CapabilityValueSemantic{{Path: "/connectionId", Kind: "virtualization.connection"}, {Path: "/node", Kind: "virtualization.node"}, {Path: "/namespace", Kind: "k8s.namespace"}, {Path: "/storage", Kind: "virtualization.storage"}}
 	tools[2].Execution.Checks = []domainai.CapabilityCheckReference{
@@ -114,7 +93,44 @@ func NewVirtualizationCapabilityProvider(service VirtualizationCapabilityService
 	if err != nil {
 		return nil, err
 	}
+	if _, ok := service.(vmSSHCapabilityService); ok {
+		sshTools, err := vmSSHCapabilities()
+		if err != nil {
+			return nil, err
+		}
+		workers = append(workers, sshTools...)
+	}
 	return &virtualizationCapabilityProvider{service: service, tools: append(tools, workers...)}, nil
+}
+
+func configureVirtualizationTools(tools []domainai.ToolCapability) error {
+	for i := range tools {
+		tool := &tools[i]
+		tool.Version, tool.Domain, tool.MCPAdapterID, tool.MCPToolName = "1", "virtualization", "virtualization.v1", tool.Name
+		tool.PermissionKeys = append([]string{appaccess.PermAIGatewayInvoke}, tool.PermissionKeys...)
+		tool.RequiredScopes = []string{"virtualizationConnection", "namespace", "vm"}
+		tool.Execution = &domainai.ToolExecutionContract{Mode: "sync", Idempotent: true}
+		if i >= 2 {
+			tool.Execution.TaskKind, tool.Execution.StatusTool, tool.Execution.CancelTool = "virtualization.operation", "virtualization.operations.get", "virtualization.operations.cancel"
+			tool.OutputSemantics = []domainai.CapabilityValueSemantic{{Path: "/id", Kind: "virtualization.operation"}, {Path: "/vmId", Kind: "virtualization.vm"}, {Path: "/connectionId", Kind: "virtualization.connection"}}
+		}
+		if i == 2 || i == 4 || i == 5 {
+			tool.Execution.Mode, tool.Execution.IdempotencyKeyField = "async", "idempotencyKey"
+			tool.Execution.RecoveryMode = "original_call"
+		}
+		if i <= 2 {
+			tool.InputSemantics = []domainai.CapabilityValueSemantic{{Path: "/connectionId", Kind: "virtualization.connection"}, {Path: "/node", Kind: "virtualization.node"}, {Path: "/namespace", Kind: "k8s.namespace"}}
+			if i != 0 {
+				tool.InputSemantics = append(tool.InputSemantics, domainai.CapabilityValueSemantic{Path: "/cloudInit", Kind: "secret"})
+			}
+		} else {
+			tool.InputSemantics = []domainai.CapabilityValueSemantic{{Path: "/operationId", Kind: "virtualization.operation"}}
+		}
+		if _, err := compileCapabilityInputSchema(tool.InputSchema); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func workerCapabilities() ([]domainai.ToolCapability, error) {
@@ -194,6 +210,9 @@ func withVirtualizationScopeCheck(ctx context.Context, tool string) context.Cont
 
 func (p *virtualizationCapabilityProvider) InvokeTool(ctx context.Context, principal domainidentity.Principal, tool domainai.ToolCapability, input map[string]any) (any, map[string]any, error) {
 	ctx = withVirtualizationScopeCheck(ctx, tool.Name)
+	if strings.HasPrefix(tool.Name, "virtualization.vm_ssh.") {
+		return p.invokeVMSSH(ctx, principal, tool, input)
+	}
 	switch tool.Name {
 	case "virtualization.worker_pools.list":
 		result, err := p.service.ListWorkerPools(ctx, principal, firstMapString(input, "connectionId"))
@@ -291,11 +310,17 @@ func virtualizationTaskOutput(task domainvm.Task) map[string]any {
 	if task.FinishedAt != nil {
 		result["finishedAt"] = task.FinishedAt
 	}
+	if receipt := publicGuestInitialization(task.Result["guestInitialization"]); receipt != nil {
+		result["guestInitialization"] = receipt
+	}
 	result["cancellationConfirmed"] = confirmed
 	return result
 }
 
 func (*virtualizationCapabilityProvider) TaskReference(tool domainai.ToolCapability, output, visible any) *domainai.CapabilityTaskRef {
+	if tool.Execution != nil && tool.Execution.TaskKind == "virtualization.ssh_command" {
+		return vmSSHTaskReference(tool, output, visible)
+	}
 	if tool.Execution == nil || tool.Execution.TaskKind != "virtualization.operation" {
 		return nil
 	}
@@ -331,6 +356,9 @@ func (*virtualizationCapabilityProvider) TaskReference(tool domainai.ToolCapabil
 
 func (p *virtualizationCapabilityProvider) RecoverTool(ctx context.Context, principal domainidentity.Principal, tool domainai.ToolCapability, input map[string]any) (any, bool, error) {
 	ctx = withVirtualizationScopeCheck(ctx, tool.Name)
+	if strings.HasPrefix(tool.Name, "virtualization.vm_ssh.") {
+		return p.recoverVMSSH(ctx, principal, tool, input)
+	}
 	var task domainvm.Task
 	var err error
 	switch tool.Name {
@@ -356,4 +384,33 @@ func (p *virtualizationCapabilityProvider) RecoverTool(ctx context.Context, prin
 		return nil, false, nil
 	}
 	return virtualizationTaskOutput(task), err == nil, err
+}
+
+func publicGuestInitialization(value any) map[string]any {
+	if value == nil {
+		return nil
+	}
+	var receipt struct {
+		Bootstrap          string                      `json:"bootstrap"`
+		CloudInit          string                      `json:"cloudInit"`
+		SSHLogin           string                      `json:"sshLogin"`
+		SourceProof        domainvm.VMIdentity         `json:"sourceProof"`
+		PublicKeyRefs      []domainsecret.Reference    `json:"publicKeyRefs"`
+		PublicKeys         []domainsecret.SSHPublicKey `json:"publicKeys"`
+		ProviderVMID       string                      `json:"providerVmId"`
+		ProviderGeneration string                      `json:"providerGeneration"`
+	}
+	data, err := json.Marshal(value)
+	if err != nil || json.Unmarshal(data, &receipt) != nil {
+		return nil
+	}
+	fingerprints := make([]string, 0, len(receipt.PublicKeys))
+	refs := make([]string, 0, len(receipt.PublicKeyRefs))
+	for _, key := range receipt.PublicKeys {
+		fingerprints = append(fingerprints, key.Fingerprint)
+	}
+	for _, ref := range receipt.PublicKeyRefs {
+		refs = append(refs, ref.URI)
+	}
+	return map[string]any{"bootstrap": receipt.Bootstrap, "cloudInit": receipt.CloudInit, "sshLogin": receipt.SSHLogin, "publicKeyRefs": refs, "fingerprints": fingerprints, "providerVmId": receipt.ProviderVMID, "providerGeneration": receipt.ProviderGeneration, "sourceProof": map[string]string{"providerVmId": receipt.SourceProof.ProviderVMID, "generation": receipt.SourceProof.Generation, "name": receipt.SourceProof.Name, "node": receipt.SourceProof.Node}}
 }

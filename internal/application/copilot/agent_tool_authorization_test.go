@@ -9,6 +9,7 @@ import (
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainknowledge "github.com/opensoha/soha/internal/domain/knowledge"
 	apperrors "github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -23,6 +24,9 @@ type chatGatewayToolStub struct {
 func (g *chatGatewayToolStub) InvokeTool(_ context.Context, _ domainidentity.Principal, input domainaigateway.ToolInvocationRequest) (domainaigateway.ToolInvocationResult, error) {
 	g.calls++
 	g.input = input
+	if input.ToolName == "knowledge.search" {
+		return domainaigateway.ToolInvocationResult{Result: "success", Output: domainknowledge.SearchResult{Citations: []domainknowledge.Citation{{ID: "fixture", KnowledgeBaseID: "selected", DocumentID: "doc", ChunkID: "fixture", ContentHash: "hash"}}}}, nil
+	}
 	return domainaigateway.ToolInvocationResult{Result: "success", Output: map[string]any{"ready": true}}, nil
 }
 

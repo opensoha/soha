@@ -214,6 +214,25 @@ func TestMapVMDetailRedactsProviderRaw(t *testing.T) {
 	}
 }
 
+func TestMapVMDetailUsesObservedResourcesBeforeFlavor(t *testing.T) {
+	for _, config := range []map[string]any{{"cpu": 2, "memoryMiB": 4096, "diskGiB": 48}, nil} {
+		detail := appvirtualization.VMDetail{VM: domainvirtualization.VM{Config: config}, Flavor: &domainvirtualization.Flavor{CPUCores: 1, MemoryMB: 1024, DiskGB: 40}}
+		vm, ok := mapVMDetail(detail)["vm"].(gin.H)
+		if !ok {
+			t.Fatal("missing VM detail projection")
+		}
+		want := []int{2, 4096, 48}
+		if config == nil {
+			want = []int{1, 1024, 40}
+		}
+		for index, key := range []string{"cpu", "memoryMiB", "diskGiB"} {
+			if vm[key] != want[index] {
+				t.Fatalf("%s=%v want %d", key, vm[key], want[index])
+			}
+		}
+	}
+}
+
 func TestMapConnectionRedactsPrometheusBearerToken(t *testing.T) {
 	mapped := mapConnection(domainvirtualization.Connection{
 		ID:       "conn-1",

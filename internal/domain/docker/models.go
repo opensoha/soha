@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 )
 
 type Page[T any] struct {
@@ -651,27 +653,28 @@ type ContainerStartCreateResult struct {
 }
 
 type QuickCreateHostInput struct {
-	RequireCapacity            bool           `json:"requireCapacity,omitempty"`
-	Name                       string         `json:"name"`
-	Environment                string         `json:"environment,omitempty"`
-	Owner                      string         `json:"owner,omitempty"`
-	Team                       string         `json:"team,omitempty"`
-	VirtualizationConnectionID string         `json:"virtualizationConnectionId,omitempty"`
-	VMTemplateID               string         `json:"vmTemplateId,omitempty"`
-	FlavorID                   string         `json:"flavorId,omitempty"`
-	ImageID                    string         `json:"imageId,omitempty"`
-	Architecture               string         `json:"architecture,omitempty"`
-	CloudInit                  string         `json:"cloudInit,omitempty"`
-	CPUCoreCount               int            `json:"cpuCoreCount,omitempty"`
-	MemoryBytes                int64          `json:"memoryBytes,omitempty"`
-	DiskBytes                  int64          `json:"diskBytes,omitempty"`
-	Network                    string         `json:"network,omitempty"`
-	AvailablePortStart         int            `json:"availablePortStart,omitempty"`
-	AvailablePortEnd           int            `json:"availablePortEnd,omitempty"`
-	TTLSeconds                 int            `json:"ttlSeconds,omitempty"`
-	Labels                     map[string]any `json:"labels,omitempty"`
-	Config                     map[string]any `json:"config,omitempty"`
-	IdempotencyKey             string         `json:"-"`
+	RequireCapacity            bool                                    `json:"requireCapacity,omitempty"`
+	Name                       string                                  `json:"name"`
+	Environment                string                                  `json:"environment,omitempty"`
+	Owner                      string                                  `json:"owner,omitempty"`
+	Team                       string                                  `json:"team,omitempty"`
+	VirtualizationConnectionID string                                  `json:"virtualizationConnectionId,omitempty"`
+	VMTemplateID               string                                  `json:"vmTemplateId,omitempty"`
+	FlavorID                   string                                  `json:"flavorId,omitempty"`
+	ImageID                    string                                  `json:"imageId,omitempty"`
+	Architecture               string                                  `json:"architecture,omitempty"`
+	CloudInit                  string                                  `json:"cloudInit,omitempty"`
+	GuestAccess                *sohaapi.VirtualMachineGuestAccessInput `json:"guestAccess,omitempty"`
+	CPUCoreCount               int                                     `json:"cpuCoreCount,omitempty"`
+	MemoryBytes                int64                                   `json:"memoryBytes,omitempty"`
+	DiskBytes                  int64                                   `json:"diskBytes,omitempty"`
+	Network                    string                                  `json:"network,omitempty"`
+	AvailablePortStart         int                                     `json:"availablePortStart,omitempty"`
+	AvailablePortEnd           int                                     `json:"availablePortEnd,omitempty"`
+	TTLSeconds                 int                                     `json:"ttlSeconds,omitempty"`
+	Labels                     map[string]any                          `json:"labels,omitempty"`
+	Config                     map[string]any                          `json:"config,omitempty"`
+	IdempotencyKey             string                                  `json:"-"`
 }
 
 type ContainerPortInput struct {

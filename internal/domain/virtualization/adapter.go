@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -69,6 +70,7 @@ type AdapterCreateVMInput struct {
 	// OperationID is assigned by the durable task worker, never by API callers.
 	OperationID      string
 	WorkerSystemUUID string
+	SystemUUID       string
 	CapacityReserved bool
 	Name             string
 	Architecture     string
@@ -138,9 +140,17 @@ type AdapterResizeVMInput struct {
 
 type AdapterDiskChange struct {
 	ID, Name, Storage, Bus string
+	Serial                 string `json:"serial,omitempty"`
 	SizeGiB                int
 	Add                    bool
 }
+
+var diskSerialPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,20}$`)
+
+func (d AdapterDiskChange) ValidSerial() bool {
+	return d.Serial == "" || (d.Add && diskSerialPattern.MatchString(d.Serial))
+}
+
 type AdapterNetworkChange struct {
 	ID, Name, Network, Model, Binding string
 	Add, Remove                       bool
@@ -176,11 +186,12 @@ type ResizeAdapter interface {
 }
 
 type AdapterError struct {
-	Cause      error
-	Reason     string
-	Message    string
-	HTTPStatus int
-	NextAction string
+	Cause           error
+	Reason          string
+	Message         string
+	HTTPStatus      int
+	NextAction      string
+	NoProviderWrite bool
 }
 
 func (e *AdapterError) Error() string {

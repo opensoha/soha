@@ -95,6 +95,11 @@ type AgentCapability struct {
 }
 
 type AgentRun struct {
+	ExecutionOwner     string                     `json:"executionOwner,omitempty" gorm:"-"`
+	Phase              string                     `json:"phase,omitempty" gorm:"-"`
+	StopReason         string                     `json:"stopReason,omitempty" gorm:"-"`
+	EventSequence      int64                      `json:"eventSequence,omitempty" gorm:"-"`
+	UsageKnown         bool                       `json:"usageKnown" gorm:"-"`
 	ParentRunID        string                     `json:"parentRunId,omitempty" gorm:"-"`
 	Chat               *sohaapi.AgentChatInput    `json:"chat,omitempty" gorm:"-"`
 	ID                 string                     `json:"id"`
@@ -839,15 +844,19 @@ type GatewayAnalysisAgentRunInput struct {
 }
 
 type AgentRunFilter struct {
-	CreatedBy      string
-	SessionID      string
-	Status         string
-	ProviderID     string
-	CapabilityID   string
-	TriggerType    string
-	DedupKey       string
-	DedupKeyPrefix string
-	Limit          int
+	CreatedBy               string
+	SessionID               string
+	NativeRequestID         string
+	Status                  string
+	ProviderID              string
+	CapabilityID            string
+	TriggerType             string
+	DedupKey                string
+	DedupKeyPrefix          string
+	Limit                   int
+	ExcludeArchivedSessions bool
+	PersonalSessionsOnly    bool
+	ExcludePersonalSessions bool
 }
 
 type AgentRunClaimInput struct {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"time"
 
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
@@ -38,14 +39,19 @@ func (s *Service) runCapabilityTick(parent context.Context, run domainworkflow.R
 		_, _ = repo.SaveManagedRun(ctx, run, true)
 		return
 	}
-	deadline := intent.Deadline
-	for _, node := range run.NodeRuns {
-		if node.DispatchAttempted && !capabilityNodeTerminal(node.Status) {
-			if candidate := domainworkflow.CapabilityNodeDeadline(intent, node); candidate.Before(deadline) {
-				deadline = candidate
-			}
+	stopReason, err := s.nativeCapabilityStopReason(ctx, intent)
+	if err != nil {
+		run.Status, run.StopSummary = "blocked", "Native parent cannot be authorized; child state is unconfirmed"
+		_, _ = repo.SaveManagedRun(ctx, run, true)
+		return
+	}
+	if run.StopReason == "" && stopReason != "" {
+		run, err = repo.StopManagedRun(ctx, run.ID, stopReason, "Native parent stopped or is no longer authorized")
+		if err != nil {
+			return
 		}
 	}
+	deadline := capabilityRunDeadline(intent, run)
 	if run.StopReason == "" && time.Now().After(deadline) {
 		run, err = repo.StopManagedRun(ctx, run.ID, "failure", "capability task deadline exceeded")
 		if err != nil {
@@ -53,6 +59,9 @@ func (s *Service) runCapabilityTick(parent context.Context, run domainworkflow.R
 		}
 	}
 	principal, err := s.deliveryPrincipals.CurrentExecutionPrincipal(ctx, intent.ActorID, intent.ActorTokenID)
+	if err == nil && intent.PermissionCeiling != nil {
+		principal, err = appaccess.RuntimePrincipalWithin(ctx, s.permissions, principal, intent.PermissionCeiling)
+	}
 	if err != nil {
 		// No roles cached in a task may authorize a resumed operation.
 		run.Status = "blocked"
@@ -73,6 +82,18 @@ func (s *Service) runCapabilityTick(parent context.Context, run domainworkflow.R
 	if err == nil {
 		s.publishRunUpdate(updated)
 	}
+}
+
+func capabilityRunDeadline(intent domainworkflow.CapabilityIntent, run domainworkflow.Run) time.Time {
+	deadline := intent.Deadline
+	for _, node := range run.NodeRuns {
+		if node.DispatchAttempted && !capabilityNodeTerminal(node.Status) {
+			if candidate := domainworkflow.CapabilityNodeDeadline(intent, node); candidate.Before(deadline) {
+				deadline = candidate
+			}
+		}
+	}
+	return deadline
 }
 
 func (s *Service) advanceCapabilityRun(ctx context.Context, repo CapabilityRepository, principal domainidentity.Principal, intent domainworkflow.CapabilityIntent, run domainworkflow.Run) (domainworkflow.Run, error) {

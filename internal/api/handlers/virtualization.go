@@ -56,6 +56,11 @@ type VirtualizationPlanningService interface {
 	CheckCapacity(context.Context, domainidentity.Principal, sohaapi.VirtualizationCapacityInput) (sohaapi.VirtualizationCapacityResult, error)
 }
 
+type VirtualizationCapacityPolicyService interface {
+	GetCapacityPolicy(context.Context, domainidentity.Principal, string) (sohaapi.VirtualizationCapacityPolicy, error)
+	SaveCapacityPolicy(context.Context, domainidentity.Principal, string, sohaapi.VirtualizationCapacityPolicyInput) (sohaapi.VirtualizationCapacityPolicy, error)
+}
+
 type VirtualizationWorkerPoolService interface {
 	GetWorkerPool(context.Context, domainidentity.Principal, string) (sohaapi.VirtualizationWorkerPool, error)
 	ListWorkerPools(context.Context, domainidentity.Principal, string) ([]sohaapi.VirtualizationWorkerPool, error)
@@ -106,45 +111,55 @@ type VirtualizationService interface {
 }
 
 type VirtualizationServices struct {
-	Connections VirtualizationConnectionService
-	Sync        VirtualizationSyncService
-	VMs         VirtualizationVMService
-	Images      VirtualizationImageService
-	Flavors     VirtualizationFlavorService
-	Operations  VirtualizationOperationService
-	Runtime     VirtualizationRuntimeService
-	Planning    VirtualizationPlanningService
-	WorkerPools VirtualizationWorkerPoolService
+	GuestAccess      VirtualizationGuestAccessService
+	Connections      VirtualizationConnectionService
+	Sync             VirtualizationSyncService
+	VMs              VirtualizationVMService
+	Images           VirtualizationImageService
+	Flavors          VirtualizationFlavorService
+	Operations       VirtualizationOperationService
+	Runtime          VirtualizationRuntimeService
+	Planning         VirtualizationPlanningService
+	WorkerPools      VirtualizationWorkerPoolService
+	CapacityPolicies VirtualizationCapacityPolicyService
 }
 
 type VirtualizationHandler struct {
-	connections VirtualizationConnectionService
-	sync        VirtualizationSyncService
-	vms         VirtualizationVMService
-	images      VirtualizationImageService
-	flavors     VirtualizationFlavorService
-	operations  VirtualizationOperationService
-	runtime     VirtualizationRuntimeService
-	planning    VirtualizationPlanningService
-	workerPools VirtualizationWorkerPoolService
+	vmBindings       VirtualizationBindingService
+	sshSessions      VirtualizationSSHSessionService
+	sshCommands      VirtualizationSSHCommandService
+	connections      VirtualizationConnectionService
+	sync             VirtualizationSyncService
+	vms              VirtualizationVMService
+	images           VirtualizationImageService
+	flavors          VirtualizationFlavorService
+	operations       VirtualizationOperationService
+	runtime          VirtualizationRuntimeService
+	planning         VirtualizationPlanningService
+	workerPools      VirtualizationWorkerPoolService
+	capacityPolicies VirtualizationCapacityPolicyService
 }
 
 func NewVirtualizationHandler(service VirtualizationService) *VirtualizationHandler {
 	planning, _ := any(service).(VirtualizationPlanningService)
 	workerPools, _ := any(service).(VirtualizationWorkerPoolService)
+	capacityPolicies, _ := any(service).(VirtualizationCapacityPolicyService)
+	guestAccess, _ := any(service).(VirtualizationGuestAccessService)
 	return NewVirtualizationHandlerWithServices(VirtualizationServices{
 		Connections: service, Sync: service, VMs: service,
-		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: planning, WorkerPools: workerPools,
+		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: planning, WorkerPools: workerPools, CapacityPolicies: capacityPolicies, GuestAccess: guestAccess,
 	})
 }
 
 func NewVirtualizationHandlerWithServices(services VirtualizationServices) *VirtualizationHandler {
 	return &VirtualizationHandler{
+		vmBindings: services.GuestAccess, sshSessions: services.GuestAccess, sshCommands: services.GuestAccess,
 		connections: services.Connections, sync: services.Sync,
 		vms: services.VMs, images: services.Images, flavors: services.Flavors,
 		operations: services.Operations, runtime: services.Runtime,
-		planning:    services.Planning,
-		workerPools: services.WorkerPools,
+		planning:         services.Planning,
+		workerPools:      services.WorkerPools,
+		capacityPolicies: services.CapacityPolicies,
 	}
 }
 
@@ -314,7 +329,13 @@ func (h *VirtualizationHandler) CheckCapacity(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid capacity request")
 		return
 	}
-	result, err := h.planning.CheckCapacity(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), input)
+	ctx, cancel, err := capacityReadContext(c)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	defer cancel()
+	result, err := h.planning.CheckCapacity(ctx, apiMiddleware.PrincipalFromContext(c), input)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -809,9 +830,15 @@ func mapVMDetail(item appvirtualization.VMDetail) gin.H {
 		out["flavor"] = mapFlavor(*item.Flavor)
 		vm["flavorName"] = item.Flavor.Name
 		vm["flavorId"] = item.Flavor.ID
-		vm["cpu"] = item.Flavor.CPUCores
-		vm["memoryMiB"] = item.Flavor.MemoryMB
-		vm["diskGiB"] = item.Flavor.DiskGB
+		if intValue(item.VM.Config, "cpu") <= 0 {
+			vm["cpu"] = item.Flavor.CPUCores
+		}
+		if intValue(item.VM.Config, "memoryMiB") <= 0 {
+			vm["memoryMiB"] = item.Flavor.MemoryMB
+		}
+		if intValue(item.VM.Config, "diskGiB") <= 0 && intValue(item.VM.Config, "diskCount") <= 1 {
+			vm["diskGiB"] = item.Flavor.DiskGB
+		}
 	}
 	return out
 }

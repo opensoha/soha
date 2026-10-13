@@ -57,6 +57,11 @@ func (r *workerExecutionTasks) RetryTaskWithCapacity(ctx context.Context, task d
 	return r.UpdateTask(ctx, task)
 }
 
+func (r *workerExecutionTasks) RecheckTaskWithCapacity(ctx context.Context, task domain.Task, _ domain.CapacitySnapshot, _ domain.CapacityDemand) (domain.Task, error) {
+	task.Payload["providerDispatchStarted"] = true
+	return r.UpdateTask(ctx, task)
+}
+
 func (r *workerPoolStore) GetWorkerPool(_ context.Context, id string) (domain.WorkerPool, error) {
 	if r.saved.ID.String() != id {
 		return domain.WorkerPool{}, apperrors.ErrNotFound

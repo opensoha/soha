@@ -44,7 +44,7 @@ func TestImageExtraClausesGroupsCatalogAndStorageKinds(t *testing.T) {
 		category string
 		wantArgs []any
 	}{
-		{name: "catalog", category: "catalog", wantArgs: []any{"iso", "template", "lxc_template", "datasource", "pvc"}},
+		{name: "catalog", category: "catalog", wantArgs: []any{"iso", "template", "cloud_image", "lxc_template", "datasource", "pvc"}},
 		{name: "storage", category: "storage", wantArgs: []any{"storage", "storage_content", "image", "images", "rootdir", "datavolume", "persistentvolumeclaim"}},
 		{name: "all", category: "", wantArgs: nil},
 	}

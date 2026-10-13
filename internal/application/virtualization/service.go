@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	guest "github.com/opensoha/soha-contracts/agent/guest"
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	"github.com/opensoha/soha/internal/application/virtualization/consoleport"
@@ -19,6 +21,7 @@ import (
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/idempotency"
@@ -37,6 +40,7 @@ const (
 	TaskKindVMCreate       = "vm_create"
 	TaskKindVMAction       = "vm_action"
 	TaskKindAssetSync      = "asset_sync"
+	TaskKindPersonalGuest  = "personal_guest_prepare"
 
 	TaskStatusQueued    = "queued"
 	TaskStatusRunning   = "running"
@@ -64,37 +68,47 @@ type AuditRecorder interface {
 }
 
 type Service struct {
-	connections               ConnectionReader
-	connectionWriter          ConnectionWriter
-	dockerLinks               DockerLinkRepository
-	vms                       VMRepository
-	images                    ImageRepository
-	flavors                   FlavorRepository
-	tasks                     TaskRepository
-	taskQueue                 TaskQueueRepository
-	taskLogs                  TaskLogRepository
-	adapters                  map[string]Adapter
-	permissions               *appaccess.PermissionResolver
-	operations                OperationRecorder
-	audit                     AuditRecorder
-	credentialKey             string
-	credentialKeys            keyring.Ring
-	workerInterval            time.Duration
-	syncConcurrency           int
-	startupSyncEnabled        bool
-	workerMu                  sync.Mutex
-	workerCancel              context.CancelFunc
-	workerDone                chan struct{}
-	running                   bool
-	workerID                  string
-	workerPrincipal           domainidentity.Principal
-	metrics                   *runtimeobs.Registry
-	secretProvider            CredentialProvider
-	executionPrincipals       ExecutionPrincipalReader
-	workerPools               WorkerPoolRepository
-	workerRuntime             *WorkerRuntime
-	authorizeWorkerCluster    func(context.Context, domainidentity.Principal, string, bool) error
-	authorizeGatewayExecution func(context.Context, domainidentity.Principal, domainaigateway.ExecutionAuthorization) error
+	connections                  ConnectionReader
+	connectionWriter             ConnectionWriter
+	dockerLinks                  DockerLinkRepository
+	vms                          VMRepository
+	images                       ImageRepository
+	flavors                      FlavorRepository
+	tasks                        TaskRepository
+	capacityPolicies             CapacityPolicyRepository
+	taskQueue                    TaskQueueRepository
+	taskLogs                     TaskLogRepository
+	adapters                     map[string]Adapter
+	permissions                  *appaccess.PermissionResolver
+	operations                   OperationRecorder
+	audit                        AuditRecorder
+	credentialKey                string
+	credentialKeys               keyring.Ring
+	workerInterval               time.Duration
+	syncConcurrency              int
+	startupSyncEnabled           bool
+	workerMu                     sync.Mutex
+	workerCancel                 context.CancelFunc
+	workerDone                   chan struct{}
+	running                      bool
+	workerID                     string
+	workerPrincipal              domainidentity.Principal
+	metrics                      *runtimeobs.Registry
+	secretProvider               CredentialProvider
+	guestCredentials             GuestCredentialProvider
+	ssh                          SSHOptions
+	executionPrincipals          ExecutionPrincipalReader
+	workerPools                  WorkerPoolRepository
+	workerRuntime                *WorkerRuntime
+	authorizeWorkerCluster       func(context.Context, domainidentity.Principal, string, bool) error
+	authorizeGatewayExecution    func(context.Context, domainidentity.Principal, domainaigateway.ExecutionAuthorization) error
+	personalGuestAuthorize       func(context.Context, guest.Binding) error
+	personalGuestCheckpoint      func(context.Context, guest.DataPlan, string, guest.DataResult) error
+	personalGuestToolsCheckpoint func(context.Context, guest.ToolsPlan) error
+	personalRuntimeAuthorize     func(context.Context, guest.RuntimeOperation) error
+	personalRuntimeArtifact      string
+	personalRuntimeComplete      func(context.Context, guest.RuntimeOperation, guest.RuntimeResult, bool) error
+	personalGuestTransaction     func(context.Context, func(context.Context) error) error
 }
 
 type ExecutionPrincipalReader interface {
@@ -102,6 +116,9 @@ type ExecutionPrincipalReader interface {
 }
 
 type Options struct {
+	SSH                      SSHOptions
+	GuestCredentials         GuestCredentialProvider
+	CapacityPolicies         CapacityPolicyRepository
 	AuthorizeWorkerCluster   func(context.Context, domainidentity.Principal, string, bool) error
 	WorkerPools              WorkerPoolRepository
 	WorkerRuntime            *WorkerRuntime
@@ -117,6 +134,10 @@ type Options struct {
 
 type CredentialProvider interface {
 	ResolveVirtualizationCredential(context.Context, domainvirtualization.Connection) (map[string]any, error)
+}
+
+type GuestCredentialProvider interface {
+	PinSSHPublicKeys(context.Context, domainidentity.Principal, map[string]string, domainsecret.Target) ([]domainsecret.Reference, []domainsecret.SSHPublicKey, error)
 }
 
 type ConnectionInput struct {
@@ -135,25 +156,26 @@ type ConnectionInput struct {
 }
 
 type CreateVMInput struct {
-	RequireCapacity   bool           `json:"requireCapacity,omitempty"`
-	ConnectionID      string         `json:"connectionId"`
-	Name              string         `json:"name"`
-	Architecture      string         `json:"architecture,omitempty"`
-	Namespace         string         `json:"namespace,omitempty"`
-	Node              string         `json:"node,omitempty"`
-	CPU               int            `json:"cpu,omitempty"`
-	MemoryMiB         int            `json:"memoryMiB,omitempty"`
-	BootImageID       string         `json:"bootImageId,omitempty"`
-	ImageID           string         `json:"imageId,omitempty"`
-	SourceMode        string         `json:"sourceMode,omitempty"`
-	SourceID          string         `json:"sourceId,omitempty"`
-	FlavorID          string         `json:"flavorId,omitempty"`
-	DiskGiB           int            `json:"diskGiB,omitempty"`
-	Network           string         `json:"network,omitempty"`
-	CloudInit         string         `json:"cloudInit,omitempty"`
-	StartAfterCreate  bool           `json:"startAfterCreate,omitempty"`
-	TemplateID        string         `json:"templateId,omitempty"`
-	ProviderParams    map[string]any `json:"providerParams,omitempty"`
+	GuestAccess       *sohaapi.VirtualMachineGuestAccessInput `json:"guestAccess,omitempty"`
+	RequireCapacity   bool                                    `json:"requireCapacity,omitempty"`
+	ConnectionID      string                                  `json:"connectionId"`
+	Name              string                                  `json:"name"`
+	Architecture      string                                  `json:"architecture,omitempty"`
+	Namespace         string                                  `json:"namespace,omitempty"`
+	Node              string                                  `json:"node,omitempty"`
+	CPU               int                                     `json:"cpu,omitempty"`
+	MemoryMiB         int                                     `json:"memoryMiB,omitempty"`
+	BootImageID       string                                  `json:"bootImageId,omitempty"`
+	ImageID           string                                  `json:"imageId,omitempty"`
+	SourceMode        string                                  `json:"sourceMode,omitempty"`
+	SourceID          string                                  `json:"sourceId,omitempty"`
+	FlavorID          string                                  `json:"flavorId,omitempty"`
+	DiskGiB           int                                     `json:"diskGiB,omitempty"`
+	Network           string                                  `json:"network,omitempty"`
+	CloudInit         string                                  `json:"cloudInit,omitempty"`
+	StartAfterCreate  bool                                    `json:"startAfterCreate,omitempty"`
+	TemplateID        string                                  `json:"templateId,omitempty"`
+	ProviderParams    map[string]any                          `json:"providerParams,omitempty"`
 	ProviderExtraJSON map[string]any
 	Disks             []domainvirtualization.AdapterDiskChange    `json:"disks,omitempty"`
 	Networks          []domainvirtualization.AdapterNetworkChange `json:"networks,omitempty"`
@@ -165,14 +187,15 @@ type DeleteConnectionOptions struct {
 }
 
 type VMActionInput struct {
-	Action         string                                      `json:"action"`
-	Config         map[string]any                              `json:"config,omitempty"`
-	CPU            int                                         `json:"cpu,omitempty"`
-	MemoryMiB      int                                         `json:"memoryMiB,omitempty"`
-	DiskGiB        int                                         `json:"diskGiB,omitempty"`
-	Disks          []domainvirtualization.AdapterDiskChange    `json:"disks,omitempty"`
-	Networks       []domainvirtualization.AdapterNetworkChange `json:"networks,omitempty"`
-	IdempotencyKey string                                      `json:"-"`
+	Action          string                                      `json:"action"`
+	Config          map[string]any                              `json:"config,omitempty"`
+	CPU             int                                         `json:"cpu,omitempty"`
+	MemoryMiB       int                                         `json:"memoryMiB,omitempty"`
+	DiskGiB         int                                         `json:"diskGiB,omitempty"`
+	RequireCapacity bool                                        `json:"requireCapacity,omitempty"`
+	Disks           []domainvirtualization.AdapterDiskChange    `json:"disks,omitempty"`
+	Networks        []domainvirtualization.AdapterNetworkChange `json:"networks,omitempty"`
+	IdempotencyKey  string                                      `json:"-"`
 }
 
 type OperationMutationInput struct {
@@ -257,6 +280,9 @@ func New(deps Dependencies, adapters map[string]Adapter, permissions *appaccess.
 		syncConcurrency = 1
 	}
 	return &Service{
+		ssh:                    opts.SSH,
+		guestCredentials:       opts.GuestCredentials,
+		capacityPolicies:       opts.CapacityPolicies,
 		connections:            deps.Connections,
 		executionPrincipals:    opts.ExecutionPrincipals,
 		workerPools:            opts.WorkerPools,
@@ -686,11 +712,13 @@ func (s *Service) ListVMDevices(ctx context.Context, principal domainidentity.Pr
 }
 
 type preparedVMCreate struct {
-	input      CreateVMInput
-	connection domainvirtualization.Connection
-	image      domainvirtualization.Image
-	imageID    string
-	sourceRef  string
+	guestSourceProof domainvirtualization.VMIdentity
+	guestPublicKeys  []domainsecret.SSHPublicKey
+	input            CreateVMInput
+	connection       domainvirtualization.Connection
+	image            domainvirtualization.Image
+	imageID          string
+	sourceRef        string
 }
 
 func (s *Service) PlanVMCreate(ctx context.Context, principal domainidentity.Principal, input CreateVMInput) (domainoperation.Plan, error) {
@@ -714,6 +742,9 @@ func (s *Service) PlanVMCreate(ctx context.Context, principal domainidentity.Pri
 	if err := domainvirtualization.CheckScope(ctx, connectionCapabilityScope(prepared.connection, prepared.input.Namespace)); err != nil {
 		return domainoperation.Plan{}, err
 	}
+	if _, _, err := s.prepareGuestBootstrap(ctx, principal, &prepared); err != nil {
+		return domainoperation.Plan{}, err
+	}
 	_, inputHash, err := idempotency.Derive("virtualization.vm.create.plan", "", "plan", prepared.input)
 	if err != nil {
 		return domainoperation.Plan{}, fmt.Errorf("hash virtual machine create plan: %w", err)
@@ -726,7 +757,7 @@ func (s *Service) PlanVMCreate(ctx context.Context, principal domainidentity.Pri
 		Action: "create", Resource: "virtualization.vm",
 		Summary: fmt.Sprintf("create %s on %s", prepared.input.Name, prepared.connection.ID),
 	}}
-	if strings.TrimSpace(prepared.input.CloudInit) != "" {
+	if strings.TrimSpace(prepared.input.CloudInit) != "" || prepared.input.GuestAccess != nil {
 		changes = append(changes, domainoperation.PlanChange{
 			Action: "configure", Resource: "virtualization.vm.cloud-init",
 			Summary: "apply redacted cloud-init bootstrap content", SensitiveValuesRedacted: true,
@@ -766,6 +797,10 @@ func (s *Service) createVM(ctx context.Context, principal domainidentity.Princip
 	}
 	input = prepared.input
 	connection, imageID, image, sourceRef := prepared.connection, prepared.imageID, prepared.image, prepared.sourceRef
+	bootstrap, guestRefs, err := s.prepareGuestBootstrap(ctx, principal, &prepared)
+	if err != nil {
+		return domainvirtualization.Task{}, err
+	}
 	payload := map[string]any{
 		"providerConnectionIdentity": vmCreateConnectionIdentity(connection),
 		"providerSourceId":           domainvirtualization.CapacitySourceID(domainvirtualization.AdapterConnection{Provider: connection.Provider, Endpoint: connection.Endpoint, ClusterID: connection.KubernetesClusterID, Options: connection.Config}),
@@ -792,7 +827,14 @@ func (s *Service) createVM(ctx context.Context, principal domainidentity.Princip
 		"disks":                      input.Disks,
 		"networks":                   input.Networks,
 	}
-	if err := s.sealVMBootstrap(payload, input.CloudInit); err != nil {
+	if input.GuestAccess != nil {
+		payload["guestAccess"], payload["guestPublicKeyRefs"], payload["guestSourceProof"] = input.GuestAccess, guestRefs, prepared.guestSourceProof
+		payload["guestPublicKeys"] = prepared.guestPublicKeys
+		if connection.Provider == ProviderPVE {
+			payload["providerGenerationRequired"] = true
+		}
+	}
+	if err := s.sealVMBootstrap(payload, bootstrap); err != nil {
 		return domainvirtualization.Task{}, err
 	}
 	task := domainvirtualization.Task{
@@ -813,6 +855,11 @@ func (s *Service) createVM(ctx context.Context, principal domainidentity.Princip
 }
 
 func (s *Service) prepareVMCreate(ctx context.Context, input CreateVMInput) (preparedVMCreate, error) {
+	for _, disk := range input.Disks {
+		if !disk.ValidSerial() {
+			return preparedVMCreate{}, fmt.Errorf("%w: serial requires a new disk and 1–20 safe ASCII characters", apperrors.ErrInvalidArgument)
+		}
+	}
 	connection, err := s.connections.GetConnection(ctx, strings.TrimSpace(input.ConnectionID))
 	if err != nil {
 		return preparedVMCreate{}, mapNotFound(err)
@@ -888,20 +935,8 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 		return domainvirtualization.Task{}, fmt.Errorf("%w: virtual machine is deleted", apperrors.ErrInvalidArgument)
 	}
 	if action == "resize" {
-		currentDisk := payloadInt(vm.Config, "diskGiB")
-		if input.CPU < 0 || input.MemoryMiB < 0 || input.DiskGiB < 0 {
-			return domainvirtualization.Task{}, fmt.Errorf("%w: resize values cannot be negative", apperrors.ErrInvalidArgument)
-		}
-		if input.CPU == 0 && input.MemoryMiB == 0 && input.DiskGiB == 0 && len(input.Disks) == 0 && len(input.Networks) == 0 {
-			return domainvirtualization.Task{}, fmt.Errorf("%w: at least one resize change is required", apperrors.ErrInvalidArgument)
-		}
-		if input.DiskGiB > 0 && input.DiskGiB < currentDisk {
-			return domainvirtualization.Task{}, fmt.Errorf("%w: virtual machine disks cannot be reduced", apperrors.ErrInvalidArgument)
-		}
-		for _, disk := range input.Disks {
-			if disk.SizeGiB <= 0 {
-				return domainvirtualization.Task{}, fmt.Errorf("%w: disk sizeGiB must be positive", apperrors.ErrInvalidArgument)
-			}
+		if err := validateVMResize(vm, input); err != nil {
+			return domainvirtualization.Task{}, err
 		}
 	}
 	task, err := s.createTaskIdempotently(ctx, "virtualization.vm.action:"+vm.ID, principal, input.IdempotencyKey, input, domainvirtualization.Task{
@@ -914,9 +949,10 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 		MaxRetries:     defaultTaskMaxRetries,
 		TimeoutSeconds: defaultTaskTimeoutSeconds,
 		Payload: map[string]any{
-			"action": string(action),
-			"vmId":   vm.ID,
-			"cpu":    input.CPU, "memoryMiB": input.MemoryMiB, "diskGiB": input.DiskGiB,
+			"action":          string(action),
+			"vmId":            vm.ID,
+			"requireCapacity": input.RequireCapacity,
+			"cpu":             input.CPU, "memoryMiB": input.MemoryMiB, "diskGiB": input.DiskGiB,
 			"disks": input.Disks, "networks": input.Networks,
 		},
 	})
@@ -925,6 +961,46 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 	}
 	s.recordOperation(ctx, principal, "virtualization.vm.action.enqueue", vm.ID, vm.Name, "success", "enqueued virtual machine action", map[string]any{"taskId": task.ID, "action": string(action)})
 	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
+}
+
+func vmDiskValue(config map[string]any, key string) int {
+	value, _ := strconv.Atoi(fmt.Sprint(config[key]))
+	return value
+}
+
+func vmCurrentRootDiskGiB(vm domainvirtualization.VM) (int, bool) {
+	if normalizeProvider(vm.Provider) != ProviderPVE {
+		return payloadInt(vm.Config, "diskGiB"), true
+	}
+	if root := vmDiskValue(vm.Config, "rootDiskGiB"); root > 0 {
+		return root, true
+	}
+	if vmDiskValue(vm.Config, "diskCount") > 1 {
+		return 0, false
+	}
+	return vmDiskValue(vm.Config, "diskGiB"), true
+}
+
+func validateVMResize(vm domainvirtualization.VM, input VMActionInput) error {
+	currentDisk, known := vmCurrentRootDiskGiB(vm)
+	if input.DiskGiB > 0 && !known {
+		return fmt.Errorf("%w: root disk size is unknown; synchronize the VM or select a disk device", apperrors.ErrInvalidArgument)
+	}
+	if input.CPU < 0 || input.MemoryMiB < 0 || input.DiskGiB < 0 {
+		return fmt.Errorf("%w: resize values cannot be negative", apperrors.ErrInvalidArgument)
+	}
+	if input.CPU == 0 && input.MemoryMiB == 0 && input.DiskGiB == 0 && len(input.Disks) == 0 && len(input.Networks) == 0 {
+		return fmt.Errorf("%w: at least one resize change is required", apperrors.ErrInvalidArgument)
+	}
+	if input.DiskGiB > 0 && input.DiskGiB < currentDisk {
+		return fmt.Errorf("%w: virtual machine disks cannot be reduced", apperrors.ErrInvalidArgument)
+	}
+	for _, disk := range input.Disks {
+		if disk.SizeGiB <= 0 || !disk.ValidSerial() {
+			return fmt.Errorf("%w: disk sizeGiB must be positive", apperrors.ErrInvalidArgument)
+		}
+	}
+	return nil
 }
 
 func vmActionPermission(action domainvirtualization.PowerAction) string {
@@ -1165,6 +1241,7 @@ func (s *Service) DeleteFlavor(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) ListOperations(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.TaskFilter) ([]domainvirtualization.Task, error) {
+	filter.PersonalGuestOwnerID = principal.UserID
 	canOperations, canSync, err := s.operationReadAccess(ctx, principal)
 	if err != nil {
 		return nil, err
@@ -1186,6 +1263,7 @@ func (s *Service) ListOperations(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) ListOperationsPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.TaskFilter) (domainvirtualization.Page[domainvirtualization.Task], error) {
+	filter.PersonalGuestOwnerID = principal.UserID
 	canOperations, canSync, err := s.operationReadAccess(ctx, principal)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Task]{}, err
@@ -1271,7 +1349,7 @@ func restrictOperationTaskFilter(filter domainvirtualization.TaskFilter, canOper
 func allowedOperationTaskKinds(canOperations, canSync bool) []string {
 	kinds := []string{}
 	if canOperations {
-		kinds = append(kinds, TaskKindConnectionTest, TaskKindVMCreate, TaskKindVMAction)
+		kinds = append(kinds, TaskKindConnectionTest, TaskKindVMCreate, TaskKindVMAction, TaskKindPersonalGuest, TaskKindPersonalGuestTools)
 	}
 	if canSync {
 		kinds = append(kinds, TaskKindAssetSync)
@@ -1283,7 +1361,7 @@ func operationTaskKindVisible(canOperations, canSync bool, kind string) bool {
 	switch strings.TrimSpace(kind) {
 	case TaskKindAssetSync:
 		return canSync
-	case TaskKindConnectionTest, TaskKindVMCreate, TaskKindVMAction:
+	case TaskKindConnectionTest, TaskKindVMCreate, TaskKindVMAction, TaskKindPersonalGuest, TaskKindPersonalGuestTools:
 		return canOperations
 	default:
 		return false
@@ -1320,6 +1398,9 @@ func (s *Service) CancelOperationIdempotent(ctx context.Context, principal domai
 	}
 	if !isCancelableTaskStatus(task.Status) && !cancelableFailedCreation(task) {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization operation %s cannot be canceled from status %s", apperrors.ErrInvalidArgument, task.ID, task.Status)
+	}
+	if task.TaskKind == TaskKindPersonalGuest || task.TaskKind == TaskKindPersonalGuestTools {
+		return domainvirtualization.Task{}, apperrors.ErrUnsupportedOperation
 	}
 	now := time.Now().UTC()
 	task.Status = TaskStatusCanceled
@@ -1389,6 +1470,9 @@ func (s *Service) RetryOperationIdempotent(ctx context.Context, principal domain
 	}
 	if !domainvirtualization.BuildOperationState(task, time.Now().UTC()).Retryable {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: virtualization operation %s (%s) cannot be retried from status %s", apperrors.ErrInvalidArgument, task.ID, task.TaskKind, task.Status)
+	}
+	if task.TaskKind == TaskKindPersonalGuestTools {
+		return domainvirtualization.Task{}, apperrors.ErrUnsupportedOperation
 	}
 	if task.TaskKind == TaskKindVMCreate && payloadString(task.Result, "providerEffect") == "created" && !isWorkerCreation(task) {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: VM creation already has a provider receipt; use the existing VM", apperrors.ErrConflict)
@@ -2385,6 +2469,9 @@ func sourceModeForProvider(provider, templateID string, image domainvirtualizati
 		}
 		if sourceKind == "qemu" || sourceKind == "vm" {
 			return "vm_clone"
+		}
+		if sourceKind == "cloud_image" {
+			return "cloud_image"
 		}
 		return "iso_install"
 	}

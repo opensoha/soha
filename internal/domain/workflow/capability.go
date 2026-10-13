@@ -6,18 +6,21 @@ import (
 	"time"
 
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 )
 
 const ScopeCapabilityTask = "capability_task"
 
 type CapabilityIntent struct {
-	Input          domainaigateway.CapabilityTaskInput `json:"input"`
-	ActorID        string                              `json:"actorId"`
-	ActorTokenID   string                              `json:"actorTokenId,omitempty"`
-	ActorSessionID string                              `json:"actorSessionId,omitempty"`
-	Digest         string                              `json:"digest"`
-	PlanVersion    int                                 `json:"planVersion"`
-	Deadline       time.Time                           `json:"deadline"`
+	Input             domainaigateway.CapabilityTaskInput `json:"input"`
+	ActorID           string                              `json:"actorId"`
+	ActorTokenID      string                              `json:"actorTokenId,omitempty"`
+	ActorSessionID    string                              `json:"actorSessionId,omitempty"`
+	PermissionCeiling []string                            `json:"permissionCeiling,omitempty"`
+	NativeParent      *domaincopilot.NativeTaskParent     `json:"nativeParent,omitempty"`
+	Digest            string                              `json:"digest"`
+	PlanVersion       int                                 `json:"planVersion"`
+	Deadline          time.Time                           `json:"deadline"`
 }
 
 // Revisions retain the frozen plan and every previous child reference. They do

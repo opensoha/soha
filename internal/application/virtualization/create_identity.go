@@ -18,6 +18,9 @@ func (s *Service) createOrObserveVM(ctx context.Context, task domain.Task, conne
 		}
 		input := adapterCreateVMInput(task.Payload)
 		input.OperationID = task.ID
+		if boolValue(task.Payload, "providerGenerationRequired") {
+			input.SystemUUID = task.ID
+		}
 		vm, found, err := observer.ObserveVMCreation(ctx, providerConnection, input)
 		if err != nil {
 			return vm, task, err
@@ -74,6 +77,9 @@ func (s *Service) prepareVMDispatch(ctx context.Context, task domain.Task, conne
 			return input, task, err
 		}
 		checkpointed, err := s.checkpointVMCreate(ctx, task, input, vmCreateConnectionIdentity(connection))
+		if err == nil && boolValue(checkpointed.Payload, "providerGenerationRequired") {
+			input.SystemUUID = checkpointed.ID
+		}
 		if !errors.Is(err, domain.ErrProviderIdentityClaimed) || !boolValue(task.Payload, "providerIdentityDynamic") || boolValue(task.Payload, "providerIdentityPrepared") || attempt >= 4 {
 			return input, checkpointed, err
 		}

@@ -62,9 +62,9 @@ type Usage struct {
 }
 
 type ProgressTracker struct {
-	MaxIdenticalActions int `json:"maxIdenticalActions"`
-	lastFingerprint     string
-	repeated            int
+	MaxIdenticalActions int    `json:"maxIdenticalActions"`
+	LastFingerprint     string `json:"lastFingerprint,omitempty"`
+	Repeated            int    `json:"repeated,omitempty"`
 }
 
 func (t *ProgressTracker) Observe(actionFingerprint string) (StopReason, error) {
@@ -75,13 +75,13 @@ func (t *ProgressTracker) Observe(actionFingerprint string) (StopReason, error) 
 	if t.MaxIdenticalActions <= 0 {
 		return "", fmt.Errorf("max identical actions must be bounded")
 	}
-	if actionFingerprint == t.lastFingerprint {
-		t.repeated++
+	if actionFingerprint == t.LastFingerprint {
+		t.Repeated++
 	} else {
-		t.lastFingerprint = actionFingerprint
-		t.repeated = 1
+		t.LastFingerprint = actionFingerprint
+		t.Repeated = 1
 	}
-	if t.repeated >= t.MaxIdenticalActions {
+	if t.Repeated >= t.MaxIdenticalActions {
 		return StopNoProgress, nil
 	}
 	return "", nil

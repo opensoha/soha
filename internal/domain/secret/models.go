@@ -36,11 +36,14 @@ const (
 )
 
 type Binding struct {
+	Purpose    string `json:"purpose,omitempty"`
 	TargetType string `json:"targetType"`
 	TargetRef  string `json:"targetRef"`
 }
 
 type Secret struct {
+	Kind           Kind
+	PublicKey      *SSHPublicKey
 	ID             string
 	Name           string
 	Description    string
@@ -55,6 +58,8 @@ type Secret struct {
 }
 
 type Version struct {
+	Kind       Kind
+	PublicKey  *SSHPublicKey
 	SecretID   string
 	Version    int
 	SourceType SourceType
@@ -74,18 +79,21 @@ type VaultKV2Reference struct {
 }
 
 type CreateInput struct {
-	Name        string
-	Description string
-	Value       *string
-	VaultKV2    *VaultKV2Reference
-	ScopeType   ScopeType
-	ScopeID     string
-	Bindings    []Binding
+	Kind          Kind
+	SSHPassphrase string
+	Name          string
+	Description   string
+	Value         *string
+	VaultKV2      *VaultKV2Reference
+	ScopeType     ScopeType
+	ScopeID       string
+	Bindings      []Binding
 }
 
 type RotateInput struct {
-	Value    *string
-	VaultKV2 *VaultKV2Reference
+	Value         *string            `json:"value"`
+	VaultKV2      *VaultKV2Reference `json:"vaultKv2"`
+	SSHPassphrase string             `json:"sshPassphrase"`
 }
 
 type Filter struct {
@@ -108,8 +116,9 @@ type Reference struct {
 }
 
 type Target struct {
-	Type string
-	Ref  string
+	Purpose string
+	Type    string
+	Ref     string
 }
 
 type ExecutionContext struct {

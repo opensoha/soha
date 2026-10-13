@@ -174,26 +174,7 @@ func (r *Repository) ListDocuments(ctx context.Context, p domainknowledge.Princi
 
 func (r *Repository) UpsertDocument(ctx context.Context, document domainknowledge.Document, chunks []domainknowledge.Chunk) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		acl, err := json.Marshal(document.ACL)
-		if err != nil {
-			return err
-		}
-		if err := tx.Exec(`INSERT INTO ai_knowledge_documents(id,knowledge_base_id,source_id,external_id,title,uri,version,content_hash,acl,status,chunk_count,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,uri=EXCLUDED.uri,version=EXCLUDED.version,content_hash=EXCLUDED.content_hash,acl=EXCLUDED.acl,status=EXCLUDED.status,chunk_count=EXCLUDED.chunk_count,updated_at=EXCLUDED.updated_at`, document.ID, document.KnowledgeBaseID, document.SourceID, document.ExternalID, document.Title, document.URI, document.Version, document.ContentHash, string(acl), document.Status, document.ChunkCount, document.CreatedAt, document.UpdatedAt).Error; err != nil {
-			return err
-		}
-		if err := tx.Exec(`DELETE FROM ai_knowledge_chunks WHERE document_id=?`, document.ID).Error; err != nil {
-			return err
-		}
-		for _, chunk := range chunks {
-			acl, location, err := marshal(chunk.ACL, chunk.Location)
-			if err != nil {
-				return err
-			}
-			if err := tx.Exec(`INSERT INTO ai_knowledge_chunks(id,knowledge_base_id,document_id,document_title,ordinal,content,content_hash,location,token_count,acl,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, chunk.ID, chunk.KnowledgeBaseID, chunk.DocumentID, chunk.DocumentTitle, chunk.Ordinal, chunk.Content, chunk.ContentHash, location, chunk.TokenCount, acl, chunk.CreatedAt).Error; err != nil {
-				return err
-			}
-		}
-		return nil
+		return upsertPublishedDocument(tx, document, chunks, document.UpdatedAt, "")
 	})
 }
 

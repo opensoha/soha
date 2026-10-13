@@ -26,11 +26,16 @@ const (
 var ErrWorkbenchRelayStreamStopped = errors.New("workbench relay stream stopped")
 
 type WorkbenchRelayMessage struct {
-	Role    string
-	Content string
+	Role       string
+	Content    string
+	Images     []string
+	ToolCallID string
+	ToolCalls  []WorkbenchToolCall
 }
 
 type WorkbenchRelayRequest struct {
+	MaxOutputTokens int
+	Tools           []WorkbenchTool
 	ReasoningEffort string
 	PublicModel     string
 	RouteID         string
@@ -44,15 +49,18 @@ type WorkbenchRelayRequest struct {
 }
 
 type WorkbenchRelayResponse struct {
-	Usage        map[string]float64
-	Content      string
-	PublicModel  string
-	RouteID      string
-	UpstreamID   string
-	ProviderKind string
-	Endpoint     string
-	Status       int
-	RequestID    string
+	ContextWindowTokens int64
+	ToolCalls           []WorkbenchToolCall
+	Usage               map[string]float64
+	UsageEstimated      bool
+	Content             string
+	PublicModel         string
+	RouteID             string
+	UpstreamID          string
+	ProviderKind        string
+	Endpoint            string
+	Status              int
+	RequestID           string
 }
 
 type WorkbenchRelayStreamDelta struct {
@@ -82,7 +90,7 @@ func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainiden
 	if input.ReasoningEffort != "" && input.ReasoningEffort != "auto" && !slices.Contains(efforts, input.ReasoningEffort) {
 		return WorkbenchRelayResponse{}, fmt.Errorf("%w: reasoning effort is not supported by this model route", apperrors.ErrInvalidArgument)
 	}
-	body, err := workbenchRelayRequestBody(endpoint, publicModel, input.Messages, false, input.ReasoningEffort, len(efforts) > 0)
+	body, err := workbenchRelayModelBody(endpoint, publicModel, input, false, len(efforts) > 0)
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
@@ -91,7 +99,7 @@ func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainiden
 		ProviderKind: providerKind,
 		Endpoint:     endpoint,
 		Method:       http.MethodPost,
-		Headers:      http.Header{"Content-Type": []string{"application/json"}},
+		Headers:      http.Header{"Content-Type": []string{"application/json"}, relayHeaderRouteTrace: []string{"true"}},
 		Body:         body,
 		RequestID:    workbenchRelayRequestID(accessCtx.Metadata),
 		UserAgent:    "opensoha-ai-workbench",
@@ -107,20 +115,25 @@ func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainiden
 	if status >= http.StatusBadRequest {
 		return WorkbenchRelayResponse{}, fmt.Errorf("%w: workbench relay returned status %d", apperrors.ErrClusterUnready, status)
 	}
-	content, err := workbenchRelayResponseText(endpoint, writer.body.Bytes())
+	content, calls, err := workbenchRelayModelOutput(endpoint, writer.body.Bytes())
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
+	usage, estimated := workbenchAccountedUsage(req, writer.body.Bytes(), workbenchReportedUsage(writer.body.Bytes()))
+	resolved := workbenchResolvedSelection(writer.Header(), selections)
 	return WorkbenchRelayResponse{
-		Content:      content,
-		Usage:        workbenchReportedUsage(writer.body.Bytes()),
-		PublicModel:  publicModel,
-		RouteID:      selections[0].route.ID,
-		UpstreamID:   selections[0].upstream.ID,
-		ProviderKind: selections[0].upstreamProviderKind(),
-		Endpoint:     endpoint,
-		Status:       status,
-		RequestID:    req.RequestID,
+		ContextWindowTokens: workbenchContextWindow(resolved.route.Metadata),
+		ToolCalls:           calls,
+		Content:             content,
+		Usage:               usage,
+		UsageEstimated:      estimated,
+		PublicModel:         publicModel,
+		RouteID:             resolved.route.ID,
+		UpstreamID:          resolved.upstream.ID,
+		ProviderKind:        resolved.upstreamProviderKind(),
+		Endpoint:            endpoint,
+		Status:              status,
+		RequestID:           req.RequestID,
 	}, nil
 }
 
@@ -147,7 +160,7 @@ func (s *Service) InvokeWorkbenchModelStream(ctx context.Context, principal doma
 	if input.ReasoningEffort != "" && input.ReasoningEffort != "auto" && !slices.Contains(efforts, input.ReasoningEffort) {
 		return WorkbenchRelayResponse{}, fmt.Errorf("%w: reasoning effort is not supported by this model route", apperrors.ErrInvalidArgument)
 	}
-	body, err := workbenchRelayRequestBody(endpoint, publicModel, input.Messages, true, input.ReasoningEffort, len(efforts) > 0)
+	body, err := workbenchRelayModelBody(endpoint, publicModel, input, true, len(efforts) > 0)
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
@@ -156,7 +169,7 @@ func (s *Service) InvokeWorkbenchModelStream(ctx context.Context, principal doma
 		ProviderKind: providerKind,
 		Endpoint:     endpoint,
 		Method:       http.MethodPost,
-		Headers:      http.Header{"Accept": []string{"text/event-stream"}, "Content-Type": []string{"application/json"}},
+		Headers:      http.Header{"Accept": []string{"text/event-stream"}, "Content-Type": []string{"application/json"}, relayHeaderRouteTrace: []string{"true"}},
 		Body:         body,
 		RequestID:    workbenchRelayRequestID(accessCtx.Metadata),
 		UserAgent:    "opensoha-ai-workbench",
@@ -180,18 +193,28 @@ func (s *Service) InvokeWorkbenchModelStream(ctx context.Context, principal doma
 		return WorkbenchRelayResponse{}, fmt.Errorf("%w: workbench relay returned status %d", apperrors.ErrClusterUnready, status)
 	}
 	content := strings.TrimSpace(writer.content.String())
-	if content == "" {
+	calls, usage, err := workbenchRelayStreamOutput(endpoint, writer.body.Bytes())
+	if err != nil {
+		return WorkbenchRelayResponse{}, err
+	}
+	if content == "" && len(calls) == 0 {
 		return WorkbenchRelayResponse{}, fmt.Errorf("%w: workbench relay stream content is empty", apperrors.ErrClusterUnready)
 	}
+	usage, estimated := workbenchAccountedUsage(req, writer.body.Bytes(), usage)
+	resolved := workbenchResolvedSelection(writer.Header(), selections)
 	return WorkbenchRelayResponse{
-		Content:      content,
-		PublicModel:  publicModel,
-		RouteID:      selections[0].route.ID,
-		UpstreamID:   selections[0].upstream.ID,
-		ProviderKind: selections[0].upstreamProviderKind(),
-		Endpoint:     endpoint,
-		Status:       status,
-		RequestID:    req.RequestID,
+		ContextWindowTokens: workbenchContextWindow(resolved.route.Metadata),
+		ToolCalls:           calls,
+		Usage:               usage,
+		UsageEstimated:      estimated,
+		Content:             content,
+		PublicModel:         publicModel,
+		RouteID:             resolved.route.ID,
+		UpstreamID:          resolved.upstream.ID,
+		ProviderKind:        resolved.upstreamProviderKind(),
+		Endpoint:            endpoint,
+		Status:              status,
+		RequestID:           req.RequestID,
 	}, nil
 }
 
@@ -371,8 +394,9 @@ func workbenchRelayRequestBody(endpoint, publicModel string, messages []Workbenc
 }
 
 type WorkbenchModelOption struct {
-	PublicModel      string
-	ReasoningEfforts []string
+	PublicModel         string
+	ReasoningEfforts    []string
+	ContextWindowTokens int64
 }
 
 func (s *Service) ListWorkbenchModels(ctx context.Context, principal domainidentity.Principal, endpoint string) ([]WorkbenchModelOption, error) {
@@ -398,7 +422,7 @@ func (s *Service) ListWorkbenchModels(ctx context.Context, principal domainident
 		if selectionErr != nil {
 			continue
 		}
-		options = append(options, WorkbenchModelOption{PublicModel: route.PublicModel, ReasoningEfforts: workbenchReasoningEfforts(endpoint, selections)})
+		options = append(options, WorkbenchModelOption{PublicModel: route.PublicModel, ReasoningEfforts: workbenchReasoningEfforts(endpoint, selections), ContextWindowTokens: workbenchCatalogContextWindow(selections)})
 	}
 	sort.Slice(options, func(i, j int) bool { return options[i].PublicModel < options[j].PublicModel })
 	return options, nil
@@ -420,17 +444,17 @@ func workbenchReasoningEfforts(endpoint string, selections []relaySelection) []s
 	return efforts
 }
 
-func workbenchOpenAIMessages(messages []WorkbenchRelayMessage) []map[string]string {
-	out := make([]map[string]string, 0, len(messages))
+func workbenchOpenAIMessages(messages []WorkbenchRelayMessage) []map[string]any {
+	out := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
 		role := normalizeWorkbenchMessageRole(message.Role)
 		if role == "" {
 			continue
 		}
-		out = append(out, map[string]string{"role": role, "content": strings.TrimSpace(message.Content)})
+		out = append(out, map[string]any{"role": role, "content": workbenchImageContent(message, "chat/completions")})
 	}
 	if len(out) == 0 {
-		out = append(out, map[string]string{"role": "user", "content": ""})
+		out = append(out, map[string]any{"role": "user", "content": ""})
 	}
 	return out
 }
@@ -443,10 +467,8 @@ func workbenchResponsesInput(messages []WorkbenchRelayMessage) []map[string]any 
 			continue
 		}
 		out = append(out, map[string]any{
-			"role": role,
-			"content": []map[string]string{
-				{"type": "input_text", "text": strings.TrimSpace(message.Content)},
-			},
+			"role":    role,
+			"content": workbenchImageContent(message, "responses"),
 		})
 	}
 	if len(out) == 0 {
@@ -458,9 +480,9 @@ func workbenchResponsesInput(messages []WorkbenchRelayMessage) []map[string]any 
 	return out
 }
 
-func workbenchAnthropicMessages(messages []WorkbenchRelayMessage) (string, []map[string]string) {
+func workbenchAnthropicMessages(messages []WorkbenchRelayMessage) (string, []map[string]any) {
 	var system []string
-	out := make([]map[string]string, 0, len(messages))
+	out := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
 		role := normalizeWorkbenchMessageRole(message.Role)
 		content := strings.TrimSpace(message.Content)
@@ -470,11 +492,11 @@ func workbenchAnthropicMessages(messages []WorkbenchRelayMessage) (string, []map
 				system = append(system, content)
 			}
 		case "user", "assistant":
-			out = append(out, map[string]string{"role": role, "content": content})
+			out = append(out, map[string]any{"role": role, "content": workbenchImageContent(message, "messages")})
 		}
 	}
 	if len(out) == 0 {
-		out = append(out, map[string]string{"role": "user", "content": ""})
+		out = append(out, map[string]any{"role": "user", "content": ""})
 	}
 	return strings.Join(system, "\n\n"), out
 }
@@ -524,6 +546,9 @@ func (w *workbenchRelayStreamWriter) Write(data []byte) (int, error) {
 	}
 	if len(data) == 0 {
 		return 0, nil
+	}
+	if w.body.Len()+len(data) > 1<<20 {
+		return 0, fmt.Errorf("%w: model stream exceeds output budget", apperrors.ErrInvalidArgument)
 	}
 	w.body.Write(data)
 	if !w.consume(string(data)) {
@@ -634,6 +659,9 @@ func (w *workbenchRelayResponseWriter) Write(data []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
+	if w.body.Len()+len(data) > 1<<20 {
+		return 0, fmt.Errorf("%w: model response exceeds output budget", apperrors.ErrInvalidArgument)
+	}
 	return w.body.Write(data)
 }
 
@@ -694,6 +722,17 @@ func workbenchResponsesResponseText(payload map[string]any) string {
 		}
 	}
 	return builder.String()
+}
+
+func workbenchAccountedUsage(request LLMRelayHTTPRequest, output []byte, reported map[string]float64) (map[string]float64, bool) {
+	if reported != nil {
+		return reported, false
+	}
+	usage, estimated := (relayUsageAnalyzer{}).analyze(request, output, http.StatusOK, "success")
+	if !estimated {
+		return nil, true
+	}
+	return map[string]float64{"inputTokens": float64(usage.promptTokens), "outputTokens": float64(usage.completionTokens), "totalTokens": float64(usage.totalTokens)}, true
 }
 
 func workbenchReportedUsage(body []byte) map[string]float64 {

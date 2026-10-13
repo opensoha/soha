@@ -31,6 +31,24 @@ class EvidenceTests(unittest.TestCase):
     def test_all_required_tests_pass(self):
         self.assertEqual(evidence.validate(self.raw(self.events()))["children"], 16)
 
+    def test_main_chat_scope_requires_a_real_uncached_run(self):
+        package = "github.com/opensoha/soha/internal/repository/copilot"
+        parent = "TestMainSessionWithPostgres"
+        events = [dict(Action=action, Package=package, Test=parent) for action in ("run", "pass")] + [dict(Action="pass", Package=package)]
+        scope = dict(package=package, parent=parent, children=[])
+        self.assertEqual(evidence.validate(self.raw(events), **scope)["result"], "PASS")
+        for invalid in (events[1:], [{**events[0], "Action": "skip"}, *events[1:]], self.events()):
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+
+    def test_identity_scope_requires_every_revocation_scenario(self):
+        scope = evidence.IDENTITY_SCOPE
+        names = [scope['parent'], *[scope['parent'] + '/' + child for child in scope['children']]]
+        events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
+        events.append(dict(Action='pass', Package=scope['package']))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 6)
+        for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+
     def test_missing_empty_corrupt_process_and_package_only(self):
         for raw, code in (("", 0), ("{broken", 0), ("[]", 0), (self.raw(self.events()), 1), (self.raw([self.events()[-1]]), 0)):
             with self.subTest(raw=raw[:20], code=code), self.assertRaises(ValueError):

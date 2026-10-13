@@ -69,6 +69,7 @@ type WorkbenchModelPreferences struct {
 }
 
 type SessionMetadata struct {
+	ConversationKind string `json:"conversationKind,omitempty"`
 	// RequestContext is transient and must never become a session preference.
 	RequestContext   *ContextSelection         `json:"-"`
 	ModelPreferences WorkbenchModelPreferences `json:"modelPreferences,omitempty"`
@@ -166,7 +167,12 @@ type SessionMessageEnvelope struct {
 	SessionPatch      map[string]any     `json:"sessionPatch,omitempty"`
 }
 
+type WorkbenchAssistantTask = sohaapi.WorkbenchAssistantTask
+
 type WorkbenchSendMessageInput struct {
+	AssistantTask    *WorkbenchAssistantTask    `json:"assistantTask,omitempty"`
+	RequestID        string                     `json:"requestId,omitempty"`
+	TaskIntent       *TaskIntent                `json:"taskIntent,omitempty"`
 	ContextSelection *ContextSelection          `json:"contextSelection,omitempty"`
 	ModelPreferences *WorkbenchModelPreferences `json:"modelPreferences,omitempty"`
 	Content          string                     `json:"content"`
@@ -407,6 +413,7 @@ type InspectionRun struct {
 }
 
 type InspectionRunFilter struct {
+	RunIDs     []string
 	TaskID     string
 	ClusterID  string
 	Namespace  string

@@ -29,13 +29,21 @@ func (s *Service) appendChatReferences(ctx context.Context, principal domainiden
 	if err := s.appendChatMemory(ctx, principal, envelope, selection.MemoryIDs); err != nil {
 		return err
 	}
+	if selection.FeedItemID != "" {
+		item, err := s.GetPersonalFeedItem(ctx, principal, selection.FeedItemID)
+		if err != nil {
+			return err
+		}
+		payload, _ := json.Marshal(item)
+		appendChatEvidence(envelope, item.Title, "feed:"+url.PathEscape(item.ID), string(payload))
+	}
 	for _, attachment := range selection.Attachments {
 		if err := validateChatAttachment(attachment); err != nil {
 			return err
 		}
 	}
 	for _, ref := range selection.References {
-		content, title, uri, err := s.readChatReference(ctx, principal, ref)
+		content, title, uri, err := s.readChatReference(ctx, principal, ref, &envelope.Citations)
 		if err != nil {
 			return err
 		}
@@ -80,9 +88,9 @@ func appendChatEvidence(envelope *domaincopilot.ContextEnvelope, title, uri, con
 	envelope.BudgetUsage.EvidenceItems++
 }
 
-func (s *Service) readChatReference(ctx context.Context, principal domainidentity.Principal, ref domaincopilot.ContextReference) (content, title, uri string, err error) {
+func (s *Service) readChatReference(ctx context.Context, principal domainidentity.Principal, ref domaincopilot.ContextReference, lineage *[]domainknowledge.Citation) (content, title, uri string, err error) {
 	if ref.Kind == "session" {
-		return s.readChatSessionReference(ctx, principal, ref)
+		return s.readChatSessionReference(ctx, principal, ref, lineage)
 	}
 	if strings.TrimSpace(ref.Name) == "" || len(ref.Name) > 256 || strings.TrimSpace(ref.ClusterID) == "" || (ref.Kind != "node" && strings.TrimSpace(ref.Namespace) == "") {
 		return "", "", "", fmt.Errorf("%w: resource reference needs a cluster, namespace and name", apperrors.ErrInvalidArgument)
@@ -121,11 +129,11 @@ func (s *Service) readChatReference(ctx context.Context, principal domainidentit
 	return "", "", "", fmt.Errorf("%w: referenced resource is unavailable", apperrors.ErrNotFound)
 }
 
-func (s *Service) readChatSessionReference(ctx context.Context, principal domainidentity.Principal, ref domaincopilot.ContextReference) (content, title, uri string, err error) {
+func (s *Service) readChatSessionReference(ctx context.Context, principal domainidentity.Principal, ref domaincopilot.ContextReference, lineage *[]domainknowledge.Citation) (content, title, uri string, err error) {
 	if strings.TrimSpace(ref.SessionID) == "" || len(ref.MessageIDs) == 0 || len(ref.MessageIDs) > 20 {
 		return "", "", "", fmt.Errorf("%w: session reference needs 1 to 20 message IDs", apperrors.ErrInvalidArgument)
 	}
-	session, err := s.sessions.GetSession(ctx, principal.UserID, ref.SessionID)
+	session, err := s.ownedSession(ctx, principal, ref.SessionID)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -161,6 +169,14 @@ func (s *Service) readChatSessionReference(ctx context.Context, principal domain
 			return "", "", "", fmt.Errorf("%w: referenced message is unavailable; refresh the reference", apperrors.ErrNotFound)
 		}
 		message := messages[index]
+		citations, err := s.validateMessageKnowledge(ctx, principal, message)
+		if err != nil {
+			return "", "", "", err
+		}
+		*lineage = append(*lineage, citations...)
+		if len(*lineage) > 200 {
+			return "", "", "", fmt.Errorf("%w: reference citation budget exceeded", apperrors.ErrInvalidArgument)
+		}
 		selected = append(selected, map[string]string{"id": message.ID, "role": message.Role, "content": message.Content})
 	}
 	data, err := json.Marshal(selected)

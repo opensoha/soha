@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
@@ -16,6 +17,13 @@ func (s *Service) VisibleCapabilityTask(ctx context.Context, principal domainide
 	if err != nil || intent.ActorID != principal.UserID {
 		return domainaigateway.CapabilityTask{}, apperrors.ErrNotFound
 	}
+	if intent.PermissionCeiling != nil {
+		principal, err = appaccess.RuntimePrincipalWithin(ctx, s.permissions, principal, intent.PermissionCeiling)
+		if err != nil {
+			return domainaigateway.CapabilityTask{}, err
+		}
+	}
+	ctx = withCapabilityExecution(ctx, run, domainworkflow.NodeRun{})
 	plan, err := s.visibleCapabilityPlan(ctx, principal, intent, run.NodeRuns)
 	if err != nil {
 		return domainaigateway.CapabilityTask{}, err
@@ -23,6 +31,7 @@ func (s *Service) VisibleCapabilityTask(ctx context.Context, principal domainide
 	created, _ := time.Parse(time.RFC3339, run.CreatedAt)
 	updated, _ := time.Parse(time.RFC3339, run.UpdatedAt)
 	view := domainaigateway.CapabilityTask{ID: run.ID, Version: run.Version, PlanVersion: intent.PlanVersion, Status: run.Status, CreatedBy: intent.ActorID, Plan: plan, CreatedAt: created, UpdatedAt: updated, Nodes: []domainaigateway.CapabilityTaskNode{}}
+	view.ScopeConstraints = intent.Input.ScopeConstraints
 	for _, node := range run.NodeRuns {
 		entry, err := s.visibleCapabilityNode(ctx, principal, node)
 		if err != nil {

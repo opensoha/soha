@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
@@ -23,6 +25,13 @@ type capabilityExecutionKey struct{}
 // delivery-stage authority into domains that own their own child Run/plan locks.
 func withCapabilityExecution(ctx context.Context, run domainworkflow.Run, node domainworkflow.NodeRun) context.Context {
 	execution := domainworkflow.NodeExecution{Scope: run.Scope, RunID: run.ID, NodeID: node.NodeID, Version: run.Version, FencingToken: run.FencingToken, LeaseOwner: run.LeaseOwner, Attempt: 1}
+	bound := capabilityTaskScope{}
+	if run.Scope == domainworkflow.ScopeCapabilityTask {
+		intent, err := domainworkflow.CapabilityIntentFrom(run)
+		bound.invalid = err != nil
+		bound.constraints = slices.Clone(intent.Input.ScopeConstraints)
+	}
+	ctx = context.WithValue(ctx, capabilityTaskScopeKey{}, bound)
 	return context.WithValue(ctx, capabilityExecutionKey{}, execution)
 }
 
@@ -50,24 +59,37 @@ func (s *Service) withCapabilityApproval(ctx context.Context, request domainaiga
 		if err != nil {
 			return fmt.Errorf("%w: capability task expired", apperrors.ErrConflict)
 		}
-		reader, ok := s.identity.(interface {
-			CurrentExecutionPrincipal(context.Context, string, string) (domainidentity.Principal, error)
-		})
-		if !ok {
-			return apperrors.ErrAccessDenied
-		}
-		actor, err := reader.CurrentExecutionPrincipal(ctx, intent.ActorID, intent.ActorTokenID)
-		if err != nil {
-			return err
-		}
 		node, err := matchingCapabilityApprovalNode(run, intent, request, cancellation)
 		if err != nil {
 			return err
 		}
-		ctx = withCapabilityExecution(ctx, run, node)
-		ctx = context.WithValue(ctx, capabilityPrincipalKey{}, actor)
-		result, err = execute(ctx)
-		return err
+		return s.withNativeCapabilityParent(ctx, run, cancellation, func(boundedCtx context.Context) error {
+			if !cancellation {
+				var cancel context.CancelFunc
+				boundedCtx, cancel = context.WithDeadline(boundedCtx, domainworkflow.CapabilityNodeDeadline(intent, node))
+				defer cancel()
+				if err := boundedCtx.Err(); err != nil {
+					return err
+				}
+			}
+			reader, ok := s.identity.(interface {
+				CurrentExecutionPrincipal(context.Context, string, string) (domainidentity.Principal, error)
+			})
+			if !ok {
+				return apperrors.ErrAccessDenied
+			}
+			actor, err := reader.CurrentExecutionPrincipal(boundedCtx, intent.ActorID, intent.ActorTokenID)
+			if err == nil && intent.PermissionCeiling != nil {
+				actor, err = appaccess.RuntimePrincipalWithin(boundedCtx, s.permissions, actor, intent.PermissionCeiling)
+			}
+			if err != nil {
+				return err
+			}
+			boundedCtx = withCapabilityExecution(boundedCtx, run, node)
+			boundedCtx = context.WithValue(boundedCtx, capabilityPrincipalKey{}, actor)
+			result, err = execute(boundedCtx)
+			return err
+		})
 	})
 	return result, err
 }
@@ -78,7 +100,10 @@ func matchingCapabilityApprovalNode(run domainworkflow.Run, intent domainworkflo
 			continue
 		}
 		call := node.PreparedCall
-		if cancellation && node.ControlCall != nil && node.ControlCall.RequestID == request.RequestID {
+		if cancellation {
+			if node.ControlCall == nil || node.ControlCall.RequestID != request.RequestID {
+				return domainworkflow.NodeRun{}, apperrors.ErrConflict
+			}
 			call = node.ControlCall
 			if run.StopReason == "" || node.Invocation == nil || node.Invocation.Task == nil || node.Invocation.Task.CancelCall == nil || call.ToolName != node.Invocation.Task.CancelCall.ToolName {
 				return domainworkflow.NodeRun{}, apperrors.ErrConflict

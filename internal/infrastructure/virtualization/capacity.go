@@ -3,6 +3,7 @@ package virtualization
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"slices"
@@ -23,6 +24,10 @@ func capacityInteger(value any) (int64, error) {
 
 func (a *PVEAdapter) ObserveCapacity(ctx context.Context, connection Connection, input CreateVMInput) (domain.CapacitySnapshot, error) {
 	snapshot := domain.CapacitySnapshot{SourceID: domain.CapacitySourceID(connection), ObservedAt: time.Now().UTC(), Nodes: []domain.CapacityNode{}, Storage: []domain.CapacityStorage{}}
+	connection, err := a.authenticatedConnection(ctx, connection)
+	if err != nil {
+		return snapshot, err
+	}
 	if err := a.checkPVECloneCapacity(ctx, connection, input); err != nil {
 		return snapshot, err
 	}
@@ -42,11 +47,7 @@ func (a *PVEAdapter) ObserveCapacity(ctx context.Context, connection Connection,
 	if err := a.do(ctx, connection, http.MethodGet, "/cluster/resources", nil, &resources); err != nil {
 		return snapshot, err
 	}
-	overhead, err := domain.CapacityMemoryOverheadMiB(connection.Options)
-	if err != nil {
-		return snapshot, err
-	}
-	nodes, err := pveCapacityNodes(resources.Data, overhead)
+	nodes, err := pveCapacityNodes(resources.Data)
 	if err != nil {
 		return snapshot, err
 	}
@@ -69,17 +70,8 @@ func (a *PVEAdapter) ObserveCapacity(ctx context.Context, connection Connection,
 		snapshot.Storage = append(snapshot.Storage, item)
 	}
 	slices.SortFunc(snapshot.Storage, func(a, b domain.CapacityStorage) int { return strings.Compare(a.Key, b.Key) })
-	for _, vm := range resources.Data {
-		if stringFromAny(vm["type"]) != "qemu" {
-			continue
-		}
-		config, err := a.pveVMConfig(ctx, connection, stringFromAny(vm["node"]), stringFromAny(vm["vmid"]))
-		if err != nil {
-			return snapshot, err
-		}
-		if owner, ok := strings.CutPrefix(stringFromAny(config["description"]), "soha-operation:"); ok && owner != "" && stringFromAny(config["lock"]) == "" {
-			snapshot.ObservedOperations = append(snapshot.ObservedOperations, owner)
-		}
+	if err := a.observePVEConfiguredCapacity(ctx, connection, resources.Data, &snapshot); err != nil {
+		return snapshot, err
 	}
 	snapshot.Complete = true
 	return snapshot, nil
@@ -131,59 +123,45 @@ func pveUnreservedDevice(key string) bool {
 	return key == "args" || key == "hookscript"
 }
 
-func pveCapacityNodes(resources []map[string]any, overheadMiB int64) ([]domain.CapacityNode, error) {
+func pveCapacityNodes(resources []map[string]any) ([]domain.CapacityNode, error) {
 	nodes := []domain.CapacityNode{}
 	for _, item := range resources {
 		if stringFromAny(item["type"]) != "node" || stringFromAny(item["status"]) != "online" {
 			continue
 		}
 		cpu, err := capacityInteger(item["maxcpu"])
-		if err != nil {
-			return nil, err
+		if err != nil || cpu == 0 || cpu > 65536 {
+			return nil, fmt.Errorf("provider node CPU capacity is missing or invalid")
+		}
+		utilization, err := strconv.ParseFloat(fmt.Sprint(item["cpu"]), 64)
+		if err != nil || math.IsNaN(utilization) || math.IsInf(utilization, 0) || utilization < 0 || utilization > 1 {
+			return nil, fmt.Errorf("provider node CPU utilization is missing or invalid")
 		}
 		memory, err := capacityInteger(item["maxmem"])
-		if err != nil {
-			return nil, err
+		if err != nil || memory == 0 {
+			return nil, fmt.Errorf("provider node memory capacity is missing or invalid")
 		}
 		usedMemory, err := capacityInteger(item["mem"])
-		if err != nil {
-			return nil, err
+		if err != nil || usedMemory > memory {
+			return nil, fmt.Errorf("provider node memory use is missing or invalid")
 		}
 		name := stringFromAny(item["node"])
-		committedCPU, committedMemory, err := pveNodeCommitments(resources, name, overheadMiB)
-		if err != nil {
-			return nil, err
+		if name == "" {
+			return nil, fmt.Errorf("provider node name is missing")
 		}
-		// Reserve current host use and all configured guest memory, including
-		// stopped guests. No CPU or memory overcommit is inferred from idle load.
-		nodes = append(nodes, domain.CapacityNode{Name: name, CPU: max(0, cpu-committedCPU), MemoryMiB: max(0, min(memory-usedMemory, memory-committedMemory)) / (1 << 20)})
+		// PVE mem is total minus MemAvailable. Keep 5% (at least 2 GiB) for host pressure and sampling lag.
+		reserve := max(int64(2<<30), memory/20)
+		nodes = append(nodes, domain.CapacityNode{Name: name, CPU: int64(math.Floor(float64(cpu) * (1 - utilization))), MemoryMiB: max(0, memory-usedMemory-reserve) / (1 << 20), LogicalCPU: cpu, TotalMemoryMiB: memory / (1 << 20), HostReserveMiB: reserve / (1 << 20), BudgetObserved: true})
 	}
 	slices.SortFunc(nodes, func(a, b domain.CapacityNode) int { return strings.Compare(a.Name, b.Name) })
 	return nodes, nil
 }
 
-func pveNodeCommitments(resources []map[string]any, node string, overheadMiB int64) (int64, int64, error) {
-	var cpu, memory int64
-	for _, item := range resources {
-		kind := stringFromAny(item["type"])
-		if stringFromAny(item["node"]) != node || kind != "qemu" && kind != "lxc" || boolFromAny(item["template"]) {
-			continue
-		}
-		cores, err := capacityInteger(item["maxcpu"])
-		if err != nil {
-			return 0, 0, err
-		}
-		bytes, err := capacityInteger(item["maxmem"])
-		if err != nil {
-			return 0, 0, err
-		}
-		cpu += cores
-		memory += bytes
-		if kind == "qemu" {
-			memory += overheadMiB * (1 << 20)
-		}
-	}
-	return cpu, memory, nil
+func pveVMCapacityObserved(vm map[string]any) bool {
+	// A stopped/just-started VM has not yet appeared in the host utilization sample.
+	uptime, uptimeErr := capacityInteger(vm["uptime"])
+	memory, memoryErr := capacityInteger(vm["mem"])
+	return stringFromAny(vm["status"]) == "running" && uptimeErr == nil && uptime >= 30 && memoryErr == nil && memory > 0
 }
 
 func (a *PVEAdapter) observePVEStorageCapacity(ctx context.Context, connection Connection, node string) ([]domain.CapacityStorage, error) {

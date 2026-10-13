@@ -29,16 +29,24 @@ func New(db *gorm.DB) *Repository {
 }
 
 func (r *Repository) ListSessions(ctx context.Context, createdBy string, limit int) ([]domaincopilot.Session, error) {
+	return r.listWorkspaceSessions(ctx, createdBy, limit, false)
+}
+
+func (r *Repository) ListPersonalSessions(ctx context.Context, createdBy string, limit int) ([]domaincopilot.Session, error) {
+	return r.listWorkspaceSessions(ctx, createdBy, limit, true)
+}
+
+func (r *Repository) listWorkspaceSessions(ctx context.Context, createdBy string, limit int, personal bool) ([]domaincopilot.Session, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT id, title, created_by, metadata, created_at, updated_at
 		FROM ai_sessions
-		WHERE created_by = ? AND deleted_at IS NULL
+		WHERE created_by = ? AND deleted_at IS NULL AND (COALESCE(metadata->>'conversationKind','') IN ('personal_main','personal_side')) = ?
 		ORDER BY updated_at DESC, created_at DESC
 		LIMIT ?
-	`, createdBy, limit).Rows()
+	`, createdBy, personal, limit).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query ai sessions: %w", err)
 	}
@@ -76,6 +84,29 @@ func (r *Repository) CreateSession(ctx context.Context, session domaincopilot.Se
 		return domaincopilot.Session{}, fmt.Errorf("create ai session: %w", err)
 	}
 	return session, nil
+}
+
+// GetOrCreateMainSession relies on the partial unique index to serialize first entry across servers.
+func (r *Repository) GetOrCreateMainSession(ctx context.Context, session domaincopilot.Session) (domaincopilot.Session, bool, error) {
+	metadata, err := json.Marshal(session.Metadata)
+	if err != nil {
+		return domaincopilot.Session{}, false, fmt.Errorf("marshal main chat: %w", err)
+	}
+	result := r.db.WithContext(ctx).Exec(`
+        INSERT INTO ai_sessions (id, title, created_by, metadata, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT DO NOTHING
+    `, session.ID, session.Title, session.CreatedBy, string(metadata), session.CreatedAt, session.UpdatedAt)
+	if result.Error != nil {
+		return domaincopilot.Session{}, false, fmt.Errorf("ensure main chat: %w", result.Error)
+	}
+	row := r.db.WithContext(ctx).Raw(`
+        SELECT id, title, created_by, metadata, created_at, updated_at FROM ai_sessions
+        WHERE created_by = ? AND deleted_at IS NULL AND metadata->>'conversationKind' = ?
+        LIMIT 1
+    `, session.CreatedBy, session.Metadata["conversationKind"]).Row()
+	item, err := scanSessionRow(row, session.ID)
+	return item, result.RowsAffected > 0, err
 }
 
 func (r *Repository) UpdateSession(ctx context.Context, createdBy, sessionID string, session domaincopilot.Session) (domaincopilot.Session, error) {
@@ -689,6 +720,19 @@ func (r *Repository) ListAgentRuns(ctx context.Context, filter domaincopilot.Age
 		clauses = append(clauses, "session_id = ?")
 		args = append(args, value)
 	}
+	if filter.NativeRequestID != "" {
+		clauses = append(clauses, "native_request_id = ? AND provider_kind = 'native'")
+		args = append(args, filter.NativeRequestID)
+	}
+	if filter.PersonalSessionsOnly {
+		clauses = append(clauses, `EXISTS (SELECT 1 FROM ai_sessions s WHERE s.id=ai_agent_runs.session_id AND s.created_by=ai_agent_runs.created_by AND s.deleted_at IS NULL AND s.metadata->>'conversationKind' IN ('personal_main','personal_side'))`)
+	}
+	if filter.ExcludePersonalSessions {
+		clauses = append(clauses, `NOT EXISTS (SELECT 1 FROM ai_sessions s WHERE s.id=ai_agent_runs.session_id AND s.metadata->>'conversationKind' IN ('personal_main','personal_side'))`)
+	}
+	if filter.ExcludeArchivedSessions {
+		clauses = append(clauses, `NOT EXISTS (SELECT 1 FROM ai_sessions s WHERE s.id = ai_agent_runs.session_id AND s.deleted_at IS NOT NULL)`)
+	}
 	if value := strings.TrimSpace(filter.Status); value != "" {
 		clauses = append(clauses, "status = ?")
 		args = append(args, value)
@@ -855,7 +899,7 @@ func (r *Repository) ClaimAgentRun(ctx context.Context, input domaincopilot.Agen
 	now := time.Now().UTC()
 	var claimed domaincopilot.AgentRun
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		clauses := []string{"status = ?"}
+		clauses := []string{"status = ?", "provider_kind <> 'native'"}
 		args := []any{domaincopilot.AgentRunStatusQueued}
 		if values := compactStringValues(input.ProviderIDs); len(values) > 0 {
 			clauses = append(clauses, fmt.Sprintf("provider_id IN (%s)", placeholders(len(values))))
@@ -1237,6 +1281,12 @@ func (r *Repository) ListInspectionRuns(ctx context.Context, createdBy string, f
 	if filter.TaskID != "" {
 		query += ` AND r.task_id = ?`
 		args = append(args, filter.TaskID)
+	}
+	if len(filter.RunIDs) > 0 {
+		query += " AND r.id IN (" + placeholders(len(filter.RunIDs)) + ")"
+		for _, id := range filter.RunIDs {
+			args = append(args, id)
+		}
 	}
 	query += ` ORDER BY r.created_at DESC`
 	rows, err := dbtx.DB(ctx, r.db).Raw(query, args...).Rows()
@@ -1722,7 +1772,7 @@ func scanAgentRun(rows *sql.Rows) (domaincopilot.AgentRun, error) {
 		return domaincopilot.AgentRun{}, fmt.Errorf("scan ai agent run: %w", err)
 	}
 	decodeAgentRunFields(&item, skillIDs, sessionID, rootCauseRunID, scope, toolset, toolBindings, skillBindings, input, output, toolExecutions, analysisArtifacts, secretRefs, secretPrincipal, secretTarget, claimedByAgentID, externalRunID, errorMessage, startedAt, lastHeartbeatAt, completedAt)
-	return item, nil
+	return domaincopilot.NativeRunProjection(item), nil
 }
 
 func scanAgentRunRow(row *sql.Row, runID string) (domaincopilot.AgentRun, error) {
@@ -1848,6 +1898,7 @@ func decodeAgentRunFields(item *domaincopilot.AgentRun, skillIDs []byte, session
 		value := completedAt.Time
 		item.CompletedAt = &value
 	}
+	*item = domaincopilot.NativeRunProjection(*item)
 }
 
 func scanInspectionTask(rows *sql.Rows) (domaincopilot.InspectionTask, error) {

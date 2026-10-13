@@ -13,6 +13,7 @@ import (
 const (
 	ScopeNetworkControl = "network-control"
 	ScopeIngest         = "network-ingest"
+	ScopePersonalGuest  = "personal-guest"
 	trustDomain         = "opensoha.local"
 )
 
@@ -94,6 +95,8 @@ func allowedKind(scope, kind string) bool {
 		return kind == "endpoint" || kind == "gateway" || kind == "nas" || kind == "proxy"
 	case ScopeIngest:
 		return kind == "endpoint" || kind == "gateway" || kind == "freeradius" || kind == "network-control" || kind == "core" || kind == "proxy"
+	case ScopePersonalGuest:
+		return kind == "guest"
 	default:
 		return false
 	}

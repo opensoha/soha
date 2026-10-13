@@ -17,8 +17,11 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.WorkbenchStreamResult{}, err
 	}
-	session, err := s.sessions.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	session, err := s.ownedSession(ctx, principal, strings.TrimSpace(sessionID))
 	if err != nil {
+		return domaincopilot.WorkbenchStreamResult{}, err
+	}
+	if err := s.validateChatImageInput(input, parseSessionMetadata(session.Metadata)); err != nil {
 		return domaincopilot.WorkbenchStreamResult{}, err
 	}
 	session, err = s.persistWorkbenchModelPreferences(ctx, principal, session, input)
@@ -37,29 +40,49 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 		}
 	}
 	mode := normalizeSessionMode(firstNonEmpty(input.Mode, metadata.Mode))
-	if mode != "general" && input.ContextSelection != nil {
-		return domaincopilot.WorkbenchStreamResult{}, fmt.Errorf("%w: context references are supported in general chat", apperrors.ErrUnsupportedOperation)
-	}
 	providerID := normalizeAgentProviderID(firstNonEmpty(input.AgentProviderID, metadata.AgentProviderID, agentProviderInternal))
+	if input.TaskIntent != nil {
+		mode = "general"
+	}
+	_, nativeStorage := s.agentRuns.(NativeRunStore)
+	useNative := nativeStorage && providerID == agentProviderInternal
 	effectiveToolset := narrowWorkbenchToolset(metadata.Toolset, input.Toolset, input.ScopeOverrides, metadata.Scope)
 	effectiveMetadata := metadata
 	effectiveMetadata.RequestContext = input.ContextSelection
 	effectiveMetadata.Mode = mode
 	effectiveMetadata.AgentProviderID = providerID
 	effectiveMetadata.Toolset = effectiveToolset
-	if input.KnowledgeContext != nil {
-		effectiveMetadata.KnowledgeContext = *input.KnowledgeContext
-		effectiveMetadata.KnowledgeContext.KnowledgeBaseIDs = normalizeStringList(effectiveMetadata.KnowledgeContext.KnowledgeBaseIDs)
-		effectiveMetadata.KnowledgeContext.TopK = min(max(effectiveMetadata.KnowledgeContext.TopK, 5), 50)
-	}
+	applyStreamKnowledgeContext(&effectiveMetadata, input.KnowledgeContext)
 	effectiveSession := session
 	effectiveSession.Metadata = sessionMetadataMap(effectiveMetadata)
+	if result, handled, err := s.assistantProfileFromChat(ctx, principal, effectiveSession, input, mode, locale); handled {
+		return result, err
+	}
+	if err := validateWorkbenchExecutionInput(input, mode, useNative); err != nil {
+		return domaincopilot.WorkbenchStreamResult{}, err
+	}
+	if useNative {
+		return s.queueNativeMessage(ctx, principal, effectiveSession, effectiveMetadata, input, locale)
+	}
 
 	if mode == "general" {
 		return s.streamGeneralWorkbenchMessage(ctx, principal, effectiveSession, effectiveMetadata, input, locale)
 	}
+	return s.streamAnalysisWorkbenchMessage(ctx, principal, effectiveSession, metadata, effectiveMetadata, input, locale)
+}
+
+func (s *Service) streamAnalysisWorkbenchMessage(ctx context.Context, principal domainidentity.Principal, effectiveSession domaincopilot.Session, metadata, effectiveMetadata domaincopilot.SessionMetadata, input domaincopilot.WorkbenchSendMessageInput, locale string) (domaincopilot.WorkbenchStreamResult, error) {
+	mode, providerID := effectiveMetadata.Mode, effectiveMetadata.AgentProviderID
+	effectiveToolset := effectiveMetadata.Toolset
+	// Analysis choices belong to this task; preserve the conversation defaults.
+	effectiveMetadata.Mode = metadata.Mode
+	effectiveMetadata.AgentProviderID = metadata.AgentProviderID
+	effectiveSession.Metadata = sessionMetadataMap(effectiveMetadata)
 	if !isRunnableSessionAnalysisMode(mode) {
 		return domaincopilot.WorkbenchStreamResult{}, fmt.Errorf("%w: stream mode must be general, root_cause, performance, trace, or inspection_review", apperrors.ErrInvalidArgument)
+	}
+	if err := s.authorizeProfessionalCapability(ctx, principal, mode); err != nil {
+		return domaincopilot.WorkbenchStreamResult{}, err
 	}
 
 	locale = detectMessageLocale(input.Content, locale)
@@ -128,6 +151,19 @@ func (s *Service) StreamMessage(ctx context.Context, principal domainidentity.Pr
 	}, nil
 }
 
+func validateWorkbenchExecutionInput(input domaincopilot.WorkbenchSendMessageInput, mode string, useNative bool) error {
+	if input.ContextSelection != nil && len(input.ContextSelection.Images) > 0 && mode != "general" && !useNative {
+		return fmt.Errorf("%w: chat images are supported in general chat", apperrors.ErrUnsupportedOperation)
+	}
+	if input.TaskIntent != nil && !useNative {
+		return fmt.Errorf("%w: this execution provider does not support per-turn task intent", apperrors.ErrUnsupportedOperation)
+	}
+	if mode != "general" && input.ContextSelection != nil && !useNative {
+		return fmt.Errorf("%w: context references are supported in general chat", apperrors.ErrUnsupportedOperation)
+	}
+	return nil
+}
+
 func (s *Service) streamGeneralWorkbenchMessage(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, metadata domaincopilot.SessionMetadata, input domaincopilot.WorkbenchSendMessageInput, locale string) (domaincopilot.WorkbenchStreamResult, error) {
 	if s.shouldUseExternalAgent(metadata.AgentProviderID) {
 		envelope, err := s.queueAgentChatMessage(ctx, principal, session, metadata, input.Content, locale)
@@ -169,7 +205,7 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 		SessionID: session.ID,
 		Role:      "user",
 		Content:   strings.TrimSpace(content),
-		Metadata:  map[string]any{"userId": principal.UserID, "locale": locale, "mode": sessionMeta.Mode},
+		Metadata:  chatUserMetadata(map[string]any{"userId": principal.UserID, "locale": locale, "mode": sessionMeta.Mode}, sessionMeta.RequestContext),
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -218,14 +254,10 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 		"locale":            locale,
 		"analysisArtifacts": []domaincopilot.AnalysisArtifact{},
 	}
-	if reply.Model != "" {
-		assistantMetadata["model"] = reply.Model
-	}
-	if reply.Error != "" {
-		assistantMetadata["error"] = reply.Error
-	}
+	applyChatReplyMetadata(assistantMetadata, reply, userMessage.ID)
 	if contextMeta != nil {
 		assistantMetadata["contextEnvelope"] = contextMeta
+		assistantMetadata["contextSnapshot"] = contextMeta
 	}
 	agentStatus := map[string]any{
 		"status":       replyAgentStatus(reply),
@@ -266,6 +298,28 @@ func (s *Service) streamGeneralMessageWithSessionConfig(ctx context.Context, pri
 	return domaincopilot.SessionMessageEnvelope{
 		Messages: []domaincopilot.Message{userMessage, assistantMessage},
 	}, nil
+}
+
+func applyChatReplyMetadata(metadata map[string]any, reply chatReply, userMessageID string) {
+	replyReactionMetadata(metadata, reply, userMessageID)
+	if reply.ContextUsage != nil {
+		metadata["contextUsage"] = reply.ContextUsage
+	}
+	if reply.Model != "" {
+		metadata["model"] = reply.Model
+	}
+	if reply.Error != "" {
+		metadata["error"] = reply.Error
+	}
+}
+
+func (s *Service) updateSessionAnalysisMetadata(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, patch map[string]any, messageID string) {
+	merged := bindChatSummarySource(parseSessionMetadata(session.Metadata), patch, messageID)
+	merged = applySessionAnalysisPatch(merged, patch)
+	patch["mode"] = merged.Mode
+	session.Metadata = sessionMetadataMap(merged)
+	session.UpdatedAt = time.Now().UTC()
+	_, _ = s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
 }
 
 func emitWorkbenchModelRunning(ctx context.Context, s *Service, sink domaincopilot.WorkbenchStreamEventSink) {
@@ -343,7 +397,7 @@ func (s *Service) runInternalStreamAnalysisMessage(ctx context.Context, principa
 	case "root_cause":
 		var run domaincopilot.RootCauseRun
 		var artifact domaincopilot.AnalysisArtifact
-		run, toolCalls, artifact, runErr = s.runSessionRootCause(ctx, principal, session.ID, scope, metadata.Toolset, input.Question, locale)
+		run, toolCalls, artifact, runErr = s.runSessionRootCause(ctx, principal, session.ID, scope, metadata.Toolset, input.Question, locale, input.AnalysisProfileID)
 		if runErr == nil {
 			artifacts = append(artifacts, artifact)
 			refs = append(refs, domaincopilot.AnalysisRunRef{ID: run.ID, Kind: run.Kind, Status: run.Status, CreatedAt: run.CreatedAt.Format(time.RFC3339)})
@@ -364,9 +418,11 @@ func (s *Service) runInternalStreamAnalysisMessage(ctx context.Context, principa
 		}
 	case "inspection_review":
 		var artifact domaincopilot.AnalysisArtifact
-		toolCalls, artifact = s.runSessionInspectionReview(session.ID, scope, metadata.Toolset, input.Question, locale)
-		artifacts = append(artifacts, artifact)
-		refs = append(refs, domaincopilot.AnalysisRunRef{ID: artifact.RunID, Kind: artifact.Kind, Status: "completed", CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		toolCalls, artifact, runErr = s.runSessionInspectionReview(ctx, principal, session.ID, scope, metadata.Toolset, input.Question, locale)
+		if runErr == nil {
+			artifacts = append(artifacts, artifact)
+			refs = append(refs, domaincopilot.AnalysisRunRef{ID: artifact.RunID, Kind: artifact.Kind, Status: "completed", CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		}
 	}
 
 	finalStatus := "succeeded"
@@ -410,16 +466,13 @@ func (s *Service) runInternalStreamAnalysisMessage(ctx context.Context, principa
 		return domaincopilot.SessionMessageEnvelope{}, finalStatus, err
 	}
 	if len(sessionPatch) > 0 {
-		merged := applySessionAnalysisPatch(parseSessionMetadata(session.Metadata), sessionPatch)
-		session.Metadata = sessionMetadataMap(merged)
-		session.UpdatedAt = time.Now().UTC()
-		_, _ = s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
+		s.updateSessionAnalysisMetadata(ctx, principal, session, sessionPatch, assistantMessage.ID)
 	}
 	envelope := domaincopilot.SessionMessageEnvelope{
 		Messages:          []domaincopilot.Message{userMessage, assistantMessage},
 		ToolCalls:         toolCalls,
 		AnalysisArtifacts: artifacts,
-		SessionPatch:      sessionPatch,
+		SessionPatch:      s.visibleSessionPatch(ctx, principal, session.ID, sessionPatch),
 	}
 	emitInternalAnalysisFinal(eventSink, mode, envelope, liveTool, finalStatus)
 	return envelope, finalStatus, nil
@@ -645,11 +698,20 @@ func (s *Service) persistWorkbenchModelPreferences(ctx context.Context, principa
 	if len(preferences.PublicModel) > 200 || !validWorkbenchReasoningEffort(preferences.ReasoningEffort) {
 		return domaincopilot.Session{}, fmt.Errorf("%w: invalid model preferences", apperrors.ErrInvalidArgument)
 	}
-	if normalizeSessionMode(firstNonEmpty(input.Mode, metadata.Mode)) != "general" || normalizeAgentProviderID(firstNonEmpty(input.AgentProviderID, metadata.AgentProviderID)) != agentProviderInternal {
+	if normalizeAgentProviderID(firstNonEmpty(input.AgentProviderID, metadata.AgentProviderID)) != agentProviderInternal {
 		return domaincopilot.Session{}, fmt.Errorf("%w: model preferences require internal chat", apperrors.ErrInvalidArgument)
 	}
 	metadata.ModelPreferences = preferences
 	session.Metadata = sessionMetadataMap(metadata)
 	session.UpdatedAt = time.Now().UTC()
 	return s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
+}
+
+func applyStreamKnowledgeContext(metadata *domaincopilot.SessionMetadata, input *domaincopilot.KnowledgeContextConfig) {
+	if input == nil {
+		return
+	}
+	metadata.KnowledgeContext = *input
+	metadata.KnowledgeContext.KnowledgeBaseIDs = normalizeStringList(metadata.KnowledgeContext.KnowledgeBaseIDs)
+	metadata.KnowledgeContext.TopK = min(max(metadata.KnowledgeContext.TopK, 5), 50)
 }

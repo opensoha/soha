@@ -22,6 +22,10 @@ func (s *Service) SyncSource(ctx context.Context, principal domainidentity.Princ
 	if err != nil {
 		return domainknowledge.SyncRun{}, err
 	}
+	base, err := s.repo.GetBase(ctx, principalScope(principal), source.KnowledgeBaseID)
+	if err != nil {
+		return domainknowledge.SyncRun{}, err
+	}
 	now := s.now()
 	run := domainknowledge.SyncRun{ID: uuid.NewString(), KnowledgeBaseID: source.KnowledgeBaseID, SourceID: source.ID, Status: domainknowledge.RunStatusRunning, StartedAt: now}
 	if err := s.repo.CreateSyncRun(ctx, run); err != nil {
@@ -36,21 +40,18 @@ func (s *Service) SyncSource(ctx context.Context, principal domainidentity.Princ
 	if len(documents) > 10000 {
 		return s.failSync(ctx, principal, source, run, fmt.Errorf("%w: source returned too many documents", domainknowledge.ErrRetrievalExhausted))
 	}
-	for _, loaded := range documents {
+	prepared, err := prepareIngestion(source, base.OwnerID, documents, cursor, s.now)
+	if err != nil {
+		return s.failSync(ctx, principal, source, run, err)
+	}
+	for index, document := range prepared.documents {
 		if err := ctx.Err(); err != nil {
 			return s.failSync(ctx, principal, source, run, err)
 		}
-		loaded.Content = strings.TrimSpace(loaded.Content)
-		if loaded.ExternalID == "" || loaded.Content == "" {
-			continue
+		chunks := prepared.chunks[index]
+		if document.Status != domainknowledge.DocumentStatusDeleted {
+			document.Status = domainknowledge.DocumentStatusIndexed
 		}
-		documentNow := s.now()
-		document := domainknowledge.Document{ID: stableDocumentID(source.ID, loaded.ExternalID), KnowledgeBaseID: source.KnowledgeBaseID, SourceID: source.ID, ExternalID: loaded.ExternalID, Title: strings.TrimSpace(loaded.Title), URI: strings.TrimSpace(loaded.URI), Version: firstNonEmpty(loaded.Version, contentHash(loaded.Content)), ContentHash: contentHash(loaded.Content), ACL: normalizeAccessScope(loaded.ACL, principal.UserID), Status: domainknowledge.DocumentStatusIndexed, CreatedAt: documentNow, UpdatedAt: documentNow}
-		if document.Title == "" {
-			document.Title = document.ExternalID
-		}
-		chunks := chunkDocument(document, loaded.Content)
-		document.ChunkCount = len(chunks)
 		if err := s.repo.UpsertDocument(ctx, document, chunks); err != nil {
 			return s.failSync(ctx, principal, source, run, err)
 		}

@@ -63,7 +63,7 @@ func TestJWTKeyringSignsWithKidAndVerifiesPreviousKeys(t *testing.T) {
 		AccessTTL: time.Minute, RefreshTTL: time.Hour,
 	}}}
 
-	signed, _, err := service.signAccessToken(domainidentity.Principal{UserID: "user-1"}, "session-1")
+	signed, _, err := service.signAccessToken(domainidentity.Principal{UserID: "user-1"}, "session-1", 1)
 	if err != nil {
 		t.Fatalf("signAccessToken() error = %v", err)
 	}

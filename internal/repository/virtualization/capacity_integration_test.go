@@ -68,6 +68,9 @@ func TestCapacityAdmissionWithPostgres(t *testing.T) {
 	verifyCapacityRetry(t, ctx, store, repo, snapshot, demand, ids, winner.ID, loserID)
 	t.Run("provider identity claim", func(t *testing.T) { testProviderIdentityClaims(t, repo, ctx) })
 	t.Run("worker pool admission", func(t *testing.T) { testWorkerPoolAdmission(t, repo, ctx) })
+	t.Run("capacity policy", func(t *testing.T) { testCapacityPolicyWithPostgres(t, repo, ctx) })
+	t.Run("ssh secret storage", func(t *testing.T) { testSSHSecretStorageWithPostgres(t, repo, ctx) })
+	t.Run("managed cloud image sync", func(t *testing.T) { testManagedCloudImageSync(t, repo, ctx) })
 }
 
 func testProviderIdentityClaims(t *testing.T, repo *Repository, ctx context.Context) {

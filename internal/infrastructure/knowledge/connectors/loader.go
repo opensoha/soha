@@ -111,8 +111,8 @@ func (InlineAdapter) Load(ctx context.Context, _ domainidentity.Principal, sourc
 		documents[i].ExternalID = strings.TrimSpace(documents[i].ExternalID)
 		documents[i].Content = strings.TrimSpace(documents[i].Content)
 		total += len(documents[i].Content)
-		if documents[i].ExternalID == "" || documents[i].Content == "" {
-			return nil, "", fmt.Errorf("%w: inline document externalId and content are required", domainknowledge.ErrInvalidInput)
+		if documents[i].ExternalID == "" || (!documents[i].Deleted && documents[i].Content == "") || (documents[i].Deleted && documents[i].Content != "") {
+			return nil, "", fmt.Errorf("%w: inline document needs an externalId and content, or an empty explicit tombstone", domainknowledge.ErrInvalidInput)
 		}
 		if total > maxInlineBytes {
 			return nil, "", fmt.Errorf("%w: inline content exceeds %d bytes", domainknowledge.ErrInvalidInput, maxInlineBytes)
@@ -145,9 +145,9 @@ func (a ExternalAdapter) Load(
 	}); err != nil {
 		return nil, "", err
 	}
-	maxItems, _ := intConfig(source.Config, "maxObjects")
-	if maxItems == 0 {
-		maxItems = maxInlineDocuments
+	maxItems := maxInlineDocuments
+	if a.kind == domainknowledge.SourceKindObject {
+		maxItems, _ = intConfig(source.Config, "maxObjects")
 	}
 	maxBytes, _ := intConfig(source.Config, "maxBytes")
 	result, err := a.fetcher.Fetch(ctx, FetchRequest{

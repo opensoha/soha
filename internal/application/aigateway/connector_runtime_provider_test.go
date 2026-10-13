@@ -3,13 +3,17 @@ package aigateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainsecret "github.com/opensoha/soha/internal/domain/secret"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func TestConnectorRuntimeProviderDiscoversManifestAndInvokesThroughGateway(t *testing.T) {
@@ -92,12 +96,14 @@ func invokeConnectorRuntimeAction(t *testing.T, w http.ResponseWriter, r *http.R
 	if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer "+runtimeToken {
 		t.Fatalf("invalid action request: method=%s authorization=%q", r.Method, r.Header.Get("Authorization"))
 	}
-	var input map[string]any
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	var request struct {
+		Input map[string]any `json:"input"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 		t.Fatalf("decode action input: %v", err)
 	}
-	if input["text"] != "hello" || input["receiveId"] != "chat-1" {
-		t.Fatalf("unexpected action input: %#v", input)
+	if request.Input["text"] != "hello" || request.Input["receiveId"] != "chat-1" {
+		t.Fatalf("unexpected action input: %#v", request.Input)
 	}
 	*invoked = true
 	writeJSON(t, w, map[string]any{"ok": true, "output": map[string]any{"messageId": "msg-1", "status": "sent"}})
@@ -184,6 +190,29 @@ func TestConnectorRuntimeProviderRejectsRuntimeActionErrors(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "tenant_token_missing") {
 		t.Fatalf("expected connector runtime error, got %v", err)
+	}
+}
+
+func TestConnectorRuntimeRejectsUnsupportedPerCallCredentials(t *testing.T) {
+	value := uuid.NewString()
+	var invoked bool
+	server := newConnectorRuntimeTestServer(t, "runtime-token", &invoked)
+	defer server.Close()
+	provider, err := DiscoverConnectorRuntime(t.Context(), server.URL, server.Client(), WithConnectorRuntimeToken("runtime-token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := domainsecret.WithValues(t.Context(), map[string]string{"source": value})
+	runtime, ok := provider.(*connectorRuntimeProvider)
+	if !ok {
+		t.Fatal("discovered provider has no connector runtime")
+	}
+	_, _, err = runtime.InvokeTool(ctx, testPrincipal("developer"), provider.Tools()[0], map[string]any{"receiveIdType": "chat_id", "receiveId": "chat-1", "text": "hello"})
+	if !errors.Is(err, apperrors.ErrUnsupportedOperation) || invoked {
+		t.Fatalf("runtime silently ignored per-call credential: err=%v invoked=%v", err, invoked)
+	}
+	if strings.Contains(err.Error(), value) {
+		t.Fatal("credential value leaked in rejection")
 	}
 }
 

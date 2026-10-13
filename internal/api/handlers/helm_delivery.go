@@ -27,15 +27,8 @@ func (h *DeliveryHandler) authorizedExecutionProviders(c *gin.Context, providers
 		if provider == "helm_direct" || provider == "manifest_direct" {
 			continue
 		}
-		clusterID := strings.TrimPrefix(provider, "helm_agent.")
-		helm := clusterID != provider
-		if !helm {
-			clusterID = strings.TrimPrefix(provider, resourceruntime.ManifestAgentProviderPrefix)
-			if clusterID == provider {
-				clusterID = strings.TrimPrefix(provider, "manifest_agent.")
-			}
-		}
-		if clusterID != provider && (!general || helm) {
+		clusterID, agentOnly := executionProviderCluster(provider)
+		if clusterID != provider && (!general || agentOnly) {
 			ok, checked := clusters[clusterID]
 			if !checked && clusterID != "" && h.agents != nil && token != "" {
 				ok = h.agents.AuthenticateAgentExecution(c.Request.Context(), clusterID, token) == nil
@@ -70,4 +63,22 @@ func (h *DeliveryHandler) InspectApplicationHelmChart(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func executionProviderCluster(provider string) (string, bool) {
+	clusterID := strings.TrimPrefix(provider, "helm_agent.")
+	helm := clusterID != provider
+	ssh := strings.HasPrefix(provider, "vm_ssh.")
+	if ssh {
+		clusterID = strings.TrimPrefix(provider, "vm_ssh.")
+	}
+	if !helm {
+		if !ssh {
+			clusterID = strings.TrimPrefix(provider, resourceruntime.ManifestAgentProviderPrefix)
+		}
+		if clusterID == provider {
+			clusterID = strings.TrimPrefix(provider, "manifest_agent.")
+		}
+	}
+	return clusterID, helm || ssh
 }

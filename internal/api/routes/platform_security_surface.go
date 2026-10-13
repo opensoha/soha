@@ -377,6 +377,9 @@ func runtimeMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 	if strings.HasPrefix(path, "/api/v1/docker/") {
 		return dockerRuntimeMutationSecuritySurface(method, path)
 	}
+	if entry, ok := vmSSHMutationSecuritySurface(method, path); ok {
+		return entry, true
+	}
 	switch {
 	case strings.HasPrefix(path, "/api/v1/compute/provider-instances/"):
 		entry := nonPlatformMutationEntry("ComputeProviderInstance", nonPlatformMutationAction(method, path), appaccess.PermWorkspaceResourceView, false)
@@ -489,7 +492,24 @@ func copilotConfigurationMutationSecuritySurface(method, path string) (nonPlatfo
 }
 
 func copilotSessionMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if entry, ok := personalGuestMutationSecuritySurface(path); ok {
+		return entry, true
+	}
 	switch {
+	case strings.HasPrefix(path, "/api/v1/copilot/assistant/access/requests/"):
+		return nonPlatformMutationEntry("PersonalAgentAccess", "decide", appaccess.PermAIEnvironmentsUpdate, true), true
+	case path == "/api/v1/copilot/assistant/access":
+		return nonPlatformMutationEntry("PersonalAgentAccess", "request", appaccess.PermObserveAIChatUse, false), true
+	case path == "/api/v1/copilot/assistant/sessions":
+		return nonPlatformMutationEntry("CopilotSession", "create", appaccess.PermObserveAIChatUse, false), true
+	case strings.HasPrefix(path, "/api/v1/copilot/assistant/feed/"):
+		return nonPlatformMutationEntry("PersonalFeed", nonPlatformMutationAction(method, path), appaccess.PermObserveAIChatUse, false), true
+	case path == "/api/v1/copilot/assistant/environment/export":
+		return nonPlatformMutationEntry("PersonalEnvironment", "export", appaccess.PermObserveAIChatUse, true), true
+	case path == "/api/v1/copilot/assistant/environment":
+		return nonPlatformMutationEntry("PersonalEnvironment", "change", appaccess.PermObserveAIChatUse, true), true
+	case path == "/api/v1/copilot/assistant" || path == "/api/v1/copilot/assistant/avatar":
+		return nonPlatformMutationEntry("PersonalAssistant", nonPlatformMutationAction(method, path), appaccess.PermObserveAIChatUse, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions") && strings.Contains(path, "/inspection-task"):
 		return nonPlatformMutationEntry("InspectionTask", "create", appaccess.PermObserveAIInspectionManage, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions") && strings.Contains(path, "/analyze"):
@@ -498,6 +518,12 @@ func copilotSessionMutationSecuritySurface(method, path string) (nonPlatformMuta
 		return nonPlatformMutationEntry("CopilotMessage", "create", appaccess.PermObserveAIChatUse, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions"):
 		return nonPlatformMutationEntry("CopilotSession", nonPlatformMutationAction(method, path), appaccess.PermObserveAIChatUse, false), true
+	}
+	return copilotInspectionMutationSecuritySurface(method, path)
+}
+
+func copilotInspectionMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	switch {
 	case strings.HasPrefix(path, "/api/v1/copilot/inspection-tasks") && strings.Contains(path, "/execute"):
 		return nonPlatformMutationEntry("InspectionTask", "execute", appaccess.PermObserveAIInspectionRun, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/inspection-runs/") && strings.Contains(path, "/session"):
@@ -606,7 +632,7 @@ func secretMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 		return nonPlatformMutationEntry("SecretVersion", "revoke", appaccess.PermSecretRevoke, true), true
 	case method == "POST" && strings.Contains(path, "/versions"):
 		return nonPlatformMutationEntry("SecretVersion", "rotate", appaccess.PermSecretRotate, true), true
-	case method == "POST" && path == "/api/v1/secrets":
+	case method == "POST" && (path == "/api/v1/secrets" || path == "/api/v1/secrets/generate-ssh-key"):
 		return nonPlatformMutationEntry("Secret", "create", appaccess.PermSecretCreate, true), true
 	case (method == "PATCH" || method == "DELETE") && strings.HasPrefix(path, "/api/v1/secrets/"):
 		return nonPlatformMutationEntry("Secret", "update", appaccess.PermSecretUpdate, true), true
@@ -919,4 +945,36 @@ var platformMutationResourceKinds = []struct {
 	{pathSegment: "/extensions/crds/", kind: "CustomResource"},
 	{pathSegment: "/helm/", kind: "HelmRelease"},
 	{pathSegment: "/observability/logging", kind: "LogCollection"},
+}
+
+func vmSSHMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	switch {
+	case strings.HasPrefix(path, "/api/v1/virtualization/vms/") && strings.HasSuffix(path, "/access-binding"):
+		return nonPlatformMutationEntry("VirtualMachineAccess", "update", "virtualization.vm_access.update", false), true
+	case strings.HasPrefix(path, "/api/v1/virtualization/ssh-sessions/") && (strings.HasSuffix(path, "/credentials") || strings.HasSuffix(path, "/execution-status")):
+		entry := nonPlatformMutationEntry("VirtualMachineSSHLease", "redeem", appaccess.PermSecretUse, false)
+		entry.DynamicPermission = true
+		return entry, true
+	case strings.HasPrefix(path, "/api/v1/virtualization/ssh-commands/") || strings.HasPrefix(path, "/api/v1/virtualization/vms/") && strings.HasSuffix(path, "/ssh-commands"):
+		entry := nonPlatformMutationEntry("VirtualMachineSSHCommand", "execute", "virtualization.vms.connect", false)
+		entry.DynamicPermission = true
+		return entry, true
+	case strings.HasPrefix(path, "/api/v1/virtualization/ssh-sessions/") || strings.HasPrefix(path, "/api/v1/virtualization/vms/") && strings.HasSuffix(path, "/ssh-sessions"):
+		return nonPlatformMutationEntry("VirtualMachineSSHSession", "connect", "virtualization.vms.connect", false), true
+	}
+	return nonPlatformMutationSecuritySurfaceEntry{}, false
+}
+
+func personalGuestMutationSecuritySurface(path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	switch {
+	case path == "/api/v1/copilot/assistant/environment/runtime":
+		return nonPlatformMutationEntry("PersonalEnvironment", "execute", appaccess.PermObserveAIChatUse, true), true
+	case path == "/api/v1/copilot/assistant/environment/guest-enrollment":
+		return nonPlatformMutationEntry("PersonalGuest", "prepare", appaccess.PermObserveAIChatUse, true), true
+	case path == "/api/v1/copilot/assistant/environment/guest-provisioning" || path == "/api/v1/copilot/assistant/environment/guest-tools":
+		return nonPlatformMutationEntry("PersonalGuest", "provision", appaccess.PermObserveAIChatUse, true), true
+	case strings.HasPrefix(path, "/api/v1/copilot/assistant/environment/guest-provisioning/") && strings.HasSuffix(path, "/reconcile"):
+		return nonPlatformMutationEntry("PersonalGuest", "reconcile", appaccess.PermObserveAIChatUse, true), true
+	}
+	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }

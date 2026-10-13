@@ -3,11 +3,14 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	guest "github.com/opensoha/soha-contracts/agent/guest"
 	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	accesshandler "github.com/opensoha/soha/internal/api/handlers/access"
 	directorysynchandler "github.com/opensoha/soha/internal/api/handlers/directorysync"
@@ -66,6 +69,7 @@ import (
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	directorysyncdomain "github.com/opensoha/soha/internal/domain/directorysync"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
 	companionartifactinfra "github.com/opensoha/soha/internal/infrastructure/companionartifact"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
@@ -965,6 +969,54 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func newVirtualizationService(lifecycleCtx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices) *appvirtualization.Service {
+	virtualizationService := appvirtualization.MustNew(
+		appvirtualization.Dependencies{
+			Connections:      repos.virtualizationRepository,
+			ConnectionWriter: repos.virtualizationRepository,
+			DockerLinks:      repos.virtualizationRepository,
+			VMs:              repos.virtualizationRepository,
+			Images:           repos.virtualizationRepository,
+			Flavors:          repos.virtualizationRepository,
+			Tasks:            repos.virtualizationRepository,
+			TaskQueue:        repos.virtualizationRepository,
+			TaskLogs:         repos.virtualizationRepository,
+		},
+		map[string]appvirtualization.Adapter{
+			appvirtualization.ProviderKubeVirt: virtualizationinfra.NewKubeVirtAdapter(infra.clusterManager),
+			appvirtualization.ProviderPVE:      virtualizationinfra.NewPVEAdapter(nil),
+		},
+		core.permissionResolver,
+		core.operationService,
+		appvirtualization.Options{
+			SSH:                    newVMSSHOptions(cfg, infra, repos, core),
+			GuestCredentials:       core.secretService,
+			CapacityPolicies:       repos.virtualizationRepository,
+			WorkerPools:            repos.virtualizationRepository,
+			AuthorizeWorkerCluster: core.resourceService.Inventory().AuthorizeWorkerSupply,
+			WorkerRuntime: &appvirtualization.WorkerRuntime{
+				InspectCluster:   infra.clusterManager.InspectWorkerCluster,
+				PrepareBootstrap: infra.clusterManager.PrepareWorkerBootstrap,
+				ClaimNode:        infra.clusterManager.ClaimWorkerNode,
+				Observe:          infra.clusterManager.ObserveWorker,
+				RevokeBootstrap:  infra.clusterManager.RevokeWorkerBootstrap,
+			},
+			ExecutionPrincipals:      core.identityService,
+			CredentialEncryptionKey:  cfg.Security.CredentialEncryptionKey,
+			CredentialEncryptionKeys: cfg.Security.CredentialEncryptionKeys,
+			StartupSyncEnabled:       cfg.Runtime.VirtualizationStartupSync,
+			WorkerInterval:           cfg.Runtime.VirtualizationWorkerInterval,
+			SyncConcurrency:          cfg.Runtime.VirtualizationSyncConcurrency,
+			Audit:                    core.auditService,
+		},
+	)
+	virtualizationService.SetInstrumentation(infra.runtimeMetrics)
+	if core.runtimeConfigService.ModuleEnabled("virtualization") {
+		virtualizationService.Start(lifecycleCtx)
+	}
+	return virtualizationService
+}
+
 func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices) *deliveryServices {
 	cfg = runtimeEffectiveConfig(cfg, core.runtimeConfigService.Current())
 	runtimeResources := core.resourceService.Runtime()
@@ -974,8 +1026,71 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	workflowService.SetInstrumentation(infra.logger.Named("workflow"), infra.runtimeMetrics)
 	workflowService.SetAlertMutator(core.monitoringService)
 	core.executionService.SetWorkflowExecutionTaskSink(workflowService)
+	virtualizationService := newVirtualizationService(lifecycleCtx, cfg, infra, repos, core)
+
+	aiProductionService, err := appaiproduction.New(repos.aiProductionRepository, core.clusterService.ValidateExecutionAgent)
+	if err != nil {
+		panic(fmt.Errorf("build AI production service: %w", err))
+	}
+
+	aiProductionService.SetPersonalVMValidator(func(ctx context.Context, principal domainidentity.Principal, policy domaincopilot.PersonalVMPolicy) error {
+		return validatePersonalVMAssignment(ctx, core, repos, virtualizationService, principal, policy)
+	})
 
 	copilotService := appcopilot.MustNew(appcopilot.Dependencies{
+		Conversations: repos.copilotRepository, Feed: repos.copilotRepository,
+		PersonalEnvironment: &appcopilot.PersonalEnvironmentDependencies{
+			Store:     repos.copilotRepository,
+			Policy:    aiProductionService.ResolvePersonalEnvironmentPolicy,
+			Templates: aiProductionService.ListPersonalEnvironmentPolicies,
+			ObserveVM: func(ctx context.Context, principal domainidentity.Principal, policy domaincopilot.PersonalVMPolicy) (domaincopilot.PersonalVMIdentity, error) {
+				return observePersonalVM(ctx, core, virtualizationService, principal, policy)
+			},
+			InvokeVM: func(ctx context.Context, principal domainidentity.Principal, item domaincopilot.PersonalEnvironmentRecord, op guest.RuntimeOperation) (guest.RuntimeResult, error) {
+				return invokePersonalVM(ctx, repos.copilotRepository, virtualizationService, principal, item, op)
+			},
+			RecoverVM: func(ctx context.Context, principal domainidentity.Principal, item domaincopilot.PersonalEnvironmentRecord) (domaincopilot.PersonalEnvironmentRecord, error) {
+				return recoverPersonalVM(ctx, repos.copilotRepository, virtualizationService, principal, item)
+			},
+			Transaction: func(ctx context.Context, apply func(context.Context) error) error {
+				return dbtx.Within(ctx, infra.databaseStore.DB(), apply)
+			},
+			Authorize: core.clusterService.ValidatePersonalExecutionAccess,
+			Preflight: func(ctx context.Context, principal domainidentity.Principal, nodeID string, quota contractenv.Quota) error {
+				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
+				if err != nil {
+					return err
+				}
+				client, err := infra.agentRegistry.ClientFor(connection)
+				if err != nil {
+					return err
+				}
+				_, err = client.PersonalEnvironmentPreflight(ctx, contractenv.PreflightRequest{SchemaVersion: contractenv.PreflightRequestVersion, ID: uuid.NewString(), Quota: quota})
+				return err
+			},
+			Invoke: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.Request) (contractenv.Result, error) {
+				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
+				if err != nil {
+					return contractenv.Result{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
+				}
+				client, err := infra.agentRegistry.ClientFor(connection)
+				if err != nil {
+					return contractenv.Result{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
+				}
+				return client.PersonalEnvironment(ctx, request)
+			},
+			Export: func(ctx context.Context, principal domainidentity.Principal, nodeID string, request contractenv.Request, target io.Writer) (contractenv.ExportResult, error) {
+				connection, err := core.clusterService.PersonalExecutionConnection(ctx, principal, nodeID)
+				if err != nil {
+					return contractenv.ExportResult{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
+				}
+				client, err := infra.agentRegistry.ClientFor(connection)
+				if err != nil {
+					return contractenv.ExportResult{}, fmt.Errorf("%w: %w", domaincopilot.ErrPersonalEnvironmentNotDispatched, err)
+				}
+				return client.ExportPersonalEnvironmentData(ctx, request, target)
+			},
+		},
 		Sessions: repos.copilotRepository, Messages: repos.copilotRepository,
 		DataSources: repos.copilotRepository, AnalysisProfiles: repos.copilotRepository,
 		AutomationPolicies: repos.copilotRepository, RootCauseRuns: repos.copilotRepository,
@@ -985,8 +1100,10 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		Events: core.eventService, Audits: core.auditService,
 		Applications: repos.applicationRepository, Builds: repos.buildRepository,
 		Releases: repos.releaseRepository, Settings: core.settingsService,
-		Permissions:     core.permissionResolver,
-		AgentPrincipals: core.identityService,
+		Permissions:         core.permissionResolver,
+		AgentPrincipals:     core.identityService,
+		NativeAuthorization: core.accessService,
+		NativeTasks:         workflowService,
 	},
 		appcopilot.WithTelemetryBackends(mcplogsinfra.DefaultRegistry(), mcpmetricsinfra.DefaultRegistry(), mcptracesinfra.DefaultRegistry()),
 	)
@@ -1011,6 +1128,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		nil,
 		appknowledge.WithSourceLoader(knowledgeconnectors.ProductionLoader(knowledgeconnectors.UnavailableFetcher{}, connectorValidator)),
 		appknowledge.WithProductionRepository(repos.knowledgeRepository),
+		appknowledge.WithExecutionPrincipalReader(core.identityService),
 		appknowledge.WithConnectorValidator(connectorValidator),
 		appknowledge.WithOperationRecorder(core.operationService),
 	)
@@ -1026,48 +1144,6 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	}
 	if core.runtimeConfigService.ModuleEnabled("ai") {
 		copilotService.Start(lifecycleCtx)
-	}
-
-	virtualizationService := appvirtualization.MustNew(
-		appvirtualization.Dependencies{
-			Connections:      repos.virtualizationRepository,
-			ConnectionWriter: repos.virtualizationRepository,
-			DockerLinks:      repos.virtualizationRepository,
-			VMs:              repos.virtualizationRepository,
-			Images:           repos.virtualizationRepository,
-			Flavors:          repos.virtualizationRepository,
-			Tasks:            repos.virtualizationRepository,
-			TaskQueue:        repos.virtualizationRepository,
-			TaskLogs:         repos.virtualizationRepository,
-		},
-		map[string]appvirtualization.Adapter{
-			appvirtualization.ProviderKubeVirt: virtualizationinfra.NewKubeVirtAdapter(infra.clusterManager),
-			appvirtualization.ProviderPVE:      virtualizationinfra.NewPVEAdapter(nil),
-		},
-		core.permissionResolver,
-		core.operationService,
-		appvirtualization.Options{
-			WorkerPools:            repos.virtualizationRepository,
-			AuthorizeWorkerCluster: core.resourceService.Inventory().AuthorizeWorkerSupply,
-			WorkerRuntime: &appvirtualization.WorkerRuntime{
-				InspectCluster:   infra.clusterManager.InspectWorkerCluster,
-				PrepareBootstrap: infra.clusterManager.PrepareWorkerBootstrap,
-				ClaimNode:        infra.clusterManager.ClaimWorkerNode,
-				Observe:          infra.clusterManager.ObserveWorker,
-				RevokeBootstrap:  infra.clusterManager.RevokeWorkerBootstrap,
-			},
-			ExecutionPrincipals:      core.identityService,
-			CredentialEncryptionKey:  cfg.Security.CredentialEncryptionKey,
-			CredentialEncryptionKeys: cfg.Security.CredentialEncryptionKeys,
-			StartupSyncEnabled:       cfg.Runtime.VirtualizationStartupSync,
-			WorkerInterval:           cfg.Runtime.VirtualizationWorkerInterval,
-			SyncConcurrency:          cfg.Runtime.VirtualizationSyncConcurrency,
-			Audit:                    core.auditService,
-		},
-	)
-	virtualizationService.SetInstrumentation(infra.runtimeMetrics)
-	if core.runtimeConfigService.ModuleEnabled("virtualization") {
-		virtualizationService.Start(lifecycleCtx)
 	}
 
 	dockerService := appdocker.New(
@@ -1132,10 +1208,6 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	multiAgentService, err := appmultiagent.NewService(repos.multiAgentRepository)
 	if err != nil {
 		panic(fmt.Errorf("build multi-agent service: %w", err))
-	}
-	aiProductionService, err := appaiproduction.New(repos.aiProductionRepository)
-	if err != nil {
-		panic(fmt.Errorf("build AI production service: %w", err))
 	}
 	result := &deliveryServices{
 		workflowService:       workflowService,
@@ -1216,6 +1288,12 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 		aiGatewayService.SetRateLimitBackend(redisRateLimitBackend)
 	}
 	aiGatewayService.SetCapabilityApprovalGuard(repos.workflowRepository)
+	if err := aiGatewayService.SetNativeTaskGuard(delivery.copilotService); err != nil {
+		return nil, fmt.Errorf("bind Native Gateway parent guard: %w", err)
+	}
+	if err := delivery.workflowService.SetNativeTaskGuard(delivery.copilotService); err != nil {
+		return nil, fmt.Errorf("bind Native Workflow parent guard: %w", err)
+	}
 	delivery.virtualizationService.SetGatewayExecutionAuthorizer(aiGatewayService.CheckExecutionAuthorization)
 	delivery.dockerService.SetGatewayExecutionAuthorizer(core.identityService.CurrentExecutionPrincipal, aiGatewayService.CheckExecutionAuthorization)
 	delivery.workflowService.SetGatewayExecutionAuthorizer(cfg.Security.CredentialEncryptionKeys, aiGatewayService.CheckExecutionAuthorization)
@@ -1256,12 +1334,18 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 		return nil, fmt.Errorf("build observability capabilities: %w", err)
 	}
 	aiGatewayService.AddCapabilityProviders(observabilityCapabilities)
+	professionalCapabilities, err := appaigateway.NewProfessionalCapabilityProvider(delivery.copilotService.RunProfessionalCapability)
+	if err != nil {
+		return nil, fmt.Errorf("build professional capabilities: %w", err)
+	}
+	aiGatewayService.AddCapabilityProviders(professionalCapabilities)
 	dockerProjectCapabilities, err := appaigateway.NewDockerProjectCapabilityProvider(delivery.dockerService)
 	if err != nil {
 		return nil, fmt.Errorf("build Docker project capabilities: %w", err)
 	}
 	aiGatewayService.AddCapabilityProviders(dockerProjectCapabilities)
 	aiGatewayService.AddCapabilityProviders(appaigateway.NewKnowledgeCapabilityProvider(delivery.knowledgeService))
+	aiGatewayService.AddCapabilityProviders(appaigateway.NewPersonalEnvironmentCapabilityProvider(delivery.copilotService))
 	aiGatewayService.SetOperationRecorder(core.operationService)
 	aiGatewayService.SetOnCallResolver(core.monitoringService)
 	candidateExecutor, err := appaieval.NewGatewayCandidateExecutor(aiGatewayService)
@@ -1388,7 +1472,9 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	delivery.deliveryService.SetHelmDelivery(appdelivery.HelmDeliveryDependencies{
 		Charts: resourcebackendinfra.HelmChartLoader{}, Runtime: core.resourceService.Helm(), Secrets: core.secretService, Keys: cfg.Security.CredentialEncryptionKeys,
 	})
-	core.executionService.SetExecutionTaskHydrator(delivery.deliveryService)
+	core.executionService.SetExecutionTaskHydrator(sshExecutionHydrator{delivery: delivery.deliveryService, virtualization: delivery.virtualizationService})
+	core.secretService.SetReferenceReader(delivery.virtualizationService.ListCredentialReferences)
+	core.executionService.AddExecutionTaskSink(delivery.virtualizationService)
 	delivery.workflowService.SetDeliveryRuntime(delivery.deliveryService, core.identityService)
 	core.executionService.AddExecutionTaskSink(manifestDeclarativeService)
 	if cfg.Modules.Delivery.Enabled {
@@ -1444,7 +1530,11 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Registries:      apiHandlers.NewRegistryHandler(core.registryService),
 		Releases:        apiHandlers.NewReleaseHandler(core.releaseService),
 		Copilot: apiHandlers.NewCopilotHandlerWithServices(apiHandlers.CopilotServices{
-			Sessions: delivery.copilotService, Messages: delivery.copilotService,
+			PersonalAgent:     delivery.copilotService,
+			PersonalAssistant: delivery.copilotService,
+			Search:            delivery.copilotService, Feed: delivery.copilotService,
+			PersonalEnvironment: delivery.copilotService,
+			Sessions:            delivery.copilotService, Messages: delivery.copilotService,
 			Streams: delivery.copilotService, Workbench: delivery.copilotService,
 			DataSources: delivery.copilotService, AnalysisProfiles: delivery.copilotService,
 			Automation: delivery.copilotService, RootCause: delivery.copilotService,
@@ -1529,6 +1619,7 @@ func newVirtualizationHandler(service *appvirtualization.Service) *apiHandlers.V
 	return apiHandlers.NewVirtualizationHandlerWithServices(apiHandlers.VirtualizationServices{
 		Connections: service, Sync: service, VMs: service,
 		Images: service, Flavors: service, Operations: service, Runtime: service, Planning: service, WorkerPools: service,
+		CapacityPolicies: service, GuestAccess: service,
 	})
 }
 

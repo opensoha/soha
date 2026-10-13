@@ -38,6 +38,9 @@ func New(policyEngine domainaccess.PolicyEngine, repo Repository, grants ScopeGr
 }
 
 func (s *Service) Authorize(ctx context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+	if revision, guarded := ctx.Value(executionCeilingKey{}).(string); guarded {
+		return s.authorizeExecutionCeiling(ctx, request, revision)
+	}
 	var (
 		decision domainaccess.Decision
 		err      error

@@ -11,7 +11,7 @@
 ```sh
 # 在 soha 仓库执行；显式使用 sibling contracts。
 mkdir -p /private/tmp/soha-vpn-build
-printf 'go 1.26.6\n\nuse %s\n\nreplace github.com/opensoha/soha-contracts => %s\n' "$PWD" "$(cd ../soha-contracts && pwd)" > /private/tmp/soha-vpn-build/go.work
+printf 'go 1.27.2\n\nuse %s\n\nreplace github.com/opensoha/soha-contracts => %s\n' "$PWD" "$(cd ../soha-contracts && pwd)" > /private/tmp/soha-vpn-build/go.work
 GOWORK=/private/tmp/soha-vpn-build/go.work GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags embedassets -o /private/tmp/soha-vpn-build/lab-server ./cmd/server
 GOWORK=/private/tmp/soha-vpn-build/go.work GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /private/tmp/soha-vpn-build/lab-control ./cmd/network-control
 GOWORK=/private/tmp/soha-vpn-build/go.work GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -o /private/tmp/soha-vpn-build/lab-ingest ./cmd/ingest

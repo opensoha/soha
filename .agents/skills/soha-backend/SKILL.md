@@ -17,7 +17,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 4. For Kubernetes-facing work, decide whether the capability should use informer/cache, live query fallback, or agent mode, and make unsupported agent paths explicit.
 5. For external or long-running work, identify the existing durable task, operation, session, run, lease, or callback state machine before adding another execution path.
 6. When public behavior changes, update `../soha-contracts` first, then the affected consumer, docs, permissions, menus, config, and tests.
-7. Use `graphify-out/graph.json` for broad ownership or dependency questions. Refresh it only after structural changes are stable and the worktree contents are understood; use `--force` after deletions and run diagnostics.
+7. Use `graphify-out/graph.json` for broad ownership or dependency questions. Refresh it only after structural changes are stable and the worktree contents are understood; follow the Graphify workflow in the repository AGENTS.md and run diagnostics. Do not bypass shrink guards with `--force` by default.
 8. Run focused tests while iterating, then apply the verification tier from `references/go-engineering-standards.md`; architecture, dependency, security, module, or release changes require the full gate.
 
 ## Non-Negotiables
@@ -98,7 +98,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## CI Gate
 
-Use Go `1.26.6` and run the release-sensitive gate with the root workspace disabled:
+Use Go `1.27.2` and run the release-sensitive gate with the root workspace disabled:
 
 ```bash
 GOWORK=off go mod tidy
@@ -108,13 +108,13 @@ GOWORK=off go test ./...
 GOWORK=off go test -race ./...
 GOWORK=off go vet ./...
 make complexity-check
-GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
+GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
 GOWORK=off CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
 docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t ghcr.io/opensoha/soha:test .
 git diff --check
 ```
 
-CI also runs `golangci-lint v2.9.0` with only-new-issues semantics on pull requests and builds the sibling `soha-web` artifact before the embed and image checks. Dependency, Dockerfile, workflow, or release changes require this full gate; a missing local Docker daemon must be covered by a successful GitHub Actions Docker job.
+CI also runs `golangci-lint v2.14.0` with only-new-issues semantics on pull requests and builds the sibling `soha-web` artifact before the embed and image checks. Dependency, Dockerfile, workflow, or release changes require this full gate; a missing local Docker daemon must be covered by a successful GitHub Actions Docker job.
 
 ## Done Criteria
 

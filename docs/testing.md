@@ -3,11 +3,22 @@
 普通 Go 验证沿用仓库 AGENTS/CI 的 `GOWORK=off`、test/race/vet/复杂度/漏洞/lint/构建入口，
 Web/Midscene 不成为 Go 测试依赖。公开协议仍由 contracts 所有，无协议变更不改 SDK/生成物。
 
+本机 `make test/lint/build` 自动检查容量；工作区 npm 脚本由本机 script-shell 接入。本机按 PATH 直接调用 go/npm/docker 的有限命令同样自动接入；其他工具或临时命令的本机验证通过 `opensoha-verify run -- <原验证命令>` 执行，复用统一工具缓存并在前后检查容量。
+本地 Docker 验证使用 `opensoha-verify image -- <原 build 参数和 context>`，由工具管理临时 tag 和清理；
+正式发布构建保持原入口。未安装命令时使用 `python3 scripts/local-verify.py`。
+操作与保护边界见工作区 [缓存手册](../../docs/local-build-cache/runbook.md)。
+`python3 -m unittest discover -s scripts -p "test_local_*.py"` 验证缓存、归属、容量与失败清理保护。
+
 `python3 scripts/run-deletion-integration.py` 复用已有 deletion-integration 测试，
 创建独立 pgvector:0.8.5-pg18-trixie 容器，动态127.0.0.1端口、run label/ID/image验证、
 独立 test-only账号，实际 `-race -count=1 -json` 运行父测试及16个必要子场景。
 finally只清理核对归属的精确容器，绝不复用/清理开发 PG。
 `.tmp/quality/deletion-test.json` 和 manifest 记录实际 core SHA、环境、运行/清理结论。
+
+`python3 scripts/run-deletion-integration.py --identity --output .tmp/quality/identity-test.json`
+复用同一隔离环境，执行真实密码登录、两用户/两会话、撤权/刷新、旧版令牌兼容及
+Core HTTP 会话/消息/任务读取的六个必要子场景。没有权限的当前身份返回 403；旧授权版本
+返回 401；历史仍保留。证据检查使用 `check-go-test-evidence.py --identity`，不接受跳过。
 
 `python3 -m unittest discover -s scripts -p 'test_go_test_evidence.py'` 验证 no-skip 反例；
 `check-go-test-evidence.py <json> --exit-code <actual>` 不以包PASS代替目标运行，拒绝空结果、
@@ -56,3 +67,11 @@ Git/Docker忽略该私有目录，源码打包另外无条件排除所有`.tmp`�
 
 `python3 -m unittest discover -s scripts -p test_quality_lab.py` 验证状态/归属反例。
 这些测试和新环境不证明已发布 SDK 组合或 GitHub CI 通过。
+
+## 外部知识来源的权限上限
+
+`python3 scripts/run-deletion-integration.py --knowledge --output .tmp/quality/knowledge-test.json`
+包含原有检索/版本场景，以及 external_import_scope 的缺省 owner、显式 reader 和显式空授权。
+证据必须包含 12 个指定父/子项、无跳过且容器清理 PASS；检索和引用分别验证，
+远端 public 文档不能越过 Core 保存的 importPolicy。抓取 loader 是替身，数据库与生产
+ingestion/检索/引用路径是真实执行；此验证不算外部 fetch、真实 Embedding 或来源编辑撤权验收。

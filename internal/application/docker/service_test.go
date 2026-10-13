@@ -2,6 +2,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaindocker "github.com/opensoha/soha/internal/domain/docker"
@@ -957,6 +959,7 @@ func TestQuickCreateHostEnqueuesVirtualizationVMWhenConnectionProvided(t *testin
 	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner))
 
 	operation, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
+		GuestAccess:                &sohaapi.VirtualMachineGuestAccessInput{Username: "soha", PublicKeyRefs: []string{"soha://secrets/key/versions/1"}},
 		Name:                       "docker-dev-1",
 		Architecture:               "arm64",
 		VirtualizationConnectionID: "pve-1",
@@ -974,6 +977,9 @@ func TestQuickCreateHostEnqueuesVirtualizationVMWhenConnectionProvided(t *testin
 	}
 	if provisioner.input.ConnectionID != "pve-1" || provisioner.input.Architecture != "arm64" || provisioner.input.MemoryMiB != 4096 || provisioner.input.DiskGiB != 40 {
 		t.Fatalf("provisioner input = %#v", provisioner.input)
+	}
+	if provisioner.input.GuestAccess == nil || provisioner.input.GuestAccess.Username != "soha" {
+		t.Fatal("managed guest access was not propagated")
 	}
 	if provisioner.input.CloudInit == "" {
 		t.Fatalf("provisioner cloud-init was not propagated")
@@ -1066,6 +1072,41 @@ func TestQuickCreateHostBuildsDefaultDockerReadyCloudInit(t *testing.T) {
 	}
 	if operation.Payload["cloudInitConfigured"] != true {
 		t.Fatalf("operation payload = %#v", operation.Payload)
+	}
+}
+
+func TestQuickCreateHostDoesNotPersistBootstrapSources(t *testing.T) {
+	for _, field := range []string{"cloudInit", "providerParams"} {
+		t.Run(field, func(t *testing.T) {
+			repo := newMemoryDockerRepo()
+			provisioner := &captureHostProvisioner{}
+			service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner))
+			bootstrap := "#cloud-config\nruncmd: [canary-bootstrap]"
+			config := map[string]any{"label": "kept", "providerParams": map[string]any{"snippetStorage": "local", "runnerToken": "canary-bootstrap", "agentInstallScript": "canary-bootstrap"}}
+			params, ok := config["providerParams"].(map[string]any)
+			if !ok {
+				t.Fatal("expected test provider parameters")
+			}
+			if field == "cloudInit" {
+				config["cloudInit"] = bootstrap
+			} else {
+				params["cloudInit"] = bootstrap
+			}
+			_, err := service.QuickCreateHost(t.Context(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{Name: "credential-host", VirtualizationConnectionID: "pve-1", Config: config})
+			if err != nil {
+				t.Fatal(err)
+			}
+			stored, err := json.Marshal(repo.hosts["host-1"].Config)
+			if err != nil || strings.Contains(string(stored), "canary-bootstrap") || !strings.Contains(string(stored), "kept") {
+				t.Fatal("bootstrap was stored in public Host config or ordinary configuration lost")
+			}
+			if !strings.Contains(provisioner.input.CloudInit, "canary-bootstrap") || provisioner.input.ProviderParams["runnerToken"] != nil || provisioner.input.ProviderParams["cloudInit"] != nil || provisioner.input.ProviderParams["agentInstallScript"] != nil {
+				t.Fatal("bootstrap encryption input or public provider parameters incorrect")
+			}
+			if params["runnerToken"] != "canary-bootstrap" {
+				t.Fatal("caller idempotency input mutated")
+			}
+		})
 	}
 }
 

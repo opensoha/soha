@@ -9,9 +9,11 @@ import (
 	"strings"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainknowledge "github.com/opensoha/soha/internal/domain/knowledge"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/redaction"
 )
@@ -80,32 +82,63 @@ func (s *Service) executeChatAgentTool(ctx context.Context, run domaincopilot.Ag
 	if err != nil {
 		return nil, err
 	}
+	if strings.HasPrefix(binding.ToolName, "personal.environment.") {
+		session, err := s.ownedSession(ctx, principal, run.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !isPersonalSession(session) {
+			return nil, apperrors.ErrAccessDenied
+		}
+	}
 	remaining := remainingChatToolEvidenceTokens(run)
 	if remaining <= 0 {
 		return nil, fmt.Errorf("%w: this turn's evidence budget is exhausted", apperrors.ErrInvalidArgument)
 	}
-	var arguments map[string]any
-	switch binding.ToolName {
+	arguments, err := chatAgentToolArguments(run, binding.ToolName, input)
+	if err != nil {
+		return nil, err
+	}
+	version := ""
+	if run.ProviderKind == "native" {
+		version = stringValue(binding.Config["capabilityVersion"])
+		ctx = appaigateway.WithNativeWorkbenchInvocation(ctx)
+	}
+	result, err := gateway.InvokeTool(ctx, principal, domainaigateway.ToolInvocationRequest{ToolName: binding.ToolName, CapabilityVersion: version, SessionID: run.SessionID, Input: arguments})
+	if err != nil {
+		return nil, err
+	}
+	return chatToolOutput(binding.ToolName, result, remaining)
+}
+
+func chatAgentToolArguments(run domaincopilot.AgentRun, toolName string, input map[string]any) (map[string]any, error) {
+	switch toolName {
+	case "personal.environment.inspect":
+		if len(input) != 0 {
+			return nil, fmt.Errorf("%w: personal environment inspection accepts no arguments", apperrors.ErrInvalidArgument)
+		}
+		return map[string]any{}, nil
+	case "personal.environment.files.read":
+		return personalFileToolArguments(input)
 	case "knowledge.search":
 		ids := agentPrincipalStringList(run.Input["_sohaKnowledgeBaseIds"])
 		query := strings.TrimSpace(stringValue(input["query"]))
 		if len(ids) == 0 || query == "" || len([]rune(query)) > 2048 {
 			return nil, fmt.Errorf("%w: knowledge search requires selected bases and a bounded query", apperrors.ErrInvalidArgument)
 		}
-		arguments = map[string]any{"knowledgeBaseIds": ids, "query": query, "topK": minPositive(intCondition(input["limit"]), 5)}
+		return map[string]any{"knowledgeBaseIds": ids, "query": query, "topK": minPositive(intCondition(input["limit"]), 5)}, nil
 	default:
-		if !chatKubernetesReadTool(binding.ToolName) {
+		if strings.HasPrefix(toolName, "copilot.") {
+			return professionalChatArguments(run, toolName, input)
+		}
+		if !chatKubernetesReadTool(toolName) {
 			return nil, fmt.Errorf("%w: tool is not available to chat", apperrors.ErrAccessDenied)
 		}
-		arguments, err = chatResourceToolArguments(run, binding.ToolName, input)
-		if err != nil {
-			return nil, err
-		}
+		return chatResourceToolArguments(run, toolName, input)
 	}
-	result, err := gateway.InvokeTool(ctx, principal, domainaigateway.ToolInvocationRequest{ToolName: binding.ToolName, SessionID: run.SessionID, Input: arguments})
-	if err != nil {
-		return nil, err
-	}
+}
+
+func chatToolOutput(toolName string, result domainaigateway.ToolInvocationResult, remaining int) (map[string]any, error) {
 	data, err := json.Marshal(result.Output)
 	if err != nil {
 		return nil, err
@@ -117,7 +150,33 @@ func (s *Service) executeChatAgentTool(ctx context.Context, run domaincopilot.Ag
 		content = content[:maxCharacters]
 	}
 	hash := sha256.Sum256([]byte(string(content)))
-	return map[string]any{"result": result.Result, "content": string(content), "citationId": "tool:" + hex.EncodeToString(hash[:12]), "truncated": truncated, "estimatedTokens": (len(content) + 3) / 4, "relatedIds": result.RelatedIDs}, nil
+	output := map[string]any{"result": result.Result, "content": string(content), "citationId": "tool:" + hex.EncodeToString(hash[:12]), "truncated": truncated, "estimatedTokens": (len(content) + 3) / 4, "relatedIds": result.RelatedIDs}
+	if strings.HasPrefix(toolName, "copilot.") && !truncated {
+		var artifact domaincopilot.AnalysisArtifact
+		if err := json.Unmarshal([]byte(string(content)), &artifact); err != nil {
+			return nil, err
+		}
+		output["artifact"] = artifact
+	}
+	if toolName == "knowledge.search" {
+		var search domainknowledge.SearchResult
+		if err := json.Unmarshal(data, &search); err != nil {
+			return nil, err
+		}
+		if search.NoAnswer {
+			output["content"] = `{"noAnswer":true,"message":"No sufficient authorized knowledge evidence was found."}`
+			search.Citations = nil
+		} else if len(search.Citations) == 0 {
+			return nil, fmt.Errorf("%w: knowledge evidence lacks citations", apperrors.ErrInvalidArgument)
+		}
+		for _, citation := range search.Citations {
+			if citation.KnowledgeBaseID == "" || citation.DocumentID == "" || citation.ChunkID == "" || citation.ContentHash == "" {
+				return nil, fmt.Errorf("%w: knowledge evidence lacks source lineage", apperrors.ErrInvalidArgument)
+			}
+		}
+		output["knowledgeCitations"] = search.Citations
+	}
+	return output, nil
 }
 
 func chatResourceToolArguments(run domaincopilot.AgentRun, toolName string, input map[string]any) (map[string]any, error) {

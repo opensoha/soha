@@ -1205,6 +1205,48 @@ func TestCapabilitiesRequiresAIGatewayView(t *testing.T) {
 	}
 }
 
+func TestWorkbenchCatalogUsesExecutionPermissionsAndCurrentPolicy(t *testing.T) {
+	for _, scenario := range []string{"allowed", "missing_chat", "missing_invoke", "grant", "deny_policy"} {
+		t.Run(scenario, func(t *testing.T) {
+			keys := []string{appaccess.PermObserveAIChatUse, appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView}
+			if scenario == "missing_chat" {
+				keys = keys[1:]
+			}
+			if scenario == "missing_invoke" {
+				keys = []string{appaccess.PermObserveAIChatUse, appaccess.PermDeliveryApplicationsView}
+			}
+			service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{"developer": keys}}), &captureAuditRecorder{})
+			repo := &memoryGatewayRepository{}
+			service.toolGrants, service.accessPolicies = repo, repo
+			if scenario == "grant" {
+				repo.toolGrants = []domainaigateway.ToolGrant{{ID: "one-tool", SubjectType: "user", SubjectID: "user-1", ToolName: "delivery.applications.list", Effect: "allow"}}
+			}
+			if scenario == "deny_policy" {
+				repo.accessPolicies = []domainaigateway.AccessPolicy{{ID: "deny-tool", Enabled: true, SubjectType: "user", SubjectID: "user-1", Effect: "deny", ToolPatterns: []string{"delivery.applications.list"}}}
+			}
+			manifest, err := service.WorkbenchCapabilities(t.Context(), testPrincipal("developer"), domainaigateway.ManifestRequest{})
+			if scenario == "missing_chat" || scenario == "missing_invoke" {
+				if !errors.Is(err, apperrors.ErrAccessDenied) {
+					t.Fatalf("catalog bypassed execution permission: %v", err)
+				}
+				return
+			}
+			if err != nil || hasTool(manifest.Tools, "delivery.applications.list") != (scenario != "deny_policy") || hasTool(manifest.Tools, "delivery.actions.trigger") {
+				t.Fatalf("catalog bypassed business permissions or policy: %v %+v", err, manifest.Tools)
+			}
+			if scenario == "grant" && len(manifest.Tools) != 1 {
+				t.Fatal("catalog bypassed the current grant allowlist")
+			}
+			if len(manifest.Resources)+len(manifest.Prompts)+len(manifest.Skills)+len(manifest.PermissionKeys) != 0 || manifest.Principal.UserID != "" {
+				t.Fatal("execution catalog exposed public Gateway discovery details")
+			}
+			if _, err := service.Capabilities(t.Context(), testPrincipal("developer"), domainaigateway.ManifestRequest{}); !errors.Is(err, apperrors.ErrAccessDenied) {
+				t.Fatalf("internal execution broadened the public manifest permission: %v", err)
+			}
+		})
+	}
+}
+
 func TestCapabilitiesFiltersToolsByBusinessPermissions(t *testing.T) {
 	audit := &captureAuditRecorder{}
 	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{

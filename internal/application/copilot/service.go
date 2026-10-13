@@ -38,6 +38,9 @@ import (
 )
 
 type SessionStore interface {
+	GetOrCreatePersonalAssistant(context.Context, domaincopilot.PersonalAssistant) (domaincopilot.PersonalAssistant, error)
+	RenamePersonalAssistant(context.Context, string, string) (domaincopilot.PersonalAssistant, error)
+	GetOrCreateMainSession(context.Context, domaincopilot.Session) (domaincopilot.Session, bool, error)
 	ListSessions(context.Context, string, int) ([]domaincopilot.Session, error)
 	GetSession(context.Context, string, string) (domaincopilot.Session, error)
 	CreateSession(context.Context, domaincopilot.Session) (domaincopilot.Session, error)
@@ -46,6 +49,7 @@ type SessionStore interface {
 }
 
 type MessageStore interface {
+	ListPersonalArtifacts(context.Context, string) ([]domaincopilot.PersonalArtifact, error)
 	ListMessages(context.Context, string, int) ([]domaincopilot.Message, error)
 	CreateMessage(context.Context, domaincopilot.Message) (domaincopilot.Message, error)
 	UpdateMessageMetadata(context.Context, string, string, map[string]any) (domaincopilot.Message, error)
@@ -197,6 +201,8 @@ type TraceTelemetry interface {
 }
 
 type chatReply struct {
+	Reaction     string
+	ContextUsage *domaincopilot.ModelContextUsage
 	Content      string
 	Source       string
 	Model        string
@@ -206,8 +212,9 @@ type chatReply struct {
 }
 
 type chatProviderMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string   `json:"role"`
+	Content string   `json:"content"`
+	Images  []string `json:"images,omitempty"`
 }
 
 type recentMessageRepository interface {
@@ -215,11 +222,14 @@ type recentMessageRepository interface {
 }
 
 type Service struct {
+	conversations       ConversationReader
+	feed                FeedStore
 	inspectionRuntimeMu sync.RWMutex
 	inspectionPlanner   InspectionCapabilityPlanner
 	inspectionExecutor  InspectionCapabilityExecutor
 
 	chatMemory            chatMemoryReader
+	personalEnvironment   *PersonalEnvironmentDependencies
 	sessions              SessionStore
 	messages              MessageStore
 	dataSources           DataSourceStore
@@ -243,7 +253,10 @@ type Service struct {
 	oncall                OnCallResolver
 	settings              AISettingsResolver
 	workbenchInvoker      WorkbenchModelInvoker
+	nativeReady           atomic.Bool
 	permissions           *appaccess.PermissionResolver
+	nativeAuthorization   NativeAuthorizationReader
+	nativeTasks           NativeCapabilityTasks
 	agentPrincipals       AgentPrincipalResolver
 	logger                *zap.Logger
 	metrics               *runtimeobs.Registry
@@ -275,25 +288,30 @@ type MCPRegistry interface {
 type Option func(*Service)
 
 type Dependencies struct {
-	Sessions           SessionStore
-	Messages           MessageStore
-	DataSources        DataSourceStore
-	AnalysisProfiles   AnalysisProfileStore
-	AutomationPolicies AutomationPolicyStore
-	RootCauseRuns      RootCauseRunStore
-	AgentRuns          AgentRunStore
-	InspectionTasks    InspectionTaskStore
-	InspectionRuns     InspectionRunStore
-	Clusters           ClusterReader
-	Alerts             AlertReader
-	Events             EventReader
-	Audits             AuditReader
-	Applications       ApplicationReader
-	Builds             BuildReader
-	Releases           ReleaseReader
-	Settings           AISettingsResolver
-	Permissions        *appaccess.PermissionResolver
-	AgentPrincipals    AgentPrincipalResolver
+	Conversations       ConversationReader
+	Feed                FeedStore
+	PersonalEnvironment *PersonalEnvironmentDependencies
+	Sessions            SessionStore
+	Messages            MessageStore
+	DataSources         DataSourceStore
+	AnalysisProfiles    AnalysisProfileStore
+	AutomationPolicies  AutomationPolicyStore
+	RootCauseRuns       RootCauseRunStore
+	AgentRuns           AgentRunStore
+	InspectionTasks     InspectionTaskStore
+	InspectionRuns      InspectionRunStore
+	Clusters            ClusterReader
+	Alerts              AlertReader
+	Events              EventReader
+	Audits              AuditReader
+	Applications        ApplicationReader
+	Builds              BuildReader
+	Releases            ReleaseReader
+	Settings            AISettingsResolver
+	Permissions         *appaccess.PermissionResolver
+	NativeAuthorization NativeAuthorizationReader
+	NativeTasks         NativeCapabilityTasks
+	AgentPrincipals     AgentPrincipalResolver
 }
 
 func WithTelemetryBackends(logs LogTelemetry, metrics MetricTelemetry, traces TraceTelemetry) Option {
@@ -311,6 +329,9 @@ func WithTelemetryBackends(logs LogTelemetry, metrics MetricTelemetry, traces Tr
 }
 
 func New(deps Dependencies, options ...Option) (*Service, error) {
+	if err := validatePersonalEnvironmentDependencies(deps.PersonalEnvironment); err != nil {
+		return nil, err
+	}
 	required := []struct {
 		name  string
 		value any
@@ -325,34 +346,50 @@ func New(deps Dependencies, options ...Option) (*Service, error) {
 		{"inspection tasks", deps.InspectionTasks},
 		{"inspection runs", deps.InspectionRuns},
 	}
+	for _, dependency := range []struct {
+		name  string
+		value any
+	}{{"conversations", deps.Conversations}, {"feed", deps.Feed}} {
+		if dependency.value != nil && isNilDependency(dependency.value) {
+			return nil, fmt.Errorf("copilot service: %s dependency is typed nil", dependency.name)
+		}
+	}
+	if deps.NativeTasks != nil && isNilDependency(deps.NativeTasks) {
+		return nil, fmt.Errorf("copilot service: Native task dependency is typed nil")
+	}
 	for _, dependency := range required {
 		if isNilDependency(dependency.value) {
 			return nil, fmt.Errorf("copilot service: %s dependency is required", dependency.name)
 		}
 	}
 	service := &Service{
-		sessions:           deps.Sessions,
-		messages:           deps.Messages,
-		dataSources:        deps.DataSources,
-		analysisProfiles:   deps.AnalysisProfiles,
-		automationPolicies: deps.AutomationPolicies,
-		rootCauseRuns:      deps.RootCauseRuns,
-		agentRuns:          deps.AgentRuns,
-		inspectionTasks:    deps.InspectionTasks,
-		inspectionRuns:     deps.InspectionRuns,
-		clusters:           deps.Clusters,
-		alerts:             deps.Alerts,
-		events:             deps.Events,
-		audits:             deps.Audits,
-		apps:               deps.Applications,
-		builds:             deps.Builds,
-		releases:           deps.Releases,
-		settings:           deps.Settings,
-		permissions:        deps.Permissions,
-		agentPrincipals:    deps.AgentPrincipals,
-		logs:               unavailableTelemetry{},
-		metricTelemetry:    unavailableTelemetry{},
-		traceTelemetry:     unavailableTelemetry{},
+		conversations:       deps.Conversations,
+		feed:                deps.Feed,
+		personalEnvironment: deps.PersonalEnvironment,
+		sessions:            deps.Sessions,
+		messages:            deps.Messages,
+		dataSources:         deps.DataSources,
+		analysisProfiles:    deps.AnalysisProfiles,
+		automationPolicies:  deps.AutomationPolicies,
+		rootCauseRuns:       deps.RootCauseRuns,
+		agentRuns:           deps.AgentRuns,
+		inspectionTasks:     deps.InspectionTasks,
+		inspectionRuns:      deps.InspectionRuns,
+		clusters:            deps.Clusters,
+		alerts:              deps.Alerts,
+		events:              deps.Events,
+		audits:              deps.Audits,
+		apps:                deps.Applications,
+		builds:              deps.Builds,
+		releases:            deps.Releases,
+		settings:            deps.Settings,
+		permissions:         deps.Permissions,
+		nativeAuthorization: deps.NativeAuthorization,
+		nativeTasks:         deps.NativeTasks,
+		agentPrincipals:     deps.AgentPrincipals,
+		logs:                unavailableTelemetry{},
+		metricTelemetry:     unavailableTelemetry{},
+		traceTelemetry:      unavailableTelemetry{},
 	}
 	service.inspectionParallelism.Store(2)
 	for _, option := range options {
@@ -471,6 +508,7 @@ func (s *Service) SetExternalAgentProviders(providers []domaincopilot.AgentProvi
 
 func (s *Service) SetWorkbenchModelInvoker(invoker WorkbenchModelInvoker) {
 	s.workbenchInvoker = invoker
+	s.nativeReady.Store(invoker != nil)
 }
 
 func (s *Service) SetAgentRuntimeReaders(execution ExecutionTaskReader, resources PlatformResourceReader, docker DockerReader, virtualization VirtualizationReader, oncall OnCallResolver) {
@@ -501,7 +539,11 @@ func (s *Service) ListSessions(ctx context.Context, principal domainidentity.Pri
 	if err != nil {
 		return nil, err
 	}
-	return s.sessionActivities(ctx, principal, items), nil
+	items = s.sessionActivities(ctx, principal, items)
+	for index := range items {
+		items[index] = s.visibleSessionSummary(ctx, principal, items[index])
+	}
+	return items, nil
 }
 
 func (s *Service) ListAnalysisRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error) {
@@ -512,10 +554,25 @@ func (s *Service) GetSession(ctx context.Context, principal domainidentity.Princ
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
-	return s.sessions.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	session, err := s.ownedSession(ctx, principal, strings.TrimSpace(sessionID))
+	if err != nil {
+		return domaincopilot.Session{}, err
+	}
+	return s.visibleSessionSummary(ctx, principal, session), nil
 }
 
 func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Principal, title, mode, agentProviderID string, scope, pinnedContext map[string]any, source string, tags []string, locale string) (domaincopilot.Session, error) {
+	return s.createWorkspaceSession(ctx, principal, title, mode, agentProviderID, scope, pinnedContext, source, tags, locale, "side")
+}
+
+func (s *Service) CreatePersonalSession(ctx context.Context, principal domainidentity.Principal, title, mode, agentProviderID string, scope, pinnedContext map[string]any, source string, tags []string, locale string) (domaincopilot.Session, error) {
+	if err := s.requirePersonalAgent(ctx, principal); err != nil {
+		return domaincopilot.Session{}, err
+	}
+	return s.createWorkspaceSession(ctx, principal, title, mode, agentProviderID, scope, pinnedContext, source, tags, locale, "personal_side")
+}
+
+func (s *Service) createWorkspaceSession(ctx context.Context, principal domainidentity.Principal, title, mode, agentProviderID string, scope, pinnedContext map[string]any, source string, tags []string, locale, kind string) (domaincopilot.Session, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
@@ -523,13 +580,14 @@ func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Pr
 		title = localize(locale, "新的会话", "New Chat")
 	}
 	metadata := sessionMetadataMap(domaincopilot.SessionMetadata{
-		Mode:            normalizeSessionMode(mode),
-		Status:          "active",
-		AgentProviderID: normalizeAgentProviderID(agentProviderID),
-		Scope:           scopeFromMap(scope),
-		PinnedContext:   compactMetadataMap(pinnedContext),
-		Tags:            normalizeStringList(tags),
-		Source:          normalizeSessionSource(source),
+		ConversationKind: kind,
+		Mode:             normalizeSessionMode(mode),
+		Status:           "active",
+		AgentProviderID:  normalizeAgentProviderID(agentProviderID),
+		Scope:            scopeFromMap(scope),
+		PinnedContext:    compactMetadataMap(pinnedContext),
+		Tags:             normalizeStringList(tags),
+		Source:           normalizeSessionSource(source),
 	})
 	metadata["locale"] = normalizeLocale(locale)
 	session, err := s.sessions.CreateSession(ctx, domaincopilot.Session{
@@ -555,11 +613,14 @@ func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Pr
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
-	current, err := s.sessions.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	current, err := s.ownedSession(ctx, principal, strings.TrimSpace(sessionID))
 	if err != nil {
 		return domaincopilot.Session{}, err
 	}
 	metadata := parseSessionMetadata(current.Metadata)
+	if isMainSessionKind(metadata.ConversationKind) && (archived || strings.TrimSpace(status) == "archived") {
+		return domaincopilot.Session{}, mainChatProtected()
+	}
 	if strings.TrimSpace(mode) != "" {
 		metadata.Mode = normalizeSessionMode(mode)
 	}
@@ -596,14 +657,25 @@ func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Pr
 	}
 	current.Metadata = sessionMetadataMap(metadata)
 	current.UpdatedAt = time.Now().UTC()
-	return s.sessions.UpdateSession(ctx, principal.UserID, current.ID, current)
+	updated, err := s.sessions.UpdateSession(ctx, principal.UserID, current.ID, current)
+	if err != nil {
+		return domaincopilot.Session{}, err
+	}
+	return s.visibleSessionSummary(ctx, principal, updated), nil
 }
 
 func (s *Service) DeleteSession(ctx context.Context, principal domainidentity.Principal, sessionID string) error {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return err
 	}
-	return s.sessions.DeleteSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	current, err := s.ownedSession(ctx, principal, strings.TrimSpace(sessionID))
+	if err != nil {
+		return err
+	}
+	if isMainSessionKind(parseSessionMetadata(current.Metadata).ConversationKind) {
+		return mainChatProtected()
+	}
+	return s.sessions.DeleteSession(ctx, principal.UserID, current.ID)
 }
 
 func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Principal, sessionID string) ([]domaincopilot.Message, error) {
@@ -611,7 +683,7 @@ func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Pri
 		return nil, err
 	}
 	trimmedSessionID := strings.TrimSpace(sessionID)
-	if _, err := s.sessions.GetSession(ctx, principal.UserID, trimmedSessionID); err != nil {
+	if _, err := s.ownedSession(ctx, principal, trimmedSessionID); err != nil {
 		return nil, err
 	}
 	messages, err := s.messages.ListMessages(ctx, trimmedSessionID, 100)
@@ -619,6 +691,9 @@ func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Pri
 		return nil, err
 	}
 	messages = s.migrateLegacyPlatformContextMessages(ctx, trimmedSessionID, messages)
+	for index, message := range messages {
+		messages[index] = s.visibleKnowledgeMessage(ctx, principal, message)
+	}
 	return messages, nil
 }
 
@@ -626,7 +701,7 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
-	session, err := s.sessions.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	session, err := s.ownedSession(ctx, principal, strings.TrimSpace(sessionID))
 	if err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
@@ -635,6 +710,9 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, sessionMeta domaincopilot.SessionMetadata, content, locale string) (domaincopilot.SessionMessageEnvelope, error) {
+	if name, requested := personalAssistantNameForTurn(content, normalizeSessionMode(sessionMeta.Mode), nil); requested && isPersonalSession(session) {
+		return s.renameAssistantFromChat(ctx, principal, session, content, name, locale)
+	}
 	if normalizeSessionMode(sessionMeta.Mode) == "general" && s.shouldUseExternalAgent(sessionMeta.AgentProviderID) {
 		return s.queueAgentChatMessage(ctx, principal, session, sessionMeta, content, locale)
 	}
@@ -644,7 +722,7 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 		SessionID: session.ID,
 		Role:      "user",
 		Content:   strings.TrimSpace(content),
-		Metadata:  map[string]any{"userId": principal.UserID, "locale": locale, "mode": sessionMeta.Mode},
+		Metadata:  chatUserMetadata(map[string]any{"userId": principal.UserID, "locale": locale, "mode": sessionMeta.Mode}, sessionMeta.RequestContext),
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -677,17 +755,13 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 		"locale":            locale,
 		"analysisArtifacts": []domaincopilot.AnalysisArtifact{},
 	}
-	if reply.Model != "" {
-		assistantMetadata["model"] = reply.Model
-	}
-	if reply.Error != "" {
-		assistantMetadata["error"] = reply.Error
-	}
+	applyChatReplyMetadata(assistantMetadata, reply, userMessage.ID)
 	if len(artifacts) > 0 {
 		assistantMetadata["analysisArtifacts"] = artifacts
 	}
 	if contextMeta, ok := sessionPatch["contextEnvelope"]; ok {
 		assistantMetadata["contextEnvelope"] = contextMeta
+		assistantMetadata["contextSnapshot"] = contextMeta
 	}
 	agentStatus := map[string]any{
 		"status":       replyAgentStatus(reply),
@@ -706,23 +780,12 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 	if err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
-	if len(sessionPatch) > 0 {
-		merged := parseSessionMetadata(session.Metadata)
-		if summary, ok := sessionPatch["summary"].(string); ok && strings.TrimSpace(summary) != "" {
-			merged.Summary = strings.TrimSpace(summary)
-		}
-		if refs, ok := sessionPatch["analysisRunRefs"].([]domaincopilot.AnalysisRunRef); ok && len(refs) > 0 {
-			merged.AnalysisRunRefs = refs
-		}
-		session.Metadata = sessionMetadataMap(merged)
-		session.UpdatedAt = time.Now().UTC()
-		_, _ = s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
-	}
+	s.applyMessageSessionPatch(ctx, principal, session, assistantMessage.ID, sessionPatch)
 	envelope := domaincopilot.SessionMessageEnvelope{
 		Messages:          []domaincopilot.Message{userMessage, assistantMessage},
 		ToolCalls:         toolCalls,
 		AnalysisArtifacts: artifacts,
-		SessionPatch:      sessionPatch,
+		SessionPatch:      s.visibleSessionPatch(ctx, principal, session.ID, sessionPatch),
 	}
 	s.recordGlobalAssistantAudit(ctx, principal, domaincopilot.WorkbenchGlobalAssistantEventInput{
 		Action:    "send",
@@ -733,11 +796,27 @@ func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal do
 	return envelope, nil
 }
 
+func (s *Service) applyMessageSessionPatch(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, messageID string, patch map[string]any) {
+	if len(patch) == 0 {
+		return
+	}
+	merged := bindChatSummarySource(parseSessionMetadata(session.Metadata), patch, messageID)
+	if summary, ok := patch["summary"].(string); ok && strings.TrimSpace(summary) != "" {
+		merged.Summary = strings.TrimSpace(summary)
+	}
+	if refs, ok := patch["analysisRunRefs"].([]domaincopilot.AnalysisRunRef); ok && len(refs) > 0 {
+		merged.AnalysisRunRefs = refs
+	}
+	session.Metadata = sessionMetadataMap(merged)
+	session.UpdatedAt = time.Now().UTC()
+	_, _ = s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
+}
+
 func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidentity.Principal, sessionID string, input domaincopilot.RootCauseRunInput, locale string) (domaincopilot.SessionMessageEnvelope, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
-	session, err := s.sessions.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	session, err := s.ownedSession(ctx, principal, strings.TrimSpace(sessionID))
 	if err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
@@ -757,6 +836,9 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 	}
 	if !isRunnableSessionAnalysisMode(mode) {
 		return domaincopilot.SessionMessageEnvelope{}, fmt.Errorf("%w: analyze mode must be root_cause, performance, trace, or inspection_review", aperrors.ErrInvalidArgument)
+	}
+	if err := s.authorizeProfessionalCapability(ctx, principal, mode); err != nil {
+		return domaincopilot.SessionMessageEnvelope{}, err
 	}
 	providerID := firstNonEmpty(input.AgentProviderID, metadata.AgentProviderID, agentProviderInternal)
 	if s.shouldUseExternalAgent(providerID) {
@@ -812,16 +894,13 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
 	if len(sessionPatch) > 0 {
-		merged := applySessionAnalysisPatch(parseSessionMetadata(session.Metadata), sessionPatch)
-		session.Metadata = sessionMetadataMap(merged)
-		session.UpdatedAt = time.Now().UTC()
-		_, _ = s.sessions.UpdateSession(ctx, principal.UserID, session.ID, session)
+		s.updateSessionAnalysisMetadata(ctx, principal, session, sessionPatch, assistantMessage.ID)
 	}
 	return domaincopilot.SessionMessageEnvelope{
 		Messages:          []domaincopilot.Message{assistantMessage},
 		ToolCalls:         toolCalls,
 		AnalysisArtifacts: artifacts,
-		SessionPatch:      sessionPatch,
+		SessionPatch:      s.visibleSessionPatch(ctx, principal, session.ID, sessionPatch),
 	}, nil
 }
 
@@ -856,7 +935,7 @@ func (s *Service) runLocalSessionAnalysis(ctx context.Context, request localSess
 		var run domaincopilot.RootCauseRun
 		var calls []domaincopilot.ToolExecution
 		var artifact domaincopilot.AnalysisArtifact
-		run, calls, artifact, err = s.runSessionRootCause(ctx, request.principal, request.session.ID, request.scope, request.metadata.Toolset, request.input.Question, request.locale)
+		run, calls, artifact, err = s.runSessionRootCause(ctx, request.principal, request.session.ID, request.scope, request.metadata.Toolset, request.input.Question, request.locale, request.input.AnalysisProfileID)
 		result.toolCalls = append(result.toolCalls, calls...)
 		result.artifacts = append(result.artifacts, artifact)
 		result.refs = append(result.refs, domaincopilot.AnalysisRunRef{ID: run.ID, Kind: run.Kind, Status: run.Status, CreatedAt: run.CreatedAt.Format(time.RFC3339)})
@@ -865,8 +944,12 @@ func (s *Service) runLocalSessionAnalysis(ctx context.Context, request localSess
 	case "trace":
 		result, err = s.runTraceSessionAnalysis(ctx, request, result)
 	case "inspection_review":
-		calls, artifact := s.runSessionInspectionReview(request.session.ID, request.scope, request.metadata.Toolset, request.input.Question, request.locale)
-		result = appendCompletedSessionAnalysis(result, calls, artifact)
+		var calls []domaincopilot.ToolExecution
+		var artifact domaincopilot.AnalysisArtifact
+		calls, artifact, err = s.runSessionInspectionReview(ctx, request.principal, request.session.ID, request.scope, request.metadata.Toolset, request.input.Question, request.locale)
+		if err == nil {
+			result = appendCompletedSessionAnalysis(result, calls, artifact)
+		}
 	default:
 		result.toolCalls, result.artifacts, _ = s.analyzeConversation(ctx, request.principal, domaincopilot.Session{
 			ID:        request.session.ID,
@@ -981,8 +1064,7 @@ func (s *Service) queueSessionAgentAnalysis(ctx context.Context, principal domai
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
 	metadata := parseSessionMetadata(session.Metadata)
-	metadata.AgentProviderID = run.ProviderID
-	metadata.Mode = mode
+	metadata = applySessionAnalysisDefaults(metadata, mode, run.ProviderID)
 	metadata.AnalysisRunRefs = append(metadata.AnalysisRunRefs, domaincopilot.AnalysisRunRef{
 		ID:        run.ID,
 		Kind:      run.CapabilityID,
@@ -996,8 +1078,8 @@ func (s *Service) queueSessionAgentAnalysis(ctx context.Context, principal domai
 		Messages:          []domaincopilot.Message{message},
 		AnalysisArtifacts: []domaincopilot.AnalysisArtifact{artifact},
 		SessionPatch: map[string]any{
-			"mode":            mode,
-			"agentProviderId": run.ProviderID,
+			"mode":            metadata.Mode,
+			"agentProviderId": metadata.AgentProviderID,
 			"analysisRunRefs": metadata.AnalysisRunRefs,
 			"agentRunId":      run.ID,
 		},
@@ -1066,8 +1148,7 @@ func (s *Service) queueSessionRootCauseAgentAnalysis(ctx context.Context, princi
 	if err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
-	metadata.AgentProviderID = run.ProviderID
-	metadata.Mode = "root_cause"
+	metadata = applySessionAnalysisDefaults(metadata, "root_cause", run.ProviderID)
 	metadata.AnalysisRunRefs = append(metadata.AnalysisRunRefs, domaincopilot.AnalysisRunRef{
 		ID:        rootRun.ID,
 		Kind:      rootRun.Kind,
@@ -1081,8 +1162,8 @@ func (s *Service) queueSessionRootCauseAgentAnalysis(ctx context.Context, princi
 		Messages:          []domaincopilot.Message{message},
 		AnalysisArtifacts: []domaincopilot.AnalysisArtifact{artifact},
 		SessionPatch: map[string]any{
-			"mode":             "root_cause",
-			"agentProviderId":  run.ProviderID,
+			"mode":             metadata.Mode,
+			"agentProviderId":  metadata.AgentProviderID,
 			"analysisRunRefs":  metadata.AnalysisRunRefs,
 			"agentRunId":       run.ID,
 			"rootCauseRunId":   rootRun.ID,
@@ -1110,9 +1191,20 @@ func inputScopeMap(input domaincopilot.RootCauseRunInput) map[string]any {
 	}
 }
 
+func applySessionAnalysisDefaults(metadata domaincopilot.SessionMetadata, mode, providerID string) domaincopilot.SessionMetadata {
+	if isMainSessionKind(metadata.ConversationKind) || (metadata.ConversationKind == "side" || metadata.ConversationKind == "personal_side") {
+		return metadata
+	}
+	metadata.Mode = normalizeSessionMode(mode)
+	if providerID != "" {
+		metadata.AgentProviderID = providerID
+	}
+	return metadata
+}
+
 func applySessionAnalysisPatch(metadata domaincopilot.SessionMetadata, patch map[string]any) domaincopilot.SessionMetadata {
 	if value, ok := patch["mode"].(string); ok && strings.TrimSpace(value) != "" {
-		metadata.Mode = normalizeSessionMode(value)
+		metadata = applySessionAnalysisDefaults(metadata, value, "")
 	}
 	if summary, ok := patch["summary"].(string); ok && strings.TrimSpace(summary) != "" {
 		metadata.Summary = strings.TrimSpace(summary)
@@ -1251,9 +1343,12 @@ func (s *Service) generateReply(ctx context.Context, principal domainidentity.Pr
 			Error:  err.Error(),
 		}
 	}
+	content, reaction := splitMessageReaction(resp.Content)
 	return chatReply{
-		Content:      resp.Content,
+		Reaction:     reaction,
+		Content:      content,
 		Source:       "gateway-model-route",
+		ContextUsage: modelContextUsage(resp),
 		Model:        firstNonEmpty(resp.PublicModel, workbenchModel.DefaultPublicModel),
 		ProviderID:   agentProviderInternal,
 		ProviderKind: firstNonEmpty(resp.ProviderKind, workbenchModelProviderKindFromEndpoint(workbenchModel.DefaultEndpoint)),
@@ -1290,6 +1385,7 @@ func (s *Service) generateReplyStream(ctx context.Context, principal domainident
 	if !ok || streamInvoker == nil {
 		return s.generateReply(ctx, principal, sessionID, mode, messages, locale, preferences)
 	}
+	filtered := reactionStream{send: func(delta string) bool { return onDelta == nil || onDelta(delta) }}
 	resp, err := streamInvoker.InvokeWorkbenchModelStream(ctx, principal, appaigateway.WorkbenchRelayRequest{
 		ReasoningEffort: preferences.ReasoningEffort,
 		PublicModel:     workbenchModel.DefaultPublicModel,
@@ -1305,7 +1401,7 @@ func (s *Service) generateReplyStream(ctx context.Context, principal domainident
 		if onDelta == nil {
 			return true
 		}
-		return onDelta(delta.ContentDelta)
+		return filtered.push(delta.ContentDelta)
 	})
 	if err != nil {
 		if errors.Is(err, appaigateway.ErrWorkbenchRelayStreamStopped) || ctx.Err() != nil {
@@ -1327,9 +1423,15 @@ func (s *Service) generateReplyStream(ctx context.Context, principal domainident
 			Error:  err.Error(),
 		}
 	}
+	if !filtered.flush() {
+		return chatReply{Source: "model-cancelled"}
+	}
+	content, reaction := splitMessageReaction(resp.Content)
 	return chatReply{
-		Content:      resp.Content,
+		Reaction:     reaction,
+		Content:      content,
 		Source:       "gateway-model-route-stream",
+		ContextUsage: modelContextUsage(resp),
 		Model:        firstNonEmpty(resp.PublicModel, workbenchModel.DefaultPublicModel),
 		ProviderID:   agentProviderInternal,
 		ProviderKind: firstNonEmpty(resp.ProviderKind, workbenchModelProviderKindFromEndpoint(workbenchModel.DefaultEndpoint)),
@@ -1346,6 +1448,7 @@ func mapWorkbenchRelayMessages(messages []chatProviderMessage) []appaigateway.Wo
 		out = append(out, appaigateway.WorkbenchRelayMessage{
 			Role:    role,
 			Content: strings.TrimSpace(message.Content),
+			Images:  message.Images,
 		})
 	}
 	return out
@@ -1358,29 +1461,41 @@ func systemPrompt(locale string) string {
 	return "You are soha's general AI chat assistant. Answer the user's question directly, concisely, and naturally. Do not claim access to platform context, databases, alerts, clusters, or tool results unless they were explicitly provided in the conversation."
 }
 
-func buildProviderChatMessages(history []domaincopilot.Message, current domaincopilot.Message, locale string) []chatProviderMessage {
-	messages := []chatProviderMessage{{Role: "system", Content: systemPrompt(locale)}}
+func buildProviderChatMessages(history []domaincopilot.Message, current domaincopilot.Message, locale string) ([]chatProviderMessage, chatContextLineage) {
+	messages := []chatProviderMessage{{Role: "system", Content: systemPrompt(locale) + "\n" + reactionInstruction}}
+	lineage := chatContextLineage{}
 	for _, item := range history {
-		if current.ID != "" && item.ID == current.ID {
+		if reason := chatHistoryExclusionReason(item, current.ID); reason != "" {
+			lineage.ExcludedMessages = append(lineage.ExcludedMessages, chatContextExclusion{MessageID: item.ID, Reason: reason})
 			continue
 		}
-		if isLegacyPlatformContextMessage(item) || messageHasLegacyPlatformContextMarkers(item.Metadata) {
-			continue
+		messages = append(messages, chatProviderMessage{Role: strings.TrimSpace(item.Role), Content: strings.TrimSpace(item.Content), Images: messageChatImages(item)})
+		if item.ID != "" {
+			lineage.HistoryMessageIDs = append(lineage.HistoryMessageIDs, item.ID)
 		}
-		role := strings.TrimSpace(item.Role)
-		if role != "assistant" && role != "user" {
-			continue
-		}
-		content := strings.TrimSpace(item.Content)
-		if content == "" {
-			continue
-		}
-		messages = append(messages, chatProviderMessage{Role: role, Content: content})
 	}
 	if strings.TrimSpace(current.Content) != "" {
-		messages = append(messages, chatProviderMessage{Role: "user", Content: strings.TrimSpace(current.Content)})
+		messages = append(messages, chatProviderMessage{Role: "user", Content: strings.TrimSpace(current.Content), Images: messageChatImages(current)})
+		lineage.RequestMessageID = current.ID
 	}
-	return messages
+	return messages, lineage
+}
+
+func chatHistoryExclusionReason(item domaincopilot.Message, currentID string) string {
+	if currentID != "" && item.ID == currentID {
+		return "duplicate_current_request"
+	}
+	if isLegacyPlatformContextMessage(item) || messageHasLegacyPlatformContextMarkers(item.Metadata) {
+		return "legacy_platform_context"
+	}
+	role := strings.TrimSpace(item.Role)
+	if role != "assistant" && role != "user" {
+		return "unsupported_role"
+	}
+	if strings.TrimSpace(item.Content) == "" {
+		return "empty_content"
+	}
+	return ""
 }
 
 func markLegacyPlatformContextMessages(messages []domaincopilot.Message) []domaincopilot.Message {

@@ -466,7 +466,7 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 		limit = 50
 	}
 	query := `
-		SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
+		SELECT id, release_bundle_id, COALESCE(application_id,''), application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
 	`
@@ -524,7 +524,7 @@ func (r *Repository) ListExecutionTasks(ctx context.Context, filter domaindelive
 
 func (r *Repository) GetExecutionTask(ctx context.Context, id string) (domaindelivery.ExecutionTask, error) {
 	row := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
+		SELECT id, release_bundle_id, COALESCE(application_id,''), application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
 		WHERE id = ?
@@ -535,7 +535,7 @@ func (r *Repository) GetExecutionTask(ctx context.Context, id string) (domaindel
 
 func (r *Repository) GetExecutionTaskByCallbackToken(ctx context.Context, token string) (domaindelivery.ExecutionTask, error) {
 	row := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
+		SELECT id, release_bundle_id, COALESCE(application_id,''), application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 		       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 		FROM execution_tasks
 		WHERE callback_token = ?
@@ -552,11 +552,12 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 	var task domaindelivery.ExecutionTask
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		row := tx.Raw(`
-			SELECT id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
+			SELECT id, release_bundle_id, COALESCE(application_id,''), application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key,
 			       max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at
 			FROM execution_tasks
 			WHERE status = 'queued' AND provider_kind IN ?
 			  AND provider_kind NOT LIKE 'external_pipeline.%'
+			  AND (provider_kind NOT LIKE 'vm_ssh.%' OR payload->>'executionAgentId' = ?)
 			  AND (COALESCE(payload->>'workflowScope', '') <> 'delivery_batch' OR EXISTS (
 				SELECT 1 FROM workflow_runs wr WHERE wr.id = execution_tasks.payload->>'workflowRunId'
 				AND wr.scope = 'delivery_batch' AND wr.stop_reason = ''
@@ -564,7 +565,7 @@ func (r *Repository) ClaimExecutionTask(ctx context.Context, providerKinds []str
 			ORDER BY created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
-		`, providerKinds).Row()
+		`, providerKinds, strings.TrimSpace(agentID)).Row()
 		item, scanErr := scanExecutionTaskRow(row)
 		if scanErr != nil {
 			return fmt.Errorf("claim execution task query: %w", scanErr)
@@ -656,13 +657,40 @@ func (r *Repository) createExecutionTask(ctx context.Context, item domaindeliver
 	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO execution_tasks (id, release_bundle_id, application_id, application_environment_id, task_kind, provider_kind, target_kind, status, queue_key, lock_key, max_retries, attempt_count, timeout_seconds, callback_token, claimed_by_agent_id, runtime_endpoint, runtime_cluster_id, stop_transport, secret_refs, secret_principal, secret_target, payload, result, started_at, last_heartbeat_at, last_runtime_seen_at, finished_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, nullableString(item.ReleaseBundleID), item.ApplicationID, nullableString(item.ApplicationEnvironmentID), item.TaskKind, item.ProviderKind, item.TargetKind, item.Status, nullableString(item.QueueKey), nullableString(item.LockKey), item.MaxRetries, item.AttemptCount, item.TimeoutSeconds, nullableString(item.CallbackToken), nullableString(item.ClaimedByAgentID), nullableString(item.RuntimeEndpoint), nullableString(item.RuntimeClusterID), nullableString(item.StopTransport), string(secretRefs), string(secretPrincipal), string(secretTarget), string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.LastRuntimeSeenAt, item.FinishedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+	`, item.ID, nullableString(item.ReleaseBundleID), nullableString(item.ApplicationID), nullableString(item.ApplicationEnvironmentID), item.TaskKind, item.ProviderKind, item.TargetKind, item.Status, nullableString(item.QueueKey), nullableString(item.LockKey), item.MaxRetries, item.AttemptCount, item.TimeoutSeconds, nullableString(item.CallbackToken), nullableString(item.ClaimedByAgentID), nullableString(item.RuntimeEndpoint), nullableString(item.RuntimeClusterID), nullableString(item.StopTransport), string(secretRefs), string(secretPrincipal), string(secretTarget), string(payload), string(result), item.StartedAt, item.LastHeartbeatAt, item.LastRuntimeSeenAt, item.FinishedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("create execution task: %w", err)
 	}
 	return item, nil
 }
 
 func (r *Repository) UpdateExecutionTask(ctx context.Context, item domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
+	if item.TaskKind == "vm_ssh_command" {
+		var updated domaindelivery.ExecutionTask
+		err := dbtx.Within(ctx, r.db, func(txCtx context.Context) error {
+			if err := dbtx.DB(txCtx, r.db).Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?,0))`, "vm-ssh-command/"+item.ID).Error; err != nil {
+				return err
+			}
+			current, err := r.GetExecutionTask(txCtx, item.ID)
+			if err != nil {
+				return err
+			}
+			switch current.Status {
+			case "completed", "failed", "canceled", "callback_timeout":
+				updated = current
+				return nil
+			}
+			if item.Status == "failed" && item.AttemptCount == 0 && current.Status != "queued" {
+				updated = current
+				return nil
+			}
+			if item.AttemptCount < current.AttemptCount {
+				item.AttemptCount = current.AttemptCount
+			}
+			updated, err = r.updateExecutionTask(txCtx, item, false)
+			return err
+		})
+		return updated, err
+	}
 	if domaindelivery.RequiresStopConfirmation(item) {
 		return r.updateDeliveryTask(ctx, item)
 	}
@@ -682,6 +710,9 @@ func (r *Repository) updateExecutionTask(ctx context.Context, item domaindeliver
 		UPDATE execution_tasks
 		SET status = ?, max_retries = ?, attempt_count = ?, timeout_seconds = ?, callback_token = ?, claimed_by_agent_id = ?, runtime_endpoint = ?, runtime_cluster_id = ?, stop_transport = ?, payload = ?, result = ?, started_at = ?, last_heartbeat_at = ?, last_runtime_seen_at = ?, finished_at = ?, updated_at = ?
 		WHERE id = ?`
+	if item.TaskKind == "vm_ssh_command" && item.Status == "failed" && item.AttemptCount == 0 {
+		query += " AND status='queued' AND attempt_count=0"
+	}
 	if !deliveryLocked {
 		query += ` AND COALESCE(payload->>'workflowScope', '') <> 'delivery_batch'`
 	}

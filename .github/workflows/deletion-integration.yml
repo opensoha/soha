@@ -50,6 +50,10 @@ jobs:
             -run '^TestApplicationAndClusterDeletionWithPostgres$' \
             ./internal/repository/application | tee deletion-test.json
           python3 scripts/check-go-test-evidence.py deletion-test.json --exit-code 0
+          go test -json -count=1 -race -timeout=10m -run '^TestMainSessionWithPostgres$' ./internal/repository/copilot | tee main-chat-test.json
+          python3 scripts/check-go-test-evidence.py main-chat-test.json --exit-code 0 --main-chat
+          go test -json -count=1 -race -timeout=10m -run '^TestSessionAuthorizationWithPostgres$' ./internal/repository/copilot | tee identity-test.json
+          python3 scripts/check-go-test-evidence.py identity-test.json --exit-code 0 --identity
       - name: Evidence validator counterexamples
         run: python3 -m unittest discover -s scripts -p 'test_go_test_evidence.py'
       - name: OCR integrity counterexamples without models
@@ -65,5 +69,8 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: postgres-deletion-test
-          path: deletion-test.json
+          path: |
+            deletion-test.json
+            main-chat-test.json
+            identity-test.json
           if-no-files-found: warn

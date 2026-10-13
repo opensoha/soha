@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -44,6 +45,10 @@ func (s *Service) capabilityRepository() (CapabilityRepository, error) {
 }
 
 func (s *Service) CreateCapabilityTask(ctx context.Context, principal domainidentity.Principal, input domainaigateway.CapabilityTaskInput) (domainaigateway.CapabilityTask, error) {
+	return s.createCapabilityTask(ctx, principal, input, nil)
+}
+
+func (s *Service) createCapabilityTask(ctx context.Context, principal domainidentity.Principal, input domainaigateway.CapabilityTaskInput, parent *domaincopilot.NativeTaskParent) (domainaigateway.CapabilityTask, error) {
 	if err := s.authorizePermission(ctx, principal, appaccess.PermAIGatewayInvoke); err != nil {
 		return domainaigateway.CapabilityTask{}, err
 	}
@@ -58,12 +63,22 @@ func (s *Service) CreateCapabilityTask(ctx context.Context, principal domainiden
 	if !validation.Valid {
 		return domainaigateway.CapabilityTask{}, fmt.Errorf("%w: capability plan is invalid; validate the plan for details", apperrors.ErrInvalidArgument)
 	}
+	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return domainaigateway.CapabilityTask{}, err
+	}
 	now := time.Now().UTC()
 	timeout := input.Plan.TimeoutSeconds
 	if timeout == 0 {
 		timeout = 3600
 	}
-	intent := domainworkflow.CapabilityIntent{Input: input, ActorID: principal.UserID, ActorTokenID: principal.AccessTokenID, Digest: validation.Digest, PlanVersion: 1, Deadline: now.Add(time.Duration(timeout) * time.Second)}
+	intent := domainworkflow.CapabilityIntent{Input: input, ActorID: principal.UserID, ActorTokenID: principal.AccessTokenID, PermissionCeiling: permissionKeys, Digest: validation.Digest, PlanVersion: 1, Deadline: now.Add(time.Duration(timeout) * time.Second)}
+	if parent != nil {
+		intent.NativeParent, intent.ActorSessionID = parent, parent.SessionID
+		if parent.Deadline.Before(intent.Deadline) {
+			intent.Deadline = parent.Deadline
+		}
+	}
 	run := domainworkflow.Run{ID: uuid.NewString(), Scope: domainworkflow.ScopeCapabilityTask, WorkflowName: input.Plan.Goal, Status: "queued", Metadata: map[string]any{"capabilityIntent": intent}, Steps: []domainworkflow.Step{}, CreatedAt: now.Format(time.RFC3339), UpdatedAt: now.Format(time.RFC3339)}
 	for _, step := range input.Plan.Steps {
 		run.NodeRuns = append(run.NodeRuns, domainworkflow.NodeRun{NodeID: step.ID, Name: step.Call.ToolName, Type: "capability", Status: "pending"})
@@ -71,6 +86,12 @@ func (s *Service) CreateCapabilityTask(ctx context.Context, principal domainiden
 	run, err = repo.CreateCapabilityRun(ctx, run)
 	if err != nil {
 		return domainaigateway.CapabilityTask{}, err
+	}
+	if parent != nil {
+		stored, err := domainworkflow.CapabilityIntentFrom(run)
+		if err != nil || !nativeCapabilityParentMatches(stored.NativeParent, *parent) {
+			return domainaigateway.CapabilityTask{}, apperrors.ErrConflict
+		}
 	}
 	return s.capabilityRuntime.VisibleCapabilityTask(ctx, principal, run)
 }

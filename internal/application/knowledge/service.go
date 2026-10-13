@@ -35,13 +35,17 @@ type Service struct {
 	vector             VectorScorer
 	reranker           Reranker
 	operations         OperationRecorder
+	principals         ExecutionPrincipalReader
 	now                func() time.Time
 }
 
 type Option func(*Service)
 
 func WithSourceLoader(loader SourceLoader) Option { return func(s *Service) { s.loader = loader } }
-func WithReranker(reranker Reranker) Option       { return func(s *Service) { s.reranker = reranker } }
+func WithExecutionPrincipalReader(reader ExecutionPrincipalReader) Option {
+	return func(s *Service) { s.principals = reader }
+}
+func WithReranker(reranker Reranker) Option { return func(s *Service) { s.reranker = reranker } }
 func WithProductionRepository(repo ProductionRepository) Option {
 	return func(s *Service) { s.productionRepo = repo }
 }
@@ -207,16 +211,11 @@ func (s *Service) Search(ctx context.Context, principal domainidentity.Principal
 	}
 	topK := min(max(request.TopK, 5), 50)
 	candidateLimit := min(max(topK*10, 50), maxCandidates)
-	chunks, err := s.repo.ListAuthorizedChunks(ctx, principalScope(principal), request, candidateLimit)
+	candidates, err := s.searchCandidates(ctx, principal, request, candidateLimit)
 	if err != nil {
 		return domainknowledge.SearchResult{}, err
 	}
-	lexical := s.lexical.Score(request.Query, chunks)
-	vector, err := s.vector.Score(ctx, principal, request.Query, chunks)
-	if err != nil {
-		vector = make([]float64, len(chunks))
-	}
-	hits := buildHits(chunks, lexical, vector)
+	hits := buildHits(candidates.chunks, candidates.lexical, candidates.vector)
 	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
 	if len(hits) > topK*2 {
 		hits = hits[:topK*2]
@@ -231,13 +230,17 @@ func (s *Service) Search(ctx context.Context, principal domainidentity.Principal
 	}
 	citations := make([]domainknowledge.Citation, 0, len(hits))
 	for _, hit := range hits {
+		hit.Citation.RetrievedAt = &started
 		citations = append(citations, hit.Citation)
+	}
+	for i := range hits {
+		hits[i].Citation.RetrievedAt = &started
 	}
 	traceID := requestctx.FromContext(ctx).TraceID
 	if traceID == "" {
 		traceID = uuid.NewString()
 	}
-	return domainknowledge.SearchResult{Query: request.Query, Hits: hits, Citations: citations, CandidateN: len(chunks), TimingMS: s.now().Sub(started).Milliseconds(), NoAnswer: len(hits) == 0 || hits[0].Score < 0.05, TraceID: traceID}, nil
+	return domainknowledge.SearchResult{RetrievalMode: candidates.mode, DegradationReason: candidates.degradation, Query: request.Query, Hits: hits, Citations: citations, CandidateN: len(candidates.chunks), TimingMS: s.now().Sub(started).Milliseconds(), NoAnswer: len(hits) == 0 || hits[0].Score < 0.05, TraceID: traceID}, nil
 }
 
 func buildHits(chunks []domainknowledge.Chunk, lexical, vector []float64) []domainknowledge.SearchHit {
@@ -245,7 +248,7 @@ func buildHits(chunks []domainknowledge.Chunk, lexical, vector []float64) []doma
 	for i, chunk := range chunks {
 		lexicalScore, vectorScore := scoreAt(lexical, i), scoreAt(vector, i)
 		score := 0.45*lexicalScore + 0.55*vectorScore
-		citation := domainknowledge.Citation{ID: "citation:" + chunk.ID, KnowledgeBaseID: chunk.KnowledgeBaseID, DocumentID: chunk.DocumentID, DocumentTitle: chunk.DocumentTitle, ChunkID: chunk.ID, Location: chunk.Location, URI: chunk.Location.URI, Score: score, ContentHash: chunk.ContentHash}
+		citation := domainknowledge.Citation{DocumentVersionID: chunk.DocumentVersionID, IndexRevisionID: chunk.IndexRevisionID, ID: "citation:" + chunk.ID, KnowledgeBaseID: chunk.KnowledgeBaseID, DocumentID: chunk.DocumentID, DocumentTitle: chunk.DocumentTitle, ChunkID: chunk.ID, Location: chunk.Location, URI: chunk.Location.URI, Score: score, ContentHash: chunk.ContentHash}
 		hits = append(hits, domainknowledge.SearchHit{ChunkID: chunk.ID, DocumentID: chunk.DocumentID, KnowledgeBaseID: chunk.KnowledgeBaseID, Title: chunk.DocumentTitle, Content: chunk.Content, Score: score, LexicalScore: lexicalScore, VectorScore: vectorScore, Citation: citation})
 	}
 	return hits
@@ -304,7 +307,7 @@ func normalizeSourceInput(baseID string, input domainknowledge.SourceInput, now 
 
 func normalizeAccessScope(scope domainknowledge.AccessScope, ownerID string) domainknowledge.AccessScope {
 	scope.Visibility = strings.ToLower(strings.TrimSpace(scope.Visibility))
-	if scope.Visibility != "public" && scope.Visibility != "restricted" {
+	if scope.Visibility != "public" && scope.Visibility != "scoped" && scope.Visibility != "restricted" {
 		scope.Visibility = "private"
 	}
 	scope.Users, scope.Roles, scope.Teams, scope.Projects = uniqueStrings(scope.Users), uniqueStrings(scope.Roles), uniqueStrings(scope.Teams), uniqueStrings(scope.Projects)

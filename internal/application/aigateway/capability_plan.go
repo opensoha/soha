@@ -25,10 +25,17 @@ func (s *Service) ValidateCapabilityPlan(ctx context.Context, principal domainid
 		result.Issues = append(result.Issues, planIssue("", "invalid_shape", "Plan does not match the public capability contract"))
 		return result, nil
 	}
-	manifest, err := s.Capabilities(ctx, principal, domainaigateway.ManifestRequest{AIClientID: input.AIClientID, SkillID: input.SkillID})
+	request := domainaigateway.ManifestRequest{AIClientID: input.AIClientID, SkillID: input.SkillID}
+	var manifest domainaigateway.Manifest
+	if native, _ := ctx.Value(nativeWorkbenchInvocationKey{}).(bool); native {
+		manifest, err = s.WorkbenchCapabilities(ctx, principal, request)
+	} else {
+		manifest, err = s.Capabilities(ctx, principal, request)
+	}
 	if err != nil {
 		return result, err
 	}
+	result.Issues = append(result.Issues, validateCapabilityScopeConstraints(input.ScopeConstraints)...)
 	if summary := gatewayRedactionAuditSummaryForValue(input.Plan.Goal, gatewayRedactionRule{SecretTypes: []string{"default"}}, "goal"); !summary.empty() {
 		result.Issues = append(result.Issues, planIssue("", "secret_reference_required", "The goal description must not contain secrets"))
 	}

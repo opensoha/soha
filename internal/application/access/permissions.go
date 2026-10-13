@@ -147,6 +147,7 @@ const (
 	PermAIAgentFleetManage                 = "ai.agent-fleet.manage"
 	PermAIEnvironmentsView                 = "ai.environments.view"
 	PermAIEnvironmentsManage               = "ai.environments.manage"
+	PermAIEnvironmentsUpdate               = "ai.environments.update"
 	PermAIMemoryView                       = "ai.memory.view"
 	PermAIMemoryManage                     = "ai.memory.manage"
 	PermAIMultiAgentRun                    = "ai.multi-agent.run"

@@ -114,7 +114,7 @@ PostgreSQL + Kubernetes 集群
 
 | 层级 | 技术 |
 | --- | --- |
-| 后端 | Go 1.26.5、Gin、PostgreSQL、Kubernetes `client-go` |
+| 后端 | Go 1.27.2、Gin、PostgreSQL、Kubernetes `client-go` |
 | 前端 | React 18、TypeScript 5、Vite 6、React Router 6、TanStack Query 5、Zustand 5、Ant Design 6、Tailwind CSS 4 |
 | 文档 | sibling `soha-docs` 仓库中的 Next.js 16 与 Nextra 4 |
 | 打包部署 | Docker、Docker Compose、原生 Kubernetes YAML；Helm Chart 在 `soha-helm` 维护 |
@@ -137,7 +137,7 @@ PostgreSQL + Kubernetes 集群
 
 ### 环境要求
 
-- Go 1.26.5+
+- Go 1.27.2+
 - Node.js 20+
 - Docker 与 Docker Compose
 - 外部数据库使用 PostgreSQL 18.4，并安装 pgvector 0.8.5
@@ -171,7 +171,10 @@ make
 - 控制台：`http://localhost:5173`
 - API：`http://localhost:8080`
 - 配置覆盖：`SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
+
 - 本地默认值在 `configs/config.yaml`，可通过环境变量或 `SOHA_CONFIG_FILE` 覆盖。
+
+个人 VM guest 的登记/心跳通道由 `personal_guest` 显式启用，默认关闭；启用时必须配置独立地址以及 `tls.cert_file`、`tls.key_file`、`tls.client_ca_file`，私钥文件只能由服务账号读取。通道使用 TLS 1.3 和受验证的 guest 客户端证书，重验当前账号、个人 Agent 授权与 VM/独立数据盘身份，不接受转发证书头。登记仅证明存活；个人 VM 模板/绑定、凭证签发安装、数据初始化和工具就绪尚未接通，因此当前不能以打开此监听替代完整 VM 开通。
 
 ### 分别启动服务
 

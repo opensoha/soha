@@ -1201,7 +1201,7 @@ func TestVMResizeAllowsComputeReductionAndQueuesResourceChanges(t *testing.T) {
 
 	task, err := service.VMAction(context.Background(), testPrincipal(), vm.ID, VMActionInput{
 		Action: "resize", CPU: 4, MemoryMiB: 4096, DiskGiB: 40,
-		Disks:    []domainvirtualization.AdapterDiskChange{{ID: "scsi1", Storage: "local-lvm", SizeGiB: 100, Add: true}},
+		Disks:    []domainvirtualization.AdapterDiskChange{{ID: "scsi1", Storage: "local-lvm", SizeGiB: 100, Add: true, Serial: "personal-data"}},
 		Networks: []domainvirtualization.AdapterNetworkChange{{ID: "net1", Network: "vmbr1", Model: "virtio", Add: true}},
 	})
 	if err != nil {
@@ -1210,8 +1210,13 @@ func TestVMResizeAllowsComputeReductionAndQueuesResourceChanges(t *testing.T) {
 	if task.Payload["cpu"] != 4 || task.Payload["memoryMiB"] != 4096 {
 		t.Fatalf("resize payload = %#v", task.Payload)
 	}
-	if len(task.Payload["disks"].([]domainvirtualization.AdapterDiskChange)) != 1 || len(task.Payload["networks"].([]domainvirtualization.AdapterNetworkChange)) != 1 {
+	disks, disksOK := task.Payload["disks"].([]domainvirtualization.AdapterDiskChange)
+	networks, networksOK := task.Payload["networks"].([]domainvirtualization.AdapterNetworkChange)
+	if !disksOK || !networksOK || len(disks) != 1 || len(networks) != 1 {
 		t.Fatalf("resource payload = %#v", task.Payload)
+	}
+	if disks[0].Serial != "personal-data" {
+		t.Fatal("disk identity was not frozen in the durable operation")
 	}
 }
 
@@ -1250,6 +1255,8 @@ func TestVMResizeRejectsMissingOrInvalidChanges(t *testing.T) {
 		{name: "negative memory", input: VMActionInput{Action: "resize", MemoryMiB: -1}},
 		{name: "negative disk", input: VMActionInput{Action: "resize", DiskGiB: -1}},
 		{name: "invalid device disk", input: VMActionInput{Action: "resize", Disks: []domainvirtualization.AdapterDiskChange{{ID: "scsi1"}}}},
+		{name: "serial injection", input: VMActionInput{Action: "resize", Disks: []domainvirtualization.AdapterDiskChange{{ID: "scsi1", SizeGiB: 8, Add: true, Serial: "data,media=cdrom"}}}},
+		{name: "changed existing serial", input: VMActionInput{Action: "resize", Disks: []domainvirtualization.AdapterDiskChange{{ID: "scsi1", SizeGiB: 8, Serial: "new-identity"}}}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1891,6 +1898,10 @@ func (r *memoryRepo) RetryTaskWithCapacity(context.Context, domainvirtualization
 	return domainvirtualization.Task{}, errors.New("capacity admission requires PostgreSQL")
 }
 
+func (r *memoryRepo) RecheckTaskWithCapacity(context.Context, domainvirtualization.Task, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.Task, error) {
+	return domainvirtualization.Task{}, domainvirtualization.ErrCapacityUnknown
+}
+
 func (r *memoryRepo) SelectCapacity(context.Context, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.CapacityNode, domainvirtualization.CapacityStorage, error) {
 	return domainvirtualization.CapacityNode{}, domainvirtualization.CapacityStorage{}, errors.New("capacity selection requires PostgreSQL")
 }
@@ -1947,6 +1958,9 @@ func (r *memoryRepo) ListTasks(_ context.Context, filter domainvirtualization.Ta
 	defer r.mu.Unlock()
 	items := []domainvirtualization.Task{}
 	for _, item := range r.tasks {
+		if filter.PersonalGuestOwnerID != "" && item.TaskKind == TaskKindPersonalGuest && item.RequestedBy != filter.PersonalGuestOwnerID {
+			continue
+		}
 		if filter.ConnectionID != "" && item.ConnectionID != filter.ConnectionID {
 			continue
 		}

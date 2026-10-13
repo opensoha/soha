@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -34,6 +36,9 @@ type SecretLeaseRedemptionService interface {
 }
 
 type SecretHandler struct {
+	sshGenerator interface {
+		GenerateSSHKey(context.Context, domainidentity.Principal, sohaapi.SecretGenerateSSHKeyRequest) (sohaapi.SecretMetadata, error)
+	}
 	management SecretManagementService
 	versions   SecretVersionService
 	leases     SecretLeaseRedemptionService
@@ -53,7 +58,10 @@ func NewSecretHandlerWithRunnerKeys(service interface {
 	SecretVersionService
 	SecretLeaseRedemptionService
 }, keys keyring.Ring) *SecretHandler {
-	return &SecretHandler{management: service, versions: service, leases: service, runnerKeys: keys}
+	generator, _ := any(service).(interface {
+		GenerateSSHKey(context.Context, domainidentity.Principal, sohaapi.SecretGenerateSSHKeyRequest) (sohaapi.SecretMetadata, error)
+	})
+	return &SecretHandler{management: service, versions: service, leases: service, runnerKeys: keys, sshGenerator: generator}
 }
 
 func (h *SecretHandler) List(c *gin.Context) {
@@ -78,8 +86,7 @@ func (h *SecretHandler) Get(c *gin.Context) {
 
 func (h *SecretHandler) Create(c *gin.Context) {
 	var request secretCreateRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid secret payload")
+	if !decodeSecretJSON(c, &request, 8<<20) {
 		return
 	}
 	item, err := h.management.Create(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), request.input())
@@ -91,17 +98,20 @@ func (h *SecretHandler) Create(c *gin.Context) {
 }
 
 type secretCreateRequest struct {
-	Name        string                          `json:"name"`
-	Description string                          `json:"description"`
-	Value       *string                         `json:"value"`
-	VaultKV2    *domainsecret.VaultKV2Reference `json:"vaultKv2"`
-	ScopeType   domainsecret.ScopeType          `json:"scopeType"`
-	ScopeID     string                          `json:"scopeId"`
-	Bindings    []sohaapi.SecretBinding         `json:"bindings"`
+	Kind          domainsecret.Kind               `json:"kind"`
+	SSHPassphrase string                          `json:"sshPassphrase"`
+	Name          string                          `json:"name"`
+	Description   string                          `json:"description"`
+	Value         *string                         `json:"value"`
+	VaultKV2      *domainsecret.VaultKV2Reference `json:"vaultKv2"`
+	ScopeType     domainsecret.ScopeType          `json:"scopeType"`
+	ScopeID       string                          `json:"scopeId"`
+	Bindings      []sohaapi.SecretBinding         `json:"bindings"`
 }
 
 func (r secretCreateRequest) input() domainsecret.CreateInput {
 	return domainsecret.CreateInput{
+		Kind: r.Kind, SSHPassphrase: r.SSHPassphrase,
 		Name: r.Name, Description: r.Description, Value: r.Value, VaultKV2: r.VaultKV2,
 		ScopeType: r.ScopeType, ScopeID: r.ScopeID, Bindings: secretBindings(r.Bindings),
 	}
@@ -116,7 +126,10 @@ type secretUpdateRequest struct {
 
 func (h *SecretHandler) Update(c *gin.Context) {
 	var request secretUpdateRequest
-	if err := c.ShouldBindJSON(&request); err != nil || (request.Name == nil && request.Description == nil && request.Status == nil && request.Bindings == nil) {
+	if !decodeSecretJSON(c, &request, 128<<10) {
+		return
+	}
+	if request.Name == nil && request.Description == nil && request.Status == nil && request.Bindings == nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid secret update payload")
 		return
 	}
@@ -128,7 +141,7 @@ func (h *SecretHandler) Update(c *gin.Context) {
 	if request.Bindings != nil {
 		bindings := make([]domainsecret.Binding, 0, len(*request.Bindings))
 		for _, binding := range *request.Bindings {
-			bindings = append(bindings, domainsecret.Binding{TargetType: string(binding.TargetType), TargetRef: binding.TargetRef})
+			bindings = append(bindings, domainsecret.Binding{TargetType: string(binding.TargetType), TargetRef: binding.TargetRef, Purpose: string(binding.Purpose)})
 		}
 		input.Bindings = &bindings
 	}
@@ -160,8 +173,7 @@ func (h *SecretHandler) ListVersions(c *gin.Context) {
 
 func (h *SecretHandler) Rotate(c *gin.Context) {
 	var request domainsecret.RotateInput
-	if err := c.ShouldBindJSON(&request); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid secret rotation payload")
+	if !decodeSecretJSON(c, &request, 8<<20) {
 		return
 	}
 	item, err := h.versions.Rotate(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("secretID"), request)
@@ -172,10 +184,20 @@ func (h *SecretHandler) Rotate(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
+func decodeSecretJSON(c *gin.Context, target any, limit int64) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, limit))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid secret payload")
+		return false
+	}
+	return true
+}
+
 func secretBindings(items []sohaapi.SecretBinding) []domainsecret.Binding {
 	bindings := make([]domainsecret.Binding, 0, len(items))
 	for _, binding := range items {
-		bindings = append(bindings, domainsecret.Binding{TargetType: string(binding.TargetType), TargetRef: binding.TargetRef})
+		bindings = append(bindings, domainsecret.Binding{TargetType: string(binding.TargetType), TargetRef: binding.TargetRef, Purpose: string(binding.Purpose)})
 	}
 	return bindings
 }

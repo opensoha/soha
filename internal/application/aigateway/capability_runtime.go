@@ -26,6 +26,16 @@ func (s *Service) SetCapabilityApprovalGuard(guard CapabilityApprovalGuard) {
 }
 
 func (s *Service) PrepareCapabilityNode(ctx context.Context, principal domainidentity.Principal, run domainworkflow.Run, node domainworkflow.NodeRun) (domainworkflow.NodeRun, error) {
+	var result domainworkflow.NodeRun
+	err := s.withNativeCapabilityParent(ctx, run, false, func(boundedCtx context.Context) error {
+		var err error
+		result, err = s.prepareCapabilityNode(boundedCtx, principal, run, node)
+		return err
+	})
+	return result, err
+}
+
+func (s *Service) prepareCapabilityNode(ctx context.Context, principal domainidentity.Principal, run domainworkflow.Run, node domainworkflow.NodeRun) (domainworkflow.NodeRun, error) {
 	intent, err := domainworkflow.CapabilityIntentFrom(run)
 	if err != nil {
 		return node, err
@@ -49,7 +59,8 @@ func (s *Service) PrepareCapabilityNode(ctx context.Context, principal domainide
 		}
 		tool, _ := s.toolByName(call.ToolName)
 		call.AIClientID, call.SkillID, call.SessionID = intent.Input.AIClientID, intent.Input.SkillID, intent.ActorSessionID
-		execution, _ := capabilityExecutionFrom(withCapabilityExecution(ctx, run, node))
+		ctx = withCapabilityExecution(ctx, run, node)
+		execution, _ := capabilityExecutionFrom(ctx)
 		call.RequestID = execution.ResourceID("capability-invocation")
 		ctx, err = s.authorizeCapabilityCall(ctx, principal, call)
 		if err != nil {
@@ -88,6 +99,28 @@ func (s *Service) authorizeCapabilityCall(ctx context.Context, principal domaini
 }
 
 func (s *Service) AdvanceCapabilityNode(ctx context.Context, principal domainidentity.Principal, run domainworkflow.Run, node domainworkflow.NodeRun) (domainworkflow.NodeRun, error) {
+	if run.StopReason == "" {
+		intent, err := domainworkflow.CapabilityIntentFrom(run)
+		if err != nil {
+			return node, err
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, domainworkflow.CapabilityNodeDeadline(intent, node))
+		defer cancel()
+		if err := ctx.Err(); err != nil {
+			return node, err
+		}
+	}
+	result := node
+	err := s.withNativeCapabilityParent(ctx, run, run.StopReason != "", func(boundedCtx context.Context) error {
+		var err error
+		result, err = s.advanceCapabilityNode(boundedCtx, principal, run, node)
+		return err
+	})
+	return result, err
+}
+
+func (s *Service) advanceCapabilityNode(ctx context.Context, principal domainidentity.Principal, run domainworkflow.Run, node domainworkflow.NodeRun) (domainworkflow.NodeRun, error) {
 	if node.PreparedCall == nil {
 		return node, apperrors.ErrInvalidArgument
 	}

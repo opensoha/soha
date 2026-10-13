@@ -51,7 +51,7 @@ jobs:
           cache-dependency-path: soha-web/package-lock.json
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.26.6"
+          go-version: "1.27.2"
           cache: true
           cache-dependency-path: soha/go.sum
       - name: Check Go module state
@@ -87,12 +87,12 @@ jobs:
         run: make complexity-check
       - name: Govulncheck
         working-directory: soha
-        run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
+        run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
       - name: Golangci-lint
         if: github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.9.0
+          version: v2.14.0
           working-directory: soha
           only-new-issues: true
           args: --timeout=5m

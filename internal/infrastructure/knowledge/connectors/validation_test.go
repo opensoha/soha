@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainknowledge "github.com/opensoha/soha/internal/domain/knowledge"
 )
@@ -69,6 +70,9 @@ func TestValidatorExternalConnectorSecurityBoundaries(t *testing.T) {
 func TestValidatorAcceptsBoundedExternalConnectors(t *testing.T) {
 	t.Parallel()
 	tests := []domainknowledge.ConnectorInput{
+		{Kind: domainknowledge.SourceKindHTTP, SecretRef: "soha://secrets/" + uuid.NewString() + "/versions/1", Config: map[string]any{
+			"url": "https://docs.example.com/runbooks", "allowedHosts": []string{"docs.example.com"}, "maxBytes": 1024,
+		}},
 		{Kind: domainknowledge.SourceKindHTTP, SecretRef: "secret:http", Config: map[string]any{
 			"url": "https://docs.example.com/runbooks", "allowedHosts": []string{"docs.example.com"}, "maxBytes": 1024,
 		}},

@@ -105,8 +105,19 @@ type WorkbenchDataSource struct {
 }
 
 type WorkbenchModelOption struct {
-	PublicModel      string   `json:"publicModel"`
-	ReasoningEfforts []string `json:"reasoningEfforts"`
+	PublicModel         string   `json:"publicModel"`
+	ReasoningEfforts    []string `json:"reasoningEfforts"`
+	ContextWindowTokens int64    `json:"contextWindowTokens,omitempty"`
+}
+
+// ModelContextUsage describes one invocation, independently of task budgets.
+type ModelContextUsage struct {
+	Measurement         string `json:"measurement"`
+	Model               string `json:"model,omitempty"`
+	InputTokens         *int64 `json:"inputTokens,omitempty"`
+	OutputTokens        *int64 `json:"outputTokens,omitempty"`
+	TotalTokens         *int64 `json:"totalTokens,omitempty"`
+	ContextWindowTokens int64  `json:"contextWindowTokens,omitempty"`
 }
 
 type WorkbenchCatalog struct {

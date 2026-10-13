@@ -25,6 +25,7 @@ type metricEvidenceAnalysis struct {
 }
 
 type metricEvidenceRequest struct {
+	toolset  domaincopilot.SessionToolset
 	input    domaincopilot.RootCauseRunInput
 	source   domaincopilot.DataSource
 	limit    int
@@ -97,11 +98,14 @@ func (s *Service) collectRootCauseMetricEvidence(ctx context.Context, input doma
 
 func (s *Service) collectMetricEvidenceBatch(ctx context.Context, request metricEvidenceBatchRequest, result *metricEvidenceAnalysis) {
 	for _, source := range request.setup.dataSources {
+		if selected := stringValue(request.toolset.ScopeOverrides["dataSourceId"]); selected != "" && selected != source.ID {
+			continue
+		}
 		if !metricEvidenceSourceEnabled(source, request.profile, request.toolset, metricEvidenceAdapterID) {
 			continue
 		}
 		s.collectMetricSourceEvidence(ctx, metricEvidenceRequest{
-			input: request.input, source: source, limit: request.setup.limit,
+			input: request.input, source: source, limit: request.setup.limit, toolset: request.toolset,
 			timeFrom: request.setup.timeFrom, timeTo: request.setup.timeTo, locale: request.locale,
 		}, result)
 	}
@@ -116,9 +120,11 @@ func (s *Service) collectMetricSourceEvidence(ctx context.Context, request metri
 			Workload:  request.input.WorkloadName,
 			Service:   request.input.WorkloadName,
 		},
-		TimeFrom: request.timeFrom,
-		TimeTo:   request.timeTo,
-		Step:     time.Minute,
+		MetricKey:       stringValue(request.toolset.ScopeOverrides["metricKey"]),
+		RequireEvidence: true,
+		TimeFrom:        request.timeFrom,
+		TimeTo:          request.timeTo,
+		Step:            time.Minute,
 	})
 	if err != nil {
 		result.playbookResults["metrics:"+source.ID] = "query_failed"
@@ -154,8 +160,11 @@ func buildMetricSignalEvidence(input domaincopilot.RootCauseRunInput, source dom
 	spikingMetrics := make([]string, 0)
 	for _, signal := range signals {
 		trend := strings.TrimSpace(fmt.Sprint(signal["trend"]))
-		metricKey := strings.TrimSpace(fmt.Sprint(signal["metricKey"]))
-		label := strings.TrimSpace(fmt.Sprint(signal["label"]))
+		metricKey := strings.TrimSpace(stringValue(signal["metricKey"]))
+		if metricKey == "" {
+			continue
+		}
+		label := strings.TrimSpace(stringValue(signal["label"]))
 		severity := "info"
 		if trend == "spike" {
 			severity = "warning"

@@ -23,26 +23,72 @@ func CapacitySourceID(connection AdapterConnection) string {
 	return "pve/" + strings.TrimRight(strings.ToLower(connection.Endpoint), "/")
 }
 
-// Capacity is measured from provider allocation records, not CPU utilization.
-// Pending Soha reservations are deducted atomically when a task is admitted.
+// Capacity uses provider semantics: PVE runtime headroom, Kubernetes allocatable requests.
+// Pending Soha reservations are deducted atomically; a snapshot is not a runtime guarantee.
 type CapacitySnapshot struct {
-	Namespace          string            `json:"namespace,omitempty"`
-	QuotaCPU           *int64            `json:"quotaCpu,omitempty"`
-	QuotaMemoryMiB     *int64            `json:"quotaMemoryMiB,omitempty"`
-	QuotaDiskGiB       *int64            `json:"quotaDiskGiB,omitempty"`
-	SourceID           string            `json:"sourceId"`
-	ObservedAt         time.Time         `json:"observedAt"`
-	Complete           bool              `json:"complete"`
-	Reason             string            `json:"reason,omitempty"`
-	Nodes              []CapacityNode    `json:"nodes"`
-	Storage            []CapacityStorage `json:"storage"`
-	ObservedOperations []string          `json:"-"`
+	ConnectionID          string                  `json:"connectionId"`
+	HypervisorOverheadMiB int64                   `json:"hypervisorOverheadMiB"`
+	Policy                CapacityPolicy          `json:"policy"`
+	Namespace             string                  `json:"namespace,omitempty"`
+	QuotaCPU              *int64                  `json:"quotaCpu,omitempty"`
+	QuotaMemoryMiB        *int64                  `json:"quotaMemoryMiB,omitempty"`
+	QuotaDiskGiB          *int64                  `json:"quotaDiskGiB,omitempty"`
+	SourceID              string                  `json:"sourceId"`
+	ObservedAt            time.Time               `json:"observedAt"`
+	Complete              bool                    `json:"complete"`
+	Reason                string                  `json:"reason,omitempty"`
+	Nodes                 []CapacityNode          `json:"nodes"`
+	Storage               []CapacityStorage       `json:"storage"`
+	ObservedOperations    []string                `json:"-"`
+	ObservedVMs           []CapacityVMObservation `json:"-"`
+	VMs                   []CapacityVMAllocation  `json:"-"`
+}
+
+type CapacityVMAllocation struct {
+	Generation      string
+	RuntimeObserved bool
+	ProviderVMID    string
+	Name            string
+	Node            string
+	Status          string
+	CPU             int64
+	MemoryMiB       int64
+	RootDiskGiB     int64
+	RootStorage     string
+	Disks           []CapacityDiskAllocation
+}
+
+type CapacityDiskAllocation struct {
+	ID, Storage, Serial string
+	ProviderRef         string
+	SizeGiB             int64
+}
+
+func (d CapacityDiskAllocation) MatchesNewDisk(change AdapterDiskChange) bool {
+	return change.Add && change.Serial != "" && d.ID == change.ID && d.Storage == change.Storage && d.Serial == change.Serial && d.SizeGiB == int64(change.SizeGiB)
+}
+
+type CapacityVMObservation struct {
+	Generation      string
+	OperationID     string
+	ProviderVMID    string
+	Node            string
+	Name            string
+	Resident        bool
+	RuntimeObserved bool
+	Status          string
 }
 
 type CapacityNode struct {
-	Name      string `json:"name"`
-	CPU       int64  `json:"cpu"`
-	MemoryMiB int64  `json:"memoryMiB"`
+	Name                string `json:"name"`
+	CPU                 int64  `json:"cpu"`
+	MemoryMiB           int64  `json:"memoryMiB"`
+	LogicalCPU          int64  `json:"logicalCpu"`
+	TotalMemoryMiB      int64  `json:"totalMemoryMiB"`
+	HostReserveMiB      int64  `json:"hostReserveMiB"`
+	ConfiguredCPU       int64  `json:"configuredCpu"`
+	ConfiguredMemoryMiB int64  `json:"configuredMemoryMiB"`
+	BudgetObserved      bool   `json:"budgetObserved"`
 }
 
 type CapacityStorage struct {
@@ -53,11 +99,12 @@ type CapacityStorage struct {
 }
 
 type CapacityDemand struct {
-	Node      string
-	Storage   string
-	CPU       int64
-	MemoryMiB int64
-	DiskGiB   int64
+	Node        string
+	Storage     string
+	CPU         int64
+	MemoryMiB   int64
+	DiskGiB     int64
+	StorageOnly bool
 }
 
 type CapacityProvider interface {

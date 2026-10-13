@@ -215,6 +215,7 @@ type Service struct {
 	audit           AuditRecorder
 	operations      OperationRecorder
 	capabilityGuard CapabilityApprovalGuard
+	nativeTaskGuard NativeTaskGuard
 
 	personalTokens  PersonalAccessTokenRepository
 	serviceAccounts ServiceAccountRepository

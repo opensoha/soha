@@ -65,7 +65,7 @@ func TestOwningProvidersPublishResolvableCheckContracts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tools := newCapabilityRegistry(vm, delivery, BuiltinCapabilityProvider{}).Tools()
+	tools := newCapabilityRegistry(vm, delivery, BuiltinCapabilityProvider{}, NewPersonalEnvironmentCapabilityProvider(nil)).Tools()
 	visible := map[string]domain.ToolCapability{}
 	for _, tool := range tools {
 		visible[tool.Name] = tool

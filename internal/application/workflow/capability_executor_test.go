@@ -171,3 +171,19 @@ func TestCapabilityWorkflowStopsBeforeDispatchOnCancelOrRevocation(t *testing.T)
 		})
 	}
 }
+
+func TestCapabilityWorkflowRetainsPermissionCeilingAfterRestart(t *testing.T) {
+	service, repo, provider := newCapabilityExecutorFixture(t, "satisfied")
+	intent, err := domainworkflow.CapabilityIntentFrom(repo.run)
+	if err != nil || len(intent.PermissionCeiling) == 0 {
+		t.Fatalf("missing execution ceiling: %+v %v", intent, err)
+	}
+	// Simulate a task whose original token only authorized discovery, followed by
+	// broader current role grants. Those grants must not authorize its dispatch.
+	intent.PermissionCeiling = []string{appaccess.PermAIGatewayView}
+	repo.run.Metadata["capabilityIntent"] = intent
+	tickCapabilityFixture(t, service, repo)
+	if len(provider.calls) != 0 || repo.run.Status == "completed" || repo.run.Status == "running" {
+		t.Fatalf("current role bypassed durable ceiling: calls=%v status=%s", provider.calls, repo.run.Status)
+	}
+}

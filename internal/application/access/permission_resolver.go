@@ -51,6 +51,20 @@ func RuntimePermissionKeys(ctx context.Context, resolver *PermissionResolver, pr
 	return resolver.PermissionKeys(ctx, principal)
 }
 
+// Empty PermissionKeys normally means all current role grants. Durable tasks
+// must reject an empty intersection instead of dropping their frozen ceiling.
+func RuntimePrincipalWithin(ctx context.Context, resolver *PermissionResolver, principal domainidentity.Principal, ceiling []string) (domainidentity.Principal, error) {
+	keys, err := RuntimePermissionKeys(ctx, resolver, principal)
+	if err != nil {
+		return principal, err
+	}
+	principal.PermissionKeys = slices.DeleteFunc(slices.Clone(keys), func(key string) bool { return !slices.Contains(ceiling, key) })
+	if len(principal.PermissionKeys) == 0 {
+		return principal, apperrors.ErrAccessDenied
+	}
+	return principal, nil
+}
+
 func (r *PermissionResolver) PermissionKeys(ctx context.Context, principal domainidentity.Principal) ([]string, error) {
 	keys, err := r.rolePermissionKeys(ctx, principal.Roles)
 	if err != nil {

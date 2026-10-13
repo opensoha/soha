@@ -36,6 +36,12 @@ func (s *Service) RequestToolApproval(ctx context.Context, principal domainident
 }
 
 func (s *Service) invokeTool(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, approvalOnly bool) (domainaigateway.ToolInvocationResult, error) {
+	ctx, ceilingErr := s.withWorkbenchAuthorization(ctx, principal, input)
+	if ceilingErr != nil {
+		tool, _ := s.toolByName(strings.TrimSpace(input.ToolName))
+		_ = s.recordToolAudit(ctx, principal, input, tool, "deny", ceilingErr.Error(), nil)
+		return domainaigateway.ToolInvocationResult{}, ceilingErr
+	}
 	toolName := strings.TrimSpace(input.ToolName)
 	tool, ok := s.toolByName(toolName)
 	if !ok {
@@ -98,12 +104,6 @@ func (s *Service) invokeTool(ctx context.Context, principal domainidentity.Princ
 		return domainaigateway.ToolInvocationResult{}, err
 	}
 	if decision.shouldHoldExecution() {
-		if observing, _ := ctx.Value(capabilityObservationKey{}).(bool); observing {
-			// A durable poll cannot replace the child's task reference with a
-			// new read approval. Preserve the child and resume after access changes.
-			_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", "domain task observation requires updated access", nil, redactionSummary)
-			return domainaigateway.ToolInvocationResult{}, fmt.Errorf("%w: domain task observation is held by policy", apperrors.ErrConflict)
-		}
 		return s.holdToolInvocation(ctx, principal, input, tool, decision, redactionSummary)
 	}
 
@@ -291,6 +291,9 @@ func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentit
 		}
 		ctx = domainsecret.WithValues(ctx, values)
 		ctx = domainsecret.WithExecutionContext(ctx, domainsecret.ExecutionContext{References: pinned, Principal: principal, Target: target})
+	}
+	if err := s.reserveNativeCapabilityToolCall(ctx); err != nil {
+		return nil, nil, err
 	}
 	if output, relatedIDs, handled, err := s.gatewayRegistry().InvokeTool(ctx, principal, tool, input); handled {
 		return output, relatedIDs, err

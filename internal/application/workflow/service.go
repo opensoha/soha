@@ -126,6 +126,7 @@ type Service struct {
 	executorSettings   dagExecutorSettings
 	runState           runStateStore
 	capabilityRuntime  CapabilityRuntime
+	nativeTaskGuard    NativeTaskGuard
 	deliveryRuntime    DeliveryRuntime
 	deliveryPrincipals DeliveryPrincipalReader
 }

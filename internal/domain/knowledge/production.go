@@ -74,6 +74,7 @@ type IngestionCheckpoint struct {
 
 type IngestionPrincipalSnapshot struct {
 	UserID         string   `json:"userId"`
+	AccessTokenID  string   `json:"accessTokenId,omitempty"`
 	Roles          []string `json:"roles"`
 	PermissionKeys []string `json:"permissionKeys"`
 }

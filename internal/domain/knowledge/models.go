@@ -80,6 +80,7 @@ type SourceInput struct {
 }
 
 type SourceDocument struct {
+	Deleted    bool        `json:"deleted,omitempty"`
 	ExternalID string      `json:"externalId"`
 	Title      string      `json:"title"`
 	Content    string      `json:"content"`
@@ -111,17 +112,25 @@ type SourceLocation struct {
 }
 
 type Chunk struct {
-	ID              string         `json:"id"`
-	KnowledgeBaseID string         `json:"knowledgeBaseId"`
-	DocumentID      string         `json:"documentId"`
-	DocumentTitle   string         `json:"documentTitle"`
-	Ordinal         int            `json:"ordinal"`
-	Content         string         `json:"content"`
-	ContentHash     string         `json:"contentHash"`
-	Location        SourceLocation `json:"location"`
-	TokenCount      int            `json:"tokenCount"`
-	ACL             AccessScope    `json:"acl"`
-	CreatedAt       time.Time      `json:"createdAt"`
+	DocumentVersionID  string         `json:"documentVersionId,omitempty"`
+	IndexRevisionID    string         `json:"indexRevisionId,omitempty"`
+	EmbeddingModel     string         `json:"embeddingModel,omitempty"`
+	EmbeddingRoute     string         `json:"embeddingRoute,omitempty"`
+	EmbeddingDimension int            `json:"-"`
+	Embedding          []float64      `json:"embedding,omitempty"`
+	LexicalScore       float64        `json:"-"`
+	VectorScore        float64        `json:"-"`
+	ID                 string         `json:"id"`
+	KnowledgeBaseID    string         `json:"knowledgeBaseId"`
+	DocumentID         string         `json:"documentId"`
+	DocumentTitle      string         `json:"documentTitle"`
+	Ordinal            int            `json:"ordinal"`
+	Content            string         `json:"content"`
+	ContentHash        string         `json:"contentHash"`
+	Location           SourceLocation `json:"location"`
+	TokenCount         int            `json:"tokenCount"`
+	ACL                AccessScope    `json:"acl"`
+	CreatedAt          time.Time      `json:"createdAt"`
 }
 
 type IndexRevision struct {
@@ -170,15 +179,18 @@ type SearchRequest struct {
 }
 
 type Citation struct {
-	ID              string         `json:"id"`
-	KnowledgeBaseID string         `json:"knowledgeBaseId"`
-	DocumentID      string         `json:"documentId"`
-	DocumentTitle   string         `json:"documentTitle"`
-	ChunkID         string         `json:"chunkId"`
-	Location        SourceLocation `json:"location"`
-	URI             string         `json:"uri,omitempty"`
-	Score           float64        `json:"score"`
-	ContentHash     string         `json:"contentHash"`
+	DocumentVersionID string         `json:"documentVersionId,omitempty"`
+	IndexRevisionID   string         `json:"indexRevisionId,omitempty"`
+	RetrievedAt       *time.Time     `json:"retrievedAt,omitempty"`
+	ID                string         `json:"id"`
+	KnowledgeBaseID   string         `json:"knowledgeBaseId"`
+	DocumentID        string         `json:"documentId"`
+	DocumentTitle     string         `json:"documentTitle"`
+	ChunkID           string         `json:"chunkId"`
+	Location          SourceLocation `json:"location"`
+	URI               string         `json:"uri,omitempty"`
+	Score             float64        `json:"score"`
+	ContentHash       string         `json:"contentHash"`
 }
 
 type SearchHit struct {
@@ -194,11 +206,20 @@ type SearchHit struct {
 }
 
 type SearchResult struct {
-	Query      string      `json:"query"`
-	Hits       []SearchHit `json:"hits"`
-	Citations  []Citation  `json:"citations"`
-	CandidateN int         `json:"candidateCount"`
-	TimingMS   int64       `json:"timingMs"`
-	NoAnswer   bool        `json:"noAnswer"`
-	TraceID    string      `json:"traceId"`
+	RetrievalMode     string      `json:"retrievalMode,omitempty"`
+	DegradationReason string      `json:"degradationReason,omitempty"`
+	Query             string      `json:"query"`
+	Hits              []SearchHit `json:"hits"`
+	Citations         []Citation  `json:"citations"`
+	CandidateN        int         `json:"candidateCount"`
+	TimingMS          int64       `json:"timingMs"`
+	NoAnswer          bool        `json:"noAnswer"`
+	TraceID           string      `json:"traceId"`
+}
+
+// EmbeddingBatch identifies the actual embedding space, rather than a hash surrogate.
+type EmbeddingBatch struct {
+	Vectors [][]float64
+	Model   string
+	Route   string
 }

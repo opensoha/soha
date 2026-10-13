@@ -93,6 +93,11 @@ func registerPublicRoutes(v1 *gin.RouterGroup, cfg cfgpkg.Config, deps Dependenc
 	if deps.Secrets != nil {
 		v1.POST("/runner/secret-leases/:secretLeaseID/redeem", deps.Secrets.RedeemLease)
 	}
+	if deps.Virtualization != nil {
+		agent := v1.Group("", apiMiddleware.RequireModule(deps.ModuleState, "virtualization"))
+		agent.POST("/virtualization/ssh-sessions/:id/credentials", deps.Virtualization.RedeemVMSSHCredentials)
+		agent.POST("/virtualization/ssh-sessions/:id/execution-status", deps.Virtualization.CheckVMSSHCommandAuthorization)
+	}
 	if deps.AgentProviders != nil {
 		apiHandlers.RegisterRunnerAgentProviderRoutes(v1, deps.AgentProviders)
 	}

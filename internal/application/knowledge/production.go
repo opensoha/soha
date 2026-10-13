@@ -116,6 +116,10 @@ func (s *Service) CreateIngestionJob(
 	if _, err := s.repo.GetSource(ctx, principalScope(principal), baseID, sourceID); err != nil {
 		return domainknowledge.IngestionJob{}, err
 	}
+	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return domainknowledge.IngestionJob{}, err
+	}
 	now := s.now()
 	job := domainknowledge.IngestionJob{
 		ID:              uuid.NewString(),
@@ -131,8 +135,9 @@ func (s *Service) CreateIngestionJob(
 		},
 		PrincipalSnapshot: domainknowledge.IngestionPrincipalSnapshot{
 			UserID:         principal.UserID,
+			AccessTokenID:  principal.AccessTokenID,
 			Roles:          append([]string{}, principal.Roles...),
-			PermissionKeys: append([]string{}, principal.PermissionKeys...),
+			PermissionKeys: permissionKeys,
 		},
 		CreatedAt: now,
 		UpdatedAt: now,

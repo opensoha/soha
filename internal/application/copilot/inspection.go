@@ -41,7 +41,11 @@ func (s *Service) Start(ctx context.Context) {
 
 	go func() {
 		var workers sync.WaitGroup
-		workers.Add(2)
+		workers.Add(4)
+		go func() {
+			defer workers.Done()
+			s.runNativeWorker(runCtx)
+		}()
 		go func() {
 			defer workers.Done()
 			s.runInspectionScheduler(runCtx)
@@ -50,6 +54,7 @@ func (s *Service) Start(ctx context.Context) {
 			defer workers.Done()
 			s.runAgentTimeoutSweeper(runCtx)
 		}()
+		go func() { defer workers.Done(); s.runFeedWorker(runCtx) }()
 		workers.Wait()
 		s.finishLifecycle(done)
 	}()
@@ -278,7 +283,7 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return domaincopilot.Session{}, err
 	}
-	runs, err := s.inspectionRuns.ListInspectionRuns(ctx, principal.UserID, domaincopilot.InspectionRunFilter{Limit: 200})
+	runs, err := s.inspectionRuns.ListInspectionRuns(ctx, principal.UserID, domaincopilot.InspectionRunFilter{RunIDs: []string{strings.TrimSpace(runID)}, Limit: 1})
 	if err != nil {
 		return domaincopilot.Session{}, err
 	}
@@ -330,7 +335,7 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 	}
 	updatedMetadata := parseSessionMetadata(updatedSession.Metadata)
 	artifact := buildInspectionReviewArtifact(updatedMetadata.Scope, *target, locale)
-	if _, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
+	message, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: updatedSession.ID,
 		Role:      "assistant",
@@ -347,10 +352,17 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 			"runId":        artifact.RunID,
 		}),
 		CreatedAt: time.Now().UTC(),
-	}); err != nil {
+	})
+	if err != nil {
 		return domaincopilot.Session{}, err
 	}
-	return updatedSession, nil
+	updatedMetadata = bindChatSummarySource(updatedMetadata, map[string]any{"summary": target.Summary}, message.ID)
+	updatedSession.Metadata = sessionMetadataMap(updatedMetadata)
+	updatedSession, err = s.sessions.UpdateSession(ctx, principal.UserID, updatedSession.ID, updatedSession)
+	if err != nil {
+		return domaincopilot.Session{}, err
+	}
+	return s.visibleSessionSummary(ctx, principal, updatedSession), nil
 }
 
 func buildInspectionReviewArtifact(scope domaincopilot.SessionScope, run domaincopilot.InspectionRun, locale string) domaincopilot.AnalysisArtifact {
@@ -521,7 +533,7 @@ func (s *Service) CreateInspectionTaskFromSession(ctx context.Context, principal
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
-	session, err := s.sessions.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	session, err := s.ownedSession(ctx, principal, strings.TrimSpace(sessionID))
 	if err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}

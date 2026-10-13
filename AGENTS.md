@@ -24,3 +24,9 @@
 - 文档/技能修改检查内容、链接与差异，不机械构建应用。保留用户未提交改动，仅提交任务所属文件；未请求时不合并 PR、不发布。
 
 - 真实数据库、内部集成与状态机验收读取 [soha-backend-testing](.agents/skills/soha-backend-testing/SKILL.md)；跨层权限、删除、runner、Secret、模型外发和 CI/OCR 审查按风险读取 [soha-security](.agents/skills/soha-security/SKILL.md)。生产实现规则仍归 soha-backend。
+
+## Graphify
+
+- 跨模块依赖、共享能力影响、模块迁移或跨仓任务，先查询已有图谱并核对源码；在已确认的多仓工作区按 [Graphify 开发手册](../docs/graphify-development/runbook.md)检查新鲜度、查询和刷新。
+- 结构变更稳定后显式刷新受影响仓库及跨仓图；普通小修改、文案和局部样式不自动建图。刷新失败先诊断，不默认使用 `--force`。
+- 独立克隆时使用本仓 `graphify-out/graph.json` 与原生 Graphify 命令；缺少工具或图谱时直接查源码并说明缺口，不要求补齐相邻仓库。

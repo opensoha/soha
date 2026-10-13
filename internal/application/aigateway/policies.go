@@ -110,6 +110,12 @@ func (s *Service) filterToolsByGrants(ctx context.Context, principal domainident
 	return out, denied, nil
 }
 func (s *Service) activeToolGrants(ctx context.Context, principal domainidentity.Principal, aiClientID string) ([]domainaigateway.ToolGrant, error) {
+	if state, err := s.workbenchPolicyState(ctx, principal, aiClientID); state != nil || err != nil {
+		if err != nil {
+			return nil, err
+		}
+		return state.Grants, nil
+	}
 	repo := s.toolGrantRepository()
 	if repo == nil {
 		return nil, nil
@@ -323,6 +329,12 @@ func (s *Service) filterSkillsByAccessPolicies(ctx context.Context, principal do
 	return out, denied, nil
 }
 func (s *Service) activeAccessPolicies(ctx context.Context, principal domainidentity.Principal, aiClientID string) ([]domainaigateway.AccessPolicy, error) {
+	if state, err := s.workbenchPolicyState(ctx, principal, aiClientID); state != nil || err != nil {
+		if err != nil {
+			return nil, err
+		}
+		return state.Policies, nil
+	}
 	repo := s.accessPolicyRepository()
 	if repo == nil {
 		return nil, nil
@@ -346,6 +358,12 @@ func (s *Service) authorizeSkillBinding(ctx context.Context, principal domainide
 	return fmt.Errorf("%w: AI Gateway skill binding rejected %s: %s", apperrors.ErrAccessDenied, tool.Name, reason)
 }
 func (s *Service) activeSkillBindings(ctx context.Context, principal domainidentity.Principal, aiClientID string) ([]domainaigateway.SkillBinding, error) {
+	if state, err := s.workbenchPolicyState(ctx, principal, aiClientID); state != nil || err != nil {
+		if err != nil {
+			return nil, err
+		}
+		return state.Bindings, nil
+	}
 	repo := s.skillBindingRepository()
 	if repo == nil {
 		return nil, nil

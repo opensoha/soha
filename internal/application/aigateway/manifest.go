@@ -23,6 +23,25 @@ func (s *Service) Capabilities(ctx context.Context, principal domainidentity.Pri
 		_ = s.recordManifestAudit(ctx, principal, input, "deny", err.Error(), 0, len(s.gatewayTools()))
 		return domainaigateway.Manifest{}, err
 	}
+	return s.capabilities(ctx, principal, input)
+}
+
+// Tool execution needs its own filtered catalog, without granting access to the
+// public Gateway administration/discovery endpoint or exposing other resources.
+func (s *Service) WorkbenchCapabilities(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ManifestRequest) (domainaigateway.Manifest, error) {
+	for _, permission := range []string{appaccess.PermObserveAIChatUse, appaccess.PermAIGatewayInvoke} {
+		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permission); err != nil {
+			return domainaigateway.Manifest{}, err
+		}
+	}
+	manifest, err := s.capabilities(ctx, principal, input)
+	if err != nil {
+		return domainaigateway.Manifest{}, err
+	}
+	return domainaigateway.Manifest{CatalogRevision: manifest.CatalogRevision, NextCursor: manifest.NextCursor, Tools: manifest.Tools}, nil
+}
+
+func (s *Service) capabilities(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ManifestRequest) (domainaigateway.Manifest, error) {
 	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
 	if err != nil {
 		return domainaigateway.Manifest{}, err

@@ -54,20 +54,22 @@ func (s *Service) ListAgentRuns(ctx context.Context, principal domainidentity.Pr
 		return nil, err
 	}
 	if sessionID != "" {
-		if _, err := s.sessions.GetSession(ctx, principal.UserID, sessionID); err != nil {
+		if _, err := s.ownedSession(ctx, principal, sessionID); err != nil {
 			return nil, err
 		}
 	}
 	items, err := s.agentRuns.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{
-		CreatedBy: principal.UserID,
-		SessionID: sessionID,
-		Limit:     50,
+		CreatedBy:               principal.UserID,
+		SessionID:               sessionID,
+		Limit:                   50,
+		ExcludePersonalSessions: sessionID == "" && s.requirePersonalAgent(ctx, principal) != nil,
 	})
 	if err != nil {
 		return nil, err
 	}
 	for index := range items {
 		items[index].CallbackToken = ""
+		items[index] = s.visibleKnowledgeAgentRun(ctx, principal, items[index])
 	}
 	return domaincopilot.WithOperationStates(items, time.Now().UTC()), nil
 }
@@ -153,8 +155,18 @@ func (s *Service) CancelAgentRun(ctx context.Context, principal domainidentity.P
 	if runID == "" {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: runId is required", aperrors.ErrInvalidArgument)
 	}
-	if _, err := s.agentRuns.GetAgentRun(ctx, principal.UserID, runID); err != nil {
+	run, err := s.agentRuns.GetAgentRun(ctx, principal.UserID, runID)
+	if err != nil {
 		return domaincopilot.AgentRun{}, err
+	}
+	if run.ProviderKind == "native" {
+		store, ok := s.agentRuns.(NativeRunStore)
+		if !ok {
+			return domaincopilot.AgentRun{}, fmt.Errorf("%w: native storage unavailable", aperrors.ErrUnsupportedOperation)
+		}
+		canceled, err := store.RequestNativeCancel(ctx, principal.UserID, runID)
+		canceled.CallbackToken = ""
+		return s.visibleKnowledgeAgentRun(ctx, principal, canceled), err
 	}
 	canceled, err := s.agentRuns.CancelAgentRun(ctx, domaincopilot.AgentRunCancelInput{
 		RunID:       runID,
@@ -180,7 +192,7 @@ func (s *Service) CancelAgentRun(ctx context.Context, principal domainidentity.P
 	if strings.TrimSpace(canceled.SessionID) != "" {
 		_ = s.persistAgentRunMessage(ctx, canceled)
 	}
-	return domaincopilot.WithOperationState(canceled, time.Now().UTC()), nil
+	return domaincopilot.WithOperationState(s.visibleKnowledgeAgentRun(ctx, principal, canceled), time.Now().UTC()), nil
 }
 
 func (s *Service) RecordAgentToolCall(ctx context.Context, input domaincopilot.AgentToolCallInput) (domaincopilot.AgentToolCallResult, error) {
@@ -270,6 +282,9 @@ func (s *Service) sweepAgentRunTimeouts(ctx context.Context) (int, error) {
 	runs = append(runs, runningRuns...)
 	count := 0
 	for _, run := range runs {
+		if run.ProviderKind == "native" {
+			continue
+		}
 		if !agentRunHeartbeatExpired(run, now) {
 			continue
 		}
@@ -1563,7 +1578,7 @@ func (s *Service) authorizeChatAgentTool(ctx context.Context, run domaincopilot.
 	if err != nil || s.agentPrincipals == nil || run.CreatedBy == "" || ceiling.UserID != run.CreatedBy || binding.PermissionKey == "" || run.Status != domaincopilot.AgentRunStatusRunning || run.ClaimedByAgentID == "" || len(run.ToolExecutions) >= 8 {
 		return run, denied
 	}
-	principal, err := s.agentPrincipals.CurrentPrincipal(ctx, run.CreatedBy)
+	principal, err := s.currentAgentExecutionPrincipal(ctx, run)
 	if err != nil || principal.UserID != run.CreatedBy {
 		return run, denied
 	}
@@ -1579,7 +1594,8 @@ func (s *Service) authorizeChatAgentTool(ctx context.Context, run domaincopilot.
 	}
 	input["_sohaPrincipal"] = map[string]any{
 		"userId": principal.UserID, "userName": principal.UserName,
-		"roles": principal.Roles, "teams": principal.Teams,
+		"accessTokenId": principal.AccessTokenID,
+		"roles":         principal.Roles, "teams": principal.Teams,
 		"projects": principal.Projects, "tags": principal.Tags, "permissionKeys": keys,
 	}
 	run.Input = input
@@ -1599,12 +1615,30 @@ func agentToolPrincipal(run domaincopilot.AgentRun) (domainidentity.Principal, e
 	return domainidentity.Principal{
 		UserID:         firstNonEmpty(stringValue(snapshot["userId"]), run.CreatedBy),
 		UserName:       stringValue(snapshot["userName"]),
+		AccessTokenID:  stringValue(snapshot["accessTokenId"]),
 		Roles:          roles,
 		Teams:          agentPrincipalStringList(snapshot["teams"]),
 		Projects:       agentPrincipalStringList(snapshot["projects"]),
 		Tags:           agentPrincipalStringList(snapshot["tags"]),
 		PermissionKeys: permissionKeys,
 	}, nil
+}
+
+func (s *Service) currentAgentExecutionPrincipal(ctx context.Context, run domaincopilot.AgentRun) (domainidentity.Principal, error) {
+	if s.agentPrincipals == nil {
+		return domainidentity.Principal{}, aperrors.ErrAccessDenied
+	}
+	tokenID := stringValue(mapValue(run.Input["_sohaPrincipal"])["accessTokenId"])
+	if tokenID != "" {
+		reader, ok := s.agentPrincipals.(interface {
+			CurrentExecutionPrincipal(context.Context, string, string) (domainidentity.Principal, error)
+		})
+		if !ok {
+			return domainidentity.Principal{}, aperrors.ErrAccessDenied
+		}
+		return reader.CurrentExecutionPrincipal(ctx, run.CreatedBy, tokenID)
+	}
+	return s.agentPrincipals.CurrentPrincipal(ctx, run.CreatedBy)
 }
 
 func agentPrincipalStringList(value any) []string {
@@ -2035,6 +2069,7 @@ func (s *Service) buildAgentRun(ctx context.Context, principal domainidentity.Pr
 	runInput["_sohaPrincipal"] = map[string]any{
 		"userId":         principal.UserID,
 		"userName":       principal.UserName,
+		"accessTokenId":  principal.AccessTokenID,
 		"roles":          normalizeStringList(principal.Roles),
 		"teams":          normalizeStringList(principal.Teams),
 		"projects":       normalizeStringList(principal.Projects),
@@ -2698,7 +2733,7 @@ func (s *Service) persistAgentRunMessage(ctx context.Context, run domaincopilot.
 	if strings.TrimSpace(reply) == "" {
 		reply = fmt.Sprintf("Agent run %s completed.", run.ID)
 	}
-	_, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
+	message, err := s.messages.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: run.SessionID,
 		Role:      "assistant",
@@ -2708,6 +2743,8 @@ func (s *Service) persistAgentRunMessage(ctx context.Context, run domaincopilot.
 			"source":            "agent-runtime",
 			"agentRunId":        run.ID,
 			"agentProviderId":   run.ProviderID,
+			"contextSnapshot":   run.Output["contextSnapshot"],
+			"contextEnvelope":   run.Input["contextSnapshot"],
 			"analysisArtifacts": artifacts,
 			"toolCalls":         run.ToolExecutions,
 			"workbenchEvents":   workbenchEventsFromValue(run.Output["workbenchEvents"]),
@@ -2729,7 +2766,7 @@ func (s *Service) persistAgentRunMessage(ctx context.Context, run domaincopilot.
 		return nil
 	}
 	metadata := parseSessionMetadata(session.Metadata)
-	metadata.Summary = reply
+	metadata = bindChatSummarySource(metadata, map[string]any{"summary": reply}, message.ID)
 	metadata.AnalysisRunRefs = append(metadata.AnalysisRunRefs, domaincopilot.AnalysisRunRef{
 		ID:        run.ID,
 		Kind:      run.CapabilityID,

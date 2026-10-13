@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"go.uber.org/zap"
 )
@@ -43,6 +44,12 @@ func New(ctx context.Context) (*App, error) {
 		infra.cancel()
 		return nil, err
 	}
+	guestServer, guestPreparation, err := newPersonalGuestServer(cfg.PersonalGuest, core, delivery, repos)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+	handlers.deps.PersonalGuestPreparation = apiHandlers.NewPersonalGuestPreparationHandler(guestPreparation)
 	httpServer := newHTTPServer(cfg, infra.logger, handlers)
 	core.runtimeConfigService.Start(infra.lifecycleCtx, 0)
 
@@ -55,6 +62,7 @@ func New(ctx context.Context) (*App, error) {
 		VirtualizationService: delivery.virtualizationService,
 		RateLimitBackend:      gateway.rateLimitBackend,
 		HTTP:                  httpServer,
+		PersonalGuest:         guestServer,
 		cancel:                infra.cancel,
 	}, nil
 }

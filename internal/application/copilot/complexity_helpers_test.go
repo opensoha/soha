@@ -1,6 +1,7 @@
 package copilot
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ func assertGeneralGatewayEnvelope(t *testing.T, envelope domaincopilot.SessionMe
 		t.Fatalf("unexpected general chat messages: %#v", envelope.Messages)
 	}
 	metadata := envelope.Messages[1].Metadata
+	assertPersistedModelUsage(t, metadata)
 	if metadata["source"] != "gateway-model-route" || metadata["model"] != "gpt-public" {
 		t.Fatalf("unexpected gateway route metadata: %#v", metadata)
 	}
@@ -67,7 +69,7 @@ func assertNarrowedInspectionArtifact(t *testing.T, artifacts []domaincopilot.An
 		t.Fatalf("narrowed scope: %#v", artifact.Scope)
 	}
 	adapters := mustCopilotValue[[]string](t, artifact.DataSourceSnapshot["enabledAdapterIds"])
-	if len(adapters) != 1 || adapters[0] != "metrics.v1" {
+	if len(adapters) != 2 || !containsString(adapters, "metrics.v1") || !containsString(adapters, "platform-native.v1") {
 		t.Fatalf("adapter allowlist: %#v", adapters)
 	}
 	skills := mustCopilotValue[[]string](t, artifact.DataSourceSnapshot["enabledSkillIds"])
@@ -111,6 +113,7 @@ func assertGatewayTokenStreamResult(t *testing.T, result domaincopilot.Workbench
 		t.Fatalf("unexpected stream request: %#v", request)
 	}
 	metadata := result.Envelope.Messages[1].Metadata
+	assertPersistedModelUsage(t, metadata)
 	if metadata["source"] != "gateway-model-route-stream" || metadata["thinkingSummary"] == "" || metadata["agentStatus"] == nil {
 		t.Fatalf("missing stream replay metadata: %#v", metadata)
 	}
@@ -221,5 +224,20 @@ func TestAppendCompletedSessionAnalysisPreservesResultContract(t *testing.T) {
 	}
 	if _, err := time.Parse(time.RFC3339, ref.CreatedAt); err != nil {
 		t.Fatalf("analysis ref createdAt = %q: %v", ref.CreatedAt, err)
+	}
+}
+
+func assertPersistedModelUsage(t *testing.T, metadata map[string]any) {
+	t.Helper()
+	encoded, err := json.Marshal(metadata["contextUsage"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var usage domaincopilot.ModelContextUsage
+	if err := json.Unmarshal(encoded, &usage); err != nil {
+		t.Fatal(err)
+	}
+	if usage.Measurement != "reported" || usage.InputTokens == nil || *usage.InputTokens != 8000 || usage.OutputTokens == nil || *usage.OutputTokens != 200 || usage.ContextWindowTokens != 128000 {
+		t.Fatalf("model receipt was not persisted: %s", encoded)
 	}
 }

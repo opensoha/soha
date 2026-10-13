@@ -30,6 +30,12 @@ func (s *Service) ResumeCapabilityTask(ctx context.Context, principal domainiden
 	if err != nil || intent.ActorID != principal.UserID {
 		return domainaigateway.CapabilityTask{}, apperrors.ErrNotFound
 	}
+	if intent.PermissionCeiling != nil {
+		principal, err = appaccess.RuntimePrincipalWithin(ctx, s.permissions, principal, intent.PermissionCeiling)
+		if err != nil {
+			return domainaigateway.CapabilityTask{}, err
+		}
+	}
 	if input.ExpectedVersion <= 0 || run.Version != input.ExpectedVersion || intent.Input.Plan.Goal != input.Plan.Goal {
 		return domainaigateway.CapabilityTask{}, fmt.Errorf("%w: reload the task; a revision must preserve its goal", apperrors.ErrConflict)
 	}
@@ -72,6 +78,9 @@ func reviseCapabilityRun(run domainworkflow.Run, intent domainworkflow.Capabilit
 	previous, err := domainworkflow.CapabilityIntentFrom(run)
 	if err != nil {
 		return run, err
+	}
+	if previous.NativeParent != nil {
+		return run, fmt.Errorf("%w: a Native task plan is frozen; create a new authorized task instead", apperrors.ErrConflict)
 	}
 	history, err := domainworkflow.CapabilityRevisionsFrom(run)
 	if err != nil {

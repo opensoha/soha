@@ -468,6 +468,6 @@ func (s *Service) addWorkbenchModels(ctx context.Context, principal domainidenti
 		return
 	}
 	for _, model := range models {
-		catalog.ModelOptions = append(catalog.ModelOptions, domaincopilot.WorkbenchModelOption{PublicModel: model.PublicModel, ReasoningEfforts: model.ReasoningEfforts})
+		catalog.ModelOptions = append(catalog.ModelOptions, domaincopilot.WorkbenchModelOption{PublicModel: model.PublicModel, ReasoningEfforts: model.ReasoningEfforts, ContextWindowTokens: model.ContextWindowTokens})
 	}
 }

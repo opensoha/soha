@@ -148,6 +148,8 @@ func TestRegisterCopilotRoutesExposesAgentRunCancel(t *testing.T) {
 	}
 	for _, route := range []string{
 		"POST /api/v1/copilot/agent-runs/:runID/cancel",
+		"GET /api/v1/copilot/agent-runs/:runID/events",
+		"POST /api/v1/copilot/agent-runs/:runID/resume",
 		"POST /api/v1/copilot/sessions/:sessionID/messages/stream",
 	} {
 		if _, ok := registered[route]; !ok {
@@ -960,13 +962,14 @@ func TestDisabledModulesRejectNewRunnerClaimsButKeepCompletionRoutesReachable(t 
 	router := gin.New()
 	router.Use(gin.Recovery())
 	registerPublicRoutes(router.Group("/api/v1"), cfgpkg.Config{}, Dependencies{
-		System:         &apiHandlers.SystemHandler{},
-		Auth:           &apiHandlers.AuthHandler{},
-		Delivery:       &apiHandlers.DeliveryHandler{},
-		Docker:         &apiHandlers.DockerHandler{},
-		Copilot:        &apiHandlers.CopilotHandler{},
-		AgentProviders: &apiHandlers.AgentProviderHandler{},
-		ModuleState:    disabledModuleState{},
+		System:                   &apiHandlers.SystemHandler{},
+		Auth:                     &apiHandlers.AuthHandler{},
+		Delivery:                 &apiHandlers.DeliveryHandler{},
+		Docker:                   &apiHandlers.DockerHandler{},
+		Copilot:                  &apiHandlers.CopilotHandler{},
+		PersonalGuestPreparation: apiHandlers.NewPersonalGuestPreparationHandler(nil),
+		AgentProviders:           &apiHandlers.AgentProviderHandler{},
+		ModuleState:              disabledModuleState{},
 	})
 
 	tests := []struct {
@@ -1026,33 +1029,34 @@ func allRoutesEnabledConfig() cfgpkg.Config {
 
 func routeTestDependencies() Dependencies {
 	return Dependencies{
-		System:             &apiHandlers.SystemHandler{},
-		Platform:           &apiHandlers.PlatformHandler{},
-		Announcements:      &apiHandlers.AnnouncementHandler{},
-		Module:             &apiHandlers.ModuleHandler{},
-		Monitoring:         &apiHandlers.MonitoringHandler{},
-		Catalog:            &apiHandlers.CatalogHandler{},
-		Delivery:           &apiHandlers.DeliveryHandler{},
-		Applications:       &apiHandlers.ApplicationHandler{},
-		Builds:             &apiHandlers.BuildHandler{},
-		Workflows:          &apiHandlers.WorkflowHandler{},
-		DeliveryBatches:    &apiHandlers.DeliveryBatchHandler{},
-		DeliveryTriggers:   &apiHandlers.DeliveryTriggerHandler{},
-		Registries:         &apiHandlers.RegistryHandler{},
-		Releases:           &apiHandlers.ReleaseHandler{},
-		Copilot:            &apiHandlers.CopilotHandler{},
-		AIGateway:          &apiHandlers.AIGatewayHandler{},
-		Plugins:            &apiHandlers.PluginHandler{},
-		Software:           &apiHandlers.SoftwareHandler{},
-		Virtualization:     &apiHandlers.VirtualizationHandler{},
-		Docker:             &apiHandlers.DockerHandler{},
-		NetworkAccess:      &apiHandlers.NetworkAccessHandler{},
-		Access:             &accesshandler.Handler{},
-		ScopeGrants:        &accesshandler.ScopeGrantHandler{},
-		Menu:               &apiHandlers.MenuHandler{},
-		Settings:           &apiHandlers.SettingsHandler{},
-		SystemIntegrations: &apiHandlers.SystemIntegrationHandler{},
-		Auth:               &apiHandlers.AuthHandler{},
-		ProviderPortal:     &providerportalhandler.Handler{},
+		System:                   &apiHandlers.SystemHandler{},
+		Platform:                 &apiHandlers.PlatformHandler{},
+		Announcements:            &apiHandlers.AnnouncementHandler{},
+		Module:                   &apiHandlers.ModuleHandler{},
+		Monitoring:               &apiHandlers.MonitoringHandler{},
+		Catalog:                  &apiHandlers.CatalogHandler{},
+		Delivery:                 &apiHandlers.DeliveryHandler{},
+		Applications:             &apiHandlers.ApplicationHandler{},
+		Builds:                   &apiHandlers.BuildHandler{},
+		Workflows:                &apiHandlers.WorkflowHandler{},
+		DeliveryBatches:          &apiHandlers.DeliveryBatchHandler{},
+		DeliveryTriggers:         &apiHandlers.DeliveryTriggerHandler{},
+		Registries:               &apiHandlers.RegistryHandler{},
+		Releases:                 &apiHandlers.ReleaseHandler{},
+		Copilot:                  &apiHandlers.CopilotHandler{},
+		PersonalGuestPreparation: apiHandlers.NewPersonalGuestPreparationHandler(nil),
+		AIGateway:                &apiHandlers.AIGatewayHandler{},
+		Plugins:                  &apiHandlers.PluginHandler{},
+		Software:                 &apiHandlers.SoftwareHandler{},
+		Virtualization:           &apiHandlers.VirtualizationHandler{},
+		Docker:                   &apiHandlers.DockerHandler{},
+		NetworkAccess:            &apiHandlers.NetworkAccessHandler{},
+		Access:                   &accesshandler.Handler{},
+		ScopeGrants:              &accesshandler.ScopeGrantHandler{},
+		Menu:                     &apiHandlers.MenuHandler{},
+		Settings:                 &apiHandlers.SettingsHandler{},
+		SystemIntegrations:       &apiHandlers.SystemIntegrationHandler{},
+		Auth:                     &apiHandlers.AuthHandler{},
+		ProviderPortal:           &providerportalhandler.Handler{},
 	}
 }

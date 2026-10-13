@@ -227,6 +227,8 @@ var externalBearerTokenNestedSuffixes = [...]struct {
 	{segment: "/delivery/execution-tasks/", suffix: "/runner-status"},
 	{segment: "/docker/operations/", suffix: "/runner-status"},
 	{segment: "/runner/secret-leases/", suffix: "/redeem"},
+	{segment: "/virtualization/ssh-sessions/", suffix: "/credentials"},
+	{segment: "/virtualization/ssh-sessions/", suffix: "/execution-status"},
 }
 
 func allowsExternalBearerToken(path string) bool {

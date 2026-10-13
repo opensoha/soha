@@ -43,7 +43,17 @@ func (r *Repository) CreateConnection(ctx context.Context, input domainvirtualiz
 	now := time.Now().UTC()
 	item.CreatedAt = now
 	item.UpdatedAt = now
-	if err := r.saveConnection(ctx, item, true); err != nil {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		repo := &Repository{db: tx}
+		if err := repo.saveConnection(ctx, item, true); err != nil {
+			return err
+		}
+		if item.Provider == "pve" {
+			return initializeCapacityPolicy(tx, item)
+		}
+		return nil
+	})
+	if err != nil {
 		return domainvirtualization.Connection{}, err
 	}
 	return item, nil
@@ -53,7 +63,24 @@ func (r *Repository) UpdateConnection(ctx context.Context, id string, input doma
 	item := connectionFromInput(input)
 	item.ID = strings.TrimSpace(id)
 	item.UpdatedAt = time.Now().UTC()
-	if err := r.saveConnection(ctx, item, false); err != nil {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?,0))`, "virtualization-capacity-connection/"+item.ID).Error; err != nil {
+			return err
+		}
+		current, err := (&Repository{db: tx}).GetConnection(ctx, item.ID)
+		if err != nil {
+			return err
+		}
+		policy, err := (&Repository{db: tx}).GetCapacityPolicy(ctx, item.ID, "")
+		if err != nil {
+			return err
+		}
+		if policy.SourceConfirmed && (item.Provider != current.Provider || !strings.EqualFold(strings.TrimRight(item.Endpoint, "/"), strings.TrimRight(current.Endpoint, "/"))) {
+			return fmt.Errorf("%w: confirmed physical source endpoint is immutable; register a separately confirmed connection", apperrors.ErrConflict)
+		}
+		return (&Repository{db: tx}).saveConnection(ctx, item, false)
+	})
+	if err != nil {
 		return domainvirtualization.Connection{}, err
 	}
 	return r.GetConnection(ctx, item.ID)
@@ -341,17 +368,23 @@ func (r *Repository) UpsertImage(ctx context.Context, item domainvirtualization.
 	if err != nil {
 		return domainvirtualization.Image{}, fmt.Errorf("marshal virtualization image raw: %w", err)
 	}
+	// Discovery refreshes provider facts without replacing the operator-owned cloud image catalog.
 	if err := dbtx.DB(ctx, r.db).Exec(`
 		INSERT INTO virtualization_images (id, provider, connection_id, external_id, name, status, os_type, architecture, size_bytes, config, raw, last_seen_at, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (provider, connection_id, external_id) DO UPDATE SET
-			name = EXCLUDED.name,
+			name = CASE WHEN virtualization_images.raw->>'managedBy' = 'soha' AND virtualization_images.config->>'sourceKind' = 'cloud_image' AND EXCLUDED.raw->>'managedBy' IS DISTINCT FROM 'soha'
+				THEN virtualization_images.name ELSE EXCLUDED.name END,
 			status = EXCLUDED.status,
-			os_type = EXCLUDED.os_type,
-			architecture = EXCLUDED.architecture,
+			os_type = CASE WHEN virtualization_images.raw->>'managedBy' = 'soha' AND virtualization_images.config->>'sourceKind' = 'cloud_image' AND EXCLUDED.raw->>'managedBy' IS DISTINCT FROM 'soha'
+				THEN virtualization_images.os_type ELSE EXCLUDED.os_type END,
+			architecture = CASE WHEN virtualization_images.raw->>'managedBy' = 'soha' AND virtualization_images.config->>'sourceKind' = 'cloud_image' AND EXCLUDED.raw->>'managedBy' IS DISTINCT FROM 'soha'
+				THEN virtualization_images.architecture ELSE EXCLUDED.architecture END,
 			size_bytes = EXCLUDED.size_bytes,
-			config = EXCLUDED.config,
-			raw = EXCLUDED.raw,
+			config = CASE WHEN virtualization_images.raw->>'managedBy' = 'soha' AND virtualization_images.config->>'sourceKind' = 'cloud_image' AND EXCLUDED.raw->>'managedBy' IS DISTINCT FROM 'soha'
+				THEN virtualization_images.config ELSE EXCLUDED.config END,
+			raw = CASE WHEN virtualization_images.raw->>'managedBy' = 'soha' AND virtualization_images.config->>'sourceKind' = 'cloud_image' AND EXCLUDED.raw->>'managedBy' IS DISTINCT FROM 'soha'
+				THEN EXCLUDED.raw || '{"managedBy":"soha"}'::jsonb ELSE EXCLUDED.raw END,
 			last_seen_at = EXCLUDED.last_seen_at,
 			updated_at = EXCLUDED.updated_at
 	`, item.ID, item.Provider, item.ConnectionID, item.ExternalID, item.Name, item.Status, nullableString(item.OSType), nullableString(item.Architecture), item.SizeBytes, string(config), string(raw), item.LastSeenAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
@@ -1275,7 +1308,7 @@ func imageExtraClauses(filter domainvirtualization.ImageFilter) ([]string, []any
 	var sourceKinds []string
 	switch strings.ToLower(strings.TrimSpace(filter.Category)) {
 	case "catalog":
-		sourceKinds = []string{"iso", "template", "lxc_template", "datasource", "pvc"}
+		sourceKinds = []string{"iso", "template", "cloud_image", "lxc_template", "datasource", "pvc"}
 	case "storage":
 		sourceKinds = []string{"storage", "storage_content", "image", "images", "rootdir", "datavolume", "persistentvolumeclaim"}
 	default:
@@ -1334,23 +1367,12 @@ func taskClauses(filter domainvirtualization.TaskFilter) ([]string, []any) {
 		clauses = append(clauses, "status IN (?, ?)")
 		args = append(args, "queued", "running")
 	}
-	if len(filter.TaskKinds) > 0 {
-		kinds := make([]string, 0, len(filter.TaskKinds))
-		for _, kind := range filter.TaskKinds {
-			if trimmed := strings.TrimSpace(kind); trimmed != "" {
-				kinds = append(kinds, trimmed)
-			}
-		}
-		if len(kinds) > 0 {
-			clauses = append(clauses, fmt.Sprintf("task_kind IN (%s)", placeholders(len(kinds))))
-			for _, kind := range kinds {
-				args = append(args, kind)
-			}
-		}
-	} else if value := strings.TrimSpace(filter.TaskKind); value != "" {
-		clauses = append(clauses, "task_kind = ?")
-		args = append(args, value)
+	if filter.PersonalGuestOwnerID != "" {
+		clauses = append(clauses, "(task_kind NOT IN (?,?) OR requested_by = ?)")
+		args = append(args, "personal_guest_prepare", "personal_guest_tools", filter.PersonalGuestOwnerID)
 	}
+	kindClauses, kindArgs := taskKindClauses(filter)
+	clauses, args = append(clauses, kindClauses...), append(args, kindArgs...)
 	if value := strings.TrimSpace(filter.Search); value != "" {
 		search := "%" + strings.ToLower(value) + "%"
 		clauses = append(clauses, "(LOWER(task_kind) LIKE ? OR LOWER(status) LIKE ? OR LOWER(vm_id) LIKE ? OR LOWER(connection_id) LIKE ?)")
@@ -1463,4 +1485,27 @@ func limitOffset(limit, page, pageSize int) (int, int) {
 	}
 	currentPage := normalizedPage(page)
 	return size, (currentPage - 1) * size
+}
+
+func taskKindClauses(filter domainvirtualization.TaskFilter) ([]string, []any) {
+	clauses := []string{}
+	args := []any{}
+	if len(filter.TaskKinds) > 0 {
+		kinds := make([]string, 0, len(filter.TaskKinds))
+		for _, kind := range filter.TaskKinds {
+			if trimmed := strings.TrimSpace(kind); trimmed != "" {
+				kinds = append(kinds, trimmed)
+			}
+		}
+		if len(kinds) > 0 {
+			clauses = append(clauses, fmt.Sprintf("task_kind IN (%s)", placeholders(len(kinds))))
+			for _, kind := range kinds {
+				args = append(args, kind)
+			}
+		}
+	} else if value := strings.TrimSpace(filter.TaskKind); value != "" {
+		clauses = append(clauses, "task_kind = ?")
+		args = append(args, value)
+	}
+	return clauses, args
 }

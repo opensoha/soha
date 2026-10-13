@@ -99,9 +99,12 @@ func (r *memoryRepository) CreateLease(_ context.Context, lease domainsecret.Lea
 	return nil
 }
 
-func (r *memoryRepository) RedeemLease(_ context.Context, id, tokenHash, agentID string, at time.Time) (domainsecret.Lease, error) {
+func (r *memoryRepository) RedeemLease(_ context.Context, id, tokenHash, agentID, subjectType, subjectID string, at time.Time) (domainsecret.Lease, error) {
 	lease, ok := r.leases[id]
 	if !ok || lease.TokenHash != tokenHash || lease.AgentID != agentID || lease.RedeemedAt != nil || lease.RevokedAt != nil || !lease.ExpiresAt.After(at) {
+		return domainsecret.Lease{}, apperrors.ErrNotFound
+	}
+	if subjectType == "" && lease.SubjectType == "vm_ssh_session" || subjectType != "" && (lease.SubjectType != subjectType || lease.SubjectID != subjectID) {
 		return domainsecret.Lease{}, apperrors.ErrNotFound
 	}
 	lease.RedeemedAt = &at
@@ -212,9 +215,14 @@ func TestSecretLifecycleEncryptsPinsAndFailsClosed(t *testing.T) {
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("wrong target error = %v, want fail-closed not found", err)
 	}
-	for _, entry := range audit.entries {
+	assertSecretAuditRedacted(t, audit.entries, value)
+}
+
+func assertSecretAuditRedacted(t *testing.T, entries []domainaudit.Entry, value string) {
+	t.Helper()
+	for _, entry := range entries {
 		payload, _ := json.Marshal(entry)
-		if strings.Contains(string(payload), "plaintext-must-not-leak") {
+		if strings.Contains(string(payload), value) {
 			t.Fatalf("audit leaked plaintext: %s", payload)
 		}
 	}

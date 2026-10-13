@@ -47,7 +47,7 @@ type Repository interface {
 	Rotate(context.Context, string, domainsecret.Version) (domainsecret.Version, error)
 	RevokeVersion(context.Context, string, int, time.Time) (domainsecret.Version, error)
 	CreateLease(context.Context, domainsecret.Lease) error
-	RedeemLease(context.Context, string, string, string, time.Time) (domainsecret.Lease, error)
+	RedeemLease(context.Context, string, string, string, string, string, time.Time) (domainsecret.Lease, error)
 	RevokeSubjectLeases(context.Context, string, string, time.Time) error
 }
 
@@ -64,13 +64,14 @@ type VaultKV2Reader interface {
 }
 
 type Service struct {
-	repo        Repository
-	permissions *appaccess.PermissionResolver
-	audit       AuditRecorder
-	operations  OperationRecorder
-	keys        keyring.Ring
-	vault       VaultKV2Reader
-	now         func() time.Time
+	referenceReader func(context.Context, domainidentity.Principal, string) ([]sohaapi.SecretReferenceUsage, error)
+	repo            Repository
+	permissions     *appaccess.PermissionResolver
+	audit           AuditRecorder
+	operations      OperationRecorder
+	keys            keyring.Ring
+	vault           VaultKV2Reader
+	now             func() time.Time
 }
 
 func New(repo Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring, vault VaultKV2Reader) (*Service, error) {
@@ -134,12 +135,16 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	if err != nil {
 		return sohaapi.SecretMetadata{}, err
 	}
-	version, err := s.buildVersion(request.Value, request.VaultKV2)
+	if err := validateCredentialBindings(request.Kind, bindings); err != nil {
+		return sohaapi.SecretMetadata{}, err
+	}
+	version, err := s.buildCredentialVersion(ctx, request.Kind, request.Value, request.VaultKV2, request.SSHPassphrase)
 	if err != nil {
 		return sohaapi.SecretMetadata{}, err
 	}
 	now := s.now().UTC()
 	item := domainsecret.Secret{
+		Kind: normalizedKind(request.Kind), PublicKey: version.PublicKey,
 		ID: uuid.NewString(), Name: name, Description: description, ScopeType: scopeType, ScopeID: scopeID,
 		Status: domainsecret.StatusActive, CurrentVersion: 1, Bindings: bindings, CreatedBy: principal.UserID,
 		CreatedAt: now, UpdatedAt: now,
@@ -180,6 +185,9 @@ func (s *Service) update(ctx context.Context, principal domainidentity.Principal
 		if err != nil {
 			return sohaapi.SecretMetadata{}, err
 		}
+	}
+	if err := validateCredentialBindings(item.Kind, item.Bindings); err != nil {
+		return sohaapi.SecretMetadata{}, err
 	}
 	if item.Name == "" || len(item.Name) > 128 || len(item.Description) > 1024 || !validStatus(item.Status) {
 		return sohaapi.SecretMetadata{}, fmt.Errorf("%w: invalid secret metadata", apperrors.ErrInvalidArgument)
@@ -227,7 +235,7 @@ func (s *Service) Rotate(ctx context.Context, principal domainidentity.Principal
 	if item.Status != domainsecret.StatusActive {
 		return sohaapi.SecretVersionMetadata{}, fmt.Errorf("%w: disabled secret cannot be rotated", apperrors.ErrConflict)
 	}
-	version, err := s.buildVersion(request.Value, request.VaultKV2)
+	version, err := s.buildCredentialVersion(ctx, item.Kind, request.Value, request.VaultKV2, request.SSHPassphrase)
 	if err != nil {
 		return sohaapi.SecretVersionMetadata{}, err
 	}
@@ -323,7 +331,7 @@ func (s *Service) IssueLease(ctx context.Context, principal domainidentity.Princ
 	if len(refs) == 0 {
 		return nil, nil
 	}
-	if !slices.Contains([]string{"execution_task", "agent_run"}, subjectType) || subjectID == "" || agentID == "" {
+	if !slices.Contains([]string{"execution_task", "agent_run", "vm_ssh_session"}, subjectType) || subjectID == "" || agentID == "" || subjectType == "vm_ssh_session" && (target.Type != "vm" || !slices.Contains([]string{"vm_auth", "vm_exec"}, target.Purpose)) {
 		return nil, fmt.Errorf("%w: invalid secret lease binding", apperrors.ErrInvalidArgument)
 	}
 	pinned, err := s.PinReferences(ctx, principal, ReferencesToMap(refs), target)
@@ -348,13 +356,24 @@ func (s *Service) IssueLease(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) RedeemLease(ctx context.Context, leaseID, token, agentID string) (sohaapi.SecretLeaseRedemption, error) {
+	return s.redeemLease(ctx, leaseID, token, agentID, "", "")
+}
+
+func (s *Service) RedeemVMSSHLease(ctx context.Context, leaseID, token, agentID, sessionID string) (sohaapi.SecretLeaseRedemption, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return sohaapi.SecretLeaseRedemption{}, apperrors.ErrInvalidArgument
+	}
+	return s.redeemLease(ctx, leaseID, token, agentID, "vm_ssh_session", sessionID)
+}
+
+func (s *Service) redeemLease(ctx context.Context, leaseID, token, agentID, subjectType, subjectID string) (sohaapi.SecretLeaseRedemption, error) {
 	leaseID = strings.TrimSpace(leaseID)
 	token = strings.TrimSpace(token)
 	agentID = strings.TrimSpace(agentID)
 	if leaseID == "" || len(token) < 16 || agentID == "" {
 		return sohaapi.SecretLeaseRedemption{}, fmt.Errorf("%w: invalid secret lease redemption", apperrors.ErrInvalidArgument)
 	}
-	lease, err := s.repo.RedeemLease(ctx, leaseID, hashLeaseToken(token), agentID, s.now().UTC())
+	lease, err := s.repo.RedeemLease(ctx, leaseID, hashLeaseToken(token), agentID, subjectType, subjectID, s.now().UTC())
 	if err != nil {
 		return sohaapi.SecretLeaseRedemption{}, err
 	}
@@ -478,10 +497,10 @@ func normalizeBindings(items []domainsecret.Binding) ([]domainsecret.Binding, er
 	for _, item := range items {
 		item.TargetType = strings.ToLower(strings.TrimSpace(item.TargetType))
 		item.TargetRef = strings.TrimSpace(item.TargetRef)
-		if !slices.Contains([]string{"capability", "project", "connection"}, item.TargetType) || item.TargetRef == "" || len(item.TargetRef) > 256 {
+		if validateTarget(domainsecret.Target{Type: item.TargetType, Ref: item.TargetRef, Purpose: item.Purpose}) != nil || len(item.TargetRef) > 256 {
 			return nil, fmt.Errorf("%w: invalid secret binding", apperrors.ErrInvalidArgument)
 		}
-		key := item.TargetType + "\x00" + item.TargetRef
+		key := item.TargetType + "\x00" + item.TargetRef + "\x00" + item.Purpose
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -534,7 +553,7 @@ func (s *Service) resolveVersionValue(ctx context.Context, version domainsecret.
 		if err != nil {
 			return "", fmt.Errorf("decrypt secret reference: %w", err)
 		}
-		return value, nil
+		return normalizeResolvedSSH(version, value)
 	case domainsecret.SourceVaultKV2:
 		if s.vault == nil || version.VaultKV2 == nil {
 			return "", unavailableReference()
@@ -543,7 +562,7 @@ func (s *Service) resolveVersionValue(ctx context.Context, version domainsecret.
 		if err != nil || value == "" || len(value) > maxSecretValueBytes {
 			return "", unavailableReference()
 		}
-		return value, nil
+		return normalizeResolvedSSH(version, value)
 	default:
 		return "", unavailableReference()
 	}
@@ -574,7 +593,9 @@ func validStatus(status domainsecret.Status) bool {
 }
 
 func validateTarget(target domainsecret.Target) error {
-	if !slices.Contains([]string{"capability", "project", "connection"}, target.Type) || strings.TrimSpace(target.Ref) == "" {
+	legacy := slices.Contains([]string{"capability", "project", "connection"}, target.Type) && target.Purpose == ""
+	vm := target.Type == "vm" && (target.Purpose == "vm_auth" || target.Purpose == "vm_exec") || target.Type == "vm_create" && target.Purpose == "vm_cloud_init"
+	if (!legacy && !vm) || strings.TrimSpace(target.Ref) == "" || len(target.Ref) > 256 {
 		return fmt.Errorf("%w: invalid secret target", apperrors.ErrInvalidArgument)
 	}
 	return nil
@@ -582,7 +603,7 @@ func validateTarget(target domainsecret.Target) error {
 
 func bindingMatches(bindings []domainsecret.Binding, target domainsecret.Target) bool {
 	for _, binding := range bindings {
-		if binding.TargetType == target.Type && binding.TargetRef == target.Ref {
+		if binding.TargetType == target.Type && binding.TargetRef == target.Ref && binding.Purpose == target.Purpose {
 			return true
 		}
 	}
@@ -600,9 +621,10 @@ func errorsInvalidCiphertext() error {
 func publicSecret(item domainsecret.Secret) sohaapi.SecretMetadata {
 	bindings := make([]sohaapi.SecretBinding, 0, len(item.Bindings))
 	for _, binding := range item.Bindings {
-		bindings = append(bindings, sohaapi.SecretBinding{TargetType: sohaapi.SecretBindingTargetType(binding.TargetType), TargetRef: binding.TargetRef})
+		bindings = append(bindings, sohaapi.SecretBinding{TargetType: sohaapi.SecretBindingTargetType(binding.TargetType), TargetRef: binding.TargetRef, Purpose: sohaapi.SecretPurpose(binding.Purpose)})
 	}
 	return sohaapi.SecretMetadata{
+		Kind: sohaapi.SecretKind(normalizedKind(item.Kind)), PublicKey: publicSSHKey(item.PublicKey),
 		ID: item.ID, Name: item.Name, Description: item.Description, ScopeType: sohaapi.SecretScopeType(item.ScopeType),
 		ScopeID: item.ScopeID, Status: sohaapi.SecretStatus(item.Status), CurrentVersion: item.CurrentVersion,
 		Bindings: bindings, CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
@@ -611,6 +633,7 @@ func publicSecret(item domainsecret.Secret) sohaapi.SecretMetadata {
 
 func publicVersion(item domainsecret.Version) sohaapi.SecretVersionMetadata {
 	return sohaapi.SecretVersionMetadata{
+		Kind: sohaapi.SecretKind(normalizedKind(item.Kind)), PublicKey: publicSSHKey(item.PublicKey),
 		SecretID: item.SecretID, Version: item.Version, Status: sohaapi.SecretVersionStatus(item.Status),
 		CreatedBy: item.CreatedBy, CreatedAt: item.CreatedAt, RevokedAt: item.RevokedAt,
 	}
@@ -652,4 +675,18 @@ func (s *Service) recordLease(ctx context.Context, principal domainidentity.Prin
 		RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP,
 		Metadata: map[string]any{"leaseId": lease.ID, "agentId": lease.AgentID, "subjectType": lease.SubjectType, "subjectId": lease.SubjectID, "referenceCount": len(lease.References)},
 	})
+}
+
+func (s *Service) SetReferenceReader(reader func(context.Context, domainidentity.Principal, string) ([]sohaapi.SecretReferenceUsage, error)) {
+	s.referenceReader = reader
+}
+
+func (s *Service) ListReferences(ctx context.Context, principal domainidentity.Principal, id string) ([]sohaapi.SecretReferenceUsage, error) {
+	if _, err := s.Get(ctx, principal, id); err != nil {
+		return nil, err
+	}
+	if s.referenceReader == nil {
+		return nil, apperrors.ErrUnsupportedOperation
+	}
+	return s.referenceReader(ctx, principal, id)
 }

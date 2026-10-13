@@ -7,7 +7,10 @@ import (
 	"strings"
 	"time"
 
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaieval "github.com/opensoha/soha/internal/application/aieval"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
@@ -47,15 +50,17 @@ type ConformanceRun struct {
 }
 
 type EnvironmentTemplate struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name"`
-	Backend        string         `json:"backend"`
-	IsolationMode  string         `json:"isolationMode"`
-	ResourcePolicy map[string]any `json:"resourcePolicy,omitempty"`
-	NetworkPolicy  map[string]any `json:"networkPolicy,omitempty"`
-	Status         string         `json:"status"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
+	PersonalDocker *sohaapi.PersonalDockerEnvironmentPolicy `json:"personalDocker,omitempty"`
+	PersonalVM     *sohaapi.PersonalVMEnvironmentPolicy     `json:"personalVM,omitempty"`
+	ID             string                                   `json:"id"`
+	Name           string                                   `json:"name"`
+	Backend        string                                   `json:"backend"`
+	IsolationMode  string                                   `json:"isolationMode"`
+	ResourcePolicy map[string]any                           `json:"resourcePolicy,omitempty"`
+	NetworkPolicy  map[string]any                           `json:"networkPolicy,omitempty"`
+	Status         string                                   `json:"status"`
+	CreatedAt      time.Time                                `json:"createdAt"`
+	UpdatedAt      time.Time                                `json:"updatedAt"`
 }
 
 type EnvironmentLease struct {
@@ -107,15 +112,24 @@ type Store interface {
 }
 
 type Service struct {
-	store Store
-	now   func() time.Time
+	store                   Store
+	now                     func() time.Time
+	executionAgentValidator ExecutionAgentValidator
+	personalVMValidator     func(context.Context, domainidentity.Principal, domaincopilot.PersonalVMPolicy) error
 }
 
-func New(store Store) (*Service, error) {
+func New(store Store, validators ...ExecutionAgentValidator) (*Service, error) {
 	if store == nil {
 		return nil, fmt.Errorf("AI production store is required")
 	}
-	return &Service{store: store, now: time.Now}, nil
+	service := &Service{store: store, now: time.Now}
+	if len(validators) > 1 || (len(validators) == 1 && validators[0] == nil) {
+		return nil, fmt.Errorf("one non-nil execution Agent validator is required when supplied")
+	}
+	if len(validators) == 1 {
+		service.executionAgentValidator = validators[0]
+	}
+	return service, nil
 }
 
 func (s *Service) ListRollouts(ctx context.Context) ([]ProviderRollout, error) {
@@ -178,9 +192,22 @@ func (s *Service) ListEnvironmentTemplates(ctx context.Context) ([]EnvironmentTe
 	return s.store.ListEnvironmentTemplates(ctx)
 }
 func (s *Service) PutEnvironmentTemplate(ctx context.Context, item EnvironmentTemplate) (EnvironmentTemplate, error) {
+	if item.PersonalDocker != nil || item.PersonalVM != nil || item.Backend == "vm" {
+		return EnvironmentTemplate{}, apperrors.ErrAccessDenied
+	}
+	return s.putEnvironmentTemplate(ctx, item)
+}
+
+func (s *Service) putEnvironmentTemplate(ctx context.Context, item EnvironmentTemplate) (EnvironmentTemplate, error) {
 	item.ID, item.Name, item.Backend, item.IsolationMode = strings.TrimSpace(item.ID), strings.TrimSpace(item.Name), strings.TrimSpace(item.Backend), strings.TrimSpace(item.IsolationMode)
-	if item.ID == "" || item.Name == "" || (item.Backend != "container" && item.Backend != "kubernetes") || (item.IsolationMode != "read-only" && item.IsolationMode != "disposable-write") {
+	if item.ID == "" || item.Name == "" || (item.Backend != "container" && item.Backend != "kubernetes" && item.Backend != "vm") || (item.IsolationMode != "read-only" && item.IsolationMode != "disposable-write") {
 		return EnvironmentTemplate{}, fmt.Errorf("%w: invalid environment template", apperrors.ErrInvalidArgument)
+	}
+	if err := validatePersonalDockerPolicy(item); err != nil {
+		return EnvironmentTemplate{}, err
+	}
+	if err := validatePersonalVMPolicy(item); err != nil {
+		return EnvironmentTemplate{}, err
 	}
 	now := s.now().UTC()
 	item.Status, item.CreatedAt, item.UpdatedAt = "active", now, now

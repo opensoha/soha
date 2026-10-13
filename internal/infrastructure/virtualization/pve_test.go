@@ -2,6 +2,8 @@ package virtualization
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,7 +11,64 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 )
+
+func TestPVESnippetSSHRequiresSelectedNodeHostKey(t *testing.T) {
+	public, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := ssh.NewPublicKey(public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trusted := string(ssh.MarshalAuthorizedKey(key))
+	connection := Connection{Endpoint: "https://other-node:8006", Options: map[string]any{"sshHostKeys": map[string]any{"selected-node": trusted}}}
+	callback, algorithms, err := pveSSHHostKeyCallback(connection, "selected-node")
+	if err != nil || callback("selected-node:22", nil, key) != nil {
+		t.Fatalf("trusted selected node rejected: %v", err)
+	}
+	if len(algorithms) != 1 || algorithms[0] != ssh.KeyAlgoED25519 {
+		t.Fatal("trusted host key algorithm not selected")
+	}
+	if _, _, err := pveSSHHostKeyCallback(connection, "other-node"); err == nil {
+		t.Fatal("unconfigured node accepted")
+	}
+	other, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongKey, err := ssh.NewPublicKey(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if callback("selected-node:22", nil, wrongKey) == nil {
+		t.Fatal("changed host key accepted")
+	}
+	for _, value := range []string{"", "invalid", "no-pty " + trusted, trusted + trusted} {
+		connection.Options["sshHostKeys"] = map[string]any{"selected-node": value}
+		if _, _, err := pveSSHHostKeyCallback(connection, "selected-node"); err == nil {
+			t.Fatal("invalid or ambiguous host key accepted")
+		}
+	}
+	host, _, _, _, _, _ := pveSSHConfig(connection, "selected-node", CreateVMInput{})
+	if host != "selected-node" {
+		t.Fatalf("snippet routed to API endpoint instead of selected node: %q", host)
+	}
+}
+
+func TestPVESnippetPreservesUnavailableHostKeyDiagnostic(t *testing.T) {
+	adapter := NewPVEAdapter(nil)
+	adapter.snippetWriter = &recordingPVESnippetWriter{err: pveSnippetWriteUnavailableError("trusted host key required")}
+	connection := Connection{Credential: map[string]any{"username": "test-user", "password": "test-only"}, Options: map[string]any{"defaultSnippetStorage": "local"}} // #nosec G101 -- synthetic fixture
+	_, err := adapter.writePVECloudInitViaSSH(context.Background(), connection, "selected-node", "local", "test.yaml", "#cloud-config", CreateVMInput{})
+	details, ok := AdapterErrorDetails(err)
+	if !ok || details.Reason != "snippet_write_unavailable" || !strings.Contains(details.NextAction, "sshHostKeys") {
+		t.Fatalf("lost unavailable host-key diagnostic: %+v", details)
+	}
+}
 
 type recordingPVESnippetWriter struct {
 	calls []pveSnippetWriteCall
@@ -813,8 +872,8 @@ func TestPVESSHWriteSnippetCommandInstallsWorldReadableSnippet(t *testing.T) {
 	if !strings.Contains(command, "install -m 0644") {
 		t.Fatalf("command = %q, want install -m 0644", command)
 	}
-	if !strings.Contains(command, "soha-106-cloud-init.yaml.tmp") || !strings.Contains(command, "rm -f") {
-		t.Fatalf("command = %q, want temporary write and cleanup", command)
+	if !strings.Contains(command, "soha-106-cloud-init.yaml.tmp") || strings.Contains(command, "rm ") {
+		t.Fatalf("command = %q, want retained staging file without provider deletion", command)
 	}
 }
 

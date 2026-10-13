@@ -41,11 +41,16 @@ type ProductionRepository interface {
 	RetryIngestionJob(context.Context, domainknowledge.PrincipalScope, string, time.Time) (domainknowledge.IngestionJob, error)
 	GetSourceInternal(context.Context, string, string) (domainknowledge.Source, error)
 	StageIngestionDocument(context.Context, string, string, domainknowledge.Document, []domainknowledge.Chunk) error
+	LoadIngestionDocument(context.Context, string, string, domainknowledge.Document) ([]domainknowledge.Chunk, error)
 	PublishIngestionJob(context.Context, domainknowledge.IngestionJob, domainknowledge.Source, domainknowledge.IndexRevision) error
 }
 
 type SourceLoader interface {
 	Load(context.Context, domainidentity.Principal, domainknowledge.Source) ([]domainknowledge.SourceDocument, string, error)
+}
+
+type ExecutionPrincipalReader interface {
+	CurrentExecutionPrincipal(context.Context, string, string) (domainidentity.Principal, error)
 }
 
 type ConnectorValidator interface {
@@ -58,6 +63,15 @@ type LexicalScorer interface {
 
 type VectorScorer interface {
 	Score(context.Context, domainidentity.Principal, string, []domainknowledge.Chunk) ([]float64, error)
+}
+
+type Embedder interface {
+	Embed(context.Context, domainidentity.Principal, []string) (domainknowledge.EmbeddingBatch, error)
+}
+
+type PersistentRetrieval interface {
+	SearchAuthorizedChunks(context.Context, domainknowledge.PrincipalScope, domainknowledge.SearchRequest, domainknowledge.EmbeddingBatch, int) ([]domainknowledge.Chunk, error)
+	ValidateCitations(context.Context, domainknowledge.PrincipalScope, []domainknowledge.Citation) error
 }
 
 type Reranker interface {

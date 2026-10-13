@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	domain "github.com/opensoha/soha/internal/domain/virtualization"
 	kubeinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -154,6 +155,9 @@ func (a *KubeVirtAdapter) SyncAssets(ctx context.Context, connection Connection)
 }
 
 func (a *KubeVirtAdapter) CreateVM(ctx context.Context, connection Connection, input CreateVMInput) (VM, error) {
+	if len(input.Disks) > 0 {
+		return VM{}, fmt.Errorf("%w: independent KubeVirt disks require a DataVolume operation", domain.ErrUnsupported)
+	}
 	if input.Name == "" {
 		return VM{}, invalidf("vm name is required")
 	}
@@ -183,6 +187,9 @@ func (a *KubeVirtAdapter) CreateVM(ctx context.Context, connection Connection, i
 }
 
 func (a *KubeVirtAdapter) PrepareVMCreate(_ context.Context, connection Connection, input CreateVMInput) (CreateVMInput, error) {
+	if len(input.Disks) > 0 {
+		return input, fmt.Errorf("%w: independent KubeVirt disks require a DataVolume operation", domain.ErrUnsupported)
+	}
 	if input.Namespace == "" {
 		input.Namespace = namespaceOrDefault(connection, "default")
 	}
@@ -244,6 +251,9 @@ func (a *KubeVirtAdapter) PowerAction(ctx context.Context, connection Connection
 }
 
 func (a *KubeVirtAdapter) ResizeVM(ctx context.Context, connection Connection, vm VM, input AdapterResizeVMInput) (PowerActionResult, error) {
+	if input.DiskGiB > 0 || len(input.Disks) > 0 {
+		return PowerActionResult{}, fmt.Errorf("%w: KubeVirt disk changes require a DataVolume operation", domain.ErrUnsupported)
+	}
 	if vm.Name == "" {
 		return PowerActionResult{}, invalidf("vm name is required")
 	}
@@ -255,8 +265,8 @@ func (a *KubeVirtAdapter) ResizeVM(ctx context.Context, connection Connection, v
 	if namespace == "" {
 		namespace = namespaceOrDefault(connection, "default")
 	}
-	patch := map[string]any{"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"domain": map[string]any{}}}}}
-	domain := patch["spec"].(map[string]any)["template"].(map[string]any)["spec"].(map[string]any)["domain"].(map[string]any)
+	domain := map[string]any{}
+	patch := map[string]any{"spec": map[string]any{"template": map[string]any{"spec": map[string]any{"domain": domain}}}}
 	if input.CPU > 0 {
 		domain["cpu"] = map[string]any{"cores": input.CPU}
 	}
@@ -269,9 +279,6 @@ func (a *KubeVirtAdapter) ResizeVM(ctx context.Context, connection Connection, v
 	}
 	if _, err := bundle.Dynamic.Resource(kubeVirtVMGVR).Namespace(namespace).Patch(ctx, vm.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{}); err != nil {
 		return PowerActionResult{}, err
-	}
-	if input.DiskGiB > 0 {
-		return PowerActionResult{Accepted: true, Action: "resize", Message: "CPU and memory updated; disk expansion requires a DataVolume operation"}, nil
 	}
 	return PowerActionResult{Accepted: true, Action: "resize", Message: "virtual machine resources updated"}, nil
 }

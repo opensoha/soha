@@ -21,6 +21,16 @@ import (
 )
 
 func (s *Service) holdToolInvocation(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, tool domainaigateway.ToolCapability, decision gatewayRiskDecision, redactionSummary gatewayRedactionAuditSummary) (domainaigateway.ToolInvocationResult, error) {
+	if nativeUnownedApproval(ctx) {
+		err := fmt.Errorf("%w: Native approval requires an owning CapabilityTask", apperrors.ErrUnsupportedOperation)
+		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", err.Error(), nil, redactionSummary)
+		return domainaigateway.ToolInvocationResult{}, err
+	}
+	if observing, _ := ctx.Value(capabilityObservationKey{}).(bool); observing {
+		// A durable poll must retain the child reference until access changes.
+		_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "deny", "domain task observation requires updated access", nil, redactionSummary)
+		return domainaigateway.ToolInvocationResult{}, fmt.Errorf("%w: domain task observation is held by policy", apperrors.ErrConflict)
+	}
 	trackingID := uuid.NewString()
 	if node, ok := capabilityExecutionFrom(ctx); ok && node.Scope == domainworkflow.ScopeCapabilityTask {
 		trackingID = capabilityApprovalID(input.RequestID)

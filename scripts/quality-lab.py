@@ -12,6 +12,7 @@ import shutil
 import socket
 import ssl
 import subprocess
+import sys
 import tarfile
 import time
 import urllib.error
@@ -24,6 +25,13 @@ STATE = LAB / 'private.json'
 ENV = dict(os.environ, GOCACHE='/private/tmp/opensoha-cache/go-build',
            GOMODCACHE='/private/tmp/opensoha-cache/go-mod',
            npm_config_cache='/private/tmp/opensoha-cache/npm')
+
+
+def docker_build():
+    guard = shutil.which('opensoha-verify')
+    return ([guard or 'opensoha-verify', 'build-image', '--']
+            if os.environ.get('GITHUB_ACTIONS') != 'true' and (guard or os.environ.get('OPENSOHA_LOCAL_VERIFY_REQUIRED'))
+            else ['docker', 'build'])
 
 
 def run(*args, data=None, timeout=180, env=None, cwd=None):
@@ -187,7 +195,7 @@ def build(s):
     for kind, repo, target in [('core', 'soha', 'soha-runtime'), ('agent', 'soha-agent', 'agent-runtime')]:
         image = s['name'] + '-' + kind
         with (LAB / (kind + '-build.log')).open('w') as log:
-            result = subprocess.run(['docker', 'build', '--build-context', f'contracts={sdk}',
+            result = subprocess.run(docker_build() + ['--build-context', f'contracts={sdk}',
                                      '--target', target, '-f', str(builddir / kind / 'deploy/Dockerfile'),
                                      '-t', image, str(builddir / kind)], stdout=log, stderr=subprocess.STDOUT,
                                     env=ENV, timeout=1200)
@@ -362,14 +370,14 @@ def provision(s):
         image = s['name'] + '-agent-amd64'
         builddir = LAB / 'build'
         with (LAB / 'agent-amd64-build.log').open('w') as log:
-            result = subprocess.run(['docker', 'build', '--platform', 'linux/amd64', '--build-context',
+            result = subprocess.run(docker_build() + ['--platform', 'linux/amd64', '--build-context',
                      f'contracts={builddir / "package"}', '--target', 'agent-runtime', '-f',
                      str(builddir / 'agent/deploy/Dockerfile'), '-t', image, str(builddir / 'agent')],
                      stdout=log, stderr=subprocess.STDOUT, env=ENV, timeout=1200)
         if result.returncode:
             raise RuntimeError('Agent amd64 build failed; retain exact production Dockerfile and retry after registry recovery')
         s['agentMiddlewareImage'] = json.loads(run('docker', 'image', 'inspect', image))[0]['Id']
-        archive = LAB / 'agent-image.tar'
+        archive = Path(ENV.get('OPENSOHA_VERIFY_DIR', str(LAB))) / 'agent-image.tar'
         run('docker', 'save', '-o', str(archive), image)
         with archive.open('rb') as source, (LAB / 'agent-import.log').open('w') as log:
             result = subprocess.run(['ssh', 'middleware', 'docker exec -i ' + s['k3sId'] + ' ctr -n k8s.io images import -'],
@@ -623,4 +631,9 @@ def main():
 
 
 if __name__ == '__main__':
+    guard = shutil.which('opensoha-verify')
+    if (sys.argv[1:2] in (['build'], ['test'], ['provision'])
+            and os.environ.get('GITHUB_ACTIONS') != 'true' and not os.environ.get('OPENSOHA_VERIFY_ACTIVE')
+            and (guard or os.environ.get('OPENSOHA_LOCAL_VERIFY_REQUIRED'))):
+        os.execvp(guard or 'opensoha-verify', [guard or 'opensoha-verify', 'run', '--', sys.executable, __file__, *sys.argv[1:]])
     main()

@@ -60,6 +60,22 @@ func (a *Adapter) Score(
 	for _, chunk := range chunks {
 		inputs = append(inputs, chunk.Content)
 	}
+	batch, err := a.Embed(ctx, principal, inputs)
+	if err != nil {
+		return nil, err
+	}
+	vectors := batch.Vectors
+	scores := make([]float64, len(chunks))
+	for index := range chunks {
+		scores[index] = cosine(vectors[0], vectors[index+1])
+	}
+	return scores, nil
+}
+
+func (a *Adapter) Embed(ctx context.Context, principal domainidentity.Principal, inputs []string) (domainknowledge.EmbeddingBatch, error) {
+	if len(inputs) == 0 || len(inputs) > maxModelBatch {
+		return domainknowledge.EmbeddingBatch{}, fmt.Errorf("invalid knowledge embedding batch size")
+	}
 	response, err := a.gateway.InvokeKnowledgeModel(ctx, principal, appaigateway.KnowledgeModelRequest{
 		PublicModel: a.config.EmbeddingModel,
 		RouteID:     a.config.EmbeddingRoute,
@@ -68,17 +84,25 @@ func (a *Adapter) Score(
 		RequestID:   uuid.NewString(),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("invoke knowledge embedding route: %w", err)
+		return domainknowledge.EmbeddingBatch{}, fmt.Errorf("invoke knowledge embedding route: %w", err)
 	}
 	vectors, err := decodeEmbeddings(response.Body, len(inputs), a.config.Dimension)
 	if err != nil {
-		return nil, err
+		return domainknowledge.EmbeddingBatch{}, err
 	}
-	scores := make([]float64, len(chunks))
-	for index := range chunks {
-		scores[index] = cosine(vectors[0], vectors[index+1])
+	var identity struct {
+		Model string `json:"model"`
 	}
-	return scores, nil
+	if err := json.Unmarshal(response.Body, &identity); err != nil {
+		return domainknowledge.EmbeddingBatch{}, err
+	}
+	if identity.Model == "" {
+		identity.Model = response.PublicModel
+	}
+	if identity.Model == "" {
+		identity.Model = a.config.EmbeddingModel
+	}
+	return domainknowledge.EmbeddingBatch{Vectors: vectors, Model: identity.Model, Route: response.RouteID}, nil
 }
 
 func (a *Adapter) Rerank(
@@ -142,6 +166,19 @@ func decodeEmbeddings(body []byte, expected, dimension int) ([][]float64, error)
 		}
 		if len(item.Embedding) != actualDimension {
 			return nil, fmt.Errorf("knowledge embedding dimension mismatch: got %d want %d", len(item.Embedding), actualDimension)
+		}
+		if actualDimension > 4096 {
+			return nil, fmt.Errorf("knowledge embedding dimension exceeds 4096")
+		}
+		var norm float64
+		for _, value := range item.Embedding {
+			if math.IsNaN(value) || math.IsInf(value, 0) {
+				return nil, fmt.Errorf("knowledge embedding must contain finite values")
+			}
+			norm += value * value
+		}
+		if norm == 0 {
+			return nil, fmt.Errorf("knowledge embedding has zero norm")
 		}
 		vectors[item.Index] = append([]float64{}, item.Embedding...)
 	}

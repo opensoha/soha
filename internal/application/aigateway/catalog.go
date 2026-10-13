@@ -706,7 +706,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name:           "k8s.namespaces.list",
+		Name: "k8s.namespaces.list", Version: "1",
 		Title:          "List Namespaces",
 		Description:    "List namespace metadata from the scoped Kubernetes workbench API.",
 		Domain:         "k8s",
@@ -719,7 +719,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Optional namespace scope used by the gateway authorization policy.")),
 	},
 	{
-		Name:           "k8s.workloads.overview",
+		Name: "k8s.workloads.overview", Version: "1",
 		Title:          "Read Workload Overview",
 		Description:    "Read pod health totals, namespace breakdown, and bounded problematic pod summaries.",
 		Domain:         "k8s",
@@ -732,7 +732,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Workload namespace. Empty means all namespaces when allowed.")),
 	},
 	{
-		Name:           "k8s.configmaps.list",
+		Name: "k8s.configmaps.list", Version: "1",
 		Title:          "List ConfigMaps",
 		Description:    "List ConfigMap metadata and data entry counts without returning ConfigMap content.",
 		Domain:         "k8s",
@@ -745,7 +745,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("ConfigMap namespace. Empty means all namespaces when allowed.")),
 	},
 	{
-		Name:           "k8s.secrets.metadata",
+		Name: "k8s.secrets.metadata", Version: "1",
 		Title:          "List Secret Metadata",
 		Description:    "List Secret names, types, and data entry counts without returning Secret data.",
 		Domain:         "k8s",
@@ -758,7 +758,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Secret namespace. Empty means all namespaces when allowed.")),
 	},
 	{
-		Name:           "k8s.helm.releases.list",
+		Name: "k8s.helm.releases.list", Version: "1",
 		Title:          "List Helm Releases",
 		Description:    "List Helm release metadata without returning release values or rendered manifests.",
 		Domain:         "k8s",
@@ -771,7 +771,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Helm release namespace. Empty means all namespaces when allowed.")),
 	},
 	{
-		Name: "k8s.crds.list", Title: "List Custom Resource Definitions", Description: "List CRD metadata without schemas or custom-resource content.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
+		Name: "k8s.crds.list", Version: "1", Title: "List Custom Resource Definitions", Description: "List CRD metadata without schemas or custom-resource content.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformExtensionsView},
 		RequiredScopes: []string{"cluster"}, MCPAdapterID: "platform-native.v1", MCPToolName: "k8s.crds.list",
 		InputSchema: gatewayObjectSchema([]string{"clusterId"}, map[string]any{
@@ -779,7 +779,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name: "k8s.custom_resources.list", Title: "List Custom Resources", Description: "List custom-resource metadata using the existing scoped authorization and Agent CRD grants.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
+		Name: "k8s.custom_resources.list", Version: "1", Title: "List Custom Resources", Description: "List custom-resource metadata using the existing scoped authorization and Agent CRD grants.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformExtensionsView},
 		RequiredScopes: []string{"cluster", "namespace"}, MCPAdapterID: "platform-native.v1", MCPToolName: "k8s.custom_resources.list",
 		InputSchema: gatewayObjectSchema([]string{"clusterId", "crdName"}, map[string]any{
@@ -789,7 +789,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name: "k8s.pods.metrics", Title: "Read Pod Metrics", Description: "Read bounded Pod metric series through the configured direct or Agent Prometheus route.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
+		Name: "k8s.pods.metrics", Version: "1", Title: "Read Pod Metrics", Description: "Read bounded Pod metric series through the configured direct or Agent Prometheus route.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformPodsView},
 		RequiredScopes: []string{"cluster", "namespace", "pod", "timeRange"}, MCPAdapterID: "platform-native.v1", MCPToolName: "k8s.pods.metrics",
 		InputSchema: gatewayObjectSchema([]string{"clusterId", "namespace", "podName"}, map[string]any{
@@ -801,7 +801,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name: "k8s.deployments.metrics", Title: "Read Deployment Metrics", Description: "Read bounded Deployment metric series through the configured direct or Agent Prometheus route.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
+		Name: "k8s.deployments.metrics", Version: "1", Title: "Read Deployment Metrics", Description: "Read bounded Deployment metric series through the configured direct or Agent Prometheus route.", Domain: "k8s", Action: "read", RiskLevel: domainaigateway.RiskLevelRead,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformDeploymentView},
 		RequiredScopes: []string{"cluster", "namespace", "deployment", "timeRange"}, MCPAdapterID: "platform-native.v1", MCPToolName: "k8s.deployments.metrics",
 		InputSchema: gatewayObjectSchema([]string{"clusterId", "namespace", "deploymentName"}, map[string]any{
@@ -813,7 +813,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name:           "k8s.pods.list",
+		Name: "k8s.pods.list", Version: "1",
 		Title:          "List Pods",
 		Description:    "List pods from the scoped Kubernetes workbench API.",
 		Domain:         "k8s",
@@ -826,7 +826,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Pod namespace. Empty means all namespaces when allowed.")),
 	},
 	{
-		Name:           "k8s.pods.logs",
+		Name: "k8s.pods.logs", Version: "1",
 		Title:          "Read Pod Logs",
 		Description:    "Read recent pod logs through the platform resource service with audit boundaries.",
 		Domain:         "k8s",
@@ -847,7 +847,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name:           "k8s.pods.describe",
+		Name: "k8s.pods.describe", Version: "1",
 		Title:          "Describe Pod",
 		Description:    "Read a describe-style pod summary with containers, conditions, volumes, and related resources.",
 		Domain:         "k8s",
@@ -864,7 +864,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name:           "k8s.deployments.list",
+		Name: "k8s.deployments.list", Version: "1",
 		Title:          "List Deployments",
 		Description:    "List deployments from the scoped Kubernetes workbench API.",
 		Domain:         "k8s",
@@ -877,7 +877,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Deployment namespace. Empty means all namespaces when allowed.")),
 	},
 	{
-		Name:           "k8s.deployments.rollout_status",
+		Name: "k8s.deployments.rollout_status", Version: "1",
 		Title:          "Read Deployment Rollout Status",
 		Description:    "Read rollout status, replica progress, revision, and conditions for one deployment.",
 		Domain:         "k8s",
@@ -894,7 +894,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name:           "k8s.deployments.events",
+		Name: "k8s.deployments.events", Version: "1",
 		Title:          "List Deployment Events",
 		Description:    "List cluster events related to one deployment in the selected namespace.",
 		Domain:         "k8s",
@@ -912,7 +912,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name:           "k8s.services.list",
+		Name: "k8s.services.list", Version: "1",
 		Title:          "List Services",
 		Description:    "List services and backend linkage from the network workbench API.",
 		Domain:         "k8s",
@@ -925,7 +925,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Service namespace. Empty means all namespaces when allowed.")),
 	},
 	{
-		Name:           "k8s.services.backends",
+		Name: "k8s.services.backends", Version: "1",
 		Title:          "Read Service Backends",
 		Description:    "Read service selector, matching pods, and related ingress route hints for one service.",
 		Domain:         "k8s",
@@ -942,7 +942,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name:        "k8s.routes.context",
+		Name: "k8s.routes.context", Version: "1",
 		Title:       "Read Route Context",
 		Description: "Read ingress and Gateway API route context for a namespace or service without returning raw Kubernetes objects.",
 		Domain:      "k8s",
@@ -969,7 +969,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name:        "k8s.storage.context",
+		Name: "k8s.storage.context", Version: "1",
 		Title:       "Read Storage Context",
 		Description: "Read PVC, PV, and storage class summaries for storage diagnosis.",
 		Domain:      "k8s",
@@ -988,7 +988,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Namespace for PVC context. Empty includes cluster storage summary when allowed.")),
 	},
 	{
-		Name:           "k8s.nodes.detail",
+		Name: "k8s.nodes.detail", Version: "1",
 		Title:          "Read Node Detail",
 		Description:    "Read node conditions, resource summary, taints, and scheduled pod context.",
 		Domain:         "k8s",
@@ -1004,7 +1004,7 @@ var defaultToolCatalog = []domainaigateway.ToolCapability{
 		}),
 	},
 	{
-		Name:           "k8s.events.list",
+		Name: "k8s.events.list", Version: "1",
 		Title:          "List Events",
 		Description:    "List Kubernetes and platform events for scoped diagnosis.",
 		Domain:         "k8s",

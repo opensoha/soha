@@ -257,6 +257,9 @@ func checkWorkerSupply(connection domain.Connection, clusterID string) error {
 }
 
 func (s *Service) authorizeWorkerTaskRead(ctx context.Context, principal domainidentity.Principal, task domain.Task) error {
+	if (task.TaskKind == TaskKindPersonalGuest || task.TaskKind == TaskKindPersonalGuestTools) && task.RequestedBy != principal.UserID {
+		return apperrors.ErrAccessDenied
+	}
 	if !isWorkerCreation(task) {
 		return nil
 	}

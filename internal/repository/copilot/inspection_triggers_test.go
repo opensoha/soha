@@ -27,41 +27,7 @@ import (
 )
 
 func TestInspectionTriggerPersistenceWithPostgres(t *testing.T) {
-	portText := os.Getenv("SOHA_CATALOG_TEST_POSTGRES_PORT")
-	if portText == "" {
-		t.Skip("set SOHA_CATALOG_TEST_POSTGRES_PORT to an isolated PostgreSQL instance")
-	}
-	port, err := strconv.Atoi(portText)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dbConfig := config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 12, MaxIdleConns: 4}
-	admin, err := dbstore.New(dbConfig, zap.NewNop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = admin.Close() })
-	dbConfig.Name = "inspection_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if err := admin.DB().Exec(`CREATE DATABASE "` + dbConfig.Name + `"`).Error; err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := admin.DB().Exec(`DROP DATABASE "` + dbConfig.Name + `" WITH (FORCE)`).Error; err != nil {
-			t.Error(err)
-		}
-	})
-	store, err := dbstore.New(dbConfig, zap.NewNop())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = store.Close() })
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	migrations := filepath.Join("..", "..", "..", "migrations", "postgres")
-	if err := store.MigrateFromFile(ctx, migrations); err != nil {
-		t.Fatal(err)
-	}
-	repo := New(store.DB())
+	repo, store, ctx := newCopilotPostgresTestRepository(t)
 	actor := "inspection-test-" + uuid.NewString()
 	t.Cleanup(func() {
 		_ = store.DB().Exec(`DELETE FROM workflow_runs WHERE metadata->>'capabilityActorId' = ?`, actor).Error
@@ -304,4 +270,47 @@ func verifyInspectionAlertReopen(t *testing.T, ctx context.Context, store *dbsto
 	if err != nil || blocked.Status != "blocked" {
 		t.Fatalf("disable gate: %+v %v", blocked, err)
 	}
+}
+
+func newCopilotPostgresTestRepository(t *testing.T) (*Repository, *dbstore.Store, context.Context) {
+	t.Helper()
+	portText := os.Getenv("SOHA_CATALOG_TEST_POSTGRES_PORT")
+	if portText == "" {
+		portText = os.Getenv("SOHA_APPLICATION_TEST_POSTGRES_PORT")
+	}
+	if portText == "" {
+		t.Skip("set SOHA_CATALOG_TEST_POSTGRES_PORT to an isolated PostgreSQL instance")
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbConfig := config.DatabaseConfig{Driver: "postgres", Host: "127.0.0.1", Port: port, Name: "soha", User: "pgsql", Password: "test-only", SSLMode: "disable", MaxOpenConns: 12, MaxIdleConns: 4}
+	admin, err := dbstore.New(dbConfig, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = admin.Close() })
+	dbConfig.Name = "copilot_test_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+	if err := admin.DB().Exec(`CREATE DATABASE "` + dbConfig.Name + `"`).Error; err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := admin.DB().Exec(`DROP DATABASE "` + dbConfig.Name + `" WITH (FORCE)`).Error; err != nil {
+			t.Error(err)
+		}
+	})
+	store, err := dbstore.New(dbConfig, zap.NewNop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	t.Cleanup(cancel)
+	migrations := filepath.Join("..", "..", "..", "migrations", "postgres")
+	if err := store.MigrateFromFile(ctx, migrations); err != nil {
+		t.Fatal(err)
+	}
+	repo := New(store.DB())
+	return repo, store, ctx
 }

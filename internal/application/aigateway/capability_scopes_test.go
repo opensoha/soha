@@ -36,6 +36,59 @@ func capabilityScopesFixture() (*Service, *memoryGatewayRepository, *scopeProvid
 	service.SetCapabilityProviders(provider)
 	return service, repo, provider, domainaigateway.ToolInvocationRequest{ToolName: "test.batch", CapabilityVersion: "1", Input: map[string]any{}}
 }
+
+func scopedCapabilityRun(call domainaigateway.ToolInvocationRequest, constraints []domainaigateway.CapabilityScopeConstraint) domainworkflow.Run {
+	input := domainaigateway.CapabilityTaskInput{IdempotencyKey: "scope-test", ScopeConstraints: constraints, Plan: domainaigateway.CapabilityPlan{Goal: "Scoped test", Steps: []domainaigateway.CapabilityPlanStep{{ID: "one", Call: sohaapi.CapabilityCall{ToolName: call.ToolName, CapabilityVersion: call.CapabilityVersion, Input: call.Input}}}}}
+	return domainworkflow.Run{ID: "scoped-task", Scope: domainworkflow.ScopeCapabilityTask, Version: 1, Metadata: map[string]any{"capabilityIntent": domainworkflow.CapabilityIntent{Input: input, ActorID: "user-1", Digest: "frozen", Deadline: time.Now().Add(time.Minute)}}}
+}
+
+func TestCapabilityTaskScopeCoversEveryResolvedTarget(t *testing.T) {
+	service, _, provider, call := capabilityScopesFixture()
+	run := scopedCapabilityRun(call, []domainaigateway.CapabilityScopeConstraint{{Dimension: "applicationIds", Value: "app-a"}})
+	ctx := withCapabilityExecution(context.Background(), run, domainworkflow.NodeRun{NodeID: "one"})
+	if _, err := service.InvokeTool(ctx, testPrincipal("developer"), call); !errors.Is(err, apperrors.ErrAccessDenied) || provider.calls != 0 {
+		t.Fatalf("second resolved target escaped scope: calls=%d err=%v", provider.calls, err)
+	}
+	provider.scopes = []map[string]string{{"applicationId": "app-a"}}
+	if _, err := service.InvokeTool(ctx, testPrincipal("developer"), call); err != nil || provider.calls != 1 {
+		t.Fatalf("matching target failed: calls=%d err=%v", provider.calls, err)
+	}
+	run = scopedCapabilityRun(call, []domainaigateway.CapabilityScopeConstraint{{Dimension: "applicationId", Value: "*"}})
+	ctx = withCapabilityExecution(context.Background(), run, domainworkflow.NodeRun{NodeID: "one"})
+	if _, err := service.InvokeTool(ctx, testPrincipal("developer"), call); !errors.Is(err, apperrors.ErrAccessDenied) || provider.calls != 1 {
+		t.Fatalf("scope value acted as a wildcard: %v", err)
+	}
+}
+
+func TestCapabilityTaskScopeIsCheckedBeforePreparingAnApproval(t *testing.T) {
+	service, repo, provider, call := capabilityScopesFixture()
+	provider.scopes = []map[string]string{{"applicationId": "app-b"}}
+	run := scopedCapabilityRun(call, []domainaigateway.CapabilityScopeConstraint{{Dimension: "applicationId", Value: "app-a"}})
+	if _, err := service.PrepareCapabilityNode(context.Background(), testPrincipal("developer"), run, domainworkflow.NodeRun{NodeID: "one"}); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("out-of-scope plan prepared: %v", err)
+	}
+	if provider.calls != 0 || len(repo.approvalRequests) != 0 {
+		t.Fatal("out-of-scope preparation produced effects")
+	}
+	if issues := validateCapabilityScopeConstraints([]domainaigateway.CapabilityScopeConstraint{{Dimension: "clusterID", Value: "one"}, {Dimension: "clusterId", Value: "two"}}); len(issues) != 1 {
+		t.Fatal("conflicting scope aliases accepted")
+	}
+}
+
+func TestCapabilityTaskScopeIsCheckedOnHistoricalReads(t *testing.T) {
+	service, _, provider, call := capabilityScopesFixture()
+	run := scopedCapabilityRun(call, []domainaigateway.CapabilityScopeConstraint{{Dimension: "applicationId", Value: "app-a"}})
+	if _, err := service.VisibleCapabilityTask(context.Background(), testPrincipal("developer"), run); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("historical read escaped task scope: %v", err)
+	}
+	provider.scopes = []map[string]string{{"applicationId": "app-a"}}
+	if _, err := service.VisibleCapabilityTask(context.Background(), testPrincipal("developer"), run); err != nil {
+		t.Fatalf("matching historical target rejected: %v", err)
+	}
+	if provider.calls != 0 {
+		t.Fatal("historical read executed a capability")
+	}
+}
 func scopePolicy(id, effect string, scopes ...string) domainaigateway.AccessPolicy {
 	p := domainaigateway.AccessPolicy{ID: id, Enabled: true, SubjectType: "role", SubjectID: "developer", Effect: effect, ToolPatterns: []string{"test.batch"}}
 	if len(scopes) > 0 {

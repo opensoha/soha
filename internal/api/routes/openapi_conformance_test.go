@@ -39,6 +39,7 @@ func TestOpenAPIExposedOperationsHaveLiveRoutes(t *testing.T) {
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	registerPublicRoutes(router.Group(document.Servers[0].URL), allRoutesEnabledConfig(), routeTestDependencies())
 	registerProtectedRoutes(router.Group(document.Servers[0].URL), allRoutesEnabledConfig(), routeTestDependencies())
 	liveRoutes := make(map[string]struct{})
 	for _, route := range router.Routes() {

@@ -25,7 +25,12 @@ type capabilityScopeContext struct {
 	scopes []map[string]string
 }
 
-func (s *Service) resolveCapabilityScopeContext(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (context.Context, error) {
+func (s *Service) resolveCapabilityScopeContext(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (resolved context.Context, err error) {
+	defer func() {
+		if err == nil {
+			err = validateCapabilityTaskScope(resolved, tool, input)
+		}
+	}()
 	ctx = context.WithValue(ctx, capabilityScopeContextKey{}, capabilityScopeContext{})
 	for _, provider := range s.gatewayRegistry().providers {
 		if !providerHasTool(provider, tool.Name) {

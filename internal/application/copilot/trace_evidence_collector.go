@@ -25,6 +25,7 @@ type traceEvidenceAnalysis struct {
 }
 
 type traceEvidenceRequest struct {
+	toolset  domaincopilot.SessionToolset
 	input    domaincopilot.RootCauseRunInput
 	source   domaincopilot.DataSource
 	limit    int
@@ -50,11 +51,14 @@ func (s *Service) collectRootCauseTraceEvidence(ctx context.Context, input domai
 		return result
 	}
 	for _, source := range setup.dataSources {
+		if selected := stringValue(toolset.ScopeOverrides["dataSourceId"]); selected != "" && selected != source.ID {
+			continue
+		}
 		if !traceEvidenceSourceEnabled(source, profile, toolset, traceEvidenceAdapterID) {
 			continue
 		}
 		s.collectTraceSourceEvidence(ctx, traceEvidenceRequest{
-			input: input, source: source, limit: setup.limit,
+			input: input, source: source, limit: setup.limit, toolset: toolset,
 			timeFrom: setup.timeFrom, timeTo: setup.timeTo, locale: locale,
 		}, &result)
 	}
@@ -73,7 +77,8 @@ func (s *Service) collectTraceSourceEvidence(ctx context.Context, request traceE
 		},
 		TimeFrom:    request.timeFrom,
 		TimeTo:      request.timeTo,
-		MinDuration: 250 * time.Millisecond,
+		TraceID:     stringValue(request.toolset.ScopeOverrides["traceId"]),
+		MinDuration: professionalTraceMinimum(request.toolset),
 		Limit:       request.limit,
 	})
 	if err != nil {

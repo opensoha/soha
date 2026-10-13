@@ -739,9 +739,11 @@ func TestSendMessageGeneralModeRequiresGatewayRouteWithoutAutoAnalysis(t *testin
 		},
 	}}
 	invoker := &fakeWorkbenchModelInvoker{response: appaigateway.WorkbenchRelayResponse{
-		Content:     "hello from gateway",
-		PublicModel: "gpt-public",
-		RouteID:     "route-openai",
+		Content:             "hello from gateway",
+		Usage:               map[string]float64{"inputTokens": 8000, "outputTokens": 200, "totalTokens": 8200},
+		ContextWindowTokens: 128000,
+		PublicModel:         "gpt-public",
+		RouteID:             "route-openai",
 	}}
 	service.SetWorkbenchModelInvoker(invoker)
 	repo.session = domaincopilot.Session{
@@ -854,20 +856,23 @@ func TestSendMessageGeneralModeReportsMissingModelProvider(t *testing.T) {
 func TestStreamMessageRequestModeOverridesSessionAndNarrowsToolset(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
-		"chat": {appaccess.PermObserveAIChatUse},
+		"chat": {appaccess.PermObserveAIChatUse, appaccess.PermObserveAIView},
 	})
+	completedAt := time.Now().UTC()
+	repo.inspectionRuns = []domaincopilot.InspectionRun{{ID: "inspection-narrow", Status: "completed", CompletedAt: &completedAt, Findings: []domaincopilot.InspectionFinding{{ID: "finding:narrow", Title: "Deployment unavailable", Source: "platform", Summary: "Zero ready replicas"}}}}
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
 		Title:     "General chat",
 		CreatedBy: "user-1",
 		Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{
-			Mode: "general",
+			Mode:          "general",
+			PinnedContext: map[string]any{"inspectionRunId": "inspection-narrow"},
 			Scope: domaincopilot.SessionScope{
 				ClusterID:        "cluster-a",
 				TimeRangeMinutes: 60,
 			},
 			Toolset: domaincopilot.SessionToolset{
-				EnabledAdapterIDs: []string{"logs.v1", "metrics.v1"},
+				EnabledAdapterIDs: []string{"logs.v1", "metrics.v1", "platform-native.v1"},
 				EnabledSkillIDs:   []string{"root-cause-investigation", "inspection-review"},
 				DisabledToolNames: []string{"logs.v1.logs.raw"},
 				BudgetOverrides:   map[string]any{"timeoutSeconds": 120, "maxEvidenceItems": 10},
@@ -885,7 +890,7 @@ func TestStreamMessageRequestModeOverridesSessionAndNarrowsToolset(t *testing.T)
 		Mode:            "inspection_review",
 		AgentProviderID: "internal",
 		Toolset: domaincopilot.SessionToolset{
-			EnabledAdapterIDs: []string{"metrics.v1", "traces.v1"},
+			EnabledAdapterIDs: []string{"metrics.v1", "traces.v1", "platform-native.v1"},
 			EnabledSkillIDs:   []string{"inspection-review", "unapproved-skill"},
 			DisabledToolNames: []string{"metrics.v1.metrics.raw"},
 			BudgetOverrides:   map[string]any{"timeoutSeconds": 60, "maxEvidenceItems": 20, "maxIterations": 3},
@@ -902,14 +907,17 @@ func TestStreamMessageRequestModeOverridesSessionAndNarrowsToolset(t *testing.T)
 func TestStreamMessageInternalAnalysisCallsLiveEventSink(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
-		"chat": {appaccess.PermObserveAIChatUse},
+		"chat": {appaccess.PermObserveAIChatUse, appaccess.PermObserveAIView},
 	})
+	completedAt := time.Now().UTC()
+	repo.inspectionRuns = []domaincopilot.InspectionRun{{ID: "inspection-live", Status: "completed", CompletedAt: &completedAt, Findings: []domaincopilot.InspectionFinding{{ID: "finding:live", Title: "Pod unavailable", Source: "platform", Summary: "Observed zero ready pods"}}}}
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
 		Title:     "Inspection",
 		CreatedBy: "user-1",
 		Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{
-			Mode: "general",
+			Mode:          "general",
+			PinnedContext: map[string]any{"inspectionRunId": "inspection-live"},
 			Toolset: domaincopilot.SessionToolset{
 				EnabledAdapterIDs: []string{"platform-native.v1"},
 			},
@@ -1001,10 +1009,12 @@ func TestStreamMessageGeneralUsesGatewayTokenStream(t *testing.T) {
 	invoker := &fakeWorkbenchModelInvoker{
 		streamDeltas: []string{"hello", " ", "stream"},
 		streamResponse: appaigateway.WorkbenchRelayResponse{
-			Content:      "hello stream",
-			PublicModel:  "gpt-public",
-			RouteID:      "route-openai",
-			ProviderKind: "openai",
+			Content:             "hello stream",
+			Usage:               map[string]float64{"inputTokens": 8000, "outputTokens": 200, "totalTokens": 8200},
+			ContextWindowTokens: 128000,
+			PublicModel:         "gpt-public",
+			RouteID:             "route-openai",
+			ProviderKind:        "openai",
 		},
 	}
 	service.SetWorkbenchModelInvoker(invoker)
@@ -1100,7 +1110,7 @@ func TestStreamMessageGeneralDoesNotPersistPartialAssistantWhenStreamStops(t *te
 func TestStreamMessageInternalAnalysisToolFailureReturnsFailedEvents(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
-		"chat": {appaccess.PermObserveAIChatUse},
+		"chat": {appaccess.PermObserveAIChatUse, appaccess.PermObserveMonitoringView},
 	})
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
@@ -2334,7 +2344,7 @@ func TestGatewayAnalysisAgentRunsReturnOperationState(t *testing.T) {
 func TestRunSessionAnalysisQueuesExternalRootCauseBusinessRun(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
-		"chat": {appaccess.PermObserveAIChatUse},
+		"chat": {appaccess.PermObserveAIChatUse, appaccess.PermObserveAIRootCauseRun},
 	})
 	session := domaincopilot.Session{
 		ID:        "session-1",
@@ -2404,7 +2414,7 @@ func TestRunSessionAnalysisQueuesExternalRootCauseBusinessRun(t *testing.T) {
 func TestStreamMessageExternalAgentEmitsProviderAwareQueuedStatus(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
-		"chat": {appaccess.PermObserveAIChatUse},
+		"chat": {appaccess.PermObserveAIChatUse, appaccess.PermObserveAIRootCauseRun},
 	})
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
@@ -2457,7 +2467,7 @@ func TestStreamMessageExternalAgentEmitsProviderAwareQueuedStatus(t *testing.T) 
 func TestRunSessionAnalysisQueuesNonRootCauseAgentWithoutSessionAsRootRun(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
-		"chat": {appaccess.PermObserveAIChatUse},
+		"chat": {appaccess.PermObserveAIChatUse, appaccess.PermObserveMonitoringView},
 	})
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
@@ -3496,6 +3506,9 @@ func (r *captureCopilotAuditRecorder) List(context.Context, domainaudit.Filter) 
 }
 
 type inspectionAuthzTestRepository struct {
+	accessStates               map[string]domaincopilot.PersonalAgentAccess
+	personalArtifacts          []domaincopilot.PersonalArtifact
+	assistants                 map[string]domaincopilot.PersonalAssistant
 	listInspectionRunsCalled   bool
 	listAgentRunsCalled        bool
 	getSessionCalled           bool
@@ -3921,6 +3934,39 @@ func (r *inspectionAuthzTestRepository) CreateSession(_ context.Context, session
 	return session, nil
 }
 
+func (r *inspectionAuthzTestRepository) GetOrCreateMainSession(_ context.Context, session domaincopilot.Session) (domaincopilot.Session, bool, error) {
+	if r.session.Metadata["conversationKind"] == session.Metadata["conversationKind"] && r.session.CreatedBy == session.CreatedBy {
+		return r.session, false, nil
+	}
+	r.session = session
+	return session, true, nil
+}
+
+func (r *inspectionAuthzTestRepository) GetOrCreatePersonalAssistant(_ context.Context, candidate domaincopilot.PersonalAssistant) (domaincopilot.PersonalAssistant, error) {
+	if r.assistants == nil {
+		r.assistants = map[string]domaincopilot.PersonalAssistant{}
+	}
+	if item, ok := r.assistants[candidate.CreatedBy]; ok {
+		return item, nil
+	}
+	r.assistants[candidate.CreatedBy] = candidate
+	return candidate, nil
+}
+
+func (r *inspectionAuthzTestRepository) RenamePersonalAssistant(_ context.Context, owner, name string) (domaincopilot.PersonalAssistant, error) {
+	item := r.assistants[owner]
+	item.Name = name
+	r.assistants[owner] = item
+	return item, nil
+}
+
+func (r *inspectionAuthzTestRepository) UpdatePersonalAssistantAvatar(_ context.Context, owner string, input domaincopilot.PersonalAssistantAvatar) (domaincopilot.PersonalAssistant, error) {
+	item := r.assistants[owner]
+	item.AvatarURL, item.AvatarPosterURL, item.AvatarMotion = input.AvatarURL, input.AvatarPosterURL, input.AvatarMotion
+	r.assistants[owner] = item
+	return item, nil
+}
+
 func (r *inspectionAuthzTestRepository) UpdateSession(_ context.Context, _, _ string, session domaincopilot.Session) (domaincopilot.Session, error) {
 	if r.session.ID != "" {
 		r.session = session
@@ -3935,6 +3981,10 @@ func (r *inspectionAuthzTestRepository) DeleteSession(context.Context, string, s
 
 func (r *inspectionAuthzTestRepository) ListMessages(context.Context, string, int) ([]domaincopilot.Message, error) {
 	return append([]domaincopilot.Message(nil), r.messages...), nil
+}
+
+func (r *inspectionAuthzTestRepository) ListPersonalArtifacts(context.Context, string) ([]domaincopilot.PersonalArtifact, error) {
+	return append([]domaincopilot.PersonalArtifact(nil), r.personalArtifacts...), nil
 }
 
 func (r *inspectionAuthzTestRepository) GetMessage(_ context.Context, sessionID, messageID string) (domaincopilot.Message, error) {

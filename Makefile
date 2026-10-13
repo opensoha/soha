@@ -1,3 +1,13 @@
+# Local host guard; standalone clones and GitHub Actions keep their existing toolchain.
+LOCAL_VERIFY :=
+LOCAL_DOCKER_BUILD := docker build
+ifneq ($(GITHUB_ACTIONS),true)
+ifneq ($(shell command -v opensoha-verify 2>/dev/null)$(OPENSOHA_LOCAL_VERIFY_REQUIRED),)
+LOCAL_VERIFY := opensoha-verify run --
+LOCAL_DOCKER_BUILD := opensoha-verify build-image --
+endif
+endif
+
 .DEFAULT_GOAL := dev
 
 COMPOSE ?= docker compose
@@ -31,7 +41,7 @@ init: init-go init-db ## Install core dependencies and start local database.
 
 init-go: ## Tidy Go modules.
 	@echo "Tidying Go modules..."
-	go mod tidy
+	$(LOCAL_VERIFY) go mod tidy
 
 init-db: ## Start local PostgreSQL from deploy/docker-compose.yaml.
 	@echo "Starting PostgreSQL..."
@@ -82,28 +92,32 @@ build-web: ## Build the frontend artifact from soha-web and stage it for embeddi
 	cp -R $(SOHA_WEB_DIR)/dist/. $(WEB_DIST_DIR)/
 
 build: build-web ## Build the management, network-control, and ingest binaries.
-	CGO_ENABLED=0 go build -tags embedassets -ldflags="$(SOHA_VERSION_LDFLAGS)" -o bin/soha ./cmd/server
-	CGO_ENABLED=0 go build -o bin/network-control ./cmd/network-control
-	CGO_ENABLED=0 go build -o bin/ingest ./cmd/ingest
+	CGO_ENABLED=0 $(LOCAL_VERIFY) go build -tags embedassets -ldflags="$(SOHA_VERSION_LDFLAGS)" -o bin/soha ./cmd/server
+	CGO_ENABLED=0 $(LOCAL_VERIFY) go build -o bin/network-control ./cmd/network-control
+	CGO_ENABLED=0 $(LOCAL_VERIFY) go build -o bin/ingest ./cmd/ingest
 
 deploy-image: build-web ## Build the application and network runtime image.
-	docker build --build-arg SOHA_BUILD_VERSION=$(SOHA_BUILD_VERSION) --build-arg GOPROXY=$(GOPROXY) --build-context contracts=$(SOHA_CONTRACTS_DIR) -f $(APP_DOCKERFILE) $(IMAGE_BUILD_TAGS) .
+	$(LOCAL_DOCKER_BUILD) --build-arg SOHA_BUILD_VERSION=$(SOHA_BUILD_VERSION) --build-arg GOPROXY=$(GOPROXY) --build-context contracts=$(SOHA_CONTRACTS_DIR) -f $(APP_DOCKERFILE) $(IMAGE_BUILD_TAGS) .
+
+.PHONY: verify-image
+verify-image: build-web ## Validate the application image and remove this run's tag.
+	opensoha-verify image -- --build-arg SOHA_BUILD_VERSION=$(SOHA_BUILD_VERSION) --build-arg GOPROXY=$(GOPROXY) --build-context contracts=$(SOHA_CONTRACTS_DIR) -f $(APP_DOCKERFILE) .
 
 # Test
 test: ## Run Go tests.
-	go test ./...
+	$(LOCAL_VERIFY) go test ./...
 
 lint: ## Run the configured Go quality and security linters.
-	golangci-lint run ./...
+	$(LOCAL_VERIFY) golangci-lint run ./...
 
 complexity-check: ## Reject production functions with cyclomatic complexity above 20.
-	@output="$$(GOWORK=off go run github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0 -over 20 internal 2>/dev/null)"; status=$$?; \
+	@output="$$(GOWORK=off $(LOCAL_VERIFY) go run github.com/fzipp/gocyclo/cmd/gocyclo@v0.6.0 -over 20 internal 2>/dev/null)"; status=$$?; \
 		{ test $$status -eq 0 || test -n "$$output"; } || exit $$status; \
 		output="$$(printf '%s\n' "$$output" | awk '!/_test\.go/ && $$0 !~ /\(\*PVEAdapter\)\.ResizeVM|validateSourceRepositoryInput|disabledModuleMenuIDs|filterSeedMenusByModules|\(\*Service\)\.executeVMAction|\(\*Service\)\.executeApplicationDeliveryAction/')"; \
 		test -z "$$output" || { printf '%s\n' "$$output"; exit 1; }
 
 complexity-report: ## Report complexity, duplication, function length, and maintainability findings.
-	-golangci-lint run --enable-only cyclop,dupl,funlen,maintidx ./...
+	$(LOCAL_VERIFY) sh -c 'golangci-lint run --enable-only cyclop,dupl,funlen,maintidx ./... || true'
 
 # Clean
 clean: ## Remove local build outputs.

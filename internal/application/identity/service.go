@@ -44,6 +44,7 @@ var (
 		regexp.MustCompile(`^/api/v1/clusters/[^/]+/workloads/pods/[^/]+/(logs/stream|terminal)$`),
 		regexp.MustCompile(`^/api/v1/compute/tasks/(virtualization|container_runtime)/[^/]+/stream$`),
 		regexp.MustCompile(`^/api/v1/virtualization/operations/[^/]+/stream$`),
+		regexp.MustCompile(`^/api/v1/virtualization/ssh-sessions/[^/]+/stream$`),
 		regexp.MustCompile(`^/api/v1/virtualization/vms/[^/]+/console/(vnc|novnc)$`),
 		regexp.MustCompile(`^/api/v1/docker/projects/[^/]+/(runtime/logs/stream|logs/stream|runtime/terminal)$`),
 		regexp.MustCompile(`^/api/v1/delivery/applications/[^/]+/environments/[^/]+/logs/stream$`),
@@ -178,14 +179,15 @@ type Dependencies struct {
 }
 
 type tokenClaims struct {
-	TokenType string   `json:"token_type"`
-	SessionID string   `json:"sid,omitempty"`
-	UserName  string   `json:"name,omitempty"`
-	Email     string   `json:"email,omitempty"`
-	Roles     []string `json:"roles,omitempty"`
-	Teams     []string `json:"teams,omitempty"`
-	Projects  []string `json:"projects,omitempty"`
-	Tags      []string `json:"tags,omitempty"`
+	AuthzVersion *int64   `json:"authzVersion,omitempty"`
+	TokenType    string   `json:"token_type"`
+	SessionID    string   `json:"sid,omitempty"`
+	UserName     string   `json:"name,omitempty"`
+	Email        string   `json:"email,omitempty"`
+	Roles        []string `json:"roles,omitempty"`
+	Teams        []string `json:"teams,omitempty"`
+	Projects     []string `json:"projects,omitempty"`
+	Tags         []string `json:"tags,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -392,7 +394,7 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (doma
 	if err != nil {
 		return domainidentity.AuthResult{}, err
 	}
-	accessToken, accessClaims, err := s.signAccessToken(principal, session.ID)
+	accessToken, accessClaims, err := s.signAccessToken(principal, session.ID, authzState.AuthzVersion)
 	if err != nil {
 		return domainidentity.AuthResult{}, err
 	}
@@ -468,10 +470,14 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (dom
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
 	}
-	if session.AuthzVersion < authzState.AuthzVersion {
+	if session.AuthzVersion < authzState.AuthzVersion || (claims.AuthzVersion != nil && *claims.AuthzVersion != authzState.AuthzVersion) {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: authorization changed, refresh required", apperrors.ErrUnauthorized)
 	}
-	principal := principalFromClaims(claims)
+	// Session refresh cannot make a token's embedded memberships authoritative again.
+	principal, err := s.loadPrincipal(ctx, claims.Subject)
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
+	}
 	return principal, domainidentity.AccessContext{TokenID: claims.ID, TokenKind: "session_access", SessionID: claims.SessionID, SubjectType: "user", SubjectID: principal.UserID, Metadata: session.Metadata, ExpiresAt: claims.ExpiresAt.Time}, nil
 }
 
@@ -1244,9 +1250,13 @@ func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.
 	if err != nil {
 		return domainidentity.AuthResult{}, err
 	}
+	principal, err = s.loadPrincipal(ctx, principal.UserID)
+	if err != nil {
+		return domainidentity.AuthResult{}, err
+	}
 	sessionID := uuid.NewString()
 	refreshID := uuid.NewString()
-	accessToken, accessClaims, err := s.signAccessToken(principal, sessionID)
+	accessToken, accessClaims, err := s.signAccessToken(principal, sessionID, authzState.AuthzVersion)
 	if err != nil {
 		return domainidentity.AuthResult{}, err
 	}
@@ -1593,17 +1603,21 @@ func (s *Service) oidcRuntimeWithProvider(ctx context.Context, item domainsettin
 	return oidcCfg, provider, verifier, oauthConfig, nil
 }
 
-func (s *Service) signAccessToken(principal domainidentity.Principal, sessionID string) (string, *tokenClaims, error) {
+func (s *Service) signAccessToken(principal domainidentity.Principal, sessionID string, authzVersion int64) (string, *tokenClaims, error) {
+	if authzVersion < 1 {
+		return "", nil, fmt.Errorf("%w: invalid authorization version", apperrors.ErrUnauthorized)
+	}
 	now := time.Now().UTC()
 	claims := &tokenClaims{
-		TokenType: "access",
-		SessionID: sessionID,
-		UserName:  principal.UserName,
-		Email:     principal.Email,
-		Roles:     append([]string(nil), principal.Roles...),
-		Teams:     append([]string(nil), principal.Teams...),
-		Projects:  append([]string(nil), principal.Projects...),
-		Tags:      append([]string(nil), principal.Tags...),
+		AuthzVersion: &authzVersion,
+		TokenType:    "access",
+		SessionID:    sessionID,
+		UserName:     principal.UserName,
+		Email:        principal.Email,
+		Roles:        append([]string(nil), principal.Roles...),
+		Teams:        append([]string(nil), principal.Teams...),
+		Projects:     append([]string(nil), principal.Projects...),
+		Tags:         append([]string(nil), principal.Tags...),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.cfg.JWT.Issuer,
 			Subject:   principal.UserID,
@@ -1716,18 +1730,6 @@ func (s *Service) jwtVerificationCandidates(tokenString string) ([]keyring.Key, 
 		return nil, errors.New("jwt key id is unknown or expired")
 	}
 	return []keyring.Key{key}, nil
-}
-
-func principalFromClaims(claims *tokenClaims) domainidentity.Principal {
-	return domainidentity.Principal{
-		UserID:   claims.Subject,
-		UserName: claims.UserName,
-		Email:    claims.Email,
-		Roles:    append([]string(nil), claims.Roles...),
-		Teams:    append([]string(nil), claims.Teams...),
-		Projects: append([]string(nil), claims.Projects...),
-		Tags:     append([]string(nil), claims.Tags...),
-	}
 }
 
 func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Principal, action, result, summary string, metadata map[string]any) error {

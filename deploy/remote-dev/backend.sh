@@ -66,7 +66,7 @@ until fingerprint="$(source_fingerprint)"; do
 	sleep "$interval"
 done
 
-printf 'go 1.26.6\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n\nreplace github.com/opensoha/soha-contracts v0.0.0 => ./soha-contracts\n' > /workspace/go.work
+printf 'go 1.27.2\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n\nreplace github.com/opensoha/soha-contracts v0.0.0 => ./soha-contracts\n' > /workspace/go.work
 mkdir -p /workspace/bin
 
 while :; do

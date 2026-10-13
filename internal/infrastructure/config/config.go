@@ -48,6 +48,7 @@ type Config struct {
 	Bootstrap          BootstrapConfig          `mapstructure:"bootstrap"`
 	Kubernetes         KubernetesConfig         `mapstructure:"kubernetes"`
 	NetworkIngestQuery NetworkIngestQueryConfig `mapstructure:"network_ingest_query"`
+	PersonalGuest      PersonalGuestConfig      `mapstructure:"personal_guest"`
 }
 
 type AppConfig struct {
@@ -427,6 +428,12 @@ func (c *Config) expandEnv() {
 	c.NetworkIngestQuery.CertFile = os.ExpandEnv(c.NetworkIngestQuery.CertFile)
 	c.NetworkIngestQuery.KeyFile = os.ExpandEnv(c.NetworkIngestQuery.KeyFile)
 	c.NetworkIngestQuery.ServerName = os.ExpandEnv(c.NetworkIngestQuery.ServerName)
+	c.PersonalGuest.Addr = os.ExpandEnv(c.PersonalGuest.Addr)
+	c.PersonalGuest.TLS.CertFile = os.ExpandEnv(c.PersonalGuest.TLS.CertFile)
+	c.PersonalGuest.TLS.KeyFile = os.ExpandEnv(c.PersonalGuest.TLS.KeyFile)
+	c.PersonalGuest.TLS.ClientCAFile = os.ExpandEnv(c.PersonalGuest.TLS.ClientCAFile)
+	c.PersonalGuest.Endpoint = os.ExpandEnv(c.PersonalGuest.Endpoint)
+	c.PersonalGuest.IssuerKeyFile = os.ExpandEnv(c.PersonalGuest.IssuerKeyFile)
 	for i := range c.Kubernetes.Clusters {
 		c.Kubernetes.Clusters[i].Kubeconfig = os.ExpandEnv(c.Kubernetes.Clusters[i].Kubeconfig)
 		c.Kubernetes.Clusters[i].KubeconfigData = os.ExpandEnv(c.Kubernetes.Clusters[i].KubeconfigData)
@@ -478,6 +485,9 @@ func (c Config) staticProblems() []string {
 	problems = append(problems, validateSecretProvider(c.Security)...)
 	problems = append(problems, validateCompanionConfig(c.Plugins.Companion)...)
 	if err := c.NetworkIngestQuery.Validate(); err != nil {
+		problems = append(problems, err.Error())
+	}
+	if err := c.PersonalGuest.Validate(); err != nil {
 		problems = append(problems, err.Error())
 	}
 	if _, _, err := c.Security.OutpostSigningKey(); err != nil {
@@ -896,6 +906,15 @@ var configDefaults = []struct {
 	{"network_ingest_query.server_name", ""},
 	{"network_ingest_query.timeout", 5 * time.Second},
 	{"network_ingest_query.max_response_bytes", int64(1 << 20)},
+	{"personal_guest.enabled", false},
+	{"personal_guest.addr", ":8444"},
+	{"personal_guest.tls.cert_file", ""},
+	{"personal_guest.tls.key_file", ""},
+	{"personal_guest.tls.client_ca_file", ""},
+	{"personal_guest.endpoint", ""},
+	{"personal_guest.issuer_key_file", ""},
+	{"personal_guest.artifact_file", ""},
+	{"personal_guest.certificate_ttl_seconds", 0},
 	{"bootstrap.seed_defaults", true},
 	{"kubernetes.clusters", []map[string]any{}},
 }

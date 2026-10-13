@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
@@ -87,6 +88,7 @@ type HostProvisionInput struct {
 	FlavorID          string
 	Network           string
 	CloudInit         string
+	GuestAccess       *sohaapi.VirtualMachineGuestAccessInput
 	StartAfterCreate  bool
 	TemplateID        string
 	ProviderParams    map[string]any
@@ -354,7 +356,7 @@ func (s *Service) quickCreateHost(ctx context.Context, principal domainidentity.
 	if err := domaindocker.CheckScope(ctx, map[string]string{"resourceKind": "docker.host", "hostId": hostID, "virtualizationConnectionId": input.VirtualizationConnectionID}); err != nil {
 		return domaindocker.Operation{}, err
 	}
-	hostConfig := mergeMap(input.Config, map[string]any{})
+	hostConfig := quickCreateHostConfig(input.Config)
 	if claim.inputHash != "" {
 		hostConfig[idempotency.PayloadHashKey] = claim.inputHash
 	}
@@ -444,7 +446,7 @@ func (s *Service) provisionQuickCreateHost(ctx context.Context, principal domain
 	if s.hostProvisioner == nil || strings.TrimSpace(input.VirtualizationConnectionID) == "" {
 		return nil, nil
 	}
-	providerParams := mapValueAny(input.Config["providerParams"])
+	providerParams := publicBootstrapConfig(mapValueAny(input.Config["providerParams"]))
 	if _, exists := providerParams["dockerHostId"]; !exists && strings.TrimSpace(host.ID) != "" {
 		providerParams["dockerHostId"] = host.ID
 	}
@@ -453,7 +455,7 @@ func (s *Service) provisionQuickCreateHost(ctx context.Context, principal domain
 		ConnectionID: strings.TrimSpace(input.VirtualizationConnectionID), Name: strings.TrimSpace(input.Name), Architecture: architecture,
 		CPU: input.CPUCoreCount, MemoryMiB: bytesToMiB(input.MemoryBytes), DiskGiB: bytesToGiB(input.DiskBytes),
 		BootImageID: strings.TrimSpace(input.ImageID), ImageID: strings.TrimSpace(input.ImageID), FlavorID: strings.TrimSpace(input.FlavorID),
-		Network: strings.TrimSpace(input.Network), CloudInit: cloudInit, StartAfterCreate: true, TemplateID: strings.TrimSpace(input.VMTemplateID),
+		Network: strings.TrimSpace(input.Network), CloudInit: cloudInit, GuestAccess: input.GuestAccess, StartAfterCreate: true, TemplateID: strings.TrimSpace(input.VMTemplateID),
 		ProviderParams: providerParams, ProviderExtraJSON: mapValueAny(firstNonNil(input.Config["providerExtra"], input.Config["providerExtraJSON"])),
 	})
 	if err != nil {
@@ -3055,6 +3057,22 @@ func mapValueAny(raw any) map[string]any {
 		return map[string]any{}
 	}
 	return mapped
+}
+
+func publicBootstrapConfig(config map[string]any) map[string]any {
+	out := mergeMap(config, nil)
+	for _, field := range []string{"cloudInit", "runnerToken", "bearerToken", "agentInstallScript"} {
+		delete(out, field)
+	}
+	return out
+}
+
+func quickCreateHostConfig(config map[string]any) map[string]any {
+	out := publicBootstrapConfig(config)
+	if parameters, ok := config["providerParams"].(map[string]any); ok {
+		out["providerParams"] = publicBootstrapConfig(parameters)
+	}
+	return out
 }
 
 func (s *Service) quickCreateCloudInit(input domaindocker.QuickCreateHostInput, hostID string) string {

@@ -39,9 +39,11 @@ type connectorRuntimeManifest struct {
 }
 
 type connectorRuntimeAction struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name               string         `json:"name"`
+	Description        string         `json:"description"`
+	InputSchema        map[string]any `json:"inputSchema"`
+	CredentialProtocol string         `json:"credentialProtocol"`
+	CredentialAliases  []string       `json:"credentialAliases"`
 }
 
 type connectorRuntimeActionResponse struct {
@@ -161,16 +163,23 @@ func (p *connectorRuntimeProvider) Skills() []domainaigateway.SkillCapability {
 	return nil
 }
 
-func (p *connectorRuntimeProvider) InvokeTool(ctx context.Context, _ domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error) {
+func (p *connectorRuntimeProvider) InvokeTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error) {
 	if !providerHasTool(p, tool.Name) {
 		return nil, nil, fmt.Errorf("%w: connector tool %s is not available", apperrors.ErrInvalidArgument, tool.Name)
 	}
-	body, err := json.Marshal(input)
+	requestContext, cancel := context.WithTimeout(ctx, connectorRuntimeRequestTimeout)
+	defer cancel()
+	envelope, needles, err := p.actionBody(requestContext, principal, tool, input)
+	if err != nil {
+		return nil, nil, err
+	}
+	body, err := json.Marshal(envelope)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: invalid connector action input", apperrors.ErrInvalidArgument)
 	}
-	requestContext, cancel := context.WithTimeout(ctx, connectorRuntimeRequestTimeout)
-	defer cancel()
+	if len(needles) > 0 && len(body) > 1<<20 {
+		return nil, nil, fmt.Errorf("%w: credential connector envelope exceeds 1 MiB", apperrors.ErrInvalidArgument)
+	}
 	req, err := http.NewRequestWithContext(requestContext, http.MethodPost, p.endpoint+"/actions/"+url.PathEscape(tool.Name), bytes.NewReader(body))
 	if err != nil {
 		return nil, nil, err
@@ -179,28 +188,55 @@ func (p *connectorRuntimeProvider) InvokeTool(ctx context.Context, _ domainident
 	if p.runtimeToken != "" {
 		req.Header.Set("Authorization", "Bearer "+p.runtimeToken)
 	}
-	resp, err := p.httpClient.Do(req)
-	if err != nil {
-		return nil, p.relatedIDs(tool.Name), err
+	client := *p.httpClient
+	related := p.relatedIDs(tool.Name)
+	if len(needles) > 0 {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		masked, ok := redactConnectorCredentialOutput(related, needles).(map[string]any)
+		if !ok {
+			return nil, nil, fmt.Errorf("%w: invalid protected connector metadata", apperrors.ErrInvalidArgument)
+		}
+		related = masked
 	}
-	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	resp, err := client.Do(req)
 	if err != nil {
-		return nil, p.relatedIDs(tool.Name), errors.Join(err, resp.Body.Close())
+		return nil, related, connectorActionTransportError(requestContext, err, needles)
+	}
+	output, err := connectorRuntimeActionOutput(requestContext, resp, needles)
+	return output, related, err
+}
+
+func connectorRuntimeActionOutput(ctx context.Context, resp *http.Response, needles []string) (any, error) {
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, (1<<20)+1))
+	if err != nil {
+		return nil, connectorActionTransportError(ctx, errors.Join(err, resp.Body.Close()), needles)
 	}
 	if err := resp.Body.Close(); err != nil {
-		return nil, p.relatedIDs(tool.Name), fmt.Errorf("close connector action response: %w", err)
+		return nil, connectorActionTransportError(ctx, fmt.Errorf("close connector action response: %w", err), needles)
+	}
+	if len(payload) > 1<<20 {
+		return nil, fmt.Errorf("%w: connector action response exceeds 1 MiB", apperrors.ErrInvalidArgument)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, p.relatedIDs(tool.Name), fmt.Errorf("%w: connector action returned %d: %s", apperrors.ErrInvalidArgument, resp.StatusCode, strings.TrimSpace(string(payload)))
+		if len(needles) > 0 {
+			return nil, fmt.Errorf("%w: credential connector action returned %d", apperrors.ErrInvalidArgument, resp.StatusCode)
+		}
+		return nil, fmt.Errorf("%w: connector action returned %d: %s", apperrors.ErrInvalidArgument, resp.StatusCode, strings.TrimSpace(string(payload)))
 	}
 	var actionResponse connectorRuntimeActionResponse
 	if err := json.Unmarshal(payload, &actionResponse); err != nil {
-		return nil, p.relatedIDs(tool.Name), fmt.Errorf("%w: invalid connector action response: %v", apperrors.ErrInvalidArgument, err)
+		return nil, connectorActionTransportError(ctx, fmt.Errorf("%w: invalid connector action response: %v", apperrors.ErrInvalidArgument, err), needles)
 	}
 	if !actionResponse.OK {
-		return nil, p.relatedIDs(tool.Name), fmt.Errorf("%w: connector action failed: %s", apperrors.ErrInvalidArgument, connectorRuntimeErrorText(actionResponse.Error))
+		if len(needles) > 0 {
+			return nil, fmt.Errorf("%w: credential connector action failed", apperrors.ErrInvalidArgument)
+		}
+		return nil, fmt.Errorf("%w: connector action failed: %s", apperrors.ErrInvalidArgument, connectorRuntimeErrorText(actionResponse.Error))
 	}
-	return actionResponse.Output, p.relatedIDs(tool.Name), nil
+	if len(needles) > 0 {
+		actionResponse.Output = redactConnectorCredentialOutput(actionResponse.Output, needles)
+	}
+	return actionResponse.Output, nil
 }
 
 func (p *connectorRuntimeProvider) relatedIDs(actionName string) map[string]any {

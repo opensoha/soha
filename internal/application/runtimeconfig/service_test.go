@@ -404,6 +404,9 @@ func TestPollingReconcilesRemoteRevisionAndRunsHook(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("remote revision was not reconciled")
 	}
+	// The hook notification precedes snapshot publication.
+	service.applyMu.Lock()
+	defer service.applyMu.Unlock()
 	if !service.FeatureEnabled("ai", "assistant.global") {
 		t.Fatal("remote feature state was not published")
 	}

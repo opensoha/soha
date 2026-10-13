@@ -10,17 +10,20 @@ import (
 
 func TestCopilotCapabilityInterfacesRemainFocused(t *testing.T) {
 	interfaces := map[string]reflect.Type{
-		"sessions":          reflect.TypeOf((*CopilotSessionService)(nil)).Elem(),
-		"messages":          reflect.TypeOf((*CopilotMessageService)(nil)).Elem(),
-		"streams":           reflect.TypeOf((*CopilotStreamService)(nil)).Elem(),
-		"workbench":         reflect.TypeOf((*CopilotWorkbenchService)(nil)).Elem(),
-		"data sources":      reflect.TypeOf((*CopilotDataSourceService)(nil)).Elem(),
-		"analysis profiles": reflect.TypeOf((*CopilotAnalysisProfileService)(nil)).Elem(),
-		"automation":        reflect.TypeOf((*CopilotAutomationService)(nil)).Elem(),
-		"root cause":        reflect.TypeOf((*CopilotRootCauseService)(nil)).Elem(),
-		"agent runs":        reflect.TypeOf((*CopilotAgentRunService)(nil)).Elem(),
-		"inspection tasks":  reflect.TypeOf((*CopilotInspectionTaskService)(nil)).Elem(),
-		"inspection runs":   reflect.TypeOf((*CopilotInspectionRunService)(nil)).Elem(),
+		"message search":     reflect.TypeOf((*CopilotMessageSearchService)(nil)).Elem(),
+		"feed":               reflect.TypeOf((*CopilotFeedService)(nil)).Elem(),
+		"personal assistant": reflect.TypeOf((*CopilotPersonalAssistantService)(nil)).Elem(),
+		"sessions":           reflect.TypeOf((*CopilotSessionService)(nil)).Elem(),
+		"messages":           reflect.TypeOf((*CopilotMessageService)(nil)).Elem(),
+		"streams":            reflect.TypeOf((*CopilotStreamService)(nil)).Elem(),
+		"workbench":          reflect.TypeOf((*CopilotWorkbenchService)(nil)).Elem(),
+		"data sources":       reflect.TypeOf((*CopilotDataSourceService)(nil)).Elem(),
+		"analysis profiles":  reflect.TypeOf((*CopilotAnalysisProfileService)(nil)).Elem(),
+		"automation":         reflect.TypeOf((*CopilotAutomationService)(nil)).Elem(),
+		"root cause":         reflect.TypeOf((*CopilotRootCauseService)(nil)).Elem(),
+		"agent runs":         reflect.TypeOf((*CopilotAgentRunService)(nil)).Elem(),
+		"inspection tasks":   reflect.TypeOf((*CopilotInspectionTaskService)(nil)).Elem(),
+		"inspection runs":    reflect.TypeOf((*CopilotInspectionRunService)(nil)).Elem(),
 	}
 	for name, contract := range interfaces {
 		if methods := contract.NumMethod(); methods > 7 {

@@ -19,6 +19,19 @@ type Fetcher struct {
 }
 
 func NewFetcher() *Fetcher {
+	client := &http.Client{Transport: NewPublicTransport(), Timeout: 2 * time.Minute}
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("too many companion package redirects")
+		}
+		return validatePackageURL(req.URL.String())
+	}
+	return &Fetcher{client: client}
+}
+
+// NewPublicTransport pins resolved public addresses at connect time and never
+// uses an environment proxy, including for each new redirected destination.
+func NewPublicTransport() *http.Transport {
 	dialer := &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
 	transport := &http.Transport{
 		Proxy: nil,
@@ -45,14 +58,7 @@ func NewFetcher() *Fetcher {
 		ResponseHeaderTimeout: 10 * time.Second,
 		IdleConnTimeout:       30 * time.Second,
 	}
-	client := &http.Client{Transport: transport, Timeout: 2 * time.Minute}
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return fmt.Errorf("too many companion package redirects")
-		}
-		return validatePackageURL(req.URL.String())
-	}
-	return &Fetcher{client: client}
+	return transport
 }
 
 func (f *Fetcher) Fetch(ctx context.Context, rawURL string, maxBytes int64) (io.ReadCloser, error) {

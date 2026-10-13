@@ -288,6 +288,9 @@ func (s *Service) resolveRootCauseProfile(ctx context.Context, input domaincopil
 		if err != nil {
 			return domaincopilot.AnalysisProfile{}, err
 		}
+		if !profile.Enabled || profile.Mode != "root_cause" {
+			return domaincopilot.AnalysisProfile{}, fmt.Errorf("%w: root-cause profile is disabled or has an incompatible mode", aperrors.ErrInvalidArgument)
+		}
 		return profile, nil
 	}
 	items, err := s.analysisProfiles.ListAnalysisProfiles(ctx)

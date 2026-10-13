@@ -22,7 +22,7 @@ func New(db *gorm.DB) *Repository {
 }
 
 func (r *Repository) List(ctx context.Context, filter domainsecret.Filter) ([]domainsecret.Secret, error) {
-	query := `SELECT id, name, description, scope_type, scope_id, status, current_version, bindings, created_by, created_at, updated_at FROM secrets WHERE 1=1`
+	query := `SELECT id, name, description, scope_type, scope_id, status, current_version, bindings, created_by, created_at, updated_at, kind, public_key FROM secrets WHERE 1=1`
 	args := make([]any, 0, 2)
 	if filter.ScopeType != "" {
 		query += ` AND scope_type = ?`
@@ -60,15 +60,15 @@ func (r *Repository) Create(ctx context.Context, item domainsecret.Secret, versi
 	}
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`
-			INSERT INTO secrets (id, name, description, scope_type, scope_id, status, current_version, bindings, created_by, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?::json, ?, ?, ?)
-		`, item.ID, item.Name, item.Description, item.ScopeType, item.ScopeID, item.Status, item.CurrentVersion, string(bindings), item.CreatedBy, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			INSERT INTO secrets (id, name, description, scope_type, scope_id, status, current_version, bindings, created_by, created_at, updated_at, kind, public_key)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?::json, ?, ?, ?, ?, ?::jsonb)
+		`, item.ID, item.Name, item.Description, item.ScopeType, item.ScopeID, item.Status, item.CurrentVersion, string(bindings), item.CreatedBy, item.CreatedAt, item.UpdatedAt, secretKind(item.Kind), publicKeyJSON(item.PublicKey)).Error; err != nil {
 			return conflictError(err, "secret name already exists in this scope")
 		}
 		return tx.Exec(`
-			INSERT INTO secret_versions (secret_id, version, source_type, ciphertext, vault_mount, vault_path, vault_key, vault_version, status, created_by, created_at, revoked_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, version.SecretID, version.Version, versionSource(version), nullableCiphertext(version), vaultMount(version), vaultPath(version), vaultKey(version), vaultVersion(version), version.Status, version.CreatedBy, version.CreatedAt, version.RevokedAt).Error
+			INSERT INTO secret_versions (secret_id, version, source_type, ciphertext, vault_mount, vault_path, vault_key, vault_version, status, created_by, created_at, revoked_at, kind, public_key)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+		`, version.SecretID, version.Version, versionSource(version), nullableCiphertext(version), vaultMount(version), vaultPath(version), vaultKey(version), vaultVersion(version), version.Status, version.CreatedBy, version.CreatedAt, version.RevokedAt, secretKind(version.Kind), publicKeyJSON(version.PublicKey)).Error
 	})
 	if err != nil {
 		return domainsecret.Secret{}, err
@@ -97,7 +97,7 @@ func (r *Repository) Update(ctx context.Context, item domainsecret.Secret) (doma
 
 func (r *Repository) ListVersions(ctx context.Context, secretID string) ([]domainsecret.Version, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT secret_id, version, source_type, COALESCE(ciphertext, ''), COALESCE(vault_mount, ''), COALESCE(vault_path, ''), COALESCE(vault_key, ''), COALESCE(vault_version, 0), status, created_by, created_at, revoked_at
+		SELECT secret_id, version, source_type, COALESCE(ciphertext, ''), COALESCE(vault_mount, ''), COALESCE(vault_path, ''), COALESCE(vault_key, ''), COALESCE(vault_version, 0), status, created_by, created_at, revoked_at, kind, public_key
 		FROM secret_versions WHERE secret_id = ? ORDER BY version DESC
 	`, secretID).Rows()
 	if err != nil {
@@ -131,12 +131,12 @@ func (r *Repository) Rotate(ctx context.Context, secretID string, version domain
 		}
 		version.Version = current + 1
 		if err := tx.Exec(`
-			INSERT INTO secret_versions (secret_id, version, source_type, ciphertext, vault_mount, vault_path, vault_key, vault_version, status, created_by, created_at, revoked_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-		`, secretID, version.Version, versionSource(version), nullableCiphertext(version), vaultMount(version), vaultPath(version), vaultKey(version), vaultVersion(version), version.Status, version.CreatedBy, version.CreatedAt).Error; err != nil {
+			INSERT INTO secret_versions (secret_id, version, source_type, ciphertext, vault_mount, vault_path, vault_key, vault_version, status, created_by, created_at, revoked_at, kind, public_key)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?::jsonb)
+		`, secretID, version.Version, versionSource(version), nullableCiphertext(version), vaultMount(version), vaultPath(version), vaultKey(version), vaultVersion(version), version.Status, version.CreatedBy, version.CreatedAt, secretKind(version.Kind), publicKeyJSON(version.PublicKey)).Error; err != nil {
 			return err
 		}
-		return tx.Exec(`UPDATE secrets SET current_version = ?, updated_at = ? WHERE id = ?`, version.Version, version.CreatedAt, secretID).Error
+		return tx.Exec(`UPDATE secrets SET current_version = ?, updated_at = ?, public_key = ?::jsonb WHERE id = ?`, version.Version, version.CreatedAt, publicKeyJSON(version.PublicKey), secretID).Error
 	})
 	return version, err
 }
@@ -178,17 +178,18 @@ func (r *Repository) CreateLease(ctx context.Context, lease domainsecret.Lease) 
 		return fmt.Errorf("marshal secret lease principal: %w", err)
 	}
 	return r.db.WithContext(ctx).Exec(`
-		INSERT INTO secret_leases (id, token_hash, agent_id, subject_type, subject_id, target_type, target_ref, secret_refs, principal, expires_at, redeemed_at, revoked_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?::json, ?::json, ?, NULL, NULL, ?)
-	`, lease.ID, lease.TokenHash, lease.AgentID, lease.SubjectType, lease.SubjectID, lease.Target.Type, lease.Target.Ref, string(refs), string(principal), lease.ExpiresAt, lease.CreatedAt).Error
+		INSERT INTO secret_leases (id, token_hash, agent_id, subject_type, subject_id, target_type, target_ref, secret_refs, principal, expires_at, redeemed_at, revoked_at, created_at, purpose)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?::json, ?::json, ?, NULL, NULL, ?, ?)
+	`, lease.ID, lease.TokenHash, lease.AgentID, lease.SubjectType, lease.SubjectID, lease.Target.Type, lease.Target.Ref, string(refs), string(principal), lease.ExpiresAt, lease.CreatedAt, lease.Target.Purpose).Error
 }
 
-func (r *Repository) RedeemLease(ctx context.Context, id, tokenHash, agentID string, now time.Time) (domainsecret.Lease, error) {
+func (r *Repository) RedeemLease(ctx context.Context, id, tokenHash, agentID, subjectType, subjectID string, now time.Time) (domainsecret.Lease, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		UPDATE secret_leases SET redeemed_at = ?
 		WHERE id = ? AND token_hash = ? AND agent_id = ? AND redeemed_at IS NULL AND revoked_at IS NULL AND expires_at > ?
-		RETURNING id, token_hash, agent_id, subject_type, subject_id, target_type, target_ref, secret_refs, principal, expires_at, redeemed_at, revoked_at, created_at
-	`, now, id, tokenHash, agentID, now).Row()
+		AND ((? = '' AND subject_type IN ('execution_task','agent_run')) OR (subject_type = ? AND subject_id = ?))
+		RETURNING id, token_hash, agent_id, subject_type, subject_id, target_type, target_ref, secret_refs, principal, expires_at, redeemed_at, revoked_at, created_at, purpose
+	`, now, id, tokenHash, agentID, now, subjectType, subjectType, subjectID).Row()
 	lease, err := scanLease(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domainsecret.Lease{}, fmt.Errorf("%w: secret lease is unavailable", apperrors.ErrNotFound)
@@ -209,7 +210,7 @@ type rowScanner interface {
 
 func getSecret(db *gorm.DB, id string) (domainsecret.Secret, error) {
 	item, err := scanSecret(db.Raw(`
-		SELECT id, name, description, scope_type, scope_id, status, current_version, bindings, created_by, created_at, updated_at
+		SELECT id, name, description, scope_type, scope_id, status, current_version, bindings, created_by, created_at, updated_at, kind, public_key
 		FROM secrets WHERE id = ?
 	`, id).Row())
 	if err != nil {
@@ -220,10 +221,10 @@ func getSecret(db *gorm.DB, id string) (domainsecret.Secret, error) {
 
 func scanSecret(scanner rowScanner) (domainsecret.Secret, error) {
 	var item domainsecret.Secret
-	var bindings []byte
+	var bindings, publicKey []byte
 	if err := scanner.Scan(
 		&item.ID, &item.Name, &item.Description, &item.ScopeType, &item.ScopeID, &item.Status, &item.CurrentVersion,
-		&bindings, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt,
+		&bindings, &item.CreatedBy, &item.CreatedAt, &item.UpdatedAt, &item.Kind, &publicKey,
 	); err != nil {
 		return domainsecret.Secret{}, err
 	}
@@ -232,12 +233,17 @@ func scanSecret(scanner rowScanner) (domainsecret.Secret, error) {
 	} else if err := json.Unmarshal(bindings, &item.Bindings); err != nil {
 		return domainsecret.Secret{}, fmt.Errorf("unmarshal secret bindings: %w", err)
 	}
+	if len(publicKey) > 0 {
+		if err := json.Unmarshal(publicKey, &item.PublicKey); err != nil {
+			return domainsecret.Secret{}, err
+		}
+	}
 	return item, nil
 }
 
 func getVersion(db *gorm.DB, secretID string, version int) (domainsecret.Version, error) {
 	item, err := scanVersion(db.Raw(`
-		SELECT secret_id, version, source_type, COALESCE(ciphertext, ''), COALESCE(vault_mount, ''), COALESCE(vault_path, ''), COALESCE(vault_key, ''), COALESCE(vault_version, 0), status, created_by, created_at, revoked_at
+		SELECT secret_id, version, source_type, COALESCE(ciphertext, ''), COALESCE(vault_mount, ''), COALESCE(vault_path, ''), COALESCE(vault_key, ''), COALESCE(vault_version, 0), status, created_by, created_at, revoked_at, kind, public_key
 		FROM secret_versions WHERE secret_id = ? AND version = ?
 	`, secretID, version).Row())
 	if err != nil {
@@ -249,12 +255,18 @@ func getVersion(db *gorm.DB, secretID string, version int) (domainsecret.Version
 func scanVersion(scanner rowScanner) (domainsecret.Version, error) {
 	var item domainsecret.Version
 	var vault domainsecret.VaultKV2Reference
+	var publicKey []byte
 	if err := scanner.Scan(
 		&item.SecretID, &item.Version, &item.SourceType, &item.Ciphertext,
 		&vault.Mount, &vault.Path, &vault.Key, &vault.Version,
-		&item.Status, &item.CreatedBy, &item.CreatedAt, &item.RevokedAt,
+		&item.Status, &item.CreatedBy, &item.CreatedAt, &item.RevokedAt, &item.Kind, &publicKey,
 	); err != nil {
 		return domainsecret.Version{}, err
+	}
+	if len(publicKey) > 0 {
+		if err := json.Unmarshal(publicKey, &item.PublicKey); err != nil {
+			return domainsecret.Version{}, err
+		}
 	}
 	if item.SourceType == domainsecret.SourceVaultKV2 {
 		item.VaultKV2 = &vault
@@ -309,7 +321,7 @@ func scanLease(scanner rowScanner) (domainsecret.Lease, error) {
 	var refs, principal []byte
 	if err := scanner.Scan(
 		&lease.ID, &lease.TokenHash, &lease.AgentID, &lease.SubjectType, &lease.SubjectID, &lease.Target.Type, &lease.Target.Ref,
-		&refs, &principal, &lease.ExpiresAt, &lease.RedeemedAt, &lease.RevokedAt, &lease.CreatedAt,
+		&refs, &principal, &lease.ExpiresAt, &lease.RedeemedAt, &lease.RevokedAt, &lease.CreatedAt, &lease.Target.Purpose,
 	); err != nil {
 		return domainsecret.Lease{}, err
 	}
@@ -336,4 +348,15 @@ func conflictError(err error, message string) error {
 		return fmt.Errorf("%w: %s", apperrors.ErrConflict, message)
 	}
 	return err
+}
+
+func secretKind(kind domainsecret.Kind) domainsecret.Kind {
+	if kind == "" {
+		return domainsecret.KindOpaque
+	}
+	return kind
+}
+func publicKeyJSON(key *domainsecret.SSHPublicKey) string {
+	encoded, _ := json.Marshal(key)
+	return string(encoded)
 }

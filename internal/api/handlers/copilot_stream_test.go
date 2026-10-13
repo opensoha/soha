@@ -231,6 +231,24 @@ func hasEventType(events []domaincopilot.WorkbenchStreamEvent, eventType string)
 	return false
 }
 
+func TestStreamMessageAppearanceBoundary(t *testing.T) {
+	service := &streamHandlerService{}
+	performStreamMessageRequest(t, service, `{"content":"white robot","assistantTask":{"kind":"avatar","useCurrentAvatar":true}}`)
+	if len(service.inputs) != 1 || service.inputs[0].AssistantTask == nil || !service.inputs[0].AssistantTask.UseCurrentAvatar {
+		t.Fatal("appearance task lost at HTTP boundary")
+	}
+	router := gin.New()
+	handler := NewCopilotHandler(service)
+	router.POST("/sessions/:sessionID/messages/stream", handler.StreamMessage)
+	request := httptest.NewRequest(http.MethodPost, "/sessions/owned/messages/stream", strings.NewReader(`{"content":"`+strings.Repeat("x", 2<<20)+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusBadRequest || len(service.inputs) != 1 {
+		t.Fatalf("oversized image request reached service: status=%d", recorder.Code)
+	}
+}
+
 func TestStreamMessagePassesModelPreferences(t *testing.T) {
 	service := &streamHandlerService{}
 	performStreamMessageRequest(t, service, `{"content":"hi","mode":"general","modelPreferences":{"publicModel":"selected","reasoningEffort":"high"}}`)

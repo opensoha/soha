@@ -2,6 +2,7 @@ package virtualization
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -22,7 +23,7 @@ func (s *Service) CheckCapacity(ctx context.Context, principal domainidentity.Pr
 			return result, err
 		}
 	}
-	if result.ConnectionID == "" || input.CPU < 1 || input.CPU > 65536 || input.MemoryMiB < 1 || input.MemoryMiB > 1<<40 || input.DiskGiB < 1 || input.DiskGiB > 1<<40 {
+	if !validCapacityInput(input) {
 		return result, fmt.Errorf("%w: connection and bounded positive CPU, memory and root disk are required", apperrors.ErrInvalidArgument)
 	}
 	architecture, err := normalizeArchitecture(input.Architecture)
@@ -39,6 +40,15 @@ func (s *Service) CheckCapacity(ctx context.Context, principal domainidentity.Pr
 		return result, err
 	}
 	result.Provider = connection.Provider
+	policy, err := s.capacityPolicy(ctx, connection)
+	if err != nil {
+		return result, err
+	}
+	result.SourceID, result.PolicyRevision, result.PolicyMode = policy.SourceID, policy.Revision, sohaapi.VirtualizationCapacityPolicyMode(policy.Mode)
+	if policy.Mode == "enforced" && !policy.SourceConfirmed {
+		result.Reason = "confirm the physical PVE source in capacity policy before admission"
+		return result, nil
+	}
 	if !connection.Enabled {
 		result.Reason = "virtualization connection is disabled"
 		return result, nil
@@ -53,7 +63,21 @@ func (s *Service) CheckCapacity(ctx context.Context, principal domainidentity.Pr
 	if err != nil {
 		return result, fmt.Errorf("%w: %v", apperrors.ErrInvalidArgument, err)
 	}
-	node, storage, err := s.tasks.SelectCapacity(ctx, snapshot, domain.CapacityDemand{Node: adapterInput.Node, Storage: strings.TrimSpace(input.Storage), CPU: int64(input.CPU), MemoryMiB: int64(input.MemoryMiB) + overhead, DiskGiB: capacityDiskDemand(connection.Provider, input.DiskGiB)})
+	demand := domain.CapacityDemand{Node: adapterInput.Node, Storage: strings.TrimSpace(input.Storage), CPU: int64(input.CPU), MemoryMiB: int64(input.MemoryMiB) + overhead, DiskGiB: capacityDiskDemand(connection.Provider, input.DiskGiB)}
+	if input.StartAfterCreate != nil && !*input.StartAfterCreate {
+		demand.CPU, demand.MemoryMiB, demand.StorageOnly = 0, 0, true
+	}
+	result.SourceID, result.PolicyRevision, result.PolicyMode = snapshot.SourceID, snapshot.Policy.Revision, sohaapi.VirtualizationCapacityPolicyMode(snapshot.Policy.Mode)
+	if s.capacityPolicies != nil {
+		diagnostics, err := s.capacityPolicies.DiagnoseCapacity(ctx, snapshot, demand)
+		if err != nil {
+			result.Reason = "capacity policy or reservation ledger could not be verified"
+			return result, nil
+		}
+		encoded, _ := json.Marshal(diagnostics)
+		_ = json.Unmarshal(encoded, &result.Diagnostics)
+	}
+	node, storage, err := s.tasks.SelectCapacity(ctx, snapshot, demand)
 	result.Namespace, result.ObservedAt = snapshot.Namespace, &snapshot.ObservedAt
 	validUntil := snapshot.ObservedAt.Add(30 * time.Second)
 	result.ValidUntil = &validUntil
@@ -79,11 +103,34 @@ func (s *Service) observeCapacity(ctx context.Context, connection domain.Connect
 	if !ok {
 		return domain.CapacitySnapshot{}, fmt.Errorf("%w: provider capacity is unavailable", apperrors.ErrConflict)
 	}
-	return provider.ObserveCapacity(ctx, providerConnection, input)
+	policy, err := s.capacityPolicy(ctx, connection)
+	if err != nil {
+		return domain.CapacitySnapshot{}, err
+	}
+	if policy.Mode == "enforced" && !policy.SourceConfirmed {
+		return domain.CapacitySnapshot{}, fmt.Errorf("%w: physical PVE source identity must be confirmed before admission", apperrors.ErrConflict)
+	}
+	snapshot, err := provider.ObserveCapacity(ctx, providerConnection, input)
+	snapshot.ConnectionID, snapshot.SourceID, snapshot.Policy = connection.ID, policy.SourceID, policy
+	return snapshot, err
 }
 
 func (s *Service) createTaskWithAdmission(ctx context.Context, task domain.Task) (domain.Task, error) {
-	if task.TaskKind != TaskKindVMCreate || !boolValue(task.Payload, "requireCapacity") {
+	if task.TaskKind != TaskKindVMCreate && task.TaskKind != TaskKindVMAction {
+		return s.tasks.CreateTask(ctx, task)
+	}
+	connection, err := s.connections.GetConnection(ctx, task.ConnectionID)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	policy, err := s.capacityPolicy(ctx, connection)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	if policy.Mode == "enforced" {
+		task.Payload["requireCapacity"] = true
+	}
+	if !boolValue(task.Payload, "requireCapacity") {
 		return s.tasks.CreateTask(ctx, task)
 	}
 	if task.ID != "" {
@@ -92,6 +139,9 @@ func (s *Service) createTaskWithAdmission(ctx context.Context, task domain.Task)
 		} else if !errors.Is(err, apperrors.ErrNotFound) {
 			return domain.Task{}, err
 		}
+	}
+	if task.TaskKind == TaskKindVMAction {
+		return s.admitVMAction(ctx, task, false)
 	}
 	return s.admitVMTask(ctx, task, false)
 }
@@ -114,6 +164,9 @@ func (s *Service) retryTaskWithAdmission(ctx context.Context, task domain.Task) 
 }
 
 func (s *Service) retryVMTaskWithAdmission(ctx context.Context, task domain.Task) (domain.Task, error) {
+	if task.TaskKind == TaskKindVMAction && boolValue(task.Payload, "requireCapacity") && !boolValue(task.Payload, "providerDispatchStarted") {
+		return s.admitVMAction(ctx, task, true)
+	}
 	if task.TaskKind != TaskKindVMCreate || !boolValue(task.Payload, "requireCapacity") || boolValue(task.Payload, "providerDispatchStarted") {
 		return s.tasks.UpdateTask(ctx, task)
 	}
@@ -136,6 +189,9 @@ func (s *Service) admitVMTask(ctx context.Context, task domain.Task, retry bool)
 	if err != nil {
 		return domain.Task{}, err
 	}
+	if connection.Provider == ProviderPVE && snapshot.Policy.Revision > 0 {
+		task.Payload["providerGenerationRequired"] = true
+	}
 	storage := firstNonEmpty(stringValue(input.ProviderParams, "storage"), stringValue(input.ProviderParams, "storageClass"))
 	memory := int64(payloadInt(task.Payload, "memoryMiB"))
 	overhead, err := domain.CapacityMemoryOverheadMiB(connection.Config)
@@ -145,7 +201,13 @@ func (s *Service) admitVMTask(ctx context.Context, task domain.Task, retry bool)
 	memory += overhead
 	task.Payload["providerConnectionIdentity"] = vmCreateConnectionIdentity(connection)
 	demand := domain.CapacityDemand{Node: input.Node, Storage: storage, CPU: int64(input.CPU), MemoryMiB: memory, DiskGiB: capacityDiskDemand(connection.Provider, payloadInt(task.Payload, "diskGiB"))}
+	if !input.StartAfterCreate {
+		demand.CPU, demand.MemoryMiB, demand.StorageOnly = 0, 0, true
+	}
 	if retry {
+		if task.Status == TaskStatusRunning {
+			return s.tasks.RecheckTaskWithCapacity(ctx, task, snapshot, demand)
+		}
 		return s.tasks.RetryTaskWithCapacity(ctx, task, snapshot, demand)
 	}
 	return s.tasks.CreateTaskWithCapacity(ctx, task, snapshot, demand)
@@ -159,4 +221,8 @@ func capacityDiskDemand(provider string, rootGiB int) int64 {
 		demand++
 	}
 	return demand
+}
+
+func validCapacityInput(input sohaapi.VirtualizationCapacityInput) bool {
+	return strings.TrimSpace(input.ConnectionID) != "" && input.CPU >= 1 && input.CPU <= 65536 && input.MemoryMiB >= 1 && input.MemoryMiB <= 1<<40 && input.DiskGiB >= 1 && input.DiskGiB <= 1<<40
 }

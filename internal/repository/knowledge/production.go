@@ -209,9 +209,6 @@ func (r *Repository) ClaimIngestionJob(
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("%w: ingestion claim lost", domainknowledge.ErrIngestionConflict)
 		}
-		if err := tx.Exec(`DELETE FROM ai_knowledge_ingestion_document_staging WHERE job_id=?`, job.ID).Error; err != nil {
-			return fmt.Errorf("clear stale knowledge ingestion staging: %w", err)
-		}
 		job.Status = domainknowledge.IngestionJobRunning
 		job.Attempt++
 		job.NextAttemptAt = nil
@@ -250,6 +247,8 @@ func (r *Repository) StageIngestionDocument(
 		WHERE EXISTS (
 			SELECT 1 FROM ai_knowledge_ingestion_jobs
 			WHERE id=? AND status='running' AND lease_token=? AND cancel_requested=false
+			  AND lease_expires_at>clock_timestamp()
+			FOR UPDATE
 		)
 		ON CONFLICT(job_id,document_id) DO UPDATE SET
 			lease_token=EXCLUDED.lease_token,
@@ -264,6 +263,34 @@ func (r *Repository) StageIngestionDocument(
 		return fmt.Errorf("%w: stale or cancelled ingestion staging", domainknowledge.ErrIngestionConflict)
 	}
 	return nil
+}
+
+// A new lease may reuse completed vectors, but must restage current metadata
+// under its own fencing token before publication. Old-lease rows stay invisible
+// to PublishIngestionJob until that happens.
+func (r *Repository) LoadIngestionDocument(ctx context.Context, jobID, leaseToken string, document domainknowledge.Document) ([]domainknowledge.Chunk, error) {
+	var payload []byte
+	err := r.db.WithContext(ctx).Raw(`
+		SELECT s.chunks_payload FROM ai_knowledge_ingestion_document_staging s
+		JOIN ai_knowledge_ingestion_jobs j ON j.id=s.job_id
+		WHERE s.job_id=? AND s.document_id=?
+		  AND s.document_payload->>'contentHash'=?
+		  AND s.document_payload->>'sourceId'=?
+		  AND s.document_payload->>'knowledgeBaseId'=?
+		  AND j.status='running' AND j.lease_token=? AND j.cancel_requested=false
+		  AND j.lease_expires_at>clock_timestamp()`,
+		jobID, document.ID, document.ContentHash, document.SourceID, document.KnowledgeBaseID, leaseToken).Row().Scan(&payload)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read staged knowledge vectors: %w", err)
+	}
+	var chunks []domainknowledge.Chunk
+	if err := json.Unmarshal(payload, &chunks); err != nil {
+		return nil, fmt.Errorf("decode staged knowledge vectors: %w", err)
+	}
+	return chunks, nil
 }
 
 func (r *Repository) AdvanceIngestionJob(
@@ -405,7 +432,7 @@ func (r *Repository) PublishIngestionJob(
 			return fmt.Errorf("%w: staged document count mismatch", domainknowledge.ErrIngestionConflict)
 		}
 		for _, item := range staged {
-			if err := upsertPublishedDocument(tx, item.document, item.chunks, job.UpdatedAt); err != nil {
+			if err := upsertPublishedDocument(tx, item.document, item.chunks, job.UpdatedAt, revision.ID); err != nil {
 				return err
 			}
 		}
@@ -460,7 +487,7 @@ func (r *Repository) PublishIngestionJob(
 		if result.RowsAffected != 1 {
 			return fmt.Errorf("%w: stale or cancelled ingestion publish", domainknowledge.ErrIngestionConflict)
 		}
-		if err := tx.Exec(`DELETE FROM ai_knowledge_ingestion_document_staging WHERE job_id=? AND lease_token=?`, job.ID, job.LeaseToken).Error; err != nil {
+		if err := tx.Exec(`DELETE FROM ai_knowledge_ingestion_document_staging WHERE job_id=?`, job.ID).Error; err != nil {
 			return fmt.Errorf("clear published knowledge staging: %w", err)
 		}
 		return insertIngestionStage(tx, job)
@@ -502,7 +529,23 @@ func loadStagedIngestionDocuments(tx *gorm.DB, jobID, leaseToken string) ([]stag
 	return items, nil
 }
 
-func upsertPublishedDocument(tx *gorm.DB, document domainknowledge.Document, chunks []domainknowledge.Chunk, publishedAt time.Time) error {
+func upsertPublishedDocument(tx *gorm.DB, document domainknowledge.Document, chunks []domainknowledge.Chunk, publishedAt time.Time, revisionID string) error {
+	if document.Status == domainknowledge.DocumentStatusDeleted {
+		if len(chunks) != 0 {
+			return fmt.Errorf("%w: tombstone cannot contain chunks", domainknowledge.ErrInvalidInput)
+		}
+		result := tx.Exec(`UPDATE ai_knowledge_documents SET status='deleted',chunk_count=0,current_version_id=NULL,updated_at=? WHERE id=? AND knowledge_base_id=? AND source_id=? AND external_id=?`, publishedAt, document.ID, document.KnowledgeBaseID, document.SourceID, document.ExternalID)
+		if result.Error != nil {
+			return fmt.Errorf("publish knowledge tombstone: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		if err := tx.Exec(`DELETE FROM ai_knowledge_chunks WHERE document_id=?`, document.ID).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`DELETE FROM ai_knowledge_document_versions WHERE document_id=?`, document.ID).Error
+	}
 	document.Status = domainknowledge.DocumentStatusIndexed
 	document.UpdatedAt = publishedAt
 	acl, err := json.Marshal(document.ACL)
@@ -543,7 +586,7 @@ func upsertPublishedDocument(tx *gorm.DB, document domainknowledge.Document, chu
 			return fmt.Errorf("publish knowledge chunk: %w", err)
 		}
 	}
-	return nil
+	return publishImmutableVersion(tx, document, chunks, revisionID, publishedAt)
 }
 
 func encodeIngestionState(job domainknowledge.IngestionJob) ([]byte, []byte, error) {

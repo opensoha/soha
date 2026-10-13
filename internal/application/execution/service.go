@@ -221,7 +221,13 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 		var hydrated domaindelivery.ExecutionTask
 		hydrated, err = s.payloadHydrator.HydrateExecutionTask(ctx, task)
 		if err != nil {
-			_, _ = s.RecordCallback(context.WithoutCancel(ctx), domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: "failed", Payload: map[string]any{"error": "execution authorization or frozen preparation is no longer available", "helm": map[string]any{"stopped": true}}})
+			failure := map[string]any{"error": "execution authorization or frozen preparation is no longer available", "helm": map[string]any{"stopped": true}}
+			if task.TaskKind == "vm_ssh_command" {
+				failure = map[string]any{"sshCommand": map[string]any{"sessionId": task.ID, "agentId": task.ClaimedByAgentID, "commandDigest": task.Payload["commandDigest"], "effect": "not_started", "stopped": true}}
+			}
+			failureCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			_, _ = s.RecordCallback(failureCtx, domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: "failed", Payload: failure})
+			cancel()
 			return domaindelivery.ExecutionTask{}, err
 		}
 		task = hydrated
@@ -248,6 +254,13 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 		return nil, err
 	}
 	items, err := s.repo.ListExecutionTasks(ctx, filter)
+	filtered := items[:0]
+	for _, item := range items {
+		if item.TaskKind != "vm_ssh_command" {
+			filtered = append(filtered, item)
+		}
+	}
+	items = filtered
 	return domaindelivery.WithOperationStates(items, time.Now().UTC()), err
 }
 
@@ -256,12 +269,22 @@ func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity
 		return domaindelivery.ExecutionTask{}, err
 	}
 	task, err := s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	if err == nil && task.TaskKind == "vm_ssh_command" {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
+	}
 	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
 func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentity.Principal, taskID string, limit int) ([]domaindelivery.ExecutionLog, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return nil, err
+	}
+	task, err := s.repo.GetExecutionTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.TaskKind == "vm_ssh_command" {
+		return nil, apperrors.ErrUnsupportedOperation
 	}
 	return s.repo.ListExecutionLogs(ctx, strings.TrimSpace(taskID), limit)
 }
@@ -302,7 +325,9 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 		"cancelReason":        reason,
 	}
 	task.Status = "canceled"
-	task.AttemptCount = maxInt(task.AttemptCount, 1)
+	if task.TaskKind != "vm_ssh_command" {
+		task.AttemptCount = maxInt(task.AttemptCount, 1)
+	}
 	task.Result = mergeMaps(task.Result, payload)
 	task.LastHeartbeatAt = &now
 	task.FinishedAt = &now
@@ -322,6 +347,9 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 		Metadata:        payload,
 		CreatedAt:       now,
 	})
+	if updated.TaskKind == "vm_ssh_command" {
+		return domaindelivery.WithOperationState(updated, time.Now().UTC()), s.notifyExecutionTaskSinks(ctx, updated)
+	}
 	_ = s.stopK8sJobExecution(ctx, updated, reason)
 	_ = s.stopRemoteRuntimeTask(ctx, updated.ID, updated.Result, reason)
 	if strings.TrimSpace(updated.ReleaseBundleID) != "" {
@@ -362,6 +390,9 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	task, err := s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
+	}
+	if task.TaskKind == "vm_ssh_command" {
+		return task, apperrors.ErrUnsupportedOperation
 	}
 	if domaindelivery.RequiresStopConfirmation(task) {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: retry delivery targets in a new batch to preserve their execution history", apperrors.ErrInvalidArgument)
@@ -604,6 +635,10 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	input, err = normalizeSSHCallback(task, input)
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
 	callback := domaindelivery.ExecutionCallback{
 		ID:              uuid.NewString(),
 		ExecutionTaskID: task.ID,
@@ -727,6 +762,10 @@ func (s *Service) recoverStaleTasks(ctx context.Context, now time.Time) error {
 				continue
 			}
 			if status == "queued" {
+				if task.TaskKind == "vm_ssh_command" && !now.Before(task.CreatedAt.Add(30*time.Minute)) {
+					_ = s.expireSSHCommand(ctx, task, now, false)
+					continue
+				}
 				if task.Payload["workflowScope"] == domainworkflow.ScopeDeliveryBatch && task.ProviderKind == "k8s_job_runner" {
 					_, _ = s.dispatchExecutionTask(ctx, task)
 				}
@@ -802,6 +841,9 @@ func (s *Service) notifyWorkflowExecutionTaskResult(ctx context.Context, task do
 }
 
 func (s *Service) markTaskTimedOut(ctx context.Context, task domaindelivery.ExecutionTask, now time.Time) error {
+	if task.TaskKind == "vm_ssh_command" {
+		return s.expireSSHCommand(ctx, task, now, true)
+	}
 	if domaindelivery.RequiresStopConfirmation(task) {
 		_, err := s.cancelDeliveryTask(ctx, task.ID, "executor heartbeat timed out; waiting for confirmed stop")
 		return err

@@ -114,7 +114,7 @@ See the published docs for current public architecture and API behavior.
 
 | Layer | Stack |
 | --- | --- |
-| Backend | Go 1.26.6, Gin, PostgreSQL, Kubernetes `client-go` |
+| Backend | Go 1.27.2, Gin, PostgreSQL, Kubernetes `client-go` |
 | Frontend | React 18, TypeScript 5, Vite 6, React Router 6, TanStack Query 5, Zustand 5, Ant Design 6, Tailwind CSS 4 |
 | Docs | Next.js 16 and Nextra 4 in the sibling `soha-docs` repository |
 | Packaging | Docker, Docker Compose, raw Kubernetes YAML; Helm charts live in `soha-helm` |
@@ -137,7 +137,7 @@ See the published docs for current public architecture and API behavior.
 
 ### Requirements
 
-- Go 1.26.6+
+- Go 1.27.2+
 - Node.js 20+
 - Docker and Docker Compose
 - PostgreSQL 18.4 with pgvector 0.8.5 when using an external database
@@ -172,7 +172,10 @@ The default target starts the Go API and the Vite frontend together.
 - Console: `http://localhost:5173`
 - API: `http://localhost:8080`
 - Config override: `SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
+
 - Local defaults live in `configs/config.yaml`; override them with environment variables or `SOHA_CONFIG_FILE`.
+
+The personal VM guest registration/heartbeat listener is opt-in through `personal_guest` and disabled by default. Enabling it requires a separate address and `tls.cert_file`, `tls.key_file`, and `tls.client_ca_file`; the private key must be readable only by the service account. TLS 1.3 and verified guest client certificates are required, with current account, personal Agent access, VM incarnation, and separate data-disk checks. Forwarded certificate headers are not authentication. Registration proves liveness only: personal VM policy/binding, certificate issuance/installation, data initialization, and tool readiness are still pending, so enabling the listener does not enable personal VM execution.
 
 ### Run services separately
 

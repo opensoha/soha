@@ -70,6 +70,10 @@ func (s *Service) executeTask(ctx context.Context, task domainvirtualization.Tas
 		outcome, taskErr = s.executeVMCreate(ctx, task)
 	case TaskKindVMAction:
 		outcome, taskErr = s.executeVMAction(ctx, task)
+	case TaskKindPersonalGuest:
+		outcome, taskErr = s.executePersonalGuest(ctx, task)
+	case TaskKindPersonalGuestTools:
+		outcome, taskErr = s.executeGuestTools(ctx, task)
 	default:
 		taskErr = fmt.Errorf("unsupported virtualization task kind %q", task.TaskKind)
 		outcome = runtimeobs.OutcomeFailed
@@ -269,14 +273,29 @@ func (s *Service) checkpointVMCreate(ctx context.Context, task domainvirtualizat
 	current.Payload["node"], current.Payload["namespace"] = input.Node, input.Namespace
 	current.Payload["providerParams"] = input.ProviderParams
 	current.Payload["providerIdentityPrepared"] = true
+	if input.SystemUUID != "" {
+		current.Payload["providerSystemUUID"] = input.SystemUUID
+	}
 	current.Payload["providerConnectionIdentity"] = connectionIdentity
-	current.Payload["providerDispatchStarted"] = true
 	current.Result = cloneMap(current.Result)
 	delete(current.Result, "providerAttemptFinished")
 	delete(current.Result, "cancellationConfirmed")
 	if deadline, ok := ctx.Deadline(); ok {
 		current.Payload["providerAttemptDeadline"] = deadline.UTC().Format(time.RFC3339Nano)
 	}
+	connection, err := s.connections.GetConnection(ctx, current.ConnectionID)
+	if err != nil {
+		return task, err
+	}
+	policy, err := s.capacityPolicy(ctx, connection)
+	if err != nil {
+		return task, err
+	}
+	if !boolValue(current.Payload, "providerDispatchStarted") && (policy.Mode == "enforced" || boolValue(current.Payload, "requireCapacity")) {
+		current.Payload["requireCapacity"] = true
+		return s.admitVMTask(ctx, current, true)
+	}
+	current.Payload["providerDispatchStarted"] = true
 	return s.tasks.UpdateTask(ctx, current)
 }
 
@@ -345,7 +364,8 @@ func createdVMRecord(connection domainvirtualization.Connection, payload map[str
 	}
 	copyVMMetadata(config, vm.Metadata, []string{"dataVolumeName", "dataVolumePhase", "dataVolumeProgress", "dataVolumeFailureReason", "dataVolumeFailureMessage", "pvcName", "pvcPhase", "pvcStorageClass", "vmiStatus", "printableStatus"})
 	raw := map[string]any{"providerVmId": vm.ID, "architecture": payloadString(payload, "architecture"), "providerParams": payload["providerParams"], "providerExtra": payload["providerExtra"], "sourceMode": payloadString(payload, "sourceMode"), "sourceRef": payloadString(payload, "sourceId")}
-	copyVMMetadata(raw, vm.Metadata, []string{"pveCreateUpid", "pveConfigUpid", "pveStartUpid"})
+	copyVMMetadata(raw, vm.Metadata, []string{"pveCreateUpid", "pveConfigUpid", "pveStartUpid", "providerGeneration"})
+	copyVMMetadata(config, vm.Metadata, []string{"providerGeneration"})
 	record := domainvirtualization.VM{Provider: connection.Provider, ConnectionID: connection.ID, ExternalID: firstNonEmpty(vm.ID, vm.Name), Name: vm.Name, Namespace: vm.Namespace, Status: firstNonEmpty(vm.Status, "created"), PowerState: powerStateFromStatus(vm.Status), NodeName: vm.Node, ImageID: firstNonEmpty(payloadString(payload, "imageId"), payloadString(payload, "bootImageId")), FlavorID: payloadString(payload, "flavorId"), IPAddresses: ipAddresses, Labels: metadataMap(vm.Metadata), Config: config, Raw: raw}
 	return record, ipAddresses, endpoint
 }
@@ -353,6 +373,9 @@ func createdVMRecord(connection domainvirtualization.Connection, payload map[str
 func populateVMCreateTaskResult(task *domainvirtualization.Task, stored domainvirtualization.VM, vm domainvirtualization.AdapterVM, ipAddresses []string, endpoint string) {
 	task.VMID = stored.ID
 	task.Result = map[string]any{"vmId": stored.ID, "name": stored.Name, "status": stored.Status, "architecture": payloadString(task.Payload, "architecture"), "providerVmId": vm.ID}
+	if task.Payload["guestAccess"] != nil {
+		task.Result["guestInitialization"] = map[string]any{"bootstrap": "submitted", "cloudInit": "unknown", "sshLogin": "unknown", "sourceProof": task.Payload["guestSourceProof"], "publicKeyRefs": task.Payload["guestPublicKeyRefs"], "publicKeys": task.Payload["guestPublicKeys"], "providerVmId": vm.ID, "providerGeneration": vm.Metadata["providerGeneration"]}
+	}
 	if len(ipAddresses) > 0 {
 		task.Result["ipAddress"], task.Result["ip"], task.Result["ipAddresses"] = ipAddresses[0], ipAddresses[0], ipAddresses
 	}
@@ -389,45 +412,14 @@ func (s *Service) executeVMAction(ctx context.Context, task domainvirtualization
 		s.failTask(ctx, task, err)
 		return runtimeobs.OutcomeFailed, err
 	}
+	task, err = s.recheckVMActionCapacity(ctx, task, connection)
+	if err != nil {
+		s.failTask(ctx, task, err)
+		return runtimeobs.OutcomeFailed, err
+	}
 	rawAction := strings.ToLower(strings.TrimSpace(payloadString(task.Payload, "action")))
 	if rawAction == "resize" {
-		input := domainvirtualization.AdapterResizeVMInput{CPU: payloadInt(task.Payload, "cpu"), MemoryMiB: payloadInt(task.Payload, "memoryMiB"), DiskGiB: payloadInt(task.Payload, "diskGiB")}
-		decodePayloadValue(task.Payload["disks"], &input.Disks)
-		decodePayloadValue(task.Payload["networks"], &input.Networks)
-		resizer, ok := adapter.(domainvirtualization.ResizeAdapter)
-		if !ok {
-			err := domainvirtualization.ErrUnsupported
-			s.failTask(ctx, task, err)
-			return runtimeobs.OutcomeFailed, err
-		}
-		result, err := resizer.ResizeVM(ctx, adapterConnection, domainvirtualization.AdapterVM{ID: firstNonEmpty(vm.ExternalID, vm.ID), Name: vm.Name, Namespace: vm.Namespace, Node: vm.NodeName, Status: vm.Status}, input)
-		if err != nil {
-			s.failTask(ctx, task, err)
-			return runtimeobs.OutcomeFailed, err
-		}
-		if vm.Config == nil {
-			vm.Config = map[string]any{}
-		}
-		if input.CPU > 0 {
-			vm.Config["cpu"] = input.CPU
-		}
-		if input.MemoryMiB > 0 {
-			vm.Config["memoryMiB"] = input.MemoryMiB
-		}
-		if input.DiskGiB > 0 {
-			vm.Config["diskGiB"] = input.DiskGiB
-		}
-		stored, err := s.vms.UpsertVM(ctx, vm)
-		if err != nil {
-			s.failTask(ctx, task, err)
-			return runtimeobs.OutcomeFailed, err
-		}
-		task.Result = map[string]any{"accepted": result.Accepted, "action": "resize", "message": result.Message, "vmId": stored.ID}
-		if outcome, err := s.completeTask(ctx, task); outcome != runtimeobs.OutcomeSucceeded {
-			return outcome, err
-		}
-		_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine resize completed"})
-		return runtimeobs.OutcomeSucceeded, nil
+		return s.executeVMResize(ctx, task, vm, adapter, adapterConnection)
 	}
 	action, err := normalizeAction(rawAction)
 	if err != nil {
@@ -570,6 +562,7 @@ func (s *Service) failTask(ctx context.Context, task domainvirtualization.Task, 
 	task.FinishedAt = &now
 	task.Result = mergeMaps(task.Result, map[string]any{"error": message})
 	applyVMCreationFailure(&task, current)
+	applyVMActionFailure(&task, err)
 	if details, ok := domainvirtualization.AdapterErrorDetails(err); ok {
 		task.Result["failureReason"] = details.Reason
 		task.Result["reason"] = details.Reason
@@ -590,6 +583,21 @@ func (s *Service) failTask(ctx context.Context, task domainvirtualization.Task, 
 		result = "unsupported"
 	}
 	s.recordOperation(ctx, s.workerPrincipal, "virtualization.worker."+task.TaskKind, task.ConnectionID, task.TaskKind, result, "virtualization worker task failed", map[string]any{"taskId": task.ID, "error": message})
+}
+
+func applyVMActionFailure(task *domainvirtualization.Task, err error) {
+	if task.TaskKind != TaskKindVMAction || !boolValue(task.Payload, "providerDispatchStarted") {
+		return
+	}
+	details, _ := domainvirtualization.AdapterErrorDetails(err)
+	// A read-only retry cannot disprove a previous unknown provider effect.
+	if details.NoProviderWrite && (task.AttemptCount == 1 || payloadString(task.Result, "providerEffect") == "not_started") {
+		task.Payload = cloneMap(task.Payload)
+		task.Payload["providerDispatchStarted"] = false
+		task.Result["providerEffect"] = "not_started"
+		return
+	}
+	task.Result["providerEffect"] = "unknown"
 }
 
 func applyVMCreationFailure(task *domainvirtualization.Task, previous domainvirtualization.Task) {
@@ -720,6 +728,9 @@ func vmFromAsset(connection domainvirtualization.Connection, asset domainvirtual
 	}
 	if diskGiB := metadataInt(asset.Metadata, "diskGiB"); diskGiB > 0 {
 		config["diskGiB"] = diskGiB
+	}
+	if _, known := asset.Metadata["rootDiskGiB"]; known {
+		config["rootDiskGiB"] = metadataInt(asset.Metadata, "rootDiskGiB")
 	}
 	ipAddresses := uniqueNonEmptyStrings(commaSeparatedValues(asset.Metadata["ipAddresses"]))
 	if ipAddress := strings.TrimSpace(asset.Metadata["ipAddress"]); ipAddress != "" {
@@ -924,5 +935,81 @@ func (s *Service) authorizeQueuedVMTask(ctx context.Context, task domainvirtuali
 	if err := s.authorizeVMRetry(ctx, principal, task); err != nil {
 		return err
 	}
+	if err := s.validateQueuedGuestReferences(ctx, principal, task); err != nil {
+		return err
+	}
 	return s.checkQueuedGatewayAuthorization(ctx, principal, task)
+}
+
+func (s *Service) executeVMResize(ctx context.Context, task domainvirtualization.Task, vm domainvirtualization.VM, adapter domainvirtualization.Adapter, connection domainvirtualization.AdapterConnection) (string, error) {
+	input := domainvirtualization.AdapterResizeVMInput{CPU: payloadInt(task.Payload, "cpu"), MemoryMiB: payloadInt(task.Payload, "memoryMiB"), DiskGiB: payloadInt(task.Payload, "diskGiB")}
+	decodePayloadValue(task.Payload["disks"], &input.Disks)
+	decodePayloadValue(task.Payload["networks"], &input.Networks)
+	resizer, ok := adapter.(domainvirtualization.ResizeAdapter)
+	if !ok {
+		err := domainvirtualization.ErrUnsupported
+		s.failTask(ctx, task, err)
+		return runtimeobs.OutcomeFailed, err
+	}
+	result, err := resizer.ResizeVM(ctx, connection, domainvirtualization.AdapterVM{ID: firstNonEmpty(vm.ExternalID, vm.ID), Name: vm.Name, Namespace: vm.Namespace, Node: vm.NodeName, Status: vm.Status}, input)
+	if err != nil {
+		s.failTask(ctx, task, err)
+		return runtimeobs.OutcomeFailed, err
+	}
+	if vm.Config == nil {
+		vm.Config = map[string]any{}
+	}
+	if input.CPU > 0 {
+		vm.Config["cpu"] = input.CPU
+	}
+	if input.MemoryMiB > 0 {
+		vm.Config["memoryMiB"] = input.MemoryMiB
+	}
+	if input.DiskGiB > 0 && normalizeProvider(vm.Provider) != ProviderPVE {
+		vm.Config["diskGiB"] = input.DiskGiB
+	}
+	if normalizeProvider(vm.Provider) == ProviderPVE && (input.DiskGiB > 0 || len(input.Disks) > 0) {
+		if devices, ok := adapter.(domainvirtualization.VMDeviceProvider); ok {
+			observed, observeErr := devices.ListVMDevices(ctx, connection, domainvirtualization.AdapterVM{ID: firstNonEmpty(vm.ExternalID, vm.ID), Node: vm.NodeName})
+			if observeErr == nil {
+				if !applyPVEVMDeviceObservation(vm.Config, observed) {
+					_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "warn", Message: "resize accepted; disk inventory capacity is incomplete"})
+				}
+			} else {
+				_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "warn", Message: "resize accepted; disk inventory refresh failed: " + observeErr.Error()})
+			}
+		}
+	}
+	stored, err := s.vms.UpsertVM(ctx, vm)
+	if err != nil {
+		s.failTask(ctx, task, err)
+		return runtimeobs.OutcomeFailed, err
+	}
+	task.Result = map[string]any{"accepted": result.Accepted, "action": "resize", "message": result.Message, "vmId": stored.ID}
+	if outcome, err := s.completeTask(ctx, task); outcome != runtimeobs.OutcomeSucceeded {
+		return outcome, err
+	}
+	_ = s.taskLogs.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine resize completed"})
+	return runtimeobs.OutcomeSucceeded, nil
+}
+
+func applyPVEVMDeviceObservation(config map[string]any, devices []domainvirtualization.VMDevice) bool {
+	diskCount, diskGiB, rootDiskGiB := 0, 0, 0
+	for _, device := range devices {
+		if device.Kind != "disk" {
+			continue
+		}
+		if device.SizeGiB <= 0 {
+			return false
+		}
+		diskCount++
+		diskGiB += device.SizeGiB
+		if device.ID == "scsi0" {
+			rootDiskGiB = device.SizeGiB
+		}
+	}
+	config["diskCount"] = diskCount
+	config["diskGiB"] = diskGiB
+	config["rootDiskGiB"] = rootDiskGiB
+	return true
 }

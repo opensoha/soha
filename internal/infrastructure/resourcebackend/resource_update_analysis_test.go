@@ -15,7 +15,7 @@ func TestAnalyzeResourceUpdateMapsChangedFieldsToManagers(t *testing.T) {
 	}}
 	live.SetManagedFields([]metav1.ManagedFieldsEntry{{
 		Manager: "helm", Operation: metav1.ManagedFieldsOperationApply, APIVersion: "apps/v1",
-		FieldsType: "FieldsV1", FieldsV1: &metav1.FieldsV1{Raw: []byte(`{"f:spec":{"f:replicas":{}}}`)},
+		FieldsType: "FieldsV1", FieldsV1: metav1.NewFieldsV1(`{"f:spec":{"f:replicas":{}}}`),
 	}})
 	desired := live.DeepCopy()
 	desired.Object["spec"].(map[string]any)["replicas"] = int64(2)

@@ -83,11 +83,11 @@ func isServerMetadataField(key string) bool {
 }
 
 func managedFieldPaths(fields *metav1.FieldsV1) []string {
-	if fields == nil || len(fields.Raw) == 0 {
+	if fields == nil || len(fields.GetRawBytes()) == 0 {
 		return []string{}
 	}
 	var tree map[string]any
-	if err := json.Unmarshal(fields.Raw, &tree); err != nil {
+	if err := json.Unmarshal(fields.GetRawBytes(), &tree); err != nil {
 		return []string{}
 	}
 	paths := []string{}

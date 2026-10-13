@@ -25,9 +25,10 @@ const (
 )
 
 var (
-	secretRefPattern = regexp.MustCompile(`^secret:[A-Za-z0-9][A-Za-z0-9._:/-]{0,232}$`)
-	bucketPattern    = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
-	branchPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$`)
+	secretRefPattern        = regexp.MustCompile(`^secret:[A-Za-z0-9][A-Za-z0-9._:/-]{0,232}$`)
+	gatewaySecretRefPattern = regexp.MustCompile(`^soha://secrets/[A-Za-z0-9._-]+(?:/versions/[1-9][0-9]*)?$`)
+	bucketPattern           = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
+	branchPattern           = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$`)
 )
 
 type Validator struct {
@@ -45,8 +46,9 @@ func (v *Validator) Validate(
 	if err := ctx.Err(); err != nil {
 		return domainknowledge.ConnectorValidationResult{}, err
 	}
-	if !secretRefPattern.MatchString(strings.TrimSpace(input.SecretRef)) {
-		return domainknowledge.ConnectorValidationResult{}, invalidConnector("secretRef must use secret:<reference>")
+	ref := strings.TrimSpace(input.SecretRef)
+	if len(ref) > 512 || (!secretRefPattern.MatchString(ref) && !gatewaySecretRefPattern.MatchString(ref)) {
+		return domainknowledge.ConnectorValidationResult{}, invalidConnector("secretRef must use a canonical Gateway reference or a legacy secret: reference")
 	}
 	raw, err := json.Marshal(input.Config)
 	if err != nil {
@@ -57,6 +59,9 @@ func (v *Validator) Validate(
 	}
 	if containsCredentialValue(input.Config) {
 		return domainknowledge.ConnectorValidationResult{}, invalidConnector("credentials must not be stored in connector config")
+	}
+	if _, err := domainknowledge.ParseSourceImportPolicy(input.Config); err != nil {
+		return domainknowledge.ConnectorValidationResult{}, err
 	}
 
 	host, resource, warnings, err := validateConnectorConfig(input.Kind, input.Config)

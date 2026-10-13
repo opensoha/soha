@@ -84,6 +84,12 @@ func relayUsageFromPayload(payload map[string]any) relayUsage {
 		}
 	}
 	if !ok {
+		response, hasResponse := payload["response"].(map[string]any)
+		if hasResponse {
+			usageRaw, ok = response["usage"].(map[string]any)
+		}
+	}
+	if !ok {
 		if geminiUsage, hasGeminiUsage := payload["usageMetadata"].(map[string]any); hasGeminiUsage {
 			return relayUsageFromGeminiUsageMetadata(geminiUsage)
 		}

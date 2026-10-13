@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine AS go-source
+FROM --platform=$BUILDPLATFORM golang:1.27.2-alpine AS go-source
 ARG TARGETOS=linux
 ARG TARGETARCH
 ARG GOPROXY=https://proxy.golang.org,direct
@@ -13,7 +13,7 @@ RUN for attempt in 1 2 3; do \
 COPY go.mod go.sum ./soha/
 COPY --from=contracts go.mod go.sum ./soha-contracts/
 RUN for attempt in 1 2 3; do \
-      printf 'go 1.26.6\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n' > go.work; \
+      printf 'go 1.27.2\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n' > go.work; \
       (cd soha && timeout 180 go mod download) && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
       sleep 2; \

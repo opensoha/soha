@@ -84,6 +84,9 @@ func (s *Service) executeIngestion(ctx context.Context, job *domainknowledge.Ing
 		s.verifyAndPublishIngestion,
 	}
 	for _, step := range steps {
+		if err := s.authorizeIngestionExecution(ctx, execution); err != nil {
+			return err
+		}
 		if err := step(ctx, execution); err != nil {
 			return err
 		}
@@ -99,7 +102,7 @@ func (s *Service) initializeIngestion(ctx context.Context, execution *ingestionE
 			return err
 		}
 	}
-	source, err := s.productionRepo.GetSourceInternal(ctx, job.KnowledgeBaseID, job.SourceID)
+	source, err := s.repo.GetSource(ctx, principalScope(execution.principal), job.KnowledgeBaseID, job.SourceID)
 	if err != nil {
 		return s.failIngestion(ctx, job, execution.principal, "source_unavailable", err)
 	}
@@ -129,7 +132,11 @@ func (s *Service) prepareIngestionStage(ctx context.Context, execution *ingestio
 	if err := s.advanceIngestion(ctx, job, domainknowledge.IngestionJobRunning, domainknowledge.IngestionStageParsing, checkpointFor(job, domainknowledge.IngestionStageParsing, cursor)); err != nil {
 		return err
 	}
-	prepared, err := prepareIngestion(execution.source, execution.principal.UserID, execution.documents, cursor, s.now)
+	base, err := s.repo.GetBase(ctx, principalScope(execution.principal), job.KnowledgeBaseID)
+	if err != nil {
+		return s.failIngestion(ctx, job, execution.principal, "source_unavailable", err)
+	}
+	prepared, err := prepareIngestion(execution.source, base.OwnerID, execution.documents, cursor, s.now)
 	if err != nil {
 		return s.failIngestion(ctx, job, execution.principal, "parse_failed", err)
 	}
@@ -154,21 +161,18 @@ func (s *Service) embedIngestion(ctx context.Context, execution *ingestionExecut
 	if err := s.advanceIngestion(ctx, job, domainknowledge.IngestionJobRunning, domainknowledge.IngestionStageEmbedding, checkpointWithStage(checkpoint, domainknowledge.IngestionStageEmbedding, s.now())); err != nil {
 		return err
 	}
-	allChunks := flattenChunks(execution.prepared.chunks)
-	for start := 0; start < len(allChunks); start += ingestionModelBatch {
-		end := min(start+ingestionModelBatch, len(allChunks))
-		modelCtx, cancelModel := context.WithTimeout(ctx, ingestionModelTimeout)
-		_, scoreErr := s.vector.Score(modelCtx, execution.principal, "index:"+job.ID, allChunks[start:end])
-		cancelModel()
-		if scoreErr != nil {
-			return s.failIngestion(ctx, job, execution.principal, "embedding_failed", scoreErr)
-		}
-		if err := s.stopIfIngestionCancelled(ctx, execution); err != nil {
+	if len(flattenChunks(execution.prepared.chunks)) == 0 {
+		return nil
+	}
+	embedder, ok := s.vector.(Embedder)
+	if !ok {
+		return s.failIngestion(ctx, job, execution.principal, "embedding_unavailable", fmt.Errorf("persistent indexing requires an embedding provider"))
+	}
+	if err := s.embedResumableIngestion(ctx, execution, embedder); err != nil {
+		if job.Terminal() {
 			return err
 		}
-		if err := s.advanceIngestion(ctx, job, domainknowledge.IngestionJobRunning, domainknowledge.IngestionStageEmbedding, checkpointWithStage(checkpoint, domainknowledge.IngestionStageEmbedding, s.now())); err != nil {
-			return err
-		}
+		return s.failIngestion(ctx, job, execution.principal, "embedding_failed", err)
 	}
 	return nil
 }
@@ -196,7 +200,7 @@ func (s *Service) verifyAndPublishIngestion(ctx context.Context, execution *inge
 	if err := s.advanceIngestion(ctx, job, domainknowledge.IngestionJobRunning, domainknowledge.IngestionStageVerifying, checkpointWithStage(checkpoint, domainknowledge.IngestionStageVerifying, s.now())); err != nil {
 		return err
 	}
-	if len(execution.prepared.documents) == 0 || checkpoint.ChunksStored == 0 {
+	if len(execution.prepared.documents) > 0 && checkpoint.ChunksStored == 0 && !allIngestionDocumentsDeleted(execution.prepared.documents) {
 		return s.failIngestion(ctx, job, execution.principal, "verification_failed", fmt.Errorf("no indexable content"))
 	}
 	if err := s.stopIfIngestionCancelled(ctx, execution); err != nil {
@@ -220,7 +224,7 @@ func (s *Service) verifyAndPublishIngestion(ctx context.Context, execution *inge
 		ID:              uuid.NewString(),
 		KnowledgeBaseID: job.KnowledgeBaseID,
 		Revision:        int(job.TargetRevision),
-		EmbeddingModel:  "gateway-route",
+		EmbeddingModel:  preparedEmbeddingIdentity(execution.prepared.chunks),
 		ChunkerVersion:  "rune-v1-1200-150",
 		DocumentCount:   len(execution.prepared.documents),
 		ChunkCount:      checkpoint.ChunksStored,
@@ -239,9 +243,12 @@ func (s *Service) verifyAndPublishIngestion(ctx context.Context, execution *inge
 func (s *Service) stopIfIngestionCancelled(ctx context.Context, execution *ingestionExecution) error {
 	cancelled, err := s.cancelIngestionIfRequested(ctx, execution.job, execution.principal)
 	if err != nil || cancelled {
+		if err == nil {
+			return domainknowledge.ErrIngestionConflict
+		}
 		return err
 	}
-	return nil
+	return s.authorizeIngestionExecution(ctx, execution)
 }
 
 func (s *Service) advanceIngestion(
@@ -373,7 +380,7 @@ func (s *Service) failIngestion(
 	job.Error = "ingestion stage failed"
 	job.UpdatedAt = now
 	job.Checkpoint = domainknowledge.IngestionCheckpoint{Stage: job.Stage, RecordedAt: now}
-	if job.Attempt < job.MaxAttempts && !job.CancelRequested {
+	if job.Attempt < job.MaxAttempts && !job.CancelRequested && code != "authorization_revoked" {
 		next := nextIngestionRetry(job.Attempt, now)
 		job.Status = domainknowledge.IngestionJobRetryWait
 		job.NextAttemptAt = &next
@@ -398,18 +405,24 @@ func prepareIngestion(
 	if len(loaded) > 10000 {
 		return preparedIngestion{}, fmt.Errorf("%w: source returned too many documents", domainknowledge.ErrRetrievalExhausted)
 	}
+	ceiling, err := sourceImportCeiling(source, ownerID)
+	if err != nil {
+		return preparedIngestion{}, err
+	}
 	prepared := preparedIngestion{
 		documents: make([]domainknowledge.Document, 0, len(loaded)),
 		chunks:    make([][]domainknowledge.Chunk, 0, len(loaded)),
 		cursor:    cursor,
 	}
 	hasher := sha256.New()
+	seen := make(map[string]bool, len(loaded))
 	for _, item := range loaded {
 		item.ExternalID = strings.TrimSpace(item.ExternalID)
 		item.Content = strings.TrimSpace(item.Content)
-		if item.ExternalID == "" || item.Content == "" {
-			continue
+		if item.ExternalID == "" || (!item.Deleted && item.Content == "") || (item.Deleted && item.Content != "") || seen[item.ExternalID] {
+			return preparedIngestion{}, fmt.Errorf("%w: invalid or duplicate source document", domainknowledge.ErrInvalidInput)
 		}
+		seen[item.ExternalID] = true
 		documentNow := now()
 		document := domainknowledge.Document{
 			ID:              stableDocumentID(source.ID, item.ExternalID),
@@ -420,19 +433,44 @@ func prepareIngestion(
 			URI:             strings.TrimSpace(item.URI),
 			Version:         firstNonEmpty(item.Version, contentHash(item.Content)),
 			ContentHash:     contentHash(item.Content),
-			ACL:             normalizeAccessScope(item.ACL, ownerID),
+			ACL:             governedImportedScope(item.ACL, ownerID, ceiling),
 			Status:          domainknowledge.DocumentStatusPending,
 			CreatedAt:       documentNow,
 			UpdatedAt:       documentNow,
 		}
-		chunks := chunkDocument(document, item.Content)
+		var chunks []domainknowledge.Chunk
+		if item.Deleted {
+			document.Status = domainknowledge.DocumentStatusDeleted
+		} else {
+			chunks = chunkDocument(document, item.Content)
+		}
 		document.ChunkCount = len(chunks)
 		prepared.documents = append(prepared.documents, document)
 		prepared.chunks = append(prepared.chunks, chunks)
-		_, _ = hasher.Write([]byte(document.ContentHash))
+		_, _ = fmt.Fprintf(hasher, "%s:%s:%t\n", document.ID, document.ContentHash, item.Deleted)
 	}
 	prepared.hash = "sha256:" + hex.EncodeToString(hasher.Sum(nil))
 	return prepared, nil
+}
+
+func normalizeImportedAccessScope(scope domainknowledge.AccessScope, defaultOwnerID string) domainknowledge.AccessScope {
+	users := uniqueStrings(scope.Users)
+	visibility := strings.ToLower(strings.TrimSpace(scope.Visibility))
+	scope = normalizeAccessScope(scope, defaultOwnerID)
+	// Explicit source grants must not acquire an implicit knowledge-base owner.
+	if visibility != "" || len(users)+len(scope.Roles)+len(scope.Teams)+len(scope.Projects) > 0 {
+		scope.Users = users
+	}
+	return scope
+}
+
+func allIngestionDocumentsDeleted(documents []domainknowledge.Document) bool {
+	for _, document := range documents {
+		if document.Status != domainknowledge.DocumentStatusDeleted {
+			return false
+		}
+	}
+	return true
 }
 
 func flattenChunks(groups [][]domainknowledge.Chunk) []domainknowledge.Chunk {
@@ -459,4 +497,45 @@ func checkpointWithStage(checkpoint domainknowledge.IngestionCheckpoint, stage d
 	checkpoint.Stage = stage
 	checkpoint.RecordedAt = now
 	return checkpoint
+}
+
+func embedPreparedChunks(ctx context.Context, embedder Embedder, principal domainidentity.Principal, chunks []*domainknowledge.Chunk, space *domainknowledge.EmbeddingBatch) error {
+	inputs := make([]string, len(chunks))
+	for i, chunk := range chunks {
+		inputs[i] = chunk.Content
+	}
+	modelCtx, cancel := context.WithTimeout(ctx, ingestionModelTimeout)
+	defer cancel()
+	batch, err := embedder.Embed(modelCtx, principal, inputs)
+	if err != nil {
+		return err
+	}
+	if batch.Model == "" || len(batch.Vectors) != len(chunks) {
+		return fmt.Errorf("embedding provider returned an incomplete batch")
+	}
+	if len(space.Vectors) > 0 && (batch.Model != space.Model || batch.Route != space.Route) {
+		return fmt.Errorf("embedding provider changed during ingestion")
+	}
+	for i, vector := range batch.Vectors {
+		if !validIngestionVector(vector, len(vector)) {
+			return fmt.Errorf("invalid embedding dimension")
+		}
+		if len(space.Vectors) > 0 && len(vector) != len(space.Vectors[0]) {
+			return fmt.Errorf("embedding dimension changed during ingestion")
+		}
+		if len(space.Vectors) == 0 {
+			*space = domainknowledge.EmbeddingBatch{Model: batch.Model, Route: batch.Route, Vectors: [][]float64{vector}}
+		}
+		chunks[i].Embedding, chunks[i].EmbeddingModel, chunks[i].EmbeddingRoute = vector, batch.Model, batch.Route
+	}
+	return nil
+}
+
+func preparedEmbeddingIdentity(groups [][]domainknowledge.Chunk) string {
+	for _, chunks := range groups {
+		if len(chunks) > 0 {
+			return fmt.Sprintf("%s@%s:%d", chunks[0].EmbeddingModel, chunks[0].EmbeddingRoute, len(chunks[0].Embedding))
+		}
+	}
+	return ""
 }

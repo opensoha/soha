@@ -28,7 +28,7 @@ func NewKnowledgeCapabilityProvider(search KnowledgeSearchService) CapabilityPro
 
 func (p *knowledgeCapabilityProvider) Tools() []domainaigateway.ToolCapability {
 	return []domainaigateway.ToolCapability{{
-		Name: "knowledge.search", Title: "Search Knowledge", Description: "Search authorized knowledge bases and return grounded chunks with citations.",
+		Name: "knowledge.search", Version: "1", Title: "Search Knowledge", Description: "Search authorized knowledge bases and return grounded chunks with citations.",
 		Domain: "knowledge", Action: "search", RiskLevel: domainaigateway.RiskLevelRead,
 		PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIKnowledgeView},
 		RequiredScopes: []string{"aiClient", "skill"}, MCPAdapterID: "knowledge.v1", MCPToolName: knowledgeSearchToolName,

@@ -16,6 +16,7 @@ import (
 )
 
 func (h *copilotStreamHandler) StreamMessage(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 2<<20)
 	var req dto.WorkbenchSendMessageStreamRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid workbench stream payload")
@@ -54,6 +55,9 @@ func (h *copilotStreamHandler) StreamMessage(c *gin.Context) {
 
 	principal := apiMiddleware.PrincipalFromContext(c)
 	result, err := h.service.StreamMessage(c.Request.Context(), principal, sessionID, domaincopilot.WorkbenchSendMessageInput{
+		AssistantTask:    req.AssistantTask,
+		RequestID:        req.RequestID,
+		TaskIntent:       req.TaskIntent,
 		ModelPreferences: req.ModelPreferences,
 		KnowledgeContext: req.KnowledgeContext,
 		ContextSelection: req.ContextSelection,

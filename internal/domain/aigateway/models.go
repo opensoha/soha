@@ -53,6 +53,7 @@ type CapabilityPlanStep = sohaapi.CapabilityPlanStep
 type CapabilityPlanValidation = sohaapi.CapabilityPlanValidation
 type CapabilityPlanIssue = sohaapi.CapabilityPlanIssue
 type CapabilityTaskInput = sohaapi.CapabilityTaskInput
+type CapabilityScopeConstraint = sohaapi.CapabilityScopeConstraint
 type CapabilityInputBinding = sohaapi.CapabilityInputBinding
 type CapabilityTaskRevisionInput = sohaapi.CapabilityTaskRevisionInput
 type CapabilityAssessment = sohaapi.CapabilityAssessment
@@ -89,16 +90,17 @@ type CapabilityTaskRef struct {
 }
 
 type CapabilityTask struct {
-	ID          string                `json:"id"`
-	Version     int64                 `json:"version"`
-	PlanVersion int                   `json:"planVersion"`
-	Status      string                `json:"status"`
-	CreatedBy   string                `json:"createdBy"`
-	Plan        CapabilityPlan        `json:"plan"`
-	Nodes       []CapabilityTaskNode  `json:"nodes"`
-	Assessment  *CapabilityAssessment `json:"assessment,omitempty"`
-	CreatedAt   time.Time             `json:"createdAt"`
-	UpdatedAt   time.Time             `json:"updatedAt"`
+	ScopeConstraints []CapabilityScopeConstraint `json:"scopeConstraints,omitempty"`
+	ID               string                      `json:"id"`
+	Version          int64                       `json:"version"`
+	PlanVersion      int                         `json:"planVersion"`
+	Status           string                      `json:"status"`
+	CreatedBy        string                      `json:"createdBy"`
+	Plan             CapabilityPlan              `json:"plan"`
+	Nodes            []CapabilityTaskNode        `json:"nodes"`
+	Assessment       *CapabilityAssessment       `json:"assessment,omitempty"`
+	CreatedAt        time.Time                   `json:"createdAt"`
+	UpdatedAt        time.Time                   `json:"updatedAt"`
 }
 
 type CapabilityTaskNode struct {

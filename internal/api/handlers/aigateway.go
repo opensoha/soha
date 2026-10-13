@@ -256,7 +256,17 @@ func (h *aiGatewayCapabilityHandler) InvokeTool(c *gin.Context) {
 	req.RequestID = firstNonEmpty(req.RequestID, c.GetString("request_id"))
 	req.SessionID = apiMiddleware.AccessContextFromContext(c).SessionID
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.InvokeTool(c.Request.Context(), principal, req)
+	ctx := c.Request.Context()
+	if req.ToolName == "virtualization.capacity.check" {
+		capacityCtx, cancel, err := capacityReadContext(c)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		defer cancel()
+		ctx = capacityCtx
+	}
+	item, err := h.service.InvokeTool(ctx, principal, req)
 	if err != nil {
 		writeError(c, err)
 		return

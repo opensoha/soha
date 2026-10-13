@@ -49,6 +49,16 @@ func (b *ContextBuilder) AuthorizeKnowledgeBases(ctx context.Context, principal 
 	return nil
 }
 
+func (b *ContextBuilder) ValidateKnowledgeCitations(ctx context.Context, principal domainidentity.Principal, citations []domainknowledge.Citation) error {
+	reader, ok := b.knowledge.(interface {
+		ValidateCitations(context.Context, domainidentity.Principal, []domainknowledge.Citation) error
+	})
+	if !ok {
+		return fmt.Errorf("%w: citation validation unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	return reader.ValidateCitations(ctx, principal, citations)
+}
+
 func (b *ContextBuilder) Inspect(ctx context.Context, principal domainidentity.Principal, input domaincopilot.ContextBuildInput) (domaincopilot.ContextInspection, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, b.permissions, principal, appknowledge.PermContextInspect); err != nil {
 		return domaincopilot.ContextInspection{}, err
@@ -87,6 +97,11 @@ func (b *ContextBuilder) build(ctx context.Context, principal domainidentity.Pri
 	citations := make([]domainknowledge.Citation, 0)
 	truncations := make([]string, 0)
 	retrievalMS := int64(0)
+	if input.Session.Summary != "" {
+		seed := domaincopilot.ContextEnvelope{Budgets: budgets}
+		appendChatEvidence(&seed, "会话摘要", "session-summary:"+input.SessionID, input.Session.Summary)
+		evidence, citations, truncations = seed.Evidence, seed.Citations, seed.Truncations
+	}
 	if input.Knowledge.Enabled {
 		if b.knowledge == nil {
 			return domaincopilot.ContextEnvelope{}, 0, nil, fmt.Errorf("%w: knowledge search is not configured", apperrors.ErrUnsupportedOperation)
@@ -100,7 +115,10 @@ func (b *ContextBuilder) build(ctx context.Context, principal domainidentity.Pri
 			return domaincopilot.ContextEnvelope{}, 0, nil, err
 		}
 		retrievalMS = result.TimingMS
-		used := 0
+		if result.NoAnswer {
+			result.Hits = nil
+		}
+		used := evidenceTokenCount(evidence)
 		for _, hit := range result.Hits {
 			hit.Content = redaction.Text(hit.Content)
 			tokens := max(1, (len([]rune(hit.Content))+3)/4)
@@ -123,10 +141,21 @@ func (b *ContextBuilder) build(ctx context.Context, principal domainidentity.Pri
 	}
 	envelope := domaincopilot.ContextEnvelope{Version: "v1", ID: uuid.NewString(), RequestID: requestID, SessionID: strings.TrimSpace(input.SessionID), AgentRunID: strings.TrimSpace(input.AgentRunID), Principal: domaincopilot.ContextPrincipal{UserID: principal.UserID}, Task: input.Task, Prompt: input.Prompt, Skills: input.Skills, Session: input.Session, Evidence: evidence, Citations: citations, Tools: input.Tools, Environment: input.Environment, Budgets: budgets, BudgetUsage: domaincopilot.ContextBudgetUsage{EvidenceTokens: evidenceTokenCount(evidence), EvidenceItems: len(evidence)}, PolicySnapshot: domaincopilot.ContextPolicySnapshot{ID: "knowledge-acl", Version: "v1"}, CreatedAt: b.now()}
 	envelope.Truncations = truncations
-	payload, _ := json.Marshal(envelope)
+	if err := sealContextEnvelope(&envelope); err != nil {
+		return domaincopilot.ContextEnvelope{}, 0, nil, err
+	}
+	return envelope, retrievalMS, truncations, nil
+}
+
+func sealContextEnvelope(envelope *domaincopilot.ContextEnvelope) error {
+	envelope.ContentHash = ""
+	payload, err := json.Marshal(envelope)
+	if err != nil {
+		return err
+	}
 	hash := sha256.Sum256(payload)
 	envelope.ContentHash = hex.EncodeToString(hash[:])
-	return envelope, retrievalMS, truncations, nil
+	return nil
 }
 
 func normalizeContextBudgets(budgets domaincopilot.ContextBudgets) domaincopilot.ContextBudgets {

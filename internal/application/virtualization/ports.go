@@ -57,12 +57,19 @@ type TaskRepository interface {
 	CreateTask(context.Context, domainvirtualization.Task) (domainvirtualization.Task, error)
 	CreateTaskWithCapacity(context.Context, domainvirtualization.Task, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.Task, error)
 	RetryTaskWithCapacity(context.Context, domainvirtualization.Task, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.Task, error)
+	RecheckTaskWithCapacity(context.Context, domainvirtualization.Task, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.Task, error)
 	SelectCapacity(context.Context, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) (domainvirtualization.CapacityNode, domainvirtualization.CapacityStorage, error)
 	UpdateTask(context.Context, domainvirtualization.Task) (domainvirtualization.Task, error)
 	UpdateTaskResult(context.Context, string, map[string]any) error
 	GetTask(context.Context, string) (domainvirtualization.Task, error)
 	ListTasks(context.Context, domainvirtualization.TaskFilter) ([]domainvirtualization.Task, error)
 	CountTasks(context.Context, domainvirtualization.TaskFilter) (int, error)
+}
+
+type CapacityPolicyRepository interface {
+	GetCapacityPolicy(context.Context, string, string) (domainvirtualization.CapacityPolicy, error)
+	SaveCapacityPolicy(context.Context, string, string, domainvirtualization.CapacityPolicy, int) (domainvirtualization.CapacityPolicy, error)
+	DiagnoseCapacity(context.Context, domainvirtualization.CapacitySnapshot, domainvirtualization.CapacityDemand) ([]domainvirtualization.CapacityNodeDiagnostic, error)
 }
 
 type TaskQueueRepository interface {

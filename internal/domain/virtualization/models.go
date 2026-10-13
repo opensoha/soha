@@ -280,6 +280,9 @@ func BuildOperationState(task Task, now time.Time) *OperationState {
 		}
 		state.FailureMessage = firstNonEmptyTaskResultString(task.Result, "error", "message", "cancelReason")
 	}
+	if task.TaskKind == "personal_guest_prepare" {
+		state.Cancelable, state.Retryable = false, false
+	}
 	return state
 }
 
@@ -354,6 +357,7 @@ func firstNonEmptyTaskResultString(result map[string]any, keys ...string) string
 }
 
 type TaskFilter struct {
+	PersonalGuestOwnerID string
 	// ReconcileBefore is internal: visit oldest unchanged tasks first.
 	ReconcileBefore *time.Time
 	Provider        string

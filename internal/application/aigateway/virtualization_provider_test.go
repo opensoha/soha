@@ -146,3 +146,11 @@ func TestCapacityPlacementBindingKeepsOwningConnection(t *testing.T) {
 		t.Fatalf("cross-pool placement binding accepted: %v", err)
 	}
 }
+
+func TestGuestInitializationReceiptOnlyProjectsReferenceFacts(t *testing.T) {
+	output := publicGuestInitialization(map[string]any{"bootstrap": "submitted", "cloudInit": "unknown", "sshLogin": "unknown", "providerVmId": "101", "privateKey": "PRIVATE-CANARY", "publicKeys": []any{map[string]any{"fingerprint": "SHA256:public", "authorizedKey": "public-material", "privateKey": "PRIVATE-CANARY"}}})
+	raw, _ := json.Marshal(output)
+	if strings.Contains(string(raw), "PRIVATE-CANARY") || strings.Contains(string(raw), "authorizedKey") || output["sshLogin"] != "unknown" {
+		t.Fatal("unsafe readiness or key projection", string(raw))
+	}
+}

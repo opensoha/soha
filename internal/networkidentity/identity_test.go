@@ -64,3 +64,38 @@ func TestParseCertificateAcceptsDedicatedIngestCoreReader(t *testing.T) {
 		t.Fatalf("ParseCertificate() = %#v, %v", identity, err)
 	}
 }
+
+func TestPersonalGuestCertificateCannotEnterNetworkControlOrIngest(t *testing.T) {
+	guestURI, err := url.Parse("spiffe://opensoha.local/personal-guest/guest/00000000-0000-4000-8000-000000000001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate := &x509.Certificate{Raw: []byte("guest-certificate"), RawSubjectPublicKeyInfo: []byte("guest-public-key"), URIs: []*url.URL{guestURI}}
+	identity, err := ParseCertificate(certificate, ScopePersonalGuest)
+	if err != nil || identity.Scope != ScopePersonalGuest || identity.Kind != "guest" {
+		t.Fatalf("dedicated guest identity: %+v %v", identity, err)
+	}
+	for _, scope := range []string{ScopeNetworkControl, ScopeIngest} {
+		if _, err := ParseCertificate(certificate, scope); err == nil {
+			t.Fatalf("guest certificate accepted for %s", scope)
+		}
+	}
+	for _, raw := range []string{
+		"spiffe://opensoha.local/network-control/endpoint/endpoint-1",
+		"spiffe://opensoha.local/network-ingest/core/soha-server",
+		"spiffe://opensoha.local/personal-guest/endpoint/endpoint-1",
+	} {
+		uri, err := url.Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		certificate.URIs = []*url.URL{uri}
+		if _, err := ParseCertificate(certificate, ScopePersonalGuest); err == nil {
+			t.Fatalf("non-guest certificate accepted: %s", raw)
+		}
+	}
+	certificate.URIs = []*url.URL{guestURI, guestURI}
+	if _, err := ParseCertificate(certificate, ScopePersonalGuest); err == nil {
+		t.Fatal("ambiguous guest identity accepted")
+	}
+}

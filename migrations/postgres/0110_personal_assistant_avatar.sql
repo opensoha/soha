@@ -1,0 +1,4 @@
+ALTER TABLE ai_personal_assistants
+    ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS avatar_poster_url TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS avatar_motion TEXT NOT NULL DEFAULT 'auto';

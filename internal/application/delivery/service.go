@@ -565,6 +565,9 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 	}
 	filtered := make([]domaindelivery.ExecutionTask, 0, len(items))
 	for _, item := range items {
+		if item.TaskKind == "vm_ssh_command" {
+			continue
+		}
 		if err := s.authorizeRuntimeScope(ctx, principal, item.ApplicationID, item.ApplicationEnvironmentID); err == nil {
 			filtered = append(filtered, item)
 		} else if !isHiddenRuntimeScopeError(err) {
@@ -585,6 +588,9 @@ func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity
 	if err := s.authorizeRuntimeScope(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if task.TaskKind == "vm_ssh_command" {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
+	}
 	artifacts, artifactErr := s.repository.ListExecutionArtifacts(ctx, task.ID)
 	if artifactErr == nil && len(artifacts) > 0 {
 		task.Artifacts = artifacts
@@ -600,6 +606,9 @@ func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentit
 	task, err := s.repository.GetExecutionTask(ctx, taskID)
 	if err != nil {
 		return nil, err
+	}
+	if task.TaskKind == "vm_ssh_command" {
+		return nil, apperrors.ErrUnsupportedOperation
 	}
 	if err := s.authorizeRuntimeScope(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
 		return nil, err
@@ -956,7 +965,9 @@ func (s *Service) CreateDeliveryDraft(ctx context.Context, principal domainident
 	if err != nil {
 		return domaindelivery.DeliveryDraft{}, err
 	}
-	if err := domaindelivery.CheckDraftScope(ctx, domaindelivery.DeliveryDraft{ApplicationDraft: input.ApplicationDraft, EnvironmentBindings: input.EnvironmentBindings}); err != nil { return domaindelivery.DeliveryDraft{}, err }
+	if err := domaindelivery.CheckDraftScope(ctx, domaindelivery.DeliveryDraft{ApplicationDraft: input.ApplicationDraft, EnvironmentBindings: input.EnvironmentBindings}); err != nil {
+		return domaindelivery.DeliveryDraft{}, err
+	}
 	if input.IdempotencyKey != "" {
 		return s.repository.CreateDeliveryDraftIdempotent(ctx, input, principal.UserID, digest)
 	}
@@ -1014,7 +1025,9 @@ func (s *Service) ConfirmDeliveryDraft(ctx context.Context, principal domainiden
 		return domaindelivery.DeliveryDraftConfirmResult{}, err
 	}
 	return s.repository.WithDeliveryDraftConfirmation(ctx, strings.TrimSpace(draftID), func(ctx context.Context, draft domaindelivery.DeliveryDraft, receipt *domaindelivery.DeliveryDraftConfirmResult) (domaindelivery.DeliveryDraftConfirmResult, error) {
-		if err := domaindelivery.CheckDraftScope(ctx, draft); err != nil { return domaindelivery.DeliveryDraftConfirmResult{}, err }
+		if err := domaindelivery.CheckDraftScope(ctx, draft); err != nil {
+			return domaindelivery.DeliveryDraftConfirmResult{}, err
+		}
 		if receipt != nil {
 			return *receipt, s.authorizeDraftReceipt(ctx, principal, *receipt)
 		}
@@ -1095,7 +1108,9 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 		return domaindelivery.DeliveryPlan{}, err
 	}
 	planInput.DockerSnapshots, planInput.DockerPrepared, err = s.prepareDockerDelivery(ctx, principal, binding, targets, planInput)
-	if err != nil { return domaindelivery.DeliveryPlan{}, err }
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
 	if planInput.HelmRevision > 0 && len(planInput.HelmSnapshots) == 1 {
 		planInput.ReleaseBundleID = planInput.HelmSnapshots[0].ReleaseBundleID
 		planInput.Impact["helmRevision"] = planInput.HelmRevision
@@ -1104,7 +1119,9 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 	if err == nil {
 		err = s.ensureHelmPreflights(ctx, principal, plan)
 	}
-	if err == nil { err = s.ensureDockerPreflights(ctx, principal, plan) }
+	if err == nil {
+		err = s.ensureDockerPreflights(ctx, principal, plan)
+	}
 	return plan, err
 }
 
@@ -1142,7 +1159,9 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 	if result, recovered, err := s.recoverHelmPlanConfirmation(ctx, plan); recovered || err != nil {
 		return result, err
 	}
-	if result, recovered, err := s.recoverDockerPlanConfirmation(ctx, principal, plan); recovered || err != nil { return result, err }
+	if result, recovered, err := s.recoverDockerPlanConfirmation(ctx, principal, plan); recovered || err != nil {
+		return result, err
+	}
 	if err := validateDeliveryPlanConfirmStatus(plan); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
@@ -1381,7 +1400,9 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 	if err := s.validateHelmDelivery(ctx, principal, targets, input); err != nil {
 		return result, err
 	}
-	if err := s.validateDockerDelivery(ctx, principal, targets, input); err != nil { return result, err }
+	if err := s.validateDockerDelivery(ctx, principal, targets, input); err != nil {
+		return result, err
+	}
 	return s.executeApplicationDeliveryAction(ctx, principal, app, binding, targets, input, result)
 }
 
@@ -1455,7 +1476,9 @@ func (s *Service) executeApplicationDeliveryAction(
 func (s *Service) executeApplicationDeploy(ctx context.Context, principal domainidentity.Principal, app domainapp.App, binding domaincatalog.ApplicationEnvironment, targets []domaincatalog.ReleaseTarget, input domaindelivery.ApplicationDeliveryActionInput, result domaindelivery.ApplicationDeliveryActionResult) (domaindelivery.ApplicationDeliveryActionResult, error) {
 	for _, target := range targets {
 		if target.Docker != nil {
-			if err := s.applyDockerDelivery(ctx, principal, target.ID, input, &result); err != nil { return result, err }
+			if err := s.applyDockerDelivery(ctx, principal, target.ID, input, &result); err != nil {
+				return result, err
+			}
 			continue
 		}
 		if target.Helm != nil {
@@ -2434,6 +2457,9 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 
 func (s *Service) GetExecutionTaskForRunner(ctx context.Context, taskID string) (domaindelivery.ExecutionTask, error) {
 	task, err := s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	if err == nil && task.TaskKind == "vm_ssh_command" {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrAccessDenied
+	}
 	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
@@ -2443,6 +2469,13 @@ func (s *Service) CancelExecutionTask(ctx context.Context, principal domainident
 	}
 	if s.execution == nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("execution task controller is not configured")
+	}
+	task, err := s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	if task.TaskKind == "vm_ssh_command" {
+		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
 	}
 	return s.execution.CancelExecutionTask(ctx, strings.TrimSpace(taskID), input)
 }

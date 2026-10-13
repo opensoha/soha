@@ -3,10 +3,13 @@ package handlers
 import (
 	"context"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	contractenv "github.com/opensoha/soha-contracts/agent/environment"
+	sohaapi "github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha/internal/api/dto"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
@@ -17,11 +20,28 @@ import (
 )
 
 type CopilotSessionService interface {
+	EnsureMainSession(context.Context, domainidentity.Principal, string, string) (domaincopilot.Session, error)
 	ListSessions(context.Context, domainidentity.Principal) ([]domaincopilot.Session, error)
 	GetSession(context.Context, domainidentity.Principal, string) (domaincopilot.Session, error)
 	CreateSession(context.Context, domainidentity.Principal, string, string, string, map[string]any, map[string]any, string, []string, string) (domaincopilot.Session, error)
 	UpdateSession(context.Context, domainidentity.Principal, string, string, string, string, string, string, map[string]any, map[string]any, string, map[string]any, []string, bool) (domaincopilot.Session, error)
 	DeleteSession(context.Context, domainidentity.Principal, string) error
+}
+
+type CopilotPersonalAssistantService interface {
+	EnsurePersonalAssistant(context.Context, domainidentity.Principal, string) (domaincopilot.PersonalAssistant, error)
+	RenamePersonalAssistant(context.Context, domainidentity.Principal, string, string) (domaincopilot.PersonalAssistant, error)
+	UpdatePersonalAssistantAvatar(context.Context, domainidentity.Principal, domaincopilot.PersonalAssistantAvatar, string) (domaincopilot.PersonalAssistant, error)
+	ListPersonalAssistantTasks(context.Context, domainidentity.Principal) ([]domaincopilot.AgentRun, error)
+	ListPersonalAssistantArtifacts(context.Context, domainidentity.Principal) ([]domaincopilot.PersonalArtifact, error)
+}
+
+type CopilotPersonalEnvironmentService interface {
+	ListPersonalEnvironmentTemplates(context.Context, domainidentity.Principal) ([]domaincopilot.PersonalEnvironmentTemplate, error)
+	GetPersonalEnvironment(context.Context, domainidentity.Principal, string) (domaincopilot.PersonalEnvironment, error)
+	ChangePersonalEnvironment(context.Context, domainidentity.Principal, string, string, string) (domaincopilot.PersonalEnvironment, error)
+	DeletePersonalEnvironmentData(context.Context, domainidentity.Principal, sohaapi.PersonalEnvironmentDataDeletionRequest, string) (domaincopilot.PersonalEnvironment, error)
+	ExportPersonalEnvironmentData(context.Context, domainidentity.Principal, sohaapi.PersonalEnvironmentDataExportRequest, string, io.Writer) (contractenv.ExportResult, error)
 }
 
 type CopilotMessageService interface {
@@ -94,6 +114,7 @@ type CopilotInspectionRunService interface {
 }
 
 type CopilotService interface {
+	CopilotPersonalAssistantService
 	CopilotSessionService
 	CopilotMessageService
 	CopilotStreamService
@@ -108,6 +129,10 @@ type CopilotService interface {
 }
 
 type CopilotHandler struct {
+	copilotPersonalAgentHandler
+	copilotDiscoveryHandler
+	copilotPersonalEnvironmentHandler
+	copilotPersonalAssistantHandler
 	copilotSessionHandler
 	copilotMessageHandler
 	copilotStreamHandler
@@ -130,28 +155,47 @@ func NewCopilotHandler(service CopilotService, runnerToken ...string) *CopilotHa
 }
 
 func NewCopilotHandlerWithRunnerKeys(service CopilotService, keys keyring.Ring) *CopilotHandler {
+	personalAgent, _ := service.(CopilotPersonalAgentService)
+	environments, _ := service.(CopilotPersonalEnvironmentService)
+	search, _ := service.(CopilotMessageSearchService)
+	feed, _ := service.(CopilotFeedService)
 	return NewCopilotHandlerWithServices(CopilotServices{
-		Sessions: service, Messages: service, Streams: service, Workbench: service,
+		PersonalAgent:       personalAgent,
+		PersonalEnvironment: environments,
+		Search:              search, Feed: feed,
+		PersonalAssistant: service,
+		Sessions:          service, Messages: service, Streams: service, Workbench: service,
 		DataSources: service, AnalysisProfiles: service, Automation: service,
 		RootCause: service, AgentRuns: service, InspectionTasks: service, InspectionRuns: service,
 	}, keys)
 }
 
 type CopilotServices struct {
-	Sessions         CopilotSessionService
-	Messages         CopilotMessageService
-	Streams          CopilotStreamService
-	Workbench        CopilotWorkbenchService
-	DataSources      CopilotDataSourceService
-	AnalysisProfiles CopilotAnalysisProfileService
-	Automation       CopilotAutomationService
-	RootCause        CopilotRootCauseService
-	AgentRuns        CopilotAgentRunService
-	InspectionTasks  CopilotInspectionTaskService
-	InspectionRuns   CopilotInspectionRunService
+	PersonalAgent       CopilotPersonalAgentService
+	Search              CopilotMessageSearchService
+	Feed                CopilotFeedService
+	PersonalEnvironment CopilotPersonalEnvironmentService
+	PersonalAssistant   CopilotPersonalAssistantService
+	Sessions            CopilotSessionService
+	Messages            CopilotMessageService
+	Streams             CopilotStreamService
+	Workbench           CopilotWorkbenchService
+	DataSources         CopilotDataSourceService
+	AnalysisProfiles    CopilotAnalysisProfileService
+	Automation          CopilotAutomationService
+	RootCause           CopilotRootCauseService
+	AgentRuns           CopilotAgentRunService
+	InspectionTasks     CopilotInspectionTaskService
+	InspectionRuns      CopilotInspectionRunService
 }
 
 type copilotSessionHandler struct{ service CopilotSessionService }
+type copilotPersonalEnvironmentHandler struct {
+	service CopilotPersonalEnvironmentService
+}
+type copilotPersonalAssistantHandler struct {
+	service CopilotPersonalAssistantService
+}
 type copilotMessageHandler struct{ service CopilotMessageService }
 type copilotStreamHandler struct{ service CopilotStreamService }
 type copilotWorkbenchHandler struct{ service CopilotWorkbenchService }
@@ -168,17 +212,21 @@ type copilotInspectionRunHandler struct{ service CopilotInspectionRunService }
 
 func NewCopilotHandlerWithServices(services CopilotServices, keys keyring.Ring) *CopilotHandler {
 	return &CopilotHandler{
-		copilotSessionHandler:         copilotSessionHandler{service: services.Sessions},
-		copilotMessageHandler:         copilotMessageHandler{service: services.Messages},
-		copilotStreamHandler:          copilotStreamHandler{service: services.Streams},
-		copilotWorkbenchHandler:       copilotWorkbenchHandler{service: services.Workbench},
-		copilotDataSourceHandler:      copilotDataSourceHandler{service: services.DataSources},
-		copilotAnalysisProfileHandler: copilotAnalysisProfileHandler{service: services.AnalysisProfiles},
-		copilotAutomationHandler:      copilotAutomationHandler{service: services.Automation},
-		copilotRootCauseHandler:       copilotRootCauseHandler{service: services.RootCause},
-		copilotAgentRunHandler:        copilotAgentRunHandler{service: services.AgentRuns, runnerKeys: keys},
-		copilotInspectionTaskHandler:  copilotInspectionTaskHandler{service: services.InspectionTasks},
-		copilotInspectionRunHandler:   copilotInspectionRunHandler{service: services.InspectionRuns},
+		copilotPersonalAgentHandler:       copilotPersonalAgentHandler{service: services.PersonalAgent},
+		copilotDiscoveryHandler:           copilotDiscoveryHandler{search: services.Search, feed: services.Feed},
+		copilotPersonalEnvironmentHandler: copilotPersonalEnvironmentHandler{service: services.PersonalEnvironment},
+		copilotPersonalAssistantHandler:   copilotPersonalAssistantHandler{service: services.PersonalAssistant},
+		copilotSessionHandler:             copilotSessionHandler{service: services.Sessions},
+		copilotMessageHandler:             copilotMessageHandler{service: services.Messages},
+		copilotStreamHandler:              copilotStreamHandler{service: services.Streams},
+		copilotWorkbenchHandler:           copilotWorkbenchHandler{service: services.Workbench},
+		copilotDataSourceHandler:          copilotDataSourceHandler{service: services.DataSources},
+		copilotAnalysisProfileHandler:     copilotAnalysisProfileHandler{service: services.AnalysisProfiles},
+		copilotAutomationHandler:          copilotAutomationHandler{service: services.Automation},
+		copilotRootCauseHandler:           copilotRootCauseHandler{service: services.RootCause},
+		copilotAgentRunHandler:            copilotAgentRunHandler{service: services.AgentRuns, runnerKeys: keys},
+		copilotInspectionTaskHandler:      copilotInspectionTaskHandler{service: services.InspectionTasks},
+		copilotInspectionRunHandler:       copilotInspectionRunHandler{service: services.InspectionRuns},
 	}
 }
 
@@ -520,6 +568,20 @@ func (h *copilotSessionHandler) ListSessions(c *gin.Context) {
 func (h *copilotSessionHandler) GetSession(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetSession(c.Request.Context(), principal, c.Param("sessionID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *copilotSessionHandler) EnsureMainSession(c *gin.Context) {
+	var req dto.WorkbenchMainSessionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid main chat payload")
+		return
+	}
+	item, err := h.service.EnsureMainSession(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), req.AgentProviderID, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		writeError(c, err)
 		return

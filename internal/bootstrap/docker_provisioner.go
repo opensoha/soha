@@ -37,6 +37,7 @@ func (p dockerHostProvisioner) ProvisionDockerHost(ctx context.Context, principa
 		Node:              stringFromMap(input.ProviderParams, "node"),
 		Network:           input.Network,
 		CloudInit:         input.CloudInit,
+		GuestAccess:       input.GuestAccess,
 		SourceMode:        stringFromMap(input.ProviderParams, "sourceMode"),
 		StartAfterCreate:  input.StartAfterCreate,
 		TemplateID:        input.TemplateID,
