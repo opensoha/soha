@@ -6,7 +6,7 @@ Web/Midscene 不成为 Go 测试依赖。公开协议仍由 contracts 所有，�
 本机 `make test/lint/build` 自动检查容量；工作区 npm 脚本由本机 script-shell 接入。本机按 PATH 直接调用 go/npm/docker 的有限命令同样自动接入；其他工具或临时命令的本机验证通过 `opensoha-verify run -- <原验证命令>` 执行，复用统一工具缓存并在前后检查容量。
 本地 Docker 验证使用 `opensoha-verify image -- <原 build 参数和 context>`，由工具管理临时 tag 和清理；
 正式发布构建保持原入口。未安装命令时使用 `python3 scripts/local-verify.py`。
-操作与保护边界见工作区 [缓存手册](../../docs/local-build-cache/runbook.md)。
+操作与保护边界见工作区 [缓存手册](../../docs/guides/local-build-cache/runbook.md)。
 `python3 -m unittest discover -s scripts -p "test_local_*.py"` 验证缓存、归属、容量与失败清理保护。
 
 `python3 scripts/run-deletion-integration.py` 复用已有 deletion-integration 测试，
