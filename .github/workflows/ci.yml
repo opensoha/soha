@@ -26,14 +26,14 @@ jobs:
         with:
           repository: opensoha/soha-contracts
           path: soha-contracts
-          ref: ${{ inputs.latest_siblings && 'main' || '935296b50dcd5dc894383ce7e00ec428e2a9bbd4' }}
+          ref: ${{ inputs.latest_siblings && 'main' || 'ad2c648b9170ef1684028098711ebe4571f56298' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Checkout web
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-web
           path: soha-web
-          ref: ${{ inputs.latest_siblings && 'main' || '12ee7bd032d91fecd2fb64597e5e23b045df3689' }}
+          ref: ${{ inputs.latest_siblings && 'main' || '6f86af8610e4deb20f980d1916dd6976a77b430d' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Record actual source combination
         env:

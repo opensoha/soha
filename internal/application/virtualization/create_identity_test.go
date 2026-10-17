@@ -11,11 +11,13 @@ import (
 
 type identityPreparingAdapter struct {
 	recoveryAdapter
-	calls int
+	calls       int
+	rejectedIDs []string
 }
 
 func (a *identityPreparingAdapter) PrepareVMCreate(_ context.Context, _ domain.AdapterConnection, input domain.AdapterCreateVMInput) (domain.AdapterCreateVMInput, error) {
 	a.calls++
+	a.rejectedIDs = append([]string(nil), input.RejectedProviderIDs...)
 	input.Node = "pve-node"
 	input.ProviderParams = cloneMap(input.ProviderParams)
 	if input.ProviderParams == nil {
@@ -76,7 +78,7 @@ func TestDynamicPVEIdentityConflictRechecksBeforeAnyProviderWrite(t *testing.T) 
 			if adapter.calls != 1 || writes != 0 || task.Status != TaskStatusFailed || task.Result["providerEffect"] != "not_started" {
 				t.Fatalf("fixed ID changed or reached provider: %+v", task)
 			}
-		} else if adapter.calls != 2 || writes != 1 || task.Status != TaskStatusSucceeded {
+		} else if adapter.calls != 2 || writes != 1 || task.Status != TaskStatusSucceeded || len(adapter.rejectedIDs) != 1 || adapter.rejectedIDs[0] != "701" {
 			t.Fatalf("dynamic ID did not recover before dispatch: calls=%d writes=%d task=%+v", adapter.calls, writes, task)
 		}
 	}

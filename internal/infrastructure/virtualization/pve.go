@@ -545,7 +545,7 @@ func (a *PVEAdapter) PrepareVMCreate(ctx context.Context, connection Connection,
 	vmid := firstNonEmpty(stringFromAny(params["vmid"]), stringOptionValue(connection.Options, "vmid"), stringOptionValue(connection.Options, "nextVmid"))
 	if vmid == "" {
 		var err error
-		vmid, err = a.nextVMID(ctx, connection)
+		vmid, err = a.nextVMIDCandidate(ctx, connection, input.RejectedProviderIDs)
 		if err != nil {
 			return input, err
 		}
