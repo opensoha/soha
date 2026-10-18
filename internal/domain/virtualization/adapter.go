@@ -87,8 +87,10 @@ type AdapterCreateVMInput struct {
 	SourceMode       string
 	SourceRef        string
 	ProviderParams   map[string]any
-	Disks            []AdapterDiskChange
-	Networks         []AdapterNetworkChange
+	// RejectedProviderIDs are worker-local hints before the identity is checkpointed.
+	RejectedProviderIDs []string
+	Disks               []AdapterDiskChange
+	Networks            []AdapterNetworkChange
 }
 
 // VMCreatePreparer freezes provider defaults and identity using read-only calls.

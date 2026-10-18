@@ -160,20 +160,24 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "identity-software", ParentID: "identity", Path: "/internal-workbench/software", LabelZH: "软件库", LabelEN: "Software Library", IconKey: "blocks", Section: "software", SortOrder: 5, Enabled: true},
 	{ID: "network-access-devices", ParentID: "identity", Path: "/network-access/devices", LabelZH: "终端资产", LabelEN: "Endpoint Assets", IconKey: "desktop", Section: "endpoint", SortOrder: 10, Enabled: true},
 	{ID: "network-access-user-admission", ParentID: "identity", Path: "/network-access/user-admission", LabelZH: "用户入网", LabelEN: "User Admission", IconKey: "user", Section: "network", SortOrder: 10, Enabled: true},
-	{ID: "network-access-settings", ParentID: "identity", Path: "/network-access/settings", LabelZH: "入网设置", LabelEN: "Admission Settings", IconKey: "settings", Section: "network", SortOrder: 20, Enabled: true},
-	{ID: "network-access-sites", ParentID: "identity", Path: "/network-access/sites", LabelZH: "站点", LabelEN: "Sites", IconKey: "globe", Section: "vpn", SortOrder: 10, Enabled: true},
-	{ID: "network-access-spaces", ParentID: "identity", Path: "/network-access/spaces", LabelZH: "网络空间", LabelEN: "Network Spaces", IconKey: "network", Section: "vpn", SortOrder: 20, Enabled: true},
-	{ID: "network-access-resources", ParentID: "identity", Path: "/network-access/resources", LabelZH: "资源", LabelEN: "Resources", IconKey: "blocks", Section: "vpn", SortOrder: 30, Enabled: true},
-	{ID: "network-access-gateways", ParentID: "identity", Path: "/network-access/gateways", LabelZH: "网关", LabelEN: "Gateways", IconKey: "network", Section: "vpn", SortOrder: 40, Enabled: true},
-	{ID: "network-access-site-profile-bindings", ParentID: "identity", Path: "/network-access/site-profile-bindings", LabelZH: "接入等级", LabelEN: "Access Levels", IconKey: "shield", Section: "vpn", SortOrder: 50, Enabled: true},
-	{ID: "network-access-access-grants", ParentID: "identity", Path: "/network-access/access-grants", LabelZH: "访问授权", LabelEN: "Access Grants", IconKey: "shield", Section: "vpn", SortOrder: 60, Enabled: true},
-	{ID: "network-access-policy", ParentID: "identity", Path: "/network-access/policy", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "vpn", SortOrder: 70, Enabled: true},
-	{ID: "network-access-sessions", ParentID: "identity", Path: "/network-access/sessions", LabelZH: "会话", LabelEN: "Sessions", IconKey: "activity", Section: "vpn", SortOrder: 80, Enabled: true},
-	{ID: "network-access-enrollments", ParentID: "identity", Path: "/network-access/enrollments", LabelZH: "运行时注册", LabelEN: "Runtime Enrollment", IconKey: "key", Section: "vpn", SortOrder: 90, Enabled: true},
-	{ID: "network-access-telemetry", ParentID: "identity", Path: "/network-access/telemetry", LabelZH: "遥测", LabelEN: "Telemetry", IconKey: "gauge", Section: "vpn", SortOrder: 100, Enabled: true},
-	{ID: "network-access-vpn-profiles", ParentID: "identity", Path: "/network-access/vpn/profiles", LabelZH: "VPN 连接方案", LabelEN: "VPN Profiles", IconKey: "network", Section: "vpn", SortOrder: 110, Enabled: true},
-	{ID: "network-access-vpn-selection-policies", ParentID: "identity", Path: "/network-access/vpn/selection-policies", LabelZH: "VPN Auto 策略", LabelEN: "VPN Auto Policies", IconKey: "network", Section: "vpn", SortOrder: 120, Enabled: true},
-	{ID: "network-access-vpn-dashboard", ParentID: "identity", Path: "/network-access/vpn/dashboard", LabelZH: "VPN Dashboard", LabelEN: "VPN Dashboard", IconKey: "network", Section: "vpn", SortOrder: 130, Enabled: true},
+	{ID: "network-access-settings", ParentID: "identity", Path: "/network-access/settings", LabelZH: "入网配置", LabelEN: "Admission Configuration", IconKey: "settings", Section: "network", SortOrder: 20, Enabled: true},
+	{ID: "network-access-infrastructure", ParentID: "identity", Path: "/network-access/infrastructure", LabelZH: "站点与网络", LabelEN: "Sites & Networks", IconKey: "network", Section: "vpn", SortOrder: 10, Enabled: true},
+	{ID: "network-access-controls", ParentID: "identity", Path: "/network-access/controls", LabelZH: "访问控制", LabelEN: "Access Control", IconKey: "shield", Section: "vpn", SortOrder: 30, Enabled: true},
+	{ID: "network-access-vpn", ParentID: "identity", Path: "/network-access/vpn", LabelZH: "VPN 配置", LabelEN: "VPN Configuration", IconKey: "network", Section: "vpn", SortOrder: 40, Enabled: true},
+	{ID: "network-access-monitoring", ParentID: "identity", Path: "/network-access/monitoring", LabelZH: "连接监控", LabelEN: "Connection Monitoring", IconKey: "activity", Section: "vpn", SortOrder: 50, Enabled: true},
+	{ID: "network-access-sites", ParentID: "network-access-infrastructure", Path: "/network-access/sites", LabelZH: "站点", LabelEN: "Sites", IconKey: "globe", Section: "vpn", SortOrder: 10, Enabled: true},
+	{ID: "network-access-spaces", ParentID: "network-access-infrastructure", Path: "/network-access/spaces", LabelZH: "网络空间", LabelEN: "Network Spaces", IconKey: "network", Section: "vpn", SortOrder: 20, Enabled: true},
+	{ID: "network-access-resources", ParentID: "identity", Path: "/network-access/resources", LabelZH: "网络资源", LabelEN: "Network Resources", IconKey: "blocks", Section: "vpn", SortOrder: 20, Enabled: true},
+	{ID: "network-access-gateways", ParentID: "network-access-infrastructure", Path: "/network-access/gateways", LabelZH: "网关", LabelEN: "Gateways", IconKey: "network", Section: "vpn", SortOrder: 30, Enabled: true},
+	{ID: "network-access-site-profile-bindings", ParentID: "network-access-controls", Path: "/network-access/site-profile-bindings", LabelZH: "接入等级", LabelEN: "Access Levels", IconKey: "shield", Section: "vpn", SortOrder: 30, Enabled: true},
+	{ID: "network-access-access-grants", ParentID: "network-access-controls", Path: "/network-access/access-grants", LabelZH: "访问授权", LabelEN: "Access Grants", IconKey: "shield", Section: "vpn", SortOrder: 20, Enabled: true},
+	{ID: "network-access-policy", ParentID: "network-access-controls", Path: "/network-access/policy", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "vpn", SortOrder: 10, Enabled: true},
+	{ID: "network-access-sessions", ParentID: "network-access-monitoring", Path: "/network-access/sessions", LabelZH: "会话", LabelEN: "Sessions", IconKey: "activity", Section: "vpn", SortOrder: 10, Enabled: true},
+	{ID: "network-access-enrollments", ParentID: "identity", Path: "/network-access/enrollments", LabelZH: "运行时接入", LabelEN: "Runtime Access", IconKey: "key", Section: "vpn", SortOrder: 60, Enabled: true},
+	{ID: "network-access-telemetry", ParentID: "network-access-monitoring", Path: "/network-access/telemetry", LabelZH: "遥测", LabelEN: "Telemetry", IconKey: "gauge", Section: "vpn", SortOrder: 20, Enabled: true},
+	{ID: "network-access-vpn-profiles", ParentID: "network-access-vpn", Path: "/network-access/vpn/profiles", LabelZH: "VPN 连接方案", LabelEN: "VPN Profiles", IconKey: "network", Section: "vpn", SortOrder: 10, Enabled: true},
+	{ID: "network-access-vpn-selection-policies", ParentID: "network-access-vpn", Path: "/network-access/vpn/selection-policies", LabelZH: "VPN Auto 策略", LabelEN: "VPN Auto Policies", IconKey: "network", Section: "vpn", SortOrder: 20, Enabled: true},
+	{ID: "network-access-vpn-dashboard", ParentID: "network-access-monitoring", Path: "/network-access/vpn/dashboard", LabelZH: "VPN 看板", LabelEN: "VPN Dashboard", IconKey: "network", Section: "vpn", SortOrder: 30, Enabled: true},
 	{ID: "network-access-mihomo-profiles", ParentID: "identity", Path: "/network-access/mihomo-profiles", LabelZH: "代理隧道", LabelEN: "Proxy Tunnels", IconKey: "link", Section: "proxy", SortOrder: 10, Enabled: true},
 	{ID: "network-access-proxy-instances", ParentID: "identity", Path: "/network-access/proxy-instances", LabelZH: "代理实例", LabelEN: "Proxy Instances", IconKey: "server", Section: "proxy", SortOrder: 15, Enabled: true},
 	{ID: "network-access-proxy-overview", ParentID: "identity", Path: "/network-access/proxy-overview", LabelZH: "流量概览", LabelEN: "Traffic Overview", IconKey: "gauge", Section: "proxy", SortOrder: 20, Enabled: true},
@@ -373,6 +377,9 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 		return err
 	}
 	if err := syncNetworkAccessMenuSeedUpgrades(ctx, db, now); err != nil {
+		return err
+	}
+	if err := syncNetworkAccessNavigationGroups(ctx, db, now); err != nil {
 		return err
 	}
 

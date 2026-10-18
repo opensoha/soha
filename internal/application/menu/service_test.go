@@ -331,3 +331,36 @@ func TestCreateDropsRoleBindingsFromMappedMenus(t *testing.T) {
 		t.Fatalf("mapped menu retained role bindings: created=%v stored=%v", created.RoleIDs, repo.created.RoleIDs)
 	}
 }
+
+func TestNetworkSceneContainersFollowOnlyAccessibleChildren(t *testing.T) {
+	tests := []struct{ group, leaf, path, permission string }{
+		{group: "network-access-infrastructure", leaf: "network-access-spaces", path: "/network-access/spaces", permission: appaccess.PermNetworkAccessSpacesView},
+		{group: "network-access-controls", leaf: "network-access-access-grants", path: "/network-access/access-grants", permission: appaccess.PermNetworkAccessAccessGrantsView},
+		{group: "network-access-vpn", leaf: "network-access-vpn-profiles", path: "/network-access/vpn/profiles", permission: "network_access.vpn_profiles.view"},
+		{group: "network-access-monitoring", leaf: "network-access-vpn-dashboard", path: "/network-access/vpn/dashboard", permission: "network_access.vpn_dashboard.view"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.group, func(t *testing.T) {
+			items := []domainmenu.Record{{ID: "identity", Path: "/internal-workbench", Enabled: true}}
+			for _, other := range tests {
+				items = append(items, domainmenu.Record{ID: other.group, ParentID: "identity", Path: "/network-access/" + other.group, Enabled: true}, domainmenu.Record{ID: other.leaf, ParentID: other.group, Path: other.path, Enabled: true})
+			}
+			permissions := []string{appaccess.PermWorkbenchSecurityView, tc.permission}
+			if isVisibleByPermissions(domainmenu.Record{ID: tc.group, Path: "/network-access/group"}, permissions) {
+				t.Fatal("a structural container must not grant its own visibility")
+			}
+			service := New(stubRepository{items: items}, appaccess.NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{"limited": permissions}}), nil, nil)
+			visible, err := service.ListVisible(context.Background(), domainidentity.Principal{Roles: []string{"limited"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(visible) != 1 || len(visible[0].Children) != 1 {
+				t.Fatalf("unexpected roots or sibling groups: %#v", visible)
+			}
+			group := visible[0].Children[0]
+			if group.ID != tc.group || len(group.Children) != 1 || group.Children[0].ID != tc.leaf {
+				t.Fatalf("unexpected visible group: %#v", group)
+			}
+		})
+	}
+}

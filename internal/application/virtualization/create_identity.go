@@ -55,8 +55,10 @@ func (s *Service) prepareVMDispatch(ctx context.Context, task domain.Task, conne
 	if err != nil {
 		return domain.AdapterCreateVMInput{}, task, err
 	}
+	var rejectedIDs []string
 	for attempt := 0; ; attempt++ {
 		input := adapterCreateVMInput(task.Payload)
+		input.RejectedProviderIDs = rejectedIDs
 		input.OperationID = task.ID
 		if isWorkerCreation(task) {
 			input.WorkerSystemUUID = task.ID
@@ -83,8 +85,9 @@ func (s *Service) prepareVMDispatch(ctx context.Context, task domain.Task, conne
 		if !errors.Is(err, domain.ErrProviderIdentityClaimed) || !boolValue(task.Payload, "providerIdentityDynamic") || boolValue(task.Payload, "providerIdentityPrepared") || attempt >= 4 {
 			return input, checkpointed, err
 		}
-		// GET nextid is advisory. Another Soha worker may have reserved that free ID
-		// before its first provider request. Re-read only; a frozen ID never changes.
+		// The provider cannot see Soha reservations. Exclude rejected suggestions;
+		// only uncheckpointed dynamic identities may change, before any provider write.
+		rejectedIDs = append(rejectedIDs, stringValue(input.ProviderParams, "vmid"))
 		timer := time.NewTimer(time.Second)
 		select {
 		case <-ctx.Done():

@@ -66,34 +66,38 @@ type clusterCredentialSeed struct {
 }
 
 // bootstrapSeedVersion identifies the current set of built-in seeds. When the
-// code introduces new menus/roles/policies or changes structural defaults, bump
-// this string so the next startup replays the idempotent seed helpers:
+// a change requires replaying all built-in defaults, bump this string so the
+// next startup replays the idempotent seed helpers:
 //   - roles/policies keep using UPSERT so code changes propagate
 //   - menus/environments keep using ON CONFLICT DO NOTHING so user edits survive
 //
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
+// Menu-only upgrades use their own marker to keep older Core worktrees compatible.
 const bootstrapSeedVersion = "2026-09-22-oncall-settings-menu"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
 func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) error {
-	storedVersion, err := readBootstrapSeedVersion(ctx, store.DB())
-	if err != nil {
-		return err
-	}
-	if storedVersion == bootstrapSeedVersion {
-		return cleanupDeprecatedMenus(ctx, store.DB(), obsoleteMenuIDsForCleanup())
-	}
-
 	return store.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		storedVersion, err := readBootstrapSeedVersion(ctx, tx)
+		storedVersion, err := readSeedVersion(ctx, tx, bootstrapSeedVersionKey)
 		if err != nil {
 			return err
 		}
-		if storedVersion == bootstrapSeedVersion {
-			return cleanupDeprecatedMenus(ctx, tx, obsoleteMenuIDsForCleanup())
+		if storedVersion == bootstrapSeedVersion || storedVersion == networkNavigationSeedVersion {
+			if err := cleanupDeprecatedMenus(ctx, tx, obsoleteMenuIDsForCleanup()); err != nil {
+				return err
+			}
+			if cfg.Modules.Security.Enabled {
+				if err := upgradeNetworkAccessNavigationSeeds(ctx, tx); err != nil {
+					return err
+				}
+			}
+			if storedVersion == networkNavigationSeedVersion {
+				return writeSeedVersion(ctx, tx, bootstrapSeedVersionKey, bootstrapSeedVersion)
+			}
+			return nil
 		}
 		if err := seedRoles(ctx, tx); err != nil {
 			return err
@@ -116,8 +120,11 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 		if err := seedWorkflowTemplates(ctx, tx); err != nil {
 			return err
 		}
-		if err := writeBootstrapSeedVersion(ctx, tx, bootstrapSeedVersion); err != nil {
+		if err := writeSeedVersion(ctx, tx, bootstrapSeedVersionKey, bootstrapSeedVersion); err != nil {
 			return err
+		}
+		if cfg.Modules.Security.Enabled {
+			return upgradeNetworkAccessNavigationSeeds(ctx, tx)
 		}
 		return nil
 	})
@@ -149,11 +156,11 @@ func syncBootstrapRuntime(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.
 	})
 }
 
-func readBootstrapSeedVersion(ctx context.Context, db *gorm.DB) (string, error) {
+func readSeedVersion(ctx context.Context, db *gorm.DB, key string) (string, error) {
 	var value string
 	row := db.WithContext(ctx).Raw(
 		`SELECT value #>> '{version}' FROM app_settings WHERE setting_key = ?`,
-		bootstrapSeedVersionKey,
+		key,
 	).Row()
 	if err := row.Scan(&value); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -164,7 +171,7 @@ func readBootstrapSeedVersion(ctx context.Context, db *gorm.DB) (string, error) 
 	return value, nil
 }
 
-func writeBootstrapSeedVersion(ctx context.Context, db *gorm.DB, version string) error {
+func writeSeedVersion(ctx context.Context, db *gorm.DB, key, version string) error {
 	payload, err := json.Marshal(map[string]string{"version": version})
 	if err != nil {
 		return err
@@ -175,7 +182,7 @@ func writeBootstrapSeedVersion(ctx context.Context, db *gorm.DB, version string)
 		ON CONFLICT (setting_key) DO UPDATE SET
 			value = EXCLUDED.value,
 			updated_at = EXCLUDED.updated_at
-	`, bootstrapSeedVersionKey, string(payload)).Error
+	`, key, string(payload)).Error
 }
 
 func pruneDemoClusters(ctx context.Context, db *gorm.DB, clusters []cfgpkg.ClusterConfig) error {

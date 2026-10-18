@@ -338,6 +338,9 @@ func computeMenuRule(id string) (visibilityRule, bool) {
 
 func networkAccessMenuRule(id string) (visibilityRule, bool) {
 	switch id {
+	case "network-access-infrastructure", "network-access-controls", "network-access-vpn", "network-access-monitoring":
+		// Structural containers are included only through their visible descendants.
+		return visibilityRule{}, true
 	case "network-access":
 		return visibilityRule{permissions: []string{
 			appaccess.PermNetworkAccessEndpointDevicesView,
