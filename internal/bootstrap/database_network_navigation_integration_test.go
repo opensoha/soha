@@ -87,7 +87,7 @@ func TestNetworkNavigationUpgradeWithPostgres(t *testing.T) {
 	if err := db.Exec(`INSERT INTO menu_role_bindings (id,menu_id,role_id) VALUES ('navigation-binding','network-access-sites','navigation-role')`).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := writeBootstrapSeedVersion(ctx, db, previousBootstrapSeedVersion); err != nil {
+	if err := writeSeedVersion(ctx, db, bootstrapSeedVersionKey, "2026-09-22-oncall-settings-menu"); err != nil {
 		t.Fatal(err)
 	}
 	customIDs := []string{"network-access-spaces", "network-access-gateways", "network-access-policy", "custom-operator-page"}
@@ -102,9 +102,13 @@ func TestNetworkNavigationUpgradeWithPostgres(t *testing.T) {
 		if err := seedDefaults(ctx, store, cfgpkg.Config{}); err != nil {
 			t.Fatal(err)
 		}
-		version, err := readBootstrapSeedVersion(ctx, db)
-		if err != nil || version != previousBootstrapSeedVersion {
+		version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
+		if err != nil || version != "2026-09-22-oncall-settings-menu" {
 			t.Fatalf("disabled module advanced upgrade: %q, %v", version, err)
+		}
+		marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
+		if err != nil || marker != "" {
+			t.Fatalf("disabled module marked upgrade: %q, %v", marker, err)
 		}
 		var count int64
 		if err := db.Table("menus").Count(&count).Error; err != nil || count != initialMenuCount {
@@ -123,9 +127,13 @@ func TestNetworkNavigationUpgradeWithPostgres(t *testing.T) {
 		if err := seedDefaults(ctx, store, cfg); err == nil {
 			t.Fatal("expected unique-path collision")
 		}
-		version, err := readBootstrapSeedVersion(ctx, db)
-		if err != nil || version != previousBootstrapSeedVersion {
+		version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
+		if err != nil || version != "2026-09-22-oncall-settings-menu" {
 			t.Fatalf("failed upgrade advanced version: %q, %v", version, err)
+		}
+		marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
+		if err != nil || marker != "" {
+			t.Fatalf("failed upgrade left marker: %q, %v", marker, err)
 		}
 		var groups int64
 		if err := db.Table("menus").Where("id = ?", "network-access-infrastructure").Count(&groups).Error; err != nil || groups != 0 {
@@ -157,9 +165,39 @@ func TestNetworkNavigationUpgradeWithPostgres(t *testing.T) {
 		if err := db.Table("menus").Count(&menus).Error; err != nil || menus != initialMenuCount+4 {
 			t.Fatalf("unrelated defaults were reseeded: %d, %v", menus, err)
 		}
-		version, err := readBootstrapSeedVersion(ctx, db)
-		if err != nil || version != bootstrapSeedVersion {
+		version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
+		if err != nil || version != "2026-09-22-oncall-settings-menu" {
 			t.Fatalf("upgrade version = %q, %v", version, err)
+		}
+		marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
+		if err != nil || marker != networkNavigationSeedVersion {
+			t.Fatalf("menu upgrade marker = %q, %v", marker, err)
+		}
+	})
+	t.Run("previous_task52_marker_recovers_without_reseed", func(t *testing.T) {
+		if err := writeSeedVersion(ctx, db, bootstrapSeedVersionKey, networkNavigationSeedVersion); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec(`DELETE FROM app_settings WHERE setting_key = ?`, networkNavigationSeedVersionKey).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := seedDefaults(ctx, store, cfg); err != nil {
+			t.Fatal(err)
+		}
+		version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
+		if err != nil || version != "2026-09-22-oncall-settings-menu" {
+			t.Fatalf("legacy bootstrap version not restored: %q, %v", version, err)
+		}
+		marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
+		if err != nil || marker != networkNavigationSeedVersion {
+			t.Fatalf("menu upgrade marker = %q, %v", marker, err)
+		}
+		var bindings, menus int64
+		if err := db.Table("menu_role_bindings").Where("id = ?", "navigation-binding").Count(&bindings).Error; err != nil || bindings != 1 {
+			t.Fatalf("legacy marker recovery lost binding: %d, %v", bindings, err)
+		}
+		if err := db.Table("menus").Count(&menus).Error; err != nil || menus != initialMenuCount+4 {
+			t.Fatalf("legacy marker recovery replayed defaults: %d, %v", menus, err)
 		}
 	})
 	t.Run("second_start_is_idempotent", func(t *testing.T) {

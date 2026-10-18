@@ -95,7 +95,7 @@ def main():
         if args.virtualization_capacity:
             scope = {"package": "github.com/opensoha/soha/internal/repository/virtualization", "parent": parent, "children": ["provider_identity_claim", "worker_pool_admission", "capacity_policy", "ssh_secret_storage", "managed_cloud_image_sync"]}
         if args.network_navigation:
-            scope = {"package": "github.com/opensoha/soha/internal/bootstrap", "parent": parent, "children": ["disabled_upgrade_stays_pending", "failure_rolls_back", "upgrade_preserves_custom_data_and_bindings", "second_start_is_idempotent"]}
+            scope = {"package": "github.com/opensoha/soha/internal/bootstrap", "parent": parent, "children": ["disabled_upgrade_stays_pending", "failure_rolls_back", "upgrade_preserves_custom_data_and_bindings", "previous_task52_marker_recovers_without_reseed", "second_start_is_idempotent"]}
         evidence = module.validate(args.output.read_text(), result.returncode, **scope)
         manifest['result'] = evidence
     except Exception as error:

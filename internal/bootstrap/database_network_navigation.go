@@ -7,12 +7,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// Upgrade the previous seed without reseeding unrelated defaults or role bindings.
+const networkNavigationSeedVersion = "2026-10-18-intranet-navigation"
+const networkNavigationSeedVersionKey = "bootstrap.network_navigation_version"
+
+// Apply this menu-only upgrade once without replaying unrelated defaults or bindings.
 func upgradeNetworkAccessNavigationSeeds(ctx context.Context, db *gorm.DB) error {
-	now := time.Now().UTC()
-	if err := cleanupDeprecatedMenus(ctx, db, obsoleteMenuIDsForCleanup()); err != nil {
+	version, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
+	if err != nil {
 		return err
 	}
+	if version != "" {
+		return nil
+	}
+	now := time.Now().UTC()
 	var groups []menuSeed
 	for _, item := range defaultMenuSeeds() {
 		switch item.ID {
@@ -26,7 +33,10 @@ func upgradeNetworkAccessNavigationSeeds(ctx context.Context, db *gorm.DB) error
 	if err := syncNetworkAccessMenuSeedUpgrades(ctx, db, now); err != nil {
 		return err
 	}
-	return syncNetworkAccessNavigationGroups(ctx, db, now)
+	if err := syncNetworkAccessNavigationGroups(ctx, db, now); err != nil {
+		return err
+	}
+	return writeSeedVersion(ctx, db, networkNavigationSeedVersionKey, networkNavigationSeedVersion)
 }
 
 func syncNetworkAccessNavigationGroups(ctx context.Context, db *gorm.DB, now time.Time) error {
