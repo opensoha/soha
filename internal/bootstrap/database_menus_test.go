@@ -273,23 +273,26 @@ func TestNetworkAccessMenuSeedsLiveUnderInternalWorkbench(t *testing.T) {
 		labelEN string
 		sort    int
 	}{
-		"network-access-devices":               {parent: "identity", path: "/network-access/devices", section: "endpoint", labelZH: "终端资产", labelEN: "Endpoint Assets", sort: 10},
-		"network-access-user-admission":        {parent: "identity", path: "/network-access/user-admission", section: "network", labelZH: "用户入网", labelEN: "User Admission", sort: 10},
-		"network-access-settings":              {parent: "identity", path: "/network-access/settings", section: "network", labelZH: "入网设置", labelEN: "Admission Settings", sort: 20},
-		"network-access-sites":                 {parent: "identity", path: "/network-access/sites", section: "vpn", labelZH: "站点", labelEN: "Sites", sort: 10},
-		"network-access-spaces":                {parent: "identity", path: "/network-access/spaces", section: "vpn", labelZH: "网络空间", labelEN: "Network Spaces", sort: 20},
-		"network-access-resources":             {parent: "identity", path: "/network-access/resources", section: "vpn", labelZH: "资源", labelEN: "Resources", sort: 30},
-		"network-access-gateways":              {parent: "identity", path: "/network-access/gateways", section: "vpn", labelZH: "网关", labelEN: "Gateways", sort: 40},
-		"network-access-site-profile-bindings": {parent: "identity", path: "/network-access/site-profile-bindings", section: "vpn", labelZH: "接入等级", labelEN: "Access Levels", sort: 50},
-		"network-access-access-grants":         {parent: "identity", path: "/network-access/access-grants", section: "vpn", labelZH: "访问授权", labelEN: "Access Grants", sort: 60},
-		"network-access-policy":                {parent: "identity", path: "/network-access/policy", section: "vpn", labelZH: "策略", labelEN: "Policies", sort: 70},
-		"network-access-sessions":              {parent: "identity", path: "/network-access/sessions", section: "vpn", labelZH: "会话", labelEN: "Sessions", sort: 80},
-		"network-access-enrollments":           {parent: "identity", path: "/network-access/enrollments", section: "vpn", labelZH: "运行时注册", labelEN: "Runtime Enrollment", sort: 90},
-		"network-access-telemetry":             {parent: "identity", path: "/network-access/telemetry", section: "vpn", labelZH: "遥测", labelEN: "Telemetry", sort: 100},
-		"network-access-mihomo-profiles":       {parent: "identity", path: "/network-access/mihomo-profiles", section: "proxy", labelZH: "代理隧道", labelEN: "Proxy Tunnels", sort: 10},
+		"network-access-vpn-profiles":           {parent: "network-access-vpn", path: "/network-access/vpn/profiles", section: "vpn", labelZH: "VPN 连接方案", labelEN: "VPN Profiles", sort: 10},
+		"network-access-vpn-selection-policies": {parent: "network-access-vpn", path: "/network-access/vpn/selection-policies", section: "vpn", labelZH: "VPN Auto 策略", labelEN: "VPN Auto Policies", sort: 20},
+		"network-access-vpn-dashboard":          {parent: "network-access-monitoring", path: "/network-access/vpn/dashboard", section: "vpn", labelZH: "VPN 看板", labelEN: "VPN Dashboard", sort: 30},
+		"network-access-devices":                {parent: "identity", path: "/network-access/devices", section: "endpoint", labelZH: "终端资产", labelEN: "Endpoint Assets", sort: 10},
+		"network-access-user-admission":         {parent: "identity", path: "/network-access/user-admission", section: "network", labelZH: "用户入网", labelEN: "User Admission", sort: 10},
+		"network-access-settings":               {parent: "identity", path: "/network-access/settings", section: "network", labelZH: "入网配置", labelEN: "Admission Configuration", sort: 20},
+		"network-access-sites":                  {parent: "network-access-infrastructure", path: "/network-access/sites", section: "vpn", labelZH: "站点", labelEN: "Sites", sort: 10},
+		"network-access-spaces":                 {parent: "network-access-infrastructure", path: "/network-access/spaces", section: "vpn", labelZH: "网络空间", labelEN: "Network Spaces", sort: 20},
+		"network-access-resources":              {parent: "identity", path: "/network-access/resources", section: "vpn", labelZH: "网络资源", labelEN: "Network Resources", sort: 20},
+		"network-access-gateways":               {parent: "network-access-infrastructure", path: "/network-access/gateways", section: "vpn", labelZH: "网关", labelEN: "Gateways", sort: 30},
+		"network-access-site-profile-bindings":  {parent: "network-access-controls", path: "/network-access/site-profile-bindings", section: "vpn", labelZH: "接入等级", labelEN: "Access Levels", sort: 30},
+		"network-access-access-grants":          {parent: "network-access-controls", path: "/network-access/access-grants", section: "vpn", labelZH: "访问授权", labelEN: "Access Grants", sort: 20},
+		"network-access-policy":                 {parent: "network-access-controls", path: "/network-access/policy", section: "vpn", labelZH: "策略", labelEN: "Policies", sort: 10},
+		"network-access-sessions":               {parent: "network-access-monitoring", path: "/network-access/sessions", section: "vpn", labelZH: "会话", labelEN: "Sessions", sort: 10},
+		"network-access-enrollments":            {parent: "identity", path: "/network-access/enrollments", section: "vpn", labelZH: "运行时接入", labelEN: "Runtime Access", sort: 60},
+		"network-access-telemetry":              {parent: "network-access-monitoring", path: "/network-access/telemetry", section: "vpn", labelZH: "遥测", labelEN: "Telemetry", sort: 20},
+		"network-access-mihomo-profiles":        {parent: "identity", path: "/network-access/mihomo-profiles", section: "proxy", labelZH: "代理隧道", labelEN: "Proxy Tunnels", sort: 10},
 		"network-access-proxy-instances":        {parent: "identity", path: "/network-access/proxy-instances", section: "proxy", labelZH: "代理实例", labelEN: "Proxy Instances", sort: 15},
-		"network-access-proxy-overview":        {parent: "identity", path: "/network-access/proxy-overview", section: "proxy", labelZH: "流量概览", labelEN: "Traffic Overview", sort: 20},
-		"network-access-proxy-connections":     {parent: "identity", path: "/network-access/proxy-connections", section: "proxy", labelZH: "活动连接", labelEN: "Active Connections", sort: 30},
+		"network-access-proxy-overview":         {parent: "identity", path: "/network-access/proxy-overview", section: "proxy", labelZH: "流量概览", labelEN: "Traffic Overview", sort: 20},
+		"network-access-proxy-connections":      {parent: "identity", path: "/network-access/proxy-connections", section: "proxy", labelZH: "活动连接", labelEN: "Active Connections", sort: 30},
 	}
 
 	for _, item := range builtinMenuSeeds {
@@ -310,5 +313,29 @@ func TestNetworkAccessMenuSeedsLiveUnderInternalWorkbench(t *testing.T) {
 		case "network-access-wifi", "network-access-wired", "network-access-radius-services", "network-access-ssids", "network-access-nas-bindings":
 			t.Fatalf("legacy or tab child menu remains seeded: %s", item.ID)
 		}
+	}
+}
+
+func TestNetworkNavigationHasSixEntriesAndPreservesLeafPaths(t *testing.T) {
+	want := map[string]string{
+		"network-access-infrastructure": "/network-access/infrastructure",
+		"network-access-resources":      "/network-access/resources",
+		"network-access-controls":       "/network-access/controls",
+		"network-access-vpn":            "/network-access/vpn",
+		"network-access-monitoring":     "/network-access/monitoring",
+		"network-access-enrollments":    "/network-access/enrollments",
+	}
+	for _, item := range defaultMenuSeeds() {
+		if item.ParentID != "identity" || item.Section != "vpn" {
+			continue
+		}
+		path, ok := want[item.ID]
+		if !ok || item.Path != path || !item.Enabled {
+			t.Fatalf("unexpected VPN entry: %#v", item)
+		}
+		delete(want, item.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing scene entries: %v", want)
 	}
 }

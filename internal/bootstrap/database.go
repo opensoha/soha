@@ -74,7 +74,8 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-09-22-oncall-settings-menu"
+const previousBootstrapSeedVersion = "2026-09-22-oncall-settings-menu"
+const bootstrapSeedVersion = "2026-10-18-intranet-navigation"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -94,6 +95,15 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 		}
 		if storedVersion == bootstrapSeedVersion {
 			return cleanupDeprecatedMenus(ctx, tx, obsoleteMenuIDsForCleanup())
+		}
+		if storedVersion == previousBootstrapSeedVersion {
+			if !cfg.Modules.Security.Enabled {
+				return cleanupDeprecatedMenus(ctx, tx, obsoleteMenuIDsForCleanup())
+			}
+			if err := upgradeNetworkAccessNavigationSeeds(ctx, tx); err != nil {
+				return err
+			}
+			return writeBootstrapSeedVersion(ctx, tx, bootstrapSeedVersion)
 		}
 		if err := seedRoles(ctx, tx); err != nil {
 			return err

@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--identity", action="store_true")
     parser.add_argument("--virtualization-capacity", action="store_true")
     parser.add_argument("--feed-search",action="store_true")
+    parser.add_argument("--network-navigation", action="store_true")
     args = parser.parse_args()
     run_id = str(uuid.uuid4())
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -67,12 +68,14 @@ def main():
                 parent = "TestSessionAuthorizationWithPostgres"
             if args.virtualization_capacity:
                 parent = "TestCapacityAdmissionWithPostgres"
+            if args.network_navigation:
+                parent = "TestNetworkNavigationUpgradeWithPostgres"
             package = "knowledge" if args.knowledge or args.knowledge_ann else "copilot" if args.identity or args.feed_search or args.main_chat or args.native_harness or args.personal_environment else "application"
             if args.virtualization_capacity:
                 package = "virtualization"
             result = subprocess.run(["go", "test", "-json", "-count=1", "-race", "-timeout=10m",
                                      "-run", "^" + parent + "$",
-                                     "./internal/repository/" + package], cwd=ROOT, env=env, stdout=log, stderr=diagnostics)
+                                     "./internal/bootstrap" if args.network_navigation else "./internal/repository/" + package], cwd=ROOT, env=env, stdout=log, stderr=diagnostics)
         spec = importlib.util.spec_from_file_location("evidence", ROOT / "scripts/check-go-test-evidence.py")
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -91,6 +94,8 @@ def main():
             scope = {"package":"github.com/opensoha/soha/internal/repository/copilot","parent":parent,"children":["message_window_owner_and_long_history","feed_read_and_feedback","refresh_claim_and_settings_fence","expired_lease_no_replay"]}
         if args.virtualization_capacity:
             scope = {"package": "github.com/opensoha/soha/internal/repository/virtualization", "parent": parent, "children": ["provider_identity_claim", "worker_pool_admission", "capacity_policy", "ssh_secret_storage", "managed_cloud_image_sync"]}
+        if args.network_navigation:
+            scope = {"package": "github.com/opensoha/soha/internal/bootstrap", "parent": parent, "children": ["disabled_upgrade_stays_pending", "failure_rolls_back", "upgrade_preserves_custom_data_and_bindings", "second_start_is_idempotent"]}
         evidence = module.validate(args.output.read_text(), result.returncode, **scope)
         manifest['result'] = evidence
     except Exception as error:
