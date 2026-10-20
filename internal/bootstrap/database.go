@@ -95,9 +95,11 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 				}
 			}
 			if storedVersion == networkNavigationSeedVersion {
-				return writeSeedVersion(ctx, tx, bootstrapSeedVersionKey, bootstrapSeedVersion)
+				if err := writeSeedVersion(ctx, tx, bootstrapSeedVersionKey, bootstrapSeedVersion); err != nil {
+					return err
+				}
 			}
-			return nil
+			return upgradeKubernetesWorkbenchSeeds(ctx, tx)
 		}
 		if err := seedRoles(ctx, tx); err != nil {
 			return err
@@ -124,9 +126,11 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 			return err
 		}
 		if cfg.Modules.Security.Enabled {
-			return upgradeNetworkAccessNavigationSeeds(ctx, tx)
+			if err := upgradeNetworkAccessNavigationSeeds(ctx, tx); err != nil {
+				return err
+			}
 		}
-		return nil
+		return upgradeKubernetesWorkbenchSeeds(ctx, tx)
 	})
 }
 

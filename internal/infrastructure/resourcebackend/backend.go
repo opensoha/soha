@@ -37,20 +37,22 @@ func (*Cache) CacheUnavailable(err error) bool {
 
 func NewAgentClients(registry *agentinfra.Registry) appresource.AgentClients {
 	return appresource.AgentClients{
-		Prometheus:       agentFactory[appresource.PrometheusAgent](registry),
-		Workloads:        agentFactory[appresource.WorkloadAgent](registry),
-		Logs:             agentFactory[appresource.LogAgent](registry),
-		Configuration:    agentFactory[appresource.ConfigurationAgent](registry),
-		Network:          agentFactory[appresource.NetworkAgent](registry),
-		Storage:          agentFactory[appresource.StorageAgent](registry),
-		RBAC:             agentFactory[appresource.RBACAgent](registry),
-		Helm:             agentFactory[appresource.HelmAgent](registry),
-		Inventory:        agentFactory[appresource.InventoryAgent](registry),
-		CustomResources:  agentFactory[appresource.CustomResourceAgent](registry),
-		Generic:          agentFactory[appresource.GenericResourceAgent](registry),
-		Events:           agentFactory[appresource.EventAgent](registry),
-		PortForwards:     agentFactory[appresource.PortForwardAgent](registry),
-		ResourceCreation: agentResourceCreatorFactory(registry),
+		MonitoringInventory: agentFactory[appresource.MonitoringInventoryAgent](registry),
+		TopologySources:     agentFactory[appresource.TopologySourceAgent](registry),
+		Prometheus:          agentFactory[appresource.PrometheusAgent](registry),
+		Workloads:           agentFactory[appresource.WorkloadAgent](registry),
+		Logs:                agentFactory[appresource.LogAgent](registry),
+		Configuration:       agentFactory[appresource.ConfigurationAgent](registry),
+		Network:             agentFactory[appresource.NetworkAgent](registry),
+		Storage:             agentFactory[appresource.StorageAgent](registry),
+		RBAC:                agentFactory[appresource.RBACAgent](registry),
+		Helm:                agentFactory[appresource.HelmAgent](registry),
+		Inventory:           agentFactory[appresource.InventoryAgent](registry),
+		CustomResources:     agentFactory[appresource.CustomResourceAgent](registry),
+		Generic:             agentFactory[appresource.GenericResourceAgent](registry),
+		Events:              agentFactory[appresource.EventAgent](registry),
+		PortForwards:        agentFactory[appresource.PortForwardAgent](registry),
+		ResourceCreation:    agentResourceCreatorFactory(registry),
 	}
 }
 

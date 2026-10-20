@@ -3,6 +3,12 @@ package cluster
 import (
 	"context"
 	"errors"
+	contractresource "github.com/opensoha/soha-contracts/resource"
+	"io"
+	rbacv1 "k8s.io/api/rbac/v1"
+	kyaml "k8s.io/apimachinery/pkg/util/yaml"
+	"sigs.k8s.io/yaml"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -139,6 +145,86 @@ func TestAgentExecutionAuthenticationBindsClusterCredentialAcrossTransports(t *t
 		repo.connection.Summary.ConnectionMode = domaincluster.ConnectionModeDirectKubeconfig
 		if err := s.AuthenticateAgentExecution(context.Background(), "cluster", "cluster-token"); err == nil {
 			t.Fatal("Direct connection accepted Agent execution")
+		}
+	}
+}
+
+func TestAgentManifestProfilesMatchActionsAndReadOnlyRBAC(t *testing.T) {
+	for _, profile := range []string{"legacy", "workbench", "read-only"} {
+		t.Run(profile, func(t *testing.T) {
+			connection := domaincluster.Connection{Summary: domaincluster.Summary{ID: "test"}, Metadata: map[string]any{"token": "test-agent-token-with-at-least-32-characters", "agent_action_profile": profile}}
+			manifest, err := renderAgentManifest(connection, "https://soha.example.test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoder := kyaml.NewYAMLOrJSONDecoder(strings.NewReader(string(manifest)), 4096)
+			found := false
+			for {
+				var object struct {
+					Kind  string              `json:"kind"`
+					Data  map[string]string   `json:"data"`
+					Rules []rbacv1.PolicyRule `json:"rules"`
+				}
+				if err := decoder.Decode(&object); err == io.EOF {
+					break
+				} else if err != nil {
+					t.Fatal(err)
+				}
+				if object.Kind == "ConfigMap" {
+					var cfg struct {
+						Security struct {
+							AllowedActions []string `json:"allowed_actions"`
+						} `json:"security"`
+					}
+					if err := yaml.Unmarshal([]byte(object.Data["agent.config.yaml"]), &cfg); err != nil {
+						t.Fatal(err)
+					}
+					expected, _ := contractresource.KubernetesAgentProfileActions(profile)
+					if !slices.Equal(cfg.Security.AllowedActions, expected) {
+						t.Fatalf("profile action drift: %v", cfg.Security.AllowedActions)
+					}
+					found = true
+				}
+				if object.Kind == "ClusterRole" {
+					assertAgentProfileRBAC(t, profile, object.Rules)
+				}
+			}
+			if !found {
+				t.Fatal("missing runtime config")
+			}
+		})
+	}
+}
+
+func TestAgentReadOnlyProfileRejectsCustomWriteGrants(t *testing.T) {
+	input := domaincluster.RegisterInput{AgentActionProfile: "read-only", AgentCustomResourceRules: []domaincluster.AgentCustomResourceRule{{APIGroup: "example.io", Resources: []string{"widgets"}, Verbs: []string{"create"}}}}
+	if err := validateAgentOptions(&input, domaincluster.ConnectionModeAgent); err == nil {
+		t.Fatal("read-only accepts writes")
+	}
+	connection := domaincluster.Connection{Metadata: map[string]any{"token": "test-agent-token-with-at-least-32-characters", "agent_action_profile": "read-only", "agent_custom_resource_rules": input.AgentCustomResourceRules}}
+	if _, err := renderAgentManifest(connection, "https://soha.example.test"); err == nil {
+		t.Fatal("persisted read-only writes rendered")
+	}
+	input.AgentActionProfile = "invalid"
+	if err := validateAgentOptions(&input, domaincluster.ConnectionModeAgent); err == nil {
+		t.Fatal("invalid profile accepted")
+	}
+}
+
+func assertAgentProfileRBAC(t *testing.T, profile string, rules []rbacv1.PolicyRule) {
+	t.Helper()
+	for _, rule := range rules {
+		crd := slices.Contains(rule.APIGroups, "apiextensions.k8s.io") && slices.Contains(rule.Resources, "customresourcedefinitions")
+		for _, verb := range rule.Verbs {
+			if verb == "get" || verb == "list" || verb == "watch" {
+				continue
+			}
+			if crd {
+				t.Fatalf("profile %s implicitly granted CRD definition %s", profile, verb)
+			}
+			if profile == "read-only" && !slices.Contains(rule.APIGroups, "authorization.k8s.io") {
+				t.Fatalf("read-only granted %s", verb)
+			}
 		}
 	}
 }

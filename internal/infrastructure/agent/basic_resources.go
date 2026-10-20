@@ -86,6 +86,12 @@ func (c *Client) DrainNode(ctx context.Context, name string, input domainresourc
 	requestClient := *c
 	httpClient := *c.httpClient
 	httpClient.Timeout = time.Duration(input.TimeoutSeconds+5) * time.Second
+	if transport, ok := httpClient.Transport.(*http.Transport); ok {
+		drainTransport := transport.Clone()
+		drainTransport.ResponseHeaderTimeout = httpClient.Timeout
+		defer drainTransport.CloseIdleConnections()
+		httpClient.Transport = drainTransport
+	}
 	requestClient.httpClient = &httpClient
 	return requestClient.request(ctx, http.MethodPost, basicMutationPath+"/infrastructure/nodes/"+url.PathEscape(name)+"/drain", input, nil)
 }

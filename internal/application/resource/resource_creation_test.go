@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -526,7 +527,8 @@ func (failingCreateOperations) List(context.Context, domainoperation.Filter) ([]
 }
 
 type resourceCreationBatchStub struct {
-	batch domainresource.ResourceCreateBatch
+	batch    domainresource.ResourceCreateBatch
+	claimErr error
 }
 
 func (s *resourceCreationBatchStub) GetByIdentity(context.Context, string, string, string) (domainresource.ResourceCreateBatch, error) {
@@ -537,6 +539,9 @@ func (s *resourceCreationBatchStub) GetByIdentity(context.Context, string, strin
 }
 
 func (s *resourceCreationBatchStub) Claim(_ context.Context, actorID, clusterID, key, contentHash string, documents []domainresource.ResourceCreateExecutionDocument) (domainresource.ResourceCreateBatchClaim, error) {
+	if s.claimErr != nil {
+		return domainresource.ResourceCreateBatchClaim{}, s.claimErr
+	}
 	if s.batch.ID != "" {
 		return domainresource.ResourceCreateBatchClaim{Batch: s.batch}, nil
 	}
@@ -546,6 +551,32 @@ func (s *resourceCreationBatchStub) Claim(_ context.Context, actorID, clusterID,
 		Documents: append([]domainresource.ResourceCreateExecutionDocument(nil), documents...),
 	}
 	return domainresource.ResourceCreateBatchClaim{Batch: s.batch, Created: true}, nil
+}
+
+func TestLegacyListCreateClaimsDurableReceiptBeforeWrite(t *testing.T) {
+	t.Parallel()
+	for _, failClaim := range []bool{false, true} {
+		t.Run(fmt.Sprintf("claim_failure_%t", failClaim), func(t *testing.T) {
+			direct := &creationDirectStub{manifests: []domainresource.ResolvedCreateManifest{testCreateManifest("ConfigMap", "minio", true)}}
+			creation := testResourceCreation(direct, &recordingCreateAuthorizer{allow: true}, allowRuntimePermission{}, domaincluster.ConnectionModeDirectKubeconfig)
+			store := &resourceCreationBatchStub{}
+			if failClaim {
+				store.claimErr = errors.New("receipt store unavailable")
+			}
+			creation.batches = store
+			configuration := &Configuration{resourceAccess: creation.resourceAccess, creation: creation}
+			_, err := configuration.CreateResourceFromYAML(context.Background(), domainidentity.Principal{UserID: "user-1"}, "cluster-a", "minio", "ConfigMap", "manifest")
+			if failClaim {
+				if !errors.Is(err, store.claimErr) || direct.createCalls != 0 {
+					t.Fatalf("error=%v creates=%d, want claim failure before write", err, direct.createCalls)
+				}
+				return
+			}
+			if err != nil || direct.createCalls != 1 || store.batch.ID == "" || store.batch.IdempotencyKey == "" || store.batch.Status != domainresource.ResourceCreateBatchSucceeded {
+				t.Fatalf("error=%v creates=%d batch=%#v, want completed durable receipt", err, direct.createCalls, store.batch)
+			}
+		})
+	}
 }
 
 func (s *resourceCreationBatchStub) Get(context.Context, string) (domainresource.ResourceCreateBatch, error) {

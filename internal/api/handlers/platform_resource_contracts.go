@@ -375,3 +375,7 @@ type ResourceServices struct {
 	ResourceGraph          ResourceGraphService
 	SecurityPosture        SecurityPostureService
 }
+
+type ResourceMonitoringService interface {
+	GetResourceMonitoring(context.Context, domainidentity.Principal, string, contractresource.ResourceMonitoringQuery) (contractresource.ResourceMonitoringView, error)
+}

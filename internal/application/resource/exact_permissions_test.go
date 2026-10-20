@@ -5,11 +5,28 @@ import (
 	"slices"
 	"testing"
 
+	contractresource "github.com/opensoha/soha-contracts/resource"
+
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
+
+func TestGenericKubernetesCRUDPermissionsExistInCatalog(t *testing.T) {
+	for _, kind := range contractresource.KubernetesResourceKinds() {
+		if !kind.GenericYAML {
+			continue
+		}
+		group := resourceGroupForResolvedResource(kind.Group, kind.Resource, kind.Kind)
+		for _, action := range []domainaccess.Action{domainaccess.ActionCreate, domainaccess.ActionUpdate, domainaccess.ActionDelete} {
+			key := resourcePermissionKey(group, kind.Kind, action)
+			if !appaccess.IsActiveAssignablePermission(key) {
+				t.Errorf("%s %s maps to absent permission %s", kind.Kind, action, key)
+			}
+		}
+	}
+}
 
 type exactPermissionAuthorizer map[string]bool
 
@@ -113,6 +130,7 @@ func TestKubernetesReadAuthorizationPopulatesRowActions(t *testing.T) {
 		{"rbac", "access-control", "Role", []string{"platform.access-control.roles.view", "platform.access-control.roles.delete"}, []string{"view", "delete"}},
 		{"node", "inventory", "Node", []string{"platform.nodes.view", "platform.nodes.update", "platform.nodes.drain", "platform.nodes.delete"}, []string{"view", "update", "drain", "delete"}},
 		{"custom resource", "extensions", "Addon", []string{"platform.extensions.view", "platform.extensions.custom-resources.delete"}, []string{"view", "delete"}},
+		{"custom resource create", "extensions", "ListenerSet", []string{"platform.extensions.view", "platform.extensions.custom-resources.create"}, []string{"view", "create"}},
 		{"helm release", "extensions", "HelmRelease", []string{"platform.helm.view", "platform.helm.releases.update", "platform.helm.releases.delete"}, []string{"view", "update", "delete"}},
 	}
 	for _, tt := range tests {

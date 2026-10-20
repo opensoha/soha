@@ -19,6 +19,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	nodev1 "k8s.io/api/node/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -44,6 +45,9 @@ func (d *Direct) GetConfigMapDetail(ctx context.Context, clusterID, namespace, n
 	defer cancel()
 	item, err := bundle.Typed.CoreV1().ConfigMaps(namespace).Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return domainresource.ConfigMapDetailView{}, fmt.Errorf("%w: ConfigMap not found", apperrors.ErrNotFound)
+		}
 		return domainresource.ConfigMapDetailView{}, err
 	}
 	return mapConfigMapDetail(*item), nil

@@ -230,10 +230,10 @@ func (i *Inventory) DrainNode(ctx context.Context, principal domainidentity.Prin
 		return err
 	}
 	if err := routeModeError(connection, i.inventoryAgentClient, i.directInventory,
-		func(a InventoryAgent) error { return a.DrainNode(ctx, nodeName, input) },
+		func(a InventoryAgent) error { return nodeDrainFailure(a.DrainNode(ctx, nodeName, input)) },
 		func(d DirectInventory) error { return d.DrainNode(ctx, clusterID, nodeName, input) }); err != nil {
-		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionDrain), "failure", err.Error())
-		return err
+		_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionDrain), "failure", "node drain did not complete; inspect remaining pods and scheduling state")
+		return nodeDrainFailure(err)
 	}
 	summary := "cordoned node and submitted pod eviction requests"
 	_ = i.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionDrain), "success", summary)

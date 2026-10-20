@@ -171,6 +171,7 @@ func registerPlatformNetworkStorageRoutes(protected gin.IRoutes, deps Dependenci
 	protected.GET("/clusters/:clusterID/network/services", deps.Platform.ListServices)
 	protected.GET("/clusters/:clusterID/network/services/:serviceName/detail", deps.Platform.GetServiceDetail)
 	protected.GET("/clusters/:clusterID/network/topology", deps.Platform.GetNetworkTopology)
+	protected.GET("/clusters/:clusterID/resource-monitoring", deps.Platform.GetResourceMonitoring)
 	protected.GET("/clusters/:clusterID/network/services/:serviceName/metrics", deps.Platform.GetServiceMetrics)
 	protected.GET("/clusters/:clusterID/network/ingresses", deps.Platform.ListIngresses)
 	protected.GET("/clusters/:clusterID/network/ingresses/:name/detail", deps.Platform.GetIngressDetail)

@@ -339,7 +339,7 @@ docker compose -f deploy/docker-compose.yaml --profile network-access \
 ```
 
 原生 Kubernetes 使用同样的进程拆分。原始清单固定应用和网络网关镜像为
-`v0.1.10`，其中包含网络运行时。本地开发可以从当前工作树构建两种镜像：
+`v0.1.11`，其中包含网络运行时。本地开发可以从当前工作树构建两种镜像：
 
 ```bash
 make deploy-image

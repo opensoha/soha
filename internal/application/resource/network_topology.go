@@ -13,7 +13,7 @@ import (
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
-func (n *Network) GetNetworkTopology(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (domainresource.NetworkTopologyView, error) {
+func (n *Network) getLegacyNetworkTopology(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (domainresource.NetworkTopologyView, error) {
 	if _, _, err := n.authorizeResourceGroup(ctx, principal, clusterID, namespace, "network", "NetworkTopology", domainaccess.ActionView); err != nil {
 		return domainresource.NetworkTopologyView{}, err
 	}

@@ -2,12 +2,12 @@ package resourcebackend
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -16,9 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 )
 
@@ -64,7 +62,7 @@ func (d *Direct) CreateResourceYAML(ctx context.Context, clusterID, namespace, k
 	item.SetResourceVersion("")
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	created, err := dynamicResource(bundle.Dynamic, gvr, namespaceScoped, item.GetNamespace()).Create(queryCtx, item, metav1.CreateOptions{})
+	created, err := dynamicResource(bundle.Dynamic, gvr, namespaceScoped, item.GetNamespace()).Create(queryCtx, item, metav1.CreateOptions{FieldManager: resourceEditFieldManager})
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
@@ -104,7 +102,7 @@ func (d *Direct) GetResourceYAML(ctx context.Context, clusterID, namespace, kind
 }
 
 func (d *Direct) DeleteResource(ctx context.Context, clusterID, namespace, kind, name string) error {
-	if strings.EqualFold(kind, "Pod") {
+	if strings.EqualFold(strings.TrimSpace(kind), "Pod") {
 		return d.DeletePod(ctx, clusterID, namespace, name)
 	}
 	bundle, err := d.directClients(ctx, clusterID)
@@ -182,19 +180,14 @@ func (d *Direct) applyResourceYAML(ctx context.Context, clusterID, namespace, ki
 	unstructured.RemoveNestedField(item.Object, "metadata", "generation")
 	unstructured.RemoveNestedField(item.Object, "status")
 	analysis := analyzeResourceUpdate(current, item)
-	patch, err := json.Marshal(item.Object)
-	if err != nil {
-		return domainresource.ResourceYAMLView{}, analysis, err
-	}
-	options := metav1.PatchOptions{FieldManager: resourceEditFieldManager, Force: ptr.To(false)}
-	if dryRun {
-		options.DryRun = []string{metav1.DryRunAll}
-	}
-	updated, err := resource.Patch(queryCtx, name, types.ApplyPatchType, patch, options)
+	updated, err := contractruntime.ApplyResourceEdit(queryCtx, resource, current, item, resourceEditFieldManager, dryRun)
 	if err != nil {
 		if dryRun && apierrors.IsConflict(err) {
 			analysis.Conflicts = conflictsFromError(err.Error(), analysis)
 			return domainresource.ResourceYAMLView{}, analysis, nil
+		}
+		if apierrors.IsConflict(err) {
+			err = fmt.Errorf("%w: %v", apperrors.ErrConflict, err)
 		}
 		return domainresource.ResourceYAMLView{}, analysis, err
 	}
@@ -222,62 +215,21 @@ func dynamicResource(client dynamic.Interface, gvr schema.GroupVersionResource, 
 	return client.Resource(gvr)
 }
 
-type resourceKindDefinition struct {
-	gvr        schema.GroupVersionResource
-	namespaced bool
-}
-
-var resourceKindDefinitions = map[string]resourceKindDefinition{
-	"namespace":                      {gvr: schema.GroupVersionResource{Version: "v1", Resource: "namespaces"}},
-	"pod":                            {gvr: schema.GroupVersionResource{Version: "v1", Resource: "pods"}, namespaced: true},
-	"node":                           {gvr: schema.GroupVersionResource{Version: "v1", Resource: "nodes"}},
-	"deployment":                     {gvr: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, namespaced: true},
-	"statefulset":                    {gvr: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}, namespaced: true},
-	"daemonset":                      {gvr: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}, namespaced: true},
-	"replicaset":                     {gvr: schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"}, namespaced: true},
-	"job":                            {gvr: schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, namespaced: true},
-	"cronjob":                        {gvr: schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}, namespaced: true},
-	"configmap":                      {gvr: schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}, namespaced: true},
-	"secret":                         {gvr: schema.GroupVersionResource{Version: "v1", Resource: "secrets"}, namespaced: true},
-	"serviceaccount":                 {gvr: schema.GroupVersionResource{Version: "v1", Resource: "serviceaccounts"}, namespaced: true},
-	"replicationcontroller":          {gvr: schema.GroupVersionResource{Version: "v1", Resource: "replicationcontrollers"}, namespaced: true},
-	"service":                        {gvr: schema.GroupVersionResource{Version: "v1", Resource: "services"}, namespaced: true},
-	"persistentvolumeclaim":          {gvr: schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumeclaims"}, namespaced: true},
-	"persistentvolume":               {gvr: schema.GroupVersionResource{Version: "v1", Resource: "persistentvolumes"}},
-	"storageclass":                   {gvr: schema.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}},
-	"role":                           {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"}, namespaced: true},
-	"rolebinding":                    {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings"}, namespaced: true},
-	"resourcequota":                  {gvr: schema.GroupVersionResource{Version: "v1", Resource: "resourcequotas"}, namespaced: true},
-	"limitrange":                     {gvr: schema.GroupVersionResource{Version: "v1", Resource: "limitranges"}, namespaced: true},
-	"lease":                          {gvr: schema.GroupVersionResource{Group: "coordination.k8s.io", Version: "v1", Resource: "leases"}, namespaced: true},
-	"horizontalpodautoscaler":        {gvr: schema.GroupVersionResource{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}, namespaced: true},
-	"poddisruptionbudget":            {gvr: schema.GroupVersionResource{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}, namespaced: true},
-	"ingress":                        {gvr: schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}, namespaced: true},
-	"endpointslice":                  {gvr: schema.GroupVersionResource{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"}, namespaced: true},
-	"networkpolicy":                  {gvr: schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}, namespaced: true},
-	"ingressclass":                   {gvr: schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingressclasses"}},
-	"gatewayclass":                   {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "gatewayclasses"}},
-	"gateway":                        {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "gateways"}, namespaced: true},
-	"httproute":                      {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}, namespaced: true},
-	"backendtlspolicy":               {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "backendtlspolicies"}, namespaced: true},
-	"grpcroute":                      {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "grpcroutes"}, namespaced: true},
-	"referencegrant":                 {gvr: schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "referencegrants"}, namespaced: true},
-	"priorityclass":                  {gvr: schema.GroupVersionResource{Group: "scheduling.k8s.io", Version: "v1", Resource: "priorityclasses"}},
-	"runtimeclass":                   {gvr: schema.GroupVersionResource{Group: "node.k8s.io", Version: "v1", Resource: "runtimeclasses"}},
-	"clusterrole":                    {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"}},
-	"clusterrolebinding":             {gvr: schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"}},
-	"customresourcedefinition":       {gvr: schema.GroupVersionResource{Group: "apiextensions.k8s.io", Version: "v1", Resource: "customresourcedefinitions"}},
-	"workloadcronjob":                {gvr: schema.GroupVersionResource{Group: "workloads.soha.io", Version: "v1alpha1", Resource: "workloadcronjobs"}, namespaced: true},
-	"mutatingwebhookconfiguration":   {gvr: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1", Resource: "mutatingwebhookconfigurations"}},
-	"validatingwebhookconfiguration": {gvr: schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1", Resource: "validatingwebhookconfigurations"}},
-}
-
 func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) {
-	definition, ok := resourceKindDefinitions[strings.ToLower(strings.TrimSpace(kind))]
-	if !ok {
+	definition, ok := contractresource.LookupKubernetesResourceKind(kind)
+	if !ok || !definition.GenericYAML {
 		return schema.GroupVersionResource{}, false, fmt.Errorf("%w: yaml apply does not support kind %s", apperrors.ErrInvalidArgument, kind)
 	}
-	return definition.gvr, definition.namespaced, nil
+	return knownResourceGVRForKind(kind)
+}
+
+// Creation has its own per-kind authorization and may include dedicated lifecycle kinds.
+func knownResourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) {
+	definition, ok := contractresource.LookupKubernetesResourceKind(kind)
+	if !ok {
+		return schema.GroupVersionResource{}, false, fmt.Errorf("%w: unsupported kind %s", apperrors.ErrInvalidArgument, kind)
+	}
+	return schema.GroupVersionResource{Group: definition.Group, Version: definition.Version, Resource: definition.Resource}, definition.Namespaced, nil
 }
 
 var _ appresource.DirectGenericResource = (*Direct)(nil)

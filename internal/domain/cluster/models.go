@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"context"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	"time"
 )
 
@@ -95,14 +96,15 @@ type CapabilityMatrixEntry struct {
 }
 
 type Diagnostics struct {
-	Transport       string                    `json:"transport"`
-	SyncStrategy    string                    `json:"syncStrategy"`
-	CacheStatus     string                    `json:"cacheStatus"`
-	CacheReady      bool                      `json:"cacheReady"`
-	CacheResources  []CacheResourceDiagnostic `json:"cacheResources,omitempty"`
-	LastChecked     time.Time                 `json:"lastChecked,omitempty"`
-	ConnectionState string                    `json:"connectionState"`
-	Message         string                    `json:"message,omitempty"`
+	ActionChecks    []contractresource.AgentActionCheck `json:"actionChecks,omitempty"`
+	Transport       string                              `json:"transport"`
+	SyncStrategy    string                              `json:"syncStrategy"`
+	CacheStatus     string                              `json:"cacheStatus"`
+	CacheReady      bool                                `json:"cacheReady"`
+	CacheResources  []CacheResourceDiagnostic           `json:"cacheResources,omitempty"`
+	LastChecked     time.Time                           `json:"lastChecked,omitempty"`
+	ConnectionState string                              `json:"connectionState"`
+	Message         string                              `json:"message,omitempty"`
 }
 
 type CacheDiagnostic struct {
@@ -121,6 +123,7 @@ type CacheResourceDiagnostic struct {
 }
 
 type ConnectionDetail struct {
+	ActionProfile       string                    `json:"actionProfile,omitempty"`
 	CustomResourceRules []AgentCustomResourceRule `json:"customResourceRules,omitempty"`
 	Mode                ConnectionMode            `json:"mode"`
 	CredentialType      string                    `json:"credentialType"`
@@ -161,6 +164,7 @@ type AgentInstallation struct {
 }
 
 type RegisterInput struct {
+	AgentActionProfile       string                    `json:"agentActionProfile,omitempty"`
 	PrometheusTransport      string                    `json:"prometheusTransport,omitempty"`
 	AgentCustomResourceRules []AgentCustomResourceRule `json:"agentCustomResourceRules,omitempty"`
 	ID                       string                    `json:"id"`
@@ -180,6 +184,7 @@ type RegisterInput struct {
 }
 
 type UpdateInput struct {
+	AgentActionProfile       string                    `json:"agentActionProfile,omitempty"`
 	PrometheusTransport      string                    `json:"prometheusTransport,omitempty"`
 	AgentCustomResourceRules []AgentCustomResourceRule `json:"agentCustomResourceRules,omitempty"`
 	Name                     string                    `json:"name"`

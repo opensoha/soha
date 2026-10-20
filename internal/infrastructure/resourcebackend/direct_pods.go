@@ -87,7 +87,11 @@ func (d *Direct) DeletePod(ctx context.Context, clusterID, namespace, name strin
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	return bundle.Typed.CoreV1().Pods(namespace).Delete(queryCtx, name, metav1.DeleteOptions{})
+	item, err := bundle.Typed.CoreV1().Pods(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	return bundle.Typed.CoreV1().Pods(namespace).Delete(queryCtx, name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &item.UID, ResourceVersion: &item.ResourceVersion}})
 }
 
 func (d *Direct) GetPodLogs(ctx context.Context, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
@@ -214,6 +218,7 @@ func (d *Direct) GetPodYAML(ctx context.Context, clusterID, namespace, name stri
 		return domainresource.ResourceYAMLView{}, err
 	}
 	copyPod := pod.DeepCopy()
+	copyPod.TypeMeta = metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"}
 	copyPod.ManagedFields = nil
 	content, err := yaml.Marshal(copyPod)
 	if err != nil {

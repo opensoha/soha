@@ -3,6 +3,7 @@ package cluster
 import (
 	"encoding/json"
 	"fmt"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	"net/url"
 	"regexp"
 	"slices"
@@ -33,7 +34,21 @@ func customResourceRules(metadata map[string]any) []domaincluster.AgentCustomRes
 	return rules
 }
 
+func agentActionProfile(metadata map[string]any) string {
+	if profile := metadataString(metadata, "agent_action_profile"); profile != "" {
+		return profile
+	}
+	return "legacy"
+}
+
 func validateAgentOptions(input *domaincluster.RegisterInput, mode domaincluster.ConnectionMode) error {
+	if input.AgentActionProfile == "" {
+		input.AgentActionProfile = "legacy"
+	}
+	if _, err := contractresource.KubernetesAgentProfileActions(input.AgentActionProfile); err != nil {
+		return fmt.Errorf("%w: invalid Agent action profile", apperrors.ErrInvalidArgument)
+	}
+
 	if input.PrometheusTransport == "" {
 		input.PrometheusTransport = "direct"
 	}
@@ -49,10 +64,21 @@ func validateAgentOptions(input *domaincluster.RegisterInput, mode domaincluster
 			return fmt.Errorf("%w: Prometheus URL must be an HTTP(S) endpoint without credentials, query or fragment", apperrors.ErrInvalidArgument)
 		}
 	}
-	if len(input.AgentCustomResourceRules) > 50 {
+	return validateAgentCustomRules(input.AgentActionProfile, input.AgentCustomResourceRules)
+}
+
+func validateAgentCustomRules(profile string, rules []domaincluster.AgentCustomResourceRule) error {
+	if len(rules) > 50 {
 		return fmt.Errorf("%w: too many custom resource rules", apperrors.ErrInvalidArgument)
 	}
-	for _, rule := range input.AgentCustomResourceRules {
+	for _, rule := range rules {
+		if profile == "read-only" {
+			for _, verb := range rule.Verbs {
+				if verb != "get" && verb != "list" && verb != "watch" {
+					return fmt.Errorf("%w: read-only Agent profile cannot grant custom resource mutations", apperrors.ErrInvalidArgument)
+				}
+			}
+		}
 		if err := validateCustomResourceRule(rule); err != nil {
 			return err
 		}

@@ -24,6 +24,13 @@ type menuSeed struct {
 }
 
 var builtinMenuSeeds = []menuSeed{
+	{ID: "resource-monitoring", Path: "/resource-monitoring", LabelZH: "资源监控", LabelEN: "Resource Monitoring", IconKey: "gauge", SortOrder: 22, Enabled: true},
+	{ID: "resource-monitoring-overview", ParentID: "resource-monitoring", Path: "/resource-monitoring/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: false},
+	{ID: "resource-monitoring-cpu", ParentID: "resource-monitoring", Path: "/resource-monitoring/cpu", LabelZH: "CPU", LabelEN: "Cpu", IconKey: "gauge", SortOrder: 2, Enabled: false},
+	{ID: "resource-monitoring-memory", ParentID: "resource-monitoring", Path: "/resource-monitoring/memory", LabelZH: "内存", LabelEN: "Memory", IconKey: "gauge", SortOrder: 3, Enabled: false},
+	{ID: "resource-monitoring-conntrack", ParentID: "resource-monitoring", Path: "/resource-monitoring/conntrack", LabelZH: "连接跟踪", LabelEN: "Conntrack", IconKey: "gauge", SortOrder: 4, Enabled: false},
+	{ID: "resource-monitoring-pods", ParentID: "resource-monitoring", Path: "/resource-monitoring/pods", LabelZH: "Pod 容量", LabelEN: "Pods", IconKey: "gauge", SortOrder: 5, Enabled: false},
+
 	{ID: "home-workbench", Path: "/portal", LabelZH: "首页", LabelEN: "Home", IconKey: "home", SortOrder: 1, Enabled: true},
 	{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", SortOrder: 10, Enabled: true},
 	{ID: "cluster-resources-nodes", Path: "/cluster-resources/nodes", LabelZH: "节点", LabelEN: "Nodes", IconKey: "server", SortOrder: 20, Enabled: true},
@@ -61,7 +68,9 @@ var builtinMenuSeeds = []menuSeed{
 	{ID: "configuration-mutatingwebhookconfigurations", ParentID: "configuration", Path: "/configuration/mutatingwebhookconfigurations", LabelZH: "MutatingWebhookConfigurations", LabelEN: "MutatingWebhookConfigurations", IconKey: "cog", SortOrder: 50, Enabled: true},
 	{ID: "configuration-validatingwebhookconfigurations", ParentID: "configuration", Path: "/configuration/validatingwebhookconfigurations", LabelZH: "ValidatingWebhookConfigurations", LabelEN: "ValidatingWebhookConfigurations", IconKey: "cog", SortOrder: 51, Enabled: true},
 	{ID: "network", Path: "/network", LabelZH: "网络", LabelEN: "Network", IconKey: "network", SortOrder: 50, Enabled: true},
-	{ID: "network-topology", ParentID: "network", Path: "/network/topology", LabelZH: "网络拓扑", LabelEN: "Network Topology", IconKey: "network", SortOrder: 40, Enabled: true},
+	{ID: "network-routing", ParentID: "network", Path: "/network/routing", LabelZH: "入口与路由", LabelEN: "Ingress & Routes", IconKey: "network", SortOrder: 20, Enabled: false},
+	{ID: "network-backends", ParentID: "network", Path: "/network/backends", LabelZH: "服务与后端", LabelEN: "Services & Backends", IconKey: "network", SortOrder: 30, Enabled: false},
+	{ID: "network-topology", ParentID: "network", Path: "/network/topology", LabelZH: "网络拓扑", LabelEN: "Network Topology", IconKey: "network", SortOrder: 10, Enabled: true},
 	{ID: "network-services", ParentID: "network", Path: "/network/services", LabelZH: "Services", LabelEN: "Services", IconKey: "network", SortOrder: 41, Enabled: true},
 	{ID: "network-ingresses", ParentID: "network", Path: "/network/ingresses", LabelZH: "Ingresses", LabelEN: "Ingresses", IconKey: "network", SortOrder: 42, Enabled: true},
 	{ID: "network-gateway-api-gatewayclasses", ParentID: "network", Path: "/network/gateway-api/gatewayclasses", LabelZH: "GatewayClasses", LabelEN: "GatewayClasses", IconKey: "network", SortOrder: 43, Enabled: true},
@@ -453,7 +462,10 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 	if err := syncAIWorkbenchMenuSeedUpgrades(ctx, db, now); err != nil {
 		return err
 	}
-	return syncGatewayMenuSeedUpgrades(ctx, db, now)
+	if err := syncGatewayMenuSeedUpgrades(ctx, db, now); err != nil {
+		return err
+	}
+	return nil
 }
 
 //nolint:dupl // Tests retain independent expected migration data to catch accidental changes to historical seed values.

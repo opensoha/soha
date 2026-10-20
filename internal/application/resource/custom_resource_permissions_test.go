@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"errors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -17,6 +18,56 @@ import (
 	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
+
+func TestCustomResourceAccessCreateRequiresUserGrantAndRuntimePermission(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		user, saved, runtime bool
+	}{
+		{"all layers permit", true, true, true},
+		{"user denies", false, true, true},
+		{"saved grant denies", true, false, true},
+		{"Kubernetes denies", true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/v1/platform/extensions/crds":
+					_ = json.NewEncoder(w).Encode(map[string]any{"items": []domainresource.CRDView{{Name: "widgets.example.com", Group: "example.com", Kind: "Widget", Plural: "widgets", Version: "v1", Scope: "Namespaced"}}})
+				case "/api/v1/platform/extensions/custom-resources/access":
+					var request struct{ Namespace, Name string }
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+						t.Error(err)
+					}
+					if request.Namespace != "platform" || request.Name != "" {
+						t.Errorf("unexpected collection scope: %+v", request)
+					}
+					actions := []string{"view"}
+					if tc.runtime {
+						actions = append(actions, "create")
+					}
+					_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"allowedActions": actions}})
+				default:
+					t.Errorf("unexpected request: %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer server.Close()
+			connection := agentCRDConnection(server.URL)
+			if !tc.saved {
+				connection.Metadata["agent_custom_resource_rules"] = []domaincluster.AgentCustomResourceRule{{APIGroup: "example.com", Resources: []string{"widgets"}, Verbs: []string{"get", "list"}, Namespaces: []string{"platform"}}}
+			}
+			service := New(Dependencies{Agents: testAgentClients(agentinfra.NewRegistry(0)), Connections: stubConnectionResolver{connection: connection}, Authorizer: exactPermissionAuthorizer{appaccess.PermPlatformExtensionsView: true, "platform.extensions.custom-resources.create": tc.user}})
+			access, err := service.CustomResources().GetCRDResourceAccess(context.Background(), domainidentity.Principal{}, "agent-cluster", "widgets.example.com", "platform")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := slices.Contains(access.AllowedActions, "create"), tc.user && tc.saved && tc.runtime; got != want {
+				t.Fatalf("create=%v want=%v actions=%v", got, want, access.AllowedActions)
+			}
+		})
+	}
+}
 
 func TestCustomResourceListReviewsBroadGrantsOnce(t *testing.T) {
 	for _, readOnly := range []bool{false, true} {
