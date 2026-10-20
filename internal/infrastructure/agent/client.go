@@ -2041,6 +2041,17 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 }
 
 func agentResponseError(path string, resp *http.Response) error {
+	if strings.HasPrefix(path, basicMutationPath+"/infrastructure/nodes/") && strings.HasSuffix(path, "/drain") && resp.StatusCode == http.StatusConflict {
+		var envelope struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 8193))
+		if err == nil && len(body) <= 8192 && json.Unmarshal(body, &envelope) == nil && contractresource.IsNodeDrainErrorCode(envelope.Error.Code) {
+			return &contractresource.NodeDrainError{Code: envelope.Error.Code}
+		}
+	}
 	if (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed) && (strings.HasPrefix(path, "/api/v1/platform/ownership-v2/") || strings.HasSuffix(path, "/custom-resources/access") || strings.HasSuffix(path, "/metrics/prometheus/query")) && !strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
 		return fmt.Errorf("%w: upgrade the Agent to support ownership-protected resource mutations", apperrors.ErrUnsupportedOperation)
 	}

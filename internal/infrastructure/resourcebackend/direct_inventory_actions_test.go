@@ -2,17 +2,36 @@ package resourcebackend
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
+	"time"
 
+	cr "github.com/opensoha/soha-contracts/resource"
+	aperrors "github.com/opensoha/soha/internal/api/errors"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 )
+
+func TestDirectDrainPermissionFailureIsSafeForbidden(t *testing.T) {
+	for _, cause := range []error{
+		apierrors.NewForbidden(schema.GroupResource{Resource: "pods/eviction"}, "pod", errors.New("private provider token")),
+		apierrors.NewUnauthorized("private provider token"),
+	} {
+		err := directNodeDrainError(cause)
+		if aperrors.StatusCode(err) != 403 || aperrors.Code(err) != "node_drain_forbidden" || strings.Contains(err.Error(), "private") {
+			t.Fatalf("unsafe public permission error: %v", err)
+		}
+	}
+}
 
 func TestSetNodeUnschedulableCordonAndUncordon(t *testing.T) {
 	t.Parallel()
@@ -41,7 +60,7 @@ func TestDrainNodeCordonsNodeWithoutEvictablePods(t *testing.T) {
 	ctx := context.Background()
 	client := fake.NewSimpleClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-a"}})
 
-	err := drainNode(ctx, client, "node-a", domainresource.NodeDrainInput{TimeoutSeconds: 5})
+	err := drainNode(ctx, client, "node-a", domainresource.NodeDrainInput{TimeoutSeconds: 30})
 	if err != nil {
 		t.Fatalf("drain node: %v", err)
 	}
@@ -81,7 +100,7 @@ func TestDrainNodeSubmitsEvictionForManagedPod(t *testing.T) {
 		return true, eviction, nil
 	})
 
-	err := drainNode(ctx, client, "node-a", domainresource.NodeDrainInput{TimeoutSeconds: 5})
+	err := drainNode(ctx, client, "node-a", domainresource.NodeDrainInput{TimeoutSeconds: 30})
 	if err != nil {
 		t.Fatalf("drain node: %v", err)
 	}
@@ -99,13 +118,42 @@ func TestDrainNodeSubmitsEvictionForManagedPod(t *testing.T) {
 	}
 }
 
+func TestDrainPDBTimeoutReturnsSafeReasonAndRetainsCordon(t *testing.T) {
+	controller := true
+	client := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node"}}, &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "team", OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "app", Controller: &controller}}}, Spec: corev1.PodSpec{NodeName: "node"}})
+	client.Discovery().(*fakediscovery.FakeDiscovery).Resources = []*metav1.APIResourceList{{GroupVersion: "v1", APIResources: []metav1.APIResource{{Name: "pods/eviction", Kind: "Eviction", Group: "policy", Version: "v1"}}}}
+	client.PrependReactor("create", "pods", func(k8stesting.Action) (bool, runtime.Object, error) {
+		blocked := apierrors.NewTooManyRequests("private provider message", 1)
+		blocked.ErrStatus.Details = &metav1.StatusDetails{Causes: []metav1.StatusCause{{Type: policyv1.DisruptionBudgetCause}}}
+		return true, nil, blocked
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err := drainNode(ctx, client, "node", domainresource.NodeDrainInput{TimeoutSeconds: 30})
+	var failure *cr.NodeDrainError
+	if !errors.As(err, &failure) || failure.Code != "node_drain_pdb_blocked" {
+		t.Fatalf("lost PDB reason: %v", err)
+	}
+	node, _ := client.CoreV1().Nodes().Get(context.Background(), "node", metav1.GetOptions{})
+	if !node.Spec.Unschedulable {
+		t.Fatal("failed drain must retain cordon")
+	}
+	if _, err := client.CoreV1().Pods("team").Get(context.Background(), "app", metav1.GetOptions{}); err != nil {
+		t.Fatal("PDB-protected pod changed")
+	}
+}
+
 func TestBuildNodeViewIncludesSchedulability(t *testing.T) {
 	t.Parallel()
 	view := buildNodeView(corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
-		Spec:       corev1.NodeSpec{Unschedulable: true},
+		Spec:       corev1.NodeSpec{Unschedulable: true, Taints: []corev1.Taint{{Key: "maintenance", Value: "task113", Effect: corev1.TaintEffectNoSchedule}}},
+		Status:     corev1.NodeStatus{Conditions: []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}, {Type: corev1.NodeDiskPressure, Status: corev1.ConditionTrue}}},
 	}, nodeAggregate{})
 	if !view.Unschedulable {
 		t.Fatal("Unschedulable = false, want true")
+	}
+	if len(view.Taints) != 1 || view.Taints[0].Key != "maintenance" || view.Taints[0].Effect != "NoSchedule" || len(view.Conditions) != 2 || view.Status != "ready" {
+		t.Fatalf("Ready, scheduling, taints and pressure must remain independent: %+v", view)
 	}
 }

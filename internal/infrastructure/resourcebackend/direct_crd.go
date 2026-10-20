@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	kubeversion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -91,6 +92,9 @@ func (d *Direct) ResolveCRD(ctx context.Context, clusterID, crdName string) (dom
 	defer cancel()
 	item, err := bundle.Dynamic.Resource(crdGVR).Get(queryCtx, crdName, metav1.GetOptions{})
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return domainresource.CRDResourceDefinition{}, fmt.Errorf("%w: CRD not found", apperrors.ErrNotFound)
+		}
 		return domainresource.CRDResourceDefinition{}, err
 	}
 	return parseCRDDefinition(*item)
@@ -180,6 +184,9 @@ func (d *Direct) GetCustomResourceYAML(ctx context.Context, clusterID string, de
 	defer cancel()
 	item, err := customResourceInterface(bundle.Dynamic, definition, effectiveNamespace).Get(queryCtx, name, metav1.GetOptions{})
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: custom resource not found", apperrors.ErrNotFound)
+		}
 		return domainresource.ResourceYAMLView{}, err
 	}
 	unstructured.RemoveNestedField(item.Object, "metadata", "managedFields")
@@ -269,9 +276,7 @@ func mapCRD(item unstructured.Unstructured) domainresource.CRDView {
 		Versions: versions, CreatedAt: item.GetCreationTimestamp().Time.UTC().Format(time.RFC3339),
 		AgeSeconds: secondsSince(item.GetCreationTimestamp().Time),
 	}
-	if len(versions) > 0 {
-		view.Version = versions[0]
-	}
+	view.Version, _ = servedCRDVersion(item)
 	return view
 }
 
@@ -408,7 +413,7 @@ func parseCRDDefinition(item unstructured.Unstructured) (domainresource.CRDResou
 
 func servedCRDVersion(item unstructured.Unstructured) (string, error) {
 	versions, _, _ := unstructured.NestedSlice(item.Object, "spec", "versions")
-	var fallback string
+	var preferred, fallback string
 	for _, raw := range versions {
 		version, ok := raw.(map[string]any)
 		if !ok {
@@ -421,21 +426,12 @@ func servedCRDVersion(item unstructured.Unstructured) (string, error) {
 		if fallback == "" {
 			fallback = name
 		}
-		if served, _ := version["served"].(bool); served {
-			if storage, _ := version["storage"].(bool); storage {
-				return name, nil
-			}
+		if served, _ := version["served"].(bool); served && (preferred == "" || kubeversion.CompareKubeAwareVersionStrings(name, preferred) > 0) {
+			preferred = name
 		}
 	}
-	for _, raw := range versions {
-		version, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		name, _ := version["name"].(string)
-		if served, _ := version["served"].(bool); served && strings.TrimSpace(name) != "" {
-			return name, nil
-		}
+	if preferred != "" {
+		return preferred, nil
 	}
 	if fallback != "" {
 		return fallback, nil

@@ -364,7 +364,9 @@ func resourceActionCandidates(resourceGroup, kind string) []domainaccess.Action 
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionCreate, domainaccess.ActionUpdate, domainaccess.ActionDelete}
 	}
 	switch strings.TrimSpace(resourceGroup) {
-	case "workloads", "configuration", "network", "storage", "access-control", "extensions":
+	case "extensions":
+		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionCreate, domainaccess.ActionUpdate, domainaccess.ActionDelete, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionSuspend}
+	case "workloads", "configuration", "network", "storage", "access-control":
 		return []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionUpdate, domainaccess.ActionDelete, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionSuspend}
 	default:
 		return nil
@@ -436,6 +438,11 @@ func (s *resourceAccess) authorizeRuntimePermission(ctx context.Context, princip
 		return fmt.Errorf("%w: runtime permission resolver unavailable for %s", apperrors.ErrAccessDenied, strings.TrimSpace(permissionKey))
 	}
 	return s.permissions.Authorize(ctx, principal, permissionKey)
+}
+
+func clusterWideResourceScope(decision domainaccess.Decision) bool {
+	scope := decision.ResourceScope
+	return decision.Allowed && (scope == nil || (len(scope.Namespaces) == 0 && len(scope.ExcludedNamespaces) == 0 && len(scope.NamespaceSelectors) == 0 && len(scope.ExcludedNamespaceSelectors) == 0 && scope.LabelSelector == ""))
 }
 
 func filterScopedNamespaceItems[T any](items []T, decision domainaccess.Decision, namespaceOf func(T) string) []T {

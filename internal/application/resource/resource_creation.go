@@ -186,8 +186,13 @@ func (s *ResourceCreation) ExecuteCreate(ctx context.Context, principal domainid
 	for index, manifest := range manifests {
 		result.Documents[index] = domainresource.ResourceCreateExecutionDocument{Index: manifest.Index, Resource: manifest.Ref, Status: "not_started", DocumentHash: manifest.ContentHash}
 	}
-	if request.RequestID != "" && s.batches != nil {
-		claim, claimErr := s.batches.Claim(ctx, principal.UserID, clusterID, request.RequestID, result.ContentHash, result.Documents)
+	if s.batches != nil {
+		key := request.RequestID
+		if key == "" {
+			// Legacy list creates still need a durable receipt before the Kubernetes write.
+			key = operationID
+		}
+		claim, claimErr := s.batches.Claim(ctx, principal.UserID, clusterID, key, result.ContentHash, result.Documents)
 		if claimErr != nil {
 			return domainresource.ResourceCreateExecution{}, claimErr
 		}

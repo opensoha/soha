@@ -7,6 +7,19 @@ import (
 	domainmenu "github.com/opensoha/soha/internal/domain/menu"
 )
 
+func TestResourceMonitoringMenusRequireWorkbenchNodeAndExactView(t *testing.T) {
+	for _, view := range []string{"overview", "cpu", "memory", "conntrack", "pods"} {
+		item := domainmenu.Record{ID: "resource-monitoring-" + view, Path: "/resource-monitoring/" + view}
+		permission := "platform.resource-monitoring." + view + ".view"
+		if isVisibleByPermissions(item, []string{appaccess.PermWorkbenchPlatformView, permission}) || isVisibleByPermissions(item, []string{appaccess.PermPlatformNodesView, permission}) {
+			t.Fatal("monitoring menu omitted a prerequisite")
+		}
+		if !isVisibleByPermissions(item, []string{appaccess.PermWorkbenchPlatformView, appaccess.PermPlatformNodesView, permission}) {
+			t.Fatal("authorized monitoring menu hidden")
+		}
+	}
+}
+
 func TestApplicationLoginRecordsRequireAuditAndInternalWorkbenchPermissions(t *testing.T) {
 	item := domainmenu.Record{ID: "identity-login-records", Path: "/identity/login-records"}
 	for _, auditPermission := range []string{appaccess.PermIdentityAuditView, appaccess.PermSystemAuditView} {

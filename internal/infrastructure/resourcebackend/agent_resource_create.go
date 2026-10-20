@@ -66,7 +66,7 @@ func resolveKnownAgentManifest(index int, object map[string]any) (domainresource
 	if strings.TrimSpace(item.GetName()) == "" && strings.TrimSpace(item.GetGenerateName()) == "" {
 		return domainresource.ResolvedCreateManifest{}, fmt.Errorf("%w: document %d metadata.name or metadata.generateName is required", apperrors.ErrInvalidArgument, index)
 	}
-	gvr, namespaced, err := resourceGVRForKind(gvk.Kind)
+	gvr, namespaced, err := knownResourceGVRForKind(gvk.Kind)
 	if err != nil {
 		return domainresource.ResolvedCreateManifest{}, fmt.Errorf("%w: agent resource creation requires a published known-kind capability for %s", apperrors.ErrUnsupportedOperation, gvk.Kind)
 	}

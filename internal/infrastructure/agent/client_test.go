@@ -805,12 +805,20 @@ func TestDrainUsesLongRequestTimeoutWithoutChangingSharedClient(t *testing.T) {
 	defer server.Close()
 	httpClient := server.Client()
 	httpClient.Timeout = time.Millisecond
+	transport, ok := httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("test server must provide an HTTP transport")
+	}
+	transport.ResponseHeaderTimeout = time.Millisecond
 	client := &Client{baseURL: server.URL, httpClient: httpClient}
 	if err := client.DrainNode(context.Background(), "node", domainresource.NodeDrainInput{TimeoutSeconds: 30}); err != nil {
 		t.Fatal(err)
 	}
 	if httpClient.Timeout != time.Millisecond {
 		t.Fatal("drain mutated the shared client timeout")
+	}
+	if transport.ResponseHeaderTimeout != time.Millisecond {
+		t.Fatal("drain mutated the shared transport header timeout")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

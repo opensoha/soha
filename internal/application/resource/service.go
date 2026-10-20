@@ -50,37 +50,39 @@ type Service struct {
 }
 
 type Dependencies struct {
-	Clusters             ClusterMetadataProvider
-	Agents               AgentClients
-	Connections          ConnectionResolver
-	StreamTickets        LogStreamTicketIssuer
-	Authorizer           domainaccess.Authorizer
-	Permissions          RuntimePermissionAuthorizer
-	Audit                AuditRecorder
-	Operations           OperationRecorder
-	CreationOperations   CreationOperationStore
-	CreationBatches      ResourceCreationBatchRepository
-	PortForwards         PortForwardRepository
-	DirectEvents         DirectEventReader
-	DirectResourceEvents DirectResourceEventStream
-	DirectResourceGraph  DirectResourceGraph
-	DirectSecurity       DirectSecurityPosture
-	DirectCustom         DirectCustomResource
-	DirectConfiguration  DirectConfiguration
-	DirectGeneric        DirectGenericResource
-	DirectResourceCreate DirectResourceCreator
-	DirectGateway        DirectGatewayReader
-	DirectHelm           DirectHelm
-	DirectInventory      DirectInventory
-	DirectLogs           DirectLogs
-	DurableLogs          DurableLogs
-	DirectNetwork        DirectNetworkReader
-	DirectPods           DirectPods
-	DirectRBAC           DirectRBACReader
-	DirectStorage        DirectStorageReader
-	DirectTunnel         DirectPortForwardStarter
-	DirectWorkloads      DirectWorkloads
-	WorkloadSnapshot     WorkloadSnapshotBuilder
+	DirectMonitoringInventory DirectMonitoringInventory
+	Clusters                  ClusterMetadataProvider
+	Agents                    AgentClients
+	Connections               ConnectionResolver
+	StreamTickets             LogStreamTicketIssuer
+	Authorizer                domainaccess.Authorizer
+	Permissions               RuntimePermissionAuthorizer
+	Audit                     AuditRecorder
+	Operations                OperationRecorder
+	CreationOperations        CreationOperationStore
+	CreationBatches           ResourceCreationBatchRepository
+	PortForwards              PortForwardRepository
+	DirectEvents              DirectEventReader
+	DirectResourceEvents      DirectResourceEventStream
+	DirectResourceGraph       DirectResourceGraph
+	DirectSecurity            DirectSecurityPosture
+	DirectCustom              DirectCustomResource
+	DirectConfiguration       DirectConfiguration
+	DirectGeneric             DirectGenericResource
+	DirectResourceCreate      DirectResourceCreator
+	DirectGateway             DirectGatewayReader
+	DirectHelm                DirectHelm
+	DirectInventory           DirectInventory
+	DirectLogs                DirectLogs
+	DurableLogs               DurableLogs
+	DirectTopologySources     DirectTopologySources
+	DirectNetwork             DirectNetworkReader
+	DirectPods                DirectPods
+	DirectRBAC                DirectRBACReader
+	DirectStorage             DirectStorageReader
+	DirectTunnel              DirectPortForwardStarter
+	DirectWorkloads           DirectWorkloads
+	WorkloadSnapshot          WorkloadSnapshotBuilder
 }
 
 type crdResourceDefinition struct {

@@ -794,8 +794,9 @@ func newPlatformCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infr
 		StreamTickets: streamTickets, DurableLogs: observabilityService,
 		Authorizer: access, Permissions: permissions, Audit: audit, Operations: operations, CreationOperations: operations, CreationBatches: repos.resourceCreationRepository, PortForwards: repos.portForwardRepository,
 		DirectCustom: resourceDirect, DirectConfiguration: resourceDirect, DirectEvents: resourceDirect, DirectResourceEvents: resourceDirect, DirectResourceGraph: resourceDirect, DirectSecurity: resourceDirect, DirectGeneric: resourceDirect, DirectResourceCreate: resourceDirect,
-		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectLogs: resourceDirect, DirectNetwork: resourceDirect,
-		DirectPods: resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
+		DirectGateway: resourceDirect, DirectHelm: resourceDirect, DirectInventory: resourceDirect, DirectLogs: resourceDirect, DirectTopologySources: resourceDirect, DirectMonitoringInventory: resourceDirect,
+		DirectNetwork: resourceDirect,
+		DirectPods:    resourceDirect, DirectRBAC: resourceDirect, DirectStorage: resourceDirect, DirectTunnel: resourceDirect, DirectWorkloads: resourceDirect,
 		WorkloadSnapshot: resourceDirect.BuildWorkloadSnapshot,
 	})
 	observabilityService.ConfigureCollection(appobservability.CollectionDependencies{

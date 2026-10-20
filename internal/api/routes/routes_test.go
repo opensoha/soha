@@ -114,8 +114,8 @@ func TestRegisterPlatformRoutesKeepsCoreOperationalSurface(t *testing.T) {
 		"PUT /api/v1/clusters/:clusterID/network/referencegrants/:name/yaml",
 		"DELETE /api/v1/clusters/:clusterID/network/referencegrants/:name",
 	} {
-		if _, ok := registered[route]; ok {
-			t.Fatalf("raw Gateway API route should not be exposed: %s", route)
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing Gateway API CRUD route: %s", route)
 		}
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	"net/url"
 	"path"
 	"strings"
@@ -206,16 +207,17 @@ func renderAgentManifest(connection domaincluster.Connection, accessURL string) 
 	if token == "" {
 		return nil, fmt.Errorf("%w: cluster Agent token is unavailable", apperrors.ErrConflict)
 	}
+	profile := agentActionProfile(connection.Metadata)
+	actions, err := contractresource.KubernetesAgentProfileActions(profile)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid Agent action profile", apperrors.ErrInvalidArgument)
+	}
 	configData, err := yaml.Marshal(map[string]any{
-		"app":    map[string]any{"name": "soha-agent", "env": "production"},
-		"http":   map[string]any{"addr": ":18080", "base_path": "/api/v1", "read_timeout": "15s", "write_timeout": "15s", "allowed_origins": []string{}},
-		"logger": map[string]any{"level": "info", "format": "json"},
-		"auth":   map[string]any{"bearer_token": ""},
-		"security": map[string]any{"allowed_actions": []string{
-			"platform.deployments.restart", "platform.deployments.scale", "platform.deployments.image", "platform.deployments.rollback",
-			"platform.statefulsets.restart", "platform.statefulsets.scale", "platform.daemonsets.restart",
-			"runtime.execution_tasks.cancel", "platform.pods.exec", "platform.nodes.drain", "platform.resources.apply", "platform.resources.create", "platform.resources.delete", "platform.custom_resources.list", "platform.custom_resources.create", "platform.custom_resources.apply", "platform.custom_resources.delete", "platform.port_forwards.create", "platform.port_forwards.tunnel", "platform.port_forwards.delete",
-		}},
+		"app":        map[string]any{"name": "soha-agent", "env": "production"},
+		"http":       map[string]any{"addr": ":18080", "base_path": "/api/v1", "read_timeout": "15s", "write_timeout": "15s", "allowed_origins": []string{}},
+		"logger":     map[string]any{"level": "info", "format": "json"},
+		"auth":       map[string]any{"bearer_token": ""},
+		"security":   map[string]any{"allowed_actions": actions},
 		"prometheus": map[string]any{"base_url": metadataString(connection.Metadata, "prometheus_url"), "bearer_token": ""},
 		"audit":      map[string]any{"file_path": ""},
 		"control_plane": map[string]any{
@@ -249,27 +251,35 @@ func renderAgentManifest(connection domaincluster.Connection, accessURL string) 
 		{"apiGroups": []string{"coordination.k8s.io"}, "resources": []string{"leases"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"gateway.networking.k8s.io"}, "resources": []string{"backendtlspolicies", "gatewayclasses", "gateways", "grpcroutes", "httproutes", "referencegrants", "tcproutes", "tlsroutes", "udproutes"}, "verbs": []string{"get", "list", "watch"}},
 		{"apiGroups": []string{"metrics.k8s.io"}, "resources": []string{"nodes", "pods"}, "verbs": []string{"get", "list", "watch"}},
-		{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "deployments/scale", "statefulsets", "statefulsets/scale"}, "verbs": []string{"update", "patch"}},
 	}
-	readRules = append(readRules,
-		map[string]any{"apiGroups": []string{""}, "resources": []string{"configmaps", "limitranges", "namespaces", "nodes", "persistentvolumeclaims", "persistentvolumes", "pods", "replicationcontrollers", "resourcequotas", "secrets", "serviceaccounts", "services"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "replicasets", "statefulsets"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"batch"}, "resources": []string{"cronjobs", "jobs"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"networking.k8s.io"}, "resources": []string{"ingressclasses", "ingresses", "networkpolicies"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"autoscaling"}, "resources": []string{"horizontalpodautoscalers"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"policy"}, "resources": []string{"poddisruptionbudgets"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"admissionregistration.k8s.io"}, "resources": []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"node.k8s.io"}, "resources": []string{"runtimeclasses"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"rbac.authorization.k8s.io"}, "resources": []string{"clusterrolebindings", "clusterroles", "rolebindings", "roles"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"scheduling.k8s.io"}, "resources": []string{"priorityclasses"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"storage.k8s.io"}, "resources": []string{"storageclasses"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"apiextensions.k8s.io"}, "resources": []string{"customresourcedefinitions"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"coordination.k8s.io"}, "resources": []string{"leases"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{"gateway.networking.k8s.io"}, "resources": []string{"backendtlspolicies", "gatewayclasses", "gateways", "grpcroutes", "httproutes", "referencegrants", "tcproutes", "tlsroutes", "udproutes"}, "verbs": []string{"create", "update", "patch", "delete"}},
-		map[string]any{"apiGroups": []string{""}, "resources": []string{"pods/exec", "pods/portforward", "pods/eviction"}, "verbs": []string{"create"}},
-		map[string]any{"apiGroups": []string{"authorization.k8s.io"}, "resources": []string{"subjectaccessreviews", "selfsubjectaccessreviews"}, "verbs": []string{"create"}},
-	)
+	readRules = append(readRules, map[string]any{"apiGroups": []string{"authorization.k8s.io"}, "resources": []string{"subjectaccessreviews", "selfsubjectaccessreviews"}, "verbs": []string{"create"}})
+	if profile != "read-only" {
+		readRules = append(readRules,
+			map[string]any{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "deployments/scale", "statefulsets", "statefulsets/scale"}, "verbs": []string{"update", "patch"}},
+			map[string]any{"apiGroups": []string{""}, "resources": []string{"configmaps", "limitranges", "namespaces", "nodes", "persistentvolumeclaims", "persistentvolumes", "pods", "replicationcontrollers", "resourcequotas", "secrets", "serviceaccounts", "services"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"apps"}, "resources": []string{"daemonsets", "deployments", "replicasets", "statefulsets"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"batch"}, "resources": []string{"cronjobs", "jobs"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"networking.k8s.io"}, "resources": []string{"ingressclasses", "ingresses", "networkpolicies"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"autoscaling"}, "resources": []string{"horizontalpodautoscalers"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"policy"}, "resources": []string{"poddisruptionbudgets"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"admissionregistration.k8s.io"}, "resources": []string{"mutatingwebhookconfigurations", "validatingwebhookconfigurations"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"node.k8s.io"}, "resources": []string{"runtimeclasses"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"rbac.authorization.k8s.io"}, "resources": []string{"clusterrolebindings", "clusterroles", "rolebindings", "roles"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"scheduling.k8s.io"}, "resources": []string{"priorityclasses"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"storage.k8s.io"}, "resources": []string{"storageclasses"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"coordination.k8s.io"}, "resources": []string{"leases"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{"gateway.networking.k8s.io"}, "resources": []string{"backendtlspolicies", "gatewayclasses", "gateways", "grpcroutes", "httproutes", "referencegrants", "tcproutes", "tlsroutes", "udproutes"}, "verbs": []string{"create", "update", "patch", "delete"}},
+			map[string]any{"apiGroups": []string{""}, "resources": []string{"pods/exec", "pods/portforward", "pods/eviction"}, "verbs": []string{"create"}},
+		)
+	}
 	for _, rule := range customResourceRules(connection.Metadata) {
+		if profile == "read-only" {
+			for _, verb := range rule.Verbs {
+				if verb != "get" && verb != "list" && verb != "watch" {
+					return nil, fmt.Errorf("read-only Agent profile cannot grant custom resource mutations")
+				}
+			}
+		}
 		if len(rule.Namespaces) == 0 {
 			readRules = append(readRules, map[string]any{"apiGroups": []string{rule.APIGroup}, "resources": rule.Resources, "verbs": rule.Verbs})
 		}

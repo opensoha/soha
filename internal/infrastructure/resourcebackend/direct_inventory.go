@@ -2,7 +2,6 @@ package resourcebackend
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -10,9 +9,12 @@ import (
 	"strings"
 	"time"
 
+	contractruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	appresource "github.com/opensoha/soha/internal/application/resource"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -64,9 +66,13 @@ func (d *Direct) CreateNamespace(ctx context.Context, clusterID string, input do
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	created, err := bundle.Typed.CoreV1().Namespaces().Create(queryCtx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
+	item := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
 		Name: name, Labels: sanitizeStringMap(input.Labels), Annotations: sanitizeStringMap(input.Annotations),
-	}}, metav1.CreateOptions{})
+	}}
+	if err := contractruntime.ValidateDirectManifestOwner(item); err != nil {
+		return domainresource.NamespaceView{}, resourceMutationError(err)
+	}
+	created, err := bundle.Typed.CoreV1().Namespaces().Create(queryCtx, item, metav1.CreateOptions{})
 	if err != nil {
 		return domainresource.NamespaceView{}, err
 	}
@@ -74,6 +80,9 @@ func (d *Direct) CreateNamespace(ctx context.Context, clusterID string, input do
 }
 
 func (d *Direct) UpdateNamespace(ctx context.Context, clusterID, namespace string, input domainresource.NamespaceUpsertInput) (domainresource.NamespaceView, error) {
+	if input.Name != "" && input.Name != namespace {
+		return domainresource.NamespaceView{}, apierrors.NewBadRequest("namespace name cannot be changed")
+	}
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
 		return domainresource.NamespaceView{}, err
@@ -84,7 +93,13 @@ func (d *Direct) UpdateNamespace(ctx context.Context, clusterID, namespace strin
 	if err != nil {
 		return domainresource.NamespaceView{}, err
 	}
+	if err := contractruntime.ValidateDirectManifestOwner(item); err != nil {
+		return domainresource.NamespaceView{}, resourceMutationError(err)
+	}
 	item.Labels, item.Annotations = sanitizeStringMap(input.Labels), sanitizeStringMap(input.Annotations)
+	if err := contractruntime.ValidateDirectManifestOwner(item); err != nil {
+		return domainresource.NamespaceView{}, resourceMutationError(err)
+	}
 	updated, err := bundle.Typed.CoreV1().Namespaces().Update(queryCtx, item, metav1.UpdateOptions{})
 	if err != nil {
 		return domainresource.NamespaceView{}, err
@@ -99,7 +114,14 @@ func (d *Direct) DeleteNamespace(ctx context.Context, clusterID, namespace strin
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	return bundle.Typed.CoreV1().Namespaces().Delete(queryCtx, namespace, metav1.DeleteOptions{})
+	item, err := bundle.Typed.CoreV1().Namespaces().Get(queryCtx, namespace, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if err := contractruntime.ValidateDirectManifestOwner(item); err != nil {
+		return resourceMutationError(err)
+	}
+	return bundle.Typed.CoreV1().Namespaces().Delete(queryCtx, namespace, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &item.UID, ResourceVersion: &item.ResourceVersion}})
 }
 
 func (d *Direct) ListNodes(ctx context.Context, clusterID string) ([]domainresource.NodeView, string, error) {
@@ -139,13 +161,24 @@ func (d *Direct) UpdateNode(ctx context.Context, clusterID, name string, input d
 	if err != nil {
 		return domainresource.NodeDetailView{}, err
 	}
+	if err := contractruntime.ValidateDirectManifestOwner(item); err != nil {
+		return domainresource.NodeDetailView{}, resourceMutationError(err)
+	}
 	item.Labels = sanitizeStringMap(input.Labels)
 	item.Spec.Taints = make([]corev1.Taint, 0, len(input.Taints))
 	for _, taint := range input.Taints {
-		if strings.TrimSpace(taint.Key) == "" || strings.TrimSpace(taint.Effect) == "" {
-			continue
+		if strings.TrimSpace(taint.Key) == "" {
+			return domainresource.NodeDetailView{}, apierrors.NewBadRequest("taint key is required")
 		}
-		item.Spec.Taints = append(item.Spec.Taints, corev1.Taint{Key: strings.TrimSpace(taint.Key), Value: strings.TrimSpace(taint.Value), Effect: corev1.TaintEffect(strings.TrimSpace(taint.Effect))})
+		switch corev1.TaintEffect(taint.Effect) {
+		case corev1.TaintEffectNoSchedule, corev1.TaintEffectPreferNoSchedule, corev1.TaintEffectNoExecute:
+		default:
+			return domainresource.NodeDetailView{}, apierrors.NewBadRequest("invalid taint effect")
+		}
+		item.Spec.Taints = append(item.Spec.Taints, corev1.Taint{Key: taint.Key, Value: taint.Value, Effect: corev1.TaintEffect(taint.Effect)})
+	}
+	if err := contractruntime.ValidateDirectManifestOwner(item); err != nil {
+		return domainresource.NodeDetailView{}, resourceMutationError(err)
 	}
 	updated, err := bundle.Typed.CoreV1().Nodes().Update(queryCtx, item, metav1.UpdateOptions{})
 	if err != nil {
@@ -173,19 +206,36 @@ func setNodeUnschedulable(ctx context.Context, client kubernetes.Interface, name
 	if err != nil {
 		return err
 	}
-	helper := &drain.Helper{Ctx: queryCtx, Client: client, Out: io.Discard, ErrOut: io.Discard}
-	return drain.RunCordonOrUncordon(helper, item, unschedulable)
+	if err := contractruntime.ValidateDirectManifestOwner(item); err != nil {
+		return resourceMutationError(err)
+	}
+	item.Spec.Unschedulable = unschedulable
+	_, err = client.CoreV1().Nodes().Update(queryCtx, item, metav1.UpdateOptions{})
+	return err
 }
 
 func (d *Direct) DrainNode(ctx context.Context, clusterID, name string, input domainresource.NodeDrainInput) error {
 	bundle, err := d.directClients(ctx, clusterID)
 	if err != nil {
-		return err
+		return directNodeDrainError(err)
 	}
-	return drainNode(ctx, bundle.Typed, name, input)
+	return directNodeDrainError(drainNode(ctx, bundle.Typed, name, input))
+}
+
+func directNodeDrainError(err error) error {
+	if apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
+		return apperrors.NewBusiness(apperrors.ErrAccessDenied, "node_drain_forbidden", "Cluster credentials lack permission to complete node drain", "集群凭据无权完成排水，请检查节点、Pod 和驱逐权限。")
+	}
+	return err
 }
 
 func drainNode(ctx context.Context, client kubernetes.Interface, name string, input domainresource.NodeDrainInput) error {
+	if input.TimeoutSeconds == 0 {
+		input.TimeoutSeconds = 300
+	}
+	if input.TimeoutSeconds < 30 || input.TimeoutSeconds > 1800 {
+		return apierrors.NewBadRequest("drain timeoutSeconds must be between 30 and 1800")
+	}
 	timeout := time.Duration(input.TimeoutSeconds) * time.Second
 	drainCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -193,23 +243,27 @@ func drainNode(ctx context.Context, client kubernetes.Interface, name string, in
 	if err != nil {
 		return err
 	}
+	if err := contractruntime.ValidateDirectManifestOwner(item); err != nil {
+		return resourceMutationError(err)
+	}
+	observed := contractruntime.NewDrainClient(client)
 	helper := &drain.Helper{
-		Ctx: drainCtx, Client: client, Force: input.Force,
+		Ctx: drainCtx, Client: observed, Force: input.Force,
 		GracePeriodSeconds: -1, IgnoreAllDaemonSets: true,
-		DeleteEmptyDirData: input.DeleteEmptyDirData, Timeout: timeout,
+		DeleteEmptyDirData: input.DeleteEmptyDirData, Timeout: timeout, EvictErrorRetryDelay: time.Second,
 		Out: io.Discard, ErrOut: io.Discard,
 	}
-	if err := drain.RunCordonOrUncordon(helper, item, true); err != nil {
-		return err
+	if !item.Spec.Unschedulable {
+		item.Spec.Unschedulable = true
+		if _, err := client.CoreV1().Nodes().Update(drainCtx, item, metav1.UpdateOptions{}); err != nil {
+			return err
+		}
 	}
 	pods, errs := helper.GetPodsForDeletion(name)
 	if len(errs) > 0 {
-		return fmt.Errorf("select pods for node drain: %w", errors.Join(errs...))
+		return observed.PodSelectionFailure(drainCtx, errs)
 	}
-	if err := helper.DeleteOrEvictPods(pods.Pods()); err != nil {
-		return fmt.Errorf("drain node pods: %w", err)
-	}
-	return nil
+	return observed.Failure(drainCtx, helper.DeleteOrEvictPods(pods.Pods()))
 }
 
 func (d *Direct) GetNodeYAML(ctx context.Context, clusterID, name string) (domainresource.ResourceYAMLView, error) {
@@ -239,7 +293,14 @@ func (d *Direct) DeleteNode(ctx context.Context, clusterID, name string) error {
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
-	return bundle.Typed.CoreV1().Nodes().Delete(queryCtx, name, metav1.DeleteOptions{})
+	item, err := bundle.Typed.CoreV1().Nodes().Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if err := contractruntime.ValidateDirectManifestOwner(item); err != nil {
+		return resourceMutationError(err)
+	}
+	return bundle.Typed.CoreV1().Nodes().Delete(queryCtx, name, metav1.DeleteOptions{Preconditions: &metav1.Preconditions{UID: &item.UID, ResourceVersion: &item.ResourceVersion}})
 }
 
 func (d *Direct) listNodes(ctx context.Context, clusterID string) ([]corev1.Node, string, error) {
@@ -352,6 +413,7 @@ func buildNodeView(node corev1.Node, aggregate nodeAggregate) domainresource.Nod
 	return domainresource.NodeView{
 		Name: node.Name, Status: nodeStatus(node), Unschedulable: node.Spec.Unschedulable, Roles: nodeRoles(node), Version: node.Status.NodeInfo.KubeletVersion,
 		InternalIP: nodeInternalIP(node), PodCount: aggregate.podCount, AgeSeconds: secondsSince(node.CreationTimestamp.Time),
+		Taints: mapNodeTaints(node.Spec.Taints), Conditions: mapNodeConditions(node),
 		Resources: domainresource.NodeResourceSummaryView{
 			Capacity: formatTotals(capacity), Allocatable: formatTotals(allocatable), Requests: formatTotals(aggregate.requests), Limits: formatTotals(aggregate.limits),
 			RequestPercentages: percentages(aggregate.requests, allocatable), LimitPercentages: percentages(aggregate.limits, allocatable),

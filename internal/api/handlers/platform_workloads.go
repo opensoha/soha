@@ -554,6 +554,7 @@ func (h *workloadInventoryResourceHandler) RegisterWorkloadDeleteRoutes(group gi
 		{"/clusters/:clusterID/workloads/jobs/:jobName", "jobName", "Job"},
 		{"/clusters/:clusterID/workloads/cronjobs/:cronJobName", "cronJobName", "CronJob"},
 		{"/clusters/:clusterID/workloads/replicasets/:replicaSetName", "replicaSetName", "ReplicaSet"},
+		{"/clusters/:clusterID/workloads/replicationcontrollers/:name", "name", "ReplicationController"},
 	}
 	for _, entry := range entries {
 		kind := entry.kind

@@ -90,6 +90,10 @@ func TestNetworkNavigationUpgradeWithPostgres(t *testing.T) {
 	if err := writeSeedVersion(ctx, db, bootstrapSeedVersionKey, "2026-09-22-oncall-settings-menu"); err != nil {
 		t.Fatal(err)
 	}
+	// Keep this fixture focused on its independent network-access upgrade.
+	if err := writeSeedVersion(ctx, db, kubernetesWorkbenchSeedVersionKey, kubernetesWorkbenchSeedVersion); err != nil {
+		t.Fatal(err)
+	}
 	customIDs := []string{"network-access-spaces", "network-access-gateways", "network-access-policy", "custom-operator-page"}
 	before := navigationRows(t, db, customIDs)
 	var initialMenuCount int64

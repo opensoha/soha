@@ -262,6 +262,7 @@ func (s *Service) Describe(ctx context.Context, principal domainidentity.Princip
 		CapabilityMatrix: domaincluster.DefaultCapabilityMatrix(),
 		Connection: domaincluster.ConnectionDetail{
 			CustomResourceRules: customResourceRules(connection.Metadata),
+			ActionProfile:       agentActionProfile(connection.Metadata),
 			Mode:                connection.Summary.ConnectionMode,
 			CredentialType:      connection.CredentialType,
 			SourceType:          connection.SourceType,
@@ -285,6 +286,7 @@ func (s *Service) Describe(ctx context.Context, principal domainidentity.Princip
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
+		s.describeAgentActions(ctx, connection, &detail)
 		if metadataString(connection.Metadata, "transport") == agentReverseSessionTransport {
 			detail.Diagnostics.Transport = "agent-reverse-session"
 			detail.Diagnostics.SyncStrategy = "agent_session_and_remote_pull"
@@ -399,6 +401,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 		AgentToken:               input.AgentToken,
 		PrometheusTransport:      input.PrometheusTransport,
 		AgentCustomResourceRules: input.AgentCustomResourceRules,
+		AgentActionProfile:       input.AgentActionProfile,
 		PrometheusBaseURL:        input.PrometheusBaseURL,
 		PrometheusBearerToken:    input.PrometheusBearerToken,
 		PrometheusClusterLabel:   input.PrometheusClusterLabel,
@@ -766,6 +769,7 @@ func (s *Service) buildConnection(input domaincluster.RegisterInput) (domainclus
 			"context":                     input.Context,
 			"prometheus_transport":        input.PrometheusTransport,
 			"agent_custom_resource_rules": input.AgentCustomResourceRules,
+			"agent_action_profile":        input.AgentActionProfile,
 			"prometheus_url":              strings.TrimSpace(input.PrometheusBaseURL),
 			"prometheus_bearer_token":     strings.TrimSpace(input.PrometheusBearerToken),
 			"prometheus_cluster_label":    strings.TrimSpace(input.PrometheusClusterLabel),
@@ -810,6 +814,7 @@ func (s *Service) buildConnection(input domaincluster.RegisterInput) (domainclus
 			"token":                       token,
 			"prometheus_transport":        input.PrometheusTransport,
 			"agent_custom_resource_rules": input.AgentCustomResourceRules,
+			"agent_action_profile":        input.AgentActionProfile,
 			"prometheus_url":              strings.TrimSpace(input.PrometheusBaseURL),
 			"prometheus_bearer_token":     strings.TrimSpace(input.PrometheusBearerToken),
 			"prometheus_cluster_label":    strings.TrimSpace(input.PrometheusClusterLabel),
@@ -865,6 +870,9 @@ func mergeAgentClusterUpdate(next *domaincluster.RegisterInput, existing domainc
 }
 
 func mergeClusterObservabilityUpdate(next *domaincluster.RegisterInput, metadata map[string]any) {
+	if next.AgentActionProfile == "" {
+		next.AgentActionProfile = agentActionProfile(metadata)
+	}
 	if next.PrometheusTransport == "" {
 		next.PrometheusTransport = prometheusTransport(metadata)
 	}

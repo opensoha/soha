@@ -49,6 +49,9 @@ type Configuration struct {
 }
 
 type Network struct {
+	topologyAgent   AgentClientFactory[TopologySourceAgent]
+	topologyDirect  DirectTopologySources
+	customResources *CustomResources
 	*resourceAccess
 	*metricsSupport
 	agent         AgentClientFactory[NetworkAgent]
@@ -79,6 +82,8 @@ type Helm struct {
 }
 
 type Inventory struct {
+	monitoringAgent  AgentClientFactory[MonitoringInventoryAgent]
+	monitoringDirect DirectMonitoringInventory
 	*resourceAccess
 	*metricsSupport
 	agent  AgentClientFactory[InventoryAgent]
@@ -245,11 +250,13 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		resourceAccess: access, agent: deps.Agents.Logs, direct: deps.DirectLogs, durable: deps.DurableLogs, tickets: deps.StreamTickets,
 	}
 	network := &Network{
+		topologyAgent: deps.Agents.TopologySources, topologyDirect: deps.DirectTopologySources,
 		resourceAccess: access, metricsSupport: metrics,
 		agent: deps.Agents.Network, directReader: deps.DirectNetwork, gatewayReader: deps.DirectGateway,
 		configuration: deps.Agents.Configuration, directConfig: deps.DirectConfiguration, pods: workloads,
 	}
 	inventory := &Inventory{
+		monitoringAgent: deps.Agents.MonitoringInventory, monitoringDirect: deps.DirectMonitoringInventory,
 		resourceAccess: access, metricsSupport: metrics,
 		agent: deps.Agents.Inventory, direct: deps.DirectInventory, yaml: genericResources,
 	}
@@ -268,6 +275,7 @@ func newServiceCapabilities(deps Dependencies) *Service {
 		portForwards:     &PortForwards{resourceAccess: access, agent: deps.Agents.PortForwards, direct: deps.DirectTunnel, repository: deps.PortForwards},
 		creation:         creation,
 	}
+	network.customResources = service.customResources
 	service.runtime = &Runtime{
 		customResources: service.customResources,
 		Workloads:       workloads, Configuration: service.configuration, Network: network, Storage: service.storage,

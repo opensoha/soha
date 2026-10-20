@@ -615,20 +615,22 @@ type PrometheusAgent interface {
 }
 
 type AgentClients struct {
-	Prometheus       AgentClientFactory[PrometheusAgent]
-	Workloads        AgentClientFactory[WorkloadAgent]
-	Logs             AgentClientFactory[LogAgent]
-	Configuration    AgentClientFactory[ConfigurationAgent]
-	Network          AgentClientFactory[NetworkAgent]
-	Storage          AgentClientFactory[StorageAgent]
-	RBAC             AgentClientFactory[RBACAgent]
-	Helm             AgentClientFactory[HelmAgent]
-	Inventory        AgentClientFactory[InventoryAgent]
-	CustomResources  AgentClientFactory[CustomResourceAgent]
-	Generic          AgentClientFactory[GenericResourceAgent]
-	Events           AgentClientFactory[EventAgent]
-	PortForwards     AgentClientFactory[PortForwardAgent]
-	ResourceCreation AgentClientFactory[AgentResourceCreator]
+	MonitoringInventory AgentClientFactory[MonitoringInventoryAgent]
+	TopologySources     AgentClientFactory[TopologySourceAgent]
+	Prometheus          AgentClientFactory[PrometheusAgent]
+	Workloads           AgentClientFactory[WorkloadAgent]
+	Logs                AgentClientFactory[LogAgent]
+	Configuration       AgentClientFactory[ConfigurationAgent]
+	Network             AgentClientFactory[NetworkAgent]
+	Storage             AgentClientFactory[StorageAgent]
+	RBAC                AgentClientFactory[RBACAgent]
+	Helm                AgentClientFactory[HelmAgent]
+	Inventory           AgentClientFactory[InventoryAgent]
+	CustomResources     AgentClientFactory[CustomResourceAgent]
+	Generic             AgentClientFactory[GenericResourceAgent]
+	Events              AgentClientFactory[EventAgent]
+	PortForwards        AgentClientFactory[PortForwardAgent]
+	ResourceCreation    AgentClientFactory[AgentResourceCreator]
 }
 
 type PortForwardRecord = domainresource.PortForwardRecord
@@ -638,4 +640,18 @@ type PortForwardRepository interface {
 	Upsert(context.Context, PortForwardRecord) error
 	Delete(context.Context, string) error
 	MarkStatus(context.Context, string, string, string) error
+}
+
+type TopologySourceAgent interface {
+	NetworkTopologySnapshot(context.Context, contractresource.NetworkTopologySnapshotRequest) (contractresource.NetworkTopologySnapshot, error)
+}
+type DirectTopologySources interface {
+	NetworkTopologySnapshot(context.Context, string, contractresource.NetworkTopologySnapshotRequest) (contractresource.NetworkTopologySnapshot, error)
+}
+
+type MonitoringInventoryAgent interface {
+	ResourceMonitoringInventory(context.Context) (contractresource.ResourceMonitoringInventory, error)
+}
+type DirectMonitoringInventory interface {
+	ResourceMonitoringInventory(context.Context, string) (contractresource.ResourceMonitoringInventory, error)
 }

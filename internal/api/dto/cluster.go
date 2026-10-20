@@ -3,6 +3,7 @@ package dto
 import domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 
 type CreateClusterRequest struct {
+	AgentActionProfile       string                                  `json:"agentActionProfile"`
 	PrometheusTransport      string                                  `json:"prometheusTransport"`
 	AgentCustomResourceRules []domaincluster.AgentCustomResourceRule `json:"agentCustomResourceRules"`
 	ID                       string                                  `json:"id"`
@@ -22,6 +23,7 @@ type CreateClusterRequest struct {
 }
 
 type UpdateClusterRequest struct {
+	AgentActionProfile       string                                  `json:"agentActionProfile"`
 	PrometheusTransport      string                                  `json:"prometheusTransport"`
 	AgentCustomResourceRules []domaincluster.AgentCustomResourceRule `json:"agentCustomResourceRules"`
 	Name                     string                                  `json:"name"`
