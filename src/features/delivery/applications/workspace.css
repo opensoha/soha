@@ -431,25 +431,60 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.soha-delivery-step-content {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.soha-workflow-execution.soha-application-workflow-stages .soha-execution-nodes {
+  flex-direction: row;
+  gap: 28px;
+  overflow-x: auto;
+  padding: 2px;
+}
+.soha-workflow-execution.soha-application-workflow-stages .soha-execution-nodes > li {
+  position: relative;
+  flex: 1 0 200px;
+  min-width: 0;
+}
+.soha-workflow-execution.soha-application-workflow-stages .soha-workflow-stage-connector {
+  position: absolute;
+  right: -22px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--soha-text-tertiary);
+}
+@media (max-width: 767px) {
+  .soha-workflow-execution.soha-application-workflow-stages .soha-execution-nodes {
+    flex-direction: column;
+  }
+  .soha-workflow-execution.soha-application-workflow-stages .soha-execution-nodes > li {
+    flex-basis: auto;
+  }
+  .soha-workflow-execution.soha-application-workflow-stages .soha-workflow-stage-connector {
+    top: auto;
+    right: 50%;
+    bottom: -26px;
+    transform: rotate(90deg);
+  }
 }
 .soha-application-workflow-card > .ant-card-body {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-.soha-delivery-step-content > span {
-  white-space: normal;
+.soha-workflow-execution.soha-application-workflow-stages .soha-execution-node {
+  height: 100%;
+  align-items: flex-start;
+  border-color: var(--soha-border-color);
+  background: var(--soha-bg-surface-muted);
+}
+.soha-workflow-execution.soha-application-workflow-stages .soha-execution-node-copy small {
   overflow-wrap: anywhere;
 }
-.soha-delivery-progress .ant-steps {
-  min-width: min(100%, 600px);
+.soha-workflow-execution.soha-application-workflow-stages .soha-execution-node.is-running {
+  border-color: var(--soha-primary);
 }
-.soha-delivery-progress .ant-steps-item {
-  min-width: 140px;
+.soha-workflow-execution.soha-application-workflow-stages .soha-execution-node.is-error {
+  border-color: var(--soha-danger);
+}
+.soha-workflow-execution.soha-application-workflow-stages .soha-execution-node:disabled {
+  color: var(--soha-text-primary);
 }
 @media (prefers-reduced-motion: reduce) {
   .soha-delivery-progress .anticon-spin {

@@ -3319,7 +3319,17 @@ export function ApplicationDetailPage() {
                             <Text type="secondary">
                               最近运行：{formatDateTime(binding.latestWorkflow?.createdAt)}
                             </Text>
-                            <WorkflowProgress binding={binding} />
+                            <WorkflowProgress
+                              binding={binding}
+                              onSelectStage={
+                                canViewWorkflows
+                                  ? (runId, stageKey) =>
+                                      navigate(
+                                        `/workflows/${encodeURIComponent(runId)}?${new URLSearchParams({ stage: stageKey })}`,
+                                      )
+                                  : undefined
+                              }
+                            />
                             <details className="soha-application-inline-disclosure">
                               <summary>配置检查</summary>
                               {renderWorkflowTemplateHealth(binding)}
