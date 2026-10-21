@@ -3,6 +3,7 @@ package delivery
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -68,6 +69,8 @@ func waitForConcurrentReads(t *testing.T, gate *concurrentReadGate, labels ...st
 }
 
 type stubApplicationReader struct {
+	importScopeErr     error
+	importScopeID      *string
 	app                domainapp.App
 	apps               []domainapp.App
 	services           []domainapp.Service
@@ -144,6 +147,8 @@ func (s stubApplicationReader) UpdateService(_ context.Context, _ domainidentity
 }
 
 type stubCatalogReader struct {
+	importScopeErr    error
+	importScopeID     *string
 	bindings          []domaincatalog.ApplicationEnvironment
 	envs              []domaincatalog.Environment
 	getErrByBindingID map[string]error
@@ -348,15 +353,21 @@ func (s stubReleaseReader) Trigger(_ context.Context, _ domainidentity.Principal
 }
 
 type stubTargetReader struct {
-	deployments       map[string][]domainresource.DeploymentView
-	deploymentDetails map[string]domainresource.DeploymentDetailView
-	statefulSets      map[string][]domainresource.StatefulSetView
-	daemonSets        map[string][]domainresource.DaemonSetView
-	services          map[string][]domainresource.ServiceView
-	ingresses         map[string][]domainresource.IngressView
-	hpas              map[string][]domainresource.HorizontalPodAutoscalerView
-	helmReleases      map[string][]domainresource.HelmReleaseView
-	detailReadGate    *concurrentReadGate
+	importSources       map[string]domainresource.ResourceSourceSnapshot
+	importSourceErr     error
+	importManagementErr error
+	jobs                map[string][]domainresource.JobView
+	cronJobs            map[string][]domainresource.CronJobView
+	customResources     map[string][]domainresource.CustomResourceView
+	deployments         map[string][]domainresource.DeploymentView
+	deploymentDetails   map[string]domainresource.DeploymentDetailView
+	statefulSets        map[string][]domainresource.StatefulSetView
+	daemonSets          map[string][]domainresource.DaemonSetView
+	services            map[string][]domainresource.ServiceView
+	ingresses           map[string][]domainresource.IngressView
+	hpas                map[string][]domainresource.HorizontalPodAutoscalerView
+	helmReleases        map[string][]domainresource.HelmReleaseView
+	detailReadGate      *concurrentReadGate
 }
 
 func (s stubTargetReader) ListHelmReleases(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.HelmReleaseView, error) {
@@ -509,6 +520,7 @@ func TestExecutionRecordsFilterApplicationEnvironmentsOutsidePrincipalScope(t *t
 }
 
 type stubRepository struct {
+	importDestination   domaindelivery.ImportDestination
 	blueprint           domaindelivery.DeliveryBlueprint
 	bundles             []domaindelivery.ReleaseBundle
 	tasks               []domaindelivery.ExecutionTask
@@ -2576,4 +2588,60 @@ func (r *draftRepository) CreateDeliveryDraftIdempotent(ctx context.Context, inp
 		r.creationKey = input.IdempotencyKey
 	}
 	return draft, err
+}
+
+func (s stubApplicationReader) AuthorizeServiceImport(_ context.Context, _ domainidentity.Principal, id string, _ domainapp.UpsertInput, _ []domainapp.ServiceInput) error {
+	if s.importScopeID != nil {
+		*s.importScopeID = id
+	}
+	return s.importScopeErr
+}
+func (s stubCatalogReader) AuthorizeImportBinding(_ context.Context, _ domainidentity.Principal, _, _, id string) error {
+	if s.importScopeID != nil {
+		*s.importScopeID = id
+	}
+	return s.importScopeErr
+}
+func (s stubRepository) ResolveImportDestination(context.Context, string, string) (domaindelivery.ImportDestination, error) {
+	return s.importDestination, nil
+}
+func (s stubTargetReader) GetImportSource(_ context.Context, _ domainidentity.Principal, clusterID, namespace, kind, name, crd string) (domainresource.ResourceSourceSnapshot, error) {
+	if s.importSourceErr != nil {
+		return domainresource.ResourceSourceSnapshot{}, s.importSourceErr
+	}
+	if source, ok := s.importSources[kind+"/"+name]; ok {
+		return source, nil
+	}
+	exists := false
+	key := clusterID + "/" + namespace
+	switch kind {
+	case "Deployment":
+		for _, row := range s.deployments[key] {
+			exists = exists || row.Name == name
+		}
+	case "StatefulSet":
+		for _, row := range s.statefulSets[key] {
+			exists = exists || row.Name == name
+		}
+	case "DaemonSet":
+		for _, row := range s.daemonSets[key] {
+			exists = exists || row.Name == name
+		}
+	}
+	if !exists {
+		return domainresource.ResourceSourceSnapshot{}, apperrors.ErrNotFound
+	}
+	return domainresource.ResourceSourceSnapshot{Resource: domainresource.ResourceRef{ClusterID: clusterID, Namespace: namespace, APIVersion: "apps/v1", Kind: kind, Name: name, UID: "uid-" + name}, SpecDigest: strings.Repeat("a", 64)}, nil
+}
+func (s stubTargetReader) AuthorizeImportManagement(context.Context, domainidentity.Principal, string, string, string) error {
+	return s.importManagementErr
+}
+func (s stubTargetReader) ListJobs(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.JobView, error) {
+	return s.jobs[clusterID+"/"+namespace], nil
+}
+func (s stubTargetReader) ListCronJobs(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.CronJobView, error) {
+	return s.cronJobs[clusterID+"/"+namespace], nil
+}
+func (s stubTargetReader) ListCRDResources(_ context.Context, _ domainidentity.Principal, clusterID, crd, namespace string) ([]domainresource.CustomResourceView, error) {
+	return s.customResources[clusterID+"/"+namespace+"/"+crd], nil
 }

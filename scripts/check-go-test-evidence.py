@@ -25,6 +25,14 @@ IDENTITY_SCOPE = {
                  "revoked_session_cannot_refresh"],
 }
 
+KUBERNETES_IMPORT_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/delivery",
+    "parent": "TestKubernetesImportIdentityWithPostgres",
+    "children": ["create_and_idempotent", "uid_replacement_rollback", "ownership_mode_no_upgrade",
+                 "preserves_service_metadata", "destination_race_rollback", "cross_namespace_identity",
+                 "native_ownership_conflict", "crd_identity_and_shared_reference", "legacy_missing_uid_conflict"],
+}
+
 
 def validate(raw, exit_code=0, package=PACKAGE, parent=PARENT, children=CHILDREN):
     if exit_code != 0:
@@ -56,11 +64,14 @@ if __name__ == "__main__":
     parser.add_argument("--exit-code", type=int, required=True)
     parser.add_argument("--main-chat", action="store_true")
     parser.add_argument("--identity", action="store_true")
+    parser.add_argument("--kubernetes-import", action="store_true")
     args = parser.parse_args()
     try:
         scope = {"package": "github.com/opensoha/soha/internal/repository/copilot", "parent": "TestMainSessionWithPostgres", "children": ["personal_assistant_identity"]} if args.main_chat else {}
         if args.identity:
             scope = IDENTITY_SCOPE
+        if args.kubernetes_import:
+            scope = KUBERNETES_IMPORT_SCOPE
         print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))
     except (ValueError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")

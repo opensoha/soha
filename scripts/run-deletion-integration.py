@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--knowledge-ann", action="store_true")
     parser.add_argument("--personal-environment", action="store_true")
     parser.add_argument("--identity", action="store_true")
+    parser.add_argument("--kubernetes-import", action="store_true")
     parser.add_argument("--virtualization-capacity", action="store_true")
     parser.add_argument("--feed-search",action="store_true")
     parser.add_argument("--network-navigation", action="store_true")
@@ -47,7 +48,9 @@ def main():
     container = None
     try:
         container = command(["docker", "run", "--detach", "--rm", "--label", "soha.test.run=" + run_id,
-                             "--publish", "127.0.0.1::5432", "--env", "POSTGRES_DB=soha",
+                             "--publish", "127.0.0.1::5432",
+                             *(["--tmpfs", "/var/lib/postgresql"] if args.kubernetes_import else []),
+                             "--env", "POSTGRES_DB=soha",
                              "--env", "POSTGRES_USER=pgsql", "--env", "POSTGRES_PASSWORD=test-only", IMAGE], timeout=90)
         info = json.loads(command(["docker", "inspect", container]))[0]
         check_owner(info, container, run_id)
@@ -70,9 +73,13 @@ def main():
                 parent = "TestCapacityAdmissionWithPostgres"
             if args.network_navigation:
                 parent = "TestNetworkNavigationUpgradeWithPostgres"
+            if args.kubernetes_import:
+                parent = "TestKubernetesImportIdentityWithPostgres"
             package = "knowledge" if args.knowledge or args.knowledge_ann else "copilot" if args.identity or args.feed_search or args.main_chat or args.native_harness or args.personal_environment else "application"
             if args.virtualization_capacity:
                 package = "virtualization"
+            if args.kubernetes_import:
+                package = "delivery"
             result = subprocess.run(["go", "test", "-json", "-count=1", "-race", "-timeout=10m",
                                      "-run", "^" + parent + "$",
                                      "./internal/bootstrap" if args.network_navigation else "./internal/repository/" + package], cwd=ROOT, env=env, stdout=log, stderr=diagnostics)
@@ -82,6 +89,8 @@ def main():
         scope = {"package": "github.com/opensoha/soha/internal/repository/copilot", "parent": parent, "children": ["personal_assistant_identity"]} if args.main_chat else {}
         if args.identity:
             scope = module.IDENTITY_SCOPE
+        if args.kubernetes_import:
+            scope = module.KUBERNETES_IMPORT_SCOPE
         if args.native_harness:
             scope = {"package": "github.com/opensoha/soha/internal/repository/copilot", "parent": parent, "children": ["idempotent_request", "owner_isolation", "request_recovery", "lease_fencing", "durable_events", "parent_child_registration", "cancel_fence", "failure_stop_fence", "unknown_outcome_no_replay", "input_resume_gate", "atomic_result", "shared_tool_budget"]}
         if args.knowledge:

@@ -38,6 +38,7 @@ type DeliveryReleaseService interface {
 }
 
 type DeliveryKubernetesImportService interface {
+	GetImportedTargetSource(context.Context, domainidentity.Principal, string, string) (domainresource.ResourceYAMLView, error)
 	ListKubernetesImportCandidates(context.Context, domainidentity.Principal, domaindelivery.KubernetesImportCandidateFilter) (domaindelivery.KubernetesImportCandidatePage, error)
 	ImportKubernetesServices(context.Context, domainidentity.Principal, domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error)
 	ImportHelmReleases(context.Context, domainidentity.Principal, domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error)
@@ -272,12 +273,24 @@ func (h *DeliveryHandler) ListTargetCandidates(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	page, err := h.imports.ListKubernetesImportCandidates(c.Request.Context(), principal, domaindelivery.KubernetesImportCandidateFilter{
 		ClusterID: c.Query("clusterId"), Namespace: c.Query("namespace"), Search: c.Query("search"), Limit: limit,
+		WorkloadKind: c.Query("workloadKind"), CRDName: c.Query("crdName"),
 	})
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, page)
+}
+
+func (h *DeliveryHandler) GetImportedTargetSource(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	item, err := h.imports.GetImportedTargetSource(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("applicationEnvironmentID"), c.Param("targetID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *DeliveryHandler) ImportKubernetesServices(c *gin.Context) {

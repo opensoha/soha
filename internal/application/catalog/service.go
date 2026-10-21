@@ -144,6 +144,27 @@ func (s *Service) AuthorizeApplicationEnvironmentPermission(ctx context.Context,
 	return item, nil
 }
 
+func (s *Service) AuthorizeImportBinding(ctx context.Context, principal domainidentity.Principal, applicationID, environmentKey, bindingID string) error {
+	if bindingID != "" {
+		_, err := s.AuthorizeApplicationEnvironmentPermission(ctx, principal, bindingID, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"))
+		return err
+	}
+	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "create")); err != nil {
+		return err
+	}
+	if s.authorizer == nil {
+		return nil
+	}
+	businessLineID, group, err := s.lookupApplicationScope(ctx, applicationID)
+	if err != nil {
+		return err
+	}
+	if applicationID == "" {
+		group = "imported"
+	}
+	return s.authorizeDelivery(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "create"), domainaccess.ActionCreate, "ApplicationEnvironment", applicationID+":"+environmentKey, businessLineID, group, environmentKey, applicationID)
+}
+
 func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
 	if err := s.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "create")); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err

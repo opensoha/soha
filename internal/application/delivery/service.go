@@ -104,7 +104,19 @@ type HelmImportTargetReader interface {
 	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
 }
 
+type KubernetesImportSourceReader interface {
+	GetImportSource(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceSourceSnapshot, error)
+	AuthorizeImportManagement(context.Context, domainidentity.Principal, string, string, string) error
+}
+
+type KubernetesImportExtendedReader interface {
+	ListJobs(context.Context, domainidentity.Principal, string, string) ([]domainresource.JobView, error)
+	ListCronJobs(context.Context, domainidentity.Principal, string, string) ([]domainresource.CronJobView, error)
+	ListCRDResources(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.CustomResourceView, error)
+}
+
 type KubernetesImportRepository interface {
+	ResolveImportDestination(context.Context, string, string) (domaindelivery.ImportDestination, error)
 	ImportKubernetesServices(context.Context, domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error)
 	ImportHelmReleases(context.Context, domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error)
 }
@@ -360,16 +372,17 @@ func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, princ
 	if err != nil {
 		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
 	}
-	var selected *domaindelivery.ApplicationRuntimeWorkload
-	for _, item := range workloads {
-		if item.WorkloadName == strings.TrimSpace(workloadName) {
-			copyItem := item
-			selected = &copyItem
-			break
-		}
+	selected, err := selectRuntimeWorkload(workloads, strings.TrimSpace(workloadName))
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
 	}
-	if selected == nil {
-		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: workload not found", apperrors.ErrNotFound)
+	if selected.SourceStatus != "" {
+		if selected.SourceStatus != "linked" && selected.SourceStatus != "changed" {
+			return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: linked workload identity is unavailable", apperrors.ErrConflict)
+		}
+		if selected.WorkloadKind != "Deployment" {
+			return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: use the linked source resource view", apperrors.ErrUnsupportedOperation)
+		}
 	}
 	var (
 		deployment domainresource.DeploymentDetailView
@@ -396,6 +409,9 @@ func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, princ
 		if err != nil {
 			return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
 		}
+	}
+	if err := s.verifyImportedRuntimeIdentity(ctx, principal, *selected); err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
 	}
 	return domaindelivery.ApplicationWorkloadRuntimeDetail{
 		Application: app,
@@ -3019,10 +3035,15 @@ func (s *Service) listRuntimeWorkloadsForBinding(
 ) ([]domaindelivery.ApplicationRuntimeWorkload, error) {
 	workloads := make([]domaindelivery.ApplicationRuntimeWorkload, 0)
 	seen := make(map[string]struct{})
+	imported := s.importedRuntimeWorkloads(ctx, principal, binding)
 	for _, target := range binding.Targets {
 		clusterID := strings.TrimSpace(target.ClusterID)
 		namespace := strings.TrimSpace(target.Namespace)
 		if clusterID == "" || namespace == "" {
+			continue
+		}
+		if metadataString(target.Metadata, "importSource") == "kubernetes" {
+			workloads = append(workloads, imported[target.ID])
 			continue
 		}
 		items, err := s.targets.ListDeployments(ctx, principal, clusterID, namespace)

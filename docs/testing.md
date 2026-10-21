@@ -24,6 +24,12 @@ Core HTTP 会话/消息/任务读取的六个必要子场景。没有权限的�
 `check-go-test-evidence.py <json> --exit-code <actual>` 不以包PASS代替目标运行，拒绝空结果、
 无run、skip/fail、损坏JSON、缓存、缺子场景、非零退出和不完整结束。CI继续使用既有PG service。
 
+`python3 scripts/run-deletion-integration.py --kubernetes-import --output .tmp/quality/kubernetes-import-test.json`
+复用同一归属保护，在tmpfs隔离PG执行workload/CR导入的9个必要子场景：幂等、UID替换回滚、
+管理权不升级、保留metadata、授权目标替换竞态、跨namespace、native归属冲突、CRD区分/共享观察、
+legacy缺UID冲突。`check-go-test-evidence.py --kubernetes-import`拒绝任何遗漏或skip；
+deletion-integration CI同步执行此父测试，上传原始Go JSON。资源读取是替身，不算真实集群接入。
+
 状态机用例位于 `internal/application/execution`，取消需要runtime确认，超时/重试/迟到回调
 沿用已有行为。Agent fake runner race 与真实 runner/cluster分别报告；不因假控制平面PASS宣布上线。
 HTTP黑盒/真实UI归 Web real入口；数据库与持久化冲突/副作用归本仓，不让Web直接SQL。

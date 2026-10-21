@@ -2,6 +2,7 @@ package delivery
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -34,7 +35,15 @@ func (s *Service) ListKubernetesImportCandidates(ctx context.Context, principal 
 	if filter.ClusterID == "" || filter.Namespace == "" {
 		return domaindelivery.KubernetesImportCandidatePage{}, fmt.Errorf("%w: clusterId and namespace are required", apperrors.ErrInvalidArgument)
 	}
-	items, err := s.collectKubernetesImportCandidates(ctx, principal, filter.ClusterID, filter.Namespace)
+	filter.WorkloadKind = strings.TrimSpace(filter.WorkloadKind)
+	filter.CRDName = strings.TrimSpace(filter.CRDName)
+	if !supportedImportKind(filter.WorkloadKind) && filter.WorkloadKind != "" {
+		return domaindelivery.KubernetesImportCandidatePage{}, fmt.Errorf("%w: unsupported workload kind", apperrors.ErrInvalidArgument)
+	}
+	if (filter.WorkloadKind == "CustomResource") != (filter.CRDName != "") {
+		return domaindelivery.KubernetesImportCandidatePage{}, fmt.Errorf("%w: CustomResource requires an explicit CRD", apperrors.ErrInvalidArgument)
+	}
+	items, err := s.collectImportKind(ctx, principal, filter)
 	if err != nil {
 		return domaindelivery.KubernetesImportCandidatePage{}, err
 	}
@@ -56,32 +65,37 @@ func (s *Service) ListKubernetesImportCandidates(ctx context.Context, principal 
 		page.Items = page.Items[:limit]
 		page.Truncated = true
 	}
+	if err := s.populateImportSources(ctx, principal, page.Items); err != nil {
+		return domaindelivery.KubernetesImportCandidatePage{}, err
+	}
+	roots := make([]domaindelivery.KubernetesImportCandidate, 0, len(page.Items))
+	for _, item := range page.Items {
+		if item.WorkloadKind != "Job" || !hasCronJobOwner(item.Source) {
+			roots = append(roots, item)
+		}
+	}
+	page.Items = roots
 	return page, nil
 }
 
 func (s *Service) ImportKubernetesServices(ctx context.Context, principal domainidentity.Principal, input domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error) {
-	if err := s.authorizeApplicationImport(ctx, principal); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
 		return domaindelivery.KubernetesServiceImportResult{}, err
 	}
 	input = normalizeKubernetesServiceImportInput(input)
 	if err := validateKubernetesServiceImportInput(input); err != nil {
 		return domaindelivery.KubernetesServiceImportResult{}, err
 	}
-	candidates, err := s.collectKubernetesImportCandidates(ctx, principal, input.ClusterID, input.Namespace)
+	if s.importRepository == nil {
+		return domaindelivery.KubernetesServiceImportResult{}, fmt.Errorf("%w: Kubernetes import persistence is unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	destination, err := s.authorizeKubernetesImportDestination(ctx, principal, input)
 	if err != nil {
 		return domaindelivery.KubernetesServiceImportResult{}, err
 	}
-	available := make(map[string]struct{}, len(candidates))
-	for _, candidate := range candidates {
-		available[candidate.WorkloadKind+"/"+candidate.WorkloadName] = struct{}{}
-	}
-	for _, workload := range input.Workloads {
-		if _, ok := available[workload.WorkloadKind+"/"+workload.WorkloadName]; !ok {
-			return domaindelivery.KubernetesServiceImportResult{}, fmt.Errorf("%w: workload %s/%s was not found", apperrors.ErrNotFound, workload.WorkloadKind, workload.WorkloadName)
-		}
-	}
-	if s.importRepository == nil {
-		return domaindelivery.KubernetesServiceImportResult{}, fmt.Errorf("%w: Kubernetes import persistence is unavailable", apperrors.ErrUnsupportedOperation)
+	input.Destination = destination
+	if err := s.resolveSelectedImportSources(ctx, principal, &input); err != nil {
+		return domaindelivery.KubernetesServiceImportResult{}, err
 	}
 	result, err := s.importRepository.ImportKubernetesServices(ctx, input)
 	if err != nil {
@@ -178,12 +192,6 @@ func (s *Service) collectKubernetesImportCandidates(ctx context.Context, princip
 	items := make([]domaindelivery.KubernetesImportCandidate, 0, len(deployments)+len(statefulSets)+len(daemonSets))
 	for _, item := range deployments {
 		candidate := kubernetesImportCandidate(clusterID, item.Namespace, "Deployment", item.Name, int(item.DesiredReplicas), int(item.ReadyReplicas), item.Labels)
-		if detail, detailErr := s.importTargets.GetDeploymentDetail(ctx, principal, clusterID, item.Namespace, item.Name); detailErr == nil {
-			candidate.Containers = make([]string, 0, len(detail.Containers))
-			for _, container := range detail.Containers {
-				candidate.Containers = append(candidate.Containers, container.Name)
-			}
-		}
 		candidate.RelatedResources = relatedKubernetesResources(candidate, "", services, ingresses, hpas)
 		items = append(items, candidate)
 	}
@@ -277,6 +285,10 @@ func normalizeKubernetesServiceImportInput(input domaindelivery.KubernetesServic
 	for index := range input.Workloads {
 		input.Workloads[index].WorkloadKind = strings.TrimSpace(input.Workloads[index].WorkloadKind)
 		input.Workloads[index].WorkloadName = strings.TrimSpace(input.Workloads[index].WorkloadName)
+		input.Workloads[index].CRDName = strings.TrimSpace(input.Workloads[index].CRDName)
+		input.Workloads[index].ExpectedUID = strings.TrimSpace(input.Workloads[index].ExpectedUID)
+		input.Workloads[index].ExpectedSpecDigest = strings.TrimSpace(input.Workloads[index].ExpectedSpecDigest)
+		input.Workloads[index].Source = nil
 	}
 	return input
 }
@@ -293,10 +305,13 @@ func validateKubernetesServiceImportInput(input domaindelivery.KubernetesService
 	}
 	seen := make(map[string]struct{}, len(input.Workloads))
 	for _, workload := range input.Workloads {
-		if workload.WorkloadKind != "Deployment" && workload.WorkloadKind != "StatefulSet" && workload.WorkloadKind != "DaemonSet" {
+		if !supportedImportKind(workload.WorkloadKind) {
 			return fmt.Errorf("%w: unsupported workload kind %q", apperrors.ErrInvalidArgument, workload.WorkloadKind)
 		}
-		key := workload.WorkloadKind + "/" + workload.WorkloadName
+		if err := validateImportPreview(workload); err != nil {
+			return err
+		}
+		key := workload.CRDName + "/" + workload.WorkloadKind + "/" + workload.WorkloadName
 		if workload.WorkloadName == "" {
 			return fmt.Errorf("%w: workloadName is required", apperrors.ErrInvalidArgument)
 		}
@@ -390,4 +405,30 @@ func (s *Service) recordHelmReleaseImport(ctx context.Context, principal domaini
 			"module": "delivery", "resourceKind": "ApplicationEnvironment", "targetId": result.ApplicationEnvironmentID,
 		}, "success", "imported Helm releases", metadata))
 	}
+}
+
+func supportedImportKind(kind string) bool {
+	switch kind {
+	case "Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "CustomResource":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateImportPreview(workload domaindelivery.KubernetesWorkloadImportInput) error {
+	if (workload.WorkloadKind == "CustomResource") != (workload.CRDName != "") {
+		return fmt.Errorf("%w: an explicit CRD is required only for CustomResource", apperrors.ErrInvalidArgument)
+	}
+	if workload.ExpectedUID == "" && workload.ExpectedSpecDigest == "" {
+		if workload.WorkloadKind == "Job" || workload.WorkloadKind == "CronJob" || workload.WorkloadKind == "CustomResource" {
+			return fmt.Errorf("%w: a source preview is required", apperrors.ErrInvalidArgument)
+		}
+		return nil
+	}
+	digest, err := hex.DecodeString(workload.ExpectedSpecDigest)
+	if workload.ExpectedUID == "" || err != nil || len(digest) != 32 || strings.ToLower(workload.ExpectedSpecDigest) != workload.ExpectedSpecDigest {
+		return fmt.Errorf("%w: expectedUid and a lowercase SHA-256 expectedSpecDigest are required together", apperrors.ErrInvalidArgument)
+	}
+	return nil
 }

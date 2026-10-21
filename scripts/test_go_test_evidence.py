@@ -54,6 +54,15 @@ class EvidenceTests(unittest.TestCase):
             with self.subTest(raw=raw[:20], code=code), self.assertRaises(ValueError):
                 evidence.validate(raw, code)
 
+    def test_kubernetes_import_scope_rejects_missing_or_skipped_identity_checks(self):
+        scope = evidence.KUBERNETES_IMPORT_SCOPE
+        names = [scope['parent'], *[scope['parent'] + '/' + child for child in scope['children']]]
+        events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
+        events.append(dict(Action='pass', Package=scope['package']))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 9)
+        for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+
     def test_child_skip_fail_missing_or_incomplete(self):
         for action in ("skip", "fail", "run"):
             events = self.events()

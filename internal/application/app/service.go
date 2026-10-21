@@ -218,6 +218,28 @@ func (s *Service) GetService(ctx context.Context, principal domainidentity.Princ
 	return item, nil
 }
 
+// AuthorizeServiceImport checks the same application scope as normal creation without writing records.
+func (s *Service) AuthorizeServiceImport(ctx context.Context, principal domainidentity.Principal, applicationID string, input domainapp.UpsertInput, services []domainapp.ServiceInput) error {
+	app := domainapp.App{Key: input.Key, Name: input.Name, Group: "imported"}
+	if applicationID == "" {
+		if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "Application", input.Name, input.Key, "", "imported", ""); err != nil {
+			return err
+		}
+	} else {
+		var err error
+		app, err = s.repo.Get(ctx, applicationID)
+		if err != nil {
+			return normalizeRepoError(err)
+		}
+	}
+	for _, service := range services {
+		if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", service.Name, service.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *Service) CreateService(ctx context.Context, principal domainidentity.Principal, applicationID string, input domainapp.ServiceInput) (domainapp.Service, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, "create")); err != nil {
 		return domainapp.Service{}, err

@@ -35,7 +35,27 @@ func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
+func (r *Repository) ResolveImportDestination(ctx context.Context, applicationKey, environmentKey string) (domaindelivery.ImportDestination, error) {
+	var destination domaindelivery.ImportDestination
+	err := dbtx.DB(ctx, r.db).Raw(`
+		SELECT COALESCE(a.id, ''), COALESCE(e.id, ''), COALESCE(b.id, '')
+		FROM (SELECT 1) AS anchor
+		LEFT JOIN applications a ON a.app_key = ?
+		LEFT JOIN delivery_environments e ON e.environment_key = ?
+		LEFT JOIN application_environments b ON b.application_id = a.id AND b.environment_id = e.id
+	`, applicationKey, environmentKey).Row().Scan(&destination.ApplicationID, &destination.EnvironmentID, &destination.BindingID)
+	if err != nil {
+		return destination, fmt.Errorf("resolve import destination: %w", err)
+	}
+	return destination, nil
+}
+
 func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error) {
+	for _, workload := range input.Workloads {
+		if workload.Source == nil || workload.Source.Resource.UID == "" || workload.Source.SpecDigest == "" {
+			return domaindelivery.KubernetesServiceImportResult{}, fmt.Errorf("%w: live source identity is required", apperrors.ErrInvalidArgument)
+		}
+	}
 	result := domaindelivery.KubernetesServiceImportResult{OwnershipMode: input.OwnershipMode}
 	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		// ponytail: namespace-scoped serialization; narrow to per-resource locks if import throughput demands it.
@@ -55,6 +75,9 @@ func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaind
 		bindingID, bindingCreated, err := importApplicationEnvironment(tx, application.ID, environment.ID, input.OwnershipMode)
 		if err != nil {
 			return err
+		}
+		if !matchesImportDestination(input.Destination, application, environment, bindingID, bindingCreated) {
+			return fmt.Errorf("%w: import destination changed; preview and authorize again", apperrors.ErrConflict)
 		}
 		result.Application = application
 		result.Environment = environment
@@ -188,7 +211,7 @@ func importApplicationEnvironment(tx *gorm.DB, applicationID, environmentID, own
 }
 
 func importApplicationService(tx *gorm.DB, applicationID string, input domaindelivery.KubernetesServiceImportInput, workload domaindelivery.KubernetesWorkloadImportInput) (domaindelivery.KubernetesImportedService, error) {
-	serviceKey := "k8s-" + strings.ToLower(workload.WorkloadKind) + "-" + workload.WorkloadName
+	serviceKey := domaindelivery.KubernetesImportServiceKey(input.ClusterID, input.Namespace, workload)
 	expected := kubernetesImportMetadata(input, workload)
 	metadata, _ := json.Marshal(expected)
 	id := uuid.NewString()
@@ -206,13 +229,8 @@ func importApplicationService(tx *gorm.DB, applicationID string, input domaindel
 	if err := tx.Raw(`SELECT id, service_key, service_name, metadata FROM application_services WHERE application_id = ? AND service_key = ? LIMIT 1`, applicationID, serviceKey).Row().Scan(&item.ID, &item.Key, &item.Name, &rawMetadata); err != nil {
 		return domaindelivery.KubernetesImportedService{}, fmt.Errorf("read imported application service %s: %w", serviceKey, err)
 	}
-	if !item.Created && !matchesImportMetadata(rawMetadata, expected, "ownershipMode") {
+	if !item.Created && !matchesImportMetadata(rawMetadata, expected, "resourceSource") {
 		return domaindelivery.KubernetesImportedService{}, fmt.Errorf("%w: application service %s is already owned by another source", apperrors.ErrConflict, serviceKey)
-	}
-	if !item.Created {
-		if err := tx.Exec(`UPDATE application_services SET metadata = ?, updated_at = ? WHERE id = ?`, string(metadata), now, item.ID).Error; err != nil {
-			return domaindelivery.KubernetesImportedService{}, fmt.Errorf("update imported application service %s: %w", serviceKey, err)
-		}
 	}
 	return item, nil
 }
@@ -224,29 +242,35 @@ func importReleaseTarget(tx *gorm.DB, bindingID string, service domaindelivery.K
 	var item domaindelivery.KubernetesImportedTarget
 	var existingBindingID string
 	var rawMetadata []byte
-	err := tx.Raw(`
+	query := `
 		SELECT id, application_environment_id, workload_kind, workload_name, metadata
 		FROM release_targets
 		WHERE cluster_id = ? AND namespace = ? AND workload_kind = ? AND workload_name = ?
+		AND COALESCE(metadata->>'crdName', '') = ?
+	`
+	args := []any{input.ClusterID, input.Namespace, workload.WorkloadKind, workload.WorkloadName, workload.CRDName}
+	if workload.WorkloadKind == "CustomResource" {
+		// A CR may be referenced by several applications; it remains owned by its operator.
+		query += ` AND application_environment_id = ?`
+		args = append(args, bindingID)
+	}
+	query += `
 		ORDER BY created_at ASC
 		LIMIT 1
-	`, input.ClusterID, input.Namespace, workload.WorkloadKind, workload.WorkloadName).Row().Scan(&item.ID, &existingBindingID, &item.WorkloadKind, &item.WorkloadName, &rawMetadata)
+	`
+	err := tx.Raw(query, args...).Row().Scan(&item.ID, &existingBindingID, &item.WorkloadKind, &item.WorkloadName, &rawMetadata)
 	if err == nil {
-		if existingBindingID != bindingID || !matchesImportMetadata(rawMetadata, expected, "ownershipMode") {
+		if existingBindingID != bindingID || !matchesImportMetadata(rawMetadata, expected, "resourceSource") {
 			return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("%w: release target %s/%s is already owned by another source", apperrors.ErrConflict, workload.WorkloadKind, workload.WorkloadName)
 		}
-		executorKind, enabled := importTargetExecution(input.OwnershipMode, "k8s_job_runner")
-		metadata, _ := json.Marshal(expected)
-		if updateErr := tx.Exec(`UPDATE release_targets SET executor_kind = ?, metadata = ?, enabled = ?, updated_at = ? WHERE id = ?`, executorKind, string(metadata), enabled, time.Now().UTC(), item.ID).Error; updateErr != nil {
-			return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("update imported release target %s/%s: %w", workload.WorkloadKind, workload.WorkloadName, updateErr)
-		}
+		item.Source = workload.Source
 		return item, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("read imported release target: %w", err)
 	}
 	metadata, _ := json.Marshal(expected)
-	item = domaindelivery.KubernetesImportedTarget{ID: uuid.NewString(), WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName, Created: true}
+	item = domaindelivery.KubernetesImportedTarget{ID: uuid.NewString(), WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName, Created: true, Source: workload.Source}
 	now := time.Now().UTC()
 	executorKind, enabled := importTargetExecution(input.OwnershipMode, "k8s_job_runner")
 	if err := tx.Exec(`
@@ -259,10 +283,32 @@ func importReleaseTarget(tx *gorm.DB, bindingID string, service domaindelivery.K
 }
 
 func kubernetesImportMetadata(input domaindelivery.KubernetesServiceImportInput, workload domaindelivery.KubernetesWorkloadImportInput) map[string]string {
-	return map[string]string{
+	metadata := map[string]string{
 		"importSource": "kubernetes", "ownershipMode": input.OwnershipMode, "clusterId": input.ClusterID,
 		"namespace": input.Namespace, "workloadKind": workload.WorkloadKind, "workloadName": workload.WorkloadName,
 	}
+	if workload.Source != nil {
+		raw, _ := json.Marshal(workload.Source)
+		metadata["resourceSource"] = string(raw)
+		metadata["resourceUid"] = workload.Source.Resource.UID
+		metadata["resourceApiVersion"] = workload.Source.Resource.APIVersion
+		metadata["resourceKind"] = workload.Source.Resource.Kind
+		metadata["crdName"] = workload.CRDName
+	}
+	return metadata
+}
+
+func matchesImportDestination(expected domaindelivery.ImportDestination, app, env domaindelivery.KubernetesImportEntityRef, bindingID string, bindingCreated bool) bool {
+	return matchesImportDestinationEntity(expected.ApplicationID, app.ID, app.Created) &&
+		matchesImportDestinationEntity(expected.EnvironmentID, env.ID, env.Created) &&
+		matchesImportDestinationEntity(expected.BindingID, bindingID, bindingCreated)
+}
+
+func matchesImportDestinationEntity(expected, actual string, created bool) bool {
+	if created {
+		return expected == ""
+	}
+	return expected != "" && expected == actual
 }
 
 func importHelmApplicationService(tx *gorm.DB, applicationID string, input domaindelivery.HelmReleaseImportInput, release domaindelivery.HelmReleaseImportItem) (domaindelivery.HelmImportedService, error) {

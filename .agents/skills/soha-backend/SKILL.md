@@ -98,7 +98,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## CI Gate
 
-Use Go `1.27.2` and run the release-sensitive gate with the root workspace disabled:
+Use Go `1.27.3` and run the release-sensitive gate with the root workspace disabled:
 
 ```bash
 GOWORK=off go mod tidy

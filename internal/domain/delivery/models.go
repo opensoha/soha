@@ -674,26 +674,30 @@ type ApplicationDetail struct {
 }
 
 type ApplicationRuntimeWorkload struct {
-	ApplicationEnvironmentID string                 `json:"applicationEnvironmentId"`
-	ServiceID                string                 `json:"serviceId,omitempty"`
-	ServiceKey               string                 `json:"serviceKey,omitempty"`
-	ClusterID                string                 `json:"clusterId"`
-	Namespace                string                 `json:"namespace"`
-	WorkloadKind             string                 `json:"workloadKind"`
-	WorkloadName             string                 `json:"workloadName"`
-	Labels                   map[string]string      `json:"labels,omitempty"`
-	Selector                 map[string]string      `json:"selector,omitempty"`
-	DesiredReplicas          int32                  `json:"desiredReplicas"`
-	ReadyReplicas            int32                  `json:"readyReplicas"`
-	UpdatedReplicas          int32                  `json:"updatedReplicas"`
-	AvailableReplicas        int32                  `json:"availableReplicas"`
-	HealthStatus             string                 `json:"healthStatus"`
-	BuildSource              *domainapp.BuildSource `json:"buildSource,omitempty"`
-	LatestBundle             *ReleaseBundle         `json:"latestBundle,omitempty"`
-	LatestExecutionTask      *ExecutionTask         `json:"latestExecutionTask,omitempty"`
-	LatestBuild              *domainbuild.Record    `json:"latestBuild,omitempty"`
-	LatestWorkflow           *domainworkflow.Run    `json:"latestWorkflow,omitempty"`
-	LatestRelease            *domainrelease.Record  `json:"latestRelease,omitempty"`
+	NativeObservationAvailable bool                                   `json:"-"`
+	TargetID                   string                                 `json:"targetId,omitempty"`
+	Source                     *domainresource.ResourceSourceSnapshot `json:"source,omitempty"`
+	SourceStatus               string                                 `json:"sourceStatus,omitempty"`
+	ApplicationEnvironmentID   string                                 `json:"applicationEnvironmentId"`
+	ServiceID                  string                                 `json:"serviceId,omitempty"`
+	ServiceKey                 string                                 `json:"serviceKey,omitempty"`
+	ClusterID                  string                                 `json:"clusterId"`
+	Namespace                  string                                 `json:"namespace"`
+	WorkloadKind               string                                 `json:"workloadKind"`
+	WorkloadName               string                                 `json:"workloadName"`
+	Labels                     map[string]string                      `json:"labels,omitempty"`
+	Selector                   map[string]string                      `json:"selector,omitempty"`
+	DesiredReplicas            int32                                  `json:"desiredReplicas"`
+	ReadyReplicas              int32                                  `json:"readyReplicas"`
+	UpdatedReplicas            int32                                  `json:"updatedReplicas"`
+	AvailableReplicas          int32                                  `json:"availableReplicas"`
+	HealthStatus               string                                 `json:"healthStatus"`
+	BuildSource                *domainapp.BuildSource                 `json:"buildSource,omitempty"`
+	LatestBundle               *ReleaseBundle                         `json:"latestBundle,omitempty"`
+	LatestExecutionTask        *ExecutionTask                         `json:"latestExecutionTask,omitempty"`
+	LatestBuild                *domainbuild.Record                    `json:"latestBuild,omitempty"`
+	LatestWorkflow             *domainworkflow.Run                    `json:"latestWorkflow,omitempty"`
+	LatestRelease              *domainrelease.Record                  `json:"latestRelease,omitempty"`
 }
 
 type ApplicationRuntimeSummary struct {
@@ -853,22 +857,25 @@ type KubernetesRelatedResource struct {
 }
 
 type KubernetesImportCandidate struct {
-	ClusterID        string                      `json:"clusterId"`
-	Namespace        string                      `json:"namespace"`
-	WorkloadKind     string                      `json:"workloadKind"`
-	WorkloadName     string                      `json:"workloadName"`
-	DesiredReplicas  int                         `json:"desiredReplicas"`
-	ReadyReplicas    int                         `json:"readyReplicas"`
-	Containers       []string                    `json:"containers,omitempty"`
-	Labels           map[string]string           `json:"labels,omitempty"`
-	RelatedResources []KubernetesRelatedResource `json:"relatedResources"`
+	ClusterID        string                                 `json:"clusterId"`
+	Namespace        string                                 `json:"namespace"`
+	WorkloadKind     string                                 `json:"workloadKind"`
+	WorkloadName     string                                 `json:"workloadName"`
+	DesiredReplicas  int                                    `json:"desiredReplicas"`
+	ReadyReplicas    int                                    `json:"readyReplicas"`
+	Containers       []string                               `json:"containers,omitempty"`
+	Labels           map[string]string                      `json:"labels,omitempty"`
+	RelatedResources []KubernetesRelatedResource            `json:"relatedResources"`
+	Source           *domainresource.ResourceSourceSnapshot `json:"source,omitempty"`
 }
 
 type KubernetesImportCandidateFilter struct {
-	ClusterID string
-	Namespace string
-	Search    string
-	Limit     int
+	ClusterID    string
+	Namespace    string
+	Search       string
+	Limit        int
+	WorkloadKind string
+	CRDName      string
 }
 
 type KubernetesImportCandidatePage struct {
@@ -877,8 +884,19 @@ type KubernetesImportCandidatePage struct {
 }
 
 type KubernetesWorkloadImportInput struct {
-	WorkloadKind string `json:"workloadKind"`
-	WorkloadName string `json:"workloadName"`
+	WorkloadKind       string                                 `json:"workloadKind"`
+	WorkloadName       string                                 `json:"workloadName"`
+	ExpectedUID        string                                 `json:"expectedUid,omitempty"`
+	ExpectedSpecDigest string                                 `json:"expectedSpecDigest,omitempty"`
+	CRDName            string                                 `json:"crdName,omitempty"`
+	Source             *domainresource.ResourceSourceSnapshot `json:"-"`
+}
+
+// ImportDestination is resolved and authorized by the service, never supplied by a client.
+type ImportDestination struct {
+	ApplicationID string
+	EnvironmentID string
+	BindingID     string
 }
 
 type KubernetesServiceImportInput struct {
@@ -890,6 +908,7 @@ type KubernetesServiceImportInput struct {
 	EnvironmentName string                          `json:"environmentName"`
 	OwnershipMode   string                          `json:"ownershipMode"`
 	Workloads       []KubernetesWorkloadImportInput `json:"workloads"`
+	Destination     ImportDestination               `json:"-"`
 }
 
 type KubernetesImportEntityRef struct {
@@ -909,10 +928,11 @@ type KubernetesImportedService struct {
 }
 
 type KubernetesImportedTarget struct {
-	ID           string `json:"id"`
-	WorkloadKind string `json:"workloadKind"`
-	WorkloadName string `json:"workloadName"`
-	Created      bool   `json:"created"`
+	ID           string                                 `json:"id"`
+	WorkloadKind string                                 `json:"workloadKind"`
+	WorkloadName string                                 `json:"workloadName"`
+	Created      bool                                   `json:"created"`
+	Source       *domainresource.ResourceSourceSnapshot `json:"source,omitempty"`
 }
 
 type KubernetesServiceImportResult struct {
