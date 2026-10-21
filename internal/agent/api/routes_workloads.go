@@ -31,6 +31,7 @@ func registerPlatformPodRoutes(platform *gin.RouterGroup, client *k8sagent.Clien
 		apiresponse.Items(c, http.StatusOK, items)
 	})
 	platform.GET("/workloads/pods/:name/detail", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
 		namespace := c.DefaultQuery("namespace", "default")
 		item, err := client.GetPodDetail(c.Request.Context(), namespace, c.Param("name"))
 		if err != nil {
@@ -40,6 +41,11 @@ func registerPlatformPodRoutes(platform *gin.RouterGroup, client *k8sagent.Clien
 		apiresponse.Item(c, http.StatusOK, item)
 	})
 	platform.GET("/workloads/pods/:name/logs", func(c *gin.Context) {
+		expectedUID, valid := podExpectedUID(c)
+		if !valid {
+			return
+		}
+		c.Header("Cache-Control", "no-store")
 		namespace := c.DefaultQuery("namespace", "default")
 		tailLines := int64(parseLimit(c.Query("tailLines"), 200))
 		sinceSeconds := int64(parseLimit(c.Query("sinceSeconds"), 0))
@@ -52,6 +58,7 @@ func registerPlatformPodRoutes(platform *gin.RouterGroup, client *k8sagent.Clien
 			tailLines,
 			sinceSeconds,
 			previous,
+			expectedUID,
 		)
 		if err != nil {
 			writeError(c, err)

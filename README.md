@@ -184,3 +184,9 @@ helm install soha-hermes-agent opensoha/soha-hermes-agent \
 
 This repository is licensed under the Apache License 2.0. See
 [LICENSE](./LICENSE) for the full license text.
+
+### Pod session identity
+
+Pod list/detail responses include `uid`. For saved log/terminal sessions, forward the original identity as `expectedUid` on `/api/v1/platform/workloads/pods/:name/logs`, `/logs/stream` and `/terminal`, alongside namespace/container. The Agent performs a live UID read before opening the Kubernetes subresource; a replacement or missing Pod is rejected. Omission remains compatible with legacy clients and must not be used to restore a saved session. Logs/exec still require normal Agent authentication, action policy and Kubernetes RBAC. Kubernetes log/exec APIs offer no atomic UID precondition.
+
+Terminal clients must read frames so ping/pong can run. A peer without pong is disconnected after 45 seconds; writes have finite deadlines. Closing the socket or sending `{ "type": "close" }` cancels the upstream; disconnect never requires an `exit` command. Only resource descriptors belong in persistent browser storage, never tickets, input or output.

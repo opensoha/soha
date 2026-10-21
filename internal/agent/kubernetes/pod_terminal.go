@@ -10,7 +10,10 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue remotecommand.TerminalSizeQueue) error {
+func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue remotecommand.TerminalSizeQueue, expectedUID string) error {
+	if err := c.CheckPodUID(ctx, namespace, name, expectedUID); err != nil {
+		return err
+	}
 	request := c.typed.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(name).

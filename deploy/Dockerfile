@@ -11,7 +11,7 @@ RUN apk add --no-cache git ca-certificates
 COPY go.mod go.sum ./soha-agent/
 COPY --from=contracts go.mod go.sum ./soha-contracts/
 RUN for attempt in 1 2 3; do \
-      printf 'go 1.27.2\n\nuse (\n\t./soha-agent\n\t./soha-contracts\n)\n' > go.work; \
+      printf 'go 1.27.3\n\nuse (\n\t./soha-agent\n\t./soha-contracts\n)\n' > go.work; \
       (cd soha-agent && go mod download) && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
       sleep 2; \
@@ -26,13 +26,13 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
 
 FROM docker:29.4.0-cli@sha256:2efe7c8e806b35050def6ba1ba0ddad67b521a0a6d37f4910b3d88f11b495d03 AS buildpacks-runtime
 ARG TARGETARCH
-RUN apk add --no-cache ca-certificates git openssh-client tzdata \
+RUN apk add --no-cache ca-certificates curl git openssh-client tzdata \
     && case "$TARGETARCH" in \
          arm64) PACK_ARCH=linux-arm64; PACK_SHA=091ccb213823656c727731537ef8f1000eb4dc3ec61641506653e7f9d6da0c5e ;; \
          amd64) PACK_ARCH=linux; PACK_SHA=dc0ee1e931cf8a106d7555a01a214864f9acb60b77adf15d69b74df4404758e9 ;; \
          *) echo "unsupported Buildpacks architecture" >&2; exit 1 ;; \
        esac \
-    && wget -q "https://github.com/buildpacks/pack/releases/download/v0.40.9/pack-v0.40.9-${PACK_ARCH}.tgz" -O /tmp/pack.tgz \
+    && curl -fL --retry 3 --max-time 120 "https://github.com/buildpacks/pack/releases/download/v0.40.9/pack-v0.40.9-${PACK_ARCH}.tgz" --output /tmp/pack.tgz \
     && printf '%s  /tmp/pack.tgz\n' "$PACK_SHA" | sha256sum -c - \
     && tar -xzf /tmp/pack.tgz -C /usr/local/bin pack \
     && rm /tmp/pack.tgz \

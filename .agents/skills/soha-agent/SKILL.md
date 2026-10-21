@@ -66,7 +66,7 @@ control plane, and calls back with task, Docker, or Agent Runtime results.
 
 ## CI Gate
 
-Use Go `1.27.2` and run the full gate for dependency, packaging, Dockerfile, workflow, or release changes:
+Use Go `1.27.3` and run the full gate for dependency, packaging, Dockerfile, workflow, or release changes:
 
 ```bash
 GOWORK=off go mod tidy

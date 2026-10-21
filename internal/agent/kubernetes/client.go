@@ -213,7 +213,10 @@ func (c *Client) GetPodDetail(ctx context.Context, namespace, name string) (doma
 	return c.buildPodDetail(queryCtx, *item), nil
 }
 
-func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
+	if err := c.CheckPodUID(ctx, namespace, name, expectedUID); err != nil {
+		return domainresource.PodLogsView{}, err
+	}
 	queryCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	options := &corev1.PodLogOptions{Container: container, Previous: previous}
@@ -1649,6 +1652,7 @@ func mapPod(item corev1.Pod) domainresource.PodView {
 		}
 	}
 	return domainresource.PodView{
+		UID:                    string(item.UID),
 		Name:                   item.Name,
 		Namespace:              item.Namespace,
 		Phase:                  string(item.Status.Phase),
@@ -1697,6 +1701,7 @@ func mapPodDetail(item corev1.Pod) domainresource.PodDetailView {
 		startTime = item.Status.StartTime.Time.Format(time.RFC3339)
 	}
 	return domainresource.PodDetailView{
+		UID:                string(item.UID),
 		Name:               item.Name,
 		Namespace:          item.Namespace,
 		Phase:              string(item.Status.Phase),
