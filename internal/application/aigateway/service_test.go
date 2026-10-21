@@ -1087,7 +1087,7 @@ func (s *fakeResourceService) GetPodDetail(_ context.Context, _ domainidentity.P
 	}, nil
 }
 
-func (s *fakeResourceService) GetPodLogs(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (s *fakeResourceService) GetPodLogs(_ context.Context, _ domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
 	s.readLogs = true
 	s.clusterID = clusterID
 	s.namespace = namespace

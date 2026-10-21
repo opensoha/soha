@@ -14,7 +14,7 @@ type PodReader interface {
 	ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error)
 	GetWorkloadOverview(context.Context, domainidentity.Principal, string, string) (domainresource.WorkloadOverviewView, error)
 	GetPodDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PodDetailView, error)
-	GetPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
+	GetPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, bool, string) (domainresource.PodLogsView, error)
 }
 
 type PodResourceEditor interface {
@@ -100,8 +100,8 @@ type WorkloadInventoryService interface {
 }
 
 type PodStreamService interface {
-	StreamPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, io.Writer) error
-	StreamPodTerminal(context.Context, domainidentity.Principal, string, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue) error
+	StreamPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, io.Writer, string) error
+	StreamPodTerminal(context.Context, domainidentity.Principal, string, string, string, string, string, io.Reader, io.Writer, io.Writer, domainresource.TerminalSizeQueue, string) error
 }
 
 type ClusterLogService interface {

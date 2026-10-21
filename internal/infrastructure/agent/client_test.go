@@ -193,6 +193,9 @@ func TestClientStreamPodLogsCopiesAgentStream(t *testing.T) {
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.String())
 		}
 		query := r.URL.Query()
+		if query.Get("expectedUid") != "uid-a" {
+			t.Error("expected UID was not forwarded")
+		}
 		if query.Get("namespace") != "platform" || query.Get("container") != "app" || query.Get("tailLines") != "10" || query.Get("sinceSeconds") != "5" {
 			t.Fatalf("query = %s, want namespace/container/tail/since", r.URL.RawQuery)
 		}
@@ -212,7 +215,7 @@ func TestClientStreamPodLogsCopiesAgentStream(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := client.StreamPodLogs(context.Background(), "platform", "api-0", "app", 10, 5, &out); err != nil {
+	if err := client.StreamPodLogs(context.Background(), "platform", "api-0", "app", 10, 5, &out, "uid-a"); err != nil {
 		t.Fatalf("StreamPodLogs() error = %v", err)
 	}
 	if out.String() != "line 1\nline 2\n" {
@@ -268,7 +271,12 @@ func TestClientQueriesAndStreamsAggregatePodLogs(t *testing.T) {
 
 func TestClientStreamPodTerminalBridgesWebSocketMessages(t *testing.T) {
 	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
-	server := httptest.NewServer(terminalTestHandler(t, upgrader))
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("expectedUid") != "uid-a" {
+			t.Error("expected UID was not forwarded")
+		}
+		terminalTestHandler(t, upgrader).ServeHTTP(w, r)
+	}))
 	defer server.Close()
 
 	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{
@@ -284,7 +292,7 @@ func TestClientStreamPodTerminalBridgesWebSocketMessages(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err = client.StreamPodTerminal(context.Background(), "platform", "api-0", "app", "/bin/sh", strings.NewReader("whoami\n"), &stdout, &stderr, &oneShotTerminalSizeQueue{})
+	err = client.StreamPodTerminal(context.Background(), "platform", "api-0", "app", "/bin/sh", strings.NewReader("whoami\n"), &stdout, &stderr, &oneShotTerminalSizeQueue{}, "uid-a")
 	if err != nil {
 		t.Fatalf("StreamPodTerminal() error = %v", err)
 	}
@@ -824,5 +832,58 @@ func TestDrainUsesLongRequestTimeoutWithoutChangingSharedClient(t *testing.T) {
 	cancel()
 	if err := client.DrainNode(ctx, "node", domainresource.NodeDrainInput{}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled drain: %v", err)
+	}
+}
+
+func TestAgentTerminalCancellationClosesUpstreamSocket(t *testing.T) {
+	opened := make(chan struct{})
+	released := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := (&websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}).Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		defer close(released)
+		close(opened)
+		for {
+			var message terminalMessage
+			if err := conn.ReadJSON(&message); err != nil || message.Type == "close" {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	client, err := NewRegistry(time.Second).ClientFor(domaincluster.Connection{Summary: domaincluster.Summary{ID: "cluster-a"}, Metadata: map[string]any{"endpoint": server.URL}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stdin, writer := io.Pipe()
+	defer func() { _ = stdin.Close() }()
+	defer func() { _ = writer.Close() }()
+	done := make(chan error, 1)
+	go func() {
+		done <- client.StreamPodTerminal(ctx, "test", "api", "main", "/bin/sh", stdin, io.Discard, io.Discard, nil, "uid-a")
+	}()
+	select {
+	case <-opened:
+	case <-time.After(2 * time.Second):
+		t.Fatal("not opened")
+	}
+	cancel()
+	select {
+	case <-released:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Agent socket not released")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Core caller not released")
 	}
 }

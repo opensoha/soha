@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -35,6 +36,7 @@ func (h *podResourceHandler) GetWorkloadOverview(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 func (h *podResourceHandler) GetPodDetail(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	item, err := h.reader.GetPodDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"))
@@ -54,12 +56,17 @@ func (h *podResourceHandler) DeletePod(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 func (h *podResourceHandler) GetPodLogs(c *gin.Context) {
+	expectedUID, valid := podExpectedUID(c)
+	if !valid {
+		return
+	}
+	c.Header("Cache-Control", "no-store")
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.DefaultQuery("namespace", "default")
 	tailLines := int64(parseLimit(c.Query("tailLines"), 200))
 	sinceSeconds := int64(parseLimit(c.Query("sinceSeconds"), 0))
 	previous := strings.EqualFold(c.Query("previous"), "true")
-	item, err := h.reader.GetPodLogs(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), c.Query("container"), tailLines, sinceSeconds, previous)
+	item, err := h.reader.GetPodLogs(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName"), c.Query("container"), tailLines, sinceSeconds, previous, expectedUID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -672,4 +679,24 @@ func (h *deploymentResourceHandler) RollbackDeployment(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+// An absent UID keeps the legacy protocol; an explicitly malformed UID never downgrades it.
+func podExpectedUID(c *gin.Context) (string, bool) {
+	query, err := url.ParseQuery(c.Request.URL.RawQuery)
+	if err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "malformed session query")
+		c.Abort()
+		return "", false
+	}
+	values, present := query["expectedUid"]
+	if !present {
+		return "", true
+	}
+	if len(values) != 1 || strings.TrimSpace(values[0]) == "" {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "expectedUid must be one non-empty value")
+		c.Abort()
+		return "", false
+	}
+	return values[0], true
 }

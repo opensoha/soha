@@ -1002,7 +1002,7 @@ func (s *Service) invokeKubernetesPodTool(ctx context.Context, principal domaini
 		if req.PodName == "" {
 			return nil, related, fmt.Errorf("%w: podName is required", apperrors.ErrInvalidArgument)
 		}
-		item, err := s.resources.GetPodLogs(ctx, principal, req.ClusterID, req.Namespace, req.PodName, req.Container, req.TailLines, req.SinceSeconds, req.Previous)
+		item, err := s.resources.GetPodLogs(ctx, principal, req.ClusterID, req.Namespace, req.PodName, req.Container, req.TailLines, req.SinceSeconds, req.Previous, "")
 		item = redactPodLogs(item)
 		related["podName"] = req.PodName
 		related["container"] = strings.TrimSpace(req.Container)

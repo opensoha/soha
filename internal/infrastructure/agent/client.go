@@ -341,11 +341,14 @@ func (c *Client) GetPodDetail(ctx context.Context, namespace, name string) (doma
 	return payload.Data, nil
 }
 
-func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
+func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool, expectedUID string) (domainresource.PodLogsView, error) {
 	var payload struct {
 		Data domainresource.PodLogsView `json:"data"`
 	}
 	values := url.Values{}
+	if expectedUID != "" {
+		values.Set("expectedUid", expectedUID)
+	}
 	values.Set("namespace", namespace)
 	if container != "" {
 		values.Set("container", container)
@@ -387,8 +390,11 @@ func (c *Client) GetPodYAML(ctx context.Context, namespace, name string) (domain
 	return payload.Data, nil
 }
 
-func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer) error {
+func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer, expectedUID string) error {
 	values := url.Values{}
+	if expectedUID != "" {
+		values.Set("expectedUid", expectedUID)
+	}
 	values.Set("namespace", namespace)
 	if container != "" {
 		values.Set("container", container)
@@ -454,8 +460,11 @@ func (c *Client) ExecPod(ctx context.Context, namespace, name, container, comman
 	return payload.Data, nil
 }
 
-func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue) error {
+func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue domainresource.TerminalSizeQueue, expectedUID string) error {
 	values := url.Values{}
+	if expectedUID != "" {
+		values.Set("expectedUid", expectedUID)
+	}
 	values.Set("namespace", namespace)
 	if container != "" {
 		values.Set("container", container)
@@ -571,6 +580,9 @@ func (c *Client) forwardAgentTerminalResizes(ctx context.Context, conn *websocke
 func writeAgentTerminalMessage(conn *websocket.Conn, writeMu *sync.Mutex, message terminalMessage) error {
 	writeMu.Lock()
 	defer writeMu.Unlock()
+	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return err
+	}
 	return conn.WriteJSON(message)
 }
 

@@ -79,7 +79,11 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 				c.Abort()
 				return
 			}
-			principal, accessCtx, err := streamParser.ParseStreamTicket(c.Request.Context(), ticket, c.Request.URL.Path)
+			requestTarget := c.Request.URL.Path
+			if c.Request.URL.Query().Has("expectedUid") {
+				requestTarget = c.Request.URL.RequestURI()
+			}
+			principal, accessCtx, err := streamParser.ParseStreamTicket(c.Request.Context(), ticket, requestTarget)
 			if err != nil {
 				_ = c.Error(err)
 				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid stream ticket")
