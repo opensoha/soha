@@ -227,4 +227,20 @@ describe('PodLogViewer', () => {
     expect(mocks.downloadText).toHaveBeenCalledOnce()
     expect(String(mocks.downloadText.mock.calls[0]?.[1]).length).toBeLessThan(70_000)
   })
+  it('does not reconnect after a pending snapshot resolves following unmount', async () => {
+    let resolve!: (value: { data: { content: string } }) => void
+    mocks.apiGet.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        }),
+    )
+    await renderViewer()
+    await act(async () => roots.pop()!.unmount())
+    await act(async () => {
+      resolve({ data: { content: 'late output' } })
+      await Promise.resolve()
+    })
+    expect(WebSocketMock.instances).toHaveLength(0)
+  })
 })

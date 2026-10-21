@@ -41,16 +41,6 @@ import { podQueries } from './queries'
 
 const { Link, Text } = Typography
 
-const PodLogViewer = lazy(async () => {
-  const mod = await import('@/components/pod-log-viewer')
-  return { default: mod.PodLogViewer }
-})
-
-const PodTerminal = lazy(async () => {
-  const mod = await import('@/components/pod-terminal')
-  return { default: mod.PodTerminal }
-})
-
 const ResourceMetricsPanel = lazy(async () => {
   const mod = await import('@/components/resource-metrics-panel')
   return { default: mod.ResourceMetricsPanel }
@@ -232,6 +222,7 @@ export function PodDetailPage() {
       kind: 'logs',
       namespace: detailNamespace,
       podName,
+      podUid: podDetail?.uid,
       streamingDisabledReason: logsStreamingDisabledReason,
     })
   }
@@ -244,6 +235,7 @@ export function PodDetailPage() {
       kind: 'terminal',
       namespace: detailNamespace,
       podName,
+      podUid: podDetail?.uid,
       shell: terminalShell,
     })
   }
@@ -657,31 +649,39 @@ export function PodDetailPage() {
           description={podLogsCapability.reason}
         />
       ) : (
-        <Suspense fallback={<Spin size="large" />}>
-          <PodLogViewer
-            clusterId={clusterId}
-            namespace={detailNamespace}
-            podName={podName}
-            container={container || undefined}
-            active={activeTabKey === 'logs'}
-            containerOptions={containerOptions}
-            onContainerChange={setContainer}
-            streamingDisabledReason={logsStreamingDisabledReason}
-            toolbarExtra={
-              <Button icon={<FileTextOutlined />} size="small" onClick={openLogSession}>
-                {localeCode === 'zh_CN' ? '打开日志会话' : 'Open log session'}
-              </Button>
-            }
-            onOpenLogCenter={() => {
-              const query = new URLSearchParams()
-              if (clusterId) query.set('cluster', clusterId)
-              if (detailNamespace) query.set('namespace', detailNamespace)
-              query.append('pod', podName)
-              if (container) query.append('container', container)
-              navigate(`/monitoring-workbench/logs?${query.toString()}`)
-            }}
-          />
-        </Suspense>
+        <Card className="soha-detail-card">
+          <Space wrap>
+            <Select
+              aria-label={localeCode === 'zh_CN' ? '日志容器' : 'Log container'}
+              allowClear
+              size="small"
+              style={{ width: 220 }}
+              options={containerOptions}
+              value={container || undefined}
+              onChange={(value) => setContainer(String(value || ''))}
+            />
+            <Button icon={<FileTextOutlined />} onClick={openLogSession}>
+              {localeCode === 'zh_CN' ? '打开日志会话' : 'Open log session'}
+            </Button>
+            <Button
+              onClick={() => {
+                const query = new URLSearchParams()
+                if (clusterId) query.set('cluster', clusterId)
+                if (detailNamespace) query.set('namespace', detailNamespace)
+                query.append('pod', podName)
+                if (container) query.append('container', container)
+                navigate(`/monitoring-workbench/logs?${query.toString()}`)
+              }}
+            >
+              {localeCode === 'zh_CN' ? '在日志中心打开' : 'Open in log center'}
+            </Button>
+            <Text type="secondary">
+              {localeCode === 'zh_CN'
+                ? '日志与终端统一在实时会话中管理，恢复连接前重新校验 UID 与权限。'
+                : 'Manage logs and terminals in live sessions; reconnect revalidates UID and permissions.'}
+            </Text>
+          </Space>
+        </Card>
       ),
   }
 
@@ -712,60 +712,43 @@ export function PodDetailPage() {
           description={terminalDisabledReason}
         />
       ) : (
-        <div className="soha-pod-terminal-tab-card">
-          <Suspense
-            fallback={
-              <Card className="soha-detail-card">
-                <Spin size="large" />
-              </Card>
-            }
-          >
-            <PodTerminal
-              clusterId={clusterId}
-              namespace={detailNamespace}
-              podName={podName}
-              container={container || undefined}
-              shell={terminalShell}
-              toolbarContent={
-                <div className="soha-terminal-controls">
-                  <div className="soha-terminal-control-group">
-                    <Text strong className="text-xs">
-                      {localeCode === 'zh_CN' ? '容器:' : 'Container:'}
-                    </Text>
-                    <Select
-                      size="small"
-                      placeholder={localeCode === 'zh_CN' ? '选择容器' : 'Select container'}
-                      value={container}
-                      onChange={(value) => setContainer(String(value || ''))}
-                      style={{ width: 220 }}
-                      options={containerOptions}
-                      allowClear
-                    />
-                  </div>
-                  <div className="soha-terminal-control-group">
-                    <Text strong className="text-xs">
-                      Shell:
-                    </Text>
-                    <Select
-                      size="small"
-                      value={terminalShell}
-                      onChange={(value) => setTerminalShell(String(value))}
-                      style={{ width: 180 }}
-                      options={[
-                        { value: '/bin/sh', label: '/bin/sh' },
-                        { value: '/bin/bash', label: '/bin/bash' },
-                        { value: '/bin/ash', label: '/bin/ash' },
-                      ]}
-                    />
-                  </div>
-                  <Button icon={<CodeOutlined />} size="small" onClick={openTerminalSession}>
-                    {localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'}
-                  </Button>
-                </div>
-              }
-            />
-          </Suspense>
-        </div>
+        <Card className="soha-detail-card">
+          <div className="soha-terminal-controls">
+            <div className="soha-terminal-control-group">
+              <Text strong className="text-xs">
+                {localeCode === 'zh_CN' ? '容器:' : 'Container:'}
+              </Text>
+              <Select
+                size="small"
+                placeholder={localeCode === 'zh_CN' ? '选择容器' : 'Select container'}
+                value={container}
+                onChange={(value) => setContainer(String(value || ''))}
+                style={{ width: 220 }}
+                options={containerOptions}
+                allowClear
+              />
+            </div>
+            <div className="soha-terminal-control-group">
+              <Text strong className="text-xs">
+                Shell:
+              </Text>
+              <Select
+                size="small"
+                value={terminalShell}
+                onChange={(value) => setTerminalShell(String(value))}
+                style={{ width: 180 }}
+                options={[
+                  { value: '/bin/sh', label: '/bin/sh' },
+                  { value: '/bin/bash', label: '/bin/bash' },
+                  { value: '/bin/ash', label: '/bin/ash' },
+                ]}
+              />
+            </div>
+            <Button icon={<CodeOutlined />} size="small" onClick={openTerminalSession}>
+              {localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'}
+            </Button>
+          </div>
+        </Card>
       ),
   }
 

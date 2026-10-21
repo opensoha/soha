@@ -46,6 +46,7 @@ const apiGetMock = vi.hoisted(() =>
           volumes: [],
           relatedResources: [],
           allowedActions: ['logs', 'exec'],
+          uid: 'uid-prometheus-0',
         },
       }
     }
@@ -298,16 +299,18 @@ describe('pod detail page lazy boundaries', () => {
     expect(testState.runtimeLoads).toEqual({ logs: 0, metrics: 1, terminal: 0 })
 
     await clickTab(container, '日志')
-    expect(container.querySelector('[data-testid="logs-panel"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="logs-panel"]')).toBeNull()
+    expect(container.textContent).toContain('打开日志会话')
     expect(container.textContent).toContain('在日志中心打开')
-    expect(testState.runtimeLoads.logs).toBe(1)
+    expect(testState.runtimeLoads.logs).toBe(0)
 
     await clickTab(container, '终端')
-    const terminalPanel = container.querySelector('[data-testid="terminal-panel"]')
-    expect(terminalPanel?.querySelector('.soha-terminal-controls')).not.toBeNull()
+    const terminalPanel = container.querySelector('.soha-terminal-controls')
+    expect(terminalPanel).not.toBeNull()
+    expect(container.querySelector('[data-testid="terminal-panel"]')).toBeNull()
     expect(terminalPanel?.textContent).toContain('容器:')
     expect(terminalPanel?.textContent).toContain('Shell:')
-    expect(testState.runtimeLoads.terminal).toBe(1)
+    expect(testState.runtimeLoads.terminal).toBe(0)
 
     await clickTab(container, '事件')
     expect(requestedPaths().some((path) => path.includes('/events?namespace=url-namespace'))).toBe(
@@ -352,6 +355,7 @@ describe('pod detail page lazy boundaries', () => {
       clusterId: 'url-cluster',
       container: 'prometheus',
       kind: 'logs',
+      podUid: 'uid-prometheus-0',
       namespace: 'url-namespace',
       podName: 'prometheus-0',
       streamingDisabledReason: undefined,
@@ -369,6 +373,7 @@ describe('pod detail page lazy boundaries', () => {
       clusterId: 'url-cluster',
       container: 'prometheus',
       kind: 'terminal',
+      podUid: 'uid-prometheus-0',
       namespace: 'url-namespace',
       podName: 'prometheus-0',
       shell: '/bin/sh',

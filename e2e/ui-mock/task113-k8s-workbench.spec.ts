@@ -902,7 +902,7 @@ for (const mode of ['pdb', 'unavailable', 'state-denied'] as const) {
       )
     }
     if (mode === 'unavailable')
-      await expect(dialog.getByRole('button', { name: '确认排空', exact: true })).toBeDisabled()
+      await expect(dialog.getByRole('button', { name: /^(?:loading )?确认排空$/ })).toBeDisabled()
     else await expect(dialog).toContainText('PodDisruptionBudget 阻止了驱逐，排水未完成。')
     expect(writes).toHaveLength(1)
     expect(new URL(writes[0]).pathname).toMatch(/\/drain$/)

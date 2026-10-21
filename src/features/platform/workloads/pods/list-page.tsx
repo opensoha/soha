@@ -583,6 +583,7 @@ export function WorkloadsPodsPage() {
                     kind: 'logs',
                     namespace: record.namespace,
                     podName: record.name,
+                    podUid: record.uid,
                     streamingDisabledReason:
                       podLogsCapability.status === 'partial' ? podLogsCapability.reason : undefined,
                   })
@@ -602,6 +603,7 @@ export function WorkloadsPodsPage() {
                     kind: 'terminal',
                     namespace: record.namespace,
                     podName: record.name,
+                    podUid: record.uid,
                     shell: '/bin/sh',
                   })
                 }}

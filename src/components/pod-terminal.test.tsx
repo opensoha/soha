@@ -187,4 +187,31 @@ describe('PodTerminal', () => {
     expect(resizeMessages[resizeMessages.length - 1]).toMatchObject({ cols: 85, rows: 30 })
     expect(messages().filter((message) => message.type === 'input')).toHaveLength(0)
   })
+  it('pins UID, revalidates every reconnect, and closes without injecting commands', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    roots.push(root)
+    const guard = vi.fn().mockResolvedValue(true)
+    await act(async () => {
+      root.render(
+        <PodTerminal
+          clusterId="cluster-a"
+          namespace="test"
+          podName="api"
+          expectedUid="uid-a"
+          beforeConnect={guard}
+        />,
+      )
+    })
+    const first = WebSocketMock.instances[0]
+    expect(new URL(first.url).searchParams.get('expectedUid')).toBe('uid-a')
+    first.readyState = WebSocketMock.OPEN
+    guard.mockResolvedValue(false)
+    await act(async () => container.querySelector('button')?.click())
+    expect(guard).toHaveBeenCalledTimes(2)
+    expect(WebSocketMock.instances).toHaveLength(1)
+    expect(first.readyState).toBe(3)
+    expect(first.sent.map((value) => JSON.parse(value).type)).toEqual(['close'])
+  })
 })

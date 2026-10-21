@@ -21,9 +21,13 @@ vi.mock('../workloads/pods/api', async (importOriginal) => ({
   getPodDetail: getPodDetailMock,
 }))
 
-const authorization = vi.hoisted(() => ({ allowed: true }))
+const authorization = vi.hoisted(() => ({ allowed: true, refetch: vi.fn() }))
 vi.mock('@/features/auth', () => ({
-  usePermissionSnapshot: () => ({ data: { data: {} }, isLoading: false }),
+  usePermissionSnapshot: () => ({
+    data: { data: {} },
+    isLoading: false,
+    refetch: authorization.refetch,
+  }),
   hasPermission: () => authorization.allowed,
   hasAllowedAction: (actions: string[] | undefined, action: string) =>
     actions?.includes(action) ?? false,
@@ -113,6 +117,7 @@ function SessionHarness() {
             kind: 'terminal',
             namespace: 'team-a',
             podName: 'pod-a',
+            podUid: 'uid-pod-a',
             shell: '/bin/sh',
           })
         }
@@ -127,6 +132,7 @@ function SessionHarness() {
             kind: 'logs',
             namespace: 'team-a',
             podName: 'pod-b',
+            podUid: 'uid-pod-b',
           })
         }
       >
@@ -140,6 +146,7 @@ function SessionHarness() {
             kind: 'terminal',
             namespace: 'team-b',
             podName: 'pod-c',
+            podUid: 'uid-pod-c',
           })
         }
       >
@@ -213,10 +220,24 @@ beforeAll(() => {
 })
 
 beforeEach(() => {
+  authorization.refetch.mockImplementation(async () => ({ data: { data: {} }, isError: false }))
   authorization.allowed = true
   localStorage.clear()
   getPodDetailMock.mockReset()
-  getPodDetailMock.mockResolvedValue({ containers: [], allowedActions: ['logs', 'exec'] })
+  getPodDetailMock.mockImplementation(async ({ name }: { name: string }) => ({
+    uid: 'uid-' + name,
+    containers:
+      name === 'pod-a'
+        ? [{ name: 'api' }, { name: 'sidecar', role: 'sidecar' }]
+        : name === 'pod-b'
+          ? [
+              { name: 'prepare', role: 'init' },
+              { name: 'sidecar', role: 'sidecar' },
+              { name: 'worker', role: 'main' },
+            ]
+          : [{ name: 'prepare', role: 'init' }, { name: 'worker' }],
+    allowedActions: ['logs', 'exec'],
+  }))
   usePlatformScopeStore.setState({ clusterId: 'cluster-a', namespace: 'team-a' })
 })
 
@@ -471,6 +492,11 @@ describe('realtime session dock', () => {
     await click(button('switch-environment'))
     expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
     await click(container.querySelector('.soha-header-realtime-sessions'))
+    await click(
+      Array.from(container.querySelectorAll('button')).find(
+        (item) => item.textContent === '重新连接',
+      ),
+    )
     expect(container.querySelector('[data-testid="logs:cluster-a:pod-b"]')).not.toBeNull()
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1)
   })
@@ -500,11 +526,21 @@ describe('realtime session dock', () => {
     expect(container.querySelector('[data-testid="logs:cluster-a:pod-b"]')).toBeNull()
     expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
     await click(container.querySelector('.soha-header-realtime-sessions'))
+    await click(
+      Array.from(container.querySelectorAll('button')).find(
+        (item) => item.textContent === '重新连接',
+      ),
+    )
     expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).not.toBeNull()
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1)
     expect(container.querySelector('[aria-label="会话集群"]')).toBeNull()
     await click(button('switch-workbench'))
     await click(container.querySelector('.soha-header-realtime-sessions'))
+    await click(
+      Array.from(container.querySelectorAll('button')).find(
+        (item) => item.textContent === '重新连接',
+      ),
+    )
     expect(container.querySelector('[data-testid="logs:cluster-a:pod-b"]')).not.toBeNull()
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1)
     await click(button('switch-user'))
@@ -529,6 +565,12 @@ describe('realtime session dock', () => {
     expect(restored.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
     authorization.allowed = false
     await click(restored.querySelector('.soha-header-realtime-sessions'))
+    expect(authorization.refetch).toHaveBeenCalled() // initial explicit open only
+    await click(
+      Array.from(restored.querySelectorAll('button')).find(
+        (item) => item.textContent === '重新连接',
+      ),
+    )
     expect(restored.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
     expect(restored.querySelector('.soha-management-state')).not.toBeNull()
   })
@@ -594,6 +636,12 @@ describe('realtime session dock', () => {
     expect(restored.querySelector('[data-testid="terminal:cluster-b:pod-c"]')).toBeNull()
     await act(async () => usePlatformScopeStore.getState().setClusterId('cluster-b'))
     expect(restored.querySelector<HTMLElement>('[data-cluster-id="cluster-b"]')?.hidden).toBe(false)
+    expect(restored.querySelector('[data-testid="terminal:cluster-b:pod-c"]')).toBeNull()
+    await click(
+      Array.from(restored.querySelectorAll('[data-cluster-id="cluster-b"] button')).find(
+        (button) => button.textContent === '重新连接',
+      ),
+    )
     expect(restored.querySelector('[data-testid="terminal:cluster-b:pod-c"]')).not.toBeNull()
   })
 
@@ -699,12 +747,69 @@ describe('realtime session dock', () => {
     const retryButton = Array.from(container.querySelectorAll('button')).find(
       (button) =>
         button.textContent?.includes('Retry') ||
-        button.textContent?.replace(/\s/g, '').includes('重试'),
+        button.textContent?.replace(/\s/g, '').includes('重试') ||
+        button.textContent?.includes('重新校验并连接'),
     )
     expect(retryButton).not.toBeNull()
-    expect(getPodDetailMock).toHaveBeenCalledTimes(1)
+    const attempts = getPodDetailMock.mock.calls.length
+    expect(attempts).toBeGreaterThanOrEqual(1)
 
     await click(retryButton)
-    expect(getPodDetailMock).toHaveBeenCalledTimes(2)
+    expect(getPodDetailMock.mock.calls.length).toBeGreaterThan(attempts)
+  })
+  it('requires explicit restore after pagehide and rejects a same-name replacement on a fresh read', async () => {
+    const container = await renderDock()
+    await click(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'terminal-a',
+      ),
+    )
+    expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).not.toBeNull()
+    await act(async () => window.dispatchEvent(new Event('pagehide')))
+    expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
+    await act(async () => window.dispatchEvent(new Event('pageshow')))
+    expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
+    getPodDetailMock.mockResolvedValue({
+      uid: 'replacement',
+      containers: [{ name: 'api' }],
+      allowedActions: ['exec'],
+    })
+    await click(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === '重新连接',
+      ),
+    )
+    expect(container.textContent).toContain('Pod 已被替换')
+    expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
+    const saved = Array.from({ length: localStorage.length }, (_, i) =>
+      localStorage.getItem(localStorage.key(i)!),
+    ).join('')
+    expect(saved).toContain('uid-pod-a')
+    expect(saved).not.toContain('replacement')
+  })
+
+  it('does not adopt a legacy saved record without UID', async () => {
+    createSessionDockStore('platform', 'user-a').setState({
+      sessions: [
+        {
+          id: 'legacy',
+          kind: 'terminal',
+          clusterId: 'cluster-a',
+          namespace: 'team-a',
+          podName: 'pod-a',
+          container: 'api',
+          shell: '/bin/sh',
+        },
+      ],
+    })
+    const container = await renderDock()
+    await click(container.querySelector('.soha-header-realtime-sessions'))
+    await click(
+      Array.from(container.querySelectorAll('button')).find(
+        (button) => button.textContent === '重新连接',
+      ),
+    )
+    expect(container.textContent).toContain('旧记录缺少 Pod UID')
+    expect(container.querySelector('[data-testid="terminal:cluster-a:pod-a"]')).toBeNull()
   })
 })

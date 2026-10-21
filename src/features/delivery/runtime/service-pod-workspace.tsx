@@ -178,6 +178,7 @@ function SessionOpener({
       clusterId: row.workload.clusterId,
       namespace: row.pod.namespace,
       podName: row.pod.name,
+      podUid: row.pod.uid,
       container,
       ...(kind === 'terminal' ? { shell: '/bin/sh' } : {}),
     })

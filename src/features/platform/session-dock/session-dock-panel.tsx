@@ -2,6 +2,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useCallback,
   useMemo,
   useRef,
   useState,
@@ -20,6 +21,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { Button, Select, Spin, Tabs, Typography } from 'antd'
 import { ManagementState } from '@/components/management-list'
+import { useInlineApiError } from '@/components/request-feedback'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useClusterCapabilityForCluster } from '../cluster-capabilities'
 import { useI18n } from '@/i18n'
@@ -40,6 +42,7 @@ const PodTerminal = lazy(async () => {
 })
 
 interface RealtimeSessionDockPanelProps {
+  connectRequests: string[]
   groupByCluster: boolean
   activeClusterId: string | null
   activeSessionKeys: Record<string, string>
@@ -85,10 +88,12 @@ function defaultDockHeight() {
 }
 
 function TerminalSessionContent({
+  beforeConnect,
   onReplaceSession,
   session,
 }: {
   onReplaceSession: RealtimeSessionDockPanelProps['onReplaceSession']
+  beforeConnect: () => Promise<boolean>
   session: RealtimeSession
 }) {
   const { localeCode } = useI18n()
@@ -114,6 +119,7 @@ function TerminalSessionContent({
       clusterId: session.clusterId,
       container,
       kind: 'terminal',
+      podUid: session.podUid,
       namespace: session.namespace,
       podName: session.podName,
       shell,
@@ -122,6 +128,8 @@ function TerminalSessionContent({
 
   return (
     <PodTerminal
+      expectedUid={session.podUid}
+      beforeConnect={beforeConnect}
       clusterId={session.clusterId}
       namespace={session.namespace}
       podName={session.podName}
@@ -211,6 +219,78 @@ function AuthorizedSessionContent({
     session.podName,
   )
   const detail = useQuery({ ...options, enabled: options.enabled && permitted })
+  useInlineApiError(permissions.error)
+  useInlineApiError(detail.error)
+  const [verified, setVerified] = useState(false)
+  const [validationError, setValidationError] = useState('')
+  const { refetch: refetchPermissions } = permissions
+  const { refetch: refetchDetail } = detail
+  const validateConnection = useCallback(async () => {
+    setValidationError('')
+    try {
+      if (!session.podUid)
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? '旧记录缺少 Pod UID，请从当前 Pod 重新打开会话。'
+            : 'This record has no Pod UID. Open a new session from the current Pod.',
+        )
+      const permission = await refetchPermissions()
+      if (
+        permission.isError ||
+        !hasPermission(
+          permission.data?.data,
+          session.kind === 'logs' ? 'platform.pods.logs' : 'platform.pods.exec',
+        )
+      ) {
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? '当前没有会话访问权限。'
+            : 'Session access is no longer permitted.',
+        )
+      }
+      const pod = await refetchDetail()
+      if (pod.isError || !pod.data)
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? '无法重新校验 Pod，请重试。'
+            : 'Unable to revalidate the Pod. Retry to reconnect.',
+        )
+      if (pod.data.uid !== session.podUid)
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? 'Pod 已被替换或无法提供 UID，请从当前 Pod 重新打开会话。'
+            : 'The Pod was replaced or its UID is unavailable. Open the current Pod.',
+        )
+      if (!hasAllowedAction(pod.data.allowedActions, session.kind === 'logs' ? 'logs' : 'exec'))
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? '当前资源不允许此操作。'
+            : 'This action is not permitted on the current resource.',
+        )
+      if (session.container && !pod.data.containers?.some(({ name }) => name === session.container))
+        throw new Error(
+          localeCode === 'zh_CN'
+            ? '原容器已不存在，请从当前 Pod 重新打开会话。'
+            : 'The saved container no longer exists. Open the current Pod.',
+        )
+      setVerified(true)
+      return true
+    } catch (error) {
+      setVerified(false)
+      setValidationError(error instanceof Error ? error.message : 'Session validation failed')
+      return false
+    }
+  }, [
+    localeCode,
+    refetchDetail,
+    refetchPermissions,
+    session.container,
+    session.kind,
+    session.podUid,
+  ])
+  useEffect(() => {
+    void validateConnection()
+  }, [validateConnection])
   const containers = detail.data?.containers ?? []
   const defaultContainer =
     containers.find(({ role }) => role === 'main')?.name ??
@@ -220,6 +300,20 @@ function AuthorizedSessionContent({
       onReplaceSession(session.id, { ...session, container: defaultContainer })
     }
   }, [defaultContainer, detail.isError, onReplaceSession, permitted, session])
+  if (validationError)
+    return (
+      <ManagementState
+        compact
+        kind="error"
+        description={validationError}
+        actions={
+          <Button onClick={() => void validateConnection()}>
+            {localeCode === 'zh_CN' ? '重新校验并连接' : 'Validate and reconnect'}
+          </Button>
+        }
+      />
+    )
+  if (!verified) return <ManagementState compact kind="loading" />
   if (!permitted)
     return <ManagementState compact kind={permissions.isLoading ? 'loading' : 'no-permission'} />
   if (detail.isError)
@@ -265,6 +359,8 @@ function AuthorizedSessionContent({
         {session.kind === 'logs' ? (
           <PodLogViewer
             active
+            expectedUid={session.podUid}
+            beforeConnect={validateConnection}
             clusterId={session.clusterId}
             namespace={session.namespace}
             podName={session.podName}
@@ -278,7 +374,11 @@ function AuthorizedSessionContent({
             }
           />
         ) : (
-          <TerminalSessionContent session={session} onReplaceSession={onReplaceSession} />
+          <TerminalSessionContent
+            session={session}
+            onReplaceSession={onReplaceSession}
+            beforeConnect={validateConnection}
+          />
         )}
       </Suspense>
     </div>
@@ -286,24 +386,46 @@ function AuthorizedSessionContent({
 }
 
 function SessionContent({
-  active,
+  requested,
   session,
   onReplaceSession,
 }: {
-  active: boolean
+  requested: boolean
   session: RealtimeSession
   onReplaceSession: RealtimeSessionDockPanelProps['onReplaceSession']
 }) {
+  const { localeCode } = useI18n()
   const [started, setStarted] = useState(false)
-  useEffect(() => {
-    if (active) setStarted(true)
-  }, [active])
-  return started ? (
-    <AuthorizedSessionContent session={session} onReplaceSession={onReplaceSession} />
-  ) : null
+  if (started || requested)
+    return <AuthorizedSessionContent session={session} onReplaceSession={onReplaceSession} />
+  return (
+    <ManagementState
+      compact
+      kind="empty"
+      title={
+        localeCode === 'zh_CN' ? '会话已断开，记录已保留' : 'Disconnected · session record retained'
+      }
+      description={
+        localeCode === 'zh_CN'
+          ? '手动重连时将重新校验 Pod UID、容器和权限。'
+          : 'Reconnect to revalidate the Pod UID, container and permissions.'
+      }
+      actions={
+        <Button
+          aria-label={localeCode === 'zh_CN' ? '重新连接' : 'Reconnect'}
+          type="primary"
+          icon={<ReloadOutlined />}
+          onClick={() => setStarted(true)}
+        >
+          {localeCode === 'zh_CN' ? '重新连接' : 'Reconnect'}
+        </Button>
+      }
+    />
+  )
 }
 
 export function RealtimeSessionDockPanel({
+  connectRequests,
   groupByCluster,
   activeClusterId,
   activeSessionKeys,
@@ -526,11 +648,7 @@ export function RealtimeSessionDockPanel({
                     forceRender: true,
                     children: (
                       <SessionContent
-                        active={
-                          visible &&
-                          (!groupByCluster || clusterId === activeClusterId) &&
-                          session.id === activeKey
-                        }
+                        requested={connectRequests.includes(session.id)}
                         session={session}
                         onReplaceSession={onReplaceSession}
                       />

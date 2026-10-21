@@ -433,6 +433,8 @@ test('Task52 topology keyboard selection, relation highlight and viewport surviv
   await page.keyboard.press('Space')
   await expect(node).toHaveClass(/selected/)
   await expect(page.locator('.soha-topology-evidence')).toContainText('qa-service')
+  await node.focus()
+  await expect(node).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(node).not.toHaveClass(/selected/)
   await test.info().attach('topology-preview', {

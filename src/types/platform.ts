@@ -400,6 +400,7 @@ export interface PodExecResult {
 }
 
 export interface PodDetail {
+  uid?: string
   name: string
   namespace: string
   phase: string
@@ -422,6 +423,7 @@ export interface PodDetail {
 }
 
 export interface Pod {
+  uid?: string
   name: string
   namespace: string
   phase: string

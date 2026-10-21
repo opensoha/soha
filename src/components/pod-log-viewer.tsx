@@ -67,10 +67,12 @@ function buildLogStreamURL({
   clusterId,
   namespace,
   podName,
+  expectedUid,
   container,
 }: {
   clusterId: string
   namespace: string
+  expectedUid?: string
   podName: string
   container?: string
 }) {
@@ -79,6 +81,7 @@ function buildLogStreamURL({
     'ws',
   )
   url.searchParams.set('namespace', namespace)
+  if (expectedUid) url.searchParams.set('expectedUid', expectedUid)
   url.searchParams.set('tailLines', '1')
   if (container) {
     url.searchParams.set('container', container)
@@ -208,16 +211,19 @@ export function PodLogViewer({
   clusterId,
   namespace,
   podName,
+  expectedUid,
   container,
   active = true,
   containerOptions,
   onOpenLogCenter,
   onContainerChange,
   streamingDisabledReason,
+  beforeConnect,
   toolbarExtra,
 }: {
   clusterId?: string | null
   namespace?: string | null
+  expectedUid?: string
   podName: string
   container?: string
   active?: boolean
@@ -225,6 +231,7 @@ export function PodLogViewer({
   onOpenLogCenter?: () => void
   onContainerChange?: (value: string) => void
   streamingDisabledReason?: string
+  beforeConnect?: () => Promise<boolean>
   toolbarExtra?: ReactNode
 }) {
   const { t, localeCode } = useI18n()
@@ -238,6 +245,7 @@ export function PodLogViewer({
   const [previous, setPrevious] = useState(false)
   const [historyLines, setHistoryLines] = useState(DEFAULT_HISTORY_LINES)
   const [loadingOlder, setLoadingOlder] = useState(false)
+  const requestRef = useRef<AbortController | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
   const pollingTimerRef = useRef<number | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
@@ -252,12 +260,13 @@ export function PodLogViewer({
     if (!clusterId || !namespace) return ''
     const params = new URLSearchParams()
     params.set('namespace', namespace)
+    if (expectedUid) params.set('expectedUid', expectedUid)
     params.set('tailLines', String(DEFAULT_HISTORY_LINES))
     if (container) params.set('container', container)
     if (sinceSeconds > 0) params.set('sinceSeconds', String(sinceSeconds))
     if (previous) params.set('previous', 'true')
     return `/clusters/${clusterId}/workloads/pods/${encodeURIComponent(podName)}/logs?${params.toString()}`
-  }, [clusterId, container, namespace, podName, previous, sinceSeconds])
+  }, [clusterId, container, namespace, podName, expectedUid, previous, sinceSeconds])
 
   const streamURL = useMemo(() => {
     if (!clusterId || !namespace || previous || streamingDisabledReason) return ''
@@ -265,12 +274,15 @@ export function PodLogViewer({
       clusterId,
       namespace,
       podName,
+      expectedUid,
       container,
     })
-  }, [clusterId, container, namespace, podName, previous, streamingDisabledReason])
+  }, [clusterId, container, namespace, podName, expectedUid, previous, streamingDisabledReason])
 
   const disconnect = useCallback(() => {
     connectionRunRef.current += 1
+    requestRef.current?.abort()
+    requestRef.current = null
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'close' }))
     }
@@ -298,27 +310,37 @@ export function PodLogViewer({
       }
       const params = new URLSearchParams()
       params.set('namespace', namespace)
+      if (expectedUid) params.set('expectedUid', expectedUid)
       params.set('tailLines', String(requestedHistoryLines))
       if (container) params.set('container', container)
       if (sinceSeconds > 0) params.set('sinceSeconds', String(sinceSeconds))
       if (previous) params.set('previous', 'true')
+      const controller = requestRef.current ?? new AbortController()
+      requestRef.current = controller
       const response = await api.get<ApiResponse<PodLogs>>(
         `/clusters/${clusterId}/workloads/pods/${encodeURIComponent(podName)}/logs?${params.toString()}`,
+        { signal: controller.signal },
       )
+      if (controller.signal.aborted) return
       const nextLines = trimLinesAfterBoundary(
         splitLogContent(response.data?.content ?? ''),
         previous ? [] : clearBoundaryRef.current,
       )
       setLines((current) => mergeLogLines(current, nextLines))
     },
-    [clusterId, container, namespace, podName, previous, sinceSeconds],
+    [clusterId, container, namespace, podName, expectedUid, previous, sinceSeconds],
   )
 
   const startPollingSync = useCallback(() => {
     if (pollingTimerRef.current != null) return
     pollingTimerRef.current = window.setInterval(async () => {
       try {
-        const response = await api.get<ApiResponse<PodLogs>>(logsPath)
+        const controller = requestRef.current ?? new AbortController()
+        requestRef.current = controller
+        const response = await api.get<ApiResponse<PodLogs>>(logsPath, {
+          signal: controller.signal,
+        })
+        if (controller.signal.aborted) return
         const nextLines = splitLogContent(response.data?.content ?? '')
         setLines((current) => mergeLogLines(current, nextLines))
         setConnectionState('connected')
@@ -350,6 +372,8 @@ export function PodLogViewer({
     disconnect()
     const runId = connectionRunRef.current + 1
     connectionRunRef.current = runId
+    if (beforeConnect && !(await beforeConnect())) return
+    if (connectionRunRef.current !== runId) return
     setConnectionState('connecting')
     let ticketedURL: string
     try {
@@ -407,6 +431,7 @@ export function PodLogViewer({
       scheduleReconnect()
     }
   }, [
+    beforeConnect,
     disconnect,
     previous,
     scheduleReconnect,
@@ -423,12 +448,14 @@ export function PodLogViewer({
     restoreScrollRef.current = null
     clearBoundaryRef.current = []
     suppressClearedReplayRef.current = false
-  }, [active, clusterId, container, namespace, podName, previous, sinceSeconds])
+  }, [active, clusterId, container, namespace, podName, expectedUid, previous, sinceSeconds])
 
   useEffect(() => {
     if (!clusterId || !namespace || !active) return
+    let cancelled = false
     fetchSnapshot(DEFAULT_HISTORY_LINES)
       .then(() => {
+        if (cancelled) return
         if (!previous) {
           connect()
         } else {
@@ -441,7 +468,10 @@ export function PodLogViewer({
         setConnectionState('error')
       })
 
-    return () => disconnect()
+    return () => {
+      cancelled = true
+      disconnect()
+    }
   }, [active, clusterId, connect, disconnect, fetchSnapshot, namespace, previous])
 
   useEffect(() => {
@@ -499,7 +529,16 @@ export function PodLogViewer({
           ...filteredLines,
         ].join('\n'),
       ),
-    [container, filteredLines, localeCode, namespace, podName, previous, timeRangeLabel],
+    [
+      container,
+      filteredLines,
+      localeCode,
+      namespace,
+      podName,
+      expectedUid,
+      previous,
+      timeRangeLabel,
+    ],
   )
 
   useEffect(() => {
