@@ -24,7 +24,7 @@ import (
 const (
 	agentReverseSessionTransport = "reverse_session"
 	agentInstallTicketTTL        = 15 * time.Minute
-	agentVersion                 = "v0.1.10"
+	agentVersion                 = "v0.1.11"
 	agentImageRepository         = "ghcr.io/opensoha/soha-agent"
 	agentImage                   = agentImageRepository + ":" + agentVersion
 )
