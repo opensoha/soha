@@ -31,6 +31,7 @@ import {
 import { useI18n, localeText } from '@/i18n'
 import { toScopeKey } from '@/types'
 import { formatAgeSeconds } from '@/utils/time'
+import { readableQueryData } from '@/utils/query-feedback'
 import { deliveryQueries } from '../queries'
 import { deliveryMutations } from '../mutations'
 import { deliveryKeys } from '../keys'
@@ -129,8 +130,15 @@ function PodMetricsPreview({ row, onOpen }: { row: PodRow; onOpen: () => void })
   )
 }
 
-function PodMetricsDetail({ row }: { row: PodRow }) {
-  const [range, setRange] = useState(60)
+function PodMetricsDetail({
+  row,
+  range,
+  onRangeChange,
+}: {
+  row: PodRow
+  range: number
+  onRangeChange: (range: number) => void
+}) {
   const query = useQuery(
     podQueries.metrics(toScopeKey(row.workload.clusterId, row.pod.namespace), row.pod.name, range),
   )
@@ -141,7 +149,7 @@ function PodMetricsDetail({ row }: { row: PodRow }) {
         data={query.data}
         loading={query.isPending}
         rangeMinutes={range}
-        onRangeChange={setRange}
+        onRangeChange={onRangeChange}
         errorMessage={query.error instanceof Error ? query.error.message : undefined}
         compact
       />
@@ -404,7 +412,7 @@ export function ServicePodWorkspace({
 }: {
   applicationId: string
   workloads: ApplicationRuntimeWorkload[]
-  view: 'pods' | 'related-resources'
+  view: 'pods' | 'metrics' | 'related-resources'
 }) {
   const text = useText()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -432,11 +440,12 @@ export function ServicePodWorkspace({
   const rows = [
     ...new Map(
       queries
-        .flatMap((query) =>
-          query.data
-            ? (query.data.pods ?? []).map((pod) => ({ pod, workload: query.data!.workload }))
-            : [],
-        )
+        .flatMap((query) => {
+          const runtime = readableQueryData(query)
+          return runtime
+            ? (runtime.pods ?? []).map((pod) => ({ pod, workload: runtime.workload }))
+            : []
+        })
         .map((row) => [rowKey(row), row]),
     ).values(),
   ]
@@ -458,6 +467,15 @@ export function ServicePodWorkspace({
   const selectedRow = selected.length === 1 ? selected[0] : undefined
   const openTool = (row: PodRow, nextTool: string) => {
     const next = new URLSearchParams(searchParams)
+    if (nextTool === 'metrics') {
+      next.set('serviceTab', 'metrics')
+      next.set('metricPod', row.pod.name)
+      next.set('metricCluster', row.workload.clusterId)
+      next.set('metricNamespace', row.pod.namespace)
+      for (const key of ['pod', 'podCluster', 'podNamespace', 'tool', 'container']) next.delete(key)
+      setSearchParams(next)
+      return
+    }
     next.set('pod', row.pod.name)
     next.set('podCluster', row.workload.clusterId)
     next.set('podNamespace', row.pod.namespace)
@@ -474,6 +492,21 @@ export function ServicePodWorkspace({
   const waiting = queries.some((query) => query.isPending)
   const failed = queries.some((query) => query.isError)
   const session = tool === 'logs' || tool === 'terminal'
+  useEffect(() => {
+    if (tool !== 'metrics' || !requestedPod) return
+    const next = new URLSearchParams(searchParams)
+    next.set('serviceTab', 'metrics')
+    next.set('metricPod', requestedPod)
+    for (const [source, target] of [
+      ['podCluster', 'metricCluster'],
+      ['podNamespace', 'metricNamespace'],
+    ]) {
+      const value = next.get(source)
+      if (value) next.set(target, value)
+    }
+    for (const key of ['pod', 'podCluster', 'podNamespace', 'tool', 'container']) next.delete(key)
+    setSearchParams(next, { replace: true })
+  }, [requestedPod, searchParams, setSearchParams, tool])
   const labels: Record<string, string> = {
     details: text('详情', 'Details'),
     metrics: text('监控', 'Metrics'),
@@ -483,6 +516,96 @@ export function ServicePodWorkspace({
     terminal: text('终端', 'Terminal'),
   }
   if (!canReadRuntime) return <ManagementState compact kind="no-permission" />
+  if (view === 'metrics') {
+    if (!canView) return <ManagementState compact kind="no-permission" />
+    const requested = searchParams.get('metricPod')
+    const candidates = requested
+      ? rows.filter(
+          ({ pod, workload }) =>
+            pod.name === requested &&
+            (!searchParams.get('metricCluster') ||
+              workload.clusterId === searchParams.get('metricCluster')) &&
+            (!searchParams.get('metricNamespace') ||
+              pod.namespace === searchParams.get('metricNamespace')),
+        )
+      : []
+    const row = candidates.length === 1 ? candidates[0] : undefined
+    const requestedRange = Number(searchParams.get('metricRange') || 60)
+    const range = [15, 60, 360, 1440].includes(requestedRange) ? requestedRange : 60
+    return (
+      <section
+        className="soha-service-metrics"
+        aria-label={text('当前服务指标', 'Current service metrics')}
+      >
+        <Space wrap>
+          <span>{text('资源范围', 'Resource')}</span>
+          <Select
+            aria-label={text('指标资源范围', 'Metrics resource')}
+            className="soha-service-metrics__target"
+            value={row ? rowKey(row) : undefined}
+            placeholder={text('选择 Pod', 'Select a Pod')}
+            options={rows.map((item) => ({
+              value: rowKey(item),
+              label: `${item.workload.workloadName} / ${item.pod.name}`,
+            }))}
+            onChange={(value) => {
+              const target = rows.find((item) => rowKey(item) === value)
+              if (target) openTool(target, 'metrics')
+            }}
+          />
+        </Space>
+        {waiting && !row ? (
+          <ManagementState compact kind="loading" />
+        ) : !row ? (
+          <ManagementState
+            compact
+            kind={failed ? 'error' : requested ? 'not-found' : 'empty'}
+            title={
+              failed
+                ? text('运行资源读取失败', 'Runtime resources unavailable')
+                : requested
+                  ? text('所选 Pod 不存在或无法唯一定位', 'Selected Pod missing or ambiguous')
+                  : rows.length
+                    ? text('请选择 Pod 查看指标', 'Select a Pod to view metrics')
+                    : text(
+                        '当前服务暂无可读取的 Pod 指标',
+                        'No Pod metrics available for this service',
+                      )
+            }
+            actions={
+              failed ? (
+                <Button onClick={() => queries.forEach((query) => void query.refetch())}>
+                  {text('重试', 'Retry')}
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : (
+          <>
+            <Text type="secondary">
+              {row.workload.clusterId} / {row.pod.namespace} / {row.pod.name}
+            </Text>
+            <Text type="secondary">
+              {text(
+                '当前数据源提供 Pod 级指标；容器级指标以数据源实际能力为准。',
+                'This data source provides Pod metrics; container metrics depend on the source capabilities.',
+              )}
+            </Text>
+            <PodMetricsDetail
+              key={rowKey(row)}
+              row={row}
+              range={range}
+              onRangeChange={(value) => {
+                const next = new URLSearchParams(searchParams)
+                next.set('metricRange', String(value))
+                setSearchParams(next)
+              }}
+            />
+          </>
+        )}
+      </section>
+    )
+  }
   return (
     <div className="soha-service-pods">
       {view === 'related-resources' ? (
@@ -724,8 +847,6 @@ export function ServicePodWorkspace({
                   'Close and select a Pod again. Actions will not switch targets automatically.',
                 )}
               />
-            ) : tool === 'metrics' ? (
-              <PodMetricsDetail row={selectedRow} />
             ) : (
               <Suspense fallback={<ManagementState compact kind="loading" />}>
                 <Descriptions

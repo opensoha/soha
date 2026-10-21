@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
-import { Breadcrumb, Select } from 'antd'
-import { ArrowLeftOutlined } from '@ant-design/icons'
+import { useEffect, useRef, useState } from 'react'
+import { Breadcrumb, Button, Input, Popover, Select } from 'antd'
+import { ArrowLeftOutlined, CheckOutlined, PlusOutlined, SwapOutlined } from '@ant-design/icons'
+import { ManagementState } from '@/components/management-list'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
@@ -12,7 +13,9 @@ import {
   APPLICATION_SETTINGS_KEYS,
   APPLICATION_WORKSPACE_LABELS,
   applicationWorkspacePath,
+  applicationEnvironmentSearch,
 } from './applications/workspace-navigation'
+import type { ApplicationRuntimeEnvironment } from './types'
 import './applications/workspace.css'
 
 function useApplicationNavigation() {
@@ -47,10 +50,14 @@ function useApplicationNavigation() {
 
 export function ApplicationIdentity() {
   const navigate = useNavigate()
-  const { applicationId, application, environmentId, search, design } = useApplicationNavigation()
+  const { applicationId, application, environmentId, search, design, workload } =
+    useApplicationNavigation()
   const { localeCode } = useI18n()
   const english = localeCode === 'en_US'
   const [switching, setSwitching] = useState(false)
+  const [filter, setFilter] = useState('')
+  const trigger = useRef<HTMLButtonElement>(null)
+  const visits = useRef(new Map<string, string>())
   const permissions = usePermissionSnapshot()
   const canBrowse = hasPermission(permissions.data?.data, 'delivery.applications.view')
   const applications = useQuery(deliveryQueries.applications.list(switching && canBrowse))
@@ -63,84 +70,228 @@ export function ApplicationIdentity() {
   useEffect(() => {
     if (userId && application?.id) visitApplication(userId, application.id)
   }, [userId, application?.id, visitApplication])
+  const context = search.toString()
+  useEffect(() => {
+    visits.current.clear()
+  }, [userId])
+  useEffect(() => {
+    if (application?.id !== applicationId || design) return
+    const saved = new URLSearchParams()
+    for (const key of ['tab', 'applicationEnvironmentId', 'serviceId', 'serviceTab']) {
+      const value = new URLSearchParams(context).get(key)
+      if (value) saved.set(key, value)
+    }
+    visits.current.set(applicationId, saved.toString())
+  }, [application?.id, applicationId, context, design])
+  const candidates = (applications.data ?? []).filter((app) =>
+    [app.name, app.key, app.group, app.ownerTeam].some((value) =>
+      value?.toLowerCase().includes(filter.trim().toLowerCase()),
+    ),
+  )
   return (
     <div className="soha-application-identity">
       <div className="soha-application-identity__switcher">
+        <strong>{application?.name || applicationId}</strong>
         {canBrowse ? (
-          <Select
-            aria-label={english ? 'Switch application' : '切换应用'}
-            value={applicationId}
-            variant="borderless"
-            showSearch={{ optionFilterProp: 'label' }}
-            loading={applications.isFetching}
-            onOpenChange={setSwitching}
-            options={
-              applications.data?.length
-                ? applications.data.map((app) => ({ value: app.id, label: app.name }))
-                : [{ value: applicationId, label: application?.name || applicationId }]
+          <Popover
+            trigger="click"
+            placement="bottomLeft"
+            open={switching}
+            onOpenChange={(open) => {
+              setSwitching(open)
+              if (!open) setFilter('')
+            }}
+            content={
+              <section
+                className="soha-application-switch-panel"
+                aria-label={english ? 'Applications' : '应用切换面板'}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setSwitching(false)
+                    setFilter('')
+                    trigger.current?.focus()
+                  }
+                }}
+              >
+                <Input
+                  autoFocus
+                  aria-label={english ? 'Search applications' : '搜索应用'}
+                  placeholder={english ? 'Application or team' : '搜索应用或团队'}
+                  value={filter}
+                  onChange={(event) => setFilter(event.target.value)}
+                  allowClear
+                />
+                {applications.isError ? (
+                  <ManagementState
+                    compact
+                    kind="error"
+                    title={english ? 'Applications unavailable' : '应用列表加载失败'}
+                    actions={
+                      <Button onClick={() => void applications.refetch()}>
+                        {english ? 'Retry' : '重试'}
+                      </Button>
+                    }
+                  />
+                ) : applications.isPending ? (
+                  <ManagementState compact kind="loading" />
+                ) : candidates.length ? (
+                  <div className="soha-application-switch-list">
+                    {candidates.map((app) => (
+                      <button
+                        key={app.id}
+                        type="button"
+                        aria-current={app.id === applicationId ? 'page' : undefined}
+                        onClick={() => {
+                          setSwitching(false)
+                          setFilter('')
+                          navigate(
+                            `/applications/${encodeURIComponent(app.id)}?${visits.current.get(app.id) || 'tab=services'}`,
+                          )
+                        }}
+                      >
+                        <span>
+                          <strong>{app.name}</strong>
+                          <small>{app.ownerTeam || app.group || app.key}</small>
+                        </span>
+                        {app.id === applicationId ? (
+                          <CheckOutlined
+                            aria-label={english ? 'Current application' : '当前应用'}
+                          />
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <ManagementState
+                    compact
+                    kind="empty"
+                    title={english ? 'No matching applications' : '没有匹配的应用'}
+                  />
+                )}
+              </section>
             }
+          >
+            <Button
+              ref={trigger}
+              aria-label={english ? 'Switch application' : '切换应用'}
+              type="text"
+              icon={<SwapOutlined />}
+              aria-expanded={switching}
+            >
+              {english ? 'Switch' : '切换应用'}
+            </Button>
+          </Popover>
+        ) : null}
+      </div>
+      {design || workload ? (
+        <>
+          <span className="soha-application-context-separator" aria-hidden="true">
+            /
+          </span>
+          <Select
+            className="soha-application-identity__environment"
+            aria-label={english ? 'Application environment' : '应用环境'}
+            variant="borderless"
+            value={selectedEnvironmentId}
+            placeholder={english ? 'Select environment' : '选择环境'}
+            showSearch={{ optionFilterProp: 'label' }}
+            loading={runtime.isFetching}
+            options={environments.map((environment) => ({
+              value: environment.applicationEnvironmentId,
+              label: `${environment.environmentName || environment.environmentKey || environment.environmentId}${catalog.data?.find((item) => item.id === environment.environmentId)?.isProduction ? ' PROD' : ''}`,
+            }))}
             onChange={(id) => {
-              setSwitching(false)
-              navigate(applicationWorkspacePath(id))
+              const next = applicationEnvironmentSearch(search, id)
+              // A designer is bound to one workflow; changing environment returns to its services.
+              if (design) {
+                next.set('tab', 'services')
+                next.delete('bindingId')
+                next.delete('templateId')
+                next.delete('source')
+                next.delete('name')
+              }
+              navigate(`/applications/${encodeURIComponent(applicationId)}?${next}`)
             }}
             notFoundContent={
-              applications.isError
-                ? english
-                  ? 'Applications unavailable'
-                  : '应用列表加载失败'
-                : undefined
+              runtime.isError ? (english ? 'Environments unavailable' : '环境加载失败') : undefined
             }
           />
-        ) : (
-          <strong>{application?.name || applicationId}</strong>
-        )}
-      </div>
-      <span className="soha-application-context-separator" aria-hidden="true">
-        /
-      </span>
-      <Select
-        className="soha-application-identity__environment"
-        aria-label={english ? 'Application environment' : '应用环境'}
-        variant="borderless"
-        value={selectedEnvironmentId}
-        placeholder={english ? 'Select environment' : '选择环境'}
-        showSearch={{ optionFilterProp: 'label' }}
-        loading={runtime.isFetching}
-        options={environments.map((environment) => ({
-          value: environment.applicationEnvironmentId,
-          label: `${environment.environmentName || environment.environmentKey || environment.environmentId}${catalog.data?.find((item) => item.id === environment.environmentId)?.isProduction ? ' PROD' : ''}`,
-        }))}
-        onChange={(id) => {
-          const next = new URLSearchParams(search)
-          for (const key of [
-            'pod',
-            'podCluster',
-            'podNamespace',
-            'tool',
-            'container',
-            'workload',
-            'serviceTab',
-            'buildId',
-            'releaseId',
-            'workflowRunId',
-          ])
-            next.delete(key)
-          next.set('applicationEnvironmentId', id)
-          // A designer is bound to one workflow; changing environment returns to its services.
-          if (design) {
-            next.set('tab', 'services')
-            next.delete('bindingId')
-            next.delete('templateId')
-            next.delete('source')
-            next.delete('name')
-          }
-          navigate(`/applications/${encodeURIComponent(applicationId)}?${next}`)
-        }}
-        notFoundContent={
-          runtime.isError ? (english ? 'Environments unavailable' : '环境加载失败') : undefined
-        }
-      />
+        </>
+      ) : null}
     </div>
+  )
+}
+
+export function ApplicationEnvironmentNavigation({
+  environments,
+  activeId,
+  productionIds,
+  clusterName,
+  onCreate,
+}: {
+  environments: ApplicationRuntimeEnvironment[]
+  activeId: string
+  productionIds: string[]
+  clusterName?: string
+  onCreate?: () => void
+}) {
+  const { applicationId, search } = useApplicationNavigation()
+  const navigate = useNavigate()
+  const { localeCode } = useI18n()
+  const english = localeCode === 'en_US'
+  return (
+    <section
+      className="soha-application-environments"
+      aria-label={english ? 'Application environments' : '应用环境'}
+    >
+      <strong>{english ? 'Environment' : '应用环境'}</strong>
+      <nav aria-label={english ? 'Choose environment' : '选择环境'}>
+        {environments.map((environment) => {
+          const id = environment.applicationEnvironmentId
+          const production = productionIds.includes(environment.environmentId)
+          return (
+            <button
+              className="soha-application-environment"
+              key={id}
+              type="button"
+              aria-current={id === activeId ? 'page' : undefined}
+              data-production={production || undefined}
+              onClick={() =>
+                navigate(
+                  `/applications/${encodeURIComponent(applicationId)}?${applicationEnvironmentSearch(search, id)}`,
+                )
+              }
+            >
+              <span>
+                {environment.environmentName ||
+                  environment.environmentKey ||
+                  environment.environmentId}
+              </span>
+              {production ? (
+                <small>
+                  {environment.requiresApproval
+                    ? english
+                      ? 'Production · approval required'
+                      : '生产 · 发布需审批'
+                    : english
+                      ? 'Production'
+                      : '生产环境'}
+                </small>
+              ) : null}
+              {id === activeId ? <small>{english ? 'Current' : '当前环境'}</small> : null}
+            </button>
+          )
+        })}
+        {onCreate ? (
+          <Button type="text" icon={<PlusOutlined />} onClick={onCreate}>
+            {english ? 'Add environment' : '添加环境'}
+          </Button>
+        ) : null}
+      </nav>
+      {clusterName ? (
+        <span className="soha-application-environments__cluster">{clusterName}</span>
+      ) : null}
+    </section>
   )
 }
 

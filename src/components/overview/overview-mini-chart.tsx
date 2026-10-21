@@ -59,7 +59,14 @@ export default function OverviewMiniChart({
 
   return (
     <div className="soha-overview-mini-chart" aria-hidden="true">
-      <Tiny.Line data={chart.data} color={baseColor} shapeField="smooth" autoFit />
+      <Tiny.Line
+        data={chart.data.map((value, index) => ({ index, value }))}
+        xField="index"
+        yField="value"
+        color={baseColor}
+        shapeField="smooth"
+        autoFit
+      />
     </div>
   )
 }

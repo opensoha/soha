@@ -16,6 +16,35 @@ export const APPLICATION_SETTINGS_NAV_ITEMS = [
 
 export const APPLICATION_SETTINGS_KEYS = APPLICATION_SETTINGS_NAV_ITEMS.map((item) => item.key)
 
+export function applicationEnvironmentSearch(search: URLSearchParams, environmentId: string) {
+  const next = new URLSearchParams(search)
+  for (const key of [
+    'pod',
+    'podCluster',
+    'podNamespace',
+    'tool',
+    'container',
+    'workload',
+    'buildId',
+    'releaseId',
+    'workflowRunId',
+    'settings',
+    'launch',
+    'buildSourceId',
+    'bindingId',
+    'templateId',
+    'source',
+    'name',
+    'metricPod',
+    'metricCluster',
+    'metricNamespace',
+    'metricRange',
+  ])
+    next.delete(key)
+  next.set('applicationEnvironmentId', environmentId)
+  return next
+}
+
 export function applicationWorkspacePath(
   applicationId: string,
   tab = 'services',

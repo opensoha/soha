@@ -10,7 +10,7 @@ import { act } from 'react'
 import { App as AntApp } from 'antd'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation, useSearchParams } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BuildDetailPage } from './builds/detail-page'
 import { ExecutionTaskDetailPage } from './execution-tasks/detail-page'
@@ -925,12 +925,22 @@ describe('delivery runtime detail pages', () => {
     updatedReplicas: 1,
     availableReplicas: 1,
   }
+  function PodWorkspaceHarness({ view }: { view: 'pods' | 'related-resources' }) {
+    const [params] = useSearchParams()
+    return (
+      <ServicePodWorkspace
+        applicationId="app-1"
+        workloads={[ref]}
+        view={params.get('serviceTab') === 'metrics' ? 'metrics' : view}
+      />
+    )
+  }
   const renderPods = (query = '', view: 'pods' | 'related-resources' = 'pods') =>
     renderWithProviders(
       <>
         <ServiceRuntimeSummary applicationId="app-1" workloads={[ref]} />
         <ServiceRuntimeActions applicationId="app-1" workloads={[ref]} />
-        <ServicePodWorkspace applicationId="app-1" workloads={[ref]} view={view} />
+        <PodWorkspaceHarness view={view} />
         <LocationProbe />
       </>,
       base + query,
@@ -1012,21 +1022,25 @@ describe('delivery runtime detail pages', () => {
     )
     expect(document.body.textContent).toContain('只读')
   })
-  it('requests metrics only for page-visible Pods and retains the full monitor in a drawer', async () => {
+  it('requests metrics only for page-visible Pods and opens the full monitor in the metrics tab', async () => {
     testState.manyPods = true
     const container = await renderPods()
     expect(container.querySelectorAll('.soha-pod-card')).toHaveLength(10)
     expect(testState.apiGet.mock.calls.filter(([path]) => path.includes('/metrics?'))).toHaveLength(
       10,
     )
-    await act(async () =>
-      container.querySelector<HTMLButtonElement>('.soha-pod-card-metrics')!.click(),
-    )
+    const monitor = container.querySelector<HTMLButtonElement>('.soha-pod-card-metrics')!
+    const podName = monitor.getAttribute('aria-label')!.replace('查看监控 ', '')
+    await act(async () => monitor.click())
     for (let i = 0; i < 3; i++)
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
     expect(document.querySelector('[data-testid="resource-metrics-panel"]')).not.toBeNull()
+    expect(document.querySelector('.ant-drawer')).toBeNull()
+    const location = container.querySelector('[data-testid="location"]')?.textContent
+    expect(location).toContain('serviceTab=metrics')
+    expect(location).toContain(`metricPod=${podName}`)
   })
   it('uses real metric values and series in the compact monitor preview', async () => {
     testState.configuredMetrics = true

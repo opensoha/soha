@@ -22,6 +22,7 @@ import {
   Radio,
   Select,
   Space,
+  Tabs,
   Tooltip,
   Typography,
   type FormInstance,
@@ -97,6 +98,7 @@ import { ServiceEditor, SERVICE_KIND_OPTIONS } from './service-editor'
 import { RepositoryFields } from './repository-fields'
 import { environmentRuntimeStatus } from './runtime-status'
 import { formatDateTime } from '@/utils/time'
+import { ApplicationEnvironmentNavigation } from '../navigation'
 
 const ServiceDeliveryForm = lazy(() =>
   import('./service-delivery-form').then((module) => ({ default: module.ServiceDeliveryForm })),
@@ -464,7 +466,7 @@ export function ApplicationDetailPage() {
   const requestedEnvironmentId = searchParams.get('applicationEnvironmentId')?.trim() ?? ''
   const focusedServiceId = searchParams.get('serviceId')?.trim() ?? ''
   const requestedServiceTab = searchParams.get('serviceTab') || 'pods'
-  const serviceTab = ['pods', 'related-resources', 'build', 'resources'].includes(
+  const serviceTab = ['pods', 'metrics', 'related-resources', 'build', 'resources'].includes(
     requestedServiceTab,
   )
     ? requestedServiceTab
@@ -482,6 +484,8 @@ export function ApplicationDetailPage() {
     : ''
   const activeTab = requestedTab === 'delivery' ? 'delivery' : 'services'
   const [serviceModalVisible, setServiceModalVisible] = useState(false)
+  const [serviceSearch, setServiceSearch] = useState('')
+  const [serviceKindFilter, setServiceKindFilter] = useState('all')
   const [editingService, setEditingService] = useState<ApplicationServiceComponent | null>(null)
   const [repositoryModalVisible, setRepositoryModalVisible] = useState(false)
   const [editingRepositoryId, setEditingRepositoryId] = useState('')
@@ -533,6 +537,10 @@ export function ApplicationDetailPage() {
     next.delete('tool')
     next.delete('container')
     next.delete('workload')
+    next.delete('metricPod')
+    next.delete('metricCluster')
+    next.delete('metricNamespace')
+    next.delete('metricRange')
     if (serviceId) {
       next.delete('settings')
       next.set('tab', 'services')
@@ -1282,13 +1290,15 @@ export function ApplicationDetailPage() {
     const next = new URLSearchParams(searchParams)
     next.set('tab', 'services')
     next.set('workload', value.slice(9))
-    next.set('serviceTab', 'pods')
+    next.set('serviceTab', serviceTab)
     next.delete('serviceId')
     next.delete('pod')
     next.delete('podCluster')
     next.delete('podNamespace')
     next.delete('tool')
     next.delete('container')
+    for (const key of ['metricPod', 'metricCluster', 'metricNamespace', 'metricRange'])
+      next.delete(key)
     if (activeEnvironmentId) next.set('applicationEnvironmentId', activeEnvironmentId)
     setSearchParams(next)
   }
@@ -1352,6 +1362,13 @@ export function ApplicationDetailPage() {
     })),
   ]
   const currentServiceCard = serviceCards.find((service) => service.id === selectionValue)
+  const filteredServiceCards = serviceCards.filter(
+    (service) =>
+      (serviceKindFilter === 'all' || service.kind === serviceKindFilter) &&
+      [service.name, service.id].some((value) =>
+        value.toLowerCase().includes(serviceSearch.trim().toLowerCase()),
+      ),
+  )
   const selectedStatus = serviceStatus(selectedWorkloads, focusedService?.id)
   const selectedReady = selectedWorkloads.reduce((sum, item) => sum + item.readyReplicas, 0)
   const selectedDesired = selectedWorkloads.reduce((sum, item) => sum + item.desiredReplicas, 0)
@@ -1544,7 +1561,18 @@ export function ApplicationDetailPage() {
             <ManifestDeploymentState key={deployment.id} deployment={deployment} />
           ))
         : null}
-      <section className="soha-service-pods-panel" aria-label="Pods">
+      <Tabs
+        activeKey={serviceTab === 'metrics' ? 'metrics' : 'pods'}
+        onChange={openServiceTab}
+        items={[
+          { key: 'pods', label: '运行资源' },
+          { key: 'metrics', label: '指标' },
+        ]}
+      />
+      <section
+        className="soha-service-pods-panel"
+        aria-label={serviceTab === 'metrics' ? '服务指标' : 'Pods'}
+      >
         <Suspense fallback={<ManagementState compact kind="loading" />}>
           {runtimePending ||
           runtimeUnavailable ||
@@ -1560,7 +1588,7 @@ export function ApplicationDetailPage() {
               key={`${activeEnvironmentId}/${selectionValue}`}
               applicationId={application.id}
               workloads={selectedWorkloads}
-              view="pods"
+              view={serviceTab === 'metrics' ? 'metrics' : 'pods'}
             />
           ) : (
             <ManagementState
@@ -1808,6 +1836,15 @@ export function ApplicationDetailPage() {
 
   return (
     <div className="soha-page soha-application-workbench">
+      <ApplicationEnvironmentNavigation
+        environments={environments}
+        activeId={activeEnvironmentId}
+        productionIds={(environmentCatalogQuery.data ?? [])
+          .filter((environment) => environment.isProduction)
+          .map((environment) => environment.id)}
+        clusterName={activeRuntimeClusterName}
+        onCreate={managementState.canCreateBinding ? openBindingCreate : undefined}
+      />
       {!buildSourceModalVisible && !managementState.appModalVisible ? (
         <MutationFeedback
           operations={[
@@ -2736,7 +2773,10 @@ export function ApplicationDetailPage() {
                   <aside className="soha-service-selector">
                     <div className="soha-service-selector__heading">
                       <strong>
-                        服务 <Text type="secondary">{serviceCards.length}</Text>
+                        服务{' '}
+                        <Text type="secondary">
+                          {filteredServiceCards.length} / {serviceCards.length}
+                        </Text>
                       </strong>
                       <ManagementIconButton
                         icon={<SettingOutlined />}
@@ -2753,8 +2793,31 @@ export function ApplicationDetailPage() {
                         }}
                       />
                     </div>
+                    {canCreateService ? (
+                      <Button block icon={<PlusOutlined />} onClick={() => openServiceModal()}>
+                        添加服务
+                      </Button>
+                    ) : null}
+                    <Input
+                      aria-label="搜索服务"
+                      placeholder="搜索名称或标识"
+                      value={serviceSearch}
+                      onChange={(event) => setServiceSearch(event.target.value)}
+                      allowClear
+                    />
+                    <Select
+                      aria-label="筛选服务类型"
+                      value={serviceKindFilter}
+                      options={[
+                        { value: 'all', label: '全部服务类型' },
+                        ...Array.from(new Set(serviceCards.map((service) => service.kind))).map(
+                          (kind) => ({ value: kind, label: kind }),
+                        ),
+                      ]}
+                      onChange={setServiceKindFilter}
+                    />
                     <nav aria-label="服务列表" className="soha-service-selector__list">
-                      {serviceCards.map((service) => {
+                      {filteredServiceCards.map((service) => {
                         const status = serviceStatus(service.workloads, service.id)
                         return (
                           <button
@@ -2775,16 +2838,26 @@ export function ApplicationDetailPage() {
                                 />
                                 {status.label}
                               </small>
+                              <small>{service.kind}</small>
                             </span>
                           </button>
                         )
                       })}
                     </nav>
+                    {!filteredServiceCards.length && serviceCards.length ? (
+                      <ManagementState
+                        compact
+                        bordered={false}
+                        kind="empty"
+                        title="没有匹配的服务"
+                      />
+                    ) : null}
                     <Select
                       className="soha-service-selector__mobile"
                       aria-label="选择服务"
                       value={selectionValue}
-                      options={serviceCards.map((service) => ({
+                      showSearch={{ optionFilterProp: 'label' }}
+                      options={filteredServiceCards.map((service) => ({
                         value: service.id,
                         label: service.name,
                       }))}

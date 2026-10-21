@@ -1505,7 +1505,7 @@ describe('ApplicationDetailPage workbench', () => {
     )
     await openSection(container, '工作流')
     expect(document.querySelector('.ant-drawer-open')?.textContent).toContain('构建与发布工作流')
-    expect(document.body.querySelectorAll('[role="tablist"]')).toHaveLength(0)
+    expect(document.body.querySelectorAll('[role="tablist"]')).toHaveLength(1)
     expect(container.querySelector('.soha-service-console__body')).toBe(pane)
     await openSection(container, '服务')
     expect(container.querySelector('.soha-service-console__body')).toBe(pane)
@@ -1627,7 +1627,9 @@ describe('ApplicationDetailPage workbench', () => {
       '/applications/app-1?tab=services&applicationEnvironmentId=binding-production&serviceId=svc-api',
     )
     expect(container.textContent).toContain('当前环境尚未部署此服务')
-    expect(container.querySelector('[role="tablist"]')).toBeNull()
+    expect(
+      Array.from(container.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent),
+    ).toEqual(['运行资源', '指标'])
     expect(
       Array.from(container.querySelectorAll('[role="tab"]')).some(
         (tab) => tab.textContent === '配置',
@@ -1915,6 +1917,125 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.textContent).not.toContain('未部署')
   })
 
+  it('filters the service rail without replacing the selected service and keeps add-service inside it', async () => {
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+    const rail = container.querySelector<HTMLElement>('.soha-service-selector')!
+    expect(findButton(rail, '添加服务')).not.toBeNull()
+    const input = rail.querySelector<HTMLInputElement>('[aria-label="搜索服务"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        input,
+        'not-a-service',
+      )
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(rail.querySelectorAll('[aria-label="服务列表"] button')).toHaveLength(0)
+    expect(rail.textContent).toContain('没有匹配的服务')
+    expect(container.querySelector('.soha-service-console__body')?.textContent).toContain(
+      'Checkout API',
+    )
+    await act(async () => {
+      findButton(rail, '添加服务').click()
+    })
+    expect(document.querySelector('.soha-application-settings__content')?.textContent).toContain(
+      '服务',
+    )
+  })
+
+  it('opens application search in a separate panel and closes it with Escape', async () => {
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-label="切换应用"]')!
+    expect(trigger.tagName).toBe('BUTTON')
+    await act(async () => {
+      trigger.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(
+        document.querySelector('[aria-label="应用切换面板"] button[aria-current="page"]')
+          ?.textContent,
+      ).toContain('Checkout Platform')
+    })
+    const input = document.querySelector<HTMLInputElement>('[aria-label="搜索应用"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+        input,
+        'no-match',
+      )
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(document.querySelector('[aria-label="应用切换面板"]')?.textContent).toContain(
+      '没有匹配的应用',
+    )
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('requires an explicit Pod in the metrics tab rather than selecting the first runtime row', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?tab=services&serviceId=svc-api&serviceTab=metrics&applicationEnvironmentId=binding-test',
+    )
+    await act(async () => {
+      await vi.dynamicImportSettled()
+    })
+    expect(container.querySelector('[aria-label="当前服务指标"]')?.textContent).toContain(
+      '请选择 Pod 查看指标',
+    )
+    expect(testState.apiGet.mock.calls.some(([path]) => path.includes('/metrics?'))).toBe(false)
+  })
+
+  it('navigates Pod metrics to the dedicated tab and clears the target on environment switch', async () => {
+    testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
+    testState.runtimeWithProductionEnvironment = true
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?tab=services&serviceId=svc-api&serviceTab=pods&applicationEnvironmentId=binding-test',
+    )
+    await act(async () => {
+      await vi.dynamicImportSettled()
+    })
+    const metrics = container.querySelector<HTMLButtonElement>('button[aria-label^="查看监控 "]')!
+    expect(metrics).not.toBeNull()
+    await act(async () => {
+      metrics.click()
+      await vi.dynamicImportSettled()
+    })
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toBe('指标')
+    expect(container.querySelector('[aria-label="当前服务指标"]')?.textContent).toContain(
+      'checkout-api-pod',
+    )
+    expect(document.querySelector('.ant-drawer-open')).toBeNull()
+    const location = container.querySelector('[data-testid="location"]')!.textContent!
+    expect(location).toContain('serviceTab=metrics')
+    expect(location).toContain('metricPod=checkout-api-pod')
+    expect(new URL(location, 'http://localhost').searchParams.has('tool')).toBe(false)
+    const production = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('[aria-label="选择环境"] button'),
+    ).find((item) => item.textContent?.includes('线上'))!
+    await act(async () => {
+      production.click()
+      await vi.dynamicImportSettled()
+    })
+    const next = new URL(
+      container.querySelector('[data-testid="location"]')!.textContent!,
+      'http://localhost',
+    )
+    expect(next.searchParams.get('serviceTab')).toBe('metrics')
+    expect(next.searchParams.get('serviceId')).toBe('svc-api')
+    expect(next.searchParams.has('metricPod')).toBe(false)
+    expect(container.querySelector('.soha-service-console__body')?.textContent).not.toContain(
+      'checkout-api-pod',
+    )
+  })
+
   it('filters services by the selected environment', async () => {
     testState.runtimeWithProductionEnvironment = true
     const container = await renderWithProviders(
@@ -1927,15 +2048,10 @@ describe('ApplicationDetailPage workbench', () => {
 
     expect(container.querySelectorAll('[aria-label="应用环境"]')).toHaveLength(1)
     expect(container.querySelector('.soha-application-service-environment-grid')).toBeNull()
-    await act(async () => {
-      container
-        .querySelector('[aria-label="应用环境"]')!
-        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-    })
     const productionOption = Array.from(
-      document.querySelectorAll<HTMLElement>('.ant-select-item-option'),
+      container.querySelectorAll<HTMLButtonElement>('[aria-label="选择环境"] button'),
     ).find((item) => item.textContent?.includes('线上'))!
-    expect(productionOption.textContent).toBe('线上 PROD')
+    expect(productionOption.textContent).toContain('生产')
     await act(async () => {
       productionOption.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1956,13 +2072,8 @@ describe('ApplicationDetailPage workbench', () => {
       '/applications/app-1?tab=services',
     )
 
-    await act(async () => {
-      container
-        .querySelector('[aria-label="应用环境"]')!
-        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
-    })
     const option = Array.from(
-      document.querySelectorAll<HTMLElement>('.ant-select-item-option'),
+      container.querySelectorAll<HTMLButtonElement>('[aria-label="选择环境"] button'),
     ).find((item) => item.textContent?.includes('不可用环境'))!
     await act(async () => {
       option.click()
