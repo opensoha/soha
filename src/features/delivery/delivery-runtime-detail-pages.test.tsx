@@ -960,6 +960,20 @@ describe('delivery runtime detail pages', () => {
       })
   }
 
+  it.each([
+    { workloadKind: 'CustomResource', sourceStatus: 'linked' as const },
+    { workloadKind: 'Deployment', sourceStatus: 'linked' as const },
+    { workloadKind: 'Deployment', sourceStatus: 'replaced' as const },
+    { workloadKind: 'Job' },
+  ])('does not expose Deployment actions for an observation root: %j', async (source) => {
+    const container = await renderWithProviders(
+      <ServiceRuntimeActions applicationId="app-1" workloads={[{ ...ref, ...source }]} />,
+      base,
+    )
+    expect(container.querySelector('.soha-service-runtime-actions')).toBeNull()
+    expect(testState.apiGet.mock.calls.some(([path]) => path.includes('/workloads/'))).toBe(false)
+  })
+
   it('renders compact Pods directly, without duplicating detail panels', async () => {
     const container = await renderPods()
     expect(container.querySelectorAll('.soha-pod-card')).toHaveLength(1)

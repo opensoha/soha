@@ -734,6 +734,9 @@ export interface DeliveryPlanConfirmResult {
 }
 
 export interface ApplicationRuntimeWorkload {
+  targetId?: string
+  source?: KubernetesImportSource
+  sourceStatus?: 'linked' | 'changed' | 'replaced' | 'missing' | 'unavailable' | 'forbidden'
   applicationEnvironmentId: string
   clusterId: string
   namespace: string
@@ -851,7 +854,17 @@ export interface ReleaseBoardEntry {
   latestRelease?: ReleaseRecord
 }
 
+export type KubernetesImportSource = SohaAPISchemas['KubernetesImportSource']
+export type KubernetesImportKind =
+  | 'Deployment'
+  | 'StatefulSet'
+  | 'DaemonSet'
+  | 'Job'
+  | 'CronJob'
+  | 'CustomResource'
+
 export interface DeliveryTargetCandidate {
+  source?: KubernetesImportSource
   clusterId: string
   namespace: string
   workloadKind: string
@@ -877,7 +890,10 @@ export interface KubernetesServiceImportInput {
   environmentName: string
   ownershipMode: 'observe_only' | 'managed'
   workloads: Array<{
-    workloadKind: 'Deployment' | 'StatefulSet' | 'DaemonSet'
+    workloadKind: KubernetesImportKind
+    expectedUid?: string
+    expectedSpecDigest?: string
+    crdName?: string
     workloadName: string
   }>
 }

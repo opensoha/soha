@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo } from 'react'
 import './styles.css'
 import { App, Button, Card, Dropdown, Input, Modal, Select, Typography } from 'antd'
 import {
@@ -18,6 +18,7 @@ import {
   ManagementTableToolbar,
   ManagementRefreshButton,
 } from '@/components/management-list'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import { scrollableModalBodyStyle, viewportModalStyle } from '@/components/modal-styles'
@@ -30,6 +31,10 @@ import {
 import type { DeliveryApplication } from '../types'
 
 const { Text } = Typography
+const ImportKubernetesServicesModal = lazy(async () => {
+  const module = await import('../environments/import-kubernetes-services-modal')
+  return { default: module.ImportKubernetesServicesModal }
+})
 
 export function ApplicationsPage() {
   const { modal } = App.useApp()
@@ -48,6 +53,12 @@ export function ApplicationsPage() {
   }
   const setFilters = usePreferencesStore((state) => state.setApplicationListFilters)
   const entryOpen = searchParams.get('action') === 'create'
+  const permissions = usePermissionSnapshot().data?.data
+  const canImport =
+    hasPermission(permissions, 'delivery.application-services.create') &&
+    hasPermission(permissions, 'delivery.application-environments.view') &&
+    (managementState.canCreateBinding || managementState.canUpdateBinding)
+  const importOpen = searchParams.get('action') === 'import'
 
   const applicationsQuery = managementState.applicationsQuery
   const hasFilters = Boolean(filters.search || (filters.group && filters.group !== 'all'))
@@ -167,6 +178,17 @@ export function ApplicationsPage() {
                   {managementState.canCreateApplication ? (
                     <Button type="primary" icon={<PlusOutlined />} onClick={openCreateApplication}>
                       创建应用
+                    </Button>
+                  ) : null}
+                  {canImport ? (
+                    <Button
+                      onClick={() => {
+                        const next = new URLSearchParams(searchParams)
+                        next.set('action', 'import')
+                        setSearchParams(next, { replace: true })
+                      }}
+                    >
+                      接入已有资源
                     </Button>
                   ) : null}
                   <ManagementRefreshButton
@@ -324,6 +346,26 @@ export function ApplicationsPage() {
         </section>
       </div>
       <ApplicationCenterModals state={managementState} />
+      {importOpen ? (
+        <Suspense fallback={<ManagementState compact kind="loading" />}>
+          {canImport ? (
+            <ImportKubernetesServicesModal
+              open
+              applications={applicationsQuery.data ?? []}
+              bindings={managementState.bindingsQuery.data ?? []}
+              canCreateApplication={managementState.canCreateApplication}
+              onClose={closeApplicationEntry}
+            />
+          ) : (
+            <ManagementState
+              compact
+              kind="no-permission"
+              title="无权接入资源"
+              actions={<Button onClick={closeApplicationEntry}>返回应用中心</Button>}
+            />
+          )}
+        </Suspense>
+      ) : null}
       <Modal
         title="创建应用"
         open={entryOpen}

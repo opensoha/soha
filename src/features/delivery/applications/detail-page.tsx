@@ -103,6 +103,10 @@ import { ApplicationEnvironmentNavigation } from '../navigation'
 const ServiceDeliveryForm = lazy(() =>
   import('./service-delivery-form').then((module) => ({ default: module.ServiceDeliveryForm })),
 )
+const ImportedSourceBrowser = lazy(async () => {
+  const module = await import('./imported-source-browser')
+  return { default: module.ImportedSourceBrowser }
+})
 const ServiceResourceModal = lazy(async () => {
   const module = await import('./service-resource-modal')
   return { default: module.ServiceResourceModal }
@@ -1258,6 +1262,11 @@ export function ApplicationDetailPage() {
       : focusedServiceId
         ? []
         : orphanWorkloads.slice(0, 1)
+  const selectedPodWorkloads = selectedWorkloads.filter(
+    (item) =>
+      !item.sourceStatus ||
+      (item.workloadKind === 'Deployment' && ['linked', 'changed'].includes(item.sourceStatus)),
+  )
   const serviceManifestDeployments = (serviceId?: string) =>
     (activeEnvironment?.manifestDeployments ?? []).filter(
       (deployment) =>
@@ -1386,6 +1395,11 @@ export function ApplicationDetailPage() {
           <div className="soha-service-overview__status" data-tone={selectedStatus.tone}>
             <StatusTag value={selectedStatus.tone} label={selectedStatus.label} />
             {selectedWorkloads.length > 0 &&
+            selectedWorkloads.every(
+              (item) =>
+                !item.sourceStatus ||
+                (item.workloadKind === 'Deployment' && item.healthStatus !== 'unknown'),
+            ) &&
             !runtimePending &&
             !runtimeUnavailable &&
             !invalidEnvironment &&
@@ -1583,11 +1597,34 @@ export function ApplicationDetailPage() {
               kind={runtimePending ? 'loading' : 'error'}
               actions={<Button onClick={() => void runtimeQuery.refetch()}>重试</Button>}
             />
+          ) : selectedWorkloads.some((item) => item.sourceStatus) && serviceTab !== 'metrics' ? (
+            <>
+              <ImportedSourceBrowser
+                key={`${activeEnvironmentId}/${selectionValue}`}
+                workloads={selectedWorkloads}
+              />
+              {selectedPodWorkloads.length > 0 ? (
+                <ServicePodWorkspace
+                  key={`${activeEnvironmentId}/${selectionValue}/pods`}
+                  applicationId={application.id}
+                  workloads={selectedPodWorkloads}
+                  view="pods"
+                />
+              ) : null}
+            </>
+          ) : selectedWorkloads.some((item) => item.sourceStatus) &&
+            !selectedPodWorkloads.length ? (
+            <ManagementState
+              compact
+              kind="not-configured"
+              title="尚无关联 Pod 的指标证据"
+              description="源配置和稳定身份可在运行资源中查看。"
+            />
           ) : selectedWorkloads.length ? (
             <ServicePodWorkspace
               key={`${activeEnvironmentId}/${selectionValue}`}
               applicationId={application.id}
-              workloads={selectedWorkloads}
+              workloads={selectedPodWorkloads}
               view={serviceTab === 'metrics' ? 'metrics' : 'pods'}
             />
           ) : (

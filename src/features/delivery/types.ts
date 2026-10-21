@@ -121,6 +121,8 @@ export interface GitCommitParams extends GitReferenceParams {
 }
 
 export interface DeliveryTargetCandidateParams {
+  workloadKind?: import('./domain-types').KubernetesImportKind
+  crdName?: string
   clusterId: string
   namespace: string
   search?: string

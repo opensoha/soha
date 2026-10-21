@@ -84,7 +84,7 @@ describe('deliveryApi', () => {
   })
 
   it('preserves candidate, application filter, workload, and gateway query paths', async () => {
-    apiMocks.get.mockResolvedValue({ items: [], truncated: false })
+    apiMocks.getEnvelope.mockResolvedValue({ items: [], truncated: true })
 
     await expect(
       deliveryApi.environments.targetCandidates({
@@ -93,7 +93,7 @@ describe('deliveryApi', () => {
         search: ' api ',
         limit: 200,
       }),
-    ).resolves.toEqual({ items: [], truncated: false })
+    ).resolves.toEqual({ items: [], truncated: true })
     await deliveryApi.workflows.list({ applicationId: 'app/a', limit: 200 })
     await deliveryApi.workloads.metrics({
       clusterId: 'cluster/a',
@@ -102,8 +102,10 @@ describe('deliveryApi', () => {
     })
     await deliveryApi.gateway.readiness({ skillId: 'delivery/onboarding' })
 
-    expect(apiMocks.get.mock.calls.map(([path]) => path)).toEqual([
+    expect(apiMocks.getEnvelope).toHaveBeenCalledWith(
       '/application-environments/target-candidates?clusterId=cluster%2Fa&namespace=team+dev&search=api&limit=200',
+    )
+    expect(apiMocks.get.mock.calls.map(([path]) => path)).toEqual([
       '/workflows?applicationId=app%2Fa&limit=200',
       '/clusters/cluster%2Fa/workloads/deployments/api%2Fweb/metrics?namespace=team+dev&rangeMinutes=60',
       '/ai-gateway/capabilities?source=delivery-workbench&skillId=delivery%2Fonboarding',

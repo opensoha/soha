@@ -1579,6 +1579,99 @@ describe('ApplicationDetailPage workbench', () => {
     )
   })
 
+  it.each(['pods', 'metrics'])(
+    'keeps native runtime available beside an imported CR in the %s tab',
+    async (serviceTab) => {
+      testState.permissionSnapshot.permissionKeys.push('platform.pods.view')
+      const previousGet = testState.apiGet.getMockImplementation()!
+      testState.apiGet.mockImplementation(async (path: string) => {
+        const result = await previousGet(path)
+        if (
+          path === '/applications/app-1/runtime' &&
+          result.data &&
+          'environments' in result.data
+        ) {
+          const environment = result.data.environments?.[0]
+          if (!environment?.workloads[0]) throw new Error('Expected native workload fixture')
+          Object.assign(environment, {
+            workloads: [
+              ...environment.workloads,
+              Object.assign(
+                {
+                  ...environment.workloads[0],
+                  workloadKind: 'CustomResource',
+                  workloadName: 'cache-root',
+                },
+                {
+                  targetId: 'target-cr',
+                  sourceStatus: 'linked',
+                  healthStatus: 'unknown',
+                  desiredReplicas: 0,
+                  readyReplicas: 0,
+                  updatedReplicas: 0,
+                  availableReplicas: 0,
+                  source: {
+                    resource: {
+                      clusterId: 'cluster-a',
+                      namespace: 'checkout-test',
+                      apiVersion: 'example.com/v1',
+                      kind: 'Widget',
+                      name: 'cache-root',
+                      uid: 'root-uid',
+                    },
+                    crdName: 'widgets.example.com',
+                    plural: 'widgets',
+                    generation: 1,
+                    specDigest: 'a'.repeat(64),
+                    observedAt: '2026-10-21T00:00:00Z',
+                  },
+                },
+              ),
+            ],
+          })
+        }
+        return result
+      })
+      try {
+        const container = await renderWithProviders(
+          <ApplicationDetailPage />,
+          `/applications/app-1?tab=services&serviceId=svc-api&serviceTab=${serviceTab}&applicationEnvironmentId=binding-test`,
+        )
+        await act(async () => {
+          await vi.dynamicImportSettled()
+        })
+        await vi.waitFor(async () => {
+          await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 0))
+          })
+          if (serviceTab === 'pods') {
+            expect(container.textContent).toContain('cache-root')
+            expect(container.querySelector('.soha-pod-card')?.textContent).toContain(
+              'checkout-api-pod',
+            )
+          } else {
+            expect(container.querySelector('[aria-label="当前服务指标"]')?.textContent).toContain(
+              '请选择 Pod 查看指标',
+            )
+            expect(container.textContent).not.toContain('尚无关联 Pod 的指标证据')
+          }
+          expect(
+            testState.apiGet.mock.calls.some(([path]) =>
+              path.includes('/workloads/checkout-api/runtime'),
+            ),
+          ).toBe(true)
+        })
+        expect(
+          testState.apiGet.mock.calls.some(([path]) =>
+            path.includes('/workloads/cache-root/runtime'),
+          ),
+        ).toBe(false)
+      } finally {
+        testState.apiGet.mockImplementation(previousGet)
+      }
+    },
+  )
+
   it('does not silently use the first environment for an invalid shared link', async () => {
     const container = await renderWithProviders(
       <ApplicationDetailPage />,

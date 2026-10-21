@@ -272,6 +272,16 @@ export const deliveryQueries = {
         enabled: enabled && hasValue(environmentId),
       })
     },
+    targetSource: (bindingId: string, targetId: string, uid: string, enabled: boolean) =>
+      queryOptions({
+        queryKey: deliveryKeys.environments.targetSource(bindingId, targetId, uid),
+        queryFn: ({ signal }) => deliveryApi.environments.targetSource(bindingId, targetId, signal),
+        enabled: enabled && Boolean(bindingId && targetId && uid),
+        gcTime: 0,
+        staleTime: 0,
+        retry: false,
+        refetchOnWindowFocus: false,
+      }),
     targetCandidates: (params: DeliveryTargetCandidateParams, enabled = true) => {
       const normalized = normalizeTargetCandidateParams(params)
       return queryOptions({

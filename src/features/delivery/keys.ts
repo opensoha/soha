@@ -82,6 +82,8 @@ export function normalizeTargetCandidateParams(
   return {
     clusterId: params.clusterId.trim(),
     namespace: params.namespace.trim(),
+    workloadKind: params.workloadKind,
+    crdName: params.crdName?.trim() || undefined,
     search: params.search?.trim() || undefined,
     limit: params.limit,
   }
@@ -198,6 +200,8 @@ export const deliveryKeys = {
     list: () => [...ENVIRONMENTS, 'list'] as const,
     details: [...ENVIRONMENTS, 'detail'] as const,
     detail: (id: string) => [...ENVIRONMENTS, 'detail', normalizeDeliveryId(id)] as const,
+    targetSource: (bindingId: string, targetId: string, uid: string) =>
+      [...ENVIRONMENTS, 'target-source', bindingId, targetId, uid] as const,
     targetCandidates: (params: DeliveryTargetCandidateParams) =>
       [...ENVIRONMENTS, 'target-candidates', normalizeTargetCandidateParams(params)] as const,
     helmReleases: (clusterId: string, namespace: string) =>

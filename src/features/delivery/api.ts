@@ -466,11 +466,20 @@ export const deliveryApi = {
           `/application-environments/${segment(id)}/detail`,
         ),
       ),
+    targetSource: (bindingId: string, targetId: string, signal?: AbortSignal) =>
+      unwrap(
+        api.get<ApiResponse<{ content: string }>>(
+          `/application-environments/${segment(bindingId)}/targets/${segment(targetId)}/source`,
+          { signal },
+        ),
+      ),
     targetCandidates: (params: DeliveryTargetCandidateParams) =>
-      api.get<DeliveryTargetCandidatePage>(
+      api.getEnvelope<DeliveryTargetCandidatePage>(
         withQuery('/application-environments/target-candidates', {
           clusterId: params.clusterId.trim(),
           namespace: params.namespace.trim(),
+          workloadKind: params.workloadKind,
+          crdName: params.crdName?.trim(),
           search: params.search?.trim(),
           limit: params.limit,
         }),

@@ -210,11 +210,14 @@ export function ServiceRuntimeSummary({
 
 export function ServiceRuntimeActions({
   applicationId,
-  workloads,
+  workloads: inputWorkloads,
 }: {
   applicationId: string
   workloads: ApplicationRuntimeWorkload[]
 }) {
+  const workloads = inputWorkloads.filter(
+    (workload) => workload.workloadKind === 'Deployment' && !workload.sourceStatus,
+  )
   const text = useText()
   const { localeCode } = useI18n()
   const [scaleIndex, setScaleIndex] = useState<number | null>(null)
@@ -243,7 +246,7 @@ export function ServiceRuntimeActions({
       ),
     ),
   })
-  if (!canReadRuntime) return null
+  if (!canReadRuntime || !workloads.length) return null
   return (
     <div className="soha-service-runtime-actions">
       {workloads.map((workload, index) => (
