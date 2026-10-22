@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Button, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { ReadFeedback } from '@/components/request-feedback'
@@ -8,6 +8,10 @@ import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { deliveryQueries } from '../queries'
 import { ResourceRelationsBrowser } from '../runtime/resource-relations-browser'
 import type { ApplicationEnvironment, ApplicationRuntimeWorkload } from '../types'
+
+const RootCRConfigurationDrawer = lazy(async () => ({
+  default: (await import('./root-cr-configuration-drawer')).RootCRConfigurationDrawer,
+}))
 
 const sourceLabels = {
   linked: '已关联',
@@ -22,10 +26,12 @@ export function ImportedSourceBrowser({
   workloads,
   binding,
   view = 'resources',
+  onOpenPlan,
 }: {
   workloads: ApplicationRuntimeWorkload[]
   binding?: ApplicationEnvironment
   view?: 'resources' | 'metrics'
+  onOpenPlan?: (targetId: string, revision: number) => void
 }) {
   const [selectedKey, setSelectedKey] = useState('')
   const sources = workloads.filter(
@@ -65,6 +71,7 @@ export function ImportedSourceBrowser({
           workload={selected}
           binding={binding}
           view={view}
+          onOpenPlan={onOpenPlan}
         />
       </section>
     </div>
@@ -75,12 +82,15 @@ function SourcePreview({
   workload,
   binding,
   view,
+  onOpenPlan,
 }: {
   workload: ApplicationRuntimeWorkload
   binding?: ApplicationEnvironment
   view: 'resources' | 'metrics'
+  onOpenPlan?: (targetId: string, revision: number) => void
 }) {
   const [showYAML, setShowYAML] = useState(false)
+  const [configure, setConfigure] = useState(false)
   const permissions = usePermissionSnapshot().data?.data
   const source = workload.source!
   const readable = ['linked', 'changed'].includes(workload.sourceStatus ?? '')
@@ -137,7 +147,20 @@ function SourcePreview({
           <Button onClick={() => setShowYAML((value) => !value)}>
             {showYAML ? '关闭 YAML' : '查看源 YAML'}
           </Button>
+          {source.crdName && binding ? (
+            <Button onClick={() => setConfigure(true)}>配置与发布控制</Button>
+          ) : null}
           {showYAML ? <SourceYAML workload={workload} /> : null}
+          {configure && source.crdName && binding ? (
+            <Suspense fallback={<ManagementState compact kind="loading" />}>
+              <RootCRConfigurationDrawer
+                workload={workload}
+                binding={binding}
+                onClose={() => setConfigure(false)}
+                onOpenPlan={onOpenPlan}
+              />
+            </Suspense>
+          ) : null}
         </>
       )}
       {readable && (source.crdName || workload.workloadKind !== 'Deployment') ? (

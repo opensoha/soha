@@ -1604,6 +1604,16 @@ export function ApplicationDetailPage() {
                 workloads={selectedWorkloads}
                 binding={activeRuntimeBinding}
                 view={serviceTab === 'metrics' ? 'metrics' : 'resources'}
+                onOpenPlan={
+                  canTriggerRelease
+                    ? (targetId, revision) => {
+                        populateDeliveryBinding(activeEnvironmentId)
+                        deliveryForm.setFieldsValue({ targetId, manifestRevision: revision })
+                        setDeliveryActionKind('deploy')
+                        setDeliveryActionModalVisible(true)
+                      }
+                    : undefined
+                }
               />
               {selectedPodWorkloads.length > 0 ? (
                 <ServicePodWorkspace
@@ -2086,6 +2096,15 @@ export function ApplicationDetailPage() {
                       label: 'Commit',
                       children: snapshot.sourceCommit || 'Soha 托管版本',
                     },
+                    ...(snapshot.rootResource
+                      ? [
+                          {
+                            key: 'rootControl',
+                            label: '根 CR 发布控制',
+                            children: `${snapshot.rootResource.kind}/${snapshot.rootResource.name} · UID ${snapshot.rootResource.uid} · generation ${snapshot.rootResource.generation} · Soha 发布 spec，Operator 协调子资源`,
+                          },
+                        ]
+                      : []),
                     { key: 'renderer', label: '渲染器', children: snapshot.rendererVersion },
                     {
                       key: 'input',

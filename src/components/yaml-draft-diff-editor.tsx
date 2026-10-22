@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useMemo } from 'react'
+import { lazy, Suspense, useEffect, useId, useMemo, useRef } from 'react'
 import Editor, { DiffEditor, loader, useMonaco } from '@monaco-editor/react'
+import type { editor as MonacoEditor } from 'monaco-editor'
 import { CloudUploadOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Button, Card, Space, Tag, Typography, theme } from 'antd'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
@@ -97,12 +98,30 @@ function YamlDraftDiffEditorContent({
     ensureYamlLanguage(monaco)
   }, [monaco])
 
-  const editorPath = useMemo(() => 'file:///helm-values-draft.yaml', [])
+  const modelScope = useId()
+  const modelBase = `file:///soha-yaml/${encodeURIComponent(modelScope)}`
+  const editorPath = `${modelBase}/draft.yaml`
   const diffPaths = useMemo(
     () => ({
-      modified: 'file:///helm-values-runtime.yaml',
-      original: 'file:///helm-values-draft-for-diff.yaml',
+      modified: `${modelBase}/runtime.yaml`,
+      original: `${modelBase}/draft-for-diff.yaml`,
     }),
+    [modelBase],
+  )
+  const diffInstance = useRef<{
+    editor: MonacoEditor.IStandaloneDiffEditor
+    models: MonacoEditor.IDiffEditorModel | null
+  } | null>(null)
+  useEffect(
+    () => () => {
+      const instance = diffInstance.current
+      diffInstance.current = null
+      if (!instance) return
+      // Detach before disposal; each mounted pane owns its model URIs.
+      if (instance.editor.getModel()) instance.editor.setModel(null)
+      instance.models?.original.dispose()
+      instance.models?.modified.dispose()
+    },
     [],
   )
   const changed = modified !== original
@@ -198,6 +217,11 @@ function YamlDraftDiffEditorContent({
           </div>
           <div className="soha-yaml-pane-body">
             <DiffEditor
+              keepCurrentOriginalModel
+              keepCurrentModifiedModel
+              onMount={(editor) => {
+                diffInstance.current = { editor, models: editor.getModel() }
+              }}
               theme={editorTheme}
               height="100%"
               language="yaml"
