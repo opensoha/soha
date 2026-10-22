@@ -84,7 +84,7 @@ func New(cfg cfgpkg.KubernetesConfig) (*Client, error) {
 
 func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 	summary := domaincluster.Summary{
-		Capabilities:   []string{contractresource.NetworkTopologySnapshotFeature, contractresource.NetworkTopologyGatewayL4Feature, contractresource.ResourceMonitoringSnapshotFeature},
+		Capabilities:   []string{contractresource.RelationSnapshotFeature, contractresource.NetworkTopologySnapshotFeature, contractresource.NetworkTopologyGatewayL4Feature, contractresource.ResourceMonitoringSnapshotFeature},
 		ID:             c.cfg.ID,
 		Name:           c.cfg.Name,
 		Region:         c.cfg.Region,
@@ -107,7 +107,7 @@ func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 	}
 
 	capabilities := []string{
-		contractresource.NetworkTopologySnapshotFeature, contractresource.NetworkTopologyGatewayL4Feature, contractresource.ResourceMonitoringSnapshotFeature, "manifest.preflight", "manifest.ssa", "manifest.observe", contractruntime.ManifestAgentCapability,
+		contractresource.RelationSnapshotFeature, contractresource.NetworkTopologySnapshotFeature, contractresource.NetworkTopologyGatewayL4Feature, contractresource.ResourceMonitoringSnapshotFeature, "manifest.preflight", "manifest.ssa", "manifest.observe", contractruntime.ManifestAgentCapability,
 		"logs.runtime.snapshot", "logs.runtime.stream", "logs.runtime.aggregate",
 	}
 	for _, group := range groups.Groups {

@@ -36,15 +36,27 @@ func TestNewRegistersRouteFamilies(t *testing.T) {
 	}
 	sort.Strings(signatures)
 	routeDigest := fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(signatures, "\n"))))
-	if len(signatures) != 269 {
-		t.Fatalf("route count = %d, want 269", len(signatures))
+	if len(signatures) != 270 {
+		t.Fatalf("route count = %d, want 270", len(signatures))
 	}
-	const expectedRouteDigest = "d246061fec36ccb61f873a1a7d50bebbdb610fd54b292f1c45658f49347ba478"
+	// M5 adds exactly the metadata relation RPC. Preserve the preceding route
+	// family's digest as a second oracle, rather than accepting unrelated drift.
+	prior := []string{}
+	for _, signature := range signatures {
+		if signature != http.MethodPost+" /api/v1/platform/resources/relations/snapshot" {
+			prior = append(prior, signature)
+		}
+	}
+	if fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(prior, "\n")))) != "d246061fec36ccb61f873a1a7d50bebbdb610fd54b292f1c45658f49347ba478" {
+		t.Fatal("unrelated route family drift")
+	}
+	const expectedRouteDigest = "8f8d27b18cb7cf57f31fb5996afa6bd8fea326c89d55aa3873d19627387204d4"
 	if routeDigest != expectedRouteDigest {
 		t.Fatalf("route digest = %s, want %s", routeDigest, expectedRouteDigest)
 	}
 
 	expected := []string{
+		http.MethodPost + " /api/v1/platform/resources/relations/snapshot",
 		http.MethodGet + " /api/v1/platform/infrastructure/resource-monitoring",
 		http.MethodPost + " /api/v1/platform/network/topology/snapshot",
 		http.MethodGet + " /api/v1/diagnostics/actions",
