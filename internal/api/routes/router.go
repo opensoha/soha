@@ -32,6 +32,7 @@ const (
 )
 
 type Dependencies struct {
+	TemplateUpdates          *apiHandlers.TemplateUpdateHandler
 	System                   *apiHandlers.SystemHandler
 	Platform                 *apiHandlers.PlatformHandler
 	AgentConnections         *apiHandlers.AgentConnectionHandler

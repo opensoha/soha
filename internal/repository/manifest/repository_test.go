@@ -159,10 +159,10 @@ func TestCreateBindingMaintainsLegacyProjection(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "package_id", "application_environment_id", "environment_key", "cluster_id", "namespace",
 			"overlay", "rollout_strategy_id", "verification_policy_id", "drift_policy", "deletion_policy",
-			"enabled", "version", "created_at", "updated_at", "kustomize", "template_parameters",
+			"enabled", "version", "created_at", "updated_at", "kustomize", "template_parameters", "template_selection",
 		}).AddRow(item.ID, item.PackageID, item.ApplicationEnvironmentID, item.EnvironmentKey, item.ClusterID,
 			item.Namespace, `{"image":"v2"}`, "", "", item.DriftPolicy, item.DeletionPolicy,
-			item.Enabled, item.Version, item.CreatedAt, item.UpdatedAt, `{"entryPath":"overlays/dev"}`, `{}`))
+			item.Enabled, item.Version, item.CreatedAt, item.UpdatedAt, `{"entryPath":"overlays/dev"}`, `{}`, `null`))
 
 	created, err := repository.CreateBinding(context.Background(), item)
 	if err != nil {

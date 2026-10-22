@@ -74,23 +74,34 @@ type SourceInput struct {
 }
 
 type EnvironmentBinding struct {
-	TemplateParameters       map[string]any    `json:"templateParameters,omitempty"`
-	ID                       string            `json:"id"`
-	PackageID                string            `json:"packageId"`
-	ApplicationEnvironmentID string            `json:"applicationEnvironmentId"`
-	EnvironmentKey           string            `json:"environmentKey"`
-	ClusterID                string            `json:"clusterId"`
-	Namespace                string            `json:"namespace"`
-	Overlay                  map[string]string `json:"overlay"`
-	Kustomize                *KustomizeOptions `json:"kustomize,omitempty"`
-	RolloutStrategyID        string            `json:"rolloutStrategyId,omitempty"`
-	VerificationPolicyID     string            `json:"verificationPolicyId,omitempty"`
-	DriftPolicy              string            `json:"driftPolicy"`
-	DeletionPolicy           string            `json:"deletionPolicy"`
-	Enabled                  bool              `json:"enabled"`
-	Version                  int64             `json:"version"`
-	CreatedAt                time.Time         `json:"createdAt"`
-	UpdatedAt                time.Time         `json:"updatedAt"`
+	TemplateSelection        *TemplateSelection `json:"templateSelection,omitempty"`
+	TemplateParameters       map[string]any     `json:"templateParameters,omitempty"`
+	ID                       string             `json:"id"`
+	PackageID                string             `json:"packageId"`
+	ApplicationEnvironmentID string             `json:"applicationEnvironmentId"`
+	EnvironmentKey           string             `json:"environmentKey"`
+	ClusterID                string             `json:"clusterId"`
+	Namespace                string             `json:"namespace"`
+	Overlay                  map[string]string  `json:"overlay"`
+	Kustomize                *KustomizeOptions  `json:"kustomize,omitempty"`
+	RolloutStrategyID        string             `json:"rolloutStrategyId,omitempty"`
+	VerificationPolicyID     string             `json:"verificationPolicyId,omitempty"`
+	DriftPolicy              string             `json:"driftPolicy"`
+	DeletionPolicy           string             `json:"deletionPolicy"`
+	Enabled                  bool               `json:"enabled"`
+	Version                  int64              `json:"version"`
+	CreatedAt                time.Time          `json:"createdAt"`
+	UpdatedAt                time.Time          `json:"updatedAt"`
+}
+
+// TemplateSelection is an environment's explicit immutable adoption. Ordinary
+// binding requests cannot write this field; approved template Plans own it.
+type TemplateSelection struct {
+	TemplateID      string         `json:"templateId"`
+	Version         int64          `json:"version"`
+	Parameters      map[string]any `json:"parameters"`
+	BaseFilesDigest string         `json:"baseFilesDigest"`
+	AdoptionID      string         `json:"adoptionId"`
 }
 
 type BindingInput struct {

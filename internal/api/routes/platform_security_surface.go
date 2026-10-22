@@ -214,6 +214,16 @@ func companionMutationSecuritySurface(_ string, path string) (nonPlatformMutatio
 }
 
 func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	if strings.HasPrefix(path, "/api/v1/delivery/template-updates/") {
+		permission, action := appaccess.PermDeliveryApplicationsView, "preview"
+		if strings.HasSuffix(path, "/batches") {
+			permission, action = appaccess.PermDeliveryWorkflowsTrigger, "adopt"
+		}
+		if strings.HasSuffix(path, "/policies") {
+			permission, action = appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), "update"
+		}
+		return nonPlatformMutationSecuritySurfaceEntry{ResourceKind: "TemplateAdoption", Action: action, PermissionKey: permission, DynamicPermission: true, ScopeRequired: true}, true
+	}
 	if strings.HasPrefix(path, "/api/v1/delivery/triggers") && !strings.HasSuffix(path, "/webhook") {
 		permission := appaccess.PermDeliveryTriggersCreate
 		if method == "PUT" {

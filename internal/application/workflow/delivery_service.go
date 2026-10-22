@@ -225,7 +225,9 @@ func (s *Service) authorizeDeliveryTarget(ctx context.Context, principal domaini
 	if target.Action == "build" || target.Action == "build_deploy" {
 		permissions = append(permissions, appaccess.PermDeliveryBuildsTrigger)
 	}
-	if target.Action != "build" {
+	if target.TemplateCandidateID != "" {
+		permissions = append(permissions, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"))
+	} else if target.Action != "build" {
 		permissions = append(permissions, appaccess.PermDeliveryReleasesTrigger)
 	}
 	for _, permission := range permissions {

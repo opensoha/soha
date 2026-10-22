@@ -1152,7 +1152,7 @@ func (r *Repository) CreateDeliveryPlan(ctx context.Context, input domaindeliver
 
 func (r *Repository) GetDeliveryPlan(ctx context.Context, id string) (domaindelivery.DeliveryPlan, error) {
 	row := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at
+		SELECT id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at, template_candidate_id
 		FROM delivery_plans
 		WHERE id = ?
 		LIMIT 1
@@ -1221,18 +1221,18 @@ func (r *Repository) saveDeliveryPlan(ctx context.Context, item domaindelivery.D
 	}
 	if create {
 		if err := dbtx.DB(ctx, r.db).Exec(`
-			INSERT INTO delivery_plans (id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?)
-		`, item.ID, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			INSERT INTO delivery_plans (id, source, status, application_id, application_name, application_environment_id, environment_key, action, target_id, target_ids, target_summary, build_source_id, release_bundle_id, ref_type, ref_name, image_tag, release_name, container_name, reason, risk_level, requires_approval, impact, rollback_strategy, variables, build_args, manifest_snapshots, helm_snapshots, helm_prepared_ciphertext, docker_snapshots, docker_prepared, created_by, confirmed_at, created_at, updated_at, template_candidate_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?)
+		`, item.ID, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.CreatedAt, item.UpdatedAt, item.TemplateCandidateID).Error; err != nil {
 			return fmt.Errorf("create delivery plan: %w", err)
 		}
 		return nil
 	}
 	result := dbtx.DB(ctx, r.db).Exec(`
 		UPDATE delivery_plans
-		SET source = ?, status = ?, application_id = ?, application_name = ?, application_environment_id = ?, environment_key = ?, action = ?, target_id = ?, target_ids = ?, target_summary = ?, build_source_id = ?, release_bundle_id = ?, ref_type = ?, ref_name = ?, image_tag = ?, release_name = ?, container_name = ?, reason = ?, risk_level = ?, requires_approval = ?, impact = ?, rollback_strategy = ?, variables = ?, build_args = ?, manifest_snapshots = ?::jsonb, helm_snapshots = ?::jsonb, helm_prepared_ciphertext = ?, docker_snapshots = ?::jsonb, docker_prepared = ?::jsonb, created_by = ?, confirmed_at = ?, updated_at = ?
+		SET source = ?, status = ?, application_id = ?, application_name = ?, application_environment_id = ?, environment_key = ?, action = ?, target_id = ?, target_ids = ?, target_summary = ?, build_source_id = ?, release_bundle_id = ?, ref_type = ?, ref_name = ?, image_tag = ?, release_name = ?, container_name = ?, reason = ?, risk_level = ?, requires_approval = ?, impact = ?, rollback_strategy = ?, variables = ?, build_args = ?, manifest_snapshots = ?::jsonb, helm_snapshots = ?::jsonb, helm_prepared_ciphertext = ?, docker_snapshots = ?::jsonb, docker_prepared = ?::jsonb, created_by = ?, confirmed_at = ?, updated_at = ?, template_candidate_id = ?
 		WHERE id = ? AND (source <> 'delivery_batch' OR ? = 'delivery_batch')
-	`, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.UpdatedAt, item.ID, item.Source)
+	`, item.Source, item.Status, item.ApplicationID, nullableString(item.ApplicationName), item.ApplicationEnvironmentID, nullableString(item.EnvironmentKey), item.Action, nullableString(item.TargetID), string(targetIDs), nullableString(item.TargetSummary), nullableString(item.BuildSourceID), nullableString(item.ReleaseBundleID), nullableString(item.RefType), nullableString(item.RefName), nullableString(item.ImageTag), nullableString(item.ReleaseName), nullableString(item.ContainerName), nullableString(item.Reason), nullableString(item.RiskLevel), item.RequiresApproval, string(impact), nullableString(item.RollbackStrategy), string(variables), string(buildArgs), string(snapshots), string(helmSnapshots), item.HelmPreparedCiphertext, string(dockerSnapshots), string(dockerPrepared), nullableString(item.CreatedBy), item.ConfirmedAt, item.UpdatedAt, item.TemplateCandidateID, item.ID, item.Source)
 	if result.Error != nil {
 		return fmt.Errorf("update delivery plan: %w", result.Error)
 	}
@@ -1589,7 +1589,7 @@ func scanDeliveryPlanRow(row *sql.Row) (domaindelivery.DeliveryPlan, error) {
 	var helmSnapshots []byte
 	var createdBy sql.NullString
 	var confirmedAt sql.NullTime
-	if err := row.Scan(&item.ID, &item.Source, &item.Status, &item.ApplicationID, &applicationName, &item.ApplicationEnvironmentID, &environmentKey, &item.Action, &targetID, &targetIDs, &targetSummary, &buildSourceID, &releaseBundleID, &refType, &refName, &imageTag, &releaseName, &containerName, &reason, &riskLevel, &item.RequiresApproval, &impact, &rollbackStrategy, &variables, &buildArgs, &snapshots, &helmSnapshots, &item.HelmPreparedCiphertext, &dockerSnapshots, &dockerPrepared, &createdBy, &confirmedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.Source, &item.Status, &item.ApplicationID, &applicationName, &item.ApplicationEnvironmentID, &environmentKey, &item.Action, &targetID, &targetIDs, &targetSummary, &buildSourceID, &releaseBundleID, &refType, &refName, &imageTag, &releaseName, &containerName, &reason, &riskLevel, &item.RequiresApproval, &impact, &rollbackStrategy, &variables, &buildArgs, &snapshots, &helmSnapshots, &item.HelmPreparedCiphertext, &dockerSnapshots, &dockerPrepared, &createdBy, &confirmedAt, &item.CreatedAt, &item.UpdatedAt, &item.TemplateCandidateID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaindelivery.DeliveryPlan{}, ErrNotFound
 		}
@@ -1840,10 +1840,11 @@ func normalizeDeliveryPlanInput(input domaindelivery.DeliveryPlanInput, createdB
 		buildArgs = map[string]any{}
 	}
 	return domaindelivery.DeliveryPlan{
-		ID:                id,
-		ManifestSnapshots: input.ManifestSnapshots,
-		HelmSnapshots:     input.HelmSnapshots,
-		DockerSnapshots:   input.DockerSnapshots, DockerPrepared: input.DockerPrepared,
+		TemplateCandidateID: input.TemplateCandidateID,
+		ID:                  id,
+		ManifestSnapshots:   input.ManifestSnapshots,
+		HelmSnapshots:       input.HelmSnapshots,
+		DockerSnapshots:     input.DockerSnapshots, DockerPrepared: input.DockerPrepared,
 		HelmPreparedCiphertext:   input.HelmPreparedCiphertext,
 		Source:                   source,
 		Status:                   domaindelivery.DeliveryPlanStatusDraft,

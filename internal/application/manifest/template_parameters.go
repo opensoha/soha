@@ -40,6 +40,10 @@ func (s *Service) validateTemplateDraftVersion(ctx context.Context, principal do
 }
 
 func (s *Service) validateTemplateParameters(ctx context.Context, principal domainidentity.Principal, item domainmanifest.Package, parameters map[string]any) error {
+	return s.validateSelectedTemplateParameters(ctx, principal, item, parameters, nil)
+}
+
+func (s *Service) validateSelectedTemplateParameters(ctx context.Context, principal domainidentity.Principal, item domainmanifest.Package, parameters map[string]any, selection *domainmanifest.TemplateSelection) error {
 	if len(parameters) == 0 {
 		return nil
 	}
@@ -53,6 +57,14 @@ func (s *Service) validateTemplateParameters(ctx context.Context, principal doma
 	reference := service.DeploymentTemplate
 	if reference == nil || reference.ManifestPackageID != "" && reference.ManifestPackageID != item.ID {
 		return fmt.Errorf("%w: manifest package is not bound to the service template", apperrors.ErrInvalidArgument)
+	}
+	if selection != nil {
+		if reference.Detached || selection.TemplateID != reference.TemplateID {
+			return apperrors.ErrConflict
+		}
+		copy := *reference
+		copy.Version, copy.Parameters = selection.Version, selection.Parameters
+		reference = &copy
 	}
 	template, err := s.serviceDeploymentTemplate(ctx, principal, *reference)
 	if err != nil {

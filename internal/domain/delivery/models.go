@@ -562,6 +562,7 @@ type DeliveryPlanApprovalInput struct {
 }
 
 type DeliveryPlan struct {
+	TemplateCandidateID      string                            `json:"templateCandidateId,omitempty"`
 	DockerSnapshots          []sohaapi.DockerDeliverySnapshot  `json:"dockerSnapshots,omitempty"`
 	DockerPrepared           map[string]string                 `json:"-"`
 	HelmSnapshots            []sohaapi.HelmDeliverySnapshot    `json:"helmSnapshots,omitempty"`
@@ -600,6 +601,7 @@ type DeliveryPlan struct {
 }
 
 type DeliveryPlanInput struct {
+	TemplateCandidateID      string                            `json:"templateCandidateId,omitempty"`
 	FrozenDockerCiphertext   string                            `json:"-"`
 	DockerSnapshots          []sohaapi.DockerDeliverySnapshot  `json:"-"`
 	DockerPrepared           map[string]string                 `json:"-"`

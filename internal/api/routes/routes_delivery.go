@@ -13,6 +13,7 @@ func registerDeliveryRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depen
 	registerDeliveryExecutionRoutes(protected, deps)
 	registerDeliveryBatchRoutes(protected, deps)
 	registerDeliveryTriggerRoutes(protected, deps)
+	registerTemplateUpdateRoutes(protected, deps)
 }
 
 func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {

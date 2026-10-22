@@ -767,6 +767,7 @@ func (r *planRepository) CreateDeliveryPlan(_ context.Context, input domaindeliv
 		ApplicationEnvironmentID: input.ApplicationEnvironmentID,
 		EnvironmentKey:           input.EnvironmentKey,
 		Action:                   input.Action,
+		TemplateCandidateID:      input.TemplateCandidateID,
 		TargetID:                 input.TargetID,
 		TargetSummary:            input.TargetSummary,
 		BuildSourceID:            input.BuildSourceID,

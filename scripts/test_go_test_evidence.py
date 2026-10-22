@@ -36,6 +36,14 @@ class EvidenceTests(unittest.TestCase):
         for invalid in (events[:2]+events[4:],[{**e,'Action':'skip'} if e.get('Test')==names[-1] else e for e in events],events+[dict(Action='output',Package=scope['package'],Output='ok (cached)')]):
             with self.assertRaises(ValueError):evidence.validate(self.raw(invalid),**scope)
 
+    def test_template_adoption_scope_requires_atomicity_and_fencing(self):
+        scope=evidence.TEMPLATE_ADOPTION_SCOPE
+        names=[scope["parent"],*[scope["parent"]+"/"+child for child in scope["children"]]]
+        events=[dict(Action=action,Package=scope["package"],Test=name) for name in names for action in ("run","pass")]+[dict(Action="pass",Package=scope["package"])]
+        self.assertEqual(evidence.validate(self.raw(events),**scope)["children"],3)
+        for invalid in (events[:2]+events[4:],[{**e,"Action":"skip"} if e.get("Test")==names[-1] else e for e in events],events+[dict(Action="output",Package=scope["package"],Output="ok (cached)")]):
+            with self.assertRaises(ValueError):evidence.validate(self.raw(invalid),**scope)
+
     def test_all_required_tests_pass(self):
         self.assertEqual(evidence.validate(self.raw(self.events()))["children"], 16)
 

@@ -11,6 +11,7 @@ import (
 
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"gorm.io/gorm"
 )
 
@@ -101,7 +102,7 @@ func scanSource(source scanner) (domainmanifest.Source, error) {
 }
 
 func (r *Repository) ListBindings(ctx context.Context, packageID string) ([]domainmanifest.EnvironmentBinding, error) {
-	rows, err := r.db.WithContext(ctx).Raw(bindingSelect+` WHERE package_id = ? ORDER BY created_at, id`, strings.TrimSpace(packageID)).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(bindingSelect+` WHERE package_id = ? ORDER BY created_at, id`, strings.TrimSpace(packageID)).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("list manifest bindings: %w", err)
 	}
@@ -118,7 +119,7 @@ func (r *Repository) ListBindings(ctx context.Context, packageID string) ([]doma
 }
 
 func (r *Repository) GetBinding(ctx context.Context, bindingID string) (domainmanifest.EnvironmentBinding, error) {
-	item, err := scanEnvironmentBinding(r.db.WithContext(ctx).Raw(bindingSelect+` WHERE id = ? LIMIT 1`, strings.TrimSpace(bindingID)).Row())
+	item, err := scanEnvironmentBinding(dbtx.DB(ctx, r.db).Raw(bindingSelect+` WHERE id = ? LIMIT 1`, strings.TrimSpace(bindingID)).Row())
 	if errors.Is(err, sql.ErrNoRows) {
 		return domainmanifest.EnvironmentBinding{}, apperrors.ErrNotFound
 	}
@@ -220,16 +221,16 @@ func (r *Repository) DeleteBinding(ctx context.Context, bindingID string) error 
 
 const bindingSelect = `SELECT id, package_id, application_environment_id, environment_key, cluster_id, namespace,
 	overlay, rollout_strategy_id, verification_policy_id, drift_policy, deletion_policy, enabled, version,
-	created_at, updated_at, COALESCE(kustomize, 'null'::jsonb), template_parameters FROM manifest_bindings`
+	created_at, updated_at, COALESCE(kustomize, 'null'::jsonb), template_parameters, COALESCE(template_selection, 'null'::jsonb) FROM manifest_bindings`
 
 func scanEnvironmentBinding(source scanner) (domainmanifest.EnvironmentBinding, error) {
 	var item domainmanifest.EnvironmentBinding
-	var overlay, kustomize, templateParameters []byte
+	var overlay, kustomize, templateParameters, selection []byte
 	if err := source.Scan(
 		&item.ID, &item.PackageID, &item.ApplicationEnvironmentID, &item.EnvironmentKey,
 		&item.ClusterID, &item.Namespace, &overlay, &item.RolloutStrategyID,
 		&item.VerificationPolicyID, &item.DriftPolicy, &item.DeletionPolicy, &item.Enabled,
-		&item.Version, &item.CreatedAt, &item.UpdatedAt, &kustomize, &templateParameters,
+		&item.Version, &item.CreatedAt, &item.UpdatedAt, &kustomize, &templateParameters, &selection,
 	); err != nil {
 		return domainmanifest.EnvironmentBinding{}, err
 	}
@@ -244,6 +245,9 @@ func scanEnvironmentBinding(source scanner) (domainmanifest.EnvironmentBinding, 
 	}
 	if err := json.Unmarshal(templateParameters, &item.TemplateParameters); err != nil {
 		return item, fmt.Errorf("decode template parameters: %w", err)
+	}
+	if err := json.Unmarshal(selection, &item.TemplateSelection); err != nil {
+		return item, fmt.Errorf("decode template selection: %w", err)
 	}
 	return item, nil
 }

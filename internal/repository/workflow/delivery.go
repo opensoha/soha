@@ -10,12 +10,13 @@ import (
 
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/dbtx"
 	"github.com/opensoha/soha/internal/repository/deliverysource"
 	"gorm.io/gorm"
 )
 
 func (r *Repository) ListDeliveryWorkflows(ctx context.Context) ([]domainworkflow.DeliveryWorkflow, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`SELECT id, version, definition, created_by, created_at, updated_at FROM delivery_workflows ORDER BY updated_at DESC`).Rows()
+	rows, err := dbtx.DB(ctx, r.db).Raw(`SELECT id, version, definition, created_by, created_at, updated_at FROM delivery_workflows ORDER BY updated_at DESC`).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +33,7 @@ func (r *Repository) ListDeliveryWorkflows(ctx context.Context) ([]domainworkflo
 }
 
 func (r *Repository) GetDeliveryWorkflow(ctx context.Context, id string) (domainworkflow.DeliveryWorkflow, error) {
-	return scanDeliveryWorkflow(r.db.WithContext(ctx).Raw(`SELECT id, version, definition, created_by, created_at, updated_at FROM delivery_workflows WHERE id = ?`, id).Row())
+	return scanDeliveryWorkflow(dbtx.DB(ctx, r.db).Raw(`SELECT id, version, definition, created_by, created_at, updated_at FROM delivery_workflows WHERE id = ?`, id).Row())
 }
 
 func (r *Repository) SaveDeliveryWorkflow(ctx context.Context, item domainworkflow.DeliveryWorkflow, expectedVersion int64) (domainworkflow.DeliveryWorkflow, error) {
@@ -41,12 +42,12 @@ func (r *Repository) SaveDeliveryWorkflow(ctx context.Context, item domainworkfl
 		return item, err
 	}
 	if expectedVersion == 0 {
-		row := r.db.WithContext(ctx).Raw(`INSERT INTO delivery_workflows (id, definition, created_by) VALUES (?, ?::jsonb, ?)
+		row := dbtx.DB(ctx, r.db).Raw(`INSERT INTO delivery_workflows (id, definition, created_by) VALUES (?, ?::jsonb, ?)
             RETURNING id, version, definition, created_by, created_at, updated_at`, item.ID, string(body), item.CreatedBy).Row()
 		return scanDeliveryWorkflow(row)
 	}
 	var updated domainworkflow.DeliveryWorkflow
-	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		var version int64
 		if err := tx.Raw(`SELECT version FROM delivery_workflows WHERE id = ? FOR UPDATE`, item.ID).Row().Scan(&version); err != nil {
 			return err
@@ -86,7 +87,7 @@ func scanDeliveryWorkflow(row deliveryScanner) (domainworkflow.DeliveryWorkflow,
 func (r *Repository) CreateDeliveryBatch(ctx context.Context, batch domainworkflow.DeliveryBatch, run domainworkflow.Run, key, digest string) (domainworkflow.DeliveryBatch, domainworkflow.Run, error) {
 	var storedBatch domainworkflow.DeliveryBatch
 	var storedRun domainworkflow.Run
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := dbtx.DB(ctx, r.db).Transaction(func(tx *gorm.DB) error {
 		// Scope the idempotency key to its actor; serialize only identical keys.
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, batch.CreatedBy+":"+key).Error; err != nil {
 			return err
@@ -128,7 +129,7 @@ func (r *Repository) CreateDeliveryBatch(ctx context.Context, batch domainworkfl
 func (r *Repository) GetDeliveryBatch(ctx context.Context, id string) (domainworkflow.DeliveryBatch, domainworkflow.Run, error) {
 	var batch domainworkflow.DeliveryBatch
 	var body []byte
-	err := r.db.WithContext(ctx).Raw(`SELECT snapshot FROM delivery_batches WHERE id = ?`, id).Row().Scan(&body)
+	err := dbtx.DB(ctx, r.db).Raw(`SELECT snapshot FROM delivery_batches WHERE id = ?`, id).Row().Scan(&body)
 	if errors.Is(err, sql.ErrNoRows) {
 		return batch, domainworkflow.Run{}, fmt.Errorf("%w: delivery batch not found", apperrors.ErrNotFound)
 	}
@@ -144,7 +145,7 @@ func (r *Repository) GetDeliveryBatch(ctx context.Context, id string) (domainwor
 
 func (r *Repository) FindDeliveryBatch(ctx context.Context, actorID, key, digest string) (domainworkflow.DeliveryBatch, domainworkflow.Run, error) {
 	var id, existingDigest string
-	err := r.db.WithContext(ctx).Raw(`SELECT id, request_digest FROM delivery_batches WHERE created_by = ? AND idempotency_key = ?`, actorID, key).Row().Scan(&id, &existingDigest)
+	err := dbtx.DB(ctx, r.db).Raw(`SELECT id, request_digest FROM delivery_batches WHERE created_by = ? AND idempotency_key = ?`, actorID, key).Row().Scan(&id, &existingDigest)
 	if errors.Is(err, sql.ErrNoRows) {
 		return domainworkflow.DeliveryBatch{}, domainworkflow.Run{}, apperrors.ErrNotFound
 	}
@@ -181,7 +182,7 @@ func (r *Repository) ListDeliveryBatchIDs(ctx context.Context, applicationID, se
 	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
 	args = append(args, limit)
 	var ids []string
-	err := r.db.WithContext(ctx).Raw(query, args...).Scan(&ids).Error
+	err := dbtx.DB(ctx, r.db).Raw(query, args...).Scan(&ids).Error
 	return ids, err
 }
 
@@ -200,7 +201,7 @@ func (r *Repository) ClaimManagedRun(ctx context.Context, owner string, ttl time
     ) UPDATE workflow_runs SET lease_owner = ?, lease_until = NOW() + (? * INTERVAL '1 millisecond'),
           fencing_token = fencing_token + 1, version = version + 1
       WHERE id = (SELECT id FROM candidate) RETURNING ` + workflowColumns
-	return scanWorkflowRow(r.db.WithContext(ctx).Raw(query, owner, ttl.Milliseconds()).Row())
+	return scanWorkflowRow(dbtx.DB(ctx, r.db).Raw(query, owner, ttl.Milliseconds()).Row())
 }
 
 func (r *Repository) SaveManagedRun(ctx context.Context, run domainworkflow.Run, releaseLease bool) (domainworkflow.Run, error) {
@@ -220,7 +221,7 @@ func (r *Repository) SaveManagedRun(ctx context.Context, run domainworkflow.Run,
 		query += `, lease_owner = '', lease_until = NULL`
 	}
 	query += ` WHERE id = ? AND scope = ? AND version = ? AND fencing_token = ? AND lease_owner = ? AND lease_until > NOW() RETURNING ` + workflowColumns
-	updated, err := scanWorkflowRow(r.db.WithContext(ctx).Raw(query, run.Status, string(steps), string(metadata), run.ID, run.Scope, run.Version, run.FencingToken, run.LeaseOwner).Row())
+	updated, err := scanWorkflowRow(dbtx.DB(ctx, r.db).Raw(query, run.Status, string(steps), string(metadata), run.ID, run.Scope, run.Version, run.FencingToken, run.LeaseOwner).Row())
 	if errors.Is(err, apperrors.ErrNotFound) {
 		return run, fmt.Errorf("%w: delivery run changed or its execution lease expired", apperrors.ErrConflict)
 	}
@@ -236,7 +237,7 @@ func (r *Repository) StopManagedRun(ctx context.Context, runID, reason, summary 
 	query := `UPDATE workflow_runs SET stop_reason = CASE WHEN stop_reason = '' THEN ? ELSE stop_reason END, stop_summary = CASE WHEN stop_reason = '' THEN ? ELSE stop_summary END, status = 'canceling', version = version + 1, updated_at = NOW()
         WHERE id = ? AND scope IN ('delivery_batch', 'capability_task') AND (stop_reason = '' OR status = 'blocked')
           AND status NOT IN ('completed', 'partially_completed', 'failed', 'canceled', 'inconclusive') RETURNING ` + workflowColumns
-	run, err := scanWorkflowRow(r.db.WithContext(ctx).Raw(query, reason, summary, runID).Row())
+	run, err := scanWorkflowRow(dbtx.DB(ctx, r.db).Raw(query, reason, summary, runID).Row())
 	if errors.Is(err, apperrors.ErrNotFound) {
 		return r.Get(ctx, runID)
 	}

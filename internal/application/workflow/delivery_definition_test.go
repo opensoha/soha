@@ -21,6 +21,45 @@ func deliveryTestTargets(count int) []domainworkflow.DeliveryTargetSnapshot {
 	return items
 }
 
+func TestTemplateAdoptionUsesWaveDAGWithoutBuildOrHealth(t *testing.T) {
+	targets := deliveryTestTargets(4)
+	definition := domainworkflow.DeliveryWorkflowDefinition{Name: "adopt", Mode: domainworkflow.DeliveryModeBuildAll}
+	for i := range targets {
+		targets[i].BuildNodeID = ""
+		targets[i].Target.Action = "config_update"
+		targets[i].Target.TemplateCandidateID = fmt.Sprintf("candidate-%d", i)
+		targets[i].Target.Group = i / 2
+		definition.Targets = append(definition.Targets, targets[i].Target)
+	}
+	if _, err := normalizeDeliveryDefinition(definition); err != nil {
+		t.Fatal(err)
+	}
+	dag, err := compileDeliveryDAG(definition, targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dag.Nodes) != 9 {
+		t.Fatalf("expected eight configuration stages plus existing barrier: %d", len(dag.Nodes))
+	}
+	for _, node := range dag.Nodes {
+		if node.Stage == "build" || node.Stage == "health" {
+			t.Fatal("configuration adoption has runtime work")
+		}
+	}
+	statuses := map[string]string{"builds:barrier": "completed", "service1:deploy": "completed", "service2:deploy": "running"}
+	if ready, _ := deliveryNodeReadiness(incomingEdgesForNode(dag, "service3:plan"), statuses); ready {
+		t.Fatal("next wave started before prior wave terminated")
+	}
+	statuses["service2:deploy"] = "completed"
+	if ready, skip := deliveryNodeReadiness(incomingEdgesForNode(dag, "service3:plan"), statuses); !ready || skip {
+		t.Fatal("next wave did not become ready")
+	}
+	definition.Targets[0].ReleaseBundleID = "artifact"
+	if _, err := normalizeDeliveryDefinition(definition); err == nil {
+		t.Fatal("configuration candidate accepted deployment override")
+	}
+}
+
 func TestDeliveryDAGOrderDoesNotGrantSuccessfulDependency(t *testing.T) {
 	targets := deliveryTestTargets(10)
 	targets[4].Target.DependsOn = []string{targets[2].Target.ID}

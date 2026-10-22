@@ -1,0 +1,193 @@
+package delivery
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainupdate "github.com/opensoha/soha/internal/domain/templateupdate"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+)
+
+type TemplateUpdates interface {
+	Candidate(context.Context, domainidentity.Principal, string, bool) (domainupdate.FrozenCandidate, error)
+	ReadCandidate(context.Context, domainidentity.Principal, string) (domainupdate.FrozenCandidate, error)
+	AuthorizeApproval(context.Context, domainidentity.Principal, string) error
+	Apply(context.Context, domainidentity.Principal, string, string, func(context.Context) error) error
+}
+
+func (s *Service) SetTemplateUpdates(owner TemplateUpdates) { s.templateUpdates = owner }
+
+func (s *Service) createTemplateAdoptionPlan(ctx context.Context, p domainidentity.Principal, input domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error) {
+	if s.templateUpdates == nil || input.TemplateCandidateID == "" || input.Source != domainworkflow.ScopeDeliveryBatch || input.Action != domaindelivery.ApplicationDeliveryActionDeploy {
+		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: create template Plans from a frozen adoption batch", apperrors.ErrInvalidArgument)
+	}
+	if input.ReleaseBundleID != "" || input.ManifestRevision != 0 || input.HelmRevision != 0 || len(input.Variables) > 0 || len(input.BuildArgs) > 0 {
+		return domaindelivery.DeliveryPlan{}, apperrors.ErrInvalidArgument
+	}
+	frozen, err := s.templateUpdates.Candidate(ctx, p, input.TemplateCandidateID, true)
+	if err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
+	target := frozen.Candidate.Target
+	if input.ApplicationID != target.ApplicationID || input.ApplicationEnvironmentID != target.ApplicationEnvironmentID || input.TargetID != target.ReleaseTargetID {
+		return domaindelivery.DeliveryPlan{}, apperrors.ErrConflict
+	}
+	input.ID = firstNonEmpty(input.ID, uuid.NewString())
+	input.ApplicationName = target.ApplicationName
+	input.RequiresApproval = frozen.Candidate.RequiresApproval
+	input.RiskLevel = "medium"
+	if input.RequiresApproval {
+		input.RiskLevel = "high"
+	}
+	input.TargetSummary = fmt.Sprintf("%s v%d → v%d · 配置采用，尚未部署", target.TemplateID, target.FromVersion, frozen.Candidate.ToVersion)
+	input.Impact = map[string]any{"templateCandidateId": frozen.Candidate.ID, "templatePreviewId": frozen.PreviewID, "templateDigest": frozen.TemplateDigest, "candidateDigest": frozen.Candidate.Digest, "configurationOnly": true, "requiresValidation": false}
+	input.RollbackStrategy = "采用历史模板版本需重新比较并创建配置 Plan；已运行资源保持原部署版本"
+	return s.repository.CreateDeliveryPlan(ctx, input, p.UserID)
+}
+
+func (s *Service) confirmTemplateAdoptionPlan(ctx context.Context, p domainidentity.Principal, plan domaindelivery.DeliveryPlan) (domaindelivery.DeliveryPlanConfirmResult, error) {
+	result := domaindelivery.DeliveryPlanConfirmResult{Plan: plan, Result: domaindelivery.ApplicationDeliveryActionResult{Action: domaindelivery.ApplicationDeliveryActionDeploy, ApplicationID: plan.ApplicationID, ApplicationEnvironmentID: plan.ApplicationEnvironmentID}}
+	if s.templateUpdates == nil || plan.TemplateCandidateID == "" || plan.Source != domainworkflow.ScopeDeliveryBatch {
+		return result, apperrors.ErrConflict
+	}
+	frozen, err := s.templateUpdates.Candidate(ctx, p, plan.TemplateCandidateID, true)
+	if err != nil {
+		return result, err
+	}
+	if plan.Impact["candidateDigest"] != frozen.Candidate.Digest || plan.ApplicationID != frozen.Candidate.Target.ApplicationID || plan.ApplicationEnvironmentID != frozen.Candidate.Target.ApplicationEnvironmentID || plan.RequiresApproval != frozen.Candidate.RequiresApproval {
+		return result, apperrors.ErrConflict
+	}
+	if plan.Status == domaindelivery.DeliveryPlanStatusConfirmed {
+		return result, nil
+	}
+	if err := validateDeliveryPlanConfirmStatus(plan); err != nil {
+		return result, err
+	}
+	if plan.RequiresApproval && !deliveryPlanApprovalGranted(plan) {
+		return result, fmt.Errorf("%w: template adoption approval is required", apperrors.ErrConflict)
+	}
+	plan.Status = domaindelivery.DeliveryPlanStatusConfirming
+	plan, err = s.repository.UpdateDeliveryPlan(ctx, plan)
+	if err != nil {
+		return result, err
+	}
+	err = s.templateUpdates.Apply(ctx, p, plan.TemplateCandidateID, plan.ID, func(txctx context.Context) error {
+		now := time.Now().UTC()
+		plan.Status = domaindelivery.DeliveryPlanStatusConfirmed
+		plan.ConfirmedAt = &now
+		var updateErr error
+		plan, updateErr = s.repository.UpdateDeliveryPlan(txctx, plan)
+		return updateErr
+	})
+	if err != nil {
+		return result, err
+	}
+	result.Plan = plan
+	return result, nil
+}
+
+func (s *Service) freezeTemplateAdoption(ctx context.Context, p domainidentity.Principal, target domainworkflow.DeliveryTargetInput) (domainworkflow.DeliveryTargetSnapshot, error) {
+	var snapshot domainworkflow.DeliveryTargetSnapshot
+	if target.Action != "config_update" || target.TemplateCandidateID == "" || target.ReleaseBundleID != "" || target.HelmRevision != 0 || len(target.RepositoryRefs) > 0 || len(target.BuildArgs) > 0 {
+		return snapshot, apperrors.ErrInvalidArgument
+	}
+	if s.templateUpdates == nil {
+		return snapshot, apperrors.ErrConflict
+	}
+	frozen, err := s.templateUpdates.Candidate(ctx, p, target.TemplateCandidateID, true)
+	if err != nil {
+		return snapshot, err
+	}
+	if !domainupdate.IsPreviewBatch(ctx, frozen.PreviewID) {
+		return snapshot, fmt.Errorf("%w: template adoption batches require their reviewed preview receipt", apperrors.ErrConflict)
+	}
+	t := frozen.Candidate.Target
+	if target.ApplicationID != t.ApplicationID || target.ServiceID != t.ServiceID || target.ApplicationEnvironmentID != t.ApplicationEnvironmentID || target.ReleaseTargetID != t.ReleaseTargetID || frozen.AppliedPlanID != "" {
+		return snapshot, apperrors.ErrConflict
+	}
+	snapshot = domainworkflow.DeliveryTargetSnapshot{Target: target, ApplicationName: t.ApplicationName, ServiceName: t.ServiceName, EnvironmentName: t.EnvironmentName, ConfigurationDigest: frozen.Candidate.Digest}
+	snapshot.TemplateUpdate = &sohaapi.TemplateUpdateReceipt{Kind: t.Kind, TemplateID: t.TemplateID, BindingID: t.ID, PreviewID: frozen.PreviewID, CandidateID: frozen.Candidate.ID, FromVersion: t.FromVersion, ToVersion: frozen.Candidate.ToVersion, RequiresApproval: frozen.Candidate.RequiresApproval}
+	snapshot.FrozenScope = deliveryTargetScope(frozen.Binding.Application, target, nil)
+	return snapshot, nil
+}
+
+func (s *Service) executeTemplateBatchPlan(ctx context.Context, p domainidentity.Principal, snapshot domainworkflow.DeliveryTargetSnapshot, node domainworkflow.NodeRun) (domainworkflow.NodeRun, error) {
+	if s.templateUpdates == nil {
+		return node, apperrors.ErrConflict
+	}
+	if _, err := s.templateUpdates.Candidate(ctx, p, snapshot.Target.TemplateCandidateID, true); err != nil {
+		return node, err
+	}
+	capability, _ := domainworkflow.NodeExecutionFrom(ctx)
+	plan, err := s.repository.GetDeliveryPlan(ctx, capability.ResourceID("plan"))
+	if errors.Is(err, apperrors.ErrNotFound) {
+		plan, err = s.CreateDeliveryPlan(ctx, p, domaindelivery.DeliveryPlanInput{ID: capability.ResourceID("plan"), Source: domainworkflow.ScopeDeliveryBatch, Action: domaindelivery.ApplicationDeliveryActionDeploy, TemplateCandidateID: snapshot.Target.TemplateCandidateID, ApplicationID: snapshot.Target.ApplicationID, ApplicationEnvironmentID: snapshot.Target.ApplicationEnvironmentID, TargetID: snapshot.Target.ReleaseTargetID})
+	}
+	if err != nil {
+		return node, err
+	}
+	node.DeliveryPlanID = plan.ID
+	if approvalStatus(plan) == "rejected" {
+		node.Status, node.Summary = "failed", "template adoption Plan was rejected"
+		return node, nil
+	}
+	if plan.RequiresApproval && !deliveryPlanApprovalGranted(plan) {
+		if plan.Status != domaindelivery.DeliveryPlanStatusWaitingApproval {
+			plan.Status = domaindelivery.DeliveryPlanStatusWaitingApproval
+			plan.Impact = deliveryPlanApprovalImpact(plan, p, "requested", "")
+			plan, err = s.repository.UpdateDeliveryPlan(ctx, plan)
+			if err != nil {
+				return node, err
+			}
+			s.recordDeliveryPlanApproval(ctx, p, plan, "requested", "")
+		}
+		node.Status, node.Summary = "waiting_approval", "template configuration is waiting for approval"
+		return node, nil
+	}
+	if _, err := s.templateUpdates.Candidate(ctx, p, snapshot.Target.TemplateCandidateID, true); err != nil {
+		return node, err
+	}
+	node.Status, node.Summary = "completed", "template configuration Plan is ready"
+	return node, nil
+}
+
+func (s *Service) executeTemplateBatchAdoption(ctx context.Context, p domainidentity.Principal, run domainworkflow.Run, node domainworkflow.NodeRun) (domainworkflow.NodeRun, error) {
+	node.DeliveryPlanID = batchStageNode(run, node.TargetID, "plan").DeliveryPlanID
+	result, err := s.ConfirmDeliveryPlan(ctx, p, node.DeliveryPlanID)
+	if err != nil {
+		return node, err
+	}
+	if result.Plan.Status != domaindelivery.DeliveryPlanStatusConfirmed {
+		return node, apperrors.ErrConflict
+	}
+	node.Status, node.Summary = "completed", "配置已采用，尚未部署"
+	return node, nil
+}
+
+func (s *Service) templateAdoptionScopes(ctx context.Context, p domainidentity.Principal, snapshot domainworkflow.DeliveryTargetSnapshot) ([]map[string]string, error) {
+	if s.templateUpdates == nil {
+		return nil, apperrors.ErrConflict
+	}
+	frozen, err := s.templateUpdates.ReadCandidate(ctx, p, snapshot.Target.TemplateCandidateID)
+	if err != nil {
+		return nil, err
+	}
+	current := deliveryTargetScope(frozen.Binding.Application, snapshot.Target, nil)
+	if frozen.Candidate.Target.Scope == "application" && len(frozen.Binding.Environments) > 0 {
+		scopes := make([]map[string]string, 0, len(frozen.Binding.Environments))
+		for _, env := range frozen.Binding.Environments {
+			target := snapshot.Target
+			target.ApplicationEnvironmentID = env.ID
+			scopes = append(scopes, deliveryTargetScope(frozen.Binding.Application, target, nil))
+		}
+		return scopes, nil
+	}
+	return []map[string]string{current}, nil
+}

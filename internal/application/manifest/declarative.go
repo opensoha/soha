@@ -220,6 +220,7 @@ func (s *DeclarativeService) UpdateBinding(ctx context.Context, principal domain
 	if input.ExpectedVersion < 1 {
 		return domainmanifest.EnvironmentBinding{}, fmt.Errorf("%w: expectedVersion must be positive", apperrors.ErrInvalidArgument)
 	}
+	binding.TemplateSelection = existing.TemplateSelection
 	if err := s.validateBinding(ctx, principal, domainaccess.ActionUpdate, item, app, &binding); err != nil {
 		return domainmanifest.EnvironmentBinding{}, err
 	}
@@ -318,7 +319,7 @@ func (s *DeclarativeService) validateBinding(ctx context.Context, principal doma
 		return err
 	}
 	binding.EnvironmentKey = item.Bindings[0].EnvironmentKey
-	return s.base.validateTemplateParameters(ctx, principal, item, binding.TemplateParameters)
+	return s.base.validateSelectedTemplateParameters(ctx, principal, item, binding.TemplateParameters, binding.TemplateSelection)
 }
 
 func normalizeSourceInput(input domainmanifest.SourceInput) (domainmanifest.SourceInput, error) {

@@ -51,6 +51,9 @@ func selectedDeliveryTarget(binding domaincatalog.ApplicationEnvironment, input 
 // ResolveDeliveryTargetScopes performs only authorized local reads. Frozen runs
 // retain their original physical resource scope even after catalog edits.
 func (s *Service) ResolveDeliveryTargetScopes(ctx context.Context, principal domainidentity.Principal, snapshot domainworkflow.DeliveryTargetSnapshot) ([]map[string]string, error) {
+	if snapshot.Target.TemplateCandidateID != "" {
+		return s.templateAdoptionScopes(ctx, principal, snapshot)
+	}
 	app, _, err := s.deliveryTargetService(ctx, principal, snapshot.Target)
 	if err != nil {
 		return nil, err

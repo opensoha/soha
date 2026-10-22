@@ -43,6 +43,8 @@ RELATION_RULES_SCOPE = {
 
 MANIFEST_ROOT_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/manifest","parent":"TestDeliverySnapshotWithPostgres","children":["root-cr-publication-control", *["root-cr-publication-control/"+name for name in ["valid","withdrawn","uid-replaced","baseline-changed","binding-changed"]]]}
 
+TEMPLATE_ADOPTION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/templateupdate","parent":"TestTemplateAdoptionWithPostgres","children":["atomic_receipt_and_environment_isolation","stale_and_canceled_worker","policy_cas_and_private_identity"]}
+
 def validate(raw, exit_code=0, package=PACKAGE, parent=PARENT, children=CHILDREN):
     if exit_code != 0:
         raise ValueError("Go process did not succeed")
@@ -75,6 +77,7 @@ if __name__ == "__main__":
     parser.add_argument("--identity", action="store_true")
     parser.add_argument("--kubernetes-import", action="store_true")
     parser.add_argument("--relation-rules", action="store_true")
+    parser.add_argument("--template-adoption", action="store_true")
     args = parser.parse_args()
     try:
         scope = {"package": "github.com/opensoha/soha/internal/repository/copilot", "parent": "TestMainSessionWithPostgres", "children": ["personal_assistant_identity"]} if args.main_chat else {}
@@ -84,6 +87,8 @@ if __name__ == "__main__":
             scope = KUBERNETES_IMPORT_SCOPE
         if args.relation_rules:
             scope = RELATION_RULES_SCOPE
+        if args.template_adoption:
+            scope = TEMPLATE_ADOPTION_SCOPE
         print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))
     except (ValueError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")

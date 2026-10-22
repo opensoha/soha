@@ -175,6 +175,9 @@ func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal do
 	if err := s.authorizeApplicationEnvironmentInput(ctx, principal, domainaccess.ActionCreate, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
+	if err := validateTemplateAdoptionUpdate(ctx, domaincatalog.ApplicationEnvironment{ApplicationID: input.ApplicationID}, input); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
 	if err := s.validateApplicationEnvironmentWorkflow(ctx, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
@@ -209,6 +212,9 @@ func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal do
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	if err := s.authorizeApplicationEnvironmentInput(ctx, principal, domainaccess.ActionUpdate, input); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateTemplateAdoptionUpdate(ctx, current, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	if err := s.validateApplicationEnvironmentWorkflow(ctx, input); err != nil {

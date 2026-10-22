@@ -140,6 +140,7 @@ type OperationRecorder interface {
 }
 
 type Service struct {
+	templateUpdates   TemplateUpdates
 	applications      ApplicationReader
 	catalog           CatalogReader
 	builds            BuildReader
@@ -1086,6 +1087,12 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 		return domaindelivery.DeliveryPlan{}, err
 	}
 	action := normalizeApplicationDeliveryAction(input.Action)
+	if input.TemplateCandidateID != "" {
+		if action != domaindelivery.ApplicationDeliveryActionDeploy {
+			return domaindelivery.DeliveryPlan{}, apperrors.ErrInvalidArgument
+		}
+		return s.createTemplateAdoptionPlan(ctx, principal, input)
+	}
 	app, err := s.applications.Get(ctx, principal, strings.TrimSpace(input.ApplicationID))
 	if err != nil {
 		return domaindelivery.DeliveryPlan{}, err
@@ -1140,6 +1147,10 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 		planInput.ReleaseBundleID = planInput.HelmSnapshots[0].ReleaseBundleID
 		planInput.Impact["helmRevision"] = planInput.HelmRevision
 	}
+	return s.createPreparedDeliveryPlan(ctx, principal, planInput)
+}
+
+func (s *Service) createPreparedDeliveryPlan(ctx context.Context, principal domainidentity.Principal, planInput domaindelivery.DeliveryPlanInput) (domaindelivery.DeliveryPlan, error) {
 	plan, err := s.repository.CreateDeliveryPlan(ctx, planInput, principal.UserID)
 	if err == nil {
 		err = s.ensureHelmPreflights(ctx, principal, plan)
@@ -1182,6 +1193,13 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 	if err := requireBatchPlanWorker(ctx, plan); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
+	if plan.TemplateCandidateID != "" {
+		return s.confirmTemplateAdoptionPlan(ctx, principal, plan)
+	}
+	return s.confirmRuntimeDeliveryPlan(ctx, principal, plan)
+}
+
+func (s *Service) confirmRuntimeDeliveryPlan(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan) (domaindelivery.DeliveryPlanConfirmResult, error) {
 	if plan.Source == domainworkflow.ScopeDeliveryBatch && plan.Status == domaindelivery.DeliveryPlanStatusConfirmed {
 		return domaindelivery.DeliveryPlanConfirmResult{Plan: plan}, nil
 	}
@@ -1214,7 +1232,7 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 	now := time.Now().UTC()
 	plan.Status = domaindelivery.DeliveryPlanStatusConfirming
 	plan.UpdatedAt = now
-	plan, err = s.repository.UpdateDeliveryPlan(ctx, plan)
+	plan, err := s.repository.UpdateDeliveryPlan(ctx, plan)
 	if err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
@@ -1351,6 +1369,12 @@ func (s *Service) GetConfirmedDeliveryPlan(ctx context.Context, principal domain
 }
 
 func (s *Service) authorizeDeliveryPlanApprover(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan) error {
+	if plan.TemplateCandidateID != "" {
+		if s.templateUpdates == nil {
+			return apperrors.ErrConflict
+		}
+		return s.templateUpdates.AuthorizeApproval(ctx, principal, plan.TemplateCandidateID)
+	}
 	if err := s.authorizeRootPlanRead(ctx, principal, plan); err != nil {
 		return err
 	}
