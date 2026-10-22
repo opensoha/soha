@@ -76,32 +76,41 @@ type DeliveryTaskReader interface {
 }
 
 type DeclarativeRuntimeDependencies struct {
-	Delivery    DeliveryTaskReader
-	Agents      func(domaincluster.Connection) (ManifestRuntime, error)
-	DeliveryGit DeliveryGitReader
-	Renderer    ManifestRenderer
-	Direct      ManifestRuntime
-	Git         ManifestRuntime
-	Tasks       ManifestTaskRuntime
-	Sources     SourceRepositoryReader
+	ExecutionPrincipals ExecutionPrincipalReader
+	ImportedRoots       ImportedRootAdmission
+	RootResources       RootResourceReader
+	Delivery            DeliveryTaskReader
+	Agents              func(domaincluster.Connection) (ManifestRuntime, error)
+	DeliveryGit         DeliveryGitReader
+	Renderer            ManifestRenderer
+	Direct              ManifestRuntime
+	Git                 ManifestRuntime
+	Tasks               ManifestTaskRuntime
+	Sources             SourceRepositoryReader
 }
 
 type DeclarativeService struct {
-	delivery    DeliveryTaskReader
-	agents      func(domaincluster.Connection) (ManifestRuntime, error)
-	deliveryGit DeliveryGitReader
-	base        *Service
-	repository  DeclarativeRepository
-	renderer    ManifestRenderer
-	direct      ManifestRuntime
-	git         ManifestRuntime
-	tasks       ManifestTaskRuntime
-	sources     SourceRepositoryReader
+	executionPrincipals ExecutionPrincipalReader
+	importedRoots       ImportedRootAdmission
+	rootResources       RootResourceReader
+	delivery            DeliveryTaskReader
+	agents              func(domaincluster.Connection) (ManifestRuntime, error)
+	deliveryGit         DeliveryGitReader
+	base                *Service
+	repository          DeclarativeRepository
+	renderer            ManifestRenderer
+	direct              ManifestRuntime
+	git                 ManifestRuntime
+	tasks               ManifestTaskRuntime
+	sources             SourceRepositoryReader
 }
 
 func NewDeclarative(base *Service, repository DeclarativeRepository, runtime ...DeclarativeRuntimeDependencies) *DeclarativeService {
 	service := &DeclarativeService{base: base, repository: repository}
 	if len(runtime) > 0 {
+		service.executionPrincipals = runtime[0].ExecutionPrincipals
+		service.importedRoots = runtime[0].ImportedRoots
+		service.rootResources = runtime[0].RootResources
 		service.delivery = runtime[0].Delivery
 		service.agents = runtime[0].Agents
 		service.deliveryGit = runtime[0].DeliveryGit
@@ -260,7 +269,16 @@ func (s *DeclarativeService) ListDeployments(ctx context.Context, principal doma
 		return domainmanifest.DeploymentPage{}, err
 	}
 	filter.ApplicationIDs = applicationIDs
-	return s.repository.ListDeployments(ctx, filter)
+	page, err := s.repository.ListDeployments(ctx, filter)
+	if err != nil {
+		return page, err
+	}
+	for _, deployment := range page.Items {
+		if err = s.authorizeRootDeploymentRead(ctx, principal, deployment); err != nil {
+			return domainmanifest.DeploymentPage{}, err
+		}
+	}
+	return page, nil
 }
 
 func (s *DeclarativeService) GetDeployment(ctx context.Context, principal domainidentity.Principal, deploymentID string) (domainmanifest.Deployment, error) {
@@ -272,6 +290,9 @@ func (s *DeclarativeService) GetDeployment(ctx context.Context, principal domain
 		return domainmanifest.Deployment{}, err
 	}
 	if _, err := s.base.Get(ctx, principal, item.PackageID); err != nil {
+		return domainmanifest.Deployment{}, err
+	}
+	if err := s.authorizeRootDeploymentRead(ctx, principal, item); err != nil {
 		return domainmanifest.Deployment{}, err
 	}
 	return item, nil

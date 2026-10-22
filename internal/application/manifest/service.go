@@ -87,7 +87,16 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 		return domainmanifest.Page{}, err
 	}
 	filter.ApplicationIDs = applicationIDs
-	return s.repository.List(ctx, filter)
+	page, err := s.repository.List(ctx, filter)
+	if err != nil {
+		return page, err
+	}
+	for _, item := range page.Items {
+		if err = s.authorizeSensitiveFiles(ctx, principal, item.Files); err != nil {
+			return domainmanifest.Page{}, err
+		}
+	}
+	return page, nil
 }
 
 func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, packageID string) (domainmanifest.Package, error) {
@@ -340,7 +349,16 @@ func (s *Service) ListRevisions(ctx context.Context, principal domainidentity.Pr
 	if _, err := s.authorizePackage(ctx, principal, domainaccess.ActionView, item); err != nil {
 		return nil, err
 	}
-	return s.repository.ListRevisions(ctx, strings.TrimSpace(packageID))
+	revisions, err := s.repository.ListRevisions(ctx, strings.TrimSpace(packageID))
+	if err != nil {
+		return nil, err
+	}
+	for _, revision := range revisions {
+		if err = s.authorizeSensitiveFiles(ctx, principal, revision.Files); err != nil {
+			return nil, err
+		}
+	}
+	return revisions, nil
 }
 
 func normalizePagination(page, pageSize, legacyLimit int) (int, int) {
@@ -382,6 +400,9 @@ func (s *Service) authorizedApplicationIDs(ctx context.Context, principal domain
 }
 
 func (s *Service) authorizeInput(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package) (domainapp.App, error) {
+	if err := s.authorizeSensitiveFiles(ctx, principal, item.Files); err != nil {
+		return domainapp.App{}, err
+	}
 	app, err := s.applications.Get(ctx, principal, item.ApplicationID)
 	if err != nil {
 		return domainapp.App{}, err

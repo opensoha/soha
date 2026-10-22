@@ -180,7 +180,8 @@ func (s *Service) AddExecutionTaskSink(sink ExecutionTaskSink) {
 
 func (s *Service) GetExecutionTaskInternal(ctx context.Context, taskID string) (domaindelivery.ExecutionTask, error) {
 	task, err := s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
-	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
+	task.OperationState = domaindelivery.BuildOperationState(task, time.Now().UTC())
+	return task, err
 }
 
 type BuildPlan struct {
@@ -232,7 +233,8 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 		}
 		task = hydrated
 	}
-	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
+	task.OperationState = domaindelivery.BuildOperationState(task, time.Now().UTC())
+	return task, err
 }
 
 func (s *Service) ListReleaseBundles(ctx context.Context, principal domainidentity.Principal, filter domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {

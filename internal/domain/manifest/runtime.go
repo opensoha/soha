@@ -109,6 +109,7 @@ type DriftReport struct {
 }
 
 type TaskPayload struct {
+	RootResource     *sohaapi.ManifestRootResource           `json:"rootResource,omitempty"`
 	RolloutControl   *sohaapi.ProgressiveRolloutControlInput `json:"rolloutControl,omitempty"`
 	GitOpsDocuments  []RenderedDocument                      `json:"gitOpsDocuments,omitempty"`
 	Action           string                                  `json:"action"`

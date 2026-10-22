@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	"slices"
 	"strings"
@@ -95,7 +96,7 @@ func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal d
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
-	if err := s.requireLegacyDeployment(ctx, binding.ID); err != nil {
+	if err := s.requireLegacyDeployment(ctx, principal, binding.ID); err != nil {
 		return DeploymentActionResult{}, err
 	}
 	item, _, err := s.bindingPackage(ctx, principal, binding.PackageID, domainaccess.ActionTrigger)
@@ -264,7 +265,12 @@ func (s *DeclarativeService) taskPayload(action string, item domainmanifest.Pack
 		fieldManager = "opensoha-manifest/" + binding.ID
 		gitOpsDocuments = deployment.Spec.DeliverySnapshot.GitOpsDocuments
 	}
+	var rootResource *sohaapi.ManifestRootResource
+	if deployment.Spec.DeliverySnapshot != nil {
+		rootResource = deployment.Spec.DeliverySnapshot.RootResource
+	}
 	return domainmanifest.TaskPayload{
+		RootResource:    rootResource,
 		GitOpsDocuments: gitOpsDocuments,
 		Action:          action, PackageID: item.ID, BindingID: binding.ID, DeploymentID: deployment.ID,
 		Generation: generation, Revision: rendered.Revision, RenderedDigest: rendered.RenderedDigest,
@@ -273,11 +279,16 @@ func (s *DeclarativeService) taskPayload(action string, item domainmanifest.Pack
 	}
 }
 
-func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmanifest.Package, binding domainmanifest.EnvironmentBinding, deployment domainmanifest.Deployment, payload domainmanifest.TaskPayload) (domaindelivery.ExecutionTask, error) {
+func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmanifest.Package, binding domainmanifest.EnvironmentBinding, deployment domainmanifest.Deployment, payload domainmanifest.TaskPayload, principals ...domainidentity.Principal) (domaindelivery.ExecutionTask, error) {
 	if s.tasks == nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: manifest task runtime is unavailable", apperrors.ErrInvalidArgument)
 	}
-	provider, err := s.taskProvider(ctx, binding.ClusterID)
+	if s.importedRoots != nil {
+		if err := s.importedRoots.ValidateImportedManifestTargets(ctx, payload); err != nil {
+			return domaindelivery.ExecutionTask{}, err
+		}
+	}
+	provider, err := s.rootTaskProvider(ctx, binding.ClusterID, payload.RootResource != nil)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
@@ -289,6 +300,9 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 		Status: "queued", QueueKey: firstNonEmptyString(deployment.ID, binding.ID), LockKey: payload.IdempotencyKey,
 		MaxRetries: 1, TimeoutSeconds: 300, CallbackToken: uuid.NewString(), Payload: structMap(payload), Result: map[string]any{},
 		CreatedAt: now, UpdatedAt: now,
+	}
+	if payload.RootResource != nil && len(principals) > 0 {
+		task.SecretPrincipal = principals[0]
 	}
 	if payload.Action == domainmanifest.TaskActionApply && hasRolloutDocuments(payload.Documents) {
 		task.TimeoutSeconds = 24 * 60 * 60
@@ -557,7 +571,15 @@ func (s *DeclarativeService) queueAutomaticAction(ctx context.Context, deploymen
 	// Reconcile active rollouts promptly; settled deployments remain due at 60 seconds.
 	bucket := observedAt.UTC().Unix() / 10
 	payload.IdempotencyKey = fmt.Sprintf("manifest:%s:%d:%s:%d", deployment.ID, deployment.Generation, action, bucket)
-	_, err = s.queueOperation(ctx, item, binding, deployment, payload)
+	var principals []domainidentity.Principal
+	if payload.RootResource != nil {
+		principal, principalErr := s.rootObservationPrincipal(ctx, deployment)
+		if principalErr != nil {
+			return principalErr
+		}
+		principals = append(principals, principal)
+	}
+	_, err = s.queueOperation(ctx, item, binding, deployment, payload, principals...)
 	return err
 }
 

@@ -684,7 +684,7 @@ func (r *Repository) createExecutionTask(ctx context.Context, item domaindeliver
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task secret refs: %w", err)
 	}
-	secretPrincipal, err := json.Marshal(item.SecretPrincipal)
+	secretPrincipal, err := marshalExecutionPrincipal(item)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("marshal execution task secret principal: %w", err)
 	}
@@ -1313,7 +1313,7 @@ func scanExecutionTask(rows *sql.Rows) (domaindelivery.ExecutionTask, error) {
 	item.RuntimeClusterID = runtimeClusterID.String
 	item.StopTransport = stopTransport.String
 	_ = json.Unmarshal(secretRefs, &item.SecretRefs)
-	_ = json.Unmarshal(secretPrincipal, &item.SecretPrincipal)
+	item.SecretPrincipal = unmarshalExecutionPrincipal(secretPrincipal)
 	_ = json.Unmarshal(secretTarget, &item.SecretTarget)
 	_ = json.Unmarshal(payload, &item.Payload)
 	_ = json.Unmarshal(result, &item.Result)
@@ -1376,7 +1376,7 @@ func scanExecutionTaskRow(row *sql.Row) (domaindelivery.ExecutionTask, error) {
 	item.RuntimeClusterID = runtimeClusterID.String
 	item.StopTransport = stopTransport.String
 	_ = json.Unmarshal(secretRefs, &item.SecretRefs)
-	_ = json.Unmarshal(secretPrincipal, &item.SecretPrincipal)
+	item.SecretPrincipal = unmarshalExecutionPrincipal(secretPrincipal)
 	_ = json.Unmarshal(secretTarget, &item.SecretTarget)
 	_ = json.Unmarshal(payload, &item.Payload)
 	_ = json.Unmarshal(result, &item.Result)

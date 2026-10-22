@@ -611,6 +611,10 @@ func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity
 	if artifactErr == nil && len(artifacts) > 0 {
 		task.Artifacts = artifacts
 	}
+	if domaindelivery.SensitiveExecutionTask(task) && appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPlatformConfigurationSecretDataView) == nil {
+		task.OperationState = domaindelivery.BuildOperationState(task, time.Now().UTC())
+		return task, nil
+	}
 	return domaindelivery.WithOperationState(task, time.Now().UTC()), nil
 }
 
@@ -628,6 +632,11 @@ func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentit
 	}
 	if err := s.authorizeRuntimeScope(ctx, principal, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
 		return nil, err
+	}
+	if domaindelivery.SensitiveExecutionTask(task) {
+		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPlatformConfigurationSecretDataView); err != nil {
+			return nil, err
+		}
 	}
 	return s.repository.ListExecutionLogs(ctx, taskID, limit)
 }
@@ -1152,6 +1161,9 @@ func (s *Service) GetDeliveryPlan(ctx context.Context, principal domainidentity.
 	if err := s.authorizeRuntimeScope(ctx, principal, plan.ApplicationID, plan.ApplicationEnvironmentID); err != nil {
 		return domaindelivery.DeliveryPlan{}, err
 	}
+	if err := s.authorizeRootPlanRead(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
+	}
 	return plan, nil
 }
 
@@ -1160,6 +1172,10 @@ func (s *Service) ConfirmDeliveryPlan(ctx context.Context, principal domainident
 	if err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
+	if err := s.authorizeRootPlanRead(ctx, principal, plan); err != nil {
+		return domaindelivery.DeliveryPlanConfirmResult{}, err
+	}
+
 	if err := s.authorizeRuntimeScope(ctx, principal, plan.ApplicationID, plan.ApplicationEnvironmentID); err != nil {
 		return domaindelivery.DeliveryPlanConfirmResult{}, err
 	}
@@ -1335,6 +1351,9 @@ func (s *Service) GetConfirmedDeliveryPlan(ctx context.Context, principal domain
 }
 
 func (s *Service) authorizeDeliveryPlanApprover(ctx context.Context, principal domainidentity.Principal, plan domaindelivery.DeliveryPlan) error {
+	if err := s.authorizeRootPlanRead(ctx, principal, plan); err != nil {
+		return err
+	}
 	binding, err := s.catalog.AuthorizeApplicationEnvironmentPermission(ctx, principal, plan.ApplicationEnvironmentID, appaccess.PermDeliveryApplicationEnvApprove)
 	if err != nil {
 		return err

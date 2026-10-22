@@ -244,3 +244,27 @@ func (c *CustomResources) importSource(ctx context.Context, principal domainiden
 	source, err := sourceSnapshot(clusterID, namespace, definition.Group+"/"+definition.Version, definition.Kind, name, crdName, definition.Resource, item.Content)
 	return source, item, err
 }
+
+// AuthorizeRootCRUpdate reuses the workbench's CR scope, saved Agent grants and
+// Kubernetes review before a delivery plan may write the root spec.
+func (r *Runtime) AuthorizeRootCRUpdate(ctx context.Context, principal domainidentity.Principal, source domainresource.ResourceSourceSnapshot) error {
+	if err := r.Workloads.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformConfigurationSecretDataView); err != nil {
+		return err
+	}
+	c := r.customResources
+	connection, err := c.authorizeCRDDefinitionAccess(ctx, principal, source.Resource.ClusterID, domainaccess.ActionView)
+	if err != nil {
+		return err
+	}
+	definition, err := c.resolveCRDResourceDefinition(ctx, connection, source.CRDName)
+	if err != nil {
+		return err
+	}
+	if !definition.Namespaced || definition.Kind != source.Resource.Kind || definition.Group+"/"+definition.Version != source.Resource.APIVersion {
+		return apperrors.ErrConflict
+	}
+	if _, _, err = c.authorizeCustomResourceAccess(ctx, principal, source.Resource.ClusterID, source.Resource.Namespace, definition.Kind, domainaccess.ActionUpdate); err != nil {
+		return err
+	}
+	return c.requireCustomResourceAction(ctx, connection, definition, source.Resource.Namespace, source.Resource.Name, domainaccess.ActionUpdate)
+}

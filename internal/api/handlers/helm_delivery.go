@@ -77,6 +77,9 @@ func executionProviderCluster(provider string) (string, bool) {
 			clusterID = strings.TrimPrefix(provider, resourceruntime.ManifestAgentProviderPrefix)
 		}
 		if clusterID == provider {
+			clusterID = strings.TrimPrefix(provider, resourceruntime.RootCRAgentProviderPrefix)
+		}
+		if clusterID == provider {
 			clusterID = strings.TrimPrefix(provider, "manifest_agent.")
 		}
 	}

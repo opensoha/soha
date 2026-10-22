@@ -40,3 +40,17 @@ func TestManifestTasksRequireProtectedAgentProtocol(t *testing.T) {
 		}
 	}
 }
+
+func TestRootCRTasksRequireDedicatedAgentCapability(t *testing.T) {
+	for _, capable := range []bool{false, true} {
+		summary := domaincluster.Summary{ConnectionMode: domaincluster.ConnectionModeAgent, Capabilities: []string{resourceruntime.ManifestAgentCapability}}
+		if capable {
+			summary.Capabilities = append(summary.Capabilities, resourceruntime.RootCRAgentCapability)
+		}
+		s := &DeclarativeService{base: &Service{clusters: manifestCapabilityCluster{summary}}}
+		provider, err := s.rootTaskProvider(t.Context(), "cluster", true)
+		if !capable && !errors.Is(err, apperrors.ErrUnsupportedOperation) || capable && (err != nil || provider != "manifest_root_cr_v1.cluster") {
+			t.Fatalf("provider=%s error=%v", provider, err)
+		}
+	}
+}

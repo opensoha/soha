@@ -10,12 +10,14 @@ import (
 	"reflect"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
@@ -61,6 +63,9 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	}
 	repository := manifestrepo.New(tx)
 	verifyConfigurationRevisionCAS(t, ctx, repository, applicationID)
+	t.Run("root-cr-publication-control", func(t *testing.T) {
+		verifyRootCRPublicationControl(t, ctx, tx, repository, applicationID, environmentID, clusterID)
+	})
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	item, err := repository.Create(ctx, domainmanifest.Package{
 		ID: uuid.NewString(), Name: "API", ApplicationID: applicationID, Renderer: domainmanifest.RendererKustomize,
@@ -456,5 +461,88 @@ func verifyGitOpsResourceOwnership(t *testing.T, ctx context.Context, tx *gorm.D
 	other.Spec.DeliverySnapshot = &incoming
 	if _, err := repository.SetDesiredRevision(ctx, other, 0); !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("incoming GitOps child ignored another binding: %v", err)
+	}
+}
+
+func verifyRootCRPublicationControl(t *testing.T, ctx context.Context, tx *gorm.DB, repository *manifestrepo.Repository, applicationID, environmentID, clusterID string) {
+	t.Helper()
+	for _, mode := range []string{"valid", "withdrawn", "uid-replaced", "baseline-changed", "binding-changed"} {
+		t.Run(mode, func(t *testing.T) {
+			requireManifestRepositoryNoError(t, tx.SavePoint("root_cr").Error)
+			defer func() { requireManifestRepositoryNoError(t, tx.RollbackTo("root_cr").Error) }()
+			now := time.Now().UTC().Truncate(time.Microsecond)
+			item, err := repository.Create(ctx, domainmanifest.Package{ID: uuid.NewString(), Name: "Generic CR", ApplicationID: applicationID, Renderer: "raw_yaml", Status: "published", CurrentRevision: 1, Files: []domainmanifest.File{}, Bindings: []domainmanifest.Binding{}, CreatedAt: now, UpdatedAt: now})
+			requireManifestRepositoryNoError(t, err)
+			binding, err := repository.CreateBinding(ctx, domainmanifest.EnvironmentBinding{ID: uuid.NewString(), PackageID: item.ID, ApplicationEnvironmentID: environmentID, ClusterID: clusterID, Namespace: "test", Enabled: true, Version: 1, DriftPolicy: "report", DeletionPolicy: "orphan", Overlay: map[string]string{}, CreatedAt: now, UpdatedAt: now})
+			requireManifestRepositoryNoError(t, err)
+			item, err = repository.Get(ctx, item.ID)
+			requireManifestRepositoryNoError(t, err)
+			targetID := uuid.NewString()
+			metadata := map[string]any{"importSource": "kubernetes", "ownershipMode": "managed", "rootCRGeneration": 2, "resourceSource": `{"resource":{"apiVersion":"unknown.example/v1","kind":"Database","uid":"root-uid"}}`}
+			switch mode {
+			case "withdrawn":
+				metadata["ownershipMode"] = "observe_only"
+			case "uid-replaced":
+				metadata["resourceSource"] = `{"resource":{"apiVersion":"unknown.example/v1","kind":"Database","uid":"new-uid"}}`
+			case "baseline-changed":
+				metadata["rootCRGeneration"] = 3
+			}
+			data, err := json.Marshal(metadata)
+			requireManifestRepositoryNoError(t, err)
+			configRef := binding.ID
+			if mode == "binding-changed" {
+				configRef = "different"
+			}
+			requireManifestRepositoryNoError(t, tx.Exec(`INSERT INTO release_targets (id,application_environment_id,cluster_id,namespace,target_kind,executor_kind,config_ref,workload_kind,workload_name,metadata,enabled) VALUES (?,?,?,'test','kubernetes_workload','manifest_ssa',?,'CustomResource','root',?::jsonb,TRUE)`, targetID, environmentID, clusterID, configRef, string(data)).Error)
+			root := &sohaapi.ManifestRootResource{APIVersion: "unknown.example/v1", Kind: "Database", Namespace: "test", Name: "root", UID: "root-uid", Generation: 2, CrdName: "databases.unknown.example", TargetID: targetID, DeliveryPlanID: uuid.NewString()}
+			snapshot := domainmanifest.DeliverySnapshot{RootResource: root, DeliveryPlanID: root.DeliveryPlanID, TargetID: targetID, PackageID: item.ID, BindingID: binding.ID, BindingVersion: binding.Version, ApplicationEnvironmentID: environmentID, ClusterID: clusterID, Namespace: "test", Revision: 1, PackageUpdatedAt: item.UpdatedAt, Documents: []domainmanifest.RenderedDocument{{APIVersion: root.APIVersion, Kind: root.Kind, Namespace: "test", Name: "root"}}}
+			next := domainmanifest.Deployment{ID: uuid.NewString(), PackageID: item.ID, BindingID: binding.ID, CreatedAt: now, UpdatedAt: now, Spec: domainmanifest.DeploymentSpec{DesiredRevision: 1, ReconcilePolicy: "continuous", DriftPolicy: "report", DeletionPolicy: "orphan", DeliverySnapshot: &snapshot}}
+			admission := domainmanifest.TaskPayload{Action: "apply", BindingID: binding.ID, ClusterID: clusterID, Namespace: "test", Documents: snapshot.Documents}
+			rejectLegacyRootAdmission(t, ctx, repository, admission)
+			admission.RootResource = root
+			if err := repository.ValidateImportedManifestTargets(ctx, admission); mode == "valid" && err != nil || mode != "valid" && !errors.Is(err, apperrors.ErrConflict) {
+				t.Fatalf("root ownership admission: %v", err)
+			}
+			stored, err := repository.SetDesiredRevision(ctx, next, 0)
+			if mode != "valid" {
+				if !errors.Is(err, apperrors.ErrConflict) {
+					t.Fatalf("changed control accepted: %v", err)
+				}
+				return
+			}
+			requireManifestRepositoryNoError(t, err)
+			if stored.Spec.DeliverySnapshot.RootResource.UID != "root-uid" {
+				t.Fatal("root fence not persisted")
+			}
+			data, err = json.Marshal(admission)
+			requireManifestRepositoryNoError(t, err)
+			wire := map[string]any{}
+			requireManifestRepositoryNoError(t, json.Unmarshal(data, &wire))
+			task := domaindelivery.ExecutionTask{ID: uuid.NewString(), ApplicationID: applicationID, ApplicationEnvironmentID: environmentID, TaskKind: "manifest_apply", ProviderKind: "manifest_direct", TargetKind: "manifest_deployment", Status: "queued", Payload: wire, SecretPrincipal: domainidentity.Principal{UserID: "actor", AccessTokenID: "private-token-id"}}
+			run := domainmanifest.OperationRun{ID: uuid.NewString(), PackageID: item.ID, BindingID: binding.ID, DeploymentID: stored.ID, Generation: stored.Generation, Action: "apply", IdempotencyKey: uuid.NewString(), CreatedAt: now}
+			taskID, _, err := repository.CreateOperationTask(ctx, run, task)
+			requireManifestRepositoryNoError(t, err)
+			restored, err := deliveryrepo.New(tx).GetExecutionTask(ctx, taskID)
+			requireManifestRepositoryNoError(t, err)
+			if restored.SecretPrincipal.AccessTokenID != "private-token-id" {
+				t.Fatal("execution token identity lost")
+			}
+			public, err := json.Marshal(restored)
+			requireManifestRepositoryNoError(t, err)
+			if strings.Contains(string(public), "private-token-id") {
+				t.Fatal("private token identity leaked")
+			}
+
+		})
+	}
+}
+
+func rejectLegacyRootAdmission(t *testing.T, ctx context.Context, repository *manifestrepo.Repository, payload domainmanifest.TaskPayload) {
+	t.Helper()
+	for _, namespace := range []string{payload.Namespace, "different-binding-namespace"} {
+		payload.Namespace = namespace
+		if err := repository.ValidateImportedManifestTargets(ctx, payload); !errors.Is(err, apperrors.ErrConflict) {
+			t.Fatalf("legacy publication bypass accepted from binding namespace %s: %v", namespace, err)
+		}
 	}
 }

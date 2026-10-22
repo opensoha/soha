@@ -119,6 +119,14 @@ func insertDeployment(tx *gorm.DB, item domainmanifest.Deployment) error {
 }
 
 func lockDeliverySnapshot(tx *gorm.DB, snapshot domainmanifest.DeliverySnapshot) error {
+	if snapshot.RootResource != nil {
+		var targetID string
+		err := tx.Raw(`SELECT id FROM release_targets WHERE id=? AND application_environment_id=? AND config_ref=? AND executor_kind='manifest_ssa' AND workload_kind='CustomResource' AND enabled=TRUE AND cluster_id=? AND namespace=? AND workload_name=? AND metadata->>'importSource'='kubernetes' AND metadata->>'ownershipMode'='managed' AND ((metadata->>'resourceSource')::jsonb #>> '{resource,uid}')=? AND (metadata->>'rootCRGeneration')::bigint=? FOR SHARE`, snapshot.TargetID, snapshot.ApplicationEnvironmentID, snapshot.BindingID, snapshot.ClusterID, snapshot.Namespace, snapshot.RootResource.Name, snapshot.RootResource.UID, snapshot.RootResource.Generation).Row().Scan(&targetID)
+		if err != nil {
+			return fmt.Errorf("%w: root CR publication control changed", apperrors.ErrConflict)
+		}
+	}
+
 	var id string
 	err := tx.Raw(`
 		SELECT binding.id FROM manifest_bindings binding

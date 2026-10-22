@@ -57,6 +57,10 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 	if err := validateDeliveryDocuments(rendered.Documents, binding.Namespace); err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
+	rootResource, err := s.freezeRootCR(ctx, principal, target, planID, rendered.Documents)
+	if err != nil {
+		return domainmanifest.DeliverySnapshot{}, err
+	}
 	gitOpsDocuments, err := s.freezeGitOpsDocuments(ctx, app, binding, rendered.Documents)
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
@@ -70,6 +74,7 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 		return domainmanifest.DeliverySnapshot{}, err
 	}
 	snapshot := domainmanifest.DeliverySnapshot{
+		RootResource:    rootResource,
 		GitOpsDocuments: gitOpsDocuments,
 		TemplateInputs:  templateInputs,
 		DeliveryPlanID:  planID, TargetID: target.ID, PackageID: item.ID, ServiceID: item.ServiceID,
@@ -82,8 +87,9 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 	payload := s.taskPayload(domainmanifest.TaskActionPreflight, item, binding, domainmanifest.Deployment{}, rendered, max(int64(1), current.Generation), false, principal.UserID)
 	payload.FieldManager = "opensoha-manifest/" + binding.ID
 	payload.GitOpsDocuments = gitOpsDocuments
+	payload.RootResource = rootResource
 	payload.IdempotencyKey = "delivery-plan:" + planID + ":" + target.ID + ":preflight"
-	task, err := s.queueOperation(ctx, item, binding, domainmanifest.Deployment{}, payload)
+	task, err := s.queueOperation(ctx, item, binding, domainmanifest.Deployment{}, payload, principal)
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
@@ -159,7 +165,14 @@ func (s *DeclarativeService) DeliveryDeployment(ctx context.Context, principal d
 	if err := s.validateBinding(ctx, principal, domainaccess.ActionView, item, app, &binding); err != nil {
 		return domainmanifest.Deployment{}, err
 	}
-	return s.repository.GetDeploymentByBinding(ctx, binding.ID)
+	deployment, err := s.repository.GetDeploymentByBinding(ctx, binding.ID)
+	if err != nil {
+		return deployment, err
+	}
+	if err = s.authorizeRootDeploymentRead(ctx, principal, deployment); err != nil {
+		return domainmanifest.Deployment{}, err
+	}
+	return deployment, nil
 }
 
 func deliveryBindingMatchesTarget(item domainmanifest.Package, binding domainmanifest.EnvironmentBinding, applicationID, environmentID string, target domaincatalog.ReleaseTarget) bool {
@@ -209,6 +222,9 @@ func (s *DeclarativeService) ValidateDeliverySnapshot(ctx context.Context, princ
 	if current.Generation != snapshot.ExpectedGeneration && !deliveryAlreadySelected(current, snapshot) {
 		return fmt.Errorf("%w: Manifest deployment changed; create a new delivery plan", apperrors.ErrConflict)
 	}
+	if err := s.validateRootCRSnapshot(ctx, principal, snapshot); err != nil {
+		return err
+	}
 	return s.validateDeliveryPreflight(ctx, item.ApplicationID, snapshot)
 }
 
@@ -232,7 +248,7 @@ func (s *DeclarativeService) validateDeliveryPreflight(ctx context.Context, appl
 	if task.Status != "completed" || result.Preflight == nil || !result.Preflight.Ready || result.Preflight.RenderedDigest != snapshot.RenderedDigest {
 		return fmt.Errorf("%w: Manifest preflight has not succeeded; inspect task %s", apperrors.ErrConflict, task.ID)
 	}
-	if task.ApplicationID != applicationID || task.ApplicationEnvironmentID != snapshot.ApplicationEnvironmentID || payload.Action != domainmanifest.TaskActionPreflight || payload.ForceConflicts || payload.BindingID != snapshot.BindingID || payload.ClusterID != snapshot.ClusterID || payload.Namespace != snapshot.Namespace || payload.RenderedDigest != snapshot.RenderedDigest || !reflect.DeepEqual(payload.Documents, snapshot.Documents) || !reflect.DeepEqual(payload.GitOpsDocuments, snapshot.GitOpsDocuments) {
+	if task.ApplicationID != applicationID || task.ApplicationEnvironmentID != snapshot.ApplicationEnvironmentID || payload.Action != domainmanifest.TaskActionPreflight || payload.ForceConflicts || payload.BindingID != snapshot.BindingID || payload.ClusterID != snapshot.ClusterID || payload.Namespace != snapshot.Namespace || payload.RenderedDigest != snapshot.RenderedDigest || !reflect.DeepEqual(payload.Documents, snapshot.Documents) || !reflect.DeepEqual(payload.GitOpsDocuments, snapshot.GitOpsDocuments) || !reflect.DeepEqual(payload.RootResource, snapshot.RootResource) {
 		return fmt.Errorf("%w: Manifest preflight does not match the delivery snapshot", apperrors.ErrConflict)
 	}
 	return validateDeliveryDocuments(snapshot.Documents, snapshot.Namespace)
@@ -274,14 +290,27 @@ func (s *DeclarativeService) ApplyDeliverySnapshot(ctx context.Context, principa
 	rendered := domainmanifest.RenderResult{Revision: snapshot.Revision, RenderedDigest: snapshot.RenderedDigest, Documents: snapshot.Documents}
 	payload := s.taskPayload(domainmanifest.TaskActionApply, item, binding, deployment, rendered, deployment.Generation, false, principal.UserID)
 	payload.IdempotencyKey = operationKey(deployment, domainmanifest.TaskActionApply)
-	task, err := s.queueOperation(ctx, item, binding, deployment, payload)
+	task, err := s.queueOperation(ctx, item, binding, deployment, payload, principal)
 	if err == nil {
 		s.base.record(ctx, principal, "delivery.manifest.plan.apply", item, "queued delivery plan "+snapshot.DeliveryPlanID)
 	}
 	return deployment, task, err
 }
 
-func (s *DeclarativeService) requireLegacyDeployment(ctx context.Context, bindingID string) error {
+func (s *DeclarativeService) requireLegacyDeployment(ctx context.Context, principal domainidentity.Principal, bindingID string) error {
+	binding, err := s.repository.GetBinding(ctx, bindingID)
+	if err != nil {
+		return err
+	}
+	environment, err := s.base.environments.GetApplicationEnvironment(ctx, principal, binding.ApplicationEnvironmentID)
+	if err != nil {
+		return err
+	}
+	for _, target := range environment.Targets {
+		if target.ConfigRef == bindingID && target.WorkloadKind == "CustomResource" {
+			return fmt.Errorf("%w: imported root CRs require an approved application delivery plan", apperrors.ErrConflict)
+		}
+	}
 	deployment, err := s.deliveryDeployment(ctx, bindingID)
 	if err != nil {
 		return err

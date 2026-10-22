@@ -1456,7 +1456,10 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	core.buildService.SetExternalPipeline(core.systemIntegrationService, core.registryService)
 	core.executionService.SetExternalPipeline(core.systemIntegrationService, core.registryService)
 	manifestDeclarativeService := appmanifest.NewDeclarative(manifestService, repos.manifestRepository, appmanifest.DeclarativeRuntimeDependencies{
-		Delivery: delivery.deliveryService,
+		RootResources:       core.resourceService.Runtime(),
+		ImportedRoots:       repos.manifestRepository,
+		ExecutionPrincipals: core.identityService,
+		Delivery:            delivery.deliveryService,
 		Agents: func(connection domaincluster.Connection) (appmanifest.ManifestRuntime, error) {
 			return manifestruntimeinfra.NewAgent(infra.agentRegistry, connection)
 		},

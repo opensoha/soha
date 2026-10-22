@@ -41,6 +41,8 @@ RELATION_RULES_SCOPE = {
 }
 
 
+MANIFEST_ROOT_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/manifest","parent":"TestDeliverySnapshotWithPostgres","children":["root-cr-publication-control", *["root-cr-publication-control/"+name for name in ["valid","withdrawn","uid-replaced","baseline-changed","binding-changed"]]]}
+
 def validate(raw, exit_code=0, package=PACKAGE, parent=PARENT, children=CHILDREN):
     if exit_code != 0:
         raise ValueError("Go process did not succeed")

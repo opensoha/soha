@@ -45,3 +45,15 @@ func TestRelationBindingReplacementAlwaysRequiresRevision(t *testing.T) {
 		t.Fatal("legacy binding without rules must remain compatible", err)
 	}
 }
+
+func TestImportedRootIdentityCannotBeSilentlyReplaced(t *testing.T) {
+	current := dc.ApplicationEnvironment{Targets: []dc.ReleaseTarget{{ID: "root", WorkloadKind: "CustomResource", WorkloadName: "db", ClusterID: "cluster", Namespace: "team", Metadata: map[string]any{"importSource": "kubernetes", "resourceSource": "original"}}}}
+	input := dc.ApplicationEnvironmentInput{Targets: []dc.ReleaseTargetInput{{ID: "root", WorkloadKind: "CustomResource", WorkloadName: "db", ClusterID: "cluster", Namespace: "team", Metadata: map[string]any{"importSource": "kubernetes", "resourceSource": "replacement"}}}}
+	if err := validateImportedRootIdentity(input, current); err == nil {
+		t.Fatal("root identity replaced")
+	}
+	input.Targets = nil
+	if err := validateImportedRootIdentity(input, current); err != nil {
+		t.Fatal("explicit unlink must retain its existing path", err)
+	}
+}

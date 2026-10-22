@@ -39,6 +39,7 @@ def main():
     parser.add_argument("--feed-search",action="store_true")
     parser.add_argument("--network-navigation", action="store_true")
     parser.add_argument("--relation-rules", action="store_true")
+    parser.add_argument("--manifest-root", action="store_true")
     args = parser.parse_args()
     run_id = str(uuid.uuid4())
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -65,7 +66,7 @@ def main():
             time.sleep(1)
         else:
             raise ValueError("Disposable PG readiness timed out")
-        env = {**os.environ, "GOWORK": "off", "SOHA_APPLICATION_TEST_POSTGRES_PORT": port, "SOHA_CATALOG_TEST_POSTGRES_PORT": port}
+        env = {**os.environ, "GOWORK": "off", "SOHA_APPLICATION_TEST_POSTGRES_PORT": port, "SOHA_CATALOG_TEST_POSTGRES_PORT": port, "SOHA_MANIFEST_TEST_POSTGRES_PORT": port}
         with args.output.open("w") as log, args.output.with_suffix('.stderr.log').open('w') as diagnostics:
             parent = "TestFeedSearchWithPostgres" if args.feed_search else "TestKnowledgeVectorIndexesWithPostgres" if args.knowledge_ann else "TestPersonalEnvironmentWithPostgres" if args.personal_environment else "TestKnowledgeRetrievalWithPostgres" if args.knowledge else "TestNativeRunWithPostgres" if args.native_harness else "TestMainSessionWithPostgres" if args.main_chat else "TestApplicationAndClusterDeletionWithPostgres"
             if args.identity:
@@ -78,6 +79,8 @@ def main():
                 parent = "TestKubernetesImportIdentityWithPostgres"
             if args.relation_rules:
                 parent = "TestTemplateVersionsWithPostgres/relation-rules-persistence-and-cas"
+            if args.manifest_root:
+                parent = "TestDeliverySnapshotWithPostgres"
             package = "knowledge" if args.knowledge or args.knowledge_ann else "copilot" if args.identity or args.feed_search or args.main_chat or args.native_harness or args.personal_environment else "application"
             if args.virtualization_capacity:
                 package = "virtualization"
@@ -85,6 +88,8 @@ def main():
                 package = "delivery"
             if args.relation_rules:
                 package = "catalog"
+            if args.manifest_root:
+                package = "manifest"
             result = subprocess.run(["go", "test", "-json", "-count=1", "-race", "-timeout=10m",
                                      "-run", "^" + parent + "$",
                                      "./internal/bootstrap" if args.network_navigation else "./internal/repository/" + package], cwd=ROOT, env=env, stdout=log, stderr=diagnostics)
@@ -112,6 +117,8 @@ def main():
             scope = {"package": "github.com/opensoha/soha/internal/bootstrap", "parent": parent, "children": ["disabled_upgrade_stays_pending", "failure_rolls_back", "upgrade_preserves_custom_data_and_bindings", "previous_task52_marker_recovers_without_reseed", "second_start_is_idempotent"]}
         if args.relation_rules:
             scope = module.RELATION_RULES_SCOPE
+        if args.manifest_root:
+            scope = module.MANIFEST_ROOT_SCOPE
         evidence = module.validate(args.output.read_text(), result.returncode, **scope)
         manifest['result'] = evidence
     except Exception as error:

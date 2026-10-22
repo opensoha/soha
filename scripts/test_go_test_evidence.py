@@ -28,6 +28,14 @@ class EvidenceTests(unittest.TestCase):
     def raw(self, events):
         return "\n".join(json.dumps(e) for e in events)
 
+    def test_root_cr_scope_rejects_missing_and_skipped_control_fences(self):
+        scope=evidence.MANIFEST_ROOT_SCOPE
+        names=[scope['parent'],*[scope['parent']+'/'+child for child in scope['children']]]
+        events=[dict(Action=action,Package=scope['package'],Test=name) for name in names for action in ('run','pass')]+[dict(Action='pass',Package=scope['package'])]
+        self.assertEqual(evidence.validate(self.raw(events),**scope)['children'],6)
+        for invalid in (events[:2]+events[4:],[{**e,'Action':'skip'} if e.get('Test')==names[-1] else e for e in events],events+[dict(Action='output',Package=scope['package'],Output='ok (cached)')]):
+            with self.assertRaises(ValueError):evidence.validate(self.raw(invalid),**scope)
+
     def test_all_required_tests_pass(self):
         self.assertEqual(evidence.validate(self.raw(self.events()))["children"], 16)
 

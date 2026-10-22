@@ -308,7 +308,7 @@ const defaultOperationTimeoutSeconds = 300
 
 func WithOperationState(task ExecutionTask, now time.Time) ExecutionTask {
 	task.OperationState = BuildOperationState(task, now)
-	return task
+	return projectConfigurationTask(task)
 }
 
 func WithOperationStates(tasks []ExecutionTask, now time.Time) []ExecutionTask {

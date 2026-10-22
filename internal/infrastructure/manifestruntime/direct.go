@@ -41,6 +41,9 @@ func (d *Direct) Execute(ctx context.Context, payload domainmanifest.TaskPayload
 	if err != nil {
 		return domainmanifest.TaskResult{}, err
 	}
+	if err := validateRootRuntimePayload(payload); err != nil {
+		return domainmanifest.TaskResult{}, err
+	}
 	switch payload.Action {
 	case domainmanifest.TaskActionPreflight:
 		return preflightDocuments(ctx, bundle.Dynamic, mapper, payload)
@@ -131,6 +134,9 @@ func observeDocuments(ctx context.Context, client dynamic.Interface, mapper rest
 		resource := resourceInterface(client, mapping, document.Namespace)
 		queryCtx, cancel := context.WithTimeout(ctx, manifestRuntimeTimeout)
 		live, getErr := resource.Get(queryCtx, document.Name, metav1.GetOptions{})
+		if getErr == nil && payload.RootResource != nil && string(live.GetUID()) != payload.RootResource.UID {
+			getErr = fmt.Errorf("root CR identity changed")
+		}
 		cancel()
 		if getErr != nil {
 			diagnostics = append(diagnostics, runtimeDiagnostic("observe", document, getErr))
@@ -141,9 +147,15 @@ func observeDocuments(ctx context.Context, client dynamic.Interface, mapper rest
 		if getErr != nil {
 			diagnostics = append(diagnostics, runtimeDiagnostic("observe", document, getErr))
 		}
+		if payload.RootResource != nil {
+			item.Health = "unknown"
+		}
 		inventory = append(inventory, item)
 		fields := diffDesiredFields(desired.Object, live.Object, "")
 		if len(fields) > 0 {
+			if payload.RootResource != nil {
+				fields = []domainmanifest.DriftField{{Path: "/spec", DesiredValue: "[restricted]", ObservedValue: "[restricted]"}}
+			}
 			driftResources = append(driftResources, domainmanifest.DriftResource{APIVersion: document.APIVersion, Kind: document.Kind, Namespace: document.Namespace, Name: document.Name, Fields: fields})
 		}
 	}
@@ -168,7 +180,12 @@ func patchDocument(ctx context.Context, client dynamic.Interface, mapper restMap
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, manifestRuntimeTimeout)
 	defer cancel()
-	applied, err := resourceruntime.ApplyManifest(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, options)
+	var applied *unstructured.Unstructured
+	if payload.RootResource != nil {
+		applied, err = resourceruntime.ApplyRootCR(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, *payload.RootResource, options)
+	} else {
+		applied, err = resourceruntime.ApplyManifest(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, options)
+	}
 	return applied, desired, err
 }
 
@@ -213,6 +230,9 @@ func inventoryItem(payload domainmanifest.TaskPayload, document domainmanifest.R
 		ResourceVersion: live.GetResourceVersion(), DesiredObjectDigest: document.ContentDigest,
 		ObservedObjectDigest: observedDigest, Health: resourceHealth(live), LastObservedAt: time.Now().UTC(),
 		ResourceGeneration: live.GetGeneration(), Finalizers: live.GetFinalizers(),
+	}
+	if payload.RootResource != nil {
+		item.Health = "unknown"
 	}
 	if generation, found, err := unstructured.NestedInt64(live.Object, "status", "observedGeneration"); err == nil && found && generation >= 0 {
 		item.ObservedResourceGeneration = &generation
@@ -334,4 +354,21 @@ func firstString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func validateRootRuntimePayload(payload domainmanifest.TaskPayload) error {
+	if payload.RootResource == nil {
+		return nil
+	}
+	if len(payload.Documents) != 1 || len(payload.GitOpsDocuments) > 0 || payload.RolloutControl != nil || payload.ForceConflicts {
+		return fmt.Errorf("invalid root CR task boundary")
+	}
+	if payload.Action != "apply" && payload.Action != "preflight" && payload.Action != "observe" {
+		return fmt.Errorf("unsupported root CR task action")
+	}
+	var object map[string]any
+	if err := json.Unmarshal([]byte(payload.Documents[0].Content), &object); err != nil {
+		return err
+	}
+	return contractresource.ValidateRootCRDocument(object, *payload.RootResource)
 }
