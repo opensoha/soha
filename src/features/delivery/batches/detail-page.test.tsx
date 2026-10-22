@@ -37,6 +37,64 @@ const batch: DeliveryBatch = {
   updatedAt: '',
 }
 
+it('blocks a migration Plan even with a comment, then requires that comment for the fresh legal Plan', async () => {
+  const migration = {
+    fromVersion: 1,
+    toVersion: 2,
+    blocked: true,
+    requiresApproval: true,
+    steps: [],
+    reason: '先完成前置版本',
+  }
+  const plan: DeliveryPlan = {
+    id: 'migration',
+    source: 'delivery_batch',
+    status: 'waiting_approval',
+    applicationId: 'app',
+    applicationEnvironmentId: 'test',
+    action: 'deploy',
+    riskLevel: 'high',
+    requiresApproval: true,
+    createdAt: '',
+    updatedAt: '',
+    impact: { templateMigration: migration },
+  }
+  client.setQueryData(deliveryKeys.plans.detail(plan.id), plan)
+  const approval = vi
+    .spyOn(deliveryApi.plans, 'approval')
+    .mockResolvedValue({ ...plan, status: 'draft' })
+  await render(<DeliveryBatchPlanDrawer id={plan.id} onClose={() => undefined} />)
+  const button = [...document.querySelectorAll('button')].find((item) =>
+    item.textContent?.includes('批准此计划'),
+  )!
+  const area = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="迁移审批意见"]')!
+  expect(button.disabled).toBe(true)
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(
+      area,
+      '已核实备份与恢复方案',
+    )
+    area.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(button.disabled).toBe(true)
+  await act(async () => {
+    client.setQueryData(deliveryKeys.plans.detail(plan.id), {
+      ...plan,
+      impact: { templateMigration: { ...migration, blocked: false } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  expect(button.disabled).toBe(false)
+  await act(async () => {
+    button.click()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  expect(approval).toHaveBeenCalledWith(plan.id, {
+    action: 'approve',
+    comment: '已核实备份与恢复方案',
+  })
+})
+
 it('requires the exact frozen template comparison before allowing configuration approval', async () => {
   const plan: DeliveryPlan = {
     id: 'template-plan',

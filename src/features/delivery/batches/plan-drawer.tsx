@@ -1,5 +1,6 @@
-import { useRef } from 'react'
-import { Alert, Button, Card, Descriptions, Drawer, Space, Typography } from 'antd'
+import { MigrationAssessment, planMigrations } from '../template-migration'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, Button, Card, Descriptions, Drawer, Input, Space, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { OperationFeedback, ReadFeedback } from '@/components/request-feedback'
@@ -28,7 +29,12 @@ export function DeliveryBatchPlanDrawer({ id, onClose }: { id: string; onClose: 
   )
   const submitting = useRef(false)
   const locked = decision.isPending || writeOutcomeUnknown(decision.error)
+  const [comment, setComment] = useState('')
+  useEffect(() => setComment(''), [id])
   const plan = readableQueryData(query)
+  const migrations = planMigrations(plan)
+  const requiresMigrationComment = migrations.some((value) => value.requiresApproval)
+  const migrationBlocked = migrations.some((value) => value.blocked)
   const configurationOnly = Boolean(plan?.templateCandidateId)
   const previewId =
     configurationOnly && typeof plan?.impact?.templatePreviewId === 'string'
@@ -47,12 +53,14 @@ export function DeliveryBatchPlanDrawer({ id, onClose }: { id: string; onClose: 
       query.isError ||
       comparisonMissing ||
       !canApprove ||
-      plan?.status !== 'waiting_approval'
+      (action === 'approve' && migrationBlocked) ||
+      plan?.status !== 'waiting_approval' ||
+      (action === 'approve' && requiresMigrationComment && !comment.trim())
     )
       return
     submitting.current = true
     try {
-      await decision.mutateAsync({ id, action })
+      await decision.mutateAsync({ id, action, comment: comment.trim() || undefined })
     } catch {
       /* The persistent receipt owns this failure. */
     } finally {
@@ -83,7 +91,13 @@ export function DeliveryBatchPlanDrawer({ id, onClose }: { id: string; onClose: 
               <Button
                 type="primary"
                 loading={decision.isPending}
-                disabled={locked || query.isError || comparisonMissing}
+                disabled={
+                  locked ||
+                  query.isError ||
+                  comparisonMissing ||
+                  migrationBlocked ||
+                  (requiresMigrationComment && !comment.trim())
+                }
                 onClick={() => void decide('approve')}
               >
                 批准此计划
@@ -113,6 +127,23 @@ export function DeliveryBatchPlanDrawer({ id, onClose }: { id: string; onClose: 
         {query.isLoading ? <Typography.Text>正在读取计划…</Typography.Text> : null}
         {plan ? (
           <>
+            {migrations.map((value, index) => (
+              <MigrationAssessment key={index} value={value} />
+            ))}
+            {requiresMigrationComment && plan.status === 'waiting_approval' && canApprove ? (
+              <label>
+                迁移审批意见
+                <Input.TextArea
+                  aria-label="迁移审批意见"
+                  value={comment}
+                  disabled={locked}
+                  maxLength={2000}
+                  autoSize={{ minRows: 3, maxRows: 6 }}
+                  onChange={(event) => setComment(event.target.value)}
+                  placeholder="确认迁移指引、备份与恢复方案；审批不能绕过版本顺序。"
+                />
+              </label>
+            ) : null}
             <Alert
               type={plan.status === 'waiting_approval' ? 'warning' : 'info'}
               showIcon

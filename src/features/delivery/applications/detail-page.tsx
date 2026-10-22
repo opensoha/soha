@@ -1,3 +1,4 @@
+import { MigrationAssessment, planMigrations } from '../template-migration'
 import { ManifestDeploymentState } from './manifest-deployment-state'
 import { WorkflowProgress, WorkloadProgress } from './delivery-progress'
 import { EnvironmentNotice } from './environment-notice'
@@ -791,6 +792,11 @@ export function ApplicationDetailPage() {
   const deliveryUnknown =
     writeOutcomeUnknown(directBuildMutation.error) ||
     writeOutcomeUnknown(createDeliveryPlanMutation.error)
+  const [migrationComment, setMigrationComment] = useState('')
+  const migrations = planMigrations(pendingDeliveryPlan)
+  const migrationApprovalRequired = migrations.some((value) => value.requiresApproval)
+  const migrationBlocked = migrations.some((value) => value.blocked)
+  useEffect(() => setMigrationComment(''), [pendingDeliveryPlan?.id])
   const planLocked =
     confirmDeliveryPlanMutation.isPending ||
     approvalMutation.isPending ||
@@ -802,12 +808,20 @@ export function ApplicationDetailPage() {
   })
   const actOnPlan = async (action: 'confirm' | 'approve' | 'reject') => {
     if (planSubmitting.current || planLocked || !pendingDeliveryPlan) return
+    if (action !== 'reject' && migrationBlocked) return
     if (action !== 'confirm' && !canApproveDelivery) return
     planSubmitting.current = true
     try {
       if (action === 'confirm')
         await confirmDeliveryPlanMutation.mutateAsync(pendingDeliveryPlan.id)
-      else await approvalMutation.mutateAsync({ id: pendingDeliveryPlan.id, action })
+      else {
+        if (action === 'approve' && migrationApprovalRequired && !migrationComment.trim()) return
+        await approvalMutation.mutateAsync({
+          id: pendingDeliveryPlan.id,
+          action,
+          comment: migrationComment.trim() || undefined,
+        })
+      }
     } catch {
       /* Keep the request and plan visible for reconciliation. */
     } finally {
@@ -1932,7 +1946,11 @@ export function ApplicationDetailPage() {
                 <Button
                   key="approve"
                   type="primary"
-                  disabled={planLocked}
+                  disabled={
+                    planLocked ||
+                    migrationBlocked ||
+                    (migrationApprovalRequired && !migrationComment.trim())
+                  }
                   loading={approvalMutation.isPending}
                   onClick={() => void actOnPlan('approve')}
                 >
@@ -1945,6 +1963,7 @@ export function ApplicationDetailPage() {
             type="primary"
             disabled={
               planLocked ||
+              migrationBlocked ||
               !pendingDeliveryPlan ||
               pendingDeliveryPlan.status !== 'draft' ||
               !manifestPreflightReady
@@ -1981,6 +2000,23 @@ export function ApplicationDetailPage() {
           >
             刷新计划记录
           </Button>
+        ) : null}
+        {migrations.map((value, index) => (
+          <MigrationAssessment key={index} value={value} />
+        ))}
+        {migrationApprovalRequired &&
+        pendingDeliveryPlan?.status === 'waiting_approval' &&
+        canApproveDelivery ? (
+          <label>
+            迁移审批意见
+            <Input.TextArea
+              aria-label="迁移审批意见"
+              value={migrationComment}
+              maxLength={2000}
+              disabled={planLocked}
+              onChange={(event) => setMigrationComment(event.target.value)}
+            />
+          </label>
         ) : null}
         {confirmedDeliveryPlan ? (
           <Alert

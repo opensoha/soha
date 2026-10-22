@@ -75,6 +75,7 @@ export interface ApplicationWorkflowInput {
 }
 
 export interface BuildTemplateInput {
+  migrationPolicy?: import('@opensoha/contracts/gen/ts/sohaapi').TemplateMigrationPolicy
   copiedFrom?: { id: string; revision: number; version?: number }
   expectedRevision?: number
   publish?: boolean

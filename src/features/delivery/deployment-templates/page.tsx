@@ -1,3 +1,4 @@
+import { TemplateMigrationFields, migrationPolicyInput } from '../template-migration'
 import { lazy, Suspense, useState } from 'react'
 import {
   Alert,
@@ -57,6 +58,7 @@ export function deploymentTemplateInput(
     parameterSchema,
     defaults,
     environmentOverrides,
+    migrationPolicy,
     artifacts,
     health,
     enabled,
@@ -69,6 +71,7 @@ export function deploymentTemplateInput(
     parameterSchema,
     defaults,
     environmentOverrides,
+    migrationPolicy,
     artifacts,
     health,
     enabled,
@@ -165,7 +168,8 @@ export function DeploymentTemplatesPage() {
   const save = async () => {
     if (sourceDirty || sourceReadOnly) return
     await form.validateFields()
-    const input = form.getFieldValue('definition') as ServiceDeploymentTemplateInput
+    const raw = form.getFieldValue('definition') as ServiceDeploymentTemplateInput
+    const input = { ...raw, migrationPolicy: migrationPolicyInput(raw.migrationPolicy) }
     const payload =
       input.source.renderer === 'helm'
         ? { ...input, source: { ...input.source, helm: parseHelmSource(input.source.helm!) } }
@@ -445,6 +449,7 @@ export function DeploymentTemplatesPage() {
                 >
                   <Input />
                 </Form.Item>
+                <TemplateMigrationFields path={['definition', 'migrationPolicy']} />
                 <Form.Item name={['definition', 'description']} label="说明">
                   <Input.TextArea rows={2} />
                 </Form.Item>

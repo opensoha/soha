@@ -1,3 +1,4 @@
+import { MigrationAssessment } from '../template-migration'
 import { lazy, Suspense, useState } from 'react'
 import { Alert, Empty, Select, Space, Tabs, Typography } from 'antd'
 import type {
@@ -30,6 +31,7 @@ function ChangeDetail({
   initiallyOpen: boolean
 }) {
   const [open, setOpen] = useState(initiallyOpen)
+  const label = change.path === 'migrationPolicy' ? '迁移声明' : sections[change.section]
   return (
     <details
       open={open}
@@ -37,12 +39,12 @@ function ChangeDetail({
       className="soha-template-adoption__change"
     >
       <summary>
-        {sections[change.section]} · {change.path}
+        {label} · {change.path}
       </summary>
       {open ? (
         <Suspense fallback={<div role="status">正在加载差异编辑器</div>}>
           <DiffEditor
-            title={`${sections[change.section]} · ${change.path}`}
+            title={`${label} · ${change.path}`}
             // The shared editor shows `modified` on the left and diffs it against `original`.
             modified={change.before || ''}
             original={change.after || ''}
@@ -59,6 +61,7 @@ function ChangeDetail({
 function DiffChanges({ diff }: { diff: TemplateUpdateDiff }) {
   return (
     <Space orientation="vertical" className="soha-template-adoption__full" size={12}>
+      <MigrationAssessment value={diff.migration} />
       {diff.historyGap ? (
         <Alert
           type="warning"
