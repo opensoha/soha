@@ -39,6 +39,7 @@ import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { formatDateTime } from '@/utils/time'
 import { TemplateUsageImpactPanel } from '../template-usage-impact'
 import { TemplatePublicationStatus, TemplateVersionHistory } from '../template-versions'
+import { TemplateUpdateEntry } from '../template-updates/entry'
 import { deliveryMutations } from '../mutations'
 import { deliveryQueries } from '../queries'
 import type { BuildTemplate } from '../types'
@@ -964,7 +965,7 @@ export function BuildTemplatesPage() {
         </Button>
         <Popconfirm
           title="发布当前草稿为新版本？"
-          description="已有服务继续使用固定版本；新版本需显式选择。"
+          description="固定版本保持不变；已订阅的应用按采用策略更新后续构建。"
           disabled={locked}
           onConfirm={() => changePublication('publish')}
         >
@@ -989,6 +990,7 @@ export function BuildTemplatesPage() {
           />
         </Popconfirm>
         <TemplateVersionHistory kind="build" templateId={selectedTemplate?.id ?? ''} iconOnly />
+        <TemplateUpdateEntry kind="build" templateId={selectedTemplate?.id ?? ''} iconOnly />
         <ManagementIconButton
           icon={<UndoOutlined />}
           aria-label="取消更改"

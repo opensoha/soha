@@ -424,9 +424,41 @@ test('Task52 topology keyboard selection, relation highlight and viewport surviv
   await expect(page.locator('.soha-read-feedback')).toHaveCount(0)
   await expect(node).toHaveClass(/selected/)
   await expect(viewport).toHaveAttribute('style', zoomed || '')
-  await node.focus()
-  await page.keyboard.press('Escape')
-  await expect(node).not.toHaveClass(/selected/)
+  const escapeEvidence = await page.evaluateHandle(() => {
+    const events: object[] = []
+    const record = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      const target = event.target instanceof Element ? event.target : null
+      events.push({
+        phase: event.eventPhase,
+        target: target?.closest('.react-flow__node')?.getAttribute('data-id'),
+        focused: document.activeElement?.closest('.react-flow__node')?.getAttribute('data-id'),
+        defaultPrevented: event.defaultPrevented,
+      })
+    }
+    document.addEventListener('keydown', record, true)
+    document.addEventListener('keydown', record)
+    return {
+      events,
+      dispose() {
+        document.removeEventListener('keydown', record, true)
+        document.removeEventListener('keydown', record)
+      },
+    }
+  })
+  try {
+    await node.focus()
+    await expect(node).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(node).not.toHaveClass(/selected/)
+  } finally {
+    await test.info().attach('topology-escape-events', {
+      body: JSON.stringify(await escapeEvidence.evaluate((value) => value.events)),
+      contentType: 'application/json',
+    })
+    await escapeEvidence.evaluate((value) => value.dispose())
+    await escapeEvidence.dispose()
+  }
   await expect(page.locator('.soha-topology-evidence')).toHaveCount(0)
   await expect(unrelated).toHaveCSS('opacity', '1')
   await node.focus()

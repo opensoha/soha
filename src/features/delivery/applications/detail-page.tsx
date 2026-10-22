@@ -56,6 +56,7 @@ import { useAIPageContext } from '@/features/copilot'
 import { useClusterCapabilityForCluster } from '@/features/platform'
 import { isApiError } from '@/services/api-error'
 import { localeText, useI18n } from '@/i18n'
+import { TemplateUpdateEntry } from '../template-updates/entry'
 import { workflowTemplateValidationNodeCount } from '../delivery-status'
 import { DeliveryTable } from '../delivery-table'
 import {
@@ -1440,6 +1441,15 @@ export function ApplicationDetailPage() {
           />
         </div>
         <Space size={8} className="soha-service-actions" wrap>
+          {focusedService?.deploymentTemplate && !focusedService.deploymentTemplate.detached ? (
+            <TemplateUpdateEntry
+              kind="deployment"
+              templateId={focusedService.deploymentTemplate.templateId}
+              applicationId={application.id}
+              serviceId={focusedService.id}
+              environmentId={activeEnvironmentId}
+            />
+          ) : null}
           <Button onClick={() => openServiceTab('related-resources')}>关联资源</Button>
           {focusedService ? (
             <Button onClick={() => openServiceTab('resources')}>资源清单</Button>
@@ -2510,6 +2520,16 @@ export function ApplicationDetailPage() {
                               width: 96,
                               render: (id: string, record: BuildSource) => (
                                 <Space size={2}>
+                                  {record.type === 'platform_build_template' &&
+                                  typeof record.config?.buildTemplateId === 'string' ? (
+                                    <TemplateUpdateEntry
+                                      kind="build"
+                                      templateId={record.config.buildTemplateId}
+                                      applicationId={application.id}
+                                      iconOnly
+                                      label="采用构建模板版本"
+                                    />
+                                  ) : null}
                                   <ManagementIconButton
                                     aria-label="编辑构建源"
                                     icon={<EditOutlined />}
@@ -2664,12 +2684,29 @@ export function ApplicationDetailPage() {
                                 {
                                   key: 'workflow',
                                   label: '发布流程模板',
-                                  children:
-                                    managementState.workflowTemplateMap[
-                                      record.workflowTemplateId || ''
-                                    ]?.name ||
-                                    record.workflowTemplateId ||
-                                    '-',
+                                  children: (
+                                    <Space orientation="vertical">
+                                      <span>
+                                        {managementState.workflowTemplateMap[
+                                          record.workflowTemplateId || ''
+                                        ]?.name ||
+                                          record.workflowTemplateId ||
+                                          '-'}
+                                      </span>
+                                      {record.workflowTemplateId &&
+                                      !managementState.workflowTemplateMap[
+                                        record.workflowTemplateId
+                                      ]?.category?.startsWith('application:') ? (
+                                        <TemplateUpdateEntry
+                                          kind="workflow"
+                                          templateId={record.workflowTemplateId}
+                                          applicationId={application.id}
+                                          environmentId={record.id}
+                                          label="采用流程模板版本"
+                                        />
+                                      ) : null}
+                                    </Space>
+                                  ),
                                 },
                                 {
                                   key: 'targets',

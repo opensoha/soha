@@ -10,6 +10,11 @@ import { deliveryKeys } from '../keys'
 import type { DeliveryBatch, DeliveryPlan } from '../types'
 import { DeliveryBatchDetailPage } from './detail-page'
 import { DeliveryBatchPlanDrawer } from './plan-drawer'
+import { templateUpdateKeys } from '../template-updates/queries'
+import type {
+  TemplateUpdatePreview,
+  TemplateUpdateCandidate,
+} from '@opensoha/contracts/gen/ts/sohaapi'
 
 vi.mock('@/features/auth', () => ({
   hasPermission: () => true,
@@ -31,6 +36,98 @@ const batch: DeliveryBatch = {
   createdAt: '',
   updatedAt: '',
 }
+
+it('requires the exact frozen template comparison before allowing configuration approval', async () => {
+  const plan: DeliveryPlan = {
+    id: 'template-plan',
+    source: 'delivery_batch',
+    status: 'waiting_approval',
+    applicationId: 'app',
+    applicationEnvironmentId: 'prod',
+    action: 'deploy',
+    templateCandidateId: 'candidate',
+    riskLevel: 'high',
+    requiresApproval: true,
+    createdAt: '',
+    updatedAt: '',
+    impact: { templatePreviewId: 'preview', configurationOnly: true },
+  }
+  const preview: TemplateUpdatePreview = {
+    id: 'preview',
+    kind: 'deployment',
+    templateId: 'template',
+    toVersion: 4,
+    digest: 'frozen',
+    configurationOnly: true,
+    createdAt: '',
+    expiresAt: '',
+    candidates: [],
+  }
+  client.setQueryData(deliveryKeys.plans.detail(plan.id), plan)
+  client.setQueryData(templateUpdateKeys.preview(preview.id), preview)
+  await render(<DeliveryBatchPlanDrawer id={plan.id} onClose={() => undefined} />)
+  const approve = [...document.querySelectorAll('button')].find(
+    (button) => button.textContent?.replace(/\s/g, '') === '批准此计划',
+  )!
+  expect(approve.disabled).toBe(true)
+  expect(document.body.textContent).toContain('模板配置采用计划')
+  const candidate: TemplateUpdateCandidate = {
+    id: 'candidate',
+    target: {
+      id: 'target',
+      kind: 'deployment',
+      templateId: 'template',
+      applicationId: 'app',
+      applicationName: 'App',
+      serviceId: 'svc',
+      serviceName: 'API',
+      applicationEnvironmentId: 'prod',
+      environmentName: 'Production',
+      releaseTargetId: 'release',
+      fromVersion: 1,
+      mode: 'approval',
+      requiresApproval: true,
+      eligible: true,
+      reason: '',
+      independentOverrides: [],
+      bindingRevision: 'binding',
+      scope: 'environment',
+    },
+    toVersion: 4,
+    digest: 'candidate-digest',
+    parameters: {},
+    cumulative: {
+      fromVersion: 1,
+      toVersion: 4,
+      changes: [],
+      renderStatus: 'available',
+      diagnostics: [],
+      historyGap: false,
+    },
+    versions: [],
+    eligible: true,
+    reason: '',
+    requiresApproval: true,
+    wave: 0,
+  }
+  await act(async () => {
+    client.setQueryData(templateUpdateKeys.preview(preview.id), {
+      ...preview,
+      candidates: [candidate],
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  expect(approve.disabled).toBe(false)
+  expect(document.body.textContent).toContain('累计差异 v1 → v4')
+  await act(async () => {
+    client.setQueryData(templateUpdateKeys.preview(preview.id), {
+      ...preview,
+      candidates: [{ ...candidate, id: 'other-candidate' }],
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  expect(approve.disabled).toBe(true)
+})
 
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
