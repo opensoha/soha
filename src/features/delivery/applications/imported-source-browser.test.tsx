@@ -6,6 +6,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ImportedSourceBrowser } from './imported-source-browser'
 import type { ApplicationRuntimeWorkload } from '../types'
 
+vi.mock('../runtime/resource-relations-browser', () => ({ ResourceRelationsBrowser: () => null }))
+
 const state = vi.hoisted(() => ({ denied: '', get: vi.fn() }))
 vi.mock('@/features/auth', () => ({
   usePermissionSnapshot: () => ({ data: { data: {} } }),

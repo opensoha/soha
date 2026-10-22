@@ -6,7 +6,8 @@ import { ManagementState } from '@/components/management-list'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { deliveryQueries } from '../queries'
-import type { ApplicationRuntimeWorkload } from '../types'
+import { ResourceRelationsBrowser } from '../runtime/resource-relations-browser'
+import type { ApplicationEnvironment, ApplicationRuntimeWorkload } from '../types'
 
 const sourceLabels = {
   linked: '已关联',
@@ -17,13 +18,29 @@ const sourceLabels = {
   forbidden: '无资源读取权限',
 }
 
-export function ImportedSourceBrowser({ workloads }: { workloads: ApplicationRuntimeWorkload[] }) {
+export function ImportedSourceBrowser({
+  workloads,
+  binding,
+  view = 'resources',
+}: {
+  workloads: ApplicationRuntimeWorkload[]
+  binding?: ApplicationEnvironment
+  view?: 'resources' | 'metrics'
+}) {
   const [selectedKey, setSelectedKey] = useState('')
-  const sources = workloads.filter((item) => item.targetId && item.source)
+  const sources = workloads.filter(
+    (item) =>
+      item.targetId &&
+      item.source &&
+      (view !== 'metrics' || item.source.crdName || item.workloadKind !== 'Deployment'),
+  )
   const keyOf = (item: ApplicationRuntimeWorkload) =>
     `${item.applicationEnvironmentId}/${item.targetId}/${item.source?.resource.uid}`
   const selected = sources.find((item) => keyOf(item) === selectedKey) ?? sources[0]
-  if (!selected) return <ManagementState compact kind="not-configured" title="源身份尚未绑定" />
+  if (!selected)
+    return view === 'metrics' ? null : (
+      <ManagementState compact kind="not-configured" title="源身份尚未绑定" />
+    )
   return (
     <div className="soha-resource-browser">
       <aside aria-label="集群源配置列表" className="soha-resource-browser-list">
@@ -43,13 +60,26 @@ export function ImportedSourceBrowser({ workloads }: { workloads: ApplicationRun
         ))}
       </aside>
       <section className="soha-resource-browser-preview" aria-label="集群源配置">
-        <SourcePreview key={keyOf(selected)} workload={selected} />
+        <SourcePreview
+          key={keyOf(selected) + view}
+          workload={selected}
+          binding={binding}
+          view={view}
+        />
       </section>
     </div>
   )
 }
 
-function SourcePreview({ workload }: { workload: ApplicationRuntimeWorkload }) {
+function SourcePreview({
+  workload,
+  binding,
+  view,
+}: {
+  workload: ApplicationRuntimeWorkload
+  binding?: ApplicationEnvironment
+  view: 'resources' | 'metrics'
+}) {
   const [showYAML, setShowYAML] = useState(false)
   const permissions = usePermissionSnapshot().data?.data
   const source = workload.source!
@@ -58,6 +88,12 @@ function SourcePreview({ workload }: { workload: ApplicationRuntimeWorkload }) {
   const canRead =
     hasPermission(permissions, 'delivery.application-environments.view') &&
     (!sensitive || hasPermission(permissions, 'platform.configuration.secret-data.view'))
+  if (view === 'metrics')
+    return readable ? (
+      <ResourceRelationsBrowser workload={workload} binding={binding} view={view} />
+    ) : (
+      <ManagementState compact kind="error" title="根资源身份不可验证，无法读取指标关系" />
+    )
   return (
     <>
       <div className="soha-resource-browser-title">
@@ -104,6 +140,9 @@ function SourcePreview({ workload }: { workload: ApplicationRuntimeWorkload }) {
           {showYAML ? <SourceYAML workload={workload} /> : null}
         </>
       )}
+      {readable && (source.crdName || workload.workloadKind !== 'Deployment') ? (
+        <ResourceRelationsBrowser workload={workload} binding={binding} view="resources" />
+      ) : null}
     </>
   )
 }

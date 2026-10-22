@@ -12,6 +12,10 @@ import type {
 } from '@/types/platform'
 
 type SohaAPISchemas = SohaAPIComponents['schemas']
+export type ResourceRelationsView = SohaAPISchemas['ResourceRelationsView']
+export type ResourceRelationConfig = SohaAPISchemas['ResourceRelationConfig']
+export type ResourceRelationNode = SohaAPISchemas['ResourceRelationNode']
+
 export type DeliveryDocument = SohaAPISchemas['DeliveryDocument']
 export type DeliveryDocumentKind = SohaAPISchemas['DeliveryDocumentKind']
 export type DeliveryDocumentFile = SohaAPISchemas['DeliveryDocumentFile']

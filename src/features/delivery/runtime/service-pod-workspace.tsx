@@ -75,6 +75,7 @@ function PodMetricsPreview({ row, onOpen }: { row: PodRow; onOpen: () => void })
     toScopeKey(row.workload.clusterId, row.pod.namespace),
     row.pod.name,
     60,
+    row.pod.uid,
   )
   const query = useQuery({
     ...options,
@@ -130,24 +131,37 @@ function PodMetricsPreview({ row, onOpen }: { row: PodRow; onOpen: () => void })
   )
 }
 
-function PodMetricsDetail({
+export function PodMetricsDetail({
   row,
   range,
   onRangeChange,
 }: {
-  row: PodRow
+  row: {
+    pod: Pick<PodRow['pod'], 'namespace' | 'name' | 'uid'>
+    workload: Pick<PodRow['workload'], 'clusterId'>
+  }
   range: number
   onRangeChange: (range: number) => void
 }) {
-  const query = useQuery(
-    podQueries.metrics(toScopeKey(row.workload.clusterId, row.pod.namespace), row.pod.name, range),
+  const options = podQueries.metrics(
+    toScopeKey(row.workload.clusterId, row.pod.namespace),
+    row.pod.name,
+    range,
+    row.pod.uid,
   )
+  const query = useQuery({
+    ...options,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+  })
+
   return (
     <Suspense fallback={<ManagementState compact kind="loading" />}>
       <ResourceMetricsPanel
         title="Pod 指标"
-        data={query.data}
-        loading={query.isPending}
+        data={query.isFetching || query.isError ? undefined : query.data}
+        loading={query.isPending || query.isFetching}
         rangeMinutes={range}
         onRangeChange={onRangeChange}
         errorMessage={query.error instanceof Error ? query.error.message : undefined}

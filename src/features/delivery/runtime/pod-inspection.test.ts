@@ -6,6 +6,7 @@ describe('Pod inspection YAML', () => {
     const pod = parsePodInspection(`metadata:
   name: api
   namespace: default
+  uid: pod-instance
 spec:
   containers:
     - name: api
@@ -22,6 +23,7 @@ status:
       exitCode: 137,
     })
     expect(pod.spec.containers[0].livenessProbe).toBeUndefined()
+    expect(pod.metadata.uid).toBe('pod-instance')
   })
   it('rejects non-Pod documents and malformed probe fields', () => {
     expect(() => parsePodInspection('kind: Deployment')).toThrow()

@@ -10,6 +10,7 @@ import type {
   RegistryConnectionListEnvelope,
   ProgressiveRolloutStatus,
   ProgressiveRolloutControlInput,
+  ResourceRelationsView,
 } from '@opensoha/contracts/gen/ts/sohaapi'
 import type {
   DeliveryDocumentSourceInfo,
@@ -464,6 +465,13 @@ export const deliveryApi = {
       unwrap(
         api.get<ApiResponse<DeliveryApplicationEnvironmentDetail>>(
           `/application-environments/${segment(id)}/detail`,
+        ),
+      ),
+    targetRelations: (bindingId: string, targetId: string, signal?: AbortSignal) =>
+      unwrap(
+        api.get<ApiResponse<ResourceRelationsView>>(
+          `/application-environments/${segment(bindingId)}/targets/${segment(targetId)}/relations`,
+          { signal },
         ),
       ),
     targetSource: (bindingId: string, targetId: string, signal?: AbortSignal) =>

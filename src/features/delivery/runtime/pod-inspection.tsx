@@ -54,7 +54,11 @@ const containerStatusSchema = z.object({
 const podSchema = z.object({
   // The typed Kubernetes GET may omit TypeMeta; identity is checked against the requested Pod.
   kind: z.literal('Pod').optional(),
-  metadata: z.object({ name: z.string(), namespace: z.string().optional() }),
+  metadata: z.object({
+    name: z.string(),
+    namespace: z.string().optional(),
+    uid: z.string().optional(),
+  }),
   spec: z.object({
     containers: z.array(containerSchema),
     initContainers: z.array(containerSchema).optional(),
@@ -104,33 +108,41 @@ export function PodInspection({
   namespace,
   podName,
   mode,
+  expectedUid,
 }: {
   clusterId: string
   namespace: string
   podName: string
   mode: 'details' | 'events' | 'yaml'
+  expectedUid?: string
 }) {
   const { localeCode } = useI18n()
   const text = (zh: string, en: string) => localeText(localeCode, zh, en)
   const scope = toScopeKey(clusterId, namespace)
   const yamlOptions = workloadQueries.yaml('pods', scope, podName)
-  const yamlQuery = useQuery({ ...yamlOptions, enabled: yamlOptions.enabled && mode !== 'events' })
+  const yamlQuery = useQuery({
+    ...yamlOptions,
+    ...(expectedUid ? { staleTime: 0, gcTime: 0, refetchOnMount: 'always' as const } : {}),
+    enabled: yamlOptions.enabled && mode !== 'events',
+  })
   const eventOptions = podQueries.events(scope, podName)
   const eventsQuery = useQuery({
     ...eventOptions,
     enabled: eventOptions.enabled && mode === 'events',
   })
   const parsed = useMemo(() => {
-    if (mode !== 'details' || !yamlQuery.data?.content) return null
+    if (mode === 'events' || (mode !== 'details' && !expectedUid) || !yamlQuery.data?.content)
+      return null
     try {
       const pod = parsePodInspection(yamlQuery.data.content)
+      if (expectedUid && pod.metadata.uid !== expectedUid) return { identityMismatch: true }
       if (pod.metadata.name !== podName || pod.metadata.namespace !== namespace)
         throw new Error('Pod identity mismatch')
       return { pod }
     } catch {
       return { error: true }
     }
-  }, [mode, yamlQuery.data?.content, podName, namespace])
+  }, [mode, yamlQuery.data?.content, podName, namespace, expectedUid])
   const query = mode === 'events' ? eventsQuery : yamlQuery
   if (query.isError)
     return (
@@ -141,7 +153,8 @@ export function PodInspection({
         actions={<Button onClick={() => void query.refetch()}>{text('重试', 'Retry')}</Button>}
       />
     )
-  if (query.isPending) return <ManagementState compact kind="loading" />
+  if (query.isPending || (expectedUid && mode !== 'events' && yamlQuery.isFetching))
+    return <ManagementState compact kind="loading" />
   if (mode === 'events')
     return (
       <ResourceEventsTimeline
@@ -153,7 +166,18 @@ export function PodInspection({
         )}
       />
     )
-  if (mode === 'yaml')
+  if (parsed?.identityMismatch)
+    return (
+      <ManagementState
+        compact
+        kind="error"
+        title={text(
+          'Pod 已重建，请刷新关系后重新选择',
+          'Pod identity changed; refresh and select it again',
+        )}
+      />
+    )
+  if (mode === 'yaml' && (!expectedUid || parsed?.pod))
     return (
       <div className="soha-pod-yaml">
         <Text copyable={{ text: yamlQuery.data?.content || '' }}>

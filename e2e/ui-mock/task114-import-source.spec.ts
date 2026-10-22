@@ -192,6 +192,28 @@ test('Task114 imported CR shares the application workspace and drops YAML on env
       }
       return base
     }
+    if (
+      /^\/application-environments\/retail-(test|prod)\/targets\/root-(test|prod)\/relations$/.test(
+        path,
+      )
+    )
+      return {
+        body: {
+          data: {
+            root: {
+              ...source.resource,
+              namespace: path.includes('retail-prod') ? 'retail-prod' : 'retail-test',
+              uid: path.includes('retail-prod') ? 'uid-prod' : 'uid-test',
+            },
+            config: { version: 'v1', rootUid: source.resource.uid, sources: [], rules: [] },
+            nodes: [],
+            edges: [],
+            coverage: [],
+            partial: false,
+            observedAt: source.observedAt,
+          },
+        },
+      }
     if (path === '/application-environments/retail-test/targets/root-test/source') {
       reads.push(path)
       return {

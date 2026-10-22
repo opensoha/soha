@@ -1597,29 +1597,23 @@ export function ApplicationDetailPage() {
               kind={runtimePending ? 'loading' : 'error'}
               actions={<Button onClick={() => void runtimeQuery.refetch()}>重试</Button>}
             />
-          ) : selectedWorkloads.some((item) => item.sourceStatus) && serviceTab !== 'metrics' ? (
+          ) : selectedWorkloads.some((item) => item.sourceStatus) ? (
             <>
               <ImportedSourceBrowser
                 key={`${activeEnvironmentId}/${selectionValue}`}
                 workloads={selectedWorkloads}
+                binding={activeRuntimeBinding}
+                view={serviceTab === 'metrics' ? 'metrics' : 'resources'}
               />
               {selectedPodWorkloads.length > 0 ? (
                 <ServicePodWorkspace
                   key={`${activeEnvironmentId}/${selectionValue}/pods`}
                   applicationId={application.id}
                   workloads={selectedPodWorkloads}
-                  view="pods"
+                  view={serviceTab === 'metrics' ? 'metrics' : 'pods'}
                 />
               ) : null}
             </>
-          ) : selectedWorkloads.some((item) => item.sourceStatus) &&
-            !selectedPodWorkloads.length ? (
-            <ManagementState
-              compact
-              kind="not-configured"
-              title="尚无关联 Pod 的指标证据"
-              description="源配置和稳定身份可在运行资源中查看。"
-            />
           ) : selectedWorkloads.length ? (
             <ServicePodWorkspace
               key={`${activeEnvironmentId}/${selectionValue}`}

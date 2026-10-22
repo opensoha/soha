@@ -1139,6 +1139,12 @@ vi.mock('@/features/auth/permission-snapshot', () => ({
   }),
 }))
 
+// AppLayout owns the real session provider; these page tests exercise runtime composition.
+vi.mock('@/features/platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/platform')>()),
+  useRealtimeSessionDock: () => ({ openSession: vi.fn() }),
+}))
+
 vi.mock('@/features/observability', () => ({
   LogExplorer: () => null,
 }))

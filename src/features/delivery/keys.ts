@@ -200,6 +200,8 @@ export const deliveryKeys = {
     list: () => [...ENVIRONMENTS, 'list'] as const,
     details: [...ENVIRONMENTS, 'detail'] as const,
     detail: (id: string) => [...ENVIRONMENTS, 'detail', normalizeDeliveryId(id)] as const,
+    targetRelations: (bindingId: string, targetId: string, uid: string) =>
+      [...ENVIRONMENTS, 'target-relations', bindingId, targetId, uid] as const,
     targetSource: (bindingId: string, targetId: string, uid: string) =>
       [...ENVIRONMENTS, 'target-source', bindingId, targetId, uid] as const,
     targetCandidates: (params: DeliveryTargetCandidateParams) =>
