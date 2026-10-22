@@ -63,6 +63,16 @@ class EvidenceTests(unittest.TestCase):
         for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
             with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
 
+    def test_relation_rules_scope_rejects_missing_skipped_or_cached_results(self):
+        scope = evidence.RELATION_RULES_SCOPE
+        names = [scope['parent'], scope['parent'] + '/' + scope['children'][0]]
+        events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
+        events.append(dict(Action='pass', Package=scope['package']))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 1)
+        invalids = [events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], events + [dict(Action='output', Package=scope['package'], Output='ok (cached)')]]
+        for invalid in invalids:
+            with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
+
     def test_child_skip_fail_missing_or_incomplete(self):
         for action in ("skip", "fail", "run"):
             events = self.events()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	contractresource "github.com/opensoha/soha-contracts/resource"
 	"io"
 	"net/http"
 	"strconv"
@@ -35,6 +36,10 @@ type DeliveryReleaseService interface {
 	ListReleaseBoard(context.Context, domainidentity.Principal) ([]domaindelivery.ReleaseBoardEntry, error)
 	ListReleaseBundles(context.Context, domainidentity.Principal, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error)
 	GetReleaseBundle(context.Context, domainidentity.Principal, string) (domaindelivery.ReleaseBundle, error)
+}
+
+type DeliveryTargetRelationsService interface {
+	GetImportedTargetRelations(context.Context, domainidentity.Principal, string, string) (contractresource.ResourceRelationsView, error)
 }
 
 type DeliveryKubernetesImportService interface {
@@ -813,4 +818,19 @@ func remarshal(source any, target any) error {
 		return err
 	}
 	return json.Unmarshal(payload, target)
+}
+
+func (h *DeliveryHandler) GetImportedTargetRelations(c *gin.Context) {
+	reader, ok := h.imports.(DeliveryTargetRelationsService)
+	if !ok {
+		apiresponse.Error(c, 503, "unsupported_operation", "resource relationships unavailable")
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	item, err := reader.GetImportedTargetRelations(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("applicationEnvironmentID"), c.Param("targetID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }

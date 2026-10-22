@@ -41,6 +41,7 @@ func TestTemplateVersionsWithPostgres(t *testing.T) {
 	t.Run("immutable-build-and-concurrent-publish", func(t *testing.T) { verifyBuildTemplateVersions(t, ctx, repo) })
 	t.Run("deployment-template-and-service-cas", func(t *testing.T) { verifyDeploymentTemplateVersions(t, ctx, repo) })
 	t.Run("binding-keeps-published-workflow", func(t *testing.T) { verifyWorkflowTemplateBinding(t, ctx, repo) })
+	t.Run("relation-rules-persistence-and-cas", func(t *testing.T) { verifyRelationRulesPersistence(t, ctx, repo) })
 	t.Run("service-deployment-configuration", func(t *testing.T) { verifyServiceDeploymentConfiguration(t, ctx, repo) })
 	t.Run("docker-target-without-cluster", func(t *testing.T) { verifyDockerTargetPersistence(t, ctx, repo) })
 	t.Run("workflow-catalog-legacy-build-sources", func(t *testing.T) { verifyWorkflowCatalogLegacySources(t, ctx, repo) })

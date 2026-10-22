@@ -32,7 +32,7 @@ func (deploymentSetupAccess) Authorize(context.Context, domainaccess.Request) (d
 func (deploymentSetupAccess) ListRolePermissions(context.Context) (map[string][]string, error) {
 	return map[string][]string{"template-test": {
 		appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryApplicationsUpdate,
-		appaccess.PermDeliveryApplicationServicesManage, appaccess.PermDeliveryApplicationServicesView, appaccess.PermDeliveryApplicationEnvView,
+		appaccess.PermDeliveryApplicationServicesManage, appaccess.PermDeliveryApplicationServicesView, appaccess.PermDeliveryApplicationEnvView, "delivery.application-environments.update",
 		appaccess.PermDeliveryDeploymentTemplatesView, appaccess.PermDeliveryDeploymentTemplatesCreate,
 		appaccess.PermDeliveryDeploymentTemplatesUpdate,
 	}}, nil

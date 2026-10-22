@@ -38,6 +38,7 @@ def main():
     parser.add_argument("--virtualization-capacity", action="store_true")
     parser.add_argument("--feed-search",action="store_true")
     parser.add_argument("--network-navigation", action="store_true")
+    parser.add_argument("--relation-rules", action="store_true")
     args = parser.parse_args()
     run_id = str(uuid.uuid4())
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -49,7 +50,7 @@ def main():
     try:
         container = command(["docker", "run", "--detach", "--rm", "--label", "soha.test.run=" + run_id,
                              "--publish", "127.0.0.1::5432",
-                             *(["--tmpfs", "/var/lib/postgresql"] if args.kubernetes_import else []),
+                             *(["--tmpfs", "/var/lib/postgresql"] if args.kubernetes_import or args.relation_rules else []),
                              "--env", "POSTGRES_DB=soha",
                              "--env", "POSTGRES_USER=pgsql", "--env", "POSTGRES_PASSWORD=test-only", IMAGE], timeout=90)
         info = json.loads(command(["docker", "inspect", container]))[0]
@@ -75,11 +76,15 @@ def main():
                 parent = "TestNetworkNavigationUpgradeWithPostgres"
             if args.kubernetes_import:
                 parent = "TestKubernetesImportIdentityWithPostgres"
+            if args.relation_rules:
+                parent = "TestTemplateVersionsWithPostgres/relation-rules-persistence-and-cas"
             package = "knowledge" if args.knowledge or args.knowledge_ann else "copilot" if args.identity or args.feed_search or args.main_chat or args.native_harness or args.personal_environment else "application"
             if args.virtualization_capacity:
                 package = "virtualization"
             if args.kubernetes_import:
                 package = "delivery"
+            if args.relation_rules:
+                package = "catalog"
             result = subprocess.run(["go", "test", "-json", "-count=1", "-race", "-timeout=10m",
                                      "-run", "^" + parent + "$",
                                      "./internal/bootstrap" if args.network_navigation else "./internal/repository/" + package], cwd=ROOT, env=env, stdout=log, stderr=diagnostics)
@@ -105,6 +110,8 @@ def main():
             scope = {"package": "github.com/opensoha/soha/internal/repository/virtualization", "parent": parent, "children": ["provider_identity_claim", "worker_pool_admission", "capacity_policy", "ssh_secret_storage", "managed_cloud_image_sync"]}
         if args.network_navigation:
             scope = {"package": "github.com/opensoha/soha/internal/bootstrap", "parent": parent, "children": ["disabled_upgrade_stays_pending", "failure_rolls_back", "upgrade_preserves_custom_data_and_bindings", "previous_task52_marker_recovers_without_reseed", "second_start_is_idempotent"]}
+        if args.relation_rules:
+            scope = module.RELATION_RULES_SCOPE
         evidence = module.validate(args.output.read_text(), result.returncode, **scope)
         manifest['result'] = evidence
     except Exception as error:

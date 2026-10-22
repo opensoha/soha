@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	cr "github.com/opensoha/soha-contracts/resource"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -55,6 +56,33 @@ func TestDeliverySourceHandlerForwardsExplicitScopeAndPreventsCaching(t *testing
 		}
 		if response.Code != want || response.Header().Get("Cache-Control") != "no-store" || service.binding != "env-1" || service.target != "target-1" {
 			t.Fatalf("source response=%d headers=%v scope=%s/%s", response.Code, response.Header(), service.binding, service.target)
+		}
+	}
+}
+
+func (s *targetSourceHandlerStub) GetImportedTargetRelations(_ context.Context, _ domainidentity.Principal, binding, target string) (cr.ResourceRelationsView, error) {
+	s.binding, s.target = binding, target
+	return cr.ResourceRelationsView{}, s.err
+}
+func TestDeliveryRelationHandlerPreservesScopeAndNoStore(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &targetSourceHandlerStub{}
+	handler := &DeliveryHandler{imports: service}
+	router := gin.New()
+	router.GET("/bindings/:applicationEnvironmentID/targets/:targetID/relations", handler.GetImportedTargetRelations)
+	for _, err := range []error{nil, apperrors.ErrConflict, apperrors.ErrAccessDenied} {
+		service.err = err
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/bindings/env/targets/target/relations", nil))
+		want := 200
+		if errors.Is(err, apperrors.ErrConflict) {
+			want = 409
+		}
+		if errors.Is(err, apperrors.ErrAccessDenied) {
+			want = 403
+		}
+		if response.Code != want || response.Header().Get("Cache-Control") != "no-store" || service.binding != "env" || service.target != "target" {
+			t.Fatalf("response=%d scope=%s/%s", response.Code, service.binding, service.target)
 		}
 	}
 }

@@ -184,6 +184,9 @@ func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal do
 	if err := validateDockerTargets(input.Targets); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
+	if err := validateRelationTargets(input.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
 	item, err := s.repo.CreateApplicationEnvironment(ctx, input)
 	if err == nil {
 		s.recordWriteLogs(ctx, principal, "delivery.application_environment.create", "ApplicationEnvironment", item.ID, item.ID, "created application environment binding")
@@ -215,6 +218,12 @@ func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal do
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	if err := validateDockerTargets(input.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateRelationTargets(input.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateRelationRuleRevision(input, current); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	item, err := s.repo.UpdateApplicationEnvironment(ctx, id, input)
