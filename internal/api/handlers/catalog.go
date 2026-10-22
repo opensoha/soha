@@ -237,6 +237,7 @@ func (h *CatalogHandler) UpdateBuildTemplate(c *gin.Context) {
 
 func buildTemplateInput(req dto.BuildTemplateRequest) domaincatalog.BuildTemplateInput {
 	return domaincatalog.BuildTemplateInput{
+		MigrationPolicy:  req.MigrationPolicy,
 		CopiedFrom:       req.CopiedFrom,
 		ExpectedRevision: req.ExpectedRevision, Publish: req.Publish,
 		ID:                 req.ID,
@@ -289,6 +290,7 @@ func (h *CatalogHandler) CreateWorkflowTemplate(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.workflows.CreateWorkflowTemplate(c.Request.Context(), principal, domaincatalog.WorkflowTemplateInput{
+		MigrationPolicy:  req.MigrationPolicy,
 		CopiedFrom:       req.CopiedFrom,
 		ExpectedRevision: req.ExpectedRevision,
 		Publish:          req.Publish,
@@ -315,6 +317,7 @@ func (h *CatalogHandler) UpdateWorkflowTemplate(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.workflows.UpdateWorkflowTemplate(c.Request.Context(), principal, c.Param("workflowTemplateID"), domaincatalog.WorkflowTemplateInput{
+		MigrationPolicy:  req.MigrationPolicy,
 		CopiedFrom:       req.CopiedFrom,
 		ExpectedRevision: req.ExpectedRevision,
 		Publish:          req.Publish,

@@ -47,6 +47,14 @@ class EvidenceTests(unittest.TestCase):
     def test_all_required_tests_pass(self):
         self.assertEqual(evidence.validate(self.raw(self.events()))["children"], 16)
 
+    def test_migration_scopes_require_declaration_and_success_evidence(self):
+        for scope in (evidence.TEMPLATE_MIGRATION_SCOPE, evidence.MANIFEST_MIGRATION_SCOPE):
+            names=[scope["parent"],*[scope["parent"]+"/"+child for child in scope["children"]]]
+            events=[dict(Action=action,Package=scope["package"],Test=name) for name in names for action in ("run","pass")]+[dict(Action="pass",Package=scope["package"])]
+            self.assertEqual(evidence.validate(self.raw(events),**scope)["result"],"PASS")
+            for invalid in (events[:2]+events[4:],[{**event,"Action":"skip"} if event.get("Test")==names[-1] else event for event in events],events+[dict(Action="output",Package=scope["package"],Output="ok (cached)")]):
+                with self.assertRaises(ValueError): evidence.validate(self.raw(invalid),**scope)
+
     def test_main_chat_scope_requires_a_real_uncached_run(self):
         package = "github.com/opensoha/soha/internal/repository/copilot"
         parent = "TestMainSessionWithPostgres"

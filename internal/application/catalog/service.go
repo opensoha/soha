@@ -364,6 +364,9 @@ func (s *Service) CreateWorkflowTemplate(ctx context.Context, principal domainid
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
+	if err := domaincatalog.ValidateMigrationPolicy(input.MigrationPolicy); err != nil {
+		return domaincatalog.WorkflowTemplate{}, err
+	}
 	if err := validateWorkflowTemplateDefinition(input.Definition); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
 	}
@@ -394,6 +397,9 @@ func (s *Service) UpdateWorkflowTemplate(ctx context.Context, principal domainid
 	}
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
+	}
+	if err := domaincatalog.ValidateMigrationPolicy(input.MigrationPolicy); err != nil {
+		return domaincatalog.WorkflowTemplate{}, err
 	}
 	if err := validateWorkflowTemplateDefinition(input.Definition); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
@@ -528,6 +534,9 @@ func normalizeBuildTemplateInput(input domaincatalog.BuildTemplateInput) domainc
 }
 
 func validateBuildTemplateInput(input domaincatalog.BuildTemplateInput) error {
+	if err := domaincatalog.ValidateMigrationPolicy(input.MigrationPolicy); err != nil {
+		return err
+	}
 	if len(input.BuildCommands) == 0 && strings.TrimSpace(input.DockerfileTemplate) == "" {
 		return fmt.Errorf("%w: a Dockerfile template or build commands are required", apperrors.ErrInvalidArgument)
 	}

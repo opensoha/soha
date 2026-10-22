@@ -71,11 +71,15 @@ type ManifestTaskRuntime interface {
 }
 
 type DeliveryTaskReader interface {
+	GetExecutingDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlan, error)
 	GetExecutionTask(context.Context, domainidentity.Principal, string) (domaindelivery.ExecutionTask, error)
 	GetConfirmedDeliveryPlan(context.Context, domainidentity.Principal, string) (domaindelivery.DeliveryPlan, error)
 }
 
 type DeclarativeRuntimeDependencies struct {
+	TemplateMigrations interface {
+		ServiceTemplateMigrationRequired(context.Context, string, string) (bool, error)
+	}
 	ExecutionPrincipals ExecutionPrincipalReader
 	ImportedRoots       ImportedRootAdmission
 	RootResources       RootResourceReader
@@ -90,6 +94,9 @@ type DeclarativeRuntimeDependencies struct {
 }
 
 type DeclarativeService struct {
+	templateMigrations interface {
+		ServiceTemplateMigrationRequired(context.Context, string, string) (bool, error)
+	}
 	executionPrincipals ExecutionPrincipalReader
 	importedRoots       ImportedRootAdmission
 	rootResources       RootResourceReader
@@ -108,6 +115,7 @@ type DeclarativeService struct {
 func NewDeclarative(base *Service, repository DeclarativeRepository, runtime ...DeclarativeRuntimeDependencies) *DeclarativeService {
 	service := &DeclarativeService{base: base, repository: repository}
 	if len(runtime) > 0 {
+		service.templateMigrations = runtime[0].TemplateMigrations
 		service.executionPrincipals = runtime[0].ExecutionPrincipals
 		service.importedRoots = runtime[0].ImportedRoots
 		service.rootResources = runtime[0].RootResources

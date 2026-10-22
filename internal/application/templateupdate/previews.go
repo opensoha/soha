@@ -127,13 +127,28 @@ func (s *Service) previewCandidate(ctx context.Context, p domainidentity.Princip
 		c.Eligible = false
 		c.Reason = "缺少目标应用或环境的配置更新权限"
 	}
+	migration, err := s.candidateMigration(ctx, p, b, versions, to.Number)
+	if err != nil {
+		c.Eligible = false
+		c.Reason = "无法验证迁移的成功发布基线，请重新读取后比较"
+	} else {
+		c.Cumulative.Migration = migration
+		if migration != nil {
+			c.RequiresApproval = c.RequiresApproval || migration.RequiresApproval
+			if migration.Blocked {
+				c.Eligible = false
+				c.Reason = migration.Reason
+			}
+		}
+	}
 	c.Digest = digest(struct {
 		Target         sohaapi.TemplateUpdateTarget
 		Version        int64
 		TemplateDigest string
 		Parameters     any
 		Selection      sohaapi.TemplateUpdateSelection
-	}{c.Target, c.ToVersion, to.Digest, c.Parameters, selection})
+		Migration      *sohaapi.TemplateMigrationAssessment
+	}{c.Target, c.ToVersion, to.Digest, c.Parameters, selection, c.Cumulative.Migration})
 	return c
 }
 
@@ -235,18 +250,35 @@ func (s *Service) Candidate(ctx context.Context, p domainidentity.Principal, id 
 	if !binding.Target.Eligible || binding.Target.BindingRevision != frozen.Candidate.Target.BindingRevision {
 		return frozen, conflict("application configuration changed; create a new preview")
 	}
+	if err := s.validateCandidateVersion(ctx, p, binding, frozen); err != nil {
+		return frozen, err
+	}
+	return frozen, nil
+}
+
+func (s *Service) validateCandidateVersion(ctx context.Context, p domainidentity.Principal, binding domainupdate.Binding, frozen domainupdate.FrozenCandidate) error {
 	versions, err := s.versions(ctx, p, binding.Target.Kind, binding.Target.TemplateID)
 	if err != nil {
-		return frozen, err
+		return err
 	}
 	to, ok := findVersion(versions, frozen.Candidate.ToVersion)
 	if !ok || !to.Enabled || to.Digest != frozen.TemplateDigest {
-		return frozen, conflict("published template is unavailable or changed")
+		return conflict("published template is unavailable or changed")
+	}
+	migration, err := s.candidateMigration(ctx, p, binding, versions, to.Number)
+	if err != nil {
+		return err
+	}
+	if migration != nil && migration.Blocked {
+		return conflict(migration.Reason)
+	}
+	if !sameMigration(migration, frozen.Candidate.Cumulative.Migration) {
+		return conflict("迁移基线或版本要求已变化，请重新比较并审批")
 	}
 	if (binding.Target.RequiresApproval || binding.Target.Mode == "approval") && !frozen.Candidate.RequiresApproval {
-		return frozen, conflict("environment now requires approval; compare again")
+		return conflict("environment now requires approval; compare again")
 	}
-	return frozen, nil
+	return nil
 }
 
 func (s *Service) ReadCandidate(ctx context.Context, p domainidentity.Principal, id string) (domainupdate.FrozenCandidate, error) {
@@ -290,7 +322,7 @@ func (s *Service) CreateBatch(ctx context.Context, p domainidentity.Principal, p
 			return empty, invalid("candidate selected twice")
 		}
 		seen[id] = true
-		candidate, err := s.ReadCandidate(ctx, p, id)
+		candidate, err := s.Candidate(ctx, p, id, true)
 		if err != nil {
 			return empty, err
 		}

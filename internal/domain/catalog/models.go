@@ -131,69 +131,73 @@ type ApplicationEnvironmentInput struct {
 }
 
 type BuildTemplate struct {
-	Revision           int64          `json:"revision"`
-	PublishedVersion   int64          `json:"publishedVersion"`
-	PublicationState   string         `json:"publicationState"`
-	ContentDigest      string         `json:"contentDigest,omitempty"`
-	ID                 string         `json:"id"`
-	Key                string         `json:"key"`
-	Name               string         `json:"name"`
-	Description        string         `json:"description,omitempty"`
-	BuilderKind        string         `json:"builderKind,omitempty"`
-	DockerfileTemplate string         `json:"dockerfileTemplate,omitempty"`
-	BuildCommands      []string       `json:"buildCommands,omitempty"`
-	VariableSchema     map[string]any `json:"variableSchema,omitempty"`
-	DefaultVariables   map[string]any `json:"defaultVariables,omitempty"`
-	Enabled            bool           `json:"enabled"`
-	CreatedAt          time.Time      `json:"createdAt"`
-	UpdatedAt          time.Time      `json:"updatedAt"`
+	MigrationPolicy    *sohaapi.TemplateMigrationPolicy `json:"migrationPolicy,omitempty"`
+	Revision           int64                            `json:"revision"`
+	PublishedVersion   int64                            `json:"publishedVersion"`
+	PublicationState   string                           `json:"publicationState"`
+	ContentDigest      string                           `json:"contentDigest,omitempty"`
+	ID                 string                           `json:"id"`
+	Key                string                           `json:"key"`
+	Name               string                           `json:"name"`
+	Description        string                           `json:"description,omitempty"`
+	BuilderKind        string                           `json:"builderKind,omitempty"`
+	DockerfileTemplate string                           `json:"dockerfileTemplate,omitempty"`
+	BuildCommands      []string                         `json:"buildCommands,omitempty"`
+	VariableSchema     map[string]any                   `json:"variableSchema,omitempty"`
+	DefaultVariables   map[string]any                   `json:"defaultVariables,omitempty"`
+	Enabled            bool                             `json:"enabled"`
+	CreatedAt          time.Time                        `json:"createdAt"`
+	UpdatedAt          time.Time                        `json:"updatedAt"`
 }
 
 type TemplateCopyOrigin = sohaapi.TemplateCopyOrigin
 
 type BuildTemplateInput struct {
-	CopiedFrom         *TemplateCopyOrigin `json:"copiedFrom,omitempty"`
-	ExpectedRevision   *int64              `json:"expectedRevision,omitempty"`
-	Publish            *bool               `json:"publish,omitempty"`
-	ID                 string              `json:"id"`
-	Key                string              `json:"key"`
-	Name               string              `json:"name"`
-	Description        string              `json:"description,omitempty"`
-	BuilderKind        string              `json:"builderKind,omitempty"`
-	DockerfileTemplate string              `json:"dockerfileTemplate,omitempty"`
-	BuildCommands      []string            `json:"buildCommands,omitempty"`
-	VariableSchema     map[string]any      `json:"variableSchema,omitempty"`
-	DefaultVariables   map[string]any      `json:"defaultVariables,omitempty"`
-	Enabled            bool                `json:"enabled"`
+	MigrationPolicy    *sohaapi.TemplateMigrationPolicy `json:"migrationPolicy,omitempty"`
+	CopiedFrom         *TemplateCopyOrigin              `json:"copiedFrom,omitempty"`
+	ExpectedRevision   *int64                           `json:"expectedRevision,omitempty"`
+	Publish            *bool                            `json:"publish,omitempty"`
+	ID                 string                           `json:"id"`
+	Key                string                           `json:"key"`
+	Name               string                           `json:"name"`
+	Description        string                           `json:"description,omitempty"`
+	BuilderKind        string                           `json:"builderKind,omitempty"`
+	DockerfileTemplate string                           `json:"dockerfileTemplate,omitempty"`
+	BuildCommands      []string                         `json:"buildCommands,omitempty"`
+	VariableSchema     map[string]any                   `json:"variableSchema,omitempty"`
+	DefaultVariables   map[string]any                   `json:"defaultVariables,omitempty"`
+	Enabled            bool                             `json:"enabled"`
 }
 
 type WorkflowTemplate struct {
-	Revision         int64          `json:"revision"`
-	PublishedVersion int64          `json:"publishedVersion"`
-	PublicationState string         `json:"publicationState"`
-	ContentDigest    string         `json:"contentDigest,omitempty"`
-	ID               string         `json:"id"`
-	Key              string         `json:"key"`
-	Name             string         `json:"name"`
-	Description      string         `json:"description,omitempty"`
-	Category         string         `json:"category,omitempty"`
-	Definition       map[string]any `json:"definition,omitempty"`
-	Enabled          bool           `json:"enabled"`
-	CreatedAt        time.Time      `json:"createdAt"`
-	UpdatedAt        time.Time      `json:"updatedAt"`
+	MigrationPolicy  *sohaapi.TemplateMigrationPolicy `json:"migrationPolicy,omitempty"`
+	Revision         int64                            `json:"revision"`
+	PublishedVersion int64                            `json:"publishedVersion"`
+	PublicationState string                           `json:"publicationState"`
+	ContentDigest    string                           `json:"contentDigest,omitempty"`
+	ID               string                           `json:"id"`
+	Key              string                           `json:"key"`
+	Name             string                           `json:"name"`
+	Description      string                           `json:"description,omitempty"`
+	Category         string                           `json:"category,omitempty"`
+	Definition       map[string]any                   `json:"definition,omitempty"`
+	Enabled          bool                             `json:"enabled"`
+	CreatedAt        time.Time                        `json:"createdAt"`
+	UpdatedAt        time.Time                        `json:"updatedAt"`
 }
 
 type WorkflowTemplateInput struct {
-	CopiedFrom       *TemplateCopyOrigin `json:"copiedFrom,omitempty"`
-	ExpectedRevision *int64              `json:"expectedRevision,omitempty"`
-	Publish          *bool               `json:"publish,omitempty"`
-	ID               string              `json:"id"`
-	Key              string              `json:"key"`
-	Name             string              `json:"name"`
-	Description      string              `json:"description,omitempty"`
-	Category         string              `json:"category,omitempty"`
-	Definition       map[string]any      `json:"definition,omitempty"`
-	Enabled          bool                `json:"enabled"`
+	MigrationPolicy  *sohaapi.TemplateMigrationPolicy `json:"migrationPolicy,omitempty"`
+	CopiedFrom       *TemplateCopyOrigin              `json:"copiedFrom,omitempty"`
+	ExpectedRevision *int64                           `json:"expectedRevision,omitempty"`
+	Publish          *bool                            `json:"publish,omitempty"`
+	ID               string                           `json:"id"`
+	Key              string                           `json:"key"`
+	Name             string                           `json:"name"`
+	Description      string                           `json:"description,omitempty"`
+	Category         string                           `json:"category,omitempty"`
+	Definition       map[string]any                   `json:"definition,omitempty"`
+	Enabled          bool                             `json:"enabled"`
 }
 
 type ApplicationWorkflowInput struct {

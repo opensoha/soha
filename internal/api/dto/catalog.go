@@ -68,32 +68,34 @@ type ReleasePolicyRequest struct {
 }
 
 type BuildTemplateRequest struct {
-	CopiedFrom         *sohaapi.TemplateCopyOrigin `json:"copiedFrom,omitempty"`
-	ExpectedRevision   *int64                      `json:"expectedRevision,omitempty" binding:"omitempty,min=1"`
-	Publish            *bool                       `json:"publish,omitempty"`
-	ID                 string                      `json:"id"`
-	Key                string                      `json:"key"`
-	Name               string                      `json:"name"`
-	Description        string                      `json:"description"`
-	BuilderKind        string                      `json:"builderKind"`
-	DockerfileTemplate string                      `json:"dockerfileTemplate"`
-	BuildCommands      []string                    `json:"buildCommands"`
-	VariableSchema     map[string]any              `json:"variableSchema"`
-	DefaultVariables   map[string]any              `json:"defaultVariables"`
-	Enabled            bool                        `json:"enabled"`
+	MigrationPolicy    *sohaapi.TemplateMigrationPolicy `json:"migrationPolicy,omitempty"`
+	CopiedFrom         *sohaapi.TemplateCopyOrigin      `json:"copiedFrom,omitempty"`
+	ExpectedRevision   *int64                           `json:"expectedRevision,omitempty" binding:"omitempty,min=1"`
+	Publish            *bool                            `json:"publish,omitempty"`
+	ID                 string                           `json:"id"`
+	Key                string                           `json:"key"`
+	Name               string                           `json:"name"`
+	Description        string                           `json:"description"`
+	BuilderKind        string                           `json:"builderKind"`
+	DockerfileTemplate string                           `json:"dockerfileTemplate"`
+	BuildCommands      []string                         `json:"buildCommands"`
+	VariableSchema     map[string]any                   `json:"variableSchema"`
+	DefaultVariables   map[string]any                   `json:"defaultVariables"`
+	Enabled            bool                             `json:"enabled"`
 }
 
 type WorkflowTemplateRequest struct {
-	CopiedFrom       *sohaapi.TemplateCopyOrigin `json:"copiedFrom,omitempty"`
-	ExpectedRevision *int64                      `json:"expectedRevision,omitempty" binding:"omitempty,min=1"`
-	Publish          *bool                       `json:"publish,omitempty"`
-	ID               string                      `json:"id"`
-	Key              string                      `json:"key"`
-	Name             string                      `json:"name"`
-	Description      string                      `json:"description"`
-	Category         string                      `json:"category"`
-	Definition       map[string]any              `json:"definition"`
-	Enabled          bool                        `json:"enabled"`
+	MigrationPolicy  *sohaapi.TemplateMigrationPolicy `json:"migrationPolicy,omitempty"`
+	CopiedFrom       *sohaapi.TemplateCopyOrigin      `json:"copiedFrom,omitempty"`
+	ExpectedRevision *int64                           `json:"expectedRevision,omitempty" binding:"omitempty,min=1"`
+	Publish          *bool                            `json:"publish,omitempty"`
+	ID               string                           `json:"id"`
+	Key              string                           `json:"key"`
+	Name             string                           `json:"name"`
+	Description      string                           `json:"description"`
+	Category         string                           `json:"category"`
+	Definition       map[string]any                   `json:"definition"`
+	Enabled          bool                             `json:"enabled"`
 }
 
 type ApplicationWorkflowRequest struct {

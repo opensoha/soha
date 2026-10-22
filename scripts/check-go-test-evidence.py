@@ -45,6 +45,9 @@ MANIFEST_ROOT_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/m
 
 TEMPLATE_ADOPTION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/templateupdate","parent":"TestTemplateAdoptionWithPostgres","children":["atomic_receipt_and_environment_isolation","stale_and_canceled_worker","policy_cas_and_private_identity"]}
 
+TEMPLATE_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/catalog","parent":"TestTemplateVersionsWithPostgres","children":["migration-declarations-preserve-legacy-writers"]}
+MANIFEST_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/manifest","parent":"TestDeliverySnapshotWithPostgres","children":["migration-baseline-is-success-only",*["migration-baseline-is-success-only/"+name for name in ["verified","desired-only","stale-generation","failed","digest-mismatch","malformed-identity"]]]}
+
 def validate(raw, exit_code=0, package=PACKAGE, parent=PARENT, children=CHILDREN):
     if exit_code != 0:
         raise ValueError("Go process did not succeed")
@@ -78,6 +81,8 @@ if __name__ == "__main__":
     parser.add_argument("--kubernetes-import", action="store_true")
     parser.add_argument("--relation-rules", action="store_true")
     parser.add_argument("--template-adoption", action="store_true")
+    parser.add_argument("--template-migration", action="store_true")
+    parser.add_argument("--manifest-migration", action="store_true")
     args = parser.parse_args()
     try:
         scope = {"package": "github.com/opensoha/soha/internal/repository/copilot", "parent": "TestMainSessionWithPostgres", "children": ["personal_assistant_identity"]} if args.main_chat else {}
@@ -89,6 +94,10 @@ if __name__ == "__main__":
             scope = RELATION_RULES_SCOPE
         if args.template_adoption:
             scope = TEMPLATE_ADOPTION_SCOPE
+        if args.template_migration:
+            scope = TEMPLATE_MIGRATION_SCOPE
+        if args.manifest_migration:
+            scope = MANIFEST_MIGRATION_SCOPE
         print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))
     except (ValueError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")

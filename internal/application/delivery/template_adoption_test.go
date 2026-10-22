@@ -70,3 +70,10 @@ func TestTemplateAdoptionPlanUsesApprovalAndNoRuntimeTask(t *testing.T) {
 		t.Fatal("adoption did not complete as configuration only")
 	}
 }
+
+func (*adoptionOwner) AssessRelease(context.Context, domainidentity.Principal, sohaapi.TemplateUpdateKind, string, int64, int64) (*sohaapi.TemplateMigrationAssessment, error) {
+	return nil, nil
+}
+func (*adoptionOwner) ReleaseReference(context.Context, domainidentity.Principal, string, int64) (*sohaapi.TemplateVersionReference, error) {
+	return nil, nil
+}

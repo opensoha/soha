@@ -216,6 +216,10 @@ func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest
 }
 
 func (r *Repository) UpdateDeploymentStatus(ctx context.Context, deploymentID string, generation int64, status domainmanifest.DeploymentStatus) error {
+	appliedTemplate, err := json.Marshal(status.AppliedTemplate)
+	if err != nil {
+		return err
+	}
 	drift, err := json.Marshal(status.Drift)
 	if err != nil {
 		return fmt.Errorf("encode manifest drift report: %w", err)
@@ -229,13 +233,13 @@ func (r *Repository) UpdateDeploymentStatus(ctx context.Context, deploymentID st
 			SET observed_generation = ?, applied_revision = NULLIF(?, 0), applied_digest = ?,
 				last_known_good_revision = NULLIF(?, 0), phase = ?, last_reconciled_at = ?,
 				last_execution_task_id = NULLIF(?, ''), drift = ?::jsonb,
-				last_error_code = ?, last_error_message = ?
+				last_error_code = ?, last_error_message = ?, applied_template = ?::jsonb
 			FROM manifest_deployments deployment
 			WHERE status.deployment_id = deployment.id AND deployment.id = ? AND deployment.generation = ?
 		`, status.ObservedGeneration, status.AppliedRevision, status.AppliedDigest,
 			status.LastKnownGoodRevision, status.Phase, status.LastReconciledAt,
 			status.LastExecutionTaskID, string(drift), status.LastErrorCode,
-			status.LastErrorMessage, deploymentID, generation)
+			status.LastErrorMessage, string(appliedTemplate), deploymentID, generation)
 		if result.Error != nil {
 			return result.Error
 		}

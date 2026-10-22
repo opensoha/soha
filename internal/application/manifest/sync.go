@@ -183,10 +183,20 @@ func (s *DeclarativeService) autoDeploySyncedRevision(ctx context.Context, paylo
 }
 
 func (s *DeclarativeService) PromoteRevision(ctx context.Context, principal domainidentity.Principal, item domainmanifest.Package, revision int) error {
-	return s.promoteRevision(ctx, item, revision, principal.UserID)
+	if err := s.requireLegacyMigration(ctx, principal, item.ID); err != nil {
+		return err
+	}
+	return s.promoteRevision(ctx, item, revision, principal.UserID, principal)
 }
 
-func (s *DeclarativeService) promoteRevision(ctx context.Context, item domainmanifest.Package, revision int, actorID string) error {
+func (s *DeclarativeService) promoteRevision(ctx context.Context, item domainmanifest.Package, revision int, actorID string, principals ...domainidentity.Principal) error {
+	// A system source has no approval identity; the owner checks declarations
+	// before any desired write, without granting a synthetic system principal.
+	if item.ServiceID != "" && len(principals) == 0 {
+		if err := s.requireLegacyMigration(ctx, domainidentity.Principal{}, item.ID); err != nil {
+			return err
+		}
+	}
 	bindings, err := s.repository.ListBindings(ctx, item.ID)
 	if err != nil {
 		return err
@@ -232,7 +242,7 @@ func (s *DeclarativeService) promoteRevision(ctx context.Context, item domainman
 		}
 		applyPayload := s.taskPayload(domainmanifest.TaskActionApply, item, binding, deployment, rendered, deployment.Generation, false, actorID)
 		applyPayload.IdempotencyKey = operationKey(deployment, domainmanifest.TaskActionApply)
-		if _, err := s.queueOperation(ctx, item, binding, deployment, applyPayload); err != nil {
+		if _, err := s.queueOperation(ctx, item, binding, deployment, applyPayload, principals...); err != nil {
 			return err
 		}
 	}

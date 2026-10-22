@@ -1,6 +1,9 @@
 package manifest
 
-import "time"
+import (
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	"time"
+)
 
 const (
 	SourceModeSohaManaged = "soha_managed"
@@ -162,18 +165,19 @@ type DeploymentSpec struct {
 }
 
 type DeploymentStatus struct {
-	ObservedGeneration    int64               `json:"observedGeneration"`
-	AppliedRevision       int                 `json:"appliedRevision,omitempty"`
-	AppliedDigest         string              `json:"appliedDigest,omitempty"`
-	LastKnownGoodRevision int                 `json:"lastKnownGoodRevision,omitempty"`
-	Phase                 string              `json:"phase"`
-	Conditions            []Condition         `json:"conditions"`
-	Inventory             []ResourceInventory `json:"inventory"`
-	LastReconciledAt      *time.Time          `json:"lastReconciledAt,omitempty"`
-	LastExecutionTaskID   string              `json:"lastExecutionTaskId,omitempty"`
-	Drift                 *DriftReport        `json:"drift,omitempty"`
-	LastErrorCode         string              `json:"lastErrorCode,omitempty"`
-	LastErrorMessage      string              `json:"lastErrorMessage,omitempty"`
+	AppliedTemplate       *sohaapi.TemplateVersionReference `json:"appliedTemplate,omitempty"`
+	ObservedGeneration    int64                             `json:"observedGeneration"`
+	AppliedRevision       int                               `json:"appliedRevision,omitempty"`
+	AppliedDigest         string                            `json:"appliedDigest,omitempty"`
+	LastKnownGoodRevision int                               `json:"lastKnownGoodRevision,omitempty"`
+	Phase                 string                            `json:"phase"`
+	Conditions            []Condition                       `json:"conditions"`
+	Inventory             []ResourceInventory               `json:"inventory"`
+	LastReconciledAt      *time.Time                        `json:"lastReconciledAt,omitempty"`
+	LastExecutionTaskID   string                            `json:"lastExecutionTaskId,omitempty"`
+	Drift                 *DriftReport                      `json:"drift,omitempty"`
+	LastErrorCode         string                            `json:"lastErrorCode,omitempty"`
+	LastErrorMessage      string                            `json:"lastErrorMessage,omitempty"`
 }
 
 type DesiredRevisionInput struct {

@@ -151,6 +151,9 @@ func (s *DeclarativeService) ValidateRootCRExecutionTask(ctx context.Context, ta
 	if err != nil {
 		return err
 	}
+	if err = s.validateMigrationTask(ctx, task, payload); err != nil {
+		return err
+	}
 	if s.importedRoots != nil {
 		if err = s.importedRoots.ValidateImportedManifestTargets(ctx, payload); err != nil {
 			return err

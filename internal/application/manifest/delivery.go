@@ -69,11 +69,16 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
+	migration, err := s.migrationAssessment(ctx, principal, item, current, templateInputs)
+	if err != nil {
+		return domainmanifest.DeliverySnapshot{}, err
+	}
 	commit, err := s.repository.GetRevisionSourceCommit(ctx, item.ID, revision)
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
 	snapshot := domainmanifest.DeliverySnapshot{
+		Migration:       migration,
 		RootResource:    rootResource,
 		GitOpsDocuments: gitOpsDocuments,
 		TemplateInputs:  templateInputs,
@@ -219,6 +224,9 @@ func (s *DeclarativeService) ValidateDeliverySnapshot(ctx context.Context, princ
 	if err != nil {
 		return err
 	}
+	if err := s.validateMigrationSnapshot(ctx, principal, item, current, snapshot); err != nil {
+		return err
+	}
 	if current.Generation != snapshot.ExpectedGeneration && !deliveryAlreadySelected(current, snapshot) {
 		return fmt.Errorf("%w: Manifest deployment changed; create a new delivery plan", apperrors.ErrConflict)
 	}
@@ -310,6 +318,9 @@ func (s *DeclarativeService) requireLegacyDeployment(ctx context.Context, princi
 		if target.ConfigRef == bindingID && target.WorkloadKind == "CustomResource" {
 			return fmt.Errorf("%w: imported root CRs require an approved application delivery plan", apperrors.ErrConflict)
 		}
+	}
+	if err := s.requireLegacyMigration(ctx, principal, binding.PackageID); err != nil {
+		return err
 	}
 	deployment, err := s.deliveryDeployment(ctx, bindingID)
 	if err != nil {

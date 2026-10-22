@@ -313,9 +313,10 @@ func (r *testManifests) AdoptTemplate(ctx context.Context, _ domainidentity.Prin
 }
 
 type testBatches struct {
-	owner  *Service
-	inputs []domainworkflow.DeliveryBatchInput
-	values map[string]domainworkflow.DeliveryBatch
+	baseline *sohaapi.TemplateVersionReference
+	owner    *Service
+	inputs   []domainworkflow.DeliveryBatchInput
+	values   map[string]domainworkflow.DeliveryBatch
 }
 
 func (r *testBatches) CreateDeliveryBatch(ctx context.Context, p domainidentity.Principal, input domainworkflow.DeliveryBatchInput) (domainworkflow.DeliveryBatch, error) {
@@ -392,7 +393,7 @@ func newFixture(t *testing.T) *fixture {
 		}
 	}
 	var err error
-	f.s, err = New(Dependencies{Repository: f.repo, Applications: f.apps, Environments: f.catalog, Deployment: f.catalog, Build: f.catalog, Workflow: f.catalog, Manifests: f.manifests, Batches: f.batches, Principals: f.principals})
+	f.s, err = New(Dependencies{Repository: f.repo, Applications: f.apps, Environments: f.catalog, Deployment: f.catalog, Build: f.catalog, Workflow: f.catalog, Manifests: f.manifests, Batches: f.batches, Baselines: f.batches, Principals: f.principals})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -729,4 +730,8 @@ func TestPausingPolicyDoesNotInvalidateCommittedAdoptionReceipt(t *testing.T) {
 	if err := f.s.Apply(context.Background(), f.p, id, "plan", func(context.Context) error { t.Fatal("committed adoption repeated after pause"); return nil }); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func (b *testBatches) TemplateMigrationBaseline(context.Context, domainidentity.Principal, string, string, string) (*sohaapi.TemplateVersionReference, error) {
+	return b.baseline, nil
 }

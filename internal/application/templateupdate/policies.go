@@ -123,7 +123,7 @@ func (s *Service) ReconcilePolicies(ctx context.Context) error {
 			item.Value.UpdatedAt = time.Now().UTC()
 			item.Value.LastError = ""
 			if err != nil {
-				item.Value.LastError = "自动采用暂未完成：请核对执行身份权限、固定版本、变量与最新批次；修正后恢复策略"
+				item.Value.LastError = policyFailure(err)
 			}
 			return nil
 		}); err != nil {
@@ -177,13 +177,25 @@ func (s *Service) reconcilePolicy(ctx context.Context, policy *domainupdate.Poli
 	if err != nil {
 		return err
 	}
-	if len(preview.Candidates) != 1 || !preview.Candidates[0].Eligible || preview.Candidates[0].Cumulative.HistoryGap {
-		return conflict("automatic adoption requires a compatible final version and complete history")
+	if err := validateAutomaticPreview(preview); err != nil {
+		return err
 	}
 	batch, err := s.CreateBatch(ctx, p, preview.ID, sohaapi.TemplateUpdateBatchInput{PreviewDigest: preview.Digest, CandidateIDs: []string{preview.Candidates[0].ID}, WaveSize: 1, StopOnFailure: true, IdempotencyKey: strings.TrimPrefix(digest([]any{policy.Value.ID, policy.Value.Version, latest.Number}), "sha256:")})
 	if err != nil {
 		return err
 	}
 	policy.AttemptVersion, policy.AttemptPreviewID, policy.Value.LastBatchID = latest.Number, preview.ID, batch.ID
+	return nil
+}
+
+func validateAutomaticPreview(preview sohaapi.TemplateUpdatePreview) error {
+	if len(preview.Candidates) == 1 {
+		if migration := preview.Candidates[0].Cumulative.Migration; migration != nil && migration.Blocked {
+			return &migrationBlockedError{reason: migration.Reason}
+		}
+	}
+	if len(preview.Candidates) != 1 || !preview.Candidates[0].Eligible || preview.Candidates[0].Cumulative.HistoryGap {
+		return conflict("automatic adoption requires a compatible final version and complete history")
+	}
 	return nil
 }

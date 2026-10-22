@@ -144,7 +144,7 @@ func (s *Service) validateHelmSnapshot(ctx context.Context, principal domainiden
 			break
 		}
 	}
-	if selected == nil || selected.ClusterID != snapshot.ClusterID || selected.Namespace != snapshot.Namespace || selected.Helm.ReleaseName != snapshot.ReleaseName || service.Version != snapshot.ServiceVersion {
+	if !helmSnapshotMatchesTarget(selected, snapshot) || service.Version != snapshot.ServiceVersion {
 		return fmt.Errorf("%w: Helm target changed; create a new plan", apperrors.ErrConflict)
 	}
 	digest, err := s.deliveryConfigurationDigest(ctx, principal, service, binding, nil, selected)
@@ -160,10 +160,17 @@ func (s *Service) validateHelmSnapshot(ctx context.Context, principal domainiden
 	if _, err := s.helm.Runtime.AuthorizeHelmDelivery(ctx, principal, snapshot, true); err != nil {
 		return err
 	}
+	if err := s.validateHelmMigration(ctx, principal, snapshot, *selected); err != nil {
+		return err
+	}
 	if requirePreflight {
 		return s.validateHelmPreflight(ctx, snapshot)
 	}
 	return nil
+}
+
+func helmSnapshotMatchesTarget(target *domaincatalog.ReleaseTarget, snapshot sohaapi.HelmDeliverySnapshot) bool {
+	return target != nil && target.Helm != nil && target.ClusterID == snapshot.ClusterID && target.Namespace == snapshot.Namespace && target.Helm.ReleaseName == snapshot.ReleaseName
 }
 
 func (s *Service) validateHelmPreflight(ctx context.Context, snapshot sohaapi.HelmDeliverySnapshot) error {

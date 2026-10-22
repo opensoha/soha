@@ -41,6 +41,8 @@ def main():
     parser.add_argument("--relation-rules", action="store_true")
     parser.add_argument("--manifest-root", action="store_true")
     parser.add_argument("--template-adoption", action="store_true")
+    parser.add_argument("--template-migration", action="store_true")
+    parser.add_argument("--manifest-migration", action="store_true")
     args = parser.parse_args()
     run_id = str(uuid.uuid4())
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -52,7 +54,7 @@ def main():
     try:
         container = command(["docker", "run", "--detach", "--rm", "--label", "soha.test.run=" + run_id,
                              "--publish", "127.0.0.1::5432",
-                             *(["--tmpfs", "/var/lib/postgresql"] if args.kubernetes_import or args.relation_rules or args.template_adoption else []),
+                             *(["--tmpfs", "/var/lib/postgresql"] if args.kubernetes_import or args.relation_rules or args.template_adoption or args.template_migration or args.manifest_migration else []),
                              "--env", "POSTGRES_DB=soha",
                              "--env", "POSTGRES_USER=pgsql", "--env", "POSTGRES_PASSWORD=test-only", IMAGE], timeout=90)
         info = json.loads(command(["docker", "inspect", container]))[0]
@@ -84,6 +86,10 @@ def main():
                 parent = "TestDeliverySnapshotWithPostgres"
             if args.template_adoption:
                 parent = "TestTemplateAdoptionWithPostgres"
+            if args.template_migration:
+                parent = "TestTemplateVersionsWithPostgres"
+            if args.manifest_migration:
+                parent = "TestDeliverySnapshotWithPostgres"
             package = "knowledge" if args.knowledge or args.knowledge_ann else "copilot" if args.identity or args.feed_search or args.main_chat or args.native_harness or args.personal_environment else "application"
             if args.virtualization_capacity:
                 package = "virtualization"
@@ -95,6 +101,10 @@ def main():
                 package = "manifest"
             if args.template_adoption:
                 package = "templateupdate"
+            if args.template_migration:
+                package = "catalog"
+            if args.manifest_migration:
+                package = "manifest"
             result = subprocess.run(["go", "test", "-json", "-count=1", "-race", "-timeout=10m",
                                      "-run", "^" + parent + "$",
                                      "./internal/bootstrap" if args.network_navigation else "./internal/repository/" + package], cwd=ROOT, env=env, stdout=log, stderr=diagnostics)
@@ -126,6 +136,10 @@ def main():
             scope = module.MANIFEST_ROOT_SCOPE
         if args.template_adoption:
             scope = module.TEMPLATE_ADOPTION_SCOPE
+        if args.template_migration:
+            scope = module.TEMPLATE_MIGRATION_SCOPE
+        if args.manifest_migration:
+            scope = module.MANIFEST_MIGRATION_SCOPE
         evidence = module.validate(args.output.read_text(), result.returncode, **scope)
         manifest['result'] = evidence
     except Exception as error:

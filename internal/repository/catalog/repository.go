@@ -202,7 +202,7 @@ func (r *Repository) DeleteApplicationEnvironment(ctx context.Context, id string
 
 func (r *Repository) ListBuildTemplates(ctx context.Context) ([]domaincatalog.BuildTemplate, error) {
 	rows, err := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest
+		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest, migration_policy
 		FROM build_templates
 		ORDER BY name ASC
 	`).Rows()
@@ -224,7 +224,7 @@ func (r *Repository) ListBuildTemplates(ctx context.Context) ([]domaincatalog.Bu
 
 func (r *Repository) GetBuildTemplate(ctx context.Context, id string) (domaincatalog.BuildTemplate, error) {
 	row := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest
+		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest, migration_policy
 		FROM build_templates
 		WHERE id = ?
 		LIMIT 1
@@ -246,7 +246,7 @@ func (r *Repository) DeleteBuildTemplate(ctx context.Context, id string) error {
 
 func (r *Repository) ListWorkflowTemplates(ctx context.Context) ([]domaincatalog.WorkflowTemplate, error) {
 	rows, err := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, template_key, name, description, category, definition, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest
+		SELECT id, template_key, name, description, category, definition, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest, migration_policy
 		FROM workflow_templates
 		ORDER BY name ASC
 	`).Rows()
@@ -268,7 +268,7 @@ func (r *Repository) ListWorkflowTemplates(ctx context.Context) ([]domaincatalog
 
 func (r *Repository) GetWorkflowTemplate(ctx context.Context, id string) (domaincatalog.WorkflowTemplate, error) {
 	row := dbtx.DB(ctx, r.db).Raw(`
-		SELECT id, template_key, name, description, category, definition, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest
+		SELECT id, template_key, name, description, category, definition, enabled, created_at, updated_at, revision, published_version, publication_state, content_digest, migration_policy
 		FROM workflow_templates
 		WHERE id = ?
 		LIMIT 1
@@ -505,14 +505,20 @@ func scanReleaseTarget(rows *sql.Rows) (domaincatalog.ReleaseTarget, error) {
 }
 
 func scanBuildTemplate(rows *sql.Rows) (domaincatalog.BuildTemplate, error) {
+	var policy []byte
 	var item domaincatalog.BuildTemplate
 	var description sql.NullString
 	var dockerfileTemplate sql.NullString
 	var buildCommands []byte
 	var variableSchema []byte
 	var defaultVariables []byte
-	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest); err != nil {
+	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest, &policy); err != nil {
 		return domaincatalog.BuildTemplate{}, fmt.Errorf("scan build template: %w", err)
+	}
+	if len(policy) > 0 {
+		if err := json.Unmarshal(policy, &item.MigrationPolicy); err != nil {
+			return item, fmt.Errorf("decode migration policy: %w", err)
+		}
 	}
 	item.Description = description.String
 	item.DockerfileTemplate = dockerfileTemplate.String
@@ -529,17 +535,23 @@ func scanBuildTemplate(rows *sql.Rows) (domaincatalog.BuildTemplate, error) {
 }
 
 func scanBuildTemplateRow(row *sql.Row) (domaincatalog.BuildTemplate, error) {
+	var policy []byte
 	var item domaincatalog.BuildTemplate
 	var description sql.NullString
 	var dockerfileTemplate sql.NullString
 	var buildCommands []byte
 	var variableSchema []byte
 	var defaultVariables []byte
-	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest); err != nil {
+	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest, &policy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaincatalog.BuildTemplate{}, ErrNotFound
 		}
 		return domaincatalog.BuildTemplate{}, fmt.Errorf("scan build template row: %w", err)
+	}
+	if len(policy) > 0 {
+		if err := json.Unmarshal(policy, &item.MigrationPolicy); err != nil {
+			return item, fmt.Errorf("decode migration policy: %w", err)
+		}
 	}
 	item.Description = description.String
 	item.DockerfileTemplate = dockerfileTemplate.String
@@ -556,12 +568,18 @@ func scanBuildTemplateRow(row *sql.Row) (domaincatalog.BuildTemplate, error) {
 }
 
 func scanWorkflowTemplate(rows *sql.Rows) (domaincatalog.WorkflowTemplate, error) {
+	var policy []byte
 	var item domaincatalog.WorkflowTemplate
 	var description sql.NullString
 	var category sql.NullString
 	var definition []byte
-	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &category, &definition, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest); err != nil {
+	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &category, &definition, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest, &policy); err != nil {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("scan workflow template: %w", err)
+	}
+	if len(policy) > 0 {
+		if err := json.Unmarshal(policy, &item.MigrationPolicy); err != nil {
+			return item, fmt.Errorf("decode migration policy: %w", err)
+		}
 	}
 	item.Description = description.String
 	item.Category = category.String
@@ -573,15 +591,21 @@ func scanWorkflowTemplate(rows *sql.Rows) (domaincatalog.WorkflowTemplate, error
 }
 
 func scanWorkflowTemplateRow(row *sql.Row) (domaincatalog.WorkflowTemplate, error) {
+	var policy []byte
 	var item domaincatalog.WorkflowTemplate
 	var description sql.NullString
 	var category sql.NullString
 	var definition []byte
-	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &category, &definition, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest); err != nil {
+	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &category, &definition, &item.Enabled, &item.CreatedAt, &item.UpdatedAt, &item.Revision, &item.PublishedVersion, &item.PublicationState, &item.ContentDigest, &policy); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaincatalog.WorkflowTemplate{}, ErrNotFound
 		}
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("scan workflow template row: %w", err)
+	}
+	if len(policy) > 0 {
+		if err := json.Unmarshal(policy, &item.MigrationPolicy); err != nil {
+			return item, fmt.Errorf("decode migration policy: %w", err)
+		}
 	}
 	item.Description = description.String
 	item.Category = category.String
@@ -632,6 +656,7 @@ func normalizeBuildTemplateInput(input domaincatalog.BuildTemplateInput) domainc
 		input.DefaultVariables = map[string]any{}
 	}
 	return domaincatalog.BuildTemplate{
+		MigrationPolicy:    input.MigrationPolicy,
 		ID:                 id,
 		Key:                strings.TrimSpace(input.Key),
 		Name:               strings.TrimSpace(input.Name),
@@ -657,15 +682,16 @@ func normalizeWorkflowTemplateInput(input domaincatalog.WorkflowTemplateInput) d
 		input.Definition = map[string]any{}
 	}
 	return domaincatalog.WorkflowTemplate{
-		ID:          id,
-		Key:         strings.TrimSpace(input.Key),
-		Name:        strings.TrimSpace(input.Name),
-		Description: strings.TrimSpace(input.Description),
-		Category:    strings.TrimSpace(input.Category),
-		Definition:  input.Definition,
-		Enabled:     input.Enabled,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		MigrationPolicy: input.MigrationPolicy,
+		ID:              id,
+		Key:             strings.TrimSpace(input.Key),
+		Name:            strings.TrimSpace(input.Name),
+		Description:     strings.TrimSpace(input.Description),
+		Category:        strings.TrimSpace(input.Category),
+		Definition:      input.Definition,
+		Enabled:         input.Enabled,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 }
 

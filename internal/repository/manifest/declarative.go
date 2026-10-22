@@ -411,7 +411,7 @@ const deploymentSelectQuery = `SELECT deployment.id, deployment.package_id, depl
 	COALESCE(status.phase, 'pending'), status.last_reconciled_at,
 	COALESCE(status.last_execution_task_id, ''), COALESCE(status.drift, '{}'::jsonb),
 	COALESCE(status.last_error_code, ''), COALESCE(status.last_error_message, ''),
-	deployment.created_at, deployment.updated_at, deployment.delivery_snapshot` + deploymentJoins
+	deployment.created_at, deployment.updated_at, deployment.delivery_snapshot, status.applied_template` + deploymentJoins
 
 const deploymentCountQuery = `SELECT COUNT(*)` + deploymentJoins
 
@@ -464,6 +464,7 @@ func scanDeployment(source scanner) (domainmanifest.Deployment, error) {
 	var item domainmanifest.Deployment
 	var drift []byte
 	var snapshot []byte
+	var appliedTemplate []byte
 	if err := source.Scan(
 		&item.ID, &item.PackageID, &item.BindingID, &item.Generation,
 		&item.Spec.DesiredRevision, &item.Spec.DesiredDigest, &item.Spec.ReconcilePolicy,
@@ -471,9 +472,14 @@ func scanDeployment(source scanner) (domainmanifest.Deployment, error) {
 		&item.Status.AppliedRevision, &item.Status.AppliedDigest, &item.Status.LastKnownGoodRevision,
 		&item.Status.Phase, &item.Status.LastReconciledAt, &item.Status.LastExecutionTaskID, &drift,
 		&item.Status.LastErrorCode,
-		&item.Status.LastErrorMessage, &item.CreatedAt, &item.UpdatedAt, &snapshot,
+		&item.Status.LastErrorMessage, &item.CreatedAt, &item.UpdatedAt, &snapshot, &appliedTemplate,
 	); err != nil {
 		return domainmanifest.Deployment{}, err
+	}
+	if len(appliedTemplate) > 0 {
+		if err := json.Unmarshal(appliedTemplate, &item.Status.AppliedTemplate); err != nil {
+			return item, fmt.Errorf("decode applied template: %w", err)
+		}
 	}
 	item.Status.Conditions = []domainmanifest.Condition{}
 	if len(snapshot) > 0 {

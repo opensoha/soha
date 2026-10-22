@@ -1462,6 +1462,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	core.buildService.SetExternalPipeline(core.systemIntegrationService, core.registryService)
 	core.executionService.SetExternalPipeline(core.systemIntegrationService, core.registryService)
 	manifestDeclarativeService := appmanifest.NewDeclarative(manifestService, repos.manifestRepository, appmanifest.DeclarativeRuntimeDependencies{
+		TemplateMigrations:  core.catalogService,
 		RootResources:       core.resourceService.Runtime(),
 		ImportedRoots:       repos.manifestRepository,
 		ExecutionPrincipals: core.identityService,
@@ -1498,7 +1499,7 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 	if cfg.Modules.Delivery.Enabled {
 		deliveryTriggers.Start(infra.lifecycleCtx)
 	}
-	templateUpdates, err := apptemplateupdate.New(apptemplateupdate.Dependencies{Repository: templateupdaterepo.New(infra.databaseStore.DB()), Applications: core.applicationService, Environments: core.catalogService, Deployment: core.catalogService, Build: core.catalogService, Workflow: core.catalogService, Manifests: manifestDeclarativeService, Batches: delivery.workflowService, Principals: core.identityService})
+	templateUpdates, err := apptemplateupdate.New(apptemplateupdate.Dependencies{Repository: templateupdaterepo.New(infra.databaseStore.DB()), Applications: core.applicationService, Environments: core.catalogService, Deployment: core.catalogService, Build: core.catalogService, Workflow: core.catalogService, Manifests: manifestDeclarativeService, Batches: delivery.workflowService, Baselines: delivery.deliveryService, Principals: core.identityService})
 	if err != nil {
 		return apiRoutes.Dependencies{}, err
 	}

@@ -19,6 +19,7 @@ import (
 type version struct {
 	Number                   int64
 	Digest                   string
+	MigrationPolicy          *sohaapi.TemplateMigrationPolicy
 	Enabled                  bool
 	Source, Schema, Defaults any
 	Deployment               *domaincatalog.DeploymentTemplate
@@ -45,7 +46,7 @@ func (s *Service) versions(ctx context.Context, p domainidentity.Principal, kind
 			return nil, err
 		}
 		for _, item := range values {
-			items = append(items, version{Number: item.PublishedVersion, Digest: item.ContentDigest, Enabled: item.Enabled && active, Source: map[string]any{"builderKind": item.BuilderKind, "dockerfileTemplate": item.DockerfileTemplate, "buildCommands": item.BuildCommands}, Schema: item.VariableSchema, Defaults: item.DefaultVariables, Build: &item})
+			items = append(items, version{Number: item.PublishedVersion, Digest: item.ContentDigest, MigrationPolicy: item.MigrationPolicy, Enabled: item.Enabled && active, Source: map[string]any{"builderKind": item.BuilderKind, "dockerfileTemplate": item.DockerfileTemplate, "buildCommands": item.BuildCommands}, Schema: item.VariableSchema, Defaults: item.DefaultVariables, Build: &item})
 		}
 	case "workflow":
 		head, headErr := s.deps.Workflow.GetWorkflowTemplate(ctx, p, id)
@@ -58,7 +59,7 @@ func (s *Service) versions(ctx context.Context, p domainidentity.Principal, kind
 			return nil, err
 		}
 		for _, item := range values {
-			items = append(items, version{Number: item.PublishedVersion, Digest: item.ContentDigest, Enabled: item.Enabled && active, Source: item.Definition, Schema: map[string]any{}, Defaults: map[string]any{}})
+			items = append(items, version{Number: item.PublishedVersion, Digest: item.ContentDigest, MigrationPolicy: item.MigrationPolicy, Enabled: item.Enabled && active, Source: item.Definition, Schema: map[string]any{}, Defaults: map[string]any{}})
 		}
 	case "blueprint":
 		return nil, invalid("应用蓝图仅用于创建应用；已复制的构建、部署和工作流绑定分别管理版本，不重放初始化")
@@ -84,7 +85,7 @@ func (s *Service) deploymentVersions(ctx context.Context, p domainidentity.Princ
 		return nil, err
 	}
 	for _, item := range values {
-		items = append(items, version{Number: item.PublishedVersion, Digest: item.ContentDigest, Enabled: item.Enabled && active, Source: item.Source, Schema: item.ParameterSchema, Defaults: item.Defaults, Deployment: &item})
+		items = append(items, version{Number: item.PublishedVersion, Digest: item.ContentDigest, MigrationPolicy: item.MigrationPolicy, Enabled: item.Enabled && active, Source: item.Source, Schema: item.ParameterSchema, Defaults: item.Defaults, Deployment: &item})
 	}
 	return items, nil
 }
@@ -129,7 +130,9 @@ func resolveParameters(v version, b domainupdate.Binding, parameters map[string]
 
 func (s *Service) compare(ctx context.Context, p domainidentity.Principal, b domainupdate.Binding, from, to version, parameters map[string]any) sohaapi.TemplateUpdateDiff {
 	diff := sohaapi.TemplateUpdateDiff{FromVersion: from.Number, ToVersion: to.Number, Changes: []sohaapi.TemplateUpdateChange{}, Diagnostics: []string{}, RenderStatus: "available"}
+	diff.Migration = domaincatalog.AssessMigration(migrationVersions([]version{from, to}), from.Number, to.Number)
 	appendChanges(&diff, "source", from.Source, to.Source)
+	appendChanges(&diff, "source", map[string]any{"migrationPolicy": from.MigrationPolicy}, map[string]any{"migrationPolicy": to.MigrationPolicy})
 	appendChanges(&diff, "schema", from.Schema, to.Schema)
 	appendChanges(&diff, "defaults", from.Defaults, to.Defaults)
 	before, beforeErr := resolveParameters(from, b, b.Parameters)

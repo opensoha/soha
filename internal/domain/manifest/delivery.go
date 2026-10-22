@@ -23,28 +23,29 @@ type DeliveryConfiguration struct {
 // DeliverySnapshot is created by the server and retained through preflight,
 // approval, execution and subsequent observation of the same desired state.
 type DeliverySnapshot struct {
-	RootResource             *sohaapi.ManifestRootResource `json:"rootResource,omitempty"`
-	GitOpsDocuments          []RenderedDocument            `json:"gitOpsDocuments,omitempty"`
-	TemplateInputs           *ServiceTemplateInputs        `json:"templateInputs,omitempty"`
-	DeliveryPlanID           string                        `json:"deliveryPlanId"`
-	TargetID                 string                        `json:"targetId"`
-	PackageID                string                        `json:"packageId"`
-	ServiceID                string                        `json:"serviceId,omitempty"`
-	BindingID                string                        `json:"bindingId"`
-	BindingVersion           int64                         `json:"bindingVersion"`
-	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
-	ClusterID                string                        `json:"clusterId"`
-	Namespace                string                        `json:"namespace"`
-	Revision                 int                           `json:"revision"`
-	RevisionDigest           string                        `json:"revisionDigest"`
-	SourceCommit             string                        `json:"sourceCommit,omitempty"`
-	PackageUpdatedAt         time.Time                     `json:"packageUpdatedAt"`
-	RendererVersion          string                        `json:"rendererVersion"`
-	InputDigest              string                        `json:"inputDigest"`
-	RenderedDigest           string                        `json:"renderedDigest"`
-	Documents                []RenderedDocument            `json:"documents"`
-	PreflightTaskID          string                        `json:"preflightTaskId"`
-	ExpectedGeneration       int64                         `json:"expectedGeneration"`
+	Migration                *sohaapi.TemplateMigrationAssessment `json:"migration,omitempty"`
+	RootResource             *sohaapi.ManifestRootResource        `json:"rootResource,omitempty"`
+	GitOpsDocuments          []RenderedDocument                   `json:"gitOpsDocuments,omitempty"`
+	TemplateInputs           *ServiceTemplateInputs               `json:"templateInputs,omitempty"`
+	DeliveryPlanID           string                               `json:"deliveryPlanId"`
+	TargetID                 string                               `json:"targetId"`
+	PackageID                string                               `json:"packageId"`
+	ServiceID                string                               `json:"serviceId,omitempty"`
+	BindingID                string                               `json:"bindingId"`
+	BindingVersion           int64                                `json:"bindingVersion"`
+	ApplicationEnvironmentID string                               `json:"applicationEnvironmentId"`
+	ClusterID                string                               `json:"clusterId"`
+	Namespace                string                               `json:"namespace"`
+	Revision                 int                                  `json:"revision"`
+	RevisionDigest           string                               `json:"revisionDigest"`
+	SourceCommit             string                               `json:"sourceCommit,omitempty"`
+	PackageUpdatedAt         time.Time                            `json:"packageUpdatedAt"`
+	RendererVersion          string                               `json:"rendererVersion"`
+	InputDigest              string                               `json:"inputDigest"`
+	RenderedDigest           string                               `json:"renderedDigest"`
+	Documents                []RenderedDocument                   `json:"documents"`
+	PreflightTaskID          string                               `json:"preflightTaskId"`
+	ExpectedGeneration       int64                                `json:"expectedGeneration"`
 }
 
 type ServiceTemplateInputs struct {

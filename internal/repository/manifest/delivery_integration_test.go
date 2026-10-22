@@ -108,6 +108,7 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	if err != nil || deployment.Generation != 2 {
 		t.Fatalf("update deployment: %#v, %v", deployment, err)
 	}
+	t.Run("migration-baseline-is-success-only", func(t *testing.T) { verifyMigrationBaseline(t, ctx, tx, repository, deployment) })
 	verifyManifestObservationCadence(t, ctx, tx, repository, deployment.ID)
 	verifyResourceObservationRoundTrip(t, ctx, repository, deployment)
 

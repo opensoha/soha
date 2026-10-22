@@ -1147,6 +1147,7 @@ func (s *Service) CreateDeliveryPlan(ctx context.Context, principal domainidenti
 		planInput.ReleaseBundleID = planInput.HelmSnapshots[0].ReleaseBundleID
 		planInput.Impact["helmRevision"] = planInput.HelmRevision
 	}
+	freezePlanMigration(&planInput)
 	return s.createPreparedDeliveryPlan(ctx, principal, planInput)
 }
 
@@ -1324,6 +1325,9 @@ func (s *Service) DecideDeliveryPlanApproval(ctx context.Context, principal doma
 	default:
 		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: approval action must be approved or rejected", apperrors.ErrInvalidArgument)
 	}
+	if action == "approved" && planHasMigration(plan) && strings.TrimSpace(input.Comment) == "" {
+		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: 迁移变更批准前必须填写审批意见，核对迁移指引与恢复方案", apperrors.ErrInvalidArgument)
+	}
 	plan.Status = domaindelivery.DeliveryPlanStatusDraft
 	plan.UpdatedAt = time.Now().UTC()
 	plan.Impact = deliveryPlanApprovalImpact(plan, principal, action, input.Comment)
@@ -1353,6 +1357,18 @@ func deliveryPlanApprovalGranted(plan domaindelivery.DeliveryPlan) bool {
 	}
 	decision, _ := history[len(history)-1].(map[string]any)
 	return strings.EqualFold(strings.TrimSpace(fmt.Sprint(decision["status"])), "approved")
+}
+
+// GetExecutingDeliveryPlan permits the confirmation-to-dispatch window without bypassing approval.
+func (s *Service) GetExecutingDeliveryPlan(ctx context.Context, p domainidentity.Principal, id string) (domaindelivery.DeliveryPlan, error) {
+	plan, err := s.GetDeliveryPlan(ctx, p, id)
+	if err != nil {
+		return plan, err
+	}
+	if (plan.Status != domaindelivery.DeliveryPlanStatusConfirming && plan.Status != domaindelivery.DeliveryPlanStatusConfirmed) || (plan.RequiresApproval && !deliveryPlanApprovalGranted(plan)) {
+		return domaindelivery.DeliveryPlan{}, apperrors.ErrConflict
+	}
+	return plan, nil
 }
 
 // GetConfirmedDeliveryPlan is used by native controls of an existing execution.

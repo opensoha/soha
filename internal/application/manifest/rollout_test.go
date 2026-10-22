@@ -109,3 +109,7 @@ func assertRolloutScenario(t *testing.T, scenario string, err error, fixture *ro
 		t.Fatalf("permission failure: %v", err)
 	}
 }
+
+func (f *rolloutTaskFixture) GetExecutingDeliveryPlan(ctx context.Context, p domainidentity.Principal, id string) (domaindelivery.DeliveryPlan, error) {
+	return f.GetConfirmedDeliveryPlan(ctx, p, id)
+}

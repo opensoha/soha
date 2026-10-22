@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"reflect"
 
 	domainapp "github.com/opensoha/soha/internal/domain/application"
@@ -58,11 +59,16 @@ type Batches interface {
 	CreateDeliveryBatch(context.Context, domainidentity.Principal, domainworkflow.DeliveryBatchInput) (domainworkflow.DeliveryBatch, error)
 	GetDeliveryBatch(context.Context, domainidentity.Principal, string) (domainworkflow.DeliveryBatch, error)
 }
+type Baselines interface {
+	TemplateMigrationBaseline(context.Context, domainidentity.Principal, string, string, string) (*sohaapi.TemplateVersionReference, error)
+}
+
 type Principals interface {
 	CurrentExecutionPrincipal(context.Context, string, string) (domainidentity.Principal, error)
 }
 
 type Dependencies struct {
+	Baselines    Baselines
 	Repository   domainupdate.Repository
 	Applications Applications
 	Environments Environments
@@ -76,7 +82,7 @@ type Dependencies struct {
 type Service struct{ deps Dependencies }
 
 func New(deps Dependencies) (*Service, error) {
-	for name, dependency := range map[string]any{"repository": deps.Repository, "applications": deps.Applications, "environments": deps.Environments, "deployment": deps.Deployment, "build": deps.Build, "workflow": deps.Workflow, "manifests": deps.Manifests, "batches": deps.Batches, "principals": deps.Principals} {
+	for name, dependency := range map[string]any{"repository": deps.Repository, "applications": deps.Applications, "environments": deps.Environments, "deployment": deps.Deployment, "build": deps.Build, "workflow": deps.Workflow, "manifests": deps.Manifests, "batches": deps.Batches, "baselines": deps.Baselines, "principals": deps.Principals} {
 		if dependency == nil || reflect.ValueOf(dependency).Kind() == reflect.Pointer && reflect.ValueOf(dependency).IsNil() {
 			return nil, fmt.Errorf("template updates require %s", name)
 		}

@@ -85,7 +85,7 @@ func (s *DeclarativeService) Preflight(ctx context.Context, principal domainiden
 	}
 	payload := s.taskPayload(domainmanifest.TaskActionPreflight, item, binding, domainmanifest.Deployment{}, rendered, generation, input.ForceConflicts, principal.UserID)
 	payload.IdempotencyKey = fmt.Sprintf("manifest:%s:%s:%d:%s:%t", item.ID, binding.ID, generation, rendered.RenderedDigest, input.ForceConflicts)
-	return s.queueOperation(ctx, item, binding, domainmanifest.Deployment{}, payload)
+	return s.queueOperation(ctx, item, binding, domainmanifest.Deployment{}, payload, principal)
 }
 
 func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal domainidentity.Principal, bindingID string, input domainmanifest.DesiredRevisionInput) (DeploymentActionResult, error) {
@@ -128,7 +128,7 @@ func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal d
 	}
 	payload := s.taskPayload(domainmanifest.TaskActionApply, item, binding, deployment, rendered, deployment.Generation, false, principal.UserID)
 	payload.IdempotencyKey = operationKey(deployment, domainmanifest.TaskActionApply)
-	task, err := s.queueOperation(ctx, item, binding, deployment, payload)
+	task, err := s.queueOperation(ctx, item, binding, deployment, payload, principal)
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
@@ -158,9 +158,14 @@ func (s *DeclarativeService) Reconcile(ctx context.Context, principal domainiden
 	if deployment.Spec.DeliverySnapshot != nil && action != domainmanifest.TaskActionObserve {
 		return DeploymentActionResult{}, fmt.Errorf("%w: this deployment is governed by application delivery plans", apperrors.ErrConflict)
 	}
+	if action == domainmanifest.TaskActionApply || action == domainmanifest.TaskActionRepair {
+		if err := s.requireLegacyMigration(ctx, principal, item.ID); err != nil {
+			return DeploymentActionResult{}, err
+		}
+	}
 	payload := s.taskPayload(action, item, binding, deployment, rendered, deployment.Generation, input.ForceConflicts, principal.UserID)
 	payload.IdempotencyKey = operationKey(deployment, action)
-	task, err := s.queueOperation(ctx, item, binding, deployment, payload)
+	task, err := s.queueOperation(ctx, item, binding, deployment, payload, principal)
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
@@ -197,6 +202,9 @@ func (s *DeclarativeService) Rollback(ctx context.Context, principal domainident
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
+	if err = s.requireLegacyMigration(ctx, principal, item.ID); err != nil {
+		return DeploymentActionResult{}, err
+	}
 	files, revision, err := s.filesForRevision(ctx, item, target)
 	if err != nil {
 		return DeploymentActionResult{}, err
@@ -214,7 +222,7 @@ func (s *DeclarativeService) Rollback(ctx context.Context, principal domainident
 	}
 	payload := s.taskPayload(domainmanifest.TaskActionRollback, item, binding, current, rendered, current.Generation, false, principal.UserID)
 	payload.IdempotencyKey = operationKey(current, domainmanifest.TaskActionRollback)
-	task, err := s.queueOperation(ctx, item, binding, current, payload)
+	task, err := s.queueOperation(ctx, item, binding, current, payload, principal)
 	if err != nil {
 		return DeploymentActionResult{}, err
 	}
@@ -301,7 +309,7 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 		MaxRetries: 1, TimeoutSeconds: 300, CallbackToken: uuid.NewString(), Payload: structMap(payload), Result: map[string]any{},
 		CreatedAt: now, UpdatedAt: now,
 	}
-	if payload.RootResource != nil && len(principals) > 0 {
+	if len(principals) > 0 {
 		task.SecretPrincipal = principals[0]
 	}
 	if payload.Action == domainmanifest.TaskActionApply && hasRolloutDocuments(payload.Documents) {
@@ -471,6 +479,12 @@ func (s *DeclarativeService) recordDeploymentTaskResult(ctx context.Context, tas
 	case domainmanifest.TaskActionApply, domainmanifest.TaskActionRepair, domainmanifest.TaskActionRollback:
 		status.AppliedRevision = payload.Revision
 		status.AppliedDigest = payload.RenderedDigest
+		status.AppliedTemplate = nil
+		if snapshot := deployment.Spec.DeliverySnapshot; snapshot != nil && snapshot.TemplateInputs != nil && snapshot.RenderedDigest == payload.RenderedDigest {
+			ref := snapshot.TemplateInputs
+			status.AppliedTemplate = &sohaapi.TemplateVersionReference{TemplateID: ref.TemplateID, TemplateVersion: ref.TemplateVersion, TemplateDigest: ref.TemplateDigest}
+		}
+
 		if inventoryHealthy(result.Inventory, payload.Documents, payload.GitOpsDocuments) {
 			status.LastKnownGoodRevision = payload.Revision
 			status.Phase = domainmanifest.DeploymentPhaseConverged

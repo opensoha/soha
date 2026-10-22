@@ -16,6 +16,8 @@ import (
 )
 
 type TemplateUpdates interface {
+	ReleaseReference(context.Context, domainidentity.Principal, string, int64) (*sohaapi.TemplateVersionReference, error)
+	AssessRelease(context.Context, domainidentity.Principal, sohaapi.TemplateUpdateKind, string, int64, int64) (*sohaapi.TemplateMigrationAssessment, error)
 	Candidate(context.Context, domainidentity.Principal, string, bool) (domainupdate.FrozenCandidate, error)
 	ReadCandidate(context.Context, domainidentity.Principal, string) (domainupdate.FrozenCandidate, error)
 	AuthorizeApproval(context.Context, domainidentity.Principal, string) error
@@ -48,6 +50,9 @@ func (s *Service) createTemplateAdoptionPlan(ctx context.Context, p domainidenti
 	}
 	input.TargetSummary = fmt.Sprintf("%s v%d → v%d · 配置采用，尚未部署", target.TemplateID, target.FromVersion, frozen.Candidate.ToVersion)
 	input.Impact = map[string]any{"templateCandidateId": frozen.Candidate.ID, "templatePreviewId": frozen.PreviewID, "templateDigest": frozen.TemplateDigest, "candidateDigest": frozen.Candidate.Digest, "configurationOnly": true, "requiresValidation": false}
+	if migration := frozen.Candidate.Cumulative.Migration; migration != nil && migration.RequiresApproval {
+		input.Impact["templateMigration"] = frozen.Candidate.Cumulative.Migration
+	}
 	input.RollbackStrategy = "采用历史模板版本需重新比较并创建配置 Plan；已运行资源保持原部署版本"
 	return s.repository.CreateDeliveryPlan(ctx, input, p.UserID)
 }

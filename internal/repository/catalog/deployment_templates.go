@@ -76,6 +76,10 @@ func (r *Repository) writeDeploymentTemplate(ctx context.Context, id string, inp
 		if err != nil {
 			return err
 		}
+		item.MigrationPolicy, err = migrationPolicyOnSave(tx, "deployment_templates", item.ID, create, item.MigrationPolicy)
+		if err != nil {
+			return err
+		}
 		item.Revision, item.CreatedAt = head.Revision, head.CreatedAt
 		item.PublishedVersion, item.PublicationState = templateSaveState(head, &publish)
 		if publish {

@@ -11,6 +11,7 @@ import (
 )
 
 type DeploymentTemplateReader interface {
+	ListDeploymentTemplateVersions(context.Context, domainidentity.Principal, string) ([]domaincatalog.DeploymentTemplate, error)
 	GetDeploymentTemplateVersion(context.Context, domainidentity.Principal, string, int64) (domaincatalog.DeploymentTemplate, error)
 }
 
