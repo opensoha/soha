@@ -30,6 +30,9 @@ func (c *Client) ExecuteManifestTask(ctx context.Context, payload sohaapi.Manife
 	if c == nil || c.dynamic == nil || c.discovery == nil {
 		return sohaapi.ManifestExecutionTaskResult{}, fmt.Errorf("manifest Kubernetes runtime is unavailable")
 	}
+	if err := validateRootManifestPayload(payload); err != nil {
+		return sohaapi.ManifestExecutionTaskResult{}, err
+	}
 	resources, err := restmapper.GetAPIGroupResources(c.discovery)
 	if err != nil {
 		return sohaapi.ManifestExecutionTaskResult{}, fmt.Errorf("discover Kubernetes resources: %w", err)
@@ -125,6 +128,9 @@ func (c *Client) observeManifest(ctx context.Context, mapper manifestRESTMapper,
 		}
 		queryCtx, cancel := context.WithTimeout(ctx, manifestTaskTimeout)
 		live, getErr := manifestResource(c.dynamic, mapping, document.Namespace).Get(queryCtx, document.Name, metav1.GetOptions{})
+		if getErr == nil && payload.RootResource != nil && string(live.GetUID()) != payload.RootResource.UID {
+			getErr = fmt.Errorf("root CR identity changed")
+		}
 		cancel()
 		if getErr != nil {
 			diagnostics = append(diagnostics, manifestDiagnostic("observe", document, getErr))
@@ -135,9 +141,15 @@ func (c *Client) observeManifest(ctx context.Context, mapper manifestRESTMapper,
 		if getErr != nil {
 			diagnostics = append(diagnostics, manifestDiagnostic("observe", document, getErr))
 		}
+		if payload.RootResource != nil {
+			item.Health = "unknown"
+		}
 		inventory = append(inventory, item)
 		fields := diffManifestFields(desired.Object, live.Object, "")
 		if len(fields) > 0 {
+			if payload.RootResource != nil {
+				fields = []manifestDriftField{{Path: "/spec", DesiredValue: "[restricted]", ObservedValue: "[restricted]"}}
+			}
 			driftResources = append(driftResources, manifestDriftResource{APIVersion: document.APIVersion, Kind: document.Kind, Namespace: document.Namespace, Name: document.Name, Fields: fields})
 		}
 		if string(payload.Action) == "adopt" {
@@ -169,7 +181,12 @@ func (c *Client) patchManifestDocument(ctx context.Context, mapper manifestRESTM
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, manifestTaskTimeout)
 	defer cancel()
-	live, err := resourceruntime.ApplyManifest(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, options)
+	var live *unstructured.Unstructured
+	if payload.RootResource != nil {
+		live, err = resourceruntime.ApplyRootCR(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, *payload.RootResource, options)
+	} else {
+		live, err = resourceruntime.ApplyManifest(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, options)
+	}
 	return live, desired, err
 }
 
@@ -236,6 +253,9 @@ func manifestInventory(payload sohaapi.ManifestExecutionTaskPayload, document so
 		ResourceVersion: live.GetResourceVersion(), DesiredObjectDigest: document.ContentDigest,
 		ObservedObjectDigest: observedDigest, Health: manifestHealth(live), LastObservedAt: time.Now().UTC(),
 		ResourceGeneration: live.GetGeneration(), Finalizers: live.GetFinalizers(),
+	}
+	if payload.RootResource != nil {
+		item.Health = "unknown"
 	}
 	if generation, found, err := unstructured.NestedInt64(live.Object, "status", "observedGeneration"); err == nil && found && generation >= 0 {
 		item.ObservedResourceGeneration = &generation
@@ -383,4 +403,21 @@ func firstManifestString(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func validateRootManifestPayload(payload sohaapi.ManifestExecutionTaskPayload) error {
+	if payload.RootResource == nil {
+		return nil
+	}
+	if len(payload.Documents) != 1 || len(payload.GitOpsDocuments) > 0 || payload.RolloutControl != nil || payload.ForceConflicts {
+		return fmt.Errorf("invalid root CR task boundary")
+	}
+	if payload.Action != "apply" && payload.Action != "preflight" && payload.Action != "observe" {
+		return fmt.Errorf("unsupported root CR task action")
+	}
+	var object map[string]any
+	if err := json.Unmarshal([]byte(payload.Documents[0].Content), &object); err != nil {
+		return err
+	}
+	return contractresource.ValidateRootCRDocument(object, *payload.RootResource)
 }

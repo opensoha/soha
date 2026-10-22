@@ -556,7 +556,7 @@ func (r *Runner) claim(ctx context.Context) (ExecutionTask, bool) {
 		providerKinds = append(providerKinds, "vm_ssh."+r.sshClusterID)
 	}
 	if r.manifestExecutor != nil && r.manifestClusterID != "" {
-		providerKinds = append(providerKinds, "manifest_agent."+r.manifestClusterID, resourceruntime.ManifestAgentProviderPrefix+r.manifestClusterID)
+		providerKinds = append(providerKinds, "manifest_agent."+r.manifestClusterID, resourceruntime.ManifestAgentProviderPrefix+r.manifestClusterID, resourceruntime.RootCRAgentProviderPrefix+r.manifestClusterID)
 	}
 	task, err := r.apiClient().ClaimExecutionTask(ctx, claimRequest{
 		AgentID:         firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),

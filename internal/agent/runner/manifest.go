@@ -29,6 +29,11 @@ func (r *Runner) executeManifestTask(ctx context.Context, task ExecutionTask) {
 		r.metrics.markOutcome(metricScopeExecution, "failed")
 		return
 	}
+	if err := validateManifestProtocol(task.ProviderKind, r.manifestClusterID, payload); err != nil {
+		r.finalCallback(ctx, task, "failed", map[string]any{"error": "manifest protocol and root identity do not match"})
+		r.metrics.markOutcome(metricScopeExecution, "failed")
+		return
+	}
 	if payload.ClusterID != "" && payload.ClusterID != r.manifestClusterID {
 		r.finalCallback(ctx, task, "failed", map[string]any{"error": "manifest task targets a different cluster"})
 		r.metrics.markOutcome(metricScopeExecution, "failed")
@@ -72,6 +77,17 @@ func (r *Runner) executeManifestTask(ctx context.Context, task ExecutionTask) {
 	}
 	r.finalCallback(context.WithoutCancel(ctx), task, status, resultPayload)
 	r.metrics.markOutcome(metricScopeExecution, status)
+}
+
+func validateManifestProtocol(provider, clusterID string, payload sohaapi.ManifestExecutionTaskPayload) error {
+	if strings.HasPrefix(provider, resourceruntime.RootCRAgentProviderPrefix) {
+		if provider != resourceruntime.RootCRAgentProviderPrefix+clusterID || payload.ClusterID != clusterID || payload.RootResource == nil {
+			return fmt.Errorf("root CR requires the protected cluster protocol and identity")
+		}
+	} else if payload.RootResource != nil {
+		return fmt.Errorf("root CR cannot use the legacy manifest protocol")
+	}
+	return nil
 }
 
 func (r *Runner) runManifestWithHeartbeat(ctx context.Context, task ExecutionTask, payload sohaapi.ManifestExecutionTaskPayload) (sohaapi.ManifestExecutionTaskResult, error) {
