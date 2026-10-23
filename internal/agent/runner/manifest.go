@@ -80,6 +80,17 @@ func (r *Runner) executeManifestTask(ctx context.Context, task ExecutionTask) {
 }
 
 func validateManifestProtocol(provider, clusterID string, payload sohaapi.ManifestExecutionTaskPayload) error {
+	if err := resourceruntime.ValidateManifestInitialization(payload); err != nil {
+		return err
+	}
+	if strings.HasPrefix(provider, resourceruntime.ManifestInitializationProviderPrefix) {
+		if provider != resourceruntime.ManifestInitializationProviderPrefix+clusterID || payload.ClusterID != clusterID || payload.InitializationPlanID == "" {
+			return fmt.Errorf("initialization protocol identity mismatch")
+		}
+	} else if payload.InitializationPlanID != "" {
+		return fmt.Errorf("initialization cannot use legacy protocol")
+	}
+
 	if strings.HasPrefix(provider, resourceruntime.RootCRAgentProviderPrefix) {
 		if provider != resourceruntime.RootCRAgentProviderPrefix+clusterID || payload.ClusterID != clusterID || payload.RootResource == nil {
 			return fmt.Errorf("root CR requires the protected cluster protocol and identity")

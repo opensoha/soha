@@ -174,3 +174,19 @@ func TestManifestProtocolCannotDropOrDowngradeRootIdentity(t *testing.T) {
 		})
 	}
 }
+
+func TestInitializationManifestCannotUseLegacyProvider(t *testing.T) {
+	payload := sohaapi.ManifestExecutionTaskPayload{Action: "apply", InitializationPlanID: "first", ClusterID: "one"}
+	for _, provider := range []string{"manifest_agent.one", "manifest_agent_v3.one", "manifest_root_cr_v1.one", "manifest_initialize_v1.two"} {
+		if validateManifestProtocol(provider, "one", payload) == nil {
+			t.Fatalf("unsafe initialization provider %s", provider)
+		}
+	}
+	if err := validateManifestProtocol("manifest_initialize_v1.one", "one", payload); err != nil {
+		t.Fatal(err)
+	}
+	payload.InitializationPlanID = ""
+	if validateManifestProtocol("manifest_initialize_v1.one", "one", payload) == nil {
+		t.Fatal("dedicated provider accepted missing mode")
+	}
+}

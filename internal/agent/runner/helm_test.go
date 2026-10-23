@@ -109,12 +109,31 @@ func TestHelmClaimUsesOnlyItsClusterAndCredential(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&claim); err != nil {
 			return nil, err
 		}
-		if req.Header.Get("Authorization") != "Bearer cluster-token" || len(claim.ProviderKinds) != 1 || claim.ProviderKinds[0] != "helm_agent.one" {
+		if req.Header.Get("Authorization") != "Bearer cluster-token" || len(claim.ProviderKinds) != 2 || claim.ProviderKinds[0] != "helm_agent.one" || claim.ProviderKinds[1] != "helm_initialize_v1.one" {
 			t.Fatalf("claim did not use cluster credential/provider")
 		}
 		return jsonResponse(t, http.StatusAccepted, map[string]any{"data": ExecutionTask{ID: "helm"}}), nil
 	})}
 	if task, ok := r.claim(context.Background()); !ok || task.ID != "helm" {
 		t.Fatal("Helm claim failed")
+	}
+}
+
+func TestInitializationManifestClaimUsesClusterCredential(t *testing.T) {
+	r := New(cfgpkg.ControlPlaneConfig{BaseURL: "http://core", AgentID: "agent", BearerToken: "general"}, zap.NewNop())
+	r.SetHelmExecutor(heldHelmExecutor{}, "one", "cluster-token")
+	r.SetManifestExecutor(&blockingManifestExecutor{}, "one")
+	r.httpClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		var claim claimRequest
+		if err := json.NewDecoder(req.Body).Decode(&claim); err != nil {
+			return nil, err
+		}
+		if req.Header.Get("Authorization") != "Bearer cluster-token" || len(claim.ProviderKinds) != 3 || claim.ProviderKinds[2] != "manifest_initialize_v1.one" {
+			t.Fatal("initialization did not use protected cluster claim")
+		}
+		return jsonResponse(t, http.StatusAccepted, map[string]any{"data": ExecutionTask{ID: "first"}}), nil
+	})}
+	if task, ok := r.claim(context.Background()); !ok || task.ID != "first" {
+		t.Fatal("initialization claim failed")
 	}
 }

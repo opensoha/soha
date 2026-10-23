@@ -10,6 +10,7 @@ import (
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha-contracts/helmrelease"
+	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 )
 
 type HelmExecutor interface {
@@ -25,7 +26,11 @@ func (r *Runner) claimHelmTask(ctx context.Context) (ExecutionTask, bool) {
 		return ExecutionTask{}, false
 	}
 	client := sohaapi.NewClient(r.cfg.BaseURL, sohaapi.WithBearerToken(r.helmClaimToken), sohaapi.WithHTTPClient(r.httpClient))
-	task, err := client.ClaimExecutionTask(ctx, claimRequest{AgentID: r.cfg.AgentID, ProviderKinds: []string{"helm_agent." + r.helmClusterID}, RuntimeEndpoint: r.cfg.RuntimeEndpoint})
+	providers := []string{"helm_agent." + r.helmClusterID, helmrelease.InitializationProviderPrefix + r.helmClusterID}
+	if r.manifestExecutor != nil && r.manifestClusterID == r.helmClusterID {
+		providers = append(providers, resourceruntime.ManifestInitializationProviderPrefix+r.manifestClusterID)
+	}
+	task, err := client.ClaimExecutionTask(ctx, claimRequest{AgentID: r.cfg.AgentID, ProviderKinds: providers, RuntimeEndpoint: r.cfg.RuntimeEndpoint})
 	ok := err == nil && task.ID != ""
 	r.metrics.markClaim(metricScopeExecution, ok)
 	return task, ok
@@ -45,7 +50,11 @@ func (r *Runner) executeHelmTask(ctx context.Context, task ExecutionTask) {
 	if err == nil {
 		err = helmrelease.ValidateTaskIdentity(payload)
 	}
-	if err == nil && (r.helmExecutor == nil || payload.Snapshot.ClusterID != r.helmClusterID || task.ProviderKind != "helm_agent."+r.helmClusterID || task.TaskKind != "helm_"+string(payload.Action)) {
+	expectedProvider := "helm_agent." + r.helmClusterID
+	if helmrelease.IsInitialization(payload.Snapshot) {
+		expectedProvider = helmrelease.InitializationProviderPrefix + r.helmClusterID
+	}
+	if err == nil && (r.helmExecutor == nil || payload.Snapshot.ClusterID != r.helmClusterID || task.ProviderKind != expectedProvider || task.TaskKind != "helm_"+string(payload.Action)) {
 		err = fmt.Errorf("helm runtime identity mismatch")
 	}
 	if err == nil {
