@@ -19,6 +19,9 @@ import (
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 )
 
+// Direct initialization must never be claimed by workers which only know Helm install/update.
+const HelmDirectInitializationProvider = "helm_direct_initialize_v1"
+
 type ReleaseBundle struct {
 	ID                       string              `json:"id"`
 	ApplicationID            string              `json:"applicationId"`
@@ -261,6 +264,11 @@ func RequiresStopConfirmation(task ExecutionTask) bool {
 	return task.Payload["workflowScope"] == "delivery_batch" || strings.HasPrefix(task.TaskKind, "helm_") || task.ProviderKind == "external_pipeline.gitlab"
 }
 
+func IsInitializationWrite(task ExecutionTask) bool {
+	plan, ok := task.Payload["initializationPlanId"].(string)
+	return ok && plan != "" && task.TaskKind == "manifest_apply"
+}
+
 type OperationState struct {
 	Phase                  string    `json:"phase"`
 	Status                 string    `json:"status"`
@@ -347,6 +355,10 @@ func BuildOperationState(task ExecutionTask, now time.Time) *OperationState {
 		RecommendedNextAction: operationRecommendedNextAction(status, heartbeatStale),
 	}
 	state.RuntimeEndpointPresent = operationRuntimeEndpointPresent(task)
+	if IsInitializationWrite(task) && state.Retryable {
+		state.Retryable = false
+		state.RecommendedNextAction = "inspect_status"
+	}
 	populateOperationStateTimes(state, task, nextDeadline)
 	state.ClaimedByAgentID = strings.TrimSpace(task.ClaimedByAgentID)
 	populateOperationFailure(state, task, terminal, status)

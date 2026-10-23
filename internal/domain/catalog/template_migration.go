@@ -16,6 +16,21 @@ type MigrationVersion struct {
 	Policy *sohaapi.TemplateMigrationPolicy
 }
 
+// AssessInitialization is selected only after the owner establishes absence of
+// prior writes. It is not a migration from a guessed historic template version.
+func AssessInitialization(assessment *sohaapi.TemplateMigrationAssessment, to int64) *sohaapi.TemplateMigrationAssessment {
+	if assessment == nil {
+		assessment = &sohaapi.TemplateMigrationAssessment{Steps: []sohaapi.TemplateMigrationStep{}}
+	}
+	assessment.Initialization = true
+	assessment.FromVersion = 0
+	assessment.ToVersion = to
+	assessment.Blocked = false
+	assessment.RequiresApproval = true
+	assessment.Reason = "新目标首次发布：仅创建不存在的资源；审批前核对外部数据和迁移指引，健康及原始UID确认后登记运行基线"
+	return assessment
+}
+
 func ValidateMigrationPolicy(policy *sohaapi.TemplateMigrationPolicy) error {
 	if policy == nil {
 		return nil

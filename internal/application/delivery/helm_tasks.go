@@ -61,12 +61,19 @@ func (s *Service) queueHelmTask(ctx context.Context, principal domainidentity.Pr
 		timeoutSeconds = snapshot.TimeoutSeconds + 30
 	}
 	now := time.Now().UTC()
+	payload := sohaapi.HelmExecutionTaskPayload{Action: action, Snapshot: snapshot}
+	if helmrelease.IsInitialization(snapshot) && action == sohaapi.Observe {
+		payload.InitializationResources, err = s.initialHelmReceipt(ctx, snapshot)
+		if err != nil {
+			return domaindelivery.ExecutionTask{}, err
+		}
+	}
 	task := domaindelivery.ExecutionTask{ID: taskID, ApplicationID: snapshot.ApplicationID, ApplicationEnvironmentID: snapshot.ApplicationEnvironmentID,
 		ReleaseBundleID: snapshot.ReleaseBundleID,
 		TaskKind:        "helm_" + string(action), ProviderKind: provider, TargetKind: "helm_release", Status: "queued",
 		QueueKey: "helm:" + snapshot.ClusterID + ":" + snapshot.Namespace + ":" + snapshot.ReleaseName, LockKey: snapshot.DeliveryPlanID + ":" + snapshot.TargetID + ":" + string(action),
 		TimeoutSeconds: timeoutSeconds, CallbackToken: uuid.NewString(), SecretPrincipal: principal, SecretTarget: domainsecret.Target{Type: "project", Ref: snapshot.ApplicationID},
-		Payload: map[string]any{"helm": sohaapi.HelmExecutionTaskPayload{Action: action, Snapshot: snapshot}}, Result: map[string]any{}, CreatedAt: now, UpdatedAt: now}
+		Payload: map[string]any{"helm": payload}, Result: map[string]any{}, CreatedAt: now, UpdatedAt: now}
 	return s.repository.CreateExecutionTask(ctx, task)
 }
 
@@ -242,6 +249,11 @@ func (s *Service) hydrateHelmExecutionTask(ctx context.Context, task domaindeliv
 	if payload.Action != sohaapi.Observe {
 		payload.Prepared = prepared.Payload.Prepared
 	}
+	payload, err = s.hydrateHelmInitialization(ctx, payload)
+	if err != nil {
+		return task, err
+	}
+
 	task.Payload = maps.Clone(task.Payload)
 	task.Payload["helm"] = payload
 	return task, nil

@@ -50,6 +50,9 @@ func (s *DeclarativeService) migrationAssessment(ctx context.Context, p domainid
 		from = domaincatalog.MigrationBaselineVersion(items, inputs.TemplateID, baseline)
 	}
 	assessment := domaincatalog.AssessMigration(items, from, inputs.TemplateVersion)
+	if assessment == nil && from > 0 {
+		assessment = &sohaapi.TemplateMigrationAssessment{FromVersion: from, ToVersion: inputs.TemplateVersion, Steps: []sohaapi.TemplateMigrationStep{}}
+	}
 	if assessment != nil && assessment.Blocked {
 		return assessment, fmt.Errorf("%w: %s", apperrors.ErrConflict, assessment.Reason)
 	}
@@ -57,11 +60,19 @@ func (s *DeclarativeService) migrationAssessment(ctx context.Context, p domainid
 }
 
 func (s *DeclarativeService) validateMigrationSnapshot(ctx context.Context, p domainidentity.Principal, item domainmanifest.Package, current domainmanifest.Deployment, snapshot domainmanifest.DeliverySnapshot) error {
+	if initializationPlan(&snapshot) != "" {
+		if err := s.checkInitialization(ctx, current, snapshot); err != nil {
+			return err
+		}
+		if own := current.Spec.DeliverySnapshot; own != nil && initializationPlan(own) == snapshot.DeliveryPlanID && reflect.DeepEqual(own.Migration, snapshot.Migration) {
+			return nil
+		}
+	}
 	// Recover the exact successful apply without interpreting it as a new migration.
 	if current.Spec.DeliverySnapshot != nil && current.Spec.DeliverySnapshot.DeliveryPlanID == snapshot.DeliveryPlanID && current.Status.AppliedDigest == snapshot.RenderedDigest && current.Status.AppliedTemplate != nil && snapshot.TemplateInputs != nil && current.Status.AppliedTemplate.TemplateID == snapshot.TemplateInputs.TemplateID && current.Status.AppliedTemplate.TemplateVersion == snapshot.TemplateInputs.TemplateVersion && current.Status.AppliedTemplate.TemplateDigest == snapshot.TemplateInputs.TemplateDigest {
 		return nil
 	}
-	assessment, err := s.migrationAssessment(ctx, p, item, current, snapshot.TemplateInputs)
+	assessment, err := s.assessDeliveryMigration(ctx, p, item, current, snapshot)
 	if err != nil {
 		return err
 	}
@@ -123,7 +134,7 @@ func migrationPlanContainsSnapshot(plan domaindelivery.DeliveryPlan, snapshot do
 }
 
 func migrationTaskMatchesSnapshot(payload domainmanifest.TaskPayload, snapshot domainmanifest.DeliverySnapshot) bool {
-	return payload.PackageID == snapshot.PackageID && payload.BindingID == snapshot.BindingID && payload.ClusterID == snapshot.ClusterID && payload.Namespace == snapshot.Namespace && payload.Revision == snapshot.Revision && payload.RenderedDigest == snapshot.RenderedDigest && !payload.ForceConflicts && payload.FieldManager == "opensoha-manifest/"+snapshot.BindingID && reflect.DeepEqual(payload.Documents, snapshot.Documents) && reflect.DeepEqual(payload.GitOpsDocuments, snapshot.GitOpsDocuments) && reflect.DeepEqual(payload.RootResource, snapshot.RootResource)
+	return payload.InitializationPlanID == initializationPlan(&snapshot) && payload.PackageID == snapshot.PackageID && payload.BindingID == snapshot.BindingID && payload.ClusterID == snapshot.ClusterID && payload.Namespace == snapshot.Namespace && payload.Revision == snapshot.Revision && payload.RenderedDigest == snapshot.RenderedDigest && !payload.ForceConflicts && payload.FieldManager == "opensoha-manifest/"+snapshot.BindingID && reflect.DeepEqual(payload.Documents, snapshot.Documents) && reflect.DeepEqual(payload.GitOpsDocuments, snapshot.GitOpsDocuments) && reflect.DeepEqual(payload.RootResource, snapshot.RootResource)
 }
 
 func (s *DeclarativeService) requireLegacyMigration(ctx context.Context, p domainidentity.Principal, packageID string) error {

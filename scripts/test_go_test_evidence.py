@@ -48,7 +48,7 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(evidence.validate(self.raw(self.events()))["children"], 16)
 
     def test_migration_scopes_require_declaration_and_success_evidence(self):
-        for scope in (evidence.TEMPLATE_MIGRATION_SCOPE, evidence.MANIFEST_MIGRATION_SCOPE):
+        for scope in (evidence.TEMPLATE_MIGRATION_SCOPE, evidence.MANIFEST_MIGRATION_SCOPE, evidence.INITIALIZATION_SCOPE):
             names=[scope["parent"],*[scope["parent"]+"/"+child for child in scope["children"]]]
             events=[dict(Action=action,Package=scope["package"],Test=name) for name in names for action in ("run","pass")]+[dict(Action="pass",Package=scope["package"])]
             self.assertEqual(evidence.validate(self.raw(events),**scope)["result"],"PASS")

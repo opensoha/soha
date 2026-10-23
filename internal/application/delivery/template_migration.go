@@ -9,6 +9,7 @@ import (
 
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	"github.com/opensoha/soha-contracts/helmrelease"
+	helmruntime "github.com/opensoha/soha-contracts/helmrelease/runtime"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -32,7 +33,7 @@ func (s *Service) TemplateMigrationBaseline(ctx context.Context, p domainidentit
 			continue
 		}
 		if target.Helm != nil {
-			ref, _, err := s.helmMigrationBaseline(ctx, appID, envID, target)
+			ref, _, err := s.helmMigrationBaseline(ctx, p, appID, envID, target)
 			return ref, err
 		}
 		if target.ConfigRef != "" && s.manifestDelivery != nil {
@@ -52,7 +53,7 @@ func (s *Service) TemplateMigrationBaseline(ctx context.Context, p domainidentit
 	return nil, apperrors.ErrNotFound
 }
 
-func (s *Service) helmMigrationBaseline(ctx context.Context, appID, envID string, target domaincatalog.ReleaseTarget) (*sohaapi.TemplateVersionReference, int, error) {
+func (s *Service) helmMigrationBaseline(ctx context.Context, p domainidentity.Principal, appID, envID string, target domaincatalog.ReleaseTarget) (*sohaapi.TemplateVersionReference, int, error) {
 	tasks, err := s.repository.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: appID, ApplicationEnvironmentID: envID, QueueKey: "helm:" + target.ClusterID + ":" + target.Namespace + ":" + target.Helm.ReleaseName, TaskKinds: []string{"helm_apply", "helm_observe"}, Status: "completed", Limit: 1000})
 	if err != nil {
 		return nil, 0, err
@@ -75,6 +76,19 @@ func (s *Service) helmMigrationBaseline(ctx context.Context, appID, envID string
 		if !result.Ready {
 			return nil, result.Revision, nil
 		}
+		if helmrelease.IsInitialization(previous) {
+			original, err := s.initialHelmReceipt(ctx, previous)
+			if err != nil || s.helm.Runtime == nil {
+				return nil, 0, apperrors.ErrConflict
+			}
+			fresh, err := s.helm.Runtime.ExecuteHelmDelivery(ctx, p, sohaapi.HelmExecutionTaskPayload{Action: sohaapi.Observe, Snapshot: previous, InitializationResources: original})
+			if err != nil {
+				return nil, 0, err
+			}
+			if !fresh.Ready || fresh.Revision != result.Revision || helmruntime.ValidateInitializationResources(fresh.Resources, original) != nil {
+				return nil, 0, apperrors.ErrConflict
+			}
+		}
 		return previous.TemplateInputs, result.Revision, nil
 	}
 	return nil, 0, nil
@@ -93,7 +107,7 @@ func (s *Service) assessHelmMigration(ctx context.Context, p domainidentity.Prin
 	if s.templateUpdates == nil {
 		return nil, fmt.Errorf("%w: migration owner unavailable", apperrors.ErrConflict)
 	}
-	ref, nativeRevision, err := s.helmMigrationBaseline(ctx, snapshot.ApplicationID, snapshot.ApplicationEnvironmentID, target)
+	ref, nativeRevision, err := s.helmMigrationBaseline(ctx, p, snapshot.ApplicationID, snapshot.ApplicationEnvironmentID, target)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +125,12 @@ func (s *Service) assessHelmMigration(ctx context.Context, p domainidentity.Prin
 	if err != nil {
 		return nil, err
 	}
+	if from == 0 {
+		if err := s.checkHelmInitialization(ctx, snapshot); err != nil {
+			return nil, err
+		}
+		assessment = domaincatalog.AssessInitialization(assessment, snapshot.TemplateInputs.TemplateVersion)
+	}
 	if assessment != nil && assessment.Blocked {
 		return assessment, fmt.Errorf("%w: %s", apperrors.ErrConflict, assessment.Reason)
 	}
@@ -118,7 +138,7 @@ func (s *Service) assessHelmMigration(ctx context.Context, p domainidentity.Prin
 }
 
 func (s *Service) assessUntrackedHelmMigration(ctx context.Context, p domainidentity.Principal, snapshot sohaapi.HelmDeliverySnapshot, target domaincatalog.ReleaseTarget) (*sohaapi.TemplateMigrationAssessment, error) {
-	ref, _, err := s.helmMigrationBaseline(ctx, snapshot.ApplicationID, snapshot.ApplicationEnvironmentID, target)
+	ref, _, err := s.helmMigrationBaseline(ctx, p, snapshot.ApplicationID, snapshot.ApplicationEnvironmentID, target)
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +212,16 @@ func (s *Service) validateHelmMigration(ctx context.Context, p domainidentity.Pr
 		}
 		if !reflect.DeepEqual(ref, snapshot.TemplateInputs) {
 			return fmt.Errorf("%w: template selection changed", apperrors.ErrConflict)
+		}
+	}
+	if helmrelease.IsInitialization(snapshot) {
+		if err := s.checkHelmInitialization(ctx, snapshot); err != nil {
+			return err
+		}
+		if _, err := s.initialHelmReceipt(ctx, snapshot); err == nil {
+			return nil
+		} else if !errors.Is(err, apperrors.ErrNotFound) {
+			return err
 		}
 	}
 	migration, err := s.assessHelmMigration(ctx, p, snapshot, target)

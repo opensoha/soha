@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
 	contractresource "github.com/opensoha/soha-contracts/resource"
 	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 
@@ -86,9 +87,9 @@ func preflightDocuments(ctx context.Context, client dynamic.Interface, mapper re
 	}
 	ready := len(diagnostics) == 0
 	return domainmanifest.TaskResult{
-		Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation,
+		InitializationPlanID: payload.InitializationPlanID, Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation,
 		RenderedDigest: payload.RenderedDigest, Diagnostics: diagnostics, Inventory: []domainmanifest.ResourceInventory{},
-		Preflight: &domainmanifest.PreflightResult{Ready: ready, Capability: "available", RenderedDigest: payload.RenderedDigest, ResourceCount: len(payload.Documents), Diagnostics: diagnostics},
+		Preflight: &domainmanifest.PreflightResult{InitializationPlanID: payload.InitializationPlanID, Ready: ready, Capability: "available", RenderedDigest: payload.RenderedDigest, ResourceCount: len(payload.Documents), Diagnostics: diagnostics},
 	}, nil
 }
 
@@ -110,9 +111,9 @@ func applyDocuments(ctx context.Context, client dynamic.Interface, mapper restMa
 		inventory = append(inventory, inventoryItem(payload, document, desired, applied))
 	}
 	if len(diagnostics) > 0 {
-		return domainmanifest.TaskResult{Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation, RenderedDigest: payload.RenderedDigest, Diagnostics: diagnostics, Inventory: inventory}, fmt.Errorf("manifest apply failed for %d resource(s)", len(diagnostics))
+		return domainmanifest.TaskResult{InitializationPlanID: payload.InitializationPlanID, Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation, RenderedDigest: payload.RenderedDigest, Diagnostics: diagnostics, Inventory: inventory}, fmt.Errorf("manifest apply failed for %d resource(s)", len(diagnostics))
 	}
-	return domainmanifest.TaskResult{Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation, RenderedDigest: payload.RenderedDigest, Diagnostics: diagnostics, Inventory: inventory}, nil
+	return domainmanifest.TaskResult{InitializationPlanID: payload.InitializationPlanID, Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation, RenderedDigest: payload.RenderedDigest, Diagnostics: diagnostics, Inventory: inventory}, nil
 }
 
 func observeDocuments(ctx context.Context, client dynamic.Interface, mapper restMapper, payload domainmanifest.TaskPayload) (domainmanifest.TaskResult, error) {
@@ -136,6 +137,9 @@ func observeDocuments(ctx context.Context, client dynamic.Interface, mapper rest
 		live, getErr := resource.Get(queryCtx, document.Name, metav1.GetOptions{})
 		if getErr == nil && payload.RootResource != nil && string(live.GetUID()) != payload.RootResource.UID {
 			getErr = fmt.Errorf("root CR identity changed")
+		}
+		if getErr == nil {
+			getErr = validateInitialObservation(payload, document, live)
 		}
 		cancel()
 		if getErr != nil {
@@ -161,7 +165,7 @@ func observeDocuments(ctx context.Context, client dynamic.Interface, mapper rest
 	}
 	now := time.Now().UTC()
 	drift := &domainmanifest.DriftReport{Drifted: len(driftResources) > 0, ObservedAt: now, Resources: driftResources, EvidenceRefs: []string{}}
-	result := domainmanifest.TaskResult{Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation, RenderedDigest: payload.RenderedDigest, Diagnostics: diagnostics, Inventory: inventory, Drift: drift}
+	result := domainmanifest.TaskResult{InitializationPlanID: payload.InitializationPlanID, Action: payload.Action, DeploymentID: payload.DeploymentID, Generation: payload.Generation, RenderedDigest: payload.RenderedDigest, Diagnostics: diagnostics, Inventory: inventory, Drift: drift}
 	if len(diagnostics) > 0 {
 		return result, fmt.Errorf("manifest observe failed for %d resource(s)", len(diagnostics))
 	}
@@ -181,7 +185,9 @@ func patchDocument(ctx context.Context, client dynamic.Interface, mapper restMap
 	queryCtx, cancel := context.WithTimeout(ctx, manifestRuntimeTimeout)
 	defer cancel()
 	var applied *unstructured.Unstructured
-	if payload.RootResource != nil {
+	if payload.InitializationPlanID != "" {
+		applied, err = resourceruntime.CreateManifest(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, metav1.CreateOptions{FieldManager: options.FieldManager, DryRun: options.DryRun})
+	} else if payload.RootResource != nil {
 		applied, err = resourceruntime.ApplyRootCR(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, *payload.RootResource, options)
 	} else {
 		applied, err = resourceruntime.ApplyManifest(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, options)
@@ -357,6 +363,14 @@ func firstString(values ...string) string {
 }
 
 func validateRootRuntimePayload(payload domainmanifest.TaskPayload) error {
+	encoded, _ := json.Marshal(payload)
+	var wire sohaapi.ManifestExecutionTaskPayload
+	if err := json.Unmarshal(encoded, &wire); err != nil {
+		return err
+	}
+	if err := resourceruntime.ValidateManifestInitialization(wire); err != nil {
+		return err
+	}
 	if payload.RootResource == nil {
 		return nil
 	}
@@ -371,4 +385,17 @@ func validateRootRuntimePayload(payload domainmanifest.TaskPayload) error {
 		return err
 	}
 	return contractresource.ValidateRootCRDocument(object, *payload.RootResource)
+}
+
+func validateInitialObservation(payload domainmanifest.TaskPayload, document domainmanifest.RenderedDocument, live *unstructured.Unstructured) error {
+	if payload.InitializationPlanID != "" {
+		expected := ""
+		for _, original := range payload.Inventory {
+			if original.APIVersion == document.APIVersion && original.Kind == document.Kind && original.Namespace == document.Namespace && original.Name == document.Name {
+				expected = original.UID
+			}
+		}
+		return resourceruntime.ValidateInitializedUID(live, expected)
+	}
+	return nil
 }

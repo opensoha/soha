@@ -23,6 +23,11 @@ type snapshotRepository struct {
 	keys       map[string]string
 	setCount   int
 	queueError error
+	history    bool
+}
+
+func (r *snapshotRepository) HasTargetWriteHistory(context.Context, string, string, []string, string, string) (bool, error) {
+	return r.history, nil
 }
 
 func (r *snapshotRepository) GetBinding(context.Context, string) (domainmanifest.EnvironmentBinding, error) {
@@ -87,7 +92,7 @@ func newSnapshotTestService() (*DeclarativeService, *snapshotRepository, *snapsh
 func approveSnapshotPreflight(repo *snapshotRepository, snapshot domainmanifest.DeliverySnapshot) {
 	task := repo.tasks[snapshot.PreflightTaskID]
 	task.Status = "completed"
-	task.Result = structMap(domainmanifest.TaskResult{Preflight: &domainmanifest.PreflightResult{Ready: true, RenderedDigest: snapshot.RenderedDigest}})
+	task.Result = structMap(domainmanifest.TaskResult{Preflight: &domainmanifest.PreflightResult{InitializationPlanID: initializationPlan(&snapshot), Ready: true, RenderedDigest: snapshot.RenderedDigest}})
 	repo.tasks[task.ID] = task
 }
 

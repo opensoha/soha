@@ -278,9 +278,10 @@ func (s *DeclarativeService) taskPayload(action string, item domainmanifest.Pack
 		rootResource = deployment.Spec.DeliverySnapshot.RootResource
 	}
 	return domainmanifest.TaskPayload{
-		RootResource:    rootResource,
-		GitOpsDocuments: gitOpsDocuments,
-		Action:          action, PackageID: item.ID, BindingID: binding.ID, DeploymentID: deployment.ID,
+		InitializationPlanID: initializationPlan(deployment.Spec.DeliverySnapshot),
+		RootResource:         rootResource,
+		GitOpsDocuments:      gitOpsDocuments,
+		Action:               action, PackageID: item.ID, BindingID: binding.ID, DeploymentID: deployment.ID,
 		Generation: generation, Revision: rendered.Revision, RenderedDigest: rendered.RenderedDigest,
 		ClusterID: binding.ClusterID, Namespace: binding.Namespace, FieldManager: fieldManager,
 		ForceConflicts: force, Documents: rendered.Documents, Inventory: deployment.Status.Inventory, RequestedBy: actor,
@@ -297,6 +298,9 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 		}
 	}
 	provider, err := s.rootTaskProvider(ctx, binding.ClusterID, payload.RootResource != nil)
+	if err == nil && payload.InitializationPlanID != "" {
+		provider, err = s.initializationProvider(ctx, binding.ClusterID)
+	}
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
@@ -311,6 +315,9 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 	}
 	if len(principals) > 0 {
 		task.SecretPrincipal = principals[0]
+	}
+	if domaindelivery.IsInitializationWrite(task) {
+		task.MaxRetries = 0
 	}
 	if payload.Action == domainmanifest.TaskActionApply && hasRolloutDocuments(payload.Documents) {
 		task.TimeoutSeconds = 24 * 60 * 60
@@ -361,7 +368,7 @@ func (s *DeclarativeService) workerLoop(ctx context.Context) {
 				s.observeContinuousDeployments(ctx)
 				nextObserve = time.Now().UTC().Add(10 * time.Second)
 			}
-			task, err := s.tasks.ClaimExecutionTask(ctx, []string{domainmanifest.TaskProviderDirect, domainmanifest.TaskProviderGit}, "soha-manifest-controller", "local")
+			task, err := s.tasks.ClaimExecutionTask(ctx, []string{domainmanifest.TaskProviderDirect, domainmanifest.TaskProviderDirectInitialization, domainmanifest.TaskProviderGit}, "soha-manifest-controller", "local")
 			if err != nil {
 				continue
 			}
@@ -462,6 +469,9 @@ func (s *DeclarativeService) recordDeploymentTaskResult(ctx context.Context, tas
 		return s.updateStatusIgnoringStale(ctx, deployment.ID, payload.Generation, status)
 	}
 	result := decodeTaskResult(task.Result)
+	if err := validateInitializationResult(task, payload, status, result); err != nil {
+		return err
+	}
 	if task.Status != "completed" {
 		status.Phase = domainmanifest.DeploymentPhaseDegraded
 		status.LastErrorCode = "manifest_task_failed"
@@ -479,11 +489,7 @@ func (s *DeclarativeService) recordDeploymentTaskResult(ctx context.Context, tas
 	case domainmanifest.TaskActionApply, domainmanifest.TaskActionRepair, domainmanifest.TaskActionRollback:
 		status.AppliedRevision = payload.Revision
 		status.AppliedDigest = payload.RenderedDigest
-		status.AppliedTemplate = nil
-		if snapshot := deployment.Spec.DeliverySnapshot; snapshot != nil && snapshot.TemplateInputs != nil && snapshot.RenderedDigest == payload.RenderedDigest {
-			ref := snapshot.TemplateInputs
-			status.AppliedTemplate = &sohaapi.TemplateVersionReference{TemplateID: ref.TemplateID, TemplateVersion: ref.TemplateVersion, TemplateDigest: ref.TemplateDigest}
-		}
+		status.AppliedTemplate = appliedTemplateReference(deployment, payload, result)
 
 		if inventoryHealthy(result.Inventory, payload.Documents, payload.GitOpsDocuments) {
 			status.LastKnownGoodRevision = payload.Revision
@@ -503,6 +509,10 @@ func (s *DeclarativeService) recordDeploymentTaskResult(ctx context.Context, tas
 			status.LastKnownGoodRevision = payload.Revision
 			status.Phase = domainmanifest.DeploymentPhaseConverged
 			status.Conditions = upsertCondition(status.Conditions, domainmanifest.Condition{Type: "Healthy", Status: "true", Reason: "ObservedHealthy", Message: "managed resources are healthy", ObservedGeneration: payload.Generation, LastTransitionAt: now, EvidenceRefs: []string{task.ID}})
+			if payload.InitializationPlanID != "" && status.AppliedDigest == payload.RenderedDigest && deployment.Spec.DeliverySnapshot != nil && deployment.Spec.DeliverySnapshot.TemplateInputs != nil {
+				ref := deployment.Spec.DeliverySnapshot.TemplateInputs
+				status.AppliedTemplate = &sohaapi.TemplateVersionReference{TemplateID: ref.TemplateID, TemplateVersion: ref.TemplateVersion, TemplateDigest: ref.TemplateDigest}
+			}
 			status.Conditions = upsertCondition(status.Conditions, domainmanifest.Condition{Type: "Drifted", Status: "false", Reason: "DesiredStateMatched", Message: "managed resource fields match the desired revision", ObservedGeneration: payload.Generation, LastTransitionAt: now, EvidenceRefs: []string{task.ID}})
 		}
 	case domainmanifest.TaskActionAdopt:
@@ -586,7 +596,7 @@ func (s *DeclarativeService) queueAutomaticAction(ctx context.Context, deploymen
 	bucket := observedAt.UTC().Unix() / 10
 	payload.IdempotencyKey = fmt.Sprintf("manifest:%s:%d:%s:%d", deployment.ID, deployment.Generation, action, bucket)
 	var principals []domainidentity.Principal
-	if payload.RootResource != nil {
+	if payload.RootResource != nil || payload.InitializationPlanID != "" {
 		principal, principalErr := s.rootObservationPrincipal(ctx, deployment)
 		if principalErr != nil {
 			return principalErr

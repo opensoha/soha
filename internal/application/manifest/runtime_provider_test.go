@@ -5,6 +5,7 @@ import (
 	"errors"
 	resourceruntime "github.com/opensoha/soha-contracts/resource/runtime"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"testing"
 )
@@ -52,5 +53,27 @@ func TestRootCRTasksRequireDedicatedAgentCapability(t *testing.T) {
 		if !capable && !errors.Is(err, apperrors.ErrUnsupportedOperation) || capable && (err != nil || provider != "manifest_root_cr_v1.cluster") {
 			t.Fatalf("provider=%s error=%v", provider, err)
 		}
+	}
+}
+
+func TestInitializationRequiresDedicatedAgentCapability(t *testing.T) {
+	for _, capable := range []bool{false, true} {
+		summary := domaincluster.Summary{ConnectionMode: domaincluster.ConnectionModeAgent, Capabilities: []string{resourceruntime.ManifestAgentCapability}}
+		if capable {
+			summary.Capabilities = append(summary.Capabilities, resourceruntime.ManifestInitializationCapability)
+		}
+		s := &DeclarativeService{base: &Service{clusters: manifestCapabilityCluster{summary}}}
+		provider, err := s.initializationProvider(t.Context(), "cluster")
+		if !capable && !errors.Is(err, apperrors.ErrUnsupportedOperation) || capable && (err != nil || provider != "manifest_initialize_v1.cluster") {
+			t.Fatalf("provider=%s error=%v", provider, err)
+		}
+	}
+}
+
+func TestDirectInitializationUsesDedicatedProvider(t *testing.T) {
+	s := &DeclarativeService{base: &Service{clusters: manifestCapabilityCluster{domaincluster.Summary{ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig}}}}
+	provider, err := s.initializationProvider(t.Context(), "cluster")
+	if err != nil || provider != domainmanifest.TaskProviderDirectInitialization || provider == domainmanifest.TaskProviderDirect {
+		t.Fatalf("initialization provider = %s %v", provider, err)
 	}
 }

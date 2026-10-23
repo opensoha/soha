@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -69,16 +68,11 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
-	migration, err := s.migrationAssessment(ctx, principal, item, current, templateInputs)
-	if err != nil {
-		return domainmanifest.DeliverySnapshot{}, err
-	}
 	commit, err := s.repository.GetRevisionSourceCommit(ctx, item.ID, revision)
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
 	snapshot := domainmanifest.DeliverySnapshot{
-		Migration:       migration,
 		RootResource:    rootResource,
 		GitOpsDocuments: gitOpsDocuments,
 		TemplateInputs:  templateInputs,
@@ -89,10 +83,15 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 		InputDigest: rendered.InputDigest, RenderedDigest: rendered.RenderedDigest, Documents: rendered.Documents,
 		ExpectedGeneration: current.Generation,
 	}
+	snapshot.Migration, err = s.assessDeliveryMigration(ctx, principal, item, current, snapshot)
+	if err != nil {
+		return domainmanifest.DeliverySnapshot{}, err
+	}
 	payload := s.taskPayload(domainmanifest.TaskActionPreflight, item, binding, domainmanifest.Deployment{}, rendered, max(int64(1), current.Generation), false, principal.UserID)
 	payload.FieldManager = "opensoha-manifest/" + binding.ID
 	payload.GitOpsDocuments = gitOpsDocuments
 	payload.RootResource = rootResource
+	payload.InitializationPlanID = initializationPlan(&snapshot)
 	payload.IdempotencyKey = "delivery-plan:" + planID + ":" + target.ID + ":preflight"
 	task, err := s.queueOperation(ctx, item, binding, domainmanifest.Deployment{}, payload, principal)
 	if err != nil {
@@ -253,10 +252,10 @@ func (s *DeclarativeService) validateDeliveryPreflight(ctx context.Context, appl
 		return err
 	}
 	result := decodeTaskResult(task.Result)
-	if task.Status != "completed" || result.Preflight == nil || !result.Preflight.Ready || result.Preflight.RenderedDigest != snapshot.RenderedDigest {
+	if task.Status != "completed" || result.Preflight == nil || !result.Preflight.Ready || result.Preflight.RenderedDigest != snapshot.RenderedDigest || result.Preflight.InitializationPlanID != initializationPlan(&snapshot) {
 		return fmt.Errorf("%w: Manifest preflight has not succeeded; inspect task %s", apperrors.ErrConflict, task.ID)
 	}
-	if task.ApplicationID != applicationID || task.ApplicationEnvironmentID != snapshot.ApplicationEnvironmentID || payload.Action != domainmanifest.TaskActionPreflight || payload.ForceConflicts || payload.BindingID != snapshot.BindingID || payload.ClusterID != snapshot.ClusterID || payload.Namespace != snapshot.Namespace || payload.RenderedDigest != snapshot.RenderedDigest || !reflect.DeepEqual(payload.Documents, snapshot.Documents) || !reflect.DeepEqual(payload.GitOpsDocuments, snapshot.GitOpsDocuments) || !reflect.DeepEqual(payload.RootResource, snapshot.RootResource) {
+	if task.ApplicationID != applicationID || task.ApplicationEnvironmentID != snapshot.ApplicationEnvironmentID || payload.Action != domainmanifest.TaskActionPreflight || !migrationTaskMatchesSnapshot(payload, snapshot) {
 		return fmt.Errorf("%w: Manifest preflight does not match the delivery snapshot", apperrors.ErrConflict)
 	}
 	return validateDeliveryDocuments(snapshot.Documents, snapshot.Namespace)

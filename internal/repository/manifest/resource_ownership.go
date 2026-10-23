@@ -91,6 +91,15 @@ func lockManifestOperation(ctx context.Context, tx *gorm.DB, run domainmanifest.
 	if payload.ClusterID != clusterID || payload.BindingID != run.BindingID {
 		return fmt.Errorf("%w: Manifest task scope changed", apperrors.ErrConflict)
 	}
+	if payload.InitializationPlanID != "" {
+		previous, err := repodelivery.TargetWriteHistory(tx, clusterID, payload.Namespace, domainmanifest.ResourceKeys(clusterID, payload.Documents), "", payload.InitializationPlanID)
+		if err != nil {
+			return err
+		}
+		if previous {
+			return fmt.Errorf("%w: initialization target has previous writes", apperrors.ErrConflict)
+		}
+	}
 	if run.DeploymentID != "" {
 		var current bool
 		if err := tx.Raw(`SELECT EXISTS (SELECT 1 FROM manifest_deployments WHERE id = ? AND binding_id = ? AND generation = ?)`, run.DeploymentID, run.BindingID, run.Generation).Row().Scan(&current); err != nil {

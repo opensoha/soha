@@ -199,10 +199,10 @@ func (s *Service) prepareHelmTarget(ctx context.Context, principal domainidentit
 		err = validateHelmPreparation(intended, result.Payload)
 	}
 	if err == nil {
-		_, err = s.helm.Runtime.AuthorizeHelmDelivery(ctx, principal, result.Payload.Snapshot, true)
+		result.Payload.Snapshot.Migration, err = s.assessHelmMigration(ctx, principal, result.Payload.Snapshot, target)
 	}
 	if err == nil {
-		result.Payload.Snapshot.Migration, err = s.assessHelmMigration(ctx, principal, result.Payload.Snapshot, target)
+		_, err = s.helm.Runtime.AuthorizeHelmDelivery(ctx, principal, result.Payload.Snapshot, true)
 	}
 	return result, err
 }

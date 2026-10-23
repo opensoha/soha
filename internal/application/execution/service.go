@@ -393,6 +393,9 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
+	if domaindelivery.IsInitializationWrite(task) {
+		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: 首次发布结果不明，请核对原始创建回执与资源状态，禁止重放初始化", apperrors.ErrConflict)
+	}
 	if task.TaskKind == "vm_ssh_command" {
 		return task, apperrors.ErrUnsupportedOperation
 	}

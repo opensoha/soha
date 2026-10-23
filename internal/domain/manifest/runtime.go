@@ -24,8 +24,10 @@ const (
 	TaskKindSync      = "manifest_sync"
 
 	TaskProviderDirect = "manifest_direct"
-	TaskProviderGit    = "manifest_git"
-	TaskProviderAgent  = "ci_agent_runner"
+	// Keep first publication out of legacy workers which only understand SSA.
+	TaskProviderDirectInitialization = "manifest_direct_initialize_v1"
+	TaskProviderGit                  = "manifest_git"
+	TaskProviderAgent                = "ci_agent_runner"
 )
 
 type RenderInput struct {
@@ -78,11 +80,12 @@ type RenderResult struct {
 }
 
 type PreflightResult struct {
-	Ready          bool         `json:"ready"`
-	Capability     string       `json:"capability"`
-	RenderedDigest string       `json:"renderedDigest"`
-	ResourceCount  int          `json:"resourceCount"`
-	Diagnostics    []Diagnostic `json:"diagnostics"`
+	InitializationPlanID string       `json:"initializationPlanId,omitempty"`
+	Ready                bool         `json:"ready"`
+	Capability           string       `json:"capability"`
+	RenderedDigest       string       `json:"renderedDigest"`
+	ResourceCount        int          `json:"resourceCount"`
+	Diagnostics          []Diagnostic `json:"diagnostics"`
 }
 
 type DriftField struct {
@@ -109,54 +112,56 @@ type DriftReport struct {
 }
 
 type TaskPayload struct {
-	RootResource     *sohaapi.ManifestRootResource           `json:"rootResource,omitempty"`
-	RolloutControl   *sohaapi.ProgressiveRolloutControlInput `json:"rolloutControl,omitempty"`
-	GitOpsDocuments  []RenderedDocument                      `json:"gitOpsDocuments,omitempty"`
-	Action           string                                  `json:"action"`
-	PackageID        string                                  `json:"packageId"`
-	BindingID        string                                  `json:"bindingId,omitempty"`
-	DeploymentID     string                                  `json:"deploymentId,omitempty"`
-	SourceID         string                                  `json:"sourceId,omitempty"`
-	Generation       int64                                   `json:"generation"`
-	Revision         int                                     `json:"revision,omitempty"`
-	RenderedDigest   string                                  `json:"renderedDigest,omitempty"`
-	ClusterID        string                                  `json:"clusterId,omitempty"`
-	Namespace        string                                  `json:"namespace,omitempty"`
-	FieldManager     string                                  `json:"fieldManager,omitempty"`
-	ForceConflicts   bool                                    `json:"forceConflicts"`
-	IdempotencyKey   string                                  `json:"idempotencyKey"`
-	Documents        []RenderedDocument                      `json:"documents,omitempty"`
-	Inventory        []ResourceInventory                     `json:"inventory,omitempty"`
-	RepositoryID     string                                  `json:"repositoryId,omitempty"`
-	RepositoryURL    string                                  `json:"repositoryUrl,omitempty"`
-	Renderer         string                                  `json:"renderer,omitempty"`
-	KustomizeEntries []string                                `json:"kustomizeEntries,omitempty"`
-	RefType          string                                  `json:"refType,omitempty"`
-	RefValue         string                                  `json:"refValue,omitempty"`
-	Path             string                                  `json:"path,omitempty"`
-	IncludePatterns  []string                                `json:"includePatterns,omitempty"`
-	ExcludePatterns  []string                                `json:"excludePatterns,omitempty"`
-	RequestedCommit  string                                  `json:"requestedCommit,omitempty"`
-	RequestedBy      string                                  `json:"requestedBy,omitempty"`
+	InitializationPlanID string                                  `json:"initializationPlanId,omitempty"`
+	RootResource         *sohaapi.ManifestRootResource           `json:"rootResource,omitempty"`
+	RolloutControl       *sohaapi.ProgressiveRolloutControlInput `json:"rolloutControl,omitempty"`
+	GitOpsDocuments      []RenderedDocument                      `json:"gitOpsDocuments,omitempty"`
+	Action               string                                  `json:"action"`
+	PackageID            string                                  `json:"packageId"`
+	BindingID            string                                  `json:"bindingId,omitempty"`
+	DeploymentID         string                                  `json:"deploymentId,omitempty"`
+	SourceID             string                                  `json:"sourceId,omitempty"`
+	Generation           int64                                   `json:"generation"`
+	Revision             int                                     `json:"revision,omitempty"`
+	RenderedDigest       string                                  `json:"renderedDigest,omitempty"`
+	ClusterID            string                                  `json:"clusterId,omitempty"`
+	Namespace            string                                  `json:"namespace,omitempty"`
+	FieldManager         string                                  `json:"fieldManager,omitempty"`
+	ForceConflicts       bool                                    `json:"forceConflicts"`
+	IdempotencyKey       string                                  `json:"idempotencyKey"`
+	Documents            []RenderedDocument                      `json:"documents,omitempty"`
+	Inventory            []ResourceInventory                     `json:"inventory,omitempty"`
+	RepositoryID         string                                  `json:"repositoryId,omitempty"`
+	RepositoryURL        string                                  `json:"repositoryUrl,omitempty"`
+	Renderer             string                                  `json:"renderer,omitempty"`
+	KustomizeEntries     []string                                `json:"kustomizeEntries,omitempty"`
+	RefType              string                                  `json:"refType,omitempty"`
+	RefValue             string                                  `json:"refValue,omitempty"`
+	Path                 string                                  `json:"path,omitempty"`
+	IncludePatterns      []string                                `json:"includePatterns,omitempty"`
+	ExcludePatterns      []string                                `json:"excludePatterns,omitempty"`
+	RequestedCommit      string                                  `json:"requestedCommit,omitempty"`
+	RequestedBy          string                                  `json:"requestedBy,omitempty"`
 }
 
 type TaskResult struct {
-	Rollout         *sohaapi.ProgressiveRolloutStatus `json:"rollout,omitempty"`
-	Action          string                            `json:"action"`
-	DeploymentID    string                            `json:"deploymentId,omitempty"`
-	Generation      int64                             `json:"generation"`
-	Stale           bool                              `json:"stale"`
-	RenderedDigest  string                            `json:"renderedDigest,omitempty"`
-	Preflight       *PreflightResult                  `json:"preflight,omitempty"`
-	Diagnostics     []Diagnostic                      `json:"diagnostics"`
-	Inventory       []ResourceInventory               `json:"inventory"`
-	Drift           *DriftReport                      `json:"drift,omitempty"`
-	AdoptedFiles    []File                            `json:"adoptedFiles,omitempty"`
-	EvidenceRefs    []string                          `json:"evidenceRefs,omitempty"`
-	ResolvedCommit  string                            `json:"resolvedCommit,omitempty"`
-	TreeDigest      string                            `json:"treeDigest,omitempty"`
-	CanonicalDigest string                            `json:"canonicalDigest,omitempty"`
-	SyncedFiles     []File                            `json:"syncedFiles,omitempty"`
+	InitializationPlanID string                            `json:"initializationPlanId,omitempty"`
+	Rollout              *sohaapi.ProgressiveRolloutStatus `json:"rollout,omitempty"`
+	Action               string                            `json:"action"`
+	DeploymentID         string                            `json:"deploymentId,omitempty"`
+	Generation           int64                             `json:"generation"`
+	Stale                bool                              `json:"stale"`
+	RenderedDigest       string                            `json:"renderedDigest,omitempty"`
+	Preflight            *PreflightResult                  `json:"preflight,omitempty"`
+	Diagnostics          []Diagnostic                      `json:"diagnostics"`
+	Inventory            []ResourceInventory               `json:"inventory"`
+	Drift                *DriftReport                      `json:"drift,omitempty"`
+	AdoptedFiles         []File                            `json:"adoptedFiles,omitempty"`
+	EvidenceRefs         []string                          `json:"evidenceRefs,omitempty"`
+	ResolvedCommit       string                            `json:"resolvedCommit,omitempty"`
+	TreeDigest           string                            `json:"treeDigest,omitempty"`
+	CanonicalDigest      string                            `json:"canonicalDigest,omitempty"`
+	SyncedFiles          []File                            `json:"syncedFiles,omitempty"`
 }
 
 type OperationRun struct {

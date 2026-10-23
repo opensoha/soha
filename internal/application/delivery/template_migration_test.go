@@ -18,7 +18,34 @@ import (
 
 type migrationHelmRepository struct {
 	*batchRuntimeRepository
-	history []domaindelivery.ExecutionTask
+	history      []domaindelivery.ExecutionTask
+	writeHistory bool
+}
+
+func (r *migrationHelmRepository) HasTargetWriteHistory(context.Context, string, string, []string, string, string) (bool, error) {
+	return r.writeHistory, nil
+}
+
+func TestHelmFirstReleaseDoesNotInitializeExistingUnknownTarget(t *testing.T) {
+	s, repo, _, _, _, _, _ := batchRuntimeCheck(t)
+	history := &migrationHelmRepository{batchRuntimeRepository: repo}
+	s.repository = history
+	s.SetTemplateUpdates(&migrationReleaseOwner{versions: []domaincatalog.MigrationVersion{{Number: 1, Digest: "one"}, {Number: 2, Digest: "two", Policy: &sohaapi.TemplateMigrationPolicy{Sequential: true, Irreversible: true, Guide: "核对数据初始化前提"}}, {Number: 3, Digest: "three"}}})
+	target := domaincatalog.ReleaseTarget{ID: "target", ClusterID: "cluster", Namespace: "team", Helm: &sohaapi.HelmDeliveryConfiguration{ReleaseName: "db"}}
+	snapshot := sohaapi.HelmDeliverySnapshot{DeliveryPlanID: "first", ApplicationID: "app", ApplicationEnvironmentID: "env", TargetID: target.ID, ClusterID: target.ClusterID, Namespace: target.Namespace, ReleaseName: "db", Operation: sohaapi.HelmDeliverySnapshotOperationInstall, TemplateInputs: &sohaapi.TemplateVersionReference{TemplateID: "template", TemplateVersion: 3, TemplateDigest: "three"}}
+	assessment, err := s.assessHelmMigration(t.Context(), deliveryActionPrincipal(), snapshot, target)
+	if err != nil || assessment == nil || !assessment.Initialization || !assessment.RequiresApproval || assessment.Blocked || len(assessment.Steps) != 1 {
+		t.Fatalf("new Helm initialization %+v %v", assessment, err)
+	}
+	snapshot.ExpectedRevision = 1
+	if _, err := s.assessHelmMigration(t.Context(), deliveryActionPrincipal(), snapshot, target); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("existing native deployment initialized %v", err)
+	}
+	snapshot.ExpectedRevision = 0
+	history.writeHistory = true
+	if _, err := s.assessHelmMigration(t.Context(), deliveryActionPrincipal(), snapshot, target); !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("failed historical write initialized %v", err)
+	}
 }
 
 func (r *migrationHelmRepository) ListExecutionTasks(context.Context, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error) {
@@ -71,7 +98,7 @@ func TestHelmMigrationChecksNativeRevisionAndDoesNotFallBackPastInvalidReceipt(t
 	invalid := completed
 	invalid.Result = map[string]any{"helm": sohaapi.HelmExecutionTaskResult{Stopped: true, Ready: true, Status: "deployed", Revision: 9, RenderedDigest: snapshot.RenderedDigest}}
 	history.history = []domaindelivery.ExecutionTask{invalid, completed}
-	if ref, _, err := s.helmMigrationBaseline(t.Context(), "app", "env", target); err != nil || ref != nil {
+	if ref, _, err := s.helmMigrationBaseline(t.Context(), domainidentity.Principal{}, "app", "env", target); err != nil || ref != nil {
 		t.Fatalf("invalid newest receipt fell back to older baseline %#v %v", ref, err)
 	}
 	history.history = []domaindelivery.ExecutionTask{completed}

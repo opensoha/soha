@@ -45,6 +45,7 @@ MANIFEST_ROOT_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/m
 
 TEMPLATE_ADOPTION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/templateupdate","parent":"TestTemplateAdoptionWithPostgres","children":["atomic_receipt_and_environment_isolation","stale_and_canceled_worker","policy_cas_and_private_identity"]}
 
+INITIALIZATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/delivery","parent":"TestInitializationHistoryWithPostgres","children":["absent","preflight-only","same-plan","same-plan-failed","same-plan-replayed","failed-write","canceled-zero-attempt","cross-owner-version","helm-release-history","admission-rechecks-failed-physical-target","legacy-direct-workers-cannot-claim-initialization"]}
 TEMPLATE_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/catalog","parent":"TestTemplateVersionsWithPostgres","children":["migration-declarations-preserve-legacy-writers"]}
 MANIFEST_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/manifest","parent":"TestDeliverySnapshotWithPostgres","children":["migration-baseline-is-success-only",*["migration-baseline-is-success-only/"+name for name in ["verified","desired-only","stale-generation","failed","digest-mismatch","malformed-identity"]]]}
 
