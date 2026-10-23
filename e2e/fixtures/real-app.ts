@@ -16,6 +16,8 @@ export const test = base.extend<{
 }>({
   real: async ({ page, context, playwright }, provide) => {
     const target = loadTarget()
+    if (target.scenario === 'task114' || process.env.SOHA_E2E_SCENARIO === 'task114')
+      expect(process.env.SOHA_E2E_SCENARIO).toBe(target.scenario)
     const origin = new URL(target.baseURL).origin
     await context.route('**/*', (route) =>
       new URL(route.request().url()).origin === origin
@@ -58,7 +60,24 @@ export const test = base.extend<{
       const permissions = await api.get('/api/v1/access/permission-snapshot')
       expect(permissions.ok()).toBe(true)
       const keys = (await permissions.json()).data.permissionKeys as string[]
-      expect(keys.includes('platform.extensions.crds.delete')).toBe(target.role === 'test-writer')
+      if (target.scenario === 'task114') {
+        for (const permission of [
+          'delivery.applications.view',
+          'delivery.application-environments.view',
+          'platform.pods.view',
+        ])
+          expect(keys).toContain(permission)
+        for (const permission of [
+          'platform.pods.exec',
+          'delivery.application-services.create',
+          'delivery.application-environments.update',
+          'delivery.application-environments.approve',
+          'delivery.workflows.trigger',
+        ])
+          expect(keys.includes(permission)).toBe(target.role === 'test-writer')
+      } else {
+        expect(keys.includes('platform.extensions.crds.delete')).toBe(target.role === 'test-writer')
+      }
       const clusters = await api.get('/api/v1/clusters')
       expect(clusters.ok()).toBe(true)
       const cluster = (await clusters.json()).items.find(
