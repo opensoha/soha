@@ -71,8 +71,12 @@ func (s *DeclarativeService) AdoptTemplate(ctx context.Context, principal domain
 	if err != nil {
 		return err
 	}
-	item, _, err := s.bindingPackage(ctx, principal, binding.PackageID, domainaccess.ActionUpdate)
+	item, app, err := s.bindingPackage(ctx, principal, binding.PackageID, domainaccess.ActionView)
 	if err != nil {
+		return err
+	}
+	if err := s.base.authorizeManifest(ctx, principal, domainaccess.ActionUpdate, item, app, nil, binding.EnvironmentKey, binding.Namespace,
+		appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "update")); err != nil {
 		return err
 	}
 	template, err := s.validateTemplateSelection(ctx, principal, item, binding, expected, selection)

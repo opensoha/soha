@@ -233,7 +233,7 @@ func (s *Service) AuthorizeServiceImport(ctx context.Context, principal domainid
 		}
 	}
 	for _, service := range services {
-		if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", service.Name, service.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
+		if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "ApplicationService", service.Name, service.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
 			return err
 		}
 	}
@@ -251,7 +251,7 @@ func (s *Service) CreateService(ctx context.Context, principal domainidentity.Pr
 	if err := validateServiceInput(input); err != nil {
 		return domainapp.Service{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
 		return domainapp.Service{}, err
 	}
 	if input.ExpectedVersion != nil {
@@ -527,13 +527,32 @@ func validateServiceInput(input domainapp.ServiceInput) error {
 	return nil
 }
 
+func applicationScopePermission(kind string, action domainaccess.Action) string {
+	read := action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch
+	switch kind {
+	case "Application":
+		if read {
+			return appaccess.PermDeliveryApplicationsView
+		}
+		return "delivery.application." + string(action)
+	case "ApplicationService":
+		if read {
+			return appaccess.PermDeliveryApplicationServicesView
+		}
+		return appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, string(action))
+	default:
+		return ""
+	}
+}
+
 func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, resourceKind, resourceName, owner, businessLineID, applicationGroup, applicationID string) error {
 	if s.authorizer == nil {
 		return nil
 	}
 	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
-		Principal: principal,
-		Action:    action,
+		PermissionKey: applicationScopePermission(resourceKind, action),
+		Principal:     principal,
+		Action:        action,
 		Subject: domainaccess.SubjectAttributes{
 			UserID:   principal.UserID,
 			Roles:    principal.Roles,

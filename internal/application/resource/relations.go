@@ -175,13 +175,33 @@ func (r *Runtime) readRelationSnapshot(ctx context.Context, connection dc.Connec
 		if !ok {
 			return cr.RelationSnapshot{}, cr.ErrRelationSnapshotUnsupported
 		}
-		return reader.RelationSnapshot(ctx, input)
+		snapshot, err := reader.RelationSnapshot(ctx, input)
+		if err != nil {
+			return cr.RelationSnapshot{}, err
+		}
+		return bindAgentRelationSnapshot(snapshot, connection), nil
 	}
 	reader, ok := r.generic.direct.(relationDirect)
 	if !ok {
 		return cr.RelationSnapshot{}, cr.ErrRelationSnapshotUnsupported
 	}
 	return reader.RelationSnapshot(ctx, connection.Summary.ID, input)
+}
+
+// Agent-local IDs differ from Core registration IDs. Only translate the ID already
+// bound to this authenticated connection; the normal snapshot sanitizer still
+// rejects foreign IDs, namespaces, kinds and unrequested objects.
+func bindAgentRelationSnapshot(snapshot cr.RelationSnapshot, connection dc.Connection) cr.RelationSnapshot {
+	agentID := agentResourceClusterID(connection, connection.Summary.ID)
+	for source := range snapshot.Sources {
+		for object := range snapshot.Sources[source].Objects {
+			ref := &snapshot.Sources[source].Objects[object].Resource
+			if ref.ClusterID == agentID {
+				ref.ClusterID = connection.Summary.ID
+			}
+		}
+	}
+	return snapshot
 }
 
 func relationFailure(id, state, reason string) cr.RelationSourceResult {

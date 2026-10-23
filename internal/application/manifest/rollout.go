@@ -105,7 +105,7 @@ func (s *DeclarativeService) rolloutTask(ctx context.Context, principal domainid
 	if err != nil {
 		return task, payload, item, err
 	}
-	if err := s.base.authorizeManifest(ctx, principal, action, item, app, connection, firstNonEmptyString(environment.EnvironmentKey, environment.EnvironmentID), payload.Namespace); err != nil {
+	if err := s.base.authorizeManifest(ctx, principal, action, item, app, connection, firstNonEmptyString(environment.EnvironmentKey, environment.EnvironmentID), payload.Namespace, ""); err != nil {
 		return task, payload, item, err
 	}
 	return task, payload, item, nil

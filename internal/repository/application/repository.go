@@ -209,13 +209,22 @@ func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]
 		if scanErr != nil {
 			return nil, scanErr
 		}
-		item.Containers, scanErr = r.listServiceContainers(ctx, item.ID)
-		if scanErr != nil {
-			return nil, scanErr
-		}
 		items = append(items, item)
 	}
-	return items, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Container reads may share the transaction connection with this result.
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close application services: %w", err)
+	}
+	for index := range items {
+		items[index].Containers, err = r.listServiceContainers(ctx, items[index].ID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return items, nil
 }
 
 func (r *Repository) GetService(ctx context.Context, applicationID, serviceID string) (domainapp.Service, error) {

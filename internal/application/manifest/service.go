@@ -381,7 +381,7 @@ func (s *Service) authorizedApplicationIDs(ctx context.Context, principal domain
 		if err != nil {
 			return nil, err
 		}
-		if err := s.authorizeManifest(ctx, principal, domainaccess.ActionList, domainmanifest.Package{ApplicationID: app.ID}, app, cluster, "", namespace); err != nil {
+		if err := s.authorizeManifest(ctx, principal, domainaccess.ActionList, domainmanifest.Package{ApplicationID: app.ID}, app, cluster, "", namespace, ""); err != nil {
 			return nil, err
 		}
 		return []string{app.ID}, nil
@@ -392,7 +392,7 @@ func (s *Service) authorizedApplicationIDs(ctx context.Context, principal domain
 	}
 	allowed := make([]string, 0, len(apps))
 	for _, app := range apps {
-		if err := s.authorizeManifest(ctx, principal, domainaccess.ActionList, domainmanifest.Package{ApplicationID: app.ID}, app, cluster, "", namespace); err == nil {
+		if err := s.authorizeManifest(ctx, principal, domainaccess.ActionList, domainmanifest.Package{ApplicationID: app.ID}, app, cluster, "", namespace, ""); err == nil {
 			allowed = append(allowed, app.ID)
 		}
 	}
@@ -407,7 +407,7 @@ func (s *Service) authorizeInput(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domainapp.App{}, err
 	}
-	if err := s.authorizeManifest(ctx, principal, action, item, app, nil, "", ""); err != nil {
+	if err := s.authorizeManifest(ctx, principal, action, item, app, nil, "", "", ""); err != nil {
 		return domainapp.App{}, err
 	}
 	return app, nil
@@ -451,7 +451,7 @@ func (s *Service) validateBindings(ctx context.Context, principal domainidentity
 		if binding.EnvironmentKey == "" {
 			binding.EnvironmentKey = environment.EnvironmentID
 		}
-		if err := s.authorizeManifest(ctx, principal, action, *item, app, &cluster, binding.EnvironmentKey, binding.Namespace); err != nil {
+		if err := s.authorizeManifest(ctx, principal, action, *item, app, &cluster, binding.EnvironmentKey, binding.Namespace, ""); err != nil {
 			return err
 		}
 		if err := s.validateTemplateParameters(ctx, principal, *item, binding.TemplateParameters); err != nil {
@@ -477,13 +477,17 @@ func (s *Service) loadCluster(ctx context.Context, clusterID string) (*domainclu
 	return &cluster, nil
 }
 
-func (s *Service) authorizeManifest(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package, app domainapp.App, cluster *domaincluster.Connection, environmentKey, namespace string) error {
+func (s *Service) authorizeManifest(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package, app domainapp.App, cluster *domaincluster.Connection, environmentKey, namespace, permissionKey string) error {
 	if s.authorizer == nil {
 		return nil
 	}
+	if permissionKey == "" && (action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch) {
+		permissionKey = appaccess.PermDeliveryApplicationsView
+	}
 	request := domainaccess.Request{
-		Principal: principal,
-		Action:    action,
+		PermissionKey: permissionKey,
+		Principal:     principal,
+		Action:        action,
 		Subject: domainaccess.SubjectAttributes{
 			UserID: principal.UserID, Roles: principal.Roles, Teams: principal.Teams,
 			Projects: principal.Projects, Tags: principal.Tags,

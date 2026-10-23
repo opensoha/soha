@@ -67,6 +67,18 @@ func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domainc
 		if err != nil {
 			return nil, err
 		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// A transaction has one connection. Finish the outer result before querying
+	// targets or bound workflow versions on that same connection.
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close application environments: %w", err)
+	}
+	for index := range items {
+		item := &items[index]
 		targets, err := r.listReleaseTargets(ctx, item.ID)
 		if err != nil {
 			return nil, err
@@ -79,9 +91,8 @@ func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domainc
 			}
 			item.WorkflowTemplate = &template
 		}
-		items = append(items, item)
 	}
-	return items, rows.Err()
+	return items, nil
 }
 
 func (r *Repository) GetApplicationEnvironment(ctx context.Context, id string) (domaincatalog.ApplicationEnvironment, error) {

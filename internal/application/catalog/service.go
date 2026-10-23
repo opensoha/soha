@@ -1458,11 +1458,18 @@ func templateUsageAuditChangeSnapshot(before, after *domaincatalog.TemplateUsage
 	return snapshot
 }
 
+func applicationEnvironmentPermission(action domainaccess.Action) string {
+	if action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch {
+		return appaccess.PermDeliveryApplicationEnvView
+	}
+	return appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, string(action))
+}
+
 func (s *Service) authorizeApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domaincatalog.ApplicationEnvironment) error {
 	if s.authorizer == nil {
 		return nil
 	}
-	return s.authorizeDelivery(ctx, principal, "", action, "ApplicationEnvironment", item.ID, item.BusinessLineID, item.ApplicationGroup, item.EnvironmentKey, item.ApplicationID)
+	return s.authorizeDelivery(ctx, principal, applicationEnvironmentPermission(action), action, "ApplicationEnvironment", item.ID, item.BusinessLineID, item.ApplicationGroup, item.EnvironmentKey, item.ApplicationID)
 }
 
 func (s *Service) authorizeApplicationEnvironmentInput(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, input domaincatalog.ApplicationEnvironmentInput) error {
@@ -1477,7 +1484,7 @@ func (s *Service) authorizeApplicationEnvironmentInput(ctx context.Context, prin
 	if resourceName == "" {
 		resourceName = fmt.Sprintf("%s:%s", strings.TrimSpace(input.ApplicationID), strings.TrimSpace(input.EnvironmentID))
 	}
-	return s.authorizeDelivery(ctx, principal, "", action, "ApplicationEnvironment", resourceName, businessLineID, applicationGroup, input.EnvironmentID, input.ApplicationID)
+	return s.authorizeDelivery(ctx, principal, applicationEnvironmentPermission(action), action, "ApplicationEnvironment", resourceName, businessLineID, applicationGroup, input.EnvironmentID, input.ApplicationID)
 }
 
 func (s *Service) lookupApplicationScope(ctx context.Context, applicationID string) (string, string, error) {

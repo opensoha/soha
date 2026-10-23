@@ -24,7 +24,7 @@ func TestServiceImportUsesExistingApplicationScope(t *testing.T) {
 			t.Fatal(err)
 		}
 		request := authorizer.requests[0]
-		if request.Action != domainaccess.ActionUpdate || request.Delivery.ApplicationID != "app" || request.Delivery.BusinessLineID != "finance" || request.Delivery.ApplicationGroup != "payments" || request.Resource.Kind != "ApplicationService" {
+		if request.Action != domainaccess.ActionCreate || request.PermissionKey != "delivery.application-services.create" || request.Delivery.ApplicationID != "app" || request.Delivery.BusinessLineID != "finance" || request.Delivery.ApplicationGroup != "payments" || request.Resource.Kind != "ApplicationService" {
 			t.Fatalf("scope=%+v", request)
 		}
 	}

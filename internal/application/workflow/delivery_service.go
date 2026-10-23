@@ -215,7 +215,14 @@ func (s *Service) authorizeDeliveryTarget(ctx context.Context, principal domaini
 	if err != nil {
 		return err
 	}
-	if err := s.authorize(ctx, principal, action, app, target.ServiceID, target.ApplicationEnvironmentID, ""); err != nil {
+	permissionKey := ""
+	switch action {
+	case domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch:
+		permissionKey = appaccess.PermDeliveryWorkflowsView
+	case domainaccess.ActionTrigger:
+		permissionKey = appaccess.PermDeliveryWorkflowsTrigger
+	}
+	if err := s.authorize(ctx, principal, action, app, target.ServiceID, target.ApplicationEnvironmentID, permissionKey); err != nil {
 		return err
 	}
 	if action != domainaccess.ActionTrigger {

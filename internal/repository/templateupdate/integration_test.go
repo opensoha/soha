@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/opensoha/soha-contracts/gen/go/sohaapi"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	domainupdate "github.com/opensoha/soha/internal/domain/templateupdate"
@@ -19,6 +20,8 @@ import (
 	"github.com/opensoha/soha/internal/infrastructure/config"
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	repoapp "github.com/opensoha/soha/internal/repository/application"
+	repocatalog "github.com/opensoha/soha/internal/repository/catalog"
 	repodelivery "github.com/opensoha/soha/internal/repository/delivery"
 	repomanifest "github.com/opensoha/soha/internal/repository/manifest"
 	repoworkflow "github.com/opensoha/soha/internal/repository/workflow"
@@ -65,6 +68,7 @@ type adoptionFixture struct {
 	bindings  []domainmanifest.EnvironmentBinding
 	run       domainworkflow.Run
 	plan      domaindelivery.DeliveryPlan
+	services  []domainapp.Service
 }
 
 func newAdoptionFixture(t *testing.T, ctx context.Context, db *gorm.DB) adoptionFixture {
@@ -73,6 +77,12 @@ func newAdoptionFixture(t *testing.T, ctx context.Context, db *gorm.DB) adoption
 	appID, clusterID := uuid.NewString(), uuid.NewString()
 	requireOK(t, db.Exec(`INSERT INTO applications(id,name,app_key,app_group,language) VALUES(?,'Template acceptance',?,'test','configuration')`, appID, appID).Error)
 	requireOK(t, db.Exec(`INSERT INTO clusters(id,name) VALUES(?,'Template acceptance')`, clusterID).Error)
+	for _, key := range []string{"api", "worker"} {
+		service, err := repoapp.New(db).CreateService(ctx, appID, domainapp.ServiceInput{Key: key, Name: key, Enabled: true,
+			Containers: []domainapp.ServiceContainerInput{{Name: key, ImageRepository: "example.invalid/" + key}}})
+		requireOK(t, err)
+		f.services = append(f.services, service)
+	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	pkg, err := f.manifest.Create(ctx, domainmanifest.Package{ID: uuid.NewString(), Name: "shared", ApplicationID: appID, Renderer: "raw_yaml", Status: "published", CurrentRevision: 1, Files: []domainmanifest.File{}, Bindings: []domainmanifest.Binding{}, CreatedAt: now, UpdatedAt: now})
 	requireOK(t, err)
@@ -81,6 +91,7 @@ func newAdoptionFixture(t *testing.T, ctx context.Context, db *gorm.DB) adoption
 		requireOK(t, db.Exec(`INSERT INTO application_environments(id,application_id,environment_id) VALUES(?,?,?)`, envID, appID, key).Error)
 		binding, err := f.manifest.CreateBinding(ctx, domainmanifest.EnvironmentBinding{ID: uuid.NewString(), PackageID: pkg.ID, ApplicationEnvironmentID: envID, EnvironmentKey: key, ClusterID: clusterID, Namespace: key, Overlay: map[string]string{}, TemplateParameters: map[string]any{"replicas": float64(7)}, Enabled: true, Version: 1, DriftPolicy: "report", DeletionPolicy: "orphan", CreatedAt: now, UpdatedAt: now})
 		requireOK(t, err)
+		requireOK(t, db.Exec(`INSERT INTO release_targets(id,application_environment_id,cluster_id,namespace,target_kind,executor_kind,config_ref,workload_kind,workload_name) VALUES(?,?,?,?,'k8s_workload','manifest_ssa',?,'ManifestPackage',?)`, uuid.NewString(), envID, clusterID, key, binding.ID, pkg.ID).Error)
 		f.bindings = append(f.bindings, binding)
 	}
 	candidateID, previewID := uuid.NewString(), uuid.NewString()
@@ -111,6 +122,38 @@ func verifyAtomicAdoption(t *testing.T, ctx context.Context, db *gorm.DB) {
 	requireOK(t, err)
 	selection := domainmanifest.TemplateSelection{TemplateID: "template", Version: 4, BaseFilesDigest: "baseline", AdoptionID: f.plan.ID, Parameters: map[string]any{"replicas": float64(1)}}
 	apply := func(txctx context.Context, _ domainupdate.FrozenCandidate) error {
+		// Candidate revalidation reads real environment/target relations within the
+		// same transaction, where an open outer result set cannot borrow another connection.
+		environments, err := repocatalog.New(db).ListApplicationEnvironments(txctx)
+		if err != nil {
+			return err
+		}
+		matched := 0
+		for _, environment := range environments {
+			for _, binding := range f.bindings {
+				if environment.ID == binding.ApplicationEnvironmentID {
+					matched++
+					if len(environment.Targets) != 1 || environment.Targets[0].ConfigRef != binding.ID {
+						return errors.New("transactional environment read lost its release target")
+					}
+				}
+			}
+		}
+		if matched != len(f.bindings) {
+			return errors.New("transactional environment read lost a binding")
+		}
+		services, err := repoapp.New(db).ListServices(txctx, f.candidate.Candidate.Target.ApplicationID)
+		if err != nil {
+			return err
+		}
+		if len(services) != len(f.services) {
+			return errors.New("transactional service read lost a service")
+		}
+		for index, service := range services {
+			if service.ID != f.services[index].ID || len(service.Containers) != 1 || service.Containers[0].Name != service.Key {
+				return errors.New("transactional service read lost ordering or containers")
+			}
+		}
 		return f.manifest.SetTemplateSelection(txctx, f.bindings[0].ID, 1, selection)
 	}
 	failure := errors.New("receipt failure")

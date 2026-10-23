@@ -90,3 +90,40 @@ func TestRelationIdentityRejectsUntrustedObjectPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentRelationSnapshotBindsOnlyRegisteredAgentIdentity(t *testing.T) {
+	connection := dc.Connection{Summary: dc.Summary{ID: "registration", ConnectionMode: dc.ConnectionModeAgent}, Metadata: map[string]any{dc.MetadataAgentClusterID: "agent-native"}}
+	query := cr.RelationQuery{ID: "pods", Source: cr.RelationSource{APIVersion: "v1", Resource: "pods", Kind: "Pod", Namespace: "team"}}
+	for _, test := range []struct {
+		name, cluster, namespace string
+		allowed                  bool
+	}{
+		{"native", "agent-native", "team", true},
+		{"registered", "registration", "team", true},
+		{"foreign cluster", "other-agent", "team", false},
+		{"foreign namespace", "agent-native", "other", false},
+		{"missing identity", "", "team", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := cr.RelationSnapshot{Version: cr.RelationSnapshotFeature, Sources: []cr.RelationSourceResult{{Coverage: cr.RelationCoverage{QueryID: "pods", State: "available"}, Objects: []cr.RelationObject{{Resource: cr.ResourceRef{ClusterID: test.cluster, APIVersion: "v1", Kind: "Pod", Namespace: test.namespace, Name: "child", UID: "pod-uid"}, Owners: []cr.RelationOwner{{APIVersion: "apps/v1", Kind: "ReplicaSet", Name: "parent", UID: "parent-uid"}}}}}}}
+			out := sanitizeRelationSnapshot(bindAgentRelationSnapshot(snapshot, connection), cr.RelationSnapshotRequest{Queries: []cr.RelationQuery{query}}, connection.Summary.ID)
+			if got := len(out.Sources[0].Objects); (got == 1) != test.allowed {
+				t.Fatalf("wrong bound identity result: %+v", out)
+			}
+			if test.allowed {
+				ref := out.Sources[0].Objects[0]
+				if ref.Resource.ClusterID != "registration" || ref.Resource.UID != "pod-uid" || ref.Owners[0].UID != "parent-uid" {
+					t.Fatalf("stable identity changed beyond cluster mapping: %+v", ref)
+				}
+			} else if out.Sources[0].Coverage.ReasonCode != "invalid_identity" {
+				t.Fatal("foreign identity was not rejected")
+			}
+		})
+	}
+	// Unsynced connections must not silently adopt an arbitrary Agent-local ID.
+	delete(connection.Metadata, dc.MetadataAgentClusterID)
+	snapshot := cr.RelationSnapshot{Sources: []cr.RelationSourceResult{{Objects: []cr.RelationObject{{Resource: cr.ResourceRef{ClusterID: "agent-native"}}}}}}
+	if bindAgentRelationSnapshot(snapshot, connection).Sources[0].Objects[0].Resource.ClusterID != "agent-native" {
+		t.Fatal("unknown Agent identity rebound without a registered mapping")
+	}
+}

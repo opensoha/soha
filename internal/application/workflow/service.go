@@ -246,7 +246,7 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 			}
 			continue
 		}
-		if err := s.authorize(ctx, principal, domainaccess.ActionList, app, item.ApplicationID, configString(item.Metadata, "bindingId"), ""); err != nil {
+		if err := s.authorize(ctx, principal, domainaccess.ActionList, app, item.ApplicationID, configString(item.Metadata, "bindingId"), appaccess.PermDeliveryWorkflowsView); err != nil {
 			continue
 		}
 		allowed = append(allowed, item)
@@ -278,7 +278,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, w
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionView, app, item.ApplicationID, configString(item.Metadata, "bindingId"), ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionView, app, item.ApplicationID, configString(item.Metadata, "bindingId"), appaccess.PermDeliveryWorkflowsView); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	return item, nil
@@ -298,13 +298,13 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	if run, binding, definition, ok, err := s.prepareBoundDAGRun(ctx, app, input); err != nil {
 		return domainworkflow.Run{}, err
 	} else if ok {
-		if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, ""); err != nil {
+		if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 			return domainworkflow.Run{}, err
 		}
 		created, err := s.repo.Create(ctx, run)
@@ -374,14 +374,14 @@ func (s *Service) TriggerValidation(ctx context.Context, principal domainidentit
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	run, binding, definition, err := s.prepareValidationDAGRun(ctx, app, input)
 	if err != nil {
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	created, err := s.repo.Create(ctx, run)
@@ -420,14 +420,14 @@ func (s *Service) TriggerRollback(ctx context.Context, principal domainidentity.
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, input.ApplicationEnvironmentID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	run, binding, definition, err := s.prepareRollbackDAGRun(ctx, app, input)
 	if err != nil {
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID, binding.ID, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	created, err := s.repo.Create(ctx, run)
