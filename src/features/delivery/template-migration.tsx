@@ -75,9 +75,19 @@ export function MigrationAssessment({ value }: { value?: TemplateMigrationAssess
     <Alert
       type={value.blocked ? 'error' : value.requiresApproval ? 'warning' : 'info'}
       showIcon
-      title={`迁移基线 ${value.fromVersion ? `v${value.fromVersion}` : '未知'} → v${value.toVersion}`}
+      title={
+        value.initialization
+          ? `首次发布 → v${value.toVersion} · 待确认运行基线`
+          : `迁移基线 ${value.fromVersion ? `v${value.fromVersion}` : '未知'} → v${value.toVersion}`
+      }
       description={
         <Space orientation="vertical" size={8}>
+          {value.initialization && (
+            <Typography.Text>
+              仅创建不存在的资源；已有部署但基线不明时仍阻断。执行后核对原始资源 UID
+              与健康状态，确认成功后才登记基线。
+            </Typography.Text>
+          )}
           <Typography.Text>{value.reason || '此区间没有额外迁移要求。'}</Typography.Text>
           {value.steps.map((step) => (
             <div key={`${step.version}:${step.contentDigest}`}>

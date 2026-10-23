@@ -34,6 +34,27 @@ beforeEach(() => {
   document.body.append(host)
   root = createRoot(host)
 })
+
+it('distinguishes verified first deployment from an unknown existing migration baseline', async () => {
+  const value = {
+    fromVersion: 0,
+    toVersion: 4,
+    initialization: true,
+    reason: '首次发布需审批',
+    requiresApproval: true,
+    blocked: false,
+    steps: [],
+  }
+  await act(async () => root.render(<MigrationAssessment value={value} />))
+  expect(host.textContent).toContain('首次发布 → v4 · 待确认运行基线')
+  expect(host.textContent).toContain('原始资源 UID 与健康状态')
+  expect(host.textContent).not.toContain('迁移基线 未知')
+  await act(async () =>
+    root.render(<MigrationAssessment value={{ ...value, initialization: false, blocked: true }} />),
+  )
+  expect(host.textContent).toContain('迁移基线 未知 → v4')
+  expect(host.textContent).not.toContain('首次发布 →')
+})
 afterEach(async () => {
   await act(async () => root.unmount())
   host.remove()
