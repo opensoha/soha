@@ -24,6 +24,7 @@ jobs:
         with:
           repository: opensoha/soha-contracts
           path: soha-contracts
+          ref: cda62e2aabd7ac771b7948080827a838b436edea # v0.1.26
           token: ${{ github.token }}
           persist-credentials: false
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
