@@ -26,7 +26,7 @@ jobs:
         with:
           repository: opensoha/soha-contracts
           path: soha-contracts
-          ref: ${{ inputs.latest_siblings && 'main' || '9d23081036491f629d69be9ac78a14d5ff5db929' }}
+          ref: ${{ inputs.latest_siblings && 'main' || 'cda62e2aabd7ac771b7948080827a838b436edea' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Checkout web
         uses: actions/checkout@v7
