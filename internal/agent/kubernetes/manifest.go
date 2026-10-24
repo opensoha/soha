@@ -186,7 +186,7 @@ func (c *Client) patchManifestDocument(ctx context.Context, mapper manifestRESTM
 	defer cancel()
 	var live *unstructured.Unstructured
 	if payload.InitializationPlanID != "" {
-		live, err = resourceruntime.CreateManifest(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, metav1.CreateOptions{FieldManager: options.FieldManager, DryRun: options.DryRun})
+		live, err = createInitializedManifest(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, options)
 	} else if payload.RootResource != nil {
 		live, err = resourceruntime.ApplyRootCR(queryCtx, manifestResource(c.dynamic, mapping, document.Namespace), desired, *payload.RootResource, options)
 	} else {
