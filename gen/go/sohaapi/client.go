@@ -300,6 +300,113 @@ func (c *Client) GetAuthLoginOptions(ctx context.Context) (LoginOptions, error) 
 	return out.Data, nil
 }
 
+func (c *Client) GetCLIAuthOptions(ctx context.Context) (CLIAuthOptions, error) {
+	var out CLIAuthOptionsEnvelope
+	if err := c.doJSON(ctx, http.MethodGet, "/auth/cli/options", false, nil, &out); err != nil {
+		return CLIAuthOptions{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) CreateCLIDeviceAuthorization(ctx context.Context, req CLIDeviceAuthorizationCreateRequest) (CLIDeviceAuthorization, error) {
+	var out CLIDeviceAuthorizationEnvelope
+	if err := c.doJSON(ctx, http.MethodPost, "/auth/cli/device-authorizations", false, req, &out); err != nil {
+		return CLIDeviceAuthorization{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) InspectCLIDeviceAuthorization(ctx context.Context, req CLIDeviceInspectRequest) (CLIDeviceConfirmation, error) {
+	var out CLIDeviceConfirmationEnvelope
+	if err := c.doJSON(ctx, http.MethodPost, "/auth/cli/device-authorizations/inspect", true, req, &out); err != nil {
+		return CLIDeviceConfirmation{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) DecideCLIDeviceAuthorization(ctx context.Context, req CLIDeviceDecisionRequest) (CLIDeviceAuthorizationStatus, error) {
+	var out CLIDeviceAuthorizationStatusEnvelope
+	if err := c.doJSON(ctx, http.MethodPost, "/auth/cli/device-authorizations/decision", true, req, &out); err != nil {
+		return CLIDeviceAuthorizationStatus{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) ExchangeCLIDeviceToken(ctx context.Context, req CLIDeviceTokenRequest) (AuthResult, error) {
+	var out AuthResultEnvelope
+	if err := c.doJSON(ctx, http.MethodPost, "/auth/cli/device-token", false, req, &out); err != nil {
+		return AuthResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) CancelCLIDeviceAuthorization(ctx context.Context, req CLIDeviceCancelRequest) (CLIDeviceAuthorizationStatus, error) {
+	var out CLIDeviceAuthorizationStatusEnvelope
+	if err := c.doJSON(ctx, http.MethodPost, "/auth/cli/device-authorizations/cancel", false, req, &out); err != nil {
+		return CLIDeviceAuthorizationStatus{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) CLIPasswordLogin(ctx context.Context, req PasswordLoginRequest) (AuthResult, error) {
+	var out AuthResultEnvelope
+	if err := c.doJSON(ctx, http.MethodPost, "/auth/cli/password", false, req, &out); err != nil {
+		return AuthResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) RefreshCLISession(ctx context.Context, req CLIRefreshRequest) (AuthResult, error) {
+	var out AuthResultEnvelope
+	if err := c.doJSON(ctx, http.MethodPost, "/auth/cli/refresh", false, req, &out); err != nil {
+		return AuthResult{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) GetAuthContext(ctx context.Context) (CLIAuthContext, error) {
+	var out CLIAuthContextEnvelope
+	if err := c.doJSON(ctx, http.MethodGet, "/auth/context", true, nil, &out); err != nil {
+		return CLIAuthContext{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) LogoutCLISession(ctx context.Context, req CLILogoutRequest) error {
+	return c.doJSON(ctx, http.MethodPost, "/auth/cli/logout", false, req, nil)
+}
+
+func (c *Client) ListCLISessions(ctx context.Context, params ListCLISessionsParams) (CLISessionPage, error) {
+	var out CLISessionPageEnvelope
+	query := url.Values{}
+	if params.Limit > 0 {
+		query.Set("limit", strconv.Itoa(params.Limit))
+	}
+	if params.Cursor != "" {
+		query.Set("cursor", params.Cursor)
+	}
+	path := "/auth/cli/sessions"
+	if len(query) > 0 {
+		path += "?" + query.Encode()
+	}
+	if err := c.doJSON(ctx, http.MethodGet, path, true, nil, &out); err != nil {
+		return CLISessionPage{}, err
+	}
+	return out.Data, nil
+}
+
+func (c *Client) RevokeCLISession(ctx context.Context, sessionID string) error {
+	return c.doJSON(ctx, http.MethodPost, "/auth/cli/sessions/"+url.PathEscape(strings.TrimSpace(sessionID))+"/revoke", true, nil, nil)
+}
+
+func (c *Client) GetTokenRotation(ctx context.Context, requestID string) (TokenRotationRecord, error) {
+	var out TokenRotationRecordEnvelope
+	if err := c.doJSON(ctx, http.MethodGet, "/ai-gateway/token-rotations/"+url.PathEscape(strings.TrimSpace(requestID)), true, nil, &out); err != nil {
+		return TokenRotationRecord{}, err
+	}
+	return out.Data, nil
+}
+
 func (c *Client) PasswordLogin(ctx context.Context, req PasswordLoginRequest) (AuthResult, error) {
 	var out AuthResultEnvelope
 	if err := c.doJSON(ctx, http.MethodPost, "/auth/login", false, req, &out); err != nil {

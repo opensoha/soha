@@ -18052,22 +18052,26 @@ paths:
     post:
       tags: [Identity]
       operationId: beginTOTPEnrollment
+      description: Existing TOTP credentials create a step-up challenge. Registering a new factor when other MFA exists requires recent step-up verification.
       responses:
         "201":
           description: Short-lived TOTP enrollment challenge.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MFAEnrollmentChallengeEnvelope" }
+        "403": { $ref: "#/components/responses/IdentityError" }
   /identity/mfa/webauthn/enroll:
     post:
       tags: [Identity]
       operationId: beginWebAuthnEnrollment
+      description: Registering another factor requires recent verification with an existing MFA method.
       responses:
         "201":
           description: WebAuthn registration challenge.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/MFAWebAuthnCreationOptionsEnvelope" }
+        "403": { $ref: "#/components/responses/IdentityError" }
   /identity/mfa/webauthn/authenticate:
     post:
       tags: [Identity]
@@ -20685,6 +20689,437 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
 
+  /auth/cli/options:
+    get:
+      tags:
+        - Auth
+      operationId: getCLIAuthOptions
+      description: Advertise CLI protocol v2 and enabled methods. Capability discovery has no authentication or login side effects.
+      security: []
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CLIAuthOptionsEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/cli/device-authorizations:
+    post:
+      tags:
+        - Auth
+      operationId: createCLIDeviceAuthorization
+      description: Create a short lived request bound device grant (five minutes by default). Only the returned high entropy verification link and six digit userCode together identify the request; userCode is never globally searchable. Creation, active grants, polling and verification attempts have finite limits shared across replicas. Tokens and links must not be logged. All responses use Cache-Control no-store.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CLIDeviceAuthorizationCreateRequest"
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CLIDeviceAuthorizationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/cli/device-authorizations/inspect:
+    post:
+      tags:
+        - Auth
+      operationId: inspectCLIDeviceAuthorization
+      description: Requires an authenticated browser session and the configured Origin. Validate the request bound handle and six digit code, then issue an account and browser-session bound short lived confirmation. Five incorrect codes permanently lock this grant; source and account attempt budgets also apply across replicas. Expired, denied, cancelled, consumed or locked grants cannot produce a new confirmation. PAT, service account, dev-auth and CLI v2 sessions cannot approve grants.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CLIDeviceInspectRequest"
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CLIDeviceConfirmationEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/cli/device-authorizations/decision:
+    post:
+      tags:
+        - Auth
+      operationId: decideCLIDeviceAuthorization
+      description: Requires explicit approval or denial by the same account and browser session that inspected the request. The confirmation, code and high entropy handle are all required. Origin is checked and no CLI token is returned to the browser.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CLIDeviceDecisionRequest"
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CLIDeviceAuthorizationStatusEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/cli/device-token:
+    post:
+      tags:
+        - Auth
+      operationId: exchangeCLIDeviceToken
+      description: PKCE-bound polling. authorization_pending returns 409; slow_down returns 429 with Retry-After. A successful claim is atomic with session creation. Reusing the same claimRequestId, deviceCode and PKCE within 30 seconds recovers the original encrypted receipt. Other claim IDs or invalid PKCE never retrieve a token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CLIDeviceTokenRequest"
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResultEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          description: Pending authorization or device grant conflict.
+          headers:
+            Retry-After:
+              description: Delay in seconds before polling again; present for authorization_pending.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "429":
+          description: Polling too quickly or request budget exhausted.
+          headers:
+            Retry-After:
+              description: Delay in seconds before polling again; present for slow_down.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/cli/device-authorizations/cancel:
+    post:
+      tags:
+        - Auth
+      operationId: cancelCLIDeviceAuthorization
+      description: Authenticated by the deviceCode and original PKCE verifier. Cancels the request and revokes any CLI session already issued by it, including after a lost response.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CLIDeviceCancelRequest"
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CLIDeviceAuthorizationStatusEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/cli/password:
+    post:
+      tags:
+        - Auth
+      operationId: passwordLoginCLI
+      description: Explicit compatibility method for local password accounts only. Existing login policy and additional verification requirements must be enforced; unsupported extra verification directs the user to browser authorization. Never changes v1 Web or App sessions or cookies.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasswordLoginRequest"
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResultEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/cli/refresh:
+    post:
+      tags:
+        - Auth
+      operationId: refreshCLISession
+      description: Rotate an opaque CLI v2 refresh credential with a durable client request ID. Same credential and request ID may recover a response for 30 seconds. Reuse with another ID revokes the family. Sessions slide idle expiry but retain the original absolute deadline; existing v1 refresh semantics are unchanged.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CLIRefreshRequest"
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResultEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/cli/logout:
+    post:
+      tags:
+        - Auth
+      operationId: logoutCLISession
+      description: Revoke the CLI v2 session using its refresh credential even if access expired. Does not accept cookies or revoke unrelated sessions. Successful responses have no body.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CLILogoutRequest"
+      responses:
+        "200":
+          description: Successful operation.
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/context:
+    get:
+      tags:
+        - Auth
+      operationId: getAuthContext
+      description: Describe the authenticated session, personal access token or service account token with its existing effective permissions and scopes. Service accounts do not require a user profile; this endpoint grants no additional permission.
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CLIAuthContextEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/cli/sessions:
+    get:
+      tags:
+        - Auth
+      operationId: listCLISessions
+      description: List only the current user s CLI v2 sessions in descending creation order using an opaque owner-bound cursor. Key and service account callers cannot manage browser sessions.
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CLISessionPageEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 1024
+  /auth/cli/sessions/{sessionID}/revoke:
+    post:
+      tags:
+        - Auth
+      operationId: revokeOwnCLISession
+      description: Revoke only the current user s CLI v2 session. Other users and Web or App sessions are not accessible through this endpoint. Successful responses have no body.
+      responses:
+        "200":
+          description: Successful operation.
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+      parameters:
+        - name: sessionID
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+  /ai-gateway/token-rotations/{rotationRequestId}:
+    get:
+      tags:
+        - Auth
+      operationId: getTokenRotationRecord
+      description: Return the durable atomic rotation association to the original user or authorized token administrator. Requires a separately valid credential after rotation revoked the old key. Never returns or replays the new key value; the replacement can be located for recovery and revocation even if audit recording failed.
+      responses:
+        "200":
+          description: Successful operation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenRotationRecordEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+        "404": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+      parameters:
+        - name: rotationRequestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+
 components:
   securitySchemes:
     bearerAuth:
@@ -21659,6 +22094,567 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
   schemas:
+    CLIAuthOptions:
+      type: object
+      required:
+        - enabled
+        - protocolVersion
+        - supportedMethods
+        - deviceCodeExpiresIn
+        - interval
+        - sessionIdleExpiresIn
+        - sessionAbsoluteExpiresIn
+      properties:
+        enabled:
+          type: boolean
+        protocolVersion:
+          type: integer
+          format: int32
+          enum:
+            - 2
+          x-enum-varnames:
+            - CLIAuthOptionsProtocolVersionN2
+        supportedMethods:
+          type: array
+          items:
+            type: string
+            enum:
+              - device_code
+              - password
+              - key
+            x-enum-varnames:
+              - CLIAuthOptionsSupportedMethodsDeviceCode
+              - CLIAuthOptionsSupportedMethodsPassword
+              - CLIAuthOptionsSupportedMethodsKey
+        verificationOrigin:
+          type: string
+          format: uri
+        deviceCodeExpiresIn:
+          type: integer
+          format: int32
+          minimum: 0
+        interval:
+          type: integer
+          format: int32
+          minimum: 0
+        sessionIdleExpiresIn:
+          type: integer
+          format: int32
+          minimum: 0
+        sessionAbsoluteExpiresIn:
+          type: integer
+          format: int32
+          minimum: 0
+      additionalProperties: false
+    CLIDeviceAuthorizationCreateRequest:
+      type: object
+      required:
+        - clientId
+        - codeChallenge
+        - codeChallengeMethod
+      properties:
+        clientId:
+          type: string
+          enum:
+            - soha-cli
+          x-enum-varnames:
+            - CLIDeviceAuthorizationCreateRequestClientIdSohaCli
+        clientVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        deviceName:
+          type: string
+          minLength: 1
+          maxLength: 128
+        codeChallenge:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: ^[A-Za-z0-9_-]{43}$
+        codeChallengeMethod:
+          type: string
+          enum:
+            - S256
+          x-enum-varnames:
+            - CLIDeviceAuthorizationCreateRequestCodeChallengeMethodS256
+        permissionKeys:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          uniqueItems: true
+          maxItems: 256
+      additionalProperties: false
+    CLIDeviceAuthorization:
+      type: object
+      required:
+        - grantId
+        - deviceCode
+        - userCode
+        - verificationUri
+        - expiresIn
+        - expiresAt
+        - interval
+      properties:
+        grantId:
+          type: string
+          format: uuid
+        deviceCode:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: ^[A-Za-z0-9_-]{43}$
+        userCode:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: ^[0-9]{6}$
+        verificationUri:
+          type: string
+          format: uri
+        expiresIn:
+          type: integer
+          format: int32
+          minimum: 0
+        expiresAt:
+          type: string
+          format: date-time
+        interval:
+          type: integer
+          format: int32
+          minimum: 0
+      additionalProperties: false
+    CLIDeviceInspectRequest:
+      type: object
+      required:
+        - verificationHandle
+        - userCode
+      properties:
+        verificationHandle:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: ^[A-Za-z0-9_-]{43}$
+        userCode:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: ^[0-9]{6}$
+      additionalProperties: false
+    CLIDeviceConfirmation:
+      type: object
+      required:
+        - grantId
+        - confirmationId
+        - deviceName
+        - clientVersion
+        - user
+        - permissionKeys
+        - expiresAt
+        - confirmationExpiresAt
+        - sessionAbsoluteExpiresIn
+      properties:
+        grantId:
+          type: string
+          format: uuid
+        confirmationId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: ^[A-Za-z0-9_-]{43}$
+        deviceName:
+          type: string
+          minLength: 1
+          maxLength: 128
+        clientVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        user:
+          $ref: "#/components/schemas/Principal"
+        permissionKeys:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          uniqueItems: true
+          maxItems: 4096
+        expiresAt:
+          type: string
+          format: date-time
+        confirmationExpiresAt:
+          type: string
+          format: date-time
+        sessionAbsoluteExpiresIn:
+          type: integer
+          format: int32
+          minimum: 0
+      additionalProperties: false
+    CLIDeviceDecisionRequest:
+      type: object
+      required:
+        - verificationHandle
+        - userCode
+        - confirmationId
+        - decision
+      properties:
+        verificationHandle:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: ^[A-Za-z0-9_-]{43}$
+        userCode:
+          type: string
+          minLength: 6
+          maxLength: 6
+          pattern: ^[0-9]{6}$
+        confirmationId:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: ^[A-Za-z0-9_-]{43}$
+        decision:
+          type: string
+          enum:
+            - approve
+            - deny
+          x-enum-varnames:
+            - CLIDeviceDecisionRequestDecisionApprove
+            - CLIDeviceDecisionRequestDecisionDeny
+      additionalProperties: false
+    CLIDeviceAuthorizationStatus:
+      type: object
+      required:
+        - grantId
+        - status
+        - expiresAt
+      properties:
+        grantId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - pending
+            - approved
+            - denied
+            - issued
+            - cancelled
+            - expired
+          x-enum-varnames:
+            - CLIDeviceAuthorizationStatusStatusPending
+            - CLIDeviceAuthorizationStatusStatusApproved
+            - CLIDeviceAuthorizationStatusStatusDenied
+            - CLIDeviceAuthorizationStatusStatusIssued
+            - CLIDeviceAuthorizationStatusStatusCancelled
+            - CLIDeviceAuthorizationStatusStatusExpired
+        expiresAt:
+          type: string
+          format: date-time
+        sessionId:
+          type: string
+          format: uuid
+      additionalProperties: false
+    CLIDeviceTokenRequest:
+      type: object
+      required:
+        - deviceCode
+        - codeVerifier
+        - claimRequestId
+      properties:
+        deviceCode:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: ^[A-Za-z0-9_-]{43}$
+        codeVerifier:
+          type: string
+          minLength: 43
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._~-]+$
+        claimRequestId:
+          type: string
+          format: uuid
+      additionalProperties: false
+    CLIDeviceCancelRequest:
+      type: object
+      required:
+        - deviceCode
+        - codeVerifier
+      properties:
+        deviceCode:
+          type: string
+          minLength: 43
+          maxLength: 43
+          pattern: ^[A-Za-z0-9_-]{43}$
+        codeVerifier:
+          type: string
+          minLength: 43
+          maxLength: 128
+          pattern: ^[A-Za-z0-9._~-]+$
+      additionalProperties: false
+    CLIRefreshRequest:
+      type: object
+      required:
+        - refreshToken
+        - refreshRequestId
+      properties:
+        refreshToken:
+          type: string
+          minLength: 32
+          maxLength: 1024
+        refreshRequestId:
+          type: string
+          format: uuid
+      additionalProperties: false
+    CLILogoutRequest:
+      type: object
+      required:
+        - refreshToken
+      properties:
+        refreshToken:
+          type: string
+          minLength: 32
+          maxLength: 1024
+      additionalProperties: false
+    CLIAuthContext:
+      type: object
+      required:
+        - credentialKind
+        - subjectType
+        - subjectId
+        - displayName
+        - permissionKeys
+        - scopes
+      properties:
+        credentialKind:
+          type: string
+          enum:
+            - session
+            - personal_access_token
+            - service_account_token
+          x-enum-varnames:
+            - CLIAuthContextCredentialKindSession
+            - CLIAuthContextCredentialKindPersonalAccessToken
+            - CLIAuthContextCredentialKindServiceAccountToken
+        subjectType:
+          type: string
+          enum:
+            - user
+            - service_account
+          x-enum-varnames:
+            - CLIAuthContextSubjectTypeUser
+            - CLIAuthContextSubjectTypeServiceAccount
+        subjectId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        displayName:
+          type: string
+          minLength: 1
+          maxLength: 512
+        tokenId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        sessionId:
+          type: string
+          format: uuid
+        permissionKeys:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          uniqueItems: true
+          maxItems: 4096
+        scopes:
+          type: array
+          items:
+            type: string
+            minLength: 1
+            maxLength: 128
+          uniqueItems: true
+          maxItems: 256
+        expiresAt:
+          type: string
+          format: date-time
+        refreshExpiresAt:
+          type: string
+          format: date-time
+        sessionAbsoluteExpiresAt:
+          type: string
+          format: date-time
+      additionalProperties: false
+    CLISession:
+      type: object
+      required:
+        - id
+        - deviceName
+        - clientVersion
+        - createdAt
+        - lastSeenAt
+        - expiresAt
+        - absoluteExpiresAt
+        - status
+        - current
+      properties:
+        id:
+          type: string
+          format: uuid
+        deviceName:
+          type: string
+          minLength: 1
+          maxLength: 128
+        clientVersion:
+          type: string
+          minLength: 1
+          maxLength: 128
+        createdAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        absoluteExpiresAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum:
+            - active
+            - revoked
+            - expired
+          x-enum-varnames:
+            - CLISessionStatusActive
+            - CLISessionStatusRevoked
+            - CLISessionStatusExpired
+        current:
+          type: boolean
+      additionalProperties: false
+    CLISessionPage:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CLISession"
+        nextCursor:
+          type: string
+          minLength: 1
+          maxLength: 1024
+      additionalProperties: false
+    TokenRotationRecord:
+      type: object
+      required:
+        - rotationRequestId
+        - tokenKind
+        - previousTokenId
+        - replacementTokenId
+        - status
+        - rotatedAt
+        - newValueRetrievable
+      properties:
+        rotationRequestId:
+          type: string
+          format: uuid
+        tokenKind:
+          type: string
+          enum:
+            - personal_access_token
+            - service_account_token
+          x-enum-varnames:
+            - TokenRotationRecordTokenKindPersonalAccessToken
+            - TokenRotationRecordTokenKindServiceAccountToken
+        previousTokenId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        replacementTokenId:
+          type: string
+          minLength: 1
+          maxLength: 128
+        status:
+          type: string
+          enum:
+            - completed
+          x-enum-varnames:
+            - TokenRotationRecordStatusCompleted
+        rotatedAt:
+          type: string
+          format: date-time
+        newValueRetrievable:
+          type: boolean
+          enum:
+            - false
+          x-enum-varnames:
+            - TokenRotationRecordNewValueRetrievableFalse
+      additionalProperties: false
+    CLIAuthOptionsEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/CLIAuthOptions"
+      additionalProperties: false
+    CLIDeviceAuthorizationEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/CLIDeviceAuthorization"
+      additionalProperties: false
+    CLIDeviceConfirmationEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/CLIDeviceConfirmation"
+      additionalProperties: false
+    CLIDeviceAuthorizationStatusEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/CLIDeviceAuthorizationStatus"
+      additionalProperties: false
+    CLIAuthContextEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/CLIAuthContext"
+      additionalProperties: false
+    CLISessionPageEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/CLISessionPage"
+      additionalProperties: false
+    TokenRotationRecordEnvelope:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          $ref: "#/components/schemas/TokenRotationRecord"
+      additionalProperties: false
+
     NetworkVPNAccessMode:
       type: string
       enum:
@@ -23014,6 +24010,7 @@ components:
         target:
           type: string
           enum: [subject, username, email, displayName, role, organization, team, project]
+          x-enum-varnames: [SAMLAttributeMappingTargetSubject, SAMLAttributeMappingTargetUsername, SAMLAttributeMappingTargetEmail, SAMLAttributeMappingTargetDisplayName, SAMLAttributeMappingTargetRole, SAMLAttributeMappingTargetOrganization, SAMLAttributeMappingTargetTeam, SAMLAttributeMappingTargetProject]
         required: { type: boolean, default: false }
       additionalProperties: false
     CertificateSummary:
@@ -24907,6 +25904,7 @@ components:
     ScopeGrantSubjectType:
       type: string
       enum: [user, team]
+      x-enum-varnames: [ScopeGrantSubjectTypeUser, ScopeGrantSubjectTypeTeam]
     ScopeGrantType:
       type: string
       enum: [legacy, delivery, platform]
@@ -30134,6 +31132,7 @@ components:
       properties:
         accessToken:
           type: string
+          description: V2 CLI access JWTs use token_type cli_access and a CLI v2 session binding. Older Core versions must reject this type rather than accepting it without the persisted CLI permission ceiling. Existing v1 access JWTs retain token_type access.
         refreshToken:
           type: string
         tokenType:
@@ -30144,6 +31143,24 @@ components:
         expiresAt:
           type: string
           format: date-time
+        credentialKind:
+          type: string
+          enum:
+            - session
+        protocolVersion:
+          type: integer
+          format: int32
+          enum:
+            - 2
+        refreshExpiresAt:
+          type: string
+          format: date-time
+        sessionAbsoluteExpiresAt:
+          type: string
+          format: date-time
+        sessionId:
+          type: string
+          format: uuid
       additionalProperties: false
     AuthResult:
       type: object
@@ -48443,6 +49460,10 @@ components:
     TokenRotationInput:
       type: object
       properties:
+        rotationRequestId:
+          type: string
+          format: uuid
+          description: Generate and durably save this identifier before sending the rotation request. It identifies the independent outcome lookup if the response is lost. Omission remains compatible with older callers, but their server generated identifier cannot be recovered from a lost response; a new identifier is a new rotation, not a safe retry.
         expiresAt:
           type: string
           format: date-time

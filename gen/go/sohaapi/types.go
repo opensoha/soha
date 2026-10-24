@@ -1022,6 +1022,180 @@ func (e BuildpacksExecutionSpecRuntime) Valid() bool {
 	}
 }
 
+// Defines values for CLIAuthContextCredentialKind.
+const (
+	CLIAuthContextCredentialKindPersonalAccessToken CLIAuthContextCredentialKind = "personal_access_token"
+	CLIAuthContextCredentialKindServiceAccountToken CLIAuthContextCredentialKind = "service_account_token"
+	CLIAuthContextCredentialKindSession             CLIAuthContextCredentialKind = "session"
+)
+
+// Valid indicates whether the value is a known member of the CLIAuthContextCredentialKind enum.
+func (e CLIAuthContextCredentialKind) Valid() bool {
+	switch e {
+	case CLIAuthContextCredentialKindPersonalAccessToken:
+		return true
+	case CLIAuthContextCredentialKindServiceAccountToken:
+		return true
+	case CLIAuthContextCredentialKindSession:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CLIAuthContextSubjectType.
+const (
+	CLIAuthContextSubjectTypeServiceAccount CLIAuthContextSubjectType = "service_account"
+	CLIAuthContextSubjectTypeUser           CLIAuthContextSubjectType = "user"
+)
+
+// Valid indicates whether the value is a known member of the CLIAuthContextSubjectType enum.
+func (e CLIAuthContextSubjectType) Valid() bool {
+	switch e {
+	case CLIAuthContextSubjectTypeServiceAccount:
+		return true
+	case CLIAuthContextSubjectTypeUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CLIAuthOptionsProtocolVersion.
+const (
+	CLIAuthOptionsProtocolVersionN2 CLIAuthOptionsProtocolVersion = 2
+)
+
+// Valid indicates whether the value is a known member of the CLIAuthOptionsProtocolVersion enum.
+func (e CLIAuthOptionsProtocolVersion) Valid() bool {
+	switch e {
+	case CLIAuthOptionsProtocolVersionN2:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CLIAuthOptionsSupportedMethods.
+const (
+	CLIAuthOptionsSupportedMethodsDeviceCode CLIAuthOptionsSupportedMethods = "device_code"
+	CLIAuthOptionsSupportedMethodsKey        CLIAuthOptionsSupportedMethods = "key"
+	CLIAuthOptionsSupportedMethodsPassword   CLIAuthOptionsSupportedMethods = "password"
+)
+
+// Valid indicates whether the value is a known member of the CLIAuthOptionsSupportedMethods enum.
+func (e CLIAuthOptionsSupportedMethods) Valid() bool {
+	switch e {
+	case CLIAuthOptionsSupportedMethodsDeviceCode:
+		return true
+	case CLIAuthOptionsSupportedMethodsKey:
+		return true
+	case CLIAuthOptionsSupportedMethodsPassword:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CLIDeviceAuthorizationCreateRequestClientID.
+const (
+	CLIDeviceAuthorizationCreateRequestClientIDSohaCli CLIDeviceAuthorizationCreateRequestClientID = "soha-cli"
+)
+
+// Valid indicates whether the value is a known member of the CLIDeviceAuthorizationCreateRequestClientID enum.
+func (e CLIDeviceAuthorizationCreateRequestClientID) Valid() bool {
+	switch e {
+	case CLIDeviceAuthorizationCreateRequestClientIDSohaCli:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CLIDeviceAuthorizationCreateRequestCodeChallengeMethod.
+const (
+	CLIDeviceAuthorizationCreateRequestCodeChallengeMethodS256 CLIDeviceAuthorizationCreateRequestCodeChallengeMethod = "S256"
+)
+
+// Valid indicates whether the value is a known member of the CLIDeviceAuthorizationCreateRequestCodeChallengeMethod enum.
+func (e CLIDeviceAuthorizationCreateRequestCodeChallengeMethod) Valid() bool {
+	switch e {
+	case CLIDeviceAuthorizationCreateRequestCodeChallengeMethodS256:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CLIDeviceAuthorizationStatusStatus.
+const (
+	CLIDeviceAuthorizationStatusStatusApproved  CLIDeviceAuthorizationStatusStatus = "approved"
+	CLIDeviceAuthorizationStatusStatusCancelled CLIDeviceAuthorizationStatusStatus = "cancelled"
+	CLIDeviceAuthorizationStatusStatusDenied    CLIDeviceAuthorizationStatusStatus = "denied"
+	CLIDeviceAuthorizationStatusStatusExpired   CLIDeviceAuthorizationStatusStatus = "expired"
+	CLIDeviceAuthorizationStatusStatusIssued    CLIDeviceAuthorizationStatusStatus = "issued"
+	CLIDeviceAuthorizationStatusStatusPending   CLIDeviceAuthorizationStatusStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the CLIDeviceAuthorizationStatusStatus enum.
+func (e CLIDeviceAuthorizationStatusStatus) Valid() bool {
+	switch e {
+	case CLIDeviceAuthorizationStatusStatusApproved:
+		return true
+	case CLIDeviceAuthorizationStatusStatusCancelled:
+		return true
+	case CLIDeviceAuthorizationStatusStatusDenied:
+		return true
+	case CLIDeviceAuthorizationStatusStatusExpired:
+		return true
+	case CLIDeviceAuthorizationStatusStatusIssued:
+		return true
+	case CLIDeviceAuthorizationStatusStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CLIDeviceDecisionRequestDecision.
+const (
+	CLIDeviceDecisionRequestDecisionApprove CLIDeviceDecisionRequestDecision = "approve"
+	CLIDeviceDecisionRequestDecisionDeny    CLIDeviceDecisionRequestDecision = "deny"
+)
+
+// Valid indicates whether the value is a known member of the CLIDeviceDecisionRequestDecision enum.
+func (e CLIDeviceDecisionRequestDecision) Valid() bool {
+	switch e {
+	case CLIDeviceDecisionRequestDecisionApprove:
+		return true
+	case CLIDeviceDecisionRequestDecisionDeny:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CLISessionStatus.
+const (
+	CLISessionStatusActive  CLISessionStatus = "active"
+	CLISessionStatusExpired CLISessionStatus = "expired"
+	CLISessionStatusRevoked CLISessionStatus = "revoked"
+)
+
+// Valid indicates whether the value is a known member of the CLISessionStatus enum.
+func (e CLISessionStatus) Valid() bool {
+	switch e {
+	case CLISessionStatusActive:
+		return true
+	case CLISessionStatusExpired:
+		return true
+	case CLISessionStatusRevoked:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CapabilityAssessmentVerdict.
 const (
 	CapabilityAssessmentVerdictInconclusive CapabilityAssessmentVerdict = "inconclusive"
@@ -10301,6 +10475,84 @@ func (e TemplateUpdateTargetScope) Valid() bool {
 	}
 }
 
+// Defines values for TokenRotationRecordNewValueRetrievable.
+const (
+	TokenRotationRecordNewValueRetrievableFalse TokenRotationRecordNewValueRetrievable = false
+)
+
+// Valid indicates whether the value is a known member of the TokenRotationRecordNewValueRetrievable enum.
+func (e TokenRotationRecordNewValueRetrievable) Valid() bool {
+	switch e {
+	case TokenRotationRecordNewValueRetrievableFalse:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenRotationRecordStatus.
+const (
+	TokenRotationRecordStatusCompleted TokenRotationRecordStatus = "completed"
+)
+
+// Valid indicates whether the value is a known member of the TokenRotationRecordStatus enum.
+func (e TokenRotationRecordStatus) Valid() bool {
+	switch e {
+	case TokenRotationRecordStatusCompleted:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenRotationRecordTokenKind.
+const (
+	TokenRotationRecordTokenKindPersonalAccessToken TokenRotationRecordTokenKind = "personal_access_token"
+	TokenRotationRecordTokenKindServiceAccountToken TokenRotationRecordTokenKind = "service_account_token"
+)
+
+// Valid indicates whether the value is a known member of the TokenRotationRecordTokenKind enum.
+func (e TokenRotationRecordTokenKind) Valid() bool {
+	switch e {
+	case TokenRotationRecordTokenKindPersonalAccessToken:
+		return true
+	case TokenRotationRecordTokenKindServiceAccountToken:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenSetCredentialKind.
+const (
+	Session TokenSetCredentialKind = "session"
+)
+
+// Valid indicates whether the value is a known member of the TokenSetCredentialKind enum.
+func (e TokenSetCredentialKind) Valid() bool {
+	switch e {
+	case Session:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenSetProtocolVersion.
+const (
+	N2 TokenSetProtocolVersion = 2
+)
+
+// Valid indicates whether the value is a known member of the TokenSetProtocolVersion enum.
+func (e TokenSetProtocolVersion) Valid() bool {
+	switch e {
+	case N2:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ToolExecutionContractMode.
 const (
 	Async ToolExecutionContractMode = "async"
@@ -14985,6 +15237,189 @@ type BuildpacksExecutionSpec struct {
 
 // BuildpacksExecutionSpecRuntime Frozen execution backend. Omission means pack; unsupported backends must be rejected.
 type BuildpacksExecutionSpecRuntime string
+
+// CLIAuthContext defines model for CLIAuthContext.
+type CLIAuthContext struct {
+	CredentialKind           CLIAuthContextCredentialKind `json:"credentialKind"`
+	DisplayName              string                       `json:"displayName"`
+	ExpiresAt                *time.Time                   `json:"expiresAt,omitempty"`
+	PermissionKeys           []string                     `json:"permissionKeys"`
+	RefreshExpiresAt         *time.Time                   `json:"refreshExpiresAt,omitempty"`
+	Scopes                   []string                     `json:"scopes"`
+	SessionAbsoluteExpiresAt *time.Time                   `json:"sessionAbsoluteExpiresAt,omitempty"`
+	SessionID                openapi_types.UUID           `json:"sessionId,omitempty"`
+	SubjectID                string                       `json:"subjectId"`
+	SubjectType              CLIAuthContextSubjectType    `json:"subjectType"`
+	TokenID                  string                       `json:"tokenId,omitempty"`
+}
+
+// CLIAuthContextCredentialKind defines model for CLIAuthContext.CredentialKind.
+type CLIAuthContextCredentialKind string
+
+// CLIAuthContextSubjectType defines model for CLIAuthContext.SubjectType.
+type CLIAuthContextSubjectType string
+
+// CLIAuthContextEnvelope defines model for CLIAuthContextEnvelope.
+type CLIAuthContextEnvelope struct {
+	Data CLIAuthContext `json:"data"`
+}
+
+// CLIAuthOptions defines model for CLIAuthOptions.
+type CLIAuthOptions struct {
+	DeviceCodeExpiresIn      int32                            `json:"deviceCodeExpiresIn"`
+	Enabled                  bool                             `json:"enabled"`
+	Interval                 int32                            `json:"interval"`
+	ProtocolVersion          CLIAuthOptionsProtocolVersion    `json:"protocolVersion"`
+	SessionAbsoluteExpiresIn int32                            `json:"sessionAbsoluteExpiresIn"`
+	SessionIdleExpiresIn     int32                            `json:"sessionIdleExpiresIn"`
+	SupportedMethods         []CLIAuthOptionsSupportedMethods `json:"supportedMethods"`
+	VerificationOrigin       string                           `json:"verificationOrigin,omitempty"`
+}
+
+// CLIAuthOptionsProtocolVersion defines model for CLIAuthOptions.ProtocolVersion.
+type CLIAuthOptionsProtocolVersion int32
+
+// CLIAuthOptionsSupportedMethods defines model for CLIAuthOptions.SupportedMethods.
+type CLIAuthOptionsSupportedMethods string
+
+// CLIAuthOptionsEnvelope defines model for CLIAuthOptionsEnvelope.
+type CLIAuthOptionsEnvelope struct {
+	Data CLIAuthOptions `json:"data"`
+}
+
+// CLIDeviceAuthorization defines model for CLIDeviceAuthorization.
+type CLIDeviceAuthorization struct {
+	DeviceCode      string             `json:"deviceCode"`
+	ExpiresAt       time.Time          `json:"expiresAt"`
+	ExpiresIn       int32              `json:"expiresIn"`
+	GrantID         openapi_types.UUID `json:"grantId"`
+	Interval        int32              `json:"interval"`
+	UserCode        string             `json:"userCode"`
+	VerificationURI string             `json:"verificationUri"`
+}
+
+// CLIDeviceAuthorizationCreateRequest defines model for CLIDeviceAuthorizationCreateRequest.
+type CLIDeviceAuthorizationCreateRequest struct {
+	ClientID            CLIDeviceAuthorizationCreateRequestClientID            `json:"clientId"`
+	ClientVersion       string                                                 `json:"clientVersion,omitempty"`
+	CodeChallenge       string                                                 `json:"codeChallenge"`
+	CodeChallengeMethod CLIDeviceAuthorizationCreateRequestCodeChallengeMethod `json:"codeChallengeMethod"`
+	DeviceName          string                                                 `json:"deviceName,omitempty"`
+	PermissionKeys      []string                                               `json:"permissionKeys,omitempty"`
+}
+
+// CLIDeviceAuthorizationCreateRequestClientID defines model for CLIDeviceAuthorizationCreateRequest.ClientID.
+type CLIDeviceAuthorizationCreateRequestClientID string
+
+// CLIDeviceAuthorizationCreateRequestCodeChallengeMethod defines model for CLIDeviceAuthorizationCreateRequest.CodeChallengeMethod.
+type CLIDeviceAuthorizationCreateRequestCodeChallengeMethod string
+
+// CLIDeviceAuthorizationEnvelope defines model for CLIDeviceAuthorizationEnvelope.
+type CLIDeviceAuthorizationEnvelope struct {
+	Data CLIDeviceAuthorization `json:"data"`
+}
+
+// CLIDeviceAuthorizationStatus defines model for CLIDeviceAuthorizationStatus.
+type CLIDeviceAuthorizationStatus struct {
+	ExpiresAt time.Time                          `json:"expiresAt"`
+	GrantID   openapi_types.UUID                 `json:"grantId"`
+	SessionID openapi_types.UUID                 `json:"sessionId,omitempty"`
+	Status    CLIDeviceAuthorizationStatusStatus `json:"status"`
+}
+
+// CLIDeviceAuthorizationStatusStatus defines model for CLIDeviceAuthorizationStatus.Status.
+type CLIDeviceAuthorizationStatusStatus string
+
+// CLIDeviceAuthorizationStatusEnvelope defines model for CLIDeviceAuthorizationStatusEnvelope.
+type CLIDeviceAuthorizationStatusEnvelope struct {
+	Data CLIDeviceAuthorizationStatus `json:"data"`
+}
+
+// CLIDeviceCancelRequest defines model for CLIDeviceCancelRequest.
+type CLIDeviceCancelRequest struct {
+	CodeVerifier string `json:"codeVerifier"`
+	DeviceCode   string `json:"deviceCode"`
+}
+
+// CLIDeviceConfirmation defines model for CLIDeviceConfirmation.
+type CLIDeviceConfirmation struct {
+	ClientVersion            string             `json:"clientVersion"`
+	ConfirmationExpiresAt    time.Time          `json:"confirmationExpiresAt"`
+	ConfirmationID           string             `json:"confirmationId"`
+	DeviceName               string             `json:"deviceName"`
+	ExpiresAt                time.Time          `json:"expiresAt"`
+	GrantID                  openapi_types.UUID `json:"grantId"`
+	PermissionKeys           []string           `json:"permissionKeys"`
+	SessionAbsoluteExpiresIn int32              `json:"sessionAbsoluteExpiresIn"`
+	User                     Principal          `json:"user"`
+}
+
+// CLIDeviceConfirmationEnvelope defines model for CLIDeviceConfirmationEnvelope.
+type CLIDeviceConfirmationEnvelope struct {
+	Data CLIDeviceConfirmation `json:"data"`
+}
+
+// CLIDeviceDecisionRequest defines model for CLIDeviceDecisionRequest.
+type CLIDeviceDecisionRequest struct {
+	ConfirmationID     string                           `json:"confirmationId"`
+	Decision           CLIDeviceDecisionRequestDecision `json:"decision"`
+	UserCode           string                           `json:"userCode"`
+	VerificationHandle string                           `json:"verificationHandle"`
+}
+
+// CLIDeviceDecisionRequestDecision defines model for CLIDeviceDecisionRequest.Decision.
+type CLIDeviceDecisionRequestDecision string
+
+// CLIDeviceInspectRequest defines model for CLIDeviceInspectRequest.
+type CLIDeviceInspectRequest struct {
+	UserCode           string `json:"userCode"`
+	VerificationHandle string `json:"verificationHandle"`
+}
+
+// CLIDeviceTokenRequest defines model for CLIDeviceTokenRequest.
+type CLIDeviceTokenRequest struct {
+	ClaimRequestID openapi_types.UUID `json:"claimRequestId"`
+	CodeVerifier   string             `json:"codeVerifier"`
+	DeviceCode     string             `json:"deviceCode"`
+}
+
+// CLILogoutRequest defines model for CLILogoutRequest.
+type CLILogoutRequest struct {
+	RefreshToken string `json:"refreshToken"`
+}
+
+// CLIRefreshRequest defines model for CLIRefreshRequest.
+type CLIRefreshRequest struct {
+	RefreshRequestID openapi_types.UUID `json:"refreshRequestId"`
+	RefreshToken     string             `json:"refreshToken"`
+}
+
+// CLISession defines model for CLISession.
+type CLISession struct {
+	AbsoluteExpiresAt time.Time          `json:"absoluteExpiresAt"`
+	ClientVersion     string             `json:"clientVersion"`
+	CreatedAt         time.Time          `json:"createdAt"`
+	Current           bool               `json:"current"`
+	DeviceName        string             `json:"deviceName"`
+	ExpiresAt         time.Time          `json:"expiresAt"`
+	ID                openapi_types.UUID `json:"id"`
+	LastSeenAt        time.Time          `json:"lastSeenAt"`
+	Status            CLISessionStatus   `json:"status"`
+}
+
+// CLISessionStatus defines model for CLISession.Status.
+type CLISessionStatus string
+
+// CLISessionPage defines model for CLISessionPage.
+type CLISessionPage struct {
+	Items      []CLISession `json:"items"`
+	NextCursor string       `json:"nextCursor,omitempty"`
+}
+
+// CLISessionPageEnvelope defines model for CLISessionPageEnvelope.
+type CLISessionPageEnvelope struct {
+	Data CLISessionPage `json:"data"`
+}
 
 // CallerContext defines model for CallerContext.
 type CallerContext struct {
@@ -29898,16 +30333,56 @@ type TemplateVersionReference struct {
 // TokenRotationInput defines model for TokenRotationInput.
 type TokenRotationInput struct {
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+
+	// RotationRequestID Generate and durably save this identifier before sending the rotation request. It identifies the independent outcome lookup if the response is lost. Omission remains compatible with older callers, but their server generated identifier cannot be recovered from a lost response; a new identifier is a new rotation, not a safe retry.
+	RotationRequestID openapi_types.UUID `json:"rotationRequestId,omitempty"`
+}
+
+// TokenRotationRecord defines model for TokenRotationRecord.
+type TokenRotationRecord struct {
+	NewValueRetrievable TokenRotationRecordNewValueRetrievable `json:"newValueRetrievable"`
+	PreviousTokenID     string                                 `json:"previousTokenId"`
+	ReplacementTokenID  string                                 `json:"replacementTokenId"`
+	RotatedAt           time.Time                              `json:"rotatedAt"`
+	RotationRequestID   openapi_types.UUID                     `json:"rotationRequestId"`
+	Status              TokenRotationRecordStatus              `json:"status"`
+	TokenKind           TokenRotationRecordTokenKind           `json:"tokenKind"`
+}
+
+// TokenRotationRecordNewValueRetrievable defines model for TokenRotationRecord.NewValueRetrievable.
+type TokenRotationRecordNewValueRetrievable bool
+
+// TokenRotationRecordStatus defines model for TokenRotationRecord.Status.
+type TokenRotationRecordStatus string
+
+// TokenRotationRecordTokenKind defines model for TokenRotationRecord.TokenKind.
+type TokenRotationRecordTokenKind string
+
+// TokenRotationRecordEnvelope defines model for TokenRotationRecordEnvelope.
+type TokenRotationRecordEnvelope struct {
+	Data TokenRotationRecord `json:"data"`
 }
 
 // TokenSet defines model for TokenSet.
 type TokenSet struct {
-	AccessToken  string    `json:"accessToken"`
-	ExpiresAt    time.Time `json:"expiresAt"`
-	ExpiresIn    int64     `json:"expiresIn"`
-	RefreshToken string    `json:"refreshToken"`
-	TokenType    string    `json:"tokenType"`
+	// AccessToken V2 CLI access JWTs use token_type cli_access and a CLI v2 session binding. Older Core versions must reject this type rather than accepting it without the persisted CLI permission ceiling. Existing v1 access JWTs retain token_type access.
+	AccessToken              string                  `json:"accessToken"`
+	CredentialKind           TokenSetCredentialKind  `json:"credentialKind,omitempty"`
+	ExpiresAt                time.Time               `json:"expiresAt"`
+	ExpiresIn                int64                   `json:"expiresIn"`
+	ProtocolVersion          TokenSetProtocolVersion `json:"protocolVersion,omitempty"`
+	RefreshExpiresAt         *time.Time              `json:"refreshExpiresAt,omitempty"`
+	RefreshToken             string                  `json:"refreshToken"`
+	SessionAbsoluteExpiresAt *time.Time              `json:"sessionAbsoluteExpiresAt,omitempty"`
+	SessionID                openapi_types.UUID      `json:"sessionId,omitempty"`
+	TokenType                string                  `json:"tokenType"`
 }
+
+// TokenSetCredentialKind defines model for TokenSet.CredentialKind.
+type TokenSetCredentialKind string
+
+// TokenSetProtocolVersion defines model for TokenSet.ProtocolVersion.
+type TokenSetProtocolVersion int32
 
 // ToolCapability defines model for ToolCapability.
 type ToolCapability struct {
@@ -33474,6 +33949,12 @@ type SummarizePlatformAuditLogsParams struct {
 	To           time.Time `form:"to,omitempty" json:"to,omitempty"`
 }
 
+// ListCLISessionsParams defines parameters for ListCLISessions.
+type ListCLISessionsParams struct {
+	Limit  int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // HandleProviderCallbackParams defines parameters for HandleProviderCallback.
 type HandleProviderCallbackParams struct {
 	Code  OIDCCode  `form:"code,omitempty" json:"code,omitempty"`
@@ -35408,6 +35889,30 @@ type CreateApplicationServiceJSONRequestBody = ApplicationServiceInput
 
 // UpdateApplicationServiceJSONRequestBody defines body for UpdateApplicationService for application/json ContentType.
 type UpdateApplicationServiceJSONRequestBody = ApplicationServiceInput
+
+// CreateCLIDeviceAuthorizationJSONRequestBody defines body for CreateCLIDeviceAuthorization for application/json ContentType.
+type CreateCLIDeviceAuthorizationJSONRequestBody = CLIDeviceAuthorizationCreateRequest
+
+// CancelCLIDeviceAuthorizationJSONRequestBody defines body for CancelCLIDeviceAuthorization for application/json ContentType.
+type CancelCLIDeviceAuthorizationJSONRequestBody = CLIDeviceCancelRequest
+
+// DecideCLIDeviceAuthorizationJSONRequestBody defines body for DecideCLIDeviceAuthorization for application/json ContentType.
+type DecideCLIDeviceAuthorizationJSONRequestBody = CLIDeviceDecisionRequest
+
+// InspectCLIDeviceAuthorizationJSONRequestBody defines body for InspectCLIDeviceAuthorization for application/json ContentType.
+type InspectCLIDeviceAuthorizationJSONRequestBody = CLIDeviceInspectRequest
+
+// ExchangeCLIDeviceTokenJSONRequestBody defines body for ExchangeCLIDeviceToken for application/json ContentType.
+type ExchangeCLIDeviceTokenJSONRequestBody = CLIDeviceTokenRequest
+
+// LogoutCLISessionJSONRequestBody defines body for LogoutCLISession for application/json ContentType.
+type LogoutCLISessionJSONRequestBody = CLILogoutRequest
+
+// PasswordLoginCLIJSONRequestBody defines body for PasswordLoginCLI for application/json ContentType.
+type PasswordLoginCLIJSONRequestBody = PasswordLoginRequest
+
+// RefreshCLISessionJSONRequestBody defines body for RefreshCLISession for application/json ContentType.
+type RefreshCLISessionJSONRequestBody = CLIRefreshRequest
 
 // CreateDesktopAuthAttemptJSONRequestBody defines body for CreateDesktopAuthAttempt for application/json ContentType.
 type CreateDesktopAuthAttemptJSONRequestBody = DesktopAuthAttemptCreateRequest
@@ -43985,6 +44490,18 @@ const ListAIGatewayRelayUpstreamsParamsStatusDegraded ListAIGatewayRelayUpstream
 
 // Retained for Go SDK source compatibility.
 const ListAIGatewayRelayUpstreamsParamsStatusDisabled ListAIGatewayRelayUpstreamsParamsStatus = "disabled"
+
+// Retained for Go SDK source compatibility.
+const DeliveryPlanStatusDraft DeliveryPlanStatus = "draft"
+
+// Retained for Go SDK source compatibility.
+const DeliveryPlanStatusWaitingApproval DeliveryPlanStatus = "waiting_approval"
+
+// Retained for Go SDK source compatibility.
+const DeliveryPlanStatusConfirming DeliveryPlanStatus = "confirming"
+
+// Retained for Go SDK source compatibility.
+const DeliveryPlanStatusConfirmed DeliveryPlanStatus = "confirmed"
 
 // Retained for Go SDK source compatibility.
 const RuntimeNetworkUsageScopeNetworkNamespace RuntimeNetworkUsageScope = "network_namespace"

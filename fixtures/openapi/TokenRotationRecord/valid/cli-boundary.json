@@ -1,0 +1,9 @@
+{
+  "rotationRequestId": "01a16496-e79a-7db0-a610-b0f33412ce3f",
+  "tokenKind": "personal_access_token",
+  "previousTokenId": "pat-old",
+  "replacementTokenId": "pat-new",
+  "status": "completed",
+  "rotatedAt": "2026-10-23T09:00:00Z",
+  "newValueRetrievable": false
+}

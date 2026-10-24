@@ -8869,6 +8869,672 @@
         ],
         "type": "object"
       },
+      "CLIAuthContext": {
+        "additionalProperties": false,
+        "properties": {
+          "credentialKind": {
+            "enum": [
+              "session",
+              "personal_access_token",
+              "service_account_token"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "CLIAuthContextCredentialKindSession",
+              "CLIAuthContextCredentialKindPersonalAccessToken",
+              "CLIAuthContextCredentialKindServiceAccountToken"
+            ]
+          },
+          "displayName": {
+            "maxLength": 512,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "permissionKeys": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 4096,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "refreshExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 256,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "sessionAbsoluteExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "subjectId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "subjectType": {
+            "enum": [
+              "user",
+              "service_account"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "CLIAuthContextSubjectTypeUser",
+              "CLIAuthContextSubjectTypeServiceAccount"
+            ]
+          },
+          "tokenId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "credentialKind",
+          "subjectType",
+          "subjectId",
+          "displayName",
+          "permissionKeys",
+          "scopes"
+        ],
+        "type": "object"
+      },
+      "CLIAuthContextEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CLIAuthContext"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "CLIAuthOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceCodeExpiresIn": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "interval": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "protocolVersion": {
+            "enum": [
+              2
+            ],
+            "format": "int32",
+            "type": "integer",
+            "x-enum-varnames": [
+              "CLIAuthOptionsProtocolVersionN2"
+            ]
+          },
+          "sessionAbsoluteExpiresIn": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sessionIdleExpiresIn": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "supportedMethods": {
+            "items": {
+              "enum": [
+                "device_code",
+                "password",
+                "key"
+              ],
+              "type": "string",
+              "x-enum-varnames": [
+                "CLIAuthOptionsSupportedMethodsDeviceCode",
+                "CLIAuthOptionsSupportedMethodsPassword",
+                "CLIAuthOptionsSupportedMethodsKey"
+              ]
+            },
+            "type": "array"
+          },
+          "verificationOrigin": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "enabled",
+          "protocolVersion",
+          "supportedMethods",
+          "deviceCodeExpiresIn",
+          "interval",
+          "sessionIdleExpiresIn",
+          "sessionAbsoluteExpiresIn"
+        ],
+        "type": "object"
+      },
+      "CLIAuthOptionsEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CLIAuthOptions"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceAuthorization": {
+        "additionalProperties": false,
+        "properties": {
+          "deviceCode": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expiresIn": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "grantId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "interval": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "userCode": {
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "verificationUri": {
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "grantId",
+          "deviceCode",
+          "userCode",
+          "verificationUri",
+          "expiresIn",
+          "expiresAt",
+          "interval"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceAuthorizationCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "clientId": {
+            "enum": [
+              "soha-cli"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "CLIDeviceAuthorizationCreateRequestClientIdSohaCli"
+            ]
+          },
+          "clientVersion": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "codeChallenge": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "codeChallengeMethod": {
+            "enum": [
+              "S256"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "CLIDeviceAuthorizationCreateRequestCodeChallengeMethodS256"
+            ]
+          },
+          "deviceName": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "permissionKeys": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 256,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "clientId",
+          "codeChallenge",
+          "codeChallengeMethod"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceAuthorizationEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CLIDeviceAuthorization"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceAuthorizationStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "grantId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "denied",
+              "issued",
+              "cancelled",
+              "expired"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "CLIDeviceAuthorizationStatusStatusPending",
+              "CLIDeviceAuthorizationStatusStatusApproved",
+              "CLIDeviceAuthorizationStatusStatusDenied",
+              "CLIDeviceAuthorizationStatusStatusIssued",
+              "CLIDeviceAuthorizationStatusStatusCancelled",
+              "CLIDeviceAuthorizationStatusStatusExpired"
+            ]
+          }
+        },
+        "required": [
+          "grantId",
+          "status",
+          "expiresAt"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceAuthorizationStatusEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CLIDeviceAuthorizationStatus"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceCancelRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "codeVerifier": {
+            "maxLength": 128,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9._~-]+$",
+            "type": "string"
+          },
+          "deviceCode": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceCode",
+          "codeVerifier"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceConfirmation": {
+        "additionalProperties": false,
+        "properties": {
+          "clientVersion": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "confirmationExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "confirmationId": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "deviceName": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "grantId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "permissionKeys": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 4096,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "sessionAbsoluteExpiresIn": {
+            "format": "int32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "user": {
+            "$ref": "#/components/schemas/Principal"
+          }
+        },
+        "required": [
+          "grantId",
+          "confirmationId",
+          "deviceName",
+          "clientVersion",
+          "user",
+          "permissionKeys",
+          "expiresAt",
+          "confirmationExpiresAt",
+          "sessionAbsoluteExpiresIn"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceConfirmationEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CLIDeviceConfirmation"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "confirmationId": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "deny"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "CLIDeviceDecisionRequestDecisionApprove",
+              "CLIDeviceDecisionRequestDecisionDeny"
+            ]
+          },
+          "userCode": {
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "verificationHandle": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verificationHandle",
+          "userCode",
+          "confirmationId",
+          "decision"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceInspectRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "userCode": {
+            "maxLength": 6,
+            "minLength": 6,
+            "pattern": "^[0-9]{6}$",
+            "type": "string"
+          },
+          "verificationHandle": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verificationHandle",
+          "userCode"
+        ],
+        "type": "object"
+      },
+      "CLIDeviceTokenRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "claimRequestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "codeVerifier": {
+            "maxLength": 128,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9._~-]+$",
+            "type": "string"
+          },
+          "deviceCode": {
+            "maxLength": 43,
+            "minLength": 43,
+            "pattern": "^[A-Za-z0-9_-]{43}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deviceCode",
+          "codeVerifier",
+          "claimRequestId"
+        ],
+        "type": "object"
+      },
+      "CLILogoutRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "refreshToken": {
+            "maxLength": 1024,
+            "minLength": 32,
+            "type": "string"
+          }
+        },
+        "required": [
+          "refreshToken"
+        ],
+        "type": "object"
+      },
+      "CLIRefreshRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "refreshRequestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "refreshToken": {
+            "maxLength": 1024,
+            "minLength": 32,
+            "type": "string"
+          }
+        },
+        "required": [
+          "refreshToken",
+          "refreshRequestId"
+        ],
+        "type": "object"
+      },
+      "CLISession": {
+        "additionalProperties": false,
+        "properties": {
+          "absoluteExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "clientVersion": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
+          },
+          "deviceName": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "revoked",
+              "expired"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "CLISessionStatusActive",
+              "CLISessionStatusRevoked",
+              "CLISessionStatusExpired"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "deviceName",
+          "clientVersion",
+          "createdAt",
+          "lastSeenAt",
+          "expiresAt",
+          "absoluteExpiresAt",
+          "status",
+          "current"
+        ],
+        "type": "object"
+      },
+      "CLISessionPage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CLISession"
+            },
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "CLISessionPageEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CLISessionPage"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "type": "object"
+      },
       "CloudExtensionBoundary": {
         "enum": [
           "public-contract",
@@ -55700,7 +56366,17 @@
               "team",
               "project"
             ],
-            "type": "string"
+            "type": "string",
+            "x-enum-varnames": [
+              "SAMLAttributeMappingTargetSubject",
+              "SAMLAttributeMappingTargetUsername",
+              "SAMLAttributeMappingTargetEmail",
+              "SAMLAttributeMappingTargetDisplayName",
+              "SAMLAttributeMappingTargetRole",
+              "SAMLAttributeMappingTargetOrganization",
+              "SAMLAttributeMappingTargetTeam",
+              "SAMLAttributeMappingTargetProject"
+            ]
           }
         },
         "required": [
@@ -56469,7 +57145,11 @@
           "user",
           "team"
         ],
-        "type": "string"
+        "type": "string",
+        "x-enum-varnames": [
+          "ScopeGrantSubjectTypeUser",
+          "ScopeGrantSubjectTypeTeam"
+        ]
       },
       "ScopeGrantType": {
         "enum": [
@@ -59781,14 +60461,100 @@
           "expiresAt": {
             "format": "date-time",
             "type": "string"
+          },
+          "rotationRequestId": {
+            "description": "Generate and durably save this identifier before sending the rotation request. It identifies the independent outcome lookup if the response is lost. Omission remains compatible with older callers, but their server generated identifier cannot be recovered from a lost response; a new identifier is a new rotation, not a safe retry.",
+            "format": "uuid",
+            "type": "string"
           }
         },
+        "type": "object"
+      },
+      "TokenRotationRecord": {
+        "additionalProperties": false,
+        "properties": {
+          "newValueRetrievable": {
+            "enum": [
+              false
+            ],
+            "type": "boolean",
+            "x-enum-varnames": [
+              "TokenRotationRecordNewValueRetrievableFalse"
+            ]
+          },
+          "previousTokenId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "replacementTokenId": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "rotatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "rotationRequestId": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "completed"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "TokenRotationRecordStatusCompleted"
+            ]
+          },
+          "tokenKind": {
+            "enum": [
+              "personal_access_token",
+              "service_account_token"
+            ],
+            "type": "string",
+            "x-enum-varnames": [
+              "TokenRotationRecordTokenKindPersonalAccessToken",
+              "TokenRotationRecordTokenKindServiceAccountToken"
+            ]
+          }
+        },
+        "required": [
+          "rotationRequestId",
+          "tokenKind",
+          "previousTokenId",
+          "replacementTokenId",
+          "status",
+          "rotatedAt",
+          "newValueRetrievable"
+        ],
+        "type": "object"
+      },
+      "TokenRotationRecordEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TokenRotationRecord"
+          }
+        },
+        "required": [
+          "data"
+        ],
         "type": "object"
       },
       "TokenSet": {
         "additionalProperties": false,
         "properties": {
           "accessToken": {
+            "description": "V2 CLI access JWTs use token_type cli_access and a CLI v2 session binding. Older Core versions must reject this type rather than accepting it without the persisted CLI permission ceiling. Existing v1 access JWTs retain token_type access.",
+            "type": "string"
+          },
+          "credentialKind": {
+            "enum": [
+              "session"
+            ],
             "type": "string"
           },
           "expiresAt": {
@@ -59799,7 +60565,26 @@
             "format": "int64",
             "type": "integer"
           },
+          "protocolVersion": {
+            "enum": [
+              2
+            ],
+            "format": "int32",
+            "type": "integer"
+          },
+          "refreshExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
           "refreshToken": {
+            "type": "string"
+          },
+          "sessionAbsoluteExpiresAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sessionId": {
+            "format": "uuid",
             "type": "string"
           },
           "tokenType": {
@@ -72181,6 +72966,59 @@
         ]
       }
     },
+    "/ai-gateway/token-rotations/{rotationRequestId}": {
+      "get": {
+        "description": "Return the durable atomic rotation association to the original user or authorized token administrator. Requires a separately valid credential after rotation revoked the old key. Never returns or replays the new key value; the replacement can be located for recovery and revocation even if audit recording failed.",
+        "operationId": "getTokenRotationRecord",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rotationRequestId",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenRotationRecordEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
     "/ai-gateway/tools/{toolName}/invoke": {
       "post": {
         "operationId": "invokeAIGatewayTool",
@@ -76714,6 +77552,647 @@
           }
         },
         "security": [],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/device-authorizations": {
+      "post": {
+        "description": "Create a short lived request bound device grant (five minutes by default). Only the returned high entropy verification link and six digit userCode together identify the request; userCode is never globally searchable. Creation, active grants, polling and verification attempts have finite limits shared across replicas. Tokens and links must not be logged. All responses use Cache-Control no-store.",
+        "operationId": "createCLIDeviceAuthorization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIDeviceAuthorizationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIDeviceAuthorizationEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/device-authorizations/cancel": {
+      "post": {
+        "description": "Authenticated by the deviceCode and original PKCE verifier. Cancels the request and revokes any CLI session already issued by it, including after a lost response.",
+        "operationId": "cancelCLIDeviceAuthorization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIDeviceCancelRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIDeviceAuthorizationStatusEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/device-authorizations/decision": {
+      "post": {
+        "description": "Requires explicit approval or denial by the same account and browser session that inspected the request. The confirmation, code and high entropy handle are all required. Origin is checked and no CLI token is returned to the browser.",
+        "operationId": "decideCLIDeviceAuthorization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIDeviceDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIDeviceAuthorizationStatusEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/device-authorizations/inspect": {
+      "post": {
+        "description": "Requires an authenticated browser session and the configured Origin. Validate the request bound handle and six digit code, then issue an account and browser-session bound short lived confirmation. Five incorrect codes permanently lock this grant; source and account attempt budgets also apply across replicas. Expired, denied, cancelled, consumed or locked grants cannot produce a new confirmation. PAT, service account, dev-auth and CLI v2 sessions cannot approve grants.",
+        "operationId": "inspectCLIDeviceAuthorization",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIDeviceInspectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIDeviceConfirmationEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/device-token": {
+      "post": {
+        "description": "PKCE-bound polling. authorization_pending returns 409; slow_down returns 429 with Retry-After. A successful claim is atomic with session creation. Reusing the same claimRequestId, deviceCode and PKCE within 30 seconds recovers the original encrypted receipt. Other claim IDs or invalid PKCE never retrieve a token.",
+        "operationId": "exchangeCLIDeviceToken",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIDeviceTokenRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResultEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Pending authorization or device grant conflict.",
+            "headers": {
+              "Retry-After": {
+                "description": "Delay in seconds before polling again; present for authorization_pending.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Polling too quickly or request budget exhausted.",
+            "headers": {
+              "Retry-After": {
+                "description": "Delay in seconds before polling again; present for slow_down.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/logout": {
+      "post": {
+        "description": "Revoke the CLI v2 session using its refresh credential even if access expired. Does not accept cookies or revoke unrelated sessions. Successful responses have no body.",
+        "operationId": "logoutCLISession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLILogoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/options": {
+      "get": {
+        "description": "Advertise CLI protocol v2 and enabled methods. Capability discovery has no authentication or login side effects.",
+        "operationId": "getCLIAuthOptions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIAuthOptionsEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/password": {
+      "post": {
+        "description": "Explicit compatibility method for local password accounts only. Existing login policy and additional verification requirements must be enforced; unsupported extra verification directs the user to browser authorization. Never changes v1 Web or App sessions or cookies.",
+        "operationId": "passwordLoginCLI",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResultEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/refresh": {
+      "post": {
+        "description": "Rotate an opaque CLI v2 refresh credential with a durable client request ID. Same credential and request ID may recover a response for 30 seconds. Reuse with another ID revokes the family. Sessions slide idle expiry but retain the original absolute deadline; existing v1 refresh semantics are unchanged.",
+        "operationId": "refreshCLISession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CLIRefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthResultEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "security": [],
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/sessions": {
+      "get": {
+        "description": "List only the current user s CLI v2 sessions in descending creation order using an opaque owner-bound cursor. Key and service account callers cannot manage browser sessions.",
+        "operationId": "listCLISessions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLISessionPageEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/cli/sessions/{sessionID}/revoke": {
+      "post": {
+        "description": "Revoke only the current user s CLI v2 session. Other users and Web or App sessions are not accessible through this endpoint. Successful responses have no body.",
+        "operationId": "revokeOwnCLISession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sessionID",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/auth/context": {
+      "get": {
+        "description": "Describe the authenticated session, personal access token or service account token with its existing effective permissions and scopes. Service accounts do not require a user profile; this endpoint grants no additional permission.",
+        "operationId": "getAuthContext",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CLIAuthContextEnvelope"
+                }
+              }
+            },
+            "description": "Successful operation."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
         "tags": [
           "Auth"
         ]
@@ -95786,6 +97265,7 @@
     },
     "/identity/mfa/totp/enroll": {
       "post": {
+        "description": "Existing TOTP credentials create a step-up challenge. Registering a new factor when other MFA exists requires recent step-up verification.",
         "operationId": "beginTOTPEnrollment",
         "responses": {
           "201": {
@@ -95797,6 +97277,9 @@
               }
             },
             "description": "Short-lived TOTP enrollment challenge."
+          },
+          "403": {
+            "$ref": "#/components/responses/IdentityError"
           }
         },
         "tags": [
@@ -95883,6 +97366,7 @@
     },
     "/identity/mfa/webauthn/enroll": {
       "post": {
+        "description": "Registering another factor requires recent verification with an existing MFA method.",
         "operationId": "beginWebAuthnEnrollment",
         "responses": {
           "201": {
@@ -95894,6 +97378,9 @@
               }
             },
             "description": "WebAuthn registration challenge."
+          },
+          "403": {
+            "$ref": "#/components/responses/IdentityError"
           }
         },
         "tags": [

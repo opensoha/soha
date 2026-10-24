@@ -2343,3 +2343,75 @@ func pluginManifestJSON(id string) map[string]any {
 		},
 	}
 }
+
+func TestCLIAuthenticationTransportIsolation(t *testing.T) {
+	cases := []struct {
+		name, method, path string
+		protected          bool
+		call               func(*Client) error
+	}{
+		{"options", "GET", "/api/v1/auth/cli/options", false, func(c *Client) error { _, e := c.GetCLIAuthOptions(context.Background()); return e }},
+		{"create", "POST", "/api/v1/auth/cli/device-authorizations", false, func(c *Client) error {
+			_, e := c.CreateCLIDeviceAuthorization(context.Background(), CLIDeviceAuthorizationCreateRequest{})
+			return e
+		}},
+		{"inspect", "POST", "/api/v1/auth/cli/device-authorizations/inspect", true, func(c *Client) error {
+			_, e := c.InspectCLIDeviceAuthorization(context.Background(), CLIDeviceInspectRequest{UserCode: "001234"})
+			return e
+		}},
+		{"decision", "POST", "/api/v1/auth/cli/device-authorizations/decision", true, func(c *Client) error {
+			_, e := c.DecideCLIDeviceAuthorization(context.Background(), CLIDeviceDecisionRequest{})
+			return e
+		}},
+		{"claim", "POST", "/api/v1/auth/cli/device-token", false, func(c *Client) error {
+			_, e := c.ExchangeCLIDeviceToken(context.Background(), CLIDeviceTokenRequest{})
+			return e
+		}},
+		{"cancel", "POST", "/api/v1/auth/cli/device-authorizations/cancel", false, func(c *Client) error {
+			_, e := c.CancelCLIDeviceAuthorization(context.Background(), CLIDeviceCancelRequest{})
+			return e
+		}},
+		{"password", "POST", "/api/v1/auth/cli/password", false, func(c *Client) error {
+			_, e := c.CLIPasswordLogin(context.Background(), PasswordLoginRequest{})
+			return e
+		}},
+		{"refresh", "POST", "/api/v1/auth/cli/refresh", false, func(c *Client) error {
+			_, e := c.RefreshCLISession(context.Background(), CLIRefreshRequest{})
+			return e
+		}},
+		{"logout", "POST", "/api/v1/auth/cli/logout", false, func(c *Client) error { return c.LogoutCLISession(context.Background(), CLILogoutRequest{}) }},
+		{"context", "GET", "/api/v1/auth/context", true, func(c *Client) error { _, e := c.GetAuthContext(context.Background()); return e }},
+		{"sessions", "GET", "/api/v1/auth/cli/sessions", true, func(c *Client) error {
+			_, e := c.ListCLISessions(context.Background(), ListCLISessionsParams{})
+			return e
+		}},
+		{"revoke", "POST", "/api/v1/auth/cli/sessions/session-1/revoke", true, func(c *Client) error { return c.RevokeCLISession(context.Background(), "session-1") }},
+		{"rotation", "GET", "/api/v1/ai-gateway/token-rotations/request-1", true, func(c *Client) error { _, e := c.GetTokenRotation(context.Background(), "request-1"); return e }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			client := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+				called = true
+				if tc.protected {
+					assertCommonRequest(t, r, tc.method, tc.path)
+				} else {
+					assertPublicRequest(t, r, tc.method, tc.path)
+				}
+				if tc.name == "inspect" {
+					var body map[string]any
+					if e := json.NewDecoder(r.Body).Decode(&body); e != nil || body["userCode"] != "001234" {
+						t.Fatal("leading zeros lost")
+					}
+				}
+				writeJSON(t, w, map[string]any{"data": map[string]any{}})
+			})
+			if e := tc.call(client); e != nil {
+				t.Fatal(e)
+			}
+			if !called {
+				t.Fatal("request was not sent")
+			}
+		})
+	}
+}

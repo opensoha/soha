@@ -10908,6 +10908,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Existing TOTP credentials create a step-up challenge. Registering a new factor when other MFA exists requires recent step-up verification. */
         post: operations["beginTOTPEnrollment"];
         delete?: never;
         options?: never;
@@ -10924,6 +10925,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** @description Registering another factor requires recent verification with an existing MFA method. */
         post: operations["beginWebAuthnEnrollment"];
         delete?: never;
         options?: never;
@@ -12245,10 +12247,403 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/cli/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Advertise CLI protocol v2 and enabled methods. Capability discovery has no authentication or login side effects. */
+        get: operations["getCLIAuthOptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/device-authorizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Create a short lived request bound device grant (five minutes by default). Only the returned high entropy verification link and six digit userCode together identify the request; userCode is never globally searchable. Creation, active grants, polling and verification attempts have finite limits shared across replicas. Tokens and links must not be logged. All responses use Cache-Control no-store. */
+        post: operations["createCLIDeviceAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/device-authorizations/inspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires an authenticated browser session and the configured Origin. Validate the request bound handle and six digit code, then issue an account and browser-session bound short lived confirmation. Five incorrect codes permanently lock this grant; source and account attempt budgets also apply across replicas. Expired, denied, cancelled, consumed or locked grants cannot produce a new confirmation. PAT, service account, dev-auth and CLI v2 sessions cannot approve grants. */
+        post: operations["inspectCLIDeviceAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/device-authorizations/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requires explicit approval or denial by the same account and browser session that inspected the request. The confirmation, code and high entropy handle are all required. Origin is checked and no CLI token is returned to the browser. */
+        post: operations["decideCLIDeviceAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/device-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description PKCE-bound polling. authorization_pending returns 409; slow_down returns 429 with Retry-After. A successful claim is atomic with session creation. Reusing the same claimRequestId, deviceCode and PKCE within 30 seconds recovers the original encrypted receipt. Other claim IDs or invalid PKCE never retrieve a token. */
+        post: operations["exchangeCLIDeviceToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/device-authorizations/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Authenticated by the deviceCode and original PKCE verifier. Cancels the request and revokes any CLI session already issued by it, including after a lost response. */
+        post: operations["cancelCLIDeviceAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicit compatibility method for local password accounts only. Existing login policy and additional verification requirements must be enforced; unsupported extra verification directs the user to browser authorization. Never changes v1 Web or App sessions or cookies. */
+        post: operations["passwordLoginCLI"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Rotate an opaque CLI v2 refresh credential with a durable client request ID. Same credential and request ID may recover a response for 30 seconds. Reuse with another ID revokes the family. Sessions slide idle expiry but retain the original absolute deadline; existing v1 refresh semantics are unchanged. */
+        post: operations["refreshCLISession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Revoke the CLI v2 session using its refresh credential even if access expired. Does not accept cookies or revoke unrelated sessions. Successful responses have no body. */
+        post: operations["logoutCLISession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Describe the authenticated session, personal access token or service account token with its existing effective permissions and scopes. Service accounts do not require a user profile; this endpoint grants no additional permission. */
+        get: operations["getAuthContext"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description List only the current user s CLI v2 sessions in descending creation order using an opaque owner-bound cursor. Key and service account callers cannot manage browser sessions. */
+        get: operations["listCLISessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/cli/sessions/{sessionID}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Revoke only the current user s CLI v2 session. Other users and Web or App sessions are not accessible through this endpoint. Successful responses have no body. */
+        post: operations["revokeOwnCLISession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ai-gateway/token-rotations/{rotationRequestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Return the durable atomic rotation association to the original user or authorized token administrator. Requires a separately valid credential after rotation revoked the old key. Never returns or replays the new key value; the replacement can be located for recovery and revocation even if audit recording failed. */
+        get: operations["getTokenRotationRecord"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CLIAuthOptions: {
+            enabled: boolean;
+            /**
+             * Format: int32
+             * @enum {integer}
+             */
+            protocolVersion: 2;
+            supportedMethods: ("device_code" | "password" | "key")[];
+            /** Format: uri */
+            verificationOrigin?: string;
+            /** Format: int32 */
+            deviceCodeExpiresIn: number;
+            /** Format: int32 */
+            interval: number;
+            /** Format: int32 */
+            sessionIdleExpiresIn: number;
+            /** Format: int32 */
+            sessionAbsoluteExpiresIn: number;
+        };
+        CLIDeviceAuthorizationCreateRequest: {
+            /** @enum {string} */
+            clientId: "soha-cli";
+            clientVersion?: string;
+            deviceName?: string;
+            codeChallenge: string;
+            /** @enum {string} */
+            codeChallengeMethod: "S256";
+            permissionKeys?: string[];
+        };
+        CLIDeviceAuthorization: {
+            /** Format: uuid */
+            grantId: string;
+            deviceCode: string;
+            userCode: string;
+            /** Format: uri */
+            verificationUri: string;
+            /** Format: int32 */
+            expiresIn: number;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: int32 */
+            interval: number;
+        };
+        CLIDeviceInspectRequest: {
+            verificationHandle: string;
+            userCode: string;
+        };
+        CLIDeviceConfirmation: {
+            /** Format: uuid */
+            grantId: string;
+            confirmationId: string;
+            deviceName: string;
+            clientVersion: string;
+            user: components["schemas"]["Principal"];
+            permissionKeys: string[];
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            confirmationExpiresAt: string;
+            /** Format: int32 */
+            sessionAbsoluteExpiresIn: number;
+        };
+        CLIDeviceDecisionRequest: {
+            verificationHandle: string;
+            userCode: string;
+            confirmationId: string;
+            /** @enum {string} */
+            decision: "approve" | "deny";
+        };
+        CLIDeviceAuthorizationStatus: {
+            /** Format: uuid */
+            grantId: string;
+            /** @enum {string} */
+            status: "pending" | "approved" | "denied" | "issued" | "cancelled" | "expired";
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: uuid */
+            sessionId?: string;
+        };
+        CLIDeviceTokenRequest: {
+            deviceCode: string;
+            codeVerifier: string;
+            /** Format: uuid */
+            claimRequestId: string;
+        };
+        CLIDeviceCancelRequest: {
+            deviceCode: string;
+            codeVerifier: string;
+        };
+        CLIRefreshRequest: {
+            refreshToken: string;
+            /** Format: uuid */
+            refreshRequestId: string;
+        };
+        CLILogoutRequest: {
+            refreshToken: string;
+        };
+        CLIAuthContext: {
+            /** @enum {string} */
+            credentialKind: "session" | "personal_access_token" | "service_account_token";
+            /** @enum {string} */
+            subjectType: "user" | "service_account";
+            subjectId: string;
+            displayName: string;
+            tokenId?: string;
+            /** Format: uuid */
+            sessionId?: string;
+            permissionKeys: string[];
+            scopes: string[];
+            /** Format: date-time */
+            expiresAt?: string;
+            /** Format: date-time */
+            refreshExpiresAt?: string;
+            /** Format: date-time */
+            sessionAbsoluteExpiresAt?: string;
+        };
+        CLISession: {
+            /** Format: uuid */
+            id: string;
+            deviceName: string;
+            clientVersion: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastSeenAt: string;
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            absoluteExpiresAt: string;
+            /** @enum {string} */
+            status: "active" | "revoked" | "expired";
+            current: boolean;
+        };
+        CLISessionPage: {
+            items: components["schemas"]["CLISession"][];
+            nextCursor?: string;
+        };
+        TokenRotationRecord: {
+            /** Format: uuid */
+            rotationRequestId: string;
+            /** @enum {string} */
+            tokenKind: "personal_access_token" | "service_account_token";
+            previousTokenId: string;
+            replacementTokenId: string;
+            /** @enum {string} */
+            status: "completed";
+            /** Format: date-time */
+            rotatedAt: string;
+            /** @enum {boolean} */
+            newValueRetrievable: false;
+        };
+        CLIAuthOptionsEnvelope: {
+            data: components["schemas"]["CLIAuthOptions"];
+        };
+        CLIDeviceAuthorizationEnvelope: {
+            data: components["schemas"]["CLIDeviceAuthorization"];
+        };
+        CLIDeviceConfirmationEnvelope: {
+            data: components["schemas"]["CLIDeviceConfirmation"];
+        };
+        CLIDeviceAuthorizationStatusEnvelope: {
+            data: components["schemas"]["CLIDeviceAuthorizationStatus"];
+        };
+        CLIAuthContextEnvelope: {
+            data: components["schemas"]["CLIAuthContext"];
+        };
+        CLISessionPageEnvelope: {
+            data: components["schemas"]["CLISessionPage"];
+        };
+        TokenRotationRecordEnvelope: {
+            data: components["schemas"]["TokenRotationRecord"];
+        };
         /** @enum {string} */
         NetworkVPNAccessMode: "internal_ztna" | "external_vpn" | "external_vpn_ztna" | "external_direct_ztna";
         /** @enum {string} */
@@ -17229,6 +17624,7 @@ export interface components {
             status: "ok";
         };
         TokenSet: {
+            /** @description V2 CLI access JWTs use token_type cli_access and a CLI v2 session binding. Older Core versions must reject this type rather than accepting it without the persisted CLI permission ceiling. Existing v1 access JWTs retain token_type access. */
             accessToken: string;
             refreshToken: string;
             tokenType: string;
@@ -17236,6 +17632,19 @@ export interface components {
             expiresIn: number;
             /** Format: date-time */
             expiresAt: string;
+            /** @enum {string} */
+            credentialKind?: "session";
+            /**
+             * Format: int32
+             * @enum {integer}
+             */
+            protocolVersion?: 2;
+            /** Format: date-time */
+            refreshExpiresAt?: string;
+            /** Format: date-time */
+            sessionAbsoluteExpiresAt?: string;
+            /** Format: uuid */
+            sessionId?: string;
         };
         AuthResult: {
             user: components["schemas"]["Principal"];
@@ -27354,6 +27763,11 @@ export interface components {
             data: components["schemas"]["CreatedServiceAccountToken"];
         };
         TokenRotationInput: {
+            /**
+             * Format: uuid
+             * @description Generate and durably save this identifier before sending the rotation request. It identifies the independent outcome lookup if the response is lost. Omission remains compatible with older callers, but their server generated identifier cannot be recovered from a lost response; a new identifier is a new rotation, not a safe retry.
+             */
+            rotationRequestId?: string;
             /** Format: date-time */
             expiresAt?: string;
         };
@@ -29035,6 +29449,28 @@ export interface components {
     };
     pathItems: never;
 }
+export type CLIAuthOptions = components['schemas']['CLIAuthOptions'];
+export type CLIDeviceAuthorizationCreateRequest = components['schemas']['CLIDeviceAuthorizationCreateRequest'];
+export type CLIDeviceAuthorization = components['schemas']['CLIDeviceAuthorization'];
+export type CLIDeviceInspectRequest = components['schemas']['CLIDeviceInspectRequest'];
+export type CLIDeviceConfirmation = components['schemas']['CLIDeviceConfirmation'];
+export type CLIDeviceDecisionRequest = components['schemas']['CLIDeviceDecisionRequest'];
+export type CLIDeviceAuthorizationStatus = components['schemas']['CLIDeviceAuthorizationStatus'];
+export type CLIDeviceTokenRequest = components['schemas']['CLIDeviceTokenRequest'];
+export type CLIDeviceCancelRequest = components['schemas']['CLIDeviceCancelRequest'];
+export type CLIRefreshRequest = components['schemas']['CLIRefreshRequest'];
+export type CLILogoutRequest = components['schemas']['CLILogoutRequest'];
+export type CLIAuthContext = components['schemas']['CLIAuthContext'];
+export type CLISession = components['schemas']['CLISession'];
+export type CLISessionPage = components['schemas']['CLISessionPage'];
+export type TokenRotationRecord = components['schemas']['TokenRotationRecord'];
+export type CLIAuthOptionsEnvelope = components['schemas']['CLIAuthOptionsEnvelope'];
+export type CLIDeviceAuthorizationEnvelope = components['schemas']['CLIDeviceAuthorizationEnvelope'];
+export type CLIDeviceConfirmationEnvelope = components['schemas']['CLIDeviceConfirmationEnvelope'];
+export type CLIDeviceAuthorizationStatusEnvelope = components['schemas']['CLIDeviceAuthorizationStatusEnvelope'];
+export type CLIAuthContextEnvelope = components['schemas']['CLIAuthContextEnvelope'];
+export type CLISessionPageEnvelope = components['schemas']['CLISessionPageEnvelope'];
+export type TokenRotationRecordEnvelope = components['schemas']['TokenRotationRecordEnvelope'];
 export type NetworkVPNAccessMode = components['schemas']['NetworkVPNAccessMode'];
 export type NetworkVPNSelectionMode = components['schemas']['NetworkVPNSelectionMode'];
 export type NetworkVPNSelectionStrategy = components['schemas']['NetworkVPNSelectionStrategy'];
@@ -53545,6 +53981,7 @@ export interface operations {
                     "application/json": components["schemas"]["MFAEnrollmentChallengeEnvelope"];
                 };
             };
+            403: components["responses"]["IdentityError"];
         };
     };
     beginWebAuthnEnrollment: {
@@ -53565,6 +54002,7 @@ export interface operations {
                     "application/json": components["schemas"]["MFAWebAuthnCreationOptionsEnvelope"];
                 };
             };
+            403: components["responses"]["IdentityError"];
         };
     };
     beginWebAuthnAuthentication: {
@@ -56837,6 +57275,412 @@ export interface operations {
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getCLIAuthOptions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIAuthOptionsEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    createCLIDeviceAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLIDeviceAuthorizationCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIDeviceAuthorizationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    inspectCLIDeviceAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLIDeviceInspectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIDeviceConfirmationEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    decideCLIDeviceAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLIDeviceDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIDeviceAuthorizationStatusEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    exchangeCLIDeviceToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLIDeviceTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResultEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            /** @description Pending authorization or device grant conflict. */
+            409: {
+                headers: {
+                    /** @description Delay in seconds before polling again; present for authorization_pending. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Polling too quickly or request budget exhausted. */
+            429: {
+                headers: {
+                    /** @description Delay in seconds before polling again; present for slow_down. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            503: components["responses"]["Error"];
+        };
+    };
+    cancelCLIDeviceAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLIDeviceCancelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIDeviceAuthorizationStatusEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    passwordLoginCLI: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResultEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    refreshCLISession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLIRefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResultEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    logoutCLISession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CLILogoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getAuthContext: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLIAuthContextEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    listCLISessions: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CLISessionPageEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    revokeOwnCLISession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sessionID: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getTokenRotationRecord: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                rotationRequestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful operation. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TokenRotationRecordEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
             503: components["responses"]["Error"];
         };
     };
