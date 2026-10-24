@@ -198,6 +198,23 @@ reviewed pin after they are committed.
 Use `--dry-run` to inspect the discovered commands without executing consumer
 builds.
 
+## Execution task callback credentials
+
+`ExecutionTask.callbackToken` is a callback capability, not ordinary task-view data.
+Normal task list/get and application, environment, runtime and release-board read
+views return the fixed non-secret string `[redacted]` when a callback is configured.
+This preserves the existing SDK string shape and configured-callback presence
+signal; the marker cannot be submitted as a callback credential. Historical empty
+values remain empty. Only authenticated runner claim/status paths return the real
+credential needed by that runner. Internal execution and callback validation keep
+the original value; task-view or configuration-secret read permission does not
+grant it.
+
+This documents the security projection within the existing v0.1.26 field shape.
+It adds no schema fields or SDK types and does not change the runner protocol.
+Clients must obtain runner credentials through the authorized runner flow rather
+than copying them from a user-facing task read.
+
 ## Compatibility Policy
 
 See [COMPATIBILITY.md](./COMPATIBILITY.md) for the versioning, compatibility,
