@@ -111,12 +111,47 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	t.Run("migration-baseline-is-success-only", func(t *testing.T) { verifyMigrationBaseline(t, ctx, tx, repository, deployment) })
 	verifyManifestObservationCadence(t, ctx, tx, repository, deployment.ID)
 	verifyResourceObservationRoundTrip(t, ctx, repository, deployment)
+	t.Run("pending-plan-retains-observed-identities", func(t *testing.T) {
+		verifyPendingPlanInventory(t, ctx, tx, repository, deployment)
+	})
 
 	verifyManifestResourceOwnership(t, ctx, tx, repository, next, binding, item)
 	verifyHelmResourceOwnership(t, ctx, tx, repository, next, binding, item)
 	verifyGitOpsResourceOwnership(t, ctx, tx, repository, next, binding, item)
 
 	verifyManifestChangedInputConflict(t, ctx, tx, repository, next, binding, item)
+}
+
+func verifyPendingPlanInventory(t *testing.T, ctx context.Context, tx *gorm.DB, repository *manifestrepo.Repository, deployment domainmanifest.Deployment) {
+	t.Helper()
+	requireManifestRepositoryNoError(t, tx.SavePoint("pending_inventory").Error)
+	defer func() { requireManifestRepositoryNoError(t, tx.RollbackTo("pending_inventory").Error) }()
+	deployment.Status.ObservedGeneration = deployment.Generation
+	deployment.Status.AppliedDigest = deployment.Spec.DesiredDigest
+	deployment.Status.Phase = "converged"
+	deployment.Status.Inventory = []domainmanifest.ResourceInventory{{APIVersion: "v1", Kind: "ConfigMap", Namespace: "test", Name: "api", UID: "known-uid", Health: "healthy", LastObservedAt: time.Now().UTC().Truncate(time.Microsecond)}}
+	requireManifestRepositoryNoError(t, repository.UpdateDeploymentStatus(ctx, deployment.ID, deployment.Generation, deployment.Status))
+	next, err := repository.SetDesiredRevision(ctx, deployment, deployment.Generation)
+	requireManifestRepositoryNoError(t, err)
+	if next.Generation != deployment.Generation+1 || next.Status.ObservedGeneration != deployment.Generation || next.Status.Phase != "pending" || len(next.Status.Inventory) != 1 || next.Status.Inventory[0].UID != "known-uid" || next.Status.Inventory[0].Generation != deployment.Generation {
+		t.Fatalf("pending Plan lost observed identities or fabricated health: %#v", next)
+	}
+	// A new observation, including partial/unhealthy inventory, is authoritative.
+	next.Status.ObservedGeneration = next.Generation
+	next.Status.Inventory = []domainmanifest.ResourceInventory{{APIVersion: "v1", Kind: "ConfigMap", Namespace: "test", Name: "api", UID: "new-uid", Health: "degraded", LastObservedAt: time.Now().UTC().Truncate(time.Microsecond)}}
+	requireManifestRepositoryNoError(t, repository.UpdateDeploymentStatus(ctx, next.ID, next.Generation, next.Status))
+	loaded, err := repository.GetDeployment(ctx, next.ID)
+	requireManifestRepositoryNoError(t, err)
+	if len(loaded.Status.Inventory) != 1 || loaded.Status.Inventory[0].UID != "new-uid" || loaded.Status.Inventory[0].Health != "degraded" {
+		t.Fatalf("old inventory replaced current observation: %#v", loaded.Status.Inventory)
+	}
+	next.Status.Inventory = nil
+	requireManifestRepositoryNoError(t, repository.UpdateDeploymentStatus(ctx, next.ID, next.Generation, next.Status))
+	loaded, err = repository.GetDeployment(ctx, next.ID)
+	requireManifestRepositoryNoError(t, err)
+	if len(loaded.Status.Inventory) != 0 {
+		t.Fatal("empty current observation resurrected an old UID")
+	}
 }
 
 func verifyResourceObservationRoundTrip(t *testing.T, ctx context.Context, repository *manifestrepo.Repository, deployment domainmanifest.Deployment) {

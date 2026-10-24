@@ -456,7 +456,7 @@ func (s *DeclarativeService) recordDeploymentTaskResult(ctx context.Context, tas
 	if err != nil {
 		return err
 	}
-	if deployment.Generation != payload.Generation {
+	if ignoreDeploymentTaskResult(deployment, payload) {
 		return nil
 	}
 	status := deployment.Status
@@ -574,8 +574,32 @@ func (s *DeclarativeService) observeContinuousDeployments(ctx context.Context) {
 		return
 	}
 	for _, deployment := range items {
+		// A newly selected Plan is pending execution, not drifted from a rollout
+		// that has already been applied. Preserve the source health receipt until
+		// apply finishes; failed writes must retain their failure status.
+		if deployment.Spec.DeliverySnapshot != nil && (deployment.Status.AppliedDigest != deployment.Spec.DesiredDigest || failedPlanWrite(deployment)) {
+			continue
+		}
 		_ = s.queueAutomaticAction(ctx, deployment, domainmanifest.TaskActionObserve, time.Now().UTC())
 	}
+}
+
+// Stale generations and reads queued before a failed publication cannot update
+// its status. Each task's own execution receipt remains available independently.
+func ignoreDeploymentTaskResult(deployment domainmanifest.Deployment, payload domainmanifest.TaskPayload) bool {
+	return deployment.Generation != payload.Generation || payload.Action == domainmanifest.TaskActionObserve && failedPlanWrite(deployment)
+}
+
+func failedPlanWrite(deployment domainmanifest.Deployment) bool {
+	if deployment.Spec.DeliverySnapshot == nil {
+		return false
+	}
+	for _, condition := range deployment.Status.Conditions {
+		if condition.Type == "Synced" && condition.Status == "false" && condition.Reason == "TaskFailed" && condition.ObservedGeneration == deployment.Generation {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *DeclarativeService) queueAutomaticAction(ctx context.Context, deployment domainmanifest.Deployment, action string, observedAt time.Time) error {

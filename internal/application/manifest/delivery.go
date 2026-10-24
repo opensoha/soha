@@ -25,14 +25,15 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
-	item, app, err := s.bindingPackage(ctx, principal, binding.PackageID, domainaccess.ActionTrigger)
+	permission := appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "preflight")
+	item, app, err := s.bindingPackage(ctx, principal, binding.PackageID, domainaccess.ActionTrigger, permission)
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
 	if !binding.Enabled || binding.Namespace == "" || !deliveryBindingMatchesTarget(item, binding, applicationID, environmentID, target) {
 		return domainmanifest.DeliverySnapshot{}, fmt.Errorf("%w: Manifest binding must belong to the selected application, environment and namespace", apperrors.ErrInvalidArgument)
 	}
-	if err := s.validateBinding(ctx, principal, domainaccess.ActionTrigger, item, app, &binding); err != nil {
+	if err := s.validateBinding(ctx, principal, domainaccess.ActionTrigger, item, app, &binding, permission); err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
 	if err := s.validateDeliverySource(ctx, item.ID); err != nil {
@@ -184,6 +185,10 @@ func deliveryBindingMatchesTarget(item domainmanifest.Package, binding domainman
 }
 
 func (s *DeclarativeService) ValidateDeliverySnapshot(ctx context.Context, principal domainidentity.Principal, snapshot domainmanifest.DeliverySnapshot) error {
+	return s.validateDeliverySnapshot(ctx, principal, snapshot, false)
+}
+
+func (s *DeclarativeService) validateDeliverySnapshot(ctx context.Context, principal domainidentity.Principal, snapshot domainmanifest.DeliverySnapshot, firstClaim bool) error {
 	if err := s.base.authorize(ctx, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "trigger")); err != nil {
 		return err
 	}
@@ -223,7 +228,7 @@ func (s *DeclarativeService) ValidateDeliverySnapshot(ctx context.Context, princ
 	if err != nil {
 		return err
 	}
-	if err := s.validateMigrationSnapshot(ctx, principal, item, current, snapshot); err != nil {
+	if err := s.validateMigrationSnapshot(ctx, principal, item, current, snapshot, firstClaim); err != nil {
 		return err
 	}
 	if current.Generation != snapshot.ExpectedGeneration && !deliveryAlreadySelected(current, snapshot) {

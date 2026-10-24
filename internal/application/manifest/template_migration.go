@@ -59,7 +59,7 @@ func (s *DeclarativeService) migrationAssessment(ctx context.Context, p domainid
 	return assessment, nil
 }
 
-func (s *DeclarativeService) validateMigrationSnapshot(ctx context.Context, p domainidentity.Principal, item domainmanifest.Package, current domainmanifest.Deployment, snapshot domainmanifest.DeliverySnapshot) error {
+func (s *DeclarativeService) validateMigrationSnapshot(ctx context.Context, p domainidentity.Principal, item domainmanifest.Package, current domainmanifest.Deployment, snapshot domainmanifest.DeliverySnapshot, firstClaim bool) error {
 	if initializationPlan(&snapshot) != "" {
 		if err := s.checkInitialization(ctx, current, snapshot); err != nil {
 			return err
@@ -71,6 +71,13 @@ func (s *DeclarativeService) validateMigrationSnapshot(ctx context.Context, p do
 	// Recover the exact successful apply without interpreting it as a new migration.
 	if current.Spec.DeliverySnapshot != nil && current.Spec.DeliverySnapshot.DeliveryPlanID == snapshot.DeliveryPlanID && current.Status.AppliedDigest == snapshot.RenderedDigest && current.Status.AppliedTemplate != nil && snapshot.TemplateInputs != nil && current.Status.AppliedTemplate.TemplateID == snapshot.TemplateInputs.TemplateID && current.Status.AppliedTemplate.TemplateVersion == snapshot.TemplateInputs.TemplateVersion && current.Status.AppliedTemplate.TemplateDigest == snapshot.TemplateInputs.TemplateDigest {
 		return nil
+	}
+	if firstClaim {
+		var err error
+		current, err = s.pendingMigrationBaseline(ctx, item.ApplicationID, current, snapshot)
+		if err != nil {
+			return err
+		}
 	}
 	assessment, err := s.assessDeliveryMigration(ctx, p, item, current, snapshot)
 	if err != nil {
@@ -116,7 +123,7 @@ func (s *DeclarativeService) validateMigrationTask(ctx context.Context, task dom
 	if !migrationPlanContainsSnapshot(plan, *snapshot) {
 		return apperrors.ErrConflict
 	}
-	return s.ValidateDeliverySnapshot(ctx, p, *snapshot)
+	return s.validateDeliverySnapshot(ctx, p, *snapshot, task.AttemptCount == 1)
 }
 
 func migrationPlanContainsSnapshot(plan domaindelivery.DeliveryPlan, snapshot domainmanifest.DeliverySnapshot) bool {

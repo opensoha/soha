@@ -186,7 +186,7 @@ func patchDocument(ctx context.Context, client dynamic.Interface, mapper restMap
 	defer cancel()
 	var applied *unstructured.Unstructured
 	if payload.InitializationPlanID != "" {
-		applied, err = resourceruntime.CreateManifest(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, metav1.CreateOptions{FieldManager: options.FieldManager, DryRun: options.DryRun})
+		applied, err = createInitializedManifest(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, options)
 	} else if payload.RootResource != nil {
 		applied, err = resourceruntime.ApplyRootCR(queryCtx, resourceInterface(client, mapping, document.Namespace), desired, *payload.RootResource, options)
 	} else {

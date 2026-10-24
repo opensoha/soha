@@ -255,11 +255,11 @@ func (s *Service) Publish(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainmanifest.Package{}, err
 	}
-	app, err := s.authorizePackage(ctx, principal, domainaccess.ActionTrigger, item)
+	app, err := s.authorizePackage(ctx, principal, domainaccess.ActionTrigger, item, appaccess.PermDeliveryReleasesTrigger)
 	if err != nil {
 		return domainmanifest.Package{}, err
 	}
-	if err := s.validateBindings(ctx, principal, domainaccess.ActionTrigger, &item, app); err != nil {
+	if err := s.validateBindings(ctx, principal, domainaccess.ActionTrigger, &item, app, appaccess.PermDeliveryReleasesTrigger); err != nil {
 		return domainmanifest.Package{}, err
 	}
 	if err := validateRenderableFiles(item); err != nil {
@@ -399,7 +399,7 @@ func (s *Service) authorizedApplicationIDs(ctx context.Context, principal domain
 	return allowed, nil
 }
 
-func (s *Service) authorizeInput(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package) (domainapp.App, error) {
+func (s *Service) authorizeInput(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package, permissionKeys ...string) (domainapp.App, error) {
 	if err := s.authorizeSensitiveFiles(ctx, principal, item.Files); err != nil {
 		return domainapp.App{}, err
 	}
@@ -407,14 +407,14 @@ func (s *Service) authorizeInput(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domainapp.App{}, err
 	}
-	if err := s.authorizeManifest(ctx, principal, action, item, app, nil, "", "", ""); err != nil {
+	if err := s.authorizeManifest(ctx, principal, action, item, app, nil, "", "", firstNonEmptyString(permissionKeys...)); err != nil {
 		return domainapp.App{}, err
 	}
 	return app, nil
 }
 
-func (s *Service) authorizePackage(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package) (domainapp.App, error) {
-	return s.authorizeInput(ctx, principal, action, item)
+func (s *Service) authorizePackage(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package, permissionKeys ...string) (domainapp.App, error) {
+	return s.authorizeInput(ctx, principal, action, item, permissionKeys...)
 }
 
 func (s *Service) validateServiceScope(ctx context.Context, principal domainidentity.Principal, item domainmanifest.Package) error {
@@ -430,7 +430,7 @@ func (s *Service) validateServiceScope(ctx context.Context, principal domainiden
 	return nil
 }
 
-func (s *Service) validateBindings(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item *domainmanifest.Package, app domainapp.App) error {
+func (s *Service) validateBindings(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item *domainmanifest.Package, app domainapp.App, permissionKeys ...string) error {
 	for index := range item.Bindings {
 		binding := &item.Bindings[index]
 		environment, err := s.environments.GetApplicationEnvironment(ctx, principal, binding.ApplicationEnvironmentID)
@@ -451,7 +451,7 @@ func (s *Service) validateBindings(ctx context.Context, principal domainidentity
 		if binding.EnvironmentKey == "" {
 			binding.EnvironmentKey = environment.EnvironmentID
 		}
-		if err := s.authorizeManifest(ctx, principal, action, *item, app, &cluster, binding.EnvironmentKey, binding.Namespace, ""); err != nil {
+		if err := s.authorizeManifest(ctx, principal, action, *item, app, &cluster, binding.EnvironmentKey, binding.Namespace, firstNonEmptyString(permissionKeys...)); err != nil {
 			return err
 		}
 		if err := s.validateTemplateParameters(ctx, principal, *item, binding.TemplateParameters); err != nil {
@@ -483,6 +483,9 @@ func (s *Service) authorizeManifest(ctx context.Context, principal domainidentit
 	}
 	if permissionKey == "" && (action == domainaccess.ActionView || action == domainaccess.ActionList || action == domainaccess.ActionWatch) {
 		permissionKey = appaccess.PermDeliveryApplicationsView
+	}
+	if permissionKey == "" && action == domainaccess.ActionTrigger {
+		permissionKey = appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "trigger")
 	}
 	request := domainaccess.Request{
 		PermissionKey: permissionKey,

@@ -507,6 +507,15 @@ func (r *Repository) loadDeploymentDetails(ctx context.Context, item *domainmani
 	if err != nil {
 		return err
 	}
+	// Selecting a Plan advances desired generation before any new observation.
+	// Retain the last observed identities until this generation returns inventory;
+	// their original generation and timestamps do not claim new rollout health.
+	if len(inventory) == 0 && item.Spec.DeliverySnapshot != nil && item.Status.ObservedGeneration > 0 && item.Status.ObservedGeneration < item.Generation {
+		inventory, err = r.listInventory(ctx, item.ID, item.Status.ObservedGeneration)
+		if err != nil {
+			return err
+		}
+	}
 	item.Status.Conditions = conditions
 	item.Status.Inventory = inventory
 	return nil

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	domainscopegrant "github.com/opensoha/soha/internal/domain/scopegrant"
@@ -16,6 +19,83 @@ type manifestReaderRole struct{}
 
 func (manifestReaderRole) ListRolePermissions(context.Context) (map[string][]string, error) {
 	return map[string][]string{"custom-reader": {appaccess.PermDeliveryApplicationsView}}, nil
+}
+
+type manifestPublisherRoles struct{}
+
+func (manifestPublisherRoles) ListRolePermissions(context.Context) (map[string][]string, error) {
+	return map[string][]string{"publisher": {"delivery.manifest-deployments.trigger"}, "reader": {appaccess.PermDeliveryApplicationsView}, "preflight": {"delivery.manifest-deployments.preflight"}}, nil
+}
+
+type preflightOnlyAuthorizer struct{ requests []domainaccess.Request }
+
+func (a *preflightOnlyAuthorizer) Authorize(_ context.Context, request domainaccess.Request) (domainaccess.Decision, error) {
+	a.requests = append(a.requests, request)
+	return domainaccess.Decision{Allowed: request.PermissionKey == "delivery.manifest-deployments.preflight"}, nil
+}
+
+func TestPreflightOnlyPlanDoesNotRequireDeployPermission(t *testing.T) {
+	s, _, target, selectVersion := newMigrationSnapshotFixture()
+	selectVersion(2)
+	auth := &preflightOnlyAuthorizer{}
+	s.base.authorizer = auth
+	s.base.permissions = appaccess.NewPermissionResolver(manifestPublisherRoles{})
+	p := domainidentity.Principal{UserID: "publisher", Roles: []string{"preflight"}}
+	snapshot, err := s.CreateDeliverySnapshot(t.Context(), p, "payments", "payments-dev", target, 1, "preview-only", domainmanifest.DeliveryArtifacts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(auth.requests) != 2 {
+		t.Fatalf("expected package and target preflight checks, got %d", len(auth.requests))
+	}
+	if err := s.ValidateDeliverySnapshot(t.Context(), p, snapshot); !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("preflight-only identity must not confirm deployment: %v", err)
+	}
+}
+
+type manifestPublisherGrants struct{}
+
+type manifestPublisherPolicy struct{}
+
+func (manifestPublisherPolicy) ListRoleCapabilities(context.Context) (map[string][]domainaccess.Action, error) {
+	return map[string][]domainaccess.Action{"publisher": {}}, nil
+}
+
+func (manifestPublisherPolicy) ListPolicies(context.Context) ([]domainaccess.Policy, error) {
+	return []domainaccess.Policy{{ID: "publisher", Effect: domainaccess.EffectAllow, Subjects: domainaccess.Matcher{Users: []string{"publisher"}}, Clusters: domainaccess.ClusterMatcher{IDs: []string{"cluster"}}, Namespaces: domainaccess.NamespaceMatcher{Names: []string{"payments"}}, Actions: []domainaccess.Action{domainaccess.ActionTrigger}, Reason: "test publisher ABAC"}}, nil
+}
+
+func (manifestPublisherGrants) List(context.Context) ([]domainscopegrant.Record, error) {
+	return []domainscopegrant.Record{{SubjectType: "user", SubjectID: "publisher", ScopeType: "delivery", BusinessLineID: "finance", ApplicationIDs: []string{"payments"}, EnvironmentIDs: []string{"dev"}, ClusterIDs: []string{"cluster"}, Namespaces: []string{"payments"}, Role: "publisher", Enabled: true}}, nil
+}
+
+func TestPermissionOnlyManifestTriggerRetainsTargetScope(t *testing.T) {
+	for _, tc := range []struct {
+		name, role, application, environment, cluster, namespace string
+		allowed                                                  bool
+	}{
+		{"publisher", "publisher", "payments", "dev", "cluster", "payments", true},
+		{"reader", "reader", "payments", "dev", "cluster", "payments", false},
+		{"other application", "publisher", "outside", "dev", "cluster", "payments", false},
+		{"other environment", "publisher", "payments", "prod", "cluster", "payments", false},
+		{"other cluster", "publisher", "payments", "dev", "outside", "payments", false},
+		{"other namespace", "publisher", "payments", "dev", "cluster", "outside", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resolver := appaccess.NewPermissionResolver(manifestPublisherRoles{})
+			auth := appaccess.New(policy.NewEngine(), manifestPublisherPolicy{}, manifestPublisherGrants{}, nil)
+			auth.SetPermissionResolver(resolver)
+			s := &Service{authorizer: auth}
+			connection := &domaincluster.Connection{Summary: domaincluster.Summary{ID: tc.cluster}}
+			err := s.authorizeManifest(context.Background(), domainidentity.Principal{UserID: "publisher", Roles: []string{tc.role}}, domainaccess.ActionTrigger, domainmanifest.Package{}, domainapp.App{ID: tc.application, BusinessLineID: "finance"}, connection, tc.environment, tc.namespace, "")
+			if tc.allowed && err != nil {
+				t.Fatal(err)
+			}
+			if !tc.allowed && !errors.Is(err, apperrors.ErrAccessDenied) {
+				t.Fatalf("expected denied, got %v", err)
+			}
+		})
+	}
 }
 
 type manifestScopeGrants struct{ applicationID string }

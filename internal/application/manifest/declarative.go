@@ -307,23 +307,23 @@ func (s *DeclarativeService) GetDeployment(ctx context.Context, principal domain
 	return item, nil
 }
 
-func (s *DeclarativeService) bindingPackage(ctx context.Context, principal domainidentity.Principal, packageID string, action domainaccess.Action) (domainmanifest.Package, domainapp.App, error) {
+func (s *DeclarativeService) bindingPackage(ctx context.Context, principal domainidentity.Principal, packageID string, action domainaccess.Action, permissionKeys ...string) (domainmanifest.Package, domainapp.App, error) {
 	item, err := s.base.get(ctx, packageID)
 	if err != nil {
 		return domainmanifest.Package{}, domainapp.App{}, err
 	}
-	app, err := s.base.authorizePackage(ctx, principal, action, item)
+	app, err := s.base.authorizePackage(ctx, principal, action, item, permissionKeys...)
 	return item, app, err
 }
 
-func (s *DeclarativeService) validateBinding(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package, app domainapp.App, binding *domainmanifest.EnvironmentBinding) error {
+func (s *DeclarativeService) validateBinding(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domainmanifest.Package, app domainapp.App, binding *domainmanifest.EnvironmentBinding, permissionKeys ...string) error {
 	legacy := domainmanifest.Binding{
 		ID: binding.ID, ApplicationEnvironmentID: binding.ApplicationEnvironmentID,
 		ClusterID: binding.ClusterID, Namespace: binding.Namespace, Overlay: binding.Overlay,
 		Kustomize: binding.Kustomize,
 	}
 	item.Bindings = []domainmanifest.Binding{legacy}
-	if err := s.base.validateBindings(ctx, principal, action, &item, app); err != nil {
+	if err := s.base.validateBindings(ctx, principal, action, &item, app, permissionKeys...); err != nil {
 		return err
 	}
 	binding.EnvironmentKey = item.Bindings[0].EnvironmentKey

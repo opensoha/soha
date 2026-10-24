@@ -494,7 +494,7 @@ func (s *Service) ListReleaseBoard(ctx context.Context, principal domainidentity
 		}
 		bundles, _ := s.repository.ListReleaseBundles(ctx, domaindelivery.ReleaseBundleFilter{ApplicationID: app.ID, Limit: 20})
 		tasks, _ := s.repository.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: app.ID, Limit: 20})
-		tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
+		tasks = domaindelivery.PublicExecutionTasks(domaindelivery.WithOperationStates(tasks, time.Now().UTC()))
 		builds, _ := s.builds.List(ctx, principal, domainbuild.Filter{ApplicationID: app.ID, Limit: 20})
 		workflows, _ := s.workflows.List(ctx, principal, app.ID, "", 20)
 		releases, _ := s.releases.List(ctx, principal, domainrelease.Filter{ApplicationID: app.ID, Limit: 20})
@@ -586,7 +586,7 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 			continue
 		}
 		if err := s.authorizeRuntimeScope(ctx, principal, item.ApplicationID, item.ApplicationEnvironmentID); err == nil {
-			filtered = append(filtered, item)
+			filtered = append(filtered, domaindelivery.PublicExecutionTask(item))
 		} else if !isHiddenRuntimeScopeError(err) {
 			return nil, err
 		}
@@ -612,6 +612,7 @@ func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity
 	if artifactErr == nil && len(artifacts) > 0 {
 		task.Artifacts = artifacts
 	}
+	task = domaindelivery.PublicExecutionTask(task)
 	if domaindelivery.SensitiveExecutionTask(task) && appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermPlatformConfigurationSecretDataView) == nil {
 		task.OperationState = domaindelivery.BuildOperationState(task, time.Now().UTC())
 		return task, nil
@@ -2268,7 +2269,7 @@ func (s *Service) deliveryBlueprintRuntimeSummary(ctx context.Context, principal
 			}
 		}
 		if tasks, err := s.repository.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: app.ID, Limit: 20}); err == nil {
-			tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
+			tasks = domaindelivery.PublicExecutionTasks(domaindelivery.WithOperationStates(tasks, time.Now().UTC()))
 			for _, task := range tasks {
 				if !deliveryTaskMatchesUsageBindings(task, bindings) && !deliveryTaskMatchesBuildSources(task, sources) {
 					continue
@@ -2854,7 +2855,7 @@ func (s *Service) loadDeliveryContext(ctx context.Context, principal domainident
 			return nil, nil, nil, nil, nil, nil, nil, err
 		}
 	}
-	tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
+	tasks = domaindelivery.PublicExecutionTasks(domaindelivery.WithOperationStates(tasks, time.Now().UTC()))
 	return bindings, environments, bundles, tasks, builds, workflows, releases, nil
 }
 
@@ -2939,7 +2940,7 @@ func latestBundleForApplication(applicationID string, items []domaindelivery.Rel
 func latestExecutionTaskForApplication(applicationID string, items []domaindelivery.ExecutionTask) *domaindelivery.ExecutionTask {
 	for _, item := range items {
 		if item.ApplicationID == applicationID {
-			copyItem := item
+			copyItem := domaindelivery.PublicExecutionTask(item)
 			return &copyItem
 		}
 	}
@@ -3013,7 +3014,7 @@ func latestExecutionTaskForBinding(binding domaincatalog.ApplicationEnvironment,
 			continue
 		}
 		if strings.TrimSpace(item.ApplicationEnvironmentID) == binding.ID {
-			copyItem := item
+			copyItem := domaindelivery.PublicExecutionTask(item)
 			return &copyItem
 		}
 	}

@@ -256,10 +256,10 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 		return nil, err
 	}
 	items, err := s.repo.ListExecutionTasks(ctx, filter)
-	filtered := items[:0]
+	filtered := make([]domaindelivery.ExecutionTask, 0, len(items))
 	for _, item := range items {
 		if item.TaskKind != "vm_ssh_command" {
-			filtered = append(filtered, item)
+			filtered = append(filtered, domaindelivery.PublicExecutionTask(item))
 		}
 	}
 	items = filtered
@@ -274,6 +274,8 @@ func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity
 	if err == nil && task.TaskKind == "vm_ssh_command" {
 		return domaindelivery.ExecutionTask{}, apperrors.ErrUnsupportedOperation
 	}
+	// View permission does not grant the runner's callback capability.
+	task = domaindelivery.PublicExecutionTask(task)
 	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 

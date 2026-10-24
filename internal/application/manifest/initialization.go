@@ -82,14 +82,14 @@ func (s *DeclarativeService) validateInitializationScope(ctx context.Context, ta
 	if err != nil {
 		return err
 	}
-	item, app, err := s.bindingPackage(ctx, p, binding.PackageID, action)
+	item, app, err := s.bindingPackage(ctx, p, binding.PackageID, action, permission)
 	if err != nil {
 		return err
 	}
 	if item.ID != payload.PackageID || item.ApplicationID != task.ApplicationID || binding.ApplicationEnvironmentID != task.ApplicationEnvironmentID || binding.ClusterID != payload.ClusterID || binding.Namespace != payload.Namespace {
 		return apperrors.ErrConflict
 	}
-	if err := s.validateBinding(ctx, p, action, item, app, &binding); err != nil {
+	if err := s.validateBinding(ctx, p, action, item, app, &binding, permission); err != nil {
 		return err
 	}
 	return nil

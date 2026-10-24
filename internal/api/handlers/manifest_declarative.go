@@ -494,7 +494,7 @@ func manifestDeploymentDTO(item domainmanifest.Deployment) sohaapi.ManifestDeplo
 		},
 		Status: sohaapi.ManifestDeploymentStatus{
 			ObservedGeneration: item.Status.ObservedGeneration, AppliedRevision: item.Status.AppliedRevision,
-			AppliedDigest: item.Status.AppliedDigest, LastKnownGoodRevision: item.Status.LastKnownGoodRevision,
+			AppliedDigest: item.Status.AppliedDigest, AppliedTemplate: item.Status.AppliedTemplate, LastKnownGoodRevision: item.Status.LastKnownGoodRevision,
 			Phase: sohaapi.ManifestDeploymentPhase(item.Status.Phase), Conditions: conditions, Inventory: inventory,
 			LastReconciledAt: item.Status.LastReconciledAt, LastExecutionTaskID: item.Status.LastExecutionTaskID,
 			Drift: manifestDriftDTO(item.Status.Drift), LastErrorCode: item.Status.LastErrorCode,
