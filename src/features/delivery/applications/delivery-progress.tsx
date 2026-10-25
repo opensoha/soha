@@ -18,7 +18,7 @@ export function WorkflowProgress({
   binding,
   onSelectStage,
 }: {
-  binding: DeliveryApplicationBindingSummary
+  binding: Pick<DeliveryApplicationBindingSummary, 'latestWorkflow' | 'workflowTemplate'>
   onSelectStage?: (runId: string, stageKey: string) => void
 }) {
   const { token } = theme.useToken()
@@ -90,6 +90,11 @@ export function WorkflowProgress({
 export function WorkloadProgress({ workload }: { workload: ApplicationRuntimeWorkload }) {
   if (!['deployment', 'statefulset', 'daemonset'].includes(workload.workloadKind.toLowerCase()))
     return null
+  if (
+    workload.healthStatus === 'unknown' ||
+    (workload.sourceStatus && !['linked', 'changed'].includes(workload.sourceStatus))
+  )
+    return <Typography.Text type="secondary">副本观测不完整，更新状态未知</Typography.Text>
   const {
     desiredReplicas: desired,
     updatedReplicas: updated,

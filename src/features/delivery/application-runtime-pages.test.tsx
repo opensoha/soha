@@ -1051,6 +1051,9 @@ const testState = vi.hoisted(() => ({
         ],
       }
     }
+    if (path.startsWith('/workflows?') && path.includes('applicationEnvironmentId=')) {
+      return { data: [] }
+    }
     if (path === '/workflows?applicationId=app-1') {
       return {
         items: [
@@ -1482,7 +1485,10 @@ describe('ApplicationDetailPage workbench', () => {
   })
 
   it('keeps one service pane beneath settings and workflow drawers without application tabs', async () => {
-    const container = await renderWithProviders(<ApplicationDetailPage />)
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?serviceId=svc-api',
+    )
     expect(testState.apiGet).toHaveBeenCalledWith('/applications/app-1/runtime')
     expect(container.querySelector('.soha-application-navigation')).toBeNull()
     expect(container.querySelectorAll('[aria-label="服务列表"] button')).toHaveLength(1)
@@ -1521,7 +1527,7 @@ describe('ApplicationDetailPage workbench', () => {
   it('keeps the selected service open and preserves scoped Pods and actions', async () => {
     const container = await renderWithProviders(
       <ApplicationDetailPage />,
-      '/applications/app-1?tab=services',
+      '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api',
     )
     await act(async () => {
       await vi.dynamicImportSettled()
@@ -1583,6 +1589,48 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
       '/applications/app-1?tab=services&applicationEnvironmentId=binding-test&serviceId=svc-api&serviceTab=pods',
     )
+  })
+
+  it('keeps observed Helm Pods readable without exposing direct workload mutation buttons', async () => {
+    const previousGet = testState.apiGet.getMockImplementation()!
+    testState.apiGet.mockImplementation(async (path: string) => {
+      const result = await previousGet(path)
+      if (path === '/applications/app-1/runtime' && result.data && 'environments' in result.data) {
+        const workload = result.data.environments?.[0]?.workloads?.[0]
+        if (!workload) throw new Error('Expected native workload fixture')
+        Object.assign(workload, {
+          sourceStatus: '',
+          source: {
+            resource: {
+              clusterId: 'cluster-a',
+              namespace: 'checkout-test',
+              apiVersion: 'apps/v1',
+              kind: 'Deployment',
+              name: 'checkout-api',
+              uid: 'helm-owned-uid',
+              scopeMode: 'namespace',
+            },
+            specDigest: 'a'.repeat(64),
+            observedAt: '2026-10-25T00:00:00Z',
+          },
+        })
+      }
+      return result
+    })
+    try {
+      const container = await renderWithProviders(
+        <ApplicationDetailPage />,
+        '/applications/app-1?serviceId=svc-api',
+      )
+      await act(async () => {
+        await vi.dynamicImportSettled()
+      })
+      expect(container.querySelector('.soha-pod-card')?.textContent).toContain('checkout-api-pod')
+      expect(container.querySelector('.soha-service-runtime-actions')).toBeNull()
+      expect(container.querySelector('.soha-service-actions')?.textContent).toContain('构建与更新')
+    } finally {
+      testState.apiGet.mockImplementation(previousGet)
+    }
   })
 
   it.each(['pods', 'metrics'])(
@@ -2006,6 +2054,39 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.querySelector('[data-testid="release-flow-dag-editor"]')).toBeNull()
   })
 
+  it('opens the service overview by default and restores the explicit service deep link', async () => {
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+    expect(
+      container.querySelector('[aria-label="服务卡片"] [role="listitem"]')?.textContent,
+    ).toContain('Checkout API')
+    expect(container.querySelector('.soha-service-detail')).toBeNull()
+    expect(
+      testState.apiGet.mock.calls.some(([path]) =>
+        path.includes('/workloads/checkout-api/runtime'),
+      ),
+    ).toBe(false)
+    expect(
+      container.querySelector('.soha-service-selector__overview')?.getAttribute('aria-current'),
+    ).toBe('page')
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.soha-service-card__identity')!.click()
+    })
+    expect(container.querySelector('.soha-service-detail h1')?.textContent).toBe('Checkout API')
+    expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
+      'serviceId=svc-api',
+    )
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.soha-service-selector__overview')!.click()
+    })
+    expect(container.querySelector('[aria-label="服务卡片"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="location"]')?.textContent).not.toContain(
+      'serviceId=',
+    )
+    expect(container.querySelector('[data-testid="location"]')?.textContent).toContain(
+      'applicationEnvironmentId=binding-test',
+    )
+  })
+
   it('renders service configuration while runtime query is pending', async () => {
     testState.runtimePending = true
     const container = await renderWithProviders(<ApplicationDetailPage />)
@@ -2017,7 +2098,10 @@ describe('ApplicationDetailPage workbench', () => {
   })
 
   it('filters the service rail without replacing the selected service and keeps add-service inside it', async () => {
-    const container = await renderWithProviders(<ApplicationDetailPage />)
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?serviceId=svc-api',
+    )
     const rail = container.querySelector<HTMLElement>('.soha-service-selector')!
     expect(findButton(rail, '添加服务')).not.toBeNull()
     const input = rail.querySelector<HTMLInputElement>('[aria-label="搜索服务"]')!
@@ -2139,7 +2223,7 @@ describe('ApplicationDetailPage workbench', () => {
     testState.runtimeWithProductionEnvironment = true
     const container = await renderWithProviders(
       <ApplicationDetailPage />,
-      '/applications/app-1?tab=services',
+      '/applications/app-1?tab=services&serviceId=svc-api',
     )
 
     expect(container.querySelector('[aria-label="服务列表"] button')).not.toBeNull()
@@ -3046,7 +3130,10 @@ describe('ApplicationDetailPage workbench', () => {
     'keeps the application workspace available for %s runtime failures',
     async (runtimeStatus) => {
       testState.runtimeStatus = runtimeStatus
-      const container = await renderWithProviders(<ApplicationDetailPage />)
+      const container = await renderWithProviders(
+        <ApplicationDetailPage />,
+        '/applications/app-1?serviceId=svc-api',
+      )
 
       expect(container.querySelector('.soha-service-console')).not.toBeNull()
       expect(container.textContent).toContain('状态读取失败')

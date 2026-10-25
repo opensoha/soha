@@ -84,6 +84,30 @@ function environments(app: string) {
     environmentKey: item.key,
     requiresApproval: item.requiresApproval,
     status: 'available',
+    targets:
+      app === 'retail'
+        ? services.map((service, index) => ({
+            id: `target-${service.id}`,
+            clusterId: 'cluster-a',
+            namespace: `retail-${item.id}`,
+            workloadName: service.key,
+            workloadKind:
+              index === 4 || index === 5
+                ? 'CustomResource'
+                : index === 2 || index === 3
+                  ? 'HelmRelease'
+                  : 'Deployment',
+            targetKind:
+              index >= 8
+                ? 'kustomize_overlay'
+                : index === 2 || index === 3
+                  ? 'helm_release'
+                  : 'k8s_workload',
+            executorKind: index >= 6 ? 'manifest_ssa' : 'observe_only',
+            metadata: { serviceId: service.id },
+            enabled: false,
+          }))
+        : [],
     workloads:
       app === 'retail' && item.id === 'test'
         ? services.map((service) => workload(service.key))
@@ -97,13 +121,13 @@ function workload(name: string) {
     namespace: 'retail-test',
     serviceId: name,
     serviceKey: name,
-    workloadKind: 'Deployment',
+    workloadKind: ['search', 'messages'].includes(name) ? 'CustomResource' : 'Deployment',
     workloadName: name,
     desiredReplicas: 2,
     readyReplicas: 2,
     updatedReplicas: 2,
     availableReplicas: 2,
-    healthStatus: 'healthy',
+    healthStatus: ['search', 'messages'].includes(name) ? 'unknown' : 'healthy',
   }
 }
 export function task114Response(
@@ -128,6 +152,7 @@ export function task114Response(
       visibleMenus: [{ id: 'applications', path: '/applications', labelZh: '应用中心' }],
     })
   if (path === '/applications') return data(applications)
+  if (path === '/workflows') return data([])
   if (path === '/application-environments') return data([])
   if (path === '/delivery/environments') return data(catalog)
   if (path === '/clusters')

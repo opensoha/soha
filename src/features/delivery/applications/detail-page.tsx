@@ -1,6 +1,8 @@
 import { MigrationAssessment, planMigrations } from '../template-migration'
 import { ManifestDeploymentState } from './manifest-deployment-state'
 import { WorkflowProgress, WorkloadProgress } from './delivery-progress'
+import { ServiceCards, ServiceWorkflowCard } from './service-cards'
+import { serviceDeliveryKind } from './service-workflow'
 import { EnvironmentNotice } from './environment-notice'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -54,7 +56,7 @@ import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { ScopeGrantManager } from '@/features/access'
 import { useAIPageContext } from '@/features/copilot'
-import { useClusterCapabilityForCluster } from '@/features/platform'
+import { buildClusterScopedPath, useClusterCapabilityForCluster } from '@/features/platform'
 import { isApiError } from '@/services/api-error'
 import { localeText, useI18n } from '@/i18n'
 import { TemplateUpdateEntry } from '../template-updates/entry'
@@ -555,6 +557,8 @@ export function ApplicationDetailPage() {
       if (nextSettings) next.set('settings', nextSettings)
       if (activeEnvironmentId) next.set('applicationEnvironmentId', activeEnvironmentId)
     } else {
+      next.set('tab', 'services')
+      next.delete('settings')
       next.delete('serviceId')
       next.delete('serviceTab')
     }
@@ -572,7 +576,7 @@ export function ApplicationDetailPage() {
     deliveryQueries.applications.detail(
       applicationId ?? '',
       Boolean(applicationId),
-      activeTab === 'delivery' ? 5_000 : false,
+      ['services', 'delivery'].includes(activeTab) ? 5_000 : false,
     ),
   )
   const servicesQuery = useQuery(
@@ -633,6 +637,14 @@ export function ApplicationDetailPage() {
     ? environments.find((item) => item.applicationEnvironmentId === requestedEnvironmentId)
     : environments[0]
   const activeEnvironmentId = activeEnvironment?.applicationEnvironmentId ?? ''
+  const workflowReadsEnabled = Boolean(applicationId && activeEnvironmentId && canViewWorkflows)
+  const serviceWorkflowsQuery = useQuery(
+    deliveryQueries.workflows.list(
+      { applicationId, applicationEnvironmentId: activeEnvironmentId, limit: 200 },
+      { enabled: workflowReadsEnabled, refetchInterval: 5_000 },
+    ),
+  )
+  const serviceWorkflows = readableQueryData(serviceWorkflowsQuery) ?? []
   useEffect(() => {
     if (requestedEnvironmentId || !activeEnvironmentId) return
     const next = new URLSearchParams(searchParams)
@@ -1255,9 +1267,8 @@ export function ApplicationDetailPage() {
   const requestedWorkload = searchParams.get('workload') || ''
   const focusedService = focusedServiceId
     ? services.find((service) => service.id === focusedServiceId)
-    : requestedWorkload
-      ? undefined
-      : services[0]
+    : undefined
+  const serviceOverview = !focusedServiceId && !requestedWorkload
   const focusedRepository = repositories.find(
     (repository) => repository.id === focusedService?.repositoryId,
   )
@@ -1279,8 +1290,8 @@ export function ApplicationDetailPage() {
         : orphanWorkloads.slice(0, 1)
   const selectedPodWorkloads = selectedWorkloads.filter(
     (item) =>
-      !item.sourceStatus ||
-      (item.workloadKind === 'Deployment' && ['linked', 'changed'].includes(item.sourceStatus)),
+      item.workloadKind === 'Deployment' &&
+      (!item.sourceStatus || ['linked', 'changed'].includes(item.sourceStatus)),
   )
   const serviceManifestDeployments = (serviceId?: string) =>
     (activeEnvironment?.manifestDeployments ?? []).filter(
@@ -1295,18 +1306,41 @@ export function ApplicationDetailPage() {
         ),
     )
   const selectedManifestDeployments = serviceManifestDeployments(focusedService?.id)
-  const serviceStatus = (items: ApplicationRuntimeWorkload[], serviceId?: string) =>
-    runtimePending || runtimeUnavailable || invalidEnvironment
-      ? { tone: 'default', label: runtimePending ? '读取状态' : '状态读取失败' }
-      : environmentRuntimeStatus({
-          ...activeEnvironment!,
-          workloads: items,
-          manifestDeployments: serviceManifestDeployments(serviceId),
-        })
+  const serviceStatus = (items: ApplicationRuntimeWorkload[], serviceId?: string) => {
+    if (runtimePending || runtimeUnavailable || invalidEnvironment)
+      return { tone: 'default', label: runtimePending ? '读取状态' : '状态读取失败' }
+    if (!activeEnvironment) return { tone: 'default', label: '未关联环境' }
+    for (const [state, label] of [
+      ['forbidden', '无资源查看权限'],
+      ['replaced', '资源身份已变化'],
+      ['missing', '未发现关联资源'],
+      ['unavailable', '资源观察不可用'],
+    ]) {
+      if (items.some((item) => item.sourceStatus === state)) return { tone: 'default', label }
+    }
+    return environmentRuntimeStatus({
+      ...activeEnvironment!,
+      workloads: items,
+      manifestDeployments: serviceManifestDeployments(serviceId),
+    })
+  }
+  const selectedNativeImports = selectedWorkloads.some(
+    (workload) =>
+      workload.sourceStatus &&
+      (workload.workloadKind === 'CustomResource' ||
+        (activeRuntimeBinding?.targets ?? activeEnvironment?.targets ?? []).some(
+          (target) =>
+            target.id === workload.targetId && target.metadata?.importSource === 'kubernetes',
+        )),
+  )
   const selectionValue =
-    focusedService?.id ||
+    (serviceOverview ? 'all' : focusedService?.id) ||
     (selectedWorkloads[0] ? `workload:${selectedWorkloads[0].workloadName}` : undefined)
   const selectService = (value: string) => {
+    if (value === 'all') {
+      setFocusedService()
+      return
+    }
     if (!value.startsWith('workload:')) {
       setFocusedService(value, serviceTab)
       return
@@ -1343,6 +1377,26 @@ export function ApplicationDetailPage() {
     (binding) =>
       binding.workflowTemplateId && binding.applicationEnvironmentId === activeEnvironmentId,
   )
+  const serviceWorkflowBinding = bindings.find(
+    (binding) => binding.applicationEnvironmentId === activeEnvironmentId,
+  )
+  const workflowReadState =
+    detailQuery.isError || serviceWorkflowsQuery.isError
+      ? 'error'
+      : !detail || (workflowReadsEnabled && serviceWorkflowsQuery.isLoading)
+        ? 'loading'
+        : 'ready'
+  const openServiceWorkflow = (serviceId: string) => {
+    const path = applicationWorkspacePath(
+      application.id,
+      'delivery',
+      activeEnvironmentId,
+      serviceId,
+    )
+    navigate(path)
+  }
+  const openWorkflowStage = (runId: string, stageKey: string) =>
+    navigate(`/workflows/${encodeURIComponent(runId)}?${new URLSearchParams({ stage: stageKey })}`)
   const selectedWorkflowCreateBinding = bindings.find(
     (binding) => binding.applicationEnvironmentId === workflowCreateEnvironmentId,
   )
@@ -1373,7 +1427,15 @@ export function ApplicationDetailPage() {
     ...services.map((service) => ({
       id: service.id,
       name: service.name || service.key,
-      kind: serviceKindLabel(service.serviceKind),
+      kind:
+        serviceDeliveryKind(
+          service,
+          activeRuntimeBinding?.targets ?? activeEnvironment?.targets ?? [],
+          runtimeWorkloads.filter(
+            (workload) => workload.serviceId === service.id || workload.serviceKey === service.key,
+          ),
+        ) || serviceKindLabel(service.serviceKind),
+      service,
       workloads: runtimeWorkloads.filter(
         (workload) => workload.serviceId === service.id || workload.serviceKey === service.key,
       ),
@@ -1451,6 +1513,7 @@ export function ApplicationDetailPage() {
             onClick={() => {
               void runtimeQuery.refetch()
               void detailQuery.refetch()
+              if (workflowReadsEnabled) void serviceWorkflowsQuery.refetch()
             }}
           />
         </div>
@@ -1501,7 +1564,7 @@ export function ApplicationDetailPage() {
               <ServiceRuntimeActions
                 key={`${activeEnvironmentId}/${selectionValue}`}
                 applicationId={application.id}
-                workloads={selectedWorkloads}
+                workloads={selectedWorkloads.filter((workload) => !workload.source)}
               />
             </Suspense>
           ) : null}
@@ -1576,10 +1639,50 @@ export function ApplicationDetailPage() {
         !runtimeUnavailable &&
         !invalidEnvironment ? (
           <Suspense fallback={<ManagementState compact kind="loading" />}>
-            <ServiceRuntimeSummary applicationId={application.id} workloads={selectedWorkloads} />
+            <ServiceRuntimeSummary
+              applicationId={application.id}
+              workloads={selectedPodWorkloads}
+            />
           </Suspense>
         ) : null}
       </div>
+      {focusedService ? (
+        <ServiceWorkflowCard
+          service={focusedService}
+          environmentId={activeEnvironmentId}
+          binding={serviceWorkflowBinding}
+          runs={serviceWorkflows}
+          workloads={selectedWorkloads}
+          canView={canViewWorkflows}
+          state={workflowReadState}
+          onSelectStage={openWorkflowStage}
+        />
+      ) : null}
+      {!selectedNativeImports &&
+      selectedWorkloads.some((workload) =>
+        ['StatefulSet', 'DaemonSet'].includes(workload.workloadKind),
+      ) ? (
+        <section className="soha-service-workflow" aria-label="其他运行工作负载">
+          <Text strong>其他运行工作负载</Text>
+          <Text type="secondary">复用 K8s 工作台查看这些控制器的 Pod、配置和事件。</Text>
+          <Space wrap>
+            {selectedWorkloads
+              .filter((workload) => ['StatefulSet', 'DaemonSet'].includes(workload.workloadKind))
+              .map((workload) => (
+                <Link
+                  key={`${workload.clusterId}/${workload.namespace}/${workload.workloadKind}/${workload.workloadName}`}
+                  to={buildClusterScopedPath(
+                    workload.clusterId,
+                    `workloads/${workload.workloadKind === 'StatefulSet' ? 'statefulsets' : 'daemonsets'}/${encodeURIComponent(workload.workloadName)}`,
+                    workload.namespace,
+                  )}
+                >
+                  {workload.workloadKind} / {workload.workloadName}
+                </Link>
+              ))}
+          </Space>
+        </section>
+      ) : null}
       {!runtimePending &&
       !runtimeUnavailable &&
       !invalidEnvironment &&
@@ -1621,7 +1724,7 @@ export function ApplicationDetailPage() {
               kind={runtimePending ? 'loading' : 'error'}
               actions={<Button onClick={() => void runtimeQuery.refetch()}>重试</Button>}
             />
-          ) : selectedWorkloads.some((item) => item.sourceStatus) ? (
+          ) : selectedNativeImports ? (
             <>
               <ImportedSourceBrowser
                 key={`${activeEnvironmentId}/${selectionValue}`}
@@ -1648,7 +1751,7 @@ export function ApplicationDetailPage() {
                 />
               ) : null}
             </>
-          ) : selectedWorkloads.length ? (
+          ) : selectedPodWorkloads.length ? (
             <ServicePodWorkspace
               key={`${activeEnvironmentId}/${selectionValue}`}
               applicationId={application.id}
@@ -1663,9 +1766,20 @@ export function ApplicationDetailPage() {
               title={
                 focusedServiceId && !focusedService
                   ? '服务不存在或不可访问'
-                  : selectedManifestDeployments.length
-                    ? '当前资源清单中没有可展示的 Deployment Pods'
-                    : '当前环境尚未部署此服务'
+                  : selectedWorkloads.some((item) => item.sourceStatus === 'forbidden')
+                    ? '无资源查看权限'
+                    : selectedWorkloads.some(
+                          (item) =>
+                            item.sourceStatus === 'linked' && item.workloadKind === 'HelmRelease',
+                        )
+                      ? '此 Helm Release 没有可展示的原生工作负载'
+                      : selectedWorkloads.some((item) => item.sourceStatus)
+                        ? '资源观察不可用'
+                        : selectedWorkloads.length
+                          ? '此服务的其他工作负载见上方 K8s 工作台入口'
+                          : selectedManifestDeployments.length
+                            ? '当前资源清单中没有可展示的 Deployment Pods'
+                            : '当前环境尚未部署此服务'
               }
               description={
                 selectedManifestDeployments.length
@@ -2916,6 +3030,13 @@ export function ApplicationDetailPage() {
                         }}
                       />
                     </div>
+                    <Button
+                      className="soha-service-selector__overview"
+                      aria-current={serviceOverview ? 'page' : undefined}
+                      onClick={() => selectService('all')}
+                    >
+                      服务总览
+                    </Button>
                     {canCreateService ? (
                       <Button block icon={<PlusOutlined />} onClick={() => openServiceModal()}>
                         添加服务
@@ -2980,16 +3101,62 @@ export function ApplicationDetailPage() {
                       aria-label="选择服务"
                       value={selectionValue}
                       showSearch={{ optionFilterProp: 'label' }}
-                      options={filteredServiceCards.map((service) => ({
-                        value: service.id,
-                        label: service.name,
-                      }))}
+                      options={filteredServiceCards
+                        .map((service) => ({
+                          value: service.id,
+                          label: service.name,
+                        }))
+                        .concat([{ value: 'all', label: '服务总览' }])}
                       onChange={selectService}
                     />
                   </aside>
                   <div className="soha-service-console__body">
                     {serviceRecordsState}
-                    {serviceCards.length || focusedServiceId ? (
+                    {serviceOverview && serviceCards.length ? (
+                      <>
+                        <div className="soha-service-overview-grid__toolbar">
+                          <h2>服务总览</h2>
+                          <ManagementRefreshButton
+                            aria-label="刷新当前环境"
+                            tooltip="刷新当前环境"
+                            loading={runtimeQuery.isFetching}
+                            onClick={() => {
+                              void runtimeQuery.refetch()
+                              void detailQuery.refetch()
+                              if (workflowReadsEnabled) void serviceWorkflowsQuery.refetch()
+                              void servicesQuery.refetch()
+                            }}
+                          />
+                        </div>
+                        {workflowReadsEnabled &&
+                        workflowReadState === 'ready' &&
+                        serviceWorkflows.length >= 200 ? (
+                          <Text type="secondary">
+                            当前展示此环境最近 200 条工作流记录；无匹配记录不代表从未执行。
+                          </Text>
+                        ) : null}
+                        <ServiceCards
+                          cards={filteredServiceCards}
+                          buildSources={application.buildSources ?? []}
+                          environmentId={activeEnvironmentId}
+                          binding={serviceWorkflowBinding}
+                          runs={serviceWorkflows}
+                          statusFor={serviceStatus}
+                          runtimeReady={
+                            !runtimePending &&
+                            !runtimeUnavailable &&
+                            !invalidEnvironment &&
+                            activeEnvironment?.status !== 'unavailable'
+                          }
+                          workflowState={workflowReadState}
+                          canViewWorkflows={canViewWorkflows}
+                          canConfigure={canViewWorkflows || canViewBuilds}
+                          onSelect={selectService}
+                          onConfigure={openServiceWorkflow}
+                          onSelectStage={openWorkflowStage}
+                        />
+                      </>
+                    ) : serviceCards.length || focusedServiceId ? (
                       serviceDetails
                     ) : (
                       <ManagementState

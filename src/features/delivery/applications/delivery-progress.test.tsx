@@ -41,6 +41,16 @@ it('keeps old ready replicas separate from the new rollout and handles zero and 
   expect(
     renderToStaticMarkup(<WorkloadProgress workload={{ ...workload, workloadKind: 'Job' }} />),
   ).toBe('')
+  for (const sourceStatus of ['unavailable', 'forbidden', 'replaced', 'missing'] as const) {
+    const output = renderToStaticMarkup(
+      <WorkloadProgress workload={{ ...workload, sourceStatus }} />,
+    )
+    expect(output).toContain('更新状态未知')
+    expect(output).not.toContain('data-status="finish"')
+  }
+  expect(
+    renderToStaticMarkup(<WorkloadProgress workload={{ ...workload, healthStatus: 'unknown' }} />),
+  ).toContain('更新状态未知')
 })
 
 it('renders recorded node results without marking missing or skipped steps successful', () => {
