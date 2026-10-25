@@ -3,12 +3,14 @@ import { Button, Collapse, Descriptions, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { parseDocument } from 'yaml'
 import { z } from 'zod'
-import { MetadataTag } from '@/components/status-tag'
+import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { ManagementState } from '@/components/management-list'
 import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
 import { podQueries, workloadQueries } from '@/features/platform'
 import { localeText, useI18n } from '@/i18n'
-import { toScopeKey } from '@/types'
+import { toScopeKey, type WorkloadContainer } from '@/types'
+import { ReadFeedback } from '@/components/request-feedback'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { formatDateTime } from '@/utils/time'
 
 const { Text } = Typography
@@ -34,6 +36,7 @@ const probeSchema = z.object({
 const containerSchema = z.object({
   name: z.string(),
   image: z.string().optional(),
+  restartPolicy: z.string().optional(),
   ports: z.array(z.object({ name: z.string().optional(), containerPort: z.number() })).optional(),
   livenessProbe: probeSchema.optional(),
   startupProbe: probeSchema.optional(),
@@ -49,6 +52,16 @@ const terminationSchema = z.object({
 const containerStatusSchema = z.object({
   name: z.string(),
   restartCount: z.number().optional(),
+  ready: z.boolean().optional(),
+  state: z
+    .object({
+      running: z.object({ startedAt: z.string().optional() }).optional(),
+      waiting: z
+        .object({ reason: z.string().optional(), message: z.string().optional() })
+        .optional(),
+      terminated: terminationSchema.optional(),
+    })
+    .optional(),
   lastState: z.object({ terminated: terminationSchema.optional() }).optional(),
 })
 const podSchema = z.object({
@@ -103,18 +116,53 @@ export function probeEndpoint(
   return '-'
 }
 
+export function VerifiedPodInspection(props: {
+  clusterId: string
+  namespace: string
+  podName: string
+  mode: 'details' | 'events' | 'yaml'
+  expectedUid?: string
+}) {
+  const permissions = usePermissionSnapshot().data?.data
+  const allowed = hasPermission(permissions, 'platform.pods.view')
+  const options = podQueries.detail(toScopeKey(props.clusterId, props.namespace), props.podName)
+  const query = useQuery({
+    ...options,
+    enabled: allowed,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnMount: 'always',
+  })
+  if (!allowed) return <ManagementState compact kind="no-permission" />
+  if (query.isPending || query.isFetching) return <ManagementState compact kind="loading" />
+  if (query.isError) return <ReadFeedback query={query} label="Pod 身份" />
+  if (!query.data?.uid || (props.expectedUid && query.data.uid !== props.expectedUid))
+    return (
+      <ManagementState compact kind="error" title="Pod 已重建或 UID 无法确认，请刷新后重新选择" />
+    )
+  return (
+    <PodInspection
+      {...props}
+      expectedUid={query.data.uid}
+      containerMetadata={query.data.containers}
+    />
+  )
+}
+
 export function PodInspection({
   clusterId,
   namespace,
   podName,
   mode,
   expectedUid,
+  containerMetadata,
 }: {
   clusterId: string
   namespace: string
   podName: string
   mode: 'details' | 'events' | 'yaml'
   expectedUid?: string
+  containerMetadata?: WorkloadContainer[]
 }) {
   const { localeCode } = useI18n()
   const text = (zh: string, en: string) => localeText(localeCode, zh, en)
@@ -207,10 +255,13 @@ export function PodInspection({
     ...(pod.status?.ephemeralContainerStatuses ?? []),
   ]
   const containers = [
-    ...(pod.spec.initContainers ?? []).map((container) => ({ ...container, category: 'Init' })),
+    ...(pod.spec.initContainers ?? []).map((container) => ({
+      ...container,
+      category: container.restartPolicy === 'Always' ? 'Sidecar · restartable init' : 'Init',
+    })),
     ...pod.spec.containers.map((container) => ({
       ...container,
-      category: text('普通', 'Regular'),
+      category: text('应用容器', 'Application container'),
     })),
     ...(pod.spec.ephemeralContainers ?? []).map((container) => ({
       ...container,
@@ -224,13 +275,22 @@ export function PodInspection({
         defaultActiveKey={containers.map((container) => container.name)}
         items={containers.map((container) => {
           const status = statuses.find((item) => item.name === container.name)
-          const terminated = status?.lastState?.terminated
+          const metadata = containerMetadata?.find((item) => item.name === container.name)
+          const role =
+            metadata?.role === 'sidecar'
+              ? 'Sidecar'
+              : metadata?.role === 'main'
+                ? text('主容器', 'Main')
+                : metadata?.role === 'init'
+                  ? 'Init'
+                  : container.category
+          const terminated = status?.state?.terminated || status?.lastState?.terminated
           return {
             key: container.name,
             label: (
               <div className="soha-pod-container-heading">
                 <Text strong>{container.name}</Text>
-                <MetadataTag label={container.category} />
+                <MetadataTag label={role} />
                 <Text type="secondary">{container.image}</Text>
               </div>
             ),
@@ -240,6 +300,38 @@ export function PodInspection({
                   size="small"
                   column={{ xs: 1, sm: 2, md: 3 }}
                   items={[
+                    {
+                      key: 'state',
+                      label: text('当前状态', 'State'),
+                      children: (
+                        <StatusTag
+                          value={
+                            status?.state?.waiting
+                              ? 'pending'
+                              : status?.state?.terminated
+                                ? 'stopped'
+                                : status?.state?.running
+                                  ? 'running'
+                                  : 'unknown'
+                          }
+                          label={
+                            status?.state?.waiting?.reason ||
+                            status?.state?.terminated?.reason ||
+                            (status?.state?.running ? 'Running' : '未知')
+                          }
+                        />
+                      ),
+                    },
+                    {
+                      key: 'ready',
+                      label: text('容器就绪', 'Container readiness'),
+                      children:
+                        status?.ready === undefined
+                          ? '未知'
+                          : status.ready
+                            ? text('已就绪', 'Ready')
+                            : text('未就绪', 'Not ready'),
+                    },
                     {
                       key: 'restarts',
                       label: text('重启次数', 'Restarts'),

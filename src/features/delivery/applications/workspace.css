@@ -957,3 +957,123 @@
     width: auto;
   }
 }
+
+/* Task114 detail: runtime relationships lead; the existing Pod cards remain below. */
+.soha-service-detail {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  gap: 20px;
+}
+.soha-service-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'identity actions' 'location actions' 'facts facts';
+  gap: 8px 16px;
+}
+.soha-service-detail-identity {
+  grid-area: identity;
+}
+.soha-service-detail-identity h1 {
+  font-size: 20px;
+  line-height: 1.5;
+}
+.soha-service-summary > .soha-service-location {
+  grid-area: location;
+  margin: 0;
+}
+.soha-service-summary > .soha-service-actions {
+  grid-area: actions;
+  justify-content: flex-end;
+  align-self: center;
+  max-width: 650px;
+}
+.soha-service-observation-facts {
+  grid-area: facts;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 16px;
+  margin-top: 8px;
+  background: var(--soha-bg-surface);
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+}
+.soha-service-observation-facts > div {
+  display: grid;
+  gap: 6px;
+  padding: 0 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soha-service-observation-facts > div:first-child {
+  padding-left: 0;
+}
+.soha-service-observation-facts > div + div {
+  border-left: 1px solid var(--soha-border-color);
+}
+.soha-service-observation-facts span {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+}
+.soha-service-configuration {
+  background: var(--soha-bg-surface);
+  padding: 20px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-panel);
+}
+.soha-service-section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.soha-service-section-heading h2,
+.soha-service-workflow h2 {
+  margin: 0;
+  font-size: var(--soha-font-size-section);
+}
+.soha-service-configuration__danger {
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--soha-border-color);
+}
+.soha-service-configuration .soha-resource-browser {
+  min-height: 180px;
+  height: auto;
+}
+.soha-service-configuration .soha-resource-yaml-content {
+  max-height: 520px;
+}
+.soha-imported-runtime {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.soha-service-pods-panel > .soha-service-pods {
+  margin-top: 20px;
+}
+@media (max-width: 1100px) {
+  .soha-service-summary {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'identity' 'location' 'actions' 'facts';
+  }
+  .soha-service-summary > .soha-service-actions {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 600px) {
+  .soha-service-observation-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .soha-service-observation-facts > div {
+    padding: 0;
+  }
+  .soha-service-observation-facts > div + div {
+    border: 0;
+  }
+  .soha-service-detail-identity h1 {
+    font-size: var(--soha-font-size-section);
+  }
+}

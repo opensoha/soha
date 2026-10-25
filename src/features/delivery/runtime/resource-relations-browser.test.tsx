@@ -20,6 +20,17 @@ vi.mock('@/features/auth', () => ({
 }))
 vi.mock('@/services/api-client', () => ({ api: { get: state.get } }))
 vi.mock('@/features/platform', () => ({
+  RelatedResourceYaml: ({
+    target,
+    expectedUid,
+  }: {
+    target: { name: string }
+    expectedUid?: string
+  }) => (
+    <div>
+      resource-yaml {target.name} {expectedUid}
+    </div>
+  ),
   useRealtimeSessionDock: () => ({ openSession: state.openSession }),
   podQueries: {
     detail: () => ({ queryKey: ['test-pod'], queryFn: state.pod }),
@@ -224,4 +235,32 @@ it('hides cached YAML until a fresh response confirms the selected Pod UID', asy
   await act(async () => resolve({ content: podYaml('pod-uid', 'fresh-image') }))
   await tick()
   expect(document.body.textContent).toContain('fresh-image')
+})
+
+it('withdraws an open resource YAML view when the latest relation scope removes its UID', async () => {
+  const config = {
+    resource: { ...podRef, apiVersion: 'v1', kind: 'ConfigMap', name: 'config', uid: 'config-uid' },
+    role: 'owned',
+    depth: 1,
+  }
+  state.get.mockResolvedValue({ data: { ...graph, nodes: [...graph.nodes, config] } })
+  await render()
+  await act(async () => {
+    ;(document.querySelector('[aria-label="选择 ConfigMap config"]') as HTMLButtonElement).click()
+  })
+  await act(async () => {
+    Array.from(document.querySelectorAll('button'))
+      .find((button) => button.textContent === '查看资源 YAML')!
+      .click()
+  })
+  await tick()
+  expect(document.body.textContent).toContain('resource-yaml config config-uid')
+  state.get.mockResolvedValue({ data: graph })
+  await act(async () => {
+    Array.from(document.querySelectorAll('button'))
+      .find((button) => button.textContent?.replace(/\s/g, '') === '刷新关系')!
+      .click()
+  })
+  await tick()
+  expect(document.body.textContent).not.toContain('resource-yaml config config-uid')
 })

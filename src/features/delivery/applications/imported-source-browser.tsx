@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
-import { Button, Typography } from 'antd'
+import { Button, Drawer, Select, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { ReadFeedback } from '@/components/request-feedback'
 import { ManagementState } from '@/components/management-list'
@@ -27,7 +27,9 @@ export function ImportedSourceBrowser({
   binding,
   view = 'resources',
   onOpenPlan,
+  presentation = 'source',
 }: {
+  presentation?: 'source' | 'runtime'
   workloads: ApplicationRuntimeWorkload[]
   binding?: ApplicationEnvironment
   view?: 'resources' | 'metrics'
@@ -46,6 +48,28 @@ export function ImportedSourceBrowser({
   if (!selected)
     return view === 'metrics' ? null : (
       <ManagementState compact kind="not-configured" title="源身份尚未绑定" />
+    )
+  if (presentation === 'runtime')
+    return (
+      <section className="soha-imported-runtime" aria-label="当前服务资源关系">
+        {sources.length > 1 ? (
+          <Select
+            aria-label="配置根选择"
+            value={keyOf(selected)}
+            options={sources.map((item) => ({
+              value: keyOf(item),
+              label: `${item.source?.resource.kind} / ${item.workloadName}`,
+            }))}
+            onChange={setSelectedKey}
+          />
+        ) : null}
+        <RuntimeSource
+          key={keyOf(selected) + view}
+          workload={selected}
+          binding={binding}
+          view={view}
+        />
+      </section>
     )
   return (
     <div className="soha-resource-browser">
@@ -75,6 +99,56 @@ export function ImportedSourceBrowser({
         />
       </section>
     </div>
+  )
+}
+
+function RuntimeSource({
+  workload,
+  binding,
+  view,
+}: {
+  workload: ApplicationRuntimeWorkload
+  binding?: ApplicationEnvironment
+  view: 'resources' | 'metrics'
+}) {
+  const [yaml, setYaml] = useState(false)
+  const permissions = usePermissionSnapshot().data?.data
+  const readable = ['linked', 'changed'].includes(workload.sourceStatus || '')
+  const canYaml =
+    hasPermission(permissions, 'delivery.application-environments.view') &&
+    (!workload.source?.crdName ||
+      hasPermission(permissions, 'platform.configuration.secret-data.view'))
+  if (!readable)
+    return (
+      <ManagementState
+        compact
+        kind="error"
+        title={sourceLabels[workload.sourceStatus || 'unavailable']}
+        description="不会自动绑定同名新资源，请刷新或重新核对关联。"
+      />
+    )
+  return (
+    <>
+      <Typography.Text type="secondary">
+        {workload.source?.resource.kind} / {workload.source?.resource.name} · {workload.clusterId} /{' '}
+        {workload.namespace}
+      </Typography.Text>
+      <ResourceRelationsBrowser
+        workload={workload}
+        binding={binding}
+        view={view}
+        onOpenRootYaml={canYaml ? () => setYaml(true) : undefined}
+      />
+      <Drawer
+        open={yaml}
+        onClose={() => setYaml(false)}
+        destroyOnHidden
+        title={`${workload.source?.resource.kind} / ${workload.workloadName} · 当前源配置`}
+        size="min(880px, 100vw)"
+      >
+        {yaml && canYaml ? <SourceYAML workload={workload} /> : null}
+      </Drawer>
+    </>
   )
 }
 

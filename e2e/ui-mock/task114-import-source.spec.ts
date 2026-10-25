@@ -140,7 +140,7 @@ for (const width of [1440, 390]) {
   })
 }
 
-test('Task114 imported CR shares the application workspace and drops YAML on environment switch', async ({
+test('Task114 imported CR opens source YAML on demand and withdraws it across environment and history navigation', async ({
   context,
   page,
 }) => {
@@ -196,17 +196,18 @@ test('Task114 imported CR shares the application workspace and drops YAML on env
       /^\/application-environments\/retail-(test|prod)\/targets\/root-(test|prod)\/relations$/.test(
         path,
       )
-    )
+    ) {
+      const root = {
+        ...source.resource,
+        namespace: path.includes('retail-prod') ? 'retail-prod' : 'retail-test',
+        uid: path.includes('retail-prod') ? 'uid-prod' : 'uid-test',
+      }
       return {
         body: {
           data: {
-            root: {
-              ...source.resource,
-              namespace: path.includes('retail-prod') ? 'retail-prod' : 'retail-test',
-              uid: path.includes('retail-prod') ? 'uid-prod' : 'uid-test',
-            },
-            config: { version: 'v1', rootUid: source.resource.uid, sources: [], rules: [] },
-            nodes: [],
+            root,
+            config: { version: 'v1', rootUid: root.uid, sources: [], rules: [] },
+            nodes: [{ resource: root, role: 'root', depth: 0 }],
             edges: [],
             coverage: [],
             partial: false,
@@ -214,13 +215,14 @@ test('Task114 imported CR shares the application workspace and drops YAML on env
           },
         },
       }
+    }
     if (path === '/application-environments/retail-test/targets/root-test/source') {
       reads.push(path)
       return {
         body: {
           data: {
             content:
-              'apiVersion: example.com/v1\nkind: Widget\nmetadata:\n  uid: uid-test\nspec:\n  password: synthetic-secret',
+              'apiVersion: example.com/v1\nkind: Widget\nmetadata:\n  name: search\n  namespace: retail-test\n  uid: uid-test\nspec:\n  password: synthetic-secret',
           },
         },
       }
@@ -231,7 +233,9 @@ test('Task114 imported CR shares the application workspace and drops YAML on env
     '/applications/retail?tab=services&applicationEnvironmentId=retail-test&serviceId=search',
   )
   await expect(page.getByRole('heading', { name: '商品搜索', exact: true })).toBeVisible()
-  await expect(page.getByLabel('集群源配置', { exact: true })).toContainText('Widget')
+  await expect(page.getByRole('region', { name: '当前服务资源关系', exact: true })).toContainText(
+    'Widget',
+  )
   expect(reads).toHaveLength(0)
   await page.getByRole('button', { name: '查看源 YAML', exact: true }).click()
   await expect(page.getByLabel('源配置 YAML')).toContainText('synthetic-secret')
@@ -239,11 +243,33 @@ test('Task114 imported CR shares the application workspace and drops YAML on env
     path: '../docs/tasks/114-enterprise-delivery-workbench/evidence/m2/imported-source.png',
   })
   await page
+    .getByRole('dialog', { name: 'Widget / search · 当前源配置', exact: true })
+    .getByRole('button', { name: '关闭', exact: true })
+    .click()
+  await expect(page.getByLabel('源配置 YAML')).toHaveCount(0)
+  await page
     .getByRole('navigation', { name: '选择环境', exact: true })
     .getByRole('button', { name: /生产环境/ })
     .click()
-  await expect(page.getByLabel('集群源配置', { exact: true })).toContainText('uid-prod')
+  await expect(page.getByRole('region', { name: '当前服务资源关系', exact: true })).toContainText(
+    'uid-prod',
+  )
   await expect(page.getByLabel('源配置 YAML')).toHaveCount(0)
   expect(reads).toHaveLength(1)
+  await page.goBack()
+  await expect(page.getByRole('region', { name: '当前服务资源关系', exact: true })).toContainText(
+    'uid-test',
+  )
+  await page.getByRole('button', { name: '查看源 YAML', exact: true }).click()
+  await expect(page.getByLabel('源配置 YAML')).toContainText('synthetic-secret')
+  expect(reads).toHaveLength(2)
+  await page.goForward()
+  await expect(page.getByRole('region', { name: '当前服务资源关系', exact: true })).toContainText(
+    'uid-prod',
+  )
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.getByLabel('源配置 YAML')).toHaveCount(0)
+  await expect(page.getByText('synthetic-secret', { exact: true })).toHaveCount(0)
+  expect(reads).toHaveLength(2)
   verifyBrowserEvidence(evidence)
 })

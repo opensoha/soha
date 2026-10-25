@@ -2,13 +2,12 @@ import { lazy, Suspense, useState } from 'react'
 import { Button, Drawer, Input, Modal, Select, Space, Typography } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
-import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
-import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { StatusTag } from '@/components/status-tag'
 import { ReadFeedback } from '@/components/request-feedback'
 import { useOperationMutation } from '@/components/use-operation-mutation'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
-import { podQueries, useRealtimeSessionDock } from '@/features/platform'
+import { podQueries, useRealtimeSessionDock, RelatedResourceYaml } from '@/features/platform'
 import { toScopeKey } from '@/types'
 import { deliveryQueries } from '../queries'
 import { deliveryMutations } from '../mutations'
@@ -20,25 +19,28 @@ import type {
 } from '../types'
 import { relationRulesPayload } from './relation-rules'
 import { PodMetricsDetail } from './service-pod-workspace'
+import {
+  ResourceRelationWorkbench,
+  relationDisplayNodes,
+  type RelationDisplayNode,
+} from './resource-relation-workbench'
 
 const PodInspection = lazy(async () => ({
   default: (await import('./pod-inspection')).PodInspection,
 }))
-const roles = {
-  root: '配置根',
-  owned: '拥有',
-  manual: '人工关联',
-  reference: '共享引用',
-  candidate: '匹配候选',
-}
 const isPod = (node: ResourceRelationNode) =>
-  node.resource.kind === 'Pod' && node.resource.apiVersion === 'v1' && node.role !== 'candidate'
+  node.resource.kind === 'Pod' &&
+  node.resource.apiVersion === 'v1' &&
+  Boolean(node.resource.uid) &&
+  node.role !== 'candidate'
 
 export function ResourceRelationsBrowser({
   workload,
   binding,
   view,
+  onOpenRootYaml,
 }: {
+  onOpenRootYaml?: () => void
   workload: ApplicationRuntimeWorkload
   binding?: ApplicationEnvironment
   view: 'resources' | 'metrics'
@@ -59,6 +61,23 @@ export function ResourceRelationsBrowser({
   const { openSession } = useRealtimeSessionDock()
   const [params, setParams] = useSearchParams()
   const [inspected, setInspected] = useState<ResourceRelationNode>()
+  const [yamlNode, setYamlNode] = useState<RelationDisplayNode>()
+  const referencesQuery = useQuery(
+    deliveryQueries.workloads.runtime(
+      {
+        applicationId: binding?.applicationId || '',
+        applicationEnvironmentId: workload.applicationEnvironmentId,
+        workloadName: workload.workloadName,
+      },
+      Boolean(binding?.applicationId) &&
+        binding?.id === workload.applicationEnvironmentId &&
+        Boolean(rootUid) &&
+        canRead &&
+        hasPermission(permissions, 'delivery.applications.view') &&
+        workload.workloadKind === 'Deployment' &&
+        view === 'resources',
+    ),
+  )
   const [editBase, setEditBase] = useState<ApplicationEnvironment>()
   const [draft, setDraft] = useState('')
   const [inputError, setInputError] = useState('')
@@ -76,6 +95,20 @@ export function ResourceRelationsBrowser({
   const rootChanged =
     response && identityKeys.some((key) => response.root[key] !== workload.source!.resource[key])
   const data = rootChanged ? undefined : response
+  const visibleYaml = Boolean(
+    data &&
+    yamlNode &&
+    relationDisplayNodes(
+      data,
+      referencesQuery.isError ? [] : referencesQuery.data?.deployment?.relatedResources,
+    ).some((node) => node.key === yamlNode.key && node.resource.uid === yamlNode.resource.uid),
+  )
+  const visibleInspection = Boolean(
+    data &&
+    canPods &&
+    inspected &&
+    data.nodes.some((node) => isPod(node) && node.resource.uid === inspected.resource.uid),
+  )
   const pods = data?.nodes.filter(isPod) ?? []
   const metricUid = params.get('metricUid')
   const metricPod = pods.find((node) => node.resource.uid === metricUid)
@@ -224,115 +257,115 @@ export function ResourceRelationsBrowser({
                   description="这不代表应用未运行。可检查来源和权限，或补充声明式关联规则。"
                 />
               ) : null}
-              <AdminTable
-                rowKey={(node: ResourceRelationNode) => node.resource.uid!}
-                dataSource={data.nodes}
-                pageSize={10}
-                columns={[
-                  {
-                    title: '资源',
-                    key: 'name',
-                    render: (_: unknown, node: ResourceRelationNode) => (
-                      <>
-                        <strong>{node.resource.name}</strong>
-                        <br />
-                        <Typography.Text type="secondary">
-                          {node.resource.apiVersion} · {node.resource.kind}
-                        </Typography.Text>
-                      </>
-                    ),
-                  },
-                  {
-                    title: 'Namespace',
-                    key: 'namespace',
-                    render: (_: unknown, node: ResourceRelationNode) =>
-                      node.resource.namespace || '—',
-                  },
-                  {
-                    title: '关系',
-                    key: 'role',
-                    render: (_: unknown, node: ResourceRelationNode) => (
-                      <>
-                        <MetadataTag label={roles[node.role]} />
-                        {data.edges
-                          .filter((e) => e.toUid === node.resource.uid)
-                          .map((e) => (
-                            <div key={`${e.fromUid}/${e.type}/${e.ruleId}`}>
-                              {data.nodes.find((n) => n.resource.uid === e.fromUid)?.resource.name}{' '}
-                              → {e.type}
-                              {e.ruleId ? ` · ${e.ruleId}` : ''}
-                            </div>
-                          ))}
-                      </>
-                    ),
-                  },
-                  {
-                    title: '操作',
-                    key: 'actions',
-                    render: (_: unknown, node: ResourceRelationNode) =>
-                      isPod(node) && canPods ? (
-                        <Space wrap>
+              {workload.workloadKind === 'Deployment' && referencesQuery.isError ? (
+                <ReadFeedback query={referencesQuery} label="入口与配置引用" />
+              ) : null}
+              <ResourceRelationWorkbench
+                data={data}
+                references={
+                  referencesQuery.isError ? [] : referencesQuery.data?.deployment?.relatedResources
+                }
+                renderActions={(node) =>
+                  isPod(node) && canPods ? (
+                    <Space wrap>
+                      <Button
+                        size="small"
+                        aria-label={`查看 ${node.resource.name} 详情`}
+                        onClick={() => setInspected(node)}
+                      >
+                        详情
+                      </Button>
+                      <Button
+                        size="small"
+                        aria-label={`查看 ${node.resource.name} 指标`}
+                        onClick={() => selectMetrics(node)}
+                      >
+                        指标
+                      </Button>
+                      {(['logs', 'terminal'] as const)
+                        .filter((kind) =>
+                          hasPermission(
+                            permissions,
+                            kind === 'logs' ? 'platform.pods.logs' : 'platform.pods.exec',
+                          ),
+                        )
+                        .map((kind) => (
                           <Button
                             size="small"
-                            aria-label={`查看 ${node.resource.name} 详情`}
-                            onClick={() => setInspected(node)}
+                            key={kind}
+                            aria-label={`查看 ${node.resource.name} ${kind === 'logs' ? '日志' : '终端'}`}
+                            onClick={() =>
+                              openSession({
+                                kind,
+                                clusterId: node.resource.clusterId,
+                                namespace: node.resource.namespace!,
+                                podName: node.resource.name,
+                                podUid: node.resource.uid,
+                                ...(kind === 'terminal' ? { shell: '/bin/sh' } : {}),
+                              })
+                            }
                           >
-                            详情
+                            {kind === 'logs' ? '日志' : '终端'}
                           </Button>
-                          <Button
-                            size="small"
-                            aria-label={`查看 ${node.resource.name} 指标`}
-                            onClick={() => selectMetrics(node)}
-                          >
-                            指标
-                          </Button>
-                          {(['logs', 'terminal'] as const)
-                            .filter((kind) =>
-                              hasPermission(
-                                permissions,
-                                kind === 'logs' ? 'platform.pods.logs' : 'platform.pods.exec',
-                              ),
-                            )
-                            .map((kind) => (
-                              <Button
-                                size="small"
-                                key={kind}
-                                aria-label={`查看 ${node.resource.name} ${kind === 'logs' ? '日志' : '终端'}`}
-                                onClick={() =>
-                                  openSession({
-                                    kind,
-                                    clusterId: node.resource.clusterId,
-                                    namespace: node.resource.namespace!,
-                                    podName: node.resource.name,
-                                    podUid: node.resource.uid,
-                                    ...(kind === 'terminal' ? { shell: '/bin/sh' } : {}),
-                                  })
-                                }
-                              >
-                                {kind === 'logs' ? '日志' : '终端'}
-                              </Button>
-                            ))}
-                        </Space>
-                      ) : (
-                        <Typography.Text type="secondary">
-                          {node.role === 'candidate' ? '候选需确认' : '只读资源身份'}
-                        </Typography.Text>
-                      ),
-                  },
-                ]}
+                        ))}
+                    </Space>
+                  ) : node.role === 'candidate' ? (
+                    <Typography.Text type="secondary">候选需确认，不开放运行操作</Typography.Text>
+                  ) : node.resource.uid === data.root.uid ? (
+                    onOpenRootYaml ? (
+                      <Button onClick={onOpenRootYaml}>查看源 YAML</Button>
+                    ) : (
+                      <Typography.Text type="secondary">源配置入口见配置与模板</Typography.Text>
+                    )
+                  ) : node.resource.kind === 'Secret' ? (
+                    <Typography.Text type="secondary">
+                      仅展示 Secret 引用身份，不回显数据
+                    </Typography.Text>
+                  ) : (
+                    <Button onClick={() => setYamlNode(node)}>
+                      {node.resource.uid ? '查看资源 YAML' : '按名称查看当前 YAML'}
+                    </Button>
+                  )
+                }
               />
             </>
           )}
         </>
       ) : null}
       <Drawer
-        open={Boolean(inspected)}
+        open={visibleYaml}
+        onClose={() => setYamlNode(undefined)}
+        title={yamlNode ? `${yamlNode.resource.kind} / ${yamlNode.resource.name}` : '资源 YAML'}
+        destroyOnHidden
+        size="min(880px, 100vw)"
+      >
+        {visibleYaml && yamlNode ? (
+          <>
+            {!yamlNode.resource.uid ? (
+              <p>
+                此引用未固定
+                UID；按名称重新读取当前同名对象，不代表原关联对象的配置，也不会在此处执行变更。
+              </p>
+            ) : null}
+            <RelatedResourceYaml
+              fresh
+              target={{
+                ...yamlNode.resource,
+                namespace: yamlNode.resource.namespace || workload.namespace,
+              }}
+              expectedUid={yamlNode.resource.uid}
+            />
+          </>
+        ) : null}
+      </Drawer>
+      <Drawer
+        open={visibleInspection}
         onClose={() => setInspected(undefined)}
         title={inspected?.resource.name}
         destroyOnHidden
         size="min(880px, 100vw)"
       >
-        {inspected ? (
+        {visibleInspection && inspected ? (
           <VerifiedRelationPod
             key={inspected.resource.uid}
             node={inspected}
@@ -446,6 +479,7 @@ function VerifiedRelationPod({
         podName={ref.name}
         mode="details"
         expectedUid={ref.uid}
+        containerMetadata={query.data?.containers}
       />
     </Suspense>
   )

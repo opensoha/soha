@@ -226,6 +226,7 @@ for (const width of [1440, 390]) {
     await page.goto(
       '/applications/retail?tab=services&applicationEnvironmentId=retail-test&serviceId=search',
     )
+    await page.getByRole('tab', { name: '配置与模板', exact: true }).click()
     await page.getByRole('button', { name: '配置与发布控制', exact: true }).click()
     const drawer = page.getByRole('dialog', { name: '根 CR 配置与发布控制' })
     await expect(drawer).toContainText('当前仅观察')

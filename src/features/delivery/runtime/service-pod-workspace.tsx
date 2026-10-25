@@ -16,6 +16,7 @@ import { DeploymentUnitOutlined, ReloadOutlined, SearchOutlined } from '@ant-des
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ManagementState } from '@/components/management-list'
+import { ReadFeedback } from '@/components/request-feedback'
 import { StatusTag, MetadataTag } from '@/components/status-tag'
 import { OverviewChartSlot } from '@/components/overview/overview-chart-slot'
 import { formatMetricValue } from '@/components/resource-metrics-format'
@@ -27,6 +28,7 @@ import {
   useRealtimeSessionDock,
   buildClusterScopedPath,
   buildRelatedResourcePath,
+  RelatedResourceYaml,
 } from '@/features/platform'
 import { useI18n, localeText } from '@/i18n'
 import { toScopeKey } from '@/types'
@@ -35,14 +37,20 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { deliveryQueries } from '../queries'
 import { deliveryMutations } from '../mutations'
 import { deliveryKeys } from '../keys'
-import type { ApplicationRuntimeWorkload, Pod } from '../types'
+import type { ApplicationRuntimeWorkload, ApplicationWorkloadRuntimeDetail, Pod } from '../types'
+import {
+  ResourceRelationWorkbench,
+  relationDisplayNodes,
+  type RelationDisplayNode,
+  type RelationWorkbenchData,
+} from './resource-relation-workbench'
 import { ServiceAddresses } from '../applications/service-addresses'
 import './workload-detail-page.css'
 import './service-pod-workspace.css'
 
 const { Text } = Typography
 const PodInspection = lazy(async () => ({
-  default: (await import('./pod-inspection')).PodInspection,
+  default: (await import('./pod-inspection')).VerifiedPodInspection,
 }))
 const ResourceMetricsPanel = lazy(async () => ({
   default: (await import('@/components/resource-metrics-panel')).ResourceMetricsPanel,
@@ -226,7 +234,9 @@ export function ServiceRuntimeSummary({
 export function ServiceRuntimeActions({
   applicationId,
   workloads: inputWorkloads,
+  labelTargets = false,
 }: {
+  labelTargets?: boolean
   applicationId: string
   workloads: ApplicationRuntimeWorkload[]
 }) {
@@ -305,7 +315,7 @@ export function ServiceRuntimeActions({
                 disabled={queries[index].isPending || queries[index].isError}
               >
                 {text('重启', 'Restart')}
-                {workloads.length > 1 ? ` ${workload.workloadName}` : ''}
+                {labelTargets || workloads.length > 1 ? ` ${workload.workloadName}` : ''}
               </Button>
             </Popconfirm>
           ) : null}
@@ -325,7 +335,7 @@ export function ServiceRuntimeActions({
               }}
             >
               {text('扩缩容', 'Scale')}
-              {workloads.length > 1 ? ` ${workload.workloadName}` : ''}
+              {labelTargets || workloads.length > 1 ? ` ${workload.workloadName}` : ''}
             </Button>
           ) : null}
           {queries[index].isError ? (
@@ -423,11 +433,183 @@ export function ServiceRuntimeActions({
   )
 }
 
+function RuntimeRelationships({
+  snapshots,
+  onOpenTool,
+}: {
+  snapshots: ApplicationWorkloadRuntimeDetail[]
+  onOpenTool: (row: PodRow, tool: string) => void
+}) {
+  const [selectedKey, setSelectedKey] = useState('')
+  const [yaml, setYaml] = useState<RelationDisplayNode>()
+  const permissions = usePermissionSnapshot().data?.data
+  const snapshot = selectedKey
+    ? snapshots.find(
+        (s) =>
+          `${s.workload.clusterId}/${s.workload.namespace}/${s.workload.workloadName}` ===
+          selectedKey,
+      )
+    : snapshots[0]
+  if (!snapshot)
+    return selectedKey ? (
+      <ManagementState
+        compact
+        kind="not-found"
+        title="所选工作负载不在当前运行范围"
+        actions={
+          <Button
+            onClick={() => {
+              setSelectedKey('')
+              setYaml(undefined)
+            }}
+          >
+            重新选择当前资源
+          </Button>
+        }
+      />
+    ) : null
+  const workload = snapshot.workload
+  const root = workload.source?.resource || {
+    clusterId: workload.clusterId,
+    namespace: workload.namespace,
+    apiVersion: 'apps/v1',
+    kind: workload.workloadKind,
+    name: workload.workloadName,
+    scopeMode: 'namespace' as const,
+  }
+  const data: RelationWorkbenchData = {
+    root,
+    nodes: [
+      { resource: root, role: 'root', depth: 0 },
+      ...(snapshot.pods || [])
+        .filter((p) => p.uid)
+        .map((p) => ({
+          resource: {
+            clusterId: workload.clusterId,
+            namespace: p.namespace,
+            apiVersion: 'v1',
+            kind: 'Pod',
+            name: p.name,
+            uid: p.uid,
+            scopeMode: 'namespace' as const,
+          },
+          role: 'reference' as const,
+          depth: 1,
+        })),
+    ],
+    edges: [],
+  }
+  const visibleYaml = Boolean(
+    yaml &&
+    relationDisplayNodes(data, snapshot.deployment?.relatedResources).some(
+      (node) => node.key === yaml.key && node.resource.uid === yaml.resource.uid,
+    ),
+  )
+  return (
+    <section className="soha-runtime-relationships" aria-label="工作负载运行关系">
+      {snapshots.length > 1 ? (
+        <Select
+          aria-label="工作负载关系范围"
+          value={`${workload.clusterId}/${workload.namespace}/${workload.workloadName}`}
+          options={snapshots.map((s) => ({
+            value: `${s.workload.clusterId}/${s.workload.namespace}/${s.workload.workloadName}`,
+            label: `${s.workload.workloadKind} / ${s.workload.workloadName}`,
+          }))}
+          onChange={(value) => {
+            setSelectedKey(value)
+            setYaml(undefined)
+          }}
+        />
+      ) : null}
+      <p>
+        <Text type="secondary">
+          来自当前工作负载运行快照。未提供 owner UID 链的 Pod 只标为运行关联，不推断 ReplicaSet
+          或独占拥有关系。
+        </Text>
+      </p>
+      <ResourceRelationWorkbench
+        runtimeSnapshot
+        key={`${root.clusterId}/${root.namespace}/${root.name}`}
+        data={data}
+        references={snapshot.deployment?.relatedResources}
+        renderActions={(node) => {
+          const pod = snapshot.pods?.find((p) => p.uid && p.uid === node.resource.uid)
+          if (pod)
+            return (
+              <Space wrap>
+                {['details', 'logs', 'terminal', 'events', 'yaml', 'metrics']
+                  .filter((tool) =>
+                    hasPermission(
+                      permissions,
+                      tool === 'logs'
+                        ? 'platform.pods.logs'
+                        : tool === 'terminal'
+                          ? 'platform.pods.exec'
+                          : 'platform.pods.view',
+                    ),
+                  )
+                  .map((tool) => (
+                    <Button key={tool} onClick={() => onOpenTool({ pod, workload }, tool)}>
+                      {
+                        {
+                          details: '详情',
+                          logs: '日志',
+                          terminal: '终端',
+                          events: '事件',
+                          yaml: 'YAML',
+                          metrics: '指标',
+                        }[tool]
+                      }
+                    </Button>
+                  ))}
+              </Space>
+            )
+          return node.resource.kind === 'Secret' ? (
+            <Text type="secondary">仅展示 Secret 引用身份，不回显数据</Text>
+          ) : (
+            <Button onClick={() => setYaml(node)}>
+              {node.resource.uid ? '查看资源 YAML' : '按名称查看当前 YAML'}
+            </Button>
+          )
+        }}
+      />
+      <Drawer
+        open={visibleYaml}
+        onClose={() => setYaml(undefined)}
+        title={yaml ? `${yaml.resource.kind} / ${yaml.resource.name}` : '资源 YAML'}
+        destroyOnHidden
+        size="min(880px, 100vw)"
+      >
+        {visibleYaml && yaml ? (
+          <>
+            {!yaml.resource.uid ? (
+              <p>
+                此引用未固定
+                UID；按名称重新读取当前同名对象，不代表原关联对象的配置，也不会在此处执行变更。
+              </p>
+            ) : null}
+            <RelatedResourceYaml
+              fresh
+              target={{
+                ...yaml.resource,
+                namespace: yaml.resource.namespace || workload.namespace,
+              }}
+              expectedUid={yaml.resource.uid}
+            />
+          </>
+        ) : null}
+      </Drawer>
+    </section>
+  )
+}
+
 export function ServicePodWorkspace({
   applicationId,
   workloads,
   view,
+  showRelationships = true,
 }: {
+  showRelationships?: boolean
   applicationId: string
   workloads: ApplicationRuntimeWorkload[]
   view: 'pods' | 'metrics' | 'related-resources'
@@ -626,6 +808,9 @@ export function ServicePodWorkspace({
   }
   return (
     <div className="soha-service-pods">
+      {failed && rows.length > 0 ? (
+        <ReadFeedback query={queries.find((query) => query.isError)!} label="Pod 运行数据" />
+      ) : null}
       {view === 'related-resources' ? (
         <div className="soha-pod-related-list">
           {waiting ? (
@@ -697,6 +882,15 @@ export function ServicePodWorkspace({
         </div>
       ) : (
         <>
+          {showRelationships ? (
+            <RuntimeRelationships
+              snapshots={queries.flatMap((query) => {
+                const snapshot = readableQueryData(query)
+                return snapshot ? [snapshot] : []
+              })}
+              onOpenTool={openTool}
+            />
+          ) : null}
           <div className="soha-pod-list-filter">
             <Text strong>
               Pods <Text type="secondary">{rows.length}</Text>
@@ -895,6 +1089,7 @@ export function ServicePodWorkspace({
                   clusterId={selectedRow.workload.clusterId}
                   namespace={selectedRow.pod.namespace}
                   podName={selectedRow.pod.name}
+                  expectedUid={selectedRow.pod.uid}
                   mode={tool === 'events' || tool === 'yaml' ? tool : 'details'}
                 />
               </Suspense>

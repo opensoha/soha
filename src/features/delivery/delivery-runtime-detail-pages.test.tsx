@@ -58,7 +58,14 @@ const testState = vi.hoisted(() => ({
     if (path.includes('/workloads/pods/') && path.includes('/detail?'))
       return {
         data: {
-          containers: [{ name: 'checkout-api' }, { name: 'telemetry-sidecar', role: 'init' }],
+          uid: 'checkout-pod-uid',
+          name: 'checkout-api-7d9f6b7c5f-x2k9m',
+          namespace: 'checkout',
+          containers: [
+            { name: 'checkout-api', role: 'main' },
+            { name: 'telemetry-sidecar', role: 'sidecar' },
+            { name: 'prepare', role: 'init' },
+          ],
           allowedActions: ['logs', 'exec'],
         },
       }
@@ -69,7 +76,7 @@ const testState = vi.hoisted(() => ({
         data: {
           content: JSON.stringify({
             kind: 'Pod',
-            metadata: { name, namespace: 'checkout' },
+            metadata: { name, namespace: 'checkout', uid: 'checkout-pod-uid' },
             spec: {
               initContainers: [{ name: 'prepare', image: 'init:1' }],
               ephemeralContainers: [{ name: 'debugger', image: 'debug:1' }],
@@ -450,6 +457,7 @@ const testState = vi.hoisted(() => ({
             : [
                 {
                   name: 'checkout-api-7d9f6b7c5f-x2k9m',
+                  uid: 'checkout-pod-uid',
                   namespace: 'checkout',
                   phase: 'Running',
                   nodeName: 'worker-01',
@@ -468,6 +476,7 @@ const testState = vi.hoisted(() => ({
                     ? [
                         {
                           name: 'checkout-api-new',
+                          uid: 'checkout-new-pod-uid',
                           namespace: 'checkout',
                           phase: 'Running',
                           nodeName: 'worker-02',
@@ -483,6 +492,7 @@ const testState = vi.hoisted(() => ({
                   testState.manyPods
                     ? Array.from({ length: 14 }, (_, i) => ({
                         name: `pod-${i}`,
+                        uid: `pod-uid-${i}`,
                         namespace: 'checkout',
                         phase:
                           i === 0
@@ -1004,6 +1014,7 @@ describe('delivery runtime detail pages', () => {
       clusterId: 'cluster-a',
       namespace: 'checkout',
       podName: 'checkout-api-7d9f6b7c5f-x2k9m',
+      podUid: 'checkout-pod-uid',
       container: undefined,
       ...(kind === 'terminal' ? { shell: '/bin/sh' } : {}),
     })

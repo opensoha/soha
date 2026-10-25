@@ -225,6 +225,7 @@ for (const width of [1440, 390]) {
     await expect(dialog).toContainText('关系规则已保存')
     expect(writes).toHaveLength(2)
     await dialog.getByRole('button', { name: '关闭', exact: true }).click()
+    await relations.getByRole('button', { name: '选择 Pod search-pod-0', exact: true }).click()
     await relations.getByRole('button', { name: '查看 search-pod-0 指标' }).click()
     await expect(page.getByRole('region', { name: '关联 Pod 指标', exact: true })).toBeVisible()
     await expect(page.getByRole('region', { name: '关联 Pod 指标', exact: true })).toContainText(
