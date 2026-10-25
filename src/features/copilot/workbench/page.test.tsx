@@ -14,7 +14,7 @@ import { webcrypto } from 'node:crypto'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MemoryPolicy } from '../memory/types'
 import {
   forgetNativeRequest,
@@ -1177,7 +1177,20 @@ function externalAgentRun(events: WorkbenchStreamEvent[], status = 'running'): W
 }
 
 describe('AIWorkbenchPage', () => {
+  const scrollIntoView = vi.fn<(this: HTMLElement) => void>()
+  const originalScrollIntoView = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollIntoView',
+  )
+
   beforeAll(() => {
+    // JSDOM has no layout scrolling; keep the real Bubble.List navigation path.
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      writable: true,
+      value: scrollIntoView,
+    })
+
     class ResizeObserverMock {
       observe() {}
       unobserve() {}
@@ -1218,6 +1231,14 @@ describe('AIWorkbenchPage', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
     vi.stubGlobal('ResizeObserver', ResizeObserverMock)
     vi.stubGlobal('IntersectionObserver', IntersectionObserverMock)
+  })
+
+  afterAll(() => {
+    if (originalScrollIntoView) {
+      Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', originalScrollIntoView)
+    } else {
+      Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView')
+    }
   })
 
   beforeEach(() => {
@@ -3672,6 +3693,7 @@ describe('AIWorkbenchPage', () => {
     expect(createInspectionButton?.getAttribute('title')).toBe('缺少 observe.ai.chat 权限')
   })
   it('searches message content and navigates to an old message without sending', async () => {
+    scrollIntoView.mockClear()
     testState.sessionMode = 'general'
     const container = await renderPage('/ai-workbench/chat?session=session-1')
     await waitForChat(container)
@@ -3702,8 +3724,16 @@ describe('AIWorkbenchPage', () => {
     })
     await waitForWorkbenchText(container, '正在查看搜索命中的消息')
     await waitForWorkbenchText(container, '飞牛 TV 的安装方法')
+    await act(async () => {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    })
     expect(latestRoute).toContain('message=old-hit')
     expect(container.querySelector('.soha-message-hit mark')?.textContent).toBe('飞牛')
+    expect(
+      scrollIntoView.mock.contexts.some((element) =>
+        element.textContent?.includes('飞牛 TV 的安装方法'),
+      ),
+    ).toBe(true)
     expect(container.querySelector('button')?.textContent).not.toBe('发送')
     expect(apiPostMock.mock.calls.filter(([path]) => path.includes('/messages/stream'))).toEqual([])
     await act(async () => {
