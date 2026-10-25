@@ -381,9 +381,9 @@ func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, princ
 		if selected.SourceStatus != "linked" && selected.SourceStatus != "changed" {
 			return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: linked workload identity is unavailable", apperrors.ErrConflict)
 		}
-		if selected.WorkloadKind != "Deployment" {
-			return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: use the linked source resource view", apperrors.ErrUnsupportedOperation)
-		}
+	}
+	if selected.WorkloadKind != "Deployment" {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: use the linked source resource view", apperrors.ErrUnsupportedOperation)
 	}
 	var (
 		deployment domainresource.DeploymentDetailView
@@ -3100,6 +3100,10 @@ func (s *Service) listRuntimeWorkloadsForBinding(
 		clusterID := strings.TrimSpace(target.ClusterID)
 		namespace := strings.TrimSpace(target.Namespace)
 		if clusterID == "" || namespace == "" {
+			continue
+		}
+		if metadataString(target.Metadata, "importSource") == "helm" || target.Helm != nil {
+			workloads = append(workloads, s.helmRuntimeWorkloads(ctx, principal, binding.ID, target)...)
 			continue
 		}
 		if metadataString(target.Metadata, "importSource") == "kubernetes" {

@@ -147,7 +147,15 @@ func selectRuntimeWorkload(items []domaindelivery.ApplicationRuntimeWorkload, na
 			continue
 		}
 		if selected != nil {
-			return nil, fmt.Errorf("%w: workload name is ambiguous; use the target-scoped source view", apperrors.ErrConflict)
+			if !sameRuntimeResourceIdentity(*selected, item) {
+				return nil, fmt.Errorf("%w: workload name is ambiguous; use the target-scoped source view", apperrors.ErrConflict)
+			}
+			// A Helm release and a native import may observe the same physical object.
+			if item.SourceStatus != "" {
+				copyItem := item
+				selected = &copyItem
+			}
+			continue
 		}
 		selected = &item
 	}
@@ -155,4 +163,13 @@ func selectRuntimeWorkload(items []domaindelivery.ApplicationRuntimeWorkload, na
 		return nil, fmt.Errorf("%w: workload not found", apperrors.ErrNotFound)
 	}
 	return selected, nil
+}
+
+func sameRuntimeResourceIdentity(left, right domaindelivery.ApplicationRuntimeWorkload) bool {
+	if left.Source == nil || right.Source == nil {
+		return false
+	}
+	a, b := left.Source.Resource, right.Source.Resource
+	return a.UID != "" && a.UID == b.UID && a.ClusterID == b.ClusterID && a.Namespace == b.Namespace &&
+		a.APIVersion == b.APIVersion && a.Kind == b.Kind && a.Name == b.Name
 }

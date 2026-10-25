@@ -25,6 +25,10 @@ func (h *Helm) GetHelmReleaseManifest(ctx context.Context, principal domainident
 	if err := h.authorizeRuntimePermission(ctx, principal, appaccess.PermPlatformHelmValuesView); err != nil {
 		return domainresource.HelmReleaseManifestView{}, err
 	}
+	return h.readHelmReleaseManifest(ctx, connection, clusterID, namespace, name, revision)
+}
+
+func (h *Helm) readHelmReleaseManifest(ctx context.Context, connection domaincluster.Connection, clusterID, namespace, name, revision string) (domainresource.HelmReleaseManifestView, error) {
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
 		client, err := h.helmAgentClient(connection)
 		if err != nil {
