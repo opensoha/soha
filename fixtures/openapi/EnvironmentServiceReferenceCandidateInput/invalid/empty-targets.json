@@ -1,0 +1,8 @@
+{
+  "sourceApplicationEnvironmentId": "source",
+  "expectedConsumerUpdatedAt": "2026-10-26T08:00:00Z",
+  "expectedSourceUpdatedAt": "2026-10-26T08:01:00Z",
+  "sourceTargetIds": [],
+  "expectedSourceRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "expectedRevision": 0
+}

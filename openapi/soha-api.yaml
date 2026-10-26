@@ -2949,6 +2949,118 @@ paths:
           $ref: "#/components/responses/Error"
         "501":
           $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-reference-candidates:
+    get:
+      tags: [Delivery]
+      operationId: listEnvironmentServiceReferenceCandidates
+      description: Paginated metadata for inactive candidates in the authorized consumer configuration. Requires consumer environment view/update and application view, but not source access, so unavailable candidates can be safely cleaned after a cold open. Returns only candidate/service identity, edit revision and timestamps; never source IDs, locations, digests or previews. This is not a list or count of active source consumers.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        - in: query
+          name: cursor
+          description: Last service ID from the preceding page.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        "200":
+          description: Consumer-owned metadata only. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceCandidatePage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-reference-candidates/{serviceID}:
+    get:
+      tags: [Delivery]
+      operationId: getEnvironmentServiceReferenceCandidate
+      description: Reload an inactive configuration candidate after current source authorization and identity checks. Requires the same configuration permissions as source previews. Source configuration changes return outdated; identity or permission failures never fall back to cached source data.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      responses:
+        "200":
+          description: Inactive candidate, never an active environment association. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+    put:
+      tags: [Delivery]
+      operationId: putEnvironmentServiceReferenceCandidate
+      description: Save an inactive configuration candidate after a fresh authorized source preview and transactional context revalidation. Does not create an active reference, change local targets or publication control, execute a Plan, or grant source/stream access. Revision zero creates; updates require both candidate ID and revision to reject delete-and-recreate ABA.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateInput"
+      responses:
+        "200":
+          description: Inactive candidate, never an active environment association. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
+    delete:
+      tags: [Delivery]
+      operationId: deleteEnvironmentServiceReferenceCandidate
+      description: Delete only the inactive candidate, using consumer view/update permission and binding/candidate CAS. No source permission is needed for cleanup after source deletion or revocation. Does not delete or modify source resources.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+        - $ref: "#/components/parameters/ServiceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateDeleteInput"
+      responses:
+        "204":
+          description: Candidate deleted; Cache-Control no-store.
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
   /application-environments/{applicationEnvironmentID}:
     get:
       tags: [Delivery]
@@ -32319,6 +32431,82 @@ components:
       required: [item]
       properties:
         item: { $ref: "#/components/schemas/EnvironmentServiceReferencePreview" }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidateInput:
+      type: object
+      description: Candidate only. Explicit complete source target selection and a fresh preview digest are mandatory. No activation, force, ownership or publication field is accepted.
+      required: [sourceApplicationEnvironmentId, expectedConsumerUpdatedAt, expectedSourceUpdatedAt, sourceTargetIds, expectedSourceRevision, expectedRevision]
+      properties:
+        sourceApplicationEnvironmentId: { type: string, minLength: 1, maxLength: 200 }
+        expectedConsumerUpdatedAt: { type: string, format: date-time }
+        expectedSourceUpdatedAt: { type: string, format: date-time }
+        sourceTargetIds:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200 }
+        expectedSourceRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        expectedRevision: { type: integer, format: int64, minimum: 0 }
+        expectedCandidateId: { type: string, minLength: 1, maxLength: 200 }
+      oneOf:
+        - properties:
+            expectedRevision: { type: integer, enum: [0] }
+          not: { required: [expectedCandidateId] }
+        - required: [expectedCandidateId]
+          properties:
+            expectedRevision: { type: integer, minimum: 1 }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidateDeleteInput:
+      type: object
+      required: [expectedCandidateId, expectedRevision, expectedConsumerUpdatedAt]
+      properties:
+        expectedCandidateId: { type: string, minLength: 1, maxLength: 200 }
+        expectedRevision: { type: integer, format: int64, minimum: 1 }
+        expectedConsumerUpdatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidate:
+      type: object
+      description: Persisted inactive proposal. Identity digest excludes ordinary configuration/runtime versions; neither digest nor current status is activation permission or proof of runtime health/network reachability. Reads reauthorize and reobserve the source. No local target or source resource is claimed.
+      required: [id, revision, state, status, sourceIdentityRevision, currentSourceRevision, preview, createdAt, updatedAt]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 200 }
+        revision: { type: integer, format: int64, minimum: 1 }
+        state: { type: string, enum: [candidate] }
+        status: { type: string, enum: [current, outdated] }
+        sourceIdentityRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        currentSourceRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        preview: { $ref: "#/components/schemas/EnvironmentServiceReferencePreview" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidateSummary:
+      type: object
+      description: Only the authorized consumer's candidate identity; no source metadata or runtime authorization.
+      required: [id, serviceId, revision, state, createdAt, updatedAt]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 200 }
+        serviceId: { type: string, minLength: 1, maxLength: 200 }
+        revision: { type: integer, format: int64, minimum: 1 }
+        state: { type: string, enum: [candidate] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidatePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EnvironmentServiceReferenceCandidateSummary" }
+        nextCursor: { type: string, minLength: 1, maxLength: 200 }
+      additionalProperties: false
+    EnvironmentServiceReferenceCandidateEnvelope:
+      type: object
+      required: [item]
+      properties:
+        item: { $ref: "#/components/schemas/EnvironmentServiceReferenceCandidate" }
       additionalProperties: false
     KubernetesImportOwnerReference:
       type: object

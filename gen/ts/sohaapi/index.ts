@@ -1450,6 +1450,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/application-environments/{applicationEnvironmentID}/service-reference-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Paginated metadata for inactive candidates in the authorized consumer configuration. Requires consumer environment view/update and application view, but not source access, so unavailable candidates can be safely cleaned after a cold open. Returns only candidate/service identity, edit revision and timestamps; never source IDs, locations, digests or previews. This is not a list or count of active source consumers. */
+        get: operations["listEnvironmentServiceReferenceCandidates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/application-environments/{applicationEnvironmentID}/service-reference-candidates/{serviceID}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Reload an inactive configuration candidate after current source authorization and identity checks. Requires the same configuration permissions as source previews. Source configuration changes return outdated; identity or permission failures never fall back to cached source data. */
+        get: operations["getEnvironmentServiceReferenceCandidate"];
+        /** @description Save an inactive configuration candidate after a fresh authorized source preview and transactional context revalidation. Does not create an active reference, change local targets or publication control, execute a Plan, or grant source/stream access. Revision zero creates; updates require both candidate ID and revision to reject delete-and-recreate ABA. */
+        put: operations["putEnvironmentServiceReferenceCandidate"];
+        post?: never;
+        /** @description Delete only the inactive candidate, using consumer view/update permission and binding/candidate CAS. No source permission is needed for cleanup after source deletion or revocation. Does not delete or modify source resources. */
+        delete: operations["deleteEnvironmentServiceReferenceCandidate"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/application-environments/{applicationEnvironmentID}": {
         parameters: {
             query?: never;
@@ -18484,6 +18520,68 @@ export interface components {
         EnvironmentServiceReferencePreviewEnvelope: {
             item: components["schemas"]["EnvironmentServiceReferencePreview"];
         };
+        /** @description Candidate only. Explicit complete source target selection and a fresh preview digest are mandatory. No activation, force, ownership or publication field is accepted. */
+        EnvironmentServiceReferenceCandidateInput: {
+            sourceApplicationEnvironmentId: string;
+            /** Format: date-time */
+            expectedConsumerUpdatedAt: string;
+            /** Format: date-time */
+            expectedSourceUpdatedAt: string;
+            sourceTargetIds: string[];
+            expectedSourceRevision: string;
+            /** Format: int64 */
+            expectedRevision: number;
+            expectedCandidateId?: string;
+        } & ({
+            /** @enum {integer} */
+            expectedRevision?: 0;
+        } | {
+            expectedRevision?: number;
+        });
+        EnvironmentServiceReferenceCandidateDeleteInput: {
+            expectedCandidateId: string;
+            /** Format: int64 */
+            expectedRevision: number;
+            /** Format: date-time */
+            expectedConsumerUpdatedAt: string;
+        };
+        /** @description Persisted inactive proposal. Identity digest excludes ordinary configuration/runtime versions; neither digest nor current status is activation permission or proof of runtime health/network reachability. Reads reauthorize and reobserve the source. No local target or source resource is claimed. */
+        EnvironmentServiceReferenceCandidate: {
+            id: string;
+            /** Format: int64 */
+            revision: number;
+            /** @enum {string} */
+            state: "candidate";
+            /** @enum {string} */
+            status: "current" | "outdated";
+            sourceIdentityRevision: string;
+            currentSourceRevision: string;
+            preview: components["schemas"]["EnvironmentServiceReferencePreview"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        /** @description Only the authorized consumer's candidate identity; no source metadata or runtime authorization. */
+        EnvironmentServiceReferenceCandidateSummary: {
+            id: string;
+            serviceId: string;
+            /** Format: int64 */
+            revision: number;
+            /** @enum {string} */
+            state: "candidate";
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        EnvironmentServiceReferenceCandidatePage: {
+            items: components["schemas"]["EnvironmentServiceReferenceCandidateSummary"][];
+            nextCursor?: string;
+        };
+        EnvironmentServiceReferenceCandidateEnvelope: {
+            item: components["schemas"]["EnvironmentServiceReferenceCandidate"];
+        };
         KubernetesImportOwnerReference: {
             apiVersion: string;
             kind: string;
@@ -29946,6 +30044,12 @@ export type EnvironmentServiceReferenceTarget = components['schemas']['Environme
 export type EnvironmentServiceReferenceResource = components['schemas']['EnvironmentServiceReferenceResource'];
 export type EnvironmentServiceReferencePreview = components['schemas']['EnvironmentServiceReferencePreview'];
 export type EnvironmentServiceReferencePreviewEnvelope = components['schemas']['EnvironmentServiceReferencePreviewEnvelope'];
+export type EnvironmentServiceReferenceCandidateInput = components['schemas']['EnvironmentServiceReferenceCandidateInput'];
+export type EnvironmentServiceReferenceCandidateDeleteInput = components['schemas']['EnvironmentServiceReferenceCandidateDeleteInput'];
+export type EnvironmentServiceReferenceCandidate = components['schemas']['EnvironmentServiceReferenceCandidate'];
+export type EnvironmentServiceReferenceCandidateSummary = components['schemas']['EnvironmentServiceReferenceCandidateSummary'];
+export type EnvironmentServiceReferenceCandidatePage = components['schemas']['EnvironmentServiceReferenceCandidatePage'];
+export type EnvironmentServiceReferenceCandidateEnvelope = components['schemas']['EnvironmentServiceReferenceCandidateEnvelope'];
 export type KubernetesImportOwnerReference = components['schemas']['KubernetesImportOwnerReference'];
 export type KubernetesImportSource = components['schemas']['KubernetesImportSource'];
 export type KubernetesImportCandidate = components['schemas']['KubernetesImportCandidate'];
@@ -34312,6 +34416,127 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["EnvironmentServiceReferencePreviewEnvelope"];
                 };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    listEnvironmentServiceReferenceCandidates: {
+        parameters: {
+            query?: {
+                limit?: number;
+                /** @description Last service ID from the preceding page. */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                applicationEnvironmentID: components["parameters"]["ApplicationEnvironmentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Consumer-owned metadata only. Cache-Control no-store. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentServiceReferenceCandidatePage"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    getEnvironmentServiceReferenceCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationEnvironmentID: components["parameters"]["ApplicationEnvironmentID"];
+                serviceID: components["parameters"]["ServiceID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Inactive candidate, never an active environment association. Cache-Control no-store. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentServiceReferenceCandidateEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    putEnvironmentServiceReferenceCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationEnvironmentID: components["parameters"]["ApplicationEnvironmentID"];
+                serviceID: components["parameters"]["ServiceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnvironmentServiceReferenceCandidateInput"];
+            };
+        };
+        responses: {
+            /** @description Inactive candidate, never an active environment association. Cache-Control no-store. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentServiceReferenceCandidateEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
+        };
+    };
+    deleteEnvironmentServiceReferenceCandidate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationEnvironmentID: components["parameters"]["ApplicationEnvironmentID"];
+                serviceID: components["parameters"]["ServiceID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnvironmentServiceReferenceCandidateDeleteInput"];
+            };
+        };
+        responses: {
+            /** @description Candidate deleted; Cache-Control no-store. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             400: components["responses"]["Error"];
             403: components["responses"]["Error"];

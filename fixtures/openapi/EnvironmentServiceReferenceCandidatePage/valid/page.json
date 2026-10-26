@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "id": "candidate",
+      "serviceId": "service",
+      "revision": 3,
+      "state": "candidate",
+      "createdAt": "2026-10-26T08:00:00Z",
+      "updatedAt": "2026-10-26T08:00:00Z"
+    }
+  ],
+  "nextCursor": "service"
+}

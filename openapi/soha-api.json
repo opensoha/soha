@@ -17723,6 +17723,249 @@
           "EndpointNetworkInterfaceStatusUnknown"
         ]
       },
+      "EnvironmentServiceReferenceCandidate": {
+        "additionalProperties": false,
+        "description": "Persisted inactive proposal. Identity digest excludes ordinary configuration/runtime versions; neither digest nor current status is activation permission or proof of runtime health/network reachability. Reads reauthorize and reobserve the source. No local target or source resource is claimed.",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "currentSourceRevision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "preview": {
+            "$ref": "#/components/schemas/EnvironmentServiceReferencePreview"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sourceIdentityRevision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "candidate"
+            ],
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "current",
+              "outdated"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "revision",
+          "state",
+          "status",
+          "sourceIdentityRevision",
+          "currentSourceRevision",
+          "preview",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceCandidateDeleteInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedCandidateId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedConsumerUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expectedCandidateId",
+          "expectedRevision",
+          "expectedConsumerUpdatedAt"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceCandidateEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/EnvironmentServiceReferenceCandidate"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceCandidateInput": {
+        "additionalProperties": false,
+        "description": "Candidate only. Explicit complete source target selection and a fresh preview digest are mandatory. No activation, force, ownership or publication field is accepted.",
+        "oneOf": [
+          {
+            "not": {
+              "required": [
+                "expectedCandidateId"
+              ]
+            },
+            "properties": {
+              "expectedRevision": {
+                "enum": [
+                  0
+                ],
+                "type": "integer"
+              }
+            }
+          },
+          {
+            "properties": {
+              "expectedRevision": {
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "expectedCandidateId"
+            ]
+          }
+        ],
+        "properties": {
+          "expectedCandidateId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "expectedConsumerUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expectedRevision": {
+            "format": "int64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "expectedSourceRevision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "expectedSourceUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "sourceApplicationEnvironmentId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceTargetIds": {
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "sourceApplicationEnvironmentId",
+          "expectedConsumerUpdatedAt",
+          "expectedSourceUpdatedAt",
+          "sourceTargetIds",
+          "expectedSourceRevision",
+          "expectedRevision"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceCandidatePage": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentServiceReferenceCandidateSummary"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "nextCursor": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceCandidateSummary": {
+        "additionalProperties": false,
+        "description": "Only the authorized consumer's candidate identity; no source metadata or runtime authorization.",
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "serviceId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "candidate"
+            ],
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "serviceId",
+          "revision",
+          "state",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
       "EnvironmentServiceReferencePreview": {
         "additionalProperties": false,
         "properties": {
@@ -75634,6 +75877,207 @@
             "description": "Application environment delivery detail."
           },
           "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/application-environments/{applicationEnvironmentID}/service-reference-candidates": {
+      "get": {
+        "description": "Paginated metadata for inactive candidates in the authorized consumer configuration. Requires consumer environment view/update and application view, but not source access, so unavailable candidates can be safely cleaned after a cold open. Returns only candidate/service identity, edit revision and timestamps; never source IDs, locations, digests or previews. This is not a list or count of active source consumers.",
+        "operationId": "listEnvironmentServiceReferenceCandidates",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Last service ID from the preceding page.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentServiceReferenceCandidatePage"
+                }
+              }
+            },
+            "description": "Consumer-owned metadata only. Cache-Control no-store."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/application-environments/{applicationEnvironmentID}/service-reference-candidates/{serviceID}": {
+      "delete": {
+        "description": "Delete only the inactive candidate, using consumer view/update permission and binding/candidate CAS. No source permission is needed for cleanup after source deletion or revocation. Does not delete or modify source resources.",
+        "operationId": "deleteEnvironmentServiceReferenceCandidate",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentServiceReferenceCandidateDeleteInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Candidate deleted; Cache-Control no-store."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      },
+      "get": {
+        "description": "Reload an inactive configuration candidate after current source authorization and identity checks. Requires the same configuration permissions as source previews. Source configuration changes return outdated; identity or permission failures never fall back to cached source data.",
+        "operationId": "getEnvironmentServiceReferenceCandidate",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentServiceReferenceCandidateEnvelope"
+                }
+              }
+            },
+            "description": "Inactive candidate, never an active environment association. Cache-Control no-store."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      },
+      "put": {
+        "description": "Save an inactive configuration candidate after a fresh authorized source preview and transactional context revalidation. Does not create an active reference, change local targets or publication control, execute a Plan, or grant source/stream access. Revision zero creates; updates require both candidate ID and revision to reject delete-and-recreate ABA.",
+        "operationId": "putEnvironmentServiceReferenceCandidate",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          },
+          {
+            "$ref": "#/components/parameters/ServiceID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentServiceReferenceCandidateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentServiceReferenceCandidateEnvelope"
+                }
+              }
+            },
+            "description": "Inactive candidate, never an active environment association. Cache-Control no-store."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
             "$ref": "#/components/responses/Error"
           }
         },

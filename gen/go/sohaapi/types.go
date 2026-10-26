@@ -3452,6 +3452,69 @@ func (e EndpointNetworkInterfaceStatus) Valid() bool {
 	}
 }
 
+// Defines values for EnvironmentServiceReferenceCandidateState.
+const (
+	EnvironmentServiceReferenceCandidateStateCandidate EnvironmentServiceReferenceCandidateState = "candidate"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentServiceReferenceCandidateState enum.
+func (e EnvironmentServiceReferenceCandidateState) Valid() bool {
+	switch e {
+	case EnvironmentServiceReferenceCandidateStateCandidate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EnvironmentServiceReferenceCandidateStatus.
+const (
+	Current  EnvironmentServiceReferenceCandidateStatus = "current"
+	Outdated EnvironmentServiceReferenceCandidateStatus = "outdated"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentServiceReferenceCandidateStatus enum.
+func (e EnvironmentServiceReferenceCandidateStatus) Valid() bool {
+	switch e {
+	case Current:
+		return true
+	case Outdated:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EnvironmentServiceReferenceCandidateInput0ExpectedRevision.
+const (
+	N0 EnvironmentServiceReferenceCandidateInput0ExpectedRevision = 0
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentServiceReferenceCandidateInput0ExpectedRevision enum.
+func (e EnvironmentServiceReferenceCandidateInput0ExpectedRevision) Valid() bool {
+	switch e {
+	case N0:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EnvironmentServiceReferenceCandidateSummaryState.
+const (
+	EnvironmentServiceReferenceCandidateSummaryStateCandidate EnvironmentServiceReferenceCandidateSummaryState = "candidate"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentServiceReferenceCandidateSummaryState enum.
+func (e EnvironmentServiceReferenceCandidateSummaryState) Valid() bool {
+	switch e {
+	case EnvironmentServiceReferenceCandidateSummaryStateCandidate:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EnvironmentServiceReferenceTargetOwnershipMode.
 const (
 	EnvironmentServiceReferenceTargetOwnershipModeManaged     EnvironmentServiceReferenceTargetOwnershipMode = "managed"
@@ -17902,6 +17965,82 @@ type EndpointNetworkInterfaceKind string
 
 // EndpointNetworkInterfaceStatus defines model for EndpointNetworkInterfaceStatus.
 type EndpointNetworkInterfaceStatus string
+
+// EnvironmentServiceReferenceCandidate Persisted inactive proposal. Identity digest excludes ordinary configuration/runtime versions; neither digest nor current status is activation permission or proof of runtime health/network reachability. Reads reauthorize and reobserve the source. No local target or source resource is claimed.
+type EnvironmentServiceReferenceCandidate struct {
+	CreatedAt              time.Time                                  `json:"createdAt"`
+	CurrentSourceRevision  string                                     `json:"currentSourceRevision"`
+	ID                     string                                     `json:"id"`
+	Preview                EnvironmentServiceReferencePreview         `json:"preview"`
+	Revision               int64                                      `json:"revision"`
+	SourceIdentityRevision string                                     `json:"sourceIdentityRevision"`
+	State                  EnvironmentServiceReferenceCandidateState  `json:"state"`
+	Status                 EnvironmentServiceReferenceCandidateStatus `json:"status"`
+	UpdatedAt              time.Time                                  `json:"updatedAt"`
+}
+
+// EnvironmentServiceReferenceCandidateState defines model for EnvironmentServiceReferenceCandidate.State.
+type EnvironmentServiceReferenceCandidateState string
+
+// EnvironmentServiceReferenceCandidateStatus defines model for EnvironmentServiceReferenceCandidate.Status.
+type EnvironmentServiceReferenceCandidateStatus string
+
+// EnvironmentServiceReferenceCandidateDeleteInput defines model for EnvironmentServiceReferenceCandidateDeleteInput.
+type EnvironmentServiceReferenceCandidateDeleteInput struct {
+	ExpectedCandidateID       string    `json:"expectedCandidateId"`
+	ExpectedConsumerUpdatedAt time.Time `json:"expectedConsumerUpdatedAt"`
+	ExpectedRevision          int64     `json:"expectedRevision"`
+}
+
+// EnvironmentServiceReferenceCandidateEnvelope defines model for EnvironmentServiceReferenceCandidateEnvelope.
+type EnvironmentServiceReferenceCandidateEnvelope struct {
+	// Item Persisted inactive proposal. Identity digest excludes ordinary configuration/runtime versions; neither digest nor current status is activation permission or proof of runtime health/network reachability. Reads reauthorize and reobserve the source. No local target or source resource is claimed.
+	Item EnvironmentServiceReferenceCandidate `json:"item"`
+}
+
+// EnvironmentServiceReferenceCandidateInput Candidate only. Explicit complete source target selection and a fresh preview digest are mandatory. No activation, force, ownership or publication field is accepted.
+type EnvironmentServiceReferenceCandidateInput struct {
+	ExpectedCandidateID            string    `json:"expectedCandidateId,omitempty"`
+	ExpectedConsumerUpdatedAt      time.Time `json:"expectedConsumerUpdatedAt"`
+	ExpectedRevision               int64     `json:"expectedRevision"`
+	ExpectedSourceRevision         string    `json:"expectedSourceRevision"`
+	ExpectedSourceUpdatedAt        time.Time `json:"expectedSourceUpdatedAt"`
+	SourceApplicationEnvironmentID string    `json:"sourceApplicationEnvironmentId"`
+	SourceTargetIDs                []string  `json:"sourceTargetIds"`
+	union                          json.RawMessage
+}
+
+// EnvironmentServiceReferenceCandidateInput0 defines model for .
+type EnvironmentServiceReferenceCandidateInput0 struct {
+	ExpectedRevision EnvironmentServiceReferenceCandidateInput0ExpectedRevision `json:"expectedRevision,omitempty"`
+}
+
+// EnvironmentServiceReferenceCandidateInput0ExpectedRevision defines model for EnvironmentServiceReferenceCandidateInput.0.ExpectedRevision.
+type EnvironmentServiceReferenceCandidateInput0ExpectedRevision int
+
+// EnvironmentServiceReferenceCandidateInput1 defines model for .
+type EnvironmentServiceReferenceCandidateInput1 struct {
+	ExpectedRevision int `json:"expectedRevision,omitempty"`
+}
+
+// EnvironmentServiceReferenceCandidatePage defines model for EnvironmentServiceReferenceCandidatePage.
+type EnvironmentServiceReferenceCandidatePage struct {
+	Items      []EnvironmentServiceReferenceCandidateSummary `json:"items"`
+	NextCursor string                                        `json:"nextCursor,omitempty"`
+}
+
+// EnvironmentServiceReferenceCandidateSummary Only the authorized consumer's candidate identity; no source metadata or runtime authorization.
+type EnvironmentServiceReferenceCandidateSummary struct {
+	CreatedAt time.Time                                        `json:"createdAt"`
+	ID        string                                           `json:"id"`
+	Revision  int64                                            `json:"revision"`
+	ServiceID string                                           `json:"serviceId"`
+	State     EnvironmentServiceReferenceCandidateSummaryState `json:"state"`
+	UpdatedAt time.Time                                        `json:"updatedAt"`
+}
+
+// EnvironmentServiceReferenceCandidateSummaryState defines model for EnvironmentServiceReferenceCandidateSummary.State.
+type EnvironmentServiceReferenceCandidateSummaryState string
 
 // EnvironmentServiceReferencePreview defines model for EnvironmentServiceReferencePreview.
 type EnvironmentServiceReferencePreview struct {
@@ -33568,6 +33707,14 @@ type UpdateApplicationEnvironmentConfigurationJSONBody struct {
 	WorkflowTemplateVersion int `json:"workflowTemplateVersion,omitempty"`
 }
 
+// ListEnvironmentServiceReferenceCandidatesParams defines parameters for ListEnvironmentServiceReferenceCandidates.
+type ListEnvironmentServiceReferenceCandidatesParams struct {
+	Limit int `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor Last service ID from the preceding page.
+	Cursor string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListApplicationsParams defines parameters for ListApplications.
 type ListApplicationsParams struct {
 	Search string `form:"search,omitempty" json:"search,omitempty"`
@@ -35531,6 +35678,12 @@ type UpdateApplicationEnvironmentJSONRequestBody = ApplicationEnvironmentInput
 
 // UpdateApplicationEnvironmentConfigurationJSONRequestBody defines body for UpdateApplicationEnvironmentConfiguration for application/json ContentType.
 type UpdateApplicationEnvironmentConfigurationJSONRequestBody UpdateApplicationEnvironmentConfigurationJSONBody
+
+// DeleteEnvironmentServiceReferenceCandidateJSONRequestBody defines body for DeleteEnvironmentServiceReferenceCandidate for application/json ContentType.
+type DeleteEnvironmentServiceReferenceCandidateJSONRequestBody = EnvironmentServiceReferenceCandidateDeleteInput
+
+// PutEnvironmentServiceReferenceCandidateJSONRequestBody defines body for PutEnvironmentServiceReferenceCandidate for application/json ContentType.
+type PutEnvironmentServiceReferenceCandidateJSONRequestBody = EnvironmentServiceReferenceCandidateInput
 
 // PreviewEnvironmentServiceReferenceJSONRequestBody defines body for PreviewEnvironmentServiceReference for application/json ContentType.
 type PreviewEnvironmentServiceReferenceJSONRequestBody = EnvironmentServiceReferencePreviewInput
@@ -43401,6 +43554,174 @@ func (t DockerPayloadValue) MarshalJSON() ([]byte, error) {
 
 func (t *DockerPayloadValue) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsEnvironmentServiceReferenceCandidateInput0 returns the union data inside the EnvironmentServiceReferenceCandidateInput as a EnvironmentServiceReferenceCandidateInput0
+func (t EnvironmentServiceReferenceCandidateInput) AsEnvironmentServiceReferenceCandidateInput0() (EnvironmentServiceReferenceCandidateInput0, error) {
+	var body EnvironmentServiceReferenceCandidateInput0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromEnvironmentServiceReferenceCandidateInput0 overwrites any union data inside the EnvironmentServiceReferenceCandidateInput as the provided EnvironmentServiceReferenceCandidateInput0
+func (t *EnvironmentServiceReferenceCandidateInput) FromEnvironmentServiceReferenceCandidateInput0(v EnvironmentServiceReferenceCandidateInput0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeEnvironmentServiceReferenceCandidateInput0 performs a merge with any union data inside the EnvironmentServiceReferenceCandidateInput, using the provided EnvironmentServiceReferenceCandidateInput0
+func (t *EnvironmentServiceReferenceCandidateInput) MergeEnvironmentServiceReferenceCandidateInput0(v EnvironmentServiceReferenceCandidateInput0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsEnvironmentServiceReferenceCandidateInput1 returns the union data inside the EnvironmentServiceReferenceCandidateInput as a EnvironmentServiceReferenceCandidateInput1
+func (t EnvironmentServiceReferenceCandidateInput) AsEnvironmentServiceReferenceCandidateInput1() (EnvironmentServiceReferenceCandidateInput1, error) {
+	var body EnvironmentServiceReferenceCandidateInput1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromEnvironmentServiceReferenceCandidateInput1 overwrites any union data inside the EnvironmentServiceReferenceCandidateInput as the provided EnvironmentServiceReferenceCandidateInput1
+func (t *EnvironmentServiceReferenceCandidateInput) FromEnvironmentServiceReferenceCandidateInput1(v EnvironmentServiceReferenceCandidateInput1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeEnvironmentServiceReferenceCandidateInput1 performs a merge with any union data inside the EnvironmentServiceReferenceCandidateInput, using the provided EnvironmentServiceReferenceCandidateInput1
+func (t *EnvironmentServiceReferenceCandidateInput) MergeEnvironmentServiceReferenceCandidateInput1(v EnvironmentServiceReferenceCandidateInput1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t EnvironmentServiceReferenceCandidateInput) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	object := make(map[string]json.RawMessage)
+	if t.union != nil {
+		err = json.Unmarshal(b, &object)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	object["expectedCandidateId"], err = json.Marshal(t.ExpectedCandidateID)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'expectedCandidateId': %w", err)
+	}
+
+	object["expectedConsumerUpdatedAt"], err = json.Marshal(t.ExpectedConsumerUpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'expectedConsumerUpdatedAt': %w", err)
+	}
+
+	object["expectedRevision"], err = json.Marshal(t.ExpectedRevision)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'expectedRevision': %w", err)
+	}
+
+	object["expectedSourceRevision"], err = json.Marshal(t.ExpectedSourceRevision)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'expectedSourceRevision': %w", err)
+	}
+
+	object["expectedSourceUpdatedAt"], err = json.Marshal(t.ExpectedSourceUpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'expectedSourceUpdatedAt': %w", err)
+	}
+
+	object["sourceApplicationEnvironmentId"], err = json.Marshal(t.SourceApplicationEnvironmentID)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling 'sourceApplicationEnvironmentId': %w", err)
+	}
+
+	if t.SourceTargetIDs != nil {
+		object["sourceTargetIds"], err = json.Marshal(t.SourceTargetIDs)
+		if err != nil {
+			return nil, fmt.Errorf("error marshaling 'sourceTargetIds': %w", err)
+		}
+	}
+	b, err = json.Marshal(object)
+	return b, err
+}
+
+func (t *EnvironmentServiceReferenceCandidateInput) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	if err != nil {
+		return err
+	}
+	object := make(map[string]json.RawMessage)
+	err = json.Unmarshal(b, &object)
+	if err != nil {
+		return err
+	}
+
+	if raw, found := object["expectedCandidateId"]; found {
+		err = json.Unmarshal(raw, &t.ExpectedCandidateID)
+		if err != nil {
+			return fmt.Errorf("error reading 'expectedCandidateId': %w", err)
+		}
+	}
+
+	if raw, found := object["expectedConsumerUpdatedAt"]; found {
+		err = json.Unmarshal(raw, &t.ExpectedConsumerUpdatedAt)
+		if err != nil {
+			return fmt.Errorf("error reading 'expectedConsumerUpdatedAt': %w", err)
+		}
+	}
+
+	if raw, found := object["expectedRevision"]; found {
+		err = json.Unmarshal(raw, &t.ExpectedRevision)
+		if err != nil {
+			return fmt.Errorf("error reading 'expectedRevision': %w", err)
+		}
+	}
+
+	if raw, found := object["expectedSourceRevision"]; found {
+		err = json.Unmarshal(raw, &t.ExpectedSourceRevision)
+		if err != nil {
+			return fmt.Errorf("error reading 'expectedSourceRevision': %w", err)
+		}
+	}
+
+	if raw, found := object["expectedSourceUpdatedAt"]; found {
+		err = json.Unmarshal(raw, &t.ExpectedSourceUpdatedAt)
+		if err != nil {
+			return fmt.Errorf("error reading 'expectedSourceUpdatedAt': %w", err)
+		}
+	}
+
+	if raw, found := object["sourceApplicationEnvironmentId"]; found {
+		err = json.Unmarshal(raw, &t.SourceApplicationEnvironmentID)
+		if err != nil {
+			return fmt.Errorf("error reading 'sourceApplicationEnvironmentId': %w", err)
+		}
+	}
+
+	if raw, found := object["sourceTargetIds"]; found {
+		err = json.Unmarshal(raw, &t.SourceTargetIDs)
+		if err != nil {
+			return fmt.Errorf("error reading 'sourceTargetIds': %w", err)
+		}
+	}
+
 	return err
 }
 
