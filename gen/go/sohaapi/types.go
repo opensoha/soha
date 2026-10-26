@@ -3452,6 +3452,24 @@ func (e EndpointNetworkInterfaceStatus) Valid() bool {
 	}
 }
 
+// Defines values for EnvironmentServiceReferenceTargetOwnershipMode.
+const (
+	EnvironmentServiceReferenceTargetOwnershipModeManaged     EnvironmentServiceReferenceTargetOwnershipMode = "managed"
+	EnvironmentServiceReferenceTargetOwnershipModeObserveOnly EnvironmentServiceReferenceTargetOwnershipMode = "observe_only"
+)
+
+// Valid indicates whether the value is a known member of the EnvironmentServiceReferenceTargetOwnershipMode enum.
+func (e EnvironmentServiceReferenceTargetOwnershipMode) Valid() bool {
+	switch e {
+	case EnvironmentServiceReferenceTargetOwnershipModeManaged:
+		return true
+	case EnvironmentServiceReferenceTargetOwnershipModeObserveOnly:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EvaluationExecutorProfileIsolationMode.
 const (
 	EvaluationExecutorProfileIsolationModeDisposableWrite EvaluationExecutorProfileIsolationMode = "disposable-write"
@@ -8683,16 +8701,16 @@ func (e PersonalEnvironmentTemplateBackend) Valid() bool {
 
 // Defines values for PersonalEnvironmentTemplateMode.
 const (
-	ObserveOnly     PersonalEnvironmentTemplateMode = "observe-only"
-	RestrictedWrite PersonalEnvironmentTemplateMode = "restricted-write"
+	PersonalEnvironmentTemplateModeObserveOnly     PersonalEnvironmentTemplateMode = "observe-only"
+	PersonalEnvironmentTemplateModeRestrictedWrite PersonalEnvironmentTemplateMode = "restricted-write"
 )
 
 // Valid indicates whether the value is a known member of the PersonalEnvironmentTemplateMode enum.
 func (e PersonalEnvironmentTemplateMode) Valid() bool {
 	switch e {
-	case ObserveOnly:
+	case PersonalEnvironmentTemplateModeObserveOnly:
 		return true
-	case RestrictedWrite:
+	case PersonalEnvironmentTemplateModeRestrictedWrite:
 		return true
 	default:
 		return false
@@ -17884,6 +17902,82 @@ type EndpointNetworkInterfaceKind string
 
 // EndpointNetworkInterfaceStatus defines model for EndpointNetworkInterfaceStatus.
 type EndpointNetworkInterfaceStatus string
+
+// EnvironmentServiceReferencePreview defines model for EnvironmentServiceReferencePreview.
+type EnvironmentServiceReferencePreview struct {
+	ApplicationID string                           `json:"applicationId"`
+	Consumer      EnvironmentServiceReferenceScope `json:"consumer"`
+
+	// CurrentLocalTargetIDs Existing local associations are only compared, never removed by this preview.
+	CurrentLocalTargetIDs []string                            `json:"currentLocalTargetIds"`
+	ObservedAt            time.Time                           `json:"observedAt"`
+	ServiceID             string                              `json:"serviceId"`
+	Source                EnvironmentServiceReferenceScope    `json:"source"`
+	SourceRevision        string                              `json:"sourceRevision"`
+	Targets               []EnvironmentServiceReferenceTarget `json:"targets"`
+}
+
+// EnvironmentServiceReferencePreviewEnvelope defines model for EnvironmentServiceReferencePreviewEnvelope.
+type EnvironmentServiceReferencePreviewEnvelope struct {
+	Item EnvironmentServiceReferencePreview `json:"item"`
+}
+
+// EnvironmentServiceReferencePreviewInput defines model for EnvironmentServiceReferencePreviewInput.
+type EnvironmentServiceReferencePreviewInput struct {
+	ExpectedConsumerUpdatedAt time.Time `json:"expectedConsumerUpdatedAt"`
+
+	// ExpectedSourceRevision Optional previous preview revision. Mismatches require a fresh preview.
+	ExpectedSourceRevision         string    `json:"expectedSourceRevision,omitempty"`
+	ExpectedSourceUpdatedAt        time.Time `json:"expectedSourceUpdatedAt"`
+	ServiceID                      string    `json:"serviceId"`
+	SourceApplicationEnvironmentID string    `json:"sourceApplicationEnvironmentId"`
+
+	// SourceTargetIDs Must equal the complete source service target set; partial Helm or multi-root selections are rejected.
+	SourceTargetIDs []string `json:"sourceTargetIds,omitempty"`
+}
+
+// EnvironmentServiceReferenceResource Identity only; no workload spec, CR values, Helm values, annotations, output or credentials.
+type EnvironmentServiceReferenceResource struct {
+	CrdName  string `json:"crdName,omitempty"`
+	Plural   string `json:"plural,omitempty"`
+	Resource struct {
+		APIVersion      string                      `json:"apiVersion"`
+		ClusterID       string                      `json:"clusterId"`
+		Kind            string                      `json:"kind"`
+		Name            string                      `json:"name"`
+		Namespace       string                      `json:"namespace,omitempty"`
+		ResourceVersion string                      `json:"resourceVersion,omitempty"`
+		ScopeMode       KubernetesResourceScopeMode `json:"scopeMode"`
+		UID             string                      `json:"uid"`
+	} `json:"resource"`
+	SpecDigest string `json:"specDigest"`
+}
+
+// EnvironmentServiceReferenceScope defines model for EnvironmentServiceReferenceScope.
+type EnvironmentServiceReferenceScope struct {
+	ApplicationEnvironmentID string    `json:"applicationEnvironmentId"`
+	EnvironmentID            string    `json:"environmentId"`
+	EnvironmentKey           string    `json:"environmentKey"`
+	IsProduction             bool      `json:"isProduction"`
+	StageLevel               int       `json:"stageLevel"`
+	Tier                     string    `json:"tier"`
+	UpdatedAt                time.Time `json:"updatedAt"`
+}
+
+// EnvironmentServiceReferenceTarget defines model for EnvironmentServiceReferenceTarget.
+type EnvironmentServiceReferenceTarget struct {
+	ClusterID     string                                         `json:"clusterId"`
+	HelmRevision  int                                            `json:"helmRevision,omitempty"`
+	Namespace     string                                         `json:"namespace"`
+	OwnershipMode EnvironmentServiceReferenceTargetOwnershipMode `json:"ownershipMode"`
+	Resources     []EnvironmentServiceReferenceResource          `json:"resources"`
+	TargetID      string                                         `json:"targetId"`
+	WorkloadKind  string                                         `json:"workloadKind"`
+	WorkloadName  string                                         `json:"workloadName"`
+}
+
+// EnvironmentServiceReferenceTargetOwnershipMode defines model for EnvironmentServiceReferenceTarget.OwnershipMode.
+type EnvironmentServiceReferenceTargetOwnershipMode string
 
 // ErrorEnvelope defines model for ErrorEnvelope.
 type ErrorEnvelope struct {
@@ -35437,6 +35531,9 @@ type UpdateApplicationEnvironmentJSONRequestBody = ApplicationEnvironmentInput
 
 // UpdateApplicationEnvironmentConfigurationJSONRequestBody defines body for UpdateApplicationEnvironmentConfiguration for application/json ContentType.
 type UpdateApplicationEnvironmentConfigurationJSONRequestBody UpdateApplicationEnvironmentConfigurationJSONBody
+
+// PreviewEnvironmentServiceReferenceJSONRequestBody defines body for PreviewEnvironmentServiceReference for application/json ContentType.
+type PreviewEnvironmentServiceReferenceJSONRequestBody = EnvironmentServiceReferencePreviewInput
 
 // CreateApplicationJSONRequestBody defines body for CreateApplication for application/json ContentType.
 type CreateApplicationJSONRequestBody = ApplicationInput

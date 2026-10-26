@@ -17723,6 +17723,258 @@
           "EndpointNetworkInterfaceStatusUnknown"
         ]
       },
+      "EnvironmentServiceReferencePreview": {
+        "additionalProperties": false,
+        "properties": {
+          "applicationId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "consumer": {
+            "$ref": "#/components/schemas/EnvironmentServiceReferenceScope"
+          },
+          "currentLocalTargetIds": {
+            "description": "Existing local associations are only compared, never removed by this preview.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "observedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "serviceId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/EnvironmentServiceReferenceScope"
+          },
+          "sourceRevision": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "targets": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentServiceReferenceTarget"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "applicationId",
+          "serviceId",
+          "consumer",
+          "source",
+          "sourceRevision",
+          "targets",
+          "currentLocalTargetIds",
+          "observedAt"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferencePreviewEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/EnvironmentServiceReferencePreview"
+          }
+        },
+        "required": [
+          "item"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferencePreviewInput": {
+        "additionalProperties": false,
+        "properties": {
+          "expectedConsumerUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expectedSourceRevision": {
+            "description": "Optional previous preview revision. Mismatches require a fresh preview.",
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          },
+          "expectedSourceUpdatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "serviceId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceApplicationEnvironmentId": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          },
+          "sourceTargetIds": {
+            "description": "Must equal the complete source service target set; partial Helm or multi-root selections are rejected.",
+            "items": {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "serviceId",
+          "sourceApplicationEnvironmentId",
+          "expectedConsumerUpdatedAt",
+          "expectedSourceUpdatedAt"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceResource": {
+        "additionalProperties": false,
+        "description": "Identity only; no workload spec, CR values, Helm values, annotations, output or credentials.",
+        "properties": {
+          "crdName": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "plural": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "resource": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KubernetesResourceRef"
+              },
+              {
+                "properties": {
+                  "uid": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "uid"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "specDigest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource",
+          "specDigest"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceScope": {
+        "additionalProperties": false,
+        "properties": {
+          "applicationEnvironmentId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "environmentId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "environmentKey": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "isProduction": {
+            "type": "boolean"
+          },
+          "stageLevel": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "tier": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "applicationEnvironmentId",
+          "environmentId",
+          "environmentKey",
+          "tier",
+          "stageLevel",
+          "isProduction",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "EnvironmentServiceReferenceTarget": {
+        "additionalProperties": false,
+        "properties": {
+          "clusterId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "helmRevision": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "namespace": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "ownershipMode": {
+            "enum": [
+              "observe_only",
+              "managed"
+            ],
+            "type": "string"
+          },
+          "resources": {
+            "items": {
+              "$ref": "#/components/schemas/EnvironmentServiceReferenceResource"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "targetId": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workloadKind": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "workloadName": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "targetId",
+          "clusterId",
+          "namespace",
+          "workloadKind",
+          "workloadName",
+          "ownershipMode",
+          "resources"
+        ],
+        "type": "object"
+      },
       "ErrorEnvelope": {
         "additionalProperties": false,
         "properties": {
@@ -75382,6 +75634,57 @@
             "description": "Application environment delivery detail."
           },
           "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/application-environments/{applicationEnvironmentID}/service-reference-previews": {
+      "post": {
+        "description": "Read-only preflight for a direct same-application, same-service, same-tier source. Requires consumer environment update, service update, source environment view and each actual source resource read permission. Returns the complete atomic source target set and current local target IDs without creating a reference, changing deployment control, executing a Plan or proving network reachability. Omitted sourceTargetIds selects the complete set; an explicit selection must equal that set. Revalidate all revisions and permissions when references are eventually saved; this response is not a write or stream ticket.",
+        "operationId": "previewEnvironmentServiceReference",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentServiceReferencePreviewInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentServiceReferencePreviewEnvelope"
+                }
+              }
+            },
+            "description": "Authorized source identity preview. Cache-Control no-store."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          },
+          "501": {
             "$ref": "#/components/responses/Error"
           }
         },

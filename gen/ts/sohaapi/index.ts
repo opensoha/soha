@@ -1433,6 +1433,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/application-environments/{applicationEnvironmentID}/service-reference-previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Read-only preflight for a direct same-application, same-service, same-tier source. Requires consumer environment update, service update, source environment view and each actual source resource read permission. Returns the complete atomic source target set and current local target IDs without creating a reference, changing deployment control, executing a Plan or proving network reachability. Omitted sourceTargetIds selects the complete set; an explicit selection must equal that set. Revalidate all revisions and permissions when references are eventually saved; this response is not a write or stream ticket. */
+        post: operations["previewEnvironmentServiceReference"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/application-environments/{applicationEnvironmentID}": {
         parameters: {
             query?: never;
@@ -18410,6 +18427,63 @@ export interface components {
             kind: "Service" | "Ingress" | "HorizontalPodAutoscaler";
             name: string;
         };
+        EnvironmentServiceReferencePreviewInput: {
+            serviceId: string;
+            sourceApplicationEnvironmentId: string;
+            /** Format: date-time */
+            expectedConsumerUpdatedAt: string;
+            /** Format: date-time */
+            expectedSourceUpdatedAt: string;
+            /** @description Must equal the complete source service target set; partial Helm or multi-root selections are rejected. */
+            sourceTargetIds?: string[];
+            /** @description Optional previous preview revision. Mismatches require a fresh preview. */
+            expectedSourceRevision?: string;
+        };
+        EnvironmentServiceReferenceScope: {
+            applicationEnvironmentId: string;
+            environmentId: string;
+            environmentKey: string;
+            tier: string;
+            stageLevel: number;
+            isProduction: boolean;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        EnvironmentServiceReferenceTarget: {
+            targetId: string;
+            clusterId: string;
+            namespace: string;
+            workloadKind: string;
+            workloadName: string;
+            /** @enum {string} */
+            ownershipMode: "observe_only" | "managed";
+            helmRevision?: number;
+            resources: components["schemas"]["EnvironmentServiceReferenceResource"][];
+        };
+        /** @description Identity only; no workload spec, CR values, Helm values, annotations, output or credentials. */
+        EnvironmentServiceReferenceResource: {
+            resource: components["schemas"]["KubernetesResourceRef"] & {
+                uid: string;
+            };
+            specDigest: string;
+            crdName?: string;
+            plural?: string;
+        };
+        EnvironmentServiceReferencePreview: {
+            applicationId: string;
+            serviceId: string;
+            consumer: components["schemas"]["EnvironmentServiceReferenceScope"];
+            source: components["schemas"]["EnvironmentServiceReferenceScope"];
+            sourceRevision: string;
+            targets: components["schemas"]["EnvironmentServiceReferenceTarget"][];
+            /** @description Existing local associations are only compared, never removed by this preview. */
+            currentLocalTargetIds: string[];
+            /** Format: date-time */
+            observedAt: string;
+        };
+        EnvironmentServiceReferencePreviewEnvelope: {
+            item: components["schemas"]["EnvironmentServiceReferencePreview"];
+        };
         KubernetesImportOwnerReference: {
             apiVersion: string;
             kind: string;
@@ -29866,6 +29940,12 @@ export type ApplicationWorkflowInput = components['schemas']['ApplicationWorkflo
 export type ApplicationEnvironment = components['schemas']['ApplicationEnvironment'];
 export type ApplicationEnvironmentInput = components['schemas']['ApplicationEnvironmentInput'];
 export type KubernetesRelatedResource = components['schemas']['KubernetesRelatedResource'];
+export type EnvironmentServiceReferencePreviewInput = components['schemas']['EnvironmentServiceReferencePreviewInput'];
+export type EnvironmentServiceReferenceScope = components['schemas']['EnvironmentServiceReferenceScope'];
+export type EnvironmentServiceReferenceTarget = components['schemas']['EnvironmentServiceReferenceTarget'];
+export type EnvironmentServiceReferenceResource = components['schemas']['EnvironmentServiceReferenceResource'];
+export type EnvironmentServiceReferencePreview = components['schemas']['EnvironmentServiceReferencePreview'];
+export type EnvironmentServiceReferencePreviewEnvelope = components['schemas']['EnvironmentServiceReferencePreviewEnvelope'];
 export type KubernetesImportOwnerReference = components['schemas']['KubernetesImportOwnerReference'];
 export type KubernetesImportSource = components['schemas']['KubernetesImportSource'];
 export type KubernetesImportCandidate = components['schemas']['KubernetesImportCandidate'];
@@ -34207,6 +34287,37 @@ export interface operations {
             400: components["responses"]["Error"];
             403: components["responses"]["Error"];
             409: components["responses"]["Error"];
+        };
+    };
+    previewEnvironmentServiceReference: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationEnvironmentID: components["parameters"]["ApplicationEnvironmentID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnvironmentServiceReferencePreviewInput"];
+            };
+        };
+        responses: {
+            /** @description Authorized source identity preview. Cache-Control no-store. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EnvironmentServiceReferencePreviewEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            501: components["responses"]["Error"];
         };
     };
     getApplicationEnvironment: {

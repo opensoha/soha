@@ -2919,6 +2919,36 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/service-reference-previews:
+    post:
+      tags: [Delivery]
+      operationId: previewEnvironmentServiceReference
+      description: Read-only preflight for a direct same-application, same-service, same-tier source. Requires consumer environment update, service update, source environment view and each actual source resource read permission. Returns the complete atomic source target set and current local target IDs without creating a reference, changing deployment control, executing a Plan or proving network reachability. Omitted sourceTargetIds selects the complete set; an explicit selection must equal that set. Revalidate all revisions and permissions when references are eventually saved; this response is not a write or stream ticket.
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentServiceReferencePreviewInput"
+      responses:
+        "200":
+          description: Authorized source identity preview. Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnvironmentServiceReferencePreviewEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+        "501":
+          $ref: "#/components/responses/Error"
   /application-environments/{applicationEnvironmentID}:
     get:
       tags: [Delivery]
@@ -32197,6 +32227,98 @@ components:
         name:
           type: string
           minLength: 1
+      additionalProperties: false
+    EnvironmentServiceReferencePreviewInput:
+      type: object
+      required: [serviceId, sourceApplicationEnvironmentId, expectedConsumerUpdatedAt, expectedSourceUpdatedAt]
+      properties:
+        serviceId: { type: string, minLength: 1, maxLength: 200 }
+        sourceApplicationEnvironmentId: { type: string, minLength: 1, maxLength: 200 }
+        expectedConsumerUpdatedAt: { type: string, format: date-time }
+        expectedSourceUpdatedAt: { type: string, format: date-time }
+        sourceTargetIds:
+          type: array
+          description: Must equal the complete source service target set; partial Helm or multi-root selections are rejected.
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 200 }
+        expectedSourceRevision:
+          type: string
+          description: Optional previous preview revision. Mismatches require a fresh preview.
+          pattern: '^[a-f0-9]{64}$'
+      additionalProperties: false
+    EnvironmentServiceReferenceScope:
+      type: object
+      required: [applicationEnvironmentId, environmentId, environmentKey, tier, stageLevel, isProduction, updatedAt]
+      properties:
+        applicationEnvironmentId: { type: string, minLength: 1 }
+        environmentId: { type: string, minLength: 1 }
+        environmentKey: { type: string, minLength: 1 }
+        tier: { type: string, minLength: 1 }
+        stageLevel: { type: integer, minimum: 1 }
+        isProduction: { type: boolean }
+        updatedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferenceTarget:
+      type: object
+      required: [targetId, clusterId, namespace, workloadKind, workloadName, ownershipMode, resources]
+      properties:
+        targetId: { type: string, minLength: 1 }
+        clusterId: { type: string, minLength: 1 }
+        namespace: { type: string, minLength: 1 }
+        workloadKind: { type: string, minLength: 1 }
+        workloadName: { type: string, minLength: 1 }
+        ownershipMode: { type: string, enum: [observe_only, managed] }
+        helmRevision: { type: integer, minimum: 1 }
+        resources:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EnvironmentServiceReferenceResource" }
+      additionalProperties: false
+    EnvironmentServiceReferenceResource:
+      type: object
+      description: Identity only; no workload spec, CR values, Helm values, annotations, output or credentials.
+      required: [resource, specDigest]
+      properties:
+        resource:
+          allOf:
+            - $ref: "#/components/schemas/KubernetesResourceRef"
+            - type: object
+              required: [uid]
+              properties:
+                uid: { type: string, minLength: 1 }
+        specDigest: { type: string, pattern: '^[a-f0-9]{64}$' }
+        crdName: { type: string, minLength: 1 }
+        plural: { type: string, minLength: 1 }
+      additionalProperties: false
+    EnvironmentServiceReferencePreview:
+      type: object
+      required: [applicationId, serviceId, consumer, source, sourceRevision, targets, currentLocalTargetIds, observedAt]
+      properties:
+        applicationId: { type: string, minLength: 1 }
+        serviceId: { type: string, minLength: 1 }
+        consumer: { $ref: "#/components/schemas/EnvironmentServiceReferenceScope" }
+        source: { $ref: "#/components/schemas/EnvironmentServiceReferenceScope" }
+        sourceRevision: { type: string, pattern: '^[a-f0-9]{64}$' }
+        targets:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: "#/components/schemas/EnvironmentServiceReferenceTarget" }
+        currentLocalTargetIds:
+          type: array
+          description: Existing local associations are only compared, never removed by this preview.
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1 }
+        observedAt: { type: string, format: date-time }
+      additionalProperties: false
+    EnvironmentServiceReferencePreviewEnvelope:
+      type: object
+      required: [item]
+      properties:
+        item: { $ref: "#/components/schemas/EnvironmentServiceReferencePreview" }
       additionalProperties: false
     KubernetesImportOwnerReference:
       type: object
