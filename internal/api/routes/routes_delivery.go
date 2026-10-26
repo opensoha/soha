@@ -52,6 +52,7 @@ func registerDeliveryRuntimeRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/application-environments/:applicationEnvironmentID/detail", deps.Delivery.GetApplicationEnvironmentDetail)
 	protected.GET("/application-environments/:applicationEnvironmentID/targets/:targetID/source", deps.Delivery.GetImportedTargetSource)
 	protected.GET("/application-environments/:applicationEnvironmentID/targets/:targetID/relations", deps.Delivery.GetImportedTargetRelations)
+	protected.POST("/application-environments/:applicationEnvironmentID/service-reference-previews", deps.Delivery.PreviewEnvironmentServiceReference)
 	protected.GET("/application-environments/target-candidates", deps.Delivery.ListTargetCandidates)
 	protected.POST("/application-environments/imports", deps.Delivery.ImportKubernetesServices)
 	protected.POST("/application-environments/imports/mapped", deps.Delivery.ImportMappedKubernetesServices)

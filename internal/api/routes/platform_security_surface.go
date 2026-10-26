@@ -290,6 +290,7 @@ func (r deliveryMutationRule) matches(method, path string) bool {
 }
 
 var deliveryMutationRules = []deliveryMutationRule{
+	{method: "POST", prefix: "/api/v1/application-environments/", suffix: "/service-reference-previews", resourceKind: "ApplicationEnvironment", action: "view", permission: appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationEnvManage, "update"), scopeRequired: true},
 	{method: "POST", prefix: "/api/v1/applications/", suffix: "/deployment-template-preview", resourceKind: "Application", action: "view", permission: appaccess.PermDeliveryApplicationsView, scopeRequired: true},
 	{method: "POST", prefix: "/api/v1/deployment-templates/", suffix: "/publish", resourceKind: "DeploymentTemplate", action: "publish", permission: appaccess.PermDeliveryDeploymentTemplatesUpdate},
 	{method: "POST", prefix: "/api/v1/deployment-templates", resourceKind: "DeploymentTemplate", action: "create", permission: appaccess.PermDeliveryDeploymentTemplatesCreate},
