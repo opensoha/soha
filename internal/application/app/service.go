@@ -233,11 +233,34 @@ func (s *Service) AuthorizeServiceImport(ctx context.Context, principal domainid
 		}
 	}
 	for _, service := range services {
+		if strings.TrimSpace(service.ID) != "" {
+			if err := s.authorizeExistingServiceImport(ctx, principal, app, service.ID); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "ApplicationService", service.Name, service.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *Service) authorizeExistingServiceImport(ctx context.Context, principal domainidentity.Principal, app domainapp.App, serviceID string) error {
+	if app.ID == "" {
+		return fmt.Errorf("%w: an existing service requires an existing application", apperrors.ErrInvalidArgument)
+	}
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, "update")); err != nil {
+		return err
+	}
+	service, err := s.repo.GetService(ctx, app.ID, strings.TrimSpace(serviceID))
+	if err != nil {
+		return normalizeRepoError(err)
+	}
+	if service.ID != strings.TrimSpace(serviceID) || service.ApplicationID != app.ID || !service.Enabled {
+		return fmt.Errorf("%w: selected service is not available in this application", apperrors.ErrConflict)
+	}
+	return s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", service.Name, service.Key, app.BusinessLineID, app.Group, app.ID)
 }
 
 func (s *Service) CreateService(ctx context.Context, principal domainidentity.Principal, applicationID string, input domainapp.ServiceInput) (domainapp.Service, error) {

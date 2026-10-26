@@ -30,7 +30,8 @@ KUBERNETES_IMPORT_SCOPE = {
     "parent": "TestKubernetesImportIdentityWithPostgres",
     "children": ["create_and_idempotent", "uid_replacement_rollback", "ownership_mode_no_upgrade",
                  "preserves_service_metadata", "destination_race_rollback", "cross_namespace_identity",
-                 "native_ownership_conflict", "crd_identity_and_shared_reference", "legacy_missing_uid_conflict"],
+                 "native_ownership_conflict", "crd_identity_and_shared_reference", "legacy_missing_uid_conflict",
+                 "explicit_service_across_environments", "explicit_service_invalid_rollback", "import_fences_default_edit_cas", "helm_explicit_service_mapping", "service_creation_identity_matches_persistence"],
 }
 
 

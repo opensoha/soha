@@ -192,6 +192,9 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 			}
 			return ErrNotFound
 		}
+		if input.Targets == nil {
+			return nil
+		}
 		return replaceReleaseTargetsTx(tx, item.ID, input.Targets, item.UpdatedAt)
 	})
 	if err != nil {
@@ -368,7 +371,14 @@ func replaceReleaseTargetsTx(tx *gorm.DB, applicationEnvironmentID string, input
 		return fmt.Errorf("delete release targets: %w", err)
 	}
 	for _, input := range inputs {
-		item := normalizeReleaseTargetInput(applicationEnvironmentID, input, now)
+		canonical, err := input.WithCanonicalServiceID()
+		if err != nil {
+			return fmt.Errorf("%w: %s", apperrors.ErrInvalidArgument, err)
+		}
+		if err := validateTargetServiceTx(tx, applicationEnvironmentID, canonical.ServiceID); err != nil {
+			return err
+		}
+		item := normalizeReleaseTargetInput(applicationEnvironmentID, canonical, now)
 		metadata, err := json.Marshal(item.Metadata)
 		if err != nil {
 			return fmt.Errorf("marshal release target metadata: %w", err)
@@ -509,6 +519,7 @@ func scanReleaseTarget(rows *sql.Rows) (domaincatalog.ReleaseTarget, error) {
 		}
 	}
 	_ = json.Unmarshal(metadata, &item.Metadata)
+	item.ServiceID = item.ResolvedServiceID()
 	if item.Metadata == nil {
 		item.Metadata = map[string]any{}
 	}
@@ -721,6 +732,7 @@ func normalizeReleaseTargetInput(applicationEnvironmentID string, input domainca
 		id = uuid.NewString()
 	}
 	return domaincatalog.ReleaseTarget{
+		ServiceID:                input.ResolvedServiceID(),
 		Helm:                     input.Helm,
 		Docker:                   input.Docker,
 		ID:                       id,

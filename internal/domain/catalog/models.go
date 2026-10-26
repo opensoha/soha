@@ -45,6 +45,7 @@ type Environment struct {
 }
 
 type ReleaseTarget struct {
+	ServiceID                string                               `json:"serviceId,omitempty"`
 	Docker                   *sohaapi.DockerDeliveryConfiguration `json:"docker,omitempty"`
 	Helm                     *sohaapi.HelmDeliveryConfiguration   `json:"helm,omitempty"`
 	ID                       string                               `json:"id"`
@@ -67,6 +68,7 @@ type ReleaseTarget struct {
 }
 
 type ReleaseTargetInput struct {
+	ServiceID     string                               `json:"serviceId,omitempty"`
 	Docker        *sohaapi.DockerDeliveryConfiguration `json:"docker,omitempty"`
 	Helm          *sohaapi.HelmDeliveryConfiguration   `json:"helm,omitempty"`
 	ID            string                               `json:"id"`

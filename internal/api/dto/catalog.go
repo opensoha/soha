@@ -6,6 +6,7 @@ import (
 )
 
 type ReleaseTargetRequest struct {
+	ServiceID     string                               `json:"serviceId,omitempty"`
 	Docker        *sohaapi.DockerDeliveryConfiguration `json:"docker,omitempty"`
 	Helm          *sohaapi.HelmDeliveryConfiguration   `json:"helm,omitempty"`
 	ID            string                               `json:"id"`

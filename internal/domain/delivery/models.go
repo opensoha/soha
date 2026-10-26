@@ -898,6 +898,7 @@ type KubernetesImportCandidatePage struct {
 }
 
 type KubernetesWorkloadImportInput struct {
+	ServiceID          string                                 `json:"serviceId,omitempty"`
 	WorkloadKind       string                                 `json:"workloadKind"`
 	WorkloadName       string                                 `json:"workloadName"`
 	ExpectedUID        string                                 `json:"expectedUid,omitempty"`
@@ -942,6 +943,7 @@ type KubernetesImportedService struct {
 }
 
 type KubernetesImportedTarget struct {
+	ServiceID    string                                 `json:"serviceId,omitempty"`
 	ID           string                                 `json:"id"`
 	WorkloadKind string                                 `json:"workloadKind"`
 	WorkloadName string                                 `json:"workloadName"`
@@ -960,6 +962,7 @@ type KubernetesServiceImportResult struct {
 }
 
 type HelmReleaseImportItem struct {
+	ServiceID     string `json:"serviceId,omitempty"`
 	ReleaseName   string `json:"releaseName"`
 	Revision      string `json:"-"`
 	Status        string `json:"-"`
@@ -969,6 +972,7 @@ type HelmReleaseImportItem struct {
 }
 
 type HelmReleaseImportInput struct {
+	Destination     ImportDestination       `json:"-"`
 	ClusterID       string                  `json:"clusterId"`
 	Namespace       string                  `json:"namespace"`
 	ApplicationKey  string                  `json:"applicationKey"`
@@ -988,6 +992,7 @@ type HelmImportedService struct {
 }
 
 type HelmImportedTarget struct {
+	ServiceID   string `json:"serviceId,omitempty"`
 	ID          string `json:"id"`
 	ReleaseName string `json:"releaseName"`
 	Created     bool   `json:"created"`

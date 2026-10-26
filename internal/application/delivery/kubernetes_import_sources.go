@@ -23,12 +23,26 @@ type importBindingAuthorizer interface {
 }
 
 func (s *Service) authorizeKubernetesImportDestination(ctx context.Context, principal domainidentity.Principal, input domaindelivery.KubernetesServiceImportInput) (domaindelivery.ImportDestination, error) {
-	destination, err := s.importRepository.ResolveImportDestination(ctx, input.ApplicationKey, input.EnvironmentKey)
+	services := make([]domainapp.ServiceInput, 0, len(input.Workloads))
+	for _, workload := range input.Workloads {
+		services = append(services, domainapp.ServiceInput{ID: workload.ServiceID, Key: domaindelivery.KubernetesImportServiceKey(input.ClusterID, input.Namespace, workload), Name: workload.WorkloadName})
+	}
+	return s.authorizeImportDestination(ctx, principal, input.ApplicationKey, input.ApplicationName, input.EnvironmentKey, services)
+}
+
+func (s *Service) authorizeImportDestination(ctx context.Context, principal domainidentity.Principal, applicationKey, applicationName, environmentKey string, services []domainapp.ServiceInput) (domaindelivery.ImportDestination, error) {
+	destination, err := s.importRepository.ResolveImportDestination(ctx, applicationKey, environmentKey)
 	if err != nil {
 		return destination, err
 	}
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, "create")); err != nil {
-		return destination, err
+	for _, service := range services {
+		if service.ID == "" {
+			if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.ManagedActionPermission(appaccess.PermDeliveryApplicationServicesManage, "create")); err != nil {
+				return destination, err
+			}
+		} else if destination.ApplicationID == "" {
+			return destination, fmt.Errorf("%w: an existing service requires an existing application", apperrors.ErrInvalidArgument)
+		}
 	}
 	if destination.ApplicationID == "" {
 		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsCreate); err != nil {
@@ -40,13 +54,9 @@ func (s *Service) authorizeKubernetesImportDestination(ctx context.Context, prin
 	if !appOK || !bindingOK {
 		return destination, fmt.Errorf("%w: import scope authorization is unavailable", apperrors.ErrUnsupportedOperation)
 	}
-	services := make([]domainapp.ServiceInput, 0, len(input.Workloads))
-	for _, workload := range input.Workloads {
-		services = append(services, domainapp.ServiceInput{Key: domaindelivery.KubernetesImportServiceKey(input.ClusterID, input.Namespace, workload), Name: workload.WorkloadName})
-	}
-	err = apps.AuthorizeServiceImport(ctx, principal, destination.ApplicationID, domainapp.UpsertInput{Key: input.ApplicationKey, Name: input.ApplicationName}, services)
+	err = apps.AuthorizeServiceImport(ctx, principal, destination.ApplicationID, domainapp.UpsertInput{Key: applicationKey, Name: applicationName}, services)
 	if err == nil {
-		err = bindings.AuthorizeImportBinding(ctx, principal, destination.ApplicationID, input.EnvironmentKey, destination.BindingID)
+		err = bindings.AuthorizeImportBinding(ctx, principal, destination.ApplicationID, environmentKey, destination.BindingID)
 	}
 	return destination, err
 }

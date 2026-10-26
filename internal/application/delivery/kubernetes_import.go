@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -120,11 +121,14 @@ func (s *Service) authorizeApplicationImport(ctx context.Context, principal doma
 }
 
 func (s *Service) ImportHelmReleases(ctx context.Context, principal domainidentity.Principal, input domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error) {
-	if err := s.authorizeApplicationImport(ctx, principal); err != nil {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
 		return domaindelivery.HelmReleaseImportResult{}, err
 	}
 	input = normalizeHelmReleaseImportInput(input)
 	if err := validateHelmReleaseImportInput(input); err != nil {
+		return domaindelivery.HelmReleaseImportResult{}, err
+	}
+	if err := s.authorizeHelmImportDestination(ctx, principal, &input); err != nil {
 		return domaindelivery.HelmReleaseImportResult{}, err
 	}
 	if s.helmImportTargets == nil {
@@ -158,6 +162,27 @@ func (s *Service) ImportHelmReleases(ctx context.Context, principal domainidenti
 	}
 	s.recordHelmReleaseImport(ctx, principal, input, result)
 	return result, nil
+}
+
+func (s *Service) authorizeHelmImportDestination(ctx context.Context, principal domainidentity.Principal, input *domaindelivery.HelmReleaseImportInput) error {
+	services := make([]domainapp.ServiceInput, 0, len(input.Releases))
+	mapped := false
+	for _, release := range input.Releases {
+		mapped = mapped || release.ServiceID != ""
+		services = append(services, domainapp.ServiceInput{ID: release.ServiceID, Key: "helm-" + release.ReleaseName, Name: release.ReleaseName})
+	}
+	if !mapped {
+		return s.authorizeApplicationImport(ctx, principal)
+	}
+	if input.OwnershipMode != observeOnlyOwnershipMode {
+		return fmt.Errorf("%w: existing service association cannot grant Helm publication control; use observe_only", apperrors.ErrUnsupportedOperation)
+	}
+	if s.importRepository == nil {
+		return fmt.Errorf("%w: Helm import persistence is unavailable", apperrors.ErrUnsupportedOperation)
+	}
+	destination, err := s.authorizeImportDestination(ctx, principal, input.ApplicationKey, input.ApplicationName, input.EnvironmentKey, services)
+	input.Destination = destination
+	return err
 }
 
 func (s *Service) collectKubernetesImportCandidates(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domaindelivery.KubernetesImportCandidate, error) {
@@ -283,6 +308,7 @@ func normalizeKubernetesServiceImportInput(input domaindelivery.KubernetesServic
 	input.EnvironmentName = strings.TrimSpace(input.EnvironmentName)
 	input.OwnershipMode = strings.TrimSpace(input.OwnershipMode)
 	for index := range input.Workloads {
+		input.Workloads[index].ServiceID = strings.TrimSpace(input.Workloads[index].ServiceID)
 		input.Workloads[index].WorkloadKind = strings.TrimSpace(input.Workloads[index].WorkloadKind)
 		input.Workloads[index].WorkloadName = strings.TrimSpace(input.Workloads[index].WorkloadName)
 		input.Workloads[index].CRDName = strings.TrimSpace(input.Workloads[index].CRDName)
@@ -335,6 +361,7 @@ func normalizeHelmReleaseImportInput(input domaindelivery.HelmReleaseImportInput
 	input.EnvironmentName = strings.TrimSpace(input.EnvironmentName)
 	input.OwnershipMode = strings.TrimSpace(input.OwnershipMode)
 	for index := range input.Releases {
+		input.Releases[index].ServiceID = strings.TrimSpace(input.Releases[index].ServiceID)
 		input.Releases[index].ReleaseName = strings.TrimSpace(input.Releases[index].ReleaseName)
 	}
 	return input

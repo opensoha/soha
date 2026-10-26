@@ -6,6 +6,7 @@ import (
 	cr "github.com/opensoha/soha-contracts/resource"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -83,6 +84,46 @@ func TestDeliveryRelationHandlerPreservesScopeAndNoStore(t *testing.T) {
 		}
 		if response.Code != want || response.Header().Get("Cache-Control") != "no-store" || service.binding != "env" || service.target != "target" {
 			t.Fatalf("response=%d scope=%s/%s", response.Code, service.binding, service.target)
+		}
+	}
+}
+
+func (s *targetSourceHandlerStub) ImportKubernetesServices(_ context.Context, _ domainidentity.Principal, input domaindelivery.KubernetesServiceImportInput) (domaindelivery.KubernetesServiceImportResult, error) {
+	s.target = input.Workloads[0].ServiceID
+	return domaindelivery.KubernetesServiceImportResult{}, s.err
+}
+func (s *targetSourceHandlerStub) ImportHelmReleases(_ context.Context, _ domainidentity.Principal, input domaindelivery.HelmReleaseImportInput) (domaindelivery.HelmReleaseImportResult, error) {
+	s.target = input.Releases[0].ServiceID
+	return domaindelivery.HelmReleaseImportResult{}, s.err
+}
+func TestMappedImportHandlersRequireAndForwardServiceIdentity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, helm := range []bool{false, true} {
+		service := &targetSourceHandlerStub{}
+		handler := &DeliveryHandler{imports: service}
+		router := gin.New()
+		action := handler.ImportMappedKubernetesServices
+		items := `"workloads":[{"serviceId":"logical-api","workloadName":"api","workloadKind":"Deployment"}]`
+		if helm {
+			action = handler.ImportMappedHelmReleases
+			items = `"releases":[{"serviceId":"logical-api","releaseName":"cache"}]`
+		}
+		router.POST("/mapped", action)
+		for _, existing := range []bool{false, true} {
+			body := `{` + items + `}`
+			if !existing {
+				body = strings.ReplaceAll(body, `"serviceId":"logical-api",`, "")
+			}
+			response := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, "/mapped", strings.NewReader(body))
+			request.Header.Set("Content-Type", "application/json")
+			router.ServeHTTP(response, request)
+			if !existing && (response.Code != 400 || service.target != "") {
+				t.Fatalf("missing mapping reached import: %s", response.Body.String())
+			}
+			if existing && (response.Code != 200 || service.target != "logical-api") {
+				t.Fatalf("mapping lost: %s", response.Body.String())
+			}
 		}
 	}
 }

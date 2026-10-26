@@ -83,7 +83,13 @@ class EvidenceTests(unittest.TestCase):
         names = [scope['parent'], *[scope['parent'] + '/' + child for child in scope['children']]]
         events = [dict(Action=action, Package=scope['package'], Test=name) for name in names for action in ('run', 'pass')]
         events.append(dict(Action='pass', Package=scope['package']))
-        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 9)
+        self.assertEqual(evidence.validate(self.raw(events), **scope)['children'], 14)
+        required_new = {'explicit_service_across_environments', 'explicit_service_invalid_rollback', 'import_fences_default_edit_cas', 'helm_explicit_service_mapping', 'service_creation_identity_matches_persistence'}
+        self.assertTrue(required_new.issubset(scope['children']))
+        for child in required_new:
+            full_name = scope['parent'] + '/' + child
+            for invalid in ([e for e in events if e.get('Test') != full_name], [{**e, 'Action': 'skip'} if e.get('Test') == full_name else e for e in events]):
+                with self.subTest(child=child), self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
         for invalid in (events[:2] + events[4:], [{**e, 'Action': 'skip'} if e.get('Test') == names[-1] else e for e in events], self.events()):
             with self.assertRaises(ValueError): evidence.validate(self.raw(invalid), **scope)
 

@@ -79,12 +79,16 @@ func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaind
 		if !matchesImportDestination(input.Destination, application, environment, bindingID, bindingCreated) {
 			return fmt.Errorf("%w: import destination changed; preview and authorize again", apperrors.ErrConflict)
 		}
+		if err := lockImportBinding(tx, bindingID); err != nil {
+			return err
+		}
 		result.Application = application
 		result.Environment = environment
 		result.ApplicationEnvironmentID = bindingID
 		result.ApplicationEnvironmentCreated = bindingCreated
 		result.Services = make([]domaindelivery.KubernetesImportedService, 0, len(input.Workloads))
 		result.Targets = make([]domaindelivery.KubernetesImportedTarget, 0, len(input.Workloads))
+		changed := false
 		for _, workload := range input.Workloads {
 			service, err := importApplicationService(tx, application.ID, input, workload)
 			if err != nil {
@@ -95,7 +99,11 @@ func (r *Repository) ImportKubernetesServices(ctx context.Context, input domaind
 				return err
 			}
 			result.Services = append(result.Services, service)
+			changed = changed || target.Created
 			result.Targets = append(result.Targets, target)
+		}
+		if changed {
+			return touchImportBinding(tx, bindingID)
 		}
 		return nil
 	})
@@ -125,6 +133,12 @@ func (r *Repository) ImportHelmReleases(ctx context.Context, input domaindeliver
 		if err != nil {
 			return err
 		}
+		if input.Destination.ApplicationID != "" && !matchesImportDestination(input.Destination, application, environment, bindingID, bindingCreated) {
+			return fmt.Errorf("%w: import destination changed; preview and authorize again", apperrors.ErrConflict)
+		}
+		if err := lockImportBinding(tx, bindingID); err != nil {
+			return err
+		}
 		result.Application = application
 		result.Environment = environment
 		result.ApplicationEnvironmentID = bindingID
@@ -143,7 +157,7 @@ func (r *Repository) ImportHelmReleases(ctx context.Context, input domaindeliver
 			result.Services = append(result.Services, service)
 			result.Targets = append(result.Targets, target)
 		}
-		return nil
+		return touchImportBinding(tx, bindingID)
 	})
 	if err != nil {
 		return domaindelivery.HelmReleaseImportResult{}, err
@@ -211,6 +225,10 @@ func importApplicationEnvironment(tx *gorm.DB, applicationID, environmentID, own
 }
 
 func importApplicationService(tx *gorm.DB, applicationID string, input domaindelivery.KubernetesServiceImportInput, workload domaindelivery.KubernetesWorkloadImportInput) (domaindelivery.KubernetesImportedService, error) {
+	if workload.ServiceID != "" {
+		service, err := existingImportService(tx, applicationID, workload.ServiceID)
+		return domaindelivery.KubernetesImportedService{ID: service.ID, Key: service.Key, Name: service.Name, WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName}, err
+	}
 	serviceKey := domaindelivery.KubernetesImportServiceKey(input.ClusterID, input.Namespace, workload)
 	expected := kubernetesImportMetadata(input, workload)
 	metadata, _ := json.Marshal(expected)
@@ -239,7 +257,7 @@ func importReleaseTarget(tx *gorm.DB, bindingID string, service domaindelivery.K
 	expected := kubernetesImportMetadata(input, workload)
 	expected["serviceId"] = service.ID
 	expected["serviceKey"] = service.Key
-	var item domaindelivery.KubernetesImportedTarget
+	item := domaindelivery.KubernetesImportedTarget{ServiceID: service.ID}
 	var existingBindingID string
 	var rawMetadata []byte
 	query := `
@@ -270,7 +288,7 @@ func importReleaseTarget(tx *gorm.DB, bindingID string, service domaindelivery.K
 		return domaindelivery.KubernetesImportedTarget{}, fmt.Errorf("read imported release target: %w", err)
 	}
 	metadata, _ := json.Marshal(expected)
-	item = domaindelivery.KubernetesImportedTarget{ID: uuid.NewString(), WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName, Created: true, Source: workload.Source}
+	item = domaindelivery.KubernetesImportedTarget{ServiceID: service.ID, ID: uuid.NewString(), WorkloadKind: workload.WorkloadKind, WorkloadName: workload.WorkloadName, Created: true, Source: workload.Source}
 	now := time.Now().UTC()
 	executorKind, enabled := importTargetExecution(input.OwnershipMode, "k8s_job_runner")
 	if err := tx.Exec(`
@@ -312,6 +330,10 @@ func matchesImportDestinationEntity(expected, actual string, created bool) bool 
 }
 
 func importHelmApplicationService(tx *gorm.DB, applicationID string, input domaindelivery.HelmReleaseImportInput, release domaindelivery.HelmReleaseImportItem) (domaindelivery.HelmImportedService, error) {
+	if release.ServiceID != "" {
+		service, err := existingImportService(tx, applicationID, release.ServiceID)
+		return domaindelivery.HelmImportedService{ID: service.ID, Key: service.Key, Name: service.Name, ReleaseName: release.ReleaseName}, err
+	}
 	serviceKey := "helm-" + release.ReleaseName
 	expected := helmImportMetadata(input, release)
 	metadata, _ := json.Marshal(expected)
@@ -345,7 +367,7 @@ func importHelmReleaseTarget(tx *gorm.DB, bindingID string, service domaindelive
 	expected := helmImportMetadata(input, release)
 	expected["serviceId"] = service.ID
 	expected["serviceKey"] = service.Key
-	var item domaindelivery.HelmImportedTarget
+	item := domaindelivery.HelmImportedTarget{ServiceID: service.ID}
 	var existingBindingID string
 	var rawMetadata []byte
 	err := tx.Raw(`
@@ -358,6 +380,12 @@ func importHelmReleaseTarget(tx *gorm.DB, bindingID string, service domaindelive
 	executorKind, enabled := importTargetExecution(input.OwnershipMode, "helm_sdk")
 	metadata, _ := json.Marshal(expected)
 	if err == nil {
+		if release.ServiceID != "" {
+			var existing map[string]any
+			if json.Unmarshal(rawMetadata, &existing) != nil || existing["ownershipMode"] != input.OwnershipMode {
+				return domaindelivery.HelmImportedTarget{}, fmt.Errorf("%w: association cannot change Helm publication control", apperrors.ErrConflict)
+			}
+		}
 		if existingBindingID != bindingID || !matchesImportMetadata(rawMetadata, expected, "ownershipMode", "revision", "status", "chart", "appVersion", "storageDriver") {
 			return domaindelivery.HelmImportedTarget{}, fmt.Errorf("%w: Helm release target %s is already owned by another source", apperrors.ErrConflict, release.ReleaseName)
 		}
@@ -369,7 +397,7 @@ func importHelmReleaseTarget(tx *gorm.DB, bindingID string, service domaindelive
 	if !errors.Is(err, sql.ErrNoRows) {
 		return domaindelivery.HelmImportedTarget{}, fmt.Errorf("read imported Helm release target: %w", err)
 	}
-	item = domaindelivery.HelmImportedTarget{ID: uuid.NewString(), ReleaseName: release.ReleaseName, Created: true}
+	item = domaindelivery.HelmImportedTarget{ServiceID: service.ID, ID: uuid.NewString(), ReleaseName: release.ReleaseName, Created: true}
 	now := time.Now().UTC()
 	if err := tx.Exec(`
 		INSERT INTO release_targets (id, application_environment_id, cluster_id, namespace, target_kind, executor_kind, workload_kind, workload_name, metadata, enabled, created_at, updated_at)

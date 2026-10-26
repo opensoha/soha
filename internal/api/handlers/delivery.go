@@ -8,7 +8,9 @@ import (
 	contractresource "github.com/opensoha/soha-contracts/resource"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opensoha/soha/internal/api/dto"
@@ -298,10 +300,24 @@ func (h *DeliveryHandler) GetImportedTargetSource(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
+func (h *DeliveryHandler) ImportMappedKubernetesServices(c *gin.Context) {
+	h.importKubernetesServices(c, true)
+}
+
 func (h *DeliveryHandler) ImportKubernetesServices(c *gin.Context) {
+	h.importKubernetesServices(c, false)
+}
+
+func (h *DeliveryHandler) importKubernetesServices(c *gin.Context, mapped bool) {
 	var request domaindelivery.KubernetesServiceImportInput
 	if err := c.ShouldBindJSON(&request); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Kubernetes service import payload")
+		return
+	}
+	if mapped && !slices.ContainsFunc(request.Workloads, func(item domaindelivery.KubernetesWorkloadImportInput) bool {
+		return strings.TrimSpace(item.ServiceID) != ""
+	}) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "mapped import requires an existing serviceId")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -313,10 +329,22 @@ func (h *DeliveryHandler) ImportKubernetesServices(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
+func (h *DeliveryHandler) ImportMappedHelmReleases(c *gin.Context) {
+	h.importHelmReleases(c, true)
+}
+
 func (h *DeliveryHandler) ImportHelmReleases(c *gin.Context) {
+	h.importHelmReleases(c, false)
+}
+
+func (h *DeliveryHandler) importHelmReleases(c *gin.Context, mapped bool) {
 	var request domaindelivery.HelmReleaseImportInput
 	if err := c.ShouldBindJSON(&request); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid Helm release import payload")
+		return
+	}
+	if mapped && !slices.ContainsFunc(request.Releases, func(item domaindelivery.HelmReleaseImportItem) bool { return strings.TrimSpace(item.ServiceID) != "" }) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "mapped import requires an existing serviceId")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)

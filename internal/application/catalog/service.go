@@ -175,6 +175,11 @@ func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal do
 	if err := s.authorizeApplicationEnvironmentInput(ctx, principal, domainaccess.ActionCreate, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
+	prepared, err := s.prepareTargetServiceMappings(ctx, principal, input, domaincatalog.ApplicationEnvironment{})
+	if err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	input = prepared
 	if err := validateTemplateAdoptionUpdate(ctx, domaincatalog.ApplicationEnvironment{ApplicationID: input.ApplicationID}, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
@@ -214,22 +219,31 @@ func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal do
 	if err := s.authorizeApplicationEnvironmentInput(ctx, principal, domainaccess.ActionUpdate, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := validateTemplateAdoptionUpdate(ctx, current, input); err != nil {
+	if input.Targets == nil && len(current.Targets) > 0 && current.ApplicationID != input.ApplicationID {
+		return domaincatalog.ApplicationEnvironment{}, fmt.Errorf("%w: moving a binding requires explicit service target mappings", apperrors.ErrConflict)
+	}
+	prepared, err := s.prepareTargetServiceMappings(ctx, principal, input, current)
+	if err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := s.validateApplicationEnvironmentWorkflow(ctx, input); err != nil {
+	input = prepared
+	validation := validationTargets(input, current)
+	if err := validateTemplateAdoptionUpdate(ctx, current, validation); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := validateHelmTargets(input.Targets, current.Targets); err != nil {
+	if err := s.validateApplicationEnvironmentWorkflow(ctx, validation); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := validateDockerTargets(input.Targets); err != nil {
+	if err := validateHelmTargets(validation.Targets, current.Targets); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := validateRelationTargets(input.Targets); err != nil {
+	if err := validateDockerTargets(validation.Targets); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	if err := validateRelationRuleRevision(input, current); err != nil {
+	if err := validateRelationTargets(validation.Targets); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
+	if err := validateRelationRuleRevision(validation, current); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	item, err := s.repo.UpdateApplicationEnvironment(ctx, id, input)

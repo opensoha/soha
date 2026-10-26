@@ -742,6 +742,8 @@ func (r *Repository) listServiceContainers(ctx context.Context, serviceID string
 }
 
 func normalizeServiceInput(applicationID string, input domainapp.ServiceInput, now time.Time) domainapp.Service {
+	// PostgreSQL stores timestamps at microsecond precision.
+	now = now.Truncate(time.Microsecond)
 	metadata := input.Metadata
 	if metadata == nil {
 		metadata = map[string]any{}

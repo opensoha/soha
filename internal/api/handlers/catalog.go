@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
 
@@ -135,10 +136,33 @@ func (h *CatalogHandler) CreateApplicationEnvironment(c *gin.Context) {
 	apiresponse.Item(c, http.StatusCreated, item)
 }
 
+func (h *CatalogHandler) UpdateApplicationEnvironmentConfiguration(c *gin.Context) {
+	h.updateApplicationEnvironment(c, true)
+}
+
 func (h *CatalogHandler) UpdateApplicationEnvironment(c *gin.Context) {
+	h.updateApplicationEnvironment(c, false)
+}
+
+func (h *CatalogHandler) updateApplicationEnvironment(c *gin.Context, configurationOnly bool) {
 	var req dto.ApplicationEnvironmentRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	var configuration struct {
+		dto.ApplicationEnvironmentRequest
+		Targets json.RawMessage `json:"targets"`
+	}
+	var payload any = &req
+	if configurationOnly {
+		payload = &configuration
+	}
+	if err := c.ShouldBindJSON(payload); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid application environment payload")
+		return
+	}
+	if configurationOnly {
+		req = configuration.ApplicationEnvironmentRequest
+	}
+	if configurationOnly && (len(configuration.Targets) != 0 || req.ExpectedUpdatedAt == nil) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "configuration update requires expectedUpdatedAt and must omit targets")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
@@ -346,9 +370,13 @@ func (h *CatalogHandler) DeleteWorkflowTemplate(c *gin.Context) {
 }
 
 func mapApplicationEnvironmentInput(req dto.ApplicationEnvironmentRequest) domaincatalog.ApplicationEnvironmentInput {
-	targets := make([]domaincatalog.ReleaseTargetInput, 0, len(req.Targets))
+	var targets []domaincatalog.ReleaseTargetInput
+	if req.Targets != nil {
+		targets = make([]domaincatalog.ReleaseTargetInput, 0, len(req.Targets))
+	}
 	for _, item := range req.Targets {
 		targets = append(targets, domaincatalog.ReleaseTargetInput{
+			ServiceID:     item.ServiceID,
 			Helm:          item.Helm,
 			Docker:        item.Docker,
 			ID:            item.ID,
