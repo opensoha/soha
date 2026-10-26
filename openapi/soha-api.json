@@ -5853,6 +5853,7 @@
             "type": "string"
           },
           "targets": {
+            "description": "On update, omission preserves the existing target set and its actual locations. An explicit array replaces it under expectedUpdatedAt; an empty array clears associations. Editing clusterId or namespace defaults never moves existing targets.",
             "items": {
               "$ref": "#/components/schemas/ReleaseTargetInput"
             },
@@ -20532,6 +20533,10 @@
           },
           "releaseName": {
             "type": "string"
+          },
+          "serviceId": {
+            "description": "Logical service selected or created for this target; identity is independent of cluster and namespace.",
+            "type": "string"
           }
         },
         "required": [
@@ -20579,6 +20584,10 @@
         "properties": {
           "releaseName": {
             "minLength": 1,
+            "type": "string"
+          },
+          "serviceId": {
+            "description": "Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control.",
             "type": "string"
           }
         },
@@ -28029,6 +28038,10 @@
           "id": {
             "type": "string"
           },
+          "serviceId": {
+            "description": "Logical service selected or created for this target; identity is independent of cluster and namespace.",
+            "type": "string"
+          },
           "source": {
             "$ref": "#/components/schemas/KubernetesImportSource"
           },
@@ -34548,6 +34561,10 @@
           },
           "expectedUid": {
             "minLength": 1,
+            "type": "string"
+          },
+          "serviceId": {
+            "description": "Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control.",
             "type": "string"
           },
           "workloadKind": {
@@ -53499,6 +53516,10 @@
           "regionKey": {
             "type": "string"
           },
+          "serviceId": {
+            "description": "Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping.",
+            "type": "string"
+          },
           "targetKind": {
             "type": "string"
           },
@@ -53566,6 +53587,10 @@
             "type": "string"
           },
           "regionKey": {
+            "type": "string"
+          },
+          "serviceId": {
+            "description": "Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping.",
             "type": "string"
           },
           "targetKind": {
@@ -75280,6 +75305,63 @@
         ]
       }
     },
+    "/application-environments/{applicationEnvironmentID}/configuration": {
+      "put": {
+        "description": "Configuration-only update. Requires expectedUpdatedAt and omission of targets; existing targets and their actual locations are preserved. Older servers return 404; clients must not fall back to the replacement endpoint.",
+        "operationId": "updateApplicationEnvironmentConfiguration",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ApplicationEnvironmentID"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ApplicationEnvironmentInput"
+                  },
+                  {
+                    "not": {
+                      "required": [
+                        "targets"
+                      ]
+                    },
+                    "required": [
+                      "expectedUpdatedAt"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApplicationEnvironmentEnvelope"
+                }
+              }
+            },
+            "description": "Updated application environment binding."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
     "/application-environments/{applicationEnvironmentID}/detail": {
       "get": {
         "operationId": "getApplicationEnvironmentDeliveryDetail",
@@ -75468,9 +75550,89 @@
         ]
       }
     },
+    "/application-environments/helm-release-imports/mapped": {
+      "post": {
+        "description": "Explicit logical service mapping. Use this endpoint when any item has serviceId; older servers return 404 instead of silently creating services. Requires at least one existing serviceId.",
+        "operationId": "importMappedHelmReleases",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HelmReleaseImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HelmReleaseImportResultEnvelope"
+                }
+              }
+            },
+            "description": "Idempotent Helm release import result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
     "/application-environments/imports": {
       "post": {
         "operationId": "importKubernetesServices",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KubernetesServiceImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KubernetesServiceImportResultEnvelope"
+                }
+              }
+            },
+            "description": "Idempotent Kubernetes service import result."
+          },
+          "400": {
+            "$ref": "#/components/responses/Error"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error"
+          },
+          "409": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
+    "/application-environments/imports/mapped": {
+      "post": {
+        "description": "Explicit logical service mapping. Use this endpoint when any item has serviceId; older servers return 404 instead of silently creating services. Requires at least one existing serviceId.",
+        "operationId": "importMappedKubernetesServices",
         "requestBody": {
           "content": {
             "application/json": {

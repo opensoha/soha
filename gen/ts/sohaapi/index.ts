@@ -1383,6 +1383,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/application-environments/imports/mapped": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicit logical service mapping. Use this endpoint when any item has serviceId; older servers return 404 instead of silently creating services. Requires at least one existing serviceId. */
+        post: operations["importMappedKubernetesServices"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/application-environments/helm-release-imports": {
         parameters: {
             query?: never;
@@ -1393,6 +1410,23 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["importHelmReleases"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/application-environments/helm-release-imports/mapped": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Explicit logical service mapping. Use this endpoint when any item has serviceId; older servers return 404 instead of silently creating services. Requires at least one existing serviceId. */
+        post: operations["importMappedHelmReleases"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1410,6 +1444,23 @@ export interface paths {
         put: operations["updateApplicationEnvironment"];
         post?: never;
         delete: operations["deleteApplicationEnvironment"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/application-environments/{applicationEnvironmentID}/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description Configuration-only update. Requires expectedUpdatedAt and omission of targets; existing targets and their actual locations are preserved. Older servers return 404; clients must not fall back to the replacement endpoint. */
+        put: operations["updateApplicationEnvironmentConfiguration"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -17876,6 +17927,8 @@ export interface components {
             data: components["schemas"]["ResourceRelationsView"];
         };
         ReleaseTarget: {
+            /** @description Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping. */
+            serviceId?: string;
             docker?: components["schemas"]["DockerDeliveryConfiguration"];
             helm?: components["schemas"]["HelmDeliveryConfiguration"];
             id: string;
@@ -17902,6 +17955,8 @@ export interface components {
             updatedAt?: string;
         };
         ReleaseTargetInput: {
+            /** @description Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping. */
+            serviceId?: string;
             docker?: components["schemas"]["DockerDeliveryConfiguration"];
             helm?: components["schemas"]["HelmDeliveryConfiguration"];
             id?: string;
@@ -18347,6 +18402,7 @@ export interface components {
             buildPolicy?: components["schemas"]["BuildPolicy"];
             releasePolicy?: components["schemas"]["ReleasePolicy"];
             resourceSelector?: components["schemas"]["ResourceSelector"];
+            /** @description On update, omission preserves the existing target set and its actual locations. An explicit array replaces it under expectedUpdatedAt; an empty array clears associations. Editing clusterId or namespace defaults never moves existing targets. */
             targets?: components["schemas"]["ReleaseTargetInput"][];
         };
         KubernetesRelatedResource: {
@@ -18396,6 +18452,8 @@ export interface components {
             truncated: boolean;
         };
         KubernetesWorkloadImportInput: {
+            /** @description Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control. */
+            serviceId?: string;
             expectedUid?: string;
             expectedSpecDigest?: string;
             /** @description Required for CustomResource. Resolve the served GVR and scope from this CRD; never infer API group or plural from Kind. */
@@ -18432,6 +18490,8 @@ export interface components {
             created: boolean;
         };
         KubernetesImportedTarget: {
+            /** @description Logical service selected or created for this target; identity is independent of cluster and namespace. */
+            serviceId?: string;
             source?: components["schemas"]["KubernetesImportSource"];
             id: string;
             /** @enum {string} */
@@ -18453,6 +18513,8 @@ export interface components {
             data: components["schemas"]["KubernetesServiceImportResult"];
         };
         HelmReleaseImportInput: {
+            /** @description Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control. */
+            serviceId?: string;
             releaseName: string;
         };
         HelmReleaseImportRequest: {
@@ -18474,6 +18536,8 @@ export interface components {
             created: boolean;
         };
         HelmImportedTarget: {
+            /** @description Logical service selected or created for this target; identity is independent of cluster and namespace. */
+            serviceId?: string;
             id: string;
             releaseName: string;
             created: boolean;
@@ -34064,7 +34128,61 @@ export interface operations {
             409: components["responses"]["Error"];
         };
     };
+    importMappedKubernetesServices: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KubernetesServiceImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Idempotent Kubernetes service import result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KubernetesServiceImportResultEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
     importHelmReleases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HelmReleaseImportRequest"];
+            };
+        };
+        responses: {
+            /** @description Idempotent Helm release import result. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HelmReleaseImportResultEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    importMappedHelmReleases: {
         parameters: {
             query?: never;
             header?: never;
@@ -34162,6 +34280,34 @@ export interface operations {
                     "application/json": components["schemas"]["OperationStatus"];
                 };
             };
+            404: components["responses"]["Error"];
+        };
+    };
+    updateApplicationEnvironmentConfiguration: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                applicationEnvironmentID: components["parameters"]["ApplicationEnvironmentID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ApplicationEnvironmentInput"] & Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Updated application environment binding. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApplicationEnvironmentEnvelope"];
+                };
+            };
+            400: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };

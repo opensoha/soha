@@ -2848,10 +2848,58 @@ paths:
           $ref: "#/components/responses/Error"
         "409":
           $ref: "#/components/responses/Error"
+  /application-environments/imports/mapped:
+    post:
+      tags: [Delivery]
+      operationId: importMappedKubernetesServices
+      description: Explicit logical service mapping. Use this endpoint when any item has serviceId; older servers return 404 instead of silently creating services. Requires at least one existing serviceId.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KubernetesServiceImportRequest"
+      responses:
+        "200":
+          description: Idempotent Kubernetes service import result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KubernetesServiceImportResultEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
   /application-environments/helm-release-imports:
     post:
       tags: [Delivery]
       operationId: importHelmReleases
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HelmReleaseImportRequest"
+      responses:
+        "200":
+          description: Idempotent Helm release import result.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HelmReleaseImportResultEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "409":
+          $ref: "#/components/responses/Error"
+  /application-environments/helm-release-imports/mapped:
+    post:
+      tags: [Delivery]
+      operationId: importMappedHelmReleases
+      description: Explicit logical service mapping. Use this endpoint when any item has serviceId; older servers return 404 instead of silently creating services. Requires at least one existing serviceId.
       requestBody:
         required: true
         content:
@@ -2920,6 +2968,34 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OperationStatus"
+        "404":
+          $ref: "#/components/responses/Error"
+  /application-environments/{applicationEnvironmentID}/configuration:
+    put:
+      tags: [Delivery]
+      operationId: updateApplicationEnvironmentConfiguration
+      parameters:
+        - $ref: "#/components/parameters/ApplicationEnvironmentID"
+      description: Configuration-only update. Requires expectedUpdatedAt and omission of targets; existing targets and their actual locations are preserved. Older servers return 404; clients must not fall back to the replacement endpoint.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ApplicationEnvironmentInput"
+                - type: object
+                  required: [expectedUpdatedAt]
+                  not: { required: [targets] }
+      responses:
+        "200":
+          description: Updated application environment binding.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationEnvironmentEnvelope"
+        "400":
+          $ref: "#/components/responses/Error"
         "404":
           $ref: "#/components/responses/Error"
   /application-environments/{applicationEnvironmentID}/detail:
@@ -31286,6 +31362,9 @@ components:
       type: object
       required: [id, applicationEnvironmentId, clusterId, namespace, workloadKind, workloadName, enabled]
       properties:
+        serviceId:
+          type: string
+          description: Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping.
         docker: { $ref: "#/components/schemas/DockerDeliveryConfiguration" }
         helm: { $ref: "#/components/schemas/HelmDeliveryConfiguration" }
         id:
@@ -31331,6 +31410,9 @@ components:
       type: object
       required: [clusterId, namespace, workloadKind, workloadName, enabled]
       properties:
+        serviceId:
+          type: string
+          description: Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping.
         docker: { $ref: "#/components/schemas/DockerDeliveryConfiguration" }
         helm: { $ref: "#/components/schemas/HelmDeliveryConfiguration" }
         id:
@@ -32100,6 +32182,7 @@ components:
         resourceSelector:
           $ref: "#/components/schemas/ResourceSelector"
         targets:
+          description: On update, omission preserves the existing target set and its actual locations. An explicit array replaces it under expectedUpdatedAt; an empty array clears associations. Editing clusterId or namespace defaults never moves existing targets.
           type: array
           items:
             $ref: "#/components/schemas/ReleaseTargetInput"
@@ -32200,6 +32283,9 @@ components:
       type: object
       required: [workloadKind, workloadName]
       properties:
+        serviceId:
+          type: string
+          description: Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control.
         expectedUid: { type: string, minLength: 1 }
         expectedSpecDigest: { type: string, pattern: '^[a-f0-9]{64}$' }
         crdName:
@@ -32282,6 +32368,9 @@ components:
       type: object
       required: [id, workloadKind, workloadName, created]
       properties:
+        serviceId:
+          type: string
+          description: Logical service selected or created for this target; identity is independent of cluster and namespace.
         source: { $ref: "#/components/schemas/KubernetesImportSource" }
         id:
           type: string
@@ -32328,6 +32417,9 @@ components:
       type: object
       required: [releaseName]
       properties:
+        serviceId:
+          type: string
+          description: Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control.
         releaseName:
           type: string
           minLength: 1
@@ -32384,6 +32476,9 @@ components:
       type: object
       required: [id, releaseName, created]
       properties:
+        serviceId:
+          type: string
+          description: Logical service selected or created for this target; identity is independent of cluster and namespace.
         id:
           type: string
         releaseName:

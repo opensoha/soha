@@ -14212,14 +14212,16 @@ type ApplicationEnvironmentInput struct {
 	EnvironmentID    string       `json:"environmentId"`
 
 	// ExpectedUpdatedAt Optional optimistic concurrency guard for replacing an existing environment configuration and its release targets. A stale value returns 409 without changes.
-	ExpectedUpdatedAt  *time.Time           `json:"expectedUpdatedAt,omitempty"`
-	ID                 string               `json:"id,omitempty"`
-	Namespace          string               `json:"namespace,omitempty"`
-	PromotionPolicyID  string               `json:"promotionPolicyId,omitempty"`
-	RegistryID         string               `json:"registryId,omitempty"`
-	ReleasePolicy      *ReleasePolicy       `json:"releasePolicy,omitempty"`
-	ResourceSelector   *ResourceSelector    `json:"resourceSelector,omitempty"`
-	StrategyProfileID  string               `json:"strategyProfileId,omitempty"`
+	ExpectedUpdatedAt *time.Time        `json:"expectedUpdatedAt,omitempty"`
+	ID                string            `json:"id,omitempty"`
+	Namespace         string            `json:"namespace,omitempty"`
+	PromotionPolicyID string            `json:"promotionPolicyId,omitempty"`
+	RegistryID        string            `json:"registryId,omitempty"`
+	ReleasePolicy     *ReleasePolicy    `json:"releasePolicy,omitempty"`
+	ResourceSelector  *ResourceSelector `json:"resourceSelector,omitempty"`
+	StrategyProfileID string            `json:"strategyProfileId,omitempty"`
+
+	// Targets On update, omission preserves the existing target set and its actual locations. An explicit array replaces it under expectedUpdatedAt; an empty array clears associations. Editing clusterId or namespace defaults never moves existing targets.
 	Targets            []ReleaseTargetInput `json:"targets,omitempty"`
 	WorkflowTemplateID string               `json:"workflowTemplateId,omitempty"`
 
@@ -18716,6 +18718,9 @@ type HelmImportedTarget struct {
 	Created     bool   `json:"created"`
 	ID          string `json:"id"`
 	ReleaseName string `json:"releaseName"`
+
+	// ServiceID Logical service selected or created for this target; identity is independent of cluster and namespace.
+	ServiceID string `json:"serviceId,omitempty"`
 }
 
 // HelmPreparedRelease Confidential runner input. Never returned through ordinary plan, task, history or log reads.
@@ -18729,6 +18734,9 @@ type HelmPreparedRelease struct {
 // HelmReleaseImportInput defines model for HelmReleaseImportInput.
 type HelmReleaseImportInput struct {
 	ReleaseName string `json:"releaseName"`
+
+	// ServiceID Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control.
+	ServiceID string `json:"serviceId,omitempty"`
 }
 
 // HelmReleaseImportRequest defines model for HelmReleaseImportRequest.
@@ -21007,6 +21015,9 @@ type KubernetesImportedTarget struct {
 	Created bool   `json:"created"`
 	ID      string `json:"id"`
 
+	// ServiceID Logical service selected or created for this target; identity is independent of cluster and namespace.
+	ServiceID string `json:"serviceId,omitempty"`
+
 	// Source Safe source identity captured from an authorized live read. No YAML, spec values, annotations or status are persisted here. For native workloads specDigest covers configuration and ownership metadata excluding status/resourceVersion. For CRs it fences the public UID, generation and owner references without hashing secret content; metadata-only edits are outside that fence. CRs without a positive generation are rejected. UID identifies recreation.
 	Source       *KubernetesImportSource              `json:"source,omitempty"`
 	WorkloadKind KubernetesImportedTargetWorkloadKind `json:"workloadKind"`
@@ -22854,11 +22865,14 @@ type KubernetesWorkloadContainer struct {
 // KubernetesWorkloadImportInput defines model for KubernetesWorkloadImportInput.
 type KubernetesWorkloadImportInput struct {
 	// CrdName Required for CustomResource. Resolve the served GVR and scope from this CRD; never infer API group or plural from Kind.
-	CrdName            string                                    `json:"crdName,omitempty"`
-	ExpectedSpecDigest string                                    `json:"expectedSpecDigest,omitempty"`
-	ExpectedUID        string                                    `json:"expectedUid,omitempty"`
-	WorkloadKind       KubernetesWorkloadImportInputWorkloadKind `json:"workloadKind"`
-	WorkloadName       string                                    `json:"workloadName"`
+	CrdName            string `json:"crdName,omitempty"`
+	ExpectedSpecDigest string `json:"expectedSpecDigest,omitempty"`
+	ExpectedUID        string `json:"expectedUid,omitempty"`
+
+	// ServiceID Explicit existing logical service in the selected application. Empty or omitted retains legacy per-resource service creation. Association never grants publishing control.
+	ServiceID    string                                    `json:"serviceId,omitempty"`
+	WorkloadKind KubernetesWorkloadImportInputWorkloadKind `json:"workloadKind"`
+	WorkloadName string                                    `json:"workloadName"`
 }
 
 // KubernetesWorkloadImportInputWorkloadKind defines model for KubernetesWorkloadImportInput.WorkloadKind.
@@ -28185,11 +28199,14 @@ type ReleaseTarget struct {
 	Metadata     map[string]any               `json:"metadata,omitempty"`
 	Namespace    string                       `json:"namespace"`
 	RegionKey    string                       `json:"regionKey,omitempty"`
-	TargetKind   string                       `json:"targetKind,omitempty"`
-	UpdatedAt    *time.Time                   `json:"updatedAt,omitempty"`
-	WaveKey      string                       `json:"waveKey,omitempty"`
-	WorkloadKind string                       `json:"workloadKind"`
-	WorkloadName string                       `json:"workloadName"`
+
+	// ServiceID Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping.
+	ServiceID    string     `json:"serviceId,omitempty"`
+	TargetKind   string     `json:"targetKind,omitempty"`
+	UpdatedAt    *time.Time `json:"updatedAt,omitempty"`
+	WaveKey      string     `json:"waveKey,omitempty"`
+	WorkloadKind string     `json:"workloadKind"`
+	WorkloadName string     `json:"workloadName"`
 }
 
 // ReleaseTargetInput defines model for ReleaseTargetInput.
@@ -28210,10 +28227,13 @@ type ReleaseTargetInput struct {
 	Metadata     map[string]any               `json:"metadata,omitempty"`
 	Namespace    string                       `json:"namespace"`
 	RegionKey    string                       `json:"regionKey,omitempty"`
-	TargetKind   string                       `json:"targetKind,omitempty"`
-	WaveKey      string                       `json:"waveKey,omitempty"`
-	WorkloadKind string                       `json:"workloadKind"`
-	WorkloadName string                       `json:"workloadName"`
+
+	// ServiceID Logical application service identity. Must belong to this application; retained in the canonical serviceId metadata projection for older clients. Empty or omitted preserves legacy mapping.
+	ServiceID    string `json:"serviceId,omitempty"`
+	TargetKind   string `json:"targetKind,omitempty"`
+	WaveKey      string `json:"waveKey,omitempty"`
+	WorkloadKind string `json:"workloadKind"`
+	WorkloadName string `json:"workloadName"`
 }
 
 // RenderedDeliverySpec defines model for RenderedDeliverySpec.
@@ -33427,6 +33447,33 @@ type ListApplicationEnvironmentTargetCandidatesParams struct {
 // ListApplicationEnvironmentTargetCandidatesParamsWorkloadKind defines parameters for ListApplicationEnvironmentTargetCandidates.
 type ListApplicationEnvironmentTargetCandidatesParamsWorkloadKind string
 
+// UpdateApplicationEnvironmentConfigurationJSONBody defines parameters for UpdateApplicationEnvironmentConfiguration.
+type UpdateApplicationEnvironmentConfigurationJSONBody struct {
+	Alias            string       `json:"alias,omitempty"`
+	ApplicationID    string       `json:"applicationId"`
+	ArtifactPolicyID string       `json:"artifactPolicyId,omitempty"`
+	BuildPolicy      *BuildPolicy `json:"buildPolicy,omitempty"`
+	ClusterID        string       `json:"clusterId,omitempty"`
+	EnvironmentID    string       `json:"environmentId"`
+
+	// ExpectedUpdatedAt Optional optimistic concurrency guard for replacing an existing environment configuration and its release targets. A stale value returns 409 without changes.
+	ExpectedUpdatedAt time.Time         `json:"expectedUpdatedAt"`
+	ID                string            `json:"id,omitempty"`
+	Namespace         string            `json:"namespace,omitempty"`
+	PromotionPolicyID string            `json:"promotionPolicyId,omitempty"`
+	RegistryID        string            `json:"registryId,omitempty"`
+	ReleasePolicy     *ReleasePolicy    `json:"releasePolicy,omitempty"`
+	ResourceSelector  *ResourceSelector `json:"resourceSelector,omitempty"`
+	StrategyProfileID string            `json:"strategyProfileId,omitempty"`
+
+	// Targets On update, omission preserves the existing target set and its actual locations. An explicit array replaces it under expectedUpdatedAt; an empty array clears associations. Editing clusterId or namespace defaults never moves existing targets.
+	Targets            []ReleaseTargetInput `json:"targets,omitempty"`
+	WorkflowTemplateID string               `json:"workflowTemplateId,omitempty"`
+
+	// WorkflowTemplateVersion Immutable published workflow template version; omission pins the latest permitted version when the binding is saved.
+	WorkflowTemplateVersion int `json:"workflowTemplateVersion,omitempty"`
+}
+
 // ListApplicationsParams defines parameters for ListApplications.
 type ListApplicationsParams struct {
 	Search string `form:"search,omitempty" json:"search,omitempty"`
@@ -35376,11 +35423,20 @@ type CreateApplicationEnvironmentJSONRequestBody = ApplicationEnvironmentInput
 // ImportHelmReleasesJSONRequestBody defines body for ImportHelmReleases for application/json ContentType.
 type ImportHelmReleasesJSONRequestBody = HelmReleaseImportRequest
 
+// ImportMappedHelmReleasesJSONRequestBody defines body for ImportMappedHelmReleases for application/json ContentType.
+type ImportMappedHelmReleasesJSONRequestBody = HelmReleaseImportRequest
+
 // ImportKubernetesServicesJSONRequestBody defines body for ImportKubernetesServices for application/json ContentType.
 type ImportKubernetesServicesJSONRequestBody = KubernetesServiceImportRequest
 
+// ImportMappedKubernetesServicesJSONRequestBody defines body for ImportMappedKubernetesServices for application/json ContentType.
+type ImportMappedKubernetesServicesJSONRequestBody = KubernetesServiceImportRequest
+
 // UpdateApplicationEnvironmentJSONRequestBody defines body for UpdateApplicationEnvironment for application/json ContentType.
 type UpdateApplicationEnvironmentJSONRequestBody = ApplicationEnvironmentInput
+
+// UpdateApplicationEnvironmentConfigurationJSONRequestBody defines body for UpdateApplicationEnvironmentConfiguration for application/json ContentType.
+type UpdateApplicationEnvironmentConfigurationJSONRequestBody UpdateApplicationEnvironmentConfigurationJSONBody
 
 // CreateApplicationJSONRequestBody defines body for CreateApplication for application/json ContentType.
 type CreateApplicationJSONRequestBody = ApplicationInput

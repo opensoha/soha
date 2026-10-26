@@ -1,0 +1,7 @@
+{
+  "workloadKind": "Deployment",
+  "workloadName": "api",
+  "serviceId": "logical-api",
+  "expectedUid": "uid-test",
+  "expectedSpecDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}
