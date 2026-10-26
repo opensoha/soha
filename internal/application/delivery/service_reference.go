@@ -32,26 +32,32 @@ type referenceContext struct {
 // PreviewEnvironmentServiceReference never creates targets/references or grants
 // write control. A future save must repeat authorization and transactional CAS.
 func (s *Service) PreviewEnvironmentServiceReference(ctx context.Context, principal domainidentity.Principal, consumerID string, input domaindelivery.ServiceReferencePreviewInput) (domaindelivery.ServiceReferencePreview, error) {
+	preview, _, err := s.previewReferenceWithContext(ctx, principal, consumerID, input)
+	return preview, err
+}
+
+func (s *Service) previewReferenceWithContext(ctx context.Context, principal domainidentity.Principal, consumerID string, input domaindelivery.ServiceReferencePreviewInput) (domaindelivery.ServiceReferencePreview, referenceContext, error) {
 	var empty domaindelivery.ServiceReferencePreview
+	var emptyContext referenceContext
 	if err := validateReferencePreviewInput(consumerID, input); err != nil {
-		return empty, err
+		return empty, emptyContext, err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	state, err := s.loadReferenceContext(ctx, principal, consumerID, input)
 	if err != nil {
-		return empty, err
+		return empty, emptyContext, err
 	}
 	before, err := referenceContextSnapshot(state)
 	if err != nil {
-		return empty, err
+		return empty, emptyContext, err
 	}
 	targets, err := referenceServiceTargets(state.source, input.ServiceID)
 	if err != nil {
-		return empty, err
+		return empty, emptyContext, err
 	}
 	if err := validateReferenceTargetSelection(targets, input.SourceTargetIDs); err != nil {
-		return empty, err
+		return empty, emptyContext, err
 	}
 	result := domaindelivery.ServiceReferencePreview{
 		ApplicationID: state.consumer.ApplicationID, ServiceID: input.ServiceID,
@@ -66,7 +72,7 @@ func (s *Service) PreviewEnvironmentServiceReference(ctx context.Context, princi
 		}
 	}
 	if len(result.CurrentLocalTargetIDs) > maxReferenceTargets {
-		return empty, fmt.Errorf("%w: local target group exceeds preview limit", apperrors.ErrUnsupportedOperation)
+		return empty, emptyContext, fmt.Errorf("%w: local target group exceeds preview limit", apperrors.ErrUnsupportedOperation)
 	}
 	slices.Sort(result.CurrentLocalTargetIDs)
 	group, queryCtx := errgroup.WithContext(ctx)
@@ -79,30 +85,30 @@ func (s *Service) PreviewEnvironmentServiceReference(ctx context.Context, princi
 		})
 	}
 	if err := group.Wait(); err != nil {
-		return empty, err
+		return empty, emptyContext, err
 	}
 	// A preview is not an atomic cluster snapshot, but must not return a DB
 	// configuration that changed while its bounded live observations ran.
 	current, err := s.loadReferenceContext(ctx, principal, consumerID, input)
 	if err != nil {
-		return empty, err
+		return empty, emptyContext, err
 	}
 	after, err := referenceContextSnapshot(current)
 	if err != nil {
-		return empty, err
+		return empty, emptyContext, err
 	}
 	if string(before) != string(after) {
-		return empty, fmt.Errorf("%w: reference configuration changed during preview", apperrors.ErrConflict)
+		return empty, emptyContext, fmt.Errorf("%w: reference configuration changed during preview", apperrors.ErrConflict)
 	}
 	result.SourceRevision, err = referenceSourceRevision(state, targets, result.Targets)
 	if err != nil {
-		return empty, err
+		return empty, emptyContext, err
 	}
 	if input.ExpectedSourceRevision != "" && input.ExpectedSourceRevision != result.SourceRevision {
-		return empty, fmt.Errorf("%w: source changed; review a fresh preview", apperrors.ErrConflict)
+		return empty, emptyContext, fmt.Errorf("%w: source changed; review a fresh preview", apperrors.ErrConflict)
 	}
 	result.ObservedAt = time.Now().UTC()
-	return result, nil
+	return result, current, nil
 }
 
 func validateReferencePreviewInput(consumerID string, input domaindelivery.ServiceReferencePreviewInput) error {

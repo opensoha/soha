@@ -35,6 +35,7 @@ def main():
     parser.add_argument("--personal-environment", action="store_true")
     parser.add_argument("--identity", action="store_true")
     parser.add_argument("--kubernetes-import", action="store_true")
+    parser.add_argument("--service-reference-candidates", action="store_true")
     parser.add_argument("--virtualization-capacity", action="store_true")
     parser.add_argument("--feed-search",action="store_true")
     parser.add_argument("--network-navigation", action="store_true")
@@ -55,7 +56,7 @@ def main():
     try:
         container = command(["docker", "run", "--detach", "--rm", "--label", "soha.test.run=" + run_id,
                              "--publish", "127.0.0.1::5432",
-                             *(["--tmpfs", "/var/lib/postgresql"] if args.kubernetes_import or args.relation_rules or args.template_adoption or args.template_migration or args.manifest_migration or args.initialization else []),
+                             *(["--tmpfs", "/var/lib/postgresql"] if args.service_reference_candidates or args.kubernetes_import or args.relation_rules or args.template_adoption or args.template_migration or args.manifest_migration or args.initialization else []),
                              "--env", "POSTGRES_DB=soha",
                              "--env", "POSTGRES_USER=pgsql", "--env", "POSTGRES_PASSWORD=test-only", IMAGE], timeout=90)
         info = json.loads(command(["docker", "inspect", container]))[0]
@@ -81,6 +82,8 @@ def main():
                 parent = "TestNetworkNavigationUpgradeWithPostgres"
             if args.kubernetes_import:
                 parent = "TestKubernetesImportIdentityWithPostgres"
+            if args.service_reference_candidates:
+                parent = "TestServiceReferenceCandidatesWithPostgres"
             if args.relation_rules:
                 parent = "TestTemplateVersionsWithPostgres/relation-rules-persistence-and-cas"
             if args.manifest_root:
@@ -97,6 +100,8 @@ def main():
             if args.virtualization_capacity:
                 package = "virtualization"
             if args.kubernetes_import:
+                package = "delivery"
+            if args.service_reference_candidates:
                 package = "delivery"
             if args.relation_rules:
                 package = "catalog"
@@ -135,6 +140,8 @@ def main():
             scope = {"package": "github.com/opensoha/soha/internal/repository/virtualization", "parent": parent, "children": ["provider_identity_claim", "worker_pool_admission", "capacity_policy", "ssh_secret_storage", "managed_cloud_image_sync"]}
         if args.network_navigation:
             scope = {"package": "github.com/opensoha/soha/internal/bootstrap", "parent": parent, "children": ["disabled_upgrade_stays_pending", "failure_rolls_back", "upgrade_preserves_custom_data_and_bindings", "previous_task52_marker_recovers_without_reseed", "second_start_is_idempotent"]}
+        if args.service_reference_candidates:
+            scope = module.SERVICE_REFERENCE_CANDIDATES_SCOPE
         if args.relation_rules:
             scope = module.RELATION_RULES_SCOPE
         if args.manifest_root:

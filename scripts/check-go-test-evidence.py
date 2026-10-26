@@ -50,6 +50,20 @@ INITIALIZATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/
 TEMPLATE_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/catalog","parent":"TestTemplateVersionsWithPostgres","children":["migration-declarations-preserve-legacy-writers"]}
 MANIFEST_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/manifest","parent":"TestDeliverySnapshotWithPostgres","children":["migration-baseline-is-success-only",*["migration-baseline-is-success-only/"+name for name in ["verified","desired-only","stale-generation","failed","digest-mismatch","malformed-identity"]]]}
 
+SERVICE_REFERENCE_CANDIDATES_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/delivery",
+    "parent": "TestServiceReferenceCandidatesWithPostgres",
+    "children": ["save_restore_no_runtime_changes", "update_and_stale_cas", "delete_recreate_aba",
+                 "context_drift", *["context_drift/" + name for name in
+                    ("consumer_binding", "source_binding", "service_version_without_timestamp",
+                     "source_target_without_timestamp", "environment_classification")],
+                 "reauthorization_rollback", "concurrent_create", "concurrent_update",
+                 "source_deleted_candidate_cleanup", "binding_lock_serializes_source_mutation",
+                 "consumer_binding_cascade", "application_cascade_unrelated_preserved",
+                 "cancellation_no_partial_write", "metadata_pagination_without_source"],
+}
+
+
 def validate(raw, exit_code=0, package=PACKAGE, parent=PARENT, children=CHILDREN):
     if exit_code != 0:
         raise ValueError("Go process did not succeed")
@@ -81,6 +95,7 @@ if __name__ == "__main__":
     parser.add_argument("--main-chat", action="store_true")
     parser.add_argument("--identity", action="store_true")
     parser.add_argument("--kubernetes-import", action="store_true")
+    parser.add_argument("--service-reference-candidates", action="store_true")
     parser.add_argument("--relation-rules", action="store_true")
     parser.add_argument("--template-adoption", action="store_true")
     parser.add_argument("--template-migration", action="store_true")
@@ -92,6 +107,8 @@ if __name__ == "__main__":
             scope = IDENTITY_SCOPE
         if args.kubernetes_import:
             scope = KUBERNETES_IMPORT_SCOPE
+        if args.service_reference_candidates:
+            scope = SERVICE_REFERENCE_CANDIDATES_SCOPE
         if args.relation_rules:
             scope = RELATION_RULES_SCOPE
         if args.template_adoption:

@@ -81,3 +81,14 @@ Git/Docker忽略该私有目录，源码打包另外无条件排除所有`.tmp`�
 证据必须包含 12 个指定父/子项、无跳过且容器清理 PASS；检索和引用分别验证，
 远端 public 文档不能越过 Core 保存的 importPolicy。抓取 loader 是替身，数据库与生产
 ingestion/检索/引用路径是真实执行；此验证不算外部 fetch、真实 Embedding 或来源编辑撤权验收。
+
+## Inactive environment service reference candidates
+
+`python3 scripts/run-deletion-integration.py --service-reference-candidates --output .tmp/quality/service-reference-candidates.json`
+uses this run's disposable tmpfs PostgreSQL, uncached race-enabled Go JSON and
+`check-go-test-evidence.py --service-reference-candidates`. All 18 required descendants
+(including five context-drift cases) must run and pass without skips. The suite checks
+persistence/recovery, binding and candidate CAS, delete/recreate ABA, concurrency,
+transactional reauthorization, source deletion/consumer cleanup and application
+cascade isolation. Candidate records do not activate references or modify runtime
+targets. Database proof is separate from real Kubernetes/Agent or publication acceptance.

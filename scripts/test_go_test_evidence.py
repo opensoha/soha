@@ -44,6 +44,23 @@ class EvidenceTests(unittest.TestCase):
         for invalid in (events[:2]+events[4:],[{**e,"Action":"skip"} if e.get("Test")==names[-1] else e for e in events],events+[dict(Action="output",Package=scope["package"],Output="ok (cached)")]):
             with self.assertRaises(ValueError):evidence.validate(self.raw(invalid),**scope)
 
+    def test_service_reference_candidates_require_every_cas_and_lifecycle_case(self):
+        scope = evidence.SERVICE_REFERENCE_CANDIDATES_SCOPE
+        names = [scope["parent"], *[scope["parent"] + "/" + child for child in scope["children"]]]
+        events = [dict(Action=action, Package=scope["package"], Test=name)
+                  for name in names for action in ("run", "pass")]
+        events.append(dict(Action="pass", Package=scope["package"]))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)["children"], 18)
+        for name in names:
+            for invalid in ([event for event in events if event.get("Test") != name],
+                            [{**event, "Action": "skip"} if event.get("Test") == name else event for event in events]):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    evidence.validate(self.raw(invalid), **scope)
+        for invalid in (events + [dict(Action="output", Package=scope["package"], Output="ok (cached)")],
+                        events[:-1]):
+            with self.assertRaises(ValueError):
+                evidence.validate(self.raw(invalid), **scope)
+
     def test_all_required_tests_pass(self):
         self.assertEqual(evidence.validate(self.raw(self.events()))["children"], 16)
 
