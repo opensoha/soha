@@ -894,6 +894,7 @@ export interface KubernetesServiceImportInput {
   environmentName: string
   ownershipMode: 'observe_only' | 'managed'
   workloads: Array<{
+    serviceId?: string
     workloadKind: KubernetesImportKind
     expectedUid?: string
     expectedSpecDigest?: string
@@ -949,7 +950,7 @@ export interface HelmReleaseImportInput {
   environmentKey: string
   environmentName: string
   ownershipMode: 'observe_only' | 'managed'
-  releases: Array<{ releaseName: string }>
+  releases: Array<{ releaseName: string; serviceId?: string }>
 }
 
 export interface HelmReleaseImportResult {

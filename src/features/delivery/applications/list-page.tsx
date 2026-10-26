@@ -54,8 +54,12 @@ export function ApplicationsPage() {
   const setFilters = usePreferencesStore((state) => state.setApplicationListFilters)
   const entryOpen = searchParams.get('action') === 'create'
   const permissions = usePermissionSnapshot().data?.data
+  const canCreateService = hasPermission(permissions, 'delivery.application-services.create')
+  const canMapExistingService =
+    hasPermission(permissions, 'delivery.application-services.view') &&
+    hasPermission(permissions, 'delivery.application-services.update')
   const canImport =
-    hasPermission(permissions, 'delivery.application-services.create') &&
+    (canCreateService || canMapExistingService) &&
     hasPermission(permissions, 'delivery.application-environments.view') &&
     (managementState.canCreateBinding || managementState.canUpdateBinding)
   const importOpen = searchParams.get('action') === 'import'
@@ -354,6 +358,8 @@ export function ApplicationsPage() {
               applications={applicationsQuery.data ?? []}
               bindings={managementState.bindingsQuery.data ?? []}
               canCreateApplication={managementState.canCreateApplication}
+              canCreateService={canCreateService}
+              canMapExistingService={canMapExistingService}
               onClose={closeApplicationEntry}
             />
           ) : (

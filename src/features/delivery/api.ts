@@ -495,7 +495,9 @@ export const deliveryApi = {
     importKubernetesServices: (payload: KubernetesServiceImportInput) =>
       unwrap(
         api.post<ApiResponse<KubernetesServiceImportResult>>(
-          '/application-environments/imports',
+          payload.workloads.some((item) => item.serviceId)
+            ? '/application-environments/imports/mapped'
+            : '/application-environments/imports',
           payload,
         ),
       ),
@@ -510,14 +512,21 @@ export const deliveryApi = {
     importHelmReleases: (payload: HelmReleaseImportInput) =>
       unwrap(
         api.post<ApiResponse<HelmReleaseImportResult>>(
-          '/application-environments/helm-release-imports',
+          payload.releases.some((item) => item.serviceId)
+            ? '/application-environments/helm-release-imports/mapped'
+            : '/application-environments/helm-release-imports',
           payload,
         ),
       ),
     create: (payload: DeliveryRecordInput) =>
       discard(api.post('/application-environments', payload)),
     update: (id: string, payload: DeliveryRecordInput) =>
-      discard(api.put(`/application-environments/${segment(id)}`, payload)),
+      discard(
+        api.put(
+          `/application-environments/${segment(id)}${payload.targets === undefined ? '/configuration' : ''}`,
+          payload,
+        ),
+      ),
     saveWorkflow: (applicationId: string, id: string, payload: ApplicationWorkflowInput) =>
       unwrap(
         api.put<ApiResponse<ApplicationEnvironment>>(

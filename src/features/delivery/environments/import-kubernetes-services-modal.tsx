@@ -39,6 +39,8 @@ interface ImportKubernetesServicesModalProps {
   open: boolean
   onClose: () => void
   canCreateApplication?: boolean
+  canCreateService?: boolean
+  canMapExistingService?: boolean
 }
 
 interface ImportFormValues {
@@ -48,6 +50,7 @@ interface ImportFormValues {
   crdName?: string
   applicationKey?: string[]
   environmentKey?: string[]
+  serviceMappings?: Record<string, string>
 }
 
 function workloadKey(item: DeliveryTargetCandidate) {
@@ -70,6 +73,8 @@ export function ImportKubernetesServicesModal({
   open,
   onClose,
   canCreateApplication = true,
+  canCreateService = true,
+  canMapExistingService = false,
 }: ImportKubernetesServicesModalProps) {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
@@ -83,6 +88,7 @@ export function ImportKubernetesServicesModal({
   const clearSelection = () => {
     setSelectedKeys([])
     setSelectedWorkloads([])
+    form.setFieldValue('serviceMappings', {})
   }
   const [result, setResult] = useState<
     KubernetesServiceImportResult | HelmReleaseImportResult | null
@@ -91,6 +97,18 @@ export function ImportKubernetesServicesModal({
   const namespace = Form.useWatch('namespace', { form, preserve: true })
   const workloadKind = Form.useWatch('workloadKind', { form, preserve: true }) ?? 'Deployment'
   const crdName = Form.useWatch('crdName', { form, preserve: true })?.trim()
+  const applicationKeyValue = Form.useWatch('applicationKey', { form, preserve: true })
+  const serviceMappings = Form.useWatch('serviceMappings', { form, preserve: true }) ?? {}
+  const selectedApplication = applications.find(
+    (item) => item.key === singleTag(applicationKeyValue),
+  )
+  const servicesQuery = useQuery(
+    deliveryQueries.applications.services(
+      selectedApplication?.id ?? '',
+      open && step === 2 && canMapExistingService,
+    ),
+  )
+  const mappedServices = Object.values(serviceMappings).some(Boolean)
 
   const clustersQuery = useQuery({ ...clusterQueries.list(), enabled: open })
   const namespacesQuery = useQuery({
@@ -231,12 +249,18 @@ export function ImportKubernetesServicesModal({
 
   const next = async () => {
     if (step === 0) {
-      await form.validateFields([
-        'clusterId',
-        'namespace',
-        'workloadKind',
-        ...(workloadKind === 'CustomResource' ? ['crdName'] : []),
-      ])
+      const valid = await form
+        .validateFields([
+          'clusterId',
+          'namespace',
+          'workloadKind',
+          ...(workloadKind === 'CustomResource' ? ['crdName'] : []),
+        ])
+        .then(
+          () => true,
+          () => false,
+        )
+      if (!valid) return
       setStep(1)
       return
     }
@@ -257,7 +281,28 @@ export function ImportKubernetesServicesModal({
       message.error('请重新选择有完整资源身份的工作负载')
       return
     }
-    const values = await form.validateFields(['applicationKey', 'environmentKey'])
+    const values = await form.validateFields().catch(() => null)
+    if (!values) return
+    const mappings = values.serviceMappings ?? {}
+    const selectedItems =
+      source === 'helm'
+        ? selectedHelmReleases.map((item) => item.name)
+        : selectedWorkloads.map(workloadKey)
+    for (const key of selectedItems) {
+      const serviceId = mappings[key]
+      if (
+        serviceId &&
+        (!canMapExistingService ||
+          !servicesQuery.data?.some((service) => service.id === serviceId && service.enabled))
+      ) {
+        message.error('服务目录已变化或不可用，请重新选择已有服务')
+        return
+      }
+      if (!serviceId && !canCreateService) {
+        message.error('请选择已有服务；当前没有创建服务权限')
+        return
+      }
+    }
     const applicationKey = singleTag(values.applicationKey)
     const environmentKey = singleTag(values.environmentKey)
     const applicationName =
@@ -275,7 +320,10 @@ export function ImportKubernetesServicesModal({
       helmImportMutation.mutate(
         {
           ...scope,
-          releases: selectedHelmReleases.map((item) => ({ releaseName: item.name })),
+          releases: selectedHelmReleases.map((item) => ({
+            releaseName: item.name,
+            serviceId: mappings[item.name] || undefined,
+          })),
         },
         {
           onSuccess: setResult,
@@ -288,6 +336,7 @@ export function ImportKubernetesServicesModal({
       {
         ...scope,
         workloads: selectedWorkloads.map((item) => ({
+          serviceId: mappings[workloadKey(item)] || undefined,
           workloadKind: item.workloadKind as KubernetesImportKind,
           expectedUid: item.source!.resource.uid,
           expectedSpecDigest: item.source!.specDigest,
@@ -366,7 +415,11 @@ export function ImportKubernetesServicesModal({
                   value={source}
                   options={[
                     { value: 'kubernetes', label: 'Kubernetes 工作负载' },
-                    { value: 'helm', label: 'Helm Release', disabled: !canCreateApplication },
+                    {
+                      value: 'helm',
+                      label: 'Helm Release',
+                      disabled: !canCreateService && !canMapExistingService,
+                    },
                   ]}
                   onChange={(value) => {
                     setSource(value as ImportSource)
@@ -572,7 +625,8 @@ export function ImportKubernetesServicesModal({
                       {
                         value: 'managed',
                         label: '托管发布',
-                        disabled: source === 'kubernetes' && !managedKubernetesAllowed,
+                        disabled:
+                          mappedServices || (source === 'kubernetes' && !managedKubernetesAllowed),
                       },
                     ]}
                     onChange={(value) => setOwnershipMode(value as OwnershipMode)}
@@ -591,12 +645,18 @@ export function ImportKubernetesServicesModal({
                     rules={[{ required: true, message: '请选择或输入应用' }]}
                   >
                     <Select
-                      mode={canCreateApplication ? 'tags' : 'multiple'}
+                      mode={canCreateApplication && canCreateService ? 'tags' : 'multiple'}
                       maxCount={1}
                       showSearch={{ optionFilterProp: 'label' }}
                       placeholder={
-                        canCreateApplication ? '选择现有应用或输入新 Key' : '选择有权修改的现有应用'
+                        canCreateApplication && canCreateService
+                          ? '选择现有应用或输入新 Key'
+                          : '选择有权修改的现有应用'
                       }
+                      onChange={() => {
+                        form.setFieldValue('serviceMappings', {})
+                        setOwnershipMode('observe_only')
+                      }}
                       options={applications.map((item) => ({
                         value: item.key,
                         label: `${item.name} (${item.key})`,
@@ -616,6 +676,62 @@ export function ImportKubernetesServicesModal({
                       options={environmentOptions}
                     />
                   </Form.Item>
+                </div>
+                <div aria-label="逻辑服务映射">
+                  <Typography.Text strong>服务归属</Typography.Text>
+                  <p>
+                    每个资源可以创建新服务，或关联此应用已有服务。同一服务可在不同环境使用不同
+                    namespace。
+                  </p>
+                  {servicesQuery.isError ? (
+                    <Alert
+                      type="error"
+                      showIcon
+                      title="服务目录读取失败，请刷新后重试"
+                      action={<Button onClick={() => void servicesQuery.refetch()}>重试</Button>}
+                    />
+                  ) : null}
+                  {(source === 'helm'
+                    ? selectedHelmReleases.map((item) => ({
+                        key: item.name,
+                        label: `Helm Release / ${item.name}`,
+                      }))
+                    : selectedWorkloads.map((item) => ({
+                        key: workloadKey(item),
+                        label: `${item.source?.resource.kind || item.workloadKind} / ${item.workloadName}`,
+                      }))
+                  ).map((item) => (
+                    <Form.Item
+                      key={`${selectedApplication?.id ?? 'new'}/${item.key}`}
+                      name={['serviceMappings', item.key]}
+                      label={item.label}
+                      rules={
+                        canCreateService ? [] : [{ required: true, message: '请选择已有服务' }]
+                      }
+                    >
+                      <Select
+                        allowClear={canCreateService}
+                        showSearch={{ optionFilterProp: 'label' }}
+                        loading={servicesQuery.isFetching}
+                        disabled={
+                          !selectedApplication || !canMapExistingService || servicesQuery.isError
+                        }
+                        placeholder={canCreateService ? '创建新服务（按资源身份）' : '选择已有服务'}
+                        options={(servicesQuery.data ?? [])
+                          .filter((service) => service.enabled)
+                          .map((service) => ({
+                            value: service.id,
+                            label: `${service.name} · ${service.key}`,
+                          }))}
+                        onChange={() => setOwnershipMode('observe_only')}
+                      />
+                    </Form.Item>
+                  ))}
+                  {mappedServices ? (
+                    <Typography.Text type="secondary">
+                      保留已有服务的构建、模板和控制权配置，仅建立只读目标关联。
+                    </Typography.Text>
+                  ) : null}
                 </div>
                 <Typography.Text type="secondary">
                   {clusterId} / {namespace} · {selectedCount} 个

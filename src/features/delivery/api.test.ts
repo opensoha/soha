@@ -14,6 +14,65 @@ vi.mock('@/services/api-client', () => ({ api: apiMocks }))
 describe('deliveryApi', () => {
   beforeEach(() => vi.clearAllMocks())
 
+  it('uses explicit mapping endpoints so older servers cannot silently create services', async () => {
+    apiMocks.post.mockResolvedValue({ data: {} })
+    const scope = {
+      clusterId: 'cluster',
+      namespace: 'orders',
+      applicationKey: 'shop',
+      applicationName: 'Shop',
+      environmentKey: 'test-b',
+      environmentName: 'Test B',
+      ownershipMode: 'observe_only' as const,
+    }
+    const native = {
+      ...scope,
+      workloads: [
+        { serviceId: 'logical-api', workloadKind: 'Deployment' as const, workloadName: 'api' },
+      ],
+    }
+    const helm = { ...scope, releases: [{ serviceId: 'logical-cache', releaseName: 'cache' }] }
+    await deliveryApi.environments.importKubernetesServices(native)
+    await deliveryApi.environments.importHelmReleases(helm)
+    expect(apiMocks.post).toHaveBeenCalledWith('/application-environments/imports/mapped', native)
+    expect(apiMocks.post).toHaveBeenCalledWith(
+      '/application-environments/helm-release-imports/mapped',
+      helm,
+    )
+    apiMocks.post.mockRejectedValue(new Error('unsupported endpoint'))
+    await expect(deliveryApi.environments.importKubernetesServices(native)).rejects.toThrow(
+      'unsupported endpoint',
+    )
+    expect(apiMocks.post).not.toHaveBeenCalledWith('/application-environments/imports', native)
+    apiMocks.post.mockResolvedValue({ data: {} })
+    const legacy = {
+      ...scope,
+      workloads: [{ workloadKind: 'Deployment' as const, workloadName: 'new-api' }],
+    }
+    await deliveryApi.environments.importKubernetesServices(legacy)
+    expect(apiMocks.post).toHaveBeenCalledWith('/application-environments/imports', legacy)
+  })
+
+  it('uses the guarded configuration endpoint when targets are omitted and never retries old PUT', async () => {
+    const defaults = {
+      applicationId: 'app',
+      environmentId: 'test',
+      expectedUpdatedAt: '2026-10-26T00:00:00Z',
+      namespace: 'new-default',
+    }
+    apiMocks.put.mockRejectedValueOnce(new Error('unsupported endpoint'))
+    await expect(deliveryApi.environments.update('binding/a', defaults)).rejects.toThrow(
+      'unsupported endpoint',
+    )
+    expect(apiMocks.put.mock.calls).toEqual([
+      ['/application-environments/binding%2Fa/configuration', defaults],
+    ])
+    apiMocks.put.mockResolvedValue(undefined)
+    const replacement = { ...defaults, targets: [] }
+    await deliveryApi.environments.update('binding/a', replacement)
+    expect(apiMocks.put).toHaveBeenCalledWith('/application-environments/binding%2Fa', replacement)
+  })
+
   it('sends exact definition filters for recent executions', async () => {
     apiMocks.get.mockResolvedValue({ data: [] })
     await deliveryApi.builds.list({ applicationId: 'app', buildSourceId: ' source/a ', limit: 10 })

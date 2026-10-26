@@ -2295,6 +2295,56 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.querySelector('.soha-rollout-progress')).toBeNull()
   })
 
+  it('edits environment defaults without replacing or moving existing targets', async () => {
+    const container = await renderWithProviders(
+      <ApplicationDetailPage />,
+      '/applications/app-1?tab=services',
+    )
+    await openSection(container, '环境配置')
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('[aria-label="编辑绑定"]')!.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const modal = findModal('编辑环境')
+    expect(modal.textContent).toContain('默认位置仅用于新增目标')
+    const input = modal.querySelector<HTMLInputElement>('#namespace')!
+    await act(async () => {
+      input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await vi.waitFor(() =>
+      expect(
+        Array.from(document.querySelectorAll('.ant-select-item-option')).some((item) =>
+          item.textContent?.includes('checkout-staging'),
+        ),
+      ).toBe(true),
+    )
+    await act(async () => {
+      const option = Array.from(
+        document.querySelectorAll<HTMLElement>('.ant-select-item-option'),
+      ).find((item) => item.textContent?.includes('checkout-staging'))!
+      option.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      findButton(modal, '保存').click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await vi.waitFor(() =>
+      expect(api.put).toHaveBeenCalledWith(
+        '/application-environments/binding-test/configuration',
+        expect.objectContaining({
+          namespace: 'checkout-staging',
+          expectedUpdatedAt: '2026-05-10T00:00:00Z',
+        }),
+      ),
+    )
+    const payload = vi
+      .mocked(api.put)
+      .mock.calls.find(
+        ([path]) => path === '/application-environments/binding-test/configuration',
+      )![1]
+    expect(payload).not.toHaveProperty('targets')
+  })
+
   it('creates an application environment from the service context switcher', async () => {
     const container = await renderWithProviders(
       <ApplicationDetailPage />,
