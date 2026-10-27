@@ -1,8 +1,9 @@
 import { ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ComponentProps, ReactNode } from 'react'
+import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ComponentProps, ReactNode, Ref } from 'react'
 import { Button, Checkbox, Popover, Table, Typography } from 'antd'
+import type { GetRef, TableProps } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, SettingOutlined } from '@ant-design/icons'
 import {
   ManagementDensityButton,
@@ -37,6 +38,37 @@ function TableHeaderCell(props: ComponentProps<'th'>) {
   return <th {...props} title={undefined} />
 }
 
+const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((props, ref) => {
+  const { localeCode } = useI18n()
+  return (
+    <div
+      {...props}
+      ref={ref}
+      tabIndex={0}
+      role="region"
+      aria-label={localeText(localeCode, '资源列表，可连续滚动', 'Scrollable resource list')}
+      onKeyDown={(event) => {
+        props.onKeyDown?.(event)
+        if (event.defaultPrevented || event.target !== event.currentTarget) return
+        const body = event.currentTarget
+        const step = body.querySelector('[data-row-key]')?.getBoundingClientRect().height ?? 24
+        const positions: Record<string, number> = {
+          ArrowDown: body.scrollTop + step,
+          ArrowUp: body.scrollTop - step,
+          PageDown: body.scrollTop + body.clientHeight,
+          PageUp: body.scrollTop - body.clientHeight,
+          Home: 0,
+          End: body.scrollHeight,
+        }
+        if (positions[event.key] === undefined) return
+        event.preventDefault()
+        body.scrollTop = positions[event.key]
+      }}
+    />
+  )
+})
+VirtualTableBody.displayName = 'VirtualTableBody'
+
 export interface AdminTableProps {
   className?: string
   columns: any[]
@@ -53,8 +85,9 @@ export interface AdminTableProps {
   hideExpandedColumn?: boolean
   localSorting?: boolean
   loading?: boolean
-  onChange?: any
+  onChange?: TableProps<any>['onChange']
   onRow?: any
+  onScroll?: TableProps['onScroll']
   onRefresh?: () => void
   onRetry?: () => void
   refreshing?: boolean
@@ -67,17 +100,20 @@ export interface AdminTableProps {
   shellClassName?: string
   tableSize?: 'large' | 'middle' | 'small'
   tableLayout?: 'auto' | 'fixed'
+  tableRef?: Ref<GetRef<typeof Table>>
   columnSettingPlacement?: 'toolbar' | 'header' | 'outside' | 'hidden'
   columnSettingIconOnly?: boolean
   scroll?: {
     x?: string | number
     y?: string | number
+    scrollToFirstRowOnChange?: boolean
   }
   selectCurrentPageOnly?: boolean
   title?: ReactNode
   toolbar?: ReactNode
   toolbarExtra?: ReactNode
   viewportScroll?: boolean
+  virtual?: boolean
 }
 
 function getColumnId(column: any, index: number) {
@@ -275,6 +311,7 @@ export function AdminTable({
   rowSelection,
   shellClassName,
   tableSize = 'small',
+  tableRef,
   columnSettingPlacement = 'toolbar',
   columnSettingIconOnly = false,
   scroll,
@@ -283,6 +320,7 @@ export function AdminTable({
   toolbar,
   toolbarExtra,
   viewportScroll = false,
+  virtual = false,
   ...rest
 }: AdminTableProps) {
   const cachedRecords = readableQueryData({
@@ -498,8 +536,9 @@ export function AdminTable({
 
     const updateScrollHeight = () => {
       if (
-        window.innerWidth < VIEWPORT_SCROLL_MIN_WIDTH ||
-        content.clientHeight < VIEWPORT_SCROLL_MIN_CONTAINER_HEIGHT
+        !virtual &&
+        (window.innerWidth < VIEWPORT_SCROLL_MIN_WIDTH ||
+          content.clientHeight < VIEWPORT_SCROLL_MIN_CONTAINER_HEIGHT)
       ) {
         setViewportScrollY(undefined)
         return
@@ -515,8 +554,11 @@ export function AdminTable({
       const availableHeight = Math.floor(
         content.clientHeight - headerBottom - paddingBottom - paginationHeight - 8,
       )
-      const nextHeight =
-        availableHeight >= VIEWPORT_SCROLL_MIN_BODY_HEIGHT ? availableHeight : undefined
+      const nextHeight = virtual
+        ? Math.max(VIEWPORT_SCROLL_MIN_BODY_HEIGHT, availableHeight)
+        : availableHeight >= VIEWPORT_SCROLL_MIN_BODY_HEIGHT
+          ? availableHeight
+          : undefined
       setViewportScrollY((current) => (current === nextHeight ? current : nextHeight))
     }
 
@@ -531,14 +573,25 @@ export function AdminTable({
       resizeObserver?.disconnect()
       window.removeEventListener('resize', updateScrollHeight)
     }
-  }, [dataSource.length, viewportScroll])
+  }, [dataSource.length, viewportScroll, virtual])
 
   const resolvedScroll = useMemo(
     () => ({
-      x: scroll?.x ?? estimatedScrollWidth,
-      y: scroll?.y ?? viewportScrollY,
+      x:
+        virtual && typeof scroll?.x !== 'number'
+          ? estimatedScrollWidth
+          : (scroll?.x ?? estimatedScrollWidth),
+      y: scroll?.y ?? viewportScrollY ?? (virtual ? VIEWPORT_SCROLL_MIN_BODY_HEIGHT : undefined),
+      scrollToFirstRowOnChange: scroll?.scrollToFirstRowOnChange,
     }),
-    [estimatedScrollWidth, scroll?.x, scroll?.y, viewportScrollY],
+    [
+      estimatedScrollWidth,
+      scroll?.x,
+      scroll?.y,
+      scroll?.scrollToFirstRowOnChange,
+      viewportScrollY,
+      virtual,
+    ],
   )
 
   const columnSetting =
@@ -689,8 +742,12 @@ export function AdminTable({
       {!error || cachedRecords !== undefined ? (
         <Table
           {...rest}
+          ref={tableRef}
           className={resolvedTableClassName}
-          components={{ header: { cell: TableHeaderCell } }}
+          components={{
+            header: { cell: TableHeaderCell },
+            ...(virtual ? { body: { wrapper: VirtualTableBody } } : {}),
+          }}
           column={{
             sortIcon: ({ sortOrder }) =>
               sortOrder ? (
@@ -709,6 +766,7 @@ export function AdminTable({
           scroll={resolvedScroll}
           showSorterTooltip={false}
           size={resolvedTableSize}
+          virtual={virtual}
         />
       ) : null}
     </div>

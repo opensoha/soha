@@ -17,7 +17,6 @@ import {
 import { useRealtimeSessionDock } from '@/features/platform/session-dock'
 import { useKubernetesResourceStream } from '@/features/platform/shared/resource-stream'
 import { ResourceStreamStatus } from '@/features/platform/shared/resource-stream-status'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformBatchReceipt,
   platformBatchUnknown,
@@ -68,6 +67,7 @@ import {
 import { podMutations } from './mutations'
 import { podQueries } from './queries'
 import { podTargetFromRecord, type Pod } from './types'
+import { usePodListViewport } from './use-pod-list-viewport'
 
 const { Link, Text } = Typography
 
@@ -291,8 +291,11 @@ export function WorkloadsPodsPage() {
 
   useEffect(() => {
     setNodeFilter('all')
-    setSelectedPodKeys([])
   }, [clusterId])
+
+  useEffect(() => {
+    setSelectedPodKeys([])
+  }, [clusterId, namespace, searchKeyword, phaseFilter, restartFilter, pvcFilter, nodeFilter])
 
   const listScope = toScopeKey(clusterId, namespace)
   const podsQueryOptions = podQueries.list(listScope)
@@ -365,6 +368,27 @@ export function WorkloadsPodsPage() {
       }),
     [filteredPods],
   )
+  const podViewport = usePodListViewport(
+    orderedPods,
+    JSON.stringify([
+      clusterId,
+      namespace,
+      normalizedKeyword,
+      phaseFilter,
+      restartFilter,
+      pvcFilter,
+      nodeFilter,
+    ]),
+  )
+  useEffect(() => {
+    const currentKeys = new Set(
+      (visiblePodsQueryData ?? []).map((pod) => `${pod.namespace}/${pod.name}`),
+    )
+    setSelectedPodKeys((keys) => {
+      const retained = keys.filter((key) => currentKeys.has(key))
+      return retained.length === keys.length ? keys : retained
+    })
+  }, [visiblePodsQueryData])
   const selectedPods = useMemo(
     () => pods.filter((item) => selectedPodKeys.includes(`${item.namespace}/${item.name}`)),
     [pods, selectedPodKeys],
@@ -857,6 +881,29 @@ export function WorkloadsPodsPage() {
 
       {podQueryPanel}
       <AdminTable
+        title={
+          <span className="soha-pod-list-count" role="status" aria-live="polite">
+            {!clusterId
+              ? localeCode === 'zh_CN'
+                ? '请选择集群'
+                : 'Select a cluster'
+              : isLoading
+                ? localeCode === 'zh_CN'
+                  ? '正在加载 Pods'
+                  : 'Loading Pods'
+                : podsQuery.error && visiblePodsQueryData === undefined
+                  ? localeCode === 'zh_CN'
+                    ? 'Pods 未加载'
+                    : 'Pods unavailable'
+                  : localeCode === 'zh_CN'
+                    ? orderedPods.length === pods.length
+                      ? `${pods.length} 个 Pods`
+                      : `匹配 ${orderedPods.length} / 共 ${pods.length} 个 Pods`
+                    : orderedPods.length === pods.length
+                      ? `${pods.length} Pods`
+                      : `${orderedPods.length} matches / ${pods.length} Pods`}
+          </span>
+        }
         error={podsQuery.isEnabled === false ? null : podsQuery.error}
         hasReadData={podsQuery.data !== undefined}
         onRetry={podsQuery.isEnabled === false ? undefined : () => podsQuery.refetch()}
@@ -899,17 +946,32 @@ export function WorkloadsPodsPage() {
             totalCount={pods.length}
           />
         }
-        pageSize={K8S_TABLE_PAGE_SIZE}
+        pagination={false}
+        virtual
+        tableRef={podViewport.tableRef}
+        onScroll={podViewport.onScroll}
+        onChange={(_pagination, _filters, _sorter, extra) => {
+          if (extra.action === 'sort') podViewport.resetPosition()
+        }}
         tableSize={tableSize}
-        scroll={{ x: 1540 }}
+        scroll={{ x: 1540, scrollToFirstRowOnChange: false }}
         viewportScroll
-        selectCurrentPageOnly
         rowSelection={
           canShowPodDeleteActions
             ? {
                 columnWidth: 44,
                 selectedRowKeys: selectedPodKeys,
                 onChange: (selectedRowKeys: string[]) => setSelectedPodKeys(selectedRowKeys),
+                getTitleCheckboxProps: () => ({
+                  'aria-label':
+                    localeCode === 'zh_CN'
+                      ? `选择全部匹配的 ${orderedPods.length} 个 Pod`
+                      : `Select all ${orderedPods.length} matching Pods`,
+                  title:
+                    localeCode === 'zh_CN'
+                      ? `选择全部匹配的 ${orderedPods.length} 个 Pod`
+                      : `Select all ${orderedPods.length} matching Pods`,
+                }),
               }
             : undefined
         }

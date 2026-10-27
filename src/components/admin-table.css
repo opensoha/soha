@@ -213,6 +213,11 @@
   font-weight: 600;
 }
 
+.soha-admin-table .ant-table-tbody-virtual-holder:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: -2px;
+}
+
 /* AdminTable owns sorter spacing; Antd has no semantic title/icon layout hook. */
 .soha-admin-table .ant-table-column-sorters {
   justify-content: flex-start;

@@ -195,6 +195,8 @@ a universal page component, add another ConfigProvider or change navigation/cont
   row keys, fixed columns, and callbacks; do not add a page query shell to an embedded list.
 - Top-level lists retain the pagination footer and total/range summary. Cursor APIs must retain
   their real navigation semantics: do not invent totals or replace the footer with toolbar arrows.
+  The explicitly scoped Pods continuous-browsing pilot uses an unpaginated virtual body with a
+  truthful scope/filter count instead; other top-level lists retain their existing pagination.
 - Table tokens in `src/theme/app-theme.ts` own header text (`colorText`), header background
   (`colorBgMuted`), and header split (`colorBorder`). Shared table CSS sets header weight to 600.
   Field separation means vertical short separators between column headers, not stronger

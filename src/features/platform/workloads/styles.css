@@ -584,9 +584,24 @@
 
 .soha-pod-table-name-cell {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   min-width: 0;
   gap: 4px;
+}
+
+.soha-pod-list-count {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.soha-pod-table-name-cell > .soha-pod-table-name-link {
+  min-width: 0;
+}
+
+.soha-pod-table-name-cell > .soha-pod-table-meta {
+  flex-shrink: 0;
 }
 
 .soha-pod-table-name-link.ant-typography {
