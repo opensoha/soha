@@ -139,10 +139,20 @@ PostgreSQL + Kubernetes 集群
 
 - Go 1.27.2+
 - Node.js 20+
-- Docker 与 Docker Compose
+- 只有运行本机容器栈时才需要 Docker 与 Docker Compose
 - 外部数据库使用 PostgreSQL 18.4，并安装 pgvector 0.8.5
 
-### 安装依赖并启动本地服务
+### 准备本机配置与依赖
+
+先复制版本库中的默认配置，再填写本机环境参数：
+
+```bash
+cp configs/config.example.yaml configs/config.yaml
+```
+
+`configs/config.yaml` 已被 Git 和 Docker 构建上下文忽略。
+主服务、network-control 与 ingest 的数据库地址在本机配置中分别设置，
+也可以通过对应环境变量覆盖。
 
 Soha 标准部署默认使用 PostgreSQL 密码 `pgsql`，初始化的 `opensoha` 管理员密码为 `opensoha`：
 
@@ -154,7 +164,10 @@ make init
 只有安装需要不同的数据库或管理员凭据时，才覆盖
 `SOHA_DATABASE_PASSWORD` 与 `SOHA_AUTH_DEV_PRINCIPAL_PASSWORD`。
 
-该命令会安装 Go 依赖，并从 `deploy/docker-compose.yaml` 启动本地 PostgreSQL 服务。前端依赖由 sibling 仓库 `../soha-web` 自己管理。
+该命令会安装 Go 依赖并准备配置，不会启动 Docker。默认的 `DEV_DB_MODE=external`
+使用配置中的外部 PostgreSQL；只有 `make init DEV_DB_MODE=local` 才会从
+`deploy/docker-compose.yaml` 启动本机 PostgreSQL。前端依赖由 sibling 仓库
+`../soha-web` 自己管理。
 
 MinIO 的 S3 API 为 `http://127.0.0.1:9000`，控制台为 `http://127.0.0.1:9001`，数据持久化到 `opensoha-minio-data`。本地默认凭据为 `minioadmin` / `minioadmin`；通过环境变量或不提交 Git 的 `deploy/.env` 设置 `SOHA_MINIO_ROOT_USER`、`SOHA_MINIO_ROOT_PASSWORD`，可沿用已有凭据。暴露到回环地址以外前必须更换默认凭据。使用 `docker compose -f deploy/docker-compose.yaml up -d minio` 单独启动；`make init` 和 `make dev` 不启动 MinIO。
 
@@ -166,13 +179,16 @@ Compose 栈使用 `pgvector/pgvector:0.8.5-pg18-trixie`，当前基于 PostgreSQ
 make
 ```
 
-默认目标会同时启动 Go API 与 Vite 前端。
+默认目标会在开发机上同时启动 Go API 与 Vite 前端，连接配置中的外部数据库，
+不要求本机 Docker 运行。`make dev-remote` 显式使用该模式；`make dev-local`
+会先启动本机 Compose PostgreSQL，使用该模式时需把本机配置中的数据库地址设为
+`localhost`。远端数据库服务在其所在主机管理。
 
 - 控制台：`http://localhost:5173`
 - API：`http://localhost:8080`
 - 配置覆盖：`SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
 
-- 本地默认值在 `configs/config.yaml`，可通过环境变量或 `SOHA_CONFIG_FILE` 覆盖。
+- 默认参数在 `configs/config.example.yaml`，复制到 Git 忽略的 `configs/config.yaml` 后使用。`make init-config` 只补齐缺失配置，不覆盖现有文件；运行时路径可通过 `SOHA_CONFIG_FILE` 指定。
 
 个人 VM guest 的登记/心跳通道由 `personal_guest` 显式启用，默认关闭；启用时必须配置独立地址以及 `tls.cert_file`、`tls.key_file`、`tls.client_ca_file`，私钥文件只能由服务账号读取。通道使用 TLS 1.3 和受验证的 guest 客户端证书，重验当前账号、个人 Agent 授权与 VM/独立数据盘身份，不接受转发证书头。登记仅证明存活；个人 VM 模板/绑定、凭证签发安装、数据初始化和工具就绪尚未接通，因此当前不能以打开此监听替代完整 VM 开通。
 
@@ -222,7 +238,7 @@ Soha 每个容器只运行一个进程。默认进程提供管理 API 和内嵌 
 
 - [deploy/Dockerfile](./deploy/Dockerfile): 多阶段镜像构建
 - [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): 包含 PostgreSQL、MinIO 与可选 Hermes runner 服务的本地栈
-- [configs/config.yaml](./configs/config.yaml): 默认应用配置
+- [configs/config.example.yaml](./configs/config.example.yaml): 公开默认应用配置
 - [deploy/deployment.yaml](./deploy/deployment.yaml): 原生 Kubernetes 清单基线
 - [deploy/network-runtime.yaml](./deploy/network-runtime.yaml): 独立的 network-control、ingest、ingest PostgreSQL 与 WireGuard gateway 工作负载
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize 入口，用于在不引入 Helm 时覆盖镜像 tag、namespace 或补丁
