@@ -139,10 +139,20 @@ See the published docs for current public architecture and API behavior.
 
 - Go 1.27.2+
 - Node.js 20+
-- Docker and Docker Compose
+- Docker and Docker Compose only when running the local container stack
 - PostgreSQL 18.4 with pgvector 0.8.5 when using an external database
 
-### Install dependencies and start local services
+### Prepare local configuration and dependencies
+
+Copy the versioned defaults before editing installation-specific settings:
+
+```bash
+cp configs/config.example.yaml configs/config.yaml
+```
+
+`configs/config.yaml` is ignored by Git and excluded from Docker build contexts.
+Set the database hosts for the management, network-control, and ingest services
+in that local file, or override them with environment variables.
 
 The standard stack starts with `pgsql` as the PostgreSQL password and
 `opensoha` as the initial `opensoha` administrator password:
@@ -155,7 +165,10 @@ These are Soha's standard initial credentials across local, Docker, Compose,
 Kubernetes, and Helm deployments. Override them only when an installation needs
 different database or administrator credentials.
 
-This installs Go dependencies, then starts the local PostgreSQL service from `deploy/docker-compose.yaml`. Frontend dependencies are managed in the sibling `../soha-web` repository.
+This installs Go dependencies and prepares the configuration without starting Docker.
+The default `DEV_DB_MODE=external` uses your configured PostgreSQL service.
+Use `make init DEV_DB_MODE=local` to start PostgreSQL from `deploy/docker-compose.yaml`.
+Frontend dependencies are managed in the sibling `../soha-web` repository.
 
 MinIO exposes its S3 API at `http://127.0.0.1:9000` and console at `http://127.0.0.1:9001`, with persistent data in `opensoha-minio-data`. Its local defaults are `minioadmin` / `minioadmin`; override `SOHA_MINIO_ROOT_USER` and `SOHA_MINIO_ROOT_PASSWORD` in the environment or an untracked `deploy/.env` to preserve existing credentials. Change these defaults before exposing MinIO beyond loopback. Start it separately with `docker compose -f deploy/docker-compose.yaml up -d minio`; `make init` and `make dev` do not start MinIO.
 
@@ -167,13 +180,18 @@ The compose stack uses `pgvector/pgvector:0.8.5-pg18-trixie`, currently based on
 make
 ```
 
-The default target starts the Go API and the Vite frontend together.
+The default target starts the Go API and the Vite frontend together against your
+configured external database, without requiring a local Docker daemon.
+`make dev-remote` selects this mode explicitly. `make dev-local` starts the local
+Compose PostgreSQL first; set the local config's database hosts to `localhost`
+when selecting that mode. These commands run the API and frontend on your
+development machine; manage remote database services on their own host.
 
 - Console: `http://localhost:5173`
 - API: `http://localhost:8080`
 - Config override: `SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
 
-- Local defaults live in `configs/config.yaml`; override them with environment variables or `SOHA_CONFIG_FILE`.
+- Public defaults live in `configs/config.example.yaml`; copy them to the ignored `configs/config.yaml`. `make init-config` copies missing defaults without overwriting an existing file. Override the runtime path with `SOHA_CONFIG_FILE`.
 
 The personal VM guest registration/heartbeat listener is opt-in through `personal_guest` and disabled by default. Enabling it requires a separate address and `tls.cert_file`, `tls.key_file`, and `tls.client_ca_file`; the private key must be readable only by the service account. TLS 1.3 and verified guest client certificates are required, with current account, personal Agent access, VM incarnation, and separate data-disk checks. Forwarded certificate headers are not authentication. Registration proves liveness only: personal VM policy/binding, certificate issuance/installation, data initialization, and tool readiness are still pending, so enabling the listener does not enable personal VM execution.
 
@@ -227,7 +245,7 @@ Soha runs one process per container. The default process serves the management A
 
 - [deploy/Dockerfile](./deploy/Dockerfile): multi-stage image build
 - [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local stack with PostgreSQL, MinIO, and optional Hermes runner services
-- [configs/config.yaml](./configs/config.yaml): default application config
+- [configs/config.example.yaml](./configs/config.example.yaml): public application defaults
 - [deploy/deployment.yaml](./deploy/deployment.yaml): raw Kubernetes manifest baseline
 - [deploy/network-runtime.yaml](./deploy/network-runtime.yaml): independent network-control, ingest, ingest PostgreSQL, and WireGuard gateway workloads
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize entrypoint for image tag, namespace, and patch overrides without Helm
