@@ -197,7 +197,7 @@ security:
 }
 
 func TestLoadRepoDefaultConfigWithoutGeneratedEnv(t *testing.T) {
-	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.yaml"))
+	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.example.yaml"))
 
 	cfg, err := Load()
 	if err != nil {
@@ -246,7 +246,7 @@ func TestLoadRepoDefaultConfigWithoutGeneratedEnv(t *testing.T) {
 }
 
 func TestLoadRepoDefaultConfigAllowsEnvOverride(t *testing.T) {
-	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.yaml"))
+	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.example.yaml"))
 	t.Setenv("SOHA_DATABASE_HOST", "postgres")
 	t.Setenv("SOHA_DATABASE_PASSWORD", "override-database-password")
 	t.Setenv("SOHA_AUTH_DEV_PRINCIPAL_PASSWORD", "override-admin-password")
@@ -293,7 +293,7 @@ func TestLoadRepoDefaultConfigAllowsEnvOverride(t *testing.T) {
 }
 
 func TestLoadRepoDefaultConfigIgnoresObsoleteAppEnvironment(t *testing.T) {
-	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.yaml"))
+	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.example.yaml"))
 	t.Setenv("SOHA_APP_ENV", "production")
 
 	cfg, err := Load()

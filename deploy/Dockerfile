@@ -135,7 +135,7 @@ WORKDIR /app
 COPY --from=go-build /out/soha /app/soha
 COPY --from=go-build /out/network-control /app/network-control
 COPY --from=go-build /out/ingest /app/ingest
-COPY configs /app/configs
+COPY configs/config.example.yaml /app/configs/config.yaml
 COPY migrations /app/migrations
 COPY deploy/entrypoint.sh /app/entrypoint.sh
 ENV SOHA_CONFIG_FILE=/app/configs/config.yaml \

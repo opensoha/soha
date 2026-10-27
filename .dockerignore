@@ -15,4 +15,6 @@ coverage
 # Local runtime keys and shared secrets are never build inputs.
 .env
 **/.env
+configs/config.yaml
+configs/config.toml
 deploy/network-runtime-tls
