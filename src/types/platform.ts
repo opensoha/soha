@@ -421,24 +421,8 @@ export interface PodDetail {
   allowedActions?: string[]
 }
 
-export interface Pod {
-  name: string
-  namespace: string
-  phase: string
-  nodeName?: string
-  podIp?: string
-  createdAt?: string
-  cpu?: string
-  memory?: string
-  requests?: ResourceQuantity
-  limits?: ResourceQuantity
-  labels?: Record<string, string>
-  persistentVolumeClaims?: string[]
-  readyContainers: string
-  restarts: number
-  ageSeconds: number
-  allowedActions?: string[]
-}
+export type Pod =
+  import('@opensoha/contracts/gen/ts/sohaapi').components['schemas']['KubernetesPod']
 
 export interface Service {
   name: string

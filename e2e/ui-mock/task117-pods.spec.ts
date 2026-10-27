@@ -1,13 +1,58 @@
 import { test, expect, type Page, type BrowserContext } from '@playwright/test'
 import { baselineResponse } from '../fixtures/baseline-data'
 import { installMocks, verifyBrowserEvidence } from '../fixtures/mock-app'
+import type { Pod } from '../../src/types/platform'
 
-function makePods(count = 2000) {
+function containerStates(index: number): NonNullable<Pod['containerStatuses']> {
+  const app = { name: 'app', kind: 'container', state: 'running', ready: true } as const
+  const init = {
+    name: 'migrate',
+    kind: 'init',
+    state: 'terminated',
+    ready: false,
+    reason: 'Completed',
+    exitCode: 0,
+  } as const
+  if (index === 1)
+    return [
+      { ...init, state: 'waiting', reason: 'PodInitializing', exitCode: undefined },
+      { ...app, state: 'unknown', ready: false },
+    ]
+  if (index === 2)
+    return [
+      { ...init, reason: 'Error', exitCode: 1 },
+      { ...app, state: 'unknown', ready: false },
+    ]
+  if (index === 3)
+    return [
+      { name: 'proxy', kind: 'sidecar', state: 'running', ready: false },
+      { ...app, state: 'unknown', ready: false },
+    ]
+  if (index === 4) return [{ ...app, state: 'waiting', ready: false, reason: 'CrashLoopBackOff' }]
+  if (index === 5)
+    return [{ ...app, state: 'terminated', ready: false, reason: 'Completed', exitCode: 0 }]
+  if (index === 6)
+    return [{ ...app, state: 'terminated', ready: false, reason: 'Error', exitCode: 1 }]
+  if (index === 7)
+    return [...Array.from({ length: 7 }, (_, n) => ({ ...init, name: `init-${n}` })), app]
+  return [init, app]
+}
+
+function makePods(count = 2000): Pod[] {
   return Array.from({ length: count }, (_, index) => ({
     name: `pod-${String(index).padStart(4, '0')}`,
     namespace: 'monitoring',
-    phase: index % 10 === 0 ? 'Pending' : 'Running',
-    readyContainers: index % 10 === 0 ? '0/1' : '1/1',
+    phase:
+      index > 0 && index < 4
+        ? 'Pending'
+        : index === 5
+          ? 'Succeeded'
+          : index === 6
+            ? 'Failed'
+            : 'Running',
+    readyContainers: index > 0 && index < 7 ? '0/1' : '1/1',
+    qosClass: ['Guaranteed', 'Burstable', 'BestEffort'][index % 3],
+    containerStatuses: containerStates(index),
     restarts: index,
     nodeName: `worker-${index % 8}`,
     podIp: `10.0.${Math.floor(index / 250)}.${index % 250}`,
@@ -97,6 +142,119 @@ async function setup(context: BrowserContext, page: Page, readonly = false) {
 const holder = (page: Page) => page.getByRole('region', { name: '资源列表，可连续滚动' })
 const rows = (page: Page) => page.locator('.soha-pods-table .ant-table-row[data-row-key]')
 const search = (page: Page) => page.getByPlaceholder('搜索 Pod / Node / IP')
+
+async function expectContainerColumnAligned(page: Page) {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const table = document.querySelector('.soha-pods-table')!
+        const header = Array.from(table.querySelectorAll<HTMLElement>('.ant-table-thead th')).find(
+          (cell) => cell.textContent?.trim() === '容器',
+        )!
+        const button = table.querySelector<HTMLElement>('.soha-pod-container-cell')!
+        const cell = button.closest('.ant-table-cell')!
+        const viewport = table.getBoundingClientRect()
+        const column = header.getBoundingClientRect()
+        const body = cell.getBoundingClientRect()
+        const aligned =
+          column.left >= viewport.left &&
+          column.right <= viewport.right &&
+          Math.abs(column.left - body.left) < 2
+        if (aligned) return 'aligned'
+        const ancestors = []
+        for (
+          let node: HTMLElement | null = button;
+          node && node !== table;
+          node = node.parentElement
+        ) {
+          ancestors.push({
+            class: node.className,
+            x: node.scrollLeft,
+            width: node.clientWidth,
+            scrollWidth: node.scrollWidth,
+          })
+        }
+        return JSON.stringify({
+          column: [column.left, column.right],
+          cell: [body.left, body.right],
+          viewport: [viewport.left, viewport.right],
+          headerX: table.querySelector('.ant-table-header')?.scrollLeft,
+          active: document.activeElement?.getAttribute('aria-label'),
+          ancestors,
+        })
+      }),
+    )
+    .toBe('aligned')
+}
+
+test('init and app states, overflow details, keyboard, QoS sorting and older APIs', async ({
+  context,
+  page,
+}, info) => {
+  const { state, evidence } = await setup(context, page)
+  const cell = () => rows(page).first().locator('.soha-pod-container-cell')
+  await search(page).fill('pod-0000')
+  await expect(cell().locator('.is-success')).toHaveCount(2)
+  await expect(cell()).toContainText('1/1')
+  await expect(rows(page).first()).toContainText('Guaranteed')
+  await cell().focus()
+  await expectContainerColumnAligned(page)
+  await cell().press('Enter')
+  const detail = page.getByRole('region', { name: '容器状态', exact: true })
+  await expect(detail).toBeFocused()
+  await expect(detail).toContainText('常规容器就绪 1/1')
+  await expect(detail).toContainText('初始化容器 migrate：正常完成')
+  await expect
+    .poll(() =>
+      detail.evaluate((node) => {
+        const popup = node.closest('.ant-popover')!
+        return Number(getComputedStyle(popup).opacity)
+      }),
+    )
+    .toBe(1)
+  await page.screenshot({ path: info.outputPath('pods-init-details.png') })
+  await detail.press('Escape')
+  await expect(cell()).toBeFocused()
+  await expect(cell()).toHaveAttribute('aria-expanded', 'false')
+
+  for (const [index, tone] of [
+    [1, 'warning'],
+    [2, 'danger'],
+    [3, 'warning'],
+    [4, 'danger'],
+    [5, 'success'],
+    [6, 'danger'],
+  ] as const) {
+    await search(page).fill(`pod-000${index}`)
+    await expect(cell().locator('.soha-pod-container-square').first()).toHaveClass(
+      new RegExp(`is-${tone}`),
+    )
+  }
+  await search(page).fill('pod-0003')
+  await cell().click()
+  await expect(detail).toContainText('常驻初始化容器 proxy：运行中，未就绪')
+  await page.keyboard.press('Escape')
+  await expect(cell()).toHaveAttribute('aria-expanded', 'false')
+  await search(page).fill('pod-0007')
+  await expect(cell().locator('.soha-pod-container-square')).toHaveCount(6)
+  await expect(cell()).toContainText('+2')
+  await cell().press('Enter')
+  await expect(detail.locator('.soha-pod-container-detail')).toHaveCount(8)
+  await expect(detail).toContainText('初始化容器 init-6：正常完成')
+  await expect(detail).toContainText('容器 app：运行中，已就绪')
+  await detail.press('Escape')
+
+  await search(page).clear()
+  await page.getByRole('columnheader', { name: 'QoS', exact: true }).click()
+  await expect(rows(page).first()).toContainText('BestEffort')
+  state.pods = [{ ...state.pods[0], containerStatuses: undefined, qosClass: undefined }]
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(rows(page)).toHaveCount(1)
+  await expect(cell().locator('.is-unknown')).toHaveCount(1)
+  await expect(cell()).toHaveAccessibleName(/逐容器状态未知/)
+  await expect(rows(page).first().getByText('—', { exact: true })).toHaveCount(1)
+  verifyBrowserEvidence(evidence)
+})
 async function anchor(page: Page) {
   return holder(page).evaluate((body) => {
     const top = body.getBoundingClientRect().top
@@ -122,6 +280,19 @@ test('continuous virtual rows, full-result search/sort, selection and keyboard',
   await page.mouse.wheel(0, 5000)
   await expect.poll(async () => (await anchor(page)).top).toBeGreaterThan(1000)
   expect(await rows(page).count()).toBeLessThan(80)
+  const beforeFocus = await anchor(page)
+  const focusKey = await holder(page).evaluate((body) => {
+    const viewport = body.getBoundingClientRect()
+    return Array.from(body.querySelectorAll<HTMLElement>('[data-row-key]')).find((row) => {
+      const rect = row.getBoundingClientRect()
+      return rect.top >= viewport.top + 1 && rect.bottom <= viewport.bottom
+    })!.dataset.rowKey!
+  })
+  await page
+    .locator(`.soha-pods-table [data-row-key="${focusKey}"] .soha-pod-container-cell`)
+    .focus()
+  await expectContainerColumnAligned(page)
+  await expect.poll(() => holder(page).evaluate((body) => body.scrollTop)).toBe(beforeFocus.top)
 
   await search(page).fill('pod-1999')
   await expect(rows(page)).toHaveCount(1)
@@ -216,7 +387,11 @@ for (const theme of ['light', 'dark']) {
         () => document.documentElement.scrollWidth > window.innerWidth,
       )
       expect(overflow, `no page overflow at ${width}px`).toBe(false)
-      if (width === 1440) await page.screenshot({ path: info.outputPath(`pods-${theme}.png`) })
+      if (width === 1440) {
+        await rows(page).first().locator('.soha-pod-container-cell').focus()
+        await expectContainerColumnAligned(page)
+        await page.screenshot({ path: info.outputPath(`pods-${theme}.png`) })
+      }
     }
     await page.setViewportSize({ width: 1280, height: 480 })
     await expect(holder(page)).toBeVisible()

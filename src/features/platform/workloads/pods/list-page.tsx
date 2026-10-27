@@ -67,6 +67,7 @@ import {
 import { podMutations } from './mutations'
 import { podQueries } from './queries'
 import { podTargetFromRecord, type Pod } from './types'
+import { PodContainersCell } from './pod-containers-cell'
 import { usePodListViewport } from './use-pod-list-viewport'
 
 const { Link, Text } = Typography
@@ -80,17 +81,6 @@ function podSorter(compareFn: (left: Pod, right: Pod) => number) {
     if (!right) return 1
     return compareFn(left, right)
   }
-}
-
-function renderPodReadyCell(readyContainers: string, readyLabel: string) {
-  const ready = parseReadyContainers(readyContainers)
-  const readyHealthy = ready.total > 0 && ready.ready >= ready.total
-
-  return (
-    <Tag variant="filled" color={readyHealthy ? 'success' : 'warning'}>
-      {`${readyLabel} ${readyContainers || '-'}`}
-    </Tag>
-  )
 }
 
 function formatPodResourceValue(resource: 'cpu' | 'memory', value?: string) {
@@ -506,6 +496,13 @@ export function WorkloadsPodsPage() {
       ),
     },
     {
+      title: 'QoS',
+      dataIndex: 'qosClass',
+      width: 112,
+      sorter: podSorter((left, right) => compareStrings(left.qosClass, right.qosClass)),
+      render: (value?: string) => value || '—',
+    },
+    {
       title: localeCode === 'zh_CN' ? '运行时间' : 'Age',
       dataIndex: 'ageSeconds',
       width: 96,
@@ -522,15 +519,20 @@ export function WorkloadsPodsPage() {
     {
       title: localeCode === 'zh_CN' ? '容器' : 'Containers',
       dataIndex: 'readyContainers',
-      width: 120,
+      width: 160,
       sorter: podSorter((left, right) => {
         const leftReady = parseReadyContainers(left.readyContainers)
         const rightReady = parseReadyContainers(right.readyContainers)
         if (leftReady.total !== rightReady.total) return leftReady.total - rightReady.total
         return leftReady.ready - rightReady.ready
       }),
-      render: (readyContainers: string) =>
-        renderPodReadyCell(readyContainers, localeCode === 'zh_CN' ? '就绪' : 'Ready'),
+      render: (readyContainers: string, record: Pod) => (
+        <PodContainersCell
+          readyContainers={readyContainers}
+          statuses={record.containerStatuses}
+          zh={localeCode === 'zh_CN'}
+        />
+      ),
     },
     {
       title: localeCode === 'zh_CN' ? '重启' : 'Restarts',
@@ -954,7 +956,7 @@ export function WorkloadsPodsPage() {
           if (extra.action === 'sort') podViewport.resetPosition()
         }}
         tableSize={tableSize}
-        scroll={{ x: 1540, scrollToFirstRowOnChange: false }}
+        scroll={{ scrollToFirstRowOnChange: false }}
         viewportScroll
         rowSelection={
           canShowPodDeleteActions

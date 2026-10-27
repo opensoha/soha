@@ -596,6 +596,69 @@
   font-variant-numeric: tabular-nums;
 }
 
+.soha-pod-container-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 44px;
+  min-height: 24px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--soha-text-secondary);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.soha-pod-container-cell:focus-visible,
+.soha-pod-container-details:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
+.soha-pod-container-square {
+  display: inline-block;
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  background: var(--soha-text-tertiary);
+}
+
+.soha-pod-container-square.is-success {
+  background: var(--soha-success);
+}
+.soha-pod-container-square.is-warning {
+  background: var(--soha-warning);
+}
+.soha-pod-container-square.is-danger {
+  background: var(--soha-danger);
+}
+.soha-pod-container-ready {
+  margin-inline-start: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.soha-pod-container-details {
+  max-width: min(420px, 80vw);
+  max-height: 50vh;
+  overflow: auto;
+}
+.soha-pod-container-detail {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 8px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@media (pointer: coarse) {
+  .soha-pod-container-cell {
+    min-height: 44px;
+  }
+}
+
 .soha-pod-table-name-cell > .soha-pod-table-name-link {
   min-width: 0;
 }

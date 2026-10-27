@@ -1,7 +1,17 @@
 import { ReadFeedback } from '@/components/request-feedback'
 import { readableQueryData } from '@/utils/query-feedback'
-import { forwardRef, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ComponentProps, ReactNode, Ref } from 'react'
+import {
+  createContext,
+  forwardRef,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
+import type { ComponentProps, MutableRefObject, ReactNode, Ref } from 'react'
 import { Button, Checkbox, Popover, Table, Typography } from 'antd'
 import type { GetRef, TableProps } from 'antd'
 import { ArrowDownOutlined, ArrowUpOutlined, SettingOutlined } from '@ant-design/icons'
@@ -32,6 +42,7 @@ const ACTION_COLUMN_CLASS_NAME = 'soha-table-actions-column'
 const AUTO_ACTION_COLUMN_CLASS_NAME = 'soha-table-actions-column--auto'
 const { Text } = Typography
 const EMPTY_TABLE_RECORDS: AdminTableProps['dataSource'] = []
+const VirtualHorizontalScroll = createContext<(delta: number, top: number) => void>(() => {})
 
 // Antd adds a native title to ellipsis headers even when sorter tooltips are disabled.
 function TableHeaderCell(props: ComponentProps<'th'>) {
@@ -40,6 +51,7 @@ function TableHeaderCell(props: ComponentProps<'th'>) {
 
 const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((props, ref) => {
   const { localeCode } = useI18n()
+  const scrollHorizontally = useContext(VirtualHorizontalScroll)
   return (
     <div
       {...props}
@@ -47,6 +59,44 @@ const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((prop
       tabIndex={0}
       role="region"
       aria-label={localeText(localeCode, '资源列表，可连续滚动', 'Scrollable resource list')}
+      onScrollCapture={(event) => {
+        props.onScrollCapture?.(event)
+        const body = event.currentTarget
+        const scroller = event.target as HTMLElement
+        // Native focus scrolling bypasses the virtual list's horizontal transform.
+        // Keep Antd's virtual controller in charge of that offset and header sync.
+        if (typeof scroller.scrollLeft === 'number' && scroller.scrollLeft !== 0) {
+          const nativeLeft = scroller.scrollLeft
+          scroller.scrollLeft = 0
+          scrollHorizontally(nativeLeft, body.scrollTop)
+        }
+      }}
+      onFocusCapture={(event) => {
+        props.onFocusCapture?.(event)
+        const body = event.currentTarget
+        const target = event.target as HTMLElement
+        requestAnimationFrame(() => {
+          if (document.activeElement !== target || !body.contains(target)) return
+          const cell = target.closest<HTMLElement>('.ant-table-cell')
+          if (!cell || cell.matches('.ant-table-cell-fix-start, .ant-table-cell-fix-end')) return
+          const row = cell.parentElement!
+          const viewport = body.getBoundingClientRect()
+          const start = Array.from(row.querySelectorAll<HTMLElement>('.ant-table-cell-fix-start'))
+          const end = Array.from(row.querySelectorAll<HTMLElement>('.ant-table-cell-fix-end'))
+          const left = Math.max(
+            viewport.left,
+            ...start.map((item) => item.getBoundingClientRect().right),
+          )
+          const right = Math.min(
+            viewport.right,
+            ...end.map((item) => item.getBoundingClientRect().left),
+          )
+          const rect = cell.getBoundingClientRect()
+          const delta =
+            rect.right > right ? rect.right - right : rect.left < left ? rect.left - left : 0
+          if (delta) scrollHorizontally(delta, body.scrollTop)
+        })
+      }}
       onKeyDown={(event) => {
         props.onKeyDown?.(event)
         if (event.defaultPrevented || event.target !== event.currentTarget) return
@@ -365,6 +415,26 @@ export function AdminTable({
   const [currentPageSize, setCurrentPageSize] = useState(pageSize)
   const [viewportScrollY, setViewportScrollY] = useState<number>()
   const tableShellRef = useRef<HTMLDivElement>(null)
+  const innerTableRef = useRef<GetRef<typeof Table> | null>(null)
+  const attachTableRef = useCallback(
+    (instance: GetRef<typeof Table> | null) => {
+      innerTableRef.current = instance
+      if (typeof tableRef === 'function') tableRef(instance)
+      else if (tableRef)
+        (tableRef as MutableRefObject<GetRef<typeof Table> | null>).current = instance
+    },
+    [tableRef],
+  )
+  const scrollHorizontally = useCallback((delta: number, top: number) => {
+    const table = innerTableRef.current
+    const header = table?.nativeElement.querySelector<HTMLElement>('.ant-table-header')
+    if (!table || !header) return
+    // Pinned Antd 6.6.2 forwards `left` without emitting onVirtualScroll.
+    // Keep the header aligned explicitly; its native range clamps the offset.
+    header.scrollLeft += delta
+    const position = { left: header.scrollLeft, top }
+    table.scrollTo(position)
+  }, [])
 
   // Measure the rendered icon group: permissions and row state can change its size.
   // Keep explicit sizing for text actions; never infer a button count from a render callback.
@@ -740,34 +810,36 @@ export function AdminTable({
         />
       ) : null}
       {!error || cachedRecords !== undefined ? (
-        <Table
-          {...rest}
-          ref={tableRef}
-          className={resolvedTableClassName}
-          components={{
-            header: { cell: TableHeaderCell },
-            ...(virtual ? { body: { wrapper: VirtualTableBody } } : {}),
-          }}
-          column={{
-            sortIcon: ({ sortOrder }) =>
-              sortOrder ? (
-                <span aria-hidden className="soha-table-sort-icon">
-                  {sortOrder === 'ascend' ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                </span>
-              ) : null,
-          }}
-          columns={activeColumns}
-          dataSource={dataSource}
-          loading={loading}
-          locale={{ emptyText: empty ?? <ManagementState bordered={false} compact /> }}
-          pagination={resolvedPagination}
-          rowKey={rowKey}
-          rowSelection={resolvedRowSelection}
-          scroll={resolvedScroll}
-          showSorterTooltip={false}
-          size={resolvedTableSize}
-          virtual={virtual}
-        />
+        <VirtualHorizontalScroll.Provider value={scrollHorizontally}>
+          <Table
+            {...rest}
+            ref={attachTableRef}
+            className={resolvedTableClassName}
+            components={{
+              header: { cell: TableHeaderCell },
+              ...(virtual ? { body: { wrapper: VirtualTableBody } } : {}),
+            }}
+            column={{
+              sortIcon: ({ sortOrder }) =>
+                sortOrder ? (
+                  <span aria-hidden className="soha-table-sort-icon">
+                    {sortOrder === 'ascend' ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+                  </span>
+                ) : null,
+            }}
+            columns={activeColumns}
+            dataSource={dataSource}
+            loading={loading}
+            locale={{ emptyText: empty ?? <ManagementState bordered={false} compact /> }}
+            pagination={resolvedPagination}
+            rowKey={rowKey}
+            rowSelection={resolvedRowSelection}
+            scroll={resolvedScroll}
+            showSorterTooltip={false}
+            size={resolvedTableSize}
+            virtual={virtual}
+          />
+        </VirtualHorizontalScroll.Provider>
       ) : null}
     </div>
   )

@@ -7,6 +7,7 @@ import type {
 import { toScopeKey } from '@/types'
 
 export type Pod = PlatformPod
+export type PodContainerStatus = NonNullable<Pod['containerStatuses']>[number]
 export type PodDetail = PlatformPodDetail
 export type PodMetrics = PlatformResourceMetrics
 
