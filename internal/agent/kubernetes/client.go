@@ -1633,14 +1633,11 @@ func buildRESTConfig(cfg cfgpkg.KubernetesConfig) (*rest.Config, error) {
 }
 
 func mapPod(item corev1.Pod) domainresource.PodView {
-	ready := 0
+	containerStatuses, ready := buildPodListContainerStatuses(item)
 	restarts := int32(0)
 	claims := make([]string, 0)
 	requests, limits := podResourceTotals(item)
 	for _, status := range item.Status.ContainerStatuses {
-		if status.Ready {
-			ready++
-		}
 		restarts += status.RestartCount
 	}
 	for _, volume := range item.Spec.Volumes {
@@ -1659,7 +1656,9 @@ func mapPod(item corev1.Pod) domainresource.PodView {
 		Limits:                 formatNodeResourceTotals(limits),
 		Labels:                 item.Labels,
 		PersistentVolumeClaims: claims,
-		ReadyContainers:        fmt.Sprintf("%d/%d", ready, len(item.Status.ContainerStatuses)),
+		ReadyContainers:        fmt.Sprintf("%d/%d", ready, len(item.Spec.Containers)),
+		QOSClass:               string(item.Status.QOSClass),
+		ContainerStatuses:      containerStatuses,
 		Restarts:               restarts,
 		AgeSeconds:             secondsSince(item.CreationTimestamp.Time),
 	}
