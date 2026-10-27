@@ -21,6 +21,9 @@ SOHA_VERSION_LDFLAGS = -X github.com/opensoha/soha/internal/application/plugin.c
 GOPROXY ?= https://proxy.golang.org,direct
 SOHA_WEB_DIR ?= ../soha-web
 SOHA_CONTRACTS_DIR ?= $(abspath ../soha-contracts)
+SOHA_CONFIG_FILE ?= configs/config.yaml
+export SOHA_CONFIG_FILE
+DEV_DB_MODE ?= external
 WEB_DIST_DIR ?= internal/staticassets/web/dist
 REMOTE_DEV_CONTEXT ?= kubernetes-admin@kubernetes
 REMOTE_DEV_URL ?= https://ops.popicorns.com
@@ -31,29 +34,42 @@ REMOTE_DEV_CONTRACTS_REF ?= main
 ROOT_COMPOSE = $(COMPOSE) -f $(ROOT_COMPOSE_FILE)
 IMAGE_BUILD_TAGS = -t $(IMAGE_REPOSITORY):$(IMAGE_TAG)
 
-.PHONY: help init init-go init-db dev dev-api dev-web remote-dev-check remote-dev-up remote-dev-down remote-dev-status remote-dev-logs build build-web clean deploy-image test lint complexity-check complexity-report
+.PHONY: help init init-config init-go init-db dev dev-local dev-remote dev-api dev-web remote-dev-check remote-dev-up remote-dev-down remote-dev-status remote-dev-logs build build-web clean deploy-image test lint complexity-check complexity-report
 
 help: ## Show available make targets.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # Development
-init: init-go init-db ## Install core dependencies and start local database.
+init: init-go init-db ## Install dependencies and prepare the selected database mode.
+
+init-config: ## Copy public defaults once; local config is never overwritten.
+	@if [ ! -f "$(SOHA_CONFIG_FILE)" ]; then \
+		if [ "$(SOHA_CONFIG_FILE)" != "configs/config.yaml" ]; then \
+			echo "Missing config: $(SOHA_CONFIG_FILE)" >&2; exit 1; \
+		fi; \
+		cp configs/config.example.yaml "$(SOHA_CONFIG_FILE)"; \
+		echo "Created $(SOHA_CONFIG_FILE); configure your database before starting."; \
+	fi
 
 init-go: ## Tidy Go modules.
 	@echo "Tidying Go modules..."
 	$(LOCAL_VERIFY) go mod tidy
 
-init-db: ## Start local PostgreSQL from deploy/docker-compose.yaml.
-	@echo "Starting PostgreSQL..."
-	@$(ROOT_COMPOSE) up -d postgres; \
-		printf "Waiting for PostgreSQL"; \
-		until $(ROOT_COMPOSE) exec -T postgres pg_isready -U pgsql -d soha >/dev/null 2>&1; do \
-			printf "."; \
-			sleep 2; \
-		done; \
-		printf " done\n"
+init-db: init-config ## Use an external database, or start Docker with DEV_DB_MODE=local.
+	@case "$(DEV_DB_MODE)" in \
+		external) echo "Using the external database configured in $(SOHA_CONFIG_FILE)." ;; \
+		local) \
+			$(ROOT_COMPOSE) up -d postgres || exit $$?; \
+			printf "Waiting for PostgreSQL"; attempts=0; \
+			until $(ROOT_COMPOSE) exec -T postgres pg_isready -U pgsql -d soha >/dev/null 2>&1; do \
+				attempts=$$((attempts + 1)); \
+				if [ $$attempts -ge 60 ]; then echo " PostgreSQL did not become ready" >&2; exit 1; fi; \
+				printf "."; sleep 2; \
+			done; printf " done\n" ;; \
+		*) echo "Invalid DEV_DB_MODE: $(DEV_DB_MODE); use external or local" >&2; exit 1 ;; \
+	esac
 
-dev-api: ## Run the Go API server locally.
+dev-api: init-config ## Run the Go API server locally.
 	go run -ldflags="$(SOHA_VERSION_LDFLAGS)" ./cmd/server
 
 dev-web: ## Run the Vite frontend locally.
@@ -66,6 +82,12 @@ dev: init-db ## Start local API and frontend development servers.
 	$(MAKE) dev-web & web_pid=$$!; \
 	trap 'kill $$api_pid $$web_pid 2>/dev/null || true' INT TERM EXIT; \
 	wait $$api_pid $$web_pid
+
+dev-local: DEV_DB_MODE=local
+dev-local: dev ## Start local PostgreSQL, API, and frontend.
+
+dev-remote: DEV_DB_MODE=external
+dev-remote: dev ## Run API and frontend against an existing external database.
 
 remote-dev-check: ## Validate the remote development scripts and Kustomize manifest.
 	sh -n deploy/remote-dev/source-sync.sh deploy/remote-dev/backend.sh deploy/remote-dev/web.sh deploy/remote-dev/manage.sh
