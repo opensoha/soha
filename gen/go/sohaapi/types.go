@@ -4646,6 +4646,51 @@ func (e KubernetesImportedTargetWorkloadKind) Valid() bool {
 	}
 }
 
+// Defines values for KubernetesPodContainerStatusKind.
+const (
+	KubernetesPodContainerStatusKindContainer KubernetesPodContainerStatusKind = "container"
+	KubernetesPodContainerStatusKindInit      KubernetesPodContainerStatusKind = "init"
+	KubernetesPodContainerStatusKindSidecar   KubernetesPodContainerStatusKind = "sidecar"
+)
+
+// Valid indicates whether the value is a known member of the KubernetesPodContainerStatusKind enum.
+func (e KubernetesPodContainerStatusKind) Valid() bool {
+	switch e {
+	case KubernetesPodContainerStatusKindContainer:
+		return true
+	case KubernetesPodContainerStatusKindInit:
+		return true
+	case KubernetesPodContainerStatusKindSidecar:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for KubernetesPodContainerStatusState.
+const (
+	KubernetesPodContainerStatusStateRunning    KubernetesPodContainerStatusState = "running"
+	KubernetesPodContainerStatusStateTerminated KubernetesPodContainerStatusState = "terminated"
+	KubernetesPodContainerStatusStateUnknown    KubernetesPodContainerStatusState = "unknown"
+	KubernetesPodContainerStatusStateWaiting    KubernetesPodContainerStatusState = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the KubernetesPodContainerStatusState enum.
+func (e KubernetesPodContainerStatusState) Valid() bool {
+	switch e {
+	case KubernetesPodContainerStatusStateRunning:
+		return true
+	case KubernetesPodContainerStatusStateTerminated:
+		return true
+	case KubernetesPodContainerStatusStateUnknown:
+		return true
+	case KubernetesPodContainerStatusStateWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for KubernetesPrometheusTransport.
 const (
 	KubernetesPrometheusTransportAgent  KubernetesPrometheusTransport = "agent"
@@ -8599,16 +8644,16 @@ func (e PersonalEnvironmentActionRequestAction) Valid() bool {
 
 // Defines values for PersonalEnvironmentTemplateBackend.
 const (
-	Container PersonalEnvironmentTemplateBackend = "container"
-	VM        PersonalEnvironmentTemplateBackend = "vm"
+	PersonalEnvironmentTemplateBackendContainer PersonalEnvironmentTemplateBackend = "container"
+	PersonalEnvironmentTemplateBackendVM        PersonalEnvironmentTemplateBackend = "vm"
 )
 
 // Valid indicates whether the value is a known member of the PersonalEnvironmentTemplateBackend enum.
 func (e PersonalEnvironmentTemplateBackend) Valid() bool {
 	switch e {
-	case Container:
+	case PersonalEnvironmentTemplateBackendContainer:
 		return true
-	case VM:
+	case PersonalEnvironmentTemplateBackendVM:
 		return true
 	default:
 		return false
@@ -21209,23 +21254,46 @@ type KubernetesPersistentVolumeListEnvelope struct {
 
 // KubernetesPod defines model for KubernetesPod.
 type KubernetesPod struct {
-	AgeSeconds             int64                       `json:"ageSeconds"`
-	AllowedActions         []string                    `json:"allowedActions,omitempty"`
-	CPU                    string                      `json:"cpu,omitempty"`
-	CreatedAt              string                      `json:"createdAt,omitempty"`
-	Labels                 *KubernetesStringMap        `json:"labels,omitempty"`
-	Limits                 *KubernetesResourceQuantity `json:"limits,omitempty"`
-	Memory                 string                      `json:"memory,omitempty"`
-	Name                   string                      `json:"name"`
-	Namespace              string                      `json:"namespace"`
-	NodeName               string                      `json:"nodeName,omitempty"`
-	PersistentVolumeClaims []string                    `json:"persistentVolumeClaims,omitempty"`
-	Phase                  string                      `json:"phase"`
-	PodIP                  string                      `json:"podIp,omitempty"`
-	ReadyContainers        string                      `json:"readyContainers"`
-	Requests               *KubernetesResourceQuantity `json:"requests,omitempty"`
-	Restarts               int32                       `json:"restarts"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+
+	// ContainerStatuses Init containers followed by ordinary containers in spec order, including unknown entries before status is reported. Restartable init containers have kind sidecar. Does not include ephemeral containers.
+	ContainerStatuses      []KubernetesPodContainerStatus `json:"containerStatuses,omitempty"`
+	CPU                    string                         `json:"cpu,omitempty"`
+	CreatedAt              string                         `json:"createdAt,omitempty"`
+	Labels                 *KubernetesStringMap           `json:"labels,omitempty"`
+	Limits                 *KubernetesResourceQuantity    `json:"limits,omitempty"`
+	Memory                 string                         `json:"memory,omitempty"`
+	Name                   string                         `json:"name"`
+	Namespace              string                         `json:"namespace"`
+	NodeName               string                         `json:"nodeName,omitempty"`
+	PersistentVolumeClaims []string                       `json:"persistentVolumeClaims,omitempty"`
+	Phase                  string                         `json:"phase"`
+	PodIP                  string                         `json:"podIp,omitempty"`
+
+	// QosClass Kubernetes status.qosClass, omitted when not reported.
+	QosClass        string                      `json:"qosClass,omitempty"`
+	ReadyContainers string                      `json:"readyContainers"`
+	Requests        *KubernetesResourceQuantity `json:"requests,omitempty"`
+	Restarts        int32                       `json:"restarts"`
 }
+
+// KubernetesPodContainerStatus defines model for KubernetesPodContainerStatus.
+type KubernetesPodContainerStatus struct {
+	// ExitCode Present only when the current container state is terminated, including a successful zero exit code.
+	ExitCode *int32                            `json:"exitCode,omitempty"`
+	Kind     KubernetesPodContainerStatusKind  `json:"kind"`
+	Name     string                            `json:"name"`
+	Ready    bool                              `json:"ready"`
+	Reason   string                            `json:"reason,omitempty"`
+	State    KubernetesPodContainerStatusState `json:"state"`
+}
+
+// KubernetesPodContainerStatusKind defines model for KubernetesPodContainerStatus.Kind.
+type KubernetesPodContainerStatusKind string
+
+// KubernetesPodContainerStatusState defines model for KubernetesPodContainerStatus.State.
+type KubernetesPodContainerStatusState string
 
 // KubernetesPodDetail defines model for KubernetesPodDetail.
 type KubernetesPodDetail struct {
@@ -43190,6 +43258,12 @@ const (
 	Medium   MarketplaceAdvisorySeverity = MarketplaceAdvisorySeverityMedium
 	Low      MarketplaceAdvisorySeverity = MarketplaceAdvisorySeverityLow
 )
+
+// Retained for Go SDK source compatibility.
+const Container PersonalEnvironmentTemplateBackend = "container"
+
+// Retained for Go SDK source compatibility.
+const VM PersonalEnvironmentTemplateBackend = "vm"
 
 // Retained for Go SDK source compatibility.
 const ListAIGatewayRelayUpstreamsParamsStatusActive ListAIGatewayRelayUpstreamsParamsStatus = "active"

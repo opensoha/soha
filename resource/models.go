@@ -104,22 +104,33 @@ type NamespaceUpsertInput struct {
 }
 
 type PodView struct {
-	Name                   string               `json:"name"`
-	Namespace              string               `json:"namespace"`
-	Phase                  string               `json:"phase"`
-	NodeName               string               `json:"nodeName,omitempty"`
-	PodIP                  string               `json:"podIp,omitempty"`
-	CreatedAt              string               `json:"createdAt,omitempty"`
-	CPU                    string               `json:"cpu,omitempty"`
-	Memory                 string               `json:"memory,omitempty"`
-	Requests               ResourceQuantityView `json:"requests,omitempty"`
-	Limits                 ResourceQuantityView `json:"limits,omitempty"`
-	Labels                 map[string]string    `json:"labels,omitempty"`
-	PersistentVolumeClaims []string             `json:"persistentVolumeClaims,omitempty"`
-	ReadyContainers        string               `json:"readyContainers"`
-	Restarts               int32                `json:"restarts"`
-	AgeSeconds             int64                `json:"ageSeconds"`
-	AllowedActions         []string             `json:"allowedActions,omitempty"`
+	Name                   string                   `json:"name"`
+	Namespace              string                   `json:"namespace"`
+	Phase                  string                   `json:"phase"`
+	NodeName               string                   `json:"nodeName,omitempty"`
+	PodIP                  string                   `json:"podIp,omitempty"`
+	CreatedAt              string                   `json:"createdAt,omitempty"`
+	CPU                    string                   `json:"cpu,omitempty"`
+	Memory                 string                   `json:"memory,omitempty"`
+	Requests               ResourceQuantityView     `json:"requests,omitempty"`
+	Limits                 ResourceQuantityView     `json:"limits,omitempty"`
+	Labels                 map[string]string        `json:"labels,omitempty"`
+	PersistentVolumeClaims []string                 `json:"persistentVolumeClaims,omitempty"`
+	ReadyContainers        string                   `json:"readyContainers"`
+	QOSClass               string                   `json:"qosClass,omitempty"`
+	ContainerStatuses      []PodContainerStatusView `json:"containerStatuses,omitempty"`
+	Restarts               int32                    `json:"restarts"`
+	AgeSeconds             int64                    `json:"ageSeconds"`
+	AllowedActions         []string                 `json:"allowedActions,omitempty"`
+}
+
+type PodContainerStatusView struct {
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	Ready    bool   `json:"ready"`
+	State    string `json:"state"`
+	Reason   string `json:"reason,omitempty"`
+	ExitCode *int32 `json:"exitCode,omitempty"`
 }
 
 type WorkloadOverviewNamespaceView struct {

@@ -21821,11 +21821,29 @@ export interface components {
             labels?: components["schemas"]["KubernetesStringMap"];
             persistentVolumeClaims?: string[];
             readyContainers: string;
+            /** @description Kubernetes status.qosClass, omitted when not reported. */
+            qosClass?: string;
+            /** @description Init containers followed by ordinary containers in spec order, including unknown entries before status is reported. Restartable init containers have kind sidecar. Does not include ephemeral containers. */
+            containerStatuses?: components["schemas"]["KubernetesPodContainerStatus"][];
             /** Format: int32 */
             restarts: number;
             /** Format: int64 */
             ageSeconds: number;
             allowedActions?: string[];
+        };
+        KubernetesPodContainerStatus: {
+            name: string;
+            /** @enum {string} */
+            kind: "init" | "sidecar" | "container";
+            ready: boolean;
+            /** @enum {string} */
+            state: "running" | "waiting" | "terminated" | "unknown";
+            reason?: string;
+            /**
+             * Format: int32
+             * @description Present only when the current container state is terminated, including a successful zero exit code.
+             */
+            exitCode?: number;
         };
         KubernetesPodListEnvelope: {
             items: components["schemas"]["KubernetesPod"][];
@@ -29716,6 +29734,7 @@ export type KubernetesWorkloadOverviewPod = components['schemas']['KubernetesWor
 export type KubernetesWorkloadOverview = components['schemas']['KubernetesWorkloadOverview'];
 export type KubernetesWorkloadOverviewEnvelope = components['schemas']['KubernetesWorkloadOverviewEnvelope'];
 export type KubernetesPod = components['schemas']['KubernetesPod'];
+export type KubernetesPodContainerStatus = components['schemas']['KubernetesPodContainerStatus'];
 export type KubernetesPodListEnvelope = components['schemas']['KubernetesPodListEnvelope'];
 export type KubernetesWorkloadContainer = components['schemas']['KubernetesWorkloadContainer'];
 export type KubernetesPodVolumeMount = components['schemas']['KubernetesPodVolumeMount'];

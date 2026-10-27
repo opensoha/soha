@@ -38050,6 +38050,14 @@ components:
             type: string
         readyContainers:
           type: string
+        qosClass:
+          type: string
+          description: Kubernetes status.qosClass, omitted when not reported.
+        containerStatuses:
+          type: array
+          description: Init containers followed by ordinary containers in spec order, including unknown entries before status is reported. Restartable init containers have kind sidecar. Does not include ephemeral containers.
+          items:
+            $ref: "#/components/schemas/KubernetesPodContainerStatus"
         restarts:
           type: integer
           format: int32
@@ -38062,6 +38070,28 @@ components:
           type: array
           items:
             type: string
+      additionalProperties: false
+    KubernetesPodContainerStatus:
+      type: object
+      required: [name, kind, ready, state]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [init, sidecar, container]
+        ready:
+          type: boolean
+        state:
+          type: string
+          enum: [running, waiting, terminated, unknown]
+        reason:
+          type: string
+        exitCode:
+          type: integer
+          format: int32
+          x-go-type-skip-optional-pointer: false
+          description: Present only when the current container state is terminated, including a successful zero exit code.
       additionalProperties: false
     KubernetesPodListEnvelope:
       type: object

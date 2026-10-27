@@ -29834,6 +29834,13 @@
             },
             "type": "array"
           },
+          "containerStatuses": {
+            "description": "Init containers followed by ordinary containers in spec order, including unknown entries before status is reported. Restartable init containers have kind sidecar. Does not include ephemeral containers.",
+            "items": {
+              "$ref": "#/components/schemas/KubernetesPodContainerStatus"
+            },
+            "type": "array"
+          },
           "cpu": {
             "type": "string"
           },
@@ -29870,6 +29877,10 @@
           "podIp": {
             "type": "string"
           },
+          "qosClass": {
+            "description": "Kubernetes status.qosClass, omitted when not reported.",
+            "type": "string"
+          },
           "readyContainers": {
             "type": "string"
           },
@@ -29889,6 +29900,50 @@
           "readyContainers",
           "restarts",
           "ageSeconds"
+        ],
+        "type": "object"
+      },
+      "KubernetesPodContainerStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "exitCode": {
+            "description": "Present only when the current container state is terminated, including a successful zero exit code.",
+            "format": "int32",
+            "type": "integer",
+            "x-go-type-skip-optional-pointer": false
+          },
+          "kind": {
+            "enum": [
+              "init",
+              "sidecar",
+              "container"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "running",
+              "waiting",
+              "terminated",
+              "unknown"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "kind",
+          "ready",
+          "state"
         ],
         "type": "object"
       },

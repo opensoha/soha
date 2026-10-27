@@ -196,6 +196,15 @@ async function patchGoEntrypoint(url) {
     )
     .replace("type AnyValue = interface{}", "type AnyValue = any")
     .replaceAll("map[string]interface{}", "map[string]any");
+  // New enums can change collision detection; keep the published reasoning names.
+  const reasoningStart = generated.indexOf("// Defines values for WorkbenchModelOptionReasoningEfforts.");
+  const reasoningEnd = generated.indexOf("\n// Defines values for ", reasoningStart + 1);
+  if (reasoningStart < 0 || reasoningEnd < 0) throw new Error("reasoning effort enum is missing");
+  let reasoning = generated.slice(reasoningStart, reasoningEnd);
+  for (const suffix of ["High", "Medium", "Low"]) {
+    reasoning = reasoning.replaceAll(new RegExp(`\\b${suffix}\\b`, "g"), `WorkbenchModelOptionReasoningEfforts${suffix}`);
+  }
+  generated = generated.slice(0, reasoningStart) + reasoning + generated.slice(reasoningEnd);
   generated += `
 
 // Deprecated: use the SAMLAttributeMappingTarget-prefixed constants in new code.
@@ -236,6 +245,7 @@ const (
   // oapi-codegen changes enum prefixes when another schema introduces the same
   // value. Preserve both published spellings without redeclaring generated ones.
   for (const [typeName, values] of [
+    ["PersonalEnvironmentTemplateBackend", [["Container", "container"], ["VM", "vm"]]],
     ["ListAIGatewayRelayUpstreamsParamsStatus", [["Active", "active"], ["Degraded", "degraded"], ["Disabled", "disabled"]]],
     ["RuntimeNetworkUsageScope", [["NetworkNamespace", "network_namespace"], ["Process", "process"], ["Unavailable", "unavailable"]]],
     ["WorkbenchAgentStatusEventStatus", [["Cancelled", "cancelled"], ["Failed", "failed"], ["Queued", "queued"], ["Running", "running"], ["Succeeded", "succeeded"]]],
