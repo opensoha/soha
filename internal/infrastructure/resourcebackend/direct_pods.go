@@ -238,6 +238,7 @@ func (d *Direct) getPod(ctx context.Context, clusterID, namespace, name string) 
 }
 
 func mapPodView(pod corev1.Pod) domainresource.PodView {
+	containerStatuses, ready := buildPodListContainerStatuses(pod)
 	requests, limits := podResourceTotals(pod)
 	claims := make([]string, 0)
 	for _, volume := range pod.Spec.Volumes {
@@ -249,7 +250,8 @@ func mapPodView(pod corev1.Pod) domainresource.PodView {
 		Name: pod.Name, Namespace: pod.Namespace, Phase: string(pod.Status.Phase), NodeName: pod.Spec.NodeName,
 		PodIP: pod.Status.PodIP, CreatedAt: pod.CreationTimestamp.Format(time.RFC3339),
 		Requests: formatTotals(requests), Limits: formatTotals(limits), Labels: cloneMap(pod.Labels),
-		PersistentVolumeClaims: claims, ReadyContainers: readyContainers(pod), Restarts: podRestartCount(pod),
+		PersistentVolumeClaims: claims, ReadyContainers: fmt.Sprintf("%d/%d", ready, len(pod.Spec.Containers)), Restarts: podRestartCount(pod),
+		QOSClass: string(pod.Status.QOSClass), ContainerStatuses: containerStatuses,
 		AgeSeconds: secondsSince(pod.CreationTimestamp.Time),
 	}
 }

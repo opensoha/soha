@@ -15,6 +15,7 @@ type (
 	NamespaceUpsertInput      = contractsresource.NamespaceUpsertInput
 
 	PodView                       = contractsresource.PodView
+	PodContainerStatusView        = contractsresource.PodContainerStatusView
 	PodDetailView                 = contractsresource.PodDetailView
 	PodLogsView                   = contractsresource.PodLogsView
 	PodExecView                   = contractsresource.PodExecView
