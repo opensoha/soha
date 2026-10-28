@@ -488,7 +488,7 @@ describe('workloads pods page refresh controls', () => {
     expect(container.textContent).toContain('worker-b')
   })
 
-  it('keeps pod usage values inside resource bars with request and limit markers', async () => {
+  it('keeps pod usage values beside thin resource bars with request and limit markers', async () => {
     setResponses({
       '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
         {

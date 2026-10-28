@@ -719,12 +719,13 @@
 
 .soha-pod-resource-limit-cell {
   --soha-pod-resource-fill: var(--soha-resource-success);
-  --soha-pod-resource-value-color: var(--soha-resource-on-fill);
-  display: flex;
-  align-items: center;
+  display: grid;
+  align-content: center;
+  gap: 2px;
   min-height: 24px;
   min-width: 0;
-  width: 100%;
+  width: 96px;
+  max-width: 100%;
   padding: 0;
   border: 0;
   border-radius: calc(var(--soha-radius-control) / 2);
@@ -741,7 +742,6 @@
 
 .soha-pod-resource-limit-cell.is-warning {
   --soha-pod-resource-fill: var(--soha-resource-warning);
-  --soha-pod-resource-value-color: var(--soha-resource-on-warning);
 }
 
 .soha-pod-resource-limit-cell.is-danger {
@@ -756,27 +756,19 @@
   position: relative;
   width: 100%;
   min-width: 0;
-  height: 24px;
+  height: 4px;
   overflow: hidden;
   border-radius: calc(var(--soha-radius-control) / 2);
 }
 
 .soha-pod-resource-value {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: grid;
-  place-items: center;
+  display: block;
+  text-align: right;
   font-size: var(--soha-font-size-supporting);
   line-height: var(--soha-line-height-supporting);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   pointer-events: none;
-}
-
-.soha-pod-resource-value.is-on-fill {
-  color: var(--soha-pod-resource-value-color);
-  clip-path: inset(0 calc(100% - var(--soha-pod-resource-usage-percent)) 0 0);
 }
 
 .soha-pod-resource-marker {

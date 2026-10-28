@@ -136,9 +136,13 @@ for (const theme of ['light', 'dark']) {
     for (const width of [1440, 900]) {
       await page.setViewportSize({ width, height: 1000 })
       if (width === 900) await page.getByRole('button', { name: '收起侧栏', exact: true }).click()
-      const geometry = await page.locator('.soha-pod-resource-progress-wrap').evaluateAll((bars) =>
-        bars.map((node) => {
-          const bar = node.getBoundingClientRect()
+      const geometry = await page.locator('.soha-pod-resource-limit-cell').evaluateAll((cells) =>
+        cells.map((node) => {
+          const cell = node.getBoundingClientRect()
+          const bar = node
+            .querySelector('.soha-pod-resource-progress-wrap')!
+            .getBoundingClientRect()
+          const rail = node.querySelector('.ant-progress-rail')!.getBoundingClientRect()
           const range = document.createRange()
           range.selectNodeContents(node.querySelector('.soha-pod-resource-value')!)
           const label = range.getBoundingClientRect()
@@ -146,10 +150,21 @@ for (const theme of ['light', 'dark']) {
             (marker) => marker.getBoundingClientRect(),
           )
           return (
-            label.left >= bar.left &&
-            label.right <= bar.right &&
-            label.top >= bar.top &&
-            label.bottom <= bar.bottom &&
+            bar.width > 0 &&
+            bar.width <= 96 &&
+            bar.height === 4 &&
+            rail.height === bar.height &&
+            rail.width === bar.width &&
+            rail.top >= bar.top &&
+            rail.bottom <= bar.bottom &&
+            rail.left >= bar.left &&
+            rail.right <= bar.right &&
+            cell.height >= 24 &&
+            label.left >= cell.left &&
+            label.right <= cell.right &&
+            label.top >= cell.top &&
+            label.bottom <= bar.top &&
+            bar.bottom <= cell.bottom &&
             markers.every(
               (marker) =>
                 marker.left >= bar.left &&
@@ -160,7 +175,7 @@ for (const theme of ['light', 'dark']) {
           )
         }),
       )
-      expect(geometry.every(Boolean), `labels and markers inside bars at ${width}px`).toBe(true)
+      expect(geometry.every(Boolean), `thin bars with readable values at ${width}px`).toBe(true)
       await bar('normal', 'CPU').hover()
       await expect(page.getByRole('tooltip')).toHaveText(
         'CPU · 使用 34m · 请求 100m · 限制 500m · 请求以内',

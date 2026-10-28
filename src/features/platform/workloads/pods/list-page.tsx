@@ -187,17 +187,20 @@ function renderPodResourceLimitComparison(
         className={`soha-pod-resource-limit-cell is-${tone}`}
         aria-label={`${record.name} · ${tooltipTitle}`}
       >
+        <span className="soha-pod-resource-value" aria-hidden>
+          {usageLabel}
+        </span>
         <div className="soha-pod-resource-progress-wrap" style={markerStyle}>
           <Progress
             aria-hidden
             percent={percent}
             showInfo={false}
-            size={['100%', 24]}
+            size={['100%', 4]}
             strokeColor="var(--soha-pod-resource-fill)"
-            strokeLinecap="butt"
+            strokeLinecap="round"
             railColor="var(--soha-fill-medium)"
             styles={{
-              root: { display: 'block', margin: 0, lineHeight: 1 },
+              root: { display: 'flex', margin: 0, lineHeight: 0 },
               rail: {
                 borderRadius: 'calc(var(--soha-radius-control) / 2)',
                 ...(!hasLimit
@@ -210,12 +213,6 @@ function renderPodResourceLimitComparison(
               track: { borderRadius: 'calc(var(--soha-radius-control) / 2)', transition: 'none' },
             }}
           />
-          <span className="soha-pod-resource-value" aria-hidden>
-            {usageLabel}
-          </span>
-          <span className="soha-pod-resource-value is-on-fill" aria-hidden>
-            {usageLabel}
-          </span>
           {requestPercent === null ? null : (
             <span
               className={`soha-pod-resource-marker is-request${hasUsage && usageAmount >= requestAmount ? ' is-passed' : ''}`}
@@ -548,7 +545,7 @@ export function WorkloadsPodsPage() {
     {
       title: 'CPU',
       key: 'cpu-resource',
-      width: 150,
+      width: 120,
       sorter: podSorter(
         (left, right) =>
           getPodResourceAmount('cpu', left.cpu) - getPodResourceAmount('cpu', right.cpu),
@@ -559,7 +556,7 @@ export function WorkloadsPodsPage() {
     {
       title: localeCode === 'zh_CN' ? '内存' : 'Memory',
       key: 'memory-resource',
-      width: 150,
+      width: 120,
       sorter: podSorter(
         (left, right) =>
           getPodResourceAmount('memory', left.memory) -
