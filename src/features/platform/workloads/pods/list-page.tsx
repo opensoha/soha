@@ -1,7 +1,6 @@
 import { AdminTable } from '@/components/admin-table'
 import {
   ManagementBatchBar,
-  ManagementIconButton,
   ManagementQueryField,
   ManagementTableToolbar,
 } from '@/components/management-list'
@@ -10,10 +9,7 @@ import { StatusTag } from '@/components/status-tag'
 import { TableCellText } from '@/components/table-cell-content'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
-import {
-  capabilityActionTooltip,
-  useClusterCapability,
-} from '@/features/platform/cluster-capabilities'
+import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { useRealtimeSessionDock } from '@/features/platform/session-dock'
 import { useKubernetesResourceStream } from '@/features/platform/shared/resource-stream'
 import { ResourceStreamStatus } from '@/features/platform/shared/resource-stream-status'
@@ -28,8 +24,6 @@ import {
   compareStrings,
   includesSearch,
   normalizeSearchKeyword,
-  parseCpuValue,
-  parseMemoryValue,
   parseReadyContainers,
 } from '@/features/platform/workloads-model'
 import '@/features/platform/workloads/styles.css'
@@ -38,24 +32,23 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatAgeSeconds } from '@/utils/time'
-import { CodeOutlined, DeleteOutlined, FileTextOutlined } from '@ant-design/icons'
+import { CodeOutlined, DeleteOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { TableColumnsType } from 'antd'
+import type { MenuProps, TableColumnsType } from 'antd'
 import {
   App,
   Button,
   Popconfirm,
-  Progress,
   Select,
+  Segmented,
   Space,
   Switch,
   Tag,
   Tooltip,
   Typography,
 } from 'antd'
-import type { CSSProperties } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { workloadKeys } from '../shared/keys'
 import {
   WorkloadQueryPanel,
@@ -68,6 +61,13 @@ import { podMutations } from './mutations'
 import { podQueries } from './queries'
 import { podTargetFromRecord, type Pod } from './types'
 import { PodContainersCell } from './pod-containers-cell'
+import { PodActionsMenu } from './pod-actions-menu'
+import {
+  getPodResourceAmount,
+  parsePodMetricDesign,
+  podMetricColumnWidth,
+  PodResourceCell,
+} from './pod-resource-cell'
 import { usePodListViewport } from './use-pod-list-viewport'
 
 const { Link, Text } = Typography
@@ -81,154 +81,6 @@ function podSorter(compareFn: (left: Pod, right: Pod) => number) {
     if (!right) return 1
     return compareFn(left, right)
   }
-}
-
-function formatPodResourceValue(resource: 'cpu' | 'memory', value?: string) {
-  const amount = getPodResourceAmount(resource, value)
-  if (!Number.isFinite(amount) || amount < 0) return '—'
-  if (resource === 'cpu') return `${Number((amount * 1000).toFixed(2))}m`
-  const [unit, divisor] =
-    amount >= 1024 ** 3
-      ? ['Gi', 1024 ** 3]
-      : amount >= 1024 ** 2
-        ? ['Mi', 1024 ** 2]
-        : amount >= 1024
-          ? ['Ki', 1024]
-          : ['B', 1]
-  return `${Number((amount / Number(divisor)).toFixed(2))}${unit}`
-}
-
-function getPodResourceAmount(resource: 'cpu' | 'memory', value?: string) {
-  return resource === 'cpu' ? parseCpuValue(value) : parseMemoryValue(value)
-}
-
-function renderPodResourceLimitComparison(
-  record: Pod,
-  resource: 'cpu' | 'memory',
-  localeCode: 'zh_CN' | 'en_US',
-) {
-  const usageValue = resource === 'cpu' ? record.cpu : record.memory
-  const requestValue = record.requests?.[resource]
-  const limitValue = record.limits?.[resource]
-  const usageAmount = getPodResourceAmount(resource, usageValue)
-  const requestAmount = getPodResourceAmount(resource, requestValue)
-  const limitAmount = getPodResourceAmount(resource, limitValue)
-  const hasUsage = Number.isFinite(usageAmount) && usageAmount >= 0
-  const hasRequest = Number.isFinite(requestAmount) && requestAmount >= 0
-  const hasLimit = Number.isFinite(limitAmount) && limitAmount > 0
-  const baselineAmount = hasLimit ? limitAmount : hasRequest ? requestAmount : 0
-  const hasBaseline = baselineAmount > 0
-  const percent = hasUsage && hasBaseline ? Math.min(100, (usageAmount / baselineAmount) * 100) : 0
-  const requestPercent =
-    hasRequest && hasBaseline ? Math.min(100, (requestAmount / baselineAmount) * 100) : null
-  const label = resource === 'cpu' ? 'CPU' : localeCode === 'zh_CN' ? '内存' : 'Memory'
-  const usageLabel = formatPodResourceValue(resource, usageValue)
-  const unsetLabel = localeCode === 'zh_CN' ? '未设置' : 'Not set'
-  const missingLabel = localeCode === 'zh_CN' ? '暂无指标' : 'No metrics'
-  const requestLabel = hasRequest ? formatPodResourceValue(resource, requestValue) : unsetLabel
-  const limitLabel = hasLimit ? formatPodResourceValue(resource, limitValue) : unsetLabel
-  const usageText = localeCode === 'zh_CN' ? '使用' : 'Usage'
-  const requestText = localeCode === 'zh_CN' ? '请求' : 'Request'
-  const limitText = localeCode === 'zh_CN' ? '限制' : 'Limit'
-  const tone =
-    !hasUsage || !hasBaseline
-      ? 'unknown'
-      : hasLimit && usageAmount / limitAmount >= 0.9
-        ? 'danger'
-        : hasRequest && usageAmount > requestAmount
-          ? 'warning'
-          : 'success'
-  const statusText =
-    tone === 'danger'
-      ? localeCode === 'zh_CN'
-        ? '接近或达到限制'
-        : 'Near or above limit'
-      : tone === 'warning'
-        ? localeCode === 'zh_CN'
-          ? '超过请求'
-          : 'Above request'
-        : tone === 'success'
-          ? localeCode === 'zh_CN'
-            ? hasRequest
-              ? '请求以内'
-              : '低于限制的 90%'
-            : hasRequest
-              ? 'Within request'
-              : 'Below 90% of limit'
-          : ''
-  const baselineText = hasLimit
-    ? ''
-    : hasBaseline
-      ? localeCode === 'zh_CN'
-        ? '以请求为比例基准'
-        : 'Relative to request'
-      : localeCode === 'zh_CN'
-        ? '无比例基准'
-        : 'No comparison baseline'
-  const tooltipTitle = [
-    label,
-    `${usageText} ${hasUsage ? usageLabel : missingLabel}`,
-    `${requestText} ${requestLabel}`,
-    `${limitText} ${limitLabel}`,
-    baselineText,
-    statusText,
-  ]
-    .filter(Boolean)
-    .join(' · ')
-  const markerStyle = {
-    '--soha-pod-resource-usage-percent': `${percent}%`,
-    '--soha-pod-resource-request-percent': `${requestPercent ?? 0}%`,
-  } as CSSProperties
-
-  return (
-    <Tooltip title={tooltipTitle} placement="topLeft" trigger={['hover', 'focus', 'click']}>
-      <button
-        type="button"
-        className={`soha-pod-resource-limit-cell is-${tone}`}
-        aria-label={`${record.name} · ${tooltipTitle}`}
-      >
-        <span className="soha-pod-resource-value" aria-hidden>
-          {usageLabel}
-        </span>
-        <div className="soha-pod-resource-progress-wrap" style={markerStyle}>
-          <Progress
-            aria-hidden
-            percent={percent}
-            showInfo={false}
-            size={['100%', 4]}
-            strokeColor="var(--soha-pod-resource-fill)"
-            strokeLinecap="round"
-            railColor="var(--soha-fill-medium)"
-            styles={{
-              root: { display: 'flex', margin: 0, lineHeight: 0 },
-              rail: {
-                borderRadius: 'calc(var(--soha-radius-control) / 2)',
-                ...(!hasLimit
-                  ? {
-                      background:
-                        'linear-gradient(to right, var(--soha-fill-medium) 70%, transparent)',
-                    }
-                  : {}),
-              },
-              track: { borderRadius: 'calc(var(--soha-radius-control) / 2)', transition: 'none' },
-            }}
-          />
-          {requestPercent === null ? null : (
-            <span
-              className={`soha-pod-resource-marker is-request${hasUsage && usageAmount >= requestAmount ? ' is-passed' : ''}`}
-              aria-hidden
-            />
-          )}
-          {hasLimit ? (
-            <span
-              className={`soha-pod-resource-marker is-limit${hasUsage && usageAmount >= limitAmount ? ' is-passed' : ''}`}
-              aria-hidden
-            />
-          ) : null}
-        </div>
-      </button>
-    </Tooltip>
-  )
 }
 
 function renderPodNameCell(record: Pod, onClick: () => void) {
@@ -254,6 +106,8 @@ export function WorkloadsPodsPage() {
   const { t, localeCode } = useI18n()
   const { message, modal } = App.useApp()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const metricDesign = parsePodMetricDesign(searchParams.get('metricsDesign'))
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const permissionSnapshot = permissionSnapshotQuery.data?.data
@@ -543,34 +397,58 @@ export function WorkloadsPodsPage() {
       ),
     },
     {
-      title: 'CPU',
+      title:
+        metricDesign === 'capacity'
+          ? localeCode === 'zh_CN'
+            ? 'CPU 用量 / 限额'
+            : 'CPU usage / limit'
+          : 'CPU',
       key: 'cpu-resource',
-      width: 120,
+      width: podMetricColumnWidth(metricDesign),
       sorter: podSorter(
         (left, right) =>
           getPodResourceAmount('cpu', left.cpu) - getPodResourceAmount('cpu', right.cpu),
       ),
-      render: (_: unknown, record: Pod) =>
-        renderPodResourceLimitComparison(record, 'cpu', localeCode),
+      render: (_: unknown, record: Pod) => (
+        <PodResourceCell
+          pod={record}
+          resource="cpu"
+          localeCode={localeCode}
+          design={metricDesign}
+        />
+      ),
     },
     {
-      title: localeCode === 'zh_CN' ? '内存' : 'Memory',
+      title:
+        metricDesign === 'capacity'
+          ? localeCode === 'zh_CN'
+            ? '内存 用量 / 限额'
+            : 'Memory usage / limit'
+          : localeCode === 'zh_CN'
+            ? '内存'
+            : 'Memory',
       key: 'memory-resource',
-      width: 120,
+      width: podMetricColumnWidth(metricDesign),
       sorter: podSorter(
         (left, right) =>
           getPodResourceAmount('memory', left.memory) -
           getPodResourceAmount('memory', right.memory),
       ),
-      render: (_: unknown, record: Pod) =>
-        renderPodResourceLimitComparison(record, 'memory', localeCode),
+      render: (_: unknown, record: Pod) => (
+        <PodResourceCell
+          pod={record}
+          resource="memory"
+          localeCode={localeCode}
+          design={metricDesign}
+        />
+      ),
     },
     {
       fixed: 'right',
       title: localeCode === 'zh_CN' ? '操作' : 'Actions',
       dataIndex: 'name',
       key: 'actions',
-      width: 116,
+      width: 64,
       align: 'center',
       className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column`,
       onHeaderCell: () => ({
@@ -591,81 +469,98 @@ export function WorkloadsPodsPage() {
         const terminalLabel = localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'
         const deleteLabel = localeCode === 'zh_CN' ? '删除 Pod' : 'Delete pod'
 
-        return (
-          <Space size={4} className="soha-deployment-action-cell">
-            {canOpenLogs ? (
-              <ManagementIconButton
-                aria-label={logLabel}
-                disabled={logsDisabled}
-                icon={<FileTextOutlined />}
-                tooltip={capabilityActionTooltip(logLabel, podLogsCapability)}
-                onClick={() => {
-                  if (!clusterId) return
-                  openSession({
-                    clusterId,
-                    kind: 'logs',
-                    namespace: record.namespace,
-                    podName: record.name,
-                    streamingDisabledReason:
-                      podLogsCapability.status === 'partial' ? podLogsCapability.reason : undefined,
-                  })
-                }}
-              />
-            ) : null}
-            {canOpenTerminal ? (
-              <ManagementIconButton
-                aria-label={terminalLabel}
-                disabled={terminalDisabled}
-                icon={<CodeOutlined />}
-                tooltip={capabilityActionTooltip(terminalLabel, podExecCapability)}
-                onClick={() => {
-                  if (!clusterId) return
-                  openSession({
-                    clusterId,
-                    kind: 'terminal',
-                    namespace: record.namespace,
-                    podName: record.name,
-                    shell: '/bin/sh',
-                  })
-                }}
-              />
-            ) : null}
-            {canDeletePod ? (
-              <ManagementIconButton
-                danger
-                aria-label={deleteLabel}
-                disabled={platformWriteBlocked || podDeleteDisabled}
-                icon={<DeleteOutlined />}
-                loading={deletePodMutation.isPending}
-                tooltip={capabilityActionTooltip(deleteLabel, podDeleteCapability)}
-                onClick={() =>
-                  modal.confirm({
-                    title:
-                      localeCode === 'zh_CN'
-                        ? `确认删除 Pod ${record.name}？`
-                        : `Delete pod ${record.name}?`,
-                    content:
-                      localeCode === 'zh_CN'
-                        ? '独立 Pod 会直接消失；受控制器管理的 Pod 可能会自动创建替代实例。'
-                        : 'Standalone pods are removed. A controller-managed pod may be replaced automatically.',
-                    okText: localeCode === 'zh_CN' ? '删除' : 'Delete',
-                    cancelText: localeCode === 'zh_CN' ? '取消' : 'Cancel',
-                    okButtonProps: { danger: true },
-                    onOk: async () => {
-                      try {
-                        await deletePodMutation.mutateAsync(podTargetFromRecord(clusterId, record))
-                        void message.success(localeCode === 'zh_CN' ? 'Pod 已删除' : 'Pod deleted')
-                        void podsQuery.refetch()
-                      } catch (error) {
-                        void message.error(error instanceof Error ? error.message : String(error))
-                        throw error
-                      }
-                    },
-                  })
+        const actionLabel = (label: string, reason?: string) => (
+          <span className="soha-pod-action-menu-label">
+            <span>{label}</span>
+            {reason ? <span className="soha-pod-action-menu-reason">{reason}</span> : null}
+          </span>
+        )
+        const items: MenuProps['items'] = []
+        const actions: Record<string, () => void> = {}
+        if (canOpenLogs) {
+          items.push({
+            key: 'logs',
+            label: actionLabel(logLabel, podLogsCapability.reason),
+            icon: <FileTextOutlined aria-hidden />,
+            disabled: logsDisabled,
+          })
+          actions.logs = () => {
+            if (!clusterId) return
+            openSession({
+              clusterId,
+              kind: 'logs',
+              namespace: record.namespace,
+              podName: record.name,
+              streamingDisabledReason:
+                podLogsCapability.status === 'partial' ? podLogsCapability.reason : undefined,
+            })
+          }
+        }
+        if (canOpenTerminal) {
+          items.push({
+            key: 'terminal',
+            label: actionLabel(terminalLabel, podExecCapability.reason),
+            icon: <CodeOutlined aria-hidden />,
+            disabled: terminalDisabled,
+          })
+          actions.terminal = () => {
+            if (!clusterId) return
+            openSession({
+              clusterId,
+              kind: 'terminal',
+              namespace: record.namespace,
+              podName: record.name,
+              shell: '/bin/sh',
+            })
+          }
+        }
+        if (canDeletePod) {
+          if (items.length) items.push({ type: 'divider', key: 'mutation-divider' })
+          items.push({
+            key: 'delete',
+            label: actionLabel(deleteLabel, podDeleteCapability.reason),
+            danger: true,
+            disabled: platformWriteBlocked || podDeleteDisabled || deletePodMutation.isPending,
+            icon: deletePodMutation.isPending ? (
+              <LoadingOutlined aria-hidden />
+            ) : (
+              <DeleteOutlined aria-hidden />
+            ),
+          })
+          actions.delete = async () => {
+            // Await mode keeps rejected onOk feedback local to the open confirmation.
+            await modal.confirm({
+              title:
+                localeCode === 'zh_CN'
+                  ? `确认删除 Pod ${record.name}？`
+                  : `Delete pod ${record.name}?`,
+              content:
+                localeCode === 'zh_CN'
+                  ? '独立 Pod 会直接消失；受控制器管理的 Pod 可能会自动创建替代实例。'
+                  : 'Standalone pods are removed. A controller-managed pod may be replaced automatically.',
+              okText: localeCode === 'zh_CN' ? '删除' : 'Delete',
+              cancelText: localeCode === 'zh_CN' ? '取消' : 'Cancel',
+              okButtonProps: { danger: true },
+              onOk: async () => {
+                try {
+                  await deletePodMutation.mutateAsync(podTargetFromRecord(clusterId, record))
+                  void message.success(localeCode === 'zh_CN' ? 'Pod 已删除' : 'Pod deleted')
+                  void podsQuery.refetch()
+                } catch (error) {
+                  void message.error(error instanceof Error ? error.message : String(error))
+                  throw error
                 }
-              />
-            ) : null}
-          </Space>
+              },
+            })
+          }
+        }
+        return (
+          <PodActionsMenu
+            name={record.name}
+            localeCode={localeCode}
+            items={items}
+            onSelect={(key) => actions[key]?.()}
+          />
         )
       },
     },
@@ -879,6 +774,33 @@ export function WorkloadsPodsPage() {
       {batchDeletePodsMutation.feedback}
 
       {podQueryPanel}
+      {metricDesign !== 'legacy' ? (
+        <div
+          className="soha-pod-metric-design-preview"
+          role="group"
+          aria-label={localeCode === 'zh_CN' ? '指标展示方案' : 'Metric design preview'}
+        >
+          <Text>{localeCode === 'zh_CN' ? '指标方案' : 'Metric design'}</Text>
+          <Segmented
+            size="small"
+            name="pod-metric-design"
+            value={metricDesign}
+            options={[
+              { value: 'values', label: localeCode === 'zh_CN' ? 'A 数值' : 'A Values' },
+              { value: 'inline', label: localeCode === 'zh_CN' ? 'B 微条' : 'B Bar' },
+              {
+                value: 'capacity',
+                label: localeCode === 'zh_CN' ? 'C 用量/限额' : 'C Used/limit',
+              },
+            ]}
+            onChange={(value) => {
+              const next = new URLSearchParams(searchParams)
+              next.set('metricsDesign', String(value))
+              setSearchParams(next, { replace: true })
+            }}
+          />
+        </div>
+      ) : null}
       <AdminTable
         title={
           <span className="soha-pod-list-count" role="status" aria-live="polite">

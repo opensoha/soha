@@ -64,8 +64,8 @@ function makePods(count = 2000): Pod[] {
   }))
 }
 
-async function setup(context: BrowserContext, page: Page, readonly = false) {
-  const state = { pods: makePods(), status: 200, reads: 0 }
+async function setup(context: BrowserContext, page: Page, readonly = false, withSessions = false) {
+  const state = { pods: makePods(), status: 200, reads: 0, deletes: 0 }
   await context.addInitScript(() =>
     localStorage.setItem(
       'soha-scope',
@@ -82,6 +82,7 @@ async function setup(context: BrowserContext, page: Page, readonly = false) {
       body.data.permissionKeys!.push(
         'platform.pods.view',
         ...(readonly ? [] : ['platform.pods.delete']),
+        ...(withSessions ? ['platform.pods.logs', 'platform.pods.exec'] : []),
       )
       body.data.visibleMenuIds!.push('workloads-pods')
       body.data.visibleMenus!.push({
@@ -115,6 +116,13 @@ async function setup(context: BrowserContext, page: Page, readonly = false) {
               direct: { status: 'available' },
               agent: { status: 'partial' },
             },
+            ...(withSessions
+              ? ['pod.logs', 'pod.exec'].map((key) => ({
+                  key,
+                  direct: { status: 'available' },
+                  agent: { status: 'partial' },
+                }))
+              : []),
           ],
         },
       }
@@ -126,6 +134,18 @@ async function setup(context: BrowserContext, page: Page, readonly = false) {
             status: state.status,
             body: { error: { code: 'test_read_failed', message: 'Synthetic read failure' } },
           }
+    }
+    if (
+      withSessions &&
+      url.pathname === '/api/v1/clusters/cluster-a/workloads/pods/pod-0000' &&
+      method === 'DELETE' &&
+      url.searchParams.get('namespace') === 'monitoring'
+    ) {
+      state.deletes += 1
+      return {
+        status: 500,
+        body: { error: { code: 'test_delete_failed', message: 'Synthetic delete rejection' } },
+      }
     }
     if (url.pathname === '/api/v1/auth/stream-ticket' && method === 'POST')
       return {
@@ -243,8 +263,12 @@ test('init and app states, overflow details, keyboard, QoS sorting and older API
   await expect(detail).toContainText('初始化容器 init-6：正常完成')
   await expect(detail).toContainText('容器 app：运行中，已就绪')
   await detail.press('Escape')
+  await expect(detail).toBeHidden()
+  await expect(cell()).toBeFocused()
 
   await search(page).clear()
+  await expect(search(page)).toHaveValue('')
+  await expect(page.getByRole('status').filter({ hasText: '2000 个 Pods' })).toBeVisible()
   await page.getByRole('columnheader', { name: 'QoS', exact: true }).click()
   await expect(rows(page).first()).toContainText('BestEffort')
   state.pods = [{ ...state.pods[0], containerStatuses: undefined, qosClass: undefined }]
@@ -378,7 +402,8 @@ for (const theme of ['light', 'dark']) {
           }),
       )
       .toBe(true)
-    await expect(page.getByRole('button', { name: '删除 Pod', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^更多操作：/ })).toHaveCount(0)
+    await expect(page.getByRole('menuitem', { name: '删除 Pod', exact: true })).toHaveCount(0)
     for (const width of [1440, 1024, 768, 320]) {
       await page.setViewportSize({ width, height: 900 })
       await expect(holder(page)).toBeVisible()
@@ -400,6 +425,147 @@ for (const theme of ['light', 'dark']) {
       page.getByRole('status').filter({ hasText: '匹配 0 / 共 2000 个 Pods' }),
     ).toBeVisible()
     await expect(page.getByText('没有匹配的 Pods', { exact: true })).toBeVisible()
+    verifyBrowserEvidence(evidence)
+  })
+}
+
+test('click-only Pods action menu supports keyboard, cancellation and failed delete feedback', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await setup(context, page, false, true)
+  state.pods = state.pods
+    .slice(0, 2)
+    .map((pod) => ({ ...pod, allowedActions: ['get', 'logs', 'exec', 'delete'] }))
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(rows(page)).toHaveCount(2)
+  const more = page.getByRole('button', { name: '更多操作：pod-0000', exact: true })
+  await expect(more).toHaveAttribute('aria-haspopup', 'menu')
+  await more.hover()
+  const menu = page.getByRole('menu', { name: 'Pod 操作：pod-0000', exact: true })
+  await expect(menu).toHaveCount(0)
+  await more.press('Enter')
+  await expect(menu).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: '打开日志会话', exact: true })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: '打开终端会话', exact: true })).toBeVisible()
+  await expect(more).toHaveAttribute('aria-expanded', 'true')
+  await menu.press('Escape')
+  await expect(menu).toBeHidden()
+  await expect(more).toBeFocused()
+  await expect(more).toHaveAttribute('aria-expanded', 'false')
+  await more.press('ArrowDown')
+  await expect(menu).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: '打开日志会话', exact: true })).toBeFocused()
+  await menu.press('Shift+Tab')
+  await expect(menu).toBeHidden()
+  await expect(
+    rows(page)
+      .first()
+      .getByRole('button', { name: /^pod-0000 · 内存 ·/ }),
+  ).toBeFocused()
+  await more.press('ArrowDown')
+  await expect(menu).toBeVisible()
+  await menu.getByRole('menuitem', { name: '删除 Pod', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '确认删除 Pod pod-0000？', exact: true })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
+  await expect(dialog).toBeHidden()
+  expect(state.deletes).toBe(0)
+  await expect(more).toBeFocused()
+  await more.click()
+  await menu.getByRole('menuitem', { name: '删除 Pod', exact: true }).click()
+  await dialog.getByRole('button', { name: /^删\s*除$/ }).click()
+  await expect(page.getByText('Synthetic delete rejection', { exact: true }).first()).toBeVisible()
+  await expect(dialog).toBeVisible()
+  await expect(rows(page)).toHaveCount(2)
+  expect(state.deletes).toBe(1)
+  await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
+  verifyBrowserEvidence(evidence)
+})
+
+for (const theme of ['light', 'dark']) {
+  test(`three metric designs keep data, selection and filters (${theme})`, async ({
+    context,
+    page,
+  }) => {
+    const { state, evidence } = await setup(context, page)
+    state.pods = state.pods.slice(0, 2).map((pod) => ({
+      ...pod,
+      cpu: '34m',
+      memory: '146Mi',
+      requests: { cpu: '100m', memory: '200Mi' },
+      limits: { memory: '1Gi' },
+    }))
+    await page.goto('/workloads/pods?metricsDesign=values&reviewContext=task117')
+    await expect(rows(page)).toHaveCount(2)
+    await page.getByRole('switch').click()
+    if (theme === 'dark') await page.getByLabel('切换到深色模式').click()
+    await search(page).fill('pod-0000')
+    await expect(rows(page)).toHaveCount(1)
+    await rows(page).first().getByRole('checkbox').check()
+    const readsBefore = state.reads
+    await page.getByRole('radio', { name: 'A 数值', exact: true }).press('ArrowRight')
+    await expect(page).toHaveURL(/metricsDesign=inline/)
+    for (const [design, label] of [
+      ['values', 'A 数值'],
+      ['inline', 'B 微条'],
+      ['capacity', 'C 用量/限额'],
+    ]) {
+      await page.getByText(label, { exact: true }).click()
+      await expect(page).toHaveURL(new RegExp(`metricsDesign=${design}`))
+      expect(new URL(page.url()).searchParams.get('reviewContext')).toBe('task117')
+      await expect(search(page)).toHaveValue('pod-0000')
+      await expect(rows(page)).toHaveCount(1)
+      await expect(rows(page).first().getByRole('checkbox')).toBeChecked()
+      const cells = page.locator(`.soha-pod-resource-limit-cell[data-metric-design="${design}"]`)
+      await expect(cells).toHaveCount(2)
+      await expect(page.getByRole('tooltip')).toBeHidden()
+      await expect(cells.locator('.soha-pod-resource-value').first()).toHaveText('34m')
+      await expect(cells.locator('.soha-pod-resource-marker')).toHaveCount(0)
+      await expect(cells.locator('.ant-progress')).toHaveCount(design === 'inline' ? 2 : 0)
+      if (design === 'capacity')
+        await expect(cells.locator('.soha-pod-resource-limit').first()).toHaveText('未设置')
+      for (const width of [1440, 768, 320]) {
+        await page.setViewportSize({ width, height: 900 })
+        expect(
+          await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
+          `${design} page overflow at ${width}`,
+        ).toBe(false)
+        await expect(page.getByRole('group', { name: '指标展示方案' })).toBeVisible()
+      }
+      await page.setViewportSize({ width: 1440, height: 900 })
+      const cpu = page.getByRole('button', { name: /^pod-0000 · CPU ·/ })
+      await cpu.focus()
+      const tooltip = page.getByRole('tooltip', {
+        name: 'CPU · 使用 34m · 请求 100m · 限制 未设置 · 以请求为比例基准 · 请求以内',
+        exact: true,
+      })
+      await expect(tooltip).toBeVisible()
+      await expect
+        .poll(async () => {
+          const box = await tooltip.boundingBox()
+          return Boolean(box && box.x >= 0 && box.x + box.width <= 1440)
+        })
+        .toBe(true)
+      const fits = await cells.evaluateAll((nodes) =>
+        nodes.every((node) => {
+          const cell = node.getBoundingClientRect()
+          return Array.from(node.children).every((child) => {
+            const box = child.getBoundingClientRect()
+            return (
+              box.left >= cell.left &&
+              box.right <= cell.right &&
+              box.top >= cell.top &&
+              box.bottom <= cell.bottom
+            )
+          })
+        }),
+      )
+      expect(fits, `${design} contents fit the metric button`).toBe(true)
+      await page.getByText(label, { exact: true }).click()
+      await expect(tooltip).toBeHidden()
+    }
+    expect(state.reads).toBe(readsBefore)
     verifyBrowserEvidence(evidence)
   })
 }

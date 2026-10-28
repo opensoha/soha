@@ -253,6 +253,29 @@ async function flushAsyncWork() {
   })
 }
 
+async function openPodActions(container: HTMLElement, name: string) {
+  const trigger = container.querySelector(`button[aria-label="更多操作：${name}"]`)
+  expect(trigger).toBeInstanceOf(HTMLButtonElement)
+  await act(async () => {
+    trigger?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(0)
+  })
+  await flushAsyncWork()
+  const menu = document.body.querySelector('[role="menu"]')!
+  expect(menu).toBeTruthy()
+  return menu
+}
+
+async function selectPodAction(container: HTMLElement, name: string, label: string) {
+  const menu = await openPodActions(container, name)
+  const item = Array.from(menu.querySelectorAll('[role="menuitem"]')).find((node) =>
+    node.textContent?.includes(label),
+  )
+  expect(item).toBeTruthy()
+  await act(async () => item?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+  await flushAsyncWork()
+}
+
 async function renderWithProviders(node: ReactNode, route = '/workloads/pods') {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -532,6 +555,55 @@ describe('workloads pods page refresh controls', () => {
     }
   })
 
+  it.each(['values', 'inline', 'capacity'])(
+    'previews %s without changing values or missing-data semantics',
+    async (design) => {
+      const base = {
+        namespace: 'monitoring',
+        phase: 'Running',
+        readyContainers: '1/1',
+        restarts: 0,
+        ageSeconds: 60,
+      }
+      setResponses({
+        '/clusters/cluster-a/workloads/pods?namespace=monitoring': [
+          {
+            ...base,
+            name: 'zero',
+            cpu: '0',
+            memory: '0',
+            requests: { cpu: '100m', memory: '128Mi' },
+            limits: { memory: '256Mi' },
+          },
+          { ...base, name: 'missing' },
+        ],
+      })
+      const container = await renderWithProviders(
+        <WorkloadsPodsPage />,
+        `/workloads/pods?metricsDesign=${design}`,
+      )
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0)
+      })
+      await flushAsyncWork()
+      const cells = Array.from(container.querySelectorAll('.soha-pod-resource-limit-cell'))
+      expect(cells).toHaveLength(4)
+      expect(cells.every((cell) => cell.getAttribute('data-metric-design') === design)).toBe(true)
+      const zeroCPU = container.querySelector('[aria-label^="zero · CPU"]')!
+      const missingCPU = container.querySelector('[aria-label^="missing · CPU"]')!
+      expect(zeroCPU.querySelector('.soha-pod-resource-value')?.textContent).toBe('0m')
+      expect(missingCPU.querySelector('.soha-pod-resource-value')?.textContent).toBe('—')
+      expect(missingCPU.getAttribute('aria-label')).toContain('暂无指标')
+      expect(zeroCPU.getAttribute('aria-label')).toContain('请求 100m')
+      expect(zeroCPU.getAttribute('aria-label')).toContain('限制 未设置')
+      expect(zeroCPU.querySelectorAll('.ant-progress')).toHaveLength(design === 'inline' ? 1 : 0)
+      expect(container.querySelectorAll('.soha-pod-resource-marker')).toHaveLength(0)
+      if (design === 'capacity')
+        expect(zeroCPU.querySelector('.soha-pod-resource-limit')?.textContent).toBe('未设置')
+      expect(container.querySelector('[role="group"][aria-label="指标展示方案"]')).not.toBeNull()
+    },
+  )
+
   it('uses actual request and limit thresholds without turning missing metrics into zero', async () => {
     const cases = [
       {
@@ -728,17 +800,13 @@ describe('workloads pods page refresh controls', () => {
       await Promise.resolve()
     })
     await flushAsyncWork()
-    const logsButton = container.querySelector('button[aria-label="打开日志会话"]')
-    const terminalButton = container.querySelector('button[aria-label="打开终端会话"]')
-    const deleteButton = container.querySelector('button[aria-label="删除 Pod"]')
-
-    expect(logsButton).toBeInstanceOf(HTMLButtonElement)
-    expect(terminalButton).toBeInstanceOf(HTMLButtonElement)
-    expect(deleteButton).toBeInstanceOf(HTMLButtonElement)
-    await act(async () => logsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await act(async () => terminalButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await act(async () => deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await flushAsyncWork()
+    expect(container.querySelector('button[aria-label="打开日志会话"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="打开终端会话"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="删除 Pod"]')).toBeNull()
+    expect(document.body.querySelector('[role="menu"]')).toBeNull()
+    await selectPodAction(container, 'prometheus-0', '打开日志会话')
+    await selectPodAction(container, 'prometheus-0', '打开终端会话')
+    await selectPodAction(container, 'prometheus-0', '删除 Pod')
 
     expect(openSessionMock).toHaveBeenNthCalledWith(1, {
       clusterId: 'cluster-a',
@@ -756,7 +824,11 @@ describe('workloads pods page refresh controls', () => {
     })
 
     expect(document.body.textContent).toContain('确认删除 Pod prometheus-0？')
-    expect(container.querySelector('button[aria-label="更多 Pod 操作"]')).toBeNull()
+    expect(
+      container
+        .querySelector('button[aria-label="更多操作：prometheus-0"]')
+        ?.getAttribute('aria-haspopup'),
+    ).toBe('menu')
   })
 
   it('disables pod delete when agent mode does not support it', async () => {
@@ -803,10 +875,15 @@ describe('workloads pods page refresh controls', () => {
     })
     await flushAsyncWork()
 
-    expect(
-      (container.querySelector('button[aria-label="删除 Pod"]') as HTMLButtonElement | null)
-        ?.disabled,
-    ).toBe(true)
+    const menu = await openPodActions(container, 'failed-pod')
+    const deleteItem = Array.from(menu.querySelectorAll('[role="menuitem"]')).find((item) =>
+      item.textContent?.includes('删除 Pod'),
+    )
+    expect(deleteItem?.getAttribute('aria-disabled')).toBe('true')
+    expect(deleteItem?.textContent).toContain(
+      '升级后的 Agent 支持工作负载快捷操作、Pod 删除以及 CronJob 暂停和恢复。',
+    )
+    await act(async () => deleteItem?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     expect(container.querySelector('input[aria-label="select-monitoring/failed-pod"]')).toBeNull()
     expect(container.textContent).not.toContain('批量删除')
     expect(apiDeleteMock).not.toHaveBeenCalled()
@@ -823,6 +900,7 @@ describe('workloads pods page refresh controls', () => {
     await flushAsyncWork()
 
     expect(container.querySelector('button[aria-label="删除 Pod"]')).toBeNull()
+    expect(container.querySelector('button[aria-haspopup="menu"]')).toBeNull()
 
     const checkbox = container.querySelector('input[aria-label="select-monitoring/prometheus-0"]')
     await act(async () => {
@@ -860,6 +938,7 @@ describe('workloads pods page refresh controls', () => {
     await flushAsyncWork()
 
     expect(container.querySelector('button[aria-label="删除 Pod"]')).toBeNull()
+    expect(container.querySelector('button[aria-haspopup="menu"]')).toBeNull()
   })
 
   it('limits concurrent pod batch delete requests', async () => {

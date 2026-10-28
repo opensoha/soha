@@ -809,7 +809,7 @@
 }
 
 .soha-pod-actions-column.soha-table-actions-column {
-  --soha-table-actions-column-width: 116px;
+  --soha-table-actions-column-width: 64px;
 }
 
 .soha-deployments-table .soha-workload-actions-column {
@@ -918,4 +918,75 @@
 
 .soha-workload-overview-events.ant-card .ant-card-body {
   padding: 18px;
+}
+
+.soha-pod-metric-design-preview {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.soha-pod-resource-limit-cell.design-values {
+  display: flex;
+  justify-content: flex-end;
+  width: 72px;
+}
+
+.soha-pod-resource-limit-cell.design-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  width: 128px;
+}
+
+.soha-pod-resource-limit-cell.design-capacity {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 136px;
+}
+
+.soha-pod-resource-limit,
+.soha-pod-resource-separator {
+  color: var(--soha-text-secondary);
+  font-size: var(--soha-font-size-supporting);
+  line-height: var(--soha-line-height-supporting);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.soha-pod-resource-limit-cell.design-values.is-danger .soha-pod-resource-value,
+.soha-pod-resource-limit-cell.design-capacity.is-danger .soha-pod-resource-value {
+  color: var(--soha-resource-danger);
+}
+
+.soha-pod-action-menu-label {
+  display: grid;
+  gap: 2px;
+  max-width: 260px;
+}
+
+.soha-pod-action-menu-reason {
+  overflow-wrap: anywhere;
+  font-size: var(--soha-font-size-supporting);
+  line-height: var(--soha-line-height-supporting);
+  white-space: normal;
+}
+
+@media (pointer: coarse) {
+  .soha-pod-actions-trigger {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+.soha-pod-resource-limit-cell.design-inline.is-success {
+  --soha-pod-resource-fill: var(--soha-primary);
+}
+
+.soha-pod-resource-limit-cell.design-inline.is-warning {
+  --soha-pod-resource-fill: var(--soha-warning);
 }

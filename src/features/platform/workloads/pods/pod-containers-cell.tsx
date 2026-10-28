@@ -1,5 +1,5 @@
 import { Popover } from 'antd'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PodContainerStatus } from './types'
 import { containerLabel, containerTone } from './container-status'
 
@@ -15,6 +15,12 @@ export function PodContainersCell({
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const detailRef = useRef<HTMLDivElement>(null)
+  const focusFrame = useRef(0)
+  useEffect(() => () => cancelAnimationFrame(focusFrame.current), [])
+  const closeDetails = () => {
+    cancelAnimationFrame(focusFrame.current)
+    setOpen(false)
+  }
   const label = zh ? '容器状态' : 'Container states'
   const summary = `${zh ? '常规容器就绪' : 'App containers ready'} ${readyContainers || '—'}`
   const details = (
@@ -27,8 +33,9 @@ export function PodContainersCell({
       onKeyDown={(event) => {
         if (event.key !== 'Escape') return
         event.preventDefault()
+        event.stopPropagation()
+        closeDetails()
         buttonRef.current?.focus()
-        setOpen(false)
       }}
     >
       <div>{summary}</div>
@@ -45,7 +52,15 @@ export function PodContainersCell({
     </div>
   )
   return (
-    <Popover open={open} onOpenChange={setOpen} trigger={['hover', 'click']} content={details}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) cancelAnimationFrame(focusFrame.current)
+        setOpen(nextOpen)
+      }}
+      trigger={['hover', 'click']}
+      content={details}
+    >
       <button
         ref={buttonRef}
         type="button"
@@ -55,13 +70,16 @@ export function PodContainersCell({
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault()
-            setOpen(false)
+            closeDetails()
             return
           }
           if (!['Enter', ' '].includes(event.key)) return
           event.preventDefault()
           setOpen(true)
-          requestAnimationFrame(() => detailRef.current?.focus())
+          cancelAnimationFrame(focusFrame.current)
+          focusFrame.current = requestAnimationFrame(() => {
+            if (document.activeElement === buttonRef.current) detailRef.current?.focus()
+          })
         }}
       >
         {statuses?.length ? (
