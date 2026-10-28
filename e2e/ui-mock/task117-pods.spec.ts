@@ -65,7 +65,22 @@ function makePods(count = 2000): Pod[] {
 }
 
 async function setup(context: BrowserContext, page: Page, readonly = false, withSessions = false) {
-  const state = { pods: makePods(), status: 200, reads: 0, deletes: 0 }
+  const state = {
+    pods: makePods(),
+    status: 200,
+    reads: 0,
+    deletes: 0,
+    terminalTickets: 0,
+    terminalRows: [] as number[],
+  }
+  if (withSessions)
+    await page.routeWebSocket('**/workloads/pods/pod-0000/terminal?*', (socket) => {
+      socket.onMessage((message) => {
+        const value = JSON.parse(String(message))
+        if (value.type === 'resize') state.terminalRows.push(value.rows)
+      })
+      socket.send(JSON.stringify({ type: 'stdout', data: 'Synthetic terminal ready\r\n' }))
+    })
   await context.addInitScript(() =>
     localStorage.setItem(
       'soha-scope',
@@ -75,7 +90,7 @@ async function setup(context: BrowserContext, page: Page, readonly = false, with
       }),
     ),
   )
-  const evidence = await installMocks(context, page, (url, method) => {
+  const evidence = await installMocks(context, page, (url, method, request) => {
     if (url.pathname === '/api/v1/access/permission-snapshot') {
       const body = baselineResponse(url.pathname)!
       if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
@@ -137,6 +152,41 @@ async function setup(context: BrowserContext, page: Page, readonly = false, with
     }
     if (
       withSessions &&
+      method === 'GET' &&
+      url.pathname === '/api/v1/clusters/cluster-a/workloads/pods/pod-0000/detail'
+    ) {
+      return {
+        body: {
+          data: {
+            ...state.pods[0],
+            allowedActions: ['get', 'logs', 'exec', 'delete'],
+            containers: [{ name: 'app', role: 'main', image: 'synthetic/app', ready: true }],
+          },
+        },
+      }
+    }
+    if (
+      withSessions &&
+      method === 'GET' &&
+      url.pathname === '/api/v1/clusters/cluster-a/workloads/pods/pod-0000/logs'
+    ) {
+      return {
+        body: {
+          data: {
+            podName: 'pod-0000',
+            namespace: 'monitoring',
+            container: 'app',
+            content: Array.from({ length: 600 }, (_, index) => `Synthetic log line ${index}`).join(
+              '\n',
+            ),
+            contentBytes: 14000,
+            truncated: false,
+          },
+        },
+      }
+    }
+    if (
+      withSessions &&
       url.pathname === '/api/v1/clusters/cluster-a/workloads/pods/pod-0000' &&
       method === 'DELETE' &&
       url.searchParams.get('namespace') === 'monitoring'
@@ -147,11 +197,20 @@ async function setup(context: BrowserContext, page: Page, readonly = false, with
         body: { error: { code: 'test_delete_failed', message: 'Synthetic delete rejection' } },
       }
     }
-    if (url.pathname === '/api/v1/auth/stream-ticket' && method === 'POST')
+    if (url.pathname === '/api/v1/auth/stream-ticket' && method === 'POST') {
+      if (withSessions && request.postDataJSON()?.path?.endsWith('/terminal')) {
+        state.terminalTickets += 1
+        return {
+          body: {
+            data: { ticket: 'synthetic-terminal-ticket', expiresAt: '2099-01-01T00:00:00Z' },
+          },
+        }
+      }
       return {
         status: 503,
         body: { error: { code: 'unavailable', message: 'Synthetic polling mode' } },
       }
+    }
     return undefined
   })
   await page.goto('/workloads/pods')
@@ -553,11 +612,9 @@ for (const theme of ['light', 'dark']) {
     await rows(page).first().getByRole('checkbox').check()
     const cpu = page.getByRole('button', { name: /^pod-0000 · CPU ·/ })
     await cpu.focus()
-    const tooltip = page.getByRole('tooltip', {
-      name: 'CPU · 使用 2m · 请求 100m · 限制 未设置 · 以请求为比例基准 · 请求以内',
-      exact: true,
-    })
+    const tooltip = page.getByRole('tooltip')
     await expect(tooltip).toBeVisible()
+    await expect(tooltip.locator('dd')).toHaveText(['2m', '100m', '未设置'])
     await expect
       .poll(async () => {
         const box = await tooltip.boundingBox()
@@ -568,3 +625,100 @@ for (const theme of ['light', 'dark']) {
     verifyBrowserEvidence(evidence)
   })
 }
+
+test('maximized session dock fills logs and terminal and keeps resize continuity', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await setup(context, page, false, true)
+  state.pods = state.pods
+    .slice(0, 2)
+    .map((pod) => ({ ...pod, allowedActions: ['get', 'logs', 'exec', 'delete'] }))
+  await page.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect(rows(page)).toHaveCount(2)
+  const more = page.getByRole('button', { name: '更多操作：pod-0000', exact: true })
+  const menu = page.getByRole('menu', { name: 'Pod 操作：pod-0000', exact: true })
+  await more.click()
+  await menu.getByRole('menuitem', { name: '打开日志会话', exact: true }).click()
+  const dock = page.getByRole('region', { name: '实时会话', exact: true })
+  await expect(dock).toBeVisible()
+  await expect(dock.locator('.soha-log-shell')).toContainText('Synthetic log line')
+  await dock.getByRole('button', { name: '最大化实时会话', exact: true }).click()
+  const fits = async (selector: string) => {
+    await expect
+      .poll(() =>
+        dock.evaluate((node, selector) => {
+          const body = node
+            .querySelector('.soha-realtime-session-dock__body')!
+            .getBoundingClientRect()
+          const panel = Array.from(node.querySelectorAll('[role="tabpanel"]')).find(
+            (item) => item.getAttribute('aria-hidden') === 'false',
+          )!
+          const pane = panel.getBoundingClientRect()
+          const shell = panel.querySelector(selector)!.getBoundingClientRect()
+          const toolbar = panel.querySelector('.soha-terminal-toolbar')!.getBoundingClientRect()
+          const rect = node.getBoundingClientRect()
+          return {
+            bodyHeight: body.height,
+            paneHeight: pane.height,
+            shellHeight: shell.height,
+            bottomGap: body.bottom - shell.bottom,
+            fits:
+              Math.abs(rect.height - window.innerHeight) < 2 &&
+              pane.height > body.height - 50 &&
+              shell.height > body.height - toolbar.height - 120 &&
+              shell.bottom <= body.bottom + 1 &&
+              body.bottom - shell.bottom < 30,
+          }
+        }, selector),
+      )
+      .toMatchObject({ fits: true })
+  }
+  for (const viewport of [
+    { width: 1367, height: 1511 },
+    { width: 1440, height: 900 },
+    { width: 390, height: 700 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await fits('.soha-log-shell')
+  }
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await dock.getByRole('button', { name: '收起实时会话', exact: true }).click()
+  await more.click()
+  await menu.getByRole('menuitem', { name: '打开终端会话', exact: true }).click()
+  await expect(dock.locator('.soha-terminal-shell .xterm')).toBeVisible()
+  await dock.getByRole('button', { name: '最大化实时会话', exact: true }).click()
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 390, height: 700 },
+    { width: 1367, height: 1511 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await fits('.soha-terminal-shell')
+    await expect.poll(() => state.terminalRows.length).toBeGreaterThan(0)
+    const screen = dock.locator('.soha-terminal-shell .xterm-screen')
+    await expect
+      .poll(async () => {
+        const box = await screen.boundingBox()
+        const shell = await dock.locator('.soha-terminal-shell-inner').boundingBox()
+        return Boolean(
+          box && shell && box.height > shell.height - 36 && box.height <= shell.height + 1,
+        )
+      })
+      .toBe(true)
+  }
+  await expect.poll(() => new Set(state.terminalRows).size).toBeGreaterThan(1)
+  const maximizedRows = Math.max(...state.terminalRows)
+  expect(state.terminalTickets).toBe(1)
+  await dock.getByRole('button', { name: '还原实时会话', exact: true }).click()
+  await expect(dock).not.toHaveClass(/is-maximized/)
+  await expect
+    .poll(async () => {
+      const box = await dock.boundingBox()
+      return box?.height ?? 0
+    })
+    .toBeLessThan(1511)
+  await expect.poll(() => state.terminalRows.at(-1) ?? maximizedRows).toBeLessThan(maximizedRows)
+  expect(state.terminalTickets).toBe(1)
+  verifyBrowserEvidence(evidence)
+})

@@ -105,6 +105,33 @@ export function PodResourceCell({
   ]
     .filter(Boolean)
     .join(' · ')
+  const tooltipContent = (
+    <div className="soha-pod-resource-tooltip">
+      <div className="soha-pod-resource-tooltip__header">
+        <strong>{label}</strong>
+        <span className={`soha-pod-resource-tooltip__status is-${tone}`}>
+          {statusText || (hasUsage ? baselineText : missingLabel)}
+        </span>
+      </div>
+      <dl className="soha-pod-resource-tooltip__facts">
+        <div className="is-usage">
+          <dt>{localeCode === 'zh_CN' ? '实际用量' : 'Usage'}</dt>
+          <dd>{hasUsage ? usageLabel : missingLabel}</dd>
+        </div>
+        <div>
+          <dt>{requestText}</dt>
+          <dd>{requestLabel}</dd>
+        </div>
+        <div>
+          <dt>{limitText}</dt>
+          <dd>{limitLabel}</dd>
+        </div>
+      </dl>
+      <div className="soha-pod-resource-tooltip__basis">
+        {baselineText || (localeCode === 'zh_CN' ? '以限额为比例基准' : 'Relative to limit')}
+      </div>
+    </div>
+  )
   const rail = (
     <div className="soha-pod-resource-progress-wrap">
       <Progress
@@ -125,7 +152,16 @@ export function PodResourceCell({
   )
 
   return (
-    <Tooltip title={tooltipTitle} placement="top" trigger={['hover', 'focus', 'click']}>
+    <Tooltip
+      title={tooltipContent}
+      placement="top"
+      trigger={['hover', 'focus', 'click']}
+      classNames={{
+        root: 'soha-pod-resource-tooltip-popup',
+        arrow: 'soha-pod-resource-tooltip-arrow',
+      }}
+      styles={{ root: { width: 260, maxWidth: 'calc(100vw - 16px)' }, container: { padding: 12 } }}
+    >
       <button
         type="button"
         className={`soha-pod-resource-limit-cell is-${tone}`}

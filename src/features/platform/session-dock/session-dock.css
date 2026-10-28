@@ -102,9 +102,9 @@ body:has(.soha-realtime-session-dock.is-maximized:not([hidden])) .soha-companion
 .soha-realtime-session-dock__body,
 .soha-realtime-session-cluster,
 .soha-realtime-session-cluster > .ant-tabs,
-.soha-realtime-session-cluster > .ant-tabs > .ant-tabs-content-holder,
-.soha-realtime-session-cluster .ant-tabs-content,
-.soha-realtime-session-cluster .ant-tabs-tabpane,
+.soha-realtime-session-cluster > .ant-tabs > .ant-tabs-body-holder,
+.soha-realtime-session-tabs-body,
+.soha-realtime-session-tab-content,
 .soha-realtime-session-pane {
   min-height: 0;
   height: 100%;
@@ -129,12 +129,12 @@ body:has(.soha-realtime-session-dock.is-maximized:not([hidden])) .soha-companion
   background: var(--soha-bg-surface-muted);
 }
 
-.soha-realtime-session-cluster > .ant-tabs > .ant-tabs-content-holder {
+.soha-realtime-session-cluster > .ant-tabs > .ant-tabs-body-holder {
   flex: 1 1 auto;
   overflow: hidden;
 }
 
-.soha-realtime-session-cluster .ant-tabs-tabpane {
+.soha-realtime-session-tab-content {
   padding: 10px;
   overflow: hidden;
 }
@@ -219,7 +219,7 @@ body:has(.soha-realtime-session-dock.is-maximized:not([hidden])) .soha-companion
     padding-inline: 10px 6px;
   }
 
-  .soha-realtime-session-cluster .ant-tabs-tabpane {
+  .soha-realtime-session-tab-content {
     padding: 6px;
   }
 

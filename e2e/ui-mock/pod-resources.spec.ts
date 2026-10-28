@@ -177,21 +177,43 @@ for (const theme of ['light', 'dark']) {
       )
       expect(geometry.every(Boolean), `thin bars with readable values at ${width}px`).toBe(true)
       await bar('normal', 'CPU').hover()
-      await expect(page.getByRole('tooltip')).toHaveText(
-        'CPU · 使用 34m · 请求 100m · 限制 500m · 请求以内',
+      const detail = page.getByRole('tooltip')
+      await expect(detail.locator('.soha-pod-resource-tooltip__header strong')).toHaveText('CPU')
+      await expect(detail.locator('dt')).toHaveText(['实际用量', '请求', '限制'])
+      await expect(detail.locator('dd')).toHaveText(['34m', '100m', '500m'])
+      await expect(detail.locator('.soha-pod-resource-tooltip__status')).toHaveText('请求以内')
+      await expect(detail.locator('.soha-pod-resource-tooltip__basis')).toHaveText(
+        '以限额为比例基准',
       )
     }
     await page.mouse.move(0, 0)
     await bar('warning', 'CPU').focus()
     await bar('warning', 'CPU').press('Tab')
     await expect(bar('warning', '内存')).toBeFocused()
-    await expect(
-      page.getByRole('tooltip', {
-        name: '内存 · 使用 768Mi · 请求 512Mi · 限制 1Gi · 超过请求',
-        exact: true,
-      }),
-    ).toBeVisible()
     await expect(page.getByRole('tooltip')).toHaveCount(1)
+    const detail = page.getByRole('tooltip')
+    await expect(detail.locator('.soha-pod-resource-tooltip__header strong')).toHaveText('内存')
+    await expect(detail.locator('dd')).toHaveText(['768Mi', '512Mi', '1Gi'])
+    await expect(detail.locator('.soha-pod-resource-tooltip__status')).toHaveText('超过请求')
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await bar('unlimited', 'CPU').focus()
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await expect(detail.locator('dd')).toHaveText(['150m', '100m', '未设置'])
+    await expect(detail.locator('.soha-pod-resource-tooltip__basis')).toHaveText('以请求为比例基准')
+    await bar('missing', 'CPU').focus()
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await expect(detail.locator('dd').first()).toHaveText('暂无指标')
+    await page.setViewportSize({ width: 320, height: 700 })
+    await bar('unbounded', 'CPU').focus()
+    await expect(page.getByRole('tooltip')).toHaveCount(1)
+    await expect(detail.locator('dd')).toHaveText(['9m', '未设置', '未设置'])
+    await expect(detail.locator('.soha-pod-resource-tooltip__basis')).toHaveText('无比例基准')
+    await expect
+      .poll(async () => {
+        const box = await detail.boundingBox()
+        return Boolean(box && box.x >= 0 && box.x + box.width <= 320)
+      })
+      .toBe(true)
     verifyBrowserEvidence(evidence)
   })
 }
