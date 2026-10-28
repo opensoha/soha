@@ -35,20 +35,9 @@ import { formatAgeSeconds } from '@/utils/time'
 import { CodeOutlined, DeleteOutlined, FileTextOutlined, LoadingOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MenuProps, TableColumnsType } from 'antd'
-import {
-  App,
-  Button,
-  Popconfirm,
-  Select,
-  Segmented,
-  Space,
-  Switch,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd'
+import { App, Button, Popconfirm, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { workloadKeys } from '../shared/keys'
 import {
   WorkloadQueryPanel,
@@ -62,12 +51,7 @@ import { podQueries } from './queries'
 import { podTargetFromRecord, type Pod } from './types'
 import { PodContainersCell } from './pod-containers-cell'
 import { PodActionsMenu } from './pod-actions-menu'
-import {
-  getPodResourceAmount,
-  parsePodMetricDesign,
-  podMetricColumnWidth,
-  PodResourceCell,
-} from './pod-resource-cell'
+import { getPodResourceAmount, podResourceColumnWidth, PodResourceCell } from './pod-resource-cell'
 import { usePodListViewport } from './use-pod-list-viewport'
 
 const { Link, Text } = Typography
@@ -106,8 +90,6 @@ export function WorkloadsPodsPage() {
   const { t, localeCode } = useI18n()
   const { message, modal } = App.useApp()
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const metricDesign = parsePodMetricDesign(searchParams.get('metricsDesign'))
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const permissionSnapshot = permissionSnapshotQuery.data?.data
@@ -160,6 +142,13 @@ export function WorkloadsPodsPage() {
   const isLoading = podsQuery.isLoading
 
   const pods = visiblePodsQueryData ?? []
+  const resourceColumnWidths = useMemo(
+    () => ({
+      cpu: podResourceColumnWidth('cpu', pods),
+      memory: podResourceColumnWidth('memory', pods),
+    }),
+    [pods],
+  )
   const normalizedKeyword = normalizeSearchKeyword(searchKeyword)
   useAIPageContext({
     sourceWorkbench: 'platform',
@@ -397,50 +386,28 @@ export function WorkloadsPodsPage() {
       ),
     },
     {
-      title:
-        metricDesign === 'capacity'
-          ? localeCode === 'zh_CN'
-            ? 'CPU 用量 / 限额'
-            : 'CPU usage / limit'
-          : 'CPU',
+      title: 'CPU',
       key: 'cpu-resource',
-      width: podMetricColumnWidth(metricDesign),
+      width: resourceColumnWidths.cpu,
       sorter: podSorter(
         (left, right) =>
           getPodResourceAmount('cpu', left.cpu) - getPodResourceAmount('cpu', right.cpu),
       ),
       render: (_: unknown, record: Pod) => (
-        <PodResourceCell
-          pod={record}
-          resource="cpu"
-          localeCode={localeCode}
-          design={metricDesign}
-        />
+        <PodResourceCell pod={record} resource="cpu" localeCode={localeCode} />
       ),
     },
     {
-      title:
-        metricDesign === 'capacity'
-          ? localeCode === 'zh_CN'
-            ? '内存 用量 / 限额'
-            : 'Memory usage / limit'
-          : localeCode === 'zh_CN'
-            ? '内存'
-            : 'Memory',
+      title: localeCode === 'zh_CN' ? '内存' : 'Memory',
       key: 'memory-resource',
-      width: podMetricColumnWidth(metricDesign),
+      width: resourceColumnWidths.memory,
       sorter: podSorter(
         (left, right) =>
           getPodResourceAmount('memory', left.memory) -
           getPodResourceAmount('memory', right.memory),
       ),
       render: (_: unknown, record: Pod) => (
-        <PodResourceCell
-          pod={record}
-          resource="memory"
-          localeCode={localeCode}
-          design={metricDesign}
-        />
+        <PodResourceCell pod={record} resource="memory" localeCode={localeCode} />
       ),
     },
     {
@@ -774,33 +741,6 @@ export function WorkloadsPodsPage() {
       {batchDeletePodsMutation.feedback}
 
       {podQueryPanel}
-      {metricDesign !== 'legacy' ? (
-        <div
-          className="soha-pod-metric-design-preview"
-          role="group"
-          aria-label={localeCode === 'zh_CN' ? '指标展示方案' : 'Metric design preview'}
-        >
-          <Text>{localeCode === 'zh_CN' ? '指标方案' : 'Metric design'}</Text>
-          <Segmented
-            size="small"
-            name="pod-metric-design"
-            value={metricDesign}
-            options={[
-              { value: 'values', label: localeCode === 'zh_CN' ? 'A 数值' : 'A Values' },
-              { value: 'inline', label: localeCode === 'zh_CN' ? 'B 微条' : 'B Bar' },
-              {
-                value: 'capacity',
-                label: localeCode === 'zh_CN' ? 'C 用量/限额' : 'C Used/limit',
-              },
-            ]}
-            onChange={(value) => {
-              const next = new URLSearchParams(searchParams)
-              next.set('metricsDesign', String(value))
-              setSearchParams(next, { replace: true })
-            }}
-          />
-        </div>
-      ) : null}
       <AdminTable
         title={
           <span className="soha-pod-list-count" role="status" aria-live="polite">

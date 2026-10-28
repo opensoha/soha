@@ -484,88 +484,87 @@ test('click-only Pods action menu supports keyboard, cancellation and failed del
 })
 
 for (const theme of ['light', 'dark']) {
-  test(`three metric designs keep data, selection and filters (${theme})`, async ({
-    context,
-    page,
-  }) => {
+  test(`fixed 80px rails and adaptive value columns (${theme})`, async ({ context, page }) => {
     const { state, evidence } = await setup(context, page)
-    state.pods = state.pods.slice(0, 2).map((pod) => ({
+    const values = ['2m', '223m', '1000m', '12345m', '123456.78m', '123456789m']
+    state.pods = state.pods.slice(0, values.length).map((pod, index) => ({
       ...pod,
-      cpu: '34m',
-      memory: '146Mi',
+      cpu: values[index],
+      memory: index === values.length - 1 ? '123456789Gi' : '146Mi',
       requests: { cpu: '100m', memory: '200Mi' },
       limits: { memory: '1Gi' },
     }))
-    await page.goto('/workloads/pods?metricsDesign=values&reviewContext=task117')
-    await expect(rows(page)).toHaveCount(2)
+    await page.getByRole('button', { name: '刷新', exact: true }).click()
+    await expect(rows(page)).toHaveCount(values.length)
     await page.getByRole('switch').click()
     if (theme === 'dark') await page.getByLabel('切换到深色模式').click()
-    await search(page).fill('pod-0000')
-    await expect(rows(page)).toHaveCount(1)
-    await rows(page).first().getByRole('checkbox').check()
-    const readsBefore = state.reads
-    await page.getByRole('radio', { name: 'A 数值', exact: true }).press('ArrowRight')
-    await expect(page).toHaveURL(/metricsDesign=inline/)
-    for (const [design, label] of [
-      ['values', 'A 数值'],
-      ['inline', 'B 微条'],
-      ['capacity', 'C 用量/限额'],
-    ]) {
-      await page.getByText(label, { exact: true }).click()
-      await expect(page).toHaveURL(new RegExp(`metricsDesign=${design}`))
-      expect(new URL(page.url()).searchParams.get('reviewContext')).toBe('task117')
-      await expect(search(page)).toHaveValue('pod-0000')
-      await expect(rows(page)).toHaveCount(1)
-      await expect(rows(page).first().getByRole('checkbox')).toBeChecked()
-      const cells = page.locator(`.soha-pod-resource-limit-cell[data-metric-design="${design}"]`)
-      await expect(cells).toHaveCount(2)
-      await expect(page.getByRole('tooltip')).toBeHidden()
-      await expect(cells.locator('.soha-pod-resource-value').first()).toHaveText('34m')
-      await expect(cells.locator('.soha-pod-resource-marker')).toHaveCount(0)
-      await expect(cells.locator('.ant-progress')).toHaveCount(design === 'inline' ? 2 : 0)
-      if (design === 'capacity')
-        await expect(cells.locator('.soha-pod-resource-limit').first()).toHaveText('未设置')
-      for (const width of [1440, 768, 320]) {
-        await page.setViewportSize({ width, height: 900 })
-        expect(
-          await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
-          `${design} page overflow at ${width}`,
-        ).toBe(false)
-        await expect(page.getByRole('group', { name: '指标展示方案' })).toBeVisible()
-      }
-      await page.setViewportSize({ width: 1440, height: 900 })
-      const cpu = page.getByRole('button', { name: /^pod-0000 · CPU ·/ })
-      await cpu.focus()
-      const tooltip = page.getByRole('tooltip', {
-        name: 'CPU · 使用 34m · 请求 100m · 限制 未设置 · 以请求为比例基准 · 请求以内',
-        exact: true,
-      })
-      await expect(tooltip).toBeVisible()
-      await expect
-        .poll(async () => {
-          const box = await tooltip.boundingBox()
-          return Boolean(box && box.x >= 0 && box.x + box.width <= 1440)
-        })
-        .toBe(true)
-      const fits = await cells.evaluateAll((nodes) =>
-        nodes.every((node) => {
-          const cell = node.getBoundingClientRect()
-          return Array.from(node.children).every((child) => {
-            const box = child.getBoundingClientRect()
-            return (
-              box.left >= cell.left &&
-              box.right <= cell.right &&
-              box.top >= cell.top &&
-              box.bottom <= cell.bottom
-            )
-          })
+    await expect(page.getByRole('group', { name: '指标展示方案' })).toHaveCount(0)
+    const cells = page.locator('.soha-pod-resource-limit-cell')
+    await expect(cells).toHaveCount(values.length * 2)
+    for (const [index, value] of values.entries()) {
+      await expect(
+        page
+          .getByRole('button', { name: new RegExp(`^pod-000${index} · CPU ·`) })
+          .locator('.soha-pod-resource-value'),
+      ).toHaveText(value)
+    }
+    for (const width of [1440, 768, 320]) {
+      await page.setViewportSize({ width, height: 900 })
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
+      ).toBe(false)
+      const geometry = await cells.evaluateAll((nodes) =>
+        nodes.map((node) => {
+          const button = node.getBoundingClientRect()
+          const cell = node.closest('.ant-table-cell')!.getBoundingClientRect()
+          const rail = node.querySelector('.ant-progress-rail')!.getBoundingClientRect()
+          const range = document.createRange()
+          range.selectNodeContents(node.querySelector('.soha-pod-resource-value')!)
+          const value = range.getBoundingClientRect()
+          return {
+            width: rail.width,
+            fits:
+              rail.width === 80 &&
+              rail.height === 4 &&
+              value.left >= rail.right + 7.9 &&
+              value.right <= button.right + 0.1 &&
+              value.top >= button.top &&
+              value.bottom <= button.bottom &&
+              button.left >= cell.left &&
+              button.right <= cell.right,
+          }
         }),
       )
-      expect(fits, `${design} contents fit the metric button`).toBe(true)
-      await page.getByText(label, { exact: true }).click()
-      await expect(tooltip).toBeHidden()
+      expect(
+        geometry.every((item) => item.fits),
+        `80px rails and full values fit at ${width}`,
+      ).toBe(true)
+      expect(new Set(geometry.map((item) => item.width))).toEqual(new Set([80]))
     }
-    expect(state.reads).toBe(readsBefore)
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const columnWidth = async () =>
+      page
+        .getByRole('columnheader', { name: 'CPU', exact: true })
+        .evaluate((node) => node.getBoundingClientRect().width)
+    const widthBeforeFilter = await columnWidth()
+    await search(page).fill('pod-0000')
+    await expect(rows(page)).toHaveCount(1)
+    expect(await columnWidth()).toBe(widthBeforeFilter)
+    await rows(page).first().getByRole('checkbox').check()
+    const cpu = page.getByRole('button', { name: /^pod-0000 · CPU ·/ })
+    await cpu.focus()
+    const tooltip = page.getByRole('tooltip', {
+      name: 'CPU · 使用 2m · 请求 100m · 限制 未设置 · 以请求为比例基准 · 请求以内',
+      exact: true,
+    })
+    await expect(tooltip).toBeVisible()
+    await expect
+      .poll(async () => {
+        const box = await tooltip.boundingBox()
+        return Boolean(box && box.x >= 0 && box.x + box.width <= 1440)
+      })
+      .toBe(true)
+    await expect(rows(page).first().getByRole('checkbox')).toBeChecked()
     verifyBrowserEvidence(evidence)
   })
 }

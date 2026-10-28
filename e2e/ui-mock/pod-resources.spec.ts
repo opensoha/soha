@@ -119,7 +119,7 @@ for (const theme of ['light', 'dark']) {
       '64Ki',
     )
     await expect(bar('unlimited', 'CPU').locator('.is-limit')).toHaveCount(0)
-    await expect(bar('over-limit', 'CPU').locator('.is-limit.is-passed')).toHaveCount(1)
+    await expect(bar('over-limit', 'CPU')).toHaveAccessibleName(/接近或达到限制/)
 
     const colors = await page
       .locator(
@@ -150,8 +150,7 @@ for (const theme of ['light', 'dark']) {
             (marker) => marker.getBoundingClientRect(),
           )
           return (
-            bar.width > 0 &&
-            bar.width <= 96 &&
+            bar.width === 80 &&
             bar.height === 4 &&
             rail.height === bar.height &&
             rail.width === bar.width &&
@@ -163,7 +162,8 @@ for (const theme of ['light', 'dark']) {
             label.left >= cell.left &&
             label.right <= cell.right &&
             label.top >= cell.top &&
-            label.bottom <= bar.top &&
+            label.left >= bar.right + 7.9 &&
+            label.bottom <= cell.bottom &&
             bar.bottom <= cell.bottom &&
             markers.every(
               (marker) =>

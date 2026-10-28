@@ -1,16 +1,14 @@
 import { parseCpuValue, parseMemoryValue } from '@/features/platform/workloads-model'
 import { Progress, Tooltip } from 'antd'
-import type { CSSProperties } from 'react'
 import type { Pod } from './types'
 
-export type PodMetricDesign = 'legacy' | 'values' | 'inline' | 'capacity'
-
-export function parsePodMetricDesign(value: string | null): PodMetricDesign {
-  return value === 'values' || value === 'inline' || value === 'capacity' ? value : 'legacy'
-}
-
-export function podMetricColumnWidth(design: PodMetricDesign) {
-  return design === 'values' ? 96 : design === 'inline' ? 152 : design === 'capacity' ? 160 : 120
+export function podResourceColumnWidth(resource: 'cpu' | 'memory', pods: readonly Pod[]) {
+  const characters = pods.reduce(
+    (longest, pod) => Math.max(longest, formatPodResourceValue(resource, pod[resource]).length),
+    6,
+  )
+  // Fixed 80px rail + 8px gap + content allowance for the 12px supporting font + cell padding.
+  return 80 + 8 + characters * 8 + 24
 }
 
 function formatPodResourceValue(resource: 'cpu' | 'memory', value?: string) {
@@ -36,12 +34,10 @@ export function PodResourceCell({
   pod: record,
   resource,
   localeCode,
-  design = 'legacy',
 }: {
   pod: Pod
   resource: 'cpu' | 'memory'
   localeCode: 'zh_CN' | 'en_US'
-  design?: PodMetricDesign
 }) {
   const usageValue = resource === 'cpu' ? record.cpu : record.memory
   const requestValue = record.requests?.[resource]
@@ -55,8 +51,6 @@ export function PodResourceCell({
   const baselineAmount = hasLimit ? limitAmount : hasRequest ? requestAmount : 0
   const hasBaseline = baselineAmount > 0
   const percent = hasUsage && hasBaseline ? Math.min(100, (usageAmount / baselineAmount) * 100) : 0
-  const requestPercent =
-    hasRequest && hasBaseline ? Math.min(100, (requestAmount / baselineAmount) * 100) : null
   const label = resource === 'cpu' ? 'CPU' : localeCode === 'zh_CN' ? '内存' : 'Memory'
   const usageLabel = formatPodResourceValue(resource, usageValue)
   const unsetLabel = localeCode === 'zh_CN' ? '未设置' : 'Not set'
@@ -111,18 +105,8 @@ export function PodResourceCell({
   ]
     .filter(Boolean)
     .join(' · ')
-  const markerStyle = {
-    '--soha-pod-resource-usage-percent': `${percent}%`,
-    '--soha-pod-resource-request-percent': `${requestPercent ?? 0}%`,
-  } as CSSProperties
-
-  const value = (
-    <span className="soha-pod-resource-value" aria-hidden>
-      {usageLabel}
-    </span>
-  )
   const rail = (
-    <div className="soha-pod-resource-progress-wrap" style={markerStyle}>
+    <div className="soha-pod-resource-progress-wrap">
       <Progress
         aria-hidden
         percent={percent}
@@ -133,29 +117,10 @@ export function PodResourceCell({
         railColor="var(--soha-fill-medium)"
         styles={{
           root: { display: 'flex', margin: 0, lineHeight: 0 },
-          rail: {
-            borderRadius: 'calc(var(--soha-radius-control) / 2)',
-            ...(design === 'legacy' && !hasLimit
-              ? {
-                  background: 'linear-gradient(to right, var(--soha-fill-medium) 70%, transparent)',
-                }
-              : {}),
-          },
+          rail: { borderRadius: 'calc(var(--soha-radius-control) / 2)' },
           track: { borderRadius: 'calc(var(--soha-radius-control) / 2)', transition: 'none' },
         }}
       />
-      {design === 'legacy' && requestPercent !== null ? (
-        <span
-          className={`soha-pod-resource-marker is-request${hasUsage && usageAmount >= requestAmount ? ' is-passed' : ''}`}
-          aria-hidden
-        />
-      ) : null}
-      {design === 'legacy' && hasLimit ? (
-        <span
-          className={`soha-pod-resource-marker is-limit${hasUsage && usageAmount >= limitAmount ? ' is-passed' : ''}`}
-          aria-hidden
-        />
-      ) : null}
     </div>
   )
 
@@ -163,29 +128,13 @@ export function PodResourceCell({
     <Tooltip title={tooltipTitle} placement="top" trigger={['hover', 'focus', 'click']}>
       <button
         type="button"
-        className={`soha-pod-resource-limit-cell is-${tone} design-${design}`}
-        data-metric-design={design}
+        className={`soha-pod-resource-limit-cell is-${tone}`}
         aria-label={`${record.name} · ${tooltipTitle}`}
       >
-        {design === 'inline' ? (
-          <>
-            {rail}
-            {value}
-          </>
-        ) : (
-          value
-        )}
-        {design === 'legacy' ? rail : null}
-        {design === 'capacity' ? (
-          <>
-            <span className="soha-pod-resource-separator" aria-hidden>
-              /
-            </span>
-            <span className="soha-pod-resource-limit" aria-hidden>
-              {hasLimit ? limitLabel : unsetLabel}
-            </span>
-          </>
-        ) : null}
+        {rail}
+        <span className="soha-pod-resource-value" aria-hidden>
+          {usageLabel}
+        </span>
       </button>
     </Tooltip>
   )
