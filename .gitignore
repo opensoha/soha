@@ -28,6 +28,8 @@ graphify-out/
 .env
 .env.local
 .env.production
+configs/config.yaml
+configs/config.toml
 
 # Go
 *.exe

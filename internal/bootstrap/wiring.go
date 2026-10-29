@@ -29,12 +29,15 @@ import (
 	appcluster "github.com/opensoha/soha/internal/application/cluster"
 	appcompanion "github.com/opensoha/soha/internal/application/companion"
 	appcompute "github.com/opensoha/soha/internal/application/compute"
+	appcontentdlp "github.com/opensoha/soha/internal/application/contentdlp"
+	appcontenttransfer "github.com/opensoha/soha/internal/application/contenttransfer"
 	appcopilot "github.com/opensoha/soha/internal/application/copilot"
 	appdelivery "github.com/opensoha/soha/internal/application/delivery"
 	appdeliverygovernance "github.com/opensoha/soha/internal/application/deliverygovernance"
 	appdeliverytrigger "github.com/opensoha/soha/internal/application/deliverytrigger"
 	appdirectorysync "github.com/opensoha/soha/internal/application/directorysync"
 	appdocker "github.com/opensoha/soha/internal/application/docker"
+	appendpointcontrol "github.com/opensoha/soha/internal/application/endpointcontrol"
 	appevent "github.com/opensoha/soha/internal/application/event"
 	appexecution "github.com/opensoha/soha/internal/application/execution"
 	appidentity "github.com/opensoha/soha/internal/application/identity"
@@ -217,51 +220,55 @@ type repositories struct {
 }
 
 type coreServices struct {
-	permissionResolver           *appaccess.PermissionResolver
-	auditService                 *appaudit.Service
-	operationService             *appoperation.Service
-	announcementService          *appannouncement.Service
-	menuService                  *appmenu.Service
-	moduleService                *appmodule.Service
-	settingsService              *appsettings.Service
-	runtimeConfigService         *appruntimeconfig.Service
-	identityService              *appidentity.Service
-	policyEngine                 *policy.Engine
-	accessService                *appaccess.Service
-	accessCatalogService         *appaccess.CatalogService
-	accessManagementService      *appaccess.ManagementService
-	accessConsoleService         *appaccess.ConsoleService
-	systemIntegrationService     *appsystemintegration.Service
-	secretService                *appsecret.Service
-	networkAccessService         *appnetworkaccess.Service
-	networkVPNService            *appnetworkaccess.VPNService
-	networkEnrollmentService     *appnetworkaccess.EnrollmentService
-	networkAccessGrantService    *appnetworkaccess.AccessGrantService
-	networkIngestQuery           apiHandlers.NetworkTelemetryService
-	networkProxyManagement       *appnetworkproxy.Management
-	clusterService               *appcluster.Service
-	resourceService              *appresource.Service
-	eventService                 *appevent.Service
-	monitoringService            *appmonitoring.Service
-	observabilityService         *appobservability.Service
-	applicationService           *appregistry.Service
-	executionService             *appexecution.Service
-	buildService                 *appbuild.Service
-	catalogService               *appcatalog.Service
-	scopeGrantService            *appscopegrant.Service
-	registryService              *appregistryconn.Service
-	releaseService               *apprelease.Service
-	integrationService           *appintegration.Service
-	pluginService                *appplugin.Service
-	softwareService              *appsoftware.Service
-	companionService             *appcompanion.Service
-	identityProviderService      *appidentityprovider.Service
-	identityMFAService           *appmfa.Service
-	providerPortalService        *appproviderportal.Service
-	applicationOnboardingService *appproviderportal.OnboardingService
-	directorySyncService         *appdirectorysync.Service
-	directorySyncConnectors      *directorysynchandler.Registry
-	pluginExtensions             *appplugin.ExtensionRegistry
+	managedContent                 *appcontenttransfer.Service
+	endpointControls               *appendpointcontrol.Service
+	permissionResolver             *appaccess.PermissionResolver
+	auditService                   *appaudit.Service
+	operationService               *appoperation.Service
+	announcementService            *appannouncement.Service
+	menuService                    *appmenu.Service
+	moduleService                  *appmodule.Service
+	settingsService                *appsettings.Service
+	runtimeConfigService           *appruntimeconfig.Service
+	identityService                *appidentity.Service
+	policyEngine                   *policy.Engine
+	accessService                  *appaccess.Service
+	accessCatalogService           *appaccess.CatalogService
+	accessManagementService        *appaccess.ManagementService
+	accessConsoleService           *appaccess.ConsoleService
+	systemIntegrationService       *appsystemintegration.Service
+	secretService                  *appsecret.Service
+	networkAccessService           *appnetworkaccess.Service
+	networkEndpointResponseService *appnetworkaccess.EndpointResponseService
+	networkVPNService              *appnetworkaccess.VPNService
+	networkEnrollmentService       *appnetworkaccess.EnrollmentService
+	networkAccessGrantService      *appnetworkaccess.AccessGrantService
+	networkIngestQuery             apiHandlers.NetworkTelemetryService
+	networkProxyManagement         *appnetworkproxy.Management
+	clusterService                 *appcluster.Service
+	resourceService                *appresource.Service
+	eventService                   *appevent.Service
+	monitoringService              *appmonitoring.Service
+	observabilityService           *appobservability.Service
+	applicationService             *appregistry.Service
+	executionService               *appexecution.Service
+	buildService                   *appbuild.Service
+	catalogService                 *appcatalog.Service
+	scopeGrantService              *appscopegrant.Service
+	registryService                *appregistryconn.Service
+	releaseService                 *apprelease.Service
+	integrationService             *appintegration.Service
+	pluginService                  *appplugin.Service
+	softwareService                *appsoftware.Service
+	contentDLPService              *appcontentdlp.Service
+	companionService               *appcompanion.Service
+	identityProviderService        *appidentityprovider.Service
+	identityMFAService             *appmfa.Service
+	providerPortalService          *appproviderportal.Service
+	applicationOnboardingService   *appproviderportal.OnboardingService
+	directorySyncService           *appdirectorysync.Service
+	directorySyncConnectors        *directorysynchandler.Registry
+	pluginExtensions               *appplugin.ExtensionRegistry
 }
 
 type deliveryServices struct {
@@ -571,7 +578,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	accessCatalogService := appaccess.NewCatalog(repos.identityRepository, repos.policyRepository, accessService, menuService, permissionResolver)
 	accessManagementService := appaccess.NewManagement(repos.identityRepository, repos.policyRepository, permissionResolver, auditService, operationService)
 	accessConsoleService := appaccess.NewConsole(accessCatalogService, accessManagementService)
-	networkAccessService, err := appnetworkaccess.New(repos.networkAccessRepository, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
+	networkAccessService, err := appnetworkaccess.New(repos.networkAccessRepository, permissionResolver, accessService, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
 	if err != nil {
 		infra.cancel()
 		return nil, fmt.Errorf("build network access service: %w", err)
@@ -591,19 +598,10 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		infra.cancel()
 		return nil, fmt.Errorf("build managed VPN service: %w", err)
 	}
-	networkIngestQuery, err := buildNetworkIngestQuery(cfg)
+	networkIngestQuery, networkProxyManagement, err := newNetworkProxyServices(cfg, repos, permissionResolver, accessService, auditService, operationService)
 	if err != nil {
 		infra.cancel()
 		return nil, err
-	}
-	var proxyTrafficReader appnetworkproxy.TrafficReader
-	if reader, ok := networkIngestQuery.(appnetworkproxy.TrafficReader); ok {
-		proxyTrafficReader = reader
-	}
-	networkProxyManagement, err := appnetworkproxy.NewManagement(repos.networkProxyRepository, proxyTrafficReader, permissionResolver, auditService, operationService, cfg.Security.CredentialEncryptionKeys)
-	if err != nil {
-		infra.cancel()
-		return nil, fmt.Errorf("build proxy management service: %w", err)
 	}
 	if metrics, ok := networkIngestQuery.(appnetworkaccess.VPNMetricsReader); ok {
 		networkVPNService.SetVPNMetricsReader(metrics)
@@ -620,6 +618,11 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	if err != nil {
 		infra.cancel()
 		return nil, err
+	}
+	networkEndpointResponseService, err := appnetworkaccess.NewEndpointResponseService(networkAccessService, repos.networkAccessRepository, platformCore.monitoring)
+	if err != nil {
+		infra.cancel()
+		return nil, fmt.Errorf("build endpoint response service: %w", err)
 	}
 
 	deliveryCore, err := newDeliveryCoreServices(cfg, infra, repos, permissionResolver, auditService, operationService, accessService, systemIntegrationService, identityService, secretService, platformCore.resources.Helm())
@@ -667,52 +670,62 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		},
 	}})
 
+	contentSecurity, err := newContentSecurityServices(infra, repos, accessService, permissionResolver, systemIntegrationService, secretService, identityMFAService)
+	if err != nil {
+		infra.cancel()
+		return nil, err
+	}
+
 	return &coreServices{
-		permissionResolver:           permissionResolver,
-		auditService:                 auditService,
-		operationService:             operationService,
-		announcementService:          announcementService,
-		menuService:                  menuService,
-		moduleService:                moduleService,
-		settingsService:              settingsService,
-		runtimeConfigService:         runtimeConfigService,
-		identityService:              identityService,
-		identityMFAService:           identityMFAService,
-		policyEngine:                 policyEngine,
-		accessService:                accessService,
-		accessCatalogService:         accessCatalogService,
-		accessManagementService:      accessManagementService,
-		accessConsoleService:         accessConsoleService,
-		systemIntegrationService:     systemIntegrationService,
-		secretService:                secretService,
-		networkAccessService:         networkAccessService,
-		networkVPNService:            networkVPNService,
-		networkEnrollmentService:     networkEnrollmentService,
-		networkAccessGrantService:    networkAccessGrantService,
-		networkIngestQuery:           networkIngestQuery,
-		networkProxyManagement:       networkProxyManagement,
-		clusterService:               platformCore.cluster,
-		resourceService:              platformCore.resources,
-		eventService:                 platformCore.events,
-		monitoringService:            platformCore.monitoring,
-		observabilityService:         platformCore.observability,
-		applicationService:           deliveryCore.applications,
-		executionService:             deliveryCore.execution,
-		buildService:                 deliveryCore.builds,
-		catalogService:               deliveryCore.catalog,
-		scopeGrantService:            deliveryCore.scopeGrants,
-		registryService:              deliveryCore.registries,
-		releaseService:               deliveryCore.releases,
-		integrationService:           deliveryCore.integration,
-		pluginService:                deliveryCore.plugins,
-		softwareService:              softwareService,
-		companionService:             companionService,
-		pluginExtensions:             deliveryCore.pluginExtensions,
-		identityProviderService:      deliveryCore.identityProvider,
-		providerPortalService:        deliveryCore.providerPortal,
-		applicationOnboardingService: appproviderportal.NewOnboarding(repos.providerPortalRepository, deliveryCore.providerPortal, deliveryCore.identityProvider),
-		directorySyncService:         directorySyncService,
-		directorySyncConnectors:      directorySyncConnectors,
+		endpointControls:               contentSecurity.endpoint,
+		managedContent:                 contentSecurity.managed,
+		permissionResolver:             permissionResolver,
+		auditService:                   auditService,
+		operationService:               operationService,
+		announcementService:            announcementService,
+		menuService:                    menuService,
+		moduleService:                  moduleService,
+		settingsService:                settingsService,
+		runtimeConfigService:           runtimeConfigService,
+		identityService:                identityService,
+		identityMFAService:             identityMFAService,
+		policyEngine:                   policyEngine,
+		accessService:                  accessService,
+		accessCatalogService:           accessCatalogService,
+		accessManagementService:        accessManagementService,
+		accessConsoleService:           accessConsoleService,
+		systemIntegrationService:       systemIntegrationService,
+		secretService:                  secretService,
+		networkAccessService:           networkAccessService,
+		networkEndpointResponseService: networkEndpointResponseService,
+		networkVPNService:              networkVPNService,
+		networkEnrollmentService:       networkEnrollmentService,
+		networkAccessGrantService:      networkAccessGrantService,
+		networkIngestQuery:             networkIngestQuery,
+		networkProxyManagement:         networkProxyManagement,
+		clusterService:                 platformCore.cluster,
+		resourceService:                platformCore.resources,
+		eventService:                   platformCore.events,
+		monitoringService:              platformCore.monitoring,
+		observabilityService:           platformCore.observability,
+		applicationService:             deliveryCore.applications,
+		executionService:               deliveryCore.execution,
+		buildService:                   deliveryCore.builds,
+		catalogService:                 deliveryCore.catalog,
+		scopeGrantService:              deliveryCore.scopeGrants,
+		registryService:                deliveryCore.registries,
+		releaseService:                 deliveryCore.releases,
+		integrationService:             deliveryCore.integration,
+		pluginService:                  deliveryCore.plugins,
+		softwareService:                softwareService,
+		contentDLPService:              contentSecurity.content,
+		companionService:               companionService,
+		pluginExtensions:               deliveryCore.pluginExtensions,
+		identityProviderService:        deliveryCore.identityProvider,
+		providerPortalService:          deliveryCore.providerPortal,
+		applicationOnboardingService:   appproviderportal.NewOnboarding(repos.providerPortalRepository, deliveryCore.providerPortal, deliveryCore.identityProvider),
+		directorySyncService:           directorySyncService,
+		directorySyncConnectors:        directorySyncConnectors,
 	}, nil
 }
 
@@ -1164,6 +1177,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 		appdocker.WithCredentialEncryptionKeys(cfg.Security.CredentialEncryptionKeys),
 		appdocker.WithAccessURLResolver(core.runtimeConfigService),
 		appdocker.WithAudit(core.auditService),
+		appdocker.WithContentDLP(core.contentDLPService),
 		appdocker.WithLogStreamTickets(core.identityService),
 		appdocker.WithComposeSourceFetcher(func(ctx context.Context, rawURL string) (io.ReadCloser, error) {
 			remote, err := infra.softwareFetcher.Fetch(ctx, rawURL)
@@ -1563,14 +1577,21 @@ func newRouteDependencies(cfg cfgpkg.Config, infra *infrastructure, repos *repos
 		Plugins: apiHandlers.NewPluginHandlerWithServices(
 			core.pluginService, core.pluginService, core.pluginService, core.pluginService,
 		),
-		Software:       apiHandlers.NewSoftwareHandler(core.softwareService),
-		Companion:      apiHandlers.NewCompanionHandler(core.companionService),
-		Compute:        apiHandlers.NewComputeHandler(delivery.computeService),
-		Virtualization: newVirtualizationHandler(delivery.virtualizationService),
-		Docker:         newDockerHandler(delivery.dockerService, cfg.Runtime.ExecutionRunnerKeys),
-		NetworkAccess:  apiHandlers.NewNetworkAccessHandler(core.networkAccessService, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery),
-		NetworkProxy:   apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement),
-		NetworkVPN:     apiHandlers.NewNetworkVPNHandler(core.networkVPNService),
+		Software:                   apiHandlers.NewSoftwareHandler(core.softwareService),
+		ManagedContentDestinations: apiHandlers.NewManagedContentDestinationsHandler(core.managedContent),
+		ManagedContentTransfers:    apiHandlers.NewManagedContentTransfersHandler(core.managedContent),
+		ManagedContentWorkflow:     apiHandlers.NewManagedContentWorkflowHandler(core.managedContent),
+		ContentDLP:                 apiHandlers.NewContentDLPHandler(core.contentDLPService),
+		EndpointControls:           apiHandlers.NewEndpointControlsHandler(core.endpointControls),
+		ContentDLPWorkflow:         apiHandlers.NewContentDLPWorkflowHandler(core.contentDLPService),
+		Companion:                  apiHandlers.NewCompanionHandler(core.companionService),
+		Compute:                    apiHandlers.NewComputeHandler(delivery.computeService),
+		Virtualization:             newVirtualizationHandler(delivery.virtualizationService),
+		Docker:                     newDockerHandler(delivery.dockerService, cfg.Runtime.ExecutionRunnerKeys),
+		NetworkAccess:              apiHandlers.NewNetworkAccessHandler(core.networkAccessService, core.networkEnrollmentService, core.networkAccessGrantService, core.networkIngestQuery),
+		NetworkEndpointResponse:    apiHandlers.NewNetworkEndpointResponseHandler(core.networkEndpointResponseService, core.networkEndpointResponseService, core.networkEndpointResponseService),
+		NetworkProxy:               apiHandlers.NewNetworkProxyHandler(core.networkProxyManagement, core.networkProxyManagement),
+		NetworkVPN:                 apiHandlers.NewNetworkVPNHandler(core.networkVPNService),
 		Access: accesshandler.New(accesshandler.Services{
 			Users: core.accessConsoleService, Catalog: core.accessConsoleService,
 			Roles: core.accessConsoleService, Teams: core.accessConsoleService, Policies: core.accessConsoleService,

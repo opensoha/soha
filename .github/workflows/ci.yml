@@ -21,19 +21,20 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: soha
+          fetch-depth: 0
       - name: Checkout contracts
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-contracts
           path: soha-contracts
-          ref: ${{ inputs.latest_siblings && 'main' || '9d23081036491f629d69be9ac78a14d5ff5db929' }}
+          ref: ${{ inputs.latest_siblings && 'main' || '8a00ba57145cbc2f0ba7a96bf86cbf3de77d2f2a' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Checkout web
         uses: actions/checkout@v7
         with:
           repository: opensoha/soha-web
           path: soha-web
-          ref: ${{ inputs.latest_siblings && 'main' || '9f724cabdc5014f4836da37fa9ac6f3efeb1da7b' }}
+          ref: ${{ inputs.latest_siblings && 'main' || 'a0e958ad18f0a823de882f1ea8f5e7e866532aba' }}
           token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Record actual source combination
         env:
@@ -64,6 +65,8 @@ jobs:
         run: GOWORK=off go mod verify
       - name: Build web artifact
         working-directory: soha-web
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           npm ci
           npm run build
@@ -88,14 +91,26 @@ jobs:
       - name: Govulncheck
         working-directory: soha
         run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+      - name: Prepare PR lint patch
+        if: github.event_name == 'pull_request'
+        working-directory: soha
+        env:
+          LINT_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$LINT_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git cat-file -e "${LINT_BASE_SHA}^{commit}"
+          git merge-base --is-ancestor "$LINT_BASE_SHA" HEAD
+          git diff --no-ext-diff --no-textconv --no-color --binary "$LINT_BASE_SHA" HEAD > "${RUNNER_TEMP}/soha-pr-lint.patch"
+          test -s "${RUNNER_TEMP}/soha-pr-lint.patch"
       - name: Golangci-lint
         if: github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.14.0
           working-directory: soha
-          only-new-issues: true
-          args: --timeout=5m
+          # Keep the PR patch filter without the GitHub API's diff-size limits.
+          args: --timeout=5m --new-from-patch=${{ runner.temp }}/soha-pr-lint.patch
       - name: Build application binaries
         working-directory: soha
         run: |

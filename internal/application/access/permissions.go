@@ -297,6 +297,12 @@ const (
 	PermSoftwarePackageCreate              = "software.package.create"
 	PermSoftwarePackageDelete              = "software.package.delete"
 	PermSoftwarePackageView                = "software.package.view"
+	PermDockerDLPPolicyView                = "docker.dlp-policy.view"
+	PermDockerDLPPolicyUpdate              = "docker.dlp-policy.update"
+	PermDockerDLPPolicyPublish             = "docker.dlp-policy.publish"
+	PermDockerDLPEventsView                = "docker.dlp-events.view"
+	PermDockerDLPAppealsReview             = "docker.dlp-appeals.review"
+	PermNetworkDLPLinkageManage            = "network_access.dlp_linkage.manage"
 )
 
 // PermPlatformResourceCreate is kept as a source-compatibility alias.
@@ -557,6 +563,12 @@ var allPermissionKeySet = []string{
 	PermSettingsSystemIntegrationsManage,
 	PermSoftwarePackageCreate,
 	PermSoftwarePackageDelete,
+	PermDockerDLPAppealsReview,
+	PermNetworkDLPLinkageManage,
+	PermDockerDLPPolicyView,
+	PermDockerDLPPolicyUpdate,
+	PermDockerDLPPolicyPublish,
+	PermDockerDLPEventsView,
 	PermSoftwarePackageView,
 }
 

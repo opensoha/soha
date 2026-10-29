@@ -1,24 +1,51 @@
 package networkaccess
 
-import "net/netip"
+import (
+	"net/netip"
+	"time"
+)
 
-// WireGuardResourceTarget returns the canonical IPv4 route for a resource that
-// the current L3 WireGuard enforcement plane can protect.
+// WireGuardResourceTarget is the compatibility validation entry; runtime
+// compilation uses every target returned by WireGuardResourceTargets.
 func WireGuardResourceTarget(resource Resource, space Space) (string, bool) {
-	if resource.SpaceID != space.ID {
+	targets, ok := WireGuardResourceTargets(resource, space)
+	if !ok || len(targets) == 0 {
 		return "", false
 	}
-	if !validWireGuardProtocol(resource.Protocol, resource.Ports) {
-		return "", false
+	return targets[0], true
+}
+
+func WireGuardResourceTargets(resource Resource, space Space) ([]string, bool) {
+	if resource.SpaceID != space.ID || !validWireGuardProtocol(resource.Protocol, resource.Ports) {
+		return nil, false
+	}
+	if resource.Kind == "fqdn" {
+		return resolvedResourceTargets(resource, space)
 	}
 	target, ok := wireGuardTargetPrefix(resource)
-	if !ok {
-		return "", false
+	if !ok || !prefixWithinSpace(target, space.CIDRs) {
+		return nil, false
 	}
-	if !prefixWithinSpace(target, space.CIDRs) {
-		return "", false
+	return []string{target.String()}, true
+}
+
+func resolvedResourceTargets(resource Resource, space Space) ([]string, bool) {
+	if !resource.DNSExpiresAt.After(time.Now()) || len(resource.TrustedAddresses) == 0 || len(resource.TrustedAddresses) > 32 {
+		return nil, false
 	}
-	return target.String(), true
+	targets := make([]string, 0, len(resource.TrustedAddresses))
+	for _, raw := range resource.TrustedAddresses {
+		address, err := netip.ParseAddr(raw)
+		if err != nil || !address.IsGlobalUnicast() || address.Is4In6() {
+			return nil, false
+		}
+		target := netip.PrefixFrom(address, address.BitLen())
+		if !prefixWithinSpace(target, space.CIDRs) {
+			return nil, false
+		}
+		targets = append(targets, target.String())
+	}
+	return targets, true
 }
 
 func validWireGuardProtocol(protocol string, ports []int) bool {
@@ -43,15 +70,15 @@ func wireGuardTargetPrefix(resource Resource) (netip.Prefix, bool) {
 	case "ip":
 		var address netip.Addr
 		address, err = netip.ParseAddr(resource.Target)
-		if err == nil && address.Is4() {
-			target = netip.PrefixFrom(address, 32)
+		if err == nil && !address.Is4In6() {
+			target = netip.PrefixFrom(address, address.BitLen())
 		}
 	case "cidr":
 		target, err = netip.ParsePrefix(resource.Target)
 	default:
 		return netip.Prefix{}, false
 	}
-	if err != nil || !target.Addr().Is4() || target != target.Masked() || target.Bits() == 0 {
+	if err != nil || !target.IsValid() || target.Addr().Is4In6() || target != target.Masked() || target.Bits() == 0 {
 		return netip.Prefix{}, false
 	}
 	return target, true
@@ -60,9 +87,20 @@ func wireGuardTargetPrefix(resource Resource) (netip.Prefix, bool) {
 func prefixWithinSpace(target netip.Prefix, cidrs []string) bool {
 	for _, raw := range cidrs {
 		spacePrefix, parseErr := netip.ParsePrefix(raw)
-		if parseErr == nil && spacePrefix.Addr().Is4() && spacePrefix == spacePrefix.Masked() && spacePrefix.Bits() <= target.Bits() && spacePrefix.Contains(target.Addr()) {
+		if parseErr == nil && spacePrefix.Addr().BitLen() == target.Addr().BitLen() && spacePrefix == spacePrefix.Masked() && spacePrefix.Bits() <= target.Bits() && spacePrefix.Contains(target.Addr()) {
 			return true
 		}
 	}
 	return false
+}
+
+// ValidOverlayPrefix bounds allocation; IPv6 pools use at most 65534 peers.
+func ValidOverlayPrefix(prefix netip.Prefix) bool {
+	if !prefix.IsValid() || prefix != prefix.Masked() || !prefix.Addr().IsGlobalUnicast() || prefix.Addr().Is4In6() {
+		return false
+	}
+	if prefix.Addr().Is4() {
+		return prefix.Bits() >= 16 && prefix.Bits() <= 30
+	}
+	return prefix.Bits() >= 64 && prefix.Bits() <= 126
 }

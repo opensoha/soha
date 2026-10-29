@@ -67,6 +67,7 @@ type Store interface {
 	FindActiveNASBinding(context.Context, string, string) (domainnetworkaccess.NASBinding, error)
 	FindSiteProfileBinding(context.Context, string, string) (domainnetworkaccess.SiteProfileBinding, error)
 	CreateSessionCommand(context.Context, domainnetworkaccess.SessionCommand) (domainnetworkaccess.SessionCommand, error)
+	GetSessionCommand(context.Context, string) (domainnetworkaccess.SessionCommand, error)
 	GetSubject(context.Context, string) (domainnetworkaccess.Subject, error)
 	ListPolicies(context.Context, domainnetworkaccess.PolicyFilter) ([]domainnetworkaccess.Policy, error)
 	GetPolicy(context.Context, string) (domainnetworkaccess.Policy, error)
@@ -91,14 +92,15 @@ type OperationRecorder interface {
 type Service struct {
 	store       Store
 	permissions *appaccess.PermissionResolver
+	scope       ScopeAuthorizer
 	audit       AuditRecorder
 	operations  OperationRecorder
 	keys        keyring.Ring
 }
 
-func New(store Store, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) (*Service, error) {
+func New(store Store, permissions *appaccess.PermissionResolver, scope ScopeAuthorizer, audit AuditRecorder, operations OperationRecorder, keys keyring.Ring) (*Service, error) {
 	for name, dependency := range map[string]any{
-		"store": store, "permissions": permissions, "audit": audit, "operations": operations,
+		"store": store, "permissions": permissions, "scope": scope, "audit": audit, "operations": operations,
 	} {
 		if isNilDependency(dependency) {
 			return nil, fmt.Errorf("network access service: %s dependency is required", name)
@@ -107,7 +109,7 @@ func New(store Store, permissions *appaccess.PermissionResolver, audit AuditReco
 	if keys.Active().ID() == "" {
 		return nil, fmt.Errorf("network access service: credential encryption key is required")
 	}
-	return &Service{store: store, permissions: permissions, audit: audit, operations: operations, keys: keys}, nil
+	return &Service{store: store, permissions: permissions, scope: scope, audit: audit, operations: operations, keys: keys}, nil
 }
 
 func (s *Service) ListDevices(ctx context.Context, principal domainidentity.Principal, filter domainnetworkaccess.DeviceFilter) ([]domainnetworkaccess.Device, error) {
@@ -118,18 +120,29 @@ func (s *Service) ListDevices(ctx context.Context, principal domainidentity.Prin
 	if err := validateDeviceFilter(filter); err != nil {
 		return nil, err
 	}
-	filter.Limit = boundedLimit(filter.Limit)
-	return s.store.ListDevices(ctx, filter)
+	return collectVisible(ctx, boundedLimit(filter.Limit), func(limit, offset int) ([]domainnetworkaccess.Device, error) {
+		filter.Limit, filter.Offset = limit, offset
+		return s.store.ListDevices(ctx, filter)
+	}, func(item domainnetworkaccess.Device) error {
+		return s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessEndpointDevicesView, deviceScope(item))
+	})
 }
 
 func (s *Service) GetDevice(ctx context.Context, principal domainidentity.Principal, id string) (domainnetworkaccess.Device, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessEndpointDevicesView); err != nil {
 		return domainnetworkaccess.Device{}, err
 	}
-	return s.store.GetDevice(ctx, strings.TrimSpace(id))
+	item, err := s.store.GetDevice(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.Device{}, err
+	}
+	return item, s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessEndpointDevicesView, deviceScope(item))
 }
 
 func (s *Service) RegisterDevice(ctx context.Context, principal domainidentity.Principal, id string, input domainnetworkaccess.DeviceRegistrationInput) (domainnetworkaccess.Device, error) {
+	if err := networkUserSubject(principal.UserID); err != nil {
+		return domainnetworkaccess.Device{}, err
+	}
 	ownerUserID := strings.TrimSpace(principal.UserID)
 	if ownerUserID == "" {
 		return domainnetworkaccess.Device{}, fmt.Errorf("%w: authenticated user id is required", apperrors.ErrUnauthorized)
@@ -145,7 +158,7 @@ func (s *Service) RegisterDevice(ctx context.Context, principal domainidentity.P
 	now := time.Now().UTC()
 	item, err := s.store.RegisterDevice(ctx, domainnetworkaccess.Device{
 		ID: id, OwnerUserID: ownerUserID, Name: input.Name, Hostname: input.Hostname, Platform: input.Platform,
-		DeviceType: input.DeviceType, OwnershipType: domainnetworkaccess.DeviceOwnershipUnassigned, ReportedFacts: input.ReportedFacts,
+		DeviceType: input.DeviceType, OwnershipType: domainnetworkaccess.DeviceOwnershipUnassigned, ManagementState: domainnetworkaccess.DeviceManagementUnknown, ReportedFacts: input.ReportedFacts,
 		Status: domainnetworkaccess.DeviceStatusPending, PostureStatus: domainnetworkaccess.PostureUnknown,
 		PostureVersion: 1, CredentialGeneration: 1, LastSeenAt: &now, CreatedAt: now, UpdatedAt: now,
 	})
@@ -159,8 +172,20 @@ func (s *Service) UpdateDevice(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessEndpointDevicesUpdate); err != nil {
 		return domainnetworkaccess.Device{}, err
 	}
+	input.ManagementState = strings.TrimSpace(input.ManagementState)
 	input.Name, input.SiteID, input.Status, input.PostureStatus, input.DeviceType, input.OwnershipType = strings.TrimSpace(input.Name), strings.TrimSpace(input.SiteID), strings.TrimSpace(input.Status), strings.TrimSpace(input.PostureStatus), strings.TrimSpace(input.DeviceType), strings.TrimSpace(input.OwnershipType)
 	if err := validateDeviceInput(input); err != nil {
+		return domainnetworkaccess.Device{}, err
+	}
+	existing, err := s.store.GetDevice(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.Device{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessEndpointDevicesUpdate, deviceScope(existing)); err != nil {
+		return domainnetworkaccess.Device{}, err
+	}
+	existing.SiteID = input.SiteID
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessEndpointDevicesUpdate, deviceScope(existing)); err != nil {
 		return domainnetworkaccess.Device{}, err
 	}
 	item, err := s.store.UpdateDevice(ctx, strings.TrimSpace(id), input, time.Now().UTC())
@@ -178,15 +203,23 @@ func (s *Service) ListSites(ctx context.Context, principal domainidentity.Princi
 	if err := validateSiteFilter(filter); err != nil {
 		return nil, err
 	}
-	filter.Limit = boundedLimit(filter.Limit)
-	return s.store.ListSites(ctx, filter)
+	return collectVisible(ctx, boundedLimit(filter.Limit), func(limit, offset int) ([]domainnetworkaccess.Site, error) {
+		filter.Limit, filter.Offset = limit, offset
+		return s.store.ListSites(ctx, filter)
+	}, func(item domainnetworkaccess.Site) error {
+		return s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesView, resourceScope{kind: "NetworkSite", id: item.ID, siteID: item.ID})
+	})
 }
 
 func (s *Service) GetSite(ctx context.Context, principal domainidentity.Principal, id string) (domainnetworkaccess.Site, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessSitesView); err != nil {
 		return domainnetworkaccess.Site{}, err
 	}
-	return s.store.GetSite(ctx, strings.TrimSpace(id))
+	item, err := s.store.GetSite(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.Site{}, err
+	}
+	return item, s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesView, resourceScope{kind: "NetworkSite", id: item.ID, siteID: item.ID})
 }
 
 func (s *Service) CreateSite(ctx context.Context, principal domainidentity.Principal, input domainnetworkaccess.SiteInput) (domainnetworkaccess.Site, error) {
@@ -197,8 +230,12 @@ func (s *Service) CreateSite(ctx context.Context, principal domainidentity.Princ
 	if err := validateSiteInput(input); err != nil {
 		return domainnetworkaccess.Site{}, err
 	}
+	creationID := uuid.NewString()
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesCreate, resourceScope{kind: "NetworkSite", id: creationID, siteID: creationID}); err != nil {
+		return domainnetworkaccess.Site{}, err
+	}
 	now := time.Now().UTC()
-	item := domainnetworkaccess.Site{ID: uuid.NewString(), Name: input.Name, Description: input.Description, Location: input.Location, Status: input.Status, CreatedAt: now, UpdatedAt: now}
+	item := domainnetworkaccess.Site{ID: creationID, Name: input.Name, Description: input.Description, Location: input.Location, DeviceGovernance: input.DeviceGovernance, ManagementIssuerKey: optionalTextValue(input.ManagementIssuerKey), Status: input.Status, CreatedAt: now, UpdatedAt: now}
 	item, err := s.store.CreateSite(ctx, item)
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.sites.create", "NetworkSite", item.ID, item.Name)
@@ -214,6 +251,13 @@ func (s *Service) UpdateSite(ctx context.Context, principal domainidentity.Princ
 	if err := validateSiteInput(input); err != nil {
 		return domainnetworkaccess.Site{}, err
 	}
+	existing, err := s.store.GetSite(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.Site{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, resourceScope{kind: "NetworkSite", id: existing.ID, siteID: existing.ID}); err != nil {
+		return domainnetworkaccess.Site{}, err
+	}
 	item, err := s.store.UpdateSite(ctx, strings.TrimSpace(id), input, time.Now().UTC())
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.sites.update", "NetworkSite", item.ID, item.Name)
@@ -226,6 +270,13 @@ func (s *Service) DeleteSite(ctx context.Context, principal domainidentity.Princ
 		return err
 	}
 	id = strings.TrimSpace(id)
+	item, err := s.store.GetSite(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesDelete, resourceScope{kind: "NetworkSite", id: item.ID, siteID: item.ID}); err != nil {
+		return err
+	}
 	if err := s.store.DeleteSite(ctx, id); err != nil {
 		return err
 	}
@@ -651,15 +702,23 @@ func (s *Service) ListNASBindings(ctx context.Context, principal domainidentity.
 	if err := validateNASBindingFilter(filter); err != nil {
 		return nil, err
 	}
-	filter.Limit = boundedLimit(filter.Limit)
-	return s.store.ListNASBindings(ctx, filter)
+	return collectVisible(ctx, boundedLimit(filter.Limit), func(limit, offset int) ([]domainnetworkaccess.NASBinding, error) {
+		filter.Limit, filter.Offset = limit, offset
+		return s.store.ListNASBindings(ctx, filter)
+	}, func(item domainnetworkaccess.NASBinding) error {
+		return s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesView, resourceScope{kind: "NetworkNASBinding", id: item.ID, siteID: item.SiteID})
+	})
 }
 
 func (s *Service) GetNASBinding(ctx context.Context, principal domainidentity.Principal, id string) (domainnetworkaccess.NASBinding, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessSitesView); err != nil {
 		return domainnetworkaccess.NASBinding{}, err
 	}
-	return s.store.GetNASBinding(ctx, strings.TrimSpace(id))
+	item, err := s.store.GetNASBinding(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.NASBinding{}, err
+	}
+	return item, s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesView, resourceScope{kind: "NetworkNASBinding", id: item.ID, siteID: item.SiteID})
 }
 
 func (s *Service) CreateNASBinding(ctx context.Context, principal domainidentity.Principal, input domainnetworkaccess.NASBindingInput) (domainnetworkaccess.NASBinding, error) {
@@ -670,11 +729,16 @@ func (s *Service) CreateNASBinding(ctx context.Context, principal domainidentity
 	if err := validateNASBindingInput(input); err != nil {
 		return domainnetworkaccess.NASBinding{}, err
 	}
+	creationID := uuid.NewString()
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, resourceScope{kind: "NetworkNASBinding", id: creationID, siteID: input.SiteID}); err != nil {
+		return domainnetworkaccess.NASBinding{}, err
+	}
 	now := time.Now().UTC()
 	item, err := s.store.CreateNASBinding(ctx, domainnetworkaccess.NASBinding{
-		ID: uuid.NewString(), NASID: input.NASID, RuntimeID: input.RuntimeID, SiteID: input.SiteID, Name: input.Name,
+		ID: creationID, NASID: input.NASID, RuntimeID: input.RuntimeID, SiteID: input.SiteID, Name: input.Name,
 		AccessMedium: input.AccessMedium, DeviceType: input.DeviceType, SSID: input.SSID, ManagementAddress: input.ManagementAddress,
 		Status: input.Status, CoASupported: input.CoASupported, DisconnectSupported: input.DisconnectSupported, CreatedAt: now, UpdatedAt: now,
+		EAPServerTrust: input.EAPServerTrust,
 	})
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.nas_bindings.create", "NetworkNASBinding", item.ID, item.Name)
@@ -690,6 +754,17 @@ func (s *Service) UpdateNASBinding(ctx context.Context, principal domainidentity
 	if err := validateNASBindingInput(input); err != nil {
 		return domainnetworkaccess.NASBinding{}, err
 	}
+	existing, err := s.store.GetNASBinding(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.NASBinding{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, resourceScope{kind: "NetworkNASBinding", id: existing.ID, siteID: existing.SiteID}); err != nil {
+		return domainnetworkaccess.NASBinding{}, err
+	}
+	existing.SiteID = input.SiteID
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, resourceScope{kind: "NetworkNASBinding", id: existing.ID, siteID: existing.SiteID}); err != nil {
+		return domainnetworkaccess.NASBinding{}, err
+	}
 	item, err := s.store.UpdateNASBinding(ctx, strings.TrimSpace(id), input, time.Now().UTC())
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.nas_bindings.update", "NetworkNASBinding", item.ID, item.Name)
@@ -702,6 +777,13 @@ func (s *Service) DeleteNASBinding(ctx context.Context, principal domainidentity
 		return err
 	}
 	id = strings.TrimSpace(id)
+	item, err := s.store.GetNASBinding(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, resourceScope{kind: "NetworkNASBinding", id: item.ID, siteID: item.SiteID}); err != nil {
+		return err
+	}
 	if err := s.store.DeleteNASBinding(ctx, id); err != nil {
 		return err
 	}
@@ -717,15 +799,23 @@ func (s *Service) ListSiteProfileBindings(ctx context.Context, principal domaini
 	if err := validateSiteProfileBindingFilter(filter); err != nil {
 		return nil, err
 	}
-	filter.Limit = boundedLimit(filter.Limit)
-	return s.store.ListSiteProfileBindings(ctx, filter)
+	return collectVisible(ctx, boundedLimit(filter.Limit), func(limit, offset int) ([]domainnetworkaccess.SiteProfileBinding, error) {
+		filter.Limit, filter.Offset = limit, offset
+		return s.store.ListSiteProfileBindings(ctx, filter)
+	}, func(item domainnetworkaccess.SiteProfileBinding) error {
+		return s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesView, resourceScope{kind: "NetworkSiteProfileBinding", id: item.ID, siteID: item.SiteID})
+	})
 }
 
 func (s *Service) GetSiteProfileBinding(ctx context.Context, principal domainidentity.Principal, id string) (domainnetworkaccess.SiteProfileBinding, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessSitesView); err != nil {
 		return domainnetworkaccess.SiteProfileBinding{}, err
 	}
-	return s.store.GetSiteProfileBinding(ctx, strings.TrimSpace(id))
+	item, err := s.store.GetSiteProfileBinding(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.SiteProfileBinding{}, err
+	}
+	return item, s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesView, resourceScope{kind: "NetworkSiteProfileBinding", id: item.ID, siteID: item.SiteID})
 }
 
 func (s *Service) CreateSiteProfileBinding(ctx context.Context, principal domainidentity.Principal, input domainnetworkaccess.SiteProfileBindingInput) (domainnetworkaccess.SiteProfileBinding, error) {
@@ -736,8 +826,12 @@ func (s *Service) CreateSiteProfileBinding(ctx context.Context, principal domain
 	if err := validateSiteProfileBindingInput(input); err != nil {
 		return domainnetworkaccess.SiteProfileBinding{}, err
 	}
+	creationID := uuid.NewString()
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, resourceScope{kind: "NetworkSiteProfileBinding", id: creationID, siteID: input.SiteID}); err != nil {
+		return domainnetworkaccess.SiteProfileBinding{}, err
+	}
 	now := time.Now().UTC()
-	item, err := s.store.CreateSiteProfileBinding(ctx, domainnetworkaccess.SiteProfileBinding{ID: uuid.NewString(), SiteID: input.SiteID, AccessProfile: input.AccessProfile, VLANID: input.VLANID, FilterID: input.FilterID, SessionTimeoutSeconds: input.SessionTimeoutSeconds, CreatedAt: now, UpdatedAt: now})
+	item, err := s.store.CreateSiteProfileBinding(ctx, domainnetworkaccess.SiteProfileBinding{ID: creationID, SiteID: input.SiteID, AccessProfile: input.AccessProfile, VLANID: input.VLANID, FilterID: input.FilterID, SessionTimeoutSeconds: input.SessionTimeoutSeconds, CreatedAt: now, UpdatedAt: now})
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.site_profile_bindings.create", "NetworkSiteProfileBinding", item.ID, item.AccessProfile)
 	}
@@ -752,6 +846,17 @@ func (s *Service) UpdateSiteProfileBinding(ctx context.Context, principal domain
 	if err := validateSiteProfileBindingInput(input); err != nil {
 		return domainnetworkaccess.SiteProfileBinding{}, err
 	}
+	existing, err := s.store.GetSiteProfileBinding(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.SiteProfileBinding{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, resourceScope{kind: "NetworkSiteProfileBinding", id: existing.ID, siteID: existing.SiteID}); err != nil {
+		return domainnetworkaccess.SiteProfileBinding{}, err
+	}
+	existing.SiteID = input.SiteID
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, resourceScope{kind: "NetworkSiteProfileBinding", id: existing.ID, siteID: existing.SiteID}); err != nil {
+		return domainnetworkaccess.SiteProfileBinding{}, err
+	}
 	item, err := s.store.UpdateSiteProfileBinding(ctx, strings.TrimSpace(id), input, time.Now().UTC())
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.site_profile_bindings.update", "NetworkSiteProfileBinding", item.ID, item.AccessProfile)
@@ -764,6 +869,13 @@ func (s *Service) DeleteSiteProfileBinding(ctx context.Context, principal domain
 		return err
 	}
 	id = strings.TrimSpace(id)
+	item, err := s.store.GetSiteProfileBinding(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, resourceScope{kind: "NetworkSiteProfileBinding", id: item.ID, siteID: item.SiteID}); err != nil {
+		return err
+	}
 	if err := s.store.DeleteSiteProfileBinding(ctx, id); err != nil {
 		return err
 	}
@@ -779,15 +891,23 @@ func (s *Service) ListPolicies(ctx context.Context, principal domainidentity.Pri
 	if err := validatePolicyFilter(filter); err != nil {
 		return nil, err
 	}
-	filter.Limit = boundedLimit(filter.Limit)
-	return s.store.ListPolicies(ctx, filter)
+	return collectVisible(ctx, boundedLimit(filter.Limit), func(limit, offset int) ([]domainnetworkaccess.Policy, error) {
+		filter.Limit, filter.Offset = limit, offset
+		return s.store.ListPolicies(ctx, filter)
+	}, func(item domainnetworkaccess.Policy) error {
+		return s.authorizePolicyScope(ctx, principal, appaccess.PermNetworkAccessPolicyView, item.ID, item.SiteIDs)
+	})
 }
 
 func (s *Service) GetPolicy(ctx context.Context, principal domainidentity.Principal, id string) (domainnetworkaccess.Policy, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessPolicyView); err != nil {
 		return domainnetworkaccess.Policy{}, err
 	}
-	return s.store.GetPolicy(ctx, strings.TrimSpace(id))
+	item, err := s.store.GetPolicy(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.Policy{}, err
+	}
+	return item, s.authorizePolicyScope(ctx, principal, appaccess.PermNetworkAccessPolicyView, item.ID, item.SiteIDs)
 }
 
 func (s *Service) CreatePolicy(ctx context.Context, principal domainidentity.Principal, input domainnetworkaccess.PolicyInput) (domainnetworkaccess.Policy, error) {
@@ -798,8 +918,12 @@ func (s *Service) CreatePolicy(ctx context.Context, principal domainidentity.Pri
 	if err := validatePolicyInput(input); err != nil {
 		return domainnetworkaccess.Policy{}, err
 	}
+	creationID := uuid.NewString()
+	if err := s.authorizePolicyScope(ctx, principal, appaccess.PermNetworkAccessPolicyCreate, creationID, input.SiteIDs); err != nil {
+		return domainnetworkaccess.Policy{}, err
+	}
 	now := time.Now().UTC()
-	item, err := s.store.CreatePolicy(ctx, domainnetworkaccess.Policy{ID: uuid.NewString(), Name: input.Name, Enabled: input.Enabled, Priority: input.Priority, Effect: input.Effect, Subjects: input.Subjects, SiteIDs: input.SiteIDs, ResourceIDs: input.ResourceIDs, Modes: input.Modes, DeviceStatuses: input.DeviceStatuses, PostureStatuses: input.PostureStatuses, AccessProfile: input.AccessProfile, Version: 1, CreatedAt: now, UpdatedAt: now})
+	item, err := s.store.CreatePolicy(ctx, domainnetworkaccess.Policy{ID: creationID, Name: input.Name, Enabled: input.Enabled, Priority: input.Priority, Effect: input.Effect, Subjects: input.Subjects, SiteIDs: input.SiteIDs, ResourceIDs: input.ResourceIDs, Modes: input.Modes, DeviceManagementStates: input.DeviceManagementStates, DeviceStatuses: input.DeviceStatuses, PostureStatuses: input.PostureStatuses, AccessProfile: input.AccessProfile, Version: 1, CreatedAt: now, UpdatedAt: now})
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.policy.create", "NetworkAccessPolicy", item.ID, item.Name)
 	}
@@ -814,6 +938,16 @@ func (s *Service) UpdatePolicy(ctx context.Context, principal domainidentity.Pri
 	if err := validatePolicyInput(input); err != nil {
 		return domainnetworkaccess.Policy{}, err
 	}
+	existing, err := s.store.GetPolicy(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.Policy{}, err
+	}
+	if err := s.authorizePolicyScope(ctx, principal, appaccess.PermNetworkAccessPolicyUpdate, existing.ID, existing.SiteIDs); err != nil {
+		return domainnetworkaccess.Policy{}, err
+	}
+	if err := s.authorizePolicyScope(ctx, principal, appaccess.PermNetworkAccessPolicyUpdate, existing.ID, input.SiteIDs); err != nil {
+		return domainnetworkaccess.Policy{}, err
+	}
 	item, err := s.store.UpdatePolicy(ctx, strings.TrimSpace(id), input, time.Now().UTC())
 	if err == nil {
 		s.recordMutation(ctx, principal, "network_access.policy.update", "NetworkAccessPolicy", item.ID, item.Name)
@@ -826,6 +960,13 @@ func (s *Service) DeletePolicy(ctx context.Context, principal domainidentity.Pri
 		return err
 	}
 	id = strings.TrimSpace(id)
+	item, err := s.store.GetPolicy(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := s.authorizePolicyScope(ctx, principal, appaccess.PermNetworkAccessPolicyDelete, item.ID, item.SiteIDs); err != nil {
+		return err
+	}
 	if err := s.store.DeletePolicy(ctx, id); err != nil {
 		return err
 	}
@@ -835,6 +976,9 @@ func (s *Service) DeletePolicy(ctx context.Context, principal domainidentity.Pri
 
 func (s *Service) CompilePolicySnapshot(ctx context.Context, principal domainidentity.Principal) (domainnetworkaccess.PolicySnapshot, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessPolicyUpdate); err != nil {
+		return domainnetworkaccess.PolicySnapshot{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessPolicyUpdate, resourceScope{kind: "NetworkPolicySnapshot", id: "current"}); err != nil {
 		return domainnetworkaccess.PolicySnapshot{}, err
 	}
 	policies, err := s.store.ListPoliciesForSnapshot(ctx)
@@ -860,11 +1004,17 @@ func (s *Service) GetPolicySnapshot(ctx context.Context, principal domainidentit
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessPolicyView); err != nil {
 		return domainnetworkaccess.PolicySnapshot{}, err
 	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessPolicyView, resourceScope{kind: "NetworkPolicySnapshot", id: "current"}); err != nil {
+		return domainnetworkaccess.PolicySnapshot{}, err
+	}
 	return s.store.GetPolicySnapshot(ctx)
 }
 
 func (s *Service) AnalyzeConflicts(ctx context.Context, principal domainidentity.Principal, runtimeRanges []domainnetworkaccess.ConflictRange) (domainnetworkaccess.ConflictAnalysis, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessPolicyView); err != nil {
+		return domainnetworkaccess.ConflictAnalysis{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessPolicyView, resourceScope{kind: "NetworkPolicySnapshot", id: "current"}); err != nil {
 		return domainnetworkaccess.ConflictAnalysis{}, err
 	}
 	for index := range runtimeRanges {
@@ -919,6 +1069,9 @@ func (s *Service) PreviewPolicy(ctx context.Context, principal domainidentity.Pr
 	if err != nil {
 		return domainnetworkaccess.PolicyPreview{}, err
 	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessPolicyView, resourceScope{kind: "NetworkPolicyPreview", id: resource.ID, siteID: site.ID, spaceID: space.ID, deviceID: device.ID, ownerUserID: device.OwnerUserID}); err != nil {
+		return domainnetworkaccess.PolicyPreview{}, err
+	}
 	snapshot, err := s.store.GetPolicySnapshot(ctx)
 	if errors.Is(err, apperrors.ErrNotFound) {
 		snapshot = domainnetworkaccess.PolicySnapshot{}
@@ -931,6 +1084,7 @@ func (s *Service) PreviewPolicy(ctx context.Context, principal domainidentity.Pr
 }
 
 func normalizeSiteInput(input domainnetworkaccess.SiteInput) domainnetworkaccess.SiteInput {
+	input.DeviceGovernance = strings.TrimSpace(input.DeviceGovernance)
 	input.Name, input.Description, input.Location, input.Status = strings.TrimSpace(input.Name), strings.TrimSpace(input.Description), strings.TrimSpace(input.Location), strings.TrimSpace(input.Status)
 	return input
 }
@@ -1018,7 +1172,7 @@ func normalizeMihomoProfileInput(input domainnetworkaccess.MihomoProfileInput) d
 
 func normalizePolicyInput(input domainnetworkaccess.PolicyInput) domainnetworkaccess.PolicyInput {
 	input.Name, input.Effect, input.AccessProfile = strings.TrimSpace(input.Name), strings.TrimSpace(input.Effect), strings.TrimSpace(input.AccessProfile)
-	for _, values := range [][]string{input.Subjects.Users, input.Subjects.Teams, input.Subjects.Tags, input.SiteIDs, input.ResourceIDs, input.Modes, input.DeviceStatuses, input.PostureStatuses} {
+	for _, values := range [][]string{input.Subjects.Roles, input.Subjects.Users, input.Subjects.Teams, input.Subjects.Tags, input.SiteIDs, input.ResourceIDs, input.Modes, input.DeviceManagementStates, input.DeviceStatuses, input.PostureStatuses} {
 		for index := range values {
 			values[index] = strings.TrimSpace(values[index])
 		}
@@ -1057,7 +1211,17 @@ func (s *Service) recordMutation(ctx context.Context, principal domainidentity.P
 
 func (s *Service) recordPreview(ctx context.Context, principal domainidentity.Principal, input PreviewInput, result domainnetworkaccess.PolicyPreview) {
 	meta := requestctx.FromContext(ctx)
-	_ = s.audit.Record(ctx, domainaudit.Entry{ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams, ResourceKind: "NetworkPolicyPreview", ResourceName: input.ResourceID, Action: "network_access.policy.preview", Result: result.Decision, Summary: "network access policy preview " + result.Decision, RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP, Metadata: map[string]any{"subjectUserId": input.SubjectUserID, "deviceId": input.DeviceID, "resourceId": input.ResourceID, "siteId": input.SiteID, "mode": input.Mode, "path": result.Path, "networkProfile": result.NetworkProfile, "policyVersion": result.PolicyVersion, "protected": result.Protected, "networkLeaseRequired": result.NetworkLeaseRequired, "resourceLeaseRequired": result.ResourceLeaseRequired, "reasons": result.Reasons}})
+	kind, action, name := "NetworkPolicyPreview", "network_access.policy.preview", input.ResourceID
+	metadata := map[string]any{"subjectUserId": input.SubjectUserID, "deviceId": input.DeviceID, "resourceId": input.ResourceID, "siteId": input.SiteID, "mode": input.Mode, "path": result.Path, "networkProfile": result.NetworkProfile, "policyVersion": result.PolicyVersion, "protected": result.Protected, "networkLeaseRequired": result.NetworkLeaseRequired, "resourceLeaseRequired": result.ResourceLeaseRequired, "reasons": result.Reasons}
+	if input.NASBindingID != "" {
+		kind, action, name = "NetworkAdmissionPreview", "network_access.admission.preview", input.NASBindingID
+		metadata["nasBindingId"] = input.NASBindingID
+	}
+	if result.AttributeVersion != "" {
+		metadata["attributeVersion"] = result.AttributeVersion
+		metadata["evaluatedAt"] = result.EvaluatedAt
+	}
+	_ = s.audit.Record(ctx, domainaudit.Entry{ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams, ResourceKind: kind, ResourceName: name, Action: action, Result: result.Decision, Summary: "network access policy preview " + result.Decision, RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP, Metadata: metadata})
 }
 
 func (s *Service) recordAnalysis(ctx context.Context, principal domainidentity.Principal, action, resourceKind string, valid bool, metadata map[string]any) {
@@ -1080,4 +1244,11 @@ func isNilDependency(value any) bool {
 	default:
 		return false
 	}
+}
+
+func optionalTextValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }

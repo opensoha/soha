@@ -115,6 +115,13 @@ func (s *VPNService) connectionOption(ctx context.Context, profile domain.VPNPro
 }
 
 func (s *VPNService) authorizeConnection(ctx context.Context, subject domain.Subject, device domain.Device, config domain.VPNProfileConfig) (domain.PolicySnapshot, error) {
+	active, err := s.connections.VPNRestrictionActive(ctx, subject.UserID, device.ID, config.SiteID)
+	if err != nil {
+		return domain.PolicySnapshot{}, err
+	}
+	if active {
+		return domain.PolicySnapshot{}, apperrors.NewBusiness(apperrors.ErrAccessDenied, "vpn_administratively_revoked", "VPN access is restricted until an administrator releases it.", "VPN 访问已被撤销，需管理员显式解除后重新授权。")
+	}
 	if !config.Enabled || !config.Assignments.Matches(subject, device) {
 		return domain.PolicySnapshot{}, apperrors.ErrAccessDenied
 	}
@@ -132,11 +139,8 @@ func (s *VPNService) authorizeConnection(ctx context.Context, subject domain.Sub
 	if space.SiteID != site.ID || space.Status != domain.StatusActive || len(space.CIDRs) == 0 {
 		return domain.PolicySnapshot{}, apperrors.ErrAccessDenied
 	}
-	for _, raw := range space.CIDRs {
-		prefix, err := netip.ParsePrefix(raw)
-		if err != nil || !prefix.Addr().Is4() || prefix.Bits() == 0 || prefix != prefix.Masked() {
-			return domain.PolicySnapshot{}, apperrors.ErrAccessDenied
-		}
+	if !validVPNRouteRanges(space.CIDRs) {
+		return domain.PolicySnapshot{}, apperrors.ErrAccessDenied
 	}
 	snapshot, err := s.base.store.GetPolicySnapshot(ctx)
 	if err != nil {
@@ -147,6 +151,16 @@ func (s *VPNService) authorizeConnection(ctx context.Context, subject domain.Sub
 		return snapshot, apperrors.ErrAccessDenied
 	}
 	return snapshot, nil
+}
+
+func validVPNRouteRanges(cidrs []string) bool {
+	for _, raw := range cidrs {
+		prefix, err := netip.ParsePrefix(raw)
+		if err != nil || !prefix.Addr().IsGlobalUnicast() || prefix.Addr().Is4In6() || prefix.Bits() == 0 || prefix != prefix.Masked() {
+			return false
+		}
+	}
+	return len(cidrs) > 0
 }
 
 func (s *VPNService) CreateConnectionIntent(ctx context.Context, p identity.Principal, authSessionID string, input domain.VPNIntentInput) (domain.VPNIntentSecret, error) {
@@ -249,6 +263,9 @@ func vpnGatewayUnavailableReason(fact runtime.VPNGatewayCandidate, now time.Time
 		return "gateway_draining"
 	}
 	if !fact.Reachable {
+		if fact.ReasonCode != "" {
+			return fact.ReasonCode
+		}
 		return "target_unreachable"
 	}
 	if c.ID == "" || c.RuntimeID != g.RuntimeID || !c.ExpiresAt.After(now) || c.NotBefore.After(now) || c.WireGuardPublicKey == "" || c.WireGuardPublicKey != g.WireGuardPublicKey || !slices.Contains(c.Capabilities, "wireguard") {

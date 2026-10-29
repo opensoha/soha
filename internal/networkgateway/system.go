@@ -34,6 +34,7 @@ type commandRunner interface {
 }
 
 type linuxSystem struct {
+	owner    wgtypes.Key
 	wg       wireGuardClient
 	commands commandRunner
 	ipPath   string
@@ -78,11 +79,17 @@ func newLinuxSystem(wg wireGuardClient, commands commandRunner, ipPath, nftPath,
 func (s *linuxSystem) Close() error { return s.wg.Close() }
 
 func (s *linuxSystem) Baseline(ctx context.Context, interfaceName string) error {
+	if err := s.verifyInterfaceOwnership(ctx, interfaceName, s.owner); err != nil {
+		return err
+	}
 	wg := networkprotocol.WireGuardConfiguration{InterfaceName: interfaceName, RoutingMode: "routed", FirewallDefault: "deny", FirewallRules: []networkprotocol.WireGuardFirewallRule{}}
 	return s.applyFirewall(ctx, wg)
 }
 
 func (s *linuxSystem) Apply(ctx context.Context, desired networkprotocol.ConfigurationDesired, privateKey wgtypes.Key) error {
+	if err := s.bindOwnership(privateKey.PublicKey()); err != nil {
+		return err
+	}
 	if desired.WireGuard == nil {
 		return s.Disable(ctx, defaultInterfaceName, privateKey.PublicKey())
 	}
@@ -116,26 +123,28 @@ func (s *linuxSystem) Apply(ctx context.Context, desired networkprotocol.Configu
 		}
 		return fmt.Errorf("configure WireGuard interface: %w", err)
 	}
-	if _, err := s.commands.Run(ctx, nil, s.ipPath, "-4", "address", "flush", "dev", wg.InterfaceName); err != nil {
+	if _, err := s.commands.Run(ctx, nil, s.ipPath, "address", "flush", "dev", wg.InterfaceName); err != nil {
 		return fmt.Errorf("flush WireGuard addresses: %w", err)
 	}
 	for _, address := range wg.Addresses {
-		if _, err := s.commands.Run(ctx, nil, s.ipPath, "-4", "address", "add", address, "dev", wg.InterfaceName); err != nil {
+		if _, err := s.commands.Run(ctx, nil, s.ipPath, ipCommandFamily(address), "address", "add", address, "dev", wg.InterfaceName); err != nil {
 			return fmt.Errorf("add WireGuard address: %w", err)
 		}
 	}
 	if _, err := s.commands.Run(ctx, nil, s.ipPath, "link", "set", "dev", wg.InterfaceName, "mtu", fmt.Sprint(wg.MTU), "up"); err != nil {
 		return fmt.Errorf("activate WireGuard interface: %w", err)
 	}
-	if _, err := s.commands.Run(ctx, nil, s.ipPath, "-4", "route", "flush", "dev", wg.InterfaceName, "proto", "static"); err != nil {
-		return fmt.Errorf("flush WireGuard routes: %w", err)
+	for _, family := range []string{"-4", "-6"} {
+		if _, err := s.commands.Run(ctx, nil, s.ipPath, family, "route", "flush", "dev", wg.InterfaceName, "proto", "static"); err != nil {
+			return fmt.Errorf("flush WireGuard routes: %w", err)
+		}
 	}
 	for _, route := range wg.Routes {
-		if _, err := s.commands.Run(ctx, nil, s.ipPath, "-4", "route", "replace", route, "dev", wg.InterfaceName, "proto", "static"); err != nil {
+		if _, err := s.commands.Run(ctx, nil, s.ipPath, ipCommandFamily(route), "route", "replace", route, "dev", wg.InterfaceName, "proto", "static"); err != nil {
 			return fmt.Errorf("replace WireGuard route: %w", err)
 		}
 	}
-	return s.applyFirewall(ctx, wg)
+	return s.applyFirewall(ctx, wg, desired.ValidUntil)
 }
 
 func (s *linuxSystem) Disable(ctx context.Context, interfaceName string, expectedPublicKey wgtypes.Key) error {
@@ -219,7 +228,7 @@ func (s *linuxSystem) Readback(ctx context.Context, desired networkprotocol.Conf
 	if err != nil {
 		return "", fmt.Errorf("read gateway firewall: %w", err)
 	}
-	ruleIDs, err := verifyNftReadback(nftRaw, wg, s.egress)
+	ruleIDs, err := verifyNftReadback(nftRaw, wg, s.egress, desired.ValidUntil)
 	if err != nil {
 		return "", err
 	}
@@ -261,7 +270,7 @@ func (s *linuxSystem) readWireGuard(wg networkprotocol.WireGuardConfiguration) (
 	if err != nil {
 		return nil, nil, err
 	}
-	if device.PublicKey.String() != wg.PublicKey || device.ListenPort != wg.ListenPort || !slices.EqualFunc(actualPeers, expectedPeers, sameReadbackPeer) {
+	if device.PublicKey.String() != wg.PublicKey || (wg.Role == "gateway" && device.ListenPort != wg.ListenPort) || !slices.EqualFunc(actualPeers, expectedPeers, sameReadbackPeer) {
 		return nil, nil, fmt.Errorf("WireGuard device readback differs from desired state")
 	}
 	return device, actualPeers, nil
@@ -291,21 +300,29 @@ func sameReadbackPeer(left, right readbackPeer) bool {
 }
 
 func (s *linuxSystem) readIPConfiguration(ctx context.Context, wg networkprotocol.WireGuardConfiguration) ([]string, []string, error) {
-	addressesRaw, err := s.commands.Run(ctx, nil, s.ipPath, "-j", "-4", "address", "show", "dev", wg.InterfaceName)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read WireGuard addresses: %w", err)
+	var addresses, routes []string
+	for _, family := range []string{"-4", "-6"} {
+		raw, err := s.commands.Run(ctx, nil, s.ipPath, "-j", family, "address", "show", "dev", wg.InterfaceName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read WireGuard addresses: %w", err)
+		}
+		values, err := parseIPAddresses(raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		addresses = append(addresses, values...)
+		raw, err = s.commands.Run(ctx, nil, s.ipPath, "-j", family, "route", "show", "dev", wg.InterfaceName, "proto", "static")
+		if err != nil {
+			return nil, nil, fmt.Errorf("read WireGuard routes: %w", err)
+		}
+		values, err = parseIPRoutes(raw)
+		if err != nil {
+			return nil, nil, err
+		}
+		routes = append(routes, values...)
 	}
-	addresses, err := parseIPAddresses(addressesRaw)
-	if err != nil || !sameStrings(addresses, wg.Addresses) {
-		return nil, nil, fmt.Errorf("WireGuard address readback differs from desired state")
-	}
-	routesRaw, err := s.commands.Run(ctx, nil, s.ipPath, "-j", "-4", "route", "show", "dev", wg.InterfaceName, "proto", "static")
-	if err != nil {
-		return nil, nil, fmt.Errorf("read WireGuard routes: %w", err)
-	}
-	routes, err := parseIPRoutes(routesRaw)
-	if err != nil || !sameStrings(routes, wg.Routes) {
-		return nil, nil, fmt.Errorf("WireGuard route readback differs from desired state")
+	if !sameStrings(addresses, wg.Addresses) || !sameStrings(routes, wg.Routes) {
+		return nil, nil, fmt.Errorf("WireGuard IP readback differs from desired state")
 	}
 	return addresses, routes, nil
 }
@@ -321,7 +338,7 @@ func hashReadbackState(device *wgtypes.Device, wg networkprotocol.WireGuardConfi
 	return fmt.Sprintf("sha256:%x", digest), nil
 }
 
-func (s *linuxSystem) applyFirewall(ctx context.Context, wg networkprotocol.WireGuardConfiguration) error {
+func (s *linuxSystem) applyFirewall(ctx context.Context, wg networkprotocol.WireGuardConfiguration, validUntil ...time.Time) error {
 	tables, err := s.commands.Run(ctx, nil, s.nftPath, "-j", "list", "tables")
 	if err != nil {
 		return fmt.Errorf("list nftables tables: %w", err)
@@ -330,7 +347,7 @@ func (s *linuxSystem) applyFirewall(ctx context.Context, wg networkprotocol.Wire
 	if err != nil {
 		return err
 	}
-	program, err := BuildNftProgram(wg, exists, s.egress)
+	program, err := BuildNftProgram(wg, exists, s.egress, validUntil...)
 	if err != nil {
 		return err
 	}
@@ -428,9 +445,12 @@ type nftReadbackState struct {
 	rules  map[string][]nftReadbackRule
 }
 
-func verifyNftReadback(raw []byte, wg networkprotocol.WireGuardConfiguration, egressInterface string) ([]string, error) {
+func verifyNftReadback(raw []byte, wg networkprotocol.WireGuardConfiguration, egressInterface string, validUntil ...time.Time) ([]string, error) {
 	state, err := decodeNftReadback(raw)
 	if err != nil {
+		return nil, err
+	}
+	if err := verifyNftLeaseGuard(raw, validUntil); err != nil {
 		return nil, err
 	}
 	if err := validateNftTopology(state, wg.RoutingMode); err != nil {
@@ -533,12 +553,12 @@ func expectedNftForward(wg networkprotocol.WireGuardConfiguration) ([]expectedNf
 	expected := []expectedNftRule{{comment: "return-established", expr: []any{
 		nftMatch(nftMeta("oifname"), wg.InterfaceName),
 		map[string]any{"match": map[string]any{"op": "in", "left": map[string]any{"ct": map[string]any{"key": "state"}}, "right": []any{"established", "related"}}},
-		nftVerdict("accept"),
+		nftLeaseGuardMatch(), nftVerdict("accept"),
 	}}}
 	ruleIDs := make([]string, 0, len(wg.FirewallRules))
 	for _, configured := range wg.FirewallRules {
-		source, sourceErr := canonicalIPv4Prefix(configured.SourceCIDR, -1)
-		destination, destinationErr := canonicalIPv4Prefix(configured.DestinationCIDR, -1)
+		source, sourceErr := canonicalIPPrefix(configured.SourceCIDR, -1)
+		destination, destinationErr := canonicalIPPrefix(configured.DestinationCIDR, -1)
 		if sourceErr != nil || destinationErr != nil {
 			return nil, nil, fmt.Errorf("gateway firewall desired rule is invalid")
 		}
@@ -548,15 +568,18 @@ func expectedNftForward(wg networkprotocol.WireGuardConfiguration) ([]expectedNf
 		}
 		expressions := []any{
 			nftMatch(nftMeta(interfaceKey), wg.InterfaceName),
-			nftMatch(nftPayload("ip", "saddr"), nftPrefixValue(source)),
-			nftMatch(nftPayload("ip", "daddr"), nftPrefixValue(destination)),
+			nftMatch(nftPayload(nftIPFamily(source), "saddr"), nftPrefixValue(source)),
+			nftMatch(nftPayload(nftIPFamily(destination), "daddr"), nftPrefixValue(destination)),
 		}
 		if configured.Protocol != "any" {
 			if len(configured.Ports) == 0 {
-				expressions = append(expressions, nftMatch(nftPayload("ip", "protocol"), configured.Protocol))
+				expressions = append(expressions, nftMatch(nftMeta("l4proto"), configured.Protocol))
 			} else {
 				expressions = append(expressions, nftMatch(nftPayload(configured.Protocol, "dport"), nftPortValue(configured.Ports)))
 			}
+		}
+		if configured.Effect == "allow" {
+			expressions = append(expressions, nftLeaseGuardMatch())
 		}
 		expressions = append(expressions, nftVerdict(map[string]string{"allow": "accept", "deny": "drop"}[configured.Effect]))
 		expected = append(expected, expectedNftRule{comment: configured.ID, expr: expressions})
@@ -575,11 +598,11 @@ func expectedNftPostrouting(wg networkprotocol.WireGuardConfiguration, egressInt
 		if configured.Effect != "allow" {
 			continue
 		}
-		source, _ := canonicalIPv4Prefix(configured.SourceCIDR, -1)
-		destination, _ := canonicalIPv4Prefix(configured.DestinationCIDR, -1)
+		source, _ := canonicalIPPrefix(configured.SourceCIDR, -1)
+		destination, _ := canonicalIPPrefix(configured.DestinationCIDR, -1)
 		expected = append(expected, expectedNftRule{comment: "snat-" + configured.ID, expr: []any{
-			nftMatch(nftPayload("ip", "saddr"), nftPrefixValue(source)),
-			nftMatch(nftPayload("ip", "daddr"), nftPrefixValue(destination)),
+			nftMatch(nftPayload(nftIPFamily(source), "saddr"), nftPrefixValue(source)),
+			nftMatch(nftPayload(nftIPFamily(destination), "daddr"), nftPrefixValue(destination)),
 			nftMatch(nftMeta("oifname"), egressInterface),
 			nftVerdict("masquerade"),
 		}})
@@ -600,7 +623,7 @@ func nftPayload(protocol, field string) map[string]any {
 }
 
 func nftPrefixValue(prefix netip.Prefix) any {
-	if prefix.Bits() == 32 {
+	if prefix.Bits() == prefix.Addr().BitLen() {
 		return prefix.Addr().String()
 	}
 	return map[string]any{"prefix": map[string]any{"addr": prefix.Addr().String(), "len": float64(prefix.Bits())}}
@@ -637,7 +660,7 @@ func parseIPAddresses(raw []byte) ([]string, error) {
 	addresses := []string{}
 	for _, link := range links {
 		for _, address := range link.Addresses {
-			if address.Family == "inet" {
+			if address.Family == "inet" || address.Family == "inet6" {
 				addresses = append(addresses, fmt.Sprintf("%s/%d", address.Local, address.PrefixLen))
 			}
 		}
@@ -708,4 +731,42 @@ func (s *linuxSystem) VPNPeerCounters(interfaceName string) ([]wgtypes.Peer, err
 		return nil, err
 	}
 	return device.Peers, nil
+}
+
+func ipCommandFamily(prefix string) string {
+	if strings.Contains(prefix, ":") {
+		return "-6"
+	}
+	return "-4"
+}
+
+func (s *linuxSystem) bindOwnership(key wgtypes.Key) error {
+	if key == (wgtypes.Key{}) || s.owner != (wgtypes.Key{}) && s.owner != key {
+		return fmt.Errorf("gateway system ownership key conflicts")
+	}
+	s.owner = key
+	return nil
+}
+func (s *linuxSystem) verifyInterfaceOwnership(ctx context.Context, name string, key wgtypes.Key) error {
+	if key == (wgtypes.Key{}) {
+		return fmt.Errorf("gateway system ownership key is missing")
+	}
+	link, err := s.link(ctx, name)
+	if err != nil {
+		return err
+	}
+	if link == nil {
+		return nil
+	}
+	if link.Kind != "wireguard" {
+		return fmt.Errorf("refuse to modify a foreign interface")
+	}
+	device, err := s.wg.Device(name)
+	if err != nil {
+		return err
+	}
+	if device.PublicKey != key {
+		return fmt.Errorf("refuse to modify another runtime's WireGuard interface")
+	}
+	return nil
 }

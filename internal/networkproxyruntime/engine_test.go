@@ -2,110 +2,56 @@ package networkproxyruntime
 
 import (
 	"context"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"os"
-	"path/filepath"
-	"strings"
-	"sync/atomic"
 	"testing"
-
-	"github.com/opensoha/soha/internal/platform/securefile"
 	"time"
 
-	domain "github.com/opensoha/soha/internal/domain/networkproxy"
+	"github.com/opensoha/soha/internal/platform/securefile"
 )
 
-func TestApplyRestoresRunningConfiguration(t *testing.T) {
-	for _, scenario := range []struct {
-		name     string
-		readback bool
-		reason   string
-	}{
-		{name: "start failure", reason: "start_failed"},
-		{name: "readback changed", readback: true, reason: "readback_failed"},
+func TestApplyRestoresFileAndStopsOldProcessOnFailure(t *testing.T) {
+	for _, scenario := range []struct{ name, reason string }{
+		{"start failure", "start_failed"}, {"readback changed", "readback_failed"},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			stateDir := t.TempDir()
-			configFile := filepath.Join(stateDir, "engine.yaml")
-			old := []byte("port: 7890\n")
-			if err := os.WriteFile(configFile, old, 0600); err != nil {
-				t.Fatal(err)
-			}
-			binary := filepath.Join(stateDir, "fake-mihomo")
-			// #nosec G306 -- executable fixture in a private test directory, containing no secrets.
-			if err := os.WriteFile(binary, []byte("#!/bin/sh\nif [ \"$1\" = \"-t\" ]; then exit 0; fi\nexec sleep 60\n"), 0700); err != nil {
-				t.Fatal(err)
-			}
-			var newConfigProbes atomic.Int32
-			controller := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-				content, err := securefile.Read(configFile, 2<<20, true)
-				if err != nil {
-					writer.WriteHeader(http.StatusServiceUnavailable)
-					return
-				}
-				if strings.Contains(string(content), "port: 7891") {
-					newConfigProbes.Add(1)
-					if !scenario.readback {
-						writer.WriteHeader(http.StatusServiceUnavailable)
-						return
-					}
-					if err := os.WriteFile(configFile, []byte("tampered"), 0600); err != nil {
-						t.Errorf("tamper config: %v", err)
-					}
-				}
-				_, _ = fmt.Fprint(writer, `{"version":"test"}`)
-			}))
-			defer controller.Close()
-			config := Config{Engine: domain.EngineMihomo, EngineBinary: binary, ConfigFile: configFile,
-				StateDir: stateDir, ControllerURL: controller.URL}
+			config, probes := lifecycleFixture(t, scenario.name)
 			engine := newEngine(config, "a-secret-for-tests")
 			defer engine.stop()
-			if err := engine.start(context.Background()); err != nil {
-				t.Fatalf("start old engine: %v", err)
+			if result := engine.apply(context.Background(), lifecycleDesired(1, 7890)); result.Status != "applied" {
+				t.Fatalf("initial guarded configuration failed: %+v", result)
 			}
-			result := engine.apply(context.Background(), domain.Configuration{Revision: 2, Engine: domain.EngineMihomo,
-				Enabled: true, Content: "port: 7891\n"})
+			old, err := securefile.Read(config.ConfigFile, 2<<20, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := engine.apply(context.Background(), lifecycleDesired(2, 7891))
 			if result.Status != "rolled-back" || result.ReasonCode != scenario.reason {
 				t.Fatalf("apply result = %+v", result)
 			}
-			if newConfigProbes.Load() == 0 {
-				t.Fatal("new configuration was never probed")
+			if probes.Load() == 0 {
+				t.Fatal("replacement was never probed")
 			}
-			got, err := securefile.Read(configFile, 2<<20, true)
+			got, err := securefile.Read(config.ConfigFile, 2<<20, true)
 			if err != nil || string(got) != string(old) {
-				t.Fatalf("restored configuration = %q, %v", got, err)
+				t.Fatalf("restored file = %q, %v", got, err)
 			}
-			if err := engine.health(context.Background()); err != nil {
-				t.Fatalf("old engine did not recover: %v", err)
+			if engine.process != nil || engine.egress != nil {
+				t.Fatal("rejected replacement resumed an old process or guard")
+			}
+			if err := engine.health(context.Background()); err == nil {
+				t.Fatal("stopped predecessor reported healthy")
 			}
 		})
 	}
 }
 
-func TestRunnerRestartsExitedEngine(t *testing.T) {
-	stateDir := t.TempDir()
-	configFile := filepath.Join(stateDir, "engine.yaml")
-	if err := os.WriteFile(configFile, []byte("port: 7890\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	binary := filepath.Join(stateDir, "fake-mihomo")
-	// #nosec G306 -- executable fixture in a private test directory, containing no secrets.
-	if err := os.WriteFile(binary, []byte("#!/bin/sh\nexec sleep 60\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	controller := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
-		_, _ = fmt.Fprint(writer, `{"version":"test"}`)
-	}))
-	defer controller.Close()
-	config := Config{Engine: domain.EngineMihomo, EngineBinary: binary, ConfigFile: configFile,
-		StateDir: stateDir, ControllerURL: controller.URL}
-	runner := &Runner{enabled: true, engine: newEngine(config, "a-secret-for-tests")}
+func TestRunnerSuspendsExitedEngineUntilFreshConfiguration(t *testing.T) {
+	config, _ := lifecycleFixture(t, "")
+	runner := &Runner{config: config, engine: newEngine(config, "a-secret-for-tests")}
 	defer runner.engine.stop()
-	runner.ensureRunning(context.Background())
-	if runner.engine.process == nil {
-		t.Fatal("engine did not start")
+	runner.applyConfiguration(context.Background(), lifecycleDesired(1, 7890))
+	if runner.engine.process == nil || !runner.enabled {
+		t.Fatal("verified engine did not start")
 	}
 	firstPID := runner.engine.process.Process.Pid
 	if err := runner.engine.process.Process.Kill(); err != nil {
@@ -118,7 +64,23 @@ func TestRunnerRestartsExitedEngine(t *testing.T) {
 		t.Fatal("engine did not exit")
 	}
 	runner.ensureRunning(context.Background())
-	if runner.engine.process == nil || runner.engine.process.Process.Pid == firstPID {
-		t.Fatal("runner did not restart the exited engine")
+	if runner.enabled || !runner.suspended || runner.engine.process != nil || runner.reasonCode != "engine_state_drift" {
+		t.Fatal("crashed engine restarted without configuration revalidation")
+	}
+	runner.applyConfiguration(context.Background(), lifecycleDesired(2, 7890))
+	if !runner.enabled || runner.suspended || runner.engine.process == nil || runner.engine.process.Process.Pid == firstPID {
+		t.Fatal("fresh validated configuration did not recover the engine")
+	}
+}
+
+func TestEngineCannotStartWithoutActiveEgressGuard(t *testing.T) {
+	config, _ := lifecycleFixture(t, "")
+	engine := newEngine(config, "a-secret-for-tests")
+	defer engine.stop()
+	if err := engine.start(context.Background()); err == nil || engine.process != nil {
+		t.Fatal("unguarded engine started", err)
+	}
+	if _, err := os.Stat(config.ConfigFile); !os.IsNotExist(err) {
+		t.Fatal("unguarded start wrote a configuration")
 	}
 }

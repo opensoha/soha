@@ -21,13 +21,20 @@ type NetworkProxyManagement interface {
 	UpdateConfiguration(context.Context, domainidentity.Principal, string, domain.ConfigurationInput) (domain.Instance, error)
 	Traffic(context.Context, domainidentity.Principal, string, time.Time, time.Time) (domain.Traffic, error)
 	Connections(context.Context, domainidentity.Principal, string) (domain.ConnectionsSnapshot, error)
-	Close(context.Context, domainidentity.Principal, string, string) (domain.CloseCommand, error)
 }
 
-type NetworkProxyHandler struct{ service NetworkProxyManagement }
+type NetworkProxyConnectionCommands interface {
+	Close(context.Context, domainidentity.Principal, string, string) (domain.CloseCommand, error)
+	GetClose(context.Context, domainidentity.Principal, string, string) (domain.CloseCommand, error)
+}
 
-func NewNetworkProxyHandler(service NetworkProxyManagement) *NetworkProxyHandler {
-	return &NetworkProxyHandler{service: service}
+type NetworkProxyHandler struct {
+	service  NetworkProxyManagement
+	commands NetworkProxyConnectionCommands
+}
+
+func NewNetworkProxyHandler(service NetworkProxyManagement, commands NetworkProxyConnectionCommands) *NetworkProxyHandler {
+	return &NetworkProxyHandler{service: service, commands: commands}
 }
 
 func (h *NetworkProxyHandler) Create(c *gin.Context) {
@@ -61,14 +68,23 @@ func (h *NetworkProxyHandler) Get(c *gin.Context) {
 }
 
 func (h *NetworkProxyHandler) UpdateConfiguration(c *gin.Context) {
-	var input sohaapi.NetworkProxyConfigurationInput
+	var input sohaapi.NetworkProxyConfigurationPatchInput
 	if !bindNetworkJSON(c, &input) {
 		return
 	}
 	item, err := h.service.UpdateConfiguration(c.Request.Context(), principal(c), c.Param("instanceID"), domain.ConfigurationInput{
 		ExpectedRevision: int64(input.ExpectedRevision), Enabled: input.Enabled, Content: input.Content,
+		Binding:      proxyBinding(input.Binding),
+		ClearBinding: input.ClearBinding,
 	})
 	respondItem(c, http.StatusOK, item, err)
+}
+
+func proxyBinding(input *sohaapi.NetworkProxyBinding) *domain.Binding {
+	if input == nil {
+		return nil
+	}
+	return &domain.Binding{SiteID: input.SiteID, DeviceID: input.DeviceID, ResourceIDs: input.ResourceIDs}
 }
 
 func (h *NetworkProxyHandler) Traffic(c *gin.Context) {
@@ -106,10 +122,20 @@ func (h *NetworkProxyHandler) Connections(c *gin.Context) {
 }
 
 func (h *NetworkProxyHandler) Close(c *gin.Context) {
-	result, err := h.service.Close(c.Request.Context(), principal(c), c.Param("instanceID"), c.Param("connectionID"))
+	result, err := h.commands.Close(c.Request.Context(), principal(c), c.Param("instanceID"), c.Param("connectionID"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.JSON(c, http.StatusAccepted, result)
+}
+
+func (h *NetworkProxyHandler) GetClose(c *gin.Context) {
+	result, err := h.commands.GetClose(c.Request.Context(), principal(c), c.Param("instanceID"), c.Param("commandID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	apiresponse.JSON(c, http.StatusOK, result)
 }

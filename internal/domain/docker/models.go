@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	domaindlp "github.com/opensoha/soha/internal/domain/contentdlp"
 	"strings"
 	"time"
 
@@ -240,20 +241,23 @@ type ProjectVolumeFileList struct {
 }
 
 type ProjectVolumeFileReadInput struct {
-	ServiceName string `json:"serviceName,omitempty"`
-	Target      string `json:"target"`
-	Path        string `json:"path"`
-	LimitBytes  int64  `json:"limitBytes,omitempty"`
+	SessionID     string `json:"-"`
+	Authorization string `json:"-"`
+	ServiceName   string `json:"serviceName,omitempty"`
+	Target        string `json:"target"`
+	Path          string `json:"path"`
+	LimitBytes    int64  `json:"limitBytes,omitempty"`
 }
 
 type ProjectVolumeFileContent struct {
-	ProjectID   string `json:"projectId"`
-	ServiceName string `json:"serviceName"`
-	Target      string `json:"target"`
-	Path        string `json:"path"`
-	Content     string `json:"content"`
-	SizeBytes   int64  `json:"sizeBytes"`
-	Truncated   bool   `json:"truncated"`
+	DLP         *domaindlp.Decision `json:"dlp,omitempty"`
+	ProjectID   string              `json:"projectId"`
+	ServiceName string              `json:"serviceName"`
+	Target      string              `json:"target"`
+	Path        string              `json:"path"`
+	Content     string              `json:"content"`
+	SizeBytes   int64               `json:"sizeBytes"`
+	Truncated   bool                `json:"truncated"`
 }
 
 type Service struct {

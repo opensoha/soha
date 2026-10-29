@@ -30,6 +30,19 @@ func scanVPNIntent(row rowScanner) (domain.VPNIntent, error) {
 
 func (r *Repository) CreateVPNIntent(ctx context.Context, item domain.VPNIntent) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockWireGuardMutations(tx); err != nil {
+			return err
+		}
+		profile, err := New(tx).GetVPNProfile(ctx, item.ProfileID)
+		if err != nil {
+			return err
+		}
+		if profile.PublishedConfiguration == nil || profile.PublishedRevision != item.ProfileRevision {
+			return invalidVPNIntent()
+		}
+		if err := ensureVPNNotRevoked(tx, item.SubjectID, item.DeviceID, profile.PublishedConfiguration.SiteID); err != nil {
+			return err
+		}
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "network-vpn-intent:"+item.RuntimeID).Error; err != nil {
 			return err
 		}

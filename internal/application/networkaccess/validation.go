@@ -1,6 +1,7 @@
 package networkaccess
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/netip"
@@ -19,6 +20,9 @@ var (
 )
 
 func validateDeviceInput(input domainnetworkaccess.DeviceInput) error {
+	if input.ManagementState != "" && !oneOf(input.ManagementState, domainnetworkaccess.DeviceManagementManaged, domainnetworkaccess.DeviceManagementUnmanaged, domainnetworkaccess.DeviceManagementUnknown) {
+		return invalid("managementState is invalid")
+	}
 	if err := requiredText("name", input.Name, 200); err != nil {
 		return err
 	}
@@ -126,19 +130,44 @@ func validateDeviceAddresses(item domainnetworkaccess.DeviceNetworkInterface) er
 		seen := make(map[string]struct{}, len(values))
 		for _, value := range values {
 			address, err := netip.ParseAddr(value)
-			if err != nil || (label == "IPv4" && !address.Is4()) || (label == "IPv6" && !address.Is6()) {
+			if err != nil || !validReportedAddress(address, label) {
 				return invalid("network interface " + label + " address is invalid")
 			}
-			if _, exists := seen[value]; exists {
+			canonical := address.String()
+			if _, exists := seen[canonical]; exists {
 				return invalid("network interface " + label + " addresses must be unique")
 			}
-			seen[value] = struct{}{}
+			seen[canonical] = struct{}{}
 		}
 	}
 	return nil
 }
 
+func validReportedAddress(address netip.Addr, family string) bool {
+	if address.Is4In6() || address.Zone() != "" || address.IsUnspecified() || address.IsMulticast() {
+		return false
+	}
+	// Inventory includes loopback and link-local addresses; it grants no routes.
+	switch family {
+	case "IPv4":
+		return address.Is4()
+	case "IPv6":
+		return address.Is6()
+	default:
+		return address.IsValid()
+	}
+}
+
 func validateSiteInput(input domainnetworkaccess.SiteInput) error {
+	if input.ManagementIssuerKey != nil && *input.ManagementIssuerKey != "" {
+		key, err := base64.StdEncoding.DecodeString(*input.ManagementIssuerKey)
+		if err != nil || len(key) != 32 {
+			return invalid("managementIssuerKey must be a base64 Ed25519 public key")
+		}
+	}
+	if input.DeviceGovernance != "" && !oneOf(input.DeviceGovernance, domainnetworkaccess.DeviceGovernanceLegacy, domainnetworkaccess.DeviceGovernanceManaged, domainnetworkaccess.DeviceGovernanceRestricted, domainnetworkaccess.DeviceGovernanceVerified) {
+		return invalid("deviceGovernance is invalid")
+	}
 	if err := requiredText("name", input.Name, 200); err != nil {
 		return err
 	}
@@ -161,10 +190,10 @@ func validateSpaceInput(input domainnetworkaccess.SpaceInput) error {
 	if input.Status != domainnetworkaccess.StatusActive && input.Status != domainnetworkaccess.StatusDisabled {
 		return invalid("status is invalid")
 	}
-	return validateIPv4CIDRs("cidrs", input.CIDRs, false)
+	return validateIPCIDRs("cidrs", input.CIDRs, false)
 }
 
-func validateIPv4CIDRs(name string, values []string, allowEmpty bool) error {
+func validateIPCIDRs(name string, values []string, allowEmpty bool) error {
 	if (!allowEmpty && len(values) == 0) || len(values) > 64 {
 		return invalid("cidrs must contain between 1 and 64 entries")
 	}
@@ -173,8 +202,8 @@ func validateIPv4CIDRs(name string, values []string, allowEmpty bool) error {
 	for _, value := range values {
 		value = strings.TrimSpace(value)
 		prefix, err := netip.ParsePrefix(value)
-		if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() || prefix.Bits() == 0 {
-			return invalid(name + " must contain canonical non-default IPv4 prefixes")
+		if err != nil || prefix.Addr().Is4In6() || !prefix.Addr().IsGlobalUnicast() || prefix != prefix.Masked() || prefix.Bits() == 0 {
+			return invalid(name + " must contain canonical non-default IPv4 or IPv6 prefixes")
 		}
 		if _, exists := seen[value]; exists {
 			return invalid(name + " must be unique")
@@ -216,13 +245,13 @@ func validateResourceTarget(kind, target string) error {
 	switch kind {
 	case "cidr":
 		prefix, err := netip.ParsePrefix(target)
-		if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() {
-			return invalid("CIDR target must be a canonical IPv4 prefix")
+		if err != nil || prefix.Addr().Is4In6() || !prefix.Addr().IsGlobalUnicast() || prefix != prefix.Masked() {
+			return invalid("CIDR target must be a canonical IPv4 or IPv6 prefix")
 		}
 	case "ip":
 		address, err := netip.ParseAddr(target)
-		if err != nil || !address.Is4() {
-			return invalid("IP target must be an IPv4 address")
+		if err != nil || address.Is4In6() || !address.IsGlobalUnicast() {
+			return invalid("IP target must be an IPv4 or IPv6 address")
 		}
 	case "fqdn":
 		if !validFQDN(target) {
@@ -297,7 +326,7 @@ func validateGatewayInput(input domainnetworkaccess.GatewayInput) error {
 	if input.HubGatewayID != "" && input.RoutingMode != domainnetworkaccess.GatewayRoutingRouted {
 		return invalid("a spoke gateway must use routed mode")
 	}
-	if err := validateIPv4CIDRs("advertisedCidrs", input.AdvertisedCIDRs, true); err != nil {
+	if err := validateIPCIDRs("advertisedCidrs", input.AdvertisedCIDRs, true); err != nil {
 		return err
 	}
 	if err := validateGatewaySelection(input); err != nil {
@@ -307,15 +336,18 @@ func validateGatewayInput(input domainnetworkaccess.GatewayInput) error {
 }
 
 func validateGatewayNetwork(input domainnetworkaccess.GatewayInput) error {
-	if address, err := netip.ParseAddr(input.PublicEndpointHost); (err != nil || !address.Is4()) && !validFQDN(input.PublicEndpointHost) {
+	if address, err := netip.ParseAddr(input.PublicEndpointHost); (err != nil || address.Is4In6() || !address.IsGlobalUnicast()) && !validFQDN(input.PublicEndpointHost) {
 		return invalid("publicEndpointHost is invalid")
 	}
 	if input.PublicEndpointPort < 1 || input.PublicEndpointPort > 65535 {
 		return invalid("publicEndpointPort must be between 1 and 65535")
 	}
 	prefix, err := netip.ParsePrefix(input.OverlayCIDR)
-	if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() || prefix.Bits() < 16 || prefix.Bits() > 30 {
-		return invalid("overlayCidr must be a canonical IPv4 /16 through /30 prefix")
+	if err != nil || prefix.Addr().Is4In6() || !prefix.Addr().IsGlobalUnicast() || prefix != prefix.Masked() || !domainnetworkaccess.ValidOverlayPrefix(prefix) {
+		return invalid("overlayCidr must be canonical IPv4 /16-/30 or IPv6 /64-/126")
+	}
+	if prefix.Addr().Is6() && input.RoutingMode != domainnetworkaccess.GatewayRoutingRouted {
+		return invalid("IPv6 overlays require routed mode")
 	}
 	if input.RoutingMode != domainnetworkaccess.GatewayRoutingRouted && input.RoutingMode != domainnetworkaccess.GatewayRoutingSNAT {
 		return invalid("routingMode is invalid")
@@ -336,8 +368,8 @@ func validateGatewayDNS(servers []string) error {
 	seen := make(map[string]struct{}, len(servers))
 	for _, value := range servers {
 		address, err := netip.ParseAddr(value)
-		if err != nil || !address.Is4() {
-			return invalid("dnsServers must contain IPv4 addresses")
+		if err != nil || address.Is4In6() || !address.IsGlobalUnicast() {
+			return invalid("dnsServers must contain IPv4 or IPv6 addresses")
 		}
 		if _, exists := seen[value]; exists {
 			return invalid("dnsServers must be unique")
@@ -376,7 +408,7 @@ func validateMihomoProfileInput(input domainnetworkaccess.MihomoProfileInput) er
 	if input.MixedPort == input.ControllerPort {
 		return invalid("mixedPort and controllerPort must be different")
 	}
-	if err := requiredText("selectorGroup", input.SelectorGroup, 128); err != nil {
+	if err := validateMihomoSelectorName(input.SelectorGroup); err != nil {
 		return err
 	}
 	if err := validateMihomoMode(input); err != nil {
@@ -390,6 +422,20 @@ func validateMihomoProfileInput(input domainnetworkaccess.MihomoProfileInput) er
 		return err
 	}
 	return validateMihomoBypassHosts(input.BypassHosts)
+}
+
+func validateMihomoSelectorName(name string) error {
+	if err := requiredText("selectorGroup", name, 128); err != nil {
+		return err
+	}
+	if strings.ContainsAny(name, ",\r\n\t") {
+		return invalid("selectorGroup contains an invalid separator")
+	}
+	switch strings.ToUpper(name) {
+	case "DIRECT", "REJECT", "REJECT-DROP", "PASS", "COMPATIBLE", "GLOBAL", "SOHA-EGRESS-PROXY", "SOHA-EGRESS-DIRECT", "SOHA-VPN", "SOHA-MANUAL", "SOHA-MANAGED":
+		return invalid("selectorGroup conflicts with a reserved proxy name")
+	}
+	return nil
 }
 
 func validateMihomoMode(input domainnetworkaccess.MihomoProfileInput) error {
@@ -464,7 +510,7 @@ func validateMihomoDNS(mode, fakeIPRange string) (netip.Prefix, error) {
 		var err error
 		fakeIP, err = parseCanonicalIPv4Prefix(fakeIPRange)
 		if err != nil || fakeIP.Bits() == 0 {
-			return netip.Prefix{}, invalid("fakeIpRange must be a canonical IPv4 prefix other than the default route")
+			return netip.Prefix{}, invalid("fakeIpRange must be a canonical IPv4 or IPv6 prefix other than the default route")
 		}
 	default:
 		return netip.Prefix{}, invalid("dnsMode is invalid")
@@ -480,7 +526,7 @@ func validateMihomoBypassCIDRs(cidrs []string, fakeIP netip.Prefix) error {
 	for _, value := range cidrs {
 		prefix, err := parseCanonicalIPv4Prefix(value)
 		if err != nil || prefix.Bits() == 0 {
-			return invalid("bypassCidrs must contain canonical IPv4 prefixes other than the default route")
+			return invalid("bypassCidrs must contain canonical IPv4 or IPv6 prefixes other than the default route")
 		}
 		if _, exists := seenCIDRs[value]; exists {
 			return invalid("bypassCidrs must be unique")
@@ -500,8 +546,8 @@ func validateMihomoBypassHosts(hosts []string) error {
 	seenHosts := make(map[string]struct{}, len(hosts))
 	for _, host := range hosts {
 		address, err := netip.ParseAddr(host)
-		if (err != nil || !address.Is4()) && !validFQDN(host) {
-			return invalid("bypassHosts must contain IPv4 addresses or FQDNs")
+		if (err != nil || address.Is4In6() || !address.IsGlobalUnicast()) && !validFQDN(host) {
+			return invalid("bypassHosts must contain IPv4 or IPv6 addresses or FQDNs")
 		}
 		if _, exists := seenHosts[host]; exists {
 			return invalid("bypassHosts must be unique")
@@ -533,8 +579,8 @@ func ValidateMihomoSubscriptionURL(value string) error {
 
 func parseCanonicalIPv4Prefix(value string) (netip.Prefix, error) {
 	prefix, err := netip.ParsePrefix(value)
-	if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() {
-		return netip.Prefix{}, invalid("value must be a canonical IPv4 prefix")
+	if err != nil || prefix.Addr().Is4In6() || !prefix.Addr().IsGlobalUnicast() || prefix != prefix.Masked() {
+		return netip.Prefix{}, invalid("value must be a canonical IPv4 or IPv6 prefix")
 	}
 	return prefix, nil
 }
@@ -679,6 +725,9 @@ func validateSessionActionInput(input domainnetworkaccess.SessionActionInput, re
 }
 
 func validateNASBindingInput(input domainnetworkaccess.NASBindingInput) error {
+	if err := ValidateEAPServerTrust(input.EAPServerTrust); err != nil {
+		return err
+	}
 	for name, value := range map[string]string{"nasId": input.NASID, "runtimeId": input.RuntimeID, "siteId": input.SiteID} {
 		if !runtimeIdentifierPattern.MatchString(value) {
 			return invalid(name + " is invalid")
@@ -753,6 +802,9 @@ func validateSiteProfileBindingFilter(filter domainnetworkaccess.SiteProfileBind
 }
 
 func validatePolicyInput(input domainnetworkaccess.PolicyInput) error {
+	if err := validateStringList("deviceManagementStates", input.DeviceManagementStates, 3, []string{domainnetworkaccess.DeviceManagementManaged, domainnetworkaccess.DeviceManagementUnmanaged, domainnetworkaccess.DeviceManagementUnknown}); err != nil {
+		return err
+	}
 	if err := requiredText("name", input.Name, 200); err != nil {
 		return err
 	}
@@ -773,6 +825,7 @@ func validatePolicyInput(input domainnetworkaccess.PolicyInput) error {
 	}
 	for name, values := range map[string][]string{
 		"subjects.users": input.Subjects.Users,
+		"subjects.roles": input.Subjects.Roles,
 		"subjects.teams": input.Subjects.Teams,
 		"subjects.tags":  input.Subjects.Tags,
 		"siteIds":        input.SiteIDs,
@@ -820,8 +873,8 @@ func validateConflictRanges(ranges []domainnetworkaccess.ConflictRange) error {
 			return err
 		}
 		prefix, err := netip.ParsePrefix(item.CIDR)
-		if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() {
-			return invalid("conflict range CIDR must be a canonical IPv4 prefix")
+		if err != nil || prefix.Addr().Is4In6() || !prefix.Addr().IsGlobalUnicast() || prefix != prefix.Masked() {
+			return invalid("conflict range CIDR must be a canonical IPv4 or IPv6 prefix")
 		}
 	}
 	return nil

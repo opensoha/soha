@@ -19,6 +19,7 @@ import (
 var hashPattern = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
 type RuntimeStore interface {
+	PrepareConfiguration(context.Context, string, time.Time) (domain.Instance, error)
 	Get(context.Context, string) (domain.Instance, error)
 	Touch(context.Context, string, time.Time) error
 	Apply(context.Context, string, domain.Applied, time.Time) error
@@ -69,6 +70,17 @@ func (s *Runtime) Configuration(ctx context.Context, identity networkidentity.Id
 	if err := s.store.Touch(ctx, item.ID, s.now().UTC()); err != nil {
 		return nil, err
 	}
+	credential, err := s.credentials.ActiveCredential(ctx, identity.CertificateFingerprint, s.now().UTC())
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(credential.Capabilities, "proxy-policy-v1") || !slices.Contains(credential.Capabilities, "proxy-guarded-dns-v1") {
+		return nil, nil
+	}
+	item, err = s.store.PrepareConfiguration(ctx, item.ID, s.now().UTC())
+	if err != nil {
+		return nil, err
+	}
 	if item.DesiredRevision == 0 {
 		return nil, nil
 	}
@@ -76,8 +88,12 @@ func (s *Runtime) Configuration(ctx context.Context, identity networkidentity.Id
 	if err != nil {
 		return nil, fmt.Errorf("decrypt proxy configuration: %w", err)
 	}
-	return &domain.Configuration{Revision: item.DesiredRevision, Engine: item.Engine, Enabled: item.Enabled,
-		ContentHash: item.DesiredHash, Content: content, ValidUntil: s.now().UTC().Add(5 * time.Minute)}, nil
+	validUntil := s.now().UTC().Add(5 * time.Minute)
+	if credential.ExpiresAt.Before(validUntil) {
+		validUntil = credential.ExpiresAt
+	}
+	return &domain.Configuration{Revision: item.DesiredRevision, Engine: item.Engine, Enabled: item.Enabled && !item.SecurityRestricted, Binding: item.Binding, Protection: item.Protection,
+		ContentHash: item.DesiredHash, Content: content, ValidUntil: validUntil}, nil
 }
 
 func (s *Runtime) Applied(ctx context.Context, identity networkidentity.Identity, applied domain.Applied) error {
@@ -96,6 +112,18 @@ func (s *Runtime) Observe(ctx context.Context, identity networkidentity.Identity
 	item, err := s.authenticate(ctx, identity)
 	if err != nil {
 		return err
+	}
+	if observation.Health == "healthy" {
+		if !slices.Contains(observation.Capabilities, "protected_destinations_v1") || !slices.Contains(observation.Capabilities, "guarded_dns_tcp_v1") {
+			return invalid("healthy proxy observations require protected destination support")
+		}
+		item, err = s.store.PrepareConfiguration(ctx, item.ID, s.now().UTC())
+		if err != nil {
+			return err
+		}
+		if !item.Enabled || item.SecurityRestricted || item.PolicyVersion < 1 || item.DesiredRevision != item.ObservedRevision || item.PolicyVersion != item.ObservedPolicyVersion {
+			return apperrors.ErrConflict
+		}
 	}
 	now := s.now().UTC()
 	if err := validateObservation(item, now, at, observation); err != nil {
@@ -119,18 +147,21 @@ func validateObservation(item domain.Instance, now, at time.Time, observation do
 }
 
 func validateCapabilities(engine string, capabilities []string) error {
-	if capabilities == nil || len(capabilities) > 3 {
+	if capabilities == nil || len(capabilities) > 6 {
 		return invalid("proxy capabilities are invalid")
 	}
 	seen := make(map[string]struct{}, len(capabilities))
 	for _, capability := range capabilities {
-		if capability != "traffic" && capability != "connections" && capability != "close_connection" {
+		if capability != "traffic" && capability != "connections" && capability != "close_connection" && capability != "protected_destinations_v1" && capability != "protection_rules_readback" && capability != "guarded_dns_tcp_v1" {
 			return invalid("proxy capabilities are invalid")
 		}
 		if _, duplicate := seen[capability]; duplicate {
 			return invalid("proxy capabilities must be unique")
 		}
 		seen[capability] = struct{}{}
+	}
+	if slices.Contains(capabilities, "protection_rules_readback") && (engine != domain.EngineMihomo || !slices.Contains(capabilities, "protected_destinations_v1")) {
+		return invalid("proxy rule readback is unsupported")
 	}
 	if engine == domain.EngineV2Ray && (slices.Contains(capabilities, "connections") || slices.Contains(capabilities, "close_connection")) {
 		return invalid("V2Ray connection operations are unsupported")

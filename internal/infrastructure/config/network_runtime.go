@@ -21,6 +21,7 @@ type MutualTLSConfig struct {
 }
 
 type NetworkControlConfig struct {
+	EAPIssuer                EAPIssuerConfig          `mapstructure:"eap_issuer"`
 	IngestQuery              NetworkIngestQueryConfig `mapstructure:"ingest_query"`
 	HTTP                     HTTPConfig               `mapstructure:"http"`
 	Logger                   LoggerConfig             `mapstructure:"logger"`
@@ -33,6 +34,11 @@ type NetworkControlConfig struct {
 	ConfigurationTTL         time.Duration            `mapstructure:"configuration_ttl"`
 	LeaseTTL                 time.Duration            `mapstructure:"lease_ttl"`
 	CredentialEncryptionKeys keyring.Ring             `mapstructure:"-"`
+}
+
+type EAPIssuerConfig struct {
+	CAFile  string `mapstructure:"ca_file"`
+	KeyFile string `mapstructure:"key_file"`
 }
 
 type IngestConfig struct {
@@ -104,6 +110,9 @@ func loadNetworkRuntimeConfig() (networkRuntimeConfig, error) {
 
 func (c NetworkControlConfig) Validate() error {
 	problems := validateRuntimeConfig("network_control", c.HTTP, c.Logger, c.Database, c.TLS)
+	if (strings.TrimSpace(c.EAPIssuer.CAFile) == "") != (strings.TrimSpace(c.EAPIssuer.KeyFile) == "") {
+		problems = append(problems, "network_control.eap_issuer requires both ca_file and key_file")
+	}
 	if err := c.IngestQuery.Validate(); err != nil {
 		problems = append(problems, "network_control.ingest_query: "+err.Error())
 	}
@@ -149,6 +158,8 @@ func (c IngestConfig) Validate() error {
 }
 
 func (c *networkRuntimeConfig) expandEnv() {
+	c.NetworkControl.EAPIssuer.CAFile = os.ExpandEnv(c.NetworkControl.EAPIssuer.CAFile)
+	c.NetworkControl.EAPIssuer.KeyFile = os.ExpandEnv(c.NetworkControl.EAPIssuer.KeyFile)
 	for _, value := range []*string{&c.NetworkControl.IngestQuery.URL, &c.NetworkControl.IngestQuery.CAFile, &c.NetworkControl.IngestQuery.CertFile, &c.NetworkControl.IngestQuery.KeyFile, &c.NetworkControl.IngestQuery.ServerName} {
 		*value = os.ExpandEnv(*value)
 	}
@@ -250,6 +261,8 @@ func setNetworkRuntimeDefaults(v *viper.Viper) {
 	v.SetDefault("network_control.max_clock_skew", "5m")
 	v.SetDefault("network_control.configuration_ttl", "5m")
 	v.SetDefault("network_control.lease_ttl", "5m")
+	v.SetDefault("network_control.eap_issuer.ca_file", "")
+	v.SetDefault("network_control.eap_issuer.key_file", "")
 	for _, key := range []string{"url", "ca_file", "cert_file", "key_file", "server_name"} {
 		v.SetDefault("network_control.ingest_query."+key, "")
 	}
