@@ -431,11 +431,13 @@ describe('CRD catalog page', () => {
     vi.clearAllMocks()
   })
 
-  it('keeps the CRD catalog query controls outside the table and uses shared pagination', async () => {
+  it('keeps the CRD catalog query controls outside the table and uses shared continuous browsing', async () => {
     const container = await renderWithProviders(<CRDPage />)
 
     expect(container.querySelector('[data-testid="page-header"]')).toBeNull()
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('1 个 API Groups')
     expect(container.querySelector('[data-testid="table-toolbar"]')).toBeNull()
     expect(
       container.querySelector('input[placeholder="搜索 API Group / CRD / Kind / Version"]'),
@@ -465,7 +467,7 @@ describe('CRD catalog page', () => {
     expect(container.querySelector('[data-testid="cell-0-2"]')?.textContent).toContain('2 个')
   })
 
-  it('keeps Helm release list filters in the query card and uses shared pagination', async () => {
+  it('keeps Helm release list filters in the query card and uses shared continuous browsing', async () => {
     setResponses({
       '/clusters/cluster-a/helm/releases?namespace=team-a': [
         {
@@ -491,7 +493,9 @@ describe('CRD catalog page', () => {
 
     const container = await renderWithProviders(<HelmReleasesPage />, '/helm/releases')
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('2 个 Helm Releases')
     expect(container.querySelector('[data-testid="table-toolbar"]')).toBeNull()
     expect(
       container.querySelector(
@@ -868,7 +872,7 @@ describe('CRD catalog page', () => {
     expect(container.querySelector('[data-testid="crd-yaml-editor"]')).toBeNull()
   })
 
-  it('keeps CRD types visible, loads only the selected type, and preserves instance search and pagination on return', async () => {
+  it('keeps CRD types visible, loads only the selected type, and preserves instance search and the continuous list on return', async () => {
     widgetResponses(['view'])
     const otherCRD = {
       ...widgetCRD,
@@ -914,14 +918,8 @@ describe('CRD catalog page', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }))
     })
     expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('20')
-    await act(async () => {
-      ;[...container.querySelectorAll('button')]
-        .find((button) => button.textContent === 'Next page')!
-        .click()
-    })
-    expect(
-      container.querySelector('[data-testid="pagination"]')?.getAttribute('data-current'),
-    ).toBe('2')
+    expect(container.querySelector('[data-testid="pagination"]')).toBeNull()
+    expect(container.textContent).toContain('sample-16')
     await openInstance(container, 'sample-16')
     await waitForEditor(container)
     expect(directory.isConnected).toBe(true)
@@ -938,10 +936,12 @@ describe('CRD catalog page', () => {
       container.querySelector<HTMLInputElement>('input[placeholder="搜索实例 / 命名空间 / 摘要"]')
         ?.value,
     ).toBe('sample-')
+    expect(container.querySelector('[data-testid="pagination"]')).toBeNull()
     expect(
-      container.querySelector('[data-testid="pagination"]')?.getAttribute('data-current'),
-    ).toBe('2')
-    expect(container.querySelector('.soha-crd-instance-name')?.textContent).toBe('sample-16')
+      Array.from(container.querySelectorAll('.soha-crd-instance-name')).some(
+        (item) => item.textContent === 'sample-16',
+      ),
+    ).toBe(true)
     await act(async () => {
       const input = directory.querySelector<HTMLInputElement>('input')!
       setNativeInputValue(input, 'Zadget')
@@ -966,9 +966,7 @@ describe('CRD catalog page', () => {
       container.querySelector<HTMLInputElement>('input[placeholder="搜索实例 / 命名空间 / 摘要"]')
         ?.value,
     ).toBe('')
-    expect(
-      container.querySelector('[data-testid="pagination"]')?.getAttribute('data-current'),
-    ).toBe('1')
+    expect(container.querySelector('[data-testid="pagination"]')).toBeNull()
     expect(container.querySelector('[data-testid="column-titles"]')?.textContent).not.toContain(
       '命名空间',
     )

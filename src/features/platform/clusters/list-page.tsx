@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementBatchBar,
   ManagementDensityButton,
@@ -14,7 +14,6 @@ import { ReadFeedback } from '@/components/request-feedback'
 import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformBatchReceipt,
   platformBatchUnknown,
@@ -674,7 +673,17 @@ export function ClustersPage() {
           onClose={() => setUpgradingCluster(null)}
         />
       ) : null}
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'clusters'}
+        resourceLabel={t('common.clusters', 'Clusters')}
+        allRows={clusters}
+        filterKey={JSON.stringify([
+          appliedSearchText,
+          appliedStatusFilter,
+          appliedTypeFilter,
+          appliedModeFilter,
+        ])}
+        scopeMode={'global'}
         error={clustersQuery.isEnabled === false ? null : clustersQuery.error}
         hasReadData={clustersQuery.data !== undefined}
         onRetry={clustersQuery.isEnabled === false ? undefined : () => clustersQuery.refetch()}
@@ -695,10 +704,8 @@ export function ClustersPage() {
         rowKey="id"
         loading={clustersQuery.isLoading}
         localSorting
-        pageSize={K8S_TABLE_PAGE_SIZE}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
         rowSelection={{
           selectedRowKeys,
           onChange: (nextSelectedRowKeys: Key[]) => {

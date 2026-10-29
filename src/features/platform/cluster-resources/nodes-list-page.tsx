@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
   ManagementIconButton,
@@ -20,7 +20,6 @@ import {
 } from '@/features/platform/node-resource-utils'
 import { useKubernetesResourceStream } from '@/features/platform/shared/resource-stream'
 import { ResourceStreamStatus } from '@/features/platform/shared/resource-stream-status'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -418,7 +417,12 @@ export function ClusterNodesPage() {
           title={t('common.pleaseSelectCluster', 'Please select a cluster')}
         />
       ) : (
-        <AdminTable
+        <KubernetesResourceTable
+          resourceKey={'nodes'}
+          resourceLabel={t('common.nodes', 'Nodes')}
+          allRows={nodes}
+          filterKey={''}
+          scopeMode={'cluster'}
           error={nodesQuery.isEnabled === false ? null : nodesQuery.error}
           hasReadData={nodesQuery.data !== undefined}
           onRetry={nodesQuery.isEnabled === false ? undefined : () => nodesQuery.refetch()}
@@ -458,12 +462,10 @@ export function ClusterNodesPage() {
           rowKey="name"
           loading={nodesQuery.isLoading}
           localSorting
-          pageSize={K8S_TABLE_PAGE_SIZE}
           tableSize={nodeTableSize}
           tableLayout="fixed"
           scroll={{ x: 960 }}
           expandable={{ columnWidth: 48, fixed: pinColumns ? 'left' : undefined }}
-          viewportScroll
           expandedRowRender={(record: ClusterNode) => <NodeResourcePanel node={record} />}
           hideExpandedColumn={false}
         />

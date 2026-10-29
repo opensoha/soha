@@ -77,24 +77,17 @@ vi.mock('@/components/management-list', () => ({
   ManagementState: ({ description }: { description?: ReactNode }) => <div>{description}</div>,
   ManagementTableToolbar: ({ children }: { children?: ReactNode }) => <>{children}</>,
 }))
-vi.mock('@/components/management-data-page', () => ({
-  ManagementDataPage: ({
-    beforeQuery,
-    table,
-  }: {
-    beforeQuery?: ReactNode
-    table: {
-      columns: Array<{
-        dataIndex?: string
-        key?: string
-        render?: (value: unknown, record: Record<string, unknown>) => ReactNode
-      }>
-      dataSource: Array<Record<string, unknown>>
-      headerExtra?: ReactNode
-    }
+vi.mock('@/components/admin-table', () => ({
+  AdminTable: (table: {
+    columns: Array<{
+      dataIndex?: string
+      key?: string
+      render?: (value: unknown, record: Record<string, unknown>) => ReactNode
+    }>
+    dataSource: Array<Record<string, unknown>>
+    headerExtra?: ReactNode
   }) => (
     <div>
-      {beforeQuery}
       {table.headerExtra}
       {table.dataSource.map((record, rowIndex) => (
         <div key={rowIndex}>
@@ -107,6 +100,20 @@ vi.mock('@/components/management-data-page', () => ({
           ))}
         </div>
       ))}
+    </div>
+  ),
+}))
+vi.mock('@/components/management-data-page', () => ({
+  ManagementDataPage: ({
+    beforeQuery,
+    tableNode,
+  }: {
+    beforeQuery?: ReactNode
+    tableNode?: ReactNode
+  }) => (
+    <div>
+      {beforeQuery}
+      {tableNode}
     </div>
   ),
 }))

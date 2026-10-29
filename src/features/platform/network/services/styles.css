@@ -8,10 +8,12 @@
 
 .soha-service-port-chain {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  min-width: max-content;
-  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
 }
 
 .soha-service-port-arrow {

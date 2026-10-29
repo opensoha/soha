@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
 import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { hasAllowedAction } from '@/features/auth'
@@ -6,7 +6,6 @@ import {
   capabilityActionTooltip,
   useClusterCapability,
 } from '@/features/platform/cluster-capabilities'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -266,7 +265,11 @@ export function WorkloadsDaemonSetsPage() {
           }
         />
       </WorkloadQueryPanel>
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'daemonsets'}
+        resourceLabel={'DaemonSets'}
+        allRows={daemonSets}
+        filterKey={searchKeyword}
         error={daemonSetsQuery.isEnabled === false ? null : daemonSetsQuery.error}
         hasReadData={daemonSetsQuery.data !== undefined}
         onRetry={daemonSetsQuery.isEnabled === false ? undefined : () => daemonSetsQuery.refetch()}
@@ -292,7 +295,6 @@ export function WorkloadsDaemonSetsPage() {
         onRow={(record: DaemonSet) => workloadRowAIContext('daemonsets', record, clusterId)}
         loading={daemonSetsQuery.isLoading}
         localSorting
-        pageSize={K8S_TABLE_PAGE_SIZE}
         empty={
           <WorkloadTableEmpty
             clusterId={clusterId}
@@ -304,7 +306,6 @@ export function WorkloadsDaemonSetsPage() {
         }
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
       />
       {editTarget ? (
         <WorkloadQuickEditModal

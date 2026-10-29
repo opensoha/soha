@@ -299,7 +299,7 @@ describe('platform RBAC list pages', () => {
     expect(container.textContent).not.toContain('editor-binding')
   })
 
-  it('keeps RBAC search controls in a query card and uses shared pagination', async () => {
+  it('keeps RBAC search controls in a query card and uses shared continuous browsing', async () => {
     setResponses({
       '/clusters/cluster-a/access-control/serviceaccounts?namespace=team-a': [
         {
@@ -315,7 +315,9 @@ describe('platform RBAC list pages', () => {
 
     const container = await renderWithProviders(<PlatformAccessControlServiceAccountsPage />)
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('1 个 ServiceAccounts')
     expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
     expect(container.querySelector('input[placeholder="搜索 ServiceAccounts"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
@@ -454,7 +456,7 @@ describe('platform configuration list pages', () => {
     vi.clearAllMocks()
   })
 
-  it('keeps configuration query controls in a separate card and uses shared pagination', async () => {
+  it('keeps configuration query controls in a separate card and uses shared continuous browsing', async () => {
     setResponses({
       '/clusters/cluster-a/configuration/configmaps?namespace=team-a': [
         {
@@ -481,7 +483,9 @@ describe('platform configuration list pages', () => {
       '/configuration/configmaps',
     )
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('2 个 ConfigMaps')
     expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
     expect(
       container.querySelector('input[placeholder="搜索 ConfigMaps 名称 / 命名空间"]'),

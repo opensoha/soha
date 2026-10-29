@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
   ManagementIconButton,
@@ -8,7 +8,6 @@ import {
 } from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import '@/features/platform/extensions/styles.css'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
@@ -40,22 +39,14 @@ export function CRDPage() {
   )
   const [params, setParams] = useSearchParams()
   const searchKeyword = params.get('q') ?? ''
-  const page = Math.max(1, Number.parseInt(params.get('page') ?? '1', 10) || 1)
-  const pageSize = Math.min(
-    100,
-    Math.max(
-      1,
-      Number.parseInt(params.get('pageSize') ?? String(K8S_TABLE_PAGE_SIZE), 10) ||
-        K8S_TABLE_PAGE_SIZE,
-    ),
-  )
   const setSearchKeyword = (keyword: string) =>
     setParams(
       (current) => {
         const next = new URLSearchParams(current)
         if (keyword) next.set('q', keyword)
         else next.delete('q')
-        next.set('page', '1')
+        next.delete('page')
+        next.delete('pageSize')
         return next
       },
       { replace: true },
@@ -206,7 +197,12 @@ export function CRDPage() {
         searchKeyword={searchKeyword}
         setSearchKeyword={setSearchKeyword}
       />
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'crds'}
+        resourceLabel={'API Groups'}
+        allRows={apiGroups}
+        filterKey={searchKeyword}
+        scopeMode={'cluster'}
         error={catalogQuery.isEnabled === false ? null : catalogQuery.error}
         hasReadData={catalogQuery.data !== undefined}
         onRetry={catalogQuery.isEnabled === false ? undefined : () => catalogQuery.refetch()}
@@ -219,24 +215,8 @@ export function CRDPage() {
         rowKey="group"
         loading={catalogQuery.isLoading}
         localSorting
-        pageSize={pageSize}
-        pagination={{
-          current: page,
-          pageSize,
-          onChange: (nextPage: number, size: number) =>
-            setParams(
-              (current) => {
-                const next = new URLSearchParams(current)
-                next.set('page', String(nextPage))
-                next.set('pageSize', String(size))
-                return next
-              },
-              { replace: true },
-            ),
-        }}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
         onRow={(record: CRDApiGroupSummary) => ({
           onClick: () => openGroup(record.group),
           style: { cursor: 'pointer' },

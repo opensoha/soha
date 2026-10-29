@@ -103,23 +103,33 @@ test('U07: multiple kinds switch the exact scoped resource request', async ({
   ).toBe(true)
 })
 
-test('U08: browser return preserves catalog query, page and scope', async ({ page }) => {
+test('U08: legacy page links open the complete catalog and preserve query on return', async ({
+  page,
+}) => {
   await page.goto('/extensions?q=group&page=2')
+  await expect(page.locator('.ant-pagination')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
+  const list = page.getByRole('region', { name: '资源列表，可连续滚动', exact: true })
+  await list.focus()
+  await list.press('End')
   await page.getByRole('button', { name: definitions[17].group, exact: true }).click()
   await expect(page.getByText('sample-widget', { exact: true })).toBeVisible()
   await page.goBack()
   await expect(page).toHaveURL(/\/extensions\?q=group&page=2$/)
   await expect(page.getByPlaceholder('搜索 API Group / CRD / Kind / Version')).toHaveValue('group')
-  await expect(page.getByRole('button', { name: definitions[17].group, exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
 })
 
-test('U02–U04: complete local catalog query, pagination, sorting and reset', async ({
+test('U02–U04: complete local catalog query, continuous scrolling, sorting and reset', async ({
   page,
   evidence,
 }) => {
   await page.goto('/extensions')
   await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
-  await page.getByTitle('2', { exact: true }).click()
+  await expect(page.locator('.ant-pagination')).toHaveCount(0)
+  const list = page.getByRole('region', { name: '资源列表，可连续滚动', exact: true })
+  await list.focus()
+  await list.press('End')
   await expect(page.getByRole('button', { name: definitions[17].group, exact: true })).toBeVisible()
   const search = page.getByPlaceholder('搜索 API Group / CRD / Kind / Version')
   await search.fill('group17')
@@ -128,7 +138,7 @@ test('U02–U04: complete local catalog query, pagination, sorting and reset', a
     0,
   )
   await search.fill('')
-  await page.getByTitle('1', { exact: true }).click()
+  await expect.poll(() => list.evaluate((node) => node.scrollTop)).toBe(0)
   await page.getByRole('columnheader', { name: 'API Group' }).click()
   await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
   await page.getByRole('columnheader', { name: 'API Group' }).click()

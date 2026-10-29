@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
   ManagementIconButton,
@@ -13,7 +13,6 @@ import {
   useClusterCapability,
 } from '@/features/platform/cluster-capabilities'
 import '@/features/platform/extensions/styles.css'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -222,7 +221,11 @@ export function HelmReleasesPage() {
           description={capabilityReason}
         />
       ) : null}
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'helm-releases'}
+        resourceLabel={'Helm Releases'}
+        allRows={rawItems}
+        filterKey={searchKeyword}
         error={releasesQuery.isEnabled === false ? null : releasesQuery.error}
         hasReadData={releasesQuery.data !== undefined}
         onRetry={releasesQuery.isEnabled === false ? undefined : () => releasesQuery.refetch()}
@@ -235,10 +238,8 @@ export function HelmReleasesPage() {
         rowKey={(record) => `${record.namespace}:${record.name}`}
         loading={releasesQuery.isLoading}
         localSorting
-        pageSize={K8S_TABLE_PAGE_SIZE}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
         onRow={(record: HelmRelease) => ({
           onClick: () => navigate(buildHelmReleaseRoutePath(record.name, record.namespace)),
           style: { cursor: 'pointer' },

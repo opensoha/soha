@@ -1,3 +1,4 @@
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
@@ -13,7 +14,6 @@ import { TableCellLink } from '@/components/table-cell-content'
 import { hasAllowedAction } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { CreateEntry } from '@/features/platform/resource-creation/components/create-entry'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -240,76 +240,81 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
             />
           ),
         }}
-        table={{
-          error: query.isEnabled === false ? null : query.error,
-          hasReadData: query.data !== undefined,
-          onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
-          className: 'soha-platform-table',
-          columnSettingIconOnly: true,
-          columnSettingPlacement: 'header',
-          headerExtra: (
-            <ManagementTableToolbar>
-              {canCreate ? (
-                <CreateEntry
-                  context={{
-                    clusterId: clusterId || '',
-                    defaultNamespace:
-                      scopeMode === 'namespace' ? namespace || undefined : undefined,
-                    expectedKind: singularLabel,
-                    resourceGroup: 'configuration',
-                    scopeMode,
-                    source: 'list',
-                  }}
-                  defaultTemplate={defaultTemplate || ''}
-                  label={singularLabel || label}
+        tableNode={
+          <KubernetesResourceTable
+            resourceKey={`configuration:${kind}`}
+            resourceLabel={label}
+            allRows={rawItems}
+            filterKey={normalizedKeyword}
+            scopeMode={scopeMode}
+            error={query.isEnabled === false ? null : query.error}
+            hasReadData={query.data !== undefined}
+            onRetry={query.isEnabled === false ? undefined : () => query.refetch()}
+            className={'soha-platform-table'}
+            columnSettingIconOnly={true}
+            columnSettingPlacement={'header'}
+            headerExtra={
+              <ManagementTableToolbar>
+                {canCreate ? (
+                  <CreateEntry
+                    context={{
+                      clusterId: clusterId || '',
+                      defaultNamespace:
+                        scopeMode === 'namespace' ? namespace || undefined : undefined,
+                      expectedKind: singularLabel,
+                      resourceGroup: 'configuration',
+                      scopeMode,
+                      source: 'list',
+                    }}
+                    defaultTemplate={defaultTemplate || ''}
+                    label={singularLabel || label}
+                  />
+                ) : null}
+                <ManagementDensityButton
+                  aria-label={densityLabel}
+                  title={densityLabel}
+                  tooltip={densityLabel}
+                  onClick={() =>
+                    setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
+                  }
                 />
-              ) : null}
-              <ManagementDensityButton
-                aria-label={densityLabel}
-                title={densityLabel}
-                tooltip={densityLabel}
-                onClick={() =>
-                  setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
-                }
+                <ManagementRefreshButton
+                  aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  disabled={!clusterId}
+                  loading={query.isFetching}
+                  tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  onClick={() => {
+                    if (clusterId) void query.refetch()
+                  }}
+                />
+              </ManagementTableToolbar>
+            }
+            columns={canShowActions ? [...columns, actionColumn] : columns}
+            dataSource={clusterId ? filteredItems : []}
+            rowKey={(record) => `${record.namespace ?? ''}/${record.name}`}
+            onRow={(record: T) => ({
+              'data-ai-context': encodeAIContextForElement({
+                sourceWorkbench: 'platform',
+                entityKind,
+                entityName: record.name,
+                clusterId: clusterId || undefined,
+                namespace: record.namespace || undefined,
+              }),
+            })}
+            loading={query.isLoading}
+            localSorting={true}
+            empty={
+              <ManagementState
+                bordered={false}
+                compact
+                description={effectiveEmptyDescription}
+                kind={!clusterId ? 'select-scope' : 'empty'}
               />
-              <ManagementRefreshButton
-                aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                disabled={!clusterId}
-                loading={query.isFetching}
-                tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                onClick={() => {
-                  if (clusterId) void query.refetch()
-                }}
-              />
-            </ManagementTableToolbar>
-          ),
-          columns: canShowActions ? [...columns, actionColumn] : columns,
-          dataSource: clusterId ? filteredItems : [],
-          rowKey: (record) => `${record.namespace ?? ''}/${record.name}`,
-          onRow: (record: T) => ({
-            'data-ai-context': encodeAIContextForElement({
-              sourceWorkbench: 'platform',
-              entityKind,
-              entityName: record.name,
-              clusterId: clusterId || undefined,
-              namespace: record.namespace || undefined,
-            }),
-          }),
-          loading: query.isLoading,
-          localSorting: true,
-          empty: (
-            <ManagementState
-              bordered={false}
-              compact
-              description={effectiveEmptyDescription}
-              kind={!clusterId ? 'select-scope' : 'empty'}
-            />
-          ),
-          pageSize: K8S_TABLE_PAGE_SIZE,
-          tableSize,
-          scroll: { x: 'max-content' },
-          viewportScroll: true,
-        }}
+            }
+            tableSize={tableSize}
+            scroll={{ x: 'max-content' }}
+          />
+        }
       />
     </>
   )

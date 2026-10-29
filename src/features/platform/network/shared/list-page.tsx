@@ -1,3 +1,4 @@
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
@@ -14,7 +15,6 @@ import type { AIPageContext } from '@/features/copilot'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { CreateEntry } from '@/features/platform/resource-creation/components/create-entry'
 import { getResourceCreateTemplate } from '@/features/platform/resource-creation/templates'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -238,69 +238,76 @@ export function NetworkResourceListPage<T extends NetworkResourceRecord>({
             />
           ),
         }}
-        table={{
-          error: query.isEnabled === false ? null : query.error,
-          hasReadData: query.data !== undefined,
-          onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
-          className: 'soha-platform-table',
-          columnSettingIconOnly: true,
-          columnSettingPlacement: 'header',
-          columns: canShowActions ? [...columns, actionColumn] : columns,
-          dataSource: clusterId ? filteredItems : [],
-          rowKey: rowKey ?? ((record) => `${record.namespace}/${record.name}`),
-          onRow: rowProps,
-          loading: query.isLoading,
-          localSorting: true,
-          pageSize: K8S_TABLE_PAGE_SIZE,
-          tableSize,
-          scroll: { x: 'max-content' },
-          viewportScroll: true,
-          headerExtra: (
-            <ManagementTableToolbar>
-              {createKind ? (
-                <CreateEntry
-                  context={{
-                    clusterId: clusterId || '',
-                    defaultNamespace:
-                      createScope === 'namespace' ? namespace || undefined : undefined,
-                    expectedApiVersion: createAPIVersion,
-                    expectedKind: createKind,
-                    resourceGroup: 'network',
-                    scopeMode: createScope,
-                    source: 'list',
-                  }}
-                  defaultTemplate={getResourceCreateTemplate(createKind)}
-                  label={createKind}
+        tableNode={
+          <KubernetesResourceTable
+            resourceKey={`network:${kind}`}
+            resourceLabel={NETWORK_ENTITY_KINDS[kind]}
+            allRows={rawItems}
+            filterKey={normalizedKeyword}
+            scopeMode={
+              ['gatewayclasses', 'ingressclasses'].includes(kind) ? 'cluster' : 'namespace'
+            }
+            error={query.isEnabled === false ? null : query.error}
+            hasReadData={query.data !== undefined}
+            onRetry={query.isEnabled === false ? undefined : () => query.refetch()}
+            className={'soha-platform-table'}
+            columnSettingIconOnly={true}
+            columnSettingPlacement={'header'}
+            columns={canShowActions ? [...columns, actionColumn] : columns}
+            dataSource={clusterId ? filteredItems : []}
+            rowKey={rowKey ?? ((record) => `${record.namespace}/${record.name}`)}
+            onRow={rowProps}
+            loading={query.isLoading}
+            localSorting={true}
+            tableSize={tableSize}
+            scroll={{ x: 'max-content' }}
+            headerExtra={
+              <ManagementTableToolbar>
+                {createKind ? (
+                  <CreateEntry
+                    context={{
+                      clusterId: clusterId || '',
+                      defaultNamespace:
+                        createScope === 'namespace' ? namespace || undefined : undefined,
+                      expectedApiVersion: createAPIVersion,
+                      expectedKind: createKind,
+                      resourceGroup: 'network',
+                      scopeMode: createScope,
+                      source: 'list',
+                    }}
+                    defaultTemplate={getResourceCreateTemplate(createKind)}
+                    label={createKind}
+                  />
+                ) : null}
+                <ManagementDensityButton
+                  aria-label={densityLabel}
+                  title={densityLabel}
+                  tooltip={densityLabel}
+                  onClick={() =>
+                    setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
+                  }
                 />
-              ) : null}
-              <ManagementDensityButton
-                aria-label={densityLabel}
-                title={densityLabel}
-                tooltip={densityLabel}
-                onClick={() =>
-                  setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
-                }
+                <ManagementRefreshButton
+                  aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  disabled={!clusterId}
+                  loading={query.isFetching}
+                  tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  onClick={() => {
+                    if (clusterId) void query.refetch()
+                  }}
+                />
+              </ManagementTableToolbar>
+            }
+            empty={
+              <ManagementState
+                bordered={false}
+                compact
+                description={effectiveEmpty}
+                kind={!clusterId ? 'select-scope' : 'empty'}
               />
-              <ManagementRefreshButton
-                aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                disabled={!clusterId}
-                loading={query.isFetching}
-                tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                onClick={() => {
-                  if (clusterId) void query.refetch()
-                }}
-              />
-            </ManagementTableToolbar>
-          ),
-          empty: (
-            <ManagementState
-              bordered={false}
-              compact
-              description={effectiveEmpty}
-              kind={!clusterId ? 'select-scope' : 'empty'}
-            />
-          ),
-        }}
+            }
+          />
+        }
       />
     </>
   )

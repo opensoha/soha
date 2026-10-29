@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
 import { BooleanTag } from '@/components/status-tag'
 import { hasAllowedAction } from '@/features/auth'
@@ -6,7 +6,6 @@ import {
   capabilityActionTooltip,
   useClusterCapability,
 } from '@/features/platform/cluster-capabilities'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -293,7 +292,11 @@ export function WorkloadsCronJobsPage() {
           }
         />
       </WorkloadQueryPanel>
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'cronjobs'}
+        resourceLabel={'CronJobs'}
+        allRows={cronJobs}
+        filterKey={searchKeyword}
         error={cronJobsQuery.isEnabled === false ? null : cronJobsQuery.error}
         hasReadData={cronJobsQuery.data !== undefined}
         onRetry={cronJobsQuery.isEnabled === false ? undefined : () => cronJobsQuery.refetch()}
@@ -319,7 +322,6 @@ export function WorkloadsCronJobsPage() {
         onRow={(record: CronJob) => workloadRowAIContext('cronjobs', record, clusterId)}
         loading={cronJobsQuery.isLoading}
         localSorting
-        pageSize={K8S_TABLE_PAGE_SIZE}
         empty={
           <WorkloadTableEmpty
             clusterId={clusterId}
@@ -331,7 +333,6 @@ export function WorkloadsCronJobsPage() {
         }
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
       />
       {editTarget ? (
         <WorkloadQuickEditModal

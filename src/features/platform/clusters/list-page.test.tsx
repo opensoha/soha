@@ -74,7 +74,8 @@ vi.mock('@/features/auth', () => ({
   usePermissionSnapshot: () => ({ data: { data: {} } }),
 }))
 vi.mock('@/stores/platform-scope-store', () => ({
-  usePlatformScopeStore: (selector: (state: typeof storeMocks) => unknown) => selector(storeMocks),
+  usePlatformScopeStore: (selector?: (state: typeof storeMocks) => unknown) =>
+    selector ? selector(storeMocks) : storeMocks,
 }))
 vi.mock('@/i18n', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/i18n')>()),

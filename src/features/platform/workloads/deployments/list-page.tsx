@@ -1,3 +1,4 @@
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { AdminTable } from '@/components/admin-table'
 import {
   ManagementIconButton,
@@ -15,7 +16,6 @@ import {
 } from '@/features/platform/cluster-capabilities'
 import { useKubernetesResourceStream } from '@/features/platform/shared/resource-stream'
 import { ResourceStreamStatus } from '@/features/platform/shared/resource-stream-status'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformBatchReceipt,
   platformBatchUnknown,
@@ -729,7 +729,11 @@ export function WorkloadsDeploymentsPage() {
       {batchRollbackMutation.feedback}
 
       {deploymentQueryPanel}
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'deployments'}
+        resourceLabel={'Deployments'}
+        allRows={deployments}
+        filterKey={JSON.stringify([searchKeyword, healthFilter])}
         error={deploymentsQuery.isEnabled === false ? null : deploymentsQuery.error}
         hasReadData={deploymentsQuery.data !== undefined}
         onRetry={
@@ -773,11 +777,8 @@ export function WorkloadsDeploymentsPage() {
             totalCount={deployments.length}
           />
         }
-        pageSize={K8S_TABLE_PAGE_SIZE}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
-        selectCurrentPageOnly
         rowSelection={
           canShowActions
             ? {

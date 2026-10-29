@@ -218,6 +218,20 @@
   outline-offset: -2px;
 }
 
+.soha-admin-table .ant-table-tbody-virtual .ant-table-row-expand-icon-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.soha-admin-table
+  .ant-table-tbody-virtual
+  .ant-table-row-expand-icon-cell
+  .ant-table-row-expand-icon {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
 /* AdminTable owns sorter spacing; Antd has no semantic title/icon layout hook. */
 .soha-admin-table .ant-table-column-sorters {
   justify-content: flex-start;
@@ -277,7 +291,8 @@
 }
 
 .soha-admin-table .ant-table-thead > tr > th,
-.soha-admin-table .ant-table-tbody > tr > td {
+.soha-admin-table .ant-table-tbody > tr > td,
+.soha-admin-table .ant-table-tbody-virtual .ant-table-cell {
   padding-left: 12px;
   padding-right: 12px;
   overflow: hidden;

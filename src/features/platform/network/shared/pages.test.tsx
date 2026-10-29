@@ -68,6 +68,7 @@ vi.mock('@/components/admin-table', () => ({
     paginationSummary,
     title,
     viewportScroll,
+    virtual,
   }: {
     columns: Array<Record<string, any>>
     dataSource: Array<Record<string, any>>
@@ -78,12 +79,14 @@ vi.mock('@/components/admin-table', () => ({
     paginationSummary?: ReactNode
     title?: ReactNode
     viewportScroll?: boolean
+    virtual?: boolean
   }) => (
     <div
       data-page-size={pageSize}
       data-testid="admin-table"
       data-local-sorting={localSorting}
       data-viewport-scroll={viewportScroll}
+      data-virtual={virtual}
     >
       {title ? <div data-testid="table-title">{title}</div> : null}
       {headerExtra ? <div data-testid="header-extra">{headerExtra}</div> : null}
@@ -216,7 +219,7 @@ describe('network core pages', () => {
     containers = []
   })
 
-  it('preserves Service list search and API path without overriding shared pagination', async () => {
+  it('preserves Service list search and API path with shared continuous browsing', async () => {
     const yamlPath = '/clusters/cluster-a/network/services/core-dns/yaml?namespace=team-a'
     const planPath = '/clusters/cluster-a/resources/update-plan'
     testState.responses['/clusters/cluster-a/network/services?namespace=team-a'] = [
@@ -290,7 +293,7 @@ describe('network core pages', () => {
     )
     expect(
       container.querySelector('[data-testid="admin-table"]')?.getAttribute('data-page-size'),
-    ).toBe('15')
+    ).toBeNull()
     expect(
       container.querySelector('[data-testid="admin-table"]')?.getAttribute('data-local-sorting'),
     ).toBe('true')
@@ -298,6 +301,9 @@ describe('network core pages', () => {
       container.querySelector('[data-testid="admin-table"]')?.getAttribute('data-viewport-scroll'),
     ).toBe('true')
     expect(container.querySelector('[data-testid="pagination-summary"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="admin-table"]')?.getAttribute('data-virtual'),
+    ).toBe('true')
     expect(container.textContent).toContain('NodePort: 30001')
     expect(container.textContent).toContain('Port: http · 80/TCP')
     expect(container.textContent).toContain('TargetPort: 8080')

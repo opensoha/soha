@@ -48,6 +48,7 @@ const AUTO_ACTION_COLUMN_CLASS_NAME = 'soha-table-actions-column--auto'
 const { Text } = Typography
 const EMPTY_TABLE_RECORDS: AdminTableProps['dataSource'] = []
 const VirtualHorizontalScroll = createContext<(delta: number, top: number) => void>(() => {})
+const VirtualBoundaryScroll = createContext<((edge: 'Home' | 'End') => void) | null>(null)
 
 function revealVirtualCell(
   body: HTMLElement,
@@ -85,6 +86,7 @@ function TableHeaderCell({
 const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((props, ref) => {
   const { localeCode } = useI18n()
   const scrollHorizontally = useContext(VirtualHorizontalScroll)
+  const scrollToBoundary = useContext(VirtualBoundaryScroll)
   return (
     <div
       {...props}
@@ -119,6 +121,11 @@ const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((prop
       onKeyDown={(event) => {
         props.onKeyDown?.(event)
         if (event.defaultPrevented || event.target !== event.currentTarget) return
+        if ((event.key === 'Home' || event.key === 'End') && scrollToBoundary) {
+          event.preventDefault()
+          scrollToBoundary(event.key)
+          return
+        }
         const body = event.currentTarget
         const step = body.querySelector('[data-row-key]')?.getBoundingClientRect().height ?? 24
         const positions: Record<string, number> = {
@@ -175,6 +182,7 @@ export interface AdminTableProps {
   columnLayoutKey?: string
   defaultHiddenColumnKeys?: string[]
   onFitColumns?: () => void
+  onResetColumns?: () => void
   scroll?: {
     x?: string | number
     y?: string | number
@@ -389,6 +397,7 @@ export function AdminTable({
   columnLayoutKey,
   defaultHiddenColumnKeys,
   onFitColumns,
+  onResetColumns,
   scroll,
   selectCurrentPageOnly = false,
   title,
@@ -416,11 +425,14 @@ export function AdminTable({
     [localeCode],
   )
   const normalizedColumns = useMemo(() => {
-    const nextColumns = columns.map((column, index) =>
-      normalizeTableColumn(column, String(index), iconActionWidths),
-    )
+    const nextColumns = columns.map((column, index) => {
+      const normalized = normalizeTableColumn(column, String(index), iconActionWidths)
+      return columnLayoutKey && column.fixed === false
+        ? { ...normalized, fixed: false }
+        : normalized
+    })
     return localSorting ? addLocalSorters(nextColumns, dataSource, localSortCollator) : nextColumns
-  }, [columns, dataSource, iconActionWidths, localSortCollator, localSorting])
+  }, [columns, dataSource, iconActionWidths, localSortCollator, localSorting, columnLayoutKey])
   const columnOptions = useMemo(
     () =>
       normalizedColumns.map((column, index) => ({
@@ -450,6 +462,7 @@ export function AdminTable({
   const [currentPage, setCurrentPage] = useState(1)
   const [currentPageSize, setCurrentPageSize] = useState(pageSize)
   const [viewportScrollY, setViewportScrollY] = useState<number>()
+  const [layoutViewportWidth, setLayoutViewportWidth] = useState(0)
   const tableShellRef = useRef<HTMLDivElement>(null)
   const innerTableRef = useRef<GetRef<typeof Table> | null>(null)
   const attachTableRef = useCallback(
@@ -460,6 +473,15 @@ export function AdminTable({
         (tableRef as MutableRefObject<GetRef<typeof Table> | null>).current = instance
     },
     [tableRef],
+  )
+  const scrollToBoundary = useCallback(
+    (edge: 'Home' | 'End') => {
+      innerTableRef.current?.scrollTo({
+        index: edge === 'Home' ? 0 : Math.max(0, dataSource.length - 1),
+        align: edge === 'Home' ? 'start' : 'end',
+      })
+    },
+    [dataSource.length],
   )
   const scrollHorizontally = useCallback((delta: number, top: number) => {
     const table = innerTableRef.current
@@ -579,7 +601,7 @@ export function AdminTable({
         ),
       }
     })
-  const estimatedScrollWidth = useMemo(() => {
+  const contentScrollWidth = useMemo(() => {
     const columnWidth = activeColumns.reduce(
       (total, column) => total + (getColumnWidth(column) ?? 168),
       0,
@@ -589,19 +611,60 @@ export function AdminTable({
         ? rowSelection.columnWidth
         : 56
       : 0
-    return Math.max(960, columnWidth + selectionWidth)
-  }, [activeColumns, rowSelection, columnLayoutKey])
+    const expansionWidth =
+      columnLayoutKey &&
+      (rest.expandedRowRender || rest.expandable?.expandedRowRender) &&
+      !rest.hideExpandedColumn
+        ? Number(rest.expandable?.columnWidth) || 48
+        : 0
+    const width = columnWidth + selectionWidth + expansionWidth
+    return columnLayoutKey ? Math.max(1, width) : Math.max(960, width)
+  }, [
+    activeColumns,
+    rowSelection,
+    columnLayoutKey,
+    rest.expandedRowRender,
+    rest.hideExpandedColumn,
+    rest.expandable?.expandedRowRender,
+    rest.expandable?.columnWidth,
+  ])
+  const estimatedScrollWidth = Math.max(
+    contentScrollWidth,
+    columnLayoutKey ? layoutViewportWidth : 0,
+  )
+  const fillerWidth = columnLayoutKey ? estimatedScrollWidth - contentScrollWidth : 0
+  const rightColumnIndex = activeColumns.findIndex((column) => column.fixed === 'right')
+  const fillerIndex = rightColumnIndex < 0 ? activeColumns.length : rightColumnIndex
+  const renderedColumns =
+    fillerWidth > 0
+      ? [
+          ...activeColumns.slice(0, fillerIndex),
+          {
+            key: '__soha_layout_filler',
+            width: fillerWidth,
+            title: '',
+            render: () => null,
+            onHeaderCell: () => ({ 'aria-hidden': true }),
+            onCell: () => ({ 'aria-hidden': true }),
+          },
+          ...activeColumns.slice(fillerIndex),
+        ]
+      : activeColumns
   const layoutWidthSignature = activeColumns.map((column) => getColumnWidth(column)).join('|')
   useLayoutEffect(() => {
-    if (!columnLayoutKey || !virtual) return
+    if (!columnLayoutKey) return
     const native = innerTableRef.current?.nativeElement
     if (!native) return
     let frame = 0
     const schedule = () => {
       cancelAnimationFrame(frame)
       frame = requestAnimationFrame(() => {
+        const width =
+          native.querySelector<HTMLElement>('.ant-table-container')?.clientWidth ??
+          native.clientWidth
+        if (width > 0) setLayoutViewportWidth(width)
         const body = native.querySelector<HTMLElement>('[role="region"]')
-        if (body && document.activeElement instanceof HTMLElement) {
+        if (virtual && body && document.activeElement instanceof HTMLElement) {
           revealVirtualCell(body, document.activeElement, scrollHorizontally)
         }
       })
@@ -814,7 +877,8 @@ export function AdminTable({
                   layout.fit()
                 }}
                 reset={() => {
-                  onFitColumns?.()
+                  if (onResetColumns) onResetColumns()
+                  else onFitColumns?.()
                   layout.reset()
                 }}
                 zh={localeCode === 'zh_CN'}
@@ -938,34 +1002,36 @@ export function AdminTable({
       ) : null}
       {!error || cachedRecords !== undefined ? (
         <VirtualHorizontalScroll.Provider value={scrollHorizontally}>
-          <Table
-            {...rest}
-            ref={attachTableRef}
-            className={resolvedTableClassName}
-            components={{
-              header: { cell: TableHeaderCell },
-              ...(virtual ? { body: { wrapper: VirtualTableBody } } : {}),
-            }}
-            column={{
-              sortIcon: ({ sortOrder }) =>
-                sortOrder ? (
-                  <span aria-hidden className="soha-table-sort-icon">
-                    {sortOrder === 'ascend' ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
-                  </span>
-                ) : null,
-            }}
-            columns={activeColumns}
-            dataSource={dataSource}
-            loading={loading}
-            locale={{ emptyText: empty ?? <ManagementState bordered={false} compact /> }}
-            pagination={resolvedPagination}
-            rowKey={rowKey}
-            rowSelection={resolvedRowSelection}
-            scroll={resolvedScroll}
-            showSorterTooltip={false}
-            size={resolvedTableSize}
-            virtual={virtual}
-          />
+          <VirtualBoundaryScroll.Provider value={scrollToBoundary}>
+            <Table
+              {...rest}
+              ref={attachTableRef}
+              className={resolvedTableClassName}
+              components={{
+                header: { cell: TableHeaderCell },
+                ...(virtual ? { body: { wrapper: VirtualTableBody } } : {}),
+              }}
+              column={{
+                sortIcon: ({ sortOrder }) =>
+                  sortOrder ? (
+                    <span aria-hidden className="soha-table-sort-icon">
+                      {sortOrder === 'ascend' ? <ArrowUpOutlined /> : <ArrowDownOutlined />}
+                    </span>
+                  ) : null,
+              }}
+              columns={renderedColumns}
+              dataSource={dataSource}
+              loading={loading}
+              locale={{ emptyText: empty ?? <ManagementState bordered={false} compact /> }}
+              pagination={resolvedPagination}
+              rowKey={rowKey}
+              rowSelection={resolvedRowSelection}
+              scroll={resolvedScroll}
+              showSorterTooltip={false}
+              size={resolvedTableSize}
+              virtual={virtual}
+            />
+          </VirtualBoundaryScroll.Provider>
         </VirtualHorizontalScroll.Provider>
       ) : null}
     </div>

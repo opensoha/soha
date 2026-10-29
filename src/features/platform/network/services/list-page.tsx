@@ -1,4 +1,5 @@
 import { ReadFeedback } from '@/components/request-feedback'
+import { TableCellLink } from '@/components/table-cell-content'
 import { encodeAIContextForElement } from '@/features/copilot'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -6,7 +7,6 @@ import { toScopeKey } from '@/types'
 import { formatAgeSeconds } from '@/utils/time'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button } from 'antd'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { NetworkResourceListPage } from '../shared/list-page'
@@ -28,12 +28,10 @@ export function NetworkServicesPage() {
       title: t('common.name', '名称'),
       dataIndex: 'name',
       render: (value: string, record) => (
-        <Button
-          type="text"
+        <TableCellLink
+          label={value}
           onClick={() => navigate(buildNetworkRoutePath('services', value, record.namespace))}
-        >
-          {value}
-        </Button>
+        />
       ),
     },
     { title: t('common.namespace', '命名空间'), dataIndex: 'namespace' },
@@ -50,6 +48,7 @@ export function NetworkServicesPage() {
     {
       title: t('common.ports', '端口'),
       key: 'ports',
+      width: 360,
       render: (_, record) => (
         <ServicePortDisplay portMappings={record.portMappings} ports={record.ports} />
       ),

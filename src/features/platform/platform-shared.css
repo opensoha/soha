@@ -350,3 +350,8 @@
   gap: 4px;
   max-width: 420px;
 }
+
+.soha-kubernetes-resource-list {
+  min-width: 0;
+  width: 100%;
+}

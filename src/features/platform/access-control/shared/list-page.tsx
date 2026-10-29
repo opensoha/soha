@@ -1,3 +1,4 @@
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
@@ -13,7 +14,6 @@ import { hasAllowedAction } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { CreateEntry } from '@/features/platform/resource-creation/components/create-entry'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -193,87 +193,92 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
             />
           ),
         }}
-        table={{
-          error: query.isEnabled === false ? null : query.error,
-          hasReadData: query.data !== undefined,
-          onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
-          className: 'soha-rbac-table soha-platform-table',
-          columnSettingIconOnly: true,
-          columnSettingPlacement: 'header',
-          columns: shouldShowActions ? [...columns, actionColumn] : columns,
-          dataSource: clusterId ? filteredItems : [],
-          empty: (
-            <ManagementState
-              bordered={false}
-              compact
-              description={effectiveEmptyDescription}
-              kind={!clusterId ? 'select-scope' : 'empty'}
-            />
-          ),
-          headerExtra: (
-            <ManagementTableToolbar>
-              <CreateEntry
-                context={{
-                  clusterId: clusterId || '',
-                  defaultNamespace:
-                    kind === 'roles' || kind === 'rolebindings' || kind === 'serviceaccounts'
-                      ? namespace || undefined
-                      : undefined,
-                  expectedApiVersion:
-                    kind === 'serviceaccounts' ? 'v1' : 'rbac.authorization.k8s.io/v1',
-                  expectedKind: {
-                    serviceaccounts: 'ServiceAccount',
-                    roles: 'Role',
-                    rolebindings: 'RoleBinding',
-                    clusterroles: 'ClusterRole',
-                    clusterrolebindings: 'ClusterRoleBinding',
-                  }[kind],
-                  resourceGroup: 'access-control',
-                  scopeMode:
-                    kind === 'clusterroles' || kind === 'clusterrolebindings'
-                      ? 'cluster'
-                      : 'namespace',
-                  source: 'list',
-                }}
-                defaultTemplate={defaultTemplate}
-                label={label.replace(/s$/, '')}
+        tableNode={
+          <KubernetesResourceTable
+            resourceKey={`rbac:${kind}`}
+            resourceLabel={label}
+            allRows={rawItems}
+            filterKey={normalizedKeyword}
+            scopeMode={kind.startsWith('cluster') ? 'cluster' : 'namespace'}
+            error={query.isEnabled === false ? null : query.error}
+            hasReadData={query.data !== undefined}
+            onRetry={query.isEnabled === false ? undefined : () => query.refetch()}
+            className={'soha-rbac-table soha-platform-table'}
+            columnSettingIconOnly={true}
+            columnSettingPlacement={'header'}
+            columns={shouldShowActions ? [...columns, actionColumn] : columns}
+            dataSource={clusterId ? filteredItems : []}
+            empty={
+              <ManagementState
+                bordered={false}
+                compact
+                description={effectiveEmptyDescription}
+                kind={!clusterId ? 'select-scope' : 'empty'}
               />
-              <ManagementDensityButton
-                aria-label={densityLabel}
-                onClick={() =>
-                  setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
-                }
-                title={densityLabel}
-                tooltip={densityLabel}
-              />
-              <ManagementRefreshButton
-                aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                disabled={!clusterId}
-                loading={query.isFetching}
-                onClick={() => {
-                  if (clusterId) void query.refetch()
-                }}
-                tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              />
-            </ManagementTableToolbar>
-          ),
-          loading: query.isLoading,
-          localSorting: true,
-          pageSize: K8S_TABLE_PAGE_SIZE,
-          rowKey,
-          onRow: (record: T) => ({
-            'data-ai-context': encodeAIContextForElement({
-              sourceWorkbench: 'platform',
-              entityKind,
-              entityName: record.name,
-              clusterId: clusterId || undefined,
-              namespace: record.namespace || undefined,
-            }),
-          }),
-          scroll: { x: 'max-content' },
-          tableSize,
-          viewportScroll: true,
-        }}
+            }
+            headerExtra={
+              <ManagementTableToolbar>
+                <CreateEntry
+                  context={{
+                    clusterId: clusterId || '',
+                    defaultNamespace:
+                      kind === 'roles' || kind === 'rolebindings' || kind === 'serviceaccounts'
+                        ? namespace || undefined
+                        : undefined,
+                    expectedApiVersion:
+                      kind === 'serviceaccounts' ? 'v1' : 'rbac.authorization.k8s.io/v1',
+                    expectedKind: {
+                      serviceaccounts: 'ServiceAccount',
+                      roles: 'Role',
+                      rolebindings: 'RoleBinding',
+                      clusterroles: 'ClusterRole',
+                      clusterrolebindings: 'ClusterRoleBinding',
+                    }[kind],
+                    resourceGroup: 'access-control',
+                    scopeMode:
+                      kind === 'clusterroles' || kind === 'clusterrolebindings'
+                        ? 'cluster'
+                        : 'namespace',
+                    source: 'list',
+                  }}
+                  defaultTemplate={defaultTemplate}
+                  label={label.replace(/s$/, '')}
+                />
+                <ManagementDensityButton
+                  aria-label={densityLabel}
+                  onClick={() =>
+                    setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
+                  }
+                  title={densityLabel}
+                  tooltip={densityLabel}
+                />
+                <ManagementRefreshButton
+                  aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  disabled={!clusterId}
+                  loading={query.isFetching}
+                  onClick={() => {
+                    if (clusterId) void query.refetch()
+                  }}
+                  tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                />
+              </ManagementTableToolbar>
+            }
+            loading={query.isLoading}
+            localSorting={true}
+            rowKey={rowKey}
+            onRow={(record: T) => ({
+              'data-ai-context': encodeAIContextForElement({
+                sourceWorkbench: 'platform',
+                entityKind,
+                entityName: record.name,
+                clusterId: clusterId || undefined,
+                namespace: record.namespace || undefined,
+              }),
+            })}
+            scroll={{ x: 'max-content' }}
+            tableSize={tableSize}
+          />
+        }
       />
     </>
   )

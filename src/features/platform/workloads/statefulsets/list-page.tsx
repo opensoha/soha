@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
 import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { TableCellText } from '@/components/table-cell-content'
@@ -7,7 +7,6 @@ import {
   capabilityActionTooltip,
   useClusterCapability,
 } from '@/features/platform/cluster-capabilities'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -287,7 +286,11 @@ export function WorkloadsStatefulSetsPage() {
           }
         />
       </WorkloadQueryPanel>
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'statefulsets'}
+        resourceLabel={'StatefulSets'}
+        allRows={statefulSets}
+        filterKey={searchKeyword}
         error={statefulSetsQuery.isEnabled === false ? null : statefulSetsQuery.error}
         hasReadData={statefulSetsQuery.data !== undefined}
         onRetry={
@@ -315,7 +318,6 @@ export function WorkloadsStatefulSetsPage() {
         onRow={(record: StatefulSet) => workloadRowAIContext('statefulsets', record, clusterId)}
         loading={statefulSetsQuery.isLoading}
         localSorting
-        pageSize={K8S_TABLE_PAGE_SIZE}
         empty={
           <WorkloadTableEmpty
             clusterId={clusterId}
@@ -327,7 +329,6 @@ export function WorkloadsStatefulSetsPage() {
         }
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
       />
       <Modal
         okButtonProps={{ disabled: platformWriteBlocked }}

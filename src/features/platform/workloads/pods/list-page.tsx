@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementBatchBar,
   ManagementQueryField,
@@ -29,7 +29,6 @@ import {
 import '@/features/platform/workloads/styles.css'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import { useAuthStore } from '@/stores/auth-store'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatAgeSeconds } from '@/utils/time'
@@ -53,8 +52,7 @@ import { podTargetFromRecord, type Pod } from './types'
 import { PodContainersCell } from './pod-containers-cell'
 import { PodActionsMenu } from './pod-actions-menu'
 import { getPodResourceAmount, podResourceMinimumWidth, PodResourceCell } from './pod-resource-cell'
-import { usePodListViewport } from './use-pod-list-viewport'
-import { usePodColumnWidths } from './use-pod-column-widths'
+import { podContentWidths } from './pod-column-widths'
 
 const { Link, Text } = Typography
 
@@ -100,7 +98,6 @@ export function WorkloadsPodsPage() {
   const canViewPodLogs = hasPermission(permissionSnapshot, 'platform.pods.logs')
   const canViewNodes = hasPermission(permissionSnapshot, 'platform.nodes.view')
   const { clusterId, namespace } = usePlatformScopeStore()
-  const userId = useAuthStore((state) => state.user?.userId)
   const { openSession } = useRealtimeSessionDock()
   const podDeleteCapability = useClusterCapability('workload.mutations', localeCode)
   const podExecCapability = useClusterCapability('pod.exec', localeCode)
@@ -146,14 +143,10 @@ export function WorkloadsPodsPage() {
   const isLoading = podsQuery.isLoading
 
   const pods = visiblePodsQueryData ?? []
-  const podColumnLayout = usePodColumnWidths(
-    pods,
-    `${clusterId}/${namespace}/${localeCode}`,
-    localeCode === 'zh_CN',
-    !namespace,
-    canDeletePods,
+  const resourceColumnWidths = useMemo(
+    () => podContentWidths(pods, localeCode === 'zh_CN'),
+    [pods, localeCode],
   )
-  const resourceColumnWidths = podColumnLayout.widths
   const normalizedKeyword = normalizeSearchKeyword(searchKeyword)
   useAIPageContext({
     sourceWorkbench: 'platform',
@@ -203,18 +196,7 @@ export function WorkloadsPodsPage() {
       }),
     [filteredPods],
   )
-  const podViewport = usePodListViewport(
-    orderedPods,
-    JSON.stringify([
-      clusterId,
-      namespace,
-      normalizedKeyword,
-      phaseFilter,
-      restartFilter,
-      pvcFilter,
-      nodeFilter,
-    ]),
-  )
+
   useEffect(() => {
     const currentKeys = new Set(
       (visiblePodsQueryData ?? []).map((pod) => `${pod.namespace}/${pod.name}`),
@@ -567,7 +549,7 @@ export function WorkloadsPodsPage() {
     'qosClass',
     'actions',
   ]
-  const fittedWidths: Record<string, number> = podColumnLayout.widths
+  const fittedWidths: Record<string, number> = resourceColumnWidths
   const compactWidths: Record<string, number> = {
     phase: 88,
     ageSeconds: 88,
@@ -596,8 +578,7 @@ export function WorkloadsPodsPage() {
         key,
         width,
         minWidth,
-        fixed:
-          key === 'name' ? (podColumnLayout.pinName ? ('left' as const) : undefined) : column.fixed,
+        fixed: column.fixed,
       }
     })
     .sort((left, right) => columnOrder.indexOf(left.key) - columnOrder.indexOf(right.key))
@@ -805,12 +786,22 @@ export function WorkloadsPodsPage() {
   )
 
   return (
-    <div className="soha-page" ref={podColumnLayout.ref}>
+    <div className="soha-page">
       {deletePodMutation.feedback}
       {batchDeletePodsMutation.feedback}
 
       {podQueryPanel}
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'pods'}
+        resourceLabel={'Pods'}
+        allRows={pods}
+        filterKey={JSON.stringify([
+          normalizedKeyword,
+          phaseFilter,
+          restartFilter,
+          pvcFilter,
+          nodeFilter,
+        ])}
         title={
           <span className="soha-pod-list-count" role="status" aria-live="polite">
             {!clusterId
@@ -839,9 +830,6 @@ export function WorkloadsPodsPage() {
         onRetry={podsQuery.isEnabled === false ? undefined : () => podsQuery.refetch()}
         className="soha-pods-table soha-platform-table"
         columnSettingIconOnly
-        columnLayoutKey={`pods:${userId || 'session'}:${localeCode}`}
-        defaultHiddenColumnKeys={namespace ? ['namespace'] : []}
-        onFitColumns={podColumnLayout.fit}
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
         headerExtra={podToolbarExtra}
@@ -879,16 +867,8 @@ export function WorkloadsPodsPage() {
             totalCount={pods.length}
           />
         }
-        pagination={false}
-        virtual
-        tableRef={podViewport.tableRef}
-        onScroll={podViewport.onScroll}
-        onChange={(_pagination, _filters, _sorter, extra) => {
-          if (extra.action === 'sort') podViewport.resetPosition()
-        }}
         tableSize={tableSize}
         scroll={{ scrollToFirstRowOnChange: false }}
-        viewportScroll
         rowSelection={
           canShowPodDeleteActions
             ? {

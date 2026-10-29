@@ -426,7 +426,7 @@ test('continuous virtual rows, full-result search/sort, selection and keyboard',
     page.getByRole('status').filter({ hasText: '匹配 1 / 共 2000 个 Pods' }),
   ).toBeVisible()
   await expect.poll(() => holder(page).evaluate((node) => node.scrollTop)).toBe(0)
-  await page.getByRole('checkbox', { name: '选择全部匹配的 1 个 Pod', exact: true }).check()
+  await page.getByRole('checkbox', { name: '选择全部匹配的 1 个 Pods', exact: true }).check()
   await expect(page.getByRole('button', { name: '批量删除', exact: true })).toBeEnabled()
   await search(page).clear()
   await expect(page.getByRole('button', { name: '批量删除', exact: true })).toHaveCount(0)

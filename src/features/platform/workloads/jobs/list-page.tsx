@@ -1,11 +1,10 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
 import { hasAllowedAction } from '@/features/auth'
 import {
   capabilityActionTooltip,
   useClusterCapability,
 } from '@/features/platform/cluster-capabilities'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -194,7 +193,11 @@ export function WorkloadsJobsPage() {
           }
         />
       </WorkloadQueryPanel>
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={'jobs'}
+        resourceLabel={'Jobs'}
+        allRows={jobs}
+        filterKey={searchKeyword}
         error={jobsQuery.isEnabled === false ? null : jobsQuery.error}
         hasReadData={jobsQuery.data !== undefined}
         onRetry={jobsQuery.isEnabled === false ? undefined : () => jobsQuery.refetch()}
@@ -220,7 +223,6 @@ export function WorkloadsJobsPage() {
         onRow={(record: Job) => workloadRowAIContext('jobs', record, clusterId)}
         loading={jobsQuery.isLoading}
         localSorting
-        pageSize={K8S_TABLE_PAGE_SIZE}
         empty={
           <WorkloadTableEmpty
             clusterId={clusterId}
@@ -232,7 +234,6 @@ export function WorkloadsJobsPage() {
         }
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
       />
     </div>
   )

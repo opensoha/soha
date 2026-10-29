@@ -987,7 +987,7 @@ test('node list distinguishes Ready, cordon, pressure, taints and unavailable fi
 }) => {
   const evidence = await setup(context, page, { nodeStates: true })
   await page.goto('/cluster-resources/nodes')
-  const row = page.getByRole('row').filter({ hasText: 'cordoned-worker' })
+  const row = page.locator('.ant-table-row[data-row-key]').filter({ hasText: 'cordoned-worker' })
   await expect(row).toContainText('就绪')
   await expect(row).toContainText('禁止调度')
   await expect(row).toContainText('磁盘压力')
@@ -1006,10 +1006,12 @@ test('node list distinguishes Ready, cordon, pressure, taints and unavailable fi
   ).toBeVisible()
   await expect(
     page
-      .getByRole('row')
+      .locator('.ant-table-row[data-row-key]')
       .filter({ hasText: 'task113-production-healthy-worker-with-a-long-resource-name-09' }),
   ).toContainText('无污点')
-  await expect(page.getByRole('row').filter({ hasText: 'legacy-worker' })).toContainText('未提供')
+  await expect(
+    page.locator('.ant-table-row[data-row-key]').filter({ hasText: 'legacy-worker' }),
+  ).toContainText('未提供')
   verifyBrowserEvidence(evidence)
 })
 
@@ -1367,10 +1369,9 @@ for (const width of [320, 1238, 1275]) {
     ).toBeLessThan(90)
     await verifyGeometry(page, content.getByRole('link', { name: 'cordoned-worker', exact: true }))
     if (width >= 1238) {
-      const body = content.locator('.ant-table-body')
-      await body.evaluate((element) => {
-        element.scrollLeft = element.scrollWidth
-      })
+      const body = content.getByRole('region', { name: '资源列表，可连续滚动', exact: true })
+      await body.hover()
+      await page.mouse.wheel(1500, 0)
       const name = content.getByRole('link', { name: 'cordoned-worker', exact: true })
       await expect(name).toBeInViewport()
       const longName = content.getByRole('link', {
@@ -1390,7 +1391,7 @@ for (const width of [320, 1238, 1275]) {
         const deltas = await content.locator('.ant-table-row-expand-icon').evaluateAll((buttons) =>
           buttons.map((button) => {
             const icon = button.getBoundingClientRect()
-            const cell = button.closest('td')!.getBoundingClientRect()
+            const cell = button.closest('.ant-table-cell')!.getBoundingClientRect()
             return {
               x: Math.abs(icon.x + icon.width / 2 - cell.x - cell.width / 2),
               y: Math.abs(icon.y + icon.height / 2 - cell.y - cell.height / 2),
@@ -1414,7 +1415,7 @@ for (const width of [320, 1238, 1275]) {
       ).toBeVisible()
       await page.mouse.move(0, 0)
       const healthy = content
-        .getByRole('row')
+        .locator('.ant-table-row[data-row-key]')
         .filter({ hasText: 'task113-production-healthy-worker-with-a-long-resource-name-09' })
       await healthy.getByRole('button', { name: '展开行', exact: true }).press('Tab')
       await expect(longName).toBeFocused()

@@ -1,3 +1,4 @@
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
@@ -11,7 +12,6 @@ import {
 import { hasAllowedAction } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { CreateEntry } from '@/features/platform/resource-creation/components/create-entry'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -177,71 +177,76 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
             />
           ),
         }}
-        table={{
-          error: query.isEnabled === false ? null : query.error,
-          hasReadData: query.data !== undefined,
-          onRetry: query.isEnabled === false ? undefined : () => query.refetch(),
-          className: 'soha-platform-table soha-storage-table',
-          columnSettingIconOnly: true,
-          columnSettingPlacement: 'header',
-          columns: effectiveColumns,
-          dataSource: clusterId ? filteredItems : [],
-          rowKey,
-          onRow: (record: T) => ({
-            'data-ai-context': encodeAIContextForElement({
-              sourceWorkbench: 'platform',
-              entityKind: kind,
-              entityName: record.name,
-              clusterId: clusterId || undefined,
-              namespace: clusterScoped ? undefined : getRecordNamespace?.(record) || undefined,
-            }),
-          }),
-          loading: query.isLoading,
-          localSorting: true,
-          pageSize: K8S_TABLE_PAGE_SIZE,
-          tableSize,
-          scroll: { x: 'max-content' },
-          viewportScroll: true,
-          headerExtra: (
-            <ManagementTableToolbar>
-              <CreateEntry
-                context={{
-                  clusterId: clusterId || '',
-                  defaultNamespace: clusterScoped ? undefined : namespace || undefined,
-                  expectedKind: kind,
-                  resourceGroup: 'storage',
-                  scopeMode: clusterScoped ? 'cluster' : 'namespace',
-                  source: 'list',
-                }}
-                defaultTemplate={createDefaultTemplate}
-                label={resourceLabel}
+        tableNode={
+          <KubernetesResourceTable
+            resourceKey={`storage:${kind}`}
+            resourceLabel={resourceLabel}
+            allRows={rawItems}
+            filterKey={normalizedKeyword}
+            scopeMode={clusterScoped ? 'cluster' : 'namespace'}
+            error={query.isEnabled === false ? null : query.error}
+            hasReadData={query.data !== undefined}
+            onRetry={query.isEnabled === false ? undefined : () => query.refetch()}
+            className={'soha-platform-table soha-storage-table'}
+            columnSettingIconOnly={true}
+            columnSettingPlacement={'header'}
+            columns={effectiveColumns}
+            dataSource={clusterId ? filteredItems : []}
+            rowKey={rowKey}
+            onRow={(record: T) => ({
+              'data-ai-context': encodeAIContextForElement({
+                sourceWorkbench: 'platform',
+                entityKind: kind,
+                entityName: record.name,
+                clusterId: clusterId || undefined,
+                namespace: clusterScoped ? undefined : getRecordNamespace?.(record) || undefined,
+              }),
+            })}
+            loading={query.isLoading}
+            localSorting={true}
+            tableSize={tableSize}
+            scroll={{ x: 'max-content' }}
+            headerExtra={
+              <ManagementTableToolbar>
+                <CreateEntry
+                  context={{
+                    clusterId: clusterId || '',
+                    defaultNamespace: clusterScoped ? undefined : namespace || undefined,
+                    expectedKind: kind,
+                    resourceGroup: 'storage',
+                    scopeMode: clusterScoped ? 'cluster' : 'namespace',
+                    source: 'list',
+                  }}
+                  defaultTemplate={createDefaultTemplate}
+                  label={resourceLabel}
+                />
+                <ManagementDensityButton
+                  aria-label={densityLabel}
+                  title={densityLabel}
+                  tooltip={densityLabel}
+                  onClick={() =>
+                    setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
+                  }
+                />
+                <ManagementRefreshButton
+                  aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  disabled={!clusterId}
+                  loading={query.isFetching}
+                  tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+                  onClick={() => clusterId && void query.refetch()}
+                />
+              </ManagementTableToolbar>
+            }
+            empty={
+              <ManagementState
+                bordered={false}
+                compact
+                description={effectiveEmpty}
+                kind={clusterId ? 'empty' : 'select-scope'}
               />
-              <ManagementDensityButton
-                aria-label={densityLabel}
-                title={densityLabel}
-                tooltip={densityLabel}
-                onClick={() =>
-                  setTableSize((current) => (current === 'middle' ? 'small' : 'middle'))
-                }
-              />
-              <ManagementRefreshButton
-                aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                disabled={!clusterId}
-                loading={query.isFetching}
-                tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-                onClick={() => clusterId && void query.refetch()}
-              />
-            </ManagementTableToolbar>
-          ),
-          empty: (
-            <ManagementState
-              bordered={false}
-              compact
-              description={effectiveEmpty}
-              kind={clusterId ? 'empty' : 'select-scope'}
-            />
-          ),
-        }}
+            }
+          />
+        }
       />
     </>
   )

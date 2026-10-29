@@ -1,9 +1,8 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
 import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { hasAllowedAction } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -147,7 +146,11 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
           }
         />
       </WorkloadQueryPanel>
-      <AdminTable
+      <KubernetesResourceTable
+        resourceKey={kind}
+        resourceLabel={label}
+        allRows={records}
+        filterKey={searchKeyword}
         error={listQuery.isEnabled === false ? null : listQuery.error}
         hasReadData={listQuery.data !== undefined}
         onRetry={listQuery.isEnabled === false ? undefined : () => listQuery.refetch()}
@@ -170,10 +173,8 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
             totalCount={records.length}
           />
         }
-        pageSize={K8S_TABLE_PAGE_SIZE}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        viewportScroll
         headerExtra={
           <ManagementTableToolbar>
             {densityButton}

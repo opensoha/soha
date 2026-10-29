@@ -205,7 +205,7 @@ describe('network resource list pages', () => {
     vi.clearAllMocks()
   })
 
-  it('keeps service search controls in a separate card and uses shared pagination', async () => {
+  it('keeps service search controls in a separate card and uses shared continuous browsing', async () => {
     setResponses({
       '/clusters/cluster-a/network/services?namespace=team-a': [
         {
@@ -231,7 +231,9 @@ describe('network resource list pages', () => {
 
     const container = await renderWithProviders(<NetworkServicesPage />)
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('2 个 Service')
     expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
     expect(
       container.querySelector('input[placeholder="搜索 Service / namespace / type / port"]'),
@@ -283,7 +285,9 @@ describe('network resource list pages', () => {
       '/network/gateway-api/gatewayclasses',
     )
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('1 个 GatewayClass')
     expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
     expect(
       container.querySelector('input[placeholder="搜索 GatewayClass / controller"]'),
@@ -331,7 +335,9 @@ describe('network resource list pages', () => {
       '/storage/persistentvolumeclaims',
     )
 
-    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(
+      container.querySelector('[data-testid="table-title"] [role="status"]')?.textContent,
+    ).toBe('2 个 PVC')
     expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
     expect(
       container.querySelector('input[placeholder="搜索 PVC / namespace / storageClass"]'),

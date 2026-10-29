@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
   ManagementIconButton,
@@ -10,7 +10,6 @@ import { MetadataTag, StatusTag } from '@/components/status-tag'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
 import { parseStringMap, stringifyMap } from '@/features/platform/node-resource-utils'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -197,7 +196,12 @@ export function ClusterNamespacesPage() {
           title={t('common.pleaseSelectClusterShort', 'Select a cluster')}
         />
       ) : (
-        <AdminTable
+        <KubernetesResourceTable
+          resourceKey={'namespaces'}
+          resourceLabel={'Namespaces'}
+          allRows={visibleNamespacesQueryData ?? []}
+          filterKey={''}
+          scopeMode={'cluster'}
           error={namespacesQuery.isEnabled === false ? null : namespacesQuery.error}
           hasReadData={namespacesQuery.data !== undefined}
           onRetry={
@@ -211,10 +215,8 @@ export function ClusterNamespacesPage() {
           rowKey="name"
           loading={namespacesQuery.isLoading || namespacesQuery.isFetching}
           localSorting
-          pageSize={K8S_TABLE_PAGE_SIZE}
           tableSize={tableSize}
           scroll={{ x: 'max-content' }}
-          viewportScroll
           headerExtra={
             <ManagementTableToolbar>
               {canCreate ? (

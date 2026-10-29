@@ -1,4 +1,4 @@
-import { AdminTable } from '@/components/admin-table'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementIconButton,
   ManagementQueryField,
@@ -12,7 +12,6 @@ import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/featur
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import { namespaceQueries } from '@/features/platform/cluster-resources/queries'
 import { toClusterScope } from '@/features/platform/cluster-resources/scope'
-import { K8S_TABLE_PAGE_SIZE } from '@/features/platform/shared/table-config'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -150,7 +149,6 @@ function CRDInstancesWorkspace({
   const [editorState, setEditorState] = useState({ dirty: false, busy: false })
   const [searchKeyword, setSearchKeyword] = useState('')
   const [sort, setSort] = useState<{ key?: string; order?: 'ascend' | 'descend' | null }>({})
-  const [pagination, setPagination] = useState({ current: 1, pageSize: K8S_TABLE_PAGE_SIZE })
   const keyword = normalizeSearchKeyword(useDeferredValue(searchKeyword))
   const disabled = capability.disabled
   const namespacesQuery = useQuery({
@@ -189,10 +187,6 @@ function CRDInstancesWorkspace({
       ],
       keyword,
     ),
-  )
-  const page = Math.min(
-    pagination.current,
-    Math.max(1, Math.ceil(filtered.length / pagination.pageSize)),
   )
   const resourcesReadable =
     resourcesQuery.isEnabled && (!resourcesQuery.isError || visibleResourcesQueryData !== undefined)
@@ -362,15 +356,10 @@ function CRDInstancesWorkspace({
     },
   ]
   const onTableChange: NonNullable<TableProps<CRDResourceInstance>['onChange']> = (
-    next,
+    _pagination,
     _filters,
     sorter,
-    extra,
   ) => {
-    setPagination({
-      current: extra.action === 'paginate' ? next.current || 1 : 1,
-      pageSize: next.pageSize || pagination.pageSize,
-    })
     const column = Array.isArray(sorter) ? sorter[0] : sorter
     setSort({
       key: column.columnKey == null ? undefined : String(column.columnKey),
@@ -489,7 +478,6 @@ function CRDInstancesWorkspace({
           searchKeyword={searchKeyword}
           setSearchKeyword={(value) => {
             setSearchKeyword(value)
-            setPagination((current) => ({ ...current, current: 1 }))
           }}
           placeholder={zh ? '搜索实例 / 命名空间 / 摘要' : 'Search instance / namespace / summary'}
         >
@@ -508,7 +496,6 @@ function CRDInstancesWorkspace({
                 onChange={(value) =>
                   onLeave(() => {
                     setSelection(undefined)
-                    setPagination((current) => ({ ...current, current: 1 }))
                     setNamespace(value || null)
                   })
                 }
@@ -516,7 +503,12 @@ function CRDInstancesWorkspace({
             </ManagementQueryField>
           ) : null}
         </ResourceQueryPanel>
-        <AdminTable
+        <KubernetesResourceTable
+          resourceKey={`crd-instances:${crd.group}/${crd.kind}/${crd.version}`}
+          resourceLabel={crd.kind}
+          allRows={resources}
+          filterKey={keyword}
+          scopeMode={isNamespacedCRD(crd) ? 'namespace' : 'cluster'}
           columns={columns}
           dataSource={filtered}
           rowKey={resourceKey}
@@ -532,12 +524,6 @@ function CRDInstancesWorkspace({
           onRetry={resourcesQuery.isEnabled ? refresh : undefined}
           hasReadData={visibleResourcesQueryData !== undefined}
           shellClassName="soha-management-table-shell"
-          title={
-            <span>
-              {crd.kind} · {zh ? '实例' : 'Instances'}
-            </span>
-          }
-          pagination={{ current: page, pageSize: pagination.pageSize, total: filtered.length }}
           onChange={onTableChange}
           headerExtra={
             <Button

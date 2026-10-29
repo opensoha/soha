@@ -666,4 +666,21 @@ describe('AdminTable', () => {
     expect(actionColumn.className).not.toContain('soha-table-actions-column--auto')
     expect(actionColumn.onHeaderCell().className).toContain('k8s-actions')
   })
+
+  it('honors unfixed actions only for the opted-in column layout', async () => {
+    const columns = [
+      { ...tableColumnPresets.action, key: 'actions', fixed: false, render: () => null },
+    ]
+    await renderNode(
+      <AdminTable
+        columns={columns}
+        dataSource={[{ id: '1' }]}
+        rowKey="id"
+        columnLayoutKey="k8s-mobile"
+      />,
+    )
+    expect(captured.tableProps.columns[0].fixed).toBe(false)
+    await renderNode(<AdminTable columns={columns} dataSource={[{ id: '1' }]} rowKey="id" />)
+    expect(captured.tableProps.columns[0].fixed).toBe('right')
+  })
 })
