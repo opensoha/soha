@@ -708,11 +708,38 @@
   text-overflow: ellipsis;
 }
 
+.soha-pod-table-namespace-tag.ant-tag {
+  max-width: 100%;
+}
+
+.soha-pod-table-namespace-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-pod-table-node-link {
+  display: block;
+  max-width: 100%;
+  color: var(--soha-primary);
+}
+
+.soha-pod-table-node-link:hover {
+  color: var(--soha-primary-hover);
+}
+
+.soha-pod-table-node-link:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+
 .soha-pod-table-node-text.ant-typography {
   display: block;
   max-width: 100%;
   overflow: hidden;
-  color: var(--soha-text-primary);
+  color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

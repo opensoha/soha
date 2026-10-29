@@ -418,6 +418,48 @@ describe('workloads pods page refresh controls', () => {
     vi.clearAllMocks()
   })
 
+  it('opens the scheduled node in the current cluster and leaves unassigned nodes as text', async () => {
+    testState.permissionKeys.push('platform.nodes.view')
+    const path = '/clusters/cluster-a/workloads/pods?namespace=monitoring'
+    const pod = (testState.responses[path] as Record<string, unknown>[])[0]
+    testState.responses[path] = [
+      pod,
+      { ...pod, name: 'pending-pod', nodeName: '' },
+      { ...pod, name: 'unknown-node-pod', nodeName: '-' },
+    ]
+    const container = await renderWithProviders(
+      <Routes>
+        <Route path="/workloads/pods" element={<WorkloadsPodsPage />} />
+        <Route path="/cluster-resources/nodes/:nodeName" element={<div>Node destination</div>} />
+      </Routes>,
+    )
+    await act(async () => {
+      vi.advanceTimersByTime(0)
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    const links = container.querySelectorAll<HTMLAnchorElement>('.soha-pod-table-node-link')
+    expect(links).toHaveLength(1)
+    expect(links[0].textContent).toBe('node-a')
+    expect(links[0].getAttribute('href')).toBe(
+      '/cluster-resources/nodes/node-a?clusterId=cluster-a',
+    )
+    await act(async () => links[0].dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushAsyncWork()
+    expect(container.textContent).toContain('Node destination')
+  })
+
+  it('keeps node names readable without node view permission', async () => {
+    const container = await renderWithProviders(<WorkloadsPodsPage />)
+    await act(async () => {
+      vi.advanceTimersByTime(0)
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    expect(container.querySelector('.soha-pod-table-node-link')).toBeNull()
+    expect(container.querySelector('.soha-pod-table-node-text')?.textContent).toBe('node-a')
+  })
+
   it('manually refetches pod data from the refresh button', async () => {
     const container = await renderWithProviders(<WorkloadsPodsPage />)
     const podListPath = '/clusters/cluster-a/workloads/pods?namespace=monitoring'

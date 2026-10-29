@@ -37,7 +37,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { MenuProps, TableColumnsType } from 'antd'
 import { App, Button, Popconfirm, Select, Space, Switch, Tag, Tooltip, Typography } from 'antd'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { workloadKeys } from '../shared/keys'
 import {
   WorkloadQueryPanel,
@@ -96,6 +96,7 @@ export function WorkloadsPodsPage() {
   const canDeletePods = hasPermission(permissionSnapshot, 'platform.pods.delete')
   const canExecPods = hasPermission(permissionSnapshot, 'platform.pods.exec')
   const canViewPodLogs = hasPermission(permissionSnapshot, 'platform.pods.logs')
+  const canViewNodes = hasPermission(permissionSnapshot, 'platform.nodes.view')
   const { clusterId, namespace } = usePlatformScopeStore()
   const { openSession } = useRealtimeSessionDock()
   const podDeleteCapability = useClusterCapability('workload.mutations', localeCode)
@@ -313,9 +314,15 @@ export function WorkloadsPodsPage() {
       width: 132,
       sorter: podSorter((left, right) => compareStrings(left.namespace, right.namespace)),
       render: (value: string) => (
-        <Tag variant="filled" color="blue" className="soha-pod-table-namespace-tag">
-          {value || '-'}
-        </Tag>
+        <Tooltip
+          title={value || '-'}
+          placement="top"
+          styles={{ container: { overflowWrap: 'anywhere' } }}
+        >
+          <Tag variant="filled" color="blue" className="soha-pod-table-namespace-tag">
+            <span className="soha-pod-table-namespace-label">{value || '-'}</span>
+          </Tag>
+        </Tooltip>
       ),
     },
     {
@@ -331,9 +338,18 @@ export function WorkloadsPodsPage() {
       width: 180,
       ellipsis: { showTitle: false },
       sorter: podSorter((left, right) => compareStrings(left.nodeName, right.nodeName)),
-      render: (value?: string) => (
-        <TableCellText className="soha-pod-table-node-text" value={value} />
-      ),
+      render: (value?: string) => {
+        const label = <TableCellText className="soha-pod-table-node-text" value={value} />
+        if (!value || value === '-' || !canViewNodes) return label
+        return (
+          <RouterLink
+            className="soha-pod-table-node-link"
+            to={`/cluster-resources/nodes/${encodeURIComponent(value)}?clusterId=${encodeURIComponent(clusterId || '')}`}
+          >
+            {label}
+          </RouterLink>
+        )
+      },
     },
     {
       title: 'QoS',

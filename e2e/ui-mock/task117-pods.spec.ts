@@ -72,6 +72,7 @@ async function setup(context: BrowserContext, page: Page, readonly = false, with
     deletes: 0,
     terminalTickets: 0,
     terminalRows: [] as number[],
+    nodeReads: 0,
   }
   if (withSessions)
     await page.routeWebSocket('**/workloads/pods/pod-0000/terminal?*', (socket) => {
@@ -96,6 +97,7 @@ async function setup(context: BrowserContext, page: Page, readonly = false, with
       if (!('permissionKeys' in body.data)) throw new Error('Missing permission fixture')
       body.data.permissionKeys!.push(
         'platform.pods.view',
+        'platform.nodes.view',
         ...(readonly ? [] : ['platform.pods.delete']),
         ...(withSessions ? ['platform.pods.logs', 'platform.pods.exec'] : []),
       )
@@ -141,6 +143,29 @@ async function setup(context: BrowserContext, page: Page, readonly = false, with
           ],
         },
       }
+    if (
+      url.pathname ===
+        '/api/v1/clusters/cluster-a/infrastructure/nodes/worker-with-a-long-dns-name.example.internal/detail' &&
+      method === 'GET'
+    ) {
+      state.nodeReads += 1
+      return {
+        body: {
+          data: {
+            name: 'worker-with-a-long-dns-name.example.internal',
+            status: 'Ready',
+            labels: {},
+            annotations: {},
+            taints: [],
+            roles: [],
+            pods: [],
+            conditions: [],
+            ageSeconds: 3600,
+            podCount: 0,
+          },
+        },
+      }
+    }
     if (url.pathname === '/api/v1/clusters/cluster-a/workloads/pods' && method === 'GET') {
       state.reads += 1
       return state.status === 200
@@ -484,6 +509,76 @@ for (const theme of ['light', 'dark']) {
       page.getByRole('status').filter({ hasText: '匹配 0 / 共 2000 个 Pods' }),
     ).toBeVisible()
     await expect(page.getByText('没有匹配的 Pods', { exact: true })).toBeVisible()
+    verifyBrowserEvidence(evidence)
+  })
+}
+
+for (const theme of ['light', 'dark']) {
+  test(`namespace ellipsis and scheduled node links remain readable (${theme})`, async ({
+    context,
+    page,
+  }) => {
+    const { state, evidence } = await setup(context, page, true)
+    state.pods = makePods(2).map((pod) => ({
+      ...pod,
+      namespace: 'envoy-gateway-system',
+      nodeName: 'worker-with-a-long-dns-name.example.internal',
+    }))
+    await page.getByRole('button', { name: '刷新', exact: true }).click()
+    await expect(rows(page)).toHaveCount(2)
+    if (theme === 'dark') await page.getByLabel('切换到深色模式').click()
+    const tag = rows(page).first().locator('.soha-pod-table-namespace-tag')
+    await expect(tag).toHaveText('envoy-gateway-system')
+    await expect
+      .poll(() =>
+        tag.locator('.soha-pod-table-namespace-label').evaluate((element) => ({
+          display: getComputedStyle(element).display,
+          overflow: getComputedStyle(element).overflow,
+          ellipsis: getComputedStyle(element).textOverflow,
+          clipped: element.scrollWidth > element.clientWidth,
+          fits:
+            element.getBoundingClientRect().width <=
+            element.parentElement!.getBoundingClientRect().width,
+        })),
+      )
+      .toEqual({
+        display: 'block',
+        overflow: 'hidden',
+        ellipsis: 'ellipsis',
+        clipped: true,
+        fits: true,
+      })
+    await tag.hover()
+    await expect(
+      page.getByRole('tooltip', { name: 'envoy-gateway-system', exact: true }),
+    ).toBeVisible()
+    const node = rows(page)
+      .first()
+      .getByRole('link', { name: 'worker-with-a-long-dns-name.example.internal', exact: true })
+    await expect(node).toHaveAttribute(
+      'href',
+      '/cluster-resources/nodes/worker-with-a-long-dns-name.example.internal?clusterId=cluster-a',
+    )
+    await node.focus()
+    await expect(node).toBeFocused()
+    await node.press('Tab')
+    await expect(
+      rows(page)
+        .first()
+        .getByRole('button', { name: /^容器状态：/ }),
+    ).toBeFocused()
+    await page.keyboard.press('Shift+Tab')
+    await expect(node).toBeFocused()
+    await expect(node.locator('.soha-pod-table-node-text')).toHaveText(
+      'worker-with-a-long-dns-name.example.internal',
+    )
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
+    await node.press('Enter')
+    await expect(page).toHaveURL(
+      /\/cluster-resources\/nodes\/worker-with-a-long-dns-name\.example\.internal\?clusterId=cluster-a$/,
+    )
+    await expect(page.getByText('资源分配', { exact: true })).toBeVisible()
+    expect(state.nodeReads).toBe(1)
     verifyBrowserEvidence(evidence)
   })
 }
