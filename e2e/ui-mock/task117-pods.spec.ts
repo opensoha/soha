@@ -573,7 +573,8 @@ for (const theme of ['light', 'dark']) {
       'worker-with-a-long-dns-name.example.internal',
     )
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
-    await node.press('Enter')
+    if (theme === 'light') await node.press('Enter')
+    else await node.click()
     await expect(page).toHaveURL(
       /\/cluster-resources\/nodes\/worker-with-a-long-dns-name\.example\.internal\?clusterId=cluster-a$/,
     )
