@@ -64,6 +64,8 @@ jobs:
         run: GOWORK=off go mod verify
       - name: Build web artifact
         working-directory: soha-web
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
         run: |
           npm ci
           npm run build
