@@ -21,6 +21,7 @@ import (
 	dbstore "github.com/opensoha/soha/internal/infrastructure/db"
 	"github.com/opensoha/soha/internal/networkprotocol"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	networkaccessrepo "github.com/opensoha/soha/internal/repository/networkaccess"
 	networkruntimerepo "github.com/opensoha/soha/internal/repository/networkruntime"
 	"go.uber.org/zap"
 )
@@ -51,7 +52,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 		t.Fatalf("create migration staging directory: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(migrationDir) })
-	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql", "0077_network_vpn_selection.sql", "0102_network_proxy_instances.sql"} {
+	for _, name := range []string{"0001_init.sql", "0060_network_access.sql", "0061_network_access_policy.sql", "0062_network_runtime.sql", "0063_network_nac.sql", "0064_network_certificate_binding.sql", "0065_network_wireguard.sql", "0066_network_gateway_management.sql", "0067_network_vpn.sql", "0068_network_access_grants.sql", "0069_network_device_posture_version.sql", "0070_network_mihomo_profiles.sql", "0071_network_nac_session_compat.sql", "0072_network_gateway_sites.sql", "0073_endpoint_device_inventory.sql", "0075_network_access_devices.sql", "0076_network_mihomo_sources.sql", "0077_network_vpn_selection.sql", "0120_endpoint_response.sql", "0121_nas_admission_revalidation.sql", "0122_network_eap_credentials.sql", "0123_network_admission_versions.sql", "0102_network_proxy_instances.sql", "0124_network_vpn_revocations.sql", "0125_network_proxy_protection.sql", "0126_network_device_governance.sql", "0127_network_site_dns.sql", "0128_network_ipv6.sql", "0129_network_workload_bindings.sql", "0130_network_management_proofs.sql", "0131_network_workload_revocation.sql", "0132_network_proxy_history.sql", "0133_network_dns_reconfiguration.sql", "0134_docker_volume_dlp.sql", "0135_dlp_response_workflows.sql", "0136_endpoint_channel_controls.sql", "0137_managed_content_transfers.sql", "0138_managed_content_network_holds.sql", "0139_endpoint_channel_identity_types.sql", "0140_network_dns_reconfiguration_scope.sql"} {
 		contents, err := os.ReadFile(filepath.Join(migrationSource, name)) // #nosec G304 -- fixed migration names from the repository fixture list.
 		if err != nil {
 			t.Fatalf("read %s: %v", name, err)
@@ -68,6 +69,7 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	scenario.seedPolicy(t)
 	scenario.enrollFirstEndpoint(t)
 	scenario.rotateInitialEndpoint(t)
+	scenario.checkEAPCertificates(t)
 	scenario.seedNetwork(t)
 	scenario.checkGatewayEnrollment(t)
 	scenario.checkMihomoSource(t)
@@ -101,6 +103,10 @@ func TestRepositoryWithPostgres(t *testing.T) {
 	scenario.rotateGateway(t)
 	scenario.checkPendingAndProxyOnly(t)
 	scenario.checkProxyEnrollmentWithoutWireGuardKey(t)
+	scenario.checkDLPHoldSources(t)
+	scenario.checkManagedDLPHoldSources(t)
+	scenario.checkEndpointChannelLifecycle(t)
+	scenario.checkGatewayDNSReconfigurationScope(t)
 }
 
 type runtimeRepositoryScenario struct {
@@ -237,6 +243,16 @@ func (s *runtimeRepositoryScenario) rotateInitialEndpoint(t *testing.T) {
 	if active, err := s.repository.ActiveEndpointCredential(s.ctx, s.credential2.CertificateSerial, s.credential2.CertificateAuthorityKeyID, s.secondNow); err != nil || active.ID != s.credential2.ID {
 		t.Fatalf("ActiveEndpointCredential() = %#v, %v", active, err)
 	}
+	if err := s.store.DB().Exec(`UPDATE network_runtime_credentials SET capabilities='["wireguard","mihomo"]'::jsonb WHERE id=?`, s.credential2.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.repository.ActiveEndpointCredential(s.ctx, s.credential2.CertificateSerial, s.credential2.CertificateAuthorityKeyID, s.secondNow); !errors.Is(err, apperrors.ErrUnauthorized) {
+		t.Fatalf("ordinary control certificate entered EAP: %v", err)
+	}
+	capabilities, _ := json.Marshal(s.credential2.Capabilities)
+	if err := s.store.DB().Exec(`UPDATE network_runtime_credentials SET capabilities=?::jsonb WHERE id=?`, string(capabilities), s.credential2.ID).Error; err != nil {
+		t.Fatal(err)
+	}
 	if _, err := s.repository.ActiveEndpointCredential(s.ctx, s.credential2.CertificateSerial, "ffffffffffffffff", s.secondNow); !errors.Is(err, apperrors.ErrUnauthorized) {
 		t.Fatalf("ActiveEndpointCredential(wrong issuer) error = %v, want unauthorized", err)
 	}
@@ -358,6 +374,10 @@ func (s *runtimeRepositoryScenario) checkEndpointConfiguration(t *testing.T) {
 	s.err = err
 	if s.err != nil || s.endpointConfiguration.Desired.WireGuard == nil || fmt.Sprint(s.endpointConfiguration.Desired.WireGuard.Addresses) != "[100.96.0.2/32]" || fmt.Sprint(s.endpointConfiguration.Desired.WireGuard.Routes) != "[10.77.0.0/24]" || len(s.endpointConfiguration.Desired.WireGuard.FirewallRules) != 2 || s.endpointConfiguration.Desired.WireGuard.FirewallRules[0].Effect != "deny" || s.endpointConfiguration.Desired.WireGuard.FirewallRules[0].DestinationCIDR != "10.77.0.10/32" || s.endpointConfiguration.Desired.Mihomo == nil || s.endpointConfiguration.Desired.Mihomo.ProfileID != s.mihomoProfileID || fmt.Sprint(s.endpointConfiguration.Desired.Mihomo.BypassCIDRs) != "[10.77.0.0/24 172.16.0.0/16]" || fmt.Sprint(s.endpointConfiguration.Desired.Mihomo.BypassHosts) != "[control.example.test vpn.example.test]" {
 		t.Fatalf("endpoint VPN configuration = %#v, %v", s.endpointConfiguration, s.err)
+	}
+	protection := s.endpointConfiguration.Desired.Mihomo.Protection
+	if s.endpointConfiguration.ConfigurationVersion != s.vpnResult.ConfigurationVersion || protection == nil || protection.PolicyVersion != s.policyVersion || fmt.Sprint(protection.CIDRs) != "[10.77.0.10/32]" {
+		t.Fatalf("saved VPN configuration changed on first read: savedVersion=%d currentVersion=%d policyVersion=%d protection=%+v", s.vpnResult.ConfigurationVersion, s.endpointConfiguration.ConfigurationVersion, s.policyVersion, protection)
 	}
 }
 
@@ -551,16 +571,50 @@ func (s *runtimeRepositoryScenario) authorizeNAS(t *testing.T) {
 		ValidUntil:       s.secondNow.Add(10 * time.Minute), CreatedAt: s.secondNow,
 	}
 	s.authorization = authorization
+	s.authorization.AttributeVersion = domainnetworkaccess.AdmissionDecisionVersion(s.authorization.InputsHash, s.authorization.PolicyVersion, s.authorization.ResponsePolicyHash, s.authorization.PresenceHash, s.authorization.RestrictionEpoch)
 	savedAuthorization, err := s.repository.SaveNASAuthorization(s.ctx, s.authorization)
 	s.err = err
-	if s.err != nil || savedAuthorization.SessionID != s.authorization.SessionID || savedAuthorization.RadiusAttributes == nil || savedAuthorization.RadiusAttributes.VLANID != 30 {
+	if s.err != nil || savedAuthorization.SessionID != s.authorization.SessionID || savedAuthorization.RadiusAttributes == nil || savedAuthorization.RadiusAttributes.VLANID != 30 || savedAuthorization.AttributeVersion != s.authorization.AttributeVersion {
 		t.Fatalf("SaveNASAuthorization() = %#v, %v", savedAuthorization, s.err)
+	}
+	session, err := networkaccessrepo.New(s.store.DB()).GetSession(s.ctx, s.authorization.SessionID)
+	if err != nil || session.AdmissionPolicyVersion != s.authorization.PolicyVersion || session.AdmissionAttributeVersion != s.authorization.AttributeVersion {
+		t.Fatalf("original admission version was not visible on the exact session: %#v %v", session, err)
 	}
 	replayedAuthorization, err := s.repository.SaveNASAuthorization(s.ctx, s.authorization)
 	s.err = err
 	if s.err != nil || replayedAuthorization.RequestHash != s.authorization.RequestHash || replayedAuthorization.RadiusAttributes == nil || replayedAuthorization.RadiusAttributes.FilterID != "soha-restricted" {
 		t.Fatalf("idempotent SaveNASAuthorization() = %#v, %v", replayedAuthorization, s.err)
 	}
+	for _, test := range []struct {
+		name   string
+		change func(*domainnetworkruntime.NASAuthorization)
+	}{
+		{"ExpiredNASAuthorizationReplay", func(value *domainnetworkruntime.NASAuthorization) { value.CreatedAt = value.ValidUntil }},
+		{"SupersededNASAuthorizationReplay", func(value *domainnetworkruntime.NASAuthorization) { value.PolicyVersion++ }},
+		{"DeniedNASAuthorizationReplay", func(value *domainnetworkruntime.NASAuthorization) { value.Decision = domainnetworkaccess.DecisionDeny }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stale := s.authorization
+			test.change(&stale)
+			if _, err := s.repository.SaveNASAuthorization(s.ctx, stale); !errors.Is(err, apperrors.ErrConflict) {
+				t.Fatalf("stale authorization error = %v, want conflict", err)
+			}
+		})
+	}
+	t.Run("RevokedNASSessionReplay", func(t *testing.T) {
+		if err := s.store.Exec(s.ctx, `UPDATE network_runtime_sessions SET status = 'revoked' WHERE id = $1`, s.authorization.SessionID); err != nil {
+			t.Fatal(err)
+		}
+		defer func() {
+			if err := s.store.Exec(s.ctx, `UPDATE network_runtime_sessions SET status = 'restricted' WHERE id = $1`, s.authorization.SessionID); err != nil {
+				t.Fatal(err)
+			}
+		}()
+		if _, err := s.repository.SaveNASAuthorization(s.ctx, s.authorization); !errors.Is(err, apperrors.ErrConflict) {
+			t.Fatalf("revoked session replay error = %v, want conflict", err)
+		}
+	})
 	conflictingAuthorization := s.authorization
 	conflictingAuthorization.RequestHash = digest("different-nas-request-" + s.suffix)
 	if _, err := s.repository.SaveNASAuthorization(s.ctx, conflictingAuthorization); !errors.Is(err, apperrors.ErrConflict) {
@@ -877,7 +931,7 @@ func (s *runtimeRepositoryScenario) checkPendingAndProxyOnly(t *testing.T) {
 		t.Fatalf("CreateEnrollment(mihomo-only): %v", err)
 	}
 	mihomoOnlyConsumption := consumption(mihomoOnlyEnrollment, s.suffix+"-mihomo-only-certificate", s.secondNow)
-	mihomoOnlyConsumption.Capabilities = []string{"mihomo"}
+	mihomoOnlyConsumption.Capabilities = []string{"mihomo", "mihomo-policy-v1", "mihomo-dns-pin-v1"}
 	if _, _, err := s.repository.ConsumeEnrollment(s.ctx, mihomoOnlyConsumption, s.snapshot, s.secondNow.Add(5*time.Minute)); err != nil {
 		t.Fatalf("ConsumeEnrollment(mihomo-only): %v", err)
 	}
@@ -892,6 +946,13 @@ func (s *runtimeRepositoryScenario) checkPendingAndProxyOnly(t *testing.T) {
 	s.err = err
 	if s.err != nil || mihomoOnlyConfiguration.Desired.WireGuard != nil || mihomoOnlyConfiguration.Desired.Mihomo == nil || mihomoOnlyConfiguration.Desired.Mihomo.Mode != domainnetworkaccess.MihomoModeAppSubscription {
 		t.Fatalf("mihomo-only configuration = %#v, %v", mihomoOnlyConfiguration, s.err)
+	}
+	if err := s.store.DB().Exec(`UPDATE network_runtime_credentials SET capabilities='["mihomo"]'::jsonb WHERE runtime_id=? AND status='active'`, mihomoOnlyRuntimeID).Error; err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := s.repository.EnsureConfiguration(s.ctx, mihomoOnlyRuntimeID, s.snapshot, s.secondNow, s.secondNow.Add(5*time.Minute))
+	if err != nil || legacy.Desired.Mihomo != nil || legacy.Desired.WireGuard != nil {
+		t.Fatalf("legacy mihomo endpoint received unsupported protection: %#v, %v", legacy, err)
 	}
 }
 
@@ -938,12 +999,19 @@ func enrollment(suffix, runtimeID, deviceID, subjectID string, createdAt time.Ti
 func consumption(challenge domainnetworkruntime.EnrollmentChallenge, certificate string, consumedAt time.Time) domainnetworkruntime.EnrollmentConsumption {
 	serial := fmt.Sprintf("%x", sha256.Sum256([]byte(certificate)))[:40]
 	wireGuardKey := sha256.Sum256([]byte(certificate + "-wireguard"))
+	capabilities := []string{"wireguard", "mihomo"}
+	if challenge.RuntimeKind == "gateway" {
+		capabilities = append(capabilities, "wireguard-kernel-expiry-v1")
+	}
+	if challenge.RuntimeKind == "endpoint" {
+		capabilities = append(capabilities, "radius-eap-tls-v1", "eap-profile-v1", "mihomo-policy-v1", "mihomo-dns-pin-v1")
+	}
 	return domainnetworkruntime.EnrollmentConsumption{
 		EnrollmentID: challenge.ID, ChallengeID: challenge.ChallengeID, TokenHash: challenge.ChallengeHash,
 		RuntimeID: challenge.RuntimeID, RuntimeKind: challenge.RuntimeKind, DeviceID: challenge.DeviceID,
 		CertificateFingerprint: digest(certificate), PublicKeyFingerprint: digest(certificate + "-key"), WireGuardPublicKey: base64.StdEncoding.EncodeToString(wireGuardKey[:]), CertificateSerial: serial,
 		CertificateAuthorityKeyID: "0123456789abcdef0123456789abcdef01234567",
-		Capabilities:              []string{"wireguard", "mihomo"}, NotBefore: consumedAt.Add(-time.Minute), ExpiresAt: consumedAt.Add(time.Hour), ConsumedAt: consumedAt,
+		Capabilities:              capabilities, NotBefore: consumedAt.Add(-time.Minute), ExpiresAt: consumedAt.Add(time.Hour), ConsumedAt: consumedAt,
 	}
 }
 

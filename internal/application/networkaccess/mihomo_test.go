@@ -51,6 +51,7 @@ func TestMihomoProfileEncryptsAndPreservesWriteOnlySources(t *testing.T) {
 			appaccess.PermNetworkAccessMihomoProfilesCreate,
 			appaccess.PermNetworkAccessMihomoProfilesUpdate,
 		}}),
+		allowTestNetworkScope(),
 		&captureAudit{}, &enrollmentOperationCapture{}, keys,
 	)
 	if err != nil {

@@ -27,14 +27,21 @@ type enrollmentState struct {
 }
 
 type Runner struct {
-	config          Config
-	client          *Client
-	ingest          *IngestClient
-	engine          *engine
-	appliedRevision int64
-	enabled         bool
-	lastAttempt     *domain.Applied
-	attemptReported bool
+	config            Config
+	client            *Client
+	ingest            *IngestClient
+	engine            *engine
+	appliedRevision   int64
+	enabled           bool
+	lastAttempt       *domain.Applied
+	attemptReported   bool
+	validUntil        time.Time
+	seenRevision      int64
+	seenHash          string
+	seenEnabled       bool
+	seenPolicyVersion int
+	suspended         bool
+	reasonCode        string
 }
 
 func NewRunner(config Config) (*Runner, error) {
@@ -61,7 +68,11 @@ func NewRunner(config Config) (*Runner, error) {
 			return nil, err
 		}
 	}
-	return &Runner{config: config, client: client, ingest: ingest, engine: newEngine(config, secret)}, nil
+	runner := &Runner{config: config, client: client, ingest: ingest, engine: newEngine(config, secret)}
+	if err := runner.restoreConfigurationFloor(); err != nil {
+		return nil, err
+	}
+	return runner, nil
 }
 
 func (r *Runner) enroll(ctx context.Context) error {
@@ -115,17 +126,30 @@ func (r *Runner) Run(ctx context.Context) error {
 	if err := r.enroll(ctx); err != nil {
 		return fmt.Errorf("enroll proxy runtime: %w", err)
 	}
-	ticker := time.NewTicker(r.config.PollInterval)
-	defer ticker.Stop()
+	lastWall := time.Now().UnixNano()
+	timer := time.NewTimer(0)
+	defer timer.Stop()
 	for {
-		if err := r.cycle(ctx); err != nil && ctx.Err() == nil {
-			slog.Warn("proxy runtime cycle failed", "error", err)
-		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
+		case <-timer.C:
 		}
+		wall := time.Now().UnixNano()
+		gap := time.Duration(wall - lastWall)
+		lastWall = wall
+		if gap < 0 || gap > max(3*r.config.PollInterval, 15*time.Second) {
+			r.suspend("system_resume_requires_refresh")
+		}
+		r.expire(time.Now())
+		cycleCtx, cancel := r.cycleContext(ctx)
+		err := r.cycle(cycleCtx)
+		cancel()
+		r.expire(time.Now())
+		if err != nil && ctx.Err() == nil {
+			slog.Warn("proxy runtime cycle failed", "error", err)
+		}
+		timer.Reset(r.nextCycleDelay(time.Now()))
 	}
 }
 
@@ -133,6 +157,9 @@ func (r *Runner) cycle(ctx context.Context) error {
 	if err := r.syncConfiguration(ctx); err != nil {
 		return err
 	}
+	// A newly granted configuration may expire before this first cycle ends.
+	ctx, cancel := r.cycleContext(ctx)
+	defer cancel()
 	r.ensureRunning(ctx)
 	observation, connections := r.observe(ctx)
 	if err := r.client.Observe(ctx, observation); err != nil {
@@ -152,45 +179,102 @@ func (r *Runner) cycle(ctx context.Context) error {
 	return closeErr
 }
 
+func (r *Runner) cycleContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if r.enabled && !r.validUntil.IsZero() {
+		return context.WithDeadline(ctx, r.validUntil)
+	}
+	return context.WithCancel(ctx)
+}
+
+func (r *Runner) nextCycleDelay(now time.Time) time.Duration {
+	if r.enabled && !r.validUntil.IsZero() {
+		return max(time.Millisecond, min(r.config.PollInterval, r.validUntil.Sub(now)))
+	}
+	return r.config.PollInterval
+}
+
+func (r *Runner) suspend(reason string) {
+	r.engine.stop()
+	r.enabled, r.suspended, r.reasonCode = false, true, reason
+}
+
+func (r *Runner) expire(now time.Time) {
+	if r.enabled && !r.validUntil.After(now) {
+		r.suspend("configuration_expired")
+	}
+}
+
 func (r *Runner) syncConfiguration(ctx context.Context) error {
 	desired, err := r.client.Configuration(ctx)
 	if err != nil {
+		if isProtectionFailure(err) {
+			r.suspend("protection_unavailable")
+		}
 		return fmt.Errorf("poll proxy configuration: %w", err)
 	}
-	if desired != nil && desired.Engine != r.config.Engine {
+	if desired == nil {
+		r.suspend("configuration_unavailable")
+		return nil
+	}
+	if desired.Engine != r.config.Engine {
+		r.suspend("engine_mismatch")
 		return fmt.Errorf("desired proxy engine does not match runtime")
 	}
-	if desired != nil && desired.Revision != r.appliedRevision {
-		if r.lastAttempt == nil || r.lastAttempt.Revision != desired.Revision {
-			applied := r.engine.apply(ctx, *desired)
-			r.lastAttempt, r.attemptReported = &applied, false
-		}
-		if !r.attemptReported {
-			if err := r.client.Applied(ctx, *r.lastAttempt); err != nil {
-				return fmt.Errorf("acknowledge proxy configuration: %w", err)
+	if desired.Revision < r.seenRevision || (desired.Revision == r.seenRevision &&
+		(desired.Digest() != r.seenHash || desired.Enabled != r.seenEnabled)) {
+		r.suspend("stale_configuration")
+		return fmt.Errorf("desired proxy configuration regressed or changed without a revision")
+	}
+	if err := r.rememberConfiguration(*desired); err != nil {
+		r.suspend("configuration_floor_unavailable")
+		return err
+	}
+	r.applyConfiguration(ctx, *desired)
+	if r.appliedRevision == desired.Revision && !r.suspended {
+		if desired.Enabled {
+			if err := r.engine.refreshEgress(desired.ValidUntil); err != nil {
+				r.suspend("egress_lease_failed")
+				return err
 			}
-			r.attemptReported = true
 		}
-		if r.lastAttempt.Status == "applied" {
-			r.appliedRevision, r.enabled = desired.Revision, desired.Enabled
-			r.lastAttempt = nil
+		r.validUntil = desired.ValidUntil
+	}
+	if r.lastAttempt != nil && !r.attemptReported {
+		if err := r.client.Applied(ctx, *r.lastAttempt); err != nil {
+			return fmt.Errorf("acknowledge proxy configuration: %w", err)
 		}
+		r.attemptReported = true
 	}
 	return nil
 }
 
+func (r *Runner) applyConfiguration(ctx context.Context, desired domain.Configuration) {
+	refreshBootstrap := desired.Enabled && time.Since(r.engine.bootstrapAt) >= 5*time.Minute
+	if desired.Revision != r.appliedRevision || r.suspended || refreshBootstrap {
+		if r.lastAttempt == nil || r.lastAttempt.Revision != desired.Revision || r.suspended || refreshBootstrap {
+			applyCtx, cancel := context.WithDeadline(ctx, desired.ValidUntil)
+			applied := r.engine.apply(applyCtx, desired)
+			cancel()
+			r.lastAttempt, r.attemptReported = &applied, false
+			if applied.Status == "applied" {
+				r.appliedRevision, r.enabled = desired.Revision, desired.Enabled
+				r.suspended, r.reasonCode = false, ""
+			} else {
+				// A rejected replacement may narrow access; do not continue its predecessor.
+				r.suspend(applied.ReasonCode)
+			}
+		}
+	}
+}
+
+func isProtectionFailure(err error) bool {
+	var status controlStatusError
+	return errors.Is(err, errUnsafeConfiguration) || errors.As(err, &status) && (status == 401 || status == 403 || status == 404 || status == 409)
+}
+
 func (r *Runner) ensureRunning(ctx context.Context) {
-	if r.enabled {
-		if r.engine.process != nil {
-			if err := r.engine.health(ctx); err != nil {
-				r.engine.stop()
-			}
-		}
-		if r.engine.process == nil {
-			if err := r.engine.start(ctx); err != nil {
-				slog.Warn("proxy engine restart failed", "error", err)
-			}
-		}
+	if r.enabled && r.engine.health(ctx) != nil {
+		r.suspend("engine_state_drift")
 	}
 }
 
@@ -221,9 +305,9 @@ func (r *Runner) observe(ctx context.Context) (observation domain.Observation, c
 		Capabilities: []string{}, UptimeSeconds: 0,
 	}
 	defer func() {
-		if r.lastAttempt != nil && r.lastAttempt.Status != "applied" {
+		if r.reasonCode != "" {
 			observation.Health = "degraded"
-			observation.ReasonCode = r.lastAttempt.ReasonCode
+			observation.ReasonCode = r.reasonCode
 		}
 	}()
 	if !r.enabled || r.engine.process == nil {
@@ -243,7 +327,10 @@ func (r *Runner) observe(ctx context.Context) (observation domain.Observation, c
 			return observation, nil
 		}
 		observation.Health = "healthy"
-		observation.Capabilities = []string{"traffic", "connections", "close_connection"}
+		observation.Capabilities = []string{"traffic", "connections", "close_connection", "protected_destinations_v1", "guarded_dns_tcp_v1"}
+		if r.config.Engine == domain.EngineMihomo {
+			observation.Capabilities = append(observation.Capabilities, "protection_rules_readback")
+		}
 		observation.UploadTotal, observation.DownloadTotal = upload, download
 		observation.ActiveConnections = &active
 		return observation, connections
@@ -255,7 +342,7 @@ func (r *Runner) observe(ctx context.Context) (observation domain.Observation, c
 	}
 	observation.EngineVersion = version
 	observation.Health = "healthy"
-	observation.Capabilities = []string{"traffic"}
+	observation.Capabilities = []string{"traffic", "protected_destinations_v1", "guarded_dns_tcp_v1"}
 	observation.UploadTotal, observation.DownloadTotal = upload, download
 	return observation, nil
 }

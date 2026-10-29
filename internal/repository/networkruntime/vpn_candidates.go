@@ -53,15 +53,29 @@ func (r *Repository) VPNGatewayCandidates(ctx context.Context, profile domain.VP
 		if !item.Reachable {
 			item.ReasonCode = "target_unreachable"
 		}
+		if resourceVPNMode(profile.Mode) && gateway.SiteID != profile.SiteID {
+			item.Reachable, item.ReasonCode = false, "resource_gateway_must_be_local"
+		}
 		if err := r.db.WithContext(ctx).Raw(`SELECT count(*) FROM network_wireguard_peers WHERE tenant_id = 'default' AND workspace_id = 'default' AND gateway_id = ? AND status = 'active' AND expires_at > ?`, id, now).Row().Scan(&item.ActiveSessions); err != nil {
 			return nil, err
 		}
-		if prefix, err := netip.ParsePrefix(gateway.OverlayCIDR); err == nil && prefix.Addr().Is4() && prefix.Bits() >= 16 && prefix.Bits() <= 30 {
-			item.OverlayCapacity = (1 << (32 - prefix.Bits())) - 3
+		if prefix, err := netip.ParsePrefix(gateway.OverlayCIDR); err == nil {
+			item.OverlayCapacity = overlayCapacity(prefix)
 		}
 		items = append(items, item)
 	}
 	return items, nil
+}
+
+func overlayCapacity(prefix netip.Prefix) int {
+	if !domain.ValidOverlayPrefix(prefix) {
+		return 0
+	}
+	hostBits := prefix.Addr().BitLen() - prefix.Bits()
+	if hostBits >= 17 {
+		return maxOverlayCandidates
+	}
+	return (1 << hostBits) - 3
 }
 
 func (r *Repository) vpnCandidateReachesSpace(ctx context.Context, gateway domain.Gateway, credential runtime.Credential, spaceID string, now time.Time) (bool, error) {

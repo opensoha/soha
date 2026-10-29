@@ -44,13 +44,14 @@ type NetworkVPNHandler struct {
 	policies    NetworkVPNPolicies
 	connections NetworkVPNConnections
 	queries     NetworkVPNQueries
+	revocations NetworkVPNRevocations
 }
 
 func NewNetworkVPNHandler(service *app.VPNService) *NetworkVPNHandler {
 	if service == nil {
 		return nil
 	}
-	return &NetworkVPNHandler{profiles: service, policies: service, connections: service, queries: service}
+	return &NetworkVPNHandler{profiles: service, policies: service, connections: service, queries: service, revocations: service}
 }
 
 func (h *NetworkVPNHandler) ListProfiles(c *gin.Context) {
@@ -200,4 +201,33 @@ func vpnProfileConfig(input api.NetworkVPNProfileConfig) domain.VPNProfileConfig
 }
 func vpnSelectionPolicyConfig(input api.NetworkVPNSelectionPolicyConfig) domain.VPNSelectionPolicyConfig {
 	return domain.VPNSelectionPolicyConfig{Name: input.Name, Strategy: string(input.Strategy), ProviderOrder: input.ProviderOrder, ProviderPreference: string(input.ProviderPreference), MaxLatencyMs: input.MaxLatencyMs, MaxTimeoutPercent: input.MaxTimeoutPercent, MaxSampleAgeSeconds: input.MaxSampleAgeSeconds, MinSamples: input.MinSamples, MissingMeasurements: string(input.MissingMeasurements), MaxAttempts: input.MaxAttempts, RetryCooldownSeconds: input.RetryCooldownSeconds, FailoverOnDisconnect: input.FailoverOnDisconnect, AllowManualFallback: input.AllowManualFallback}
+}
+
+type NetworkVPNRevocations interface {
+	GetSessionRevocation(context.Context, identity.Principal, string) (*domain.VPNRevocation, error)
+	RevokeSession(context.Context, identity.Principal, string) (domain.VPNRevocation, error)
+	ReleaseSessionRevocation(context.Context, identity.Principal, string, int64) (domain.VPNRevocation, error)
+}
+
+func (h *NetworkVPNHandler) GetSessionRevocation(c *gin.Context) {
+	item, err := h.revocations.GetSessionRevocation(c.Request.Context(), principal(c), c.Param("sessionID"))
+	c.Header("Cache-Control", "no-store")
+	respondItem(c, http.StatusOK, struct {
+		Present    bool                  `json:"present"`
+		Revocation *domain.VPNRevocation `json:"revocation,omitempty"`
+	}{Present: item != nil, Revocation: item}, err)
+}
+func (h *NetworkVPNHandler) RevokeSession(c *gin.Context) {
+	item, err := h.revocations.RevokeSession(c.Request.Context(), principal(c), c.Param("sessionID"))
+	c.Header("Cache-Control", "no-store")
+	respondItem(c, http.StatusAccepted, item, err)
+}
+func (h *NetworkVPNHandler) ReleaseSessionRevocation(c *gin.Context) {
+	var input api.NetworkVPNRevocationReleaseInput
+	if !bindNetworkJSON(c, &input) {
+		return
+	}
+	item, err := h.revocations.ReleaseSessionRevocation(c.Request.Context(), principal(c), c.Param("sessionID"), int64(input.ExpectedEpoch))
+	c.Header("Cache-Control", "no-store")
+	respondItem(c, http.StatusOK, item, err)
 }

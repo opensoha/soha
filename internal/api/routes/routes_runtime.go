@@ -108,7 +108,23 @@ func registerDockerRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depende
 	protected.GET("/docker/projects/:id/runtime/volumes", deps.Docker.ListProjectVolumes)
 	protected.GET("/docker/projects/:id/runtime/volume-files", deps.Docker.ListProjectVolumeFiles)
 	protected.GET("/docker/projects/:id/runtime/volume-file", deps.Docker.ReadProjectVolumeFile)
+	protected.POST("/docker/projects/:id/runtime/volume-file/read", deps.Docker.ReadProjectVolumeTransfer)
+	if deps.ContentDLP != nil {
+		protected.GET("/docker/projects/:id/content-dlp", deps.ContentDLP.Get)
+		protected.PUT("/docker/projects/:id/content-dlp", deps.ContentDLP.Save)
+		protected.POST("/docker/projects/:id/content-dlp/publish", deps.ContentDLP.Publish)
+		protected.POST("/docker/projects/:id/content-dlp/preview", deps.ContentDLP.Preview)
+		protected.GET("/docker/projects/:id/content-dlp/events", deps.ContentDLP.Events)
+	}
 	protected.POST("/docker/containers/start", deps.Docker.StartContainer)
+	if deps.ContentDLPWorkflow != nil {
+		protected.GET("/docker/projects/:id/content-dlp/activity", deps.ContentDLPWorkflow.Activity)
+		protected.GET("/docker/projects/:id/content-dlp/events/:eventID", deps.ContentDLPWorkflow.Case)
+		protected.POST("/docker/projects/:id/content-dlp/events/:eventID/authorizations", deps.ContentDLPWorkflow.Authorize)
+		protected.POST("/docker/projects/:id/content-dlp/events/:eventID/appeal", deps.ContentDLPWorkflow.Appeal)
+		protected.POST("/docker/projects/:id/content-dlp/events/:eventID/appeal/review", deps.ContentDLPWorkflow.Review)
+	}
+
 	protected.GET("/docker/services", deps.Docker.ListServices)
 	protected.POST("/docker/services/:id/actions", deps.Docker.ServiceAction)
 	protected.GET("/docker/ports", deps.Docker.ListPortMappings)

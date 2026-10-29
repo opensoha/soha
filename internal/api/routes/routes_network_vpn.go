@@ -7,6 +7,9 @@ func registerNetworkVPNRoutes(protected gin.IRoutes, deps Dependencies) {
 	if h == nil {
 		return
 	}
+	protected.GET("/network-access/sessions/:sessionID/vpn-revocation", h.GetSessionRevocation)
+	protected.POST("/network-access/sessions/:sessionID/vpn-revocation", h.RevokeSession)
+	protected.POST("/network-access/sessions/:sessionID/vpn-revocation/release", h.ReleaseSessionRevocation)
 	protected.GET("/network-access/vpn/dashboard", h.Dashboard)
 	protected.GET("/network-access/vpn/decisions/:id", h.Decision)
 	protected.GET("/network-access/vpn/current-connection", h.CurrentConnection)

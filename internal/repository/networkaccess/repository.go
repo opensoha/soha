@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgconn"
 	"strings"
 	"time"
 
@@ -27,7 +28,7 @@ const gatewayColumns = `g.id, COALESCE(g.runtime_id, ''), g.site_id, g.name, g.a
 	g.version, g.capabilities, g.policy_version, g.applied_at, g.last_heartbeat_at, g.created_at, g.updated_at,
 	g.region, g.provider_code, g.provider_name, g.selection_priority, g.accept_new_connections, g.max_sessions, g.probe_url`
 
-const deviceColumns = `id, owner_user_id, name, hostname, platform, device_type, ownership_type,
+const deviceColumns = `id, owner_user_id, name, hostname, platform, device_type, ownership_type, management_state,
 	COALESCE(site_id, ''), status, posture_status, posture_version, credential_generation, last_seen_at,
 	reported_facts, created_at, updated_at`
 
@@ -38,13 +39,21 @@ func (r *Repository) ListDevices(ctx context.Context, filter domainnetworkaccess
 	query, args = addFilter(query, args, "owner_user_id", filter.OwnerUserID)
 	query, args = addFilter(query, args, "site_id", filter.SiteID)
 	query, args = addFilter(query, args, "status", filter.Status)
-	query += ` ORDER BY created_at DESC, id DESC LIMIT ?`
-	args = append(args, filter.Limit)
-	return queryMany(ctx, r.db, query, args, scanDevice)
+	query += ` ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`
+	args = append(args, filter.Limit, filter.Offset)
+	items, err := queryMany(ctx, r.db, query, args, scanDevice)
+	if err == nil {
+		err = r.readManagementProofs(ctx, items)
+	}
+	return items, err
 }
 
 func (r *Repository) GetDevice(ctx context.Context, id string) (domainnetworkaccess.Device, error) {
-	return scanOne(r.db.WithContext(ctx).Raw(`SELECT `+deviceColumns+` FROM network_access_devices WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? LIMIT 1`, id).Row(), scanDevice, "endpoint device")
+	device, err := scanOne(r.db.WithContext(ctx).Raw(`SELECT `+deviceColumns+` FROM network_access_devices WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? LIMIT 1`, id).Row(), scanDevice, "endpoint device")
+	if err == nil {
+		err = r.readManagementProof(ctx, &device)
+	}
+	return device, err
 }
 
 func (r *Repository) RegisterDevice(ctx context.Context, item domainnetworkaccess.Device) (domainnetworkaccess.Device, error) {
@@ -84,7 +93,7 @@ func (r *Repository) RegisterDevice(ctx context.Context, item domainnetworkacces
 }
 
 func (r *Repository) UpdateDevice(ctx context.Context, id string, input domainnetworkaccess.DeviceInput, updatedAt time.Time) (domainnetworkaccess.Device, error) {
-	result := r.db.WithContext(ctx).Exec(`UPDATE network_access_devices SET name = ?, site_id = NULLIF(?, ''), status = ?, posture_status = COALESCE(NULLIF(?, ''), posture_status), device_type = COALESCE(NULLIF(?, ''), device_type), ownership_type = COALESCE(NULLIF(?, ''), ownership_type), updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`, input.Name, input.SiteID, input.Status, input.PostureStatus, input.DeviceType, input.OwnershipType, updatedAt, id)
+	result := r.db.WithContext(ctx).Exec(`UPDATE network_access_devices SET name = ?, site_id = NULLIF(?, ''), status = ?, posture_status = COALESCE(NULLIF(?, ''), posture_status), device_type = COALESCE(NULLIF(?, ''), device_type), ownership_type = COALESCE(NULLIF(?, ''), ownership_type), management_state = COALESCE(NULLIF(?, ''), management_state), updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`, input.Name, input.SiteID, input.Status, input.PostureStatus, input.DeviceType, input.OwnershipType, input.ManagementState, updatedAt, id)
 	if err := mutationError(result, "endpoint device"); err != nil {
 		return domainnetworkaccess.Device{}, err
 	}
@@ -92,21 +101,21 @@ func (r *Repository) UpdateDevice(ctx context.Context, id string, input domainne
 }
 
 func (r *Repository) ListSites(ctx context.Context, filter domainnetworkaccess.SiteFilter) ([]domainnetworkaccess.Site, error) {
-	query := `SELECT id, name, description, location, status, created_at, updated_at FROM network_access_sites WHERE tenant_id = 'default' AND workspace_id = 'default'`
+	query := `SELECT id, name, description, location, status, device_governance, management_issuer_key, created_at, updated_at FROM network_access_sites WHERE tenant_id = 'default' AND workspace_id = 'default'`
 	args := []any{}
 	query, args = addSearch(query, args, filter.Search, "name", "description", "location")
 	query, args = addFilter(query, args, "status", filter.Status)
-	query += ` ORDER BY name ASC, id ASC LIMIT ?`
-	args = append(args, filter.Limit)
+	query += ` ORDER BY name ASC, id ASC LIMIT ? OFFSET ?`
+	args = append(args, filter.Limit, filter.Offset)
 	return queryMany(ctx, r.db, query, args, scanSite)
 }
 
 func (r *Repository) GetSite(ctx context.Context, id string) (domainnetworkaccess.Site, error) {
-	return scanOne(r.db.WithContext(ctx).Raw(`SELECT id, name, description, location, status, created_at, updated_at FROM network_access_sites WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? LIMIT 1`, id).Row(), scanSite, "network site")
+	return scanOne(r.db.WithContext(ctx).Raw(`SELECT id, name, description, location, status, device_governance, management_issuer_key, created_at, updated_at FROM network_access_sites WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? LIMIT 1`, id).Row(), scanSite, "network site")
 }
 
 func (r *Repository) CreateSite(ctx context.Context, item domainnetworkaccess.Site) (domainnetworkaccess.Site, error) {
-	err := r.db.WithContext(ctx).Exec(`INSERT INTO network_access_sites (id, name, description, location, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, item.ID, item.Name, item.Description, item.Location, item.Status, item.CreatedAt, item.UpdatedAt).Error
+	err := r.db.WithContext(ctx).Exec(`INSERT INTO network_access_sites (id, name, description, location, status, device_governance, management_issuer_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, COALESCE(NULLIF(?, ''), 'legacy'), ?, ?, ?)`, item.ID, item.Name, item.Description, item.Location, item.Status, item.DeviceGovernance, item.ManagementIssuerKey, item.CreatedAt, item.UpdatedAt).Error
 	if err != nil {
 		return domainnetworkaccess.Site{}, normalizeDatabaseError(err)
 	}
@@ -114,7 +123,7 @@ func (r *Repository) CreateSite(ctx context.Context, item domainnetworkaccess.Si
 }
 
 func (r *Repository) UpdateSite(ctx context.Context, id string, input domainnetworkaccess.SiteInput, updatedAt time.Time) (domainnetworkaccess.Site, error) {
-	result := r.db.WithContext(ctx).Exec(`UPDATE network_access_sites SET name = ?, description = ?, location = ?, status = ?, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`, input.Name, input.Description, input.Location, input.Status, updatedAt, id)
+	result := r.db.WithContext(ctx).Exec(`UPDATE network_access_sites SET name = ?, description = ?, location = ?, status = ?, device_governance = COALESCE(NULLIF(?, ''), device_governance), management_issuer_key=COALESCE(?,management_issuer_key), updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`, input.Name, input.Description, input.Location, input.Status, input.DeviceGovernance, input.ManagementIssuerKey, updatedAt, id)
 	if err := mutationError(result, "network site"); err != nil {
 		return domainnetworkaccess.Site{}, err
 	}
@@ -197,8 +206,23 @@ func (r *Repository) ListResources(ctx context.Context, filter domainnetworkacce
 	return queryMany(ctx, r.db, query, args, scanResource)
 }
 
+// ResourcesByIDs reuses the canonical resource decoder for bounded runtime revalidation.
+func (r *Repository) ResourcesByIDs(ctx context.Context, ids []string) ([]domainnetworkaccess.Resource, error) {
+	if len(ids) == 0 {
+		return []domainnetworkaccess.Resource{}, nil
+	}
+	if len(ids) > 256 {
+		return nil, apperrors.ErrServiceUnavailable
+	}
+	return queryMany(ctx, r.db, `SELECT id, space_id, name, kind, target, protocol, ports, protected, path_mode, created_at, updated_at FROM network_access_resources WHERE tenant_id = 'default' AND workspace_id = 'default' AND id IN ? ORDER BY id FOR SHARE`, []any{ids}, scanResource)
+}
+
 func (r *Repository) GetResource(ctx context.Context, id string) (domainnetworkaccess.Resource, error) {
-	return scanOne(r.db.WithContext(ctx).Raw(`SELECT id, space_id, name, kind, target, protocol, ports, protected, path_mode, created_at, updated_at FROM network_access_resources WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? LIMIT 1`, id).Row(), scanResource, "network resource")
+	resource, err := scanOne(r.db.WithContext(ctx).Raw(`SELECT id, space_id, name, kind, target, protocol, ports, protected, path_mode, created_at, updated_at FROM network_access_resources WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ? LIMIT 1`, id).Row(), scanResource, "network resource")
+	if err == nil {
+		err = r.ResolveResourceDNS(ctx, &resource)
+	}
+	return resource, err
 }
 
 func (r *Repository) CreateResource(ctx context.Context, item domainnetworkaccess.Resource) (domainnetworkaccess.Resource, error) {
@@ -254,6 +278,9 @@ func (r *Repository) CreateGateway(ctx context.Context, item domainnetworkaccess
 		return domainnetworkaccess.Gateway{}, err
 	}
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext('network-wireguard-mutations'))`).Error; err != nil {
+			return err
+		}
 		if item.AdministrativeStatus == domainnetworkaccess.StatusActive {
 			if err := ensureGatewayOverlayAvailable(tx, item.ID, item.OverlayCIDR); err != nil {
 				return err
@@ -286,6 +313,9 @@ func (r *Repository) UpdateGateway(ctx context.Context, id string, input domainn
 		return domainnetworkaccess.Gateway{}, err
 	}
 	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtext('network-wireguard-mutations'))`).Error; err != nil {
+			return err
+		}
 		if input.AdministrativeStatus == domainnetworkaccess.StatusActive {
 			if err := ensureGatewayOverlayAvailable(tx, id, input.OverlayCIDR); err != nil {
 				return err
@@ -312,6 +342,9 @@ func (r *Repository) UpdateGateway(ctx context.Context, id string, input domainn
 }
 
 func (r *Repository) GetSubject(ctx context.Context, userID string) (domainnetworkaccess.Subject, error) {
+	if strings.HasPrefix(strings.TrimSpace(userID), "service_account:") {
+		return domainnetworkaccess.Subject{}, fmt.Errorf("%w: network access requires a user subject", apperrors.ErrAccessDenied)
+	}
 	var subject domainnetworkaccess.Subject
 	var tags []byte
 	if err := r.db.WithContext(ctx).Raw(`SELECT id::text, status, tags FROM users WHERE id = ?::uuid LIMIT 1`, userID).Row().Scan(&subject.UserID, &subject.Status, &tags); err != nil {
@@ -323,6 +356,15 @@ func (r *Repository) GetSubject(ctx context.Context, userID string) (domainnetwo
 	if err := json.Unmarshal(tags, &subject.Tags); err != nil {
 		return subject, fmt.Errorf("decode network access subject tags: %w", err)
 	}
+	roles, err := queryMany(ctx, r.db, `SELECT role_id FROM user_role_bindings WHERE user_id = ?::uuid ORDER BY role_id ASC`, []any{userID}, func(row scanner) (string, error) {
+		var roleID string
+		err := row.Scan(&roleID)
+		return roleID, err
+	})
+	if err != nil {
+		return subject, err
+	}
+	subject.Roles = roles
 	teams, err := queryMany(ctx, r.db, `SELECT team_id FROM user_team_bindings WHERE user_id = ?::uuid ORDER BY team_id ASC`, []any{userID}, func(row scanner) (string, error) {
 		var teamID string
 		err := row.Scan(&teamID)
@@ -338,7 +380,7 @@ func (r *Repository) GetSubject(ctx context.Context, userID string) (domainnetwo
 	return subject, nil
 }
 
-const policyColumns = `id, name, enabled, priority, effect, subjects, site_ids, resource_ids, modes, device_statuses, posture_statuses, access_profile, version, created_at, updated_at`
+const policyColumns = `id, name, enabled, priority, effect, subjects, site_ids, resource_ids, modes, device_statuses, posture_statuses, device_management_states, access_profile, version, created_at, updated_at`
 
 func (r *Repository) ListPolicies(ctx context.Context, filter domainnetworkaccess.PolicyFilter) ([]domainnetworkaccess.Policy, error) {
 	query := `SELECT ` + policyColumns + ` FROM network_access_policies WHERE tenant_id = 'default' AND workspace_id = 'default'`
@@ -349,8 +391,8 @@ func (r *Repository) ListPolicies(ctx context.Context, filter domainnetworkacces
 		query += ` AND enabled = ?`
 		args = append(args, *filter.Enabled)
 	}
-	query += ` ORDER BY priority ASC, id ASC LIMIT ?`
-	args = append(args, filter.Limit)
+	query += ` ORDER BY priority ASC, id ASC LIMIT ? OFFSET ?`
+	args = append(args, filter.Limit, filter.Offset)
 	return queryMany(ctx, r.db, query, args, scanPolicy)
 }
 
@@ -359,11 +401,11 @@ func (r *Repository) GetPolicy(ctx context.Context, id string) (domainnetworkacc
 }
 
 func (r *Repository) CreatePolicy(ctx context.Context, item domainnetworkaccess.Policy) (domainnetworkaccess.Policy, error) {
-	values, err := encodePolicyValues(item.Subjects, item.SiteIDs, item.ResourceIDs, item.Modes, item.DeviceStatuses, item.PostureStatuses)
+	values, err := encodePolicyValues(item.Subjects, item.SiteIDs, item.ResourceIDs, item.Modes, item.DeviceStatuses, item.PostureStatuses, managementStates(item.DeviceManagementStates))
 	if err != nil {
 		return domainnetworkaccess.Policy{}, err
 	}
-	err = r.db.WithContext(ctx).Exec(`INSERT INTO network_access_policies (id, name, enabled, priority, effect, subjects, site_ids, resource_ids, modes, device_statuses, posture_statuses, access_profile, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`, item.ID, item.Name, item.Enabled, item.Priority, item.Effect, values[0], values[1], values[2], values[3], values[4], values[5], item.AccessProfile, item.Version, item.CreatedAt, item.UpdatedAt).Error
+	err = r.db.WithContext(ctx).Exec(`INSERT INTO network_access_policies (id, name, enabled, priority, effect, subjects, site_ids, resource_ids, modes, device_statuses, posture_statuses, device_management_states, access_profile, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?, ?, ?)`, item.ID, item.Name, item.Enabled, item.Priority, item.Effect, values[0], values[1], values[2], values[3], values[4], values[5], values[6], item.AccessProfile, item.Version, item.CreatedAt, item.UpdatedAt).Error
 	if err != nil {
 		return domainnetworkaccess.Policy{}, normalizeDatabaseError(err)
 	}
@@ -371,11 +413,11 @@ func (r *Repository) CreatePolicy(ctx context.Context, item domainnetworkaccess.
 }
 
 func (r *Repository) UpdatePolicy(ctx context.Context, id string, input domainnetworkaccess.PolicyInput, updatedAt time.Time) (domainnetworkaccess.Policy, error) {
-	values, err := encodePolicyValues(input.Subjects, input.SiteIDs, input.ResourceIDs, input.Modes, input.DeviceStatuses, input.PostureStatuses)
+	values, err := encodePolicyValues(input.Subjects, input.SiteIDs, input.ResourceIDs, input.Modes, input.DeviceStatuses, input.PostureStatuses, managementStates(input.DeviceManagementStates))
 	if err != nil {
 		return domainnetworkaccess.Policy{}, err
 	}
-	result := r.db.WithContext(ctx).Exec(`UPDATE network_access_policies SET name = ?, enabled = ?, priority = ?, effect = ?, subjects = ?::jsonb, site_ids = ?::jsonb, resource_ids = ?::jsonb, modes = ?::jsonb, device_statuses = ?::jsonb, posture_statuses = ?::jsonb, access_profile = ?, version = version + 1, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`, input.Name, input.Enabled, input.Priority, input.Effect, values[0], values[1], values[2], values[3], values[4], values[5], input.AccessProfile, updatedAt, id)
+	result := r.db.WithContext(ctx).Exec(`UPDATE network_access_policies SET name = ?, enabled = ?, priority = ?, effect = ?, subjects = ?::jsonb, site_ids = ?::jsonb, resource_ids = ?::jsonb, modes = ?::jsonb, device_statuses = ?::jsonb, posture_statuses = ?::jsonb, device_management_states = CASE WHEN ? THEN device_management_states ELSE ?::jsonb END, access_profile = ?, version = version + 1, updated_at = ? WHERE tenant_id = 'default' AND workspace_id = 'default' AND id = ?`, input.Name, input.Enabled, input.Priority, input.Effect, values[0], values[1], values[2], values[3], values[4], values[5], input.DeviceManagementStates == nil, values[6], input.AccessProfile, updatedAt, id)
 	if err := mutationError(result, "network access policy"); err != nil {
 		return domainnetworkaccess.Policy{}, err
 	}
@@ -645,7 +687,7 @@ type scanner interface{ Scan(...any) error }
 func scanDevice(row scanner) (domainnetworkaccess.Device, error) {
 	var item domainnetworkaccess.Device
 	var reportedFacts []byte
-	if err := row.Scan(&item.ID, &item.OwnerUserID, &item.Name, &item.Hostname, &item.Platform, &item.DeviceType, &item.OwnershipType, &item.SiteID, &item.Status, &item.PostureStatus, &item.PostureVersion, &item.CredentialGeneration, &item.LastSeenAt, &reportedFacts, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.OwnerUserID, &item.Name, &item.Hostname, &item.Platform, &item.DeviceType, &item.OwnershipType, &item.ManagementState, &item.SiteID, &item.Status, &item.PostureStatus, &item.PostureVersion, &item.CredentialGeneration, &item.LastSeenAt, &reportedFacts, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return item, err
 	}
 	if len(reportedFacts) > 0 && string(reportedFacts) != "null" {
@@ -660,7 +702,7 @@ func scanDevice(row scanner) (domainnetworkaccess.Device, error) {
 
 func scanSite(row scanner) (domainnetworkaccess.Site, error) {
 	var item domainnetworkaccess.Site
-	err := row.Scan(&item.ID, &item.Name, &item.Description, &item.Location, &item.Status, &item.CreatedAt, &item.UpdatedAt)
+	err := row.Scan(&item.ID, &item.Name, &item.Description, &item.Location, &item.Status, &item.DeviceGovernance, &item.ManagementIssuerKey, &item.CreatedAt, &item.UpdatedAt)
 	return item, err
 }
 
@@ -712,8 +754,8 @@ func scanGateway(row scanner) (domainnetworkaccess.Gateway, error) {
 
 func scanPolicy(row scanner) (domainnetworkaccess.Policy, error) {
 	var item domainnetworkaccess.Policy
-	var subjects, siteIDs, resourceIDs, modes, deviceStatuses, postureStatuses []byte
-	if err := row.Scan(&item.ID, &item.Name, &item.Enabled, &item.Priority, &item.Effect, &subjects, &siteIDs, &resourceIDs, &modes, &deviceStatuses, &postureStatuses, &item.AccessProfile, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var subjects, siteIDs, resourceIDs, modes, deviceStatuses, postureStatuses, deviceManagementStates []byte
+	if err := row.Scan(&item.ID, &item.Name, &item.Enabled, &item.Priority, &item.Effect, &subjects, &siteIDs, &resourceIDs, &modes, &deviceStatuses, &postureStatuses, &deviceManagementStates, &item.AccessProfile, &item.Version, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return item, err
 	}
 	for _, value := range []struct {
@@ -722,7 +764,7 @@ func scanPolicy(row scanner) (domainnetworkaccess.Policy, error) {
 		dst  any
 	}{
 		{"subjects", subjects, &item.Subjects}, {"site IDs", siteIDs, &item.SiteIDs}, {"resource IDs", resourceIDs, &item.ResourceIDs},
-		{"modes", modes, &item.Modes}, {"device statuses", deviceStatuses, &item.DeviceStatuses}, {"posture statuses", postureStatuses, &item.PostureStatuses},
+		{"device management states", deviceManagementStates, &item.DeviceManagementStates}, {"modes", modes, &item.Modes}, {"device statuses", deviceStatuses, &item.DeviceStatuses}, {"posture statuses", postureStatuses, &item.PostureStatuses},
 	} {
 		if err := json.Unmarshal(value.raw, value.dst); err != nil {
 			return item, fmt.Errorf("decode network policy %s: %w", value.name, err)
@@ -746,8 +788,15 @@ func scanPolicySnapshot(row scanner) (domainnetworkaccess.PolicySnapshot, error)
 	return item, nil
 }
 
-func encodePolicyValues(values ...any) ([6]string, error) {
-	var encoded [6]string
+func managementStates(states []string) []string {
+	if states == nil {
+		return []string{}
+	}
+	return states
+}
+
+func encodePolicyValues(values ...any) ([7]string, error) {
+	var encoded [7]string
 	for index, value := range values {
 		raw, err := json.Marshal(value)
 		if err != nil {
@@ -817,6 +866,10 @@ func mutationError(result *gorm.DB, kind string) error {
 func normalizeDatabaseError(err error) error {
 	if err == nil {
 		return nil
+	}
+	var pg *pgconn.PgError
+	if errors.As(err, &pg) && pg.ConstraintName == "endpoint_channel_release_required" {
+		return apperrors.NewBusiness(apperrors.ErrConflict, "endpoint_controls_release_required", "Publish release and confirm native channel restoration before removing or reassigning this device.", "请先发布端点通道解除并确认原生恢复，再移除或重新分配设备。 ")
 	}
 	var state interface{ SQLState() string }
 	if errors.As(err, &state) {

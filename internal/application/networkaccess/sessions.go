@@ -25,19 +25,48 @@ func (s *Service) ListSessions(ctx context.Context, principal domainidentity.Pri
 	if err := validateSessionFilter(filter); err != nil {
 		return nil, err
 	}
-	filter.Limit = boundedLimit(filter.Limit)
-	return s.store.ListSessions(ctx, filter)
+	return collectVisible(ctx, boundedLimit(filter.Limit), func(limit, offset int) ([]domainnetworkaccess.Session, error) {
+		filter.Limit, filter.Offset = limit, offset
+		return s.store.ListSessions(ctx, filter)
+	}, func(item domainnetworkaccess.Session) error {
+		return s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesView, sessionScope(item))
+	})
 }
 
 func (s *Service) GetSession(ctx context.Context, principal domainidentity.Principal, id string) (domainnetworkaccess.Session, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessSitesView); err != nil {
 		return domainnetworkaccess.Session{}, err
 	}
-	return s.store.GetSession(ctx, strings.TrimSpace(id))
+	item, err := s.store.GetSession(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.Session{}, err
+	}
+	return item, s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesView, sessionScope(item))
+}
+
+func (s *Service) GetSessionCommand(ctx context.Context, principal domainidentity.Principal, id string) (domainnetworkaccess.SessionCommand, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessSitesView); err != nil {
+		return domainnetworkaccess.SessionCommand{}, err
+	}
+	command, err := s.store.GetSessionCommand(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainnetworkaccess.SessionCommand{}, err
+	}
+	session, err := s.store.GetSession(ctx, command.SessionID)
+	if err != nil {
+		return domainnetworkaccess.SessionCommand{}, err
+	}
+	if err := s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesView, sessionScope(session)); err != nil {
+		return domainnetworkaccess.SessionCommand{}, err
+	}
+	return command, nil
 }
 
 func (s *Service) PlanSessionAction(ctx context.Context, principal domainidentity.Principal, sessionID string, input domainnetworkaccess.SessionActionInput) (domainnetworkaccess.SessionActionPlan, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessSitesUpdate); err != nil {
+		return domainnetworkaccess.SessionActionPlan{}, err
+	}
+	if err := s.authorizeSessionAction(ctx, principal, sessionID); err != nil {
 		return domainnetworkaccess.SessionActionPlan{}, err
 	}
 	plan, err := s.planSessionAction(ctx, sessionID, input)
@@ -49,6 +78,9 @@ func (s *Service) PlanSessionAction(ctx context.Context, principal domainidentit
 
 func (s *Service) ExecuteSessionAction(ctx context.Context, principal domainidentity.Principal, sessionID string, input domainnetworkaccess.SessionActionInput) (domainnetworkaccess.SessionCommand, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermNetworkAccessSitesUpdate); err != nil {
+		return domainnetworkaccess.SessionCommand{}, err
+	}
+	if err := s.authorizeSessionAction(ctx, principal, sessionID); err != nil {
 		return domainnetworkaccess.SessionCommand{}, err
 	}
 	input = normalizeSessionActionInput(input)
@@ -78,6 +110,14 @@ func (s *Service) ExecuteSessionAction(ctx context.Context, principal domainiden
 		s.recordMutation(ctx, principal, "network_access.session.coa.execute", "NetworkSessionCommand", command.ID, command.SessionID)
 	}
 	return command, err
+}
+
+func (s *Service) authorizeSessionAction(ctx context.Context, principal domainidentity.Principal, sessionID string) error {
+	session, err := s.store.GetSession(ctx, strings.TrimSpace(sessionID))
+	if err != nil {
+		return err
+	}
+	return s.authorizeScope(ctx, principal, appaccess.PermNetworkAccessSitesUpdate, sessionScope(session))
 }
 
 func (s *Service) planSessionAction(ctx context.Context, sessionID string, input domainnetworkaccess.SessionActionInput) (domainnetworkaccess.SessionActionPlan, error) {

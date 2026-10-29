@@ -52,6 +52,12 @@ func New(ctx context.Context) (*App, error) {
 	handlers.deps.PersonalGuestPreparation = apiHandlers.NewPersonalGuestPreparationHandler(guestPreparation)
 	httpServer := newHTTPServer(cfg, infra.logger, handlers)
 	core.runtimeConfigService.Start(infra.lifecycleCtx, 0)
+	go core.networkEndpointResponseService.Run(infra.lifecycleCtx, func(err error) {
+		infra.logger.Named("network-endpoint-response").Warn("endpoint response reconciliation failed", zap.Error(err))
+	})
+	go core.networkEndpointResponseService.RunNotifications(infra.lifecycleCtx, func(err error) {
+		infra.logger.Named("network-endpoint-response").Warn("endpoint notification delivery failed", zap.Error(err))
+	})
 
 	return &App{
 		Config:                cfg,

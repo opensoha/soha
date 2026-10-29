@@ -48,23 +48,35 @@ type Config struct {
 	EnrollmentTokenFile     string
 }
 
-func LoadConfig() (Config, error) {
+func LoadConfig() (Config, error) { return loadRuntimeConfig(os.Getenv) }
+
+func LoadWorkloadConfig() (Config, error) {
+	return loadRuntimeConfig(func(name string) string {
+		value := os.Getenv(strings.Replace(name, "SOHA_NETWORK_GATEWAY_", "SOHA_NETWORK_WORKLOAD_", 1))
+		if name == "SOHA_NETWORK_GATEWAY_PRIVATE_KEY_FILE" && value == "" {
+			return "/var/lib/soha-network-workload/wireguard.key"
+		}
+		return value
+	})
+}
+
+func loadRuntimeConfig(getenv func(string) string) (Config, error) {
 	config := Config{
-		ProbeAddress: os.Getenv("SOHA_NETWORK_GATEWAY_PROBE_ADDR"), ProbeCertFile: os.Getenv("SOHA_NETWORK_GATEWAY_PROBE_CERT_FILE"), ProbeKeyFile: os.Getenv("SOHA_NETWORK_GATEWAY_PROBE_KEY_FILE"), ProbeCAFile: os.Getenv("SOHA_NETWORK_GATEWAY_PROBE_CA_FILE"),
-		RuntimeID: os.Getenv("SOHA_NETWORK_GATEWAY_RUNTIME_ID"), DeviceID: os.Getenv("SOHA_NETWORK_GATEWAY_DEVICE_ID"),
-		ControlURL: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_URL"), ControlCAFile: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_CA_FILE"),
-		ControlCertFile: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_CERT_FILE"), ControlKeyFile: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_KEY_FILE"), ControlServerName: os.Getenv("SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME"),
-		IngestURL: os.Getenv("SOHA_NETWORK_GATEWAY_INGEST_URL"), IngestCAFile: os.Getenv("SOHA_NETWORK_GATEWAY_INGEST_CA_FILE"), IngestCertFile: os.Getenv("SOHA_NETWORK_GATEWAY_INGEST_CERT_FILE"), IngestKeyFile: os.Getenv("SOHA_NETWORK_GATEWAY_INGEST_KEY_FILE"), IngestServerName: os.Getenv("SOHA_NETWORK_GATEWAY_INGEST_SERVER_NAME"),
-		WireGuardPrivateKeyFile: valueOrDefault(os.Getenv("SOHA_NETWORK_GATEWAY_PRIVATE_KEY_FILE"), "/var/lib/soha-network-gateway/wireguard.key"),
-		IPPath:                  valueOrDefault(os.Getenv("SOHA_NETWORK_GATEWAY_IP_PATH"), "/sbin/ip"), NFTPath: valueOrDefault(os.Getenv("SOHA_NETWORK_GATEWAY_NFT_PATH"), "/usr/sbin/nft"), EgressInterface: os.Getenv("SOHA_NETWORK_GATEWAY_EGRESS_INTERFACE"),
-		HealthAddress: valueOrDefault(os.Getenv("SOHA_NETWORK_GATEWAY_HEALTH_ADDR"), ":8084"), PollInterval: time.Minute, HeartbeatInterval: time.Minute, RequestTimeout: 5 * time.Second, MaxClockSkew: 5 * time.Minute,
-		EnrollmentID: os.Getenv("SOHA_NETWORK_GATEWAY_ENROLLMENT_ID"), EnrollmentChallengeID: os.Getenv("SOHA_NETWORK_GATEWAY_ENROLLMENT_CHALLENGE_ID"), EnrollmentTokenFile: os.Getenv("SOHA_NETWORK_GATEWAY_ENROLLMENT_TOKEN_FILE"),
+		ProbeAddress: getenv("SOHA_NETWORK_GATEWAY_PROBE_ADDR"), ProbeCertFile: getenv("SOHA_NETWORK_GATEWAY_PROBE_CERT_FILE"), ProbeKeyFile: getenv("SOHA_NETWORK_GATEWAY_PROBE_KEY_FILE"), ProbeCAFile: getenv("SOHA_NETWORK_GATEWAY_PROBE_CA_FILE"),
+		RuntimeID: getenv("SOHA_NETWORK_GATEWAY_RUNTIME_ID"), DeviceID: getenv("SOHA_NETWORK_GATEWAY_DEVICE_ID"),
+		ControlURL: getenv("SOHA_NETWORK_GATEWAY_CONTROL_URL"), ControlCAFile: getenv("SOHA_NETWORK_GATEWAY_CONTROL_CA_FILE"),
+		ControlCertFile: getenv("SOHA_NETWORK_GATEWAY_CONTROL_CERT_FILE"), ControlKeyFile: getenv("SOHA_NETWORK_GATEWAY_CONTROL_KEY_FILE"), ControlServerName: getenv("SOHA_NETWORK_GATEWAY_CONTROL_SERVER_NAME"),
+		IngestURL: getenv("SOHA_NETWORK_GATEWAY_INGEST_URL"), IngestCAFile: getenv("SOHA_NETWORK_GATEWAY_INGEST_CA_FILE"), IngestCertFile: getenv("SOHA_NETWORK_GATEWAY_INGEST_CERT_FILE"), IngestKeyFile: getenv("SOHA_NETWORK_GATEWAY_INGEST_KEY_FILE"), IngestServerName: getenv("SOHA_NETWORK_GATEWAY_INGEST_SERVER_NAME"),
+		WireGuardPrivateKeyFile: valueOrDefault(getenv("SOHA_NETWORK_GATEWAY_PRIVATE_KEY_FILE"), "/var/lib/soha-network-gateway/wireguard.key"),
+		IPPath:                  valueOrDefault(getenv("SOHA_NETWORK_GATEWAY_IP_PATH"), "/sbin/ip"), NFTPath: valueOrDefault(getenv("SOHA_NETWORK_GATEWAY_NFT_PATH"), "/usr/sbin/nft"), EgressInterface: getenv("SOHA_NETWORK_GATEWAY_EGRESS_INTERFACE"),
+		HealthAddress: valueOrDefault(getenv("SOHA_NETWORK_GATEWAY_HEALTH_ADDR"), ":8084"), PollInterval: time.Minute, HeartbeatInterval: time.Minute, RequestTimeout: 5 * time.Second, MaxClockSkew: 5 * time.Minute,
+		EnrollmentID: getenv("SOHA_NETWORK_GATEWAY_ENROLLMENT_ID"), EnrollmentChallengeID: getenv("SOHA_NETWORK_GATEWAY_ENROLLMENT_CHALLENGE_ID"), EnrollmentTokenFile: getenv("SOHA_NETWORK_GATEWAY_ENROLLMENT_TOKEN_FILE"),
 	}
 	for name, target := range map[string]*time.Duration{
 		"SOHA_NETWORK_GATEWAY_POLL_INTERVAL": &config.PollInterval, "SOHA_NETWORK_GATEWAY_HEARTBEAT_INTERVAL": &config.HeartbeatInterval,
 		"SOHA_NETWORK_GATEWAY_REQUEST_TIMEOUT": &config.RequestTimeout, "SOHA_NETWORK_GATEWAY_MAX_CLOCK_SKEW": &config.MaxClockSkew,
 	} {
-		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+		if value := strings.TrimSpace(getenv(name)); value != "" {
 			parsed, err := time.ParseDuration(value)
 			if err != nil {
 				return Config{}, fmt.Errorf("%s must be a duration: %w", name, err)
@@ -198,7 +210,7 @@ func (c Config) Enrollment(privateKeyPublic, devicePublicKey, clientVersion stri
 	if len(token) < 32 || strings.ContainsAny(token, "\r\n\t ") {
 		return Enrollment{}, fmt.Errorf("gateway enrollment token is invalid")
 	}
-	capabilities := []string{}
+	capabilities := []string{networkprotocol.CapabilitySiteDNS, "wireguard-ipv6-v1", "wireguard-kernel-expiry-v1"}
 	if c.IngestURL != "" {
 		capabilities = append(capabilities, networkprotocol.CapabilityVPNMetrics)
 	}

@@ -118,20 +118,24 @@ const (
 )
 
 type Site struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Location    string    `json:"location,omitempty"`
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ManagementIssuerKey string    `json:"managementIssuerKey,omitempty"`
+	DeviceGovernance    string    `json:"deviceGovernance,omitempty"`
+	ID                  string    `json:"id"`
+	Name                string    `json:"name"`
+	Description         string    `json:"description,omitempty"`
+	Location            string    `json:"location,omitempty"`
+	Status              string    `json:"status"`
+	CreatedAt           time.Time `json:"createdAt"`
+	UpdatedAt           time.Time `json:"updatedAt"`
 }
 
 type SiteInput struct {
-	Name        string
-	Description string
-	Location    string
-	Status      string
+	ManagementIssuerKey *string
+	DeviceGovernance    string
+	Name                string
+	Description         string
+	Location            string
+	Status              string
 }
 
 type Space struct {
@@ -152,17 +156,19 @@ type SpaceInput struct {
 }
 
 type Resource struct {
-	ID        string    `json:"id"`
-	SpaceID   string    `json:"spaceId"`
-	Name      string    `json:"name"`
-	Kind      string    `json:"kind"`
-	Target    string    `json:"target"`
-	Protocol  string    `json:"protocol"`
-	Ports     []int     `json:"ports,omitempty"`
-	Protected bool      `json:"protected"`
-	PathMode  string    `json:"pathMode"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	TrustedAddresses []string  `json:"-"`
+	DNSExpiresAt     time.Time `json:"-"`
+	ID               string    `json:"id"`
+	SpaceID          string    `json:"spaceId"`
+	Name             string    `json:"name"`
+	Kind             string    `json:"kind"`
+	Target           string    `json:"target"`
+	Protocol         string    `json:"protocol"`
+	Ports            []int     `json:"ports,omitempty"`
+	Protected        bool      `json:"protected"`
+	PathMode         string    `json:"pathMode"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
 }
 
 type ResourceInput struct {
@@ -177,31 +183,35 @@ type ResourceInput struct {
 }
 
 type Device struct {
-	ID                   string               `json:"id"`
-	OwnerUserID          string               `json:"ownerUserId"`
-	Name                 string               `json:"name"`
-	Hostname             string               `json:"hostname,omitempty"`
-	Platform             string               `json:"platform"`
-	DeviceType           string               `json:"deviceType,omitempty"`
-	OwnershipType        string               `json:"ownershipType,omitempty"`
-	SiteID               string               `json:"siteId,omitempty"`
-	Status               string               `json:"status"`
-	PostureStatus        string               `json:"postureStatus,omitempty"`
-	PostureVersion       int                  `json:"postureVersion"`
-	CredentialGeneration int                  `json:"credentialGeneration,omitempty"`
-	LastSeenAt           *time.Time           `json:"lastSeenAt,omitempty"`
-	ReportedFacts        *DeviceReportedFacts `json:"reportedFacts,omitempty"`
-	CreatedAt            time.Time            `json:"createdAt"`
-	UpdatedAt            time.Time            `json:"updatedAt"`
+	ManagementVerifiedUntil *time.Time           `json:"managementVerifiedUntil,omitempty"`
+	ManagementIssuerKey     string               `json:"-"`
+	ManagementState         string               `json:"managementState,omitempty"`
+	ID                      string               `json:"id"`
+	OwnerUserID             string               `json:"ownerUserId"`
+	Name                    string               `json:"name"`
+	Hostname                string               `json:"hostname,omitempty"`
+	Platform                string               `json:"platform"`
+	DeviceType              string               `json:"deviceType,omitempty"`
+	OwnershipType           string               `json:"ownershipType,omitempty"`
+	SiteID                  string               `json:"siteId,omitempty"`
+	Status                  string               `json:"status"`
+	PostureStatus           string               `json:"postureStatus,omitempty"`
+	PostureVersion          int                  `json:"postureVersion"`
+	CredentialGeneration    int                  `json:"credentialGeneration,omitempty"`
+	LastSeenAt              *time.Time           `json:"lastSeenAt,omitempty"`
+	ReportedFacts           *DeviceReportedFacts `json:"reportedFacts,omitempty"`
+	CreatedAt               time.Time            `json:"createdAt"`
+	UpdatedAt               time.Time            `json:"updatedAt"`
 }
 
 type DeviceInput struct {
-	Name          string
-	SiteID        string
-	Status        string
-	PostureStatus string
-	DeviceType    string
-	OwnershipType string
+	ManagementState string
+	Name            string
+	SiteID          string
+	Status          string
+	PostureStatus   string
+	DeviceType      string
+	OwnershipType   string
 }
 
 type DeviceRegistrationInput struct {
@@ -237,6 +247,7 @@ type DeviceNetworkInterface struct {
 }
 
 type DeviceFilter struct {
+	Offset      int
 	Search      string
 	OwnerUserID string
 	SiteID      string
@@ -361,20 +372,21 @@ type MihomoProfileFilter struct {
 }
 
 type NASBinding struct {
-	ID                  string    `json:"id"`
-	NASID               string    `json:"nasId"`
-	RuntimeID           string    `json:"runtimeId"`
-	SiteID              string    `json:"siteId"`
-	Name                string    `json:"name"`
-	AccessMedium        string    `json:"accessMedium,omitempty"`
-	DeviceType          string    `json:"deviceType,omitempty"`
-	SSID                string    `json:"ssid,omitempty"`
-	ManagementAddress   string    `json:"managementAddress,omitempty"`
-	Status              string    `json:"status"`
-	CoASupported        bool      `json:"coaSupported"`
-	DisconnectSupported bool      `json:"disconnectSupported"`
-	CreatedAt           time.Time `json:"createdAt"`
-	UpdatedAt           time.Time `json:"updatedAt"`
+	ID                  string          `json:"id"`
+	NASID               string          `json:"nasId"`
+	RuntimeID           string          `json:"runtimeId"`
+	SiteID              string          `json:"siteId"`
+	Name                string          `json:"name"`
+	AccessMedium        string          `json:"accessMedium,omitempty"`
+	DeviceType          string          `json:"deviceType,omitempty"`
+	SSID                string          `json:"ssid,omitempty"`
+	ManagementAddress   string          `json:"managementAddress,omitempty"`
+	Status              string          `json:"status"`
+	CoASupported        bool            `json:"coaSupported"`
+	DisconnectSupported bool            `json:"disconnectSupported"`
+	EAPServerTrust      *EAPServerTrust `json:"eapServerTrust,omitempty"`
+	CreatedAt           time.Time       `json:"createdAt"`
+	UpdatedAt           time.Time       `json:"updatedAt"`
 }
 
 type NASBindingInput struct {
@@ -389,9 +401,11 @@ type NASBindingInput struct {
 	Status              string
 	CoASupported        bool
 	DisconnectSupported bool
+	EAPServerTrust      *EAPServerTrust
 }
 
 type NASBindingFilter struct {
+	Offset    int
 	SiteID    string
 	RuntimeID string
 	Status    string
@@ -428,33 +442,40 @@ type SiteProfileBindingInput struct {
 }
 
 type SiteProfileBindingFilter struct {
+	Offset        int
 	SiteID        string
 	AccessProfile string
 	Limit         int
 }
 
 type Session struct {
-	ID               string    `json:"id"`
-	RuntimeID        string    `json:"-"`
-	SubjectID        string    `json:"subjectId"`
-	DeviceID         string    `json:"deviceId"`
-	SiteID           string    `json:"siteId,omitempty"`
-	GatewayID        string    `json:"gatewayId,omitempty"`
-	NASID            string    `json:"nasId,omitempty"`
-	Mode             string    `json:"mode"`
-	Path             string    `json:"path"`
-	AccessProfile    string    `json:"accessProfile"`
-	Status           string    `json:"status"`
-	PolicyVersion    int       `json:"policyVersion"`
-	NetworkLeaseIDs  []string  `json:"networkLeaseIds"`
-	ResourceLeaseIDs []string  `json:"resourceLeaseIds"`
-	ReasonCode       string    `json:"reasonCode,omitempty"`
-	StartedAt        time.Time `json:"startedAt"`
-	ExpiresAt        time.Time `json:"expiresAt"`
-	UpdatedAt        time.Time `json:"-"`
+	AdmissionPolicyVersion    int             `json:"admissionPolicyVersion,omitempty"`
+	AdmissionAttributeVersion string          `json:"admissionAttributeVersion,omitempty"`
+	RestrictionProfile        string          `json:"restrictionProfile,omitempty"`
+	RestrictionReason         string          `json:"restrictionReason,omitempty"`
+	LatestCommand             *SessionCommand `json:"latestCommand,omitempty"`
+	ID                        string          `json:"id"`
+	RuntimeID                 string          `json:"-"`
+	SubjectID                 string          `json:"subjectId"`
+	DeviceID                  string          `json:"deviceId"`
+	SiteID                    string          `json:"siteId,omitempty"`
+	GatewayID                 string          `json:"gatewayId,omitempty"`
+	NASID                     string          `json:"nasId,omitempty"`
+	Mode                      string          `json:"mode"`
+	Path                      string          `json:"path"`
+	AccessProfile             string          `json:"accessProfile"`
+	Status                    string          `json:"status"`
+	PolicyVersion             int             `json:"policyVersion"`
+	NetworkLeaseIDs           []string        `json:"networkLeaseIds"`
+	ResourceLeaseIDs          []string        `json:"resourceLeaseIds"`
+	ReasonCode                string          `json:"reasonCode,omitempty"`
+	StartedAt                 time.Time       `json:"startedAt"`
+	ExpiresAt                 time.Time       `json:"expiresAt"`
+	UpdatedAt                 time.Time       `json:"-"`
 }
 
 type SessionFilter struct {
+	Offset    int
 	SiteID    string
 	RuntimeID string
 	SubjectID string
@@ -486,6 +507,9 @@ type SessionActionPlan struct {
 }
 
 type SessionCommand struct {
+	StationID           string                            `json:"-"`
+	AccountingSessionID string                            `json:"-"`
+	NASPortID           string                            `json:"-"`
 	ID                  string                            `json:"id"`
 	SessionID           string                            `json:"sessionId"`
 	RuntimeID           string                            `json:"runtimeId"`
@@ -506,6 +530,7 @@ type SessionCommand struct {
 }
 
 type SiteFilter struct {
+	Offset int
 	Search string
 	Status string
 	Limit  int
@@ -536,49 +561,54 @@ type GatewayFilter struct {
 type Subject struct {
 	UserID string   `json:"userId"`
 	Status string   `json:"status"`
+	Roles  []string `json:"roles,omitempty"`
 	Teams  []string `json:"teams"`
 	Tags   []string `json:"tags"`
 }
 
 type PolicySubjects struct {
+	Roles []string `json:"roles,omitempty"`
 	Users []string `json:"users"`
 	Teams []string `json:"teams"`
 	Tags  []string `json:"tags"`
 }
 
 type Policy struct {
-	ID              string         `json:"id"`
-	Name            string         `json:"name"`
-	Enabled         bool           `json:"enabled"`
-	Priority        int            `json:"priority"`
-	Effect          string         `json:"effect"`
-	Subjects        PolicySubjects `json:"subjects"`
-	SiteIDs         []string       `json:"siteIds"`
-	ResourceIDs     []string       `json:"resourceIds"`
-	Modes           []string       `json:"modes"`
-	DeviceStatuses  []string       `json:"deviceStatuses"`
-	PostureStatuses []string       `json:"postureStatuses"`
-	AccessProfile   string         `json:"accessProfile"`
-	Version         int            `json:"version"`
-	CreatedAt       time.Time      `json:"createdAt"`
-	UpdatedAt       time.Time      `json:"updatedAt"`
+	DeviceManagementStates []string       `json:"deviceManagementStates,omitempty"`
+	ID                     string         `json:"id"`
+	Name                   string         `json:"name"`
+	Enabled                bool           `json:"enabled"`
+	Priority               int            `json:"priority"`
+	Effect                 string         `json:"effect"`
+	Subjects               PolicySubjects `json:"subjects"`
+	SiteIDs                []string       `json:"siteIds"`
+	ResourceIDs            []string       `json:"resourceIds"`
+	Modes                  []string       `json:"modes"`
+	DeviceStatuses         []string       `json:"deviceStatuses"`
+	PostureStatuses        []string       `json:"postureStatuses"`
+	AccessProfile          string         `json:"accessProfile"`
+	Version                int            `json:"version"`
+	CreatedAt              time.Time      `json:"createdAt"`
+	UpdatedAt              time.Time      `json:"updatedAt"`
 }
 
 type PolicyInput struct {
-	Name            string
-	Enabled         bool
-	Priority        int
-	Effect          string
-	Subjects        PolicySubjects
-	SiteIDs         []string
-	ResourceIDs     []string
-	Modes           []string
-	DeviceStatuses  []string
-	PostureStatuses []string
-	AccessProfile   string
+	DeviceManagementStates []string
+	Name                   string
+	Enabled                bool
+	Priority               int
+	Effect                 string
+	Subjects               PolicySubjects
+	SiteIDs                []string
+	ResourceIDs            []string
+	Modes                  []string
+	DeviceStatuses         []string
+	PostureStatuses        []string
+	AccessProfile          string
 }
 
 type PolicyFilter struct {
+	Offset  int
 	Search  string
 	Enabled *bool
 	Effect  string
@@ -616,12 +646,19 @@ type ConflictAnalysis struct {
 }
 
 type PolicyPreview struct {
-	Decision              string   `json:"decision"`
-	Path                  string   `json:"path"`
-	NetworkProfile        string   `json:"networkProfile,omitempty"`
-	PolicyVersion         int      `json:"policyVersion"`
-	Protected             bool     `json:"protected"`
-	NetworkLeaseRequired  bool     `json:"networkLeaseRequired"`
-	ResourceLeaseRequired bool     `json:"resourceLeaseRequired"`
-	Reasons               []string `json:"reasons"`
+	AttributeVersion      string     `json:"attributeVersion,omitempty"`
+	EvaluatedAt           *time.Time `json:"evaluatedAt,omitempty"`
+	Decision              string     `json:"decision"`
+	Path                  string     `json:"path"`
+	NetworkProfile        string     `json:"networkProfile,omitempty"`
+	PolicyVersion         int        `json:"policyVersion"`
+	Protected             bool       `json:"protected"`
+	NetworkLeaseRequired  bool       `json:"networkLeaseRequired"`
+	ResourceLeaseRequired bool       `json:"resourceLeaseRequired"`
+	Reasons               []string   `json:"reasons"`
+}
+type ProtectedDestinations struct {
+	PolicyVersion int      `json:"policyVersion"`
+	CIDRs         []string `json:"cidrs"`
+	Hosts         []string `json:"hosts"`
 }

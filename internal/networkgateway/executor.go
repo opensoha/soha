@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -43,6 +44,7 @@ type ApplyOutcome struct {
 }
 
 type Executor struct {
+	endpoint bool
 	mu       sync.Mutex
 	key      wgtypes.Key
 	system   System
@@ -57,34 +59,59 @@ func NewExecutor(key wgtypes.Key, system System, egressInterface string) (*Execu
 	if egressInterface != "" && !linuxInterfacePattern.MatchString(egressInterface) {
 		return nil, fmt.Errorf("gateway egress interface is invalid")
 	}
+	if owner, ok := system.(interface{ bindOwnership(wgtypes.Key) error }); ok {
+		if err := owner.bindOwnership(key.PublicKey()); err != nil {
+			return nil, err
+		}
+	}
 	return &Executor{key: key, system: system, egress: egressInterface}, nil
 }
 
 func (e *Executor) Apply(ctx context.Context, desired networkprotocol.ConfigurationDesired, now time.Time) ApplyOutcome {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if err := ValidateGatewayDesired(desired, e.key.PublicKey(), now, e.egress); err != nil {
+	if err := e.validateDesired(desired, now); err != nil {
 		return failedOutcome("rejected", "invalid_configuration")
 	}
 	interfaceName := desiredInterfaceName(desired)
 	if err := e.system.Baseline(ctx, interfaceName); err != nil {
-		return failedOutcome("rejected", "firewall_baseline_failed")
+		return e.recoverFailure(ctx, desired, now, interfaceName, "firewall_baseline_failed")
 	}
 	if err := e.system.Apply(ctx, desired, e.key); err != nil {
-		return e.recoverFailure(ctx, interfaceName, "system_apply_failed")
+		return e.recoverFailure(ctx, desired, now, interfaceName, "system_apply_failed")
 	}
 	hash, err := e.system.Readback(ctx, desired)
 	if err != nil || !sha256Pattern.MatchString(hash) {
-		return e.recoverFailure(ctx, interfaceName, "readback_failed")
+		return e.recoverFailure(ctx, desired, now, interfaceName, "readback_failed")
 	}
 	copy := desired
 	e.previous = &copy
 	return ApplyOutcome{Status: "applied", ReadbackHash: hash}
 }
 
-func (e *Executor) recoverFailure(ctx context.Context, interfaceName, reason string) ApplyOutcome {
+// Verify reads the active rules and peers without reapplying them.
+func (e *Executor) Verify(ctx context.Context, desired networkprotocol.ConfigurationDesired, now time.Time) ApplyOutcome {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if err := e.validateDesired(desired, now); err != nil {
+		return failedOutcome("rejected", "invalid_configuration")
+	}
+	hash, err := e.system.Readback(ctx, desired)
+	if err != nil || !sha256Pattern.MatchString(hash) {
+		return failedOutcome("rejected", "configuration_drift")
+	}
+	return ApplyOutcome{Status: "applied", ReadbackHash: hash}
+}
+
+func (e *Executor) recoverFailure(ctx context.Context, desired networkprotocol.ConfigurationDesired, now time.Time, interfaceName, reason string) ApplyOutcome {
+	if e.previous != nil && rollbackWouldRestoreAccess(*e.previous, desired) {
+		if err := e.disableLocked(ctx); err != nil {
+			return failedOutcome("rejected", "restriction_disable_failed")
+		}
+		return failedOutcome("rejected", reason)
+	}
 	hadPrevious := e.previous != nil
-	if e.rollback(ctx, interfaceName) != nil {
+	if e.rollback(ctx, interfaceName, now) != nil {
 		return failedOutcome("rejected", "rollback_failed")
 	}
 	if !hadPrevious {
@@ -101,21 +128,53 @@ func failedOutcome(status, reason string) ApplyOutcome {
 func (e *Executor) Disable(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.disableLocked(ctx)
+}
+
+func (e *Executor) disableLocked(ctx context.Context) error {
 	interfaceName := defaultInterfaceName
 	if e.previous != nil {
 		interfaceName = desiredInterfaceName(*e.previous)
 	}
 	baselineErr := e.system.Baseline(ctx, interfaceName)
 	disableErr := e.system.Disable(ctx, interfaceName, e.key.PublicKey())
-	return errors.Join(baselineErr, disableErr)
+	err := errors.Join(baselineErr, disableErr)
+	if err == nil {
+		e.previous = nil
+	}
+	return err
 }
 
-func (e *Executor) rollback(ctx context.Context, interfaceName string) error {
+// Removed lease allows and newly added denies must survive a failed replacement.
+func rollbackWouldRestoreAccess(previous, desired networkprotocol.ConfigurationDesired) bool {
+	if previous.PolicyVersion != desired.PolicyVersion {
+		return true
+	}
+	if previous.WireGuard == nil {
+		return false
+	}
+	if desired.WireGuard == nil {
+		return true
+	}
+	for _, oldRule := range previous.WireGuard.FirewallRules {
+		if oldRule.Effect == "allow" && !slices.ContainsFunc(desired.WireGuard.FirewallRules, func(rule networkprotocol.WireGuardFirewallRule) bool { return reflect.DeepEqual(oldRule, rule) }) {
+			return true
+		}
+	}
+	for _, rule := range desired.WireGuard.FirewallRules {
+		if rule.Effect == "deny" && !slices.ContainsFunc(previous.WireGuard.FirewallRules, func(oldRule networkprotocol.WireGuardFirewallRule) bool { return reflect.DeepEqual(oldRule, rule) }) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Executor) rollback(ctx context.Context, interfaceName string, now time.Time) error {
 	if err := e.system.Baseline(ctx, interfaceName); err != nil {
 		_ = e.system.Disable(ctx, interfaceName, e.key.PublicKey())
 		return err
 	}
-	if e.previous == nil {
+	if e.previous == nil || !e.previous.ValidUntil.After(now) {
 		return e.system.Disable(ctx, interfaceName, e.key.PublicKey())
 	}
 	if err := e.system.Apply(ctx, *e.previous, e.key); err != nil {
@@ -174,13 +233,14 @@ func validateGatewayWireGuard(wg networkprotocol.WireGuardConfiguration, publicK
 	if wg.RoutingMode != "routed" && wg.RoutingMode != "snat" {
 		return fmt.Errorf("gateway routing mode is invalid")
 	}
-	if wg.RoutingMode == "snat" && !linuxInterfacePattern.MatchString(egressInterface) {
-		return fmt.Errorf("SNAT requires an explicit egress interface")
+	if err := validateSNATFamily(wg, egressInterface); err != nil {
+		return err
 	}
+
 	if len(wg.Addresses) != 1 || len(wg.Peers) > 1024 || len(wg.Routes) > 256 || len(wg.FirewallRules) > 4096 {
 		return fmt.Errorf("gateway WireGuard collection bounds are invalid")
 	}
-	if _, err := canonicalIPv4Prefix(wg.Addresses[0], 32); err != nil {
+	if _, err := canonicalIPPrefix(wg.Addresses[0], -2); err != nil {
 		return fmt.Errorf("gateway address: %w", err)
 	}
 	return nil
@@ -189,7 +249,7 @@ func validateGatewayWireGuard(wg networkprotocol.WireGuardConfiguration, publicK
 func validateGatewayRoutes(routes []string, allowed map[string]struct{}) error {
 	seen := make(map[string]struct{}, len(routes))
 	for _, route := range routes {
-		prefix, err := canonicalIPv4Prefix(route, -1)
+		prefix, err := canonicalIPPrefix(route, -1)
 		if err != nil || prefix.Bits() == 0 {
 			return fmt.Errorf("gateway route is invalid")
 		}
@@ -239,8 +299,8 @@ func validateGatewayPeers(peers []networkprotocol.WireGuardPeer) (gatewayPeerSou
 		}
 		prefixes := make([]netip.Prefix, 0, len(peer.AllowedIPs))
 		for _, raw := range peer.AllowedIPs {
-			prefix, err := canonicalIPv4Prefix(raw, -1)
-			if err != nil || prefix.Bits() == 0 || (!sitePeer && prefix.Bits() != 32) {
+			prefix, err := canonicalIPPrefix(raw, -1)
+			if err != nil || prefix.Bits() == 0 || (!sitePeer && prefix.Bits() != prefix.Addr().BitLen()) {
 				return gatewayPeerSources{}, fmt.Errorf("gateway peer AllowedIPs are invalid")
 			}
 			for _, existing := range allPrefixes {
@@ -264,7 +324,7 @@ func validateGatewayPeers(peers []networkprotocol.WireGuardPeer) (gatewayPeerSou
 func validateGatewayPeerKind(peer networkprotocol.WireGuardPeer) (bool, error) {
 	sitePeer := peer.EndpointHost != "" || peer.EndpointPort != 0
 	if sitePeer {
-		if peer.DeviceID != "" || !endpointHostPattern.MatchString(peer.EndpointHost) || peer.EndpointPort < 1 || peer.EndpointPort > 65535 || peer.PersistentKeepaliveSeconds < 0 || peer.PersistentKeepaliveSeconds > 300 {
+		if peer.DeviceID != "" || !validWorkloadEndpoint(peer.EndpointHost) || peer.EndpointPort < 1 || peer.EndpointPort > 65535 || peer.PersistentKeepaliveSeconds < 0 || peer.PersistentKeepaliveSeconds > 300 {
 			return false, fmt.Errorf("gateway site peer is invalid")
 		}
 	} else if !identifierPattern.MatchString(peer.DeviceID) || len(peer.AllowedIPs) != 1 || peer.PersistentKeepaliveSeconds != 0 {
@@ -304,11 +364,11 @@ func validateGatewayFirewallRule(rule networkprotocol.WireGuardFirewallRule, see
 		return netip.Prefix{}, fmt.Errorf("gateway firewall rule ID is duplicate")
 	}
 	seenRules[rule.ID] = struct{}{}
-	source, err := canonicalIPv4Prefix(rule.SourceCIDR, -1)
+	source, err := canonicalIPPrefix(rule.SourceCIDR, -1)
 	if err != nil {
 		return netip.Prefix{}, fmt.Errorf("gateway firewall source is invalid")
 	}
-	destination, err := canonicalIPv4Prefix(rule.DestinationCIDR, -1)
+	destination, err := canonicalIPPrefix(rule.DestinationCIDR, -1)
 	if err != nil || destination.Bits() == 0 || !validFirewallEffect(rule.Effect) || !validFirewallProtocol(rule.Protocol) {
 		return netip.Prefix{}, fmt.Errorf("gateway firewall rule is invalid")
 	}
@@ -342,7 +402,7 @@ func validateGatewayFirewallSource(rule networkprotocol.WireGuardFirewallRule, s
 			return fmt.Errorf("gateway site-link firewall rule is expired")
 		}
 	} else {
-		if rule.Direction != "" || source.Bits() != 32 {
+		if rule.Direction != "" || source.Bits() != source.Addr().BitLen() {
 			return fmt.Errorf("gateway endpoint firewall rule is invalid")
 		}
 		if _, exists := peerSources.endpoint[source.String()]; !exists {
@@ -384,7 +444,7 @@ func siteRuleCovered(prefixes []netip.Prefix, direction string, source, destinat
 
 func prefixCoveredByAny(candidate netip.Prefix, rawPrefixes []string) bool {
 	for _, raw := range rawPrefixes {
-		prefix, err := canonicalIPv4Prefix(raw, -1)
+		prefix, err := canonicalIPPrefix(raw, -1)
 		if err == nil && prefix.Bits() <= candidate.Bits() && prefix.Contains(candidate.Addr()) {
 			return true
 		}
@@ -397,7 +457,7 @@ func protectedDenyFollows(later []networkprotocol.WireGuardFirewallRule, allowed
 		if candidate.Effect != "deny" || candidate.SourceCIDR != allowed.SourceCIDR {
 			continue
 		}
-		denied, err := canonicalIPv4Prefix(candidate.DestinationCIDR, -1)
+		denied, err := canonicalIPPrefix(candidate.DestinationCIDR, -1)
 		if err == nil && destination.Contains(denied.Addr()) && destination.Bits() <= denied.Bits() {
 			return true
 		}
@@ -411,27 +471,35 @@ func validFirewallProtocol(protocol string) bool {
 	return protocol == "any" || protocol == "tcp" || protocol == "udp"
 }
 
-func canonicalIPv4Prefix(raw string, requiredBits int) (netip.Prefix, error) {
+func canonicalIPPrefix(raw string, requiredBits int) (netip.Prefix, error) {
 	prefix, err := netip.ParsePrefix(raw)
-	if err != nil || !prefix.Addr().Is4() || prefix != prefix.Masked() || (requiredBits >= 0 && prefix.Bits() != requiredBits) {
-		return netip.Prefix{}, fmt.Errorf("IPv4 prefix must be canonical")
+	if err != nil || prefix.Addr().Is4In6() || !prefix.Addr().IsGlobalUnicast() || prefix != prefix.Masked() || (requiredBits >= 0 && prefix.Bits() != requiredBits) || (requiredBits == -2 && prefix.Bits() != prefix.Addr().BitLen()) {
+		return netip.Prefix{}, fmt.Errorf("IP prefix must be canonical")
 	}
 	return prefix, nil
 }
 
-func BuildNftProgram(wg networkprotocol.WireGuardConfiguration, tableExists bool, egressInterface string) (string, error) {
+func BuildNftProgram(wg networkprotocol.WireGuardConfiguration, tableExists bool, egressInterface string, validUntil ...time.Time) (string, error) {
+	if err := validateSNATFamily(wg, egressInterface); err != nil {
+		return "", err
+	}
 	if !linuxInterfacePattern.MatchString(wg.InterfaceName) || wg.FirewallDefault != "deny" || (wg.RoutingMode == "snat" && !linuxInterfacePattern.MatchString(egressInterface)) {
 		return "", fmt.Errorf("invalid nftables gateway parameters")
 	}
 	var lines []string
 	if tableExists {
-		lines = append(lines, "flush table inet "+firewallTable)
+		lines = append(lines, "delete table inet "+firewallTable, "add table inet "+firewallTable)
 	} else {
 		lines = append(lines, "add table inet "+firewallTable)
 	}
+	guard, err := nftLeaseGuardProgram(wg, validUntil)
+	if err != nil {
+		return "", err
+	}
+	lines = append(lines, guard)
 	lines = append(lines,
 		"add chain inet "+firewallTable+" forward { type filter hook forward priority -20; policy accept; }",
-		"add rule inet "+firewallTable+" forward oifname "+strconv.Quote(wg.InterfaceName)+" ct state established,related accept comment \"return-established\"",
+		"add rule inet "+firewallTable+" forward oifname "+strconv.Quote(wg.InterfaceName)+" ct state established,related meta mark & 0 @lease_guard accept comment \"return-established\"",
 	)
 	for _, rule := range wg.FirewallRules {
 		line, err := nftFilterRule(wg.InterfaceName, rule)
@@ -459,11 +527,12 @@ func nftFilterRule(interfaceName string, rule networkprotocol.WireGuardFirewallR
 	if !identifierPattern.MatchString(rule.ID) || !validFirewallEffect(rule.Effect) {
 		return "", fmt.Errorf("invalid nftables firewall rule")
 	}
-	if _, err := canonicalIPv4Prefix(rule.SourceCIDR, -1); err != nil {
+	source, err := canonicalIPPrefix(rule.SourceCIDR, -1)
+	if err != nil {
 		return "", fmt.Errorf("invalid nftables firewall source")
 	}
-	destination, err := canonicalIPv4Prefix(rule.DestinationCIDR, -1)
-	if err != nil || destination.Bits() == 0 || !validFirewallProtocol(rule.Protocol) || (rule.Protocol == "any" && len(rule.Ports) != 0) {
+	destination, err := canonicalIPPrefix(rule.DestinationCIDR, -1)
+	if err != nil || source.Addr().BitLen() != destination.Addr().BitLen() || destination.Bits() == 0 || !validFirewallProtocol(rule.Protocol) || (rule.Protocol == "any" && len(rule.Ports) != 0) {
 		return "", fmt.Errorf("invalid nftables firewall destination or protocol")
 	}
 	for _, port := range rule.Ports {
@@ -477,10 +546,39 @@ func nftFilterRule(interfaceName string, rule networkprotocol.WireGuardFirewallR
 	} else if rule.Direction != "" && rule.Direction != "from_wireguard" {
 		return "", fmt.Errorf("invalid nftables firewall direction")
 	}
-	parts := []string{"add rule inet", firewallTable, "forward", direction, strconv.Quote(interfaceName), "ip saddr", rule.SourceCIDR, "ip daddr", rule.DestinationCIDR}
+	parts := []string{"add rule inet", firewallTable, "forward", direction, strconv.Quote(interfaceName), nftIPFamily(source) + " saddr", rule.SourceCIDR, nftIPFamily(destination) + " daddr", rule.DestinationCIDR}
+	parts = appendNftTransport(parts, rule)
+
+	if rule.Effect == "allow" {
+		parts = append(parts, "meta mark & 0 @lease_guard")
+	}
+	parts = append(parts, map[string]string{"allow": "accept", "deny": "drop"}[rule.Effect], "comment", strconv.Quote(rule.ID))
+	return strings.Join(parts, " "), nil
+}
+
+func nftIPFamily(prefix netip.Prefix) string {
+	if prefix.Addr().Is6() {
+		return "ip6"
+	}
+	return "ip"
+}
+
+// Keep the old private test helper spelling for source compatibility.
+func canonicalIPv4Prefix(raw string, requiredBits int) (netip.Prefix, error) {
+	return canonicalIPPrefix(raw, requiredBits)
+}
+
+func (e *Executor) validateDesired(desired networkprotocol.ConfigurationDesired, now time.Time) error {
+	if e.endpoint {
+		return validateWorkloadDesired(desired, e.key.PublicKey(), now)
+	}
+	return ValidateGatewayDesired(desired, e.key.PublicKey(), now, e.egress)
+}
+
+func appendNftTransport(parts []string, rule networkprotocol.WireGuardFirewallRule) []string {
 	if rule.Protocol != "any" {
 		if len(rule.Ports) == 0 {
-			parts = append(parts, "ip protocol", rule.Protocol)
+			parts = append(parts, "meta l4proto", rule.Protocol)
 		} else if len(rule.Ports) == 1 {
 			parts = append(parts, rule.Protocol)
 			parts = append(parts, "dport", strconv.Itoa(rule.Ports[0]))
@@ -495,6 +593,25 @@ func nftFilterRule(interfaceName string, rule networkprotocol.WireGuardFirewallR
 			parts = append(parts, "dport { "+strings.Join(values, ", ")+" }")
 		}
 	}
-	parts = append(parts, map[string]string{"allow": "accept", "deny": "drop"}[rule.Effect], "comment", strconv.Quote(rule.ID))
-	return strings.Join(parts, " "), nil
+	return parts
+}
+
+func validateSNATFamily(wg networkprotocol.WireGuardConfiguration, egress string) error {
+	if wg.RoutingMode != "snat" {
+		return nil
+	}
+	if !linuxInterfacePattern.MatchString(egress) {
+		return fmt.Errorf("SNAT requires an explicit egress interface")
+	}
+	for _, raw := range append(slices.Clone(wg.Addresses), wg.Routes...) {
+		if strings.Contains(raw, ":") {
+			return fmt.Errorf("IPv6 requires routed mode")
+		}
+	}
+	for _, rule := range wg.FirewallRules {
+		if strings.Contains(rule.SourceCIDR, ":") || strings.Contains(rule.DestinationCIDR, ":") {
+			return fmt.Errorf("IPv6 requires routed mode")
+		}
+	}
+	return nil
 }

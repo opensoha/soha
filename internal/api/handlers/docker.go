@@ -656,11 +656,14 @@ func (h *DockerHandler) ListProjectVolumeFiles(c *gin.Context) {
 }
 
 func (h *DockerHandler) ReadProjectVolumeFile(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
 	item, err := h.projectStorage.ReadProjectVolumeFile(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), domaindocker.ProjectVolumeFileReadInput{
-		ServiceName: c.Query("serviceName"),
-		Target:      c.Query("target"),
-		Path:        c.Query("path"),
-		LimitBytes:  int64(queryInt(c, "limitBytes", 262144)),
+		SessionID:     apiMiddleware.AccessContextFromContext(c).SessionID,
+		ServiceName:   c.Query("serviceName"),
+		Target:        c.Query("target"),
+		Path:          c.Query("path"),
+		Authorization: c.GetHeader("X-Soha-DLP-Authorization"),
+		LimitBytes:    int64(queryInt(c, "limitBytes", 262144)),
 	})
 	if err != nil {
 		writeError(c, err)

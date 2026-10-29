@@ -3,6 +3,8 @@ package routes
 import "github.com/gin-gonic/gin"
 
 func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
+	registerNetworkEndpointResponseRoutes(protected, deps)
+	registerManagedContentRoutes(protected, deps)
 	registerNetworkVPNRoutes(protected, deps)
 	if deps.NetworkProxy != nil {
 		proxy := deps.NetworkProxy
@@ -10,14 +12,20 @@ func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 		protected.POST("/network-access/proxy-instances", proxy.Create)
 		protected.GET("/network-access/proxy-instances/:instanceID", proxy.Get)
 		protected.PUT("/network-access/proxy-instances/:instanceID/configuration", proxy.UpdateConfiguration)
+		protected.GET("/network-access/proxy-instances/:instanceID/configuration-history", proxy.ConfigurationHistory)
+		protected.POST("/network-access/proxy-instances/:instanceID/configuration-history/:revision/restore", proxy.RestoreConfiguration)
 		protected.GET("/network-access/proxy-instances/:instanceID/traffic", proxy.Traffic)
 		protected.GET("/network-access/proxy-instances/:instanceID/connections", proxy.Connections)
+		protected.GET("/network-access/proxy-instances/:instanceID/close-commands/:commandID", proxy.GetClose)
 		protected.POST("/network-access/proxy-instances/:instanceID/connections/:connectionID/close", proxy.Close)
 	}
 	if deps.NetworkAccess == nil {
 		return
 	}
 	handler := deps.NetworkAccess
+	protected.GET("/network-access/workload-bindings", handler.ListWorkloadBindings)
+	protected.PUT("/network-access/workload-bindings/:bindingID", handler.PutWorkloadBinding)
+	protected.POST("/network-access/devices/:deviceID/management-proof", handler.SubmitManagementProof)
 	registerNetworkAccessDeviceRoutes(protected, deps)
 	protected.GET("/network-access/sites", handler.ListSites)
 	protected.POST("/network-access/sites", handler.CreateSite)
@@ -74,6 +82,7 @@ func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.DELETE("/network-access/policies/:policyID", handler.DeletePolicy)
 	protected.GET("/network-access/policy/snapshot", handler.GetPolicySnapshot)
 	protected.POST("/network-access/policy/preview", handler.PreviewPolicy)
+	protected.POST("/network-access/admission/preview", handler.PreviewAdmission)
 	protected.POST("/network-access/conflicts/analyze", handler.AnalyzeConflicts)
 }
 

@@ -77,6 +77,48 @@ func TestAllocateOverlayAddressReservesNetworkGatewayAndBroadcast(t *testing.T) 
 	}
 }
 
+func TestOverlayCapacityMatchesBothFamilyAllocationBounds(t *testing.T) {
+	for _, tc := range []struct {
+		cidr string
+		want int
+	}{
+		{"100.96.0.0/16", 65533}, {"100.96.0.0/30", 1},
+		{"fd00:53::/64", maxOverlayCandidates}, {"fd00:53::/111", maxOverlayCandidates},
+		{"fd00:53::/112", 65533}, {"fd00:53::/125", 5}, {"fd00:53::/126", 1},
+		{"fd00:53::1/64", 0}, {"fd00:53::/127", 0}, {"fe80::/64", 0},
+	} {
+		t.Run(tc.cidr, func(t *testing.T) {
+			if got := overlayCapacity(netip.MustParsePrefix(tc.cidr)); got != tc.want {
+				t.Fatalf("overlayCapacity = %d, want %d", got, tc.want)
+			}
+		})
+	}
+	for _, raw := range []string{"100.96.0.0/29", "fd00:53::/125"} {
+		prefix := netip.MustParsePrefix(raw)
+		used := make(map[netip.Addr]struct{})
+		for i := 0; i < overlayCapacity(prefix); i++ {
+			address, err := allocateOverlayAddress(prefix, used)
+			if err != nil {
+				t.Fatalf("allocate %s peer %d: %v", raw, i, err)
+			}
+			used[address] = struct{}{}
+		}
+		if _, err := allocateOverlayAddress(prefix, used); err == nil {
+			t.Fatalf("%s allocated beyond advertised capacity", raw)
+		}
+	}
+	prefix := netip.MustParsePrefix("fd00:53::/64")
+	used := make(map[netip.Addr]struct{}, maxOverlayCandidates)
+	address := prefix.Addr().Next().Next()
+	for i := 0; i < maxOverlayCandidates; i++ {
+		used[address] = struct{}{}
+		address = address.Next()
+	}
+	if _, err := allocateOverlayAddress(prefix, used); err == nil {
+		t.Fatal("IPv6 allocator exceeded its advertised bounded search")
+	}
+}
+
 func TestLeaseFirewallRulesAuthorizeResourceBeforeProtectedSet(t *testing.T) {
 	expiresAt := time.Date(2026, 9, 3, 8, 0, 0, 0, time.UTC)
 	rules := leaseFirewallRules(
@@ -92,6 +134,29 @@ func TestLeaseFirewallRulesAuthorizeResourceBeforeProtectedSet(t *testing.T) {
 	direct := leaseFirewallRules("100.96.0.3/32", nil, []leasedResourceTarget{{DestinationCIDR: "10.20.8.10/32", Protocol: "tcp", Ports: []int{5432}, LeaseID: "resource-lease", ExpiresAt: expiresAt}}, []string{"10.20.8.10/32"})
 	if len(direct) != 2 || direct[0].Effect != "allow" || direct[1].Effect != "deny" {
 		t.Fatalf("direct ZTNA rules = %#v", direct)
+	}
+}
+
+func TestLeaseDerivedConfigurationUsesStableDatabaseTimeRepresentation(t *testing.T) {
+	expiry := time.Date(2026, 10, 28, 8, 0, 0, 123456789, time.UTC)
+	stored := expiry.In(time.FixedZone("database", 8*60*60)).Truncate(time.Microsecond)
+	document := func(at time.Time) []byte {
+		targets := []leasedResourceTarget{{Hostname: "protected.example", ResourceID: "resource-1", DestinationCIDR: "10.53.0.10/32", Protocol: "tcp", Ports: []int{443}, LeaseID: "resource-lease", ExpiresAt: at}}
+		payload, err := json.Marshal(networkprotocol.WireGuardConfiguration{
+			FirewallRules: leaseFirewallRules("100.96.0.2/32", []networkprotocol.NetworkLease{{ID: "network-lease", CIDRs: []string{"10.53.0.0/24"}, ExpiresAt: at}}, targets, nil),
+			DNSRecords:    resourceDNSRecords(targets, "100.96.0.2/32"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return payload
+	}
+	initial, reloaded := string(document(expiry)), string(document(stored))
+	if initial != reloaded {
+		t.Fatalf("database round trip changed data plane: initial=%s reloaded=%s", initial, reloaded)
+	}
+	if initial == string(document(stored.Add(time.Microsecond))) {
+		t.Fatal("a real lease deadline change disappeared")
 	}
 }
 
