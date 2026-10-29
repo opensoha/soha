@@ -86,7 +86,11 @@ func (s *Service) readVolumeContent(ctx context.Context, p identity.Principal, t
 		return zero, err
 	}
 	file.DLP = decision
-	limit := normalizeVolumeReadLimit(input.LimitBytes)
+	truncateVolumeContent(&file, normalizeVolumeReadLimit(input.LimitBytes))
+	return file, nil
+}
+
+func truncateVolumeContent(file *domain.ProjectVolumeFileContent, limit int64) {
 	if int64(len(file.Content)) > limit {
 		for limit > 0 && !utf8.RuneStart(file.Content[limit]) {
 			limit--
@@ -94,7 +98,6 @@ func (s *Service) readVolumeContent(ctx context.Context, p identity.Principal, t
 		file.Content = file.Content[:limit]
 		file.Truncated = true
 	}
-	return file, nil
 }
 
 func validateVolumeAuthorization(token string) error {

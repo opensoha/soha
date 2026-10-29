@@ -160,7 +160,7 @@ func (s *Service) Review(ctx context.Context, p identity.Principal, id string, i
 }
 
 func validReview(id string, in d.ReviewInput) bool {
-	return !(!validID(id) || in.ExpectedRevision < 1 || in.Resolution != "approve" && in.Resolution != "reject" || in.ReasonCode != "false_positive" && in.ReasonCode != "business_exception" && in.ReasonCode != "insufficient_justification")
+	return validID(id) && in.ExpectedRevision >= 1 && (in.Resolution == "approve" || in.Resolution == "reject") && (in.ReasonCode == "false_positive" || in.ReasonCode == "business_exception" || in.ReasonCode == "insufficient_justification")
 }
 
 func reviewable(r d.Record, in d.ReviewInput) bool {

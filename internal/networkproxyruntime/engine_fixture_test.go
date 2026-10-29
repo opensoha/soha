@@ -59,7 +59,17 @@ func runEngineFixture() error {
 			path = os.Args[i+1]
 		}
 	}
-	raw, err := os.ReadFile(path)
+	base := os.Getenv("SOHA_PROXY_FIXTURE_ROOT")
+	root, err := os.OpenRoot(base)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = root.Close() }()
+	name, err := filepath.Rel(base, path)
+	if err != nil {
+		return err
+	}
+	raw, err := root.ReadFile(name)
 	if err != nil {
 		return err
 	}
@@ -100,7 +110,7 @@ func runEngineFixture() error {
 }
 
 func fixtureSOCKS(conn net.Conn, listener fixtureListener, front fixtureProxy) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	if !fixtureSOCKSAuth(conn, listener) {
 		return
@@ -126,7 +136,7 @@ func fixtureSOCKS(conn net.Conn, listener fixtureListener, front fixtureProxy) {
 	if err != nil {
 		return
 	}
-	defer upstream.Close()
+	defer func() { _ = upstream.Close() }()
 	_ = upstream.SetDeadline(time.Now().Add(5 * time.Second))
 	auth := base64.StdEncoding.EncodeToString([]byte(front.Username + ":" + front.Password))
 	target := net.JoinHostPort(host, "80")
@@ -135,7 +145,11 @@ func fixtureSOCKS(conn net.Conn, listener fixtureListener, front fixtureProxy) {
 	}
 	reader := bufio.NewReader(upstream)
 	response, err := http.ReadResponse(reader, &http.Request{Method: "CONNECT"})
-	if err != nil || response.StatusCode != 200 {
+	if err != nil {
+		return
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != 200 {
 		return
 	}
 	if _, err := conn.Write([]byte{5, 0, 0, 1, 127, 0, 0, 1, 0, 0}); err != nil {
@@ -191,10 +205,16 @@ func lifecycleFixture(t *testing.T, failure string) (Config, *atomic.Int32) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
+	t.Setenv("SOHA_PROXY_FIXTURE_ROOT", dir)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Close() })
 	file := filepath.Join(dir, "engine.yaml")
 	probes := &atomic.Int32{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		raw, err := os.ReadFile(file)
+		raw, err := root.ReadFile("engine.yaml")
 		if err != nil {
 			w.WriteHeader(503)
 			return

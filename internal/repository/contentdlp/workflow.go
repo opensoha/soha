@@ -186,7 +186,7 @@ func (r *Repository) Cases(ctx context.Context, project, actor string) ([]domain
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []domain.Case{}
 	for rows.Next() {
 		var meta, appeal []byte

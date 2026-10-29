@@ -57,7 +57,7 @@ func (r *Repository) Destinations(ctx context.Context) ([]domain.Destination, er
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	ids := []string{}
 	for rows.Next() {
 		var id string
@@ -292,7 +292,7 @@ func (r *Repository) Records(ctx context.Context, actor, destination, kind strin
 	if err != nil {
 		return p, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	ids := []string{}
 	for rows.Next() {
 		var id string

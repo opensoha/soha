@@ -139,7 +139,7 @@ func (b *webdavBackend) request(ctx context.Context, method, key string, content
 		return nil, apperrors.ErrServiceUnavailable
 	}
 	if response.Header.Get("Content-Encoding") != "" && response.Header.Get("Content-Encoding") != "identity" {
-		response.Body.Close()
+		_ = response.Body.Close()
 		return nil, apperrors.ErrServiceUnavailable
 	}
 	return response, nil
@@ -150,7 +150,7 @@ func (b *webdavBackend) Open(ctx context.Context, key string) (io.ReadCloser, er
 		return nil, err
 	}
 	if r.StatusCode != http.StatusOK {
-		r.Body.Close()
+		_ = r.Body.Close()
 		return nil, apperrors.ErrServiceUnavailable
 	}
 	return r.Body, nil
@@ -160,7 +160,7 @@ func (b *webdavBackend) Put(ctx context.Context, key string, content []byte) err
 	if err != nil {
 		return err
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	if r.StatusCode != http.StatusCreated {
 		return apperrors.ErrServiceUnavailable
 	}
@@ -171,7 +171,7 @@ func (b *webdavBackend) Delete(ctx context.Context, key string) error {
 	if err != nil {
 		return err
 	}
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	if r.StatusCode != http.StatusNoContent && r.StatusCode != http.StatusOK && r.StatusCode != http.StatusNotFound {
 		return apperrors.ErrServiceUnavailable
 	}

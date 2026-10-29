@@ -563,11 +563,6 @@ func nftIPFamily(prefix netip.Prefix) string {
 	return "ip"
 }
 
-// Keep the old private test helper spelling for source compatibility.
-func canonicalIPv4Prefix(raw string, requiredBits int) (netip.Prefix, error) {
-	return canonicalIPPrefix(raw, requiredBits)
-}
-
 func (e *Executor) validateDesired(desired networkprotocol.ConfigurationDesired, now time.Time) error {
 	if e.endpoint {
 		return validateWorkloadDesired(desired, e.key.PublicKey(), now)

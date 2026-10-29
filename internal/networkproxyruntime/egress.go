@@ -39,11 +39,11 @@ type egressGuard struct {
 }
 
 func newEgressGuard(protection *domain.Protection, until time.Time) (*egressGuard, error) {
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	listener, port, err := listenEgressPort()
 	if err != nil {
 		return nil, err
 	}
-	gate := &egressGuard{listener: listener, probeHost: "soha-probe-" + strings.ToLower(rand.Text()) + ".invalid", port: listener.Addr().(*net.TCPAddr).Port, backends: map[string]*egressBackend{}}
+	gate := &egressGuard{listener: listener, probeHost: "soha-probe-" + strings.ToLower(rand.Text()) + ".invalid", port: port, backends: map[string]*egressBackend{}}
 	// Credentials are populated before serving. Start only after compiling every
 	// backend; the public engine has not been launched at this point.
 	gate.server = &http.Server{ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
@@ -55,21 +55,34 @@ func newEgressGuard(protection *domain.Protection, until time.Time) (*egressGuar
 	return gate, nil
 }
 
+func listenEgressPort() (net.Listener, int, error) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		return nil, 0, err
+	}
+	address, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = listener.Close()
+		return nil, 0, errUnsafeConfiguration
+	}
+	return listener, address.Port, nil
+}
+
 func (g *egressGuard) add(name string) (*egressBackend, error) {
 	if _, exists := g.backends[name]; exists || len(g.backends) >= 128 {
 		return nil, errUnsafeConfiguration
 	}
-	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	listener, port, err := listenEgressPort()
 	if err != nil {
 		return nil, err
 	}
-	b := &egressBackend{name: name, user: "s" + strings.ToLower(rand.Text()), secret: rand.Text() + rand.Text(), port: listener.Addr().(*net.TCPAddr).Port, reserve: listener}
-	probeListener, err := net.Listen("tcp4", "127.0.0.1:0")
+	b := &egressBackend{name: name, user: "s" + strings.ToLower(rand.Text()), secret: rand.Text() + rand.Text(), port: port, reserve: listener}
+	probeListener, probePort, err := listenEgressPort()
 	if err != nil {
 		_ = listener.Close()
 		return nil, err
 	}
-	b.probePort = probeListener.Addr().(*net.TCPAddr).Port
+	b.probePort = probePort
 	b.probeReserve = probeListener
 	g.backends[name] = b
 	return b, nil
@@ -269,7 +282,11 @@ func (g *egressGuard) mihomo(doc map[string]any) error {
 		allowed[name] = true
 	}
 	for _, raw := range groups {
-		if err := guardMihomoGroup(raw.(map[string]any), allowed, direct.name); err != nil {
+		group, ok := raw.(map[string]any)
+		if !ok {
+			return errUnsafeConfiguration
+		}
+		if err := guardMihomoGroup(group, allowed, direct.name); err != nil {
 			return err
 		}
 	}

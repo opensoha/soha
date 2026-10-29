@@ -131,17 +131,7 @@ func resolveSiteType(ctx context.Context, resolver, hostname string, kind dnsmes
 
 func querySiteDNS(ctx context.Context, resolver, hostname string, kind dnsmessage.Type) (dnsmessage.Message, error) {
 	var result dnsmessage.Message
-	name, err := dnsmessage.NewName(hostname)
-	if err != nil {
-		return result, err
-	}
-	var random [2]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		return result, err
-	}
-	id := binary.BigEndian.Uint16(random[:])
-	query := dnsmessage.Message{Header: dnsmessage.Header{ID: id, RecursionDesired: true}, Questions: []dnsmessage.Question{{Name: name, Type: kind, Class: dnsmessage.ClassINET}}}
-	raw, err := query.Pack()
+	query, packet, err := buildSiteDNSQuery(hostname, kind)
 	if err != nil {
 		return result, err
 	}
@@ -157,9 +147,6 @@ func querySiteDNS(ctx context.Context, resolver, hostname string, kind dnsmessag
 	if err := conn.SetDeadline(deadline); err != nil {
 		return result, err
 	}
-	packet := make([]byte, len(raw)+2)
-	binary.BigEndian.PutUint16(packet, uint16(len(raw)))
-	copy(packet[2:], raw)
 	if _, err := io.Copy(conn, strings.NewReader(string(packet))); err != nil {
 		return result, err
 	}
@@ -178,10 +165,36 @@ func querySiteDNS(ctx context.Context, resolver, hostname string, kind dnsmessag
 	if err := result.Unpack(response); err != nil {
 		return result, err
 	}
-	if result.ID != id || !result.Response || result.Truncated || result.RCode != dnsmessage.RCodeSuccess || len(result.Questions) != 1 || result.Questions[0] != query.Questions[0] {
+	if result.ID != query.ID || !result.Response || result.Truncated || result.RCode != dnsmessage.RCodeSuccess || len(result.Questions) != 1 || result.Questions[0] != query.Questions[0] {
 		return result, fmt.Errorf("site DNS response mismatch")
 	}
 	return result, nil
+}
+
+func buildSiteDNSQuery(hostname string, kind dnsmessage.Type) (dnsmessage.Message, []byte, error) {
+	var query dnsmessage.Message
+	name, err := dnsmessage.NewName(hostname)
+	if err != nil {
+		return query, nil, err
+	}
+	var random [2]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return query, nil, err
+	}
+	id := binary.BigEndian.Uint16(random[:])
+	query = dnsmessage.Message{Header: dnsmessage.Header{ID: id, RecursionDesired: true}, Questions: []dnsmessage.Question{{Name: name, Type: kind, Class: dnsmessage.ClassINET}}}
+	raw, err := query.Pack()
+	if err != nil {
+		return query, nil, err
+	}
+	querySize := len(raw)
+	if querySize < 12 || querySize > 65535 {
+		return query, nil, fmt.Errorf("site DNS query size invalid")
+	}
+	packet := make([]byte, len(raw)+2)
+	binary.BigEndian.PutUint16(packet, uint16(querySize))
+	copy(packet[2:], raw)
+	return query, packet, nil
 }
 
 func minTimeDNS(a, b time.Time) time.Time {
