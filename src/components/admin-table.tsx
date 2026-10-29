@@ -23,6 +23,11 @@ import {
 import { localeText, useI18n } from '@/i18n'
 import type { LocaleCode } from '@/i18n'
 import './admin-table.css'
+import {
+  ColumnLayoutControls,
+  ColumnResizeHandle,
+  useTableColumnLayout,
+} from './table-column-layout'
 
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 15, 20, 50, 100]
 const VIEWPORT_SCROLL_MIN_BODY_HEIGHT = 240
@@ -44,9 +49,37 @@ const { Text } = Typography
 const EMPTY_TABLE_RECORDS: AdminTableProps['dataSource'] = []
 const VirtualHorizontalScroll = createContext<(delta: number, top: number) => void>(() => {})
 
+function revealVirtualCell(
+  body: HTMLElement,
+  target: HTMLElement,
+  scroll: (delta: number, top: number) => void,
+) {
+  if (document.activeElement !== target || !body.contains(target)) return
+  const cell = target.closest<HTMLElement>('.ant-table-cell')
+  if (!cell || cell.matches('.ant-table-cell-fix-start, .ant-table-cell-fix-end')) return
+  const row = cell.parentElement!
+  const viewport = body.getBoundingClientRect()
+  const start = Array.from(row.querySelectorAll<HTMLElement>('.ant-table-cell-fix-start'))
+  const end = Array.from(row.querySelectorAll<HTMLElement>('.ant-table-cell-fix-end'))
+  const left = Math.max(viewport.left, ...start.map((item) => item.getBoundingClientRect().right))
+  const right = Math.min(viewport.right, ...end.map((item) => item.getBoundingClientRect().left))
+  const rect = cell.getBoundingClientRect()
+  const delta = rect.right > right ? rect.right - right : rect.left < left ? rect.left - left : 0
+  if (delta) scroll(delta, body.scrollTop)
+}
+
 // Antd adds a native title to ellipsis headers even when sorter tooltips are disabled.
-function TableHeaderCell(props: ComponentProps<'th'>) {
-  return <th {...props} title={undefined} />
+function TableHeaderCell({
+  columnResizeHandle,
+  children,
+  ...props
+}: ComponentProps<'th'> & { 'data-column-label'?: string; columnResizeHandle?: ReactNode }) {
+  return (
+    <th {...props} title={undefined} aria-label={props['data-column-label'] ?? props['aria-label']}>
+      {children}
+      {columnResizeHandle}
+    </th>
+  )
 }
 
 const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((props, ref) => {
@@ -69,6 +102,10 @@ const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((prop
           const nativeLeft = scroller.scrollLeft
           scroller.scrollLeft = 0
           scrollHorizontally(nativeLeft, body.scrollTop)
+          const target = document.activeElement
+          if (target instanceof HTMLElement) {
+            requestAnimationFrame(() => revealVirtualCell(body, target, scrollHorizontally))
+          }
         }
       }}
       onFocusCapture={(event) => {
@@ -76,25 +113,7 @@ const VirtualTableBody = forwardRef<HTMLDivElement, ComponentProps<'div'>>((prop
         const body = event.currentTarget
         const target = event.target as HTMLElement
         requestAnimationFrame(() => {
-          if (document.activeElement !== target || !body.contains(target)) return
-          const cell = target.closest<HTMLElement>('.ant-table-cell')
-          if (!cell || cell.matches('.ant-table-cell-fix-start, .ant-table-cell-fix-end')) return
-          const row = cell.parentElement!
-          const viewport = body.getBoundingClientRect()
-          const start = Array.from(row.querySelectorAll<HTMLElement>('.ant-table-cell-fix-start'))
-          const end = Array.from(row.querySelectorAll<HTMLElement>('.ant-table-cell-fix-end'))
-          const left = Math.max(
-            viewport.left,
-            ...start.map((item) => item.getBoundingClientRect().right),
-          )
-          const right = Math.min(
-            viewport.right,
-            ...end.map((item) => item.getBoundingClientRect().left),
-          )
-          const rect = cell.getBoundingClientRect()
-          const delta =
-            rect.right > right ? rect.right - right : rect.left < left ? rect.left - left : 0
-          if (delta) scrollHorizontally(delta, body.scrollTop)
+          revealVirtualCell(body, target, scrollHorizontally)
         })
       }}
       onKeyDown={(event) => {
@@ -153,6 +172,9 @@ export interface AdminTableProps {
   tableRef?: Ref<GetRef<typeof Table>>
   columnSettingPlacement?: 'toolbar' | 'header' | 'outside' | 'hidden'
   columnSettingIconOnly?: boolean
+  columnLayoutKey?: string
+  defaultHiddenColumnKeys?: string[]
+  onFitColumns?: () => void
   scroll?: {
     x?: string | number
     y?: string | number
@@ -364,6 +386,9 @@ export function AdminTable({
   tableRef,
   columnSettingPlacement = 'toolbar',
   columnSettingIconOnly = false,
+  columnLayoutKey,
+  defaultHiddenColumnKeys,
+  onFitColumns,
   scroll,
   selectCurrentPageOnly = false,
   title,
@@ -410,7 +435,18 @@ export function AdminTable({
     [columnOptions],
   )
   const columnSignature = columnOptions.map((option) => option.id).join('|')
-  const [visibleColumnIds, setVisibleColumnIds] = useState<string[]>([])
+  const [visibleColumnIds, setSessionVisibleColumnIds] = useState<string[]>([])
+  const layout = useTableColumnLayout(columnLayoutKey)
+  const layoutColumns = selectableColumnOptions.map((option) => ({
+    id: option.id,
+    label: option.label,
+    width: getColumnWidth(option.column) ?? 168,
+    min: Math.max(40, Number(option.column.minWidth) || 64),
+  }))
+  const setVisibleColumnIds = (ids: string[]) => {
+    if (columnLayoutKey) layout.setVisible(ids)
+    else setSessionVisibleColumnIds(ids)
+  }
   const [currentPage, setCurrentPage] = useState(1)
   const [currentPageSize, setCurrentPageSize] = useState(pageSize)
   const [viewportScrollY, setViewportScrollY] = useState<number>()
@@ -474,7 +510,7 @@ export function AdminTable({
 
   useEffect(() => {
     const nextIds = selectableColumnOptions.map((option) => option.id)
-    setVisibleColumnIds((current) => {
+    setSessionVisibleColumnIds((current) => {
       const filtered = current.filter((id) => nextIds.includes(id))
       return filtered.length > 0 ? filtered : nextIds
     })
@@ -494,21 +530,92 @@ export function AdminTable({
     setCurrentPageSize(nextPageSize)
   }, [pageSize, pagination])
 
-  const activeColumnIds =
-    visibleColumnIds.length > 0
+  const defaultIds = selectableColumnOptions
+    .filter((option) => !defaultHiddenColumnKeys?.includes(option.id))
+    .map((option) => option.id)
+  const savedIds = layout.visible?.filter((id) =>
+    selectableColumnOptions.some((option) => option.id === id),
+  )
+  const activeColumnIds = columnLayoutKey
+    ? savedIds?.length
+      ? savedIds
+      : defaultIds
+    : visibleColumnIds.length > 0
       ? visibleColumnIds
       : selectableColumnOptions.map((option) => option.id)
   const activeColumns = columnOptions
     .filter((option) => isActionColumn(option.column) || activeColumnIds.includes(option.id))
-    .map((option) => option.column)
+    .map((option) => {
+      const descriptor = layoutColumns.find((item) => item.id === option.id)
+      if (!columnLayoutKey || !descriptor) return option.column
+      const width = Math.max(
+        descriptor.min,
+        Math.min(800, layout.widths[option.id] ?? descriptor.width),
+      )
+      const column = option.column
+      return {
+        ...column,
+        width,
+        onHeaderCell: (...args: any[]) => {
+          const original = column.onHeaderCell?.(...args) ?? {}
+          return {
+            ...original,
+            'data-column-label': descriptor.label,
+            className: mergeClassNames(original.className, 'soha-table-resizable-header'),
+            columnResizeHandle: (
+              <ColumnResizeHandle
+                column={descriptor}
+                width={width}
+                zh={localeCode === 'zh_CN'}
+                onResize={(next, persist) => layout.setWidth(option.id, next, persist)}
+              />
+            ),
+          }
+        },
+        title: (props: unknown) => (
+          <span className="soha-table-resizable-title">
+            {typeof column.title === 'function' ? column.title(props) : column.title}
+          </span>
+        ),
+      }
+    })
   const estimatedScrollWidth = useMemo(() => {
     const columnWidth = activeColumns.reduce(
       (total, column) => total + (getColumnWidth(column) ?? 168),
       0,
     )
-    const selectionWidth = rowSelection ? 56 : 0
+    const selectionWidth = rowSelection
+      ? columnLayoutKey && typeof rowSelection.columnWidth === 'number'
+        ? rowSelection.columnWidth
+        : 56
+      : 0
     return Math.max(960, columnWidth + selectionWidth)
-  }, [activeColumns, rowSelection])
+  }, [activeColumns, rowSelection, columnLayoutKey])
+  const layoutWidthSignature = activeColumns.map((column) => getColumnWidth(column)).join('|')
+  useLayoutEffect(() => {
+    if (!columnLayoutKey || !virtual) return
+    const native = innerTableRef.current?.nativeElement
+    if (!native) return
+    let frame = 0
+    const schedule = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const body = native.querySelector<HTMLElement>('[role="region"]')
+        if (body && document.activeElement instanceof HTMLElement) {
+          revealVirtualCell(body, document.activeElement, scrollHorizontally)
+        }
+      })
+    }
+    schedule()
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(schedule)
+    observer?.observe(native)
+    window.addEventListener('resize', schedule)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', schedule)
+      cancelAnimationFrame(frame)
+    }
+  }, [columnLayoutKey, virtual, layoutWidthSignature, scrollHorizontally])
 
   const getRowKeyValue = (record: any) =>
     typeof rowKey === 'function' ? rowKey(record) : record?.[rowKey]
@@ -697,8 +804,28 @@ export function AdminTable({
                 setVisibleColumnIds(next)
               }}
             />
+            {columnLayoutKey ? (
+              <ColumnLayoutControls
+                columns={layoutColumns}
+                widths={layout.widths}
+                setWidth={layout.setWidth}
+                fit={() => {
+                  onFitColumns?.()
+                  layout.fit()
+                }}
+                reset={() => {
+                  onFitColumns?.()
+                  layout.reset()
+                }}
+                zh={localeCode === 'zh_CN'}
+              />
+            ) : null}
             <Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-              {t('table.columns.sessionHint', '列设置仅影响当前页面会话。')}
+              {columnLayoutKey
+                ? localeCode === 'zh_CN'
+                  ? '布局保存在当前用户的此浏览器中。'
+                  : 'Layout is saved for this user in this browser.'
+                : t('table.columns.sessionHint', '列设置仅影响当前页面会话。')}
             </Text>
           </div>
         }

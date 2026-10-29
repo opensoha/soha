@@ -3,12 +3,16 @@ import { Progress, Tooltip } from 'antd'
 import type { Pod } from './types'
 
 export function podResourceColumnWidth(resource: 'cpu' | 'memory', pods: readonly Pod[]) {
+  return Math.max(112, podResourceMinimumWidth(resource, pods))
+}
+
+export function podResourceMinimumWidth(resource: 'cpu' | 'memory', pods: readonly Pod[]) {
   const characters = pods.reduce(
     (longest, pod) => Math.max(longest, formatPodResourceValue(resource, pod[resource]).length),
     6,
   )
-  // Fixed 80px rail + 8px gap + content allowance for the 12px supporting font + cell padding.
-  return 80 + 8 + characters * 8 + 24
+  // Value lives inside the bar; reserve full text width plus inner and cell padding.
+  return characters * 8 + 40
 }
 
 function formatPodResourceValue(resource: 'cpu' | 'memory', value?: string) {
@@ -138,10 +142,10 @@ export function PodResourceCell({
         aria-hidden
         percent={percent}
         showInfo={false}
-        size={['100%', 4]}
-        strokeColor="var(--soha-pod-resource-fill)"
+        size={['100%', 20]}
+        strokeColor="color-mix(in srgb, var(--soha-pod-resource-fill) 28%, transparent)"
         strokeLinecap="round"
-        railColor="var(--soha-fill-medium)"
+        railColor="var(--soha-fill-weak)"
         styles={{
           root: { display: 'flex', margin: 0, lineHeight: 0 },
           rail: { borderRadius: 'calc(var(--soha-radius-control) / 2)' },

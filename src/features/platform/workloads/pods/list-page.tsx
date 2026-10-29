@@ -29,6 +29,7 @@ import {
 import '@/features/platform/workloads/styles.css'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { toScopeKey } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatAgeSeconds } from '@/utils/time'
@@ -51,8 +52,9 @@ import { podQueries } from './queries'
 import { podTargetFromRecord, type Pod } from './types'
 import { PodContainersCell } from './pod-containers-cell'
 import { PodActionsMenu } from './pod-actions-menu'
-import { getPodResourceAmount, podResourceColumnWidth, PodResourceCell } from './pod-resource-cell'
+import { getPodResourceAmount, podResourceMinimumWidth, PodResourceCell } from './pod-resource-cell'
 import { usePodListViewport } from './use-pod-list-viewport'
+import { usePodColumnWidths } from './use-pod-column-widths'
 
 const { Link, Text } = Typography
 
@@ -98,6 +100,7 @@ export function WorkloadsPodsPage() {
   const canViewPodLogs = hasPermission(permissionSnapshot, 'platform.pods.logs')
   const canViewNodes = hasPermission(permissionSnapshot, 'platform.nodes.view')
   const { clusterId, namespace } = usePlatformScopeStore()
+  const userId = useAuthStore((state) => state.user?.userId)
   const { openSession } = useRealtimeSessionDock()
   const podDeleteCapability = useClusterCapability('workload.mutations', localeCode)
   const podExecCapability = useClusterCapability('pod.exec', localeCode)
@@ -143,13 +146,14 @@ export function WorkloadsPodsPage() {
   const isLoading = podsQuery.isLoading
 
   const pods = visiblePodsQueryData ?? []
-  const resourceColumnWidths = useMemo(
-    () => ({
-      cpu: podResourceColumnWidth('cpu', pods),
-      memory: podResourceColumnWidth('memory', pods),
-    }),
-    [pods],
+  const podColumnLayout = usePodColumnWidths(
+    pods,
+    `${clusterId}/${namespace}/${localeCode}`,
+    localeCode === 'zh_CN',
+    !namespace,
+    canDeletePods,
   )
+  const resourceColumnWidths = podColumnLayout.widths
   const normalizedKeyword = normalizeSearchKeyword(searchKeyword)
   useAIPageContext({
     sourceWorkbench: 'platform',
@@ -288,7 +292,7 @@ export function WorkloadsPodsPage() {
     }
   }
 
-  const columns: TableColumnsType<Pod> = [
+  const baseColumns: TableColumnsType<Pod> = [
     {
       title: 'Pod',
       dataIndex: 'name',
@@ -549,6 +553,55 @@ export function WorkloadsPodsPage() {
     },
   ]
 
+  const columnOrder = [
+    'name',
+    'namespace',
+    'phase',
+    'readyContainers',
+    'restarts',
+    'cpu-resource',
+    'memory-resource',
+    'nodeName',
+    'ageSeconds',
+    'podIp',
+    'qosClass',
+    'actions',
+  ]
+  const fittedWidths: Record<string, number> = podColumnLayout.widths
+  const compactWidths: Record<string, number> = {
+    phase: 88,
+    ageSeconds: 88,
+    qosClass: 96,
+    actions: 48,
+  }
+  const columns = baseColumns
+    .map((column) => {
+      const key = String(column.key ?? ('dataIndex' in column ? column.dataIndex : ''))
+      const widthKey = key.replace('-resource', '')
+      const width = fittedWidths[widthKey] ?? compactWidths[key] ?? column.width
+      const minWidth =
+        key === 'name'
+          ? 240
+          : key.endsWith('-resource')
+            ? podResourceMinimumWidth(widthKey as 'cpu' | 'memory', pods)
+            : key === 'readyContainers'
+              ? fittedWidths.readyContainers
+              : key === 'namespace' || key === 'podIp'
+                ? 96
+                : key === 'nodeName'
+                  ? 128
+                  : 64
+      return {
+        ...column,
+        key,
+        width,
+        minWidth,
+        fixed:
+          key === 'name' ? (podColumnLayout.pinName ? ('left' as const) : undefined) : column.fixed,
+      }
+    })
+    .sort((left, right) => columnOrder.indexOf(left.key) - columnOrder.indexOf(right.key))
+
   const podQueryPanel = (
     <WorkloadQueryPanel
       hasActiveFilters={
@@ -752,7 +805,7 @@ export function WorkloadsPodsPage() {
   )
 
   return (
-    <div className="soha-page">
+    <div className="soha-page" ref={podColumnLayout.ref}>
       {deletePodMutation.feedback}
       {batchDeletePodsMutation.feedback}
 
@@ -786,6 +839,9 @@ export function WorkloadsPodsPage() {
         onRetry={podsQuery.isEnabled === false ? undefined : () => podsQuery.refetch()}
         className="soha-pods-table soha-platform-table"
         columnSettingIconOnly
+        columnLayoutKey={`pods:${userId || 'session'}:${localeCode}`}
+        defaultHiddenColumnKeys={namespace ? ['namespace'] : []}
+        onFitColumns={podColumnLayout.fit}
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
         headerExtra={podToolbarExtra}

@@ -491,7 +491,7 @@ describe('workloads pods page refresh controls', () => {
     expect(apiGetMock.mock.calls.filter(([path]) => path === podListPath)).toHaveLength(2)
   })
 
-  it('renders pod phase and ready container count in separate columns', async () => {
+  it('renders phase and container squares without inline readiness counts', async () => {
     const container = await renderWithProviders(<WorkloadsPodsPage />)
     await act(async () => {
       vi.advanceTimersByTime(0)
@@ -500,7 +500,7 @@ describe('workloads pods page refresh controls', () => {
     await flushAsyncWork()
 
     expect(container.querySelector('[data-column="phase"]')?.textContent).toBe('Running')
-    expect(container.querySelector('[data-column="readyContainers"]')?.textContent).toBe('1/1')
+    expect(container.querySelector('[data-column="readyContainers"]')?.textContent).toBe('')
     expect(
       container.querySelector('[data-column="readyContainers"] button')?.getAttribute('aria-label'),
     ).toContain('逐容器状态未知')

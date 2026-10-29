@@ -635,9 +635,14 @@
 .soha-pod-container-square.is-danger {
   background: var(--soha-danger);
 }
-.soha-pod-container-ready {
-  margin-inline-start: 4px;
-  font-variant-numeric: tabular-nums;
+.soha-pod-container-overflow {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  background: var(--soha-fill-medium);
+  border-radius: 2px;
+  line-height: 12px;
 }
 .soha-pod-container-details {
   max-width: min(420px, 80vw);
@@ -746,10 +751,8 @@
 
 .soha-pod-resource-limit-cell {
   --soha-pod-resource-fill: var(--soha-primary);
-  display: grid;
-  grid-template-columns: 80px minmax(max-content, 1fr);
-  align-items: center;
-  gap: 8px;
+  position: relative;
+  display: block;
   min-height: 24px;
   min-width: 0;
   width: 100%;
@@ -782,16 +785,20 @@
 
 .soha-pod-resource-progress-wrap {
   position: relative;
-  width: 80px;
-  min-width: 80px;
-  height: 4px;
+  width: 100%;
+  height: 20px;
+  margin-block: 2px;
   overflow: hidden;
   border-radius: calc(var(--soha-radius-control) / 2);
 }
 
 .soha-pod-resource-value {
-  display: block;
-  text-align: right;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding-inline: 8px;
+  text-align: center;
   font-size: var(--soha-font-size-supporting);
   line-height: var(--soha-line-height-supporting);
   font-variant-numeric: tabular-nums;

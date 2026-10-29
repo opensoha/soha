@@ -150,8 +150,8 @@ for (const theme of ['light', 'dark']) {
             (marker) => marker.getBoundingClientRect(),
           )
           return (
-            bar.width === 80 &&
-            bar.height === 4 &&
+            bar.width >= 80 &&
+            bar.height === 20 &&
             rail.height === bar.height &&
             rail.width === bar.width &&
             rail.top >= bar.top &&
@@ -162,7 +162,10 @@ for (const theme of ['light', 'dark']) {
             label.left >= cell.left &&
             label.right <= cell.right &&
             label.top >= cell.top &&
-            label.left >= bar.right + 7.9 &&
+            label.left >= bar.left + 7.9 &&
+            label.right <= bar.right - 7.9 &&
+            label.top >= bar.top &&
+            label.bottom <= bar.bottom &&
             label.bottom <= cell.bottom &&
             bar.bottom <= cell.bottom &&
             markers.every(
@@ -175,7 +178,11 @@ for (const theme of ['light', 'dark']) {
           )
         }),
       )
-      expect(geometry.every(Boolean), `thin bars with readable values at ${width}px`).toBe(true)
+      expect(geometry.every(Boolean), `20px bars with inset readable values at ${width}px`).toBe(
+        true,
+      )
+      await bar('normal', 'CPU').focus()
+      await expect(bar('normal', 'CPU')).toBeFocused()
       await bar('normal', 'CPU').hover()
       const detail = page.getByRole('tooltip')
       await expect(detail.locator('.soha-pod-resource-tooltip__header strong')).toHaveText('CPU')

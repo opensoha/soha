@@ -64,7 +64,13 @@ function makePods(count = 2000): Pod[] {
   }))
 }
 
-async function setup(context: BrowserContext, page: Page, readonly = false, withSessions = false) {
+async function setup(
+  context: BrowserContext,
+  page: Page,
+  readonly = false,
+  withSessions = false,
+  namespace: string | null = 'monitoring',
+) {
   const state = {
     pods: makePods(),
     status: 200,
@@ -82,14 +88,16 @@ async function setup(context: BrowserContext, page: Page, readonly = false, with
       })
       socket.send(JSON.stringify({ type: 'stdout', data: 'Synthetic terminal ready\r\n' }))
     })
-  await context.addInitScript(() =>
-    localStorage.setItem(
-      'soha-scope',
-      JSON.stringify({
-        state: { clusterId: 'cluster-a', namespace: 'monitoring' },
-        version: 0,
-      }),
-    ),
+  await context.addInitScript(
+    (namespace) =>
+      localStorage.setItem(
+        'soha-scope',
+        JSON.stringify({
+          state: { clusterId: 'cluster-a', namespace },
+          version: 0,
+        }),
+      ),
+    namespace,
   )
   const evidence = await installMocks(context, page, (url, method, request) => {
     if (url.pathname === '/api/v1/access/permission-snapshot') {
@@ -299,7 +307,8 @@ test('init and app states, overflow details, keyboard, QoS sorting and older API
   const cell = () => rows(page).first().locator('.soha-pod-container-cell')
   await search(page).fill('pod-0000')
   await expect(cell().locator('.is-success')).toHaveCount(2)
-  await expect(cell()).toContainText('1/1')
+  await expect(cell()).toHaveText('')
+  await expect(cell()).toHaveAttribute('aria-label', /常规容器就绪 1\/1/)
   await expect(rows(page).first()).toContainText('Guaranteed')
   await cell().focus()
   await expectContainerColumnAligned(page)
@@ -341,7 +350,7 @@ test('init and app states, overflow details, keyboard, QoS sorting and older API
   await expect(cell()).toHaveAttribute('aria-expanded', 'false')
   await search(page).fill('pod-0007')
   await expect(cell().locator('.soha-pod-container-square')).toHaveCount(6)
-  await expect(cell()).toContainText('+2')
+  await expect(cell().locator('.soha-pod-container-overflow')).toHaveText('…')
   await cell().press('Enter')
   await expect(detail.locator('.soha-pod-container-detail')).toHaveCount(8)
   await expect(detail).toContainText('初始化容器 init-6：正常完成')
@@ -363,18 +372,27 @@ test('init and app states, overflow details, keyboard, QoS sorting and older API
   await expect(rows(page).first().getByText('—', { exact: true })).toHaveCount(1)
   verifyBrowserEvidence(evidence)
 })
-async function anchor(page: Page) {
-  return holder(page).evaluate((body) => {
-    const top = body.getBoundingClientRect().top
-    const row = Array.from(body.querySelectorAll<HTMLElement>('[data-row-key]')).find(
-      (item) => item.getBoundingClientRect().bottom > top + 1,
-    )!
-    return {
-      key: row.dataset.rowKey!,
-      offset: row.getBoundingClientRect().top - top,
-      top: body.scrollTop,
-    }
-  })
+async function anchor(page: Page): Promise<{ key: string; offset: number; top: number }> {
+  let snapshot: { key: string; offset: number; top: number } | null = null
+  await expect
+    .poll(async () => {
+      snapshot = await holder(page).evaluate((body) => {
+        const top = body.getBoundingClientRect().top
+        const row = Array.from(body.querySelectorAll<HTMLElement>('[data-row-key]')).find(
+          (item) => item.getBoundingClientRect().bottom > top + 1,
+        )
+        return row
+          ? {
+              key: row.dataset.rowKey!,
+              offset: row.getBoundingClientRect().top - top,
+              top: body.scrollTop,
+            }
+          : null
+      })
+      return snapshot !== null
+    })
+    .toBe(true)
+  return snapshot!
 }
 
 test('continuous virtual rows, full-result search/sort, selection and keyboard', async ({
@@ -518,17 +536,17 @@ for (const theme of ['light', 'dark']) {
     context,
     page,
   }) => {
-    const { state, evidence } = await setup(context, page, true)
+    const { state, evidence } = await setup(context, page, true, false, null)
     state.pods = makePods(2).map((pod) => ({
       ...pod,
-      namespace: 'envoy-gateway-system',
+      namespace: 'envoy-gateway-system-with-a-long-resource-namespace',
       nodeName: 'worker-with-a-long-dns-name.example.internal',
     }))
     await page.getByRole('button', { name: '刷新', exact: true }).click()
     await expect(rows(page)).toHaveCount(2)
     if (theme === 'dark') await page.getByLabel('切换到深色模式').click()
     const tag = rows(page).first().locator('.soha-pod-table-namespace-tag')
-    await expect(tag).toHaveText('envoy-gateway-system')
+    await expect(tag).toHaveText('envoy-gateway-system-with-a-long-resource-namespace')
     await expect
       .poll(() =>
         tag.locator('.soha-pod-table-namespace-label').evaluate((element) => ({
@@ -550,7 +568,10 @@ for (const theme of ['light', 'dark']) {
       })
     await tag.hover()
     await expect(
-      page.getByRole('tooltip', { name: 'envoy-gateway-system', exact: true }),
+      page.getByRole('tooltip', {
+        name: 'envoy-gateway-system-with-a-long-resource-namespace',
+        exact: true,
+      }),
     ).toBeVisible()
     const node = rows(page)
       .first()
@@ -561,13 +582,13 @@ for (const theme of ['light', 'dark']) {
     )
     await node.focus()
     await expect(node).toBeFocused()
-    await node.press('Tab')
+    await node.press('Shift+Tab')
     await expect(
       rows(page)
         .first()
-        .getByRole('button', { name: /^容器状态：/ }),
+        .getByRole('button', { name: /^pod-0000 · 内存 ·/ }),
     ).toBeFocused()
-    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Tab')
     await expect(node).toBeFocused()
     await expect(node.locator('.soha-pod-table-node-text')).toHaveText(
       'worker-with-a-long-dns-name.example.internal',
@@ -614,9 +635,7 @@ test('click-only Pods action menu supports keyboard, cancellation and failed del
   await menu.press('Shift+Tab')
   await expect(menu).toBeHidden()
   await expect(
-    rows(page)
-      .first()
-      .getByRole('button', { name: /^pod-0000 · 内存 ·/ }),
+    rows(page).first().getByRole('link', { name: 'worker-0', exact: true }),
   ).toBeFocused()
   await more.press('ArrowDown')
   await expect(menu).toBeVisible()
@@ -639,7 +658,7 @@ test('click-only Pods action menu supports keyboard, cancellation and failed del
 })
 
 for (const theme of ['light', 'dark']) {
-  test(`fixed 80px rails and adaptive value columns (${theme})`, async ({ context, page }) => {
+  test(`bar values remain inside adaptive 20px tracks (${theme})`, async ({ context, page }) => {
     const { state, evidence } = await setup(context, page)
     const values = ['2m', '223m', '1000m', '12345m', '123456.78m', '123456789m']
     state.pods = state.pods.slice(0, values.length).map((pod, index) => ({
@@ -679,10 +698,10 @@ for (const theme of ['light', 'dark']) {
           return {
             width: rail.width,
             fits:
-              rail.width === 80 &&
-              rail.height === 4 &&
-              value.left >= rail.right + 7.9 &&
-              value.right <= button.right + 0.1 &&
+              rail.width >= value.width + 15.9 &&
+              rail.height === 20 &&
+              value.left >= rail.left + 7.9 &&
+              value.right <= rail.right - 7.9 &&
               value.top >= button.top &&
               value.bottom <= button.bottom &&
               button.left >= cell.left &&
@@ -692,9 +711,9 @@ for (const theme of ['light', 'dark']) {
       )
       expect(
         geometry.every((item) => item.fits),
-        `80px rails and full values fit at ${width}`,
+        `full values fit inside 20px bars at ${width}`,
       ).toBe(true)
-      expect(new Set(geometry.map((item) => item.width))).toEqual(new Set([80]))
+      expect(new Set(geometry.map((item) => item.width)).size).toBeLessThanOrEqual(2)
     }
     await page.setViewportSize({ width: 1440, height: 900 })
     const columnWidth = async () =>
@@ -816,5 +835,57 @@ test('maximized session dock fills logs and terminal and keeps resize continuity
     .toBeLessThan(1511)
   await expect.poll(() => state.terminalRows.at(-1) ?? maximizedRows).toBeLessThan(maximizedRows)
   expect(state.terminalTickets).toBe(1)
+  verifyBrowserEvidence(evidence)
+})
+
+test('adaptive column layout supports pointer, keyboard, menu, persistence and reset', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await setup(context, page)
+  await expect(page.getByRole('columnheader', { name: '命名空间', exact: true })).toHaveCount(0)
+  const nameHeader = page.getByRole('columnheader', { name: 'Pod', exact: true })
+  const width = () => nameHeader.evaluate((node) => node.getBoundingClientRect().width)
+  const handle = page.getByRole('separator', { name: '调整Pod列宽', exact: true })
+  const initial = await width()
+  const reads = state.reads
+  await handle.focus()
+  await handle.press('ArrowRight')
+  expect(await width()).toBe(initial + 8)
+  await expect(nameHeader).toHaveAttribute('aria-sort', 'ascending')
+  const box = (await handle.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + box.width / 2 + 48, box.y + box.height / 2, { steps: 5 })
+  await page.mouse.up()
+  const dragged = await width()
+  expect(dragged).toBe(initial + 56)
+  expect(state.reads).toBe(reads)
+  expect(
+    await rows(page)
+      .first()
+      .locator('.soha-pod-table-name-cell')
+      .evaluate((node) => node.closest('.ant-table-cell')!.getBoundingClientRect().width),
+  ).toBe(dragged)
+  await page.reload()
+  await expect(nameHeader).toBeVisible()
+  await expect.poll(width).toBe(dragged)
+  await page.getByRole('button', { name: '列设置', exact: true }).click()
+  await page.getByRole('checkbox', { name: '命名空间', exact: true }).check()
+  await expect(page.getByRole('columnheader', { name: '命名空间', exact: true })).toBeVisible()
+  await page.getByRole('combobox', { name: '调整列宽的列', exact: true }).click()
+  await page.getByText('IP', { exact: true }).last().click()
+  await page.getByRole('spinbutton', { name: '列宽像素', exact: true }).fill('144')
+  await page.getByRole('spinbutton', { name: '列宽像素', exact: true }).press('Tab')
+  await expect
+    .poll(() =>
+      page
+        .getByRole('columnheader', { name: 'IP', exact: true })
+        .evaluate((node) => node.getBoundingClientRect().width),
+    )
+    .toBe(144)
+  await page.getByRole('button', { name: '恢复默认', exact: true }).click()
+  await expect(page.getByRole('columnheader', { name: '命名空间', exact: true })).toHaveCount(0)
+  await expect.poll(width).toBeLessThan(dragged)
   verifyBrowserEvidence(evidence)
 })

@@ -95,8 +95,11 @@ export function PodContainersCell({
         ) : (
           <span className="soha-pod-container-square is-unknown" aria-hidden />
         )}
-        {(statuses?.length ?? 0) > 6 ? <span>+{statuses!.length - 6}</span> : null}
-        <span className="soha-pod-container-ready">{readyContainers || '—'}</span>
+        {(statuses?.length ?? 0) > 6 ? (
+          <span className="soha-pod-container-overflow" aria-hidden>
+            …
+          </span>
+        ) : null}
       </button>
     </Popover>
   )
