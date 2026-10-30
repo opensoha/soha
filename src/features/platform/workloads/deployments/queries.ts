@@ -42,10 +42,10 @@ export const deploymentQueries = {
       queryFn: () => getDeploymentDetail(target(scope, name)),
       enabled: hasDeploymentReference(scope, name),
     }),
-  metrics: (scope: ScopeKey, name: string) =>
+  metrics: (scope: ScopeKey, name: string, rangeMinutes?: number) =>
     queryOptions<ResourceMetrics>({
-      queryKey: workloadKeys.metrics('deployments', scope, name),
-      queryFn: () => getDeploymentMetrics(target(scope, name)),
+      queryKey: workloadKeys.metrics('deployments', scope, name, rangeMinutes),
+      queryFn: () => getDeploymentMetrics(target(scope, name), rangeMinutes),
       enabled: hasDeploymentReference(scope, name),
     }),
   rolloutStatus: (scope: ScopeKey, name: string) =>

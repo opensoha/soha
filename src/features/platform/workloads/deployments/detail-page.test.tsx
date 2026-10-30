@@ -12,6 +12,18 @@ import { DeploymentDetailPage } from './detail-page'
 const testState = vi.hoisted(() => ({
   history: [] as RolloutHistory[],
   historyError: false,
+  permissions: [
+    'platform.deployment.view',
+    'platform.deployment.scale',
+    'platform.deployment.restart',
+    'platform.deployment.rollback',
+    'platform.deployment.delete',
+    'platform.pods.view',
+    'platform.nodes.view',
+    'delivery.applications.view',
+    'delivery.workflows.view',
+    'delivery.releases.view',
+  ],
   scope: {
     clusterId: 'cluster-a' as string | null,
     namespace: 'monitoring' as string | null,
@@ -26,13 +38,20 @@ const apiGetMock = vi.hoisted(() =>
       return {
         data: {
           name: 'prometheus',
-          namespace: 'monitoring',
+          namespace: 'url-namespace',
           createdAt: '2026-01-01T00:00:00Z',
+          desiredReplicas: 1,
+          readyReplicas: 1,
+          updatedReplicas: 1,
+          availableReplicas: 1,
+          observedGeneration: 1,
+          strategy: 'RollingUpdate',
+          allowedActions: ['scale', 'restart', 'rollback', 'delete'],
           selector: { app: 'prometheus' },
           pods: [
             {
               name: 'prometheus-0',
-              namespace: 'monitoring',
+              namespace: 'url-namespace',
               phase: 'Running',
               podIp: '10.20.0.1',
               nodeName: 'worker-a',
@@ -45,7 +64,7 @@ const apiGetMock = vi.hoisted(() =>
             {
               kind: 'Service',
               name: 'prometheus',
-              namespace: 'monitoring',
+              namespace: 'url-namespace',
               relation: 'selected-by-service',
             },
           ],
@@ -101,12 +120,26 @@ vi.mock('@/i18n', async (importOriginal) => ({
   }),
 }))
 
+vi.mock('@/features/auth', async (original) => ({
+  ...(await original<typeof import('@/features/auth')>()),
+  usePermissionSnapshot: () => ({
+    data: { data: { permissionKeys: testState.permissions } },
+    isLoading: false,
+  }),
+}))
+
+vi.mock('@/features/platform/shared/resource-gitops-status', () => ({
+  ResourceGitOpsStatus: () => null,
+}))
+
 vi.mock('@/features/copilot', () => ({ useAIPageContext: vi.fn() }))
 
 vi.mock('@/features/platform/cluster-capabilities', () => ({
   capabilityActionTooltip: (label: string) => label,
   useClusterCapability: () => ({ disabled: false, reason: '', status: 'available' }),
 }))
+
+vi.mock('@visactor/react-vchart', () => ({ LineChart: () => <div data-testid="chart" /> }))
 
 vi.mock('@/components/resource-events-timeline', () => ({
   ResourceEventsTimeline: () => <div data-testid="events-panel">events-panel</div>,
@@ -121,6 +154,7 @@ vi.mock('@/components/k8s-yaml-editor', () => ({
 }))
 
 vi.mock('@/components/status-tag', () => ({
+  BooleanTag: ({ value }: { value: boolean }) => <span>{String(value)}</span>,
   StatusTag: ({ value }: { value?: string }) => <span>{value}</span>,
   MetadataTag: ({ label }: { label: string }) => <span>{label}</span>,
 }))
@@ -148,6 +182,8 @@ beforeAll(() => {
     })),
   })
 
+  const computedStyle = window.getComputedStyle.bind(window)
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => computedStyle(element))
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   vi.stubGlobal('ResizeObserver', ResizeObserverMock)
 })
@@ -156,6 +192,18 @@ beforeEach(() => {
   vi.clearAllMocks()
   testState.scope.clusterId = 'cluster-a'
   testState.scope.namespace = 'monitoring'
+  testState.permissions = [
+    'platform.deployment.view',
+    'platform.deployment.scale',
+    'platform.deployment.restart',
+    'platform.deployment.rollback',
+    'platform.deployment.delete',
+    'platform.pods.view',
+    'platform.nodes.view',
+    'delivery.applications.view',
+    'delivery.workflows.view',
+    'delivery.releases.view',
+  ]
   testState.history = []
   testState.historyError = false
   testState.scope.setClusterId.mockImplementation((value: string) => {
@@ -175,6 +223,7 @@ afterEach(async () => {
 
 async function flushAsyncWork() {
   await act(async () => {
+    await vi.dynamicImportSettled()
     await Promise.resolve()
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
@@ -190,7 +239,9 @@ function LocationProbe() {
   )
 }
 
-async function renderDetail() {
+async function renderDetail(
+  entry = '/workloads/deployments/prometheus?clusterId=url-cluster&namespace=url-namespace',
+) {
   const container = document.createElement('div')
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -203,11 +254,7 @@ async function renderDetail() {
     root.render(
       <QueryClientProvider client={queryClient}>
         <AntdApp>
-          <MemoryRouter
-            initialEntries={[
-              '/workloads/deployments/prometheus?clusterId=url-cluster&namespace=url-namespace',
-            ]}
-          >
+          <MemoryRouter initialEntries={[entry]}>
             <Routes>
               <Route
                 path="/workloads/deployments/:deploymentName"
@@ -234,57 +281,53 @@ function clickTab(container: HTMLElement, label: string) {
 }
 
 describe('deployment detail page boundaries', () => {
-  it('keeps mutation actions out of the read-only detail tabs', async () => {
+  it('shows the eight tabs and only the approved four header actions', async () => {
     const container = await renderDetail()
-
-    expect(container.querySelector('.soha-workload-detail-heading')).toBeNull()
-    const tabsNav = container.querySelector('.soha-workload-detail-tabs > .ant-tabs-nav')
-    expect(tabsNav?.textContent).not.toContain('重启')
-    expect(tabsNav?.textContent).not.toContain('扩缩容')
+    expect(container.querySelector('h1')?.textContent).toBe('prometheus')
+    expect(
+      Array.from(container.querySelectorAll('[role="tab"]')).map((tab) => tab.textContent),
+    ).toEqual(['Overview', 'Pods', '版本历史', '事件', '指标', '关联资源', '交付联动', 'YAML'])
+    const actions = container.querySelector('.soha-deployment-actions')!
+    expect(actions.textContent).toContain('扩缩容')
+    expect(actions.querySelector('[aria-label="重启"]')).not.toBeNull()
+    expect(actions.querySelector('[aria-label="删除"]')).not.toBeNull()
+    expect(actions.textContent).not.toContain('YAML')
+    expect(actions.textContent).not.toContain('回滚')
   })
 
-  it('deduplicates detail data and loads tab data only when activated', async () => {
+  it('loads tab data only when activated and preserves URL scope', async () => {
     const container = await renderDetail()
-    const requestedPaths = () => apiGetMock.mock.calls.map(([path]) => String(path))
-
-    expect(requestedPaths().filter((path) => path.includes('/detail?'))).toEqual([
+    const paths = () => apiGetMock.mock.calls.map(([path]) => String(path))
+    expect(paths().filter((path) => path.includes('/detail?'))).toEqual([
       '/clusters/url-cluster/workloads/deployments/prometheus/detail?namespace=url-namespace',
     ])
-    expect(testState.scope.setClusterId).toHaveBeenCalledWith('url-cluster')
-    expect(testState.scope.setNamespace).toHaveBeenCalledWith('url-namespace')
-    expect(requestedPaths().some((path) => path.includes('/metrics?'))).toBe(false)
-    expect(requestedPaths().some((path) => path.includes('/events?'))).toBe(false)
-    expect(requestedPaths().some((path) => path.includes('/yaml?'))).toBe(false)
-    expect(requestedPaths().some((path) => path.includes('/workloads/pods?'))).toBe(false)
+    expect(paths().some((path) => /\/(metrics|events|yaml)\?/.test(path))).toBe(false)
+    expect(
+      paths().some((path) =>
+        /^\/(applications|application-environments|builds|workflows|releases)(\?|$)/.test(path),
+      ),
+    ).toBe(false)
+    expect(paths().some((path) => path.includes('/workloads/pods?'))).toBe(false)
     expect(container.textContent).toContain('prometheus-0')
-    expect(container.textContent).toContain('Service 选择器命中')
-
     await act(async () => clickTab(container, '指标'))
     await flushAsyncWork()
-    expect(requestedPaths().some((path) => path.includes('/metrics?namespace=url-namespace'))).toBe(
-      true,
-    )
-    expect(container.querySelector('[data-testid="metrics-panel"]')).not.toBeNull()
-
+    expect(
+      paths().some((path) => path.includes('/metrics?namespace=url-namespace&rangeMinutes=60')),
+    ).toBe(true)
+    expect(container.querySelectorAll('.soha-pod-detail-metric-card')).toHaveLength(4)
     await act(async () => clickTab(container, '事件'))
     await flushAsyncWork()
-    expect(requestedPaths().some((path) => path.includes('/events?namespace=url-namespace'))).toBe(
-      true,
-    )
-    expect(container.querySelector('[data-testid="events-panel"]')).not.toBeNull()
-
+    expect(paths().some((path) => path.includes('/events?namespace=url-namespace'))).toBe(true)
+    expect(container.textContent).toContain('没有匹配的 Deployment 事件')
     await act(async () => clickTab(container, 'YAML'))
     await flushAsyncWork()
-    expect(requestedPaths().some((path) => path.includes('/yaml?namespace=url-namespace'))).toBe(
-      true,
-    )
     expect(container.querySelector('[data-testid="yaml-editor"]')).not.toBeNull()
   })
 
-  it('paginates revisions numerically with the current marker and expandable images', async () => {
+  it('shows every revision numerically and filters across the complete set', async () => {
     testState.history = [9, 10, 2, 8, 11, 1, 12].map((revision) => ({
       name: `prometheus-rs-${revision}`,
-      namespace: 'monitoring',
+      namespace: 'url-namespace',
       revision: String(revision),
       replicas: revision === 12 ? 1 : 0,
       readyReplicas: revision === 12 ? 1 : 0,
@@ -292,76 +335,77 @@ describe('deployment detail page boundaries', () => {
       createdAt: '2026-01-01T00:00:00Z',
     }))
     const container = await renderDetail()
-    const section = container.querySelector<HTMLElement>('.soha-rollout-history-section')!
-    const visibleRevisions = () =>
+    await act(async () => clickTab(container, '版本历史'))
+    await flushAsyncWork()
+    const section = container.querySelector('.soha-deployment-history')!
+    expect(
       Array.from(section.querySelectorAll('.soha-rollout-history-revision')).map(
-        (item) => item.textContent,
-      )
-    expect(visibleRevisions()).toEqual(['版本 12', '版本 11', '版本 10'])
-    expect(section.textContent).toContain('共 7 个版本')
-    expect(section.querySelectorAll('[role="listitem"]')).toHaveLength(3)
-    expect(section.querySelector('[role="listitem"]')?.textContent).toContain('当前版本')
+        (el) => el.textContent,
+      ),
+    ).toEqual(['版本 12', '版本 11', '版本 10', '版本 9', '版本 8', '版本 2', '版本 1'])
+    expect(section.querySelectorAll('[role="listitem"]')).toHaveLength(7)
+    expect(section.querySelector('.ant-pagination')).toBeNull()
+    expect(section.querySelector('[role="listitem"]')?.textContent).toContain('当前模板')
     const images = section.querySelector('details')!
-    expect(images.open).toBe(false)
     await act(async () => images.querySelector('summary')!.click())
     expect(images.open).toBe(true)
     expect(images.querySelectorAll('li')).toHaveLength(2)
-    expect(images.textContent).toContain('registry.example/sidecar:v1')
-
-    const next = () =>
-      section.querySelector<HTMLButtonElement>('.ant-pagination-next button')!.click()
-    await act(async () => next())
-    expect(visibleRevisions()).toEqual(['版本 9', '版本 8', '版本 2'])
-    expect(section.textContent).not.toContain('当前版本')
-    await act(async () => next())
-    expect(visibleRevisions()).toEqual(['版本 1'])
-    expect(section.querySelector('.ant-pagination-next')?.getAttribute('aria-disabled')).toBe(
-      'true',
-    )
-    await act(async () =>
-      section.querySelector<HTMLButtonElement>('.ant-pagination-prev button')!.click(),
-    )
-    expect(visibleRevisions()).toEqual(['版本 9', '版本 8', '版本 2'])
     expect(apiGetMock.mock.calls.filter(([path]) => path.includes('/rollouts?'))).toHaveLength(1)
-    expect(testState.history.map((item) => item.revision)).toEqual([
-      '9',
-      '10',
-      '2',
-      '8',
-      '11',
-      '1',
-      '12',
-    ])
   })
 
-  it('distinguishes empty history from a failed history request', async () => {
+  it('distinguishes failed history from an empty revision list', async () => {
     testState.historyError = true
     const container = await renderDetail()
-    expect(container.textContent).toContain('版本历史加载失败')
-    expect(container.textContent).not.toContain('暂无滚动历史')
-    expect(container.querySelector('.soha-rollout-history-pagination')).toBeNull()
+    await act(async () => clickTab(container, '版本历史'))
+    await flushAsyncWork()
+    expect(container.textContent).toContain('History unavailable')
+    expect(container.textContent).not.toContain('暂无版本历史')
   })
 
-  it('keeps Pod facts together and preserves the detail cluster and namespace when navigating', async () => {
+  it('does not expose write actions or request Delivery data for a K8s-only reader', async () => {
+    testState.permissions = ['platform.deployment.view', 'platform.pods.view']
     const container = await renderDetail()
-    const row = container.querySelector('.soha-related-pod-cards [role="listitem"]')!
-    expect(row.textContent).toContain('Running')
-    const facts = Object.fromEntries(
-      Array.from(row.querySelectorAll('dl > div')).map((item) => [
-        item.querySelector('dt')?.textContent,
-        item.querySelector('dd')?.textContent,
-      ]),
+    expect(container.querySelector('.soha-deployment-actions')?.textContent).not.toContain('扩缩容')
+    expect(container.querySelector('.soha-deployment-actions [aria-label="删除"]')).toBeNull()
+    await act(async () => clickTab(container, '交付联动'))
+    await flushAsyncWork()
+    expect(
+      apiGetMock.mock.calls.some(([path]) =>
+        /^\/(applications|application-environments|builds|workflows|releases)(\?|$)/.test(
+          String(path),
+        ),
+      ),
+    ).toBe(false)
+  })
+
+  it('keeps every Pod in a non-paginated table and links to its exact detail scope', async () => {
+    const container = await renderDetail()
+    await act(async () => clickTab(container, 'Pods'))
+    await flushAsyncWork()
+    const panel = container.querySelector('.soha-deployment-pods')!
+    expect(panel.textContent).toContain('worker-a')
+    expect(panel.querySelector('.ant-pagination')).toBeNull()
+    const link = panel.querySelector<HTMLAnchorElement>('a[title="prometheus-0"]')!
+    expect(link.getAttribute('href')).toBe(
+      '/workloads/pods/prometheus-0?clusterId=url-cluster&namespace=url-namespace',
     )
-    expect(facts).toMatchObject({
-      命名空间: 'monitoring',
-      节点: 'worker-a',
-      'Pod IP': '10.20.0.1',
-      就绪: '1/1',
-      重启: '0',
-    })
-    await act(async () => row.querySelector<HTMLButtonElement>('.soha-related-pod-link')!.click())
+    await act(async () => link.click())
     expect(container.querySelector('[data-testid="destination"]')?.textContent).toBe(
       '/workloads/pods/prometheus-0?clusterId=url-cluster&namespace=url-namespace',
     )
+  })
+  it('renders an explicit scope prompt without requesting an unscoped resource', async () => {
+    testState.scope.clusterId = null
+    testState.scope.namespace = null
+    const container = await renderDetail('/workloads/deployments/prometheus')
+    expect(container.textContent).toContain('请选择集群和命名空间')
+    expect(apiGetMock.mock.calls.some(([path]) => String(path).includes('/detail?'))).toBe(false)
+  })
+  it('renders denied permission without reading or leaking a Deployment', async () => {
+    testState.permissions = []
+    const container = await renderDetail()
+    expect(container.textContent).toContain('无权查看 Deployment')
+    expect(container.querySelector('h1')).toBeNull()
+    expect(apiGetMock.mock.calls.some(([path]) => String(path).includes('/detail?'))).toBe(false)
   })
 })

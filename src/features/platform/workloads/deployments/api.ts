@@ -52,8 +52,11 @@ export function getDeploymentDetail(target: DeploymentTarget): Promise<Deploymen
   return getWorkloadDetail<DeploymentDetail>(deploymentKind, target.scope, target.name)
 }
 
-export function getDeploymentMetrics(target: DeploymentTarget): Promise<ResourceMetrics> {
-  return getWorkloadMetrics(deploymentKind, target.scope, target.name)
+export function getDeploymentMetrics(
+  target: DeploymentTarget,
+  rangeMinutes?: number,
+): Promise<ResourceMetrics> {
+  return getWorkloadMetrics(deploymentKind, target.scope, target.name, rangeMinutes)
 }
 
 export async function getDeploymentRolloutStatus(

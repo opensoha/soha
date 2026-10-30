@@ -80,6 +80,7 @@ export function WorkloadDetailShell({
   header,
   hideMetadataOverview = false,
   hideRelationshipsTab = false,
+  detailRefetchOnMount = true,
 }: {
   title: string
   resource: WorkloadKind
@@ -92,6 +93,7 @@ export function WorkloadDetailShell({
   header?: ReactNode
   hideMetadataOverview?: boolean
   hideRelationshipsTab?: boolean
+  detailRefetchOnMount?: boolean
 }) {
   const { t, localeCode } = useI18n()
   const { message } = App.useApp()
@@ -102,7 +104,10 @@ export function WorkloadDetailShell({
   const resolvedActiveTabKey = activeTabKey ?? internalActiveTabKey
 
   const detailScope = { clusterId, namespace: detailNamespace }
-  const detailQuery = useQuery(workloadQueries.detail<WorkloadMeta>(resource, detailScope, name))
+  const detailQuery = useQuery({
+    ...workloadQueries.detail<WorkloadMeta>(resource, detailScope, name),
+    refetchOnMount: detailRefetchOnMount,
+  })
   const visibleDetailQueryData = readableQueryData(detailQuery)
   const yamlQueryOptions = workloadQueries.yaml(resource, detailScope, name)
   const yamlQuery = useQuery({

@@ -1,0 +1,375 @@
+.soha-deployment-detail {
+  min-width: 0;
+}
+.soha-deployment-detail .soha-workload-detail-page {
+  padding: 0;
+  gap: 0;
+}
+.soha-deployment-header {
+  padding: 20px 22px 16px;
+  background: var(--soha-bg-surface);
+  border-bottom: 1px solid var(--soha-border-color);
+}
+.soha-deployment-title-row,
+.soha-deployment-title,
+.soha-deployment-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.soha-deployment-title-row {
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.soha-deployment-title {
+  min-width: 0;
+}
+.soha-deployment-title h1 {
+  margin: 0;
+  font-size: 21px;
+  line-height: 30px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.soha-deployment-actions {
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  max-width: 100%;
+}
+.soha-deployment-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: 12px;
+}
+.soha-deployment-detail .soha-workload-detail-tabs > .ant-tabs-nav {
+  padding-inline: 22px;
+  margin: 0;
+  background: var(--soha-bg-surface);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.soha-deployment-detail
+  .soha-workload-detail-tabs
+  > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
+  padding: 20px 22px;
+  min-width: 0;
+}
+.soha-deployment-detail .soha-detail-stack {
+  gap: 16px;
+}
+.soha-deployment-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 20px;
+  align-items: start;
+}
+.soha-deployment-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.soha-deployment-detail .soha-detail-card > .ant-card-head {
+  min-height: 46px;
+  padding-inline: 18px;
+}
+.soha-deployment-detail .soha-detail-card > .ant-card-body {
+  padding: 18px;
+}
+.soha-deployment-replica-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+}
+.soha-deployment-replica-facts > div {
+  min-width: 0;
+}
+.soha-deployment-replica-facts span {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+.soha-deployment-replica-facts strong {
+  display: block;
+  font-size: 28px;
+  line-height: 40px;
+  font-variant-numeric: tabular-nums;
+}
+.soha-deployment-replica-facts small {
+  font-size: 12px;
+  color: var(--soha-text-secondary);
+  font-weight: 400;
+}
+.soha-deployment-fact-track {
+  height: 4px;
+  background: var(--soha-fill-weak);
+  margin-top: 12px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.soha-deployment-fact-track i {
+  display: block;
+  height: 100%;
+}
+.soha-deployment-facts-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  border-top: 1px solid var(--soha-border-color);
+  margin-top: 18px;
+  padding-top: 10px;
+  font-size: 12px;
+}
+.soha-deployment-facts-footer .ant-btn {
+  margin-left: auto;
+  padding-inline: 0;
+}
+.soha-deployment-template {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-wrap: anywhere;
+}
+.soha-deployment-template + .soha-deployment-template {
+  margin-top: 16px;
+}
+.soha-deployment-template .ant-typography {
+  font-size: 12px;
+}
+.soha-deployment-config,
+.soha-deployment-metadata {
+  margin: 0;
+}
+.soha-deployment-config > div {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+  font-size: 12px;
+}
+.soha-deployment-config > div:last-child {
+  margin-bottom: 0;
+}
+.soha-deployment-config dt,
+.soha-deployment-metadata dt {
+  color: var(--soha-text-secondary);
+}
+.soha-deployment-config dd,
+.soha-deployment-metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.soha-deployment-metadata > div {
+  display: grid;
+  grid-template-columns: minmax(160px, 0.6fr) 1fr;
+  gap: 16px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--soha-border-color);
+  overflow-wrap: anywhere;
+}
+.soha-deployment-detail details summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.soha-deployment-detail details summary > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 18px;
+}
+.soha-deployment-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.soha-deployment-toolbar > .ant-input-affix-wrapper {
+  width: 280px;
+  max-width: 100%;
+}
+.soha-deployment-toolbar > label {
+  margin-left: auto;
+  font-size: 12px;
+}
+.soha-deployment-warning {
+  color: var(--soha-warning);
+}
+.soha-deployment-history-list {
+  max-height: 640px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+.soha-deployment-history-list:focus-visible {
+  outline: 2px solid var(--soha-primary);
+  outline-offset: 2px;
+}
+.soha-deployment-history-row {
+  padding: 18px 4px;
+  border-bottom: 1px solid var(--soha-border-color);
+  overflow-wrap: anywhere;
+}
+.soha-deployment-history-row > div {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.soha-deployment-history-row > div > .ant-btn {
+  margin-left: auto;
+}
+.soha-deployment-history-row p {
+  margin-block: 12px;
+  font-size: 12px;
+  color: var(--soha-text-secondary);
+}
+.soha-deployment-relation-board {
+  min-height: 420px;
+  background: var(--soha-bg-layout);
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  padding: 30px 24px;
+  text-align: center;
+}
+.soha-deployment-relation-node {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  background: var(--soha-bg-surface);
+  color: var(--soha-text-primary);
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  min-width: 170px;
+  max-width: 260px;
+  padding: 15px 18px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+.soha-deployment-relation-node > span {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+.soha-deployment-relation-node strong {
+  font-size: 13px;
+}
+.soha-deployment-relation-node.is-root {
+  border-color: var(--soha-primary);
+}
+.soha-deployment-relation-node:focus-visible,
+.soha-deployment-relation-node:hover {
+  border-color: var(--soha-primary);
+  outline: 2px solid color-mix(in srgb, var(--soha-primary) 16%, transparent);
+}
+.soha-deployment-connector {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  align-items: center;
+  margin: 16px 0;
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+.soha-deployment-relation-branches,
+.soha-deployment-relation-group {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+.soha-deployment-relation-branches > section {
+  flex: 1;
+  min-width: 210px;
+}
+.soha-deployment-relation-group {
+  gap: 12px;
+}
+.soha-deployment-relation-branches > section > .ant-typography {
+  display: block;
+}
+.soha-deployment-selected {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+}
+.soha-deployment-delivery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.soha-deployment-delivery-grid article {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius-control);
+  overflow-wrap: anywhere;
+}
+.soha-deployment-delivery-grid article > span:first-child {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+@media (max-width: 1279px) {
+  .soha-deployment-overview {
+    grid-template-columns: 1fr;
+  }
+  .soha-deployment-overview > aside {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .soha-deployment-overview > aside > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 1050px) {
+  .soha-deployment-actions {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+}
+@media (max-width: 760px) {
+  .soha-deployment-header {
+    padding: 16px 14px;
+  }
+  .soha-deployment-title h1 {
+    font-size: 18px;
+  }
+  .soha-deployment-detail .soha-workload-detail-tabs > .ant-tabs-nav {
+    padding-inline: 14px;
+  }
+  .soha-deployment-detail
+    .soha-workload-detail-tabs
+    > :is(.ant-tabs-content-holder, .ant-tabs-body-holder) {
+    padding: 14px;
+  }
+  .soha-deployment-overview > aside,
+  .soha-deployment-delivery-grid {
+    display: flex;
+    flex-direction: column;
+  }
+  .soha-deployment-replica-facts {
+    gap: 10px;
+  }
+  .soha-deployment-replica-facts strong {
+    font-size: 24px;
+  }
+  .soha-deployment-metadata > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .soha-deployment-relation-board {
+    padding: 20px 12px;
+  }
+}

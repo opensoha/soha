@@ -1,461 +1,419 @@
 import { ManagementState } from '@/components/management-list'
-import { ReadFeedback } from '@/components/request-feedback'
-import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
-import { MetadataTag, StatusTag } from '@/components/status-tag'
+import { ReadFeedback, useInlineApiError } from '@/components/request-feedback'
+import { StatusTag } from '@/components/status-tag'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
-import { deliveryQueries, type ApplicationEnvironment } from '@/features/delivery'
-import {
-  conditionToTimelineEvent,
-  targetMatchesDeployment,
-} from '@/features/platform/workloads-model'
-import '@/features/platform/workloads/styles.css'
+import { resourceInsightQueries } from '@/features/platform/shared/resource-insights/queries'
 import { useI18n } from '@/i18n'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatDateTime } from '@/utils/time'
-import { useQuery } from '@tanstack/react-query'
-import type { TabsProps } from 'antd'
-import { Card, Pagination, Spin, Tag, Typography } from 'antd'
+import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Button, Spin, Typography } from 'antd'
 import { lazy, Suspense, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkloadDetailScope } from '../shared/detail-scope'
 import { WorkloadDetailShell } from '../shared/detail-shell'
-import { WorkloadPodsCard, WorkloadRelationsCard } from '../shared/workload-relations'
+import { WorkloadDetailEvents } from '../shared/detail-events'
+import { workloadKeys } from '../shared/keys'
 import { deploymentQueries } from './queries'
+import { podQueries } from '../pods/queries'
+import { buildDeploymentRelationships } from './deployment-detail-model'
+import { DeploymentDetailOverview, deploymentDetailState } from './deployment-detail-overview'
+import { DeploymentDetailPods } from './deployment-detail-pods'
+import { DeploymentDetailHistory } from './deployment-detail-history'
+import { useDeploymentDetailActions } from './use-deployment-detail-actions'
+import './deployment-detail.css'
 
-const { Text } = Typography
-
-const ResourceMetricsPanel = lazy(async () => {
-  const mod = await import('@/components/resource-metrics-panel')
-  return { default: mod.ResourceMetricsPanel }
-})
+const Metrics = lazy(async () => ({
+  default: (await import('../shared/detail-metrics')).WorkloadDetailMetrics,
+}))
+const Resources = lazy(async () => ({
+  default: (await import('./deployment-detail-resources')).DeploymentDetailResources,
+}))
+const Delivery = lazy(async () => ({
+  default: (await import('./deployment-detail-delivery')).DeploymentDetailDelivery,
+}))
+const tabs = [
+  'overview',
+  'pods',
+  'revisions',
+  'events',
+  'metrics',
+  'related-resources',
+  'delivery',
+  'yaml',
+]
 
 export function DeploymentDetailPage() {
   const { localeCode } = useI18n()
-  const params = useParams()
-  const deploymentName = params.deploymentName as string
-  const { clusterId, namespace: detailNamespace } = useWorkloadDetailScope()
-  const [activeTabKey, setActiveTabKey] = useState('overview')
-  const detailScope = { clusterId, namespace: detailNamespace }
-  const deploymentDetailQuery = useQuery(deploymentQueries.detail(detailScope, deploymentName))
-  const visibleDeploymentDetailQueryData = readableQueryData(deploymentDetailQuery)
-
-  const bindingsQuery = useQuery(deliveryQueries.environments.list())
-  const visibleBindingsQueryData = readableQueryData(bindingsQuery)
-  const applicationsQuery = useQuery(deliveryQueries.applications.list())
-  const visibleApplicationsQueryData = readableQueryData(applicationsQuery)
-  const buildsQuery = useQuery(deliveryQueries.builds.list())
-  const visibleBuildsQueryData = readableQueryData(buildsQuery)
-  const workflowsQuery = useQuery(deliveryQueries.workflows.list())
-  const visibleWorkflowsQueryData = readableQueryData(workflowsQuery)
-  const releasesQuery = useQuery(deliveryQueries.releases.list())
-  const visibleReleasesQueryData = readableQueryData(releasesQuery)
-  const metricsQueryOptions = deploymentQueries.metrics(detailScope, deploymentName)
-  const metricsQuery = useQuery({
-    ...metricsQueryOptions,
-    enabled: Boolean(metricsQueryOptions.enabled) && activeTabKey === 'metrics',
-  })
-  const visibleMetricsQueryData =
-    Boolean(metricsQueryOptions.enabled) && activeTabKey === 'metrics'
-      ? readableQueryData(metricsQuery)
-      : undefined
-  const rolloutStatusQuery = useQuery(deploymentQueries.rolloutStatus(detailScope, deploymentName))
-  const visibleRolloutStatusQueryData = readableQueryData(rolloutStatusQuery)
-  const rolloutHistoryQuery = useQuery(deploymentQueries.rollouts(detailScope, deploymentName))
-  const visibleRolloutHistoryQueryData = readableQueryData(rolloutHistoryQuery)
-  const deploymentEventsQueryOptions = deploymentQueries.events(detailScope, deploymentName)
-  const deploymentEventsQuery = useQuery({
-    ...deploymentEventsQueryOptions,
-    enabled: Boolean(deploymentEventsQueryOptions.enabled) && activeTabKey === 'events',
-  })
-  const visibleDeploymentEventsQueryData =
-    Boolean(deploymentEventsQueryOptions.enabled) && activeTabKey === 'events'
-      ? readableQueryData(deploymentEventsQuery)
-      : undefined
-  const matchedBindings = useMemo<ApplicationEnvironment[]>(() => {
-    if (!clusterId || !detailNamespace) return []
-    return (visibleBindingsQueryData ?? []).filter((binding) =>
-      (binding.targets ?? []).some((target) =>
-        targetMatchesDeployment(target, clusterId, detailNamespace, deploymentName),
-      ),
+  const zh = localeCode === 'zh_CN'
+  const { deploymentName = '' } = useParams()
+  const [params, setParams] = useSearchParams()
+  const { clusterId, namespace } = useWorkloadDetailScope()
+  const scope = useMemo(() => ({ clusterId, namespace }), [clusterId, namespace])
+  const permissions = usePermissionSnapshot()
+  const permissionData = readableQueryData(permissions)?.data
+  const canRead = hasPermission(permissionData, 'platform.deployment.view')
+  const requestedTab =
+    params.get('tab') === 'relationships' || params.get('tab') === 'resources'
+      ? 'related-resources'
+      : params.get('tab') || 'overview'
+  const active = tabs.includes(requestedTab) ? requestedTab : 'overview'
+  const requestedRange = Number(params.get('range') || 60)
+  const range = [15, 60, 360, 1440].includes(requestedRange) ? requestedRange : 60
+  const changeTab = (key: string) =>
+    setParams((previous) => {
+      const next = new URLSearchParams(previous)
+      next.set('tab', key)
+      return next
+    })
+  const changeRange = (value: number) =>
+    setParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        next.set('range', String(value))
+        return next
+      },
+      { replace: true },
     )
-  }, [visibleBindingsQueryData, clusterId, detailNamespace, deploymentName])
-
-  const applicationMap = useMemo(
-    () => Object.fromEntries((visibleApplicationsQueryData ?? []).map((item) => [item.id, item])),
-    [visibleApplicationsQueryData],
-  )
-  const latestBuildByApplication = useMemo(
+  const detailOptions = deploymentQueries.detail(scope, deploymentName)
+  const detailQuery = useQuery({
+    ...detailOptions,
+    enabled: Boolean(detailOptions.enabled && canRead),
+  })
+  const rawDetail = canRead ? readableQueryData(detailQuery) : undefined
+  const detail =
+    rawDetail?.name === deploymentName && rawDetail.namespace === namespace ? rawDetail : undefined
+  const canReadPods = canRead && hasPermission(permissionData, 'platform.pods.view')
+  const podListOptions = podQueries.list(scope)
+  const podListQuery = useQuery({
+    ...podListOptions,
+    enabled: Boolean(detail && canReadPods && active === 'pods' && podListOptions.enabled),
+  })
+  const podList = canReadPods && active === 'pods' ? readableQueryData(podListQuery) : undefined
+  const usageByPod = new Map((podList || []).map((pod) => [`${pod.namespace}/${pod.name}`, pod]))
+  const completePods = (detail?.pods || []).map((pod) => {
+    const sampled = usageByPod.get(`${pod.namespace}/${pod.name}`)
+    return sampled
+      ? {
+          ...pod,
+          cpu: sampled.cpu,
+          memory: sampled.memory,
+          requests: sampled.requests || pod.requests,
+          limits: sampled.limits || pod.limits,
+        }
+      : pod
+  })
+  const statusOptions = deploymentQueries.rolloutStatus(scope, deploymentName)
+  const statusQuery = useQuery({
+    ...statusOptions,
+    enabled: Boolean(statusOptions.enabled && canRead),
+  })
+  const status = canRead ? readableQueryData(statusQuery) : undefined
+  const historyOptions = deploymentQueries.rollouts(scope, deploymentName)
+  const historyQuery = useQuery({
+    ...historyOptions,
+    enabled: Boolean(historyOptions.enabled && canRead),
+  })
+  const history = canRead ? readableQueryData(historyQuery) : undefined
+  const graphOptions = resourceInsightQueries.graph(scope, 'Deployment', deploymentName)
+  const graphQuery = useQuery({
+    ...graphOptions,
+    enabled: Boolean(
+      graphOptions.enabled && canRead && ['overview', 'pods', 'related-resources'].includes(active),
+    ),
+  })
+  const graph = canRead ? readableQueryData(graphQuery) : undefined
+  const metricsOptions = deploymentQueries.metrics(scope, deploymentName, range)
+  const metricsQuery = useQuery({
+    ...metricsOptions,
+    enabled: Boolean(metricsOptions.enabled && canRead && active === 'metrics'),
+  })
+  const metrics = canRead && active === 'metrics' ? readableQueryData(metricsQuery) : undefined
+  const eventsOptions = deploymentQueries.events(scope, deploymentName)
+  const eventsQuery = useQuery({
+    ...eventsOptions,
+    enabled: Boolean(eventsOptions.enabled && canRead && active === 'events'),
+  })
+  const events = canRead && active === 'events' ? readableQueryData(eventsQuery) : undefined
+  useInlineApiError(active === 'metrics' ? metricsQuery.error : null)
+  useInlineApiError(active === 'events' ? eventsQuery.error : null)
+  useInlineApiError(active === 'revisions' ? historyQuery.error : null)
+  const model = useMemo(
     () =>
-      Object.fromEntries((visibleBuildsQueryData ?? []).map((item) => [item.applicationId, item])),
-    [visibleBuildsQueryData],
+      detail
+        ? buildDeploymentRelationships(detail, scope, history || [], status?.revision, graph)
+        : undefined,
+    [detail, scope, history, status?.revision, graph],
   )
-
-  const rolloutStatus = visibleRolloutStatusQueryData
-  const rolloutHistory = useMemo(
-    () =>
-      [...(visibleRolloutHistoryQueryData ?? [])].sort((a, b) =>
-        b.revision.localeCompare(a.revision, undefined, { numeric: true }),
-      ),
-    [visibleRolloutHistoryQueryData],
-  )
-  const historyScope = JSON.stringify([clusterId, detailNamespace, deploymentName])
-  const [historyPagination, setHistoryPagination] = useState({ scope: historyScope, page: 1 })
-  const historyPage = Math.min(
-    historyPagination.scope === historyScope ? historyPagination.page : 1,
-    Math.max(1, Math.ceil(rolloutHistory.length / 3)),
-  )
-  const deploymentPods = visibleDeploymentDetailQueryData?.pods ?? []
+  const actions = useDeploymentDetailActions(detail, scope, status?.revision)
+  const client = useQueryClient()
+  const [refreshToken, setRefreshToken] = useState(0)
+  const identity = JSON.stringify([clusterId, namespace, deploymentName])
   useAIPageContext({
     sourceWorkbench: 'platform',
     sourceTitle: `Deployment ${deploymentName}`,
     entityKind: 'kubernetes.deployment',
     entityName: deploymentName,
-    clusterId: clusterId ?? undefined,
-    namespace: detailNamespace ?? undefined,
+    clusterId: clusterId || undefined,
+    namespace: namespace || undefined,
     workload: deploymentName,
-    timeRangeMinutes: visibleMetricsQueryData?.rangeMinutes ?? 60,
+    timeRangeMinutes: metrics?.rangeMinutes || range,
     pinnedData: {
-      pods: deploymentPods.length,
-      rolloutStatus: rolloutStatus?.status,
-      desiredReplicas: rolloutStatus?.desiredReplicas,
+      pods: detail?.pods?.length,
+      rolloutStatus: status?.status,
+      desiredReplicas: detail?.desiredReplicas,
     },
-    promptHint:
-      localeCode === 'zh_CN'
-        ? `排查 Deployment ${deploymentName} 的副本、Pod、滚动发布、事件、日志和指标。`
-        : `Investigate replicas, Pods, rollouts, events, logs, and metrics for Deployment ${deploymentName}.`,
   })
-  const deploymentTimelineEvents = useMemo(
-    () =>
-      visibleDeploymentEventsQueryData?.length
-        ? visibleDeploymentEventsQueryData
-        : (rolloutStatus?.conditions ?? []).map(conditionToTimelineEvent),
-    [visibleDeploymentEventsQueryData, rolloutStatus],
-  )
-  const linkageOverview = (
-    <div className="soha-detail-stack">
-      <WorkloadPodsCard pods={deploymentPods} namespace={detailNamespace ?? ''} />
-      <WorkloadRelationsCard
-        resources={visibleDeploymentDetailQueryData?.relatedResources}
-        namespace={detailNamespace ?? ''}
+  const errorText = (error: unknown) =>
+    error instanceof Error ? error.message : error ? String(error) : undefined
+  if (permissions.isLoading) return <Spin />
+  if (permissions.isError && !permissionData)
+    return <ReadFeedback query={permissions} label={zh ? '权限' : 'Permissions'} />
+  if (!canRead)
+    return (
+      <ManagementState
+        compact
+        kind="no-permission"
+        title={zh ? '无权查看 Deployment' : 'No permission to view Deployment'}
       />
-      <Card
-        className="soha-detail-card soha-rollout-card"
-        size="small"
-        title={localeCode === 'zh_CN' ? '滚动发布' : 'Rollout'}
-      >
-        <div className="soha-rollout-status-section">
-          {rolloutStatus ? (
-            <>
-              <div className="soha-rollout-current-heading">
-                <Text
-                  strong
-                >{`${localeCode === 'zh_CN' ? '当前版本' : 'Current revision'} ${rolloutStatus.revision || '-'}`}</Text>
-                <StatusTag value={rolloutStatus.status} />
-              </div>
-              <dl className="soha-rollout-counts">
-                {[
-                  [localeCode === 'zh_CN' ? '期望副本' : 'Desired', rolloutStatus.desiredReplicas],
-                  [localeCode === 'zh_CN' ? '已更新' : 'Updated', rolloutStatus.updatedReplicas],
-                  [localeCode === 'zh_CN' ? '已就绪' : 'Ready', rolloutStatus.readyReplicas],
-                  [
-                    localeCode === 'zh_CN' ? '可用副本' : 'Available',
-                    rolloutStatus.availableReplicas,
-                  ],
-                ].map(([label, value]) => (
-                  <div key={label}>
-                    <dt>{label}</dt>
-                    <dd>{value ?? '-'}</dd>
-                  </div>
-                ))}
-              </dl>
-              {rolloutStatus.message ? (
-                <Text type="secondary" className="soha-rollout-status-message">
-                  {rolloutStatus.message}
-                </Text>
-              ) : null}
-            </>
-          ) : (
-            <ManagementState
-              bordered={false}
-              compact
-              kind={
-                rolloutStatusQuery.isPending
-                  ? 'loading'
-                  : rolloutStatusQuery.isError
-                    ? 'error'
-                    : 'empty'
-              }
-              title={
-                localeCode === 'zh_CN'
-                  ? rolloutStatusQuery.isPending
-                    ? '正在加载滚动状态'
-                    : rolloutStatusQuery.isError
-                      ? '滚动状态加载失败'
-                      : '暂无滚动状态'
-                  : rolloutStatusQuery.isPending
-                    ? 'Loading rollout status'
-                    : rolloutStatusQuery.isError
-                      ? 'Failed to load rollout status'
-                      : 'No rollout status'
-              }
-            />
-          )}
-        </div>
-        <section
-          className="soha-rollout-history-section"
-          aria-label={localeCode === 'zh_CN' ? '版本历史' : 'Revision history'}
-        >
-          <div className="soha-rollout-history-heading">
-            <Text strong>{localeCode === 'zh_CN' ? '版本历史' : 'Revision history'}</Text>
-            <Text type="secondary">
-              {localeCode === 'zh_CN'
-                ? `共 ${rolloutHistory.length} 个版本`
-                : `${rolloutHistory.length} revisions`}
-            </Text>
-          </div>
-          {rolloutHistory.length === 0 ? (
-            <ManagementState
-              bordered={false}
-              compact
-              kind={
-                rolloutHistoryQuery.isPending
-                  ? 'loading'
-                  : rolloutHistoryQuery.isError
-                    ? 'error'
-                    : 'empty'
-              }
-              title={
-                localeCode === 'zh_CN'
-                  ? rolloutHistoryQuery.isPending
-                    ? '正在加载版本历史'
-                    : rolloutHistoryQuery.isError
-                      ? '版本历史加载失败'
-                      : '暂无滚动历史'
-                  : rolloutHistoryQuery.isPending
-                    ? 'Loading revision history'
-                    : rolloutHistoryQuery.isError
-                      ? 'Failed to load revision history'
-                      : 'No rollout history'
-              }
-            />
-          ) : (
-            <>
-              <div className="soha-rollout-history-list" role="list">
-                {rolloutHistory.slice((historyPage - 1) * 3, historyPage * 3).map((record) => (
-                  <div key={record.revision} className="soha-rollout-history-row" role="listitem">
-                    <div className="soha-rollout-history-row-heading">
-                      <Text
-                        strong
-                        className="soha-rollout-history-revision"
-                      >{`${localeCode === 'zh_CN' ? '版本' : 'Revision'} ${record.revision || '-'}`}</Text>
-                      {record.revision === rolloutStatus?.revision ? (
-                        <MetadataTag
-                          label={localeCode === 'zh_CN' ? '当前版本' : 'Current'}
-                          tone="blue"
-                        />
-                      ) : null}
-                      <Text type="secondary" className="soha-rollout-history-time">
-                        {record.createdAt ? formatDateTime(record.createdAt) : '-'}
-                      </Text>
-                    </div>
-                    <div className="soha-rollout-history-meta">
-                      <span className="soha-rollout-history-name" title={record.name}>
-                        {record.name}
-                      </span>
-                      <span>{`${localeCode === 'zh_CN' ? '副本' : 'Replicas'} ${record.replicas ?? '-'}`}</span>
-                      <span>{`${localeCode === 'zh_CN' ? '就绪' : 'Ready'} ${record.readyReplicas ?? '-'}`}</span>
-                    </div>
-                    {record.images?.length ? (
-                      <details className="soha-rollout-images">
-                        <summary>
-                          <span>
-                            {localeCode === 'zh_CN'
-                              ? `镜像 ${record.images.length}`
-                              : `Images ${record.images.length}`}
-                          </span>
-                          <span className="soha-rollout-image-preview">{record.images[0]}</span>
-                        </summary>
-                        <ul>
-                          {record.images.map((image, index) => (
-                            <li key={`${index}:${image}`}>{image}</li>
-                          ))}
-                        </ul>
-                      </details>
-                    ) : (
-                      <Text type="secondary">
-                        {localeCode === 'zh_CN' ? '未记录镜像' : 'No image recorded'}
-                      </Text>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {rolloutHistory.length > 3 ? (
-                <nav
-                  className="soha-rollout-history-pagination"
-                  aria-label={
-                    localeCode === 'zh_CN' ? '版本历史分页' : 'Revision history pagination'
-                  }
-                >
-                  <Text type="secondary">
-                    {localeCode === 'zh_CN' ? '每页 3 个版本' : '3 revisions per page'}
-                  </Text>
-                  <Pagination
-                    current={historyPage}
-                    pageSize={3}
-                    total={rolloutHistory.length}
-                    showSizeChanger={false}
-                    simple={{ readOnly: true }}
-                    onChange={(page) => setHistoryPagination({ scope: historyScope, page })}
-                  />
-                </nav>
-              ) : null}
-            </>
-          )}
-        </section>
-      </Card>
-      <Card
-        className="soha-detail-card"
-        size="small"
-        title={localeCode === 'zh_CN' ? '交付联动' : 'Delivery integration'}
-      >
-        {matchedBindings.length === 0 ? (
+    )
+  if (!detailOptions.enabled)
+    return (
+      <ManagementState
+        compact
+        kind="empty"
+        title={
+          zh
+            ? '请选择集群和命名空间后查看 Deployment'
+            : 'Select a cluster and namespace to view this Deployment'
+        }
+      />
+    )
+  if (!detail)
+    return (
+      <>
+        <ReadFeedback
+          canRead={canRead}
+          query={detailQuery}
+          label={zh ? 'Deployment 详情' : 'Deployment detail'}
+        />
+        {detailQuery.isLoading && <Spin />}
+        {canRead && !detailQuery.isPending && !detailQuery.isError && (
           <ManagementState
-            bordered={false}
             compact
-            title={
-              localeCode === 'zh_CN'
-                ? '当前 Deployment 尚未绑定到任何应用环境'
-                : 'This Deployment is not bound to an application environment'
-            }
+            kind="not-found"
+            title={zh ? 'Deployment 未找到' : 'Deployment not found'}
           />
-        ) : (
-          <div className="soha-list-panel">
-            {matchedBindings.map((binding) => {
-              const application = applicationMap[binding.applicationId]
-              const latestBuild = latestBuildByApplication[binding.applicationId]
-              const latestWorkflow = (visibleWorkflowsQueryData ?? []).find(
-                (item) =>
-                  item.applicationId === binding.applicationId &&
-                  item.clusterId === clusterId &&
-                  item.namespace === detailNamespace &&
-                  item.deploymentName === deploymentName,
-              )
-              const latestRelease = (visibleReleasesQueryData ?? []).find(
-                (item) =>
-                  item.applicationId === binding.applicationId &&
-                  item.clusterId === clusterId &&
-                  item.namespace === detailNamespace &&
-                  item.deploymentName === deploymentName,
-              )
-
-              return (
-                <div key={binding.id} className="soha-list-row">
-                  <div className="soha-list-row-meta">
-                    <Text strong>{application?.name || binding.applicationId}</Text>
-                    <Tag color="blue">{binding.environmentKey || binding.environmentId}</Tag>
-                    {binding.workflowTemplate?.name ? (
-                      <Tag color="cyan">{binding.workflowTemplate.name}</Tag>
-                    ) : null}
-                  </div>
-                  <div className="soha-list-row-extra">
-                    <StatusTag value={latestBuild?.status || 'unknown'} />
-                    <StatusTag value={latestWorkflow?.status || 'unknown'} />
-                    <StatusTag value={latestRelease?.status || 'unknown'} />
-                    <Text type="secondary" className="text-xs">
-                      {latestRelease?.createdAt
-                        ? `${localeCode === 'zh_CN' ? '最近发布' : 'Latest release'}: ${formatDateTime(latestRelease.createdAt)}`
-                        : latestWorkflow?.updatedAt
-                          ? `${localeCode === 'zh_CN' ? '最近工作流' : 'Latest workflow'}: ${formatDateTime(latestWorkflow.updatedAt)}`
-                          : latestBuild?.createdAt
-                            ? `${localeCode === 'zh_CN' ? '最近构建' : 'Latest build'}: ${formatDateTime(latestBuild.createdAt)}`
-                            : localeCode === 'zh_CN'
-                              ? '暂无执行记录'
-                              : 'No execution records'}
-                    </Text>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
         )}
-      </Card>
-    </div>
-  )
-
-  const metricsTab: NonNullable<TabsProps['items']>[number] = {
-    key: 'metrics',
-    label: localeCode === 'zh_CN' ? '指标' : 'Metrics',
-    children: (
-      <Suspense
-        fallback={
-          <Card className="soha-detail-card">
-            <Spin size="large" />
-          </Card>
-        }
-      >
-        <ResourceMetricsPanel data={visibleMetricsQueryData} loading={metricsQuery.isLoading} />
-      </Suspense>
-    ),
-  }
-
-  const eventsTab: NonNullable<TabsProps['items']>[number] = {
-    key: 'events',
-    label: localeCode === 'zh_CN' ? '事件' : 'Events',
-    children: (
-      <ResourceEventsTimeline
-        events={deploymentTimelineEvents}
-        loading={deploymentEventsQuery.isLoading}
-        emptyDescription={
-          localeCode === 'zh_CN'
-            ? '当前 Deployment 暂无事件和状态变化'
-            : 'No deployment events or rollout condition transitions'
-        }
-      />
-    ),
-  }
-
+      </>
+    )
   return (
-    <>
-      <ReadFeedback
-        canRead={deploymentDetailQuery.isEnabled}
-        query={deploymentDetailQuery}
-        label="Deployment 详情"
-      />
-      <ReadFeedback canRead={bindingsQuery.isEnabled} query={bindingsQuery} label="环境绑定" />
-      <ReadFeedback
-        canRead={applicationsQuery.isEnabled}
-        query={applicationsQuery}
-        label="应用目录"
-      />
-      <ReadFeedback canRead={buildsQuery.isEnabled} query={buildsQuery} label="构建记录" />
-      <ReadFeedback canRead={workflowsQuery.isEnabled} query={workflowsQuery} label="工作流目录" />
-      <ReadFeedback canRead={releasesQuery.isEnabled} query={releasesQuery} label="发布记录" />
-      <ReadFeedback canRead={metricsQuery.isEnabled} query={metricsQuery} label="资源指标" />
-      <ReadFeedback
-        canRead={rolloutStatusQuery.isEnabled}
-        query={rolloutStatusQuery}
-        label="发布状态"
-      />
-      <ReadFeedback
-        canRead={rolloutHistoryQuery.isEnabled}
-        query={rolloutHistoryQuery}
-        label="发布历史"
-      />
-      <ReadFeedback
-        canRead={deploymentEventsQuery.isEnabled}
-        query={deploymentEventsQuery}
-        label="Deployment 事件"
-      />
+    <div className="soha-deployment-detail">
+      {actions.feedback}
+      <ReadFeedback canRead query={statusQuery} label={zh ? '滚动发布状态' : 'Rollout status'} />
+      {['overview', 'pods'].includes(active) && (
+        <ReadFeedback
+          canRead={graphQuery.isEnabled}
+          query={graphQuery}
+          label={zh ? '资源关系' : 'Resource relationships'}
+        />
+      )}
+      {active !== 'revisions' && (
+        <ReadFeedback canRead query={historyQuery} label={zh ? '版本历史' : 'Revision history'} />
+      )}
+      {active === 'pods' && (
+        <ReadFeedback
+          canRead={canReadPods}
+          query={podListQuery}
+          label={zh ? 'Pod 用量' : 'Pod usage'}
+        />
+      )}
       <WorkloadDetailShell
         title="Deployment"
         resource="deployments"
         paramKey="deploymentName"
-        activeTabKey={activeTabKey}
-        onTabChange={setActiveTabKey}
-        extraOverview={linkageOverview}
-        extraTabPanes={[metricsTab, eventsTab]}
+        activeTabKey={active}
+        onTabChange={changeTab}
+        detailRefetchOnMount={false}
+        hideMetadataOverview
+        hideRelationshipsTab
         yamlLast
+        header={
+          <header className="soha-deployment-header">
+            <div className="soha-deployment-title-row">
+              <div className="soha-deployment-title">
+                <Link
+                  aria-label={zh ? '返回 Deployments' : 'Back to Deployments'}
+                  to={`/workloads/deployments?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(namespace || '')}`}
+                >
+                  <ArrowLeftOutlined />
+                </Link>
+                <h1>{detail.name}</h1>
+                <Typography.Text copyable={{ text: detail.name }} />
+              </div>
+              <div className="soha-deployment-actions">
+                {actions.buttons}
+                <Button
+                  icon={<ReloadOutlined />}
+                  aria-label={zh ? '刷新 Deployment' : 'Refresh Deployment'}
+                  loading={detailQuery.isFetching || statusQuery.isFetching}
+                  onClick={() => {
+                    void client.invalidateQueries({
+                      queryKey: workloadKeys.detail('deployments', scope, deploymentName),
+                    })
+                    if (graphQuery.isEnabled) void graphQuery.refetch()
+                    if (podListQuery.isEnabled) void podListQuery.refetch()
+                    setRefreshToken((value) => value + 1)
+                  }}
+                >
+                  {zh ? '刷新' : 'Refresh'}
+                </Button>
+                {actions.deleteButton}
+              </div>
+            </div>
+            <div className="soha-deployment-meta">
+              <StatusTag
+                value={deploymentDetailState(detail, status)}
+                label={
+                  detail.desiredReplicas === 0 ? (zh ? '已缩容至 0' : 'Scaled to zero') : undefined
+                }
+              />
+              <span>
+                {detail.readyReplicas} / {detail.desiredReplicas} {zh ? '就绪' : 'ready'}
+              </span>
+              <span>
+                {zh ? '版本' : 'Revision'} {status?.revision || '—'}
+              </span>
+              <span>{detail.namespace}</span>
+              <span>{detail.strategy}</span>
+              <Typography.Text type="secondary">
+                {zh ? '读取于' : 'Read at'}{' '}
+                {formatDateTime(new Date(detailQuery.dataUpdatedAt).toISOString())}
+              </Typography.Text>
+            </div>
+          </header>
+        }
+        extraOverview={
+          model ? (
+            <DeploymentDetailOverview
+              detail={detail}
+              status={status}
+              scope={scope}
+              model={model}
+              onTabChange={changeTab}
+            />
+          ) : null
+        }
+        extraTabPanes={[
+          {
+            key: 'pods',
+            label: 'Pods',
+            children:
+              active === 'pods' && model ? (
+                <DeploymentDetailPods
+                  key={identity}
+                  pods={completePods}
+                  scope={scope}
+                  model={model}
+                  currentRevision={status?.revision}
+                />
+              ) : null,
+          },
+          {
+            key: 'revisions',
+            label: zh ? '版本历史' : 'Revision history',
+            children:
+              active === 'revisions' ? (
+                <DeploymentDetailHistory
+                  key={identity}
+                  records={history || []}
+                  currentRevision={status?.revision}
+                  loading={historyQuery.isLoading}
+                  error={errorText(historyQuery.error)}
+                  canRollback={actions.canRollback}
+                  blocked={actions.blocked}
+                  onRollback={actions.openRollback}
+                  onRefresh={() => void historyQuery.refetch()}
+                />
+              ) : null,
+          },
+          {
+            key: 'events',
+            label: zh ? '事件' : 'Events',
+            children:
+              active === 'events' ? (
+                <WorkloadDetailEvents
+                  key={identity}
+                  resourceLabel="Deployment"
+                  events={events || []}
+                  observedAt={eventsQuery.dataUpdatedAt || Date.now()}
+                  loading={eventsQuery.isLoading}
+                  error={errorText(eventsQuery.error)}
+                  onRefresh={() => void eventsQuery.refetch()}
+                />
+              ) : null,
+          },
+          {
+            key: 'metrics',
+            label: zh ? '指标' : 'Metrics',
+            children:
+              active === 'metrics' ? (
+                <Suspense fallback={<Spin />}>
+                  <Metrics
+                    mode="workload"
+                    data={metrics}
+                    rangeMinutes={range}
+                    onRangeChange={changeRange}
+                    loading={metricsQuery.isLoading}
+                    errorMessage={errorText(metricsQuery.error)}
+                    emptyDescription={
+                      detail.desiredReplicas === 0 && !detail.pods?.length
+                        ? zh
+                          ? '当前没有 Pod，暂无指标'
+                          : 'No Pods; metrics unavailable'
+                        : undefined
+                    }
+                    onRefresh={() => void metricsQuery.refetch()}
+                  />
+                </Suspense>
+              ) : null,
+          },
+          {
+            key: 'related-resources',
+            label: zh ? '关联资源' : 'Related resources',
+            children:
+              active === 'related-resources' && model ? (
+                <Suspense fallback={<Spin />}>
+                  <Resources
+                    key={identity}
+                    scope={scope}
+                    name={deploymentName}
+                    model={model}
+                    onShowPods={() => changeTab('pods')}
+                  />
+                </Suspense>
+              ) : null,
+          },
+          {
+            key: 'delivery',
+            label: zh ? '交付联动' : 'Delivery integration',
+            children:
+              active === 'delivery' ? (
+                <Suspense fallback={<Spin />}>
+                  <Delivery
+                    key={identity}
+                    scope={scope}
+                    name={deploymentName}
+                    refreshToken={refreshToken}
+                  />
+                </Suspense>
+              ) : null,
+          },
+        ]}
       />
-    </>
+      {actions.confirmation}
+    </div>
   )
 }

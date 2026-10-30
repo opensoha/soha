@@ -284,137 +284,6 @@
   height: max(480px, calc(100dvh - 265px));
   min-height: 0;
 }
-.soha-pod-detail-metrics-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 16px;
-}
-.soha-pod-detail-metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-.soha-pod-detail-metric-card {
-  min-width: 0;
-  overflow: hidden;
-}
-.soha-pod-detail-metric-card > .ant-card-head {
-  padding: 0 16px;
-  min-height: 45px;
-  border: 0;
-}
-.soha-pod-detail-metric-card > .ant-card-body {
-  padding: 5px 12px 12px;
-}
-.soha-pod-detail-metric-card .ant-card-extra {
-  font-size: 12px;
-  color: var(--soha-text-secondary);
-}
-.soha-pod-detail-metric-values {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-height: 72px;
-  padding: 0 4px 8px;
-}
-.soha-pod-detail-metric-values > div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.soha-pod-detail-metric-values strong {
-  font-size: 24px;
-  line-height: 32px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.soha-pod-detail-metric-values span {
-  font-size: 12px;
-  color: var(--soha-text-secondary);
-}
-.soha-pod-detail-metric-values > .ant-typography {
-  margin-left: auto;
-  font-size: 11px;
-  text-align: right;
-  max-width: 145px;
-}
-.soha-pod-detail-metric-values i,
-.soha-pod-detail-metric-legend i {
-  display: inline-block;
-  width: 10px;
-  height: 2px;
-  margin-right: 5px;
-  vertical-align: middle;
-}
-.soha-pod-detail-metric-missing {
-  height: 166px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-}
-.soha-pod-detail-metric-legend {
-  min-height: 24px;
-  display: flex;
-  gap: 18px;
-  justify-content: center;
-  align-items: center;
-  font-size: 11px;
-  color: var(--soha-text-secondary);
-}
-.soha-pod-detail-metrics-message {
-  display: block;
-  margin-top: 14px;
-  font-size: 12px;
-}
-.soha-pod-detail-event-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 22px;
-}
-.soha-pod-detail-event-toolbar > .ant-input-affix-wrapper {
-  width: 250px;
-}
-.soha-pod-detail-event-toolbar > .ant-select {
-  margin-left: auto;
-  min-width: 120px;
-}
-.soha-pod-detail-timeline h3 {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--soha-text-secondary);
-  margin: 18px 0;
-}
-.soha-pod-detail-timeline-item {
-  padding-bottom: 28px;
-}
-.soha-pod-detail-timeline time {
-  font-size: 12px;
-  color: var(--soha-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-.soha-pod-detail-event-heading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.soha-pod-detail-event-heading > span:last-child {
-  font-size: 11px;
-  color: var(--soha-text-secondary);
-}
-.soha-pod-detail-timeline article > p {
-  margin: 7px 0;
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-.soha-pod-detail-timeline article > .ant-typography {
-  font-size: 11px;
-}
 @media (max-width: 1399px) {
   .soha-pod-detail-overview-grid {
     grid-template-columns: minmax(0, 1fr) 270px;
@@ -426,17 +295,8 @@
   .soha-pod-detail-container-label > strong {
     min-width: 100px;
   }
-  .soha-pod-detail-metric-values {
-    gap: 12px;
-  }
-  .soha-pod-detail-metric-values strong {
-    font-size: 22px;
-  }
 }
 @media (max-width: 1279px) {
-  .soha-pod-detail-metrics-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .soha-pod-detail-overview-grid {
     grid-template-columns: 1fr;
   }
@@ -467,9 +327,6 @@
   .soha-pod-detail .soha-workload-detail-tabs > .ant-tabs-content-holder {
     padding: 14px;
   }
-  .soha-pod-detail-metrics-grid {
-    grid-template-columns: 1fr;
-  }
   .soha-pod-detail-overview-aside {
     display: flex;
   }
@@ -482,13 +339,6 @@
   }
   .soha-pod-detail-selector {
     flex-wrap: wrap;
-  }
-  .soha-pod-detail-event-toolbar > .ant-input-affix-wrapper {
-    width: 100%;
-    order: 3;
-  }
-  .soha-pod-detail-event-toolbar > .ant-select {
-    margin-left: auto;
   }
   .soha-pod-detail-container-label > strong {
     min-width: 0;
