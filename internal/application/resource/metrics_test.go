@@ -305,3 +305,36 @@ func TestPodMetricDefinitionsKeepNetworkAtPodScope(t *testing.T) {
 		}
 	}
 }
+
+func TestPodMetricDefinitionsOptionalDiagnosticsRespectTargetScope(t *testing.T) {
+	t.Parallel()
+	definitions := buildPodMetricDefinitions("team-a", "api-0", "cluster-a", "cluster")
+	byKey := make(map[string]metricDefinition, len(definitions))
+	for _, definition := range definitions {
+		byKey[definition.Key] = definition
+	}
+	for _, test := range []struct{ key, metric, unit string }{
+		{"filesystem", "container_fs_usage_bytes", "bytes"},
+		{"restarts", "kube_pod_container_status_restarts_total", "count"},
+		{"cpu_throttled", "container_cpu_cfs_throttled_periods_total", "%"},
+		{"oom_events", "container_oom_events_total", "count"},
+	} {
+		t.Run(test.key, func(t *testing.T) {
+			definition, ok := byKey[test.key]
+			if !ok || definition.Unit != test.unit || !strings.Contains(definition.Query, test.metric) {
+				t.Fatalf("missing diagnostic definition %s: %#v", test.key, definition)
+			}
+			for _, matcher := range []string{`namespace="team-a"`, `pod="api-0"`, `cluster="cluster-a"`} {
+				if !strings.Contains(definition.Query, matcher) {
+					t.Fatalf("%s escapes target scope: %s", test.key, definition.Query)
+				}
+			}
+			if test.key == "cpu_throttled" && !strings.Contains(definition.Query, "> 0)") {
+				t.Fatalf("CPU throttling must omit undefined ratios: %s", definition.Query)
+			}
+			if strings.Contains(definition.Query, "vector(0)") || strings.Contains(definition.Query, "increase(") {
+				t.Fatalf("%s must preserve missing and cumulative semantics: %s", test.key, definition.Query)
+			}
+		})
+	}
+}

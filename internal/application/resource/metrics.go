@@ -405,6 +405,30 @@ func buildPodMetricDefinitions(namespace, podName, clusterID, clusterLabel strin
 			Unit:  "count",
 			Query: fmt.Sprintf(`sum(container_sockets{%s})`, containerFilter),
 		},
+		{
+			Key:   "filesystem",
+			Label: "Container Filesystem Usage",
+			Unit:  "bytes",
+			Query: fmt.Sprintf(`sum(container_fs_usage_bytes{%s})`, containerFilter),
+		},
+		{
+			Key:   "restarts",
+			Label: "Cumulative Container Restarts",
+			Unit:  "count",
+			Query: fmt.Sprintf(`sum(kube_pod_container_status_restarts_total{%s})`, podFilter),
+		},
+		{
+			Key:   "cpu_throttled",
+			Label: "CPU Throttled Periods",
+			Unit:  "%",
+			Query: fmt.Sprintf(`100 * sum(rate(container_cpu_cfs_throttled_periods_total{%s}[5m])) / (sum(rate(container_cpu_cfs_periods_total{%s}[5m])) > 0)`, containerFilter, containerFilter),
+		},
+		{
+			Key:   "oom_events",
+			Label: "Cumulative OOM Events",
+			Unit:  "count",
+			Query: fmt.Sprintf(`sum(container_oom_events_total{%s})`, containerFilter),
+		},
 	}
 }
 
