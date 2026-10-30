@@ -118,14 +118,14 @@ vi.mock('@/features/platform/session-dock', () => ({
   useRealtimeSessionDock: () => ({ openSession: testState.openSession }),
 }))
 
-vi.mock('@/components/resource-events-timeline', () => ({
-  ResourceEventsTimeline: () => <div data-testid="events-panel">events-panel</div>,
+vi.mock('./pod-detail-events', () => ({
+  PodDetailEvents: () => <div data-testid="events-panel">events-panel</div>,
 }))
 
-vi.mock('@/components/resource-metrics-panel', () => {
+vi.mock('./pod-detail-metrics', () => {
   testState.runtimeLoads.metrics += 1
   return {
-    ResourceMetricsPanel: () => <div data-testid="metrics-panel">metrics-panel</div>,
+    PodDetailMetrics: () => <div data-testid="metrics-panel">metrics-panel</div>,
   }
 })
 
@@ -285,7 +285,7 @@ describe('pod detail page lazy boundaries', () => {
     ])
     expect(testState.scope.setClusterId).toHaveBeenCalledWith('url-cluster')
     expect(testState.scope.setNamespace).toHaveBeenCalledWith('url-namespace')
-    expect(requestedPaths().some((path) => path.includes('/metrics?'))).toBe(false)
+    expect(requestedPaths().filter((path) => path.includes('/metrics?'))).toHaveLength(1)
     expect(requestedPaths().some((path) => path.includes('/events?'))).toBe(false)
     expect(requestedPaths().some((path) => path.includes('/yaml?'))).toBe(false)
     expect(testState.runtimeLoads).toEqual({ logs: 0, metrics: 0, terminal: 0 })
@@ -303,10 +303,17 @@ describe('pod detail page lazy boundaries', () => {
     expect(testState.runtimeLoads.logs).toBe(1)
 
     await clickTab(container, '终端')
-    const terminalPanel = container.querySelector('[data-testid="terminal-panel"]')
-    expect(terminalPanel?.querySelector('.soha-terminal-controls')).not.toBeNull()
-    expect(terminalPanel?.textContent).toContain('容器:')
-    expect(terminalPanel?.textContent).toContain('Shell:')
+    expect(container.querySelector('.soha-terminal-controls')).not.toBeNull()
+    expect(container.textContent).toContain('容器:')
+    expect(container.textContent).toContain('Shell:')
+    expect(testState.runtimeLoads.terminal).toBe(0)
+    const connect = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('连接终端'),
+    )
+    expect(connect).toBeDefined()
+    await act(async () => connect?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushAsyncWork()
+    expect(container.querySelector('[data-testid="terminal-panel"]')).not.toBeNull()
     expect(testState.runtimeLoads.terminal).toBe(1)
 
     await clickTab(container, '事件')

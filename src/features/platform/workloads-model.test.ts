@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildRelatedResourcePath,
+  buildVolumeDetailPath,
   buildWorkloadDetailPath,
   buildWorkloadListPagePath,
   localizeRelatedResourceKind,
@@ -37,6 +38,23 @@ describe('workload relation paths', () => {
     expect(
       buildRelatedResourcePath({ kind: 'GRPCRoute', name: 'rpc', namespace: 'team-a' }, null),
     ).toBe('/network/gateway-api/grpcroutes/rpc?namespace=team-a')
+  })
+
+  it('keeps cluster scope in non-workload relations and volume targets', () => {
+    expect(
+      buildRelatedResourcePath(
+        { kind: 'ServiceAccount', name: 'runner', namespace: 'team-a' },
+        null,
+        'cluster-a',
+      ),
+    ).toBe('/platform-access-control/serviceaccounts/runner?clusterId=cluster-a&namespace=team-a')
+    expect(
+      buildVolumeDetailPath(
+        { name: 'config', type: 'ConfigMap', sourceName: 'api-config', readOnly: true },
+        'team-a',
+        'cluster-a',
+      ),
+    ).toBe('/configuration/configmaps/api-config?clusterId=cluster-a&namespace=team-a')
   })
 
   it('keeps cluster and namespace scope in workload detail links', () => {

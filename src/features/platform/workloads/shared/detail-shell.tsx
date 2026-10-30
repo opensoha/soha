@@ -77,6 +77,9 @@ export function WorkloadDetailShell({
   activeTabKey,
   onTabChange,
   yamlLast = false,
+  header,
+  hideMetadataOverview = false,
+  hideRelationshipsTab = false,
 }: {
   title: string
   resource: WorkloadKind
@@ -86,6 +89,9 @@ export function WorkloadDetailShell({
   activeTabKey?: string
   onTabChange?: (activeKey: string) => void
   yamlLast?: boolean
+  header?: ReactNode
+  hideMetadataOverview?: boolean
+  hideRelationshipsTab?: boolean
 }) {
   const { t, localeCode } = useI18n()
   const { message } = App.useApp()
@@ -186,6 +192,8 @@ export function WorkloadDetailShell({
 
       {applyYamlMutation.feedback}
 
+      {header}
+
       <Tabs
         activeKey={resolvedActiveTabKey}
         className="soha-resource-tabs soha-workload-detail-tabs"
@@ -202,13 +210,15 @@ export function WorkloadDetailShell({
             label: t('common.overview', 'Overview'),
             children: (
               <div className="soha-detail-stack">
-                <PlatformResourceOverview
-                  annotations={detail.annotations}
-                  createdAt={detail.createdAt}
-                  labels={detail.labels}
-                  name={detail.name}
-                  namespace={detail.namespace}
-                />
+                {!hideMetadataOverview && (
+                  <PlatformResourceOverview
+                    annotations={detail.annotations}
+                    createdAt={detail.createdAt}
+                    labels={detail.labels}
+                    name={detail.name}
+                    namespace={detail.namespace}
+                  />
+                )}
                 <ResourceGitOpsStatus
                   clusterId={clusterId}
                   kind={title}
@@ -219,7 +229,7 @@ export function WorkloadDetailShell({
               </div>
             ),
           },
-          ...(graphKind
+          ...(graphKind && !hideRelationshipsTab
             ? [
                 {
                   key: 'relationships',

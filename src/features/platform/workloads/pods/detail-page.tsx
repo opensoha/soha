@@ -1,9 +1,12 @@
 import { AdminTable } from '@/components/admin-table'
 import { ManagementState } from '@/components/management-list'
 import { ReadFeedback } from '@/components/request-feedback'
-import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
-import { BooleanTag, StatusTag } from '@/components/status-tag'
-import { TableCellText } from '@/components/table-cell-content'
+import { PodDetailEvents } from './pod-detail-events'
+import { PodContainerSquare, PodDetailOverview } from './pod-detail-overview'
+import { PodResourceCell } from './pod-resource-cell'
+import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
+import './pod-detail.css'
+import { StatusTag } from '@/components/status-tag'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
 import { useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
@@ -11,30 +14,26 @@ import { useRealtimeSessionDock } from '@/features/platform/session-dock'
 import {
   buildRelatedResourcePath,
   buildVolumeDetailPath,
-  conditionToTimelineEvent,
-  formatContainerStateLabel,
   formatVolumeTypeLabel,
   localizeRelatedRelation,
   localizeRelatedResourceKind,
 } from '@/features/platform/workloads-model'
 import '@/features/platform/workloads/styles.css'
 import { useI18n } from '@/i18n'
-import type {
-  PodRelatedResource,
-  PodVolume,
-  PodVolumeMount,
-  WorkloadCondition,
-  WorkloadContainer,
-} from '@/types'
+import type { PodRelatedResource, PodVolume, PodVolumeMount } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
-import { tableColumnPresets } from '@/utils/table-columns'
-import { formatDateTime } from '@/utils/time'
-import { CodeOutlined, FileTextOutlined } from '@ant-design/icons'
+import { formatRelativeTime } from '@/utils/time'
+import {
+  ArrowLeftOutlined,
+  CodeOutlined,
+  FileTextOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
-import { Button, Card, Descriptions, Select, Space, Spin, Tag, Tooltip, Typography } from 'antd'
+import { Button, Card, Segmented, Select, Space, Spin, Tag, Tooltip, Typography } from 'antd'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkloadDetailScope } from '../shared/detail-scope'
 import { WorkloadDetailShell } from '../shared/detail-shell'
 import { podQueries } from './queries'
@@ -52,8 +51,13 @@ const PodTerminal = lazy(async () => {
 })
 
 const ResourceMetricsPanel = lazy(async () => {
-  const mod = await import('@/components/resource-metrics-panel')
-  return { default: mod.ResourceMetricsPanel }
+  const mod = await import('./pod-detail-metrics')
+  return { default: mod.PodDetailMetrics }
+})
+
+const ResourceGraphPanel = lazy(async () => {
+  const mod = await import('@/features/platform/shared/resource-insights/resource-graph-panel')
+  return { default: mod.ResourceGraphPanel }
 })
 
 /* ─── shared helpers ─── */
@@ -110,8 +114,9 @@ function renderVolumeDetail(
   localeCode: 'zh_CN' | 'en_US',
   detailNamespace: string | null,
   navigate: ReturnType<typeof useNavigate>,
+  clusterId: string | null,
 ) {
-  const targetPath = buildVolumeDetailPath(volume, detailNamespace)
+  const targetPath = buildVolumeDetailPath(volume, detailNamespace, clusterId)
   const summary = summarizeVolumeDetail(volume, localeCode)
   if (!targetPath) {
     return (
@@ -135,16 +140,67 @@ export function PodDetailPage() {
   const canViewPodLogs = hasPermission(permissionSnapshot, 'platform.pods.logs')
   const canExecPod = hasPermission(permissionSnapshot, 'platform.pods.exec')
   const params = useParams()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const podName = params.podName as string
   const { clusterId, namespace: detailNamespace } = useWorkloadDetailScope()
-  const { openSession } = useRealtimeSessionDock()
-  const [container, setContainer] = useState<string>('')
+  const { openSession, closeSession, sessions = [] } = useRealtimeSessionDock()
   const [terminalShell, setTerminalShell] = useState('/bin/sh')
-  const [activeTabKey, setActiveTabKey] = useState(() =>
-    searchParams.get('tab') === 'yaml' ? 'yaml' : 'overview',
-  )
-  const [metricsRangeMinutes, setMetricsRangeMinutes] = useState(60)
+  const requestedTab =
+    searchParams.get('tab') === 'relationships'
+      ? 'related-resources'
+      : searchParams.get('tab') || 'overview'
+  const activeTabKey =
+    [
+      'overview',
+      'logs',
+      'terminal',
+      'events',
+      'metrics',
+      'volumes',
+      'related-resources',
+      'yaml',
+    ].includes(requestedTab) &&
+    !(requestedTab === 'logs' && !canViewPodLogs) &&
+    !(requestedTab === 'terminal' && !canExecPod)
+      ? requestedTab
+      : 'overview'
+  const parsedRange = Number(searchParams.get('range') || 60)
+  const metricsRangeMinutes = [15, 60, 360, 1440].includes(parsedRange) ? parsedRange : 60
+  const [expanded, setExpanded] = useState<string[]>([])
+  const [relationView, setRelationView] = useState('graph')
+  const [terminalConnection, setTerminalConnection] = useState('')
+  function setActiveTabKey(key: string) {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous)
+      next.set('tab', key)
+      return next
+    })
+  }
+  function setContainer(name: string) {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous)
+      next.set('container', name)
+      return next
+    })
+  }
+  function openContainerTab(key: string, name: string) {
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous)
+      next.set('container', name)
+      next.set('tab', key)
+      return next
+    })
+  }
+  function setMetricsRangeMinutes(value: number) {
+    setSearchParams(
+      (previous) => {
+        const next = new URLSearchParams(previous)
+        next.set('range', String(value))
+        return next
+      },
+      { replace: true },
+    )
+  }
   const podLogsCapability = useClusterCapability('pod.logs', localeCode)
   const podExecCapability = useClusterCapability('pod.exec', localeCode)
   const logsStreamingDisabledReason =
@@ -160,13 +216,14 @@ export function PodDetailPage() {
   const detailScope = { clusterId, namespace: detailNamespace }
   const podDetailQuery = useQuery(podQueries.detail(detailScope, podName))
   const visiblePodDetailQueryData = readableQueryData(podDetailQuery)
+  const readsMetrics = activeTabKey === 'overview' || activeTabKey === 'metrics'
   const podMetricsQueryOptions = podQueries.metrics(detailScope, podName, metricsRangeMinutes)
   const podMetricsQuery = useQuery({
     ...podMetricsQueryOptions,
-    enabled: Boolean(podMetricsQueryOptions.enabled) && activeTabKey === 'metrics',
+    enabled: Boolean(podMetricsQueryOptions.enabled) && readsMetrics,
   })
   const visiblePodMetricsQueryData =
-    Boolean(podMetricsQueryOptions.enabled) && activeTabKey === 'metrics'
+    Boolean(podMetricsQueryOptions.enabled) && readsMetrics
       ? readableQueryData(podMetricsQuery)
       : undefined
   const podEventsQueryOptions = podQueries.events(detailScope, podName)
@@ -188,13 +245,22 @@ export function PodDetailPage() {
     [visiblePodDetailQueryData?.containers],
   )
 
+  const requestedContainer = searchParams.get('container') || ''
+  const container = containerOptions.some((item) => item.value === requestedContainer)
+    ? requestedContainer
+    : (
+        visiblePodDetailQueryData?.containers?.find((item) => item.role !== 'init') ??
+        visiblePodDetailQueryData?.containers?.[0]
+      )?.name || ''
+  const identity = `${clusterId}/${detailNamespace}/${podName}`
+  const connectionKey = `${identity}/${container}/${terminalShell}`
   useEffect(() => {
-    if (container) return
-    if (containerOptions.length > 0) {
-      setContainer(String(containerOptions[0].value))
-    }
-  }, [container, containerOptions])
-
+    setExpanded([])
+    setTerminalConnection('')
+  }, [identity])
+  useEffect(() => {
+    if (activeTabKey !== 'terminal') setTerminalConnection('')
+  }, [activeTabKey])
   const podDetail = visiblePodDetailQueryData
   const logsAllowedByPolicy = hasAllowedAction(podDetail?.allowedActions, 'logs')
   const logsDisabled =
@@ -225,7 +291,7 @@ export function PodDetailPage() {
           : 'Pod terminal access is not allowed in the current environment or resource scope.'
 
   function openLogSession() {
-    if (!clusterId || !detailNamespace) return
+    if (!clusterId || !detailNamespace || !canViewPodLogs || logsDisabled) return
     openSession({
       clusterId,
       container: container || undefined,
@@ -237,7 +303,14 @@ export function PodDetailPage() {
   }
 
   function openTerminalSession() {
-    if (!clusterId || !detailNamespace) return
+    if (
+      !clusterId ||
+      !detailNamespace ||
+      !canExecPod ||
+      terminalDisabled ||
+      podDetail?.containers?.find((item) => item.name === container)?.state === 'terminated'
+    )
+      return
     openSession({
       clusterId,
       container: container || undefined,
@@ -271,13 +344,7 @@ export function PodDetailPage() {
         ? `排查 Pod ${podName} 的状态、容器、事件、日志、指标和节点相关问题。`
         : `Investigate status, containers, events, logs, metrics, and node issues for Pod ${podName}.`,
   })
-  const podTimelineEvents = useMemo(
-    () =>
-      visiblePodEventsQueryData?.length
-        ? visiblePodEventsQueryData
-        : (podDetail?.conditions ?? []).map(conditionToTimelineEvent),
-    [podDetail, visiblePodEventsQueryData],
-  )
+  const podTimelineEvents = visiblePodEventsQueryData ?? []
   const podVolumes = podDetail?.volumes ?? []
   const podRelatedResources = podDetail?.relatedResources ?? []
   const containerSummary = useMemo(() => {
@@ -289,82 +356,13 @@ export function PodDetailPage() {
     }
   }, [podDetail])
 
-  const containerColumns: TableColumnsType<WorkloadContainer> = [
-    { title: localeCode === 'zh_CN' ? '容器' : 'Container', dataIndex: 'name' },
-    {
-      title: localeCode === 'zh_CN' ? '镜像' : 'Image',
-      dataIndex: 'image',
-      ellipsis: { showTitle: false },
-      render: (value?: string) => <TableCellText value={value} />,
-    },
-    { title: localeCode === 'zh_CN' ? '重启次数' : 'Restarts', dataIndex: 'restartCount' },
-    {
-      title: (
-        <Tooltip
-          title={
-            localeCode === 'zh_CN'
-              ? '平台展示约定：初始化容器、首个普通容器为主容器，其余普通容器为辅助容器。'
-              : 'Platform display convention: init containers, the first regular container as main, and remaining regular containers as sidecars.'
-          }
-        >
-          {localeCode === 'zh_CN' ? '角色' : 'Role'}
-        </Tooltip>
-      ),
-      dataIndex: 'role',
-      render: (value?: string) => {
-        const labels: Record<string, string> =
-          localeCode === 'zh_CN'
-            ? { init: '初始化容器', main: '主容器', sidecar: '辅助容器' }
-            : { init: 'Init', main: 'Main', sidecar: 'Sidecar' }
-        return <Tag>{(value && labels[value]) || value || '-'}</Tag>
-      },
-    },
-    {
-      title: localeCode === 'zh_CN' ? '就绪' : 'Ready',
-      dataIndex: 'ready',
-      render: (value: boolean) => (
-        <BooleanTag
-          value={value}
-          trueLabel={localeCode === 'zh_CN' ? '是' : 'Yes'}
-          falseLabel={localeCode === 'zh_CN' ? '否' : 'No'}
-        />
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '状态' : 'State',
-      dataIndex: 'state',
-      render: (value: string) => formatContainerStateLabel(value),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '原因' : 'Reason',
-      dataIndex: 'reason',
-      render: (value: string) => value || '-',
-    },
-    {
-      title: localeCode === 'zh_CN' ? '上次状态' : 'Last State',
-      dataIndex: 'lastState',
-      render: (value: string) => formatContainerStateLabel(value),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '启动时间' : 'Started At',
-      dataIndex: 'startedAt',
-      render: (value?: string) => (value ? formatDateTime(value) : '-'),
-    },
-    {
-      title: 'Container ID',
-      dataIndex: 'containerId',
-      ellipsis: { showTitle: false },
-      render: (value?: string) => <TableCellText value={value} />,
-    },
-  ]
-
   const volumeColumns: TableColumnsType<PodVolume> = [
     {
       title: localeCode === 'zh_CN' ? '卷名' : 'Volume',
       dataIndex: 'name',
       width: 220,
       render: (value: string, record: PodVolume) => {
-        const targetPath = buildVolumeDetailPath(record, detailNamespace)
+        const targetPath = buildVolumeDetailPath(record, detailNamespace, clusterId)
         if (!targetPath) {
           return <Text className="soha-volume-name-text">{value}</Text>
         }
@@ -387,7 +385,7 @@ export function PodDetailPage() {
       title: localeCode === 'zh_CN' ? '详情' : 'Details',
       width: 300,
       render: (_: unknown, record: PodVolume) =>
-        renderVolumeDetail(record, localeCode, detailNamespace, navigate),
+        renderVolumeDetail(record, localeCode, detailNamespace, navigate, clusterId),
     },
     {
       title: localeCode === 'zh_CN' ? 'Volume Mounts' : 'Volume Mounts',
@@ -439,110 +437,99 @@ export function PodDetailPage() {
     },
   ]
 
-  const conditionColumns: TableColumnsType<WorkloadCondition> = [
-    { title: localeCode === 'zh_CN' ? '条件' : 'Condition', dataIndex: 'type' },
-    {
-      title: localeCode === 'zh_CN' ? '状态' : 'Status',
-      dataIndex: 'status',
-      render: (value: string) => <StatusTag value={value} />,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '原因' : 'Reason',
-      dataIndex: 'reason',
-      render: (value: string) => value || '-',
-    },
-    {
-      title: localeCode === 'zh_CN' ? '消息' : 'Message',
-      dataIndex: 'message',
-      ellipsis: { showTitle: false },
-      render: (value?: string) => <TableCellText value={value} />,
-    },
-    {
-      ...tableColumnPresets.datetime,
-      title: localeCode === 'zh_CN' ? '最近变化' : 'Last Transition',
-      dataIndex: 'lastTransitionTime',
-      render: (value: string) => (value ? formatDateTime(value) : '-'),
-    },
-  ]
-
+  const nodeLink =
+    podDetail?.nodeName &&
+    !['-', '—'].includes(podDetail.nodeName) &&
+    hasPermission(permissionSnapshot, 'platform.nodes.view') ? (
+      <RouterLink
+        to={`/cluster-resources/nodes/${encodeURIComponent(podDetail.nodeName)}?clusterId=${encodeURIComponent(clusterId || '')}`}
+      >
+        {podDetail.nodeName}
+      </RouterLink>
+    ) : (
+      podDetail?.nodeName || '—'
+    )
+  const namespaceLink = hasPermission(permissionSnapshot, 'platform.namespaces.view') ? (
+    <RouterLink
+      to={`/cluster-resources/namespaces?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(detailNamespace || '')}`}
+    >
+      {podDetail?.namespace || detailNamespace}
+    </RouterLink>
+  ) : (
+    podDetail?.namespace || detailNamespace || '—'
+  )
+  const owner = podRelatedResources.find((item) =>
+    ['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'ReplicaSet'].includes(item.kind),
+  )
+  const ownerPath = owner ? buildRelatedResourcePath(owner, detailNamespace, clusterId) : null
+  const account = podRelatedResources.find(
+    (item) => item.kind === 'ServiceAccount' && item.name === podDetail?.serviceAccountName,
+  )
+  const accountPath = account ? buildRelatedResourcePath(account, detailNamespace, clusterId) : null
+  const metricValue = (key: string) => {
+    const series = visiblePodMetricsQueryData?.series?.find((item) => item.key === key)
+    return series && Number.isFinite(series.latest) ? String(series.latest) : undefined
+  }
+  const usagePod = {
+    name: podName,
+    cpu: metricValue('cpu'),
+    memory: metricValue('memory'),
+    requests: podDetail?.requests,
+    limits: podDetail?.limits,
+  }
   const runtimeOverview = podDetail ? (
-    <div className="soha-pod-overview-stack">
-      <Card
-        className="soha-detail-card soha-pod-overview-card soha-pod-overview-status"
-        title={localeCode === 'zh_CN' ? '容器状态' : 'Containers'}
-        extra={
-          <Space size={6}>
-            <Tag color="blue">
-              {localeCode === 'zh_CN' ? '容器' : 'Containers'} {containerSummary.total}
-            </Tag>
-            <Tag color="green">
-              {localeCode === 'zh_CN' ? '就绪' : 'Ready'} {containerSummary.ready}
-            </Tag>
-            <Tag color="orange">
-              {localeCode === 'zh_CN' ? '重启' : 'Restarts'} {containerSummary.restarts}
-            </Tag>
+    <PodDetailOverview
+      pod={podDetail}
+      zh={localeCode === 'zh_CN'}
+      expanded={expanded}
+      onExpand={setExpanded}
+      onContainerAction={openContainerTab}
+      canLogs={canViewPodLogs && !logsDisabled}
+      canExec={canExecPod && !terminalDisabled}
+      logsReason={logsDisabledReason}
+      execReason={terminalDisabledReason}
+      nodeLink={nodeLink}
+      namespaceLink={namespaceLink}
+      accountLink={
+        accountPath ? (
+          <RouterLink to={accountPath}>{account?.name}</RouterLink>
+        ) : (
+          podDetail.serviceAccountName || '—'
+        )
+      }
+      ownerLink={
+        owner ? (
+          <Space orientation="vertical">
+            <Text type="secondary">{owner.kind}</Text>
+            {ownerPath ? <RouterLink to={ownerPath}>{owner.name}</RouterLink> : owner.name}
           </Space>
-        }
-      >
-        <AdminTable
-          shellClassName="soha-management-table-shell"
-          columns={containerColumns}
-          dataSource={podDetail.containers ?? []}
-          rowKey="name"
-          pageSize={10}
-          enableColumnSelection={false}
-        />
-      </Card>
-      <Card
-        className="soha-detail-card soha-pod-overview-card soha-pod-overview-summary"
-        title={localeCode === 'zh_CN' ? '运行时概览' : 'Runtime Overview'}
-      >
-        <Descriptions
-          column={{ xs: 1, sm: 2, lg: 3 }}
-          size="small"
-          items={[
-            {
-              key: localeCode === 'zh_CN' ? '阶段' : 'Phase',
-              label: localeCode === 'zh_CN' ? '阶段' : 'Phase',
-              children: <StatusTag value={podDetail.phase} />,
-            },
-            { key: 'Pod IP', label: 'Pod IP', children: podDetail.podIp || '-' },
-            { key: 'Host IP', label: 'Host IP', children: podDetail.hostIp || '-' },
-            {
-              key: localeCode === 'zh_CN' ? '节点' : 'Node',
-              label: localeCode === 'zh_CN' ? '节点' : 'Node',
-              children: podDetail.nodeName || '-',
-            },
-            {
-              key: localeCode === 'zh_CN' ? '服务账号' : 'ServiceAccount',
-              label: localeCode === 'zh_CN' ? '服务账号' : 'ServiceAccount',
-              children: podDetail.serviceAccountName || '-',
-            },
-            { key: 'QoS', label: 'QoS', children: podDetail.qosClass || '-' },
-            {
-              key: localeCode === 'zh_CN' ? '启动时间' : 'Started At',
-              label: localeCode === 'zh_CN' ? '启动时间' : 'Started At',
-              children: podDetail.startTime ? formatDateTime(podDetail.startTime) : '-',
-            },
-          ]}
-        />
-      </Card>
-      <Card
-        className="soha-detail-card soha-pod-overview-card soha-pod-overview-conditions"
-        title={localeCode === 'zh_CN' ? '条件' : 'Conditions'}
-      >
-        <AdminTable
-          shellClassName="soha-management-table-shell"
-          columns={conditionColumns}
-          dataSource={podDetail.conditions ?? []}
-          rowKey={(record) => `${record.type}:${record.lastTransitionTime || 'na'}`}
-          pageSize={10}
-          enableColumnSelection={false}
-        />
-      </Card>
-    </div>
+        ) : null
+      }
+      onEvents={() => setActiveTabKey('events')}
+      metrics={
+        <Card
+          className="soha-pod-detail-card"
+          title={localeCode === 'zh_CN' ? '资源使用' : 'Resource usage'}
+          extra={
+            <Button type="link" size="small" onClick={() => setActiveTabKey('metrics')}>
+              {localeCode === 'zh_CN' ? '查看趋势' : 'View trends'}
+            </Button>
+          }
+        >
+          <div className="soha-pod-detail-usage">
+            {(['cpu', 'memory'] as const).map((resource) => (
+              <div key={resource}>
+                <Text>
+                  {resource === 'cpu' ? 'CPU' : localeCode === 'zh_CN' ? '内存' : 'Memory'}
+                </Text>
+                <PodResourceCell pod={usagePod} resource={resource} localeCode={localeCode} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      }
+    />
   ) : null
-
   const metricsTab: NonNullable<TabsProps['items']>[number] = {
     key: 'metrics',
     label: localeCode === 'zh_CN' ? '指标' : 'Metrics',
@@ -559,7 +546,7 @@ export function PodDetailPage() {
             }
             resourceRequests={podDetail?.requests}
             resourceLimits={podDetail?.limits}
-            compact
+            onRefresh={() => void podMetricsQuery.refetch()}
           />
         </Suspense>
       ) : null,
@@ -568,22 +555,26 @@ export function PodDetailPage() {
   const eventsTab: NonNullable<TabsProps['items']>[number] = {
     key: 'events',
     label: localeCode === 'zh_CN' ? '事件' : 'Events',
-    children: (
-      <ResourceEventsTimeline
-        events={podTimelineEvents}
-        loading={podEventsQuery.isLoading}
-        emptyDescription={
-          localeCode === 'zh_CN'
-            ? '当前 Pod 暂无事件和条件变化'
-            : 'No pod events or condition transitions'
-        }
-      />
-    ),
+    children:
+      activeTabKey === 'events' ? (
+        <PodDetailEvents
+          events={podTimelineEvents}
+          observedAt={podEventsQuery.dataUpdatedAt || Date.now()}
+          loading={podEventsQuery.isLoading}
+          error={
+            podEventsQuery.isError
+              ? podEventsQuery.error instanceof Error
+                ? podEventsQuery.error.message
+                : String(podEventsQuery.error)
+              : undefined
+          }
+          onRefresh={() => void podEventsQuery.refetch()}
+        />
+      ) : null,
   }
-
   const volumesTab: NonNullable<TabsProps['items']>[number] = {
     key: 'volumes',
-    label: localeCode === 'zh_CN' ? '卷' : 'Volumes',
+    label: localeCode === 'zh_CN' ? '存储与挂载' : 'Storage and mounts',
     children: (
       <Card className="soha-detail-card">
         <AdminTable
@@ -592,7 +583,7 @@ export function PodDetailPage() {
           columns={volumeColumns}
           dataSource={podVolumes}
           rowKey={(record) => record.name}
-          pageSize={10}
+          pagination={false}
           enableColumnSelection={false}
           empty={
             <ManagementState
@@ -608,32 +599,77 @@ export function PodDetailPage() {
 
   const relatedResourcesTab: NonNullable<TabsProps['items']>[number] = {
     key: 'related-resources',
-    label: localeCode === 'zh_CN' ? '相关资源' : 'Related Resources',
+    label: localeCode === 'zh_CN' ? '关联资源' : 'Related resources',
     children: (
-      <Card className="soha-detail-card">
-        <AdminTable
-          shellClassName="soha-management-table-shell"
-          columns={relatedResourceColumns}
-          dataSource={podRelatedResources}
-          rowKey={(record) => `${record.kind}:${record.namespace || 'cluster'}:${record.name}`}
-          pageSize={10}
-          enableColumnSelection={false}
-          empty={
-            <ManagementState
-              bordered={false}
-              compact
-              title={
-                localeCode === 'zh_CN'
-                  ? '当前 Pod 暂无可识别的关联资源'
-                  : 'No related resources detected for this pod'
-              }
-            />
-          }
+      <div className="soha-pod-detail-relations">
+        <Segmented
+          aria-label={localeCode === 'zh_CN' ? '关联资源视图' : 'Related resource view'}
+          value={relationView}
+          onChange={(value) => setRelationView(String(value))}
+          options={[
+            { value: 'graph', label: localeCode === 'zh_CN' ? '关系图' : 'Graph' },
+            { value: 'list', label: localeCode === 'zh_CN' ? '列表' : 'List' },
+          ]}
         />
-      </Card>
+        {activeTabKey === 'related-resources' &&
+          (relationView === 'graph' ? (
+            <Suspense fallback={<Spin />}>
+              <ResourceGraphPanel kind="Pod" name={podName} scope={detailScope} focusPod />
+            </Suspense>
+          ) : (
+            <Card className="soha-pod-detail-card">
+              <AdminTable
+                columns={relatedResourceColumns}
+                dataSource={podRelatedResources}
+                rowKey={(record) =>
+                  `${record.kind}:${record.namespace || 'cluster'}:${record.name}`
+                }
+                pagination={false}
+                enableColumnSelection={false}
+              />
+            </Card>
+          ))}
+      </div>
     ),
   }
-
+  const matchingDock = (kind: 'logs' | 'terminal') =>
+    sessions.find(
+      (session) =>
+        session.kind === kind &&
+        session.clusterId === clusterId &&
+        session.namespace === detailNamespace &&
+        session.podName === podName &&
+        session.container === (container || undefined) &&
+        (kind === 'logs' || session.shell === terminalShell),
+    )
+  const logDock = matchingDock('logs')
+  const terminalDock = matchingDock('terminal')
+  const dockNotice = (kind: 'logs' | 'terminal', id: string) => (
+    <ManagementState
+      compact
+      title={localeCode === 'zh_CN' ? '已在实时会话栏打开' : 'Open in realtime session dock'}
+      description={
+        localeCode === 'zh_CN'
+          ? '继续使用当前会话，或返回页面查看。'
+          : 'Continue in the current session or return to this page.'
+      }
+      actions={
+        <Space>
+          <Button onClick={() => (kind === 'logs' ? openLogSession() : openTerminalSession())}>
+            {localeCode === 'zh_CN' ? '查看会话' : 'Show session'}
+          </Button>
+          <Button
+            onClick={() => {
+              closeSession(id)
+              setTerminalConnection('')
+            }}
+          >
+            {localeCode === 'zh_CN' ? '返回页面' : 'Return to page'}
+          </Button>
+        </Space>
+      }
+    />
+  )
   const logsTab: NonNullable<TabsProps['items']>[number] = {
     key: 'logs',
     label: logsDisabled ? (
@@ -647,7 +683,9 @@ export function PodDetailPage() {
     ),
     disabled: logsDisabled,
     children:
-      activeTabKey !== 'logs' ? null : podLogsCapability.isLoading ? (
+      activeTabKey !== 'logs' ? null : logDock ? (
+        dockNotice('logs', logDock.id)
+      ) : podLogsCapability.isLoading ? (
         <ManagementState compact kind="loading" />
       ) : podLogsCapability.disabled ? (
         <ManagementState
@@ -687,110 +725,201 @@ export function PodDetailPage() {
 
   const terminalTab: NonNullable<TabsProps['items']>[number] = {
     key: 'terminal',
-    label: terminalDisabled ? (
-      <Tooltip title={terminalDisabledReason}>
-        <span>{localeCode === 'zh_CN' ? '终端' : 'Terminal'}</span>
+    label: (
+      <Tooltip title={terminalDisabled ? terminalDisabledReason : undefined}>
+        {localeCode === 'zh_CN' ? '终端' : 'Terminal'}
       </Tooltip>
-    ) : localeCode === 'zh_CN' ? (
-      '终端'
-    ) : (
-      'Terminal'
     ),
     disabled: terminalDisabled,
     children:
-      activeTabKey !== 'terminal' ? null : podExecCapability.isLoading ? (
-        <ManagementState compact kind="loading" />
-      ) : terminalDisabled ? (
-        <ManagementState
-          compact
-          kind="unsupported"
-          title={
-            localeCode === 'zh_CN'
-              ? '当前集群不支持交互终端'
-              : 'Interactive terminal is not supported'
-          }
-          description={terminalDisabledReason}
-        />
+      activeTabKey !== 'terminal' ? null : terminalDock ? (
+        dockNotice('terminal', terminalDock.id)
       ) : (
-        <div className="soha-pod-terminal-tab-card">
-          <Suspense
-            fallback={
-              <Card className="soha-detail-card">
-                <Spin size="large" />
-              </Card>
-            }
-          >
-            <PodTerminal
-              clusterId={clusterId}
-              namespace={detailNamespace}
-              podName={podName}
-              container={container || undefined}
-              shell={terminalShell}
-              toolbarContent={
-                <div className="soha-terminal-controls">
-                  <div className="soha-terminal-control-group">
-                    <Text strong className="text-xs">
-                      {localeCode === 'zh_CN' ? '容器:' : 'Container:'}
-                    </Text>
-                    <Select
-                      size="small"
-                      placeholder={localeCode === 'zh_CN' ? '选择容器' : 'Select container'}
-                      value={container}
-                      onChange={(value) => setContainer(String(value || ''))}
-                      style={{ width: 220 }}
-                      options={containerOptions}
-                      allowClear
-                    />
-                  </div>
-                  <div className="soha-terminal-control-group">
-                    <Text strong className="text-xs">
-                      Shell:
-                    </Text>
-                    <Select
-                      size="small"
-                      value={terminalShell}
-                      onChange={(value) => setTerminalShell(String(value))}
-                      style={{ width: 180 }}
-                      options={[
-                        { value: '/bin/sh', label: '/bin/sh' },
-                        { value: '/bin/bash', label: '/bin/bash' },
-                        { value: '/bin/ash', label: '/bin/ash' },
-                      ]}
-                    />
-                  </div>
-                  <Button icon={<CodeOutlined />} size="small" onClick={openTerminalSession}>
-                    {localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'}
-                  </Button>
-                </div>
+        <div className="soha-pod-detail-terminal">
+          <div className="soha-terminal-controls">
+            <label className="soha-pod-detail-selector">
+              {localeCode === 'zh_CN' ? '容器:' : 'Container:'}
+              <Select
+                aria-label={localeCode === 'zh_CN' ? '选择容器' : 'Select container'}
+                value={container || undefined}
+                onChange={setContainer}
+                options={containerOptions}
+              />
+            </label>
+            <label className="soha-pod-detail-selector">
+              Shell:
+              <Select
+                aria-label="Shell"
+                value={terminalShell}
+                onChange={setTerminalShell}
+                options={['/bin/sh', '/bin/bash', '/bin/ash'].map((value) => ({
+                  value,
+                  label: value,
+                }))}
+              />
+            </label>
+            <Button
+              icon={<CodeOutlined />}
+              size="small"
+              onClick={openTerminalSession}
+              disabled={
+                podDetail?.containers?.find((item) => item.name === container)?.state ===
+                'terminated'
+              }
+            >
+              {localeCode === 'zh_CN' ? '打开终端会话' : 'Open terminal session'}
+            </Button>
+          </div>
+          {terminalConnection === connectionKey ? (
+            <Suspense fallback={<Spin />}>
+              <PodTerminal
+                clusterId={clusterId}
+                namespace={detailNamespace}
+                podName={podName}
+                container={container || undefined}
+                shell={terminalShell}
+              />
+            </Suspense>
+          ) : (
+            <ManagementState
+              compact
+              title={localeCode === 'zh_CN' ? '连接容器终端' : 'Connect to container terminal'}
+              description={
+                localeCode === 'zh_CN'
+                  ? '选择容器和 Shell 后连接。'
+                  : 'Select a container and shell, then connect.'
+              }
+              actions={
+                <Button
+                  type="primary"
+                  disabled={
+                    terminalDisabled ||
+                    !container ||
+                    podDetail?.containers?.find((item) => item.name === container)?.state ===
+                      'terminated'
+                  }
+                  onClick={() => setTerminalConnection(connectionKey)}
+                >
+                  {localeCode === 'zh_CN' ? '连接终端' : 'Connect'}
+                </Button>
               }
             />
-          </Suspense>
+          )}
         </div>
       ),
   }
+  const header = (
+    <header className="soha-pod-detail-header">
+      <div className="soha-pod-detail-title-row">
+        <div>
+          <RouterLink
+            aria-label={localeCode === 'zh_CN' ? '返回 Pods' : 'Back to Pods'}
+            to={`/workloads/pods?clusterId=${encodeURIComponent(clusterId || '')}&namespace=${encodeURIComponent(detailNamespace || '')}`}
+          >
+            <ArrowLeftOutlined />
+          </RouterLink>
+          <h1>{podName}</h1>
+          <Text copyable={{ text: podName }} />
+        </div>
+        <Space>
+          <Button
+            icon={<ReloadOutlined />}
+            loading={podDetailQuery.isFetching}
+            onClick={() => {
+              void podDetailQuery.refetch()
+              if (readsMetrics) void podMetricsQuery.refetch()
+              if (activeTabKey === 'events') void podEventsQuery.refetch()
+            }}
+          >
+            {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+          </Button>
+          <KubernetesResourceActionsMenu
+            resourceLabel="Pod"
+            name={podName}
+            localeCode={localeCode}
+            items={[
+              ...(canViewPodLogs
+                ? [
+                    {
+                      key: 'logs',
+                      label: (
+                        <Tooltip title={logsDisabled ? logsDisabledReason : undefined}>
+                          {localeCode === 'zh_CN' ? '查看日志' : 'View logs'}
+                        </Tooltip>
+                      ),
+                      disabled: logsDisabled,
+                    },
+                  ]
+                : []),
+              ...(canExecPod
+                ? [
+                    {
+                      key: 'terminal',
+                      label: (
+                        <Tooltip title={terminalDisabled ? terminalDisabledReason : undefined}>
+                          {localeCode === 'zh_CN' ? '打开终端' : 'Open terminal'}
+                        </Tooltip>
+                      ),
+                      disabled: terminalDisabled,
+                    },
+                  ]
+                : []),
+              { key: 'yaml', label: 'YAML' },
+            ]}
+            onSelect={setActiveTabKey}
+          />
+        </Space>
+      </div>
+      <div className="soha-pod-detail-meta">
+        <StatusTag value={podDetail?.phase} />
+        <span className="soha-pod-detail-squares">
+          {[...(podDetail?.containers ?? [])]
+            .sort((a, b) => Number(b.role === 'init') - Number(a.role === 'init'))
+            .map((item) => (
+              <PodContainerSquare
+                key={item.name}
+                item={item}
+                onClick={() => {
+                  setExpanded([item.name])
+                  openContainerTab('overview', item.name)
+                }}
+              />
+            ))}
+        </span>
+        <span>
+          {localeCode === 'zh_CN' ? '重启' : 'Restarts'} {containerSummary.restarts}
+        </span>
+        {namespaceLink}
+        <span>{podDetail?.qosClass || '—'}</span>
+        <Text type="secondary">{formatRelativeTime(podDetail?.createdAt)}</Text>
+      </div>
+    </header>
+  )
 
   return (
-    <>
+    <div className={`soha-pod-detail is-tab-${activeTabKey}`}>
       <ReadFeedback canRead={podDetailQuery.isEnabled} query={podDetailQuery} label="Pod 详情" />
       <ReadFeedback canRead={podMetricsQuery.isEnabled} query={podMetricsQuery} label="Pod 指标" />
-      <ReadFeedback canRead={podEventsQuery.isEnabled} query={podEventsQuery} label="Pod 事件" />
       <WorkloadDetailShell
         title="Pod"
         resource="pods"
         paramKey="podName"
+        header={header}
+        hideMetadataOverview
+        hideRelationshipsTab
         extraOverview={runtimeOverview}
         extraTabPanes={[
           ...(canViewPodLogs ? [logsTab] : []),
           ...(canExecPod ? [terminalTab] : []),
           eventsTab,
+          metricsTab,
           volumesTab,
           relatedResourcesTab,
-          metricsTab,
         ]}
         activeTabKey={activeTabKey}
         onTabChange={setActiveTabKey}
         yamlLast
       />
-    </>
+    </div>
   )
 }

@@ -21,7 +21,7 @@ import {
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Alert, Button, Empty, Space, Spin, Typography } from 'antd'
+import { Alert, Button, Empty, Space, Spin, Switch, Typography } from 'antd'
 import dagre from 'dagre'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -246,18 +246,48 @@ function ResourceGraphCanvas({ graph }: { graph: KubernetesResourceGraph }) {
   )
 }
 
+export function focusResourceGraph(graph: KubernetesResourceGraph): KubernetesResourceGraph {
+  if (!graph.rootId) return graph
+  const keep = new Set([graph.rootId])
+  const ancestors = [graph.rootId]
+  while (ancestors.length) {
+    const target = ancestors.pop()
+    for (const edge of graph.edges) {
+      if (edge.targetId !== target || keep.has(edge.sourceId)) continue
+      keep.add(edge.sourceId)
+      ancestors.push(edge.sourceId)
+    }
+  }
+  for (const edge of graph.edges) {
+    if (edge.sourceId === graph.rootId) keep.add(edge.targetId)
+    if (edge.targetId === graph.rootId) keep.add(edge.sourceId)
+  }
+  return {
+    ...graph,
+    nodes: graph.nodes.filter((node) => keep.has(node.id)),
+    edges: graph.edges.filter((edge) => keep.has(edge.sourceId) && keep.has(edge.targetId)),
+  }
+}
+
 export function ResourceGraphPanel({
   kind,
   name,
   scope,
+  focusPod = false,
 }: {
   kind: string
   name: string
   scope: ScopeKey
+  focusPod?: boolean
 }) {
   const { localeCode } = useI18n()
   const graphQuery = useQuery(resourceInsightQueries.graph(scope, kind, name))
   const graph = readableQueryData(graphQuery)
+  const [includeOtherResources, setIncludeOtherResources] = useState(false)
+  const focusedGraph = useMemo(
+    () => (graph && focusPod && !includeOtherResources ? focusResourceGraph(graph) : graph),
+    [graph, focusPod, includeOtherResources],
+  )
 
   if (graphQuery.isLoading) {
     return (
@@ -298,6 +328,16 @@ export function ResourceGraphPanel({
         query={graphQuery}
       />
       <Space wrap>
+        {focusPod && (
+          <label>
+            <Switch
+              size="small"
+              checked={includeOtherResources}
+              onChange={setIncludeOtherResources}
+            />{' '}
+            {localeCode === 'zh_CN' ? '包含其他关联资源' : 'Include other related resources'}
+          </label>
+        )}
         <ManagementRefreshButton
           aria-label="刷新资源关系"
           tooltip="刷新资源关系"
@@ -317,7 +357,7 @@ export function ResourceGraphPanel({
       <ReactFlowProvider>
         <ResourceGraphCanvas
           key={`${graph.clusterId}/${graph.rootId ?? `${kind}/${name}`}`}
-          graph={graph}
+          graph={focusedGraph ?? graph}
         />
       </ReactFlowProvider>
       {graph.evidence.length ? (

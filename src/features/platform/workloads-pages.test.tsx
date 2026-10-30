@@ -1525,8 +1525,8 @@ describe('workloads pods page refresh controls', () => {
     })
 
     expect(container.textContent).toContain('容器')
-    expect(container.textContent).toContain('卷')
-    expect(container.textContent).toContain('相关资源')
+    expect(container.textContent).toContain('存储与挂载')
+    expect(container.textContent).toContain('关联资源')
   })
 
   it('hides pod logs and terminal tabs when the role lacks their permissions', async () => {

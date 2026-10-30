@@ -1,8 +1,44 @@
 import { describe, expect, it } from 'vitest'
 import type { KubernetesResourceGraph } from '@opensoha/contracts/gen/ts/sohaapi'
-import { buildResourceGraphFlow } from './resource-graph-panel'
+import { buildResourceGraphFlow, focusResourceGraph } from './resource-graph-panel'
 
 describe('buildResourceGraphFlow', () => {
+  it('focuses a pod and its parent chain without including sibling replica sets', () => {
+    const graph: KubernetesResourceGraph = {
+      clusterId: 'cluster-a',
+      generatedAt: '2026-10-30T10:00:00Z',
+      rootId: 'pod',
+      warnings: [],
+      evidence: [],
+      nodes: ['deployment', 'replicaset', 'sibling', 'pod', 'configmap'].map((id) => ({
+        id,
+        resource: {
+          apiVersion: 'v1',
+          kind: id,
+          name: id,
+          namespace: 'default',
+          clusterId: 'cluster-a',
+          scopeMode: 'namespace',
+        },
+      })),
+      edges: [
+        { id: 'owns-rs', sourceId: 'deployment', targetId: 'replicaset', relation: 'owns' },
+        { id: 'owns-sibling', sourceId: 'deployment', targetId: 'sibling', relation: 'owns' },
+        { id: 'owns-pod', sourceId: 'replicaset', targetId: 'pod', relation: 'owns' },
+        { id: 'uses', sourceId: 'pod', targetId: 'configmap', relation: 'references' },
+      ],
+    }
+    const focused = focusResourceGraph(graph)
+    expect(focused.nodes.map((node) => node.id)).toEqual([
+      'deployment',
+      'replicaset',
+      'pod',
+      'configmap',
+    ])
+    expect(focused.edges).toHaveLength(3)
+    expect(graph.nodes).toHaveLength(5)
+    expect(focused.rootId).toBe('pod')
+  })
   it('keeps backend direction and highlights the requested root', () => {
     const graph: KubernetesResourceGraph = {
       clusterId: 'cluster-a',

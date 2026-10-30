@@ -39,7 +39,7 @@ export function PodResourceCell({
   resource,
   localeCode,
 }: {
-  pod: Pod
+  pod: Pick<Pod, 'name' | 'cpu' | 'memory' | 'requests' | 'limits'>
   resource: 'cpu' | 'memory'
   localeCode: 'zh_CN' | 'en_US'
 }) {

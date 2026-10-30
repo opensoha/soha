@@ -41,9 +41,12 @@ export function buildWorkloadDetailPath(
   return query ? `${path}?${query}` : path
 }
 
-export function buildNamespacedDetailQuery(namespace?: string | null) {
-  if (!namespace) return ''
-  return `?namespace=${encodeURIComponent(namespace)}`
+export function buildNamespacedDetailQuery(
+  namespace?: string | null,
+  clusterId: string | null = null,
+) {
+  const query = buildWorkloadScopeQuery(namespace || null, clusterId)
+  return query ? `?${query}` : ''
 }
 
 export function formatContainerStateLabel(value?: string) {
@@ -116,17 +119,17 @@ export function buildRelatedResourcePath(
   const effectiveNamespace = resource.namespace || selectedNamespace || ''
   switch (resource.kind) {
     case 'Service':
-      return `/network/services/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+      return `/network/services/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
     case 'Ingress':
-      return `/network/ingresses/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+      return `/network/ingresses/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
     case 'HTTPRoute':
-      return `/network/gateway-api/httproutes/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+      return `/network/gateway-api/httproutes/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
     case 'GRPCRoute':
-      return `/network/gateway-api/grpcroutes/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+      return `/network/gateway-api/grpcroutes/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
     case 'ConfigMap':
-      return `/configuration/configmaps/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+      return `/configuration/configmaps/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
     case 'Secret':
-      return `/configuration/secrets/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+      return `/configuration/secrets/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
     case 'Deployment':
       return buildWorkloadDetailPath(
         'deployments',
@@ -184,28 +187,32 @@ export function buildRelatedResourcePath(
         clusterId,
       )
     case 'PersistentVolumeClaim':
-      return `/storage/persistentvolumeclaims/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+      return `/storage/persistentvolumeclaims/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
     case 'ServiceAccount':
-      return `/platform-access-control/serviceaccounts/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+      return `/platform-access-control/serviceaccounts/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
     default:
       return null
   }
 }
 
-export function buildVolumeDetailPath(volume: PodVolume, selectedNamespace: string | null) {
+export function buildVolumeDetailPath(
+  volume: PodVolume,
+  selectedNamespace: string | null,
+  clusterId: string | null = null,
+) {
   const effectiveNamespace = selectedNamespace || ''
   switch (volume.type) {
     case 'ConfigMap':
       return volume.sourceName
-        ? `/configuration/configmaps/${encodeURIComponent(volume.sourceName)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+        ? `/configuration/configmaps/${encodeURIComponent(volume.sourceName)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
         : null
     case 'Secret':
       return volume.sourceName
-        ? `/configuration/secrets/${encodeURIComponent(volume.sourceName)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+        ? `/configuration/secrets/${encodeURIComponent(volume.sourceName)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
         : null
     case 'PersistentVolumeClaim':
       return volume.sourceName
-        ? `/storage/persistentvolumeclaims/${encodeURIComponent(volume.sourceName)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+        ? `/storage/persistentvolumeclaims/${encodeURIComponent(volume.sourceName)}${buildNamespacedDetailQuery(effectiveNamespace, clusterId)}`
         : null
     default:
       return null
