@@ -80,6 +80,13 @@ func (r *Runner) executeManifestTask(ctx context.Context, task ExecutionTask) {
 }
 
 func validateManifestProtocol(provider, clusterID string, payload sohaapi.ManifestExecutionTaskPayload) error {
+	if strings.HasPrefix(provider, manifestAdmissionProviderPrefix) {
+		base := strings.TrimPrefix(provider, manifestAdmissionProviderPrefix)
+		if base != resourceruntime.ManifestAgentProviderPrefix+clusterID && base != resourceruntime.RootCRAgentProviderPrefix+clusterID && base != resourceruntime.ManifestInitializationProviderPrefix+clusterID {
+			return fmt.Errorf("protected Manifest provider targets an unsupported runtime")
+		}
+		provider = base
+	}
 	if err := resourceruntime.ValidateManifestInitialization(payload); err != nil {
 		return err
 	}

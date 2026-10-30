@@ -558,12 +558,13 @@ func (r *Runner) claim(ctx context.Context) (ExecutionTask, bool) {
 	if r.manifestExecutor != nil && r.manifestClusterID != "" {
 		providerKinds = append(providerKinds, "manifest_agent."+r.manifestClusterID, resourceruntime.ManifestAgentProviderPrefix+r.manifestClusterID, resourceruntime.RootCRAgentProviderPrefix+r.manifestClusterID)
 	}
-	task, err := r.apiClient().ClaimExecutionTask(ctx, claimRequest{
+	task, err := claimExecutionWithManifestAdmission(ctx, r.apiClient(), claimRequest{
 		AgentID:         firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
 		ProviderKinds:   providerKinds,
 		RuntimeEndpoint: strings.TrimSpace(r.cfg.RuntimeEndpoint),
 	})
 	if err != nil {
+		r.rejectUnadmittedManifestClaim(ctx, task, err)
 		r.metrics.markClaim(metricScopeExecution, false)
 		return ExecutionTask{}, false
 	}

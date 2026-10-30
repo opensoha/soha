@@ -29,8 +29,10 @@ func (r *Runner) claimHelmTask(ctx context.Context) (ExecutionTask, bool) {
 	providers := []string{"helm_agent." + r.helmClusterID, helmrelease.InitializationProviderPrefix + r.helmClusterID}
 	if r.manifestExecutor != nil && r.manifestClusterID == r.helmClusterID {
 		providers = append(providers, resourceruntime.ManifestInitializationProviderPrefix+r.manifestClusterID)
+		providers = append(providers, protectedManifestProviders(r.manifestClusterID)...)
 	}
-	task, err := client.ClaimExecutionTask(ctx, claimRequest{AgentID: r.cfg.AgentID, ProviderKinds: providers, RuntimeEndpoint: r.cfg.RuntimeEndpoint})
+	task, err := claimExecutionWithManifestAdmission(ctx, client, claimRequest{AgentID: r.cfg.AgentID, ProviderKinds: providers, RuntimeEndpoint: r.cfg.RuntimeEndpoint})
+	r.rejectUnadmittedManifestClaim(ctx, task, err)
 	ok := err == nil && task.ID != ""
 	r.metrics.markClaim(metricScopeExecution, ok)
 	return task, ok

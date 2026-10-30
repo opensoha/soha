@@ -107,7 +107,7 @@ func (c *Client) Summary(_ context.Context) domaincluster.Summary {
 	}
 
 	capabilities := []string{
-		contractresource.RelationSnapshotFeature, contractresource.NetworkTopologySnapshotFeature, contractresource.NetworkTopologyGatewayL4Feature, contractresource.ResourceMonitoringSnapshotFeature, "manifest.preflight", "manifest.ssa", "manifest.observe", contractruntime.ManifestAgentCapability, contractruntime.RootCRAgentCapability, contractruntime.ManifestInitializationCapability, helmrelease.InitializationCapability,
+		contractresource.RelationSnapshotFeature, contractresource.NetworkTopologySnapshotFeature, contractresource.NetworkTopologyGatewayL4Feature, contractresource.ResourceMonitoringSnapshotFeature, "manifest.preflight", "manifest.ssa", "manifest.observe", contractruntime.ManifestAgentCapability, "manifest.delivery-admission.v1", contractruntime.RootCRAgentCapability, contractruntime.ManifestInitializationCapability, helmrelease.InitializationCapability,
 		"logs.runtime.snapshot", "logs.runtime.stream", "logs.runtime.aggregate",
 	}
 	for _, group := range groups.Groups {

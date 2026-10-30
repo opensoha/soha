@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -128,7 +129,8 @@ func TestInitializationManifestClaimUsesClusterCredential(t *testing.T) {
 		if err := json.NewDecoder(req.Body).Decode(&claim); err != nil {
 			return nil, err
 		}
-		if req.Header.Get("Authorization") != "Bearer cluster-token" || len(claim.ProviderKinds) != 3 || claim.ProviderKinds[2] != "manifest_initialize_v1.one" {
+		expected := []string{"helm_agent.one", "helm_initialize_v1.one", "manifest_initialize_v1.one", "manifest_delivery_v1.manifest_agent_v3.one", "manifest_delivery_v1.manifest_root_cr_v1.one", "manifest_delivery_v1.manifest_initialize_v1.one"}
+		if req.Header.Get("Authorization") != "Bearer cluster-token" || !slices.Equal(claim.ProviderKinds, expected) {
 			t.Fatal("initialization did not use protected cluster claim")
 		}
 		return jsonResponse(t, http.StatusAccepted, map[string]any{"data": ExecutionTask{ID: "first"}}), nil
