@@ -15,12 +15,19 @@ export function ResourceStreamStatus({
   status,
   lastEventAt,
   localeCode,
+  showLabel = false,
 }: {
   status: KubernetesResourceStreamStatus
   lastEventAt?: string
   localeCode: 'zh_CN' | 'en_US'
+  showLabel?: boolean
 }) {
-  const statusLabel = formatStatusLabel(status, localeCode)
+  const statusLabel =
+    status === 'live' && showLabel
+      ? localeCode === 'zh_CN'
+        ? '实时更新'
+        : 'Live updates'
+      : formatStatusLabel(status, localeCode)
   const eventDate = lastEventAt ? new Date(lastEventAt) : null
   const eventTime =
     eventDate && !Number.isNaN(eventDate.getTime())
@@ -44,13 +51,16 @@ export function ResourceStreamStatus({
         style={{
           alignItems: 'center',
           display: 'inline-flex',
-          flex: '0 0 24px',
+          flex: showLabel ? '0 0 auto' : '0 0 24px',
           height: 24,
           justifyContent: 'center',
-          width: 24,
+          width: showLabel ? undefined : 24,
         }}
       >
-        <Badge status={badgeStatusByStreamStatus[status]} />
+        <Badge
+          status={badgeStatusByStreamStatus[status]}
+          text={showLabel ? statusLabel : undefined}
+        />
       </span>
     </Tooltip>
   )

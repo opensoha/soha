@@ -599,13 +599,26 @@ test('Deployment unknown batch restart also blocks the row restart and other wri
     .locator('.ant-table-row[data-row-key]')
     .filter({ has: page.getByText('api', { exact: true }) })
   await row.getByRole('checkbox').check()
-  const batchRestart = page.getByRole('button').filter({ hasText: /^批量重启 \(1\)$/ })
-  await batchRestart.click()
+  const batchActions = page.getByRole('button', { name: '批量操作', exact: true })
+  await batchActions.click()
+  await page
+    .getByRole('menu', { name: 'Deployments 操作：已选 1 个', exact: true })
+    .getByRole('menuitem', { name: '批量重启', exact: true })
+    .click()
   await expect(page.getByText('批量重启 Deployment：请求结果不明', { exact: true })).toBeVisible()
-  await expect(row.getByRole('button', { name: '重启', exact: true })).toBeDisabled()
-  await expect(row.getByRole('button', { name: '编辑 api', exact: true })).toBeDisabled()
+  await row.getByRole('button', { name: '更多操作：api', exact: true }).click()
+  const actions = page.getByRole('menu', { name: 'Deployment 操作：api', exact: true })
+  await expect(actions.getByRole('menuitem', { name: '重启', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
+  await expect(actions.getByRole('menuitem', { name: '编辑', exact: true })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  )
   await expect(row.getByRole('checkbox')).toBeChecked()
-  await expect(batchRestart).toBeDisabled()
+  await expect(batchActions).toBeDisabled()
+  await expect(page.getByRole('button', { name: '清除', exact: true })).toBeDisabled()
   expect(state.writes).toEqual([root + '/workloads/deployments/restart'])
   verifyBrowserEvidence(evidence)
 })
@@ -628,9 +641,8 @@ for (const entry of lists) {
       await table
         .getByRole('checkbox', { name: '选择全部匹配的 2000 个 Deployments', exact: true })
         .check()
-      await expect(
-        page.getByRole('button').filter({ hasText: /^批量重启 \(2000\)$/ }),
-      ).toBeVisible()
+      await expect(page.getByRole('status').filter({ hasText: /^已选 2000 个$/ })).toBeVisible()
+      await expect(page.getByRole('button', { name: '批量操作', exact: true })).toBeEnabled()
       await table
         .getByRole('checkbox', { name: '选择全部匹配的 2000 个 Deployments', exact: true })
         .uncheck()

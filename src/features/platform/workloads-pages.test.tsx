@@ -1096,7 +1096,7 @@ describe('workloads pods page refresh controls', () => {
     expect(maxActiveDeletes).toBeLessThanOrEqual(8)
   })
 
-  it('hides the deployment action column when the current cluster capability is unsupported', async () => {
+  it('keeps unavailable deployment actions disabled with reasons and prevents selection', async () => {
     const unsupportedReason = 'workload mutations are disabled for agent-connected clusters'
     setResponses({
       '/clusters': [
@@ -1154,6 +1154,161 @@ describe('workloads pods page refresh controls', () => {
       expect(container.querySelector(`button[aria-label="${label}"]`)).toBeNull()
     }
     expect(container.querySelector('input[aria-label="select-monitoring/prometheus"]')).toBeNull()
+    const menu = await openPodActions(container, 'prometheus')
+    const items = [...menu.querySelectorAll('[role="menuitem"]')]
+    expect(items.length).toBe(4)
+    expect(items.every((item) => item.getAttribute('aria-disabled') === 'true')).toBe(true)
+    expect(menu.textContent).toContain('当前集群连接模式暂不支持该操作')
+    expect(apiPostMock).not.toHaveBeenCalledWith(
+      expect.stringMatching(/\/workloads\/deployments\//),
+      expect.anything(),
+    )
+    expect(apiDeleteMock).not.toHaveBeenCalled()
+  })
+
+  it('freezes batch scale targets and blocks confirmation after a target disappears or scope changes', async () => {
+    const path = '/clusters/cluster-a/workloads/deployments?namespace=monitoring'
+    const rows = ['api', 'worker'].map((name) => ({
+      name,
+      namespace: 'monitoring',
+      desiredReplicas: 2,
+      readyReplicas: 2,
+      updatedReplicas: 2,
+      available: 2,
+      ageSeconds: 60,
+      allowedActions: ['view', 'scale'],
+    }))
+    testState.responses[path] = rows
+    const container = await renderWithProviders(
+      <WorkloadsDeploymentsPage />,
+      '/workloads/deployments',
+    )
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    for (const name of ['api', 'worker']) {
+      const checkbox = container.querySelector(`input[aria-label="select-monitoring/${name}"]`)
+      expect(checkbox).toBeInstanceOf(HTMLInputElement)
+      await act(async () => checkbox?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    }
+    const batch = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('批量操作'),
+    )
+    await act(async () => {
+      batch?.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    const item = [...document.body.querySelectorAll('[role="menuitem"]')].find((node) =>
+      node.textContent?.includes('批量扩缩'),
+    )
+    expect(item).toBeTruthy()
+    await act(async () => {
+      item?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await flushAsyncWork()
+    const dialog = document.body.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('将对 2 个 Deployment 应用相同副本数')
+    testState.responses[path] = rows.slice(0, 1)
+    await act(async () => {
+      await currentQueryClient?.invalidateQueries({ queryKey: ['platform', 'workloads'] })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await flushAsyncWork()
+    expect(dialog.textContent).toContain('将对 2 个 Deployment 应用相同副本数')
+    const ok = dialog.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')
+    expect(ok?.disabled).toBe(true)
+    expect(apiPostMock).not.toHaveBeenCalledWith(
+      expect.stringMatching(/\/workloads\/deployments\//),
+      expect.anything(),
+    )
+    expect(apiDeleteMock).not.toHaveBeenCalled()
+    testState.scope.clusterId = 'cluster-b'
+    await rerenderWithProviders(<WorkloadsDeploymentsPage />, '/workloads/deployments')
+    await act(async () => vi.advanceTimersByTimeAsync(1000))
+    expect(dialog.closest<HTMLElement>('.ant-modal-wrap')?.style.display).toBe('none')
+  })
+
+  it('keeps late batch failures and receipts in their original cluster after a scope change', async () => {
+    const entry = {
+      name: 'api',
+      namespace: 'monitoring',
+      desiredReplicas: 1,
+      readyReplicas: 1,
+      updatedReplicas: 1,
+      available: 1,
+      ageSeconds: 60,
+      allowedActions: ['view', 'restart'],
+    }
+    testState.responses['/clusters'] = ['cluster-a', 'cluster-b'].map((id) => ({
+      id,
+      name: id,
+      connectionMode: 'direct',
+      health: { status: 'healthy' },
+    }))
+    testState.responses['/clusters/cluster-a/workloads/deployments?namespace=monitoring'] = [entry]
+    testState.responses['/clusters/cluster-b/workloads/deployments?namespace=monitoring'] = [entry]
+    const container = await renderWithProviders(
+      <WorkloadsDeploymentsPage />,
+      '/workloads/deployments',
+    )
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    let rejectRequest!: (error: Error) => void
+    apiPostMock.mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectRequest = reject
+        }),
+    )
+    await act(async () =>
+      container
+        .querySelector<HTMLInputElement>('input[aria-label="select-monitoring/api"]')
+        ?.click(),
+    )
+    const batch = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('批量操作'),
+    )
+    await act(async () => {
+      batch?.click()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    const restart = [...document.body.querySelectorAll('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes('批量重启'),
+    )
+    await act(async () => {
+      restart?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(apiPostMock).toHaveBeenCalledWith('/clusters/cluster-a/workloads/deployments/restart', {
+      name: 'api',
+      namespace: 'monitoring',
+    })
+    testState.scope.clusterId = 'cluster-b'
+    await rerenderWithProviders(<WorkloadsDeploymentsPage />, '/workloads/deployments')
+    await act(async () => {
+      vi.runOnlyPendingTimers()
+      await Promise.resolve()
+    })
+    await flushAsyncWork()
+    await act(async () => {
+      rejectRequest(new Error('Synthetic rejected restart'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await flushAsyncWork()
+    expect(container.textContent).not.toContain('已选 1 个')
+    expect(
+      container.querySelector<HTMLInputElement>('input[aria-label="select-monitoring/api"]')
+        ?.checked,
+    ).toBe(false)
+    const feedback = container.querySelector('.soha-operation-feedback')!
+    expect(feedback.textContent).toContain('cluster-a / monitoring / api')
+    expect(feedback.textContent).not.toContain('cluster-b / monitoring / api')
   })
 
   it('renders statefulset restart, scale, and delete actions using workload permissions', async () => {

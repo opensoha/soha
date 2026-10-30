@@ -13,9 +13,9 @@ const captured = vi.hoisted(() => ({
 
 vi.mock('antd', async (importOriginal) => ({
   ...(await importOriginal<typeof import('antd')>()),
-  Badge: ({ status }: { status: string }) => {
+  Badge: ({ status, text }: { status: string; text?: ReactNode }) => {
     captured.badgeStatus = status
-    return <span />
+    return <span>{text}</span>
   },
   Tooltip: ({ children, title }: { children: ReactNode; title: string }) => {
     captured.tooltipTitle = title
@@ -73,6 +73,21 @@ describe('ResourceStreamStatus', () => {
       'Polling Fallback',
     )
 
+    await act(async () => root.unmount())
+  })
+  it('shows an explicit live label only when requested and keeps fallback status truthful', async () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    await act(async () =>
+      root.render(<ResourceStreamStatus showLabel status="live" localeCode="zh_CN" />),
+    )
+    expect(container.textContent).toBe('实时更新')
+    await act(async () =>
+      root.render(<ResourceStreamStatus showLabel status="degraded" localeCode="zh_CN" />),
+    )
+    expect(container.textContent).not.toContain('实时更新')
+    expect(captured.badgeStatus).toBe('error')
     await act(async () => root.unmount())
   })
 })

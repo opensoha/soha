@@ -50,7 +50,7 @@ import { podMutations } from './mutations'
 import { podQueries } from './queries'
 import { podTargetFromRecord, type Pod } from './types'
 import { PodContainersCell } from './pod-containers-cell'
-import { PodActionsMenu } from './pod-actions-menu'
+import { KubernetesResourceActionsMenu } from '@/features/platform/shared/kubernetes-resource-actions-menu'
 import { getPodResourceAmount, podResourceMinimumWidth, PodResourceCell } from './pod-resource-cell'
 import { podContentWidths } from './pod-column-widths'
 
@@ -524,7 +524,8 @@ export function WorkloadsPodsPage() {
           }
         }
         return (
-          <PodActionsMenu
+          <KubernetesResourceActionsMenu
+            resourceLabel="Pod"
             name={record.name}
             localeCode={localeCode}
             items={items}
@@ -802,29 +803,6 @@ export function WorkloadsPodsPage() {
           pvcFilter,
           nodeFilter,
         ])}
-        title={
-          <span className="soha-pod-list-count" role="status" aria-live="polite">
-            {!clusterId
-              ? localeCode === 'zh_CN'
-                ? '请选择集群'
-                : 'Select a cluster'
-              : isLoading
-                ? localeCode === 'zh_CN'
-                  ? '正在加载 Pods'
-                  : 'Loading Pods'
-                : podsQuery.error && visiblePodsQueryData === undefined
-                  ? localeCode === 'zh_CN'
-                    ? 'Pods 未加载'
-                    : 'Pods unavailable'
-                  : localeCode === 'zh_CN'
-                    ? orderedPods.length === pods.length
-                      ? `${pods.length} 个 Pods`
-                      : `匹配 ${orderedPods.length} / 共 ${pods.length} 个 Pods`
-                    : orderedPods.length === pods.length
-                      ? `${pods.length} Pods`
-                      : `${orderedPods.length} matches / ${pods.length} Pods`}
-          </span>
-        }
         error={podsQuery.isEnabled === false ? null : podsQuery.error}
         hasReadData={podsQuery.data !== undefined}
         onRetry={podsQuery.isEnabled === false ? undefined : () => podsQuery.refetch()}

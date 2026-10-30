@@ -62,6 +62,9 @@ afterEach(async () => {
 })
 it('owns continuous browsing, full-result count, namespace folding and per-resource user preferences', async () => {
   await render({ dataSource: rows.slice(0, 1), rowSelection: { selectedRowKeys: [] } })
+  expect(container.querySelector('.soha-kubernetes-resource-count')?.getAttribute('role')).toBe(
+    'status',
+  )
   expect(table.pagination).toBe(false)
   expect(table.virtual).toBe(true)
   expect(table.viewportScroll).toBe(true)
@@ -112,4 +115,9 @@ it('releases wide fixed action groups on narrow screens while keeping compact me
   expect(table.columns[1].fixed).toBe(false)
   await render({ resourceKey: 'pods', columns: [columns[0], { ...action, width: 64 }] })
   expect(table.columns[1].fixed).toBe('right')
+})
+
+it('composes selection actions beside the shared truthful count without replacing it', async () => {
+  await render({ selectionToolbar: <button>批量操作</button> })
+  expect(container.textContent).toBe('2 个 Deployments批量操作')
 })

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AdminTable, type AdminTableProps } from '@/components/admin-table'
 import { useI18n } from '@/i18n'
@@ -52,6 +53,7 @@ export type KubernetesResourceTableProps = Omit<
   | 'defaultHiddenColumnKeys'
 > & {
   resourceKey: string
+  selectionToolbar?: ReactNode
   resourceLabel: string
   /** Complete readable scope, before client filtering; never a server page. */
   allRows: Record<string, any>[]
@@ -62,6 +64,7 @@ export type KubernetesResourceTableProps = Omit<
 /** K8s full-collection browsing; request and mutation ownership stays with each resource. */
 export function KubernetesResourceTable({
   resourceKey,
+  selectionToolbar,
   resourceLabel,
   allRows,
   filterKey = '',
@@ -163,11 +166,14 @@ export function KubernetesResourceTable({
         {...props}
         className={['soha-kubernetes-resource-table', className].filter(Boolean).join(' ')}
         title={
-          title ?? (
-            <span role="status" aria-live="polite">
-              {countLabel}
-            </span>
-          )
+          <>
+            {title ?? (
+              <span className="soha-kubernetes-resource-count" role="status" aria-live="polite">
+                {countLabel}
+              </span>
+            )}
+            {selectionToolbar}
+          </>
         }
         columns={activeColumns}
         dataSource={dataSource}

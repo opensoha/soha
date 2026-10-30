@@ -589,13 +589,6 @@
   gap: 4px;
 }
 
-.soha-pod-list-count {
-  color: var(--soha-text-secondary);
-  font-size: var(--soha-font-size-supporting);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-
 .soha-pod-container-cell {
   display: inline-flex;
   align-items: center;
@@ -897,7 +890,7 @@
 }
 
 .soha-deployments-table .soha-workload-actions-column {
-  --soha-table-actions-column-width: 148px;
+  --soha-table-actions-column-width: 64px;
 }
 
 .soha-statefulsets-table .soha-workload-actions-column {
@@ -1015,11 +1008,4 @@
   font-size: var(--soha-font-size-supporting);
   line-height: var(--soha-line-height-supporting);
   white-space: normal;
-}
-
-@media (pointer: coarse) {
-  .soha-pod-actions-trigger {
-    min-width: 44px;
-    min-height: 44px;
-  }
 }
