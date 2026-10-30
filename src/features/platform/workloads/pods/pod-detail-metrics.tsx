@@ -149,7 +149,7 @@ export function PodDetailMetrics({
             if (chart) {
               chart.height = 166
               chart.legends = { visible: false }
-              chart.padding = { top: 8, right: 12, bottom: 24, left: 56 }
+              chart.padding = { top: 8, right: 8, bottom: 24, left: 0 }
               chart.axes[0].label.formatMethod = (label: string) => label.split(' ').at(-1) || label
               chart.axes[0].tickCount = 3
               chart.axes[1].min = 0

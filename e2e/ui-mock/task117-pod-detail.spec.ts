@@ -115,6 +115,7 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
                 name: 'api-config',
                 namespace: 'monitoring',
                 relations: ['volume'],
+                details: ['Mount /etc/config'],
               },
               {
                 kind: 'ServiceAccount',
@@ -204,8 +205,36 @@ async function setup(context: BrowserContext, page: Page, sessions = true) {
         body: {
           data: {
             rootId: 'pod-a',
-            nodes: [{ id: 'pod-a', kind: 'Pod', name: podName, namespace: 'monitoring' }],
-            edges: [],
+            clusterId: 'cluster-a',
+            generatedAt: '2026-10-30T10:00:00Z',
+            warnings: [],
+            evidence: [],
+            nodes: [
+              ['deployment', 'Deployment', 'api'],
+              ['replicaset', 'ReplicaSet', 'api-7d9'],
+              ['other-rs', 'ReplicaSet', 'api-old'],
+              ['unrelated-rs', 'ReplicaSet', 'unrelated'],
+              ['pod-a', 'Pod', podName],
+              ['config', 'ConfigMap', 'api-config'],
+              ['secret', 'Secret', 'api-secret'],
+            ].map(([id, kind, name]) => ({
+              id,
+              resource: {
+                clusterId: 'cluster-a',
+                apiVersion: 'v1',
+                scopeMode: 'namespace',
+                namespace: 'monitoring',
+                kind,
+                name,
+              },
+            })),
+            edges: [
+              { id: 'owns-rs', sourceId: 'deployment', targetId: 'replicaset', relation: 'owns' },
+              { id: 'owns-other', sourceId: 'deployment', targetId: 'other-rs', relation: 'owns' },
+              { id: 'owns-pod', sourceId: 'replicaset', targetId: 'pod-a', relation: 'owns' },
+              { id: 'uses-config', sourceId: 'pod-a', targetId: 'config', relation: 'uses-config' },
+              { id: 'uses-secret', sourceId: 'pod-a', targetId: 'secret', relation: 'uses-secret' },
+            ],
           },
         },
       }
@@ -332,5 +361,66 @@ test('Pod logs fill available height and remain bounded during window resize', a
   await page.setViewportSize({ width: 1440, height: 900 })
   await expect.poll(height).toBeLessThan(initial)
   expect(await shell.locator('.soha-log-row').count()).toBeLessThan(100)
+  verifyBrowserEvidence(evidence)
+})
+
+test('Pod relationships follow the approved owner, scheduling and reference layout', async ({
+  context,
+  page,
+}, testInfo) => {
+  const { state, evidence } = await setup(context, page)
+  await page.goto(`${path}&tab=related-resources`)
+  const board = page.getByRole('group', { name: '当前 Pod 资源关系图', exact: true })
+  const root = board.getByRole('button', { name: `Pod ${podName}`, exact: true })
+  const deployment = board.getByRole('button', { name: 'Deployment api', exact: true })
+  const rs = board.getByRole('button', { name: 'ReplicaSet api-7d9', exact: true })
+  const node = board.getByRole('button', { name: 'Node worker-a', exact: true })
+  const account = board.getByRole('button', { name: 'ServiceAccount runner', exact: true })
+  await expect(rs).toBeVisible()
+  const rb = (await root.boundingBox())!
+  const nb = (await node.boundingBox())!
+  expect((await deployment.boundingBox())!.y).toBeLessThan(rb.y)
+  expect((await rs.boundingBox())!.y).toBeLessThan(rb.y)
+  expect(nb.x + nb.width).toBeLessThan(rb.x)
+  expect(Math.abs(nb.y + nb.height / 2 - rb.y - rb.height / 2)).toBeLessThan(3)
+  expect((await account.boundingBox())!.y).toBeGreaterThan(rb.y + rb.height)
+  await expect(board.getByRole('button', { name: 'ReplicaSet api-old', exact: true })).toHaveCount(
+    0,
+  )
+  await page.getByRole('switch', { name: '其他 ReplicaSets', exact: true }).click()
+  await expect(board.getByRole('button', { name: 'ReplicaSet api-old', exact: true })).toBeVisible()
+  await expect(
+    board.getByRole('button', { name: 'ReplicaSet unrelated', exact: true }),
+  ).toHaveCount(0)
+  await node.focus()
+  await node.press('Enter')
+  await expect(page.locator('.soha-pod-relation-inspector')).toContainText('worker-a')
+  await page.getByRole('button', { name: '关闭资源信息', exact: true }).click()
+  await expect(node).toBeFocused()
+  await board.getByRole('button', { name: 'ConfigMap api-config', exact: true }).click()
+  await expect(page.locator('.soha-pod-relation-inspector')).toContainText('Mount /etc/config')
+  await page
+    .getByRole('radiogroup', { name: '关联资源视图' })
+    .getByText('列表', { exact: true })
+    .click()
+  await page.getByRole('button', { name: '关闭资源信息', exact: true }).click()
+  await expect(page.getByRole('group', { name: '关联资源视图切换', exact: true })).toBeFocused()
+  await expect(page.locator('.soha-pod-relations-card')).toContainText('ServiceAccount')
+  await expect(page.locator('.soha-pod-relations-card .ant-pagination')).toHaveCount(0)
+  expect(state.graphReads).toBe(1)
+  await page
+    .getByRole('radiogroup', { name: '关联资源视图' })
+    .getByText('关系图', { exact: true })
+    .click()
+  await page.getByLabel('切换到深色模式').click()
+  await page.setViewportSize({ width: 900, height: 1100 })
+  expect(
+    await page.locator('.soha-pod-detail').evaluate((el) => el.scrollWidth - el.clientWidth),
+  ).toBeLessThanOrEqual(1)
+  await page.screenshot({
+    path: testInfo.outputPath('pod-relations-dark.png'),
+    fullPage: true,
+    animations: 'disabled',
+  })
   verifyBrowserEvidence(evidence)
 })

@@ -15,12 +15,10 @@ import {
   buildRelatedResourcePath,
   buildVolumeDetailPath,
   formatVolumeTypeLabel,
-  localizeRelatedRelation,
-  localizeRelatedResourceKind,
 } from '@/features/platform/workloads-model'
 import '@/features/platform/workloads/styles.css'
 import { useI18n } from '@/i18n'
-import type { PodRelatedResource, PodVolume, PodVolumeMount } from '@/types'
+import type { PodVolume, PodVolumeMount } from '@/types'
 import { readableQueryData } from '@/utils/query-feedback'
 import { formatRelativeTime } from '@/utils/time'
 import {
@@ -31,7 +29,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType, TabsProps } from 'antd'
-import { Button, Card, Segmented, Select, Space, Spin, Tag, Tooltip, Typography } from 'antd'
+import { Button, Card, Select, Space, Spin, Tag, Tooltip, Typography } from 'antd'
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkloadDetailScope } from '../shared/detail-scope'
@@ -55,25 +53,12 @@ const ResourceMetricsPanel = lazy(async () => {
   return { default: mod.PodDetailMetrics }
 })
 
-const ResourceGraphPanel = lazy(async () => {
-  const mod = await import('@/features/platform/shared/resource-insights/resource-graph-panel')
-  return { default: mod.ResourceGraphPanel }
+const PodDetailResources = lazy(async () => {
+  const mod = await import('./pod-detail-resources')
+  return { default: mod.PodDetailResources }
 })
 
 /* ─── shared helpers ─── */
-
-function renderDetailTagList(values: string[] | undefined, emptyLabel = '-') {
-  if (!values || values.length === 0) {
-    return <Text type="secondary">{emptyLabel}</Text>
-  }
-  return (
-    <Space size={[6, 6]} wrap>
-      {values.map((item) => (
-        <Tag key={item}>{item}</Tag>
-      ))}
-    </Space>
-  )
-}
 
 function renderVolumeMounts(mounts: PodVolumeMount[] | undefined) {
   if (!mounts || mounts.length === 0) {
@@ -167,7 +152,6 @@ export function PodDetailPage() {
   const parsedRange = Number(searchParams.get('range') || 60)
   const metricsRangeMinutes = [15, 60, 360, 1440].includes(parsedRange) ? parsedRange : 60
   const [expanded, setExpanded] = useState<string[]>([])
-  const [relationView, setRelationView] = useState('graph')
   const [terminalConnection, setTerminalConnection] = useState('')
   function setActiveTabKey(key: string) {
     setSearchParams((previous) => {
@@ -394,49 +378,6 @@ export function PodDetailPage() {
     },
   ]
 
-  const relatedResourceColumns: TableColumnsType<PodRelatedResource> = [
-    {
-      title: localeCode === 'zh_CN' ? '资源类型' : 'Kind',
-      dataIndex: 'kind',
-      width: 150,
-      render: (value: string) => <Tag>{localizeRelatedResourceKind(value, localeCode)}</Tag>,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
-      dataIndex: 'name',
-      render: (value: string, record: PodRelatedResource) => {
-        const targetPath = buildRelatedResourcePath(record, detailNamespace, clusterId)
-        if (!targetPath) {
-          return value
-        }
-        return <Link onClick={() => navigate(targetPath)}>{value}</Link>
-      },
-    },
-    {
-      title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
-      dataIndex: 'namespace',
-      width: 160,
-      render: (value?: string) => value || '-',
-    },
-    {
-      title: localeCode === 'zh_CN' ? '关联关系' : 'Relations',
-      dataIndex: 'relations',
-      render: (value?: string[]) => (
-        <Space size={[6, 6]} wrap>
-          {(value ?? []).map((item) => (
-            <Tag key={item}>{localizeRelatedRelation(item, localeCode)}</Tag>
-          ))}
-        </Space>
-      ),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '详情' : 'Details',
-      dataIndex: 'details',
-      render: (value?: string[]) =>
-        renderDetailTagList(value, localeCode === 'zh_CN' ? '无' : 'None'),
-    },
-  ]
-
   const nodeLink =
     podDetail?.nodeName &&
     !['-', '—'].includes(podDetail.nodeName) &&
@@ -600,37 +541,15 @@ export function PodDetailPage() {
   const relatedResourcesTab: NonNullable<TabsProps['items']>[number] = {
     key: 'related-resources',
     label: localeCode === 'zh_CN' ? '关联资源' : 'Related resources',
-    children: (
-      <div className="soha-pod-detail-relations">
-        <Segmented
-          aria-label={localeCode === 'zh_CN' ? '关联资源视图' : 'Related resource view'}
-          value={relationView}
-          onChange={(value) => setRelationView(String(value))}
-          options={[
-            { value: 'graph', label: localeCode === 'zh_CN' ? '关系图' : 'Graph' },
-            { value: 'list', label: localeCode === 'zh_CN' ? '列表' : 'List' },
-          ]}
+    children: podDetail ? (
+      <Suspense fallback={<Spin />}>
+        <PodDetailResources
+          pod={podDetail}
+          scope={detailScope}
+          active={activeTabKey === 'related-resources'}
         />
-        {activeTabKey === 'related-resources' &&
-          (relationView === 'graph' ? (
-            <Suspense fallback={<Spin />}>
-              <ResourceGraphPanel kind="Pod" name={podName} scope={detailScope} focusPod />
-            </Suspense>
-          ) : (
-            <Card className="soha-pod-detail-card">
-              <AdminTable
-                columns={relatedResourceColumns}
-                dataSource={podRelatedResources}
-                rowKey={(record) =>
-                  `${record.kind}:${record.namespace || 'cluster'}:${record.name}`
-                }
-                pagination={false}
-                enableColumnSelection={false}
-              />
-            </Card>
-          ))}
-      </div>
-    ),
+      </Suspense>
+    ) : null,
   }
   const matchingDock = (kind: 'logs' | 'terminal') =>
     sessions.find(
