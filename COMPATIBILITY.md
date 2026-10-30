@@ -554,3 +554,22 @@ this SDK alone does not enable the feature or validate a production deployment.
 Consumers must pin the actually published npm/Go artifacts and validate the
 released combination; local tarballs and provenance policy files do not prove
 registry publication or an npm provenance attestation.
+
+## Manifest publication admission v1
+
+`manifest_delivery_v1.` is an opt-in provider family, not a change to legacy
+providers. New Core uses it for Plan-bound Manifest tasks only after an Agent
+advertises `manifest.delivery-admission.v1`. The claim response header
+`X-Soha-Manifest-Admission-Version: 1` confirms current Core admission for that
+claim, not a permanent grant. Missing, repeated, or different confirmation prevents
+execution on a new runner, even if an older Core accepted the provider string.
+Old runners and Direct workers do not claim this family. No legacy fallback is
+allowed. Private Plan/target context is not runner payload or a new public DTO.
+Rollback must settle or cancel protected tasks before removing the new workers;
+retain the additive private operation column and do not rewrite task providers.
+
+New runners also reject known old application Plan tasks (`fieldManager` begins
+`opensoha-manifest/` or `initializationPlanId` is nonempty) returned on legacy
+providers. This prevents an old Core from being treated as a standalone Manifest
+executor for those Plans. Markers are rejection hints only, not identity or grants.
+Unassociated standalone tasks and read-only Git synchronization keep their behavior.

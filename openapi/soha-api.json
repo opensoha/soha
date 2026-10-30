@@ -92272,7 +92272,7 @@
     },
     "/delivery/execution-tasks/claim": {
       "post": {
-        "description": "Claims one task from the authorized subset of requested providers. Local Direct providers are never available over HTTP. Helm Agent providers require the target cluster Agent token; general runner credentials alone do not grant access to confidential Helm inputs.",
+        "description": "Claims one task from the authorized subset of requested providers. Local Direct providers are never available over HTTP. Helm Agent and manifest_delivery_v1. providers require the target cluster Agent token; general runner credentials alone do not grant access. Plan-bound Manifest providers prepend manifest_delivery_v1. to the existing Direct, initialization or Agent provider. They require Agent capability manifest.delivery-admission.v1 and fresh Core admission against the durable operation, current publisher, target, policy and approved Plan on every claim and retry. Runners must require the response header X-Soha-Manifest-Admission-Version with the single value 1 before executing such a task. Missing or different confirmation fails the task without Kubernetes execution. A task payload or a status read cannot supply this confirmation. Older providers retain their existing semantics; protected tasks must never fall back to them during mixed-version operation. Known legacy application Plan tasks (fieldManager beginning with opensoha-manifest/ or a nonempty initializationPlanId) must be rejected when returned with a legacy provider, even if a response contains the header. These markers are rejection hints only and cannot reconstruct or grant publication identity. Unassociated standalone Manifest tasks and read-only Git synchronization retain their existing behavior.",
         "operationId": "claimExecutionTask",
         "requestBody": {
           "content": {
@@ -92293,7 +92293,18 @@
                 }
               }
             },
-            "description": "Legacy claimed-task response retained for client compatibility."
+            "description": "Legacy claimed-task response retained for client compatibility.",
+            "headers": {
+              "X-Soha-Manifest-Admission-Version": {
+                "description": "Present only after successful current admission of a manifest_delivery_v1. task. Required by runners for that provider family.",
+                "schema": {
+                  "enum": [
+                    "1"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
           },
           "202": {
             "content": {
@@ -92303,7 +92314,18 @@
                 }
               }
             },
-            "description": "Execution task claimed for the runner."
+            "description": "Execution task claimed for the runner.",
+            "headers": {
+              "X-Soha-Manifest-Admission-Version": {
+                "description": "Present only after successful current admission of a manifest_delivery_v1. task. Required by runners for that provider family.",
+                "schema": {
+                  "enum": [
+                    "1"
+                  ],
+                  "type": "string"
+                }
+              }
+            }
           },
           "204": {
             "description": "No execution task is currently available to claim."

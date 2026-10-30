@@ -601,6 +601,14 @@ function validateOpenapiStructure(openapi, permissionDefinitions) {
       }
       validateCapabilityExtension(operation, `${method.toUpperCase()} ${path}`, capabilityNames, riskLevels, permissionDefinitions);
       validateKubernetesOperationPermissions(operation, `${method.toUpperCase()} ${path}`, path, permissionDefinitions);
+      if (operation.operationId === "claimExecutionTask") {
+        for (const status of ["200", "202"]) {
+          const schema = operation.responses[status]?.headers?.["X-Soha-Manifest-Admission-Version"]?.schema;
+          if (schema?.type !== "string" || JSON.stringify(schema.enum) !== '["1"]') {
+            throw new Error(`claimExecutionTask ${status} must describe Manifest admission confirmation`);
+          }
+        }
+      }
       if (["claimExecutionTask", "claimDockerOperation"].includes(operation.operationId)) {
         for (const status of ["202", "204"]) {
           if (!operation.responses[status]) {
