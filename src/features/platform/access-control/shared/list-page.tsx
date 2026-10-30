@@ -1,15 +1,17 @@
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { hasAllowedAction } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
@@ -24,7 +26,7 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Popconfirm } from 'antd'
+import { Alert } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
 import '../styles.css'
 import { accessControlMutations } from './mutations'
@@ -87,9 +89,6 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
     () => rawItems.filter((item) => matchesSearchValues(searchValues(item), normalizedKeyword)),
     [normalizedKeyword, rawItems, searchValues],
   )
-  const actionsAvailable = !yamlCapability.isLoading && !yamlCapability.disabled
-  const shouldShowActions =
-    actionsAvailable && rawItems.some((item) => hasAllowedAction(item.allowedActions, 'delete'))
   const entityKind = ACCESS_CONTROL_ENTITY_KINDS[kind]
   useAIPageContext({
     sourceWorkbench: 'platform',
@@ -110,52 +109,42 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
         : `No matching ${label}`
       : emptyDescription[localeCode]
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
-  const deleteLabel = localeCode === 'zh_CN' ? '删除' : 'Delete'
-  const actionColumn: TableColumnsType<T>[number] = {
-    title: '',
-    dataIndex: '__actions',
-    fixed: 'right',
-    align: 'center',
-    width: 52,
-    onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    render: (_value, record) => {
-      if (!hasAllowedAction(record.allowedActions, 'delete')) return null
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `rbac:${kind}`,
+    resourceLabel: entityKind,
+    records: rawItems,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace ?? ''}/${record.name}`,
+    actions: (record) => {
       const target = accessControlTargetFromRecord(kind, clusterId, record)
-      const deleting =
-        removeMutation.isPending &&
-        removeMutation.variables?.name === target.name &&
-        removeMutation.variables.scope.namespace === target.scope.namespace
-      return (
-        <Popconfirm
-          title={localeCode === 'zh_CN' ? `确认删除 ${record.name}？` : `Delete ${record.name}?`}
-          cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-          description={
-            localeCode === 'zh_CN'
-              ? '此操作不可恢复，删除后集群资源立即消失。'
-              : 'This deletes the resource immediately and cannot be undone.'
-          }
-          okButtonProps={{ disabled: platformWriteBlocked, danger: true, loading: deleting }}
-          okText={deleteLabel}
-          onConfirm={() => removeMutation.mutate(target, {})}
-          placement="topRight"
-        >
-          <ManagementIconButton
-            disabled={platformWriteBlocked}
-            danger
-            aria-label={deleteLabel}
-            icon={<DeleteOutlined />}
-            loading={deleting}
-            tooltip={deleteLabel}
-          />
-        </Popconfirm>
-      )
+      return hasAllowedAction(record.allowedActions, 'delete')
+        ? [
+            {
+              key: 'delete',
+              label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: platformWriteBlocked || yamlCapability.isLoading || yamlCapability.disabled,
+              reason: yamlCapability.reason,
+              loading:
+                removeMutation.isPending &&
+                removeMutation.variables?.scope.clusterId === clusterId &&
+                removeMutation.variables?.name === target.name &&
+                removeMutation.variables.scope.namespace === target.scope.namespace,
+              confirm: kubernetesDeleteConfirmation(record, localeCode),
+              prepare: () => removeMutation.reset(),
+              feedback: removeMutation.feedback,
+              run: () => removeMutation.mutateAsync(target),
+            },
+          ]
+        : []
     },
-  }
+  })
 
   return (
     <>
-      {removeMutation.feedback}
+      {resourceActions.confirmation}
+      {!resourceActions.isConfirming && removeMutation.feedback}
       <ManagementDataPage
         beforeQuery={
           <>
@@ -206,7 +195,7 @@ export function AccessControlResourceListPage<T extends AccessControlResourceRec
             className={'soha-rbac-table soha-platform-table'}
             columnSettingIconOnly={true}
             columnSettingPlacement={'header'}
-            columns={shouldShowActions ? [...columns, actionColumn] : columns}
+            columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
             dataSource={clusterId ? filteredItems : []}
             empty={
               <ManagementState

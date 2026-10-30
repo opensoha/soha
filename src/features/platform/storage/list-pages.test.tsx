@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, type ReactNode } from 'react'
+import { act, cloneElement, isValidElement, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -58,25 +58,18 @@ vi.mock('@/components/status-tag', () => ({
   BooleanTag: ({ value }: { value: boolean }) => <span>{String(value)}</span>,
   StatusTag: ({ value }: { value: string }) => <span>{value}</span>,
 }))
-vi.mock('@/components/management-list', () => ({
-  ManagementDensityButton: () => null,
-  ManagementIconButton: ({
-    'aria-label': ariaLabel,
-    onClick,
-  }: {
-    'aria-label': string
-    onClick?: () => void
-  }) => (
-    <button aria-label={ariaLabel} onClick={onClick}>
-      {ariaLabel}
-    </button>
-  ),
-  ManagementKeywordField: () => null,
-  ManagementQueryActions: () => null,
-  ManagementRefreshButton: () => null,
-  ManagementState: ({ description }: { description?: ReactNode }) => <div>{description}</div>,
-  ManagementTableToolbar: ({ children }: { children?: ReactNode }) => <>{children}</>,
-}))
+vi.mock('@/components/management-list', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/management-list')>()
+  return {
+    ManagementDensityButton: () => null,
+    ManagementIconButton: actual.ManagementIconButton,
+    ManagementKeywordField: () => null,
+    ManagementQueryActions: () => null,
+    ManagementRefreshButton: () => null,
+    ManagementState: ({ description }: { description?: ReactNode }) => <div>{description}</div>,
+    ManagementTableToolbar: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  }
+})
 vi.mock('@/components/admin-table', () => ({
   AdminTable: (table: {
     columns: Array<{
@@ -133,10 +126,22 @@ vi.mock('antd', async (importOriginal) => {
 
 const mountedRoots: Root[] = []
 
-beforeAll(() => vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true))
+beforeAll(() => {
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  window.matchMedia = vi.fn().mockReturnValue({
+    matches: false,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+  })
+  const computedStyle = window.getComputedStyle.bind(window)
+  vi.spyOn(window, 'getComputedStyle').mockImplementation((element) => computedStyle(element))
+})
 beforeEach(() => {
   vi.clearAllMocks()
   testState.editorModuleLoads = 0
+  testState.scope.clusterId = 'cluster-a'
 })
 afterEach(async () => {
   await act(async () => {
@@ -153,29 +158,41 @@ async function renderPage(page: ReactNode) {
   const queryClient = new QueryClient({
     defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
   })
-  await act(async () => {
-    root.render(
-      <QueryClientProvider client={queryClient}>
-        <MemoryRouter>{page}</MemoryRouter>
-      </QueryClientProvider>,
-    )
-  })
-  await act(async () => {
-    await Promise.resolve()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  })
-  return container
+  const rerender = async () => {
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter>{isValidElement(page) ? cloneElement(page) : page}</MemoryRouter>
+        </QueryClientProvider>,
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+  await rerender()
+  return { container, rerender }
 }
 
 describe('storage list pages', () => {
   it('uses selected namespace for PVC list and row namespace for delete', async () => {
-    const container = await renderPage(<StoragePvcPage />)
+    const { container } = await renderPage(<StoragePvcPage />)
     expect(apiGetMock).toHaveBeenCalledWith(
       '/clusters/cluster-a/storage/persistentvolumeclaims?namespace=selected-ns',
     )
-    const deleteButton = container.querySelector('button[aria-label="删除"]')
-    await act(async () => deleteButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await act(async () => Promise.resolve())
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="更多操作：claim-a"]')!.click()
+    })
+    await act(async () => {
+      document.querySelector<HTMLElement>('[role="menuitem"]')!.click()
+    })
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('row-ns / claim-a')
+    expect(apiDeleteMock).not.toHaveBeenCalled()
+    await act(async () => {
+      document.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
     expect(apiDeleteMock).toHaveBeenCalledWith(
       '/clusters/cluster-a/storage/persistentvolumeclaims/claim-a?namespace=row-ns',
     )
@@ -189,4 +206,41 @@ describe('storage list pages', () => {
     expect(apiGetMock).toHaveBeenCalledWith('/clusters/cluster-a/storage/storageclasses')
     expect(testState.editorModuleLoads).toBe(0)
   })
+})
+
+it('does not show a previous cluster delete as loading on an identically named PVC', async () => {
+  let finish!: () => void
+  apiDeleteMock.mockImplementationOnce(
+    () =>
+      new Promise<{ data: null }>((resolve) => {
+        finish = () => resolve({ data: null })
+      }),
+  )
+  const { container, rerender } = await renderPage(<StoragePvcPage />)
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="更多操作：claim-a"]')!.click(),
+  )
+  await act(async () => document.querySelector<HTMLElement>('[role="menuitem"]')!.click())
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('.ant-modal-footer .ant-btn-primary')!.click(),
+  )
+  testState.scope.clusterId = 'cluster-b'
+  await rerender()
+  expect(apiGetMock).toHaveBeenCalledWith(
+    '/clusters/cluster-b/storage/persistentvolumeclaims?namespace=selected-ns',
+  )
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="更多操作：claim-a"]')!.click(),
+  )
+  const remove = document.querySelector('[role="menuitem"]')!
+  expect(remove.getAttribute('aria-disabled')).toBe('true')
+  expect(remove.querySelector('.anticon-loading')).toBeNull()
+  await act(async () => {
+    finish()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  expect(apiDeleteMock).toHaveBeenCalledTimes(1)
+  expect(apiDeleteMock).toHaveBeenCalledWith(
+    '/clusters/cluster-a/storage/persistentvolumeclaims/claim-a?namespace=row-ns',
+  )
 })

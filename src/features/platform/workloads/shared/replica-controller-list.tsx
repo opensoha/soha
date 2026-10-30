@@ -1,6 +1,9 @@
+import {
+  useKubernetesResourceActions,
+  kubernetesDeleteConfirmation,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
-import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
-import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
+import { ManagementTableToolbar } from '@/components/management-list'
 import { hasAllowedAction } from '@/features/auth'
 import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import {
@@ -15,7 +18,6 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Popconfirm } from 'antd'
 import { useMemo, useState } from 'react'
 import {
   useWorkloadListAIContext,
@@ -69,9 +71,6 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
       ),
     [normalizedKeyword, records],
   )
-  const canShowActions =
-    !capability.disabled &&
-    records.some((record) => hasAllowedAction(record.allowedActions, 'delete'))
   useWorkloadListAIContext({
     clusterId,
     itemCount: records.length,
@@ -80,57 +79,44 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
     namespace,
     searchKeyword,
   })
-  const actionColumn: TableColumnsType<T>[number] = {
-    fixed: 'right',
-    title: '',
-    dataIndex: 'name',
-    key: 'actions',
-    width: 64,
-    align: 'center',
-    className: TABLE_ACTIONS_COLUMN_CLASS_NAME,
-    render: (name: string, record: T) => {
-      if (!hasAllowedAction(record.allowedActions, 'delete')) return '-'
-      const target = { scope: toScopeKey(clusterId, record.namespace), name }
-      const pending =
-        removeMutation.isPending &&
-        removeMutation.variables?.name === name &&
-        removeMutation.variables.scope.namespace === record.namespace
-      const deleteLabel = localeCode === 'zh_CN' ? '删除' : 'Delete'
-      if (capability.disabled) {
-        return (
-          <ManagementIconButton
-            danger
-            disabled
-            icon={<DeleteOutlined />}
-            aria-label={deleteLabel}
-            tooltip={capability.reason || deleteLabel}
-          />
-        )
-      }
-      return (
-        <Popconfirm
-          title={localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`}
-          okText={deleteLabel}
-          cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-          okButtonProps={{ disabled: platformWriteBlocked, danger: true, loading: pending }}
-          onConfirm={() => removeMutation.mutate(target, {})}
-        >
-          <ManagementIconButton
-            disabled={platformWriteBlocked}
-            danger
-            icon={<DeleteOutlined />}
-            aria-label={deleteLabel}
-            loading={pending}
-            tooltip={deleteLabel}
-          />
-        </Popconfirm>
-      )
-    },
-  }
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: kind,
+    resourceLabel: label,
+    records,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace}/${record.name}`,
+    actions: (record) =>
+      hasAllowedAction(record.allowedActions, 'delete')
+        ? [
+            {
+              key: 'delete',
+              label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+              icon: <DeleteOutlined aria-hidden />,
+              danger: true,
+              disabled: platformWriteBlocked || capability.disabled,
+              reason: capability.reason,
+              loading:
+                removeMutation.isPending &&
+                removeMutation.variables?.scope.clusterId === clusterId &&
+                removeMutation.variables?.name === record.name &&
+                removeMutation.variables.scope.namespace === record.namespace,
+              prepare: () => removeMutation.reset(),
+              feedback: removeMutation.feedback,
+              confirm: kubernetesDeleteConfirmation(record, localeCode),
+              run: () =>
+                removeMutation.mutateAsync({
+                  name: record.name,
+                  scope: toScopeKey(clusterId, record.namespace),
+                }),
+            },
+          ]
+        : [],
+  })
 
   return (
     <div className="soha-page">
-      {removeMutation.feedback}
+      {resourceActions.isConfirming ? null : removeMutation.feedback}
+      {resourceActions.confirmation}
 
       <WorkloadQueryPanel
         hasActiveFilters={Boolean(searchKeyword.trim())}
@@ -158,7 +144,7 @@ export function ReplicaControllerListPage<T extends ReplicaControllerRecord>({
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
-        columns={canShowActions ? [...columns, actionColumn] : columns}
+        columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
         dataSource={clusterId ? filteredRecords : []}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         onRow={(record: T) => workloadRowAIContext(kind, record, clusterId)}

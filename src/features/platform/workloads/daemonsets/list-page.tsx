@@ -1,11 +1,11 @@
-import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
-import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
-import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
-import { hasAllowedAction } from '@/features/auth'
 import {
-  capabilityActionTooltip,
-  useClusterCapability,
-} from '@/features/platform/cluster-capabilities'
+  useKubernetesResourceActions,
+  kubernetesDeleteConfirmation,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
+import { ManagementTableToolbar } from '@/components/management-list'
+import { hasAllowedAction } from '@/features/auth'
+import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -36,23 +36,22 @@ import { formatAgeSeconds } from '@/utils/time'
 import { DeleteOutlined, FormOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Popconfirm, Space } from 'antd'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
 import { daemonSetMutations } from './mutations'
 import { daemonSetQueries } from './queries'
 import type { DaemonSet, DaemonSetTarget } from './types'
 
-const WORKLOAD_ACTIONS_COLUMN_CLASS_NAME = `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-workload-actions-column`
-
 function isTargetMutationPending(
   mutation: { isPending: boolean; variables?: DaemonSetTarget },
   name: string,
   namespace: string,
+  clusterId: string | null,
 ) {
   return (
     mutation.isPending &&
+    mutation.variables?.scope.clusterId === clusterId &&
     mutation.variables?.name === name &&
     mutation.variables.scope.namespace === namespace
   )
@@ -82,12 +81,6 @@ export function WorkloadsDaemonSetsPage() {
   const yamlApplyCapability = useClusterCapability('resource.yaml.apply', localeCode)
 
   const daemonSets = visibleDaemonSetsQueryData ?? []
-  const canShowActions = daemonSets.some(
-    (item) =>
-      (!yamlApplyCapability.disabled && hasAllowedAction(item.allowedActions, 'update')) ||
-      (!workloadMutationCapability.disabled &&
-        ['restart', 'delete'].some((action) => hasAllowedAction(item.allowedActions, action))),
-  )
   const targetFor = (name: string, targetNamespace: string): DaemonSetTarget => ({
     name,
     scope: toScopeKey(clusterId, targetNamespace),
@@ -109,6 +102,74 @@ export function WorkloadsDaemonSetsPage() {
     searchKeyword,
   })
 
+  useEffect(() => {
+    setEditTarget(null)
+  }, [clusterId, namespace])
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: 'daemonsets',
+    resourceLabel: 'DaemonSet',
+    records: daemonSets,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace}/${record.name}`,
+    actions: (record) => {
+      const target = targetFor(record.name, record.namespace)
+      return [
+        ...(hasAllowedAction(record.allowedActions, 'update')
+          ? [
+              {
+                key: 'update',
+                label: localeCode === 'zh_CN' ? '编辑' : 'Edit',
+                icon: <FormOutlined aria-hidden />,
+                disabled: platformWriteBlocked || yamlApplyCapability.disabled,
+                reason: yamlApplyCapability.reason,
+                run: () => setEditTarget(record),
+              },
+            ]
+          : []),
+        ...(hasAllowedAction(record.allowedActions, 'restart')
+          ? [
+              {
+                key: 'restart',
+                label: localeCode === 'zh_CN' ? '重启' : 'Restart',
+                icon: <ReloadOutlined aria-hidden />,
+                disabled: platformWriteBlocked || workloadMutationCapability.disabled,
+                reason: workloadMutationCapability.reason,
+                loading: isTargetMutationPending(
+                  restartMutation,
+                  record.name,
+                  record.namespace,
+                  clusterId,
+                ),
+                run: () => restartMutation.mutateAsync(target),
+              },
+            ]
+          : []),
+        ...(hasAllowedAction(record.allowedActions, 'delete')
+          ? [
+              {
+                key: 'delete',
+                label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+                icon: <DeleteOutlined aria-hidden />,
+                danger: true,
+                disabled: platformWriteBlocked || workloadMutationCapability.disabled,
+                reason: workloadMutationCapability.reason,
+                loading: isTargetMutationPending(
+                  deleteMutation,
+                  record.name,
+                  record.namespace,
+                  clusterId,
+                ),
+                prepare: () => deleteMutation.reset(),
+                feedback: deleteMutation.feedback,
+                confirm: kubernetesDeleteConfirmation(record, localeCode),
+                run: () => deleteMutation.mutateAsync(target),
+              },
+            ]
+          : []),
+      ]
+    },
+  })
+
   const columns: TableColumnsType<DaemonSet> = [
     {
       title: localeCode === 'zh_CN' ? '名称' : 'Name',
@@ -128,30 +189,18 @@ export function WorkloadsDaemonSetsPage() {
       width: 160,
     },
     {
-      title: localeCode === 'zh_CN' ? '期望' : 'Desired',
-      dataIndex: 'desiredNumber',
-      width: 96,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '当前' : 'Current',
-      dataIndex: 'currentNumber',
-      width: 96,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '就绪' : 'Ready',
+      title: localeCode === 'zh_CN' ? '就绪 / 期望' : 'Ready / Desired',
       dataIndex: 'readyNumber',
-      width: 96,
+      width: 112,
+      render: (_value: number, record) => `${record.readyNumber}/${record.desiredNumber}`,
     },
+    { title: localeCode === 'zh_CN' ? '已更新' : 'Updated', dataIndex: 'updatedNumber', width: 96 },
     {
       title: localeCode === 'zh_CN' ? '可用' : 'Available',
       dataIndex: 'availableNumber',
-      width: 110,
-    },
-    {
-      title: localeCode === 'zh_CN' ? '已更新' : 'Updated',
-      dataIndex: 'updatedNumber',
       width: 96,
     },
+    { title: localeCode === 'zh_CN' ? '当前' : 'Current', dataIndex: 'currentNumber', width: 96 },
     {
       ...tableColumnPresets.datetime,
       title: localeCode === 'zh_CN' ? '时长' : 'Age',
@@ -159,98 +208,15 @@ export function WorkloadsDaemonSetsPage() {
       width: 104,
       render: (value: number) => formatAgeSeconds(value),
     },
-    {
-      fixed: 'right',
-      title: '',
-      dataIndex: 'name',
-      key: 'actions',
-      width: 116,
-      align: 'center',
-      onHeaderCell: () => ({ className: WORKLOAD_ACTIONS_COLUMN_CLASS_NAME }),
-      onCell: () => ({ className: WORKLOAD_ACTIONS_COLUMN_CLASS_NAME }),
-      render: (name: string, record) => {
-        const canRestart = hasAllowedAction(record.allowedActions, 'restart')
-        const canEdit = hasAllowedAction(record.allowedActions, 'update')
-        const canDelete = hasAllowedAction(record.allowedActions, 'delete')
-        if (!canEdit && !canRestart && !canDelete) return '-'
-
-        const restartLabel = localeCode === 'zh_CN' ? '重启' : 'Restart'
-        const deleteLabel = localeCode === 'zh_CN' ? '删除' : 'Delete'
-        const target = targetFor(name, record.namespace)
-        const deletePending = isTargetMutationPending(deleteMutation, name, record.namespace)
-
-        return (
-          <Space size={4} className="soha-deployment-action-cell">
-            {canEdit ? (
-              <ManagementIconButton
-                icon={<FormOutlined />}
-                aria-label={`${localeCode === 'zh_CN' ? '编辑' : 'Edit'} ${name}`}
-                disabled={platformWriteBlocked || yamlApplyCapability.disabled}
-                tooltip={capabilityActionTooltip(
-                  localeCode === 'zh_CN' ? '编辑' : 'Edit',
-                  yamlApplyCapability,
-                )}
-                onClick={() => setEditTarget(record)}
-              />
-            ) : null}
-            {canRestart ? (
-              <ManagementIconButton
-                icon={<ReloadOutlined />}
-                aria-label={restartLabel}
-                disabled={platformWriteBlocked || workloadMutationCapability.disabled}
-                loading={isTargetMutationPending(restartMutation, name, record.namespace)}
-                tooltip={capabilityActionTooltip(restartLabel, workloadMutationCapability)}
-                onClick={() => restartMutation.mutate(target, {})}
-              />
-            ) : null}
-            {canDelete && workloadMutationCapability.disabled ? (
-              <ManagementIconButton
-                danger
-                disabled
-                icon={<DeleteOutlined />}
-                aria-label={deleteLabel}
-                tooltip={capabilityActionTooltip(deleteLabel, workloadMutationCapability)}
-              />
-            ) : null}
-            {canDelete && !workloadMutationCapability.disabled ? (
-              <Popconfirm
-                title={localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`}
-                description={
-                  localeCode === 'zh_CN'
-                    ? '此操作不可恢复，删除后集群资源立即消失。'
-                    : 'This deletes the resource immediately and cannot be undone.'
-                }
-                okText={deleteLabel}
-                cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-                okButtonProps={{
-                  disabled: platformWriteBlocked,
-                  danger: true,
-                  loading: deletePending,
-                }}
-                placement="topRight"
-                onConfirm={() => deleteMutation.mutate(target, {})}
-              >
-                <ManagementIconButton
-                  disabled={platformWriteBlocked}
-                  danger
-                  icon={<DeleteOutlined />}
-                  aria-label={deleteLabel}
-                  loading={deletePending}
-                  tooltip={deleteLabel}
-                />
-              </Popconfirm>
-            ) : null}
-          </Space>
-        )
-      },
-    },
+    resourceActions.column,
   ]
 
   return (
     <div className="soha-page">
       {restartMutation.feedback}
-      {deleteMutation.feedback}
+      {resourceActions.isConfirming ? null : deleteMutation.feedback}
 
+      {resourceActions.confirmation}
       <WorkloadQueryPanel
         hasActiveFilters={Boolean(searchKeyword.trim())}
         localeCode={localeCode}
@@ -289,7 +255,11 @@ export function WorkloadsDaemonSetsPage() {
             />
           </ManagementTableToolbar>
         }
-        columns={canShowActions ? columns : columns.filter((column) => column.key !== 'actions')}
+        columns={
+          resourceActions.hasActions
+            ? columns
+            : columns.filter((column) => column.key !== 'actions')
+        }
         dataSource={filteredDaemonSets}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         onRow={(record: DaemonSet) => workloadRowAIContext('daemonsets', record, clusterId)}

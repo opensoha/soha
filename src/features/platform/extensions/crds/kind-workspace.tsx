@@ -1,3 +1,7 @@
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementIconButton,
@@ -23,7 +27,7 @@ import { formatAgeSeconds, formatRelativeTime } from '@/utils/time'
 import { ArrowLeftOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType, TableProps } from 'antd'
-import { App, Button, Card, Descriptions, Popconfirm, Select, Space, Spin } from 'antd'
+import { App, Button, Card, Descriptions, Popconfirm, Select, Spin } from 'antd'
 import { lazy, Suspense, useDeferredValue, useEffect, useState } from 'react'
 import { ResourceQueryPanel } from '../shared/resource-query-panel'
 import { includesSearch, normalizeSearchKeyword } from '../shared/search'
@@ -240,7 +244,11 @@ function CRDInstancesWorkspace({
         okButtonProps={{
           disabled: platformWriteBlocked,
           danger: true,
-          loading: deleteMutation.isPending,
+          loading:
+            deleteMutation.isPending &&
+            deleteMutation.variables?.clusterId === clusterId &&
+            deleteMutation.variables.resourceName === record.name &&
+            deleteMutation.variables.expectedUid === record.uid,
         }}
         onConfirm={() => {
           if (!clusterId || disabled || busy || editing) return
@@ -271,6 +279,67 @@ function CRDInstancesWorkspace({
         />
       </Popconfirm>
     ) : null
+  const resourceActions = useKubernetesResourceActions<CRDResourceInstance>({
+    resourceKey: `crd-instances:${crd.name}`,
+    resourceLabel: crd.kind,
+    records: resources,
+    scopeKey: JSON.stringify([clusterId, namespace, crd.group, crd.plural, crd.version]),
+    getName: (record) => record.name,
+    getKey: (record) => `${resourceKey(record)}/${record.uid ?? ''}`,
+    actions: (record) => [
+      ...(hasAllowedAction(record.allowedActions, 'update')
+        ? [
+            {
+              key: 'edit',
+              label: t('common.edit', 'Edit'),
+              icon: <EditOutlined />,
+              disabled: platformWriteBlocked || disabled || busy || Boolean(record.deletingAt),
+              reason: disabled ? capability.reason : undefined,
+              run: () => openResource(record, true),
+            },
+          ]
+        : []),
+      ...(!record.deletingAt && hasAllowedAction(record.allowedActions, 'delete')
+        ? [
+            {
+              key: 'delete',
+              label: t('common.delete', 'Delete'),
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: platformWriteBlocked || disabled || busy || editing || !record.uid,
+              reason: !record.uid
+                ? zh
+                  ? '缺少资源 UID，请刷新后重试。'
+                  : 'Missing resource UID. Refresh and retry.'
+                : disabled
+                  ? capability.reason
+                  : undefined,
+              loading:
+                deleteMutation.isPending &&
+                deleteMutation.variables?.clusterId === clusterId &&
+                deleteMutation.variables.resourceName === record.name &&
+                deleteMutation.variables.expectedUid === record.uid,
+              confirm: kubernetesDeleteConfirmation(record, localeCode),
+              prepare: () => deleteMutation.reset(),
+              feedback: deleteMutation.feedback,
+              run: async () => {
+                if (!clusterId || !record.uid) return
+                await deleteMutation.mutateAsync({
+                  clusterId,
+                  crd,
+                  namespace: record.namespace ?? namespace,
+                  resourceName: record.name,
+                  expectedUid: record.uid,
+                })
+                if (selection && resourceKey(selection) === resourceKey(record))
+                  setSelection(undefined)
+              },
+            },
+          ]
+        : []),
+    ],
+  })
+
   const columns: TableColumnsType<CRDResourceInstance> = [
     {
       key: 'name',
@@ -333,26 +402,6 @@ function CRDInstancesWorkspace({
           : record.ageSeconds == null
             ? '—'
             : formatAgeSeconds(record.ageSeconds),
-    },
-    {
-      key: 'actions',
-      render: (_value, record) => (
-        <Space size={0} className="soha-row-action-icons">
-          <ManagementIconButton
-            icon={<EditOutlined />}
-            aria-label={t('common.edit', 'Edit')}
-            tooltip={t('common.edit', 'Edit')}
-            disabled={
-              disabled ||
-              busy ||
-              Boolean(record.deletingAt) ||
-              !hasAllowedAction(record.allowedActions, 'update')
-            }
-            onClick={() => openResource(record, true)}
-          />
-          {deleteButton(record)}
-        </Space>
-      ),
     },
   ]
   const onTableChange: NonNullable<TableProps<CRDResourceInstance>['onChange']> = (
@@ -455,6 +504,7 @@ function CRDInstancesWorkspace({
   ) : null
   return (
     <>
+      {resourceActions.confirmation}
       <ReadFeedback canRead={accessQuery.isEnabled} query={accessQuery} label="资源权限" />
       {selection ? (
         <ReadFeedback
@@ -464,7 +514,7 @@ function CRDInstancesWorkspace({
         />
       ) : null}
 
-      {deleteMutation.feedback}
+      {!resourceActions.isConfirming && deleteMutation.feedback}
       {isNamespacedCRD(crd) ? (
         <ReadFeedback
           canRead={namespacesQuery.isEnabled}
@@ -509,7 +559,7 @@ function CRDInstancesWorkspace({
           allRows={resources}
           filterKey={keyword}
           scopeMode={isNamespacedCRD(crd) ? 'namespace' : 'cluster'}
-          columns={columns}
+          columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
           dataSource={filtered}
           rowKey={resourceKey}
           scroll={{ x: 'max-content' }}

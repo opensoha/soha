@@ -328,12 +328,12 @@ describe('configuration leaf pages', () => {
     ).not.toBeNull()
     expect(configMaps.querySelector('[data-testid="pagination-summary"]')).toBeNull()
     expect(configMaps.querySelector('[data-testid="column-keys"]')?.textContent).not.toContain(
-      '__actions',
+      'actions',
     )
 
     const secrets = await renderPage(<ConfigurationSecretsPage />, '/configuration/secrets')
     expect(secrets.textContent).toContain('registry-secret')
-    expect(secrets.querySelector('[data-testid="column-keys"]')?.textContent).toContain('__actions')
+    expect(secrets.querySelector('[data-testid="column-keys"]')?.textContent).toContain('actions')
     const secretContext = JSON.parse(
       secrets.querySelector('[data-testid="row-0"]')?.getAttribute('data-ai-context') ?? '{}',
     )

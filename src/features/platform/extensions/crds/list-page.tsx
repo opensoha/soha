@@ -1,7 +1,7 @@
+import { useKubernetesResourceActions } from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
@@ -11,7 +11,6 @@ import '@/features/platform/extensions/styles.css'
 import { useI18n } from '@/i18n'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { readableQueryData } from '@/utils/query-feedback'
-import { tableColumnPresets } from '@/utils/table-columns'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
@@ -71,6 +70,39 @@ export function CRDPage() {
   )
   const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
   const openGroup = (group: string) => navigate(buildCRDApiGroupDetailPath(group))
+
+  const resourceActions = useKubernetesResourceActions<CRDApiGroupSummary>({
+    resourceKey: 'crds',
+    resourceLabel: 'API Group',
+    records: apiGroups,
+    scopeKey: clusterId ?? '',
+    getName: (record) => record.group,
+    getKey: (record) => record.group,
+    actions: (record) => {
+      const hasDeletableDefinition = record.crds.some(
+        (item) => item.uid && !item.deletingAt && item.allowedActions?.includes('delete'),
+      )
+      return canDelete
+        ? [
+            {
+              key: 'delete-definition',
+              label: localeCode === 'zh_CN' ? '删除 CRD 定义' : 'Delete CRD definition',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: !clusterId || !hasDeletableDefinition,
+              reason: hasDeletableDefinition
+                ? ''
+                : localeCode === 'zh_CN'
+                  ? '需要删除授权和包含 UID 的最新目录；Agent 需启用 platform.crds.delete'
+                  : 'Requires deletion access and a current catalog with UIDs; enable platform.crds.delete on the agent',
+              run: () => {
+                if (clusterId) setDeleteTarget({ clusterId, group: record.group })
+              },
+            },
+          ]
+        : []
+    },
+  })
 
   const columns: TableColumnsType<CRDApiGroupSummary> = [
     {
@@ -151,39 +183,6 @@ export function CRDPage() {
         </Space>
       ),
     },
-    {
-      ...tableColumnPresets.action,
-      title: '',
-      key: 'actions',
-      render: (_value, record) => (
-        <ManagementIconButton
-          icon={<DeleteOutlined />}
-          danger
-          aria-label={localeCode === 'zh_CN' ? '删除 CRD 定义' : 'Delete CRD definition'}
-          disabled={
-            !clusterId ||
-            !record.crds.some(
-              (item) => item.uid && !item.deletingAt && item.allowedActions?.includes('delete'),
-            )
-          }
-          tooltip={
-            record.crds.some(
-              (item) => item.uid && !item.deletingAt && item.allowedActions?.includes('delete'),
-            )
-              ? localeCode === 'zh_CN'
-                ? '删除 CRD 定义'
-                : 'Delete CRD definition'
-              : localeCode === 'zh_CN'
-                ? '需要删除授权和包含 UID 的最新目录；Agent 需启用 platform.crds.delete'
-                : 'Requires deletion access and a current catalog with UIDs; enable platform.crds.delete on the agent'
-          }
-          onClick={(event) => {
-            event.stopPropagation()
-            if (clusterId) setDeleteTarget({ clusterId, group: record.group })
-          }}
-        />
-      ),
-    },
   ]
 
   return (
@@ -210,7 +209,7 @@ export function CRDPage() {
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
-        columns={canDelete ? columns : columns.filter((column) => column.key !== 'actions')}
+        columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
         dataSource={clusterId ? filteredApiGroups : []}
         rowKey="group"
         loading={catalogQuery.isLoading}

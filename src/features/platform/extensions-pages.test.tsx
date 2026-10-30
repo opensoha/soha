@@ -575,20 +575,22 @@ describe('CRD catalog page', () => {
 
     const container = await renderWithProviders(<HelmReleasesPage />, '/helm/releases')
 
-    const editButton = container.querySelector(
-      'button[aria-label="编辑并比对 values.yaml"]',
-    ) as HTMLButtonElement | null
-    const deleteButton = container.querySelector(
-      'button[aria-label="删除 Helm Release"]',
-    ) as HTMLButtonElement | null
-    const viewButton = container.querySelector(
-      'button[aria-label="查看 values.yaml"]',
-    ) as HTMLButtonElement | null
-
     expect(container.textContent).not.toContain('当前连接模式限制 Helm 写入')
-    expect(editButton?.disabled).toBe(false)
-    expect(deleteButton?.disabled).toBe(false)
-    expect(viewButton?.disabled).toBe(false)
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="更多操作：ingress-nginx"]')!
+        .click()
+    })
+    const menu = document.querySelector(
+      '[role="menu"][aria-label="Helm Release 操作：ingress-nginx"]',
+    )!
+    for (const label of ['编辑并比对 values.yaml', '删除 Helm Release', '查看 values.yaml']) {
+      const item = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+        (entry) => entry.textContent === label,
+      )
+      expect(item).toBeTruthy()
+      expect(item?.getAttribute('aria-disabled')).not.toBe('true')
+    }
   })
 
   it('hides the Helm action column when values and mutation permissions are absent', async () => {

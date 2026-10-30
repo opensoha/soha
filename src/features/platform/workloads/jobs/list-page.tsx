@@ -1,10 +1,11 @@
-import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
-import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
-import { hasAllowedAction } from '@/features/auth'
 import {
-  capabilityActionTooltip,
-  useClusterCapability,
-} from '@/features/platform/cluster-capabilities'
+  useKubernetesResourceActions,
+  kubernetesDeleteConfirmation,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
+import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
+import { ManagementTableToolbar } from '@/components/management-list'
+import { hasAllowedAction } from '@/features/auth'
+import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -34,13 +35,12 @@ import { formatAgeSeconds } from '@/utils/time'
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Popconfirm } from 'antd'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
 import { jobMutations } from './mutations'
 import { jobQueries } from './queries'
-import type { Job, JobTarget } from './types'
+import type { Job } from './types'
 
 export function WorkloadsJobsPage() {
   const { t, localeCode } = useI18n()
@@ -59,9 +59,6 @@ export function WorkloadsJobsPage() {
   const workloadMutationCapability = useClusterCapability('workload.mutations', localeCode)
 
   const jobs = visibleJobsQueryData ?? []
-  const canShowActions =
-    !workloadMutationCapability.disabled &&
-    jobs.some((item) => hasAllowedAction(item.allowedActions, 'delete'))
   const filteredJobs = useMemo(
     () =>
       jobs.filter((item) =>
@@ -82,7 +79,39 @@ export function WorkloadsJobsPage() {
     searchKeyword,
   })
 
-  const remove = (target: JobTarget) => removeMutation.mutate(target, {})
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: 'jobs',
+    resourceLabel: 'Job',
+    records: jobs,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace}/${record.name}`,
+    actions: (record) => {
+      const target = { name: record.name, scope: toScopeKey(clusterId, record.namespace) }
+      return [
+        ...(hasAllowedAction(record.allowedActions, 'delete')
+          ? [
+              {
+                key: 'delete',
+                label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+                icon: <DeleteOutlined aria-hidden />,
+                danger: true,
+                disabled: platformWriteBlocked || workloadMutationCapability.disabled,
+                reason: workloadMutationCapability.reason,
+                loading:
+                  removeMutation.isPending &&
+                  removeMutation.variables?.scope.clusterId === clusterId &&
+                  removeMutation.variables?.name === record.name &&
+                  removeMutation.variables.scope.namespace === record.namespace,
+                feedback: removeMutation.feedback,
+                prepare: () => removeMutation.reset(),
+                confirm: kubernetesDeleteConfirmation(record, localeCode),
+                run: () => removeMutation.mutateAsync(target),
+              },
+            ]
+          : []),
+      ]
+    },
+  })
 
   const columns: TableColumnsType<Job> = [
     {
@@ -106,8 +135,8 @@ export function WorkloadsJobsPage() {
       dataIndex: 'succeeded',
       width: 104,
     },
-    { title: localeCode === 'zh_CN' ? '失败' : 'Failed', dataIndex: 'failed', width: 88 },
     { title: localeCode === 'zh_CN' ? '活跃' : 'Active', dataIndex: 'active', width: 88 },
+    { title: localeCode === 'zh_CN' ? '失败' : 'Failed', dataIndex: 'failed', width: 88 },
     {
       title: localeCode === 'zh_CN' ? '模式' : 'Mode',
       dataIndex: 'completionMode',
@@ -121,64 +150,14 @@ export function WorkloadsJobsPage() {
       width: 104,
       render: (value: number) => formatAgeSeconds(value),
     },
-    {
-      title: '',
-      dataIndex: 'name',
-      key: 'actions',
-      fixed: 'right',
-      align: 'center',
-      width: 52,
-      render: (name: string, record: Job) => {
-        if (!hasAllowedAction(record.allowedActions, 'delete')) return null
-        const target = { scope: toScopeKey(clusterId, record.namespace), name }
-        const pending =
-          removeMutation.isPending &&
-          removeMutation.variables?.name === name &&
-          removeMutation.variables.scope.namespace === record.namespace
-        const label = localeCode === 'zh_CN' ? '删除' : 'Delete'
-        if (workloadMutationCapability.disabled) {
-          return (
-            <ManagementIconButton
-              danger
-              disabled
-              icon={<DeleteOutlined />}
-              aria-label={label}
-              tooltip={capabilityActionTooltip(label, workloadMutationCapability)}
-            />
-          )
-        }
-        return (
-          <Popconfirm
-            title={localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`}
-            description={
-              localeCode === 'zh_CN'
-                ? '此操作不可恢复，删除后集群资源立即消失。'
-                : 'This deletes the resource immediately and cannot be undone.'
-            }
-            okText={label}
-            cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-            okButtonProps={{ disabled: platformWriteBlocked, danger: true, loading: pending }}
-            placement="topRight"
-            onConfirm={() => remove(target)}
-          >
-            <ManagementIconButton
-              disabled={platformWriteBlocked}
-              danger
-              icon={<DeleteOutlined />}
-              aria-label={label}
-              loading={pending}
-              tooltip={label}
-            />
-          </Popconfirm>
-        )
-      },
-    },
+    resourceActions.column,
   ]
 
   return (
     <div className="soha-page">
-      {removeMutation.feedback}
+      {resourceActions.isConfirming ? null : removeMutation.feedback}
 
+      {resourceActions.confirmation}
       <WorkloadQueryPanel
         hasActiveFilters={Boolean(searchKeyword.trim())}
         localeCode={localeCode}
@@ -217,7 +196,11 @@ export function WorkloadsJobsPage() {
             />
           </ManagementTableToolbar>
         }
-        columns={canShowActions ? columns : columns.filter((column) => column.key !== 'actions')}
+        columns={
+          resourceActions.hasActions
+            ? columns
+            : columns.filter((column) => column.key !== 'actions')
+        }
         dataSource={filteredJobs}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         onRow={(record: Job) => workloadRowAIContext('jobs', record, clusterId)}

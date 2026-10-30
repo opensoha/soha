@@ -1,17 +1,17 @@
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth'
-import {
-  capabilityActionTooltip,
-  useClusterCapability,
-} from '@/features/platform/cluster-capabilities'
+import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import '@/features/platform/extensions/styles.css'
 import {
   platformResourceTarget,
@@ -25,7 +25,7 @@ import { formatAgeSeconds } from '@/utils/time'
 import { DeleteOutlined, EditOutlined, EyeOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Alert, Button, Popconfirm, Space } from 'antd'
+import { Alert, Button } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ResourceQueryPanel } from '../../shared/resource-query-panel'
@@ -45,7 +45,6 @@ export function HelmReleasesPage() {
   const capability = useClusterCapability('helm.releases', localeCode)
   const [searchKeyword, setSearchKeyword] = useState('')
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
-  const [deletingReleaseKey, setDeletingReleaseKey] = useState<string | null>(null)
   const normalizedKeyword = normalizeSearchKeyword(useDeferredValue(searchKeyword))
   const releasesQuery = useQuery(helmQueries.releases(clusterId, namespace))
   const visibleReleasesQueryData = readableQueryData(releasesQuery)
@@ -55,11 +54,6 @@ export function HelmReleasesPage() {
   })
   const platformWriteBlocked = deleteMutation.blocked
   const rawItems = visibleReleasesQueryData ?? []
-  const canShowActions =
-    canViewValues ||
-    rawItems.some((item) =>
-      ['update', 'delete'].some((action) => hasAllowedAction(item.allowedActions, action)),
-    )
   const filteredItems = useMemo(
     () =>
       rawItems.filter((item) =>
@@ -80,6 +74,80 @@ export function HelmReleasesPage() {
         ? '没有匹配的 Helm Release'
         : 'No matching Helm releases'
       : t('page.extensions.helm.empty', 'No Helm releases in the current scope.')
+
+  const resourceActions = useKubernetesResourceActions<HelmRelease>({
+    resourceKey: 'helm-releases',
+    resourceLabel: 'Helm Release',
+    records: rawItems,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace}/${record.name}`,
+    actions: (record) => [
+      ...(canViewValues
+        ? [
+            {
+              key: 'values',
+              label: localeCode === 'zh_CN' ? '查看 values.yaml' : 'View values.yaml',
+              icon: <EyeOutlined />,
+              run: () =>
+                navigate(
+                  buildHelmReleaseRoutePath(record.name, record.namespace, {
+                    tab: 'values',
+                    mode: 'diff',
+                  }),
+                ),
+            },
+          ]
+        : []),
+      ...(hasAllowedAction(record.allowedActions, 'update')
+        ? [
+            {
+              key: 'edit',
+              label:
+                localeCode === 'zh_CN' ? '编辑并比对 values.yaml' : 'Edit and compare values.yaml',
+              icon: <EditOutlined />,
+              disabled: mutationsDisabled || platformWriteBlocked,
+              reason: capabilityReason,
+              run: () =>
+                navigate(
+                  buildHelmReleaseRoutePath(record.name, record.namespace, {
+                    tab: 'values',
+                    mode: 'edit',
+                  }),
+                ),
+            },
+          ]
+        : []),
+      ...(hasAllowedAction(record.allowedActions, 'delete')
+        ? [
+            {
+              key: 'delete',
+              label: localeCode === 'zh_CN' ? '删除 Helm Release' : 'Delete Helm release',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: mutationsDisabled || platformWriteBlocked || !clusterId,
+              reason: capabilityReason,
+              loading:
+                deleteMutation.isPending &&
+                deleteMutation.variables?.clusterId === clusterId &&
+                deleteMutation.variables?.name === record.name &&
+                deleteMutation.variables.namespace === record.namespace,
+              confirm: {
+                ...kubernetesDeleteConfirmation(record, localeCode),
+                okText: localeCode === 'zh_CN' ? '删除' : 'Delete',
+              },
+              prepare: () => deleteMutation.reset(),
+              feedback: deleteMutation.feedback,
+              run: () =>
+                deleteMutation.mutateAsync({
+                  clusterId: clusterId!,
+                  name: record.name,
+                  namespace: record.namespace,
+                }),
+            },
+          ]
+        : []),
+    ],
+  })
 
   const columns: TableColumnsType<HelmRelease> = [
     {
@@ -111,97 +179,12 @@ export function HelmReleasesPage() {
       dataIndex: 'ageSeconds',
       render: formatAgeSeconds,
     },
-    {
-      title: '',
-      key: 'actions',
-      fixed: 'right',
-      align: 'center',
-      width: 116,
-      render: (_value, record) => {
-        const key = `${record.namespace}/${record.name}`
-        const canUpdate = hasAllowedAction(record.allowedActions, 'update')
-        const canDelete = hasAllowedAction(record.allowedActions, 'delete')
-        const editLabel =
-          localeCode === 'zh_CN' ? '编辑并比对 values.yaml' : 'Edit and compare values.yaml'
-        const deleteLabel = localeCode === 'zh_CN' ? '删除 Helm Release' : 'Delete Helm release'
-        return (
-          <Space
-            size={2}
-            className="soha-row-action-icons"
-            onClick={(event) => event.stopPropagation()}
-          >
-            {canViewValues ? (
-              <ManagementIconButton
-                icon={<EyeOutlined />}
-                aria-label={localeCode === 'zh_CN' ? '查看 values.yaml' : 'View values.yaml'}
-                tooltip={localeCode === 'zh_CN' ? '查看 values.yaml' : 'View values.yaml'}
-                onClick={() =>
-                  navigate(
-                    buildHelmReleaseRoutePath(record.name, record.namespace, {
-                      tab: 'values',
-                      mode: 'diff',
-                    }),
-                  )
-                }
-              />
-            ) : null}
-            {canUpdate ? (
-              <ManagementIconButton
-                icon={<EditOutlined />}
-                aria-label={editLabel}
-                disabled={mutationsDisabled}
-                tooltip={capabilityActionTooltip(editLabel, capability)}
-                onClick={() =>
-                  navigate(
-                    buildHelmReleaseRoutePath(record.name, record.namespace, {
-                      tab: 'values',
-                      mode: 'edit',
-                    }),
-                  )
-                }
-              />
-            ) : null}
-            {canDelete ? (
-              <Popconfirm
-                title={localeCode === 'zh_CN' ? '删除 Helm Release?' : 'Delete Helm release?'}
-                description={`${record.name} (${record.namespace})`}
-                okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
-                cancelText={t('common.cancel', 'Cancel')}
-                okButtonProps={{
-                  disabled: platformWriteBlocked,
-                  danger: true,
-                  loading: deletingReleaseKey === key,
-                }}
-                onConfirm={() => {
-                  if (!clusterId) return
-                  setDeletingReleaseKey(key)
-                  deleteMutation.mutate(
-                    { clusterId, name: record.name, namespace: record.namespace },
-                    {
-                      onSettled: () => setDeletingReleaseKey(null),
-                    },
-                  )
-                }}
-              >
-                <ManagementIconButton
-                  danger
-                  icon={<DeleteOutlined />}
-                  aria-label={deleteLabel}
-                  disabled={platformWriteBlocked || mutationsDisabled}
-                  loading={deletingReleaseKey === key}
-                  tooltip={capabilityActionTooltip(deleteLabel, capability)}
-                />
-              </Popconfirm>
-            ) : null}
-          </Space>
-        )
-      },
-    },
   ]
 
   return (
     <div className="soha-page">
-      {deleteMutation.feedback}
+      {resourceActions.confirmation}
+      {!resourceActions.isConfirming && deleteMutation.feedback}
 
       <ResourceQueryPanel
         placeholder={
@@ -233,7 +216,7 @@ export function HelmReleasesPage() {
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
-        columns={canShowActions ? columns : columns.filter((column) => column.key !== 'actions')}
+        columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
         dataSource={clusterId ? filteredItems : []}
         rowKey={(record) => `${record.namespace}:${record.name}`}
         loading={releasesQuery.isLoading}

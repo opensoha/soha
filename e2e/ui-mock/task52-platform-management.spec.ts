@@ -153,6 +153,7 @@ async function platformMocks(context: BrowserContext, page: Page) {
       nodePort?: number
     }>,
     collectionCopies: 1,
+    namespaceActions: false,
   }
   const failure = (status: number) => ({
     status,
@@ -266,6 +267,10 @@ async function platformMocks(context: BrowserContext, page: Page) {
               riskLevel: 'mutate',
             })),
           },
+        }
+      if (state.namespaceActions && path === root + '/namespaces')
+        return {
+          body: { data: [{ name: 'monitoring', status: 'Active', labels: {}, allowedActions }] },
         }
       const list = lists.find((item) => path === root + item.path)
       if (list) {
@@ -509,7 +514,8 @@ test('Platform long resource identity remains usable at 125 percent zoom', async
 
 async function openHPAEditor(page: Page) {
   await page.goto('/configuration/hpas')
-  await page.getByRole('button', { name: '编辑 autoscale-api', exact: true }).click()
+  await page.getByRole('button', { name: '更多操作：autoscale-api', exact: true }).click()
+  await page.getByRole('menuitem', { name: '编辑', exact: true }).click()
   const editor = page.getByRole('dialog', { name: /编辑 HorizontalPodAutoscaler/ })
   await editor.getByLabel('最小副本数', { exact: true }).fill('3')
   await editor.getByRole('button', { name: '保存更改', exact: true }).press('Enter')
@@ -699,3 +705,66 @@ for (const entry of lists) {
     verifyBrowserEvidence(evidence)
   })
 }
+
+for (const item of lists.filter((entry) => entry.path !== '/workloads/deployments')) {
+  test(`Task117 shared action menu retains confirmation and permission semantics: ${item.route}`, async ({
+    context,
+    page,
+  }) => {
+    const { state, evidence } = await platformMocks(context, page)
+    await page.goto(item.route)
+    const trigger = page.getByRole('button', { name: `更多操作：${item.name}`, exact: true })
+    await expect(trigger).toBeVisible()
+    const column = trigger.locator('xpath=ancestor::*[contains(@class,"ant-table-cell")][1]')
+    expect((await column.boundingBox())!.width).toBeCloseTo(64, 0)
+    await trigger.press('ArrowDown')
+    const menu = page.getByRole('menu', { name: / 操作：/ })
+    await expect(menu).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(trigger).toBeFocused()
+    await trigger.click()
+    await menu.getByRole('menuitem', { name: /^(删除|删除 Helm Release)$/ }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText(item.name)
+    if (item.path === '/infrastructure/nodes')
+      await expect(dialog).toContainText('不会自动回收底层机器')
+    await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
+    expect(state.writes).toEqual([])
+    verifyBrowserEvidence(evidence)
+  })
+}
+
+test('Task117 namespace navigation and destructive confirmation stay distinct', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await platformMocks(context, page)
+  state.namespaceActions = true
+  await page.goto('/cluster-resources/namespaces')
+  await page.getByRole('button', { name: '更多操作：monitoring', exact: true }).click()
+  const menu = page.getByRole('menu', { name: '命名空间 操作：monitoring', exact: true })
+  await expect(menu.getByRole('menuitem', { name: '查看资源', exact: true })).toBeVisible()
+  await expect(menu.getByRole('menuitem', { name: 'Helm', exact: true })).toBeVisible()
+  await menu.getByRole('menuitem', { name: '删除', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('该命名空间下的资源会一并回收')
+  await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
+  expect(state.writes).toEqual([])
+  verifyBrowserEvidence(evidence)
+})
+test('Task117 node drain retains its explicit risk and parameter form', async ({
+  context,
+  page,
+}) => {
+  const { state, evidence } = await platformMocks(context, page)
+  await page.goto('/cluster-resources/nodes')
+  await page.getByRole('button', { name: '更多操作：worker-prod-01', exact: true }).click()
+  await page.getByRole('menuitem', { name: '排空节点', exact: true }).click()
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toContainText('DaemonSet 和静态 Pod 不会被驱逐')
+  await expect(dialog.getByRole('spinbutton')).toHaveValue('300')
+  for (const box of await dialog.getByRole('checkbox').all()) await expect(box).not.toBeChecked()
+  await dialog.getByRole('button', { name: /^取\s*消$/ }).click()
+  expect(state.writes).toEqual([])
+  verifyBrowserEvidence(evidence)
+})

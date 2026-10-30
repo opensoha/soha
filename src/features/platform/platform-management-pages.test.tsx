@@ -427,7 +427,15 @@ describe('platform RBAC list pages', () => {
     ).find((button) => button.textContent?.trim() === '新增')
     expect(createButton).toBeInstanceOf(HTMLButtonElement)
     expect((createButton as HTMLButtonElement).disabled).toBe(true)
-    expect(container.querySelector('button[aria-label="删除"]')).toBeNull()
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="更多操作：default"]')!.click()
+    })
+    const menu = document.querySelector('[role="menu"]')!
+    const remove = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+      item.textContent?.includes('删除'),
+    )!
+    expect(remove.getAttribute('aria-disabled')).toBe('true')
+    expect(remove.textContent).toContain('当前集群连接模式暂不支持该操作')
   })
 })
 

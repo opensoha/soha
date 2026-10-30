@@ -248,7 +248,7 @@ describe('extensions capability pages', () => {
     expect(container.textContent).toContain('widgets.example.io')
     expect(container.textContent).toContain('gadgets.example.io')
     expect(container.querySelector('button[aria-label="查看详情"]')).toBeNull()
-    expect(container.querySelector('button[aria-label="删除 CRD 定义"]')).toBeNull()
+    expect(container.querySelector('button[aria-label="更多操作：example.io"]')).toBeNull()
   })
 
   it('requires one definition and its full name, preserves deletion errors and observed UID', async () => {
@@ -266,7 +266,15 @@ describe('extensions capability pages', () => {
     setResponses({ '/clusters/cluster-a/extensions/crds': [definition] })
     const container = await renderPage(<CRDPage />, '/extensions')
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('button[aria-label="删除 CRD 定义"]')!.click()
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="更多操作：example.io"]')!
+        .click()
+    })
+    await act(async () => {
+      ;[...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+        .find((item) => item.textContent === '删除 CRD 定义')!
+        .click()
+      await flush()
     })
     expect(document.body.textContent).toContain('所有命名空间')
     const confirmButton = () =>

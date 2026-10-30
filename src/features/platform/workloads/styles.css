@@ -1009,3 +1009,12 @@
   line-height: var(--soha-line-height-supporting);
   white-space: normal;
 }
+
+.soha-workload-overview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}

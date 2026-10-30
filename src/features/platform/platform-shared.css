@@ -406,3 +406,7 @@
   display: inline-flex;
   vertical-align: middle;
 }
+
+.soha-kubernetes-actions-column {
+  --soha-table-actions-column-width: 64px;
+}

@@ -1,7 +1,10 @@
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
@@ -28,8 +31,8 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Button, Form, Input, Modal, Popconfirm, Space } from 'antd'
-import { useMemo, useState } from 'react'
+import { Button, Form, Input, Modal } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { namespaceMutations } from './mutations'
 import { namespaceQueries } from './queries'
@@ -37,7 +40,7 @@ import { toClusterScope } from './scope'
 import type { ClusterNamespace } from './types'
 
 export function ClusterNamespacesPage() {
-  const { t } = useI18n()
+  const { t, localeCode } = useI18n()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { clusterId, setNamespace } = usePlatformScopeStore()
@@ -93,6 +96,78 @@ export function ClusterNamespacesPage() {
     }
   }, [editingNamespace])
 
+  useEffect(() => {
+    setNamespaceModalVisible(false)
+    setEditingNamespace(null)
+  }, [clusterId])
+  const resourceActions = useKubernetesResourceActions<ClusterNamespace>({
+    resourceKey: 'namespaces',
+    resourceLabel: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+    records: visibleNamespacesQueryData ?? [],
+    scopeKey: clusterId ?? '',
+    getName: (record) => record.name,
+    getKey: (record) => record.name,
+    actions: (record) => [
+      {
+        key: 'resources',
+        label: localeCode === 'zh_CN' ? '查看资源' : 'View resources',
+        icon: <SendOutlined />,
+        run: () => {
+          setNamespace(record.name)
+          navigate('/workloads/overview')
+        },
+      },
+      {
+        key: 'helm',
+        label: 'Helm',
+        icon: <ApartmentOutlined />,
+        run: () => {
+          setNamespace(record.name)
+          navigate('/helm/releases')
+        },
+      },
+      ...(hasAllowedAction(record.allowedActions, 'update')
+        ? [
+            {
+              key: 'edit',
+              label: localeCode === 'zh_CN' ? '编辑' : 'Edit',
+              icon: <EditOutlined />,
+              disabled: platformWriteBlocked,
+              run: () => {
+                setEditingNamespace(record)
+                setNamespaceModalVisible(true)
+              },
+            },
+          ]
+        : []),
+      ...(hasAllowedAction(record.allowedActions, 'delete')
+        ? [
+            {
+              key: 'delete',
+              label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: platformWriteBlocked,
+              loading:
+                deleteNamespaceMutation.isPending &&
+                deleteNamespaceMutation.variables?.scope.clusterId === clusterId &&
+                deleteNamespaceMutation.variables?.name === record.name,
+              confirm: kubernetesDeleteConfirmation(
+                record,
+                localeCode,
+                localeCode === 'zh_CN'
+                  ? '删除后该命名空间下的资源会一并回收，请确认。'
+                  : 'Resources in this namespace will also be deleted.',
+              ),
+              prepare: () => deleteNamespaceMutation.reset(),
+              feedback: deleteNamespaceMutation.feedback,
+              run: () => deleteNamespaceMutation.mutateAsync({ scope, name: record.name }),
+            },
+          ]
+        : []),
+    ],
+  })
+
   const columns: TableColumnsType<ClusterNamespace> = [
     { title: '名称', dataIndex: 'name' },
     {
@@ -111,83 +186,14 @@ export function ClusterNamespacesPage() {
               .map(([key, value]) => <MetadataTag key={key} label={`${key}=${value}`} />)
           : '-',
     },
-    {
-      ...tableColumnPresets.action,
-      title: '操作',
-      dataIndex: 'name',
-      width: 150,
-      render: (name: string, record) => {
-        const deleting =
-          deleteNamespaceMutation.isPending && deleteNamespaceMutation.variables?.name === name
-        const canUpdate = hasAllowedAction(record.allowedActions, 'update')
-        const canDelete = hasAllowedAction(record.allowedActions, 'delete')
-        return (
-          <Space size={2} className="soha-row-action-icons">
-            <ManagementIconButton
-              aria-label={`查看命名空间 ${name} 资源`}
-              size="small"
-              tooltip="查看资源"
-              icon={<SendOutlined />}
-              onClick={() => {
-                setNamespace(name)
-                navigate('/workloads/overview')
-              }}
-            />
-            <ManagementIconButton
-              aria-label={`查看命名空间 ${name} Helm`}
-              size="small"
-              tooltip="Helm"
-              icon={<ApartmentOutlined />}
-              onClick={() => {
-                setNamespace(name)
-                navigate('/helm/releases')
-              }}
-            />
-            {canUpdate ? (
-              <ManagementIconButton
-                disabled={platformWriteBlocked}
-                aria-label={`编辑命名空间 ${name}`}
-                size="small"
-                tooltip="编辑"
-                icon={<EditOutlined />}
-                onClick={() => {
-                  setEditingNamespace(record)
-                  setNamespaceModalVisible(true)
-                }}
-              />
-            ) : null}
-            {canDelete ? (
-              <Popconfirm
-                title={`确认删除命名空间 ${name}？`}
-                description="删除后该命名空间下的资源会一并回收，请确认。"
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ disabled: platformWriteBlocked, danger: true, loading: deleting }}
-                placement="topRight"
-                onConfirm={() => deleteNamespaceMutation.mutate({ scope, name }, {})}
-              >
-                <ManagementIconButton
-                  disabled={platformWriteBlocked}
-                  aria-label={`删除命名空间 ${name}`}
-                  danger
-                  icon={<DeleteOutlined />}
-                  loading={deleting}
-                  size="small"
-                  tooltip="删除"
-                />
-              </Popconfirm>
-            ) : null}
-          </Space>
-        )
-      },
-    },
   ]
 
   return (
     <div className="soha-page">
       {createNamespaceMutation.feedback}
       {updateNamespaceMutation.feedback}
-      {deleteNamespaceMutation.feedback}
+      {resourceActions.confirmation}
+      {!resourceActions.isConfirming && deleteNamespaceMutation.feedback}
 
       {!clusterId ? (
         <ManagementState
@@ -210,7 +216,7 @@ export function ClusterNamespacesPage() {
           columnSettingIconOnly
           columnSettingPlacement="header"
           shellClassName="soha-management-table-shell"
-          columns={columns}
+          columns={[...columns, resourceActions.column]}
           dataSource={visibleNamespacesQueryData ?? []}
           rowKey="name"
           loading={namespacesQuery.isLoading || namespacesQuery.isFetching}
@@ -222,6 +228,7 @@ export function ClusterNamespacesPage() {
               {canCreate ? (
                 <Button
                   autoInsertSpace={false}
+                  disabled={platformWriteBlocked}
                   icon={<PlusOutlined />}
                   size="small"
                   type="primary"
@@ -274,6 +281,17 @@ export function ClusterNamespacesPage() {
           initialValues={namespaceModalInitValues}
           preserve={false}
           onFinish={(values) => {
+            if (platformWriteBlocked || !clusterId) return
+            if (
+              editingNamespace
+                ? !(visibleNamespacesQueryData ?? []).some(
+                    (item) =>
+                      item.name === editingNamespace.name &&
+                      hasAllowedAction(item.allowedActions, 'update'),
+                  )
+                : !canCreate
+            )
+              return
             const input = {
               name: editingNamespace?.name ?? String(values.name ?? ''),
               labels: parseStringMap(values.labels, 'Labels'),

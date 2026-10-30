@@ -170,7 +170,8 @@ test('U09–U11: exact deletion confirmation, failure context, retry and duplica
   catalog,
 }) => {
   await page.goto('/extensions')
-  await page.getByRole('button', { name: '删除 CRD 定义', exact: true }).first().click()
+  await page.getByRole('button', { name: `更多操作：${definitions[0].group}`, exact: true }).click()
+  await page.getByRole('menuitem', { name: '删除 CRD 定义', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await expect(dialog).toContainText('所有命名空间')
   await dialog.getByLabel('选择具体 CRD 定义').click()
@@ -198,7 +199,8 @@ test('U09: unknown deletion keeps the original confirmation and blocks another r
 }) => {
   catalog.deleteFailureStatus = 503
   await page.goto('/extensions')
-  await page.getByRole('button', { name: '删除 CRD 定义', exact: true }).first().click()
+  await page.getByRole('button', { name: `更多操作：${definitions[0].group}`, exact: true }).click()
+  await page.getByRole('menuitem', { name: '删除 CRD 定义', exact: true }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('选择具体 CRD 定义').click()
   await page.getByTitle(`${definitions[0].name} · Widget`, { exact: true }).click()
@@ -225,7 +227,9 @@ test('U12: no deletion permission removes dangerous UI entry', async ({ page, ca
   catalog.allowDelete = false
   await page.goto('/extensions')
   await expect(page.getByRole('button', { name: definitions[0].group, exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: '删除 CRD 定义', exact: true })).toHaveCount(0)
+  await expect(
+    page.getByRole('button', { name: `更多操作：${definitions[0].group}`, exact: true }),
+  ).toHaveCount(0)
 })
 
 test('U12: catalog failure stays distinguishable from empty results', async ({ page, catalog }) => {

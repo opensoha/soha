@@ -321,12 +321,16 @@ describe('network core pages', () => {
       await flush()
     })
     expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('1')
-    const editButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="编辑 core-dns"]',
-    )
-    expect(editButton).not.toBeNull()
     await act(async () => {
-      editButton?.click()
+      container.querySelector<HTMLButtonElement>('button[aria-label="更多操作：core-dns"]')!.click()
+      await flush()
+    })
+    const editAction = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (item) => item.textContent === '编辑',
+    )
+    expect(editAction).toBeTruthy()
+    await act(async () => {
+      editAction!.click()
       await flush()
     })
     await act(flush)

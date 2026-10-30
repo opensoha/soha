@@ -38,13 +38,6 @@ vi.mock('@/services/api-client', () => ({
   },
 }))
 
-vi.mock('@/components/resource-actions', () => ({
-  useResourceActions: () => ({
-    column: { title: '操作', dataIndex: '__actions', render: () => null },
-    modalNode: null,
-  }),
-}))
-
 vi.mock('@/components/resource-events-timeline', () => ({
   ResourceEventsTimeline: () => <div data-testid="events-timeline" />,
 }))

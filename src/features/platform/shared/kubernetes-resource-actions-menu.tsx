@@ -47,7 +47,7 @@ export function KubernetesResourceActionsMenu({
   // Keep the menu as one intrinsic control; the table's icon-group measurement
   // must not replace the resource column's explicit 64px interaction budget.
   return (
-    <span className="soha-kubernetes-action-menu">
+    <span className="soha-kubernetes-action-menu" onClick={(event) => event.stopPropagation()}>
       <Dropdown
         disabled={disabled}
         destroyOnHidden

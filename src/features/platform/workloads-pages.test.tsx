@@ -1354,17 +1354,7 @@ describe('workloads pods page refresh controls', () => {
     })
     await flushAsyncWork()
 
-    const restartButton = container.querySelector('button[aria-label="重启"]')
-    const scaleButton = container.querySelector('button[aria-label="扩缩"]')
-    const deleteButton = container.querySelector('button[aria-label="删除"]')
-    expect(restartButton).toBeInstanceOf(HTMLButtonElement)
-    expect(scaleButton).toBeInstanceOf(HTMLButtonElement)
-    expect(deleteButton).toBeInstanceOf(HTMLButtonElement)
-
-    await act(async () => {
-      restartButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flushAsyncWork()
+    await selectPodAction(container, 'prometheus', '重启')
     expect(apiPostMock).toHaveBeenCalledWith('/clusters/cluster-a/workloads/statefulsets/restart', {
       namespace: 'monitoring',
       name: 'prometheus',
@@ -1414,13 +1404,7 @@ describe('workloads pods page refresh controls', () => {
     })
     await flushAsyncWork()
 
-    const scaleButton = container.querySelector('button[aria-label="扩缩"]')
-    await act(async () => {
-      scaleButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      vi.runOnlyPendingTimers()
-      await Promise.resolve()
-    })
-    await flushAsyncWork()
+    await selectPodAction(container, 'prometheus', '扩缩')
 
     const modalOkButton = document.body.querySelector('.ant-modal-footer .ant-btn-primary')
     expect(document.body.textContent).toContain('StatefulSet 扩缩容')
@@ -1481,15 +1465,7 @@ describe('workloads pods page refresh controls', () => {
     })
     await flushAsyncWork()
 
-    const restartButton = container.querySelector('button[aria-label="重启"]')
-    const deleteButton = container.querySelector('button[aria-label="删除"]')
-    expect(restartButton).toBeInstanceOf(HTMLButtonElement)
-    expect(deleteButton).toBeInstanceOf(HTMLButtonElement)
-
-    await act(async () => {
-      restartButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flushAsyncWork()
+    await selectPodAction(container, 'node-exporter', '重启')
     expect(apiPostMock).toHaveBeenCalledWith('/clusters/cluster-a/workloads/daemonsets/restart', {
       namespace: 'monitoring',
       name: 'node-exporter',

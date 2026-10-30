@@ -1,8 +1,11 @@
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementRefreshButton,
@@ -28,7 +31,6 @@ import {
   type UseQueryOptions,
 } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Popconfirm } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
 import '../styles.css'
 import { toClusterStorageScope, toStorageScope } from './scope'
@@ -89,7 +91,6 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
     () => rawItems.filter((item) => includesSearch(searchValues(item), normalizedKeyword)),
     [normalizedKeyword, rawItems, searchValues],
   )
-  const canShowActions = rawItems.some((item) => hasAllowedAction(item.allowedActions, 'delete'))
   useAIPageContext({
     sourceWorkbench: 'platform',
     sourceTitle: resourceLabel,
@@ -99,46 +100,44 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
     visibleFilters: { keyword: searchKeyword || undefined },
     pinnedData: { itemCount: rawItems.length },
   })
-  const deleteLabel = localeCode === 'zh_CN' ? '删除' : 'Delete'
-  const actionColumn: TableColumnsType<T>[number] = {
-    fixed: 'right',
-    title: '',
-    dataIndex: 'name',
-    key: 'actions',
-    width: 64,
-    align: 'center',
-    render: (name: string, record: T) => {
-      if (!hasAllowedAction(record.allowedActions, 'delete')) return null
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `storage:${kind}`,
+    resourceLabel,
+    records: rawItems,
+    getName: (record) => record.name,
+    getKey: (record) => `${getRecordNamespace?.(record) ?? ''}/${record.name}`,
+    actions: (record) => {
       const targetScope = clusterScoped
         ? toClusterStorageScope(clusterId)
         : toStorageScope(clusterId, getRecordNamespace?.(record))
-      const pending =
-        removeMutation.isPending &&
-        removeMutation.variables?.name === name &&
-        removeMutation.variables.scope.clusterId === targetScope.clusterId &&
-        removeMutation.variables.scope.namespace === targetScope.namespace
-      return (
-        <Popconfirm
-          title={localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`}
-          okText={deleteLabel}
-          cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-          okButtonProps={{ disabled: platformWriteBlocked, danger: true, loading: pending }}
-          placement="topRight"
-          onConfirm={() => removeMutation.mutate({ scope: targetScope, name }, {})}
-        >
-          <ManagementIconButton
-            disabled={platformWriteBlocked}
-            danger
-            icon={<DeleteOutlined />}
-            aria-label={deleteLabel}
-            loading={pending}
-            tooltip={deleteLabel}
-          />
-        </Popconfirm>
-      )
+      return hasAllowedAction(record.allowedActions, 'delete')
+        ? [
+            {
+              key: 'delete',
+              label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+              icon: <DeleteOutlined />,
+              danger: true,
+              disabled: platformWriteBlocked,
+              loading:
+                removeMutation.isPending &&
+                removeMutation.variables?.scope.clusterId === targetScope.clusterId &&
+                removeMutation.variables?.name === record.name &&
+                removeMutation.variables.scope.namespace === targetScope.namespace,
+              confirm: kubernetesDeleteConfirmation(
+                { name: record.name, namespace: getRecordNamespace?.(record) },
+                localeCode,
+              ),
+              prepare: () => removeMutation.reset(),
+              feedback: removeMutation.feedback,
+              run: () => removeMutation.mutateAsync({ scope: targetScope, name: record.name }),
+            },
+          ]
+        : []
     },
-  }
-  const effectiveColumns = canShowActions ? [...columns, actionColumn] : columns
+  })
+  const effectiveColumns = resourceActions.hasActions
+    ? [...columns, resourceActions.column]
+    : columns
   const effectiveEmpty = !clusterId
     ? localeCode === 'zh_CN'
       ? '请选择集群'
@@ -152,7 +151,8 @@ export function StorageListPage<T extends { allowedActions?: string[]; name: str
 
   return (
     <>
-      {removeMutation.feedback}
+      {resourceActions.confirmation}
+      {!resourceActions.isConfirming && removeMutation.feedback}
       <ManagementDataPage
         query={{
           onFinish: () => undefined,

@@ -1,15 +1,17 @@
+import {
+  kubernetesDeleteConfirmation,
+  useKubernetesResourceActions,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
 import { ManagementDataPage } from '@/components/management-data-page'
 import {
   ManagementDensityButton,
-  ManagementIconButton,
   ManagementKeywordField,
   ManagementQueryActions,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { TableCellLink } from '@/components/table-cell-content'
 import { hasAllowedAction } from '@/features/auth'
 import { encodeAIContextForElement, useAIPageContext } from '@/features/copilot'
@@ -25,7 +27,6 @@ import { readableQueryData } from '@/utils/query-feedback'
 import { DeleteOutlined, FormOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Popconfirm, Space } from 'antd'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import '../styles.css'
@@ -142,76 +143,57 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
     visibleFilters: { keyword: searchKeyword || undefined },
     pinnedData: { itemCount: rawItems.length },
   })
-  const canShowActions = rawItems.some(
-    (item) =>
-      hasAllowedAction(item.allowedActions, 'delete') ||
-      Boolean(onEdit && hasAllowedAction(item.allowedActions, 'update')),
-  )
   const searchDimensions = scopeMode === 'namespace' ? '名称 / 命名空间' : '名称'
   const englishSearchDimensions = scopeMode === 'namespace' ? 'name / namespace' : 'name'
 
-  const actionColumn: TableColumnsType<T>[number] = {
-    title: '',
-    dataIndex: '__actions',
-    fixed: 'right',
-    align: 'center',
-    width: onEdit ? 84 : 52,
-    onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-    render: (_value, record) => {
-      const canEdit = Boolean(onEdit && hasAllowedAction(record.allowedActions, 'update'))
-      const canDelete = hasAllowedAction(record.allowedActions, 'delete')
-      if (!canEdit && !canDelete) return null
+  const resourceActions = useKubernetesResourceActions<T>({
+    resourceKey: `configuration:${kind}`,
+    resourceLabel: entityKind,
+    records: rawItems,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace ?? ''}/${record.name}`,
+    actions: (record) => {
       const target = configurationTargetFromRecord(clusterId, record)
-      const deleting =
-        removeMutation.isPending &&
-        removeMutation.variables?.name === target.name &&
-        removeMutation.variables.scope.namespace === target.scope.namespace
-      const deleteLabel = localeCode === 'zh_CN' ? '删除' : 'Delete'
-      return (
-        <Space size={2} className="soha-row-action-icons">
-          {canEdit ? (
-            <ManagementIconButton
-              aria-label={`${localeCode === 'zh_CN' ? '编辑' : 'Edit'} ${record.name}`}
-              icon={<FormOutlined />}
-              onClick={() => onEdit?.(record)}
-              tooltip={localeCode === 'zh_CN' ? '编辑' : 'Edit'}
-            />
-          ) : null}
-          {canDelete ? (
-            <Popconfirm
-              title={
-                localeCode === 'zh_CN' ? `确认删除 ${record.name}？` : `Delete ${record.name}?`
-              }
-              description={
-                localeCode === 'zh_CN'
-                  ? '此操作不可恢复，删除后集群资源立即消失。'
-                  : 'This deletes the resource immediately and cannot be undone.'
-              }
-              okText={deleteLabel}
-              cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-              okButtonProps={{ disabled: platformWriteBlocked, danger: true, loading: deleting }}
-              placement="topRight"
-              onConfirm={() => removeMutation.mutate(target, {})}
-            >
-              <ManagementIconButton
-                disabled={platformWriteBlocked}
-                danger
-                icon={<DeleteOutlined />}
-                aria-label={deleteLabel}
-                loading={deleting}
-                tooltip={deleteLabel}
-              />
-            </Popconfirm>
-          ) : null}
-        </Space>
-      )
+      return [
+        ...(onEdit && hasAllowedAction(record.allowedActions, 'update')
+          ? [
+              {
+                key: 'edit',
+                label: localeCode === 'zh_CN' ? '编辑' : 'Edit',
+                icon: <FormOutlined />,
+                disabled: platformWriteBlocked,
+                run: () => onEdit(record),
+              },
+            ]
+          : []),
+        ...(hasAllowedAction(record.allowedActions, 'delete')
+          ? [
+              {
+                key: 'delete',
+                label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled: platformWriteBlocked,
+                loading:
+                  removeMutation.isPending &&
+                  removeMutation.variables?.scope.clusterId === clusterId &&
+                  removeMutation.variables?.name === target.name &&
+                  removeMutation.variables.scope.namespace === target.scope.namespace,
+                confirm: kubernetesDeleteConfirmation(record, localeCode),
+                prepare: () => removeMutation.reset(),
+                feedback: removeMutation.feedback,
+                run: () => removeMutation.mutateAsync(target),
+              },
+            ]
+          : []),
+      ]
     },
-  }
+  })
 
   return (
     <>
-      {removeMutation.feedback}
+      {resourceActions.confirmation}
+      {!resourceActions.isConfirming && removeMutation.feedback}
       <ManagementDataPage
         query={{
           onFinish: () => undefined,
@@ -289,7 +271,7 @@ export function ConfigurationResourceListPage<T extends ConfigurationResourceRec
                 />
               </ManagementTableToolbar>
             }
-            columns={canShowActions ? [...columns, actionColumn] : columns}
+            columns={resourceActions.hasActions ? [...columns, resourceActions.column] : columns}
             dataSource={clusterId ? filteredItems : []}
             rowKey={(record) => `${record.namespace ?? ''}/${record.name}`}
             onRow={(record: T) => ({

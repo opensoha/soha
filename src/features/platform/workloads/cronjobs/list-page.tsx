@@ -1,11 +1,12 @@
+import {
+  useKubernetesResourceActions,
+  kubernetesDeleteConfirmation,
+} from '@/features/platform/shared/use-kubernetes-resource-actions'
 import { KubernetesResourceTable } from '@/features/platform/shared/kubernetes-resource-table'
-import { ManagementIconButton, ManagementTableToolbar } from '@/components/management-list'
+import { ManagementTableToolbar } from '@/components/management-list'
 import { BooleanTag } from '@/components/status-tag'
 import { hasAllowedAction } from '@/features/auth'
-import {
-  capabilityActionTooltip,
-  useClusterCapability,
-} from '@/features/platform/cluster-capabilities'
+import { useClusterCapability } from '@/features/platform/cluster-capabilities'
 import {
   platformResourceTarget,
   usePlatformMutation,
@@ -41,13 +42,12 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TableColumnsType } from 'antd'
-import { Popconfirm, Space } from 'antd'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { WorkloadCreateEntry } from '../shared/create-entry'
 import { cronJobMutations } from './mutations'
 import { cronJobQueries } from './queries'
-import type { CronJob, CronJobTarget } from './types'
+import type { CronJob } from './types'
 
 export function WorkloadsCronJobsPage() {
   const { t, localeCode } = useI18n()
@@ -72,13 +72,6 @@ export function WorkloadsCronJobsPage() {
   const yamlApplyCapability = useClusterCapability('resource.yaml.apply', localeCode)
 
   const cronJobs = visibleCronJobsQueryData ?? []
-  const canShowActions = cronJobs.some(
-    (item) =>
-      (!yamlApplyCapability.disabled && hasAllowedAction(item.allowedActions, 'update')) ||
-      (!workloadMutationCapability.disabled &&
-        (hasAllowedAction(item.allowedActions, 'suspend') ||
-          hasAllowedAction(item.allowedActions, 'delete'))),
-  )
   const filteredCronJobs = useMemo(
     () =>
       cronJobs.filter((item) =>
@@ -99,9 +92,91 @@ export function WorkloadsCronJobsPage() {
     searchKeyword,
   })
 
-  const targetFor = (name: string, targetNamespace: string): CronJobTarget => ({
-    scope: toScopeKey(clusterId, targetNamespace),
-    name,
+  useEffect(() => setEditTarget(null), [clusterId, namespace])
+  const resourceActions = useKubernetesResourceActions({
+    resourceKey: 'cronjobs',
+    resourceLabel: 'CronJob',
+    records: cronJobs,
+    getName: (record) => record.name,
+    getKey: (record) => `${record.namespace}/${record.name}`,
+    actions: (record) => {
+      const target = { name: record.name, scope: toScopeKey(clusterId, record.namespace) }
+      return [
+        ...(hasAllowedAction(record.allowedActions, 'update')
+          ? [
+              {
+                key: 'update',
+                label: localeCode === 'zh_CN' ? '编辑' : 'Edit',
+                icon: <FormOutlined aria-hidden />,
+                disabled: platformWriteBlocked || yamlApplyCapability.disabled,
+                reason: yamlApplyCapability.reason,
+                run: () => setEditTarget(record),
+              },
+            ]
+          : []),
+        ...(hasAllowedAction(record.allowedActions, 'suspend')
+          ? [
+              {
+                key: record.suspend ? 'resume' : 'suspend',
+                label: record.suspend
+                  ? localeCode === 'zh_CN'
+                    ? '恢复'
+                    : 'Resume'
+                  : localeCode === 'zh_CN'
+                    ? '暂停'
+                    : 'Suspend',
+                icon: record.suspend ? (
+                  <PlayCircleOutlined aria-hidden />
+                ) : (
+                  <PauseCircleOutlined aria-hidden />
+                ),
+                disabled: platformWriteBlocked || workloadMutationCapability.disabled,
+                reason: workloadMutationCapability.reason,
+                loading:
+                  suspendMutation.isPending &&
+                  suspendMutation.variables?.scope.clusterId === clusterId &&
+                  suspendMutation.variables?.name === record.name &&
+                  suspendMutation.variables.scope.namespace === record.namespace,
+                feedback: suspendMutation.feedback,
+                prepare: () => suspendMutation.reset(),
+                confirm: {
+                  title: record.suspend
+                    ? localeCode === 'zh_CN'
+                      ? `恢复 ${record.name}？`
+                      : `Resume ${record.name}?`
+                    : localeCode === 'zh_CN'
+                      ? `暂停 ${record.name}？`
+                      : `Suspend ${record.name}?`,
+                  description: `${record.namespace} / ${record.name}`,
+                  okText: localeCode === 'zh_CN' ? '确认' : 'OK',
+                },
+                run: () => suspendMutation.mutateAsync({ ...target, suspend: !record.suspend }),
+              },
+            ]
+          : []),
+        ...(hasAllowedAction(record.allowedActions, 'delete')
+          ? [
+              {
+                key: 'delete',
+                label: localeCode === 'zh_CN' ? '删除' : 'Delete',
+                icon: <DeleteOutlined aria-hidden />,
+                danger: true,
+                disabled: platformWriteBlocked || workloadMutationCapability.disabled,
+                reason: workloadMutationCapability.reason,
+                loading:
+                  removeMutation.isPending &&
+                  removeMutation.variables?.scope.clusterId === clusterId &&
+                  removeMutation.variables?.name === record.name &&
+                  removeMutation.variables.scope.namespace === record.namespace,
+                feedback: removeMutation.feedback,
+                prepare: () => removeMutation.reset(),
+                confirm: kubernetesDeleteConfirmation(record, localeCode),
+                run: () => removeMutation.mutateAsync(target),
+              },
+            ]
+          : []),
+      ]
+    },
   })
 
   const columns: TableColumnsType<CronJob> = [
@@ -157,125 +232,15 @@ export function WorkloadsCronJobsPage() {
       width: 104,
       render: (value: number) => formatAgeSeconds(value),
     },
-    {
-      title: '',
-      dataIndex: 'name',
-      key: 'actions',
-      fixed: 'right',
-      align: 'center',
-      width: 96,
-      render: (name: string, record: CronJob) => {
-        const canSuspend = hasAllowedAction(record.allowedActions, 'suspend')
-        const canEdit = hasAllowedAction(record.allowedActions, 'update')
-        const canDelete = hasAllowedAction(record.allowedActions, 'delete')
-        if (!canEdit && !canSuspend && !canDelete) return null
-
-        const target = targetFor(name, record.namespace)
-        const actionLabel = record.suspend
-          ? localeCode === 'zh_CN'
-            ? '恢复'
-            : 'Resume'
-          : localeCode === 'zh_CN'
-            ? '暂停'
-            : 'Suspend'
-        const suspendPending =
-          suspendMutation.isPending &&
-          suspendMutation.variables?.name === name &&
-          suspendMutation.variables.scope.namespace === record.namespace
-        const removePending =
-          removeMutation.isPending &&
-          removeMutation.variables?.name === name &&
-          removeMutation.variables.scope.namespace === record.namespace
-        const deleteLabel = localeCode === 'zh_CN' ? '删除' : 'Delete'
-
-        return (
-          <Space size={4} className="soha-deployment-action-cell">
-            {canEdit ? (
-              <ManagementIconButton
-                icon={<FormOutlined />}
-                aria-label={`${localeCode === 'zh_CN' ? '编辑' : 'Edit'} ${name}`}
-                disabled={platformWriteBlocked || yamlApplyCapability.disabled}
-                tooltip={capabilityActionTooltip(
-                  localeCode === 'zh_CN' ? '编辑' : 'Edit',
-                  yamlApplyCapability,
-                )}
-                onClick={() => setEditTarget(record)}
-              />
-            ) : null}
-            {canSuspend ? (
-              <Popconfirm
-                okButtonProps={{ disabled: platformWriteBlocked }}
-                title={
-                  record.suspend
-                    ? localeCode === 'zh_CN'
-                      ? `恢复 ${name}？`
-                      : `Resume ${name}?`
-                    : localeCode === 'zh_CN'
-                      ? `暂停 ${name}？`
-                      : `Suspend ${name}?`
-                }
-                okText={localeCode === 'zh_CN' ? '确认' : 'OK'}
-                cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-                onConfirm={() =>
-                  suspendMutation.mutate({ ...target, suspend: !record.suspend }, {})
-                }
-              >
-                <ManagementIconButton
-                  icon={record.suspend ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-                  aria-label={actionLabel}
-                  loading={suspendPending}
-                  tooltip={actionLabel}
-                />
-              </Popconfirm>
-            ) : null}
-            {canDelete && workloadMutationCapability.disabled ? (
-              <ManagementIconButton
-                danger
-                disabled
-                icon={<DeleteOutlined />}
-                aria-label={deleteLabel}
-                tooltip={capabilityActionTooltip(deleteLabel, workloadMutationCapability)}
-              />
-            ) : null}
-            {canDelete && !workloadMutationCapability.disabled ? (
-              <Popconfirm
-                title={localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`}
-                description={
-                  localeCode === 'zh_CN'
-                    ? '此操作不可恢复，删除后集群资源立即消失。'
-                    : 'This deletes the resource immediately and cannot be undone.'
-                }
-                okText={deleteLabel}
-                cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-                okButtonProps={{
-                  disabled: platformWriteBlocked,
-                  danger: true,
-                  loading: removePending,
-                }}
-                placement="topRight"
-                onConfirm={() => removeMutation.mutate(target, {})}
-              >
-                <ManagementIconButton
-                  disabled={platformWriteBlocked}
-                  danger
-                  icon={<DeleteOutlined />}
-                  aria-label={deleteLabel}
-                  loading={removePending}
-                  tooltip={deleteLabel}
-                />
-              </Popconfirm>
-            ) : null}
-          </Space>
-        )
-      },
-    },
+    resourceActions.column,
   ]
 
   return (
     <div className="soha-page">
-      {suspendMutation.feedback}
-      {removeMutation.feedback}
+      {resourceActions.isConfirming ? null : suspendMutation.feedback}
+      {resourceActions.isConfirming ? null : removeMutation.feedback}
 
+      {resourceActions.confirmation}
       <WorkloadQueryPanel
         hasActiveFilters={Boolean(searchKeyword.trim())}
         localeCode={localeCode}
@@ -316,7 +281,11 @@ export function WorkloadsCronJobsPage() {
             />
           </ManagementTableToolbar>
         }
-        columns={canShowActions ? columns : columns.filter((column) => column.key !== 'actions')}
+        columns={
+          resourceActions.hasActions
+            ? columns
+            : columns.filter((column) => column.key !== 'actions')
+        }
         dataSource={filteredCronJobs}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         onRow={(record: CronJob) => workloadRowAIContext('cronjobs', record, clusterId)}

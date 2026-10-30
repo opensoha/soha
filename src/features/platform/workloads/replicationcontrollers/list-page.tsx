@@ -1,4 +1,3 @@
-import { Progress, Typography } from 'antd'
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
 import { useI18n } from '@/i18n'
@@ -10,23 +9,6 @@ import { renderWorkloadNameLink } from '../shared/list-controls'
 import { ReplicaControllerListPage } from '../shared/replica-controller-list'
 import type { ReplicationController } from './types'
 import '@/features/platform/workloads/styles.css'
-
-const { Text } = Typography
-
-function renderReady(ready: number, desired: number) {
-  const percent = desired > 0 ? Math.min(100, Math.round((ready / desired) * 100)) : 0
-  return (
-    <div className="soha-replica-progress-cell">
-      <Progress
-        percent={percent}
-        showInfo={false}
-        size="small"
-        status={desired === 0 || ready >= desired ? 'success' : 'active'}
-      />
-      <Text type="secondary">{`${ready}/${desired}`}</Text>
-    </div>
-  )
-}
 
 export function WorkloadsReplicationControllersPage() {
   const { localeCode } = useI18n()
@@ -57,15 +39,10 @@ export function WorkloadsReplicationControllersPage() {
       width: 160,
     },
     {
-      title: localeCode === 'zh_CN' ? '就绪' : 'Ready',
+      title: localeCode === 'zh_CN' ? '就绪 / 期望' : 'Ready / Desired',
       dataIndex: 'readyReplicas',
-      width: 190,
-      render: (_: number, record) => renderReady(record.readyReplicas, record.desiredReplicas),
-    },
-    {
-      title: localeCode === 'zh_CN' ? '期望' : 'Desired',
-      dataIndex: 'desiredReplicas',
-      width: 96,
+      width: 112,
+      render: (_: number, record) => `${record.readyReplicas}/${record.desiredReplicas}`,
     },
     {
       title: localeCode === 'zh_CN' ? '当前' : 'Current',
