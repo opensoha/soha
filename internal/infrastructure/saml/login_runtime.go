@@ -128,11 +128,6 @@ func (r *LoginRuntime) serviceProvider(ctx context.Context, provider domainsetti
 	})
 }
 
-func (r *LoginRuntime) fetchMetadata(ctx context.Context, rawURL string) (*Metadata, error) {
-	_, metadata, err := r.fetchMetadataDocument(ctx, rawURL)
-	return metadata, err
-}
-
 func (r *LoginRuntime) fetchMetadataDocument(ctx context.Context, rawURL string) ([]byte, *Metadata, error) {
 	metadataURL, err := safeMetadataURL(rawURL)
 	if err != nil {
@@ -146,7 +141,7 @@ func (r *LoginRuntime) fetchMetadataDocument(ctx context.Context, rawURL string)
 	if err != nil {
 		return nil, nil, fmt.Errorf("fetch SAML metadata: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		return nil, nil, fmt.Errorf("fetch SAML metadata: unexpected status %d", response.StatusCode)
 	}

@@ -710,6 +710,7 @@ func runtimeMessageJSON(t *testing.T, now time.Time, identity networkidentity.Id
 func checkManualAndInvalidMihomoSource(t *testing.T, service *Service, store *controlStoreStub, identity networkidentity.Identity, keys keyring.Ring) {
 	t.Helper()
 	var err error
+	// #nosec G117 -- Synthetic credential serialized only to exercise the encrypted profile fixture.
 	manualRaw, _ := json.Marshal(domainnetworkaccess.MihomoManualNode{Protocol: "socks5", Server: "proxy.example.test", Port: 1080, Username: "alice", Password: "secret"})
 	store.mihomoSourceType = domainnetworkaccess.MihomoSourceManualNode
 	store.mihomoCipher, err = secretcrypto.EncryptStringWithKeyring(keys, string(manualRaw))

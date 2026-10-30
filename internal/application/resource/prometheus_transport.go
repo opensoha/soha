@@ -48,6 +48,7 @@ func (s *metricsSupport) doPrometheusRequest(ctx context.Context, request *http.
 	// Never forward bearer credentials through redirects, including Core direct mode.
 	client := *s.httpClient
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	// #nosec G704 -- Endpoint and bearer token come only from authorized server-side cluster configuration; private Prometheus endpoints are intentional. Query values are encoded separately and redirects are disabled above.
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: Prometheus endpoint is unreachable", apperrors.ErrClusterUnready)

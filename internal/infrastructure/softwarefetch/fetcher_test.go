@@ -41,7 +41,7 @@ func TestSafeDialerRejectsPrivateAndPinsPublicAddress(t *testing.T) {
 		dial: func(_ context.Context, _, address string) (net.Conn, error) {
 			dialed = address
 			client, server := net.Pipe()
-			server.Close()
+			_ = server.Close()
 			return client, nil
 		},
 	}
@@ -52,7 +52,7 @@ func TestSafeDialerRejectsPrivateAndPinsPublicAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection.Close()
+	_ = connection.Close()
 	if dialed != "203.0.113.10:443" {
 		t.Fatalf("unexpected pinned address %q", dialed)
 	}
@@ -80,7 +80,7 @@ func TestFetchUsesResponseFileName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer remote.Content.Close()
+	defer func() { _ = remote.Content.Close() }()
 	if remote.FileName != "release.pkg" {
 		t.Fatalf("unexpected file name %q", remote.FileName)
 	}

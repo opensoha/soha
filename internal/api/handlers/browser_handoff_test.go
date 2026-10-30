@@ -64,8 +64,8 @@ func TestCompleteBrowserHandoffPreservesCookiesOnAccountConflict(t *testing.T) {
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "https://soha.example/api/v1/auth/browser-handoffs/handoff-1/complete", nil)
 	ctx.Request.Header.Set("Origin", "https://soha.example")
-	ctx.Request.AddCookie(&http.Cookie{Name: apiMiddleware.ProtocolAccessCookieName, Value: "existing-access"})
-	ctx.Request.AddCookie(&http.Cookie{Name: refreshCookieName, Value: "existing-refresh"})
+	ctx.Request.AddCookie(&http.Cookie{Name: apiMiddleware.ProtocolAccessCookieName, Value: "existing-access"}) // #nosec G124 -- Request cookie only; browser response flags are tested separately.
+	ctx.Request.AddCookie(&http.Cookie{Name: refreshCookieName, Value: "existing-refresh"})                     // #nosec G124 -- Request cookie only; browser response flags are tested separately.
 	ctx.Params = gin.Params{{Key: "browserHandoffID", Value: "handoff-1"}}
 	handler.CompleteBrowserHandoff(ctx)
 
@@ -106,8 +106,8 @@ func TestCompleteBrowserHandoffRequiresExactOriginAndReturnsNoTokens(t *testing.
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(http.MethodPost, "https://soha.example/api/v1/auth/browser-handoffs/handoff-1/complete", nil)
 	ctx.Request.Header.Set("Origin", "https://soha.example")
-	ctx.Request.AddCookie(&http.Cookie{Name: apiMiddleware.ProtocolAccessCookieName, Value: "old-access"})
-	ctx.Request.AddCookie(&http.Cookie{Name: refreshCookieName, Value: "old-refresh"})
+	ctx.Request.AddCookie(&http.Cookie{Name: apiMiddleware.ProtocolAccessCookieName, Value: "old-access"}) // #nosec G124 -- Request cookie only; browser response flags are tested separately.
+	ctx.Request.AddCookie(&http.Cookie{Name: refreshCookieName, Value: "old-refresh"})                     // #nosec G124 -- Request cookie only; browser response flags are tested separately.
 	ctx.Params = gin.Params{{Key: "browserHandoffID", Value: "handoff-1"}}
 	handler.CompleteBrowserHandoff(ctx)
 

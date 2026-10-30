@@ -32,7 +32,11 @@ func TestOutpostConfigPayloadMatchesAgentVerifierOrder(t *testing.T) {
 	privateKey := ed25519.NewKeyFromSeed(seed[:])
 	signature := ed25519.Sign(privateKey, payload)
 	config.Signature = base64.StdEncoding.EncodeToString(signature)
-	if !ed25519.Verify(privateKey.Public().(ed25519.PublicKey), payload, signature) {
+	publicKey, ok := privateKey.Public().(ed25519.PublicKey)
+	if !ok {
+		t.Fatal("unexpected signing public key type")
+	}
+	if !ed25519.Verify(publicKey, payload, signature) {
 		t.Fatal("agent-compatible signature did not verify")
 	}
 }

@@ -218,9 +218,9 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 		}
 		task.SecretLease, err = s.secretLeases.IssueLease(ctx, task.SecretPrincipal, task.SecretRefs, task.SecretTarget, "execution_task", task.ID, strings.TrimSpace(agentID))
 	}
-	if err == nil && s.payloadHydrator != nil {
+	if err == nil {
 		var hydrated domaindelivery.ExecutionTask
-		hydrated, err = s.payloadHydrator.HydrateExecutionTask(ctx, task)
+		hydrated, err = s.hydrateExecutionClaim(ctx, task)
 		if err != nil {
 			failure := map[string]any{"error": "execution authorization or frozen preparation is no longer available", "helm": map[string]any{"stopped": true}}
 			if task.TaskKind == "vm_ssh_command" {

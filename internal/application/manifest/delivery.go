@@ -36,6 +36,10 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 	if err := s.validateBinding(ctx, principal, domainaccess.ActionTrigger, item, app, &binding, permission); err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
+	publicationContext, err := s.freezeDeliveryContext(ctx, principal, applicationID, environmentID, planID, target)
+	if err != nil {
+		return domainmanifest.DeliverySnapshot{}, err
+	}
 	if err := s.validateDeliverySource(ctx, item.ID); err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
@@ -65,11 +69,7 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
-	current, err := s.deliveryDeployment(ctx, binding.ID)
-	if err != nil {
-		return domainmanifest.DeliverySnapshot{}, err
-	}
-	commit, err := s.repository.GetRevisionSourceCommit(ctx, item.ID, revision)
+	current, commit, err := s.deliverySnapshotBaseline(ctx, item.ID, binding.ID, revision)
 	if err != nil {
 		return domainmanifest.DeliverySnapshot{}, err
 	}
@@ -90,6 +90,7 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 	}
 	payload := s.taskPayload(domainmanifest.TaskActionPreflight, item, binding, domainmanifest.Deployment{}, rendered, max(int64(1), current.Generation), false, principal.UserID)
 	payload.FieldManager = "opensoha-manifest/" + binding.ID
+	payload.DeliveryContext = publicationContext
 	payload.GitOpsDocuments = gitOpsDocuments
 	payload.RootResource = rootResource
 	payload.InitializationPlanID = initializationPlan(&snapshot)
@@ -100,6 +101,15 @@ func (s *DeclarativeService) CreateDeliverySnapshot(ctx context.Context, princip
 	}
 	snapshot.PreflightTaskID = task.ID
 	return snapshot, nil
+}
+
+func (s *DeclarativeService) deliverySnapshotBaseline(ctx context.Context, packageID, bindingID string, revision int) (domainmanifest.Deployment, string, error) {
+	current, err := s.deliveryDeployment(ctx, bindingID)
+	if err != nil {
+		return domainmanifest.Deployment{}, "", err
+	}
+	commit, err := s.repository.GetRevisionSourceCommit(ctx, packageID, revision)
+	return current, commit, err
 }
 
 func (s *DeclarativeService) validateDeliverySource(ctx context.Context, packageID string) error {
@@ -202,6 +212,9 @@ func (s *DeclarativeService) validateDeliverySnapshot(ctx context.Context, princ
 	}
 	if !deliveryBindingMatchesSnapshot(item, binding, snapshot) {
 		return fmt.Errorf("%w: Manifest package or environment changed; create a new delivery plan", apperrors.ErrConflict)
+	}
+	if err := s.ValidateDeliveryControl(ctx, principal, snapshot); err != nil {
+		return err
 	}
 	if err := s.validateBinding(ctx, principal, domainaccess.ActionTrigger, item, app, &binding); err != nil {
 		return err
@@ -319,8 +332,8 @@ func (s *DeclarativeService) requireLegacyDeployment(ctx context.Context, princi
 		return err
 	}
 	for _, target := range environment.Targets {
-		if target.ConfigRef == bindingID && target.WorkloadKind == "CustomResource" {
-			return fmt.Errorf("%w: imported root CRs require an approved application delivery plan", apperrors.ErrConflict)
+		if target.ConfigRef == bindingID && (target.ExecutorKind == "manifest_ssa" || target.WorkloadKind == "CustomResource") {
+			return fmt.Errorf("%w: associated delivery targets require an approved application delivery plan", apperrors.ErrConflict)
 		}
 	}
 	if err := s.requireLegacyMigration(ctx, principal, binding.PackageID); err != nil {

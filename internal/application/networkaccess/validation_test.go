@@ -195,7 +195,7 @@ func TestValidateMihomoProfileInput(t *testing.T) {
 			input.SubscriptionURL = &value
 		},
 		"subscription userinfo": func(input *domainnetworkaccess.MihomoProfileInput) {
-			value := "https://user:secret@subscription.example/config"
+			value := "https://user:secret@subscription.example/config" // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 			input.SubscriptionURL = &value
 		},
 		"same ports":   func(input *domainnetworkaccess.MihomoProfileInput) { input.ControllerPort = input.MixedPort },

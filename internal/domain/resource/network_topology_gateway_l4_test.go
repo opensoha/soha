@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestGatewayL4TopologyKeepsListenerPortsWeightsAndTLSMatches(t *testing.T) {
@@ -24,8 +26,11 @@ func TestGatewayL4TopologyKeepsListenerPortsWeightsAndTLSMatches(t *testing.T) {
 			for _, node := range view.Nodes {
 				if node.Resource != nil && node.Resource.Kind == kind && node.Rule != nil {
 					ruleFound = node.Protocol == protocol
-					if protocol == "TLS" && (node.Rule.TLSMode != "Passthrough" || len(node.Rule.MatchGroups) != 1 || node.Rule.MatchGroups[0][0].Value != "app.example.test") {
-						t.Fatalf("TLS evidence lost: %+v", node.Rule)
+					if protocol == "TLS" {
+						require.Equal(t, "Passthrough", node.Rule.TLSMode, "TLS mode evidence")
+						require.Len(t, node.Rule.MatchGroups, 1, "TLS match group evidence")
+						require.NotEmpty(t, node.Rule.MatchGroups[0], "TLS match evidence")
+						require.Equal(t, "app.example.test", node.Rule.MatchGroups[0][0].Value)
 					}
 				}
 			}
@@ -38,9 +43,10 @@ func TestGatewayL4TopologyKeepsListenerPortsWeightsAndTLSMatches(t *testing.T) {
 					total = total || edge.TotalWeight != nil && *edge.TotalWeight == 3
 				}
 			}
-			if !parent || !zero || !total || !ruleFound {
-				t.Fatalf("lost L4 evidence: %+v", view)
-			}
+			require.True(t, parent, "lost L4 parent evidence: %+v", view)
+			require.True(t, zero, "lost L4 zero-weight evidence: %+v", view)
+			require.True(t, total, "lost L4 total-weight evidence: %+v", view)
+			require.True(t, ruleFound, "lost L4 rule evidence: %+v", view)
 		})
 	}
 }

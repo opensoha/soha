@@ -90,7 +90,7 @@ func (h *SoftwareHandler) Upload(c *gin.Context) {
 		return
 	}
 	if c.Request.MultipartForm != nil {
-		defer c.Request.MultipartForm.RemoveAll()
+		defer func() { _ = c.Request.MultipartForm.RemoveAll() }()
 	}
 	header, err := c.FormFile("file")
 	if err != nil {
@@ -102,7 +102,7 @@ func (h *SoftwareHandler) Upload(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "cannot read installer file")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	item, err := h.service.Upload(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), appsoftware.UploadInput{
 		StorageIntegrationID: c.PostForm("storageIntegrationId"),
 		SoftwareID:           c.PostForm("softwareId"), Name: c.PostForm("name"), Description: c.PostForm("description"),

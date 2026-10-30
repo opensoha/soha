@@ -168,9 +168,16 @@ func (r *Repository) GetDeploymentByBinding(ctx context.Context, bindingID strin
 }
 
 func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest.OperationRun, task domaindelivery.ExecutionTask) (string, bool, error) {
+	if (run.DeliveryContext != nil) != domaindelivery.RequiresManifestAdmission(task) {
+		return "", false, fmt.Errorf("%w: Manifest task provider and private context must agree", apperrors.ErrInvalidArgument)
+	}
+	admissionJSON, err := encodeDeliveryContext(run.DeliveryContext)
+	if err != nil {
+		return "", false, err
+	}
 	created := false
 	var taskID string
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if _, ok := domainworkflow.NodeExecutionFrom(ctx); ok {
 			if err := repoworkflow.LockDeliveryNode(ctx, tx, task.ApplicationID, task.ApplicationEnvironmentID); err != nil {
 				return err
@@ -179,12 +186,13 @@ func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, "manifest-operation:"+run.IdempotencyKey).Error; err != nil {
 			return err
 		}
-		err := tx.Raw(`SELECT execution_task_id FROM manifest_operation_runs WHERE idempotency_key = ?`, run.IdempotencyKey).Row().Scan(&taskID)
+		var previousContext sql.NullString
+		err := tx.Raw(`SELECT execution_task_id, delivery_context::text FROM manifest_operation_runs WHERE idempotency_key = ?`, run.IdempotencyKey).Row().Scan(&taskID, &previousContext)
 		if err == nil {
 			if node, ok := domainworkflow.NodeExecutionFrom(ctx); ok && node.ResourceID("task") != taskID {
 				return fmt.Errorf("%w: manifest operation belongs to another delivery node", apperrors.ErrConflict)
 			}
-			return nil
+			return sameDeliveryContext(previousContext, run.DeliveryContext)
 		}
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
@@ -200,10 +208,10 @@ func (r *Repository) CreateOperationTask(ctx context.Context, run domainmanifest
 		if err := tx.Exec(`
 			INSERT INTO manifest_operation_runs (
 				id, package_id, binding_id, deployment_id, generation, action,
-				idempotency_key, execution_task_id, created_at
-			) VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?)
+				idempotency_key, execution_task_id, created_at, delivery_context
+			) VALUES (?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, '')::jsonb)
 		`, run.ID, run.PackageID, run.BindingID, run.DeploymentID, run.Generation,
-			run.Action, run.IdempotencyKey, taskID, run.CreatedAt).Error; err != nil {
+			run.Action, run.IdempotencyKey, taskID, run.CreatedAt, admissionJSON).Error; err != nil {
 			return err
 		}
 		created = true
@@ -326,7 +334,7 @@ func (r *Repository) ListContinuousDeployments(ctx context.Context, limit int) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	ids := make([]string, 0)
 	for rows.Next() {
 		var id string

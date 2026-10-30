@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -34,9 +35,7 @@ func networkNavigationTestStore(t *testing.T) *dbstore.Store {
 	}
 	t.Cleanup(func() { _ = admin.Close() })
 	name := "soha_navigation_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if err := admin.Exec(context.Background(), "CREATE DATABASE "+name); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, admin.Exec(context.Background(), "CREATE DATABASE "+name))
 	t.Cleanup(func() {
 		if err := admin.Exec(context.Background(), "DROP DATABASE "+name); err != nil {
 			t.Error(err)
@@ -50,18 +49,14 @@ func networkNavigationTestStore(t *testing.T) *dbstore.Store {
 	t.Cleanup(func() { _ = store.Close() })
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	if err := store.MigrateFromFile(ctx, filepath.Join("..", "..", "migrations", "postgres")); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, store.MigrateFromFile(ctx, filepath.Join("..", "..", "migrations", "postgres")))
 	return store
 }
 
 func navigationRows(t *testing.T, db *gorm.DB, ids []string) []string {
 	t.Helper()
 	var rows []string
-	if err := db.Raw(`SELECT row_to_json(m)::text FROM menus m WHERE id IN ? ORDER BY id`, ids).Scan(&rows).Error; err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, db.Raw(`SELECT row_to_json(m)::text FROM menus m WHERE id IN ? ORDER BY id`, ids).Scan(&rows).Error)
 	return rows
 }
 
@@ -78,140 +73,150 @@ func TestNetworkNavigationUpgradeWithPostgres(t *testing.T) {
 		{ID: "network-access-policy", ParentID: "identity", Path: "/network-access/policy", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "custom", SortOrder: 7, Enabled: true},
 		{ID: "custom-operator-page", ParentID: "identity", Path: "/custom/operator", LabelZH: "自定义入口", LabelEN: "Custom Entry", Enabled: true},
 	}
-	if err := upsertMenus(ctx, db, items, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(`INSERT INTO roles (id,name,permission_keys) VALUES ('navigation-role','Retained role','["retained.permission"]')`).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(`INSERT INTO menu_role_bindings (id,menu_id,role_id) VALUES ('navigation-binding','network-access-sites','navigation-role')`).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := writeSeedVersion(ctx, db, bootstrapSeedVersionKey, "2026-09-22-oncall-settings-menu"); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, upsertMenus(ctx, db, items, time.Now()))
+	require.NoError(t, db.Exec(`INSERT INTO roles (id,name,permission_keys) VALUES ('navigation-role','Retained role','["retained.permission"]')`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO menu_role_bindings (id,menu_id,role_id) VALUES ('navigation-binding','network-access-sites','navigation-role')`).Error)
+	require.NoError(t, writeSeedVersion(ctx, db, bootstrapSeedVersionKey, "2026-09-22-oncall-settings-menu"))
 	// Keep this fixture focused on its independent network-access upgrade.
-	if err := writeSeedVersion(ctx, db, kubernetesWorkbenchSeedVersionKey, kubernetesWorkbenchSeedVersion); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, writeSeedVersion(ctx, db, kubernetesWorkbenchSeedVersionKey, kubernetesWorkbenchSeedVersion))
 	customIDs := []string{"network-access-spaces", "network-access-gateways", "network-access-policy", "custom-operator-page"}
 	before := navigationRows(t, db, customIDs)
 	var initialMenuCount int64
-	if err := db.Table("menus").Count(&initialMenuCount).Error; err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, db.Table("menus").Count(&initialMenuCount).Error)
 	cfg := cfgpkg.Config{Modules: cfgpkg.ModulesConfig{Security: cfgpkg.ModuleToggleConfig{Enabled: true}}}
 
 	t.Run("disabled_upgrade_stays_pending", func(t *testing.T) {
-		if err := seedDefaults(ctx, store, cfgpkg.Config{}); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, seedDefaults(ctx, store, cfgpkg.Config{}))
 		version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
-		if err != nil || version != "2026-09-22-oncall-settings-menu" {
-			t.Fatalf("disabled module advanced upgrade: %q, %v", version, err)
+		{
+			require.NoError(t, err, "disabled module advanced upgrade: %q, %v", version, err)
+			require.Equal(t, "2026-09-22-oncall-settings-menu", version, "disabled module advanced upgrade: %q, %v", version, err)
 		}
 		marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
-		if err != nil || marker != "" {
-			t.Fatalf("disabled module marked upgrade: %q, %v", marker, err)
+		{
+			require.NoError(t, err, "disabled module marked upgrade: %q, %v", marker, err)
+			require.Empty(t, marker, "disabled module marked upgrade: %q, %v", marker, err)
 		}
 		var count int64
-		if err := db.Table("menus").Count(&count).Error; err != nil || count != initialMenuCount {
-			t.Fatalf("disabled module inserted containers: %d, %v", count, err)
+		{
+			err := db.Table("menus").Count(&count).Error
+			require.NoError(t, err, "disabled module inserted containers: %d, %v", count, err)
+			require.Equal(t, initialMenuCount, count, "disabled module inserted containers: %d, %v", count, err)
 		}
 		var parent string
-		if err := db.Raw(`SELECT parent_id FROM menus WHERE id='network-access-sites'`).Scan(&parent).Error; err != nil || parent != "identity" {
-			t.Fatalf("disabled module moved a leaf: %q, %v", parent, err)
+		{
+			err := db.Raw(`SELECT parent_id FROM menus WHERE id='network-access-sites'`).Scan(&parent).Error
+			require.NoError(t, err, "disabled module moved a leaf: %q, %v", parent, err)
+			require.Equal(t, "identity", parent, "disabled module moved a leaf: %q, %v", parent, err)
 		}
 	})
 	t.Run("failure_rolls_back", func(t *testing.T) {
 		collision := menuSeed{ID: "custom-path-owner", Path: "/network-access/controls", LabelZH: "Custom", LabelEN: "Custom", Enabled: true}
-		if err := upsertMenus(ctx, db, []menuSeed{collision}, time.Now()); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, upsertMenus(ctx, db, []menuSeed{collision}, time.Now()))
 		if err := seedDefaults(ctx, store, cfg); err == nil {
 			t.Fatal("expected unique-path collision")
 		}
 		version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
-		if err != nil || version != "2026-09-22-oncall-settings-menu" {
-			t.Fatalf("failed upgrade advanced version: %q, %v", version, err)
+		{
+			require.NoError(t, err, "failed upgrade advanced version: %q, %v", version, err)
+			require.Equal(t, "2026-09-22-oncall-settings-menu", version, "failed upgrade advanced version: %q, %v", version, err)
 		}
 		marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
-		if err != nil || marker != "" {
-			t.Fatalf("failed upgrade left marker: %q, %v", marker, err)
+		{
+			require.NoError(t, err, "failed upgrade left marker: %q, %v", marker, err)
+			require.Empty(t, marker, "failed upgrade left marker: %q, %v", marker, err)
 		}
 		var groups int64
-		if err := db.Table("menus").Where("id = ?", "network-access-infrastructure").Count(&groups).Error; err != nil || groups != 0 {
-			t.Fatalf("failed upgrade left a container: %d, %v", groups, err)
+		{
+			err := db.Table("menus").Where("id = ?", "network-access-infrastructure").Count(&groups).Error
+			require.NoError(t, err, "failed upgrade left a container: %d, %v", groups, err)
+			require.Equal(t, int64(0), groups, "failed upgrade left a container: %d, %v", groups, err)
 		}
-		if err := db.Exec(`DELETE FROM menus WHERE id = 'custom-path-owner'`).Error; err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, db.Exec(`DELETE FROM menus WHERE id = 'custom-path-owner'`).Error)
 	})
 	t.Run("upgrade_preserves_custom_data_and_bindings", func(t *testing.T) {
-		if err := seedDefaults(ctx, store, cfg); err != nil {
-			t.Fatal(err)
-		}
-		if after := navigationRows(t, db, customIDs); !reflect.DeepEqual(before, after) {
-			t.Fatalf("custom or disabled menus changed: before %v after %v", before, after)
-		}
-		var parent string
-		if err := db.Raw(`SELECT parent_id FROM menus WHERE id='network-access-sites'`).Scan(&parent).Error; err != nil || parent != "network-access-infrastructure" {
-			t.Fatalf("default site parent = %q, %v", parent, err)
-		}
-		var label string
-		if err := db.Raw(`SELECT label_zh FROM menus WHERE id='network-access-resources'`).Scan(&label).Error; err != nil || label != "网络资源" {
-			t.Fatalf("default resource label = %q, %v", label, err)
-		}
-		var bindings, menus int64
-		if err := db.Table("menu_role_bindings").Where("id = ?", "navigation-binding").Count(&bindings).Error; err != nil || bindings != 1 {
-			t.Fatalf("role binding lost: %d, %v", bindings, err)
-		}
-		if err := db.Table("menus").Count(&menus).Error; err != nil || menus != initialMenuCount+4 {
-			t.Fatalf("unrelated defaults were reseeded: %d, %v", menus, err)
-		}
-		version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
-		if err != nil || version != "2026-09-22-oncall-settings-menu" {
-			t.Fatalf("upgrade version = %q, %v", version, err)
-		}
-		marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
-		if err != nil || marker != networkNavigationSeedVersion {
-			t.Fatalf("menu upgrade marker = %q, %v", marker, err)
-		}
+		verifyNetworkNavigationUpgrade(t, ctx, store, cfg, customIDs, before, initialMenuCount)
 	})
 	t.Run("previous_task52_marker_recovers_without_reseed", func(t *testing.T) {
-		if err := writeSeedVersion(ctx, db, bootstrapSeedVersionKey, networkNavigationSeedVersion); err != nil {
-			t.Fatal(err)
-		}
-		if err := db.Exec(`DELETE FROM app_settings WHERE setting_key = ?`, networkNavigationSeedVersionKey).Error; err != nil {
-			t.Fatal(err)
-		}
-		if err := seedDefaults(ctx, store, cfg); err != nil {
-			t.Fatal(err)
-		}
-		version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
-		if err != nil || version != "2026-09-22-oncall-settings-menu" {
-			t.Fatalf("legacy bootstrap version not restored: %q, %v", version, err)
-		}
-		marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
-		if err != nil || marker != networkNavigationSeedVersion {
-			t.Fatalf("menu upgrade marker = %q, %v", marker, err)
-		}
-		var bindings, menus int64
-		if err := db.Table("menu_role_bindings").Where("id = ?", "navigation-binding").Count(&bindings).Error; err != nil || bindings != 1 {
-			t.Fatalf("legacy marker recovery lost binding: %d, %v", bindings, err)
-		}
-		if err := db.Table("menus").Count(&menus).Error; err != nil || menus != initialMenuCount+4 {
-			t.Fatalf("legacy marker recovery replayed defaults: %d, %v", menus, err)
-		}
+		verifyNetworkNavigationLegacyMarker(t, ctx, store, cfg, initialMenuCount)
 	})
 	t.Run("second_start_is_idempotent", func(t *testing.T) {
 		ids := append(customIDs, "network-access-sites", "network-access-resources", "network-access-infrastructure", "network-access-controls", "network-access-vpn", "network-access-monitoring")
 		before := navigationRows(t, db, ids)
-		if err := seedDefaults(ctx, store, cfg); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, seedDefaults(ctx, store, cfg))
 		if after := navigationRows(t, db, ids); !reflect.DeepEqual(before, after) {
 			t.Fatalf("second start changed menus: before %v after %v", before, after)
 		}
 	})
+}
+
+func verifyNetworkNavigationLegacyMarker(t *testing.T, ctx context.Context, store *dbstore.Store, cfg cfgpkg.Config, initialMenuCount int64) {
+	t.Helper()
+	db := store.DB()
+	require.NoError(t, writeSeedVersion(ctx, db, bootstrapSeedVersionKey, networkNavigationSeedVersion))
+	require.NoError(t, db.Exec(`DELETE FROM app_settings WHERE setting_key = ?`, networkNavigationSeedVersionKey).Error)
+	require.NoError(t, seedDefaults(ctx, store, cfg))
+	version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
+	{
+		require.NoError(t, err, "legacy bootstrap version not restored: %q, %v", version, err)
+		require.Equal(t, "2026-09-22-oncall-settings-menu", version, "legacy bootstrap version not restored: %q, %v", version, err)
+	}
+	marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
+	{
+		require.NoError(t, err, "menu upgrade marker = %q, %v", marker, err)
+		require.Equal(t, networkNavigationSeedVersion, marker, "menu upgrade marker = %q, %v", marker, err)
+	}
+	var bindings, menus int64
+	{
+		err := db.Table("menu_role_bindings").Where("id = ?", "navigation-binding").Count(&bindings).Error
+		require.NoError(t, err, "legacy marker recovery lost binding: %d, %v", bindings, err)
+		require.Equal(t, int64(1), bindings, "legacy marker recovery lost binding: %d, %v", bindings, err)
+	}
+	{
+		err := db.Table("menus").Count(&menus).Error
+		require.NoError(t, err, "legacy marker recovery replayed defaults: %d, %v", menus, err)
+		require.Equal(t, initialMenuCount+4, menus, "legacy marker recovery replayed defaults: %d, %v", menus, err)
+	}
+}
+
+func verifyNetworkNavigationUpgrade(t *testing.T, ctx context.Context, store *dbstore.Store, cfg cfgpkg.Config, customIDs, before []string, initialMenuCount int64) {
+	t.Helper()
+	db := store.DB()
+	require.NoError(t, seedDefaults(ctx, store, cfg))
+	if after := navigationRows(t, db, customIDs); !reflect.DeepEqual(before, after) {
+		t.Fatalf("custom or disabled menus changed: before %v after %v", before, after)
+	}
+	var parent string
+	{
+		err := db.Raw(`SELECT parent_id FROM menus WHERE id='network-access-sites'`).Scan(&parent).Error
+		require.NoError(t, err, "default site parent = %q, %v", parent, err)
+		require.Equal(t, "network-access-infrastructure", parent, "default site parent = %q, %v", parent, err)
+	}
+	var label string
+	{
+		err := db.Raw(`SELECT label_zh FROM menus WHERE id='network-access-resources'`).Scan(&label).Error
+		require.NoError(t, err, "default resource label = %q, %v", label, err)
+		require.Equal(t, "网络资源", label, "default resource label = %q, %v", label, err)
+	}
+	var bindings, menus int64
+	{
+		err := db.Table("menu_role_bindings").Where("id = ?", "navigation-binding").Count(&bindings).Error
+		require.NoError(t, err, "role binding lost: %d, %v", bindings, err)
+		require.Equal(t, int64(1), bindings, "role binding lost: %d, %v", bindings, err)
+	}
+	{
+		err := db.Table("menus").Count(&menus).Error
+		require.NoError(t, err, "unrelated defaults were reseeded: %d, %v", menus, err)
+		require.Equal(t, initialMenuCount+4, menus, "unrelated defaults were reseeded: %d, %v", menus, err)
+	}
+	version, err := readSeedVersion(ctx, db, bootstrapSeedVersionKey)
+	{
+		require.NoError(t, err, "upgrade version = %q, %v", version, err)
+		require.Equal(t, "2026-09-22-oncall-settings-menu", version, "upgrade version = %q, %v", version, err)
+	}
+	marker, err := readSeedVersion(ctx, db, networkNavigationSeedVersionKey)
+	{
+		require.NoError(t, err, "menu upgrade marker = %q, %v", marker, err)
+		require.Equal(t, networkNavigationSeedVersion, marker, "menu upgrade marker = %q, %v", marker, err)
+	}
 }

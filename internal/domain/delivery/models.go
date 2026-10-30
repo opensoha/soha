@@ -224,38 +224,39 @@ type ReleaseBundleFilter struct {
 }
 
 type ExecutionTask struct {
-	ID                       string                   `json:"id"`
-	ReleaseBundleID          string                   `json:"releaseBundleId,omitempty"`
-	ApplicationID            string                   `json:"applicationId"`
-	ApplicationEnvironmentID string                   `json:"applicationEnvironmentId,omitempty"`
-	TaskKind                 string                   `json:"taskKind"`
-	ProviderKind             string                   `json:"providerKind"`
-	TargetKind               string                   `json:"targetKind"`
-	Status                   string                   `json:"status"`
-	QueueKey                 string                   `json:"queueKey,omitempty"`
-	LockKey                  string                   `json:"lockKey,omitempty"`
-	MaxRetries               int                      `json:"maxRetries"`
-	AttemptCount             int                      `json:"attemptCount"`
-	TimeoutSeconds           int                      `json:"timeoutSeconds"`
-	CallbackToken            string                   `json:"callbackToken,omitempty"`
-	SecretLease              *domainsecret.LeaseGrant `json:"secretLease,omitempty" gorm:"-"`
-	SecretRefs               []domainsecret.Reference `json:"-" gorm:"-"`
-	SecretPrincipal          domainidentity.Principal `json:"-" gorm:"-"`
-	SecretTarget             domainsecret.Target      `json:"-" gorm:"-"`
-	ClaimedByAgentID         string                   `json:"claimedByAgentId,omitempty"`
-	RuntimeEndpoint          string                   `json:"runtimeEndpoint,omitempty"`
-	RuntimeClusterID         string                   `json:"runtimeClusterId,omitempty"`
-	StopTransport            string                   `json:"stopTransport,omitempty"`
-	Payload                  map[string]any           `json:"payload,omitempty"`
-	Result                   map[string]any           `json:"result,omitempty"`
-	OperationState           *OperationState          `json:"operationState,omitempty" gorm:"-"`
-	Artifacts                []ExecutionArtifact      `json:"artifacts,omitempty"`
-	StartedAt                *time.Time               `json:"startedAt,omitempty"`
-	LastHeartbeatAt          *time.Time               `json:"lastHeartbeatAt,omitempty"`
-	LastRuntimeSeenAt        *time.Time               `json:"lastRuntimeSeenAt,omitempty"`
-	FinishedAt               *time.Time               `json:"finishedAt,omitempty"`
-	CreatedAt                time.Time                `json:"createdAt"`
-	UpdatedAt                time.Time                `json:"updatedAt"`
+	ID                         string                   `json:"id"`
+	ReleaseBundleID            string                   `json:"releaseBundleId,omitempty"`
+	ApplicationID              string                   `json:"applicationId"`
+	ApplicationEnvironmentID   string                   `json:"applicationEnvironmentId,omitempty"`
+	TaskKind                   string                   `json:"taskKind"`
+	ProviderKind               string                   `json:"providerKind"`
+	TargetKind                 string                   `json:"targetKind"`
+	Status                     string                   `json:"status"`
+	QueueKey                   string                   `json:"queueKey,omitempty"`
+	LockKey                    string                   `json:"lockKey,omitempty"`
+	MaxRetries                 int                      `json:"maxRetries"`
+	AttemptCount               int                      `json:"attemptCount"`
+	TimeoutSeconds             int                      `json:"timeoutSeconds"`
+	CallbackToken              string                   `json:"callbackToken,omitempty"`
+	SecretLease                *domainsecret.LeaseGrant `json:"secretLease,omitempty" gorm:"-"`
+	SecretRefs                 []domainsecret.Reference `json:"-" gorm:"-"`
+	SecretPrincipal            domainidentity.Principal `json:"-" gorm:"-"`
+	ManifestAdmissionValidated bool                     `json:"-" gorm:"-"`
+	SecretTarget               domainsecret.Target      `json:"-" gorm:"-"`
+	ClaimedByAgentID           string                   `json:"claimedByAgentId,omitempty"`
+	RuntimeEndpoint            string                   `json:"runtimeEndpoint,omitempty"`
+	RuntimeClusterID           string                   `json:"runtimeClusterId,omitempty"`
+	StopTransport              string                   `json:"stopTransport,omitempty"`
+	Payload                    map[string]any           `json:"payload,omitempty"`
+	Result                     map[string]any           `json:"result,omitempty"`
+	OperationState             *OperationState          `json:"operationState,omitempty" gorm:"-"`
+	Artifacts                  []ExecutionArtifact      `json:"artifacts,omitempty"`
+	StartedAt                  *time.Time               `json:"startedAt,omitempty"`
+	LastHeartbeatAt            *time.Time               `json:"lastHeartbeatAt,omitempty"`
+	LastRuntimeSeenAt          *time.Time               `json:"lastRuntimeSeenAt,omitempty"`
+	FinishedAt                 *time.Time               `json:"finishedAt,omitempty"`
+	CreatedAt                  time.Time                `json:"createdAt"`
+	UpdatedAt                  time.Time                `json:"updatedAt"`
 }
 
 // RequiresStopConfirmation covers delivery operations whose side effects may

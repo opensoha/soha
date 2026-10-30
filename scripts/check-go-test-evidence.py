@@ -50,6 +50,13 @@ INITIALIZATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/
 TEMPLATE_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/catalog","parent":"TestTemplateVersionsWithPostgres","children":["migration-declarations-preserve-legacy-writers"]}
 MANIFEST_MIGRATION_SCOPE = {"package":"github.com/opensoha/soha/internal/repository/manifest","parent":"TestDeliverySnapshotWithPostgres","children":["migration-baseline-is-success-only",*["migration-baseline-is-success-only/"+name for name in ["verified","desired-only","stale-generation","failed","digest-mismatch","malformed-identity"]]]}
 
+MANIFEST_CONTROL_SCOPE = {
+    "package": "github.com/opensoha/soha/internal/repository/manifest",
+    "parent": "TestDeliverySnapshotWithPostgres",
+    "children": ["publication-operation-context", *["publication-operation-context/" + child for child in
+                 ("roundtrip_and_idempotency", "atomic_rollback", "schema_and_task_uniqueness", "legacy_standalone")]],
+}
+
 SERVICE_REFERENCE_CANDIDATES_SCOPE = {
     "package": "github.com/opensoha/soha/internal/repository/delivery",
     "parent": "TestServiceReferenceCandidatesWithPostgres",
@@ -100,6 +107,7 @@ if __name__ == "__main__":
     parser.add_argument("--template-adoption", action="store_true")
     parser.add_argument("--template-migration", action="store_true")
     parser.add_argument("--manifest-migration", action="store_true")
+    parser.add_argument("--manifest-control", action="store_true")
     args = parser.parse_args()
     try:
         scope = {"package": "github.com/opensoha/soha/internal/repository/copilot", "parent": "TestMainSessionWithPostgres", "children": ["personal_assistant_identity"]} if args.main_chat else {}
@@ -117,6 +125,8 @@ if __name__ == "__main__":
             scope = TEMPLATE_MIGRATION_SCOPE
         if args.manifest_migration:
             scope = MANIFEST_MIGRATION_SCOPE
+        if args.manifest_control:
+            scope = MANIFEST_CONTROL_SCOPE
         print(json.dumps(validate(args.log.read_text(), args.exit_code, **scope)))
     except (ValueError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")

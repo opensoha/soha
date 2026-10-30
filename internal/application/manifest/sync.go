@@ -45,9 +45,10 @@ func (s *DeclarativeService) SyncWebhook(ctx context.Context, principal domainid
 		return domainmanifest.SyncRun{}, domaindelivery.ExecutionTask{}, fmt.Errorf("%w: manifest source is not configured for webhook synchronization", apperrors.ErrConflict)
 	}
 	expectedRef := source.RefValue
-	if source.RefType == domainmanifest.SourceRefBranch {
+	switch source.RefType {
+	case domainmanifest.SourceRefBranch:
 		expectedRef = "refs/heads/" + source.RefValue
-	} else if source.RefType == domainmanifest.SourceRefTag {
+	case domainmanifest.SourceRefTag:
 		expectedRef = "refs/tags/" + source.RefValue
 	}
 	if input.Ref != source.RefValue && input.Ref != expectedRef {

@@ -134,6 +134,7 @@ func prepareGitCredentialEnvironment(repository domainapp.SourceRepository, cred
 		}
 		askpass := filepath.Join(workspace, "git-askpass.sh")
 		const script = "#!/bin/sh\ncase \"$1\" in\n  *Username*) printf '%s\\n' \"$SOHA_GIT_USERNAME\" ;;\n  *) printf '%s\\n' \"$SOHA_GIT_PASSWORD\" ;;\nesac\n"
+		// #nosec G306 -- Git executes this fixed helper; owner-only execution is required in a private temporary workspace.
 		if err := os.WriteFile(askpass, []byte(script), 0o700); err != nil {
 			return nil, fmt.Errorf("create Git credential helper: %w", err)
 		}
@@ -223,13 +224,16 @@ func checkoutManifestRepository(ctx context.Context, payload domainmanifest.Task
 		requested = strings.TrimSpace(payload.RefValue)
 	}
 	if requested != "" {
+		if !gitCommitPattern.MatchString(requested) {
+			return "", "", fmt.Errorf("manifest requested commit must be a full commit hash")
+		}
 		if err := runGit(ctx, "", environment, "init", directory); err != nil {
 			return "", "", err
 		}
 		if err := runGit(ctx, directory, environment, "remote", "add", "origin", payload.RepositoryURL); err != nil {
 			return "", "", err
 		}
-		if err := runGit(ctx, directory, environment, "fetch", "--depth", "1", "origin", requested); err != nil {
+		if err := runGit(ctx, directory, environment, "fetch", "--depth", "1", "--", "origin", requested); err != nil {
 			return "", "", err
 		}
 		if err := runGit(ctx, directory, environment, "checkout", "--detach", "FETCH_HEAD"); err != nil {
@@ -410,6 +414,7 @@ func runGit(ctx context.Context, directory string, environment []string, args ..
 }
 
 func gitOutput(ctx context.Context, directory string, environment []string, args ...string) (string, error) {
+	// #nosec G204 -- Fixed Git executable, no shell; callers use fixed subcommands, URL validation, full commit hashes or --branch values and -- before repository URLs.
 	command := exec.CommandContext(ctx, "git", args...)
 	command.Dir = directory
 	command.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_OPTIONAL_LOCKS=0")

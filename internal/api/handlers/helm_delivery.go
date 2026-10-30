@@ -27,7 +27,11 @@ func (h *DeliveryHandler) authorizedExecutionProviders(c *gin.Context, providers
 	allowed := []string{}
 	clusters := map[string]bool{}
 	for _, provider := range providers {
-		if provider == "helm_direct" || provider == domaindelivery.HelmDirectInitializationProvider || provider == domainmanifest.TaskProviderDirect || provider == domainmanifest.TaskProviderDirectInitialization {
+		baseProvider := domaindelivery.ManifestBaseProvider(provider)
+		if baseProvider == domainmanifest.TaskProviderDirect || baseProvider == domainmanifest.TaskProviderDirectInitialization {
+			continue
+		}
+		if provider == "helm_direct" || provider == domaindelivery.HelmDirectInitializationProvider {
 			continue
 		}
 		clusterID, agentOnly := executionProviderCluster(provider)
@@ -69,6 +73,15 @@ func (h *DeliveryHandler) InspectApplicationHelmChart(c *gin.Context) {
 }
 
 func executionProviderCluster(provider string) (string, bool) {
+	if strings.HasPrefix(provider, domaindelivery.ManifestAdmissionProviderPrefix) {
+		base := domaindelivery.ManifestBaseProvider(provider)
+		for _, prefix := range []string{resourceruntime.ManifestAgentProviderPrefix, resourceruntime.RootCRAgentProviderPrefix, resourceruntime.ManifestInitializationProviderPrefix} {
+			if strings.HasPrefix(base, prefix) {
+				return strings.TrimPrefix(base, prefix), true
+			}
+		}
+		return "", true
+	}
 	for _, prefix := range []string{helmrelease.InitializationProviderPrefix, resourceruntime.ManifestInitializationProviderPrefix} {
 		if strings.HasPrefix(provider, prefix) {
 			return strings.TrimPrefix(provider, prefix), true

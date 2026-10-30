@@ -31,7 +31,7 @@ func (s *gitCredentialResolverStub) ResolveSourceCredentials(_ context.Context, 
 
 func TestReadManifestRepositoryFilesFiltersAndDigests(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "deploy", "ignored"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "deploy", "ignored"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	for name, content := range map[string]string{
@@ -108,6 +108,7 @@ func TestGitExecutionResolvesRepositoryCredentialWithoutPersistingIt(t *testing.
 	if strings.Contains(strings.Join(environment, "\n"), "integration-1") {
 		t.Fatalf("execution environment leaked credential reference: %#v", environment)
 	}
+	// #nosec G304 -- Read the fixed credential-helper filename inside this test-owned temporary workspace.
 	askpass, err := os.ReadFile(filepath.Join(workspace, "git-askpass.sh"))
 	if err != nil {
 		t.Fatal(err)

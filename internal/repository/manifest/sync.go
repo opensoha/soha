@@ -110,7 +110,7 @@ func (r *Repository) ListSyncRuns(ctx context.Context, packageID string, limit i
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainmanifest.SyncRun, 0)
 	for rows.Next() {
 		var item domainmanifest.SyncRun
@@ -148,7 +148,7 @@ func (r *Repository) ListDueSources(ctx context.Context, limit int) ([]domainman
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainmanifest.Source, 0)
 	for rows.Next() {
 		item, err := scanSource(rows)

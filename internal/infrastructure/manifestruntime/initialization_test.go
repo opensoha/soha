@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	dm "github.com/opensoha/soha/internal/domain/manifest"
+	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -56,9 +57,7 @@ func TestInitializationUsesCreateAndRejectsReplacedUID(t *testing.T) {
 			t.Fatalf("unexpected patch %s", a.GetPatchType())
 		}
 		var object unstructured.Unstructured
-		if err := json.Unmarshal(a.GetPatch(), &object.Object); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, json.Unmarshal(a.GetPatch(), &object.Object))
 		if object.GetUID() != "created" || object.GetResourceVersion() != "1" {
 			t.Fatal("handoff lost created identity")
 		}
@@ -74,17 +73,11 @@ func TestInitializationUsesCreateAndRejectsReplacedUID(t *testing.T) {
 	payload.Action = "observe"
 	payload.Inventory = result.Inventory
 	_, err = observeDocuments(t.Context(), client, mapper, payload)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	live, err := client.Resource(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}).Namespace("team").Get(context.Background(), "app", metav1.GetOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	live.SetUID(types.UID("replacement"))
-	if err := client.Tracker().Update(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}, live, "team"); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, client.Tracker().Update(schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}, live, "team"))
 	_, err = observeDocuments(t.Context(), client, mapper, payload)
 	if err == nil {
 		t.Fatal("same-name replacement confirmed original initialization")
@@ -176,9 +169,7 @@ func newInitializationHandoffFixture(t *testing.T, scenario string) (*fake.FakeD
 			return true, nil, apierrors.NewConflict(gvr.GroupResource(), "app", fmt.Errorf("foreign manager owns data"))
 		}
 		var object unstructured.Unstructured
-		if err := json.Unmarshal(a.GetPatch(), &object.Object); err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, json.Unmarshal(a.GetPatch(), &object.Object))
 		if object.GetUID() != "created" || object.GetResourceVersion() != "1" {
 			t.Fatal("handoff lost identity")
 		}

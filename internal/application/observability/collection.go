@@ -417,10 +417,11 @@ func (s *Service) configureCollectionDestination(ctx context.Context, connection
 func publicCollectionPlan(plan collectionPlan, blockers, warnings []string) sohaapi.LogCollectionPlan {
 	components := []sohaapi.LogCollectionPlanComponents{sohaapi.LogCollectionPlanComponentsOtelCollector}
 	cpu, memory := "200m", "256Mi"
-	if plan.Profile == sohaapi.LogCollectionProfileStarter {
+	switch plan.Profile {
+	case sohaapi.LogCollectionProfileStarter:
 		components = append(components, sohaapi.LogCollectionPlanComponentsLoki)
 		cpu, memory = "500m", "1Gi"
-	} else if plan.Profile == sohaapi.LogCollectionProfileProductionExternal {
+	case sohaapi.LogCollectionProfileProductionExternal:
 		cpu, memory = "300m", "512Mi"
 	}
 	return sohaapi.LogCollectionPlan{
@@ -597,7 +598,12 @@ func (s *Service) ensureManagedLokiQueryEndpoint(ctx context.Context, principal 
 	if err != nil {
 		return "", "", fmt.Errorf("allocate managed Loki query port: %w", err)
 	}
-	localPort := listener.Addr().(*net.TCPAddr).Port
+	address, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		_ = listener.Close()
+		return "", "", fmt.Errorf("managed Loki query listener requires a TCP address")
+	}
+	localPort := address.Port
 	if err := listener.Close(); err != nil {
 		return "", "", fmt.Errorf("release managed Loki query port: %w", err)
 	}

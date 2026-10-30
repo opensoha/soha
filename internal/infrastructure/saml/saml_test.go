@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"math/big"
 	"net/url"
 	"strings"
@@ -45,9 +46,7 @@ func TestLoginRuntimeMetadataUsesEntityIDAndACSSeparately(t *testing.T) {
 		EntityID:    "https://sp.example.test/metadata",
 		RedirectURL: "https://sp.example.test/acs",
 	})
-	if err != nil {
-		t.Fatalf("Metadata returned error: %v", err)
-	}
+	require.NoError(t, err, "Metadata returned error: %v", err)
 	text := string(metadata)
 	if !strings.Contains(text, `entityID="https://sp.example.test/metadata"`) || !strings.Contains(text, `Location="https://sp.example.test/acs"`) {
 		t.Fatalf("metadata does not separate entity ID and ACS: %s", text)
@@ -79,9 +78,7 @@ func TestProviderRuntimeValidatesRegisteredServiceProvider(t *testing.T) {
 		RelayState: "opaque", ServiceProvider: serviceProvider,
 	}
 	validated, err := runtime.ValidateRequest(material, input)
-	if err != nil {
-		t.Fatalf("validate registered request: %v", err)
-	}
+	require.NoError(t, err, "validate registered request: %v", err)
 	if validated.ID != "request-1" || validated.Issuer != serviceProvider.EntityID || validated.ACSURL != serviceProvider.AssertionConsumerServiceURLs[0] || validated.RelayState != "opaque" {
 		t.Fatalf("unexpected request: %#v", validated)
 	}
@@ -109,26 +106,18 @@ func TestSignedResponseRoundTrip(t *testing.T) {
 	key, certificate := testCertificate(t, now)
 	idp := mustIdentityProvider(t, key, certificate, now)
 	metadataXML, err := idp.MetadataXML()
-	if err != nil {
-		t.Fatalf("marshal metadata: %v", err)
-	}
+	require.NoError(t, err, "marshal metadata: %v", err)
 	metadata, err := ParseMetadata(metadataXML, now)
-	if err != nil {
-		t.Fatalf("parse metadata: %v", err)
-	}
+	require.NoError(t, err, "parse metadata: %v", err)
 	sp, err := NewServiceProvider(ServiceProviderConfig{
 		EntityID: "https://sp.example.test/metadata", MetadataURL: "https://sp.example.test/metadata",
 		ACSURL: "https://sp.example.test/acs", IDPMetadata: metadata,
 		SigningKey: key, SigningCertificate: certificate, Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatalf("create SP: %v", err)
-	}
+	require.NoError(t, err, "create SP: %v", err)
 
 	redirect, err := sp.BuildAuthnRequest(BindingRedirect, "return=/identity&tab=apps")
-	if err != nil {
-		t.Fatalf("build Redirect request: %v", err)
-	}
+	require.NoError(t, err, "build Redirect request: %v", err)
 	redirectURL, err := url.Parse(redirect.RedirectURL)
 	if err != nil || redirect.ID == "" || redirectURL.Query().Get("RelayState") != "return=/identity&tab=apps" || redirectURL.Query().Get("Signature") == "" {
 		t.Fatalf("invalid Redirect request: id=%q url=%q err=%v", redirect.ID, redirect.RedirectURL, err)
@@ -142,13 +131,9 @@ func TestSignedResponseRoundTrip(t *testing.T) {
 		RequestID: redirect.ID, SPEntityID: "https://sp.example.test/metadata", ACSURL: "https://sp.example.test/acs",
 		NameID: "subject-123", SessionIndex: "session-123", Attributes: map[string][]string{"email": {"user@example.test"}},
 	})
-	if err != nil {
-		t.Fatalf("sign response: %v", err)
-	}
+	require.NoError(t, err, "sign response: %v", err)
 	assertion, err := sp.ValidateResponse(base64.StdEncoding.EncodeToString(rawResponse), redirect.ID)
-	if err != nil {
-		t.Fatalf("validate response: %v", err)
-	}
+	require.NoError(t, err, "validate response: %v", err)
 	if assertion.ID == "" || assertion.ResponseID == "" || assertion.Subject != "subject-123" || assertion.SessionIndex != "session-123" || len(assertion.Attributes["email"]) != 1 {
 		t.Fatalf("unexpected assertion: %#v", assertion)
 	}
@@ -295,9 +280,7 @@ func mustIdentityProvider(t *testing.T, key *rsa.PrivateKey, certificate *x509.C
 		MetadataURL: "https://idp.example.test/metadata", SSOURL: "https://idp.example.test/sso",
 		SigningKey: key, Certificate: certificate, Now: func() time.Time { return now },
 	})
-	if err != nil {
-		t.Fatalf("create IdP: %v", err)
-	}
+	require.NoError(t, err, "create IdP: %v", err)
 	return idp
 }
 

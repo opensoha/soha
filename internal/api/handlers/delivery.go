@@ -748,6 +748,13 @@ func (h *DeliveryHandler) ClaimExecutionTask(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	if domaindelivery.RequiresManifestAdmission(item) {
+		if !item.ManifestAdmissionValidated {
+			writeError(c, apperrors.ErrUnsupportedOperation)
+			return
+		}
+		c.Header(domaindelivery.ManifestAdmissionHeader, "1")
+	}
 	apiresponse.Item(c, http.StatusAccepted, item)
 }
 

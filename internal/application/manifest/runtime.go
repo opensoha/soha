@@ -138,9 +138,10 @@ func (s *DeclarativeService) SetDesiredRevision(ctx context.Context, principal d
 
 func (s *DeclarativeService) Reconcile(ctx context.Context, principal domainidentity.Principal, deploymentID, action string, input domainmanifest.ActionInput) (DeploymentActionResult, error) {
 	permission := appaccess.ManagedActionPermission(appaccess.PermDeliveryManifestDeploymentsManage, "trigger")
-	if action == domainmanifest.TaskActionRepair {
+	switch action {
+	case domainmanifest.TaskActionRepair:
 		permission = appaccess.PermDeliveryManifestDriftRepair
-	} else if action == domainmanifest.TaskActionAdopt {
+	case domainmanifest.TaskActionAdopt:
 		permission = appaccess.PermDeliveryManifestDriftAdopt
 	}
 	if err := s.base.authorize(ctx, principal, permission); err != nil {
@@ -292,15 +293,15 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 	if s.tasks == nil {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: manifest task runtime is unavailable", apperrors.ErrInvalidArgument)
 	}
+	if err := s.prepareOperationContext(ctx, deployment, &payload); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
 	if s.importedRoots != nil {
 		if err := s.importedRoots.ValidateImportedManifestTargets(ctx, payload); err != nil {
 			return domaindelivery.ExecutionTask{}, err
 		}
 	}
-	provider, err := s.rootTaskProvider(ctx, binding.ClusterID, payload.RootResource != nil)
-	if err == nil && payload.InitializationPlanID != "" {
-		provider, err = s.initializationProvider(ctx, binding.ClusterID)
-	}
+	provider, err := s.operationProvider(ctx, binding, payload)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
@@ -326,6 +327,7 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 		task.ID, task.Payload, task.MaxRetries = node.ResourceID("task"), node.Metadata(task.Payload), 0
 	}
 	run := domainmanifest.OperationRun{ID: uuid.NewString(), PackageID: item.ID, BindingID: binding.ID, DeploymentID: deployment.ID, Generation: payload.Generation, Action: payload.Action, IdempotencyKey: payload.IdempotencyKey, ExecutionTaskID: task.ID, CreatedAt: now}
+	run.DeliveryContext = payload.DeliveryContext
 	existingID, created, err := s.repository.CreateOperationTask(ctx, run, task)
 	if err != nil {
 		return domaindelivery.ExecutionTask{}, err
@@ -334,6 +336,26 @@ func (s *DeclarativeService) queueOperation(ctx context.Context, item domainmani
 		return task, nil
 	}
 	return s.tasks.GetExecutionTaskInternal(ctx, existingID)
+}
+
+func (s *DeclarativeService) operationProvider(ctx context.Context, binding domainmanifest.EnvironmentBinding, payload domainmanifest.TaskPayload) (string, error) {
+	provider, err := s.rootTaskProvider(ctx, binding.ClusterID, payload.RootResource != nil)
+	if err == nil && payload.InitializationPlanID != "" {
+		provider, err = s.initializationProvider(ctx, binding.ClusterID)
+	}
+	if err != nil || payload.DeliveryContext == nil {
+		return provider, err
+	}
+	if provider != domainmanifest.TaskProviderDirect && provider != domainmanifest.TaskProviderDirectInitialization {
+		connection, err := s.base.loadCluster(ctx, binding.ClusterID)
+		if err != nil {
+			return "", err
+		}
+		if connection == nil || !slices.Contains(connection.Summary.Capabilities, domaindelivery.ManifestAdmissionCapability) {
+			return "", fmt.Errorf("%w: upgrade the Agent for current Manifest Plan admission", apperrors.ErrUnsupportedOperation)
+		}
+	}
+	return domaindelivery.ManifestAdmissionProviderPrefix + provider, nil
 }
 
 func (s *DeclarativeService) taskProvider(ctx context.Context, clusterID string) (string, error) {
@@ -368,7 +390,7 @@ func (s *DeclarativeService) workerLoop(ctx context.Context) {
 				s.observeContinuousDeployments(ctx)
 				nextObserve = time.Now().UTC().Add(10 * time.Second)
 			}
-			task, err := s.tasks.ClaimExecutionTask(ctx, []string{domainmanifest.TaskProviderDirect, domainmanifest.TaskProviderDirectInitialization, domainmanifest.TaskProviderGit}, "soha-manifest-controller", "local")
+			task, err := s.tasks.ClaimExecutionTask(ctx, []string{domainmanifest.TaskProviderDirect, domainmanifest.TaskProviderDirectInitialization, domainmanifest.TaskProviderGit, domaindelivery.ManifestAdmissionProviderPrefix + domainmanifest.TaskProviderDirect, domaindelivery.ManifestAdmissionProviderPrefix + domainmanifest.TaskProviderDirectInitialization}, "soha-manifest-controller", "local")
 			if err != nil {
 				continue
 			}
@@ -384,6 +406,10 @@ func (s *DeclarativeService) executeLocalTask(ctx context.Context, task domainde
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
 	defer cancel()
+	if domaindelivery.RequiresManifestAdmission(task) && !task.ManifestAdmissionValidated {
+		_, _ = s.tasks.RecordCallback(context.WithoutCancel(ctx), domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: "failed", Payload: map[string]any{"error": "Manifest Plan admission was not confirmed"}})
+		return
+	}
 	payload, err := decodeTaskPayload(task.Payload)
 	if err != nil {
 		_, _ = s.tasks.RecordCallback(context.WithoutCancel(ctx), domaindelivery.ExecutionCallbackInput{CallbackToken: task.CallbackToken, Status: "failed", Payload: map[string]any{"error": "invalid manifest task payload"}})
@@ -620,7 +646,7 @@ func (s *DeclarativeService) queueAutomaticAction(ctx context.Context, deploymen
 	bucket := observedAt.UTC().Unix() / 10
 	payload.IdempotencyKey = fmt.Sprintf("manifest:%s:%d:%s:%d", deployment.ID, deployment.Generation, action, bucket)
 	var principals []domainidentity.Principal
-	if payload.RootResource != nil || payload.InitializationPlanID != "" {
+	if deployment.Spec.DeliverySnapshot != nil || payload.RootResource != nil || payload.InitializationPlanID != "" {
 		principal, principalErr := s.rootObservationPrincipal(ctx, deployment)
 		if principalErr != nil {
 			return principalErr

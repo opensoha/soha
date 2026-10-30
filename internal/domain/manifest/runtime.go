@@ -112,6 +112,7 @@ type DriftReport struct {
 }
 
 type TaskPayload struct {
+	DeliveryContext      *DeliveryContext                        `json:"-"`
 	InitializationPlanID string                                  `json:"initializationPlanId,omitempty"`
 	RootResource         *sohaapi.ManifestRootResource           `json:"rootResource,omitempty"`
 	RolloutControl       *sohaapi.ProgressiveRolloutControlInput `json:"rolloutControl,omitempty"`
@@ -165,13 +166,14 @@ type TaskResult struct {
 }
 
 type OperationRun struct {
-	ID              string    `json:"id"`
-	PackageID       string    `json:"packageId"`
-	BindingID       string    `json:"bindingId,omitempty"`
-	DeploymentID    string    `json:"deploymentId,omitempty"`
-	Generation      int64     `json:"generation"`
-	Action          string    `json:"action"`
-	IdempotencyKey  string    `json:"idempotencyKey"`
-	ExecutionTaskID string    `json:"executionTaskId"`
-	CreatedAt       time.Time `json:"createdAt"`
+	DeliveryContext *DeliveryContext `json:"-"`
+	ID              string           `json:"id"`
+	PackageID       string           `json:"packageId"`
+	BindingID       string           `json:"bindingId,omitempty"`
+	DeploymentID    string           `json:"deploymentId,omitempty"`
+	Generation      int64            `json:"generation"`
+	Action          string           `json:"action"`
+	IdempotencyKey  string           `json:"idempotencyKey"`
+	ExecutionTaskID string           `json:"executionTaskId"`
+	CreatedAt       time.Time        `json:"createdAt"`
 }

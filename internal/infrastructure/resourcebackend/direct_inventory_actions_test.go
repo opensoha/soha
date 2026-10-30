@@ -85,7 +85,11 @@ func TestDrainNodeSubmitsEvictionForManagedPod(t *testing.T) {
 			Spec: corev1.PodSpec{NodeName: "node-a"},
 		},
 	)
-	client.Discovery().(*fakediscovery.FakeDiscovery).Resources = []*metav1.APIResourceList{{
+	discovery, ok := client.Discovery().(*fakediscovery.FakeDiscovery)
+	if !ok {
+		t.Fatal("expected fake discovery client")
+	}
+	discovery.Resources = []*metav1.APIResourceList{{
 		GroupVersion: "v1",
 		APIResources: []metav1.APIResource{{Name: "pods/eviction", Kind: "Eviction", Group: policyv1.GroupName, Version: policyv1.SchemeGroupVersion.Version}},
 	}}
@@ -94,7 +98,10 @@ func TestDrainNodeSubmitsEvictionForManagedPod(t *testing.T) {
 		if !ok || createAction.GetSubresource() != "eviction" {
 			return false, nil, nil
 		}
-		eviction := createAction.GetObject().(*policyv1.Eviction)
+		eviction, ok := createAction.GetObject().(*policyv1.Eviction)
+		if !ok {
+			t.Fatalf("unexpected eviction object: %T", createAction.GetObject())
+		}
 		if err := client.Tracker().Delete(corev1.SchemeGroupVersion.WithResource("pods"), eviction.Namespace, eviction.Name); err != nil {
 			return true, nil, err
 		}

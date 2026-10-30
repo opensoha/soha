@@ -29,9 +29,9 @@ func (g *GenericResources) PlanResourceYAMLUpdate(ctx context.Context, principal
 	}
 	var analysis domainresource.ResourceUpdateAnalysis
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		client, err := g.genericResourceAgentClient(connection)
-		if err != nil {
-			return domainoperation.Plan{}, err
+		client, clientErr := g.genericResourceAgentClient(connection)
+		if clientErr != nil {
+			return domainoperation.Plan{}, clientErr
 		}
 		analysis, err = client.DryRunResourceYAML(ctx, request.Namespace, request.Kind, request.Name, request.Content)
 	} else if g.direct == nil {

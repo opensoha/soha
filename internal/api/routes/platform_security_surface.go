@@ -485,9 +485,10 @@ func copilotConfigurationMutationSecuritySurface(method, path string) (nonPlatfo
 	case strings.HasPrefix(path, "/api/v1/copilot/data-sources"):
 		action := nonPlatformMutationAction(method, path)
 		permission := appaccess.PermAIDataSourcesUpdate
-		if action == "create" {
+		switch action {
+		case "create":
 			permission = appaccess.PermAIDataSourcesCreate
-		} else if action == "validate" {
+		case "validate":
 			permission = appaccess.PermAIDataSourcesValidate
 		}
 		return nonPlatformMutationEntry("CopilotDataSource", action, permission, false), true

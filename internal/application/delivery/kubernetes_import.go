@@ -391,46 +391,37 @@ func validateHelmReleaseImportInput(input domaindelivery.HelmReleaseImportInput)
 }
 
 func (s *Service) recordKubernetesServiceImport(ctx context.Context, principal domainidentity.Principal, input domaindelivery.KubernetesServiceImportInput, result domaindelivery.KubernetesServiceImportResult) {
-	meta := requestctx.FromContext(ctx)
 	metadata := map[string]any{
 		"clusterId": input.ClusterID, "namespace": input.Namespace, "applicationId": result.Application.ID,
 		"applicationEnvironmentId": result.ApplicationEnvironmentID, "ownershipMode": result.OwnershipMode,
 		"workloadCount": len(input.Workloads),
 	}
-	if s.audit != nil {
-		_ = s.audit.Record(ctx, domainaudit.Entry{
-			ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
-			ClusterID: input.ClusterID, Namespace: input.Namespace, ResourceKind: "ApplicationEnvironment", ResourceName: result.ApplicationEnvironmentID,
-			Action: "kubernetes.import", Result: "success", Summary: "imported Kubernetes services in observe-only mode",
-			RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP, Metadata: metadata,
-		})
-	}
-	if s.operations != nil {
-		_ = s.operations.Record(ctx, operationentry.New(ctx, principal, "delivery.kubernetes.import", map[string]any{
-			"module": "delivery", "resourceKind": "ApplicationEnvironment", "targetId": result.ApplicationEnvironmentID,
-		}, "success", "imported Kubernetes services in observe-only mode", metadata))
-	}
+	s.recordServiceImport(ctx, principal, input.ClusterID, input.Namespace, result.ApplicationEnvironmentID, "kubernetes.import", "imported Kubernetes services in observe-only mode", metadata)
 }
 
 func (s *Service) recordHelmReleaseImport(ctx context.Context, principal domainidentity.Principal, input domaindelivery.HelmReleaseImportInput, result domaindelivery.HelmReleaseImportResult) {
-	meta := requestctx.FromContext(ctx)
 	metadata := map[string]any{
 		"clusterId": input.ClusterID, "namespace": input.Namespace, "applicationId": result.Application.ID,
 		"applicationEnvironmentId": result.ApplicationEnvironmentID, "ownershipMode": result.OwnershipMode,
 		"releaseCount": len(input.Releases),
 	}
+	s.recordServiceImport(ctx, principal, input.ClusterID, input.Namespace, result.ApplicationEnvironmentID, "helm.import", "imported Helm releases", metadata)
+}
+
+func (s *Service) recordServiceImport(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, environmentID, action, summary string, metadata map[string]any) {
+	meta := requestctx.FromContext(ctx)
 	if s.audit != nil {
 		_ = s.audit.Record(ctx, domainaudit.Entry{
 			ActorID: principal.UserID, ActorName: principal.UserName, Roles: principal.Roles, Teams: principal.Teams,
-			ClusterID: input.ClusterID, Namespace: input.Namespace, ResourceKind: "ApplicationEnvironment", ResourceName: result.ApplicationEnvironmentID,
-			Action: "helm.import", Result: "success", Summary: "imported Helm releases",
+			ClusterID: clusterID, Namespace: namespace, ResourceKind: "ApplicationEnvironment", ResourceName: environmentID,
+			Action: action, Result: "success", Summary: summary,
 			RequestPath: meta.Path, RequestMethod: meta.Method, RequestID: meta.RequestID, SourceIP: meta.SourceIP, Metadata: metadata,
 		})
 	}
 	if s.operations != nil {
-		_ = s.operations.Record(ctx, operationentry.New(ctx, principal, "delivery.helm.import", map[string]any{
-			"module": "delivery", "resourceKind": "ApplicationEnvironment", "targetId": result.ApplicationEnvironmentID,
-		}, "success", "imported Helm releases", metadata))
+		_ = s.operations.Record(ctx, operationentry.New(ctx, principal, "delivery."+action, map[string]any{
+			"module": "delivery", "resourceKind": "ApplicationEnvironment", "targetId": environmentID,
+		}, "success", summary, metadata))
 	}
 }
 

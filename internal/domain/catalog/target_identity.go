@@ -1,10 +1,28 @@
 package catalog
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"strings"
 )
+
+// ConfigurationRevision excludes observation timestamps and canonicalizes the
+// legacy service association before freezing publication control.
+func (target ReleaseTarget) ConfigurationRevision() (string, error) {
+	input, err := target.Input().WithCanonicalServiceID()
+	if err != nil {
+		return "", err
+	}
+	data, err := json.Marshal(input)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:]), nil
+}
 
 // ResolvedServiceID keeps older metadata-only targets readable.
 func (target ReleaseTarget) ResolvedServiceID() string {

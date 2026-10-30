@@ -39,7 +39,7 @@ func (r *Repository) ListDeliveryIntents(ctx context.Context, packageID string) 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]domainmanifest.DeliveryIntent, 0)
 	for rows.Next() {
 		item, err := scanDeliveryIntent(rows)

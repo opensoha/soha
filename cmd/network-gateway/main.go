@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
+
 	"github.com/opensoha/soha/internal/networkgateway"
 	"github.com/opensoha/soha/internal/networkprotocol"
 	"github.com/opensoha/soha/internal/platform/redaction"
@@ -75,18 +77,9 @@ func runGateway(config networkgateway.Config, privateKey [32]byte, control *netw
 	if err != nil {
 		return fail(err)
 	}
-	var telemetry networkgateway.Telemetry
-	if config.IngestURL != "" {
-		client, err := config.IngestHTTPClient()
-		if err != nil {
-			return fail(err)
-		}
-		metrics, err := networkgateway.NewTelemetryClient(config.IngestURL, config.RuntimeID, client, schemas)
-		if err != nil {
-			return fail(err)
-		}
-		metrics.SetVPNPeerCounters(system.VPNPeerCounters)
-		telemetry = metrics
+	telemetry, err := gatewayTelemetry(config, schemas, system.VPNPeerCounters)
+	if err != nil {
+		return fail(err)
 	}
 	runtime, err := networkgateway.NewRuntime(config.RuntimeID, control, executor, telemetry, config.PollInterval, config.HeartbeatInterval, config.MaxClockSkew, logger)
 	if err != nil {
@@ -158,4 +151,21 @@ func clientVersion() string {
 func fail(err error) int {
 	_, _ = fmt.Fprintln(os.Stderr, redaction.LogText(err.Error(), 2048))
 	return 1
+}
+
+func gatewayTelemetry(config networkgateway.Config, schemas *networkprotocol.Schemas, peerCounters func(string) ([]wgtypes.Peer, error)) (networkgateway.Telemetry, error) {
+	var telemetry networkgateway.Telemetry
+	if config.IngestURL != "" {
+		client, err := config.IngestHTTPClient()
+		if err != nil {
+			return nil, err
+		}
+		metrics, err := networkgateway.NewTelemetryClient(config.IngestURL, config.RuntimeID, client, schemas)
+		if err != nil {
+			return nil, err
+		}
+		metrics.SetVPNPeerCounters(peerCounters)
+		telemetry = metrics
+	}
+	return telemetry, nil
 }

@@ -961,7 +961,7 @@ func (s *Service) invokeKubernetesResourceCreationTool(ctx context.Context, prin
 	if err := requireGatewayIdempotencyKey(req.IdempotencyKey); err != nil {
 		return nil, nil, err
 	}
-	req.ResourceCreateRequest.RequestID = req.IdempotencyKey
+	req.RequestID = req.IdempotencyKey
 	item, err := s.resourceCreation.ExecuteCreate(ctx, principal, req.ClusterID, req.ResourceCreateRequest)
 	return item, map[string]any{"clusterId": req.ClusterID, "operationId": item.OperationID, "contentHash": item.ContentHash}, err
 }

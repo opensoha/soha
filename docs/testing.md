@@ -92,3 +92,13 @@ persistence/recovery, binding and candidate CAS, delete/recreate ABA, concurrenc
 transactional reauthorization, source deletion/consumer cleanup and application
 cascade isolation. Candidate records do not activate references or modify runtime
 targets. Database proof is separate from real Kubernetes/Agent or publication acceptance.
+
+## Manifest Plan 任务归属与控制权
+
+`python3 scripts/run-deletion-integration.py --manifest-control --output .tmp/quality/manifest-control.json`
+复用 `TestDeliverySnapshotWithPostgres` 的隔离 PG18、无缓存 race 与所有权清理入口，
+严格要求 `publication-operation-context` 及其原子回滚、上下文恢复/幂等、约束/歧义拒绝、
+旧独立任务兼容四个子场景实际 run/pass，无 skip。父测试还执行原根 CR 与迁移基线场景。
+`python3 scripts/check-go-test-evidence.py <log> --exit-code 0 --manifest-control`
+只验真实 Go JSON，不以包通过代替场景证据；CI 对同一 Manifest 日志追加此检查。
+本检查不代表真实 K8s 发布或混合 Core/Agent 现场验收。

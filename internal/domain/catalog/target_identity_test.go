@@ -1,6 +1,10 @@
 package catalog
 
-import "testing"
+import (
+	"maps"
+	"testing"
+	"time"
+)
 
 func TestTargetServiceIdentityCompatibility(t *testing.T) {
 	for _, tc := range []struct {
@@ -49,5 +53,44 @@ func TestTargetInputPreservesActualPosition(t *testing.T) {
 	input.Metadata["resourceUid"] = "replacement"
 	if original.Metadata["resourceUid"] != "uid" {
 		t.Fatal("copy mutated original")
+	}
+}
+
+func TestTargetConfigurationRevisionPreservesIdentityWithoutObservationTime(t *testing.T) {
+	original := ReleaseTarget{ID: "target", ServiceID: "service", ClusterID: "cluster", Namespace: "team", ConfigRef: "binding", ExecutorKind: "manifest_ssa", Enabled: true}
+	revision, err := original.ConfigurationRevision()
+	if err != nil || len(revision) != 64 {
+		t.Fatalf("revision=%q error=%v", revision, err)
+	}
+	for _, tc := range []struct {
+		name   string
+		change func(*ReleaseTarget)
+		same   bool
+		bad    bool
+	}{
+		{name: "observation_time", change: func(x *ReleaseTarget) { x.UpdatedAt = time.Now(); x.CreatedAt = time.Now() }, same: true},
+		{name: "legacy_service", change: func(x *ReleaseTarget) { x.ServiceID = ""; x.Metadata = map[string]any{"serviceId": "service"} }, same: true},
+		{name: "namespace", change: func(x *ReleaseTarget) { x.Namespace = "other" }},
+		{name: "binding", change: func(x *ReleaseTarget) { x.ConfigRef = "other" }},
+		{name: "disabled", change: func(x *ReleaseTarget) { x.Enabled = false }},
+		{name: "metadata", change: func(x *ReleaseTarget) { x.Metadata = map[string]any{"ownershipMode": "observe_only"} }},
+		{name: "ambiguous_service", change: func(x *ReleaseTarget) { x.Metadata = map[string]any{"serviceId": "other"} }, bad: true},
+		{name: "invalid_json", change: func(x *ReleaseTarget) { x.Metadata = map[string]any{"invalid": make(chan int)} }, bad: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			next := original
+			next.Metadata = maps.Clone(original.Metadata)
+			tc.change(&next)
+			actual, err := next.ConfigurationRevision()
+			if tc.bad {
+				if err == nil {
+					t.Fatal("invalid configuration accepted")
+				}
+				return
+			}
+			if err != nil || (actual == revision) != tc.same {
+				t.Fatalf("same=%v actual=%q error=%v", tc.same, actual, err)
+			}
+		})
 	}
 }

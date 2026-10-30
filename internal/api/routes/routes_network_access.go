@@ -4,16 +4,7 @@ import "github.com/gin-gonic/gin"
 
 func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	registerNetworkVPNRoutes(protected, deps)
-	if deps.NetworkProxy != nil {
-		proxy := deps.NetworkProxy
-		protected.GET("/network-access/proxy-instances", proxy.List)
-		protected.POST("/network-access/proxy-instances", proxy.Create)
-		protected.GET("/network-access/proxy-instances/:instanceID", proxy.Get)
-		protected.PUT("/network-access/proxy-instances/:instanceID/configuration", proxy.UpdateConfiguration)
-		protected.GET("/network-access/proxy-instances/:instanceID/traffic", proxy.Traffic)
-		protected.GET("/network-access/proxy-instances/:instanceID/connections", proxy.Connections)
-		protected.POST("/network-access/proxy-instances/:instanceID/connections/:connectionID/close", proxy.Close)
-	}
+	registerNetworkProxyRoutes(protected, deps)
 	if deps.NetworkAccess == nil {
 		return
 	}
@@ -66,15 +57,7 @@ func registerNetworkAccessRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/network-access/access-grants", handler.CreateAccessGrant)
 	protected.GET("/network-access/access-grants/:grantID", handler.GetAccessGrant)
 	protected.POST("/network-access/access-grants/:grantID/revoke", handler.RevokeAccessGrant)
-	protected.GET("/network-access/policies", handler.ListPolicies)
-	protected.POST("/network-access/policies", handler.CreatePolicy)
-	protected.POST("/network-access/policies/compile", handler.CompilePolicySnapshot)
-	protected.GET("/network-access/policies/:policyID", handler.GetPolicy)
-	protected.PUT("/network-access/policies/:policyID", handler.UpdatePolicy)
-	protected.DELETE("/network-access/policies/:policyID", handler.DeletePolicy)
-	protected.GET("/network-access/policy/snapshot", handler.GetPolicySnapshot)
-	protected.POST("/network-access/policy/preview", handler.PreviewPolicy)
-	protected.POST("/network-access/conflicts/analyze", handler.AnalyzeConflicts)
+	registerNetworkAccessPolicyRoutes(protected, deps)
 }
 
 func registerNetworkAccessDeviceRoutes(protected gin.IRoutes, deps Dependencies) {
@@ -84,4 +67,30 @@ func registerNetworkAccessDeviceRoutes(protected gin.IRoutes, deps Dependencies)
 	protected.PUT("/network-access/devices/:deviceID/registration", handler.RegisterDevice)
 	protected.PUT("/network-access/devices/:deviceID", handler.UpdateDevice)
 	protected.GET("/network-access/connection-options", handler.ListConnectionOptions)
+}
+
+func registerNetworkProxyRoutes(protected gin.IRoutes, deps Dependencies) {
+	if deps.NetworkProxy != nil {
+		proxy := deps.NetworkProxy
+		protected.GET("/network-access/proxy-instances", proxy.List)
+		protected.POST("/network-access/proxy-instances", proxy.Create)
+		protected.GET("/network-access/proxy-instances/:instanceID", proxy.Get)
+		protected.PUT("/network-access/proxy-instances/:instanceID/configuration", proxy.UpdateConfiguration)
+		protected.GET("/network-access/proxy-instances/:instanceID/traffic", proxy.Traffic)
+		protected.GET("/network-access/proxy-instances/:instanceID/connections", proxy.Connections)
+		protected.POST("/network-access/proxy-instances/:instanceID/connections/:connectionID/close", proxy.Close)
+	}
+}
+
+func registerNetworkAccessPolicyRoutes(protected gin.IRoutes, deps Dependencies) {
+	handler := deps.NetworkAccess
+	protected.GET("/network-access/policies", handler.ListPolicies)
+	protected.POST("/network-access/policies", handler.CreatePolicy)
+	protected.POST("/network-access/policies/compile", handler.CompilePolicySnapshot)
+	protected.GET("/network-access/policies/:policyID", handler.GetPolicy)
+	protected.PUT("/network-access/policies/:policyID", handler.UpdatePolicy)
+	protected.DELETE("/network-access/policies/:policyID", handler.DeletePolicy)
+	protected.GET("/network-access/policy/snapshot", handler.GetPolicySnapshot)
+	protected.POST("/network-access/policy/preview", handler.PreviewPolicy)
+	protected.POST("/network-access/conflicts/analyze", handler.AnalyzeConflicts)
 }

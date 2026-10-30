@@ -24,7 +24,7 @@ func TestInitializationClaimRevalidatesIdentityModeAndApprovedPlan(t *testing.T)
 	s.repository, s.delivery, s.executionPrincipals = fixture, fixture, identity
 	requireSnapshotTestNoError(t, s.ValidateRootCRExecutionTask(t.Context(), task))
 	protectedProvider := task.ProviderKind
-	if protectedProvider != domainmanifest.TaskProviderDirectInitialization {
+	if protectedProvider != domaindelivery.ManifestAdmissionProviderPrefix+domainmanifest.TaskProviderDirectInitialization {
 		t.Fatalf("initialization queued for legacy worker: %s", protectedProvider)
 	}
 	task.ProviderKind = domainmanifest.TaskProviderDirect

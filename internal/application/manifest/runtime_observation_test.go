@@ -4,6 +4,7 @@ import (
 	"context"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
+	"strings"
 	"testing"
 )
 
@@ -19,9 +20,14 @@ func (r *continuousSnapshotRepository) ListContinuousDeployments(context.Context
 func TestAutomaticObservationWaitsForPlanApply(t *testing.T) {
 	for _, scenario := range []string{"pending_plan", "failed_plan", "applied_plan", "legacy_pending", "same_digest_failed_plan", "transient_observe_failure"} {
 		t.Run(scenario, func(t *testing.T) {
-			s, repo, renderer, _ := newSnapshotTestService()
-			snapshot := &domainmanifest.DeliverySnapshot{BindingID: repo.binding.ID, ClusterID: repo.binding.ClusterID, Namespace: repo.binding.Namespace, Revision: 1, RenderedDigest: "next", Documents: []domainmanifest.RenderedDocument{{Kind: "ConfigMap", APIVersion: "v1", Namespace: repo.binding.Namespace, Name: "settings"}}}
+			s, repo, renderer, target := newSnapshotTestService()
+			snapshot := &domainmanifest.DeliverySnapshot{PackageID: repo.base.item.ID, ApplicationEnvironmentID: repo.binding.ApplicationEnvironmentID, TargetID: target.ID, DeliveryPlanID: "observed-plan", PreflightTaskID: "observed-preflight", BindingID: repo.binding.ID, ClusterID: repo.binding.ClusterID, Namespace: repo.binding.Namespace, Revision: 1, RenderedDigest: "next", Documents: []domainmanifest.RenderedDocument{{Kind: "ConfigMap", APIVersion: "v1", Namespace: repo.binding.Namespace, Name: "settings"}}}
+			revision, err := target.ConfigurationRevision()
+			requireSnapshotTestNoError(t, err)
+			repo.operations[snapshot.PreflightTaskID] = domainmanifest.OperationRun{PackageID: snapshot.PackageID, BindingID: snapshot.BindingID, ExecutionTaskID: snapshot.PreflightTaskID, Action: "preflight", DeliveryContext: &domainmanifest.DeliveryContext{Version: 1, PlanID: snapshot.DeliveryPlanID, TargetID: target.ID, TargetRevision: revision, ScopeRevision: strings.Repeat("a", 64)}}
+			repo.tasks["last-write"] = domaindelivery.ExecutionTask{ID: "last-write", Payload: structMap(domainmanifest.TaskPayload{}), SecretPrincipal: testPrincipal()}
 			deployment := domainmanifest.Deployment{ID: "deployment", PackageID: repo.base.item.ID, BindingID: repo.binding.ID, Generation: 2, Spec: domainmanifest.DeploymentSpec{DesiredRevision: 1, DesiredDigest: "next", DeliverySnapshot: snapshot}, Status: domainmanifest.DeploymentStatus{AppliedDigest: "old", Phase: domainmanifest.DeploymentPhasePending}}
+			deployment.Status.LastExecutionTaskID = "last-write"
 			if scenario == "failed_plan" || scenario == "same_digest_failed_plan" {
 				deployment.Status.Phase = domainmanifest.DeploymentPhaseDegraded
 				deployment.Status.Conditions = []domainmanifest.Condition{{Type: "Synced", Status: "false", Reason: "TaskFailed", ObservedGeneration: 2}}
@@ -41,13 +47,14 @@ func TestAutomaticObservationWaitsForPlanApply(t *testing.T) {
 				deployment.Spec.DeliverySnapshot = nil
 			}
 			s.repository = &continuousSnapshotRepository{snapshotRepository: repo, items: []domainmanifest.Deployment{deployment}}
+			before := len(repo.tasks)
 			s.observeContinuousDeployments(t.Context())
 			expected := 0
 			if scenario == "applied_plan" || scenario == "legacy_pending" || scenario == "transient_observe_failure" {
 				expected = 1
 			}
-			if len(repo.tasks) != expected {
-				t.Fatalf("queued %d observations, want %d", len(repo.tasks), expected)
+			if len(repo.tasks)-before != expected {
+				t.Fatalf("queued %d observations, want %d", len(repo.tasks)-before, expected)
 			}
 			if expected == 0 && renderer.calls != 0 {
 				t.Fatal("pending plan rendered unexecuted desired state")

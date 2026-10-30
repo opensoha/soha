@@ -89,10 +89,11 @@ func TestDeliverySnapshotWithPostgres(t *testing.T) {
 	snapshot := domainmanifest.DeliverySnapshot{
 		DeliveryPlanID: uuid.NewString(), TargetID: "target-1", PackageID: item.ID, BindingID: binding.ID, BindingVersion: binding.Version,
 		ApplicationEnvironmentID: environmentID, ClusterID: clusterID, Namespace: binding.Namespace, Revision: 1,
-		PackageUpdatedAt: item.UpdatedAt, RevisionDigest: "sha256:revision", RendererVersion: "kustomize/test", InputDigest: "sha256:input", RenderedDigest: "sha256:rendered",
+		PackageUpdatedAt: item.UpdatedAt.UTC(), RevisionDigest: "sha256:revision", RendererVersion: "kustomize/test", InputDigest: "sha256:input", RenderedDigest: "sha256:rendered",
 		Documents: []domainmanifest.RenderedDocument{{APIVersion: "v1", Kind: "ConfigMap", Namespace: "test", Name: "api", Content: "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: api\n  namespace: test\n"}}, PreflightTaskID: "preflight-1",
 	}
 	verifyDeliveryPlanRoundTrip(t, ctx, deliveryrepo.New(tx), applicationID, snapshot)
+	t.Run("publication-operation-context", func(t *testing.T) { verifyPublicationOperationContext(t, ctx, tx, repository, item, binding) })
 
 	next := domainmanifest.Deployment{ID: uuid.NewString(), PackageID: item.ID, BindingID: binding.ID, CreatedAt: now, UpdatedAt: now,
 		Spec: domainmanifest.DeploymentSpec{DesiredRevision: 1, DesiredDigest: snapshot.RenderedDigest, ReconcilePolicy: "continuous", DriftPolicy: "report", DeletionPolicy: "orphan", DeliverySnapshot: &snapshot}}
@@ -313,7 +314,7 @@ func verifyDeliveryPlanRoundTrip(t *testing.T, ctx context.Context, plans *deliv
 	plan, err = plans.GetDeliveryPlan(ctx, plan.ID)
 	requireManifestRepositoryNoError(t, err)
 	if !reflect.DeepEqual(plan.ManifestSnapshots, []domainmanifest.DeliverySnapshot{snapshot}) {
-		t.Fatalf("plan snapshot round trip: %#v", plan.ManifestSnapshots)
+		t.Fatalf("plan snapshot round trip: got %#v, want %#v", plan.ManifestSnapshots, []domainmanifest.DeliverySnapshot{snapshot})
 	}
 	plan.Status = domaindelivery.DeliveryPlanStatusConfirmed
 	if _, err := plans.UpdateDeliveryPlan(ctx, plan); err != nil {

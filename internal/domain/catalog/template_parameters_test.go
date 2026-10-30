@@ -32,7 +32,7 @@ func TestTemplateParametersValidateAndPreserveValues(t *testing.T) {
 	}
 	for name, input := range map[string]map[string]any{
 		"unknown": {"unexpected": true}, "wrong type": {"replicas": "1"},
-		"plaintext credential":   {"token": "do-not-print-this-secret"},
+		"plaintext credential":   {"token": "do-not-print-this-secret"}, // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		"cross namespace secret": {"token": map[string]any{"name": "secret", "key": "token", "namespace": "production"}},
 		"invalid nested map":     {"labels": map[string]any{"app": true}},
 	} {

@@ -193,7 +193,7 @@ func (s *Store) list(ctx context.Context, filter appsoftware.Filter, readyOnly b
 	if err != nil {
 		return nil, "", fmt.Errorf("list software packages: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := make([]appsoftware.Package, 0, filter.Limit+1)
 	for rows.Next() {
 		item, err := scanPackage(rows)

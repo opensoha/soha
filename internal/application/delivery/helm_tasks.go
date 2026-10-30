@@ -200,13 +200,8 @@ func (s *Service) validateHelmPreflight(ctx context.Context, snapshot sohaapi.He
 // HydrateExecutionTask is called only after a runner claims a persisted task.
 // Public task reads and callbacks never load confidential chart/values contents.
 func (s *Service) HydrateExecutionTask(ctx context.Context, task domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
-	if strings.HasPrefix(task.TaskKind, "manifest_") {
-		if task.Payload["rootResource"] != nil {
-			return s.hydrateRootCRTask(ctx, task)
-		}
-		if validator, ok := s.manifestDelivery.(rootCRTaskValidator); ok {
-			return task, validator.ValidateRootCRExecutionTask(ctx, task)
-		}
+	if strings.HasPrefix(task.TaskKind, "manifest_") || domaindelivery.RequiresManifestAdmission(task) {
+		return s.hydrateManifestExecutionTask(ctx, task)
 	}
 	if !strings.HasPrefix(task.TaskKind, "helm_") {
 		return task, nil

@@ -151,6 +151,10 @@ func (s *DeclarativeService) ValidateRootCRExecutionTask(ctx context.Context, ta
 	if err != nil {
 		return err
 	}
+	task, err = s.validateManifestTaskAdmission(ctx, task, payload)
+	if err != nil {
+		return err
+	}
 	if err = s.validateInitializationTask(ctx, task, payload); err != nil {
 		return err
 	}

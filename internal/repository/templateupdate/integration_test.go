@@ -122,37 +122,8 @@ func verifyAtomicAdoption(t *testing.T, ctx context.Context, db *gorm.DB) {
 	requireOK(t, err)
 	selection := domainmanifest.TemplateSelection{TemplateID: "template", Version: 4, BaseFilesDigest: "baseline", AdoptionID: f.plan.ID, Parameters: map[string]any{"replicas": float64(1)}}
 	apply := func(txctx context.Context, _ domainupdate.FrozenCandidate) error {
-		// Candidate revalidation reads real environment/target relations within the
-		// same transaction, where an open outer result set cannot borrow another connection.
-		environments, err := repocatalog.New(db).ListApplicationEnvironments(txctx)
-		if err != nil {
+		if err := verifyAdoptionTransactionalReads(txctx, db, f); err != nil {
 			return err
-		}
-		matched := 0
-		for _, environment := range environments {
-			for _, binding := range f.bindings {
-				if environment.ID == binding.ApplicationEnvironmentID {
-					matched++
-					if len(environment.Targets) != 1 || environment.Targets[0].ConfigRef != binding.ID {
-						return errors.New("transactional environment read lost its release target")
-					}
-				}
-			}
-		}
-		if matched != len(f.bindings) {
-			return errors.New("transactional environment read lost a binding")
-		}
-		services, err := repoapp.New(db).ListServices(txctx, f.candidate.Candidate.Target.ApplicationID)
-		if err != nil {
-			return err
-		}
-		if len(services) != len(f.services) {
-			return errors.New("transactional service read lost a service")
-		}
-		for index, service := range services {
-			if service.ID != f.services[index].ID || len(service.Containers) != 1 || service.Containers[0].Name != service.Key {
-				return errors.New("transactional service read lost ordering or containers")
-			}
 		}
 		return f.manifest.SetTemplateSelection(txctx, f.bindings[0].ID, 1, selection)
 	}
@@ -267,4 +238,40 @@ func verifyPolicyPersistence(t *testing.T, ctx context.Context, db *gorm.DB) {
 		t.Fatal("paused policy dequeued")
 	}
 	requireOK(t, r.WithPolicy(ctx, value.Value.ID, 1, func(context.Context, *domainupdate.Policy) error { t.Fatal("stale policy dequeued"); return nil }))
+}
+
+func verifyAdoptionTransactionalReads(txctx context.Context, db *gorm.DB, f adoptionFixture) error {
+	// Candidate revalidation reads real environment/target relations within the
+	// same transaction, where an open outer result set cannot borrow another connection.
+	environments, err := repocatalog.New(db).ListApplicationEnvironments(txctx)
+	if err != nil {
+		return err
+	}
+	matched := 0
+	for _, environment := range environments {
+		for _, binding := range f.bindings {
+			if environment.ID == binding.ApplicationEnvironmentID {
+				matched++
+				if len(environment.Targets) != 1 || environment.Targets[0].ConfigRef != binding.ID {
+					return errors.New("transactional environment read lost its release target")
+				}
+			}
+		}
+	}
+	if matched != len(f.bindings) {
+		return errors.New("transactional environment read lost a binding")
+	}
+	services, err := repoapp.New(db).ListServices(txctx, f.candidate.Candidate.Target.ApplicationID)
+	if err != nil {
+		return err
+	}
+	if len(services) != len(f.services) {
+		return errors.New("transactional service read lost a service")
+	}
+	for index, service := range services {
+		if service.ID != f.services[index].ID || len(service.Containers) != 1 || service.Containers[0].Name != service.Key {
+			return errors.New("transactional service read lost ordering or containers")
+		}
+	}
+	return nil
 }

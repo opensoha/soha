@@ -21,7 +21,7 @@ import (
 )
 
 func TestTOTPCodeRFC6238Vector(t *testing.T) {
-	const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+	const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ" // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 	code, err := totpCode(secret, time.Unix(59, 0).Unix()/totpPeriod)
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +166,7 @@ func TestWebAuthnAuthenticationCompletesStepUpOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := sohaapi.MFAWebAuthnResponse{CredentialID: "Y3JlZGVudGlhbA", ClientDataJSON: "e30", AuthenticatorData: "YXV0aA", Signature: "c2ln"}
+	response := sohaapi.MFAWebAuthnResponse{CredentialID: "Y3JlZGVudGlhbA", ClientDataJSON: "e30", AuthenticatorData: "YXV0aA", Signature: "c2ln"} // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 	result, err := service.VerifyWebAuthnChallenge(t.Context(), principal, "session-1", challenge.ChallengeID, response)
 	if err != nil || !result.Verified || !repo.recentStepUp {
 		t.Fatalf("VerifyWebAuthnChallenge = %#v, %v; recentStepUp=%v", result, err, repo.recentStepUp)

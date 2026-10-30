@@ -64,6 +64,7 @@ jobs:
           python3 scripts/check-go-test-evidence.py template-migration-test.json --exit-code 0 --template-migration
           go test -json -count=1 -race -timeout=10m -run '^TestDeliverySnapshotWithPostgres$' ./internal/repository/manifest | tee manifest-migration-test.json
           python3 scripts/check-go-test-evidence.py manifest-migration-test.json --exit-code 0 --manifest-migration
+          python3 scripts/check-go-test-evidence.py manifest-migration-test.json --exit-code 0 --manifest-control
       - name: Evidence validator counterexamples
         run: python3 -m unittest discover -s scripts -p 'test_go_test_evidence.py'
       - name: OCR integrity counterexamples without models

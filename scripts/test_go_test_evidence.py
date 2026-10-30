@@ -61,6 +61,23 @@ class EvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 evidence.validate(self.raw(invalid), **scope)
 
+    def test_manifest_control_requires_every_atomic_and_compatibility_case(self):
+        scope = evidence.MANIFEST_CONTROL_SCOPE
+        names = [scope["parent"], *[scope["parent"] + "/" + child for child in scope["children"]]]
+        events = [dict(Action=action, Package=scope["package"], Test=name)
+                  for name in names for action in ("run", "pass")]
+        events.append(dict(Action="pass", Package=scope["package"]))
+        self.assertEqual(evidence.validate(self.raw(events), **scope)["children"], 5)
+        for name in names:
+            for invalid in ([event for event in events if event.get("Test") != name],
+                            [{**event, "Action": "skip"} if event.get("Test") == name else event for event in events]):
+                with self.subTest(name=name), self.assertRaises(ValueError):
+                    evidence.validate(self.raw(invalid), **scope)
+        for invalid in (events[:-1], events + [dict(Action="output", Package=scope["package"], Output="ok (cached)")],
+                        [{**event, "Package": "wrong"} for event in events]):
+            with self.assertRaises(ValueError):
+                evidence.validate(self.raw(invalid), **scope)
+
     def test_all_required_tests_pass(self):
         self.assertEqual(evidence.validate(self.raw(self.events()))["children"], 16)
 

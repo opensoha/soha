@@ -281,7 +281,7 @@ func TestNetworkEnrollmentToolsUseSharedServiceAndNeverExposeDigest(t *testing.T
 func TestNetworkAccessGrantToolsBindSessionAndNeverExposeDigest(t *testing.T) {
 	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{}), nil, &memoryGatewayRepository{})
 	now := time.Date(2026, 9, 3, 10, 0, 0, 0, time.UTC)
-	grants := &fakeNetworkAccessGrantService{item: domainnetworkruntime.AccessGrant{
+	grants := &fakeNetworkAccessGrantService{item: domainnetworkruntime.AccessGrant{ // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 		ID: "grant-1", SubjectID: "user-1", AuthSessionID: "do-not-return", DeviceID: "device-1", SiteID: "site-1",
 		NetworkSpaceID: "space-1", Mode: domainnetworkaccess.ModeExternalDirectZTNA, ResourceIDs: []string{"resource-1"},
 		PolicyVersion: 7, Status: domainnetworkruntime.AccessGrantIssued, TokenHash: "sha256:do-not-return",

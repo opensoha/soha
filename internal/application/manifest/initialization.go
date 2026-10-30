@@ -25,7 +25,7 @@ type initializationHistory interface {
 
 func (s *DeclarativeService) validateInitializationTask(ctx context.Context, task domaindelivery.ExecutionTask, payload domainmanifest.TaskPayload) error {
 	if payload.InitializationPlanID == "" {
-		if task.ProviderKind == domainmanifest.TaskProviderDirectInitialization || strings.HasPrefix(task.ProviderKind, resourceruntime.ManifestInitializationProviderPrefix) {
+		if domaindelivery.ManifestBaseProvider(task.ProviderKind) == domainmanifest.TaskProviderDirectInitialization || strings.HasPrefix(domaindelivery.ManifestBaseProvider(task.ProviderKind), resourceruntime.ManifestInitializationProviderPrefix) {
 			return apperrors.ErrConflict
 		}
 		if payload.DeploymentID != "" {
@@ -53,7 +53,7 @@ func (s *DeclarativeService) validateInitializationScope(ctx context.Context, ta
 	if err != nil {
 		return err
 	}
-	if task.ProviderKind != provider {
+	if domaindelivery.ManifestBaseProvider(task.ProviderKind) != provider {
 		return apperrors.ErrConflict
 	}
 	if s.executionPrincipals == nil {

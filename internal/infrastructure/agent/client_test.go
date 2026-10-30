@@ -91,7 +91,7 @@ func TestReverseSessionCarriesAgentHTTPRequests(t *testing.T) {
 		t.Fatalf("yamux.Client() error = %v", err)
 	}
 	defer func() { _ = agentSession.Close() }()
-	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v1/platform/summary" || r.Header.Get("Authorization") != "Bearer agent-token" {
 			t.Errorf("unexpected tunneled request %s auth=%q", r.URL.Path, r.Header.Get("Authorization"))
 		}

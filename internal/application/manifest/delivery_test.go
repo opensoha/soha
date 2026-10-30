@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainmanifest "github.com/opensoha/soha/internal/domain/manifest"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -16,14 +18,19 @@ import (
 type snapshotRepository struct {
 	DeclarativeRepository
 	ManifestTaskRuntime
-	base       *testRepository
-	binding    domainmanifest.EnvironmentBinding
-	deployment domainmanifest.Deployment
-	tasks      map[string]domaindelivery.ExecutionTask
-	keys       map[string]string
-	setCount   int
-	queueError error
-	history    bool
+	base          *testRepository
+	binding       domainmanifest.EnvironmentBinding
+	deployment    domainmanifest.Deployment
+	tasks         map[string]domaindelivery.ExecutionTask
+	operations    map[string]domainmanifest.OperationRun
+	target        domaincatalog.ReleaseTarget
+	scopeRevision string
+	contextError  error
+	planError     error
+	keys          map[string]string
+	setCount      int
+	queueError    error
+	history       bool
 }
 
 func (r *snapshotRepository) HasTargetWriteHistory(context.Context, string, string, []string, string, string) (bool, error) {
@@ -66,7 +73,57 @@ func (r *snapshotRepository) CreateOperationTask(_ context.Context, run domainma
 	}
 	r.keys[run.IdempotencyKey] = task.ID
 	r.tasks[task.ID] = task
+	r.operations[task.ID] = run
 	return task.ID, true, nil
+}
+
+func (r *snapshotRepository) GetOperationTask(_ context.Context, id string) (domainmanifest.OperationRun, error) {
+	operation, ok := r.operations[id]
+	if !ok {
+		return operation, apperrors.ErrNotFound
+	}
+	return operation, nil
+}
+
+func (r *snapshotRepository) GetDeployment(_ context.Context, id string) (domainmanifest.Deployment, error) {
+	if id == "" || r.deployment.ID != id {
+		return domainmanifest.Deployment{}, apperrors.ErrNotFound
+	}
+	return r.deployment, nil
+}
+
+func (r *snapshotRepository) CurrentManifestDeliveryContext(_ context.Context, _ domainidentity.Principal, _, _, id string) (domainmanifest.DeliveryContext, error) {
+	if r.contextError != nil {
+		return domainmanifest.DeliveryContext{}, r.contextError
+	}
+	if id != r.target.ID {
+		return domainmanifest.DeliveryContext{}, apperrors.ErrConflict
+	}
+	revision, err := r.target.ConfigurationRevision()
+	scope := r.scopeRevision
+	if scope == "" {
+		scope = strings.Repeat("a", 64)
+	}
+	return domainmanifest.DeliveryContext{Version: 1, TargetID: id, TargetRevision: revision, ScopeRevision: scope}, err
+}
+
+func (r *snapshotRepository) GetExecutingDeliveryPlan(_ context.Context, _ domainidentity.Principal, id string) (domaindelivery.DeliveryPlan, error) {
+	if r.planError != nil {
+		return domaindelivery.DeliveryPlan{}, r.planError
+	}
+	snapshot := r.deployment.Spec.DeliverySnapshot
+	if snapshot == nil || snapshot.DeliveryPlanID != id {
+		return domaindelivery.DeliveryPlan{}, apperrors.ErrConflict
+	}
+	return domaindelivery.DeliveryPlan{ID: id, ApplicationID: r.base.item.ApplicationID, ApplicationEnvironmentID: r.binding.ApplicationEnvironmentID, Action: domaindelivery.ApplicationDeliveryActionDeploy, Status: "confirmed", RequiresApproval: true, Impact: map[string]any{"approval": []any{map[string]any{"status": "approved"}}}, ManifestSnapshots: []domainmanifest.DeliverySnapshot{*snapshot}}, nil
+}
+
+func (r *snapshotRepository) GetConfirmedDeliveryPlan(ctx context.Context, p domainidentity.Principal, id string) (domaindelivery.DeliveryPlan, error) {
+	return r.GetExecutingDeliveryPlan(ctx, p, id)
+}
+
+func (r *snapshotRepository) GetExecutionTask(ctx context.Context, _ domainidentity.Principal, id string) (domaindelivery.ExecutionTask, error) {
+	return r.GetExecutionTaskInternal(ctx, id)
 }
 func (r *snapshotRepository) GetExecutionTaskInternal(_ context.Context, id string) (domaindelivery.ExecutionTask, error) {
 	return r.tasks[id], nil
@@ -83,10 +140,11 @@ func (r *snapshotRenderer) Render(_ context.Context, item domainmanifest.Package
 
 func newSnapshotTestService() (*DeclarativeService, *snapshotRepository, *snapshotRenderer, domaincatalog.ReleaseTarget) {
 	base := &testRepository{item: domainmanifest.Package{ID: "package", ApplicationID: "payments", Renderer: domainmanifest.RendererRaw, CurrentRevision: 1, UpdatedAt: time.Now().UTC()}, revisions: []domainmanifest.Revision{{Version: 1, Digest: "revision", Files: []domainmanifest.File{{Path: "config.yaml", Content: "fixed"}}}}}
-	repo := &snapshotRepository{base: base, binding: domainmanifest.EnvironmentBinding{ID: "manifest-binding", PackageID: "package", ApplicationEnvironmentID: "payments-dev", ClusterID: "dev-1", Namespace: "payments", Enabled: true, Version: 1}, tasks: map[string]domaindelivery.ExecutionTask{}, keys: map[string]string{}}
+	repo := &snapshotRepository{base: base, binding: domainmanifest.EnvironmentBinding{ID: "manifest-binding", PackageID: "package", ApplicationEnvironmentID: "payments-dev", ClusterID: "dev-1", Namespace: "payments", Enabled: true, Version: 1}, tasks: map[string]domaindelivery.ExecutionTask{}, keys: map[string]string{}, operations: map[string]domainmanifest.OperationRun{}}
+	repo.target = domaincatalog.ReleaseTarget{ID: "target", ApplicationEnvironmentID: repo.binding.ApplicationEnvironmentID, ExecutorKind: "manifest_ssa", ConfigRef: repo.binding.ID, ClusterID: repo.binding.ClusterID, Namespace: repo.binding.Namespace, Enabled: true}
 	renderer := &snapshotRenderer{}
-	service := NewDeclarative(newTestService(base, testAuthorizer{}), repo, DeclarativeRuntimeDependencies{Renderer: renderer, Tasks: repo})
-	return service, repo, renderer, domaincatalog.ReleaseTarget{ID: "target", ExecutorKind: "manifest_ssa", ConfigRef: repo.binding.ID, ClusterID: repo.binding.ClusterID, Namespace: repo.binding.Namespace, Enabled: true}
+	service := NewDeclarative(newTestService(base, testAuthorizer{}), repo, DeclarativeRuntimeDependencies{Renderer: renderer, Tasks: repo, Delivery: repo})
+	return service, repo, renderer, repo.target
 }
 
 func approveSnapshotPreflight(repo *snapshotRepository, snapshot domainmanifest.DeliverySnapshot) {

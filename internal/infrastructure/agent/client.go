@@ -1738,7 +1738,7 @@ func (c *Client) SubscribeResourceEvents(ctx context.Context, namespace string, 
 	events := make(chan domainresource.ResourceStreamEvent, 64)
 	go func() {
 		defer close(events)
-		defer stream.Close()
+		defer func() { _ = stream.Close() }()
 		decoder := json.NewDecoder(stream)
 		for {
 			var event domainresource.ResourceStreamEvent

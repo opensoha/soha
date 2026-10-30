@@ -21,6 +21,7 @@ type manifestDeliveryStub struct {
 	snapshot        domainmanifest.DeliverySnapshot
 	applied         []domainmanifest.DeliverySnapshot
 	validationError error
+	controlError    error
 }
 
 func (m *manifestDeliveryStub) DeliveryDeployment(context.Context, domainidentity.Principal, string, string, domaincatalog.ReleaseTarget) (domainmanifest.Deployment, error) {
@@ -33,6 +34,9 @@ func (m *manifestDeliveryStub) CreateDeliverySnapshot(_ context.Context, _ domai
 }
 func (m *manifestDeliveryStub) ValidateDeliverySnapshot(context.Context, domainidentity.Principal, domainmanifest.DeliverySnapshot) error {
 	return m.validationError
+}
+func (m *manifestDeliveryStub) ValidateDeliveryControl(context.Context, domainidentity.Principal, domainmanifest.DeliverySnapshot) error {
+	return m.controlError
 }
 func (m *manifestDeliveryStub) ApplyDeliverySnapshot(_ context.Context, _ domainidentity.Principal, snapshot domainmanifest.DeliverySnapshot) (domainmanifest.Deployment, domaindelivery.ExecutionTask, error) {
 	m.applied = append(m.applied, snapshot)

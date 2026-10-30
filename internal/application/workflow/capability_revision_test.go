@@ -72,7 +72,7 @@ func TestCapabilityRevisionRetainsOpaqueSecretsWithoutRepeatingEffects(t *testin
 	tickCapabilityFixture(t, service, repo)
 	tickCapabilityFixture(t, service, repo)
 	intent, _ := domainworkflow.CapabilityIntentFrom(repo.run)
-	intent.Input.Plan.Steps[0].Call.SecretRefs = map[string]string{"TOKEN": "soha://secrets/secret-1/versions/1"}
+	intent.Input.Plan.Steps[0].Call.SecretRefs = map[string]string{"TOKEN": "soha://secrets/secret-1/versions/1"} // #nosec G101 -- Synthetic test-only credential or rejection fixture; no real credential.
 	repo.run.Metadata["capabilityIntent"] = intent
 	principal, _ := provider.CurrentExecutionPrincipal(context.Background(), "actor", "frozen-token")
 	view, err := service.GetCapabilityTask(context.Background(), principal, repo.run.ID)

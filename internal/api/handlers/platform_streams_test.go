@@ -102,11 +102,14 @@ func TestStreamPodTerminalReportsSafeResult(t *testing.T) {
 			defer server.Close()
 
 			endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/clusters/cluster-a/workloads/pods/pod-a/terminal"
-			conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+			conn, response, err := websocket.DefaultDialer.Dial(endpoint, nil)
+			if response != nil && response.Body != nil {
+				defer func() { _ = response.Body.Close() }()
+			}
 			if err != nil {
 				t.Fatalf("dial terminal websocket: %v", err)
 			}
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
 			var status terminalMessage
@@ -164,11 +167,14 @@ func TestStreamResourceEventsWritesStatusAndMetadataEvent(t *testing.T) {
 	defer server.Close()
 
 	endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/clusters/cluster-a/resources/stream?namespace=team-a&kinds=Pod,Deployment"
-	conn, _, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	conn, response, err := websocket.DefaultDialer.Dial(endpoint, nil)
+	if response != nil && response.Body != nil {
+		defer func() { _ = response.Body.Close() }()
+	}
 	if err != nil {
 		t.Fatalf("dial resource websocket: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 
 	var status domainresource.ResourceStreamEvent

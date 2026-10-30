@@ -147,6 +147,7 @@ func verifyLegacyTemplateMigration(t *testing.T, ctx context.Context, admin *dbs
 			// #nosec G304 -- ReadDir supplies filenames from the fixed repository migration directory.
 			content, readErr := os.ReadFile(filepath.Join(migrationDir, file.Name()))
 			requireTemplateNoError(t, readErr)
+			// #nosec G703 -- Migration basename comes from os.ReadDir of repository migrations and destination is a test-owned temporary directory.
 			requireTemplateNoError(t, os.WriteFile(filepath.Join(stagedMigrations, file.Name()), content, 0o600))
 		}
 	}
@@ -163,6 +164,7 @@ INSERT INTO application_build_sources (id, application_id, source_name, source_t
 			// #nosec G304 -- ReadDir supplies filenames from the fixed repository migration directory.
 			content, readErr := os.ReadFile(filepath.Join(migrationDir, file.Name()))
 			requireTemplateNoError(t, readErr)
+			// #nosec G703 -- Migration basename comes from os.ReadDir of repository migrations and destination is a test-owned temporary directory.
 			requireTemplateNoError(t, os.WriteFile(filepath.Join(stagedMigrations, file.Name()), content, 0o600))
 		}
 	}

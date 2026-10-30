@@ -44,6 +44,7 @@ def main():
     parser.add_argument("--template-adoption", action="store_true")
     parser.add_argument("--template-migration", action="store_true")
     parser.add_argument("--manifest-migration", action="store_true")
+    parser.add_argument("--manifest-control", action="store_true")
     parser.add_argument("--initialization", action="store_true")
     args = parser.parse_args()
     run_id = str(uuid.uuid4())
@@ -56,7 +57,7 @@ def main():
     try:
         container = command(["docker", "run", "--detach", "--rm", "--label", "soha.test.run=" + run_id,
                              "--publish", "127.0.0.1::5432",
-                             *(["--tmpfs", "/var/lib/postgresql"] if args.service_reference_candidates or args.kubernetes_import or args.relation_rules or args.template_adoption or args.template_migration or args.manifest_migration or args.initialization else []),
+                             *(["--tmpfs", "/var/lib/postgresql"] if args.service_reference_candidates or args.kubernetes_import or args.relation_rules or args.template_adoption or args.template_migration or args.manifest_migration or args.manifest_control or args.initialization else []),
                              "--env", "POSTGRES_DB=soha",
                              "--env", "POSTGRES_USER=pgsql", "--env", "POSTGRES_PASSWORD=test-only", IMAGE], timeout=90)
         info = json.loads(command(["docker", "inspect", container]))[0]
@@ -92,7 +93,7 @@ def main():
                 parent = "TestTemplateAdoptionWithPostgres"
             if args.template_migration:
                 parent = "TestTemplateVersionsWithPostgres"
-            if args.manifest_migration:
+            if args.manifest_migration or args.manifest_control:
                 parent = "TestDeliverySnapshotWithPostgres"
             if args.initialization:
                 parent = "TestInitializationHistoryWithPostgres"
@@ -111,7 +112,7 @@ def main():
                 package = "templateupdate"
             if args.template_migration:
                 package = "catalog"
-            if args.manifest_migration:
+            if args.manifest_migration or args.manifest_control:
                 package = "manifest"
             if args.initialization:
                 package = "delivery"
@@ -150,8 +151,8 @@ def main():
             scope = module.TEMPLATE_ADOPTION_SCOPE
         if args.template_migration:
             scope = module.TEMPLATE_MIGRATION_SCOPE
-        if args.manifest_migration:
-            scope = module.MANIFEST_MIGRATION_SCOPE
+        if args.manifest_migration or args.manifest_control:
+            scope = module.MANIFEST_CONTROL_SCOPE if args.manifest_control else module.MANIFEST_MIGRATION_SCOPE
         if args.initialization:
             scope = module.INITIALIZATION_SCOPE
         evidence = module.validate(args.output.read_text(), result.returncode, **scope)

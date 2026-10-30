@@ -3,6 +3,7 @@ package observability
 import (
 	"context"
 	"errors"
+	"github.com/stretchr/testify/require"
 	"testing"
 	"time"
 
@@ -89,13 +90,9 @@ func (r *recordingLogRegistry) Search(_ context.Context, _, _ string, config map
 func TestDataSourceCredentialsStayEncryptedAndCursorIsPrincipalBound(t *testing.T) {
 	now := time.Date(2026, 7, 31, 8, 5, 0, 0, time.UTC)
 	key, err := keyring.NewKey("observability.test", "01234567890123456789012345678901", now.Add(-time.Hour), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	keys, err := keyring.New(key, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	store := &memoryDataSources{items: map[string]domainobservability.DataSource{}}
 	logs := &recordingLogRegistry{}
 	service, err := New(Dependencies{
@@ -103,9 +100,7 @@ func TestDataSourceCredentialsStayEncryptedAndCursorIsPrincipalBound(t *testing.
 		Permissions: appaccess.NewPermissionResolver(observabilityRoleReader{"ops": {appaccess.PermObserveLogDataSourcesView, appaccess.PermObserveLogDataSourcesManage}}),
 		Logs:        logs, Keys: keys,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	service.now = func() time.Time { return now }
 	principal := domainidentity.Principal{UserID: "user-1", Roles: []string{"ops"}}
 	input := sohaapi.ObservabilityDataSourceInput{
@@ -116,9 +111,7 @@ func TestDataSourceCredentialsStayEncryptedAndCursorIsPrincipalBound(t *testing.
 		RedactionPolicy: &sohaapi.ObservabilityLogRedactionPolicy{DropAttributeKeys: []string{"token"}},
 	}
 	created, err := service.CreateDataSource(context.Background(), principal, input)
-	if err != nil {
-		t.Fatalf("CreateDataSource() error = %v", err)
-	}
+	require.NoError(t, err, "CreateDataSource() error = %v", err)
 	stored := store.items[created.ID]
 	if !secretcrypto.Encrypted(stored.CredentialRef) || stored.CredentialRef == "top-secret" {
 		t.Fatalf("credential reference is not encrypted: %q", stored.CredentialRef)
@@ -130,9 +123,7 @@ func TestDataSourceCredentialsStayEncryptedAndCursorIsPrincipalBound(t *testing.
 	selector := domainresource.LogSourceSelector{Namespace: "team-a", PodNames: []string{"api-0", "api-1"}, Containers: []string{"api", "sidecar"}}
 	query := domainresource.LogQuery{Selector: &selector, SourceMode: sohaapi.LogSourceModeDurable, Limit: 1, TraceID: "trace-1", SpanID: "span-1"}
 	page, err := service.QueryDurableLogs(context.Background(), principal, "cluster-a", query)
-	if err != nil {
-		t.Fatalf("QueryDurableLogs() error = %v", err)
-	}
+	require.NoError(t, err, "QueryDurableLogs() error = %v", err)
 	if logs.config["bearerToken"] != "top-secret" || len(logs.query.Scope.Pods) != 2 || len(logs.query.Scope.Containers) != 2 || logs.query.TraceID != "trace-1" || logs.query.SpanID != "span-1" || page.NextCursor == "" {
 		t.Fatalf("provider config/query/page = %#v %#v %#v", logs.config, logs.query, page)
 	}

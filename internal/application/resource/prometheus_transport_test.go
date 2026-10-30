@@ -62,3 +62,27 @@ func TestPrometheusOldConfigurationUsesDirect(t *testing.T) {
 		t.Fatalf("legacy direct mode changed: %v", err)
 	}
 }
+
+func TestPrometheusDirectKeepsConfiguredAuthorityAndRejectsRedirect(t *testing.T) {
+	leaked := 0
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { leaked++ }))
+	defer other.Close()
+	query := "up&redirect=" + other.URL + "/collect?token=synthetic"
+	called := false
+	configured := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		if r.URL.Path != "/api/v1/query_range" || r.URL.Query().Get("query") != query {
+			t.Errorf("query escaped its encoded parameter: %s", r.URL)
+		}
+		if r.Header.Get("Authorization") != "Bearer synthetic-token" {
+			t.Error("configured credential missing")
+		}
+		http.Redirect(w, r, other.URL, http.StatusFound)
+	}))
+	defer configured.Close()
+	service := &metricsSupport{httpClient: configured.Client()}
+	_, _, err := service.queryPrometheusRange(t.Context(), configured.URL, "synthetic-token", query, time.Minute, time.Second)
+	if err == nil || !called || leaked != 0 {
+		t.Fatalf("redirect guard: called=%t leaked=%d error=%v", called, leaked, err)
+	}
+}

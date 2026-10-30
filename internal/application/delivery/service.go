@@ -1329,6 +1329,11 @@ func (s *Service) DecideDeliveryPlanApproval(ctx context.Context, principal doma
 	if action == "approved" && planHasMigration(plan) && strings.TrimSpace(input.Comment) == "" {
 		return domaindelivery.DeliveryPlan{}, fmt.Errorf("%w: 迁移变更批准前必须填写审批意见，核对迁移指引与恢复方案", apperrors.ErrInvalidArgument)
 	}
+	if action == "approved" {
+		if err := s.validateManifestApprovalControl(ctx, principal, plan); err != nil {
+			return domaindelivery.DeliveryPlan{}, err
+		}
+	}
 	plan.Status = domaindelivery.DeliveryPlanStatusDraft
 	plan.UpdatedAt = time.Now().UTC()
 	plan.Impact = deliveryPlanApprovalImpact(plan, principal, action, input.Comment)
@@ -1368,6 +1373,9 @@ func (s *Service) GetExecutingDeliveryPlan(ctx context.Context, p domainidentity
 	}
 	if (plan.Status != domaindelivery.DeliveryPlanStatusConfirming && plan.Status != domaindelivery.DeliveryPlanStatusConfirmed) || (plan.RequiresApproval && !deliveryPlanApprovalGranted(plan)) {
 		return domaindelivery.DeliveryPlan{}, apperrors.ErrConflict
+	}
+	if err := s.authorizeApplicationDeliveryAction(ctx, p, plan.ApplicationEnvironmentID, plan.Action); err != nil {
+		return domaindelivery.DeliveryPlan{}, err
 	}
 	return plan, nil
 }

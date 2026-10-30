@@ -691,6 +691,7 @@ type readbackState struct {
 type execCommands struct{}
 
 func (execCommands) Run(ctx context.Context, stdin []byte, path string, args ...string) ([]byte, error) {
+	// #nosec G204 -- Only configured ip/nft executables, no shell; Executor validates canonical prefixes, fixed interface and numeric bounds, and BuildNftProgram validates/quotes rule values.
 	command := exec.CommandContext(ctx, path, args...)
 	if stdin != nil {
 		command.Stdin = bytes.NewReader(stdin)
