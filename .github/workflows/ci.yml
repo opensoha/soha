@@ -30,6 +30,8 @@ jobs:
       - name: Consumer revision selector tests
         run: node --test scripts/select-consumer-revision.checks.mjs
       - run: npm ci
+      - name: Verify staged release workflow
+        run: node --test scripts/release-workflow.checks.mjs
       - run: npm test
       - name: Go vet
         run: GOWORK=off go vet ./...
